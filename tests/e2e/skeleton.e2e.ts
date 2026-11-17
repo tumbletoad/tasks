@@ -189,6 +189,8 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
       const open = row
         .getByRole("toolbar")
         .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` });
+      const composer = row.locator('[data-part="composer"]');
+      await composer.fill("Tag it after the tests pass");
       await open.click();
       const said = page.getByRole("status").filter({
         hasText: `The folder ${set.folder} has no Tasks marker, so it may not be the folder set for this task. Nothing was started.`,
@@ -197,10 +199,14 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
       expect(world.terminal()).toHaveLength(before);
       await page.screenshot({ path: test.info().outputPath("open-marker-missing.png") });
 
-      // The person uses this folder: it opens there, and is marked as the task's.
+      // Nothing started, so the words wait in the field.
+      await expect(composer).toHaveValue("Tag it after the tests pass");
+      // The person uses this folder: it opens there with the words, is marked as the task's, and
+      // the field clears once the agent has them, as after any Open.
       await said.getByRole("button", { name: "Use this folder" }).click();
       await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
       expect(existsSync(join(folder, FOLDER_MARKER, "owners.json"))).toBe(true);
+      await expect(composer).toHaveValue("", { timeout: SLOW_MS });
       expect(await violations(page)).toEqual([]);
     } finally {
       // The fake agent works in the folder for a few seconds, and Windows keeps a folder in use.

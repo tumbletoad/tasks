@@ -72,7 +72,10 @@ export const LaunchOpenResult = z.strictObject({
     .optional(),
   text: z
     .enum(["none", "inline", "note"])
-    .describe("Where your words went: none given, in the brief, or saved as a note"),
+    .describe("Where your words went: none given or none sent, in the brief, or saved as a note"),
+  created: z
+    .boolean()
+    .describe("This click made the launch; false when it got the one a click just before made"),
 });
 
 const BRIEF = [
@@ -126,6 +129,7 @@ export const launchOpen = defineEntry({
         },
         copy: BRIEF,
         text: "none",
+        created: true,
       },
     },
   ],

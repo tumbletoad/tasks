@@ -148,6 +148,8 @@ export interface OpenTaskResult {
   readonly composer: "none" | "inline" | "note";
   /** The sanitiser removed something from the composer text (A4 3.15.6's quiet notice). */
   readonly removed: boolean;
+  /** This click made the launch; false when it was given the one a click just before made. */
+  readonly created: boolean;
 }
 
 /** The route an instance takes for a click, and its brief. */

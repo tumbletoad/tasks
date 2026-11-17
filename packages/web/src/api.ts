@@ -144,8 +144,9 @@ export class Api {
 
   /**
    * A click on a tile, or on Copy without an instance (A4's `launch.open`): the launch's receipt,
-   * and for Copy (or an open whose app takes the brief by paste) the text for the clipboard.
-   * `text` is what the person typed in the composer: the agent's request.
+   * for Copy (or an open whose app takes the brief by paste) the text for the clipboard, and
+   * whether this click made the launch or was given the one a click just before made. `text` is
+   * what the person typed in the composer: the agent's request.
    */
   async openLaunch(
     task: string,
@@ -156,7 +157,7 @@ export class Api {
       text,
       markFolder = false,
     }: { readonly pack?: boolean; readonly text?: string; readonly markFolder?: boolean } = {},
-  ): Promise<{ receipt: Receipt; copy: string | undefined }> {
+  ): Promise<{ receipt: Receipt; copy: string | undefined; created: boolean }> {
     const result = await this.client.launch.open({
       task,
       ...(instance === undefined ? {} : { instance }),
@@ -183,6 +184,7 @@ export class Api {
         at,
       },
       copy: result.copy,
+      created: result.created,
     };
   }
 

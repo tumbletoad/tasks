@@ -230,6 +230,7 @@ interface Opened {
   };
   readonly copy?: string;
   readonly text: string;
+  readonly created: boolean;
 }
 
 const open = async (
@@ -415,8 +416,31 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       const r = await rig("claude-link");
       const task = await addTask(r, HOSTILE_TITLE, HOSTILE_FOLDER);
       const folder = realpathSync.native(join(r.lab.work, HOSTILE_FOLDER));
-      const { result } = await open(r, { task: task.ref, instance: "claude-link" });
-      expect(result.launch.route).toBe("link");
+      const { result, requestId } = await open(r, {
+        task: task.ref,
+        instance: "claude-link",
+        text: "Start with the tests",
+      });
+      expect(result).toMatchObject({ launch: { route: "link" }, text: "inline", created: true });
+      // A second click straight after, from another tab, is given the first launch: its words
+      // are in no brief, and it says so. Its first click's repeat still made the launch.
+      const second = await open(r, {
+        task: task.ref,
+        instance: "claude-link",
+        text: "Other words",
+      });
+      expect(second.result).toMatchObject({
+        launch: { id: result.launch.id },
+        text: "none",
+        created: false,
+      });
+      const again = await open(r, {
+        task: task.ref,
+        instance: "claude-link",
+        text: "Start with the tests",
+        request_id: requestId,
+      });
+      expect(again.result).toMatchObject({ launch: { id: result.launch.id }, created: true });
       const dispatched = await r.lab.waitIntent(
         result.launch.id,
         (i) => i.state === "dispatched",
@@ -436,7 +460,10 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect([...query.keys()]).toEqual(["cwd", "q"]);
       expect(query.get("cwd")).toBe(folder);
       expect(query.get("q")).toBe(
-        briefFor("prefilled", task, HOSTILE_TITLE, result.launch.reference, { budget: 1000 }),
+        briefFor("prefilled", task, HOSTILE_TITLE, result.launch.reference, {
+          budget: 1000,
+          composer: "Start with the tests",
+        }),
       );
       expect(url).toMatch(/^[A-Za-z0-9:/?&=%._~-]+$/u);
     },

@@ -14,11 +14,18 @@ export interface RowActions {
   /** The tile shows a launch on its way or done: expand to its thread entry. */
   readonly expand: (task: TaskRow) => void;
   /**
-   * Open the task in an instance, with the composer's `text` as the request: the receipt of the
-   * launch the service recorded or returned, or undefined when it recorded none or the brief an
-   * app takes by paste did not reach the clipboard.
+   * Open the task in an instance, with the composer's `text` as the request. `carried` hears of
+   * each launch that took the text to its agent: this click's, or the one a later "Use this
+   * folder" makes. Never one the click was given because a click just before made it, nor one
+   * whose brief an app takes by paste and that did not reach the clipboard. Settles when this
+   * click's answer is in.
    */
-  readonly open: (task: TaskRow, instance: Instance, text?: string) => Promise<Receipt | undefined>;
+  readonly open: (
+    task: TaskRow,
+    instance: Instance,
+    text?: string,
+    carried?: (receipt: Receipt) => void,
+  ) => Promise<void>;
   /**
    * Copy the pointer brief, or with `pack` (Shift+Copy) the context pack (A4 3.15.5), with the
    * composer's `text`. True once it is on the clipboard.

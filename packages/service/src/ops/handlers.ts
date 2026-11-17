@@ -2375,6 +2375,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       launch: launchReceipt(opened.intent),
       ...(opened.copy === undefined ? {} : { copy: opened.copy }),
       text: opened.composer,
+      created: opened.created,
     };
   },
 

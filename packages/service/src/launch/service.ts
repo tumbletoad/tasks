@@ -288,6 +288,19 @@ const answer = (reason: HostRefusal): AppError =>
 /** A best-effort app's folder check, as `launch.folder_check` logs it (A4 3.4.4). */
 type FolderCheck = "same" | "other" | "unknown";
 
+/**
+ * Where a click's words went. A second click on a task within 5 s is given the launch the first
+ * made (A4 3.9.1): its words are in no agent's brief, though a note it saved or the clipboard Copy
+ * filled still has them.
+ */
+function wordsWent(
+  composer: OpenTaskResult["composer"],
+  created: boolean,
+  route: string,
+): OpenTaskResult["composer"] {
+  return created || composer === "note" || route === "clipboard" ? composer : "none";
+}
+
 export class LaunchService {
   readonly host: ShimHost;
   /** Where the agent's environment comes from (A4 3.8). */
@@ -621,7 +634,9 @@ export class LaunchService {
     // task or machine.toml is read again: an edit to the task since the click never turns a retry
     // into a conflict, and a retry saves, prepares and dispatches nothing.
     const replayed = await hosted.store.replayed(requestId);
-    if (replayed !== undefined) return this.#replay(space, replayed, request);
+    if (replayed !== undefined) {
+      return this.#replay(space, replayed.intent, request, replayed.created);
+    }
     const { platform } = this.#options;
     let instance: Instance | undefined;
     let choice: Choice = COPY;
@@ -763,11 +778,13 @@ export class LaunchService {
       // Copy is Dispatched at once (A4 3.4.6): its one external step is the page's own copy.
       if (choice.route === "clipboard") intent = (await dispatching) ?? intent;
     }
+    const created = (await hosted.store.replayed(requestId))?.created ?? false;
     return {
       intent,
       copy: choice.copy ? text.text : undefined,
-      composer: probe.composer,
+      composer: wordsWent(probe.composer, created, choice.route),
       removed: probe.removed,
+      created,
     };
   }
 
@@ -928,6 +945,7 @@ export class LaunchService {
     space: string,
     intent: LaunchIntent,
     request: OpenTaskRequest,
+    created: boolean,
   ): Promise<OpenTaskResult> {
     if (
       intent.task !== request.task.id ||
@@ -948,8 +966,9 @@ export class LaunchService {
     const bare: OpenTaskResult = {
       intent,
       copy: undefined,
-      composer: given === "" ? "none" : "inline",
+      composer: wordsWent(given === "" ? "none" : "inline", created, intent.route),
       removed: false,
+      created,
     };
     if (choice?.route !== intent.route) return bare;
     const text = (await this.#briefOf(space, request, choice))(intent.reference);
@@ -957,8 +976,9 @@ export class LaunchService {
     return {
       intent,
       copy: choice.copy ? text.text : undefined,
-      composer: text.composer,
+      composer: wordsWent(text.composer, created, intent.route),
       removed: text.removed,
+      created,
     };
   }
 

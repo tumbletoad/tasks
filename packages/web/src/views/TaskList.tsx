@@ -509,24 +509,24 @@ export function TaskList({
       // gets it on the clipboard too.
       // A folder whose marker says it may be another one opens only when the person says so: the
       // toast asks, and its action opens it there and marks it. The composer's words stay in its
-      // field until then.
-      open: (task: TaskRow, instance: Instance, text?: string) => {
-        const launch = (markFolder: boolean): Promise<Receipt | undefined> => {
+      // field until a launch carried them.
+      open: (task: TaskRow, instance: Instance, text?: string, carried?: (r: Receipt) => void) => {
+        const launch = (markFolder: boolean): Promise<void> => {
           watched.current.add(task.id);
           return api
             .openLaunch(task.id, instance.key, requestId(), {
               markFolder,
               ...(text === undefined ? {} : { text }),
             })
-            .then(async ({ receipt, copy }) => {
+            .then(async ({ receipt, copy, created }) => {
               refuse(task.id, undefined);
               shown(task, receipt);
               // The app takes the brief by paste: without it on the clipboard the words did not go.
-              if (copy !== undefined && !(await toClipboard(copy))) return undefined;
-              return receipt;
+              if (copy !== undefined && !(await toClipboard(copy))) return;
+              if (created) carried?.(receipt);
             })
             .catch((error: unknown) => {
-              if (live.failed(error)) return undefined;
+              if (live.failed(error)) return;
               const refused = folderRefusal(error);
               // The folder line says what the refusal found, unless the folder is there and
               // only its marker asks.
@@ -544,7 +544,6 @@ export function TaskList({
                 });
               } else if (refused.folder === undefined) say(t("row.openWorkFolder"));
               else say(t("row.openFolder", { reason: refused.reason, folder: refused.folder }));
-              return undefined;
             });
         };
         return launch(false);

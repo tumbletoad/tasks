@@ -155,19 +155,25 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     if (opening.has(instance.key)) return;
     setOpening((known) => new Set(known).add(instance.key));
     const request = words;
-    // A click while a launch of the instance lives returns that launch: it takes no new request.
-    const before = new Set(receipts.filter((r) => r.instance === instance.key).map((r) => r.id));
-    void actions.open(task, instance, request === "" ? undefined : request).then((receipt) => {
-      setOpening((known) => {
-        const next = new Set(known);
-        next.delete(instance.key);
-        return next;
-      });
-      if (receipt === undefined || before.has(receipt.id) || request === "") return;
+    const carried = (receipt: Receipt) => {
       const reached = delivered(receipt);
       if (reached === true) sent(request);
       else if (reached === undefined) carry(space, task.id, receipt.id, request);
-    });
+    };
+    void actions
+      .open(
+        task,
+        instance,
+        request === "" ? undefined : request,
+        request === "" ? undefined : carried,
+      )
+      .then(() => {
+        setOpening((known) => {
+          const next = new Set(known);
+          next.delete(instance.key);
+          return next;
+        });
+      });
   };
 
   const copy = (event: MouseEvent<HTMLButtonElement>) => {

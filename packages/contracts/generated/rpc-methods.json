@@ -1168,6 +1168,10 @@
             "maxLength": 200000,
             "type": "string"
           },
+          "created": {
+            "description": "This click made the launch; false when it got the one a click just before made",
+            "type": "boolean"
+          },
           "launch": {
             "additionalProperties": false,
             "description": "The launch's receipt: IDs, states, instants and codes only",
@@ -1270,7 +1274,7 @@
             "type": "object"
           },
           "text": {
-            "description": "Where your words went: none given, in the brief, or saved as a note",
+            "description": "Where your words went: none given or none sent, in the brief, or saved as a note",
             "enum": [
               "none",
               "inline",
@@ -1281,7 +1285,8 @@
         },
         "required": [
           "launch",
-          "text"
+          "text",
+          "created"
         ],
         "type": "object"
       },
