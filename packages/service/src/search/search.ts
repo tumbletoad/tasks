@@ -35,7 +35,14 @@ import {
   type FrozenSearch,
   type SearchCursors,
 } from "./cursors.ts";
-import { planSearch, SEARCH_IDS, type Scope, type SearchPlan, type Vocabulary } from "./plan.ts";
+import {
+  planSearch,
+  SEARCH_IDS,
+  type HereSets,
+  type Scope,
+  type SearchPlan,
+  type Vocabulary,
+} from "./plan.ts";
 import { namesLifecycle, parseQuery, printQuery, termsOf, type Query } from "./query.ts";
 
 /** What a search reads through: a space's reader connection (`WorkerConnection`). */
@@ -71,8 +78,8 @@ export interface SearchEnv {
   readonly boundTask?: string;
   /** The tasks with a live session, for `is:bound`. */
   readonly live: () => readonly string[];
-  /** The tasks whose place here matches `cwd`; none when `cwd` is no folder here. */
-  readonly here: (cwd: string) => Promise<readonly string[]>;
+  /** What `cwd` relates to on this machine (ops/here.ts); nothing when it is no folder here. */
+  readonly here: (cwd: string) => Promise<HereSets>;
   /** A folder given to `folder:` as this machine stores it (`cwd` already made the folder). */
   readonly folderOf?: (
     given: string,
@@ -94,7 +101,13 @@ export interface SearchResult {
 
 const SPACE: SqlQuery = { sql: "SELECT * FROM space WHERE one = 1", mode: "get" };
 
-const VOCABULARY: readonly SqlQuery[] = [
+const HAS_FOLDERS: SqlQuery = {
+  sql: "SELECT count(*) AS n FROM sqlite_schema WHERE type = 'table' AND name = 'folders'",
+  mode: "get",
+};
+
+/** The vocabulary's reads, with the folders' stamp when the space has its folders. */
+const vocabulary = (folders: boolean): SqlQuery[] => [
   SPACE,
   { sql: "SELECT value, schema_ver FROM preferences WHERE key = 'tasks.statuses'", mode: "get" },
   {
@@ -111,11 +124,12 @@ const VOCABULARY: readonly SqlQuery[] = [
   },
   { sql: "SELECT id, name FROM machines ORDER BY name, id", mode: "all" },
   { sql: HAS_SEARCH_TABLES_SQL, mode: "get" },
-  // A stamp of every place: a place write makes its row the newest (its version is the commit's
-  // seq), and a removal lowers the count, so any change to the places changes the stamp.
-  { sql: "SELECT count(*) AS n, coalesce(max(version), 0) AS v FROM places", mode: "get" },
+  // A stamp of every folder: a folder write makes its row the newest (its version is the commit's
+  // seq), so any change to the folders, and with them to what `here` matches, changes the stamp.
   {
-    sql: "SELECT 1 AS found FROM sqlite_schema WHERE type = 'table' AND name = 'folders'",
+    sql: folders
+      ? "SELECT count(*) AS n, coalesce(max(version), 0) AS v FROM folders"
+      : "SELECT 0 AS n, 0 AS v",
     mode: "get",
   },
 ];
@@ -149,25 +163,23 @@ export function cut(text: string, max: number): string {
   return chars.length <= max ? line : `${chars.slice(0, max - 1).join("")}…`;
 }
 
-/** What a search plans from: the space's values and the stamp of its places. */
+/** What a search plans from: the space's values and the stamp of its folders. */
 interface Known {
   space: SpaceRow;
   vocabulary: Vocabulary;
   indexed: boolean;
-  places: string;
-  folders: boolean;
+  folders: string;
 }
 
 function vocabularyOf(results: readonly unknown[]): Known {
-  const [space, statuses, efforts, areas, projects, machines, indexed, places, folders] = results;
+  const [space, statuses, efforts, areas, projects, machines, indexed, folders] = results;
   const decoded = decodeSpaceRow(space as Row);
   const groups = (value: unknown) =>
     rows(value).map((r) => ({ id: str(r["id"]), slug: str(r["slug"]), title: str(r["title"]) }));
   return {
     space: decoded,
     indexed: (indexed as Row | null)?.["n"] === 2,
-    places: `${String((places as Row | null)?.["n"])}:${String((places as Row | null)?.["v"])}`,
-    folders: folders !== null && folders !== undefined,
+    folders: `${String((folders as Row | null)?.["n"])}:${String((folders as Row | null)?.["v"])}`,
     vocabulary: {
       refPrefix: decoded.refPrefix,
       statuses: keysOf("tasks.statuses", statuses),
@@ -183,14 +195,13 @@ function vocabularyOf(results: readonly unknown[]): Known {
 const PLAN_ROUNDS = 3;
 
 /**
- * Whether two reads would plan the same statement: the same values, and the same places when the
- * plan holds the tasks placed at the caller's folder.
+ * Whether two reads would plan the same statement: the same values, and the same folders when the
+ * plan holds what the caller's working folder relates to.
  */
-function samePlan(a: Known, b: Known, placed: boolean): boolean {
+function samePlan(a: Known, b: Known, here: boolean): boolean {
   return (
     a.indexed === b.indexed &&
-    a.folders === b.folders &&
-    (!placed || a.places === b.places) &&
+    (!here || a.folders === b.folders) &&
     JSON.stringify(a.vocabulary) === JSON.stringify(b.vocabulary)
   );
 }
@@ -199,13 +210,13 @@ function samePlan(a: Known, b: Known, placed: boolean): boolean {
 function vocabularyChanging(): AppError {
   return new AppError({
     code: "space_unavailable",
-    message: "The space's statuses, areas, projects or places changed while searching.",
+    message: "The space's statuses, areas, projects or folders changed while searching.",
     hint: "Search again.",
     data: { reason: "busy", retryable: true },
   });
 }
 
-/** Whether planning needs the tasks placed at `cwd`: for `on:cwd`, or for the boost of a text query. */
+/** Whether planning needs what `cwd` relates to: for `on:cwd`, or for the boost of a text query. */
 function needsHere(query: Query, scope: Scope): boolean {
   const terms = termsOf(query);
   return terms.some(
@@ -232,11 +243,14 @@ export async function runSearch(
   const scope: Scope = input.scope ?? (namesLifecycle(query) ? "all" : "active");
   const cwd = input.cwd !== undefined && needsHere(query, scope) ? input.cwd : undefined;
   const live = termsOf(query).some((t) => t.type === "filter" && t.key === "is") ? env.live() : [];
-  // The plan names the space's values (a status, an area's ID) and the tasks placed at `cwd`, so
-  // it is made from reads before the query and checked against the same reads in the query's own
-  // read transaction at S: a change between them plans again, so S never mixes with an earlier
-  // state. The places are read after the stamp they are checked by, and every change to them
-  // changes the stamp.
+  // The plan names the space's values (a status, an area's ID) and what `cwd` relates to (tasks
+  // and projects by their folders), so it is made from reads before the query and checked against
+  // the same reads in the query's own read transaction at S: a change between them plans again, so
+  // S never mixes with an earlier state. The folders are read after the stamp they are checked by,
+  // and every change to them changes the stamp. Which tasks a project holds is read at S.
+  const [hasFolders] = await reader.transaction("deferred", [HAS_FOLDERS]);
+  const folders = Number((hasFolders as Row | null)?.["n"] ?? 0) > 0;
+  const VOCABULARY = vocabulary(folders);
   let known = vocabularyOf(await reader.transaction("deferred", [...VOCABULARY]));
   let here = cwd === undefined ? undefined : await env.here(cwd);
   let settled: { space: SpaceRow; plan: SearchPlan; ranked: unknown } | undefined;
@@ -254,10 +268,10 @@ export async function runSearch(
       now: env.now,
       timeZone: env.timeZone,
       machine: env.machine,
+      folders,
       ...(env.boundTask === undefined ? {} : { boundTask: env.boundTask }),
       ...(here === undefined ? {} : { here }),
       live,
-      folders: known.folders,
       folderOf: (value) => {
         const given = value.toLowerCase() === "cwd" ? input.cwd : value;
         if (given === undefined) return "no_cwd";

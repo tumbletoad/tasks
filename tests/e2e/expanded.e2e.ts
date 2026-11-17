@@ -165,6 +165,7 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
     await expect(doc.locator("a")).toHaveAttribute("href", "https://docs.example/brief");
     // No folder of its own: it opens in its project's.
     await expect(body.locator('[data-part="place"]')).toHaveAttribute("data-state", "here");
+    await expect(body.locator('[data-part="place"]')).toContainText(world.portal);
 
     // The context is Markdown, never HTML: the markup shows as text and nothing of it runs.
     const context = body.locator('[data-part="context"]');

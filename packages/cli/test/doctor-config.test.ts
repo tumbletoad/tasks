@@ -1,6 +1,6 @@
 // `tasks doctor`'s config row (A2 3.13, A2 3.2.4): machine.toml as the service reads it, with the
 // command that fixes a file or folder another user could change. Fixture text only.
-import { chmodSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { currentPerson, shellPath } from "@tasks/service/permissions";
@@ -40,6 +40,23 @@ describe("[A2.3.2.2.permissions.rule] tasks doctor's config row", () => {
     writeFileSync(file, "[spaces\n");
     expect(configCheck(io)).toMatchObject({ status: "fail" });
     expect(configCheck(io).detail).toContain("syntax at line 1");
+  });
+
+  test("[A1.3.15.roots.retired] a [roots] section is named once, as lines that do nothing, and the file is left as it is", () => {
+    const { io, file } = home();
+    const text =
+      '[roots.work]\nlabel = "Work"\npath = "/home/mira/work"\n\n[roots.oss]\npath = "/home/mira/oss"\n';
+    writeFileSync(file, text, { mode: 0o600 });
+    const check = configCheck(io);
+    expect(check.status).toBe("warn");
+    expect(check.detail.match(/\[roots\]/gu)).toHaveLength(1);
+    expect(check.detail).toContain("do nothing now");
+    expect(check.detail).not.toContain("drop only their entry");
+    expect(readFileSync(file, "utf8")).toBe(text);
+    // With another problem beside it, both are named.
+    writeFileSync(file, `not_a_key = 1\n${text}`);
+    expect(configCheck(io).detail).toContain("not_a_key (unknown_key)");
+    expect(configCheck(io).detail).toContain("[roots] lines do nothing now");
   });
 
   test.skipIf(process.platform === "win32")(

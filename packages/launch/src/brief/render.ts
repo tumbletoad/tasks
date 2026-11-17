@@ -40,17 +40,12 @@ export interface BriefNames {
 
 /** Where the task works, for the pointer brief's folder line (A4 3.15.4). */
 export type BriefFolder =
-  /** A place: its root's ID and its path under it, and the real folder when it resolves here. */
-  | {
-      readonly kind: "place";
-      readonly root: string;
-      readonly path: string;
-      readonly absolute: string | undefined;
-    }
+  /** The task's or its project's folder here, the home as `~`, and whether it is there now. */
+  | { readonly kind: "folder"; readonly path: string; readonly found: boolean }
   /** The space's Tasks work folder on this machine (A4 3.3). */
   | { readonly kind: "work_folder"; readonly absolute: string | undefined }
-  /** A place on another machine only. */
-  | { readonly kind: "elsewhere" };
+  /** A folder on another machine only, by that machine's name. */
+  | { readonly kind: "elsewhere"; readonly machine: string };
 
 export interface BriefInput {
   readonly kind: BriefKind;
@@ -116,32 +111,26 @@ function head(task: string, title: string, reference: string, names: BriefNames)
   ];
 }
 
+/** The folder line of the pointer brief and the context pack (A4 3.15.4, 3.15.5). */
+export function folderLine(folder: BriefFolder): string {
+  switch (folder.kind) {
+    case "folder":
+      return folder.found
+        ? `Folder: ${sanitisePath(folder.path)}`
+        : `Folder: ${sanitisePath(folder.path)} (not found on this computer)`;
+    case "work_folder":
+      return folder.absolute === undefined
+        ? `Folder: ${PRODUCT_NAME} work folder`
+        : `Folder: ${PRODUCT_NAME} work folder (${sanitisePath(folder.absolute)})`;
+    case "elsewhere":
+      return `Folder: on ${sanitisePath(folder.machine)}`;
+  }
+}
+
 /** The pointer brief's two lines (A4 3.15.4). */
 function pointerLines(folder: BriefFolder, names: BriefNames): string[] {
-  let line: string;
-  switch (folder.kind) {
-    case "place": {
-      const shown =
-        folder.path === ""
-          ? sanitisePath(folder.root)
-          : `${sanitisePath(folder.root)} › ${sanitisePath(folder.path)}`;
-      const where =
-        folder.absolute === undefined ? "not found on this machine" : sanitisePath(folder.absolute);
-      line = `Folder: ${shown} (${where})`;
-      break;
-    }
-    case "work_folder":
-      line =
-        folder.absolute === undefined
-          ? `Folder: ${PRODUCT_NAME} work folder`
-          : `Folder: ${PRODUCT_NAME} work folder (${sanitisePath(folder.absolute)})`;
-      break;
-    case "elsewhere":
-      line = "Folder: on another machine";
-      break;
-  }
   return [
-    line,
+    folderLine(folder),
     `If you have no ${names.server} tools, ask me to paste the context pack ` +
       `(Shift+Copy in ${PRODUCT_NAME}).`,
   ];

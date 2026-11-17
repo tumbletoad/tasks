@@ -27,6 +27,7 @@ import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
 import { itemsOf, type RowItem } from "../list/items.ts";
 import { List, type Place } from "../list/List.tsx";
+import { folderRefusal } from "../row/launch.ts";
 import { contextFor, type Grouping, type RowView } from "../row/model.ts";
 import type { RowActions } from "../row/actions.ts";
 import type { Clock } from "../row/dates.ts";
@@ -40,7 +41,6 @@ import css from "./TaskList.module.css";
 const styles = classes(css, ["line", "announce"]);
 
 const NO_RECEIPTS: readonly Receipt[] = [];
-
 /** How long a row an agent added keeps its accent (A5 3.20: 1.2 s). */
 const FRESH_MS = 1_200;
 /** Agents' changes are announced once the burst has been quiet this long (A5 3.15 item 10). */
@@ -504,7 +504,11 @@ export function TaskList({
             return receipt;
           })
           .catch((error: unknown) => {
-            if (!live.failed(error)) say(t("row.openFailed"));
+            if (live.failed(error)) return undefined;
+            const refused = folderRefusal(error);
+            if (refused === undefined) say(t("row.openFailed"));
+            else if (refused.folder === undefined) say(t("row.openWorkFolder"));
+            else say(t("row.openFolder", { reason: refused.reason, folder: refused.folder }));
             return undefined;
           });
       },

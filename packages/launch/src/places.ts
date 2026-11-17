@@ -69,6 +69,8 @@ export const RESOLVE_REASONS = [
    * or not inside its parent by identity.
    */
   "unsafe_folder",
+  /** The folder's drive or share did not answer in time: nothing was started. */
+  "not_answering",
 ] as const;
 export type ResolveReason = (typeof RESOLVE_REASONS)[number];
 
@@ -257,15 +259,38 @@ export function isPlacePath(path: string, platform: NodeJS.Platform = process.pl
 export function absoluteFolder(
   given: string,
   platform: NodeJS.Platform = process.platform,
-):
+): AbsoluteFolder {
+  return absoluteWith(given, platform, PATH_FORBIDDEN);
+}
+
+type AbsoluteFolder =
   | { readonly ok: true; readonly path: string }
-  | { readonly ok: false; readonly reason: BindReason } {
+  | { readonly ok: false; readonly reason: BindReason };
+
+// C0 and C1 controls and DEL, which the folders a person binds never hold. Built from escapes, so
+// the source holds no invisible character.
+// eslint-disable-next-line no-control-regex -- the controls are what this refuses.
+const CONTROLS = new RegExp("[\\u0000-\\u001f\\u007f-\\u009f]", "u");
+
+/**
+ * A person's folder as the space stores it, made ready for `realpath` as `absoluteFolder` makes a
+ * root, but with the characters any folder name may hold: a zero-width joiner in an emoji or in
+ * Persian text, or a bidirectional mark, is part of a real folder's name.
+ */
+export function folderPath(
+  given: string,
+  platform: NodeJS.Platform = process.platform,
+): AbsoluteFolder {
+  return absoluteWith(given, platform, CONTROLS);
+}
+
+function absoluteWith(given: string, platform: NodeJS.Platform, forbidden: RegExp): AbsoluteFolder {
   if (given === "" || given.includes("\u0000") || given.length > 4096) {
     return { ok: false, reason: "not_absolute" };
   }
   // A lone surrogate is not text: Node would replace it (with U+FFFD) before the file system saw
   // it, so it would name another folder.
-  if (!given.isWellFormed() || PATH_FORBIDDEN.test(given.replaceAll("\\", "/"))) {
+  if (!given.isWellFormed() || forbidden.test(given.replaceAll("\\", "/"))) {
     return { ok: false, reason: "invalid_path" };
   }
   let path = given;
@@ -527,6 +552,55 @@ export async function resolvePlace(
 
 const sameRemote = (found: GitRemote, recorded: string): boolean =>
   found.status === "remote" && found.url === recorded;
+
+/** A folder a launch works in, resolved now: where it starts and what the shim checks there. */
+export type FolderResolution =
+  | {
+      readonly status: "ok";
+      /** The folder's real path, read in the same pass. */
+      readonly folder: string;
+      readonly identity: FolderIdentity;
+      readonly check: FolderCheck;
+    }
+  | { readonly status: "failed"; readonly reason: ResolveReason };
+
+/**
+ * The folder at the absolute path `given` on this machine, read once as `resolvePlace` reads a
+ * place: it must be there and be a directory with an identity, a link to one included. The check
+ * the shim runs in it is the directory's identity alone, so the folder has no root to stay under.
+ */
+export async function resolveFolder(
+  given: string,
+  options: PlaceOptions = {},
+): Promise<FolderResolution> {
+  const platform = options.platform ?? process.platform;
+  const failed = (reason: ResolveReason): FolderResolution => ({ status: "failed", reason });
+  const ready = folderPath(given, platform);
+  if (!ready.ok) return failed("invalid_path");
+  let found: BigIntStats;
+  try {
+    found = await bigStat(ready.path);
+  } catch {
+    return failed(await missingReason(ready.path, pathOf(platform)));
+  }
+  if (!found.isDirectory()) return failed("not_a_directory");
+  const identity = identityOf(found);
+  if (identity === undefined) return failed("identity_unavailable");
+  let real: string;
+  try {
+    real = await realpath(ready.path);
+  } catch {
+    return failed("path_missing");
+  }
+  const dev = identity.dev.toString();
+  const ino = identity.ino.toString();
+  return {
+    status: "ok",
+    folder: real,
+    identity,
+    check: { dev, ino, rootDev: dev, rootIno: ino, depth: 0 },
+  };
+}
 
 // ---------------------------------------------------------------------------------------------
 // The check in the folder

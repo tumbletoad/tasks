@@ -30,6 +30,7 @@ import {
   readPreference,
   type PreferenceRead,
 } from "@tasks/contracts";
+import type { FoldersHere } from "./here.ts";
 
 /** One statement of a read. Only the parameters the statement names are bound. */
 interface Statement {
@@ -523,13 +524,6 @@ const SOURCES: Statement = {
     "AND ts.removed_at IS NULL AND s.deleted_at IS NULL ORDER BY ts.position",
   mode: "all",
 };
-const PLACE: Statement = {
-  sql:
-    "SELECT root_id, rel_path, kind, identity FROM places WHERE owner_kind = 'task' " +
-    "AND machine_id = $machine " +
-    `AND deleted_at IS NULL AND owner_id = ${MATCH}`,
-  mode: "get",
-};
 /**
  * The task's own learnings in their order, removed ones too (A1 3.11.2): a learning's rank among
  * them is its key on a page, which no later wrap-up moves, because a new learning goes after the
@@ -543,6 +537,8 @@ const LEARNINGS_TABLE: Statement = {
   sql: "SELECT count(*) AS n FROM sqlite_schema WHERE type = 'table' AND name = 'learnings'",
   mode: "get",
 };
+/** A statement in a list whose slot is not read: it holds no row. */
+const NOTHING: Statement = { sql: "SELECT 1 WHERE 0", mode: "all" };
 /** The readers whose space has the learnings table: a table, once there, stays. */
 const learningReaders = new WeakSet<WorkerConnection>();
 
@@ -670,7 +666,8 @@ export interface TaskRead {
   readonly notes: Row[];
   readonly log: Row[];
   readonly sources: Row[];
-  readonly place: Row | undefined;
+  /** Where the task opens on the read's machine. */
+  readonly folder: TaskFolder;
   readonly history: Row[];
   /** The task's own learnings in their order, each with its rank among all of them (`key`). */
   readonly learnings: readonly { readonly key: number; readonly text: string }[];
@@ -713,6 +710,7 @@ export async function readTask(
     llimit: options.log.limit,
   };
   const learned = await readsLearnings(reader);
+  const folders = await hasFolderTable(reader);
   const [
     space,
     alias,
@@ -723,9 +721,10 @@ export async function readTask(
     log,
     logCount,
     sources,
-    place,
     history,
     learnings,
+    own,
+    project,
   ] = await snapshot(
     reader,
     [
@@ -738,9 +737,9 @@ export async function readTask(
       LOG,
       LOG_COUNT,
       SOURCES,
-      PLACE,
       HISTORY,
-      ...(learned ? [LEARNINGS] : []),
+      learned ? LEARNINGS : NOTHING,
+      ...(folders ? [OWN_FOLDERS_OF_MATCH, PROJECT_FOLDERS_OF_MATCH] : []),
     ],
     params,
   );
@@ -763,7 +762,7 @@ export async function readTask(
     notes: notes as Row[],
     log: log as Row[],
     sources: sourceRows,
-    place: (place as Row | null) ?? undefined,
+    folder: taskFolderOf((own ?? []) as Row[], (project ?? []) as Row[], options.machine),
     history: history as Row[],
     learnings: ((learnings ?? []) as Row[]).flatMap((learning, k) =>
       learning["deleted_at"] === null ? [{ key: k + 1, text: text(learning["body"]) }] : [],
@@ -936,55 +935,75 @@ const SECTION_SQL: Readonly<Record<string, Statement>> = {
   },
 };
 
-/** Active tasks with a place on this machine under one of the roots in `$roots` (JSON). */
-const PLACED: Statement = {
+/** The live folders on `$machine` of live projects: `here`'s project folders. */
+const PROJECT_FOLDERS_ON: Statement = {
   sql:
-    "SELECT t.*, a.title AS area_title, p.title AS project_title, pl.root_id AS place_root, " +
-    "pl.rel_path AS place_path, pl.kind AS place_kind, pl.identity AS place_identity " +
-    "FROM tasks t JOIN places pl ON pl.owner_kind = 'task' " +
-    "AND pl.owner_id = t.id AND pl.machine_id = $machine AND pl.deleted_at IS NULL " +
-    "LEFT JOIN areas a ON a.id = t.area_id LEFT JOIN projects p ON p.id = t.project_id " +
-    "WHERE t.deleted_at IS NULL AND t.lifecycle = 'active' " +
-    "AND pl.root_id IN (SELECT value FROM json_each($roots))",
+    "SELECT f.owner_id AS project, f.path AS path FROM folders f JOIN projects p " +
+    "ON p.id = f.owner_id WHERE f.machine_id = $machine AND f.owner_kind = 'project' " +
+    "AND f.deleted_at IS NULL AND p.deleted_at IS NULL",
+  mode: "all",
+};
+/** The live folders on `$machine` of tasks that are not deleted. */
+const TASK_FOLDERS_ON: Statement = {
+  sql:
+    "SELECT f.owner_id AS task, f.path AS path FROM folders f JOIN tasks t ON t.id = f.owner_id " +
+    "WHERE f.machine_id = $machine AND f.owner_kind = 'task' AND f.deleted_at IS NULL " +
+    "AND t.deleted_at IS NULL",
   mode: "all",
 };
 
-/** The active tasks placed on this machine under `roots`, with the space's facts. */
-export async function readPlaced(
+/** The folders on `machine` that `here` compares with a working folder (here.ts). */
+export async function readFoldersHere(
   reader: WorkerConnection,
   machine: string,
-  roots: readonly string[],
-): Promise<{ space: SpaceFacts; placed: Row[] }> {
-  const [space, placed] = await snapshot(reader, [SPACE, PLACED], {
+): Promise<FoldersHere> {
+  if (!(await hasFolderTable(reader))) return { projects: [], tasks: [] };
+  const [projects, tasks] = await snapshot(reader, [PROJECT_FOLDERS_ON, TASK_FOLDERS_ON], {
     machine,
-    roots: JSON.stringify(roots),
   });
-  return { space: spaceFacts(space), placed: placed as Row[] };
+  return { projects: projects as Row[], tasks: tasks as Row[] };
 }
 
+/** A task's own live folder on `$machine`: such a task works there, never in its project's. */
+export const OWN_FOLDER_HERE =
+  "EXISTS (SELECT 1 FROM folders f WHERE f.owner_kind = 'task' AND f.owner_id = t.id " +
+  "AND f.machine_id = $machine AND f.deleted_at IS NULL)";
+
 /**
- * Every task with a place on this machine under one of the roots in `$roots` (JSON), whatever its
- * lifecycle, tombstoned ones too: search's `on:cwd` (A3 3.9.2), whose own query at S filters them.
- * It reads `places` only beside the task's row, so the places stamp of a search covers it.
+ * The active tasks `here` names: those in `$tasks` (JSON), by their own folder, and those of the
+ * projects in `$projects` that have no folder of their own here.
  */
-const PLACED_ANY: Statement = {
+const HERE_TASKS: Statement = {
   sql:
-    "SELECT t.id, t.ref, t.priority, t.due_date, t.due_at, pl.root_id AS place_root, " +
-    "pl.rel_path AS place_path, pl.kind AS place_kind, pl.identity AS place_identity " +
-    "FROM places pl JOIN tasks t ON t.id = pl.owner_id WHERE pl.owner_kind = 'task' " +
-    "AND pl.machine_id = $machine AND pl.deleted_at IS NULL " +
-    "AND pl.root_id IN (SELECT value FROM json_each($roots))",
+    "SELECT t.*, a.title AS area_title, p.title AS project_title, " +
+    `CASE WHEN ${OWN_FOLDER_HERE} THEN 1 END AS x_own_here FROM tasks t ` +
+    "LEFT JOIN areas a ON a.id = t.area_id LEFT JOIN projects p ON p.id = t.project_id " +
+    "WHERE t.deleted_at IS NULL AND t.lifecycle = 'active' AND (t.id IN " +
+    "(SELECT value FROM json_each($tasks)) OR t.project_id IN (SELECT value FROM " +
+    `json_each($projects)))`,
   mode: "all",
 };
 
-/** The tasks of any lifecycle placed on this machine under `roots`: search's `on:cwd`. */
-export async function readPlacedAny(
+/** What `here` matched, as the reads take it: task IDs and project IDs. */
+export interface HereIds {
+  readonly machine: string;
+  readonly tasks: readonly string[];
+  readonly projects: readonly string[];
+}
+
+const hereParams = (ids: HereIds) => ({
+  machine: ids.machine,
+  tasks: JSON.stringify(ids.tasks),
+  projects: JSON.stringify(ids.projects),
+});
+
+/** The active tasks of `ids`, with the space's facts: the candidates of a call with no task. */
+export async function readHereTasks(
   reader: WorkerConnection,
-  machine: string,
-  roots: readonly string[],
-): Promise<Row[]> {
-  const [placed] = await snapshot(reader, [PLACED_ANY], { machine, roots: JSON.stringify(roots) });
-  return placed as Row[];
+  ids: HereIds,
+): Promise<{ space: SpaceFacts; rows: Row[] }> {
+  const [space, rows] = await snapshot(reader, [SPACE, HERE_TASKS], hereParams(ids));
+  return { space: spaceFacts(space), rows: rows as Row[] };
 }
 
 /** A preference's row as a read returned it, for the registry (A1 3.16). */
@@ -1016,8 +1035,8 @@ export async function readStatus(
     readonly week: string;
     readonly since: number;
     readonly include: readonly string[];
-    /** Read the active tasks placed on this machine under these roots, for `here`. */
-    readonly placed?: { readonly machine: string; readonly roots: readonly string[] };
+    /** Read the active tasks `here` matched, for `here`. */
+    readonly here?: HereIds;
     /** The bound task's ID: its reference and notes for agents, for the session line. */
     readonly bound?: string;
   },
@@ -1027,8 +1046,8 @@ export async function readStatus(
   statuses: { status: string; count: number }[];
   inbox: number;
   sections: { name: string; tasks: Record<string, unknown>[] }[];
-  /** Each task row with its place's `place_root`, `place_path`, `place_kind` and `place_identity`. */
-  placed: Row[];
+  /** The task rows `here` asked for, each with `x_own_here`. */
+  here: Row[];
   /** The bound task, when one was asked for and it exists. */
   bound: { ref: string; instructions: number } | undefined;
 }> {
@@ -1042,21 +1061,20 @@ export async function readStatus(
       COUNTS,
       INBOX,
       ...(options.bound === undefined ? [] : [BOUND]),
-      ...(options.placed === undefined ? [] : [PLACED]),
+      ...(options.here === undefined ? [] : [HERE_TASKS]),
       ...include.map((name) => SECTION_SQL[name] as Statement),
     ],
     {
       today: options.today,
       week: options.week,
       since: options.since,
-      machine: options.placed?.machine ?? null,
-      roots: JSON.stringify(options.placed?.roots ?? []),
+      ...hereParams(options.here ?? { machine: "", tasks: [], projects: [] }),
       bound: options.bound ?? null,
     },
   );
   const [space, order, autonomy, counts, inbox, ...rest] = results;
   const boundRow = options.bound === undefined ? undefined : rest.shift();
-  const placed = options.placed === undefined ? [] : ((rest.shift() ?? []) as Row[]);
+  const here = options.here === undefined ? [] : ((rest.shift() ?? []) as Row[]);
   const found = rest;
   const facts = spaceFacts(space);
   const byStatus = new Map(
@@ -1078,7 +1096,7 @@ export async function readStatus(
     statuses: keys.map((status) => ({ status, count: byStatus.get(status) ?? 0 })),
     inbox: Number((inbox as Row | null)?.["n"] ?? 0),
     sections,
-    placed,
+    here,
     bound:
       isPlain(boundRow) && typeof boundRow["ref"] === "number"
         ? {
@@ -1272,21 +1290,24 @@ export async function readScriptChange(
 // ---------------------------------------------------------------------------------------------
 // A task to launch (A4 3.3, 3.15; `launch.open`)
 
-const LAUNCH_PLACE: Statement = {
+/** The task's own live folders, newest first: the task named as `MATCH` names it. */
+const OWN_FOLDERS_OF_MATCH: Statement = {
   sql:
-    "SELECT id, root_id, rel_path, kind, identity FROM places WHERE owner_kind = 'task' " +
-    `AND machine_id = $machine AND deleted_at IS NULL AND owner_id = ${MATCH}`,
-  mode: "get",
+    "SELECT f.*, m.name AS machine_name FROM folders f JOIN machines m ON m.id = f.machine_id " +
+    `WHERE f.owner_kind = 'task' AND f.deleted_at IS NULL AND f.owner_id = ${MATCH} ` +
+    "ORDER BY f.created_seq DESC, f.id",
+  mode: "all",
 };
-/** A place of the task on another machine (A4 3.3 step 1: it opens there, never here). */
-const PLACED_ELSEWHERE: Statement = {
+/** The live folders of the project of the task `MATCH` names, newest first. */
+const PROJECT_FOLDERS_OF_MATCH: Statement = {
   sql:
-    "SELECT 1 AS elsewhere FROM places WHERE owner_kind = 'task' AND machine_id <> $machine " +
-    `AND deleted_at IS NULL AND owner_id = ${MATCH} LIMIT 1`,
-  mode: "get",
+    "SELECT f.*, m.name AS machine_name FROM folders f JOIN tasks t ON t.project_id = f.owner_id " +
+    `JOIN machines m ON m.id = f.machine_id WHERE t.id = ${MATCH} AND f.owner_kind = 'project' ` +
+    "AND f.deleted_at IS NULL ORDER BY f.created_seq DESC, f.id",
+  mode: "all",
 };
 
-/** What a launch reads about a task, in one snapshot: the task, its place here, one elsewhere. */
+/** What a launch reads about a task, in one snapshot: the task and the folder it opens in. */
 export interface LaunchTaskRead {
   readonly space: SpaceFacts;
   readonly id: string;
@@ -1295,19 +1316,62 @@ export interface LaunchTaskRead {
   readonly version: number;
   /** Not finished or archived. */
   readonly active: boolean;
-  readonly place: {
-    readonly id: string;
-    readonly root: string;
-    readonly path: string;
-    readonly gitRemote?: string;
-  } | null;
-  readonly elsewhere: boolean;
+  readonly folder: TaskFolder;
+}
+
+/**
+ * Where a task opens on one machine (storage's `decideLaunchFolder`), as the launch, the digest and
+ * the row read it: its own folder or its project's there, in stored form; the name of the machine
+ * where one is; or none, when it uses the space's work folder.
+ */
+export type TaskFolder =
+  | { readonly kind: "task" | "project"; readonly path: string }
+  | { readonly kind: "other_machine"; readonly machine: string }
+  | { readonly kind: "none" };
+
+/** A launch folder decided from the task's and its project's folder rows, read newest first. */
+export function taskFolderOf(
+  own: readonly Row[],
+  project: readonly Row[],
+  machine: string,
+): TaskFolder {
+  const ownRows = own.map(ownerFolder);
+  const projectRows = project.map(ownerFolder);
+  const names = new Map([...ownRows, ...projectRows].map((f) => [f.machine, f.machineName]));
+  const decided = decideLaunchFolder(ownRows, projectRows, machine, (id) => names.get(id));
+  switch (decided.kind) {
+    case "task":
+    case "project":
+      return { kind: decided.kind, path: decided.folder.path };
+    case "other_machine":
+      return { kind: "other_machine", machine: decided.machine.name };
+    case "none":
+      return { kind: "none" };
+  }
+}
+
+const HAS_FOLDERS: Statement = {
+  sql: "SELECT count(*) AS n FROM sqlite_schema WHERE type = 'table' AND name = 'folders'",
+  mode: "get",
+};
+/** The readers whose space has the folders table: a table, once there, stays. */
+const folderReaders = new WeakSet<WorkerConnection>();
+
+/**
+ * Whether the reader's space has folders to read: schema 0.5 on. A space served read-only at an
+ * older revision until its migration runs has none, and its tasks open in the work folder.
+ */
+export async function hasFolderTable(reader: WorkerConnection): Promise<boolean> {
+  if (folderReaders.has(reader)) return true;
+  const [found] = await snapshot(reader, [HAS_FOLDERS]);
+  if (Number((found as Row | null)?.["n"] ?? 0) === 0) return false;
+  folderReaders.add(reader);
+  return true;
 }
 
 /**
  * The task a launch names, as `readTask` resolves a reference: another space's prefix and a
- * deleted task are `not_found`. Its place on this machine (a file place resolves as no folder, so
- * a launch refuses it), and whether it has one on another machine.
+ * deleted task are `not_found`. With it, the folder it opens in on `machine`.
  */
 export async function readLaunchTask(
   reader: WorkerConnection,
@@ -1316,9 +1380,15 @@ export async function readLaunchTask(
 ): Promise<LaunchTaskRead> {
   const key = taskKey(ref);
   const params = { id: key.id, ref: key.ref, alias: key.alias, prefix: key.prefix, machine };
-  const [space, alias, row, place, elsewhere] = await snapshot(
+  const folders = await hasFolderTable(reader);
+  const [space, alias, row, own, project] = await snapshot(
     reader,
-    [SPACE, PREFIX_ALIAS, TASK, LAUNCH_PLACE, PLACED_ELSEWHERE],
+    [
+      SPACE,
+      PREFIX_ALIAS,
+      TASK,
+      ...(folders ? [OWN_FOLDERS_OF_MATCH, PROJECT_FOLDERS_OF_MATCH] : []),
+    ],
     params,
   );
   const facts = spaceFacts(space);
@@ -1331,8 +1401,6 @@ export async function readLaunchTask(
   }
   const task = row as Row | null;
   if (task === null || task["deleted_at"] !== null) throw notFound();
-  const here = place as Row | null;
-  const remote = here === null ? undefined : remoteOfIdentity(here["identity"]);
   return {
     space: facts,
     id: String(task["id"]),
@@ -1340,29 +1408,8 @@ export async function readLaunchTask(
     title: String(task["title"]),
     version: Number(task["version"]),
     active: task["lifecycle"] === "active",
-    place:
-      here === null
-        ? null
-        : {
-            id: String(here["id"]),
-            root: String(here["root_id"]),
-            path: String(here["rel_path"]),
-            ...(remote === undefined ? {} : { gitRemote: remote }),
-          },
-    elsewhere: elsewhere !== null && elsewhere !== undefined,
+    folder: taskFolderOf((own ?? []) as Row[], (project ?? []) as Row[], machine),
   };
-}
-
-/** The Git remote a place recorded in its `identity` (A1 3.15), if any. */
-function remoteOfIdentity(identity: unknown): string | undefined {
-  try {
-    const parsed: unknown = typeof identity === "string" ? JSON.parse(identity) : null;
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
-    const remote = (parsed as Record<string, unknown>)["git_remote"];
-    return typeof remote === "string" ? remote : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 // ---------------------------------------------------------------------------------------------
