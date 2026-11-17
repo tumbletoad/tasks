@@ -1,11 +1,14 @@
 // Background runs in the service: at start, the probe of this machine's containers (on Linux it is
-// also when the service moves itself into its unit's `main` cgroup), then for each space open as
+// also when the service moves itself into its unit's `main` cgroup); then for each space open as
 // this machine's a run host over its execution store, whose recovery settles the space's open runs
-// before any of them is hosted again. A run starts only through `start`, an internal call: no
-// person or agent can start one yet.
+// before any of them is hosted again; and over all of them one supervisor, which starts queued runs
+// within machine.toml's `[runs]` limits, holds new starts while an update waits, and removes old
+// run folders. A run is queued only through `start`, an internal call: no person or agent can
+// start one yet.
 import { dirname, join } from "node:path";
 import { PRODUCT_NAME } from "@tasks/brand";
-import type { NewRun, RunRecord } from "@tasks/contracts/runs";
+import { AppError } from "@tasks/contracts";
+import { RUN_LIMITS, type NewRun, type RunLimits, type RunRecord } from "@tasks/contracts/runs";
 import { SpaceExecutionStore } from "@tasks/launch";
 import {
   containers as platformContainers,
@@ -14,15 +17,23 @@ import {
   RunHost,
   RunMachine,
   RUNS_FOLDER,
+  Supervisor,
   type AgentCommand,
   type Containers,
+  type Hold,
+  type Lane,
+  type Prepared,
   type ProbeResult,
   type RunHostLog,
   type RunTimes,
+  type StartRefusal,
+  type WaitReason,
 } from "@tasks/runs";
+import { DEFAULT_RUN_SETTINGS, type RunSettings } from "../config/machine-toml.ts";
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
 import type { ServedSpace } from "../ops/index.ts";
+import { readLaunchTask, readTaskRef } from "../ops/read.ts";
 
 /** What a start of the service may set for runs. Tests pass their containers or times. */
 export interface RunOptions {
@@ -33,6 +44,13 @@ export interface RunOptions {
   readonly times?: Partial<RunTimes>;
 }
 
+/** A task's place as a run's folder check reads it. */
+export interface RunPlace {
+  readonly root: string;
+  readonly path: string;
+  readonly gitRemote?: string;
+}
+
 export interface RunServiceOptions extends RunOptions {
   /** This machine (`m_` ID). */
   readonly machine: string;
@@ -41,9 +59,17 @@ export interface RunServiceOptions extends RunOptions {
   readonly platform: NodeJS.Platform;
   readonly spaces: () => readonly ServedSpace[];
   readonly log: Logger;
+  /** machine.toml's `[runs]` as it is now. Default: DEFAULT_RUN_SETTINGS. */
+  readonly settings?: () => RunSettings;
+  /** The agent instances machine.toml names now. Default: not checked. */
+  readonly instances?: () => readonly { readonly id: string }[];
+  /** Whether a task's place still resolves to a folder runs can use. Default: not checked. */
+  readonly folderUsable?: (space: string, place: RunPlace) => Promise<boolean>;
+  /** Whether an update of this install has not finished (its journal is there). Default: no. */
+  readonly updating?: () => boolean;
 }
 
-/** How often spaces that opened since are recovered. */
+/** How often spaces that opened since are recovered, and the queue looked at. */
 const ROUND_MS = 30_000;
 
 interface Hosted {
@@ -64,6 +90,22 @@ export class RunsUnavailable extends Error {
   override readonly name = "RunsUnavailable";
 }
 
+/** A run an update would cut short, as the updater shows it to the person. */
+export interface RunBlocker {
+  readonly space: string;
+  readonly space_name: string | null;
+  readonly run: string;
+  /** The task's reference, such as `MIRA-12`, or null for a routine's run. */
+  readonly task: string | null;
+  readonly state: string;
+}
+
+/** Whether runs can be contained here, for `service status` and doctor. */
+export type RunsStatus =
+  | { readonly available: true }
+  | { readonly available: false; readonly reason: string; readonly message: string }
+  | { readonly available: null };
+
 /**
  * tasks-run.exe beside the launchers of the version folder this Node runs from
  * (`<version>/runtime/node.exe`, `<version>/bin/tasks-run.exe`).
@@ -76,9 +118,20 @@ export class RunService {
   readonly #containers: Containers;
   readonly #files: RunFiles;
   readonly #hosted = new Map<string, Hosted>();
+  /** The spaces whose host recovered, as the supervisor works on them. */
+  readonly #lanes = new Map<string, Lane>();
+  /** What runs for each run the internal call queued, until it starts. */
+  readonly #commands = new Map<string, (run: RunRecord) => AgentCommand | Promise<AgentCommand>>();
+  readonly #supervisor: Supervisor;
   #probe: Promise<ProbeResult> | undefined;
+  #probed: ProbeResult | undefined;
   #timer: NodeJS.Timeout | undefined;
   #stopped = false;
+  #ending: () => void = () => undefined;
+  /** Resolves once the service began to close: an update's hold ends with it. */
+  readonly closing: Promise<void> = new Promise((resolve) => {
+    this.#ending = resolve;
+  });
 
   constructor(options: RunServiceOptions) {
     this.#options = options;
@@ -89,6 +142,17 @@ export class RunService {
         runHelper: options.runHelper ?? defaultRunHelper(),
       });
     this.#files = new RunFiles(join(options.stateDir, RUNS_FOLDER));
+    this.#supervisor = new Supervisor({
+      lanes: () => [...this.#lanes.values()],
+      limits: () => this.#settings().limits,
+      available: async () => (await this.probe()).available,
+      prepare: (lane, run) => this.#prepare(lane, run),
+      ...(options.updating === undefined ? {} : { updating: options.updating }),
+      folders: this.#files,
+      log: (event, fields) => {
+        this.#options.log.log(event, fields);
+      },
+    });
   }
 
   /**
@@ -116,9 +180,19 @@ export class RunService {
       },
     ));
     void probe.then((result) => {
+      this.#probed = result;
       if (!result.available && this.#probe === probe) this.#probe = undefined;
     });
     return probe;
+  }
+
+  /** What the last probe found, without asking again: for `service status`. */
+  status(): RunsStatus {
+    const probed = this.#probed;
+    if (probed === undefined) return { available: null };
+    return probed.available
+      ? { available: true }
+      : { available: false, reason: probed.reason, message: probed.message };
   }
 
   /** Recovers every open space now and every 30 s the spaces that opened since. */
@@ -132,9 +206,10 @@ export class RunService {
   }
 
   /**
-   * One round: a host, with its recovery, for every space that opened since, and the end of the
-   * hosts whose space closed. Each space's recovery goes on by itself, so one whose store does not
-   * answer holds up no other space and no later round. Resolves once this round's recoveries ended.
+   * One round: a host, with its recovery, for every space that opened since, the end of the hosts
+   * whose space closed, and then the supervisor's round. Each space's recovery goes on by itself,
+   * so one whose store does not answer holds up no other space and no later round. Resolves once
+   * this round's recoveries ended.
    */
   async tick(): Promise<void> {
     if (this.#stopped) return;
@@ -147,37 +222,52 @@ export class RunService {
         .filter(isOpen)
         .map((space) => this.#space(space.id ?? "").catch(() => undefined)),
     );
+    await this.#supervisor.round();
   }
 
   /** Ends hosting: the containers of live runs are killed; the next start settles their runs. */
   async close(): Promise<void> {
     this.#stopped = true;
+    this.#ending();
     if (this.#timer !== undefined) clearInterval(this.#timer);
     this.#timer = undefined;
+    this.#supervisor.close();
     await Promise.all([...this.#hosted.values()].map((hosted) => this.#close(hosted)));
   }
 
   /**
-   * Queues a run and starts it in its container with `command`. Internal: nothing reaches it from
-   * a person or an agent yet. Throws RunsUnavailable when runs cannot be contained here.
+   * Queues a run to start in its container with `command`, once its limits allow. Its time limits
+   * are `[runs]`'s unless it names its own. Internal: nothing reaches it from a person or an agent
+   * yet. Throws RunsUnavailable when runs cannot be contained here.
    */
   async start(
     space: string,
-    input: Omit<NewRun, "machine">,
+    input: Omit<NewRun, "machine" | "limits"> & { readonly limits?: RunLimits },
     requestId: string,
     command: (run: RunRecord) => AgentCommand | Promise<AgentCommand>,
-  ): Promise<RunRecord | undefined> {
+  ): Promise<RunRecord> {
     const probe = await this.probe();
     if (!probe.available) throw new RunsUnavailable(probe.message);
     const hosted = await this.#space(space);
     if (hosted === undefined) throw new Error("The space is not open on this machine");
-    const queued = await hosted.machine.queue(input, requestId);
-    return hosted.host.start(queued.id, command);
+    const settings = this.#settings();
+    const limits = input.limits ?? {
+      ...RUN_LIMITS[input.routine === null ? "task" : "routine"],
+      wallMs: settings.wallMs,
+      idleMs: settings.idleMs,
+    };
+    const queued = await hosted.machine.queue({ ...input, limits }, requestId);
+    if (queued.state === "queued") this.#commands.set(queued.id, command);
+    void this.#supervisor.round();
+    return queued;
   }
 
-  /** The person's Stop. */
+  /** The person's Stop: a queued run is cancelled at once and never starts. */
   async stop(space: string, run: string): Promise<RunRecord | undefined> {
-    return (await this.#required(space)).host.stop(run);
+    const after = await (await this.#required(space)).host.stop(run);
+    if (after?.state === "cancelled") this.#commands.delete(run);
+    void this.#supervisor.round();
+    return after;
   }
 
   /** End by force, for an `unknown` run. */
@@ -190,9 +280,114 @@ export class RunService {
     return (await this.#required(space)).machine.read(run);
   }
 
-  /** The run once its host's work on it is over. */
+  /** The run once it is final: started and ended, refused, or stopped. */
   async ended(space: string, run: string): Promise<RunRecord | undefined> {
-    return (await this.#required(space)).host.ended(run);
+    const { host, machine } = await this.#required(space);
+    return this.#supervisor.ended({ space, host, machine }, run);
+  }
+
+  /** Why a queued run waits, as the last round saw it. */
+  waiting(run: string): WaitReason | undefined {
+    return this.#supervisor.waiting(run);
+  }
+
+  /** An update's hold: no run starts until it is released. */
+  hold(): Hold {
+    this.#options.log.log("runs.hold", { held: true });
+    const hold = this.#supervisor.hold();
+    return {
+      release: () => {
+        hold.release();
+        this.#options.log.log("runs.hold", { held: false });
+      },
+    };
+  }
+
+  /** The runs an update would cut short now, each with its space's name and its task's reference. */
+  async blocking(): Promise<RunBlocker[]> {
+    return this.#described(await this.#supervisor.blocking());
+  }
+
+  /** Stops every run an update would cut short, and returns those that did not end in time. */
+  async stopAll(): Promise<RunBlocker[]> {
+    return this.#described(await this.#supervisor.stopAll());
+  }
+
+  async #described(
+    blockers: readonly { space: string; run: string; task: string | null; state: string }[],
+  ): Promise<RunBlocker[]> {
+    const spaces = this.#options.spaces();
+    return Promise.all(
+      blockers.map(async (b) => {
+        const served = spaces.find((s) => s.id === b.space);
+        let task: string | null = null;
+        if (b.task !== null && served?.reader !== undefined) {
+          task = (await readTaskRef(served.reader, b.task).catch(() => undefined)) ?? null;
+        }
+        return {
+          space: b.space,
+          space_name: served?.name ?? null,
+          run: b.run,
+          task,
+          state: b.state,
+        };
+      }),
+    );
+  }
+
+  #settings(): RunSettings {
+    try {
+      return this.#options.settings?.() ?? DEFAULT_RUN_SETTINGS;
+    } catch {
+      return DEFAULT_RUN_SETTINGS;
+    }
+  }
+
+  /**
+   * A queued run checked again right before it starts, and what runs for it. Its command is
+   * taken only once its `starting` commit landed, so a start that did not land can be tried again.
+   */
+  async #prepare(lane: Lane, run: RunRecord): Promise<Prepared> {
+    const served = this.#options.spaces().find((s) => s.id === lane.space && isOpen(s));
+    if (served === undefined) throw new Error("The space is not open on this machine");
+    const refused = await this.#check(served, run);
+    const command = this.#commands.get(run.id);
+    if (refused !== undefined || command === undefined) {
+      this.#commands.delete(run.id);
+      return { refused: refused ?? "spawn_failed" };
+    }
+    return {
+      command: (started) => {
+        this.#commands.delete(run.id);
+        return command(started);
+      },
+    };
+  }
+
+  /** What a queued run needs, read now: its task open, its instance and its folder still there. */
+  async #check(served: ServedSpace, run: RunRecord): Promise<StartRefusal | undefined> {
+    if (run.task !== null && served.reader !== undefined) {
+      let task: Awaited<ReturnType<typeof readLaunchTask>>;
+      try {
+        task = await readLaunchTask(served.reader, run.task, this.#options.machine);
+      } catch (error) {
+        if (error instanceof AppError && error.code === "not_found") return "task_closed";
+        throw error;
+      }
+      if (!task.active) return "task_closed";
+      if (run.place !== null) {
+        if (task.place?.id !== run.place) return "folder_gone";
+        const usable = this.#options.folderUsable;
+        if (usable !== undefined && !(await usable(served.id ?? "", task.place))) {
+          return "folder_gone";
+        }
+      }
+    }
+    const instances = this.#options.instances?.();
+    if (instances !== undefined && !instances.some((i) => i.id === run.instance)) {
+      return "instance_gone";
+    }
+    return undefined;
   }
 
   async #required(space: string): Promise<{ host: RunHost; machine: RunMachine }> {
@@ -219,7 +414,7 @@ export class RunService {
     return made;
   }
 
-  /** A host over the space's store; it is handed out once its recovery ended. */
+  /** A host over the space's store; it is handed out, and supervised, once its recovery ended. */
   async #make(
     space: string,
     served: ServedSpace,
@@ -254,8 +449,11 @@ export class RunService {
     life.host = host;
     // Recovery waits for the probe: on Linux the service must sit in its own cgroup first.
     await this.probe();
-    if (life.closed) throw new Error("The space's host was closed");
+    const closed = (): boolean => life.closed;
+    if (closed()) throw new Error("The space's host was closed");
     await host.recover();
+    if (closed()) throw new Error("The space's host was closed");
+    this.#lanes.set(space, { space, machine, host });
     return { host, machine };
   }
 
@@ -269,6 +467,7 @@ export class RunService {
    */
   #drop(space: string, hosted: Hosted): void {
     if (this.#hosted.get(space) === hosted) this.#hosted.delete(space);
+    if (this.#lanes.get(space)?.host === hosted.life.host) this.#lanes.delete(space);
     void this.#close(hosted);
   }
 

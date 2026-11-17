@@ -5,3 +5,4 @@ export * from "./machine.ts";
 export * from "./container/index.ts";
 export * from "./run-files.ts";
 export * from "./host.ts";
+export * from "./supervisor.ts";
