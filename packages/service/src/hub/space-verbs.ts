@@ -189,6 +189,19 @@ function spaceOf(result: AdminResult): Id<"sp"> {
 /** The export modes a person can ask for now: transfer comes with M3.08. */
 const EXPORT_MODES = ["backup", "fork", "transfer"] as const;
 
+/**
+ * A view rebuild of a space that is not open here: it needs the space open first, so a retry on
+ * its own does not help.
+ */
+export function viewNotKept(state: string): AppError {
+  return new AppError({
+    code: "space_unavailable",
+    message: `${PRODUCT_NAME} keeps a space's view only while the space is open on this machine.`,
+    hint: `Run ${CLI_NAME} space list to see why it is not open.`,
+    data: { reason: "not_served", retryable: false, state },
+  });
+}
+
 /** A storage failure, or a worker's code, as A3's error body. */
 function failure(error: unknown): AppError {
   if (error instanceof AppError) return error;
@@ -551,21 +564,15 @@ export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>>
     "view/rebuild": async (params, cls) => {
       userOnly(cls);
       const view = find(required(params, "space"));
-      const unavailable = (): AppError =>
-        new AppError({
-          code: "space_unavailable",
-          message: `${PRODUCT_NAME} keeps a space's view only while the space is open on this machine.`,
-          data: { reason: "not_served", retryable: view.state === "open", state: view.state },
-        });
       const running = view.state === "open" ? manager.rebuildView(view.entry) : undefined;
-      if (running === undefined) throw unavailable();
+      if (running === undefined) throw viewNotKept(view.state);
       try {
         const found = await running;
         return { checked: found.checked, queued: found.queued, forgotten: found.forgotten };
       } catch (error) {
         if (error instanceof StorageError) throw failure(error);
         // The projection ended before its reconciliation ran: the space closed meanwhile.
-        throw unavailable();
+        throw viewNotKept("closed");
       }
     },
 

@@ -1073,7 +1073,7 @@
     },
     {
       "id": "A3.3.5.error-retry-words",
-      "title": "An error that asks a person to try again is retryable, and one that is not retryable never asks it: the storage failures' sentences and a space the service does not serve now",
+      "title": "An error that asks a person to try again is retryable, and one that is not retryable never asks it: the storage failures' sentences, a space the service does not serve now, a read-only space and a view rebuild of a space not open, and every error the service's own code writes out",
       "source": "A3 3.5",
       "owner": "M1",
       "kind": "ci",

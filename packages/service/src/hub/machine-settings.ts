@@ -49,6 +49,7 @@ function refused(reason: EditRefusal): AppError {
         code: "conflict",
         message: "machine.toml changed while the setting was being saved.",
         hint: "Try again.",
+        data: { retryable: true },
       });
     case "invalid_value":
       return new AppError({
