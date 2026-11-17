@@ -2842,7 +2842,7 @@ interface WrittenGroup {
  */
 async function groupWrite(call: Call, action: string): Promise<unknown> {
   const { input } = call;
-  const path = groupPath(input);
+  let path = groupPath(input);
   const to = typeof input["to"] === "string" ? input["to"].trim() : undefined;
   if ((action === "rename" || action === "move") && (to === undefined || to === "")) {
     throw invalid("to", `Required to ${action}`, action === "move" ? "Name the area." : undefined);
@@ -2859,12 +2859,24 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     );
   }
   const folderAction = action === "set_folder" || action === "clear_folder";
-  if ((folderAction || given !== undefined) && path.project === undefined) {
+  if (folderAction && path.project === undefined) {
     throw invalid("path", "Only a project has a folder", "Name it as Area/Project.");
   }
   const facts = given === undefined ? undefined : bindFacts(call);
   const folder =
     given === undefined || facts === undefined ? undefined : folderOf(call, given, "folder", facts);
+  // An area and a folder: a project in the area named after the folder, as add_project names one.
+  if (folder !== undefined && facts !== undefined && path.project === undefined) {
+    const named = folderName(folder.absolute, facts.platform);
+    if (named === undefined) {
+      throw invalid(
+        "path",
+        "A drive or a root has no name to give the project",
+        "Name it as Area/Project.",
+      );
+    }
+    path = { area: path.area, project: named };
+  }
   if (await applied(call)) {
     // A retry of a decided write: the writer replays it. Its names and its folder are not looked
     // at again, since a rename it made would refuse its own retry; a stand-in operation carries it

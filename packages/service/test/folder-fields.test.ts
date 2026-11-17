@@ -313,6 +313,23 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
     expect(JSON.stringify(answer.areas)).not.toContain("Portal again");
   });
 
+  test("creating with an area and a folder makes a project in the area named after the folder", async () => {
+    const made = GroupManageResult.parse(
+      await call(agent, "group.manage", {
+        action: "create",
+        path: "Errands",
+        folder: folder("garden-planner"),
+        request_id: rid(),
+      }),
+    );
+    expect(made).toMatchObject({
+      result: "created",
+      group: { kind: "project", name: "garden-planner", folder: ends("garden-planner") },
+    });
+    const errands = made.areas.find((a) => a.name === "Errands");
+    expect(errands?.projects.map((p) => p.name)).toContain("garden-planner");
+  });
+
   test("cwd without a working folder, a folder that is not there and a file are refused with their reason", async () => {
     const noCwd = await refused(
       call(agent, "group.manage", {
