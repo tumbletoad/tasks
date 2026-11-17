@@ -4,12 +4,14 @@
 // through edit.ts, which keeps every other byte.
 //
 // Sections have owners. This appendix (A2) owns `[service]`, `[http]`, `[ui]`, `[updates]`, `[log]`
-// and `[[spaces]]`, checked here. A4 owns `[terminal]`, `[[instance]]`, `[approvals]` and, with A1,
-// `[roots]`: @tasks/launch checks those. `[runs]`, background runs' guidelines, is checked here.
-// A1 owns `[preferences]` (3.16), checked here with the
-// preferences registry of @tasks/contracts. `[[custom_target]]`, `[override.*]` (A4) and `[remote]`,
+// and `[[spaces]]`, checked here. A4 owns `[terminal]`, `[[instance]]` and `[approvals]`:
+// @tasks/launch checks those. `[runs]`, background runs' guidelines, is checked here. A1 owns
+// `[preferences]` (3.16), checked here with the preferences registry of @tasks/contracts.
+// `[[custom_target]]`, `[override.*]` (A4) and `[remote]`,
 // `[security]` (A6) are reserved: the steps that use them check them, and until then they are
-// passed by without a problem. Any other top-level key is an `unknown_key` warning.
+// passed by without a problem. `[roots]` is retired: a project's folder took its place, and its
+// lines are left as they are with one `retired` warning. Any other top-level key is an
+// `unknown_key` warning.
 //
 // A bad entry is dropped with its problem, and the rest of its section stays. Problems in the file
 // itself and in `[[spaces]]` are fatal for the service (fatalProblems below): hosting a different
@@ -26,12 +28,10 @@ import {
   Problems,
   readApprovals,
   readInstances,
-  readRoots,
   readTerminal,
   TableReader,
   type ConfigProblem,
   type Instance,
-  type Root,
   type TerminalSettings,
   type Verdict,
 } from "@tasks/launch";
@@ -83,7 +83,6 @@ export interface MachineConfig {
   };
   readonly log: { readonly level: Level };
   readonly spaces: readonly SpaceRegistration[];
-  readonly roots: readonly Root[];
   readonly terminal: TerminalSettings;
   readonly instances: readonly Instance[];
   /** `[approvals]`: approval hash to verdict (A4 3.2). */
@@ -151,7 +150,6 @@ export const DEFAULT_CONFIG: MachineConfig = {
   updates: { channel: "stable", check: true, auto: false },
   log: { level: "info" },
   spaces: [],
-  roots: [],
   terminal: DEFAULT_TERMINAL,
   instances: [],
   approvals: new Map(),
@@ -294,6 +292,7 @@ export function checkMachineConfig(
   for (const name of Object.keys(doc)) {
     if (!(SECTIONS as readonly string[]).includes(name)) problems.warn(name, "unknown_key");
   }
+  if (doc["roots"] !== undefined) problems.warn("roots", "retired");
 
   const service = tableOf(doc, "service", problems);
   const defaultText = service?.string("default_space");
@@ -329,7 +328,6 @@ export function checkMachineConfig(
     updates: { channel, check, auto },
     log: { level },
     spaces: readSpaces(doc["spaces"], platform, problems),
-    roots: readRoots(doc["roots"], platform, problems),
     terminal: readTerminal(doc["terminal"], platform, problems),
     instances: readInstances(doc["instance"], platform, problems),
     approvals: readApprovals(doc["approvals"], problems),

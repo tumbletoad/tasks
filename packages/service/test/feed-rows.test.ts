@@ -1,8 +1,9 @@
 // What a task's compact row carries of its children (A5 3.6, A7 3.12 M5.06): its first three
-// sources with their own text and URL, how many more it has, and its place's state on this
-// machine, in the snapshot and in every batch that changes a source, a link or a place of it. A
-// real service in this process, real tasks-local/1 sessions, fixture text and temporary folders.
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+// sources with their own text and URL, how many more it has, and where it opens on this machine,
+// in the snapshot and in every batch that changes a source, a link or a folder of it or of its
+// project. A real service in this process, real tasks-local/1 sessions, fixture text and
+// temporary folders.
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { TaskAddResult, TaskGetResult } from "@tasks/contracts";
@@ -11,8 +12,7 @@ import type { WorkerConnection } from "@tasks/storage";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { readBatch, readHead, readSnapshot, type FeedHere } from "../src/http/feed.ts";
 import { classSession } from "./ops-helpers.ts";
-import { configOf, removeRuntimeDir, serviceEnv, tempRoot } from "./harness.ts";
-import { placeTasks, unplaceTask } from "./places-helper.ts";
+import { removeRuntimeDir, serviceEnv, tempRoot } from "./harness.ts";
 
 let service: RunningService;
 let home: string;
@@ -42,12 +42,6 @@ beforeAll(async () => {
   work = join(temp.root, "workrootfeed");
   mkdirSync(join(work, "lumen", "portal"), { recursive: true });
   mkdirSync(join(work, "lumen", "api"), { recursive: true });
-  mkdirSync(configOf(home), { recursive: true, mode: 0o700 });
-  writeFileSync(
-    join(configOf(home), "machine.toml"),
-    `[roots.work]\nlabel = "Work"\npath = ${JSON.stringify(work)}\n`,
-    { mode: 0o600 },
-  );
   service = await startService({
     env: serviceEnv(home),
     identity: () => ({ root: false, elevated: false, package: null }),
@@ -65,7 +59,7 @@ beforeAll(async () => {
   reader = served;
   here = {
     machine: service.ops.machine.id,
-    roots: service.ops.roots ?? (() => []),
+    home: service.ops.home,
     platform: process.platform,
   };
 }, 120_000);
@@ -80,24 +74,36 @@ afterAll(async () => {
 type Rows = readonly Readonly<Record<string, unknown>>[];
 const byTitle = (rows: Rows, title: string) => rows.find((r) => r["title"] === title);
 
-describe("[A5.3.6.http.row-children] a task's row carries its sources and its place's state here", () => {
-  test("the snapshot: three sources with their own text, how many more, here and missing places", async () => {
+describe("[A5.3.6.http.row-children] a task's row carries its sources and where it opens here", () => {
+  test("the snapshot: three sources with their own text, how many more, a folder here and one missing", async () => {
+    await call("folder.manage", {
+      action: "add_project",
+      project: "Portal",
+      area: "Client work",
+      folder: join(work, "lumen", "portal"),
+      request_id: rid(),
+    });
     const added = TaskAddResult.parse(
       await call("task.add", {
         tasks: [
-          { title: "Fixture four sources", sources: [source(1), source(2), source(3), source(4)] },
+          {
+            title: "Fixture four sources",
+            area: "Client work",
+            project: "Portal",
+            sources: [source(1), source(2), source(3), source(4)],
+          },
           { title: "Fixture gone folder" },
           { title: "Fixture plain" },
         ],
         request_id: rid(),
       }),
     );
-    // The feed's rows read places, which no tool binds any more.
-    const [placed, gone] = added.tasks.map((t) => t.ref ?? "");
-    await placeTasks(service.ops, [
-      { task: placed ?? "", root: "work", path: "lumen/portal" },
-      { task: gone ?? "", root: "work", path: "lumen/api" },
-    ]);
+    await call("folder.manage", {
+      action: "set",
+      task: added.tasks[1]?.ref,
+      folder: join(work, "lumen", "api"),
+      request_id: rid(),
+    });
     rmSync(join(work, "lumen", "api"), { recursive: true });
 
     const snapshot = await readSnapshot(reader, here);
@@ -128,7 +134,7 @@ describe("[A5.3.6.http.row-children] a task's row carries its sources and its pl
     expect(byTitle(bare.tasks, "Fixture four sources")?.["sources_more"]).toBe(1);
   });
 
-  test("a batch that changes a source, a link or a place carries the task's row with it", async () => {
+  test("a batch that changes a source, a link or a folder of a task, or its project's folder, carries the task's row with it", async () => {
     const start = (await readHead(reader)).cursor.seq;
     const read = TaskGetResult.parse(await call("task.get", { task: "M-3" }));
     await call("task.update", {
@@ -137,10 +143,25 @@ describe("[A5.3.6.http.row-children] a task's row carries its sources and its pl
       base: read.as_of,
       request_id: rid(),
     });
-    await unplaceTask(service.ops, "M-2");
+    const asOf = async () => ((await call("space.status", {})) as { as_of: string }).as_of;
+    await call("folder.manage", {
+      action: "clear",
+      task: "M-2",
+      base: await asOf(),
+      request_id: rid(),
+    });
+    rmSync(join(work, "lumen", "portal"), { recursive: true });
+    mkdirSync(join(work, "lumen", "portal-next"), { recursive: true });
+    await call("folder.manage", {
+      action: "set",
+      project: "Portal",
+      folder: join(work, "lumen", "portal-next"),
+      base: await asOf(),
+      request_id: rid(),
+    });
     const { batch } = await readBatch(reader, start, { here });
-    expect(batch.events).toHaveLength(2);
-    const [link, unplace] = batch.events;
+    expect(batch.events).toHaveLength(3);
+    const [link, unplace, moved] = batch.events;
     const taskOf = (event: (typeof batch.events)[number] | undefined) =>
       event?.entities.find((e) => e.type === "task");
     // A source and its link were added; the task's row came with them, naming no field of it.
@@ -153,9 +174,14 @@ describe("[A5.3.6.http.row-children] a task's row carries its sources and its pl
     ]);
     expect(row).not.toHaveProperty("sources_more");
     expect(row).not.toHaveProperty("place");
-    expect(unplace?.entities.map((e) => e.type)).toContain("place");
+    expect(unplace?.entities.map((e) => e.type)).toEqual(["folder", "task"]);
     expect(taskOf(unplace)?.row).not.toHaveProperty("place");
     expect(taskOf(unplace)?.row).toMatchObject({ title: "Fixture gone folder" });
+    // The project's folder changed: the rows of its tasks come with it, as they are now.
+    expect(taskOf(moved)?.row).toMatchObject({
+      title: "Fixture four sources",
+      place: { state: "here" },
+    });
   });
 });
 

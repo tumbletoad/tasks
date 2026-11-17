@@ -598,9 +598,11 @@ describe("[A2.3.8.http.feed] a peer that reads nothing or answers nothing", () =
     const reader = {
       get: () => Promise.resolve(head),
       transaction: (_mode: string, statements: unknown[]) => {
+        // The one-statement look at the space's schema (whether it has folders) answers at once.
+        if (statements.length === 1) return Promise.resolve([{ n: 1 }]);
         reads += 1;
         return new Promise<unknown[]>((resolve) => {
-          // A snapshot's four reads, or a batch's eight: nothing in either.
+          // A snapshot's reads, or a batch's: nothing in either.
           waiting.push(() => {
             resolve([head, ...statements.slice(1).map(() => [])]);
           });

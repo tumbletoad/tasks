@@ -14,7 +14,6 @@ import { opCall, type Caller } from "../src/ops/index.ts";
 import { join } from "node:path";
 import { contractWorld } from "./contract/suite.ts";
 import { classSession, grantHome } from "./ops-helpers.ts";
-import { placeTasks } from "./places-helper.ts";
 
 type Json = Record<string, unknown>;
 const LONG = 1_200_000;
@@ -254,7 +253,7 @@ async function runCorpus(size: number, pool: readonly string[], heavyCount: numb
   const pick = (i: number): string => pool[i % pool.length] ?? "x";
 
   // Tasks, 25 drafts a call: odd one-line titles and summaries, a third in the portal folder and a
-  // third in the folder above it. Status's `here` reads places, so they are placed there too.
+  // third in the folder above it.
   const refs: string[] = [];
   for (let start = 0; start < size; start += 25) {
     const at = (i: number): string | undefined =>
@@ -271,11 +270,6 @@ async function runCorpus(size: number, pool: readonly string[], heavyCount: numb
     const added = await call("task.add", { tasks: drafts, request_id: rid() });
     const made = (added["tasks"] as Json[]).map((t) => String(t["ref"]));
     refs.push(...made);
-    const places = made.flatMap((task, k) => {
-      const path = at(start + k);
-      return path === undefined ? [] : [{ task, root: "work", path }];
-    });
-    if (places.length > 0) await placeTasks(w.service.ops, places, space);
   }
 
   // A few heavy tasks: a context near 64 KiB, notes for agents short and long, other notes, fifty

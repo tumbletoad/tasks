@@ -1,7 +1,7 @@
-// The sections of machine.toml that A4 owns, alone or with A1 (A2 3.2.4): `[roots]`, `[terminal]`,
-// `[[instance]]` and `[approvals]`. Each is checked strictly into a typed value plus problems
-// (problems.ts). A bad entry is dropped, never guessed: an instance with a bad key is not offered,
-// a root with a bad path resolves nothing, an approval that is not `allow` approves nothing.
+// The sections of machine.toml that A4 owns (A2 3.2.4): `[terminal]`, `[[instance]]` and
+// `[approvals]`. Each is checked strictly into a typed value plus problems (problems.ts). A bad
+// entry is dropped, never guessed: an instance with a bad key is not offered, an approval that is
+// not `allow` approves nothing.
 //
 // `[[custom_target]]` and `[override.*]` (A4 3.2, 3.4.7) belong to the launch steps; until they
 // read them, this build passes them by without checking (sections RESERVED in the service).
@@ -27,45 +27,17 @@ import {
 } from "./problems.ts";
 
 // ---------------------------------------------------------------------------------------------
-// [roots] (A1 3.15)
+// Roots: a named folder an older place was relative to. machine.toml's `[roots]` is no longer
+// read; the planning importer still maps a prototype's places to the roots given to it.
 
-/** A root ID: lower case, at most 32 characters, never changed (A1 3.15). */
+/** A root ID: lower case, at most 32 characters, never changed. */
 export const ROOT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/u;
 
 export interface Root {
   readonly id: string;
   readonly label: string;
   readonly path: string;
-  /** A4 3.11.7: background runs allowed under this root. */
   readonly runs: boolean;
-}
-
-export function readRoots(value: unknown, platform: NodeJS.Platform, problems: Problems): Root[] {
-  if (value === undefined) return [];
-  if (!isTable(value)) {
-    problems.error("roots", "wrong_type");
-    return [];
-  }
-  const roots: Root[] = [];
-  for (const [id, entry] of Object.entries(value)) {
-    const key = keyPath("roots", id);
-    if (!ROOT_ID.test(id)) {
-      problems.error(key, "invalid_value");
-      continue;
-    }
-    if (!isTable(entry)) {
-      problems.error(key, "wrong_type");
-      continue;
-    }
-    const r = new TableReader(entry, key, problems);
-    const label = r.string("label", { max: 80 }) ?? id;
-    const path = r.path("path", platform, { required: true });
-    const runs = r.bool("runs", false);
-    r.done();
-    if (r.failed || path === undefined) continue;
-    roots.push({ id, label, path, runs });
-  }
-  return roots;
 }
 
 // ---------------------------------------------------------------------------------------------

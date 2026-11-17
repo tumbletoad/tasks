@@ -68,7 +68,7 @@ function link(target: string, path: string): void {
   symlinkSync(target, path, WINDOWS ? "junction" : "dir");
 }
 
-const resolve = (state: string) => resolveLaunchFolder(null, SPACE, { roots: [], stateDir: state });
+const resolve = (state: string) => resolveLaunchFolder(null, SPACE, { stateDir: state });
 
 describe("[A4.5.shim.work-folder] the work folder is checked before anything is made or entered", () => {
   test("made on first use, each folder user-only, and resolved below the state folder; found again as it is", async () => {

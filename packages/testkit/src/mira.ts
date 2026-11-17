@@ -67,6 +67,11 @@ export interface MiraOptions {
   steps?: readonly SchemaStep[];
   /** The space's authority machine. Default: one drawn from the seed. */
   machineId?: Id<"m">;
+  /**
+   * The authority machine's OS, which its folders take the form of. A service that runs as that
+   * machine on another OS cannot give anything a folder. Default: Linux.
+   */
+  os?: "linux" | "macos" | "windows";
 }
 
 export interface SeededSpace {
@@ -397,6 +402,7 @@ export async function seedMira(
   // Drawn either way, so a given machine changes nothing else the seed draws.
   const drawn = newId("m", random);
   const machineId = options.machineId ?? drawn;
+  const os = options.os ?? MIRA.machine.os;
   const createOptions = {
     name: MIRA.name,
     ownerLabel: MIRA.owner,
@@ -432,7 +438,7 @@ export async function seedMira(
   let writer: SpaceWriter | undefined;
   try {
     writer = SpaceWriter.open(opened, {
-      machine: { id: machineId, name: MIRA.machine.name, os: MIRA.machine.os },
+      machine: { id: machineId, name: MIRA.machine.name, os },
       now: clock,
       random,
     });
@@ -445,7 +451,7 @@ export async function seedMira(
     // Schema 0.5's folders: an older chain's sample has none, and every row before them is the one
     // that chain made.
     if (opened.revision.major > 0 || opened.revision.minor >= 5) {
-      bindFolders(conn, writer, rng, created.space, created.actors.human);
+      bindFolders(conn, writer, rng, created.space, created.actors.human, os === "windows");
     }
     conn.pragma("synchronous", "FULL");
     const counts: Record<string, number> = {};
@@ -520,7 +526,9 @@ function bindFolders(
   rng: Rng,
   space: { spaceId: Id<"sp">; authority: { machineId: Id<"m"> } },
   human: Id<"ac">,
+  windows: boolean,
 ): void {
+  const sep = windows ? "\\" : "/";
   const portal = conn.prepare("SELECT id FROM projects WHERE slug = 'lumen-portal'").get()?.["id"];
   const first = conn.prepare("SELECT id FROM tasks ORDER BY ref LIMIT 1").get()?.["id"];
   if (typeof portal !== "string" || typeof first !== "string") throw new Error("no portal");
@@ -539,8 +547,16 @@ function bindFolders(
     base: formatAsOf(writer.asOf()),
     undoable: true,
     ops: [
-      { kind: "project.folder_set", project: portal, path: "~/work/lumen/portal" },
-      { kind: "task.folder_set", task: first, path: "~/work/lumen/portal/appointments" },
+      {
+        kind: "project.folder_set",
+        project: portal,
+        path: ["~", "work", "lumen", "portal"].join(sep),
+      },
+      {
+        kind: "task.folder_set",
+        task: first,
+        path: ["~", "work", "lumen", "portal", "appointments"].join(sep),
+      },
     ],
   });
   if (result.status !== "applied") {

@@ -1662,6 +1662,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.9.run.folder",
+      "title": "A queued run checks, right before it starts, the folder a launch of its task would use: a task whose folder went is refused as folder_gone and nothing starts, and a task without a folder runs in the work folder",
+      "source": "A4 3.11.9",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.9.run.service",
       "title": "The service probes its containers at start and says why runs cannot be contained where they cannot, refusing its internal call to start one there; on Windows it hosts a run started through that call to its answer, and a run left open by a stopped service ends at the next start as interrupted with its last saved answer",
       "source": "A4 3.11.9",
@@ -1751,7 +1759,7 @@
     },
     {
       "id": "A4.5.shim.folder",
-      "title": "The launch's folder (A4 3.3): resolved right before the launch with this machine's live roots, or the space's work folder for a task without a place; the terminal starts in it and the claim's reply alone carries its check; the shim checks its own working directory before anything else and starts the agent there without a working-directory option: an unchanged folder runs the agent in exactly that directory, a folder swapped after the resolve is refused with folder_changed and starts nothing, a place that does not resolve disables the route with its reason",
+      "title": "The launch's folder (A4 3.3): resolved right before the launch, or the space's work folder for a task without a folder; the terminal starts in it and the claim's reply alone carries its check; the shim checks its own working directory before anything else and starts the agent there without a working-directory option: an unchanged folder runs the agent in exactly that directory, a folder swapped after the resolve is refused with folder_changed and starts nothing, a folder that is not there or is a file refuses the click with its reason, and one removed between the click and the dispatch fails the launch and starts nothing; a background run checks the same folder before it starts, and a folder only on another machine is never usable here",
       "source": "A4 3.3, A4 3.6.3, A7 3.9 M2.08",
       "owner": "M2",
       "kind": "ci",
@@ -2295,9 +2303,23 @@
     },
     {
       "id": "A3.3.4.tools.five",
-      "title": "The five tools through the request path: status's here (exact, inside, below, across nested roots, best first, with a hint), its session and the work guide; get_task's digest v0 with A3 3.9.6's limits per part, what it left out counted and its place resolved now, unbound with candidates for cwd, and sections a page at a time; update_task's place clear and context append; add_entry's links; and every field a later step brings refused with that step",
+      "title": "The five tools through the request path: status's here (exact, inside, below, best first, with a hint), its session and the work guide; get_task's digest v0 with A3 3.9.6's limits per part, what it left out counted and its folder, unbound with candidates for cwd, and sections a page at a time; update_task's place clear and context append; add_entry's links; and every field a later step brings refused with that step",
       "source": "A3 3.4.2, A3 3.4.4, A3 3.4.6, A3 3.4.7, A3 3.4.8, A3 3.5, A3 3.9.6, A7 3.9 M2.03",
       "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.4.here.folders",
+      "title": "Where a working folder belongs: a task's own folder, else the deepest project folder that holds it, so a nested project's folder names that project and not the one around it; exact, inside and below for status's here, the candidates and search's on:cwd alike; the digest says the task's own folder or its project's, missing, or none, the folder's words inside the data block",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.routes.folders",
+      "title": "A launch opens in the task's own folder, else its project's, else the space's work folder, in the terminal route, the link and Copy alike; a folder only on another machine opens nothing here and never the work folder, and Copy names that machine",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -2805,14 +2827,6 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A4.3.2.root-rev",
-      "title": "Each root's root_rev in machine state starts at 1 and rises whenever its mapping changes, also across a removal and re-adding, and never otherwise",
-      "source": "A4 3.2, A6 3.8.3, A7 3.9 M2.06",
-      "owner": "M2",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A4.5.t3.fake-server",
       "title": "The T3 primary route against a fake T3 server: an idle thread with the launch ID as clientRequestId and the grant on the intent, a lost reply then one repeat returning the same thread across an HTTP reconnect, a T3 restart and a service restart, Unknown and no thread after an OAuth reauthorization, a 401 leading to Reconnect T3, a nested folder that asks and never uses the containing project, the folder check and the thread link with the draft",
       "source": "A4 3.4.1, A4 3.9.2, A4 3.9.3, A4 5.1, A7 3.9 M2.11",
@@ -3022,7 +3036,7 @@
     },
     {
       "id": "A2.3.2.4.hub.spaces",
-      "title": "The hub hosts the enabled [[spaces]] of machine.toml, takes [log] level from it, and refuses an invalid machine.toml with 64 and a line that names the key and code but no value",
+      "title": "The hub hosts the enabled [[spaces]] of machine.toml, takes [log] level from it, names a retired [roots] section once and leaves it and the old roots' revisions as they are, and refuses an invalid machine.toml with 64 and a line that names the key and code but no value",
       "source": "A2 3.2.4, A2 3.3.1, A7 3.9 M2.06",
       "owner": "M2",
       "kind": "ci",
@@ -3110,7 +3124,7 @@
     },
     {
       "id": "A5.3.6.http.row-children",
-      "title": "A task's compact row carries its first three sources with their own text, key and URL, how many more it has, and its place's state on this machine (here, missing, none; none when the feed names no machine), never a path; a batch that adds a source or link or clears a place carries the task's row after the child, naming no field",
+      "title": "A task's compact row carries its first three sources with their own text, key and URL, how many more it has, and where it opens on this machine (its own or its project's folder here or missing, another machine, none; none when the feed names no machine), never a path; a batch that adds a source or link, clears a task's folder or changes its project's folder carries the task's row, naming no field",
       "source": "A5 3.6, A5 3.15, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",
@@ -3380,12 +3394,10 @@
       "kind": "ci",
       "profiles": ["v1"]
     },
-
     {
-      "id": "A1.3.15.roots.add",
-      "title": "tasks roots add is the user's only, edits machine.toml keeping its other bytes, gives the root its revision and binds places under it at once; an ID in use, a folder another root names, a missing folder and a bad ID are refused with the file unchanged",
-      "source": "A1 3.15, A2 3.2.4, A4 3.2, A7 3.9 M2.07",
-      "owner": "M2",
+      "id": "A1.3.15.roots.retired",
+      "title": "Roots are retired: a machine.toml with [roots] sections parses, doctor names them once as lines that do nothing, tasks roots points to where tasks open now and its add fails, and no command changes the file",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -3554,6 +3566,13 @@
       "title": "Playwright with fakes, in Chromium and Firefox against the real service process: Open on a row's tile sends exactly `<cli> shim <ticket>` to the fake terminal, the receipt reaches Confirmed live in the expanded row, and an agent's log entry appears without a reload",
       "source": "A7 3.9 M2.13, A5 3.6, A5 3.9, A4 3.6.2",
       "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.e2e.open-folder",
+      "title": "Playwright against the real service process: a task with no folder shows the work folder, the expanded task shows the folder it was given, and Open after that folder went sends nothing to the fake terminal and says on the page that the folder was not found, naming it",
+      "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -4231,7 +4250,7 @@
     },
     {
       "id": "A7.3.12.m5-06.e2e.expanded",
-      "title": "In Chromium and Firefox against the real service: a task link lands on the area view with the task expanded; sources show their own text with the key first and the person after, a blocked scheme as text; the work folder line; the context as Markdown whose markup stays text and runs nothing; the last six thread entries then Earlier; the facts with short labels; no fact string twice; a new agent entry appears live; no CSP report",
+      "title": "In Chromium and Firefox against the real service: a task link lands on the area view with the task expanded; sources show their own text with the key first and the person after, a blocked scheme as text; the project's folder line; the context as Markdown whose markup stays text and runs nothing; the last six thread entries then Earlier; the facts with short labels; no fact string twice; a new agent entry appears live; no CSP report",
       "source": "A5 3.7, A5 3.3, A5 3.26, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",

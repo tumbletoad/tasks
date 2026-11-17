@@ -24,7 +24,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { envVar, PRODUCT_NAME } from "@tasks/brand";
-import type { Instance, Root } from "@tasks/launch";
+import type { Instance } from "@tasks/launch";
 import { StorageError, type Id } from "@tasks/storage";
 import {
   DEFAULT_CONFIG,
@@ -34,7 +34,6 @@ import {
   type MachineConfig,
 } from "../config/machine-toml.ts";
 import { configRefusal, unsafeConfigMessage } from "../config/messages.ts";
-import { ROOTS_FILE, syncRootRevisions } from "../config/root-revs.ts";
 import {
   openGrants,
   startHttp,
@@ -492,7 +491,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     log.log("config.loaded", {
       present: machineToml.present,
       spaces: config.spaces.length,
-      roots: config.roots.length,
       instances: config.instances.length,
       problems: machineToml.problems.length,
     });
@@ -516,7 +514,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       SERVICE_FILE,
       KEY_FILE,
       MACHINE_FILE,
-      ROOTS_FILE,
       SESSIONS_FILE,
     ]);
     // T3's machine state (M2.11) is written the same way, in its own folder.
@@ -555,10 +552,10 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         return runSettings;
       },
       instances: () => instances,
-      folderUsable: async (space, place) => {
+      folderUsable: async (space, folder) => {
         const service = launching.service;
         if (service === undefined) return true;
-        return (await service.resolveFolder(space, place)).status === "ok";
+        return service.folderUsable(space, folder);
       },
       // From the journal's write to its removal an update may restart the service, a repair
       // included, whether or not its updater still holds the queue.
@@ -568,17 +565,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
 
     const { key, replaced } = loadOrCreateKey(layout.state, platform);
     if (replaced !== undefined) log.log("service.key_created", { reason: replaced });
-
-    // Each root's root_rev (A4 3.2), reserved for L1: kept current, never a reason not to start.
-    try {
-      const revisions = syncRootRevisions(layout.state, config.roots);
-      if (revisions.changed > 0 || revisions.reset) {
-        log.log("config.roots_changed", { changed: revisions.changed, reset: revisions.reset });
-      }
-    } catch (error) {
-      const code = errorCode(error);
-      log.log("config.roots_failed", code === undefined ? {} : { code });
-    }
 
     let instance = randomBytes(16).toString("hex");
     const runtime = runtimeNames(
@@ -643,9 +629,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       }
       return made.spaces;
     };
-    // This machine's roots, which places resolve with (A1 3.15): machine.toml's at start, and the
-    // roots `tasks roots add` writes while the service runs (roots.ts).
-    let roots: readonly Root[] = config.roots;
     // The instances Open uses: machine.toml's at start, then what `tasks setup instances` writes.
     let instances: readonly Instance[] = config.instances;
     // The machine's default space (A2 3.1): machine.toml's at start, then what Make default and
@@ -707,7 +690,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       ops: {
         machine,
         spaces: () => made.spaces?.served() ?? [],
-        roots: () => roots,
         platform,
         ...(personHome === undefined ? {} : { home: personHome }),
         dataFolder: layout.data,
@@ -731,16 +713,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       bindings,
       defaults,
       runs,
-      roots: {
-        configDir: layout.config,
-        stateDir: layout.state,
-        platform,
-        log,
-        current: () => roots,
-        set: (next: readonly Root[]) => {
-          roots = next;
-        },
-      },
       instances: {
         configDir: layout.config,
         stateDir: layout.state,
@@ -876,7 +848,6 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       machine: machine.id,
       root: runtime.launch,
       stateDir: layout.state,
-      roots: () => roots,
       platform,
       env,
       spaces: () => made.spaces?.served() ?? [],

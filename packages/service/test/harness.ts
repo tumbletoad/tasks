@@ -216,8 +216,6 @@ export const configOf = (home: string): string => join(home, "config");
 export function registerSpaces(
   home: string,
   spaces: readonly (string | { readonly path: string; readonly id: string })[],
-  /** `[roots.<id>]` tables to write beside them: root ID to folder. */
-  roots: Readonly<Record<string, string>> = {},
   /** More of machine.toml, written after them as it is (`[[instance]]` tables, instanceToml). */
   extra = "",
 ): void {
@@ -237,9 +235,6 @@ export function registerSpaces(
     taken.add(id);
     return { op: "append", array: "spaces", entries: { id, path } };
   });
-  for (const [id, path] of Object.entries(roots)) {
-    edits.push({ op: "add_table", table: ["roots", id], entries: { path } });
-  }
   const result = applyEdits("", edits);
   if (!result.ok) throw new Error(`machine.toml not written: ${result.reason}`);
   mkdirSync(configOf(home), { recursive: true, mode: 0o700 });

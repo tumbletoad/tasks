@@ -66,6 +66,7 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --
   const w = await contractWorld("cj");
   const transport: ContractTransport = {
     portal: w.portal,
+    folder: (task) => w.folder(task),
     // The CLI holds no binding: `tasks show --launch` resolves the reference for that call.
     binds: false,
     // An entry with no command is the UI's alone; the import has commands of its own.

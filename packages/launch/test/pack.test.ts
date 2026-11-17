@@ -27,12 +27,7 @@ const BASE: PackInput = {
   context: "Dates are stored without zone and converted twice.\n\nThe mobile app may share it.",
   instructions: [{ day: "2026-11-11", text: "Don't touch the reminders service." }],
   sources: [{ kind: "ticket", title: "Appointments off by one hour", key: "jira:LUM-212" }],
-  folder: {
-    kind: "place",
-    root: "work",
-    path: "lumen/portal",
-    absolute: "/home/mira/lumen/portal",
-  },
+  folder: { kind: "folder", path: "~/lumen/portal", found: true },
   learnings: [{ text: "Store UTC plus the clinic's zone ID.", task: "M-3", day: "2026-04-03" }],
   log: [
     {
@@ -71,7 +66,7 @@ describe("[A4.5.brief.pack] the context pack: framed task text, the user's notes
       "From the user, for agents:",
       "- 2026-11-11 Don't touch the reminders service.",
       'Sources:\n- [ticket] "Appointments off by one hour" · key jira:LUM-212',
-      "Folder: work › lumen/portal (/home/mira/lumen/portal)",
+      "Folder: ~/lumen/portal",
       'Related learnings:\n- "Store UTC plus the clinic\'s zone ID." (M-3, 2026-04-03)',
       "Log:\n- 2026-11-11 [agent:codex-work] evidence: Reproduced on staging.\n- 2026-11-12",
       "```tasks-update\ntask: M-14\nlaunch: L7KQ21\nlog:",

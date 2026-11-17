@@ -2,11 +2,17 @@
 // 3.15), and the read of finished tasks behind the page's Completed view, which gives the same
 // rows and one line of how each task ended. A column that is null in the space is left out. No
 // body of a note or log entry, no context, outcome or other long text is in it: only what a row
-// shows of the task's children, its first three sources and its place's state on the machine
-// that serves it.
-import type { Row, WorkerConnection } from "@tasks/storage";
-import type { Root } from "@tasks/launch";
-import { placeState } from "./here.ts";
+// shows of the task's children, its first three sources and where it opens on the machine that
+// serves it.
+import {
+  decideLaunchFolder,
+  type FolderView,
+  type Id,
+  type Row,
+  type WorkerConnection,
+} from "@tasks/storage";
+import { folderState } from "./folders.ts";
+import { hasFolderTable } from "./read.ts";
 
 const PREFIX_SQL = "SELECT ref_prefix FROM space WHERE one = 1";
 
@@ -21,9 +27,9 @@ export interface CompactSource {
 }
 
 /**
- * A task's place as its row shows it, on the machine that serves the feed: a folder here that
- * resolves now, one that does not (its folder is missing, its root is gone, another repository is
- * there), or a place only on another machine, named. A task without a place has none.
+ * Where a task opens, as its row shows it on the machine that serves the feed (storage's
+ * `decideLaunchFolder`): its own folder or its project's here, there now or missing, or another
+ * machine, named. A task that opens in the space's work folder has none.
  */
 export type CompactPlace =
   | { readonly state: "here" | "missing" }
@@ -32,10 +38,10 @@ export type CompactPlace =
 export type CompactValue = string | number | boolean | readonly CompactSource[] | CompactPlace;
 export type CompactRow = Readonly<Record<string, CompactValue>>;
 
-/** The machine the feed resolves places on: its ID, its roots as they are now, its platform. */
+/** The machine the feed looks at folders on: its ID, the person's home there, its platform. */
 export interface FeedHere {
   readonly machine: string;
-  readonly roots: () => readonly Root[];
+  readonly home: string | undefined;
   readonly platform: NodeJS.Platform;
 }
 
@@ -51,32 +57,46 @@ const FINISHED_AT =
   "COALESCE(t.completed_at, (SELECT c.at FROM commits c WHERE c.seq = " +
   "COALESCE(json_extract(t.fp, '$.lifecycle'), t.created_seq)), t.created_at)";
 
-export const TASK_COLUMNS =
-  "t.id, t.ref, t.title, t.summary, t.lifecycle, t.status, t.inbox, t.priority, t.effort, " +
-  "t.due_date, t.due_at, t.due_tz, t.planned_for, t.focus_on, t.owner, t.waiting_on, t.area_id, " +
-  "t.project_id, t.parent_id, t.position, t.wrap_state, t.completed_at, t.deleted_at, " +
-  "t.created_at, t.version, t.touched, " +
-  `CASE WHEN t.lifecycle <> 'active' THEN ${FINISHED_AT} END AS finished_at, ` +
-  // When a waiting task's wait began (the Waiting view's age): the commit whose write its status
-  // holds (its provenance, which an undo sets back), or its creation. Not the last write (`fv`):
-  // an undo that brings a wait back would restart its age. A new person waited on is the same wait.
-  "CASE WHEN t.status = 'waiting' THEN COALESCE((SELECT c.at FROM commits c WHERE c.seq = " +
-  "json_extract(t.fp, '$.status') AND c.seq <> t.created_seq), t.created_at) END AS waiting_since, " +
-  // What the row shows of the task's children (A5 3.6), turned into `sources`, `sources_more`
-  // and `place` by `taskRows`. A `$machine` of null (no machine given) matches no place.
-  "(SELECT json_group_array(json_object('p', x.position, 'kind', x.kind, 'title', x.title, " +
-  "'who', x.who, 'ref', x.ref, 'key', x.source_key, 'url', x.url)) FROM (SELECT ts.position, " +
-  "s.kind, s.title, s.who, s.ref, s.source_key, s.url FROM task_sources ts JOIN sources s ON s.id = ts.source_id WHERE ts.task_id = t.id " +
-  `AND ts.removed_at IS NULL AND s.deleted_at IS NULL ORDER BY ts.position LIMIT ${String(ROW_SOURCES)}) x) ` +
-  "AS x_sources, " +
-  "(SELECT count(*) FROM task_sources ts JOIN sources s ON s.id = ts.source_id WHERE " +
-  "ts.task_id = t.id AND ts.removed_at IS NULL AND s.deleted_at IS NULL) AS x_source_count, " +
-  "(SELECT json_object('root', pl.root_id, 'path', pl.rel_path, 'kind', pl.kind, 'identity', " +
-  "pl.identity) FROM places pl WHERE pl.owner_kind = 'task' AND pl.owner_id = t.id AND " +
-  "pl.machine_id = $machine AND pl.deleted_at IS NULL) AS x_place_here, " +
-  "(SELECT m.name FROM places pl JOIN machines m ON m.id = pl.machine_id WHERE " +
-  "pl.owner_kind = 'task' AND pl.owner_id = t.id AND pl.machine_id <> $machine AND " +
-  "pl.deleted_at IS NULL ORDER BY pl.id LIMIT 1) AS x_place_elsewhere";
+/** An owner's live folders as JSON, newest first, with their machine's name. */
+const foldersOf = (kind: "task" | "project", owner: string): string =>
+  "(SELECT json_group_array(json_object('id', x.id, 'machine', x.machine_id, 'name', x.name, " +
+  "'path', x.path, 'version', x.version)) FROM (SELECT f.id, f.machine_id, m.name, f.path, " +
+  "f.version FROM folders f JOIN machines m ON m.id = f.machine_id WHERE " +
+  `f.owner_kind = '${kind}' AND f.owner_id = ${owner} AND f.deleted_at IS NULL ` +
+  "ORDER BY f.created_seq DESC, f.id) x)";
+
+/**
+ * A task row's columns. `folders`: the space has the folders table (schema 0.5 on); a space
+ * served read-only at an older revision has none, and its rows show no folder.
+ */
+export function taskColumns(folders: boolean): string {
+  return (
+    "t.id, t.ref, t.title, t.summary, t.lifecycle, t.status, t.inbox, t.priority, t.effort, " +
+    "t.due_date, t.due_at, t.due_tz, t.planned_for, t.focus_on, t.owner, t.waiting_on, t.area_id, " +
+    "t.project_id, t.parent_id, t.position, t.wrap_state, t.completed_at, t.deleted_at, " +
+    "t.created_at, t.version, t.touched, " +
+    `CASE WHEN t.lifecycle <> 'active' THEN ${FINISHED_AT} END AS finished_at, ` +
+    // When a waiting task's wait began (the Waiting view's age): the commit whose write its status
+    // holds (its provenance, which an undo sets back), or its creation. Not the last write (`fv`):
+    // an undo that brings a wait back would restart its age. A new person waited on is the same
+    // wait.
+    "CASE WHEN t.status = 'waiting' THEN COALESCE((SELECT c.at FROM commits c WHERE c.seq = " +
+    "json_extract(t.fp, '$.status') AND c.seq <> t.created_seq), t.created_at) END AS waiting_since, " +
+    // What the row shows of the task's children (A5 3.6), turned into `sources`, `sources_more`
+    // and `place` by `taskRows`.
+    "(SELECT json_group_array(json_object('p', x.position, 'kind', x.kind, 'title', x.title, " +
+    "'who', x.who, 'ref', x.ref, 'key', x.source_key, 'url', x.url)) FROM (SELECT ts.position, " +
+    "s.kind, s.title, s.who, s.ref, s.source_key, s.url FROM task_sources ts JOIN sources s ON s.id = ts.source_id WHERE ts.task_id = t.id " +
+    `AND ts.removed_at IS NULL AND s.deleted_at IS NULL ORDER BY ts.position LIMIT ${String(ROW_SOURCES)}) x) ` +
+    "AS x_sources, " +
+    "(SELECT count(*) FROM task_sources ts JOIN sources s ON s.id = ts.source_id WHERE " +
+    "ts.task_id = t.id AND ts.removed_at IS NULL AND s.deleted_at IS NULL) AS x_source_count" +
+    (folders
+      ? `, ${foldersOf("task", "t.id")} AS x_folders_own, ` +
+        `${foldersOf("project", "t.project_id")} AS x_folders_project`
+      : "")
+  );
+}
 
 /** A row without its nulls, booleans as booleans. */
 export function compact(row: Row, booleans: readonly string[] = []): CompactRow {
@@ -145,18 +165,29 @@ function sourcesOf(value: unknown): CompactSource[] {
   return out;
 }
 
-/** A place of this machine as `placeState` reads it, from `x_place_here`. */
-interface HerePlace {
-  readonly root: unknown;
-  readonly path: unknown;
-  readonly kind: unknown;
-  readonly identity: unknown;
+/** The folders of `x_folders_own` or `x_folders_project`, newest first, with machine names. */
+function foldersFrom(value: unknown, names: Map<string, string>): FolderView[] {
+  const list = parsed(value);
+  if (!Array.isArray(list)) return [];
+  const out: FolderView[] = [];
+  for (const f of list.filter(isPlain)) {
+    const { id, machine, name, path, version } = f;
+    if (typeof machine !== "string" || typeof path !== "string") continue;
+    if (typeof name === "string") names.set(machine, name);
+    out.push({
+      id: String(id) as Id<"fo">,
+      machine: machine as Id<"m">,
+      path,
+      version: Number(version),
+    });
+  }
+  return out;
 }
 
 /**
  * The tasks' compact rows, with what each row shows of its children: its first sources, how many
- * more, and its place's state on `here`'s machine, each place resolved once now (`placeState`, the
- * rule the digest and `here` use). Without `here`, no place is resolved and none is shown.
+ * more, and where it opens on `here`'s machine (`decideLaunchFolder`, the launch's rule), each
+ * folder looked at once now. Without `here`, none is shown.
  */
 export async function taskRows(
   rows: readonly Row[],
@@ -164,18 +195,14 @@ export async function taskRows(
   here?: FeedHere,
 ): Promise<CompactRow[]> {
   const states = new Map<string, Promise<"here" | "missing">>();
-  const resolve = (place: HerePlace): Promise<"here" | "missing"> => {
-    const key = JSON.stringify([place.root, place.path, place.kind, place.identity]);
-    let found = states.get(key);
+  const stateOf = (stored: string): Promise<"here" | "missing"> => {
+    let found = states.get(stored);
     if (found === undefined) {
       found =
         here === undefined
           ? Promise.resolve("missing")
-          : placeState(place, here.roots(), here.platform).then(
-              (state) => ("folder" in state ? "here" : "missing"),
-              () => "missing",
-            );
-      states.set(key, found);
+          : folderState(stored, here.home, here.platform).catch(() => "missing" as const);
+      states.set(stored, found);
     }
     return found;
   };
@@ -184,8 +211,8 @@ export async function taskRows(
       const {
         x_sources: sources,
         x_source_count: count,
-        x_place_here: placeHere,
-        x_place_elsewhere: elsewhere,
+        x_folders_own: ownFolders,
+        x_folders_project: projectFolders,
         x_reason: reason,
         x_outcome: outcome,
         ref,
@@ -208,19 +235,24 @@ export async function taskRows(
         }),
       );
       if (ended !== undefined) out["ending"] = ended;
-      const place = parsed(placeHere);
-      if (here !== undefined && isPlain(place)) {
-        out["place"] = { state: await resolve(place as unknown as HerePlace) };
-      } else if (here !== undefined && typeof elsewhere === "string") {
-        out["place"] = { state: "elsewhere", machine: elsewhere };
+      if (here !== undefined) {
+        const names = new Map<string, string>();
+        const decided = decideLaunchFolder(
+          foldersFrom(ownFolders, names),
+          foldersFrom(projectFolders, names),
+          here.machine,
+          (id) => names.get(id),
+        );
+        if (decided.kind === "task" || decided.kind === "project") {
+          out["place"] = { state: await stateOf(decided.folder.path) };
+        } else if (decided.kind === "other_machine") {
+          out["place"] = { state: "elsewhere", machine: decided.machine.name };
+        }
       }
       return out;
     }),
   );
 }
-
-/** The `$machine` a task read binds: none without `here`, which matches no place. */
-export const machineOf = (here: FeedHere | undefined): string | null => here?.machine ?? null;
 
 /** A page of finished tasks: which of them, how many, and the last row of the page before. */
 export interface FinishedRequest {
@@ -279,13 +311,13 @@ export function endingOf(text: unknown): string | undefined {
  * Finished tasks newest first, from a key. The page's keys are chosen first and the rows built
  * only for them: a row's sources and place cost a read each, and a space finishes tasks for years.
  */
-function finishedSql(request: FinishedRequest): string {
+function finishedSql(request: FinishedRequest, folders: boolean): string {
   const where = ["t.lifecycle IN ('completed', 'archived')", "t.deleted_at IS NULL"];
   if (request.checkedOff === true) where.push(CHECKED_OFF);
   if (request.checkedOff === false) where.push(`NOT ${CHECKED_OFF}`);
   const from = request.after === undefined ? "" : "WHERE k.at < $at OR (k.at = $at AND k.id < $id)";
   return (
-    `SELECT ${TASK_COLUMNS}, ${ENDING_COLUMNS} FROM (SELECT k.id, k.at FROM (SELECT ` +
+    `SELECT ${taskColumns(folders)}, ${ENDING_COLUMNS} FROM (SELECT k.id, k.at FROM (SELECT ` +
     `t.id AS id, ${FINISHED_AT} AS at FROM tasks t WHERE ${where.join(" AND ")}) k ${from} ORDER BY k.at DESC, k.id DESC ` +
     "LIMIT $limit) p JOIN tasks t ON t.id = p.id ORDER BY p.at DESC, p.id DESC"
   );
@@ -300,14 +332,14 @@ export async function readFinished(
   request: FinishedRequest,
   here?: FeedHere,
 ): Promise<{ rows: CompactRow[]; more: boolean }> {
+  const folders = await hasFolderTable(reader);
   const [space, rows] = await reader.transaction("deferred", [
     { sql: PREFIX_SQL, mode: "get" },
     {
-      sql: finishedSql(request),
+      sql: finishedSql(request, folders),
       mode: "all",
       params: {
         limit: request.limit + 1,
-        machine: machineOf(here),
         ...(request.after === undefined ? {} : { at: request.after.at, id: request.after.id }),
       },
     },
