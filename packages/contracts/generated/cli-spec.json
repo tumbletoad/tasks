@@ -240,7 +240,7 @@
         {
           "field": "tasks[].log",
           "flag": "--log",
-          "help": "Log entry; also added to a matched task",
+          "help": "Log entry; also added to a matched task that lacks it",
           "repeat": false,
           "required": false,
           "type": "string"

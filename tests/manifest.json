@@ -2330,6 +2330,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.bulk.second-pass",
+      "title": "A draft's log entry that its matched task has already, from before or from an earlier draft of the same call, is not added again, and the answer does not say log added; new text is still added",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.5.search.parser",
       "title": "The query language: A3 3.9.2's examples parse into words, phrases, OR groups and filters; quotes, doubled quotes and letter-only keys; an unknown key or value fails with a suggestion and never quotes the query; OR, negation, limits and values are checked; is:new and is:changed are refused naming their step; a query that names a lifecycle widens the default scope; and random strings parse or are refused as invalid_input, with parsed reading back as the same query",
       "source": "A3 3.9.2, A3 3.5, A3 5, A7 3.10 M3.05",

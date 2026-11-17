@@ -756,6 +756,8 @@ type Predicted =
       /** Drafts created with a key another task holds linked without it, and drafts matched by their own keys. */
       linkedWithout: number;
       own: number;
+      /** Matched drafts whose log entry the task had already. */
+      again: number;
     }
   | { status: "rejected"; op: number };
 
@@ -802,6 +804,7 @@ class SessionsModel {
     let past = 0;
     let linkedWithout = 0;
     let own = 0;
+    let again = 0;
     const holdersOf = (ks: readonly string[]): Id<"t">[] => [
       ...new Set(ks.flatMap((k) => [...(keys.get(k) ?? [])])),
     ];
@@ -852,7 +855,11 @@ class SessionsModel {
       ) {
         // One active match: the draft's log follows it, and its sources with add_sources.
         results.push(`existing ${first}`);
-        if (d.log) {
+        // Every draft logs the same text: a task that has it already is not given it again.
+        if (d.log && task(first).logs > 0) {
+          results.push(`unchanged ${first}`);
+          again += 1;
+        } else if (d.log) {
           results.push(`created ${first}`);
           task(first).logs += 1;
           applied = true;
@@ -906,6 +913,7 @@ class SessionsModel {
       past,
       linkedWithout,
       own,
+      again,
     };
   }
 
@@ -1053,6 +1061,7 @@ const sessionsProperty = (seen: Record<string, number>) =>
             if (predicted.past > 0) count("created past the window");
             if (predicted.linkedWithout > 0) count("linked without a key");
             if (predicted.own > 0) count("matched by its own keys");
+            if (predicted.again > 0) count("log there already");
           }
           for (const r of result.results) {
             if (r.ambiguous !== undefined) count("ambiguous");
@@ -1092,6 +1101,7 @@ describe("[A1.5.write.dedupe-sessions] overlapping keys from several sessions", 
       "existing replayed after the window",
       "linked without a key",
       "matched by its own keys",
+      "log there already",
     ]) {
       expect(seen[outcome] ?? 0, outcome).toBeGreaterThan(3);
     }

@@ -420,3 +420,34 @@ describe("[A3.bulk.paging] an agent that pages through search sees every task on
     LONG,
   );
 });
+
+describe("[A3.bulk.second-pass] a second pass adds nothing", () => {
+  test("a draft's log entry that its matched task has already is not added again", async () => {
+    const draft = (log: string): Json => ({
+      title: "Logged once",
+      area: "Passes",
+      log,
+      sources: [{ key: "planning:log-1", kind: "doc", title: "Logged item" }],
+    });
+    const first = (
+      await call("task.add", { tasks: [draft("Evidence: the export matches.")], request_id: rid() })
+    )["tasks"] as Json[];
+    const ref = first[0]?.["ref"];
+    const again = await tool("add_tasks", {
+      tasks: [draft("Evidence: the export matches.")],
+      request_id: rid(),
+    });
+    expect(again).toMatch(new RegExp(`^tasks\\.0: exists ${String(ref)} · by source key$`, "mu"));
+    const logOf = async (): Promise<string[]> =>
+      (((await call("task.get", { task: ref }))["task"] as Json)["log"] as Json[]).map((e) =>
+        String(e["text"]),
+      );
+    expect(await logOf()).toEqual(["Evidence: the export matches."]);
+    // New evidence is still added.
+    const more = (
+      await call("task.add", { tasks: [draft("Evidence: seen again.")], request_id: rid() })
+    )["tasks"] as Json[];
+    expect(more[0]).toMatchObject({ result: "exists", log_added: true });
+    expect(await logOf()).toEqual(["Evidence: seen again.", "Evidence: the export matches."]);
+  });
+});

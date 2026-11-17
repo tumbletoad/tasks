@@ -3816,7 +3816,7 @@
                   "type": "boolean"
                 },
                 "log": {
-                  "description": "Log entry; also added to a matched task",
+                  "description": "Log entry; also added to a matched task that lacks it",
                   "maxLength": 16384,
                   "type": "string"
                 },
@@ -4150,7 +4150,7 @@
                   "type": "boolean"
                 },
                 "log": {
-                  "description": "Log entry; also added to a matched task",
+                  "description": "Log entry; also added to a matched task that lacks it",
                   "maxLength": 16384,
                   "type": "string"
                 },

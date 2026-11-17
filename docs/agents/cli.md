@@ -52,7 +52,7 @@ Usage: `tasks add <title> [flags]`
 | `--created` | `tasks[].created` | string | When it was created, only for work that existed before: ISO date or instant |
 | `--folder` | `tasks[].folder` | string | Its folder: "cwd", an absolute folder or one under ~ |
 | `--context` | `tasks[].context` | string | Markdown context |
-| `--log` | `tasks[].log` | string | Log entry; also added to a matched task |
+| `--log` | `tasks[].log` | string | Log entry; also added to a matched task that lacks it |
 | `--on-existing` | `tasks[].on_existing` | "return" \| "add_sources" \| "create_new" | When a source key matches; default return |
 
 Only through `--input`: `tasks[].sources`.

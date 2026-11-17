@@ -162,7 +162,7 @@ export const TaskDraft = z.strictObject({
   folder: FolderInput.describe('Its folder: "cwd", an absolute folder or one under ~').optional(),
   sources: z.array(SourceInput).max(10).describe("Where it came from").optional(),
   context: ContextInput.describe("Markdown context").optional(),
-  log: LogInput.describe("Log entry; also added to a matched task").optional(),
+  log: LogInput.describe("Log entry; also added to a matched task that lacks it").optional(),
   on_existing: z
     .enum(["return", "add_sources", "create_new"])
     .describe("When a source key matches; default return")

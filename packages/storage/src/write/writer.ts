@@ -420,7 +420,10 @@ interface StagedOp {
   heldBy?: Id<"t">;
   /** `task.wrap_up`: the IDs of the learnings it adds, one per text of `learnings.add`. */
   learnings?: Id<"lr">[];
-  /** `task.wrap_up` with `once` on a task wrapped already that it would not change: no write. */
+  /**
+   * No write: `task.wrap_up` with `once` on a task wrapped already that it would not change, or a
+   * matched draft's `log.add` whose entry the task has already.
+   */
   skip?: true;
   /**
    * `area.upsert`, `project.upsert` and `alias.add`: whether the operation creates its row, finds
@@ -601,6 +604,9 @@ const SQL = {
     "edited_at, deleted_at, created_seq, version, fv, fp) VALUES ($id, $task, $ordinal, $author, " +
     "$addressee, 'all', $body, $at, NULL, NULL, $seq, $seq, '{}', '{}')",
   log: "SELECT * FROM log_entries WHERE id = $id",
+  sameLog:
+    "SELECT id FROM log_entries WHERE task_id = $task AND body = $body AND deleted_at IS NULL " +
+    "ORDER BY ordinal LIMIT 1",
   insertLog:
     "INSERT INTO log_entries (id, task_id, ordinal, author_id, session_id, run_id, kind, body, " +
     "created_at, deleted_at, created_seq, version, fv, fp) VALUES ($id, $task, $ordinal, " +
@@ -1380,6 +1386,8 @@ export class SpaceWriter {
      * task: the draft's source of that key is linked without the key (Dedupe.decide).
      */
     const heldKeys = new Map<string, Id<"t">>();
+    /** The log entries earlier operations add, by task and text: a matched draft's same one. */
+    const stagedLogs = new Map<string, string>();
     /**
      * The tombstones earlier operations set (`true`) or clear (`false`): a later operation sees
      * the task as they leave it, so a restored task takes changes and a deleted one refuses them.
@@ -1804,7 +1812,30 @@ export class SpaceWriter {
         case "log.add": {
           // Base-free inserts: they fail only when the task is deleted (A1 3.5).
           const parent = task(op.task, "task");
+          // A matched draft's entry that the task has already, before the request or from an
+          // earlier operation of it: the same work sent again adds it once, so a second pass of
+          // an agent recreating its tasks adds nothing.
+          const entryKey = `${parent}\n${op.kind === "log.add" ? op.body : ""}`;
+          if (op.kind === "log.add" && matched.has(op.task)) {
+            const row = conn.prepare(SQL.sameLog).get({ task: parent, body: op.body });
+            const same =
+              row === undefined
+                ? stagedLogs.get(entryKey)
+                : new RowReader("log_entries", row).id("id", "l");
+            if (same !== undefined) {
+              return {
+                i,
+                op,
+                target: same,
+                task: parent,
+                touches: [],
+                record: { task: parent, ...inputOf(op, "task") },
+                skip: true,
+              };
+            }
+          }
           const id = op.kind === "note.add" ? newId("n", random) : newId("l", random);
+          if (op.kind === "log.add" && !stagedLogs.has(entryKey)) stagedLogs.set(entryKey, id);
           return {
             i,
             op,
@@ -3908,6 +3939,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       return;
     }
     case "log.add": {
+      if (staged.skip === true) return;
       const task = must(staged.task, "A log entry has a task");
       conn.prepare(SQL.insertLog).run({
         id: staged.target,
