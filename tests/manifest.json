@@ -2326,6 +2326,55 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.bulk.one-call",
+      "title": "Twenty-five task drafts at every agent limit (new groups, ten keyed sources, a log entry and a folder each, text of three-byte characters) fit in one add_tasks call, and ten such follow-ups in one complete_task",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.bulk.shared-key",
+      "title": "Two drafts that share a ticket key and each carry a key of their own become two tasks: the second links the ticket without its key and its answer row names the task that holds it; a second pass matches each draft to its own task, and the ticket alone to the task that holds it",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.bulk.dates",
+      "title": "An agent recreating work keeps its dates: add_tasks takes when a task was created (a date at nine in the morning, or an instant), complete_task when it was done and add_entry when a log entry was made; a time in the future or one it cannot read is refused at its field; a task finished long ago is still found by its key on a second pass",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.bulk.refusals",
+      "title": "A refusal says what to change: a limit names the field, its limit and how much was sent, with the command's own help at the command line and no command-line hint for an agent; a request ID names its form; a status or effort the space lacks lists what it has, at the draft that sent it; a base from elsewhere is said plainly; a name close to another says how to create a different group",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.bulk.paging",
+      "title": "An agent that follows search's cursor with limit 50 over tasks with long titles sees every task once: a page holds the rows the tool's text shows whole, and the next page starts at the first row it left out",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.bulk.second-pass",
+      "title": "A draft's log entry that its matched task has already, from before or from an earlier draft of the same call, is not added again, and the answer does not say log added; new text is still added",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.bulk.small",
+      "title": "Two drafts of one call with the same title in one group get a possible-duplicate warning naming the earlier draft, and a status section says how many of its tasks an earlier section lists",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.4.here.folders",
       "title": "Where a working folder belongs: a task's own folder, else the deepest project folder that holds it, so a nested project's folder names that project and not the one around it; exact, inside and below for status's here, the candidates and search's on:cwd alike; the digest says the task's own folder or its project's, missing, or none, the folder's words inside the data block",
       "owner": "M6",
@@ -2380,7 +2429,7 @@
     },
     {
       "id": "A3.5.search.cursors",
-      "title": "Cursor pages under random writes, tombstones, entity and text redactions and new matches have no gaps or duplicates and keep the snapshot's order, and a removed entry is a placeholder without its old text; a retried cursor gives the same page with a changed row marked and the page's own as_of; more than 1,000 matches freeze the first 1,000; an epoch, incarnation, binding, idle time, eviction or restart ends a cursor with its reason",
+      "title": "Cursor pages under random writes, tombstones, entity and text redactions and new matches have no gaps or duplicates and keep the snapshot's order, and a removed entry is a placeholder without its old text; a retried cursor gives the same page with a changed row marked and the page's own as_of; more than 10,000 matches freeze the first 10,000; an epoch, incarnation, binding, idle time, eviction or restart ends a cursor with its reason",
       "source": "A3 3.9.5, A3 3.5, A3 5, A1 3.12, A7 3.10 M3.05",
       "owner": "M3",
       "kind": "ci",

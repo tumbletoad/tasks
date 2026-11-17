@@ -137,6 +137,12 @@ export const SourceInput = z.strictObject({
  */
 export const FolderInput = z.string().min(1).max(4096);
 
+/**
+ * When something happened, for work that existed before it was added here: an ISO date or an
+ * instant with its offset, never in the future. The service reads it (ops/dates.ts).
+ */
+export const PastInput = z.string().max(40);
+
 /** One task to create (A3 3.4.5). */
 export const TaskDraft = z.strictObject({
   title: TitleInput.describe("Title"),
@@ -150,10 +156,13 @@ export const TaskDraft = z.strictObject({
   due: safeLine(40).describe("ISO date or phrase: fri, +3d").optional(),
   waiting_on: safeLine(80).describe("Who or what it waits on").optional(),
   focus: z.boolean().describe("Star it for today, only when the user asks").optional(),
+  created: PastInput.describe(
+    "When it was created, only for work that existed before: ISO date or instant",
+  ).optional(),
   folder: FolderInput.describe('Its folder: "cwd", an absolute folder or one under ~').optional(),
   sources: z.array(SourceInput).max(10).describe("Where it came from").optional(),
   context: ContextInput.describe("Markdown context").optional(),
-  log: LogInput.describe("Log entry; also added to a matched task").optional(),
+  log: LogInput.describe("Log entry; also added to a matched task that lacks it").optional(),
   on_existing: z
     .enum(["return", "add_sources", "create_new"])
     .describe("When a source key matches; default return")
@@ -261,6 +270,16 @@ export const InsideFolders = {
     .optional(),
   kept: z.array(InsideFolder).max(20).describe("The first of them").optional(),
 };
+
+/** A new task's sources whose key another active task holds: each is linked without its key. */
+export const HeldSources = z
+  .array(
+    z.strictObject({
+      source: z.int().min(0).max(9).describe("Index in the draft's sources"),
+      held_by: TaskRef.describe("The task that holds its key"),
+    }),
+  )
+  .describe("Sources linked without their key, which another task holds");
 
 /**
  * A task's due commitment as A1 3.4 stores it: a date-only `due_date`, never shifted to UTC, or a

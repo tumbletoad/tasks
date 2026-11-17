@@ -88,6 +88,12 @@ export const SpaceStatusResult = z.strictObject({
       z.strictObject({
         name: z.enum(INCLUDE).describe("Section"),
         tasks: z.array(TaskRow).describe("Up to 8 tasks"),
+        above: z
+          .int()
+          .min(1)
+          .max(1000)
+          .describe("Its tasks listed in an earlier section")
+          .optional(),
       }),
     )
     .describe("The sections asked for with include")

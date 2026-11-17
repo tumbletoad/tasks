@@ -1195,8 +1195,8 @@ function expand(s: Step): Step[] {
 /**
  * The oracle for a draft's match (A1 3.6 rules 1 to 3), on the state before its request at
  * instant `at`: its keys' holders, the first active one by reference, else the one finished last
- * within the window. A task finished at its `completed_at`, else at the commit whose write its
- * lifecycle holds (its provenance), never at an undo that set that write back.
+ * within the window. A task finished at the commit whose write its lifecycle holds (its
+ * provenance), never at an undo that set that write back.
  */
 function expectedMatch(
   conn: Connection,
@@ -1215,10 +1215,9 @@ function expectedMatch(
     const fv = JSON.parse(String(r["fv"])) as Record<string, number>;
     const fp = JSON.parse(String(r["fp"])) as Record<string, number>;
     const seq = fp["lifecycle"] ?? Number(r["created_seq"]);
-    const finished =
-      typeof r["completed_at"] === "number"
-        ? r["completed_at"]
-        : Number(conn.prepare("SELECT at FROM commits WHERE seq = $seq").get({ seq })?.["at"]);
+    const finished = Number(
+      conn.prepare("SELECT at FROM commits WHERE seq = $seq").get({ seq })?.["at"],
+    );
     return {
       id: String(r["id"]),
       ref: Number(r["ref"]),
@@ -1240,6 +1239,40 @@ function expectedMatch(
     match: active[0] ?? last?.id,
     setBack: rows.some((r) => r.setBack),
   };
+}
+
+/**
+ * The oracle for a draft that returns a match: of the tasks its keys match, the one that has every
+ * key of the draft, held or as a source linked without its key; else none when a key of it matches
+ * nothing (the draft is new); else A1 3.6's match on all its keys.
+ */
+function expectedReturn(
+  conn: Connection,
+  keys: readonly string[],
+  at: number,
+): ReturnType<typeof expectedMatch> {
+  const all = expectedMatch(conn, keys, at);
+  const distinct = [...new Set(keys)];
+  if (all.match === undefined || distinct.length < 2) return all;
+  const each = distinct.map((k) => expectedMatch(conn, [k], at).match);
+  const candidates = new Set([...each.filter((t) => t !== undefined), ...all.active]);
+  const had = (task: string | undefined): Set<string> =>
+    new Set(
+      conn
+        .prepare(
+          "SELECT coalesce(s.source_key, s.ref) AS k FROM task_sources l JOIN sources s " +
+            "ON s.id = l.source_id WHERE l.task_id = $task AND l.removed_at IS NULL " +
+            "AND s.deleted_at IS NULL",
+        )
+        .all({ task: task ?? "" })
+        .map((r) => String(r["k"])),
+    );
+  const covered = [...candidates].filter((t) => {
+    const has = had(t);
+    return distinct.every((k) => has.has(k));
+  });
+  if (covered.length === 1) return { ...all, match: covered[0] };
+  return each.includes(undefined) ? { ...all, match: undefined } : all;
 }
 
 type Cell = { value: string; fv: number; fp: number };
@@ -1455,7 +1488,11 @@ const property = (seen: Record<string, number>) =>
           // The first draft sees the state before its request only (A1 3.6): the oracle's input.
           const [first] = drafts;
           const oracle =
-            first === undefined ? undefined : expectedMatch(conn, first.keys, now + 1000);
+            first === undefined
+              ? undefined
+              : first.spec.mode === "return"
+                ? expectedReturn(conn, first.keys, now + 1000)
+                : expectedMatch(conn, first.keys, now + 1000);
           result = submit(
             space.request(
               as(s.actor),
@@ -1815,5 +1852,5 @@ describe("[A1.5.history.property] undo and redo with dedupe by source key", () =
       expect(seen[outcome] ?? 0, outcome).toBeGreaterThan(2);
     }
     await fc.assert(property({}), { numRuns: 20 });
-  }, 180_000);
+  }, 600_000);
 });

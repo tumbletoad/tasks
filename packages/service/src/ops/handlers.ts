@@ -79,7 +79,7 @@ import {
 } from "../launch/open.ts";
 import { type BindOutcome, type BindingPort, type FoundLaunch } from "./binding.ts";
 import { checkGrant, grantRefused, homesOf, type HomeGate } from "./grant.ts";
-import { addDays, dateIn, dueDate, localTimeZone } from "./dates.ts";
+import { addDays, dateIn, dueDate, localTimeZone, pastInstant } from "./dates.ts";
 import { GUIDE_STEPS, GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
 import {
@@ -107,6 +107,7 @@ import {
   spaceUnavailable,
   storageFailure,
   unsupported,
+  type PathOf,
 } from "./errors.ts";
 import type { FolderMarkers } from "./marker.ts";
 import { repoName } from "./repo.ts";
@@ -134,6 +135,7 @@ import {
   readSpace,
   readStatus,
   readTask,
+  readTaskKeys,
   readTaskRef,
   logOf,
   noteOf,
@@ -421,7 +423,7 @@ async function callWith(
   }
   checkHiddenFields(entry, input, principal.audience);
   const parsed = parseInput(entry, principal.audience, input);
-  if (!parsed.success) throw schemaFailure(parsed.error, input);
+  if (!parsed.success) throw schemaFailure(parsed.error, input, principal.origin, entry.name);
   checkActionFields(entry, parsed.data);
   if (params.space !== undefined && typeof params.space !== "string") {
     throw invalid("space", "Expected a space ID or name");
@@ -680,6 +682,8 @@ async function submit(
      * a refusal's `op` counts the handler's own operations, as its results do (`ownResults`).
      */
     readonly inserted?: { readonly at: number; readonly count: number };
+    /** The input path of the caller's own operation `i`, with the field a refusal names. */
+    readonly pathOf?: PathOf;
   } = {},
 ): Promise<WriteResult> {
   const writer = writerOf(call.space);
@@ -741,12 +745,65 @@ async function submit(
         ? undefined
         : (i: number): number | undefined =>
             i < inserted.at ? i : i < inserted.at + inserted.count ? undefined : i - inserted.count;
-    throw resultFailure(result, options.hints, options.wrapUp, principal.origin, own);
+    const field = result.error?.field;
+    const keyed = field === "status" || field === "effort" ? field : undefined;
+    let hints = options.hints;
+    if (result.error?.code === "VALIDATION_FAILED" && keyed !== undefined) {
+      const keys = await readTaskKeys(readerOf(call.space)).catch(() => undefined);
+      if (keys !== undefined) {
+        hints = { ...hints, VALIDATION_FAILED: allowedHint(keyed, keys[keyed]) };
+      }
+    }
+    throw resultFailure(result, hints, options.wrapUp, principal.origin, own, options.pathOf);
   }
   return result;
 }
 
 const replayed = (result: WriteResult) => (result.replayed === true ? { replayed: true } : {});
+
+/** What a status or an effort may be in this space, as a refusal's hint. */
+function allowedHint(field: "status" | "effort", keys: readonly string[]): string {
+  return field === "status"
+    ? `Use one of the space's statuses: ${keys.join(", ")}.`
+    : `Use one of the space's efforts: ${keys.join(", ")}. Put another estimate in context.`;
+}
+
+/** The writer's name of a draft's field where the caller's input names it otherwise. */
+const DRAFT_INPUT: Readonly<Record<string, string>> = { dedupe: "on_existing" };
+
+/**
+ * Where each operation of drafts came from in the input (`at(k)` for draft `k`), so a refusal
+ * names the draft and its field: the draft's own field for its task.create, its log, a source by
+ * `sources`, its folder.
+ */
+function draftPathOf(
+  ops: readonly Operation[],
+  ids: readonly string[],
+  at: (k: number) => string,
+  sources: ReadonlyMap<number, string>,
+): PathOf {
+  return (i, field) => {
+    const source = sources.get(i);
+    if (source !== undefined) return source;
+    const op = ops[i];
+    if (op === undefined) return undefined;
+    const task = op.kind === "task.create" ? op.id : "task" in op ? op.task : undefined;
+    const k = typeof task === "string" ? ids.indexOf(task) : -1;
+    if (k < 0) return undefined;
+    switch (op.kind) {
+      case "task.create":
+        return field !== undefined && /^[a-z_]+$/u.test(field)
+          ? `${at(k)}.${DRAFT_INPUT[field] ?? field}`
+          : at(k);
+      case "log.add":
+        return `${at(k)}.log`;
+      case "task.folder_set":
+        return `${at(k)}.folder`;
+      default:
+        return at(k);
+    }
+  };
+}
 
 /**
  * A1's `source_differs` (A3 3.4.6): a source that exists already keeps its metadata, and the reply
@@ -761,6 +818,24 @@ function differsWarnings(result: WriteResult, paths: ReadonlyMap<number, string>
       `The source at ${path} exists already and keeps its own ${op.differs.join(", ")} (source_differs).`,
     ];
   });
+}
+
+/**
+ * The sources of the draft at `path` that were linked without their key, because another active
+ * task holds it (Dedupe.decide), by their index in the draft.
+ */
+function heldOf(
+  result: WriteResult,
+  paths: ReadonlyMap<number, string>,
+  path: string,
+): { held?: { source: number; held_by: string }[] } {
+  const prefix = `${path}.sources.`;
+  const held = result.results.flatMap((op) => {
+    const at = paths.get(op.i);
+    if (op.held_by === undefined || at?.startsWith(prefix) !== true) return [];
+    return [{ source: Number(at.slice(prefix.length)), held_by: op.held_by }];
+  });
+  return held.length === 0 ? {} : { held };
 }
 
 function opAt(result: WriteResult, i: number): OpResult {
@@ -1035,6 +1110,27 @@ function due(value: unknown, today: string, path: string): { date: string } | un
     );
   }
   return { date };
+}
+
+/**
+ * When something the caller recreates really happened (a draft's `created`, complete_task's
+ * `finished`, an entry's `at`), as an instant: never in the future.
+ */
+function pastAt(call: Call, value: unknown, path: string): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const now = (call.host.now ?? Date.now)();
+  const at = pastInstant(value, now, (call.host.timeZone ?? localTimeZone)());
+  if (at === "future") {
+    throw invalid(path, "In the future", "Give when it really happened: today or earlier.");
+  }
+  if (at === undefined) {
+    throw invalid(
+      path,
+      "Not a date or an instant",
+      "Use an ISO date, or an instant with its offset such as 2026-03-02T14:05:00Z.",
+    );
+  }
+  return at;
 }
 
 function sourceFields(source: Record<string, unknown>, path: string): SourceFields {
@@ -1468,6 +1564,7 @@ async function resolvedDrafts(
     throw storageFailure(error);
   }
   const groups: Operation[] = [];
+  const face = call.principal.origin;
   // The groups an earlier draft makes join the names, with the slugs the writer will give them, so
   // a later draft resolves them by the same rules as the space's own: one call answers as its
   // drafts sent one by one would.
@@ -1485,7 +1582,7 @@ async function resolvedDrafts(
       const out = { ...draft };
       const area = draft["area"];
       if (typeof area === "string") {
-        let id = resolveGroup(working, "area", area, `${at}.area`);
+        let id = resolveGroup(working, "area", area, `${at}.area`, { face });
         if (id === undefined) {
           const created = newId("a");
           made.add(created);
@@ -1509,7 +1606,10 @@ async function resolvedDrafts(
           within !== undefined && made.has(within)
             ? { ...working, projects: projects.filter((p) => p.area === within) }
             : working;
-        let id = resolveGroup(among, "project", project, `${at}.project`, { area: within });
+        let id = resolveGroup(among, "project", project, `${at}.project`, {
+          area: within,
+          face,
+        });
         if (id === undefined) {
           const created = newId("p");
           projects.push({
@@ -1550,9 +1650,10 @@ function ownResults(result: WriteResult): WriteResult {
 
 /**
  * The `possible duplicate` warnings of the drafts (similar.ts, A3 3.4.5): one per draft whose
- * title is close to an active task's in the group it lands in. They go with the request, so the
- * receipt keeps them and a replay says the first call's; a draft that matched an existing task
- * drops its warning after the write (`task.add`).
+ * title is close to an active task's in the group it lands in, or to an earlier draft's of the
+ * same call, which it names by its path. They go with the request, so the receipt keeps them and a
+ * replay says the first call's; a draft that matched an existing task drops its warning after the
+ * write (`task.add`).
  */
 async function duplicateWarnings(
   call: Call,
@@ -1567,15 +1668,18 @@ async function duplicateWarnings(
   } catch (error) {
     throw storageFailure(error);
   }
+  const drafted = list.map((draft, k) => ({
+    ref: `tasks.${String(k)}`,
+    title: String(draft["title"]),
+    destination: destinations[k] as Destination,
+  }));
   return list.flatMap((draft, k) => {
     const destination = destinations[k];
     if (destination === undefined) return [];
-    const found = duplicateWarning(
-      `tasks.${String(k)}`,
-      String(draft["title"]),
-      destination,
-      siblings,
-    );
+    const found = duplicateWarning(`tasks.${String(k)}`, String(draft["title"]), destination, [
+      ...siblings,
+      ...drafted.slice(0, k),
+    ]);
     return found === undefined ? [] : [found];
   });
 }
@@ -1589,15 +1693,18 @@ async function duplicateWarnings(
  * the Inbox (`toInbox`).
  */
 function draftOps(
+  call: Call,
   draft: Record<string, unknown>,
   id: Id<"t">,
-  today: string,
   path: string,
   start: number,
   sourcePaths: Map<number, string>,
   agent: boolean,
 ): Operation[] {
+  const { today } = call;
   const create: TaskCreate = { kind: "task.create", id, title: String(draft["title"]) };
+  const created = pastAt(call, draft["created"], `${path}.created`);
+  if (created !== undefined) create.created_at = created;
   if (toInbox(draft, agent)) create.inbox = true;
   // `return`, the default, is A1's: an active match takes the draft's log entry, nothing else.
   if (draft["on_existing"] === "add_sources") create.link_sources = true;
@@ -1841,9 +1948,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const sourcePaths = new Map<number, string>();
     list.forEach((draft, k) => {
       firsts.push(ops.length);
-      ops.push(
-        ...draftOps(draft, ids[k] as Id<"t">, call.today, at(k), ops.length, sourcePaths, agent),
-      );
+      ops.push(...draftOps(call, draft, ids[k] as Id<"t">, at(k), ops.length, sourcePaths, agent));
     });
     const duplicates = await duplicateWarnings(call, list, agent);
     // The folders last, so the drafts' operations keep their indexes in a replay, which sends none.
@@ -1855,6 +1960,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       await submit(call, [...named.groups, ...ops], {
         warnings: [...duplicates, ...folders.warnings],
         inserted: { at: 0, count: named.groups.length },
+        pathOf: draftPathOf(ops, ids, at, sourcePaths),
       }),
     );
     await markersAfter(call, ops, result);
@@ -1878,6 +1984,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           ...outcomes[k],
           title: String(draft["title"]),
           log_added: log?.status === "created",
+          ...heldOf(result, sourcePaths, at(k)),
         };
       }),
       warnings: [...differsWarnings(result, sourcePaths), ...kept],
@@ -1995,6 +2102,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       await submit(call, [...groups, ...ops], {
         active: true,
         inserted: { at: 0, count: groups.length },
+        pathOf: (i, field) =>
+          ops[i]?.kind === "task.patch" && field !== undefined && /^[a-z_]+$/u.test(field)
+            ? `set.${field}`
+            : undefined,
       }),
     );
     const updated = result.status === "applied";
@@ -2025,6 +2136,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw invalid("for_agents", "Only a note is addressed to agents");
     }
     const body = withLinks(String(input["text"]), input["links"]);
+    if (kind === "note" && input["at"] !== undefined) {
+      throw invalid("at", "A note is dated when it is written", "Give the entry a log kind.");
+    }
+    const at = pastAt(call, input["at"], "at");
     const task = await taskOf(call);
     const op: Operation =
       kind === "note"
@@ -2034,7 +2149,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
             body,
             addressee: input["for_agents"] === true ? "agents" : "self",
           }
-        : { kind: "log.add", task, body, log_kind: kind as never };
+        : {
+            kind: "log.add",
+            task,
+            body,
+            log_kind: kind as never,
+            ...(at === undefined ? {} : { at }),
+          };
     const result = await submit(call, [op]);
     const done = opAt(result, 0);
     return {
@@ -2053,17 +2174,25 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const task = await taskOf(call);
     const outcome = typeof input["outcome"] === "string" ? input["outcome"] : undefined;
     const learnings = Array.isArray(input["learnings"]) ? (input["learnings"] as string[]) : [];
+    const dropped = input["status"] === "dropped";
+    if (dropped && input["finished"] !== undefined) {
+      throw invalid("finished", "A dropped task keeps no time it was done", "Leave out finished.");
+    }
+    const finishedAt = pastAt(call, input["finished"], "finished");
     // A3 3.4.8, decided by the writer on the task as it finds it: an active task is completed
     // (done) or archived (dropped), one the user finished first is left as it is (`if_active`),
     // and the outcome and learnings are its wrap-up, `once`: a task wrapped already is no change
     // with the same outcome and a conflict otherwise. The operations follow from the input alone,
     // so a replay's stored result lines up with them whatever the task's state is now.
     const ops: Operation[] = [
-      {
-        kind: input["status"] === "dropped" ? "task.archive" : "task.complete",
-        task,
-        if_active: true,
-      },
+      dropped
+        ? { kind: "task.archive", task, if_active: true }
+        : {
+            kind: "task.complete",
+            task,
+            if_active: true,
+            ...(finishedAt === undefined ? {} : { at: finishedAt }),
+          },
     ];
     if (outcome !== undefined || learnings.length > 0) {
       ops.push({
@@ -2085,9 +2214,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const firsts: number[] = [];
     follow.forEach((draft, k) => {
       firsts.push(ops.length);
-      ops.push(
-        ...draftOps(draft, ids[k] as Id<"t">, call.today, at(k), ops.length, sourcePaths, agent),
-      );
+      ops.push(...draftOps(call, draft, ids[k] as Id<"t">, at(k), ops.length, sourcePaths, agent));
     });
     ops.push(...folders.ops);
     // New groups after the task's own operations, so its wrap-up keeps its index, and before the
@@ -2099,6 +2226,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...(own > 1 ? { wrapUp: 1 } : {}),
         inserted: { at: own, count: groups.length },
         warnings: folders.warnings,
+        pathOf: draftPathOf(ops, ids, at, sourcePaths),
       }),
     );
     await markersAfter(call, ops, result);
@@ -2140,6 +2268,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         result: outcome.result,
         ...(outcome.ref === undefined ? {} : { ref: outcome.ref }),
         title: String(follow[k]?.["title"]),
+        ...heldOf(result, sourcePaths, at(k)),
       })),
       ...(warnings.length === 0 ? {} : { warnings }),
       as_of: result.as_of,
@@ -2409,6 +2538,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         machine: host.machine.id,
         ...(boundTask === undefined ? {} : { boundTask }),
         updateFailed: call.space.state === "read_only" && call.space.reason === "migration_failed",
+        ...(call.caller.shows === undefined
+          ? {}
+          : { shows: (page: unknown) => call.caller.shows?.("task.search", page) !== false }),
         live: () =>
           [...(host.bindings?.liveSessions(space) ?? new Map<string, number>())]
             .filter(([, count]) => count > 0)
@@ -2637,7 +2769,9 @@ async function folderWrite(
     }
     let area: string | undefined;
     if (typeof input["area"] === "string") {
-      area = replay ? REPLAY_GROUP : resolveGroup(names, "area", input["area"], "area");
+      area = replay
+        ? REPLAY_GROUP
+        : resolveGroup(names, "area", input["area"], "area", { face: call.principal.origin });
       if (area === undefined) {
         area = newId("a");
         ops.push({ kind: "area.create", id: area as Id<"a">, title: input["area"].trim() });
@@ -2859,6 +2993,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     // The group created is created as named; an area named only to hold it keeps the typo check.
     let area = resolveGroup(names, "area", path.area, "path", {
       create: path.project === undefined,
+      face: call.principal.origin,
     });
     if (area === undefined) {
       area = newId("a");
@@ -2927,7 +3062,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
       if (kind !== "project") {
         throw invalid("path", "Only a project moves to another area", "Name it as Area/Project.");
       }
-      let target = resolveGroup(names, "area", to ?? "", "to");
+      let target = resolveGroup(names, "area", to ?? "", "to", { face: call.principal.origin });
       if (target === undefined) {
         target = newId("a");
         ops.push({ kind: "area.create", id: target as Id<"a">, title: to ?? "" });

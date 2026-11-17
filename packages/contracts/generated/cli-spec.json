@@ -214,6 +214,14 @@
           "type": "boolean"
         },
         {
+          "field": "tasks[].created",
+          "flag": "--created",
+          "help": "When it was created, only for work that existed before: ISO date or instant",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
           "field": "tasks[].folder",
           "flag": "--folder",
           "help": "Its folder: \"cwd\", an absolute folder or one under ~",
@@ -232,7 +240,7 @@
         {
           "field": "tasks[].log",
           "flag": "--log",
-          "help": "Log entry; also added to a matched task",
+          "help": "Log entry; also added to a matched task that lacks it",
           "repeat": false,
           "required": false,
           "type": "string"
@@ -434,6 +442,14 @@
           "type": "string"
         },
         {
+          "field": "finished",
+          "flag": "--finished",
+          "help": "When it was done, only for work done before it was recorded: ISO date or instant",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
           "field": "mode",
           "flag": "--mode",
           "help": "propose: ask the user to decide",
@@ -536,6 +552,14 @@
             "question",
             "note"
           ]
+        },
+        {
+          "field": "at",
+          "flag": "--at",
+          "help": "When a log entry was made, only for older work: ISO date or instant",
+          "repeat": false,
+          "required": false,
+          "type": "string"
         }
       ],
       "inputOnly": [
@@ -579,6 +603,14 @@
           "required": false,
           "type": "boolean",
           "userOnly": true
+        },
+        {
+          "field": "at",
+          "flag": "--at",
+          "help": "When a log entry was made, only for older work: ISO date or instant",
+          "repeat": false,
+          "required": false,
+          "type": "string"
         }
       ],
       "inputOnly": [

@@ -59,6 +59,64 @@ export function dueDate(phrase: string, today: string): string | undefined {
   return undefined;
 }
 
+/** An instant with a time and an offset, such as `2026-03-02T14:05:00+01:00`. */
+const INSTANT =
+  /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,9})?)?(?:Z|[+-][0-9]{2}:[0-9]{2})$/;
+
+/** A clock a few minutes ahead of this machine's still says "now", not the future. */
+const AHEAD_MS = 5 * 60_000;
+
+/** The offset of `timeZone` from UTC at `ms`, in milliseconds. */
+function offsetAt(ms: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(ms));
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  const wall = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    get("hour"),
+    get("minute"),
+    get("second"),
+  );
+  return wall - Math.floor(ms / 1000) * 1000;
+}
+
+/**
+ * When something happened before it was added here, as an instant: an instant with its offset as
+ * given, or a date at nine in the morning in `timeZone` (no later than `now`), as the planning
+ * import dates an added day. Undefined for anything else; `future` for a time after `now`.
+ */
+export function pastInstant(
+  text: string,
+  now: number,
+  timeZone: string,
+): number | "future" | undefined {
+  const value = text.trim();
+  let at: number;
+  if (isCalendarDate(value)) {
+    if (value > dateIn(now, timeZone)) return "future";
+    const nine = Date.parse(`${value}T09:00:00Z`);
+    at = Math.min(nine - offsetAt(nine - offsetAt(nine, timeZone), timeZone), now);
+  } else if (INSTANT.test(value) && isCalendarDate(value.slice(0, 10))) {
+    at = Date.parse(value);
+    if (Number.isNaN(at)) return undefined;
+    if (at > now + AHEAD_MS) return "future";
+    at = Math.min(at, now);
+  } else {
+    return undefined;
+  }
+  return at;
+}
+
 const FULL: Readonly<Record<(typeof WEEKDAYS)[number], string>> = {
   sun: "sunday",
   mon: "monday",
