@@ -122,8 +122,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   nothing from before the last upgrade that changed the data format can be undone.
 - Two copies of one space that both take changes, such as a restored copy and its original used
   in turn, give out references on their own: a task in one can get a reference a task in the
-  other has. A restore over a space whose database cannot be read at all goes on from the
-  backup's counter.
+  other has. A restore over a space, or a claim of a copy, goes on from the backup's counter when
+  the earlier space's database cannot be read at all.
 - A command repeated without its request ID is a new change: a note added twice is there twice.
 - Backups and exports are not encrypted. Their protection is that of the disk they are on.
 - Backups sit beside the space on the same disk unless you set another folder for them or copy an

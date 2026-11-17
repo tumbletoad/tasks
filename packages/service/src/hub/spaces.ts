@@ -72,9 +72,10 @@
 // ends, or the process exit does. The lock lives in the space's worker, beside the writer it
 // guards, so a worker that hangs keeps both until the process exits.
 import { realpathSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { CLI_NAME } from "@tasks/brand";
 import {
+  DATABASE_FILE,
   DEFAULT_DRIVER,
   decodeRevision,
   encodeRevision,
@@ -2003,7 +2004,12 @@ export class SpaceManager {
         : undefined;
     };
     if (space.reader !== undefined) return read(space.reader);
-    const { conn } = await bounded(worker.openSpaceReader(space.folder), this.#openMs);
+    // The one column, read as it is: a copy that no longer opens as a space (damaged, or newer
+    // than this build) still gave out its references.
+    const conn = await bounded(
+      worker.open(join(space.folder, DATABASE_FILE), "reader"),
+      this.#openMs,
+    );
     try {
       return await read(conn);
     } finally {

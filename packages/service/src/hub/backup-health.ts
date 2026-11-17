@@ -48,8 +48,8 @@ export function afterRun(health: BackupHealth, report: MaintenanceReport): Backu
   if (report.checked === true) {
     return report.unverified > 0 ? { ...base, trouble: { why: "unverified" } } : base;
   }
-  // A run without a verdict found no daily backup due: today's was made after a failure, and a
-  // backup that does not restore is still there.
+  // A run without a verdict found no daily backup due: a complete one is there since the last
+  // daily hour, so a failure before is over. A backup that does not restore is still there.
   return health.trouble?.why === "unverified" ? { ...base, trouble: health.trouble } : base;
 }
 
