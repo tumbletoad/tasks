@@ -1264,17 +1264,16 @@ function moveWarnings(move: FolderMove): string[] {
     .slice(0, FOLLOWERS_SHOWN)
     .map((f) => (f.kind === "task" ? f.label : `project ${f.label}`))
     .join(", ");
-  const count = String(move.inside.length);
+  const n = move.inside.length;
+  const count = `${String(n)} folder${n === 1 ? "" : "s"}`;
   if (!move.carry) {
-    return [
-      `The old folder is still there, so ${count} folders inside it stay where they are: ${names}.`,
-    ];
+    const stay = n === 1 ? "stays where it is" : "stay where they are";
+    return [`The old folder is still there, so ${count} inside it ${stay}: ${names}.`];
   }
+  const gone = move.missing.size;
   const missing =
-    move.missing.size === 0 ? "" : ` ${String(move.missing.size)} of them are not there now.`;
-  return [
-    `The old folder was moved, so ${count} folders inside it moved along: ${names}.${missing}`,
-  ];
+    gone === 0 ? "" : ` ${String(gone)} of them ${gone === 1 ? "is" : "are"} not there now.`;
+  return [`The old folder was moved, so ${count} inside it moved along: ${names}.${missing}`];
 }
 
 /** What binding an owner's folder on this machine reads first (read.ts). */

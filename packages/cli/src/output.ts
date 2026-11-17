@@ -235,10 +235,11 @@ function insideLines(result: Result): string[] {
   const stayed = typeof result["stayed"] === "number" ? result["stayed"] : 0;
   if (moved === 0 && stayed === 0) return [];
   const list = ((moved > 0 ? result["followed"] : result["kept"]) as Result[] | undefined) ?? [];
+  const folders = (n: number) => `${String(n)} folder${n === 1 ? "" : "s"}`;
   const lines = [
     moved > 0
-      ? `The old folder was moved: ${String(moved)} folders inside it moved along.`
-      : `The old folder is still there: ${String(stayed)} folders inside it stay where they are.`,
+      ? `The old folder was moved: ${folders(moved)} inside it moved along.`
+      : `The old folder is still there: ${folders(stayed)} inside it ${stayed === 1 ? "stays where it is" : "stay where they are"}.`,
   ];
   for (const f of list) {
     const who = f["kind"] === "task" ? str(f["ref"]) : `project ${str(f["name"])}`;

@@ -372,7 +372,9 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs 
           {
             name: "Client work",
             active: 7,
-            projects: [{ name: "Lumen Health", active: 4, folder: "~/work/lumen" }],
+            projects: [
+              { name: "Lumen Health", active: 4, folder: "~/work/lumen", repo: "lumen-web" },
+            ],
             more_projects: 2,
           },
           { name: "Learning", active: 1, projects: [] },
@@ -384,7 +386,7 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs 
     expect(groups).toBe(
       [
         "Client work (7)",
-        "  Lumen Health (4)  ~/work/lumen",
+        "  Lumen Health [lumen-web] (4)  ~/work/lumen",
         "  and 2 more projects",
         "Learning (1)",
         "No area",
@@ -419,6 +421,43 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs 
       "Mira",
     );
     expect(same).toBe("No change to area Home\n");
+    // A moved folder names what moved along with it; one still there, what stayed.
+    const write = (extra: Record<string, unknown>) =>
+      render(
+        "group.manage",
+        {
+          action: "set_folder",
+          as_of: "1.1048.5n0w8k3q",
+          areas: [],
+          projects: [],
+          result: "folder_set",
+          group: { kind: "project", id: "p_9m3q7w1y5c9g3k7p1t5x9b3f7k", name: "Portal" },
+          ...extra,
+        },
+        "Mira",
+      )
+        .split("\n")
+        .slice(1, 4);
+    expect(
+      write({
+        moved: 2,
+        followed: [
+          { kind: "task", ref: "M-14", folder: "~/Dev/portal/web" },
+          { kind: "project", name: "Portal api", folder: "~/Dev/portal/api", missing: true },
+        ],
+      }),
+    ).toEqual([
+      "The old folder was moved: 2 folders inside it moved along.",
+      "  M-14  ~/Dev/portal/web",
+      "  project Portal api  ~/Dev/portal/api  (not there now)",
+    ]);
+    expect(
+      write({ stayed: 1, kept: [{ kind: "task", ref: "M-15", folder: "~/work/portal/docs" }] }),
+    ).toEqual([
+      "The old folder is still there: 1 folder inside it stays where it is.",
+      "  M-15  ~/work/portal/docs",
+      "",
+    ]);
     const got = render(
       "prefs.manage",
       {
