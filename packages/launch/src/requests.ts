@@ -19,8 +19,11 @@ export const REQUEST_FILE = "request.json";
 /** As long as a launch reference binds an agent: a link launch's request is no use after that. */
 export const REQUEST_KEEP_MS = 24 * 60 * 60_000;
 
-/** The largest request held, in characters: the composer's own input limit. */
-export const REQUEST_MAX = 65_536;
+/**
+ * The longest request held, in UTF-16 code units: twice the 65,536 characters `launch.open` takes,
+ * since a character takes at most two.
+ */
+export const REQUEST_MAX = 131_072;
 
 /** The largest file read back. */
 const MAX_FILE = 1024 * 1024;

@@ -260,7 +260,8 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
   });
 
   test("an Open route's brief never carries the person's words: its last line says the request comes with the task, and the words are handed back to hold, whatever their length", () => {
-    const words = 'Look at "the failing test" first.\nThen fix the zone offset. Café ✓';
+    // Held exactly as typed: an emoji's zero-width joiner stays.
+    const words = `Look at "the failing test" first.\nThen fix the zone offset. Café ${cp(0x1f469, 0x200d, 0x1f4bb)}`;
     for (const kind of ["sent", "prefilled"] as const) {
       const brief = renderBrief(base({ kind, composer: words, budget: 1000 }));
       expect(brief).toMatchObject({ status: "ok", composer: "held", composerText: words });

@@ -196,15 +196,17 @@ export function renderBrief(input: BriefInput): Brief {
     if (!NAME.test(name)) throw new Error("Not a tool or command name");
   }
   if (!Number.isSafeInteger(input.budget) || input.budget <= 0) throw new Error("Not a budget");
+
+  if (input.kind !== "pointer") {
+    // Held as typed: the words never stand in the brief, so nothing of them needs a fence.
+    const words = input.composer?.trim() === "" ? undefined : input.composer;
+    const text = compose(input, input.reference, words === undefined ? undefined : REQUEST_LINE);
+    if (text.length > input.budget) return { status: "too_long" };
+    return done(input, text, words === undefined ? "none" : "held", words, false);
+  }
   const given = input.composer === undefined ? undefined : sanitiseComposer(input.composer);
   const composer = given !== undefined && given.text.trim() !== "" ? given.text : undefined;
   const removed = given?.removed === true;
-
-  if (input.kind !== "pointer") {
-    const text = compose(input, input.reference, composer === undefined ? undefined : REQUEST_LINE);
-    if (text.length > input.budget) return { status: "too_long" };
-    return done(input, text, composer === undefined ? "none" : "held", composer, removed);
-  }
   const inline = compose(input, input.reference, composer);
   if (inline.length <= input.budget) {
     return done(input, inline, composer === undefined ? "none" : "inline", composer, removed);
