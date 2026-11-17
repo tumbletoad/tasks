@@ -3415,7 +3415,7 @@ async function unmarkedError(call: Call, error: LaunchFolderUnmarked): Promise<A
   return new AppError({
     code: "invalid_input",
     message: `This may not be the folder that was set for ${whose}: ${why}. Nothing was started.`,
-    hint: `To use this folder and mark it, open again with mark_folder. Or give ${whose} another folder.`,
+    hint: `To use this folder and mark it, open it again with --mark-folder. Or give ${whose} another folder.`,
     data: {
       field: "task",
       reason: error.reason,

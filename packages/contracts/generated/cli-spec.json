@@ -372,6 +372,14 @@
           "repeat": false,
           "required": false,
           "type": "boolean"
+        },
+        {
+          "field": "mark_folder",
+          "flag": "--mark-folder",
+          "help": "Open although the folder's marker is gone or another's, and mark it",
+          "repeat": false,
+          "required": false,
+          "type": "boolean"
         }
       ],
       "inputOnly": [],
