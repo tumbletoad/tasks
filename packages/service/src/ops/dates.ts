@@ -106,7 +106,7 @@ export function pastInstant(
     if (value > dateIn(now, timeZone)) return "future";
     const nine = Date.parse(`${value}T09:00:00Z`);
     at = Math.min(nine - offsetAt(nine - offsetAt(nine, timeZone), timeZone), now);
-  } else if (INSTANT.test(value)) {
+  } else if (INSTANT.test(value) && isCalendarDate(value.slice(0, 10))) {
     at = Date.parse(value);
     if (Number.isNaN(at)) return undefined;
     if (at > now + AHEAD_MS) return "future";
