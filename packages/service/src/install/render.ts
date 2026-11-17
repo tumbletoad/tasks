@@ -124,6 +124,41 @@ export interface UnitInput {
  */
 const SYSTEMD_UNSAFE = /["'\\]/;
 
+const DELEGATE_COMMENT =
+  "# Background runs: each in a child cgroup of this unit, which the service manages itself.";
+
+/**
+ * A unit an earlier version wrote, without `Delegate=yes`, with it added at the end of its
+ * `[Service]` section as `renderUnit` writes it, every other byte kept. Undefined when the unit
+ * already says something about delegation, has no `[Service]` section, or ends that section in a
+ * continued line.
+ */
+export function withDelegate(text: string): string | undefined {
+  if (unitDirectives(text).some((d) => d.section === "Service" && d.key === "Delegate")) {
+    return undefined;
+  }
+  const lines = text.split("\n");
+  let service = -1;
+  let end = lines.length;
+  for (const [i, raw] of lines.entries()) {
+    const line = sdTrim(raw);
+    if (!line.startsWith("[") || !line.endsWith("]")) continue;
+    if (service !== -1) {
+      end = i;
+      break;
+    }
+    if (line === "[Service]") service = i;
+  }
+  if (service === -1) return undefined;
+  // Before the blank lines and comments that close the section, where renderUnit writes it.
+  let at = end;
+  const closing = (line: string) => line === "" || line.startsWith("#") || line.startsWith(";");
+  while (at > service + 1 && closing(sdTrim(lines[at - 1] ?? ""))) at -= 1;
+  if ((lines[at - 1] ?? "").trimEnd().endsWith("\\")) return undefined;
+  lines.splice(at, 0, DELEGATE_COMMENT, "Delegate=yes");
+  return lines.join("\n");
+}
+
 /** The systemd user unit of A2 3.3.3. */
 export function renderUnit(input: UnitInput): string {
   checkPath(input.program, "linux", "launcher");
@@ -154,7 +189,7 @@ export function renderUnit(input: UnitInput): string {
     "RestartPreventExitStatus=64 73",
     "KillMode=mixed",
     "TimeoutStopSec=15",
-    "# Background runs: each in a child cgroup of this unit, which the service manages itself.",
+    DELEGATE_COMMENT,
     "Delegate=yes",
     "# No ProtectHome, PrivateTmp or NoNewPrivileges: launched agents need the user's full home and tools.",
     "",

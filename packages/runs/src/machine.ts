@@ -49,6 +49,12 @@ export type RunEnd =
   /** The container could not be confirmed empty. */
   | { readonly kind: "not_confirmed" };
 
+/**
+ * Why a queued run can no longer start: its task was finished or deleted, its instance or its
+ * folder is gone, or no agent could be made for it.
+ */
+export type StartRefusal = "task_closed" | "instance_gone" | "folder_gone" | "spawn_failed";
+
 export interface RunMachineOptions {
   store: RunStore;
   /** This machine (`m_` ID): it works on its own runs only. */
@@ -227,6 +233,18 @@ export class RunMachine {
       });
       return { run, stopping: run?.state === "cancelling" };
     });
+  }
+
+  /**
+   * A queued run that can no longer start fails with why, before any container exists. Any other
+   * run is returned as it is: one a Stop cancelled meanwhile, or one that started.
+   */
+  refuse(id: string, reason: StartRefusal): Promise<RunRecord | undefined> {
+    return this.#section(id, () =>
+      this.#decide(id, (run) =>
+        run.state === "queued" ? { next: "failed", patch: { reason } } : undefined,
+      ),
+    );
   }
 
   /** Settles a run by how it ended (endMove). A final run, and a queued one, stay as they are. */

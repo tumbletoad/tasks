@@ -38,6 +38,7 @@ import { spaceVerbs, type SpaceVerbsHost } from "./space-verbs.ts";
 import { t3Verbs, type T3Host } from "./t3.ts";
 import { agentHomeVerbs, type AgentHomesHost } from "./agent-homes.ts";
 import { instanceVerbs, type InstancesHost } from "./instances.ts";
+import type { RunBlocker, RunsStatus } from "../runs/service.ts";
 
 /** The protocols this build speaks (A2 3.6.6): the library's, listed in service.json too. */
 export const PROTOCOLS = { min: PROTOCOL, max: PROTOCOL } as const;
@@ -57,6 +58,35 @@ export interface ServiceStatus {
   readonly spaces: readonly SpaceSummary[];
   /** The UI's listener (M2.12): its port, whether it moved, and whether it is blocked. */
   readonly http?: HttpStatus | null;
+  /** Whether background runs can be contained here, and why not; null before the probe answered. */
+  readonly runs?: RunsStatus;
+}
+
+/** Background runs as an update reaches them (`runs/hold`, `runs/stop_held`). */
+export interface EndpointRuns {
+  hold(): { release(): void };
+  blocking(): Promise<RunBlocker[]>;
+  stopAll(): Promise<RunBlocker[]>;
+  /** Resolves once the service began to close. */
+  readonly closing: Promise<void>;
+}
+
+/** How often a hold tells its updater what still blocks it. */
+const HOLD_TELL_MS = 2_000;
+
+/** Resolves after `ms`, or at once when `signal` aborts. */
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    timer.unref();
+    if (signal.aborted) done();
+    else signal.addEventListener("abort", done, { once: true });
+  });
 }
 
 /** The UI listener as the endpoint reaches it (`ui/mint_code`, `service/port`). */
@@ -110,6 +140,8 @@ export interface EndpointHub {
   readonly agentHomes?: AgentHomesHost;
   /** `tasks setup instances` (`instances/*`): machine.toml's [[instance]] entries. */
   readonly instances?: InstancesHost;
+  /** Background runs, for an update's hold. */
+  readonly runs?: EndpointRuns;
 }
 
 export interface EndpointOptions {
@@ -232,6 +264,44 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
         hub.requestStop({ restart: true });
       });
       return { port, state: "draining", restart: true };
+    },
+    // `tasks update`: no run starts while this request is open. The hold ends when the updater
+    // cancels it, when its connection closes (an updater that died included) or when the service
+    // stops. Meanwhile `runs/blocking` says which runs the update would cut short, at once and
+    // whenever that changes.
+    "runs/hold": async (_params, context) => {
+      const runs = hub.runs;
+      if (runs === undefined) return { held: false };
+      const hold = runs.hold();
+      try {
+        let told = "";
+        const tell = async () => {
+          const blocking = await runs.blocking();
+          const text = JSON.stringify(blocking);
+          if (text === told) return;
+          told = text;
+          context.notify("runs/blocking", { runs: blocking as unknown as JsonObject[] });
+        };
+        const held = { ended: false };
+        const end = () => {
+          held.ended = true;
+        };
+        context.signal.addEventListener("abort", end, { once: true });
+        void runs.closing.then(end);
+        await tell();
+        for (;;) {
+          await Promise.race([pause(HOLD_TELL_MS, context.signal), runs.closing]);
+          if (held.ended) break;
+          await tell();
+        }
+        return { held: false };
+      } finally {
+        hold.release();
+      }
+    },
+    "runs/stop_held": async () => {
+      const runs = hub.runs;
+      return { runs: runs === undefined ? [] : await runs.stopAll() };
     },
     "service/shutdown": (params) => {
       const { restart, reason } = params;

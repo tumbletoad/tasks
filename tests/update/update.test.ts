@@ -49,6 +49,7 @@ import {
   currentOf,
   fakeSelfTest,
   FakeControl,
+  FakeRuns,
   fixtureFiles,
   fixtureInstall,
   fixtureRelease,
@@ -92,6 +93,15 @@ async function world(label: string, running = true) {
     lockWaitMs: 20_000,
   };
   return { dir, root, state: join(root, "state"), control, selfTest, said, options };
+}
+
+/** Resolves once `ok` holds; fails after 20 s. */
+async function until(ok: () => boolean, what: string): Promise<void> {
+  const end = Date.now() + 20_000;
+  while (!ok()) {
+    if (Date.now() > end) throw new Error(`timed out: ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 const refusal = async (promise: Promise<unknown>): Promise<InstanceType<typeof UpdateError>> => {
@@ -410,6 +420,180 @@ describe("[A2.3.12.6.update.switch] the switch: self-test first, the journal bef
     expect(data()).toEqual(before);
     await rollbackUpdate(w.options);
     expect(data()).toEqual(before);
+  });
+});
+
+describe("[A2.3.12.6.update.runs] an update holds new runs back, waits for the running ones, then stops them or gives up as the person decides", () => {
+  const running = [
+    { space_name: "Work", task: "WORK-12", state: "running" },
+    { space_name: "Work", task: null, state: "unknown" },
+  ];
+
+  test("runs that finish during the wait let the update go on without a question; with none it does not wait", async () => {
+    const w = await world("runs-wait");
+    const runs = new FakeRuns(running);
+    w.control.runs = runs;
+    let asked = 0;
+    const options: UpdateOptions = {
+      ...w.options,
+      runs: {
+        waitMs: 60_000,
+        decide: () => {
+          asked += 1;
+          return Promise.resolve("give_up");
+        },
+      },
+    };
+    const r2 = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    const updating = updateFromArchive(r2.archive, options);
+    await until(() => w.said.some((line) => line.startsWith("New runs wait")), "the wait");
+    // Nothing changed while it waits: no journal, current as it was, the service untouched.
+    expect(existsSync(join(w.state, UPDATE_JOURNAL))).toBe(false);
+    expect(currentOf(w.root, os)).toBe("0.1.0");
+    expect(w.control.calls).toEqual(["hold"]);
+    runs.set([running[0] ?? running[1] ?? { space_name: null, task: null, state: "running" }]);
+    runs.set([]);
+    expect(await updating).toMatchObject({ outcome: "updated", to: "0.2.0" });
+    expect(asked).toBe(0);
+    // The hold lasts until the restart, and goes after it.
+    const restart = windows ? "restart supervisor" : "restart";
+    expect(w.control.calls).toEqual(["hold", restart, "wait 0.2.0", "release"]);
+    expect(w.said).toEqual(
+      expect.arrayContaining([
+        "The restart would cut short 2 runs:",
+        "  WORK-12 in Work: running",
+        "  A routine's run in Work: not confirmed ended",
+        "The runs finished.",
+      ]),
+    );
+
+    // A rollback with nothing running neither waits nor says anything about runs.
+    w.control.calls.length = 0;
+    w.said.length = 0;
+    expect(await rollbackUpdate(options)).toMatchObject({ to: "0.1.0" });
+    expect(w.control.calls).toEqual(["hold", restart, "wait 0.1.0", "release"]);
+    expect(w.said.some((line) => /cut short|runs/.test(line))).toBe(false);
+  });
+
+  test("runs still running after the wait: giving up changes nothing; stopping them goes on with the update", async () => {
+    const w = await world("runs-ask");
+    const runs = new FakeRuns(running);
+    w.control.runs = runs;
+    const before = installTree(w.root);
+    const r2 = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    const asked: number[] = [];
+    const given = await refusal(
+      updateFromArchive(r2.archive, {
+        ...w.options,
+        runs: {
+          waitMs: 30,
+          decide: (blocking) => {
+            asked.push(blocking.length);
+            return Promise.resolve("give_up");
+          },
+        },
+      }),
+    );
+    expect(given.exitCode).toBe(2);
+    expect(given.message).toMatch(/given up while 2 runs still run\. Nothing was changed\./);
+    expect(asked).toEqual([2]);
+    expect(currentOf(w.root, os)).toBe("0.1.0");
+    expect(installTree(w.root).filter((p) => !p.startsWith("versions/0.2.0"))).toEqual(before);
+    expect(w.control.calls).toEqual(["hold", "release"]);
+
+    w.control.calls.length = 0;
+    runs.stubborn = [{ space_name: "Work", task: null, state: "unknown" }];
+    // A unit an earlier version wrote gets Delegate=yes before the restart, and the person hears.
+    w.control.delegateUnit = () => {
+      w.control.calls.push("delegate");
+      return Promise.resolve(true);
+    };
+    const result = await updateFromArchive(r2.archive, {
+      ...w.options,
+      runs: { waitMs: 30, decide: () => Promise.resolve("stop") },
+    });
+    expect(result).toMatchObject({ outcome: "updated", to: "0.2.0" });
+    const restart = windows ? "restart supervisor" : "restart";
+    expect(w.control.calls).toEqual([
+      "hold",
+      "stop runs",
+      "delegate",
+      restart,
+      "wait 0.2.0",
+      "release",
+    ]);
+    expect(w.said).toEqual(
+      expect.arrayContaining([
+        "Stopping the runs. Each keeps its answer so far.",
+        "The service's systemd unit now has Delegate=yes, which background runs need.",
+        "The restart ends what did not stop in time: 1 run.",
+      ]),
+    );
+  });
+
+  test("a service that started again during the wait is held again and its runs waited for; one that does not say which runs it has is not restarted", async () => {
+    const w = await world("runs-again");
+    const runs = new FakeRuns(running);
+    w.control.runs = runs;
+    const asked: number[] = [];
+    const options: UpdateOptions = {
+      ...w.options,
+      runs: {
+        waitMs: 60_000,
+        decide: (blocking) => {
+          asked.push(blocking.length);
+          return Promise.resolve("give_up");
+        },
+      },
+    };
+    const r2 = fixtureRelease(join(w.dir, "r2"), "0.2.0", os, key, { launcher: "two" });
+    const updating = updateFromArchive(r2.archive, options);
+    await until(() => w.said.some((line) => line.startsWith("New runs wait")), "the wait");
+    // The service ended by itself and came back, and a run of its own started before any hold.
+    runs.restarted([{ space_name: "Work", task: "WORK-13", state: "running" }]);
+    await until(() => w.control.calls.length >= 3, "the second hold");
+    expect(w.control.calls).toEqual(["hold", "release", "hold"]);
+    expect(existsSync(join(w.state, UPDATE_JOURNAL))).toBe(false);
+    runs.set([]);
+    expect(await updating).toMatchObject({ outcome: "updated", to: "0.2.0" });
+    expect(asked).toEqual([]);
+
+    w.control.calls.length = 0;
+    w.said.length = 0;
+    runs.silent = true;
+    const given = await refusal(rollbackUpdate(options));
+    expect(given.exitCode).toBe(1);
+    expect(given.message).toMatch(
+      /did not say which background runs it has.*Nothing was changed\./,
+    );
+    expect(currentOf(w.root, os)).toBe("0.2.0");
+    expect(w.control.calls).toEqual(["hold"]);
+  });
+
+  test("a repair that restarts a service with runs waits for them first: giving up leaves the service as it is, stopping them goes on", async () => {
+    const w = await world("runs-repair");
+    const runs = new FakeRuns([{ space_name: "Work", task: "WORK-12", state: "running" }]);
+    w.control.runs = runs;
+    // The service runs another version than current names, with no update journal.
+    w.control.version = "0.0.9";
+    const given = await refusal(
+      repairUpdate({
+        ...w.options,
+        runs: { waitMs: 30, decide: () => Promise.resolve("give_up") },
+      }),
+    );
+    expect(given.exitCode).toBe(2);
+    expect(given.message).toMatch(/not restarted on 0\.1\.0 while background runs still run/);
+    expect(w.control.calls).toEqual(["hold", "release"]);
+    expect(w.control.version).toBe("0.0.9");
+
+    w.control.calls.length = 0;
+    const repaired = await repairUpdate({
+      ...w.options,
+      runs: { waitMs: 30, decide: () => Promise.resolve("stop") },
+    });
+    expect(repaired).toMatchObject({ outcome: "repaired", current: "0.1.0" });
+    expect(w.control.calls).toEqual(["hold", "stop runs", "restart", "wait 0.1.0", "release"]);
   });
 });
 
