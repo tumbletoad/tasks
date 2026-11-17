@@ -118,6 +118,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Agent setup shows what it will change, changes only its own entry, and removes only what it
   wrote.
 - An update is checked before it runs. A failed update returns to the version before it.
+- An update does not end a background run unasked. It waits up to 15 minutes for running runs,
+  then asks whether to stop them or give the update up; without anyone to ask, it gives up.
 - An install over a running Tasks never restarts it unasked: it says that the old version still
   runs, and names the one command that restarts it. A restart ends background runs, which keep
   their answers so far.

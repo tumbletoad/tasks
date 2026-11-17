@@ -1336,6 +1336,8 @@ export interface LaunchTaskRead {
   readonly ref: string;
   readonly title: string;
   readonly version: number;
+  /** Not finished or archived. */
+  readonly active: boolean;
   readonly place: {
     readonly id: string;
     readonly root: string;
@@ -1380,6 +1382,7 @@ export async function readLaunchTask(
     ref: formatTaskRef(facts.refPrefix, Number(task["ref"])),
     title: String(task["title"]),
     version: Number(task["version"]),
+    active: task["lifecycle"] === "active",
     place:
       here === null
         ? null

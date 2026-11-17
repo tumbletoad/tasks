@@ -908,9 +908,6 @@ function generate(
     });
   };
   runStep("queued", "starting");
-  runStep("starting", "starting", {
-    evidence: { claim: "claim-fixture-2", claimed_at: start + 7_200_000 },
-  });
   runStep("starting", "running", { evidence: { pid: 51007, pid_started_at: start + 7_200_300 } });
   runStep("running", "running", {
     evidence: { native_id: "0199a3f2-7c41-7d20-9b6e-3f1c2a4b5d6e" },

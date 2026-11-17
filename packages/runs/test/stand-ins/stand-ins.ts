@@ -22,6 +22,7 @@ export type StandInMode =
   | "argv"
   | "nest"
   | "talk"
+  | "chatty"
   | "detach-stay"
   | "flood-answer"
   | "huge-answer"
