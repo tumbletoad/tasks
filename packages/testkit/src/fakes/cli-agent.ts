@@ -8,8 +8,8 @@
 //   Codex's (its session record with the folder `-C` named, then the prompt after `--` as the
 //   user's first message), for the reference match.
 // - FAKE_CLI_TASKS: `{"argv": [...], "home": "..."}`, the product's command and the install's home
-//   (TASKS_HOME): it reads the task as its brief says when the tools are missing, `show --launch
-//   <reference>` with `--json`, and its report holds the request it got, in hex, so a test finds
+//   (TASKS_HOME): it reads the task as its brief says when the tools are missing, the brief's
+//   command with `--json` and without the launch's TASKS_SPACE, and its report holds the request it got, in hex, so a test finds
 //   the words nowhere else on disk. FAKE_CLI_UNREAD names a file of task references, one a line:
 //   on those tasks it reads nothing, as an agent without Tasks' tools or a shell.
 // - FAKE_CLI_HOLD_MS (default 4000), FAKE_CLI_RELEASE (a file whose existence ends it),
@@ -46,11 +46,17 @@ const startedIn = statSync(".", { bigint: true });
 const argv = process.argv.slice(2);
 const env = process.env;
 
-/** The task's and the launch's references in the brief's first line, as an agent reads them. */
-function referencesOf(args: readonly string[]): { task: string; launch: string } | undefined {
-  const brief = args[args.indexOf("--") + 1] ?? "";
-  const found = / task (\S+) \(launch (L[0-9A-Z]{5})\)\./u.exec(brief.split("\n")[0] ?? "");
-  return found === null ? undefined : { task: found[1] ?? "", launch: found[2] ?? "" };
+/**
+ * The task's reference in the brief's first line, and the arguments of the command its second
+ * line says to run without the tools, as an agent reads them.
+ */
+function briefOf(args: readonly string[]): { task: string; command: string[] } | undefined {
+  const lines = (args[args.indexOf("--") + 1] ?? "").split("\n");
+  const task = / task (\S+) \(launch L[0-9A-Z]{5}\)\./u.exec(lines[0] ?? "")?.[1];
+  const command = /run `\S+ ([^`]+)`\.$/u.exec(lines[1] ?? "")?.[1];
+  return task === undefined || command === undefined
+    ? undefined
+    : { task, command: command.split(" ") };
 }
 
 /** Whether the task is one this fake leaves unread (FAKE_CLI_UNREAD). */
@@ -62,15 +68,16 @@ function leftUnread(task: string): boolean {
 
 /** `show --launch <reference> --json` through the product's command, as the brief says. */
 function readTask(spec: string): CliAgentReport["read"] {
-  const references = referencesOf(argv);
-  if (references === undefined) return { code: null, error: "no_reference" };
-  if (leftUnread(references.task)) return { code: null, error: "left_unread" };
-  const reference = references.launch;
+  const brief = briefOf(argv);
+  if (brief === undefined) return { code: null, error: "no_reference" };
+  if (leftUnread(brief.task)) return { code: null, error: "left_unread" };
   const { argv: command, home } = JSON.parse(spec) as { argv: string[]; home: string };
   const [file, ...rest] = command;
   if (file === undefined) return { code: null, error: "no_command" };
-  const ran = spawnSync(file, [...rest, "show", "--launch", reference, "--json"], {
-    env: { ...env, TASKS_HOME: home },
+  // The brief's command alone: without the launch's TASKS_SPACE, as in an app opened by a link.
+  const { TASKS_SPACE: _space, ...outside } = env;
+  const ran = spawnSync(file, [...rest, ...brief.command, "--json"], {
+    env: { ...outside, TASKS_HOME: home },
     encoding: "utf8",
     windowsHide: true,
     timeout: 60_000,

@@ -225,13 +225,16 @@ async function mcpAgent(r: Rig, cwd: string) {
 }
 
 /**
- * `tasks show --launch <reference> --json` as an agent without the tools runs it, with the space its
- * launch gave its environment: a process of its own, waited for without blocking this one, where
- * the service runs.
+ * The command a brief says to run without the tools, with `--json`, as an agent's shell in an app
+ * that Tasks did not start runs it: an agent marker and no TASKS_SPACE. A process of its own,
+ * waited for without blocking this one, where the service runs.
  */
-async function cliShow(r: Rig, reference: string): Promise<{ request?: string }> {
-  const child = spawn(process.execPath, [CLI_BIN, "show", "--launch", reference, "--json"], {
-    env: { ...process.env, TASKS_HOME: r.lab.home, TASKS_SPACE: r.lab.spaceId },
+async function cliShow(r: Rig, brief: string): Promise<{ request?: string }> {
+  const command = /run `\S+ ([^`]+)`\.$/mu.exec(brief)?.[1];
+  if (command === undefined) throw new Error("The brief names no command");
+  const { TASKS_SPACE: _space, ...outside } = process.env;
+  const child = spawn(process.execPath, [CLI_BIN, ...command.split(" "), "--json"], {
+    env: { ...outside, TASKS_HOME: r.lab.home, CLAUDECODE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -431,7 +434,7 @@ describe("[A4.5.routes.request] what a person types before Open reaches the agen
       const reference = briefReference(result.copy ?? "") ?? "";
       expect(reference).toBe(result.launch.reference);
       await expectOnlyHeld(r, marker, result.launch.id);
-      expect((await cliShow(r, reference)).request).toBe(words);
+      expect((await cliShow(r, result.copy ?? "")).request).toBe(words);
       expect(r.lab.running.launches.requestState(result.launch.id)).toBe("read");
       writeFileSync(r.release, "");
       await waitFor(
@@ -477,6 +480,8 @@ describe("[A4.5.routes.request] what a person types before Open reaches the agen
         for (const line of words.split("\n")) expect(text).toContain(`  ${line}`);
         expect(r.lab.running.launches.requestState(result.launch.id)).toBe("read");
         agent.close();
+        // An agent of the app without the tools runs the command the link's brief names.
+        expect((await cliShow(r, prefill)).request).toBe(words);
 
         // Kept while the reference binds, also across a restart; gone at the first round after.
         await r.lab.stopService();

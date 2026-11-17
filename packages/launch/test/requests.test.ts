@@ -71,6 +71,20 @@ describe("[A4.5.routes.request-store] a launch's request is held in its own fold
     expect(store.state(OTHER)).toBeUndefined();
   });
 
+  test("a write a crash cut short is removed at the next start and with its request", () => {
+    const at = root();
+    const temp = `.${REQUEST_FILE}.4242.0a1b2c3d.tmp`;
+    mkdirSync(join(at, LAUNCH), { recursive: true });
+    writeFileSync(join(at, LAUNCH, temp), WORDS);
+    const store = new LaunchRequests(at);
+    expect(readdirSync(at)).toEqual([]);
+
+    store.put({ space: SPACE, launch: OTHER, route: "link", at: 1 }, WORDS);
+    writeFileSync(join(at, OTHER, temp), WORDS);
+    store.remove(OTHER);
+    expect(readdirSync(at)).toEqual([]);
+  });
+
   test("a launch folder removed under it takes the request with it", () => {
     const at = root();
     const store = new LaunchRequests(at);

@@ -960,6 +960,7 @@ export class LaunchService {
       renderBrief({
         kind: choice.kind,
         task: task.ref,
+        space,
         reference,
         composer: request.composer,
         ...(folder === undefined ? {} : { folder }),

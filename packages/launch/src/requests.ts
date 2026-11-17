@@ -10,8 +10,8 @@
 // field only once the words reached the agent.
 import { readdirSync, readFileSync, rmdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWrite, makeDir } from "@tasks/files";
-import { LAUNCH_FILE_MODE, LAUNCH_FOLDER_MODE } from "./shim/records.ts";
+import { atomicWrite, makeDir, removeStaleTemps } from "@tasks/files";
+import { LAUNCH_FILE_MODE, LAUNCH_FOLDER_MODE, SPACE_ID } from "./shim/records.ts";
 import { LAUNCH_ID } from "./store.ts";
 
 export const REQUEST_FILE = "request.json";
@@ -30,8 +30,6 @@ const MAX_FILE = 1024 * 1024;
 
 /** Launches whose request was read and is gone since, remembered for the page's receipts. */
 const READ_KEPT = 1024;
-
-const SPACE_ID = /^sp_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
 
 export type RequestRoute = "terminal" | "link";
 
@@ -81,9 +79,11 @@ export class LaunchRequests {
     makeDir(root, LAUNCH_FOLDER_MODE);
     for (const name of readdirSync(root)) {
       if (!LAUNCH_ID.test(name)) continue;
+      // A write a crash cut short holds the words too.
+      const cut = removeStaleTemps(join(root, name), [REQUEST_FILE]) > 0;
       const found = this.#readFile(name);
       if (found !== undefined) this.#held.set(name, held(found));
-      else if (exists(this.#file(name))) this.#removeFile(name);
+      else if (cut || exists(this.#file(name))) this.#removeFile(name);
     }
   }
 
@@ -195,6 +195,7 @@ export class LaunchRequests {
 
   #removeFile(launch: string): void {
     rmSync(this.#file(launch), { force: true, maxRetries: 5 });
+    removeStaleTemps(join(this.root, launch), [REQUEST_FILE]);
     try {
       // Only an empty folder: a terminal launch's own files are its record's to remove.
       rmdirSync(join(this.root, launch));

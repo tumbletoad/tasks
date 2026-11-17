@@ -270,6 +270,7 @@ const hex16 = (text: string): string =>
 /** The brief a route renders for this launch, as the test computes it. */
 function briefFor(
   kind: "sent" | "prefilled" | "pointer",
+  space: string,
   task: { ref: string },
   reference: string,
   options: {
@@ -281,6 +282,7 @@ function briefFor(
   const brief = renderBrief({
     kind,
     task: task.ref,
+    space,
     reference,
     budget: options.budget ?? 8000,
     names: briefNames(),
@@ -316,7 +318,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       const report = await reportAt(r.report("claude"));
 
       const session = presetSession(r.lab.spaceId, requestId);
-      const brief = briefFor("sent", task, launch.reference, { composer: COMPOSER });
+      const brief = briefFor("sent", r.lab.spaceId, task, launch.reference, { composer: COMPOSER });
       const golden = [
         "--session-id",
         session,
@@ -372,7 +374,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         `mcp_servers.${MCP_SERVER_KEY}.env_vars=["${envVar("TICKET")}"]`,
         "--dangerously-bypass-approvals-and-sandbox",
         "--",
-        briefFor("sent", task, launch.reference),
+        briefFor("sent", r.lab.spaceId, task, launch.reference),
       ];
       expect(report.argv).toEqual(golden);
       expect(report.utf16).toEqual(golden.map(hex16));
@@ -403,7 +405,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         "-c",
         `mcp_servers.${MCP_SERVER_KEY}.env_vars=["${envVar("TICKET")}"]`,
       ]);
-      expect(result.copy).toBe(briefFor("prefilled", task, result.launch.reference));
+      expect(result.copy).toBe(briefFor("prefilled", r.lab.spaceId, task, result.launch.reference));
     },
   );
 
@@ -436,7 +438,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect([...query.keys()]).toEqual(["cwd", "q"]);
       expect(query.get("cwd")).toBe(folder);
       expect(query.get("q")).toBe(
-        briefFor("prefilled", task, result.launch.reference, { budget: 1000 }),
+        briefFor("prefilled", r.lab.spaceId, task, result.launch.reference, { budget: 1000 }),
       );
       expect(url).toMatch(/^[A-Za-z0-9:/?&=%._~-]+$/u);
     },
@@ -476,7 +478,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         state: "dispatched",
       });
       expect(first.result.copy).toBe(
-        briefFor("pointer", task, first.result.launch.reference, {
+        briefFor("pointer", r.lab.spaceId, task, first.result.launch.reference, {
           budget: 20_000,
           folder: { kind: "folder", path: task.folder ?? "", found: true },
         }),
