@@ -95,6 +95,16 @@ export class Live {
     void this.#connect();
   }
 
+  /**
+   * Asks for a fresh snapshot on the same session: what Open offers comes only with one. The tab's
+   * edits and its change log stay, as they belong to this session.
+   */
+  refresh(): void {
+    if (this.#stopped) return;
+    this.store.resnapshot();
+    if (!this.#greeting) this.#subscribe(undefined);
+  }
+
   /** The tab stopped (closed, or signed out): nothing more is asked of the service. */
   get stopped(): boolean {
     return this.#stopped;

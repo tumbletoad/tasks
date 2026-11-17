@@ -255,6 +255,7 @@ export function SpaceSwitcher({
               onMode={setAdding}
               onMade={(made) => {
                 setAdding(undefined);
+                if (made.notRemembered !== undefined) say(made.notRemembered);
                 void navigate({ to: "/s/$space/$view", params: { space: made.id, view: LANDING } });
               }}
             />

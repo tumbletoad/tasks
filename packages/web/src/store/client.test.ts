@@ -228,6 +228,27 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     expect(socket().sent).toEqual([{ type: "subscribe", space: SPACE }]);
     live.stop();
   });
+
+  test("a refresh takes a fresh snapshot on the same session: what Open offers follows", async () => {
+    const live = start();
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b" });
+    receive(snapshot(5, [task("a", "One")]));
+    const before = live.getState().instances;
+    live.refresh();
+    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: SPACE });
+    // A batch from before the new snapshot is not applied over it.
+    receive(batch(5, 6, [taskEvent(task("a", "Old"))]));
+    expect(live.getState().tasks.get("a")?.title).toBe("One");
+    const instance = { key: "claude", label: "Claude Code", glyph: "C", ring: 0, route: "cli" };
+    receive({ ...snapshot(7, [task("a", "One")]), instances: [instance] });
+    expect(live.getState().phase).toBe("live");
+    expect(live.getState().instances).not.toBe(before);
+    expect(live.getState().instances.map((i) => i.key)).toEqual(["claude"]);
+    live.stop();
+    live.refresh();
+    expect(socket().sent.filter((m) => m["type"] === "subscribe")).toHaveLength(2);
+  });
 });
 
 describe("[A5.3.15.web.installed] the page and a newer installed version", () => {

@@ -3763,7 +3763,7 @@
     },
     {
       "id": "A5.3.15.web.live",
-      "title": "The tab's feed client applies a batch only when it reaches past its cursor without a gap, ignores a repeat, takes a fresh snapshot after a gap (asked for again on the next socket when the old one dropped), never applies another space's batch, and a feed that resumes from its cursor (after applying what it had queued) is live again without a snapshot, with its rows kept and its backoff reset",
+      "title": "The tab's feed client applies a batch only when it reaches past its cursor without a gap, ignores a repeat, takes a fresh snapshot after a gap (asked for again on the next socket when the old one dropped) or on a refresh, on the same session, never applies another space's batch, and a feed that resumes from its cursor (after applying what it had queued) is live again without a snapshot, with its rows kept and its backoff reset",
       "source": "A5 3.15, A1 3.7, A7 3.9 M2.13",
       "owner": "M2",
       "kind": "ci",
@@ -4189,6 +4189,20 @@
     {
       "id": "A7.3.12.m5-12.page-apps",
       "title": "Over HTTP as the page calls them: a space from a name alone, each app's two switches with what they write, one click that adds and one that takes out again, a home that changed since the view written nowhere with the new view returned, and a space not served or a switch named twice refused",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.page-desktop",
+      "title": "Over HTTP on Windows with two Claude Desktop settings files: neither is proposed, each can take the tools, and moving them from one file to the other is one apply",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.page-env",
+      "title": "The agent apps are looked for in the person's environment, brought up to date first",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

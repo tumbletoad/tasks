@@ -34,13 +34,23 @@ const nameOf = (params: JsonObject): string => {
   return name.trim();
 };
 
-/** A space as the page needs it: its ID and name. */
-function described(result: unknown): { id: string; name: string } {
-  const space = (result as { space?: { id?: unknown; name?: unknown } }).space;
+/**
+ * A space as the page needs it: its ID and name, and when machine.toml could not record it, the
+ * line that says a restart will not reopen it and what to do.
+ */
+function described(result: unknown): { id: string; name: string; not_remembered?: string } {
+  const { space, not_remembered: line } = result as {
+    space?: { id?: unknown; name?: unknown };
+    not_remembered?: unknown;
+  };
   if (typeof space?.id !== "string" || typeof space.name !== "string") {
     throw new AppError({ code: "internal", message: "The space has no ID." });
   }
-  return { id: space.id, name: space.name };
+  return {
+    id: space.id,
+    name: space.name,
+    ...(typeof line === "string" ? { not_remembered: line } : {}),
+  };
 }
 
 export function pageSpaceVerbs(host: PageSpacesHost): {

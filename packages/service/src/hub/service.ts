@@ -120,7 +120,7 @@ import { currentVersion } from "../version/switch.ts";
 import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
 import { homeGate } from "./home-gate.ts";
 import { SeenCalls } from "./agent-homes.ts";
-import { agentAppVerbs } from "./agent-apps.ts";
+import { agentAppVerbs, personEnv } from "./agent-apps.ts";
 import { pageSpaceVerbs } from "./page-spaces.ts";
 import { within } from "./wait.ts";
 
@@ -966,7 +966,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         tasks: join(layout.bin, platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME),
         userHome: options.agentApps?.home ?? personHome,
         env: async () =>
-          options.agentApps?.env ?? (await launches.environment.base().catch(() => ({ env }))).env,
+          options.agentApps?.env ?? (await personEnv(launches.environment).catch(() => env)),
         homes: hub.agentHomes,
         instances: hub.instances,
         spaceName: (id) => made.spaces?.served().find((s) => s.id === id)?.name,

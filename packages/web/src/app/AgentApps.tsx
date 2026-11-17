@@ -10,6 +10,7 @@ import { useT, type Translate } from "../i18n/intl.tsx";
 import {
   applyApps,
   carryChoices,
+  choose,
   initialChoices,
   pendingOf,
   readApps,
@@ -131,9 +132,9 @@ export function AgentApps({
   }
 
   const pending = pendingOf(view, choices);
-  const choose = (row: AppRow, part: PartName, on: boolean) => {
+  const turn = (row: AppRow, part: PartName, on: boolean) => {
     setSaid(undefined);
-    setChoices((before) => new Map(before).set(switchKey(row.key, part), on));
+    setChoices((before) => choose(view, before, row, part, on));
   };
 
   const apply = () => {
@@ -173,9 +174,20 @@ export function AgentApps({
         },
         (error: unknown) => {
           if (signedOut(error)) return;
-          setSaid({
-            kind: error instanceof Refused && error.code === "conflict" ? "busy" : "failed",
-          });
+          if (error instanceof Refused && error.code === "conflict") {
+            setSaid({ kind: "busy" });
+            return;
+          }
+          // Part of it may have been written: the page shows how things stand now.
+          setSaid({ kind: "failed" });
+          readApps(api, space).then(
+            (found) => {
+              setView(found);
+              setChoices((before) => carryChoices(found, before));
+              onOpenChanged?.();
+            },
+            () => undefined,
+          );
         },
       )
       .finally(() => {
@@ -219,7 +231,7 @@ export function AgentApps({
                     on={choices.get(switchKey(row.key, part)) ?? found.on}
                     busy={busy}
                     onChange={(on) => {
-                      choose(row, part, on);
+                      turn(row, part, on);
                     }}
                   />
                 );

@@ -32,6 +32,7 @@ import {
   nodeDetectHost,
   shellLine,
   type Env,
+  type EnvironmentSource,
   type Instance,
   type Proposal,
 } from "@tasks/launch";
@@ -89,7 +90,8 @@ export interface AgentAppsHost {
  * Why a switch cannot be turned over here, or what to know about it, as a fixed word: open's
  * `by_hand` (machine.toml names it, written by hand), `no_command`, `needs_home`, `id_taken`; tools'
  * `not_installed` (Tasks's command is not where the entry would run it), `edited`, `missing`,
- * `interrupted`, `other_space`, or one of setup's refusals.
+ * `interrupted`, `other_space`, `several` (one of several Claude Desktop files: the person picks), or
+ * one of setup's refusals.
  */
 export type Why = string;
 
@@ -200,6 +202,9 @@ export function shownPath(
   return `~${p.sep}${relative}`;
 }
 
+/** A home's plan, and whether it is one of several Claude Desktop files the person picks from. */
+type Planned = PlanItem & { readonly several?: true };
+
 /** What one look found: the view, and what apply needs to carry each switch out. */
 interface Look {
   readonly view: AppsView;
@@ -268,7 +273,14 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   };
   const installed = isFolder(host.root) && isFile(host.tasks);
   const views = userHome === "" ? [] : await survey(input);
-  const plan = planOf(input, views, space);
+  // Claude Desktop with several settings files (a Windows app installed twice over the years): the
+  // engine changes none of them on its own, and here the person picks one with its switch. The
+  // grants table keeps one home per instance, so turning one on turns the others off (apps.ts).
+  const plan = planOf(input, views, space).map((item): Planned =>
+    item.change === "ambiguous"
+      ? { view: item.view, change: planOf(input, [item.view], space)[0]?.change, several: true }
+      : item,
+  );
   const written = readInstancesRecord(host.stateDir);
   const configFile = shown(pathOf(platform).join(host.configDir, MACHINE_TOML));
 
@@ -416,7 +428,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
 function toolsPart(
   host: AgentAppsHost,
   space: string,
-  { view, change }: PlanItem,
+  { view, change, several }: Planned,
   installed: boolean,
   shown: (path: string) => string,
 ): Part {
@@ -468,6 +480,7 @@ function toolsPart(
       return {
         on: false,
         change: "add",
+        ...(several === true ? { why: "several" } : {}),
         file,
         detail: toolsAdd(host.platform, change),
         plan: plan("add"),
@@ -533,6 +546,16 @@ function setupError(error: unknown): unknown {
 
 const reasonOf = (error: unknown): string => (error instanceof AppError ? error.code : "internal");
 
+/**
+ * The person's environment as Open's agents get it, brought up to date first: on Linux and macOS a
+ * service started at sign-in lacks what the person's profile adds to PATH until their login shell
+ * has been read once.
+ */
+export async function personEnv(source: Pick<EnvironmentSource, "prepare" | "base">): Promise<Env> {
+  await source.prepare();
+  return (await source.base()).env;
+}
+
 async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<unknown> {
   const space = spaceOf(params, host);
   const changes = changesOf(params["changes"]);
@@ -597,37 +620,45 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
       }
     }
 
-    // Then each app's own entry: out, then in, each with its row in the grants table.
+    // Then each app's own entry: out, then in, each with its row in the grants table. A home that
+    // fails is reported and the others still run, so the answer names every switch's outcome.
     const rows = (method: string, input: Record<string, unknown>) =>
       verb(method)(input, "ui") as Promise<Record<string, unknown>>;
-    for (const c of changes.filter((change) => change.part === "tools" && !change.on)) {
-      const item = now.items.get(c.key);
-      if (item === undefined) continue;
-      const outcome = await removeHome(now.input, item.view);
-      if (outcome.result === "removed") {
-        const { home } = item.view;
-        const stale = host.homes
-          .grants()
-          .list("agent_home")
-          .filter(
-            (grant) =>
-              grant.revoked_at === null &&
-              grant.attrs["app"] === home.app &&
-              samePath(host.platform, attr(grant, "home"), home.home),
-          )
-          .map((grant) => grant.grant_id);
-        if (stale.length > 0) await rows("setup/home_revoke", { grants: stale });
-        done(c);
-      } else {
-        done(c, outcome.reason ?? outcome.result);
+    const each = async (on: boolean, run: (item: PlanItem) => Promise<string | undefined>) => {
+      for (const c of changes.filter((change) => change.part === "tools" && change.on === on)) {
+        const item = now.items.get(c.key);
+        if (item === undefined) {
+          done(c, "changed_meanwhile");
+          continue;
+        }
+        try {
+          done(c, await run(item));
+        } catch (error) {
+          done(c, reasonOf(error));
+        }
       }
-    }
-    for (const c of changes.filter((change) => change.part === "tools" && change.on)) {
-      const item = now.items.get(c.key);
-      if (item === undefined) continue;
+    };
+    await each(false, async (item) => {
+      const outcome = await removeHome(now.input, item.view);
+      if (outcome.result !== "removed") return outcome.reason ?? outcome.result;
+      const { home } = item.view;
+      const stale = host.homes
+        .grants()
+        .list("agent_home")
+        .filter(
+          (grant) =>
+            grant.revoked_at === null &&
+            grant.attrs["app"] === home.app &&
+            samePath(host.platform, attr(grant, "home"), home.home),
+        )
+        .map((grant) => grant.grant_id);
+      if (stale.length > 0) await rows("setup/home_revoke", { grants: stale });
+      return undefined;
+    });
+    await each(true, async (item) => {
       const outcome = await applyWithRow(now.input, item, space, rows);
-      done(c, outcome.result === "applied" ? undefined : (outcome.reason ?? outcome.result));
-    }
+      return outcome.result === "applied" ? undefined : (outcome.reason ?? outcome.result);
+    });
     return { applied: true, outcomes, view: (await look(host, space)).view };
   });
 }

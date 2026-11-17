@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import {
   appliedOf,
   carryChoices,
+  choose,
   initialChoices,
   pendingOf,
   switchKey,
@@ -93,6 +94,35 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
       ["claude", "open", true, "0123456789abcdef"],
       ["codex", "tools", false, "fedcba9876543210"],
     ]);
+  });
+
+  test("several Claude Desktop files: none is proposed, and turning one on turns the others off", () => {
+    const desktop = (key: string, tools: ReturnType<typeof part> & { why?: string }) => ({
+      key,
+      app: "claude-desktop",
+      label: "Claude Desktop",
+      home: `~/${key}`,
+      also: [],
+      tools,
+    });
+    const view = viewOf({
+      space: "sp_one",
+      rows: [
+        desktop("a", { ...part(false, "add"), why: "several" }),
+        desktop("b", part(true, "remove")),
+        desktop("c", { ...part(true, null), why: "edited" }),
+      ],
+    });
+    expect(pendingOf(view, initialChoices(view, true))).toEqual([]);
+    const row = view.rows[0];
+    if (row === undefined) throw new Error("no row");
+    const chosen = choose(view, initialChoices(view, false), row, "tools", true);
+    expect(pendingOf(view, chosen).map((p) => [p.row.key, p.on])).toEqual([
+      ["a", true],
+      ["b", false],
+    ]);
+    // One Tasks cannot take out stays as it shows.
+    expect(chosen.get(switchKey("c", "tools"))).toBe(true);
   });
 
   test("an answer of another shape is refused, and an applied one is read with its outcomes", () => {

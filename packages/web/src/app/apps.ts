@@ -130,7 +130,8 @@ export type Choices = ReadonlyMap<string, boolean>;
 
 /**
  * The switches as a person first sees them: as they stand, and, when `propose` is set (the first
- * start), every switch that can be turned on is on, so one press applies the usual choice.
+ * start), every switch that can be turned on is on, so one press applies the usual choice. A switch
+ * with something to know first (one of several Claude Desktop files) is left to the person.
  */
 export function initialChoices(view: AppsView, propose: boolean): Map<string, boolean> {
   const choices = new Map<string, boolean>();
@@ -138,8 +139,31 @@ export function initialChoices(view: AppsView, propose: boolean): Map<string, bo
     for (const part of ["open", "tools"] as const) {
       const found = row[part];
       if (found === undefined) continue;
-      choices.set(switchKey(row.key, part), propose && found.change === "add" ? true : found.on);
+      const usual = propose && found.change === "add" && found.why === undefined;
+      choices.set(switchKey(row.key, part), usual ? true : found.on);
     }
+  }
+  return choices;
+}
+
+/**
+ * A switch turned over by the person. Claude Desktop's tools can be in one of its settings files
+ * only: turning them on in one turns them off in the others.
+ */
+export function choose(
+  view: AppsView,
+  before: Choices,
+  row: AppRow,
+  part: PartName,
+  on: boolean,
+): Map<string, boolean> {
+  const choices = new Map(before).set(switchKey(row.key, part), on);
+  if (row.app !== "claude-desktop" || part !== "tools" || !on) return choices;
+  for (const other of view.rows) {
+    const tools = other.tools;
+    if (other.key === row.key || other.app !== "claude-desktop" || tools === undefined) continue;
+    if (tools.on && tools.change !== "remove") continue;
+    choices.set(switchKey(other.key, "tools"), false);
   }
   return choices;
 }

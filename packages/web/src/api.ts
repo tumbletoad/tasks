@@ -71,12 +71,18 @@ export class Refused extends Error {
 export interface MadeSpace {
   readonly id: string;
   readonly name: string;
+  /** The space will not reopen after a restart: why, and what to do. */
+  readonly notRemembered?: string;
 }
 
 function madeSpace(value: unknown): MadeSpace {
-  const { id, name } = (value ?? {}) as { id?: unknown; name?: unknown };
+  const { id, name, not_remembered: line } = (value ?? {}) as Record<string, unknown>;
   if (typeof id !== "string" || typeof name !== "string") throw new Refused(200, "unknown");
-  return { id, name };
+  return {
+    id,
+    name,
+    ...(typeof line === "string" && line.length <= 2000 ? { notRemembered: line } : {}),
+  };
 }
 
 /** A fresh request ID (A1 3.8): 128 random bits, new per intended change. */

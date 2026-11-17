@@ -7,7 +7,13 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CLI_NAME } from "@tasks/brand";
 import { installFakeAgents } from "@tasks/testkit/fake-agents";
-import { agentAppVerbs, type AgentAppsHost, type AppsView } from "../src/hub/agent-apps.ts";
+import { FixedEnvironment } from "@tasks/launch";
+import {
+  agentAppVerbs,
+  personEnv,
+  type AgentAppsHost,
+  type AppsView,
+} from "../src/hub/agent-apps.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { configOf, removeRuntimeDir, serviceEnv, tempRoot } from "./harness.ts";
 import { post } from "./http-client.ts";
@@ -25,7 +31,10 @@ interface World {
   close(): Promise<void>;
 }
 
-async function world(label: string): Promise<World> {
+async function world(
+  label: string,
+  extra: (root: string) => Record<string, string> = () => ({}),
+): Promise<World> {
   const temp = tempRoot(label);
   const home = join(temp.root, "h");
   // The person's own home, as the agent apps see it: a Claude Code and a Codex home.
@@ -42,7 +51,7 @@ async function world(label: string): Promise<World> {
     maintenance: false,
     say: () => undefined,
     http: { ports: [0], persist: false },
-    agentApps: { env: fakes.env, home: user },
+    agentApps: { env: { ...fakes.env, ...extra(temp.root) }, home: user },
   });
   const sessions: { close(): void }[] = [];
   const signed = await signIn({
@@ -273,4 +282,74 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
     },
     SLOW,
   );
+});
+
+describe("[A7.3.12.m5-12.page-desktop] Several Claude Desktop files: the person picks one with its switch", () => {
+  it.skipIf(process.platform !== "win32")(
+    "each file can take the tools, none is proposed, and moving them is one apply",
+    async () => {
+      const w = await world("desktop", (root) => ({
+        LOCALAPPDATA: join(root, "local"),
+        APPDATA: join(root, "roaming"),
+      }));
+      try {
+        // The current app's folder and a classic install's, both with a file.
+        const files = [
+          join(w.user, "..", "local", "Claude-Data", "claude_pkg7"),
+          join(w.user, "..", "roaming", "Claude"),
+        ].map((folder) => {
+          mkdirSync(folder, { recursive: true });
+          const file = join(folder, "claude_desktop_config.json");
+          writeFileSync(file, "{}");
+          return file;
+        });
+        const has = (file: string) =>
+          (JSON.parse(readFileSync(file, "utf8")) as { mcpServers?: Record<string, unknown> })
+            .mcpServers?.["tasks"] !== undefined;
+        const made = await call<{ id: string }>(w, "/api/v1/space/create", {
+          name: "Mira",
+          folder: join(w.home, "mira"),
+        });
+        const space = made.result.id;
+        const desktops = (view: AppsView) => view.rows.filter((r) => r.app === "claude-desktop");
+
+        const seen = (await call<AppsView>(w, "/api/v1/machine/apps", { space })).result;
+        expect(desktops(seen).map((r) => r.tools)).toEqual([
+          expect.objectContaining({ on: false, change: "add", why: "several" }),
+          expect.objectContaining({ on: false, change: "add", why: "several" }),
+        ]);
+        const [first, second] = desktops(seen);
+        if (first === undefined || second === undefined) throw new Error("two Desktop rows");
+        const one = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: first.key, part: "tools", on: true, plan: first.tools?.plan }],
+        });
+        expect(one.result.outcomes.map((o) => o.result)).toEqual(["done"]);
+        expect(files.map(has)).toEqual([true, false]);
+
+        // Moved to the other file: out of the first and into the second in one apply.
+        const [on, off] = desktops(one.result.view);
+        const moved = await call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [
+            { key: on?.key, part: "tools", on: false, plan: on?.tools?.plan },
+            { key: off?.key, part: "tools", on: true, plan: off?.tools?.plan },
+          ],
+        });
+        expect(moved.result.outcomes.map((o) => o.result)).toEqual(["done", "done"]);
+        expect(files.map(has)).toEqual([false, true]);
+      } finally {
+        await w.close();
+      }
+    },
+    SLOW,
+  );
+});
+
+describe("[A7.3.12.m5-12.page-env] The agent apps are looked for in the person's environment", () => {
+  it("brings the person's environment up to date before it is read", async () => {
+    const base = new FixedEnvironment({ kind: "user", env: { PATH: "/person/bin" } });
+    expect(await personEnv(base)).toEqual({ PATH: "/person/bin" });
+    expect(base.prepared).toBe(1);
+  });
 });

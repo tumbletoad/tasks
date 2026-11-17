@@ -116,18 +116,25 @@ function FirstStart({ closed }: { readonly closed: readonly NotOpen[] }) {
           }}
         />
       ) : (
-        <AgentApps
-          space={step.made.id}
-          firstStart
-          headingLevel={1}
-          onDone={() => {
-            void navigate({
-              to: "/s/$space/$view",
-              params: { space: step.made.id, view: LANDING },
-              replace: true,
-            });
-          }}
-        />
+        <>
+          {step.made.notRemembered === undefined ? null : (
+            <p className={styles.line} role="alert">
+              {step.made.notRemembered}
+            </p>
+          )}
+          <AgentApps
+            space={step.made.id}
+            firstStart
+            headingLevel={1}
+            onDone={() => {
+              void navigate({
+                to: "/s/$space/$view",
+                params: { space: step.made.id, view: LANDING },
+                replace: true,
+              });
+            }}
+          />
+        </>
       )}
     </main>
   );
