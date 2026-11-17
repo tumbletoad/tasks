@@ -12,6 +12,10 @@
 // where a restore into a new folder marks the copy (restore.ts), so the claim and the end of the
 // copy state commit together or not at all.
 //
+// A copy comes from an earlier state, so its counter of task references may stand below references
+// this machine has given out since in the space elsewhere. The claim raises the counter to the
+// caller's `refFloor`, in its own commit, so a reference such as M-14 never names a second task.
+//
 // The claim commit is the first of the new incarnation: its seq is `last_seq + 1`, and
 // `authority_since` is that seq. It is a system commit of kind `ops` with one `space.claim`
 // operation, written by the writer's own writeSystemCommit (write/writer.ts), in the one
@@ -21,7 +25,7 @@ import { misuse, StorageError } from "../errors.ts";
 import { isId, newId, type Id, type RandomSource } from "../ids.ts";
 import { manifestFor, writeManifest } from "../manifest.ts";
 import { stepPosition } from "../migrate/steps.ts";
-import { decodeSpaceRow, inRange, type LineageEntry, type SpaceRow } from "../rows.ts";
+import { decodeSpaceRow, inRange, RANGES, type LineageEntry, type SpaceRow } from "../rows.ts";
 import { encodeRevision, type SchemaStep } from "../schema.ts";
 import type { OpenedSpace } from "../space.ts";
 import { writeSystemCommit } from "../write/writer.ts";
@@ -32,6 +36,12 @@ export interface ClaimOptions {
   machineId: Id<"m">;
   /** Epochs known on this machine besides the copy's own and its lineage's. */
   knownEpochs?: readonly number[];
+  /**
+   * The lowest next task reference the claimed space may give: one past the highest this machine
+   * gave out in the space elsewhere (the live space a restore replaces, other copies). The claim
+   * raises the copy's counter to it, so no reference is given to a second task.
+   */
+  refFloor?: number;
   /** Milliseconds since 1970. */
   now: number;
   random: RandomSource;
@@ -85,7 +95,16 @@ export function claimInTransaction(conn: Connection, options: ClaimOptions): Cla
   for (const epoch of options.knownEpochs ?? []) {
     if (!inRange(epoch, "epoch")) throw misuse("A known epoch is outside its range");
   }
+  const floor = options.refFloor;
+  if (
+    floor !== undefined &&
+    (!Number.isSafeInteger(floor) || floor < RANGES.taskRef.min || floor > RANGES.taskRef.max + 1)
+  ) {
+    throw misuse("A reference floor is a next task reference");
+  }
   const before = decodeSpaceRow(conn.prepare(SPACE).get());
+  // The raised counter is part of the claim's operation, so its commit says what it changed.
+  const nextRef = floor !== undefined && floor > before.nextRef ? floor : undefined;
   const known = [
     before.authority.epoch,
     ...before.lineage.incarnations.map((entry) => entry.epoch),
@@ -107,7 +126,13 @@ export function claimInTransaction(conn: Connection, options: ClaimOptions): Cla
         v: 1,
         op: "space.claim",
         target: before.spaceId,
-        input: { kind: options.kind, epoch, incarnation, parent },
+        input: {
+          kind: options.kind,
+          epoch,
+          incarnation,
+          parent,
+          ...(nextRef === undefined ? {} : { next_ref: nextRef }),
+        },
       },
     ],
     epoch,
@@ -128,7 +153,7 @@ export function claimInTransaction(conn: Connection, options: ClaimOptions): Cla
     .prepare(
       `UPDATE space SET authority_machine = $machine, authority_epoch = $epoch,
          authority_incarnation = $incarnation, authority_since = $seq, lineage = $lineage,
-         transfer = NULL
+         transfer = NULL, next_ref = $nextRef
        WHERE one = 1`,
     )
     .run({
@@ -136,6 +161,7 @@ export function claimInTransaction(conn: Connection, options: ClaimOptions): Cla
       epoch,
       incarnation,
       seq,
+      nextRef: nextRef ?? before.nextRef,
       lineage: JSON.stringify({
         forked_from: before.lineage.forked_from,
         incarnations: [...before.lineage.incarnations, entry],

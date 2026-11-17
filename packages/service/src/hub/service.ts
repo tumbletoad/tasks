@@ -744,6 +744,9 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           repairSearch: (entry: number) => {
             spaceManager().repairSearch(entry);
           },
+          backedUp: (entry: number, at: number) => {
+            spaceManager().backedUp(entry, at);
+          },
         },
       },
     };

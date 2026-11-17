@@ -461,7 +461,7 @@ export async function requestRestart(
   }
 }
 
-/** System32's tools, found where the loader mapped ntdll.dll from, never through SystemRoot. */
+/** System32's tools, from the folder identity.ts finds, never through SystemRoot. */
 function windowsTools(): WindowsTools | undefined {
   const folder = system32();
   if (folder === undefined) return undefined;

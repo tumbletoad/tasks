@@ -154,3 +154,11 @@ a.pick:hover {
   margin: 6px 8px;
   color: var(--k-muted);
 }
+
+.attention {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--k-due);
+}

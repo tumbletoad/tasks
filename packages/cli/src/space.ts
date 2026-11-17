@@ -92,6 +92,8 @@ export interface SpaceRow {
   message?: string;
   /** The newest migration this machine ran on the space, with the backup from just before it. */
   migrated?: Migrated;
+  /** An open space whose backups are not working: what happened and what to do. */
+  backup?: { why?: string; message?: string };
 }
 
 /** Options of a space command: `--name value` or `--flag`. Values are never shown in errors. */
@@ -196,6 +198,7 @@ function printSpace(io: Io, row: SpaceRow, verb: string, isDefault = false): voi
   );
   if (row.message !== undefined) io.stdout(`  ${row.message}\n`);
   if (row.migrated !== undefined) io.stdout(`  ${migratedLine(row.migrated)}\n`);
+  if (row.backup?.message !== undefined) io.stdout(`  ${row.backup.message}\n`);
   for (const line of wayOut(row)) io.stdout(`  ${line}\n`);
 }
 

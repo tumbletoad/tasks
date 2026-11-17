@@ -170,6 +170,8 @@ export interface ServedSpace {
   readonly reason?: string;
   /** Why a read-only space is read-only, in A1 3.2's words (a synced or network folder). */
   readonly message?: string;
+  /** An open space whose backups are not working: why, in a fixed word (hub/backup-health.ts). */
+  readonly backup?: string;
   /** Set while the space is open as this machine's. */
   readonly writer: SpaceWriterHandle | undefined;
   /** Set while the space is served: open or read-only. */

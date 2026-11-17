@@ -18,6 +18,7 @@
 import { execFile, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { win32 } from "node:path";
+import { system32 } from "../hub/identity.ts";
 
 /** One socket of `/proc/net/tcp` or `/proc/net/tcp6`. */
 export interface ProcTcpRow {
@@ -207,19 +208,6 @@ export function windowsPidOwner(text: string, pid: number, me: string): PidOwner
   return owner.toLowerCase() === me.toLowerCase() ? "mine" : "other";
 }
 
-/** The System32 folder: the folder the loader mapped ntdll.dll from (as hub/identity.ts does). */
-let system32: string | undefined;
-function system32Dir(): string | undefined {
-  if (system32 !== undefined) return system32;
-  const report = process.report.getReport() as { sharedObjects?: unknown };
-  const modules = Array.isArray(report.sharedObjects) ? report.sharedObjects : [];
-  const ntdll = modules.find(
-    (m): m is string => typeof m === "string" && win32.basename(m).toLowerCase() === "ntdll.dll",
-  );
-  system32 = ntdll === undefined ? undefined : win32.dirname(ntdll);
-  return system32;
-}
-
 /** Runs a tool without blocking the service: its output, or undefined when it failed. */
 function runAsync(file: string, args: readonly string[]): Promise<string | undefined> {
   return new Promise((resolve) => {
@@ -278,7 +266,7 @@ export function osHolderCheck(platform: NodeJS.Platform = process.platform): Hol
   if (platform === "win32") {
     let me: string | undefined;
     return async (port) => {
-      const dir = system32Dir();
+      const dir = system32();
       if (dir === undefined) throw new HolderCheckFailed("no System32 folder");
       const text = await runAsync(win32.join(dir, "netstat.exe"), ["-ano"]);
       if (text === undefined) throw new HolderCheckFailed("netstat gave no answer");
