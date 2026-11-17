@@ -319,7 +319,8 @@ describe("[A1.5.write.groups] areas and projects are created, changed, moved, ar
 
   test("in a space whose deleted project still holds live tasks, a reorder and its undo work, a move out and its undo too, and no task joins the project", async () => {
     const [first, second] = [newTask("First"), newTask("Second")];
-    // The project was deleted with its tasks still in it, as the undo of an import could leave it.
+    // The project was deleted with its tasks still in it, as an earlier build's undo of an import
+    // could leave it.
     await olderSpace("UPDATE projects SET deleted_at = 1 WHERE id = $id", { id: fx.project });
     expectStatus(submit([{ kind: "task.move", task: second, before: first }]), "applied");
     expect(order()).toEqual([second, first]);

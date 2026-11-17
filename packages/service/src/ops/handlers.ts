@@ -161,7 +161,6 @@ import {
   sectionsOf,
   type DigestFolder,
 } from "./task-view.ts";
-import { planningApply, planningPreview, planningUndo } from "./import-planning.ts";
 import { readFinished } from "./task-rows.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
@@ -184,10 +183,8 @@ export interface ServedSpace {
   readonly writer: SpaceWriterHandle | undefined;
   /** Set while the space is served: open or read-only. */
   readonly reader: WorkerConnection | undefined;
-  /** The space's folder on this machine: where an import's run folder goes (A7 3.15.1). */
+  /** The space's folder on this machine. */
   readonly folder?: string;
-  /** The space's machine-local backup folder, when one is set: an import's barrier backup. */
-  readonly backupDir?: string;
 }
 
 /** What the request path needs from its host. */
@@ -2373,89 +2370,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ...(opened.copy === undefined ? {} : { copy: opened.copy }),
       text: opened.composer,
     };
-  },
-
-  "import.planning.preview": async (call) => {
-    // The dry run writes no operation, but it puts its run folder in the space's folder, and the
-    // import it previews can apply only to a space this machine writes: an open space only.
-    writerOf(call.space);
-    const reader = readerOf(call.space);
-    const folder = call.space.folder;
-    if (folder === undefined) throw spaceUnavailable("not_served", false, call.space.state);
-    try {
-      return await planningPreview({
-        folder,
-        reader,
-        input: call.input,
-        roots: [],
-        platform: call.host.platform ?? process.platform,
-        timeZone: (call.host.timeZone ?? localTimeZone)(),
-      });
-    } catch (error) {
-      throw storageFailure(error);
-    }
-  },
-
-  // A7 3.15.5: the user's apply of a dry run, behind a verified backup, as the import actor.
-  "import.planning.apply": async (call) => {
-    const writer = writerOf(call.space);
-    const reader = readerOf(call.space);
-    const folder = call.space.folder;
-    if (folder === undefined) throw spaceUnavailable("not_served", false, call.space.state);
-    let principal: Id<"ac">;
-    try {
-      checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
-      principal = await actorOf(writer, call.principal);
-    } catch (error) {
-      throw storageFailure(error);
-    }
-    try {
-      return await planningApply({
-        folder,
-        reader,
-        writer,
-        input: call.input,
-        roots: [],
-        platform: call.host.platform ?? process.platform,
-        principal,
-        importer: () => writer.actor("import", "import"),
-        scope: call.principal.scope,
-        ...(call.principal.earlierScope === undefined
-          ? {}
-          : { earlierScope: call.principal.earlierScope }),
-        machine: call.host.machine.id as Id<"m">,
-        ...(call.space.backupDir === undefined ? {} : { backupDir: call.space.backupDir }),
-        ...(call.host.now === undefined ? {} : { now: call.host.now }),
-      });
-    } catch (error) {
-      throw storageFailure(error);
-    }
-  },
-
-  // A7 3.15.5: the undo of an applied import, partial by design, never on the undo stack.
-  "import.planning.undo": async (call) => {
-    const writer = writerOf(call.space);
-    const reader = readerOf(call.space);
-    let principal: Id<"ac">;
-    try {
-      checkGrant(call.host.homes, homesOf(call.caller), call.space.id);
-      principal = await actorOf(writer, call.principal);
-    } catch (error) {
-      throw storageFailure(error);
-    }
-    return await planningUndo({
-      ...(call.space.folder === undefined ? {} : { folder: call.space.folder }),
-      reader,
-      writer,
-      input: call.input,
-      principal,
-      scope: call.principal.scope,
-      ...(call.principal.earlierScope === undefined
-        ? {}
-        : { earlierScope: call.principal.earlierScope }),
-      machine: call.host.machine.id as Id<"m">,
-      origin: call.principal.origin,
-    });
   },
 
   // A1 3.10.1: the user's one stack, shared by every tab and the user's CLI. Guarded by

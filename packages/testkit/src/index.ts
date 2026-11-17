@@ -13,7 +13,6 @@ export {
   type MiraOptions,
   type SeededSpace,
 } from "./mira.ts";
-export * from "./planning.ts";
 export { Rng } from "./rng.ts";
 export {
   FAKE_AGENT,
