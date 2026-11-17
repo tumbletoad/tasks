@@ -63,6 +63,11 @@ function described(run: Shown): string {
   const out = [line(run)];
   const cleanup = typeof run["cleanup"] === "string" ? CLEANUP[run["cleanup"]] : undefined;
   if (cleanup !== undefined) out.push(cleanup);
+  if (run["state"] === "unknown") {
+    out.push(
+      `Not all of what it started was confirmed ended. End it with: ${CLI_NAME} run stop ${String(run["id"])}`,
+    );
+  }
   if (typeof run["error"] === "string") out.push(`The agent said: ${run["error"]}`);
   const answer = run["answer"];
   if (typeof answer === "string" && answer !== "") {
@@ -141,13 +146,30 @@ export async function runCommand(
     }
     const given = words[0];
     const request = given === "-" ? (await io.readStdin()).trim() : given;
-    const started = await call("runs/start", {
-      ...space,
-      task: first,
-      ...(instance === undefined ? {} : { instance }),
-      ...(request === undefined || request === "" ? {} : { request }),
-      request_id: globals.requestId ?? newRequestId(),
-    });
+    // A start whose answer was lost may have queued the run: the same request ID finds it and
+    // starts nothing twice. A script keeps the ID; a person reads it when a retry is the way out.
+    const requestId = globals.requestId ?? newRequestId();
+    if (globals.requestId === undefined && globals.json && !globals.quiet) {
+      io.stderr(`request ${requestId}\n`);
+    }
+    const retry = globals.quiet ? undefined : `Retry with: --request-id ${requestId}\n`;
+    let started: Shown;
+    try {
+      io.onInterrupt?.(retry);
+      started = await call("runs/start", {
+        ...space,
+        task: first,
+        ...(instance === undefined ? {} : { instance }),
+        ...(request === undefined || request === "" ? {} : { request }),
+        request_id: requestId,
+      });
+    } catch (error) {
+      const body = bodyOf(asAppError(error));
+      if (retry !== undefined && body.data?.["retryable"] === true) io.stderr(retry);
+      return printError(io, globals.json, body);
+    } finally {
+      io.onInterrupt?.(undefined);
+    }
     const id = String(started["id"]);
     if (!wait) {
       if (globals.json) io.stdout(`${JSON.stringify(started)}\n`);

@@ -225,19 +225,28 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
     const a = JSON.parse(first.stdout) as { id: string };
     const b = JSON.parse(second.stdout) as { id: string };
     expect(b.id).toBe(a.id);
+    // A start without an ID of its own hands out the one it made, and a retry with it is the same.
+    const own = await user(["run", task, "--json", "Once more."]);
+    const made = /^request (\S+)$/m.exec(own.stderr)?.[1] ?? "";
+    const again = await user(["run", task, "--request-id", made, "--json", "Once more."]);
+    expect((JSON.parse(again.stdout) as { id: string }).id).toBe(
+      (JSON.parse(own.stdout) as { id: string }).id,
+    );
     const listed = await user(["run", "list", task, "--json"]);
     const ids = (JSON.parse(listed.stdout) as { runs: { id: string }[] }).runs.map((r) => r.id);
     expect(ids.filter((x) => x === a.id)).toHaveLength(1);
-    await waitFor(
-      async () => {
-        const shown = JSON.parse((await user(["run", "show", a.id, "--json"])).stdout) as {
-          state: string;
-        };
-        return shown.state === "succeeded" ? true : undefined;
-      },
-      60_000,
-      "the retried run done",
-    );
+    for (const id of [a.id, (JSON.parse(own.stdout) as { id: string }).id]) {
+      await waitFor(
+        async () => {
+          const shown = JSON.parse((await user(["run", "show", id, "--json"])).stdout) as {
+            state: string;
+          };
+          return shown.state === "succeeded" ? true : undefined;
+        },
+        60_000,
+        "the retried run done",
+      );
+    }
   });
 
   test("a queued run is built from its record, so it starts after a restart of the service", async () => {
