@@ -1,7 +1,7 @@
 // The normalised run events and the final run outcome of A4 3.11.1, as the stream parsers of
 // A4 3.11.4 produce them. The shapes live in packages/contracts (`@tasks/contracts/runs`), beside
 // the run record's; this module re-exports them for the parsers and adds what only they use.
-import { RUN_ADAPTERS, type StreamCounts } from "@tasks/contracts/runs";
+import type { StreamCounts } from "@tasks/contracts/runs";
 
 export {
   ANSWER_CAP_BYTES,
@@ -21,8 +21,8 @@ export {
   type Usage,
 } from "@tasks/contracts/runs";
 
-/** The two v1 run adapters' stream formats (A4 3.11.3): one parser per adapter. */
-export const STREAM_KINDS = RUN_ADAPTERS;
+/** The print-mode adapters' stream formats: one parser each. */
+export const STREAM_KINDS = ["claude-print"] as const;
 export type StreamKind = (typeof STREAM_KINDS)[number];
 
 export function emptyCounts(): StreamCounts {

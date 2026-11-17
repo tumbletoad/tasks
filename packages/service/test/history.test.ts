@@ -264,7 +264,7 @@ describe("[A1.5.history.runs] a run keeps its task's create, through the request
             kind: "run.create",
             task: id as `t_${string}`,
             instance: "codex-work",
-            adapter: "codex-exec",
+            adapter: "codex",
             place: null,
             request: "Fixture instruction.",
             brief_hash: "a1b2c3d4".repeat(8),

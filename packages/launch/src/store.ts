@@ -19,6 +19,7 @@ import {
   isRunReason,
   OUTCOME_REASONS,
   APP_TOOLS_STATES,
+  RUN_CLEANUPS,
   RUN_ADAPTERS,
   RUN_EVIDENCE_FIELDS,
   RUN_EVIDENCE_ID,
@@ -566,6 +567,7 @@ export function runResultProblem(result: unknown): string | undefined {
     "declined",
     "permissionDenials",
     "durationMs",
+    "cleanup",
   ];
   if (Object.keys(r).some((key) => !keys.includes(key) && r[key] !== undefined)) {
     return "patch.result";
@@ -624,6 +626,10 @@ export function runResultProblem(result: unknown): string | undefined {
   const appTools = r["appTools"];
   if (appTools !== null && !(APP_TOOLS_STATES as readonly unknown[]).includes(appTools)) {
     return "patch.result.appTools";
+  }
+  const cleanup = r["cleanup"];
+  if (cleanup !== undefined && !(RUN_CLEANUPS as readonly unknown[]).includes(cleanup)) {
+    return "patch.result.cleanup";
   }
   if (!isCount(r["declined"])) return "patch.result.declined";
   if (!isCount(r["permissionDenials"])) return "patch.result.permissionDenials";

@@ -67,42 +67,14 @@ const EXPECTED: Record<string, Expected> = {
   "claude-print/windows-cancel-terminate.jsonl": noResult(false),
   "claude-print/windows-cancel-taskkill-tree.jsonl": noResult(false),
   "claude-print/windows-killed-truncated-final-line.jsonl": noResult(false),
-  "codex-exec/windows-success-tool-call.jsonl": ok,
-  "codex-exec/windows-resume.jsonl": ok,
-  "codex-exec/windows-error-model.jsonl": {
-    reason: "agent_error",
-    nativeId: true,
-    result: false,
-    usage: false,
-  },
-  "codex-exec/windows-error-no-brief.jsonl": noOutput,
-  "codex-exec/windows-error-not-git.jsonl": noOutput,
-  // No Codex cancel flushed an event (A4 3.11.3): the first agent message is the last word.
-  "codex-exec/windows-cancel-ctrl-c.jsonl": noResult(true),
-  "codex-exec/windows-cancel-ctrl-c-early.jsonl": noResult(false),
-  "codex-exec/windows-cancel-ctrl-break.jsonl": noResult(true),
-  "codex-exec/windows-cancel-terminate.jsonl": noResult(true),
-  "codex-exec/windows-cancel-taskkill-tree.jsonl": noResult(true),
-  "codex-exec/windows-killed-truncated-final-line.jsonl": noResult(true),
-  "codex-exec/linux-success-tool-call.jsonl": ok,
-  "codex-exec/linux-resume.jsonl": ok,
-  "codex-exec/linux-error-model.jsonl": {
-    reason: "agent_error",
-    nativeId: true,
-    result: false,
-    usage: false,
-  },
-  "codex-exec/linux-cancel-sigint-group.jsonl": noResult(true),
-  "codex-exec/linux-cancel-sigterm-group.jsonl": noResult(true),
-  "codex-exec/linux-killed-truncated-final-line.jsonl": noResult(true),
 };
 
 const byteLength = (s: string): number => new TextEncoder().encode(s).length;
 
 describe("[A4.5.parsers.recordings] every recording parses to the outcome its recording states", () => {
-  test("the table, the index and the folder name the same 28 recordings", () => {
+  test("the table, the index and the folder name the same 11 recordings", () => {
     const files = fixtureFiles().sort();
-    expect(files).toHaveLength(28);
+    expect(files).toHaveLength(11);
     expect(Object.keys(EXPECTED).sort()).toEqual(files);
     expect(
       fixtureIndex()
@@ -159,7 +131,7 @@ describe("[A4.5.parsers.recordings] every recording parses to the outcome its re
     expect(last).toEqual({ kind: "finished", ok: outcome.ok, reason: outcome.reason });
   });
 
-  test("Claude's init reports the working folder and the Tasks tools; Codex has no session", () => {
+  test("Claude's init reports the working folder and the Tasks tools", () => {
     const claude = parseStream(
       "claude-print",
       fixtureBytes("claude-print/windows-success-tool-call.jsonl"),
@@ -174,23 +146,10 @@ describe("[A4.5.parsers.recordings] every recording parses to the outcome its re
       { code: 1, signal: null },
     );
     expect(noTools.outcome.session?.appTools).toBe("absent");
-    const codex = parseStream(
-      "codex-exec",
-      fixtureBytes("codex-exec/windows-success-tool-call.jsonl"),
-      {
-        code: 0,
-        signal: null,
-      },
-    );
-    expect(codex.outcome.session).toBeNull();
   });
 
-  test("the probe call is labelled as a Tasks tool call by both parsers", () => {
-    for (const file of [
-      "claude-print/windows-success-tool-call.jsonl",
-      "codex-exec/windows-success-tool-call.jsonl",
-      "codex-exec/linux-success-tool-call.jsonl",
-    ]) {
+  test("the probe call is labelled as a Tasks tool call", () => {
+    for (const file of ["claude-print/windows-success-tool-call.jsonl"]) {
       const entry = fixtureEntry(file);
       const { events } = parseStream(entry.cli, fixtureBytes(file), { code: 0, signal: null });
       const labels = events.flatMap((e) => (e.kind === "progress" ? [e.label] : []));

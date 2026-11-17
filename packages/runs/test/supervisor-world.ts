@@ -176,7 +176,6 @@ export class SupervisorWorld {
     return new Supervisor({
       lanes: () => this.#lanes,
       limits: () => this.limits,
-      available: () => Promise.resolve(true),
       prepare: (_lane, run) =>
         Promise.resolve(
           run.task !== null && this.closedTasks.has(run.task)
@@ -230,6 +229,7 @@ export class SupervisorWorld {
         return Promise.resolve({
           name,
           pid: this.#pids,
+          stdin: new PassThrough(),
           stdout: box.stdout,
           stderr: box.stderr,
           exited,

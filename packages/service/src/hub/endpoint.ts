@@ -37,6 +37,7 @@ import { t3Verbs, type T3Host } from "./t3.ts";
 import { agentHomeVerbs, type AgentHomesHost } from "./agent-homes.ts";
 import { instanceVerbs, type InstancesHost } from "./instances.ts";
 import type { RunBlocker, RunsStatus } from "../runs/service.ts";
+import { runVerbs, type RunVerbsHost } from "../runs/verbs.ts";
 
 /** The protocols this build speaks (A2 3.6.6): the library's, listed in service.json too. */
 export const PROTOCOLS = { min: PROTOCOL, max: PROTOCOL } as const;
@@ -138,6 +139,8 @@ export interface EndpointHub {
   readonly instances?: InstancesHost;
   /** Background runs, for an update's hold. */
   readonly runs?: EndpointRuns;
+  /** `tasks run` (`runs/*`): a person's runs of tasks. */
+  readonly runVerbs?: RunVerbsHost;
 }
 
 export interface EndpointOptions {
@@ -186,6 +189,7 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
     ...(hub.t3 === undefined ? {} : t3Verbs(hub.t3)),
     ...(hub.agentHomes === undefined ? {} : agentHomeVerbs(hub.agentHomes)),
     ...(hub.instances === undefined ? {} : instanceVerbs(hub.instances)),
+    ...(hub.runVerbs === undefined ? {} : runVerbs(hub.runVerbs)),
   };
   const verb = (name: string): RpcHandler | undefined => {
     const found = verbs[name];
@@ -317,7 +321,7 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
   };
 }
 
-/** The local command groups' methods: `tasks space` and `tasks setup`. */
+/** The local command groups' methods: `tasks space`, `tasks setup` and `tasks run`. */
 const VERB_METHODS = [
   "space/list",
   "space/create",
@@ -342,6 +346,10 @@ const VERB_METHODS = [
   "setup/home_grant",
   "setup/home_revoke",
   "setup/seen",
+  "runs/start",
+  "runs/list",
+  "runs/show",
+  "runs/stop",
 ] as const;
 
 /** The bind context's environment: only text values (the library already kept only listed names). */

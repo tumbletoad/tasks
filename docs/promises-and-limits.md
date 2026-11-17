@@ -120,6 +120,23 @@ the behaviour it describes, and keep each one to a sentence or two.
   sources. An instruction too long for it is kept as a note, never cut.
 - Tasks never changes another app's trust or approval settings.
 
+## Background runs
+
+- `tasks run` starts an agent on a task in the task's folder, the one Open uses, and only you can
+  start one. A run may do whatever your agent setup allows, without asking: the network, other
+  folders, other agents. An instance's `run_permission` narrows that.
+- Your request reaches the agent over its own connection, never on a command line. A run's
+  answer, or the agent's question when it needs you, is kept in the run's record. A question
+  from a helper the agent started does not reach you: that helper hears that no one answered.
+- Stop ends the agent and everything it started, and the run is called ended only once the system
+  confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
+  ends what Tasks could find of it: a process the agent detached from it may live on.
+- What a run's agent changes through Tasks' own tools is recorded as that run's.
+- A run's folder on this computer keeps the agent's raw output and its answer, which are task
+  text. It is removed after 14 days or past the newest 200 runs, once the answer is in the run's
+  record. The agent's own history, such as Codex's sessions, keeps the run's conversation as it
+  keeps any session of yours, and Tasks leaves it there.
+
 ## The page
 
 - An edit that failed or conflicted stays visible until you decide what to do with it.

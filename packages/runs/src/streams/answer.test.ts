@@ -15,27 +15,19 @@ const encoder = new TextEncoder();
 const size = (text: string): number => encoder.encode(text).length;
 const exit0 = { code: 0, signal: null };
 
-/** The CLI's line that carries `text` as its final answer, and the lines that finish the turn. */
-function finalLines(kind: StreamKind, text: string): string[] {
-  return kind === "claude-print"
-    ? [JSON.stringify({ type: "result", subtype: "success", is_error: false, result: text })]
-    : [
-        JSON.stringify({ type: "item.completed", item: { id: "m9", type: "agent_message", text } }),
-        JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } }),
-      ];
+/** The CLI's line that carries `text` as its final answer. */
+function finalLines(_kind: StreamKind, text: string): string[] {
+  return [JSON.stringify({ type: "result", subtype: "success", is_error: false, result: text })];
 }
 
 /** An assistant message of the CLI. */
-function messageLine(kind: StreamKind, text: string, id = "m1"): string {
-  return kind === "claude-print"
-    ? JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text }] } })
-    : JSON.stringify({ type: "item.completed", item: { id, type: "agent_message", text } });
+function messageLine(_kind: StreamKind, text: string): string {
+  return JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text }] } });
 }
 
 /** One MiB of output that is no answer: a known event of the CLI with a long field. */
-function otherLine(kind: StreamKind): string {
-  const head =
-    kind === "claude-print" ? '{"type":"user","pad":"' : '{"type":"turn.started","pad":"';
+function otherLine(): string {
+  const head = '{"type":"user","pad":"';
   return head + "o".repeat(1024 * 1024 - head.length - 2) + '"}';
 }
 
@@ -53,7 +45,7 @@ describe.each(STREAM_KINDS)(
   (kind) => {
     test("a 1 MiB answer after 50 MB of other output is kept whole and final", () => {
       const parser = createStreamParser(kind);
-      const other = encoder.encode(`${otherLine(kind)}\n`);
+      const other = encoder.encode(`${otherLine()}\n`);
       for (let i = 0; i < 50; i += 1) parser.push(other);
       const text = "a".repeat(ANSWER_CAP_BYTES - 3) + "€";
       const events = parser.push(`${finalLines(kind, text).join("\n")}\n`);
@@ -94,9 +86,9 @@ describe.each(STREAM_KINDS)(
 
     test("each message is the answer so far; only the end of the agent's turn makes it final", () => {
       const parser = createStreamParser(kind);
-      const first = answers(parser.push(`${messageLine(kind, "Looking.", "m1")}\n`));
+      const first = answers(parser.push(`${messageLine(kind, "Looking.")}\n`));
       expect(first).toEqual([{ kind: "answer", text: "Looking.", final: false, cut: false }]);
-      const second = answers(parser.push(`${messageLine(kind, "Found it.", "m2")}\n`));
+      const second = answers(parser.push(`${messageLine(kind, "Found it.")}\n`));
       expect(second).toEqual([{ kind: "answer", text: "Found it.", final: false, cut: false }]);
       // Stopped before the turn ended: the last message is the answer, not final.
       const { outcome } = parser.end({ code: null, signal: "SIGKILL" });
@@ -117,7 +109,7 @@ describe.each(STREAM_KINDS)(
     test("a message after the final answer does not replace it", () => {
       const parser = createStreamParser(kind);
       parser.push(`${finalLines(kind, "The answer.").join("\n")}\n`);
-      expect(answers(parser.push(`${messageLine(kind, "An aside.", "m7")}\n`))).toEqual([]);
+      expect(answers(parser.push(`${messageLine(kind, "An aside.")}\n`))).toEqual([]);
       const { outcome } = parser.end(exit0);
       expect([outcome.result, outcome.resultFinal]).toEqual(["The answer.", true]);
     });

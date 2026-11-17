@@ -2,7 +2,7 @@
 // force as a crash would. On Linux it runs as the main process of a transient user unit with
 // Delegate=yes, as the real service runs in its unit; on Windows it is a plain child of the test.
 //
-//   node harness.ts [<tasks-run.exe>]
+//   node harness.ts [<tasks-run.exe> | ungrouped]
 //
 // It reads one JSON request per line on stdin and answers each on stdout, in order:
 //   {"op":"hello"}                                  -> {"pid":<n>}
@@ -14,6 +14,8 @@
 //   {"op":"recover","name","waitMs"?}               -> the confirmation
 //   {"op":"exited","name"}                          -> the agent's exit, once it has one
 //   {"op":"output","name"}                          -> {"bytes","head","ended"}: its stdout so far
+//   {"op":"write","name","text"}                    -> {}: `text` written to the agent's stdin
+//   {"op":"endStdin","name"}                        -> {}: the agent's stdin ended
 //   {"op":"forget"}                                 -> {}: drops what it knows of its containers,
 //                                                      as a restarted service would have nothing
 // Every answer is {"ok":true,"result":…} or {"ok":false,"error":"…","code"?:"…"}.
@@ -24,6 +26,7 @@ import { createInterface } from "node:readline";
 import {
   ContainerError,
   containers,
+  UngroupedContainers,
   type AgentExit,
   type Containers,
 } from "../../src/container/index.ts";
@@ -36,10 +39,14 @@ interface Output {
 }
 
 const helper = process.argv[2];
-const make = (): Containers => containers(helper === undefined ? {} : { runHelper: helper });
+const make = (): Containers =>
+  helper === "ungrouped"
+    ? new UngroupedContainers()
+    : containers(helper === undefined ? {} : { runHelper: helper });
 let box = make();
 const exits = new Map<string, Promise<AgentExit>>();
 const outputs = new Map<string, Output>();
+const inputs = new Map<string, NodeJS.WritableStream>();
 
 type Request = {
   op: string;
@@ -49,6 +56,7 @@ type Request = {
   maxMs?: number;
   args?: string[];
   waitMs?: number;
+  text?: string;
 };
 
 async function handle(request: Request): Promise<unknown> {
@@ -76,6 +84,7 @@ async function handle(request: Request): Promise<unknown> {
       });
       started.stderr.resume();
       exits.set(name, started.exited);
+      inputs.set(name, started.stdin);
       return { pid: started.pid };
     }
     case "interrupt":
@@ -95,10 +104,17 @@ async function handle(request: Request): Promise<unknown> {
       const head = output.head.subarray(0, 4096).toString("utf8");
       return { bytes: output.bytes, head, ended: output.ended };
     }
+    case "write":
+      inputs.get(name)?.write(request.text ?? "");
+      return {};
+    case "endStdin":
+      inputs.get(name)?.end();
+      return {};
     case "forget":
       box = make();
       exits.clear();
       outputs.clear();
+      inputs.clear();
       return {};
     default:
       throw new Error(`unknown op ${request.op}`);

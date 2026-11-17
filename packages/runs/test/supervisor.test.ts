@@ -107,7 +107,6 @@ function bench(
   const supervisor = new Supervisor({
     lanes: () => [lane],
     limits: () => options.limits ?? { runs: 3, perInstance: 2, perTask: 1 },
-    available: () => Promise.resolve(true),
     prepare: (_lane, run) =>
       options.prepare?.(run) ??
       Promise.resolve(
@@ -297,7 +296,6 @@ describe("[A4.5.run.supervisor] the supervisor's rules: a start whose record lan
       const supervisor = new Supervisor({
         lanes: () => [b.lane],
         limits: () => ({ runs: 3, perInstance: 2, perTask: 1 }),
-        available: () => Promise.resolve(true),
         prepare: () => Promise.resolve({ refused: "spawn_failed" }),
         folders: files,
         retention: { days: 14, count: 0 },

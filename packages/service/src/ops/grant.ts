@@ -29,6 +29,7 @@
 import { CLI_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
 import { MANUAL_INSTANCE } from "@tasks/launch";
+import { runOf } from "./binding.ts";
 import type { Caller } from "./caller.ts";
 
 /**
@@ -40,8 +41,12 @@ export { MANUAL_INSTANCE };
 
 /** What the request path asks of the agent homes' rows (hub/home-gate.ts answers it). */
 export interface HomeGate {
-  /** Whether a call of the agent home `instance` may use the space `space` (an `sp_` ID). */
-  may(instance: string, space: string): boolean;
+  /**
+   * Whether a call of the agent home `instance` may use the space `space` (an `sp_` ID). `run` is
+   * the background run (`ru_` ID) the call's session or ticket acts for: Tasks gave that run's
+   * agent its tools, so the run's own calls may use the run's space without a row.
+   */
+  may(instance: string, space: string, run?: string): boolean;
 }
 
 /**
@@ -76,15 +81,17 @@ export function homesOf(caller: Caller): readonly string[] {
 }
 
 /**
- * Refuses the call unless every agent home in `homes` may use `space` (A3 3.7.8). A host without
- * the gate refuses every agent home's call: the gate is never open by omission.
+ * Refuses the call unless every agent home it comes from may use `space` (A3 3.7.8), as the run its
+ * session acts for if it acts for one. A host without the gate refuses every agent home's call: the
+ * gate is never open by omission.
  */
 export function checkGrant(
   gate: HomeGate | undefined,
-  homes: readonly string[],
+  caller: Caller,
   space: string | undefined,
 ): void {
-  for (const home of homes) {
-    if (space === undefined || gate?.may(home, space) !== true) throw grantRefused();
+  const run = runOf(caller.binding?.session);
+  for (const home of homesOf(caller)) {
+    if (space === undefined || gate?.may(home, space, run) !== true) throw grantRefused();
   }
 }

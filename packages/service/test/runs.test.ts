@@ -21,7 +21,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import type { Logger } from "../src/hub/log.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
 import { opCall, type ServedSpace } from "../src/ops/index.ts";
-import { RunService, RunsUnavailable } from "../src/runs/service.ts";
+import { RunService } from "../src/runs/service.ts";
 import { holdRuns } from "../src/install/context.ts";
 import {
   instanceToml,
@@ -281,7 +281,7 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
     }
   });
 
-  test("where runs cannot be contained, the probe says why and the internal call refuses", async () => {
+  test("where no process group can hold runs, the probe says why and a run starts anyway: its work is done, and its cleanup says Tasks ended what it could find", async () => {
     const { home, spaceId } = await setUp("runs-none");
     // On Windows without tasks-run.exe; elsewhere a service outside a delegated systemd unit.
     const runs = windows ? { runHelper: join(home, "missing", "tasks-run.exe") } : undefined;
@@ -291,9 +291,17 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
     if (probe.available) return;
     expect(probe.message.length).toBeGreaterThan(20);
     const task = await addTask(home, service, 1);
-    await expect(
-      service.runs.start(spaceId, input(task), "runs-service-run-000003", agent(ANSWERS, home)),
-    ).rejects.toBeInstanceOf(RunsUnavailable);
+    const queued = await service.runs.start(
+      spaceId,
+      input(task),
+      "runs-service-run-000003",
+      agent(ANSWERS, home),
+    );
+    const done = await service.runs.ended(spaceId, queued.id);
+    expect(done).toMatchObject({
+      state: "succeeded",
+      result: { text: "Found it in the export.", cleanup: "ended_found" },
+    });
   });
 });
 
@@ -337,6 +345,7 @@ function fakeBoxes() {
       const contained: Contained = {
         name: spec.name,
         pid,
+        stdin: new PassThrough(),
         stdout: box.stdout,
         stderr: box.stderr,
         exited,
@@ -400,6 +409,48 @@ describe("[A4.3.11.9.run.folder] a queued run checks the folder a launch of its 
     );
     boxes.finish(runs.id);
     expect(await service.runs.ended(spaceId, runs.id)).toMatchObject({ state: "succeeded" });
+  }, 120_000);
+});
+
+describe("[A4.3.11.9.run.stop-unknown] Stop of a run whose processes were not confirmed ended ends them by force", () => {
+  test("a process that outlived the kill leaves the run unknown; once it can be ended, Stop settles the run as it ended", async () => {
+    const { home, spaceId } = await setUp("runs-unknown");
+    const boxes = fakeBoxes();
+    // What the agent left survives the run's own kill, until it is ended by its name.
+    const left = new Set<string>();
+    const containers: Containers = {
+      ...boxes.containers,
+      start: async (spec) => {
+        left.add(spec.name);
+        return boxes.containers.start(spec);
+      },
+      confirmEmpty: (name, options) =>
+        left.has(name)
+          ? Promise.resolve({ state: "occupied", detail: "left" })
+          : boxes.containers.confirmEmpty(name, options),
+      recover: (name, options) => {
+        left.delete(name);
+        return boxes.containers.recover(name, options);
+      },
+    };
+    const service = await start(home, {
+      containers,
+      times: { stopGraceMs: 500, confirmMs: 200, closeMs: 200 },
+    });
+    const task = await addTask(home, service, 1);
+    const run = await service.runs.start(
+      spaceId,
+      input(task),
+      "runs-unknown-run-000001",
+      agent(ANSWERS, home),
+    );
+    await runUntil(service, spaceId, run.id, (r) => r.state === "running", "the run");
+    await service.runs.stop(spaceId, run.id);
+    await runUntil(service, spaceId, run.id, (r) => r.state === "unknown", "the run unknown");
+    expect(await service.runs.stop(spaceId, run.id)).toMatchObject({
+      state: "cancelled",
+      result: { text: "Stopped with what was found." },
+    });
   }, 120_000);
 });
 

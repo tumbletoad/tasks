@@ -122,14 +122,22 @@ describe("[A4.3.11.8.container.probe] the probe says why runs cannot be containe
     await expect(
       missing.start({ name: "r1", command: "C:\\x.exe", args: [], cwd: "C:\\", env: {} }),
     ).rejects.toMatchObject({ code: "unavailable" });
+    // Elsewhere no process group exists: a run starts as the agent's process tree, so a program
+    // that is not there fails its start.
     const other = containers({ platform: "darwin" });
     expect(await other.probe()).toMatchObject({
       available: false,
       reason: "unsupported_platform",
     });
     await expect(
-      other.start({ name: "r1", command: "/x", args: [], cwd: "/", env: {} }),
-    ).rejects.toMatchObject({ code: "unavailable" });
+      other.start({
+        name: "r1",
+        command: join(tmpdir(), "no-such-dir", "x"),
+        args: [],
+        cwd: tmpdir(),
+        env: {},
+      }),
+    ).rejects.toMatchObject({ code: "start_failed" });
   });
 
   test("container names are checked before anything is made", async () => {
