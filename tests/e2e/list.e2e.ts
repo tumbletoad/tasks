@@ -397,7 +397,7 @@ test.describe("[A5.3.6.e2e.row-due-effort] A row's due date fits its column at e
         for (const [i, ref] of shown.entries()) {
           const row = rowOf(ref);
           await row.scrollIntoViewIfNeeded({ timeout: SLOW_MS });
-          const due = row.locator('[data-part="due"]');
+          const due = row.locator('[data-part="row-due"]');
           await expect(due).not.toBeEmpty();
           // Measured, not guessed: the text and its icon take no more room than the column gives.
           const cut = await due.evaluate((el) => el.scrollWidth - el.clientWidth);
@@ -405,7 +405,7 @@ test.describe("[A5.3.6.e2e.row-due-effort] A row's due date fits its column at e
             cut,
             `${dues[i]?.[0] ?? ""} at ${String(width)} px: ${await due.innerText()}`,
           ).toBe(0);
-          const effort = row.locator('[data-part="effort"]');
+          const effort = row.locator('[data-part="row-effort"]');
           const key = dues[i]?.[2];
           if (width === 390) await expect(effort).toBeHidden();
           else if (key === undefined) await expect(effort).toBeEmpty();

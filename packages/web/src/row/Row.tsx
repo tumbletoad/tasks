@@ -121,7 +121,7 @@ function Slots({
     <div className={styles.slots}>
       <span
         className={styles.due}
-        data-part="due"
+        data-part="row-due"
         data-tone={model.due?.tone}
         data-tip={model.due === undefined ? undefined : say(model.due.tip)}
       >
@@ -139,7 +139,7 @@ function Slots({
       </span>
       <span
         className={styles.effort}
-        data-part="effort"
+        data-part="row-effort"
         data-tip={model.effort === undefined ? undefined : say(model.effort.tip)}
       >
         {model.effort?.key}
