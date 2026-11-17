@@ -22,6 +22,7 @@ import { classSession } from "@tasks/service/test/ops-helpers";
 import { newId, type Id } from "@tasks/storage";
 import { seedMira } from "@tasks/testkit";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { callTools, type ToolCall } from "../../runs/test/codex-server.ts";
 import { BIN, runMain } from "./cli-harness.ts";
 
 const windows = process.platform === "win32";
@@ -37,6 +38,26 @@ let spaceId = "";
 let task = "";
 let log = "";
 let service: RunningService | undefined;
+
+/**
+ * What the run's agent calls through Tasks' tools, bound by its ticket: a write, its own task bound
+ * once more, reads, and another task of the space bound explicitly.
+ */
+const RUN_CALLS: readonly ToolCall[] = [
+  { name: "add_entry", arguments: { text: LOG_MARK, request_id: "runlogentry000000000001" } },
+  { name: "get_task", arguments: { bind: true } },
+  { name: "status", arguments: {} },
+  { name: "search", arguments: { q: "export" } },
+  { name: "get_task", arguments: { task: "M-1", bind: true } },
+];
+
+/** A tool's answer as the agent reads it: its error code, or none. */
+const codeOf = (result: unknown): string | undefined => {
+  const answer = result as { isError?: boolean; content?: { text?: string }[] };
+  if (answer.isError !== true) return undefined;
+  const text = answer.content?.map((c) => c.text ?? "").join("") ?? "";
+  return /^error ([a-z_]+):/.exec(text)?.[1] ?? text;
+};
 
 async function start(): Promise<RunningService> {
   const started = await startService({
@@ -84,11 +105,7 @@ beforeAll(async () => {
     answer: ANSWER_MARK,
     pace: 0.3,
     log,
-    callTool: {
-      name: "add_entry",
-      arguments: { text: LOG_MARK, request_id: "runlogentry000000000001" },
-      home,
-    },
+    callTool: { calls: RUN_CALLS, home },
   };
   registerSpaces(
     home,
@@ -198,11 +215,20 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
     const shown = await user(["run", "show", id, "--json"]);
     expect(JSON.parse(shown.stdout)).toMatchObject({ answer: ANSWER_MARK, answer_final: true });
 
-    // The agent's call of Tasks' own tool bound to the run's session and wrote as the run.
+    // The agent's calls of Tasks' own tools bound to the run's session: it wrote as the run, bound
+    // its own task again, read, and was told its session is bound when it named another task.
     const said = readFileSync(log, "utf8")
       .split("\n")
-      .filter((l) => l.includes("tool_result"));
-    expect(said.join("")).not.toContain('isError":true');
+      .filter((l) => l.includes("tool_result"))
+      .slice(0, RUN_CALLS.length)
+      .map((l) => JSON.parse(l) as { tool: string; tool_result: unknown });
+    expect(said.map((c) => [c.tool, codeOf(c.tool_result)])).toEqual([
+      ["add_entry", undefined],
+      ["get_task", undefined],
+      ["status", undefined],
+      ["search", undefined],
+      ["get_task", "already_bound"],
+    ]);
     const served = service?.ops.spaces().find((s) => s.id === spaceId);
     const rows = (await served?.reader?.transaction("deferred", [
       {
@@ -213,6 +239,18 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
     ])) as unknown[][] | undefined;
     expect(rows?.[0]).toEqual([expect.objectContaining({ run_id: id })]);
     expect(service?.bindings.sessionOfLaunch(id)?.launches).toContain(id);
+
+    // Once the run ended, its tools' entry (its ticket with it) may no longer use the space.
+    const thread = readFileSync(log, "utf8")
+      .split("\n")
+      .filter((l) => l.includes('"thread/start"'))
+      .map(
+        (l) => JSON.parse(l) as { params: { config: Record<string, Record<string, unknown>> } },
+      )[0];
+    const entry = thread?.params.config["mcp_servers.tasks"] ?? {};
+    const late = await callTools(entry, { calls: [{ name: "status", arguments: {} }], home });
+    expect(codeOf(late[0])).toBe("forbidden");
+    expect(JSON.stringify(late[0])).toContain("not registered");
 
     // The request and the answer are in no file of the state folder but the run's own.
     for (const file of files(stateOf(home))) {

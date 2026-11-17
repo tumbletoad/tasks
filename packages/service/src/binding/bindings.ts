@@ -49,6 +49,7 @@ import {
   MAX_PRESENTED,
   NATIVE_ID,
   principalOf,
+  runOf,
   Slot,
   grantRefused,
   type BindOutcome,
@@ -1078,11 +1079,13 @@ export class Bindings implements BindingPort {
   }
 
   /**
-   * Throws the grant refusal (ops/grant.ts) unless the slot's agent home may use `space` now: a bind
-   * through a tool records nothing for a home whose row was revoked while its call waited.
+   * Throws the grant refusal (ops/grant.ts) unless the slot's agent home may use `space` now, as
+   * the run its live session acts for if it acts for one: a bind through a tool records nothing
+   * for a home whose row was revoked, or whose run ended, while its call waited.
    */
   #granted(slot: Slot, space: string): void {
-    if (!this.#options.homes.may(slot.instance, space)) throw grantRefused();
+    const run = runOf(this.#current(slot));
+    if (!this.#options.homes.may(slot.instance, space, run)) throw grantRefused();
   }
 
   #ignored(input: "ticket" | "handle", reason: Ignored): void {

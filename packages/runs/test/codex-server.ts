@@ -54,11 +54,18 @@ export interface FakeScenario {
    */
   readonly leave?: "detached" | "in-group";
   /**
-   * At the recorded tool call, this tool of the server the thread's configuration names under
-   * `tasks` is called for real: its command, arguments and environment, with `home` as the
-   * install's home. Its answer goes to the log as `{"tool_result": …}`.
+   * At the recorded tool call, these tools of the server the thread's configuration names under
+   * `tasks` are called for real, in order, on one connection: its command, arguments and
+   * environment, with `home` as the install's home. Each answer goes to the log as
+   * `{"tool": …, "tool_result": …}`.
    */
-  readonly callTool?: { readonly name: string; readonly arguments: Json; readonly home: string };
+  readonly callTool?: { readonly calls: readonly ToolCall[]; readonly home: string };
+}
+
+/** One call of a tool, as an agent makes it. */
+export interface ToolCall {
+  readonly name: string;
+  readonly arguments: Json;
 }
 
 interface Line {
@@ -303,9 +310,12 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
         message["method"] === "item/started" &&
         item?.["type"] === "mcpToolCall"
       ) {
-        const result = await callTool(tasksServer, scenario.callTool);
-        if (scenario.log !== undefined) {
-          appendFileSync(scenario.log, `${JSON.stringify({ tool_result: result })}\n`);
+        const results = await callTools(tasksServer, scenario.callTool);
+        for (const [n, result] of results.entries()) {
+          const tool = scenario.callTool.calls[n]?.name;
+          if (scenario.log !== undefined) {
+            appendFileSync(scenario.log, `${JSON.stringify({ tool, tool_result: result })}\n`);
+          }
         }
       }
       send(message);
@@ -360,11 +370,14 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
   return { received, replayed: replaying.then(() => undefined), done };
 }
 
-/** Calls one tool of an MCP server over its stdio, as an agent would: its answer, or its error. */
-async function callTool(
+/**
+ * Calls tools of an MCP server over its stdio, in order on one connection, as an agent would:
+ * each one's answer, or its error. `server` is an entry of a thread's `mcp_servers`.
+ */
+export async function callTools(
   server: Json,
   call: NonNullable<FakeScenario["callTool"]>,
-): Promise<unknown> {
+): Promise<unknown[]> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
   const own = isObject(server["env"]) ? server["env"] : {};
@@ -395,8 +408,12 @@ async function callTool(
     child.stdin.write(
       `${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`,
     );
-    const answer = await ask(2, "tools/call", { name: call.name, arguments: call.arguments });
-    return answer["result"] ?? answer["error"];
+    const results: unknown[] = [];
+    for (const [n, tool] of call.calls.entries()) {
+      const answer = await ask(2 + n, "tools/call", { name: tool.name, arguments: tool.arguments });
+      results.push(answer["result"] ?? answer["error"]);
+    }
+    return results;
   } finally {
     child.stdin.end();
   }

@@ -24,6 +24,7 @@ export {
   MAX_PRESENTED,
   NATIVE_ID,
   NATIVE_SOURCES,
+  runOf,
   Slot,
   type BindOutcome,
   type BindingPort,
