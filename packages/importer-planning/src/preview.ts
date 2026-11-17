@@ -420,10 +420,10 @@ function judged(plan: ImportPlan, space: SpaceState) {
  * writer hashes them with the space's identity and the rows the plan meets, which it reads in the
  * applying transaction (storage: recomputeToken).
  *
- * Also what the apply decides from its own snapshot and this machine's disk, which the barrier
- * holds until the writer's transaction, so the writer takes them as given: each record of where an
- * earlier import landed one of the plan's groups, with whether that group is live, and the folders
- * the import gives here.
+ * Also what the apply decides from its own snapshot, which the barrier holds until the writer's
+ * transaction, and from this machine's disk, so the writer takes them as given: each record of
+ * where an earlier import landed one of the plan's groups, with whether that group is live, and
+ * the folders the import gives here.
  */
 export function previewPinned(
   plan: ImportPlan,

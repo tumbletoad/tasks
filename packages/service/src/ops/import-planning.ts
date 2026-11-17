@@ -118,7 +118,10 @@ function absolute(value: string, path: string): string {
  * What this machine says of each task's folder path, by legacy ID: its stored form when it is a
  * folder here, else why not. Each distinct path is looked at once, each look bounded.
  */
-export async function folderFacts(plan: ImportPlan, host: FolderHost): Promise<Map<string, FolderFact>> {
+export async function folderFacts(
+  plan: ImportPlan,
+  host: FolderHost,
+): Promise<Map<string, FolderFact>> {
   const looked = new Map<string, FolderFact>();
   const facts = new Map<string, FolderFact>();
   for (const t of plan.tasks) {

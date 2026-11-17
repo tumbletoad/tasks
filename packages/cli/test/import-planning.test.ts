@@ -139,14 +139,7 @@ describe("[A7.3.15.importer.dry-run] tasks import planning --dry-run", () => {
   }, 120_000);
 
   test("the person's text: a summary, with the run and the token", async () => {
-    const ran = await run([
-      "import",
-      "planning",
-      FIXTURE,
-      "--dry-run",
-      "--me",
-      index.me,
-    ]);
+    const ran = await run(["import", "planning", FIXTURE, "--dry-run", "--me", index.me]);
     expect(ran.code, ran.stdout).toBe(0);
     expect(ran.stdout).toContain("nothing was written to the space");
     expect(ran.stdout).toMatch(/Preview token: pv1_/);
