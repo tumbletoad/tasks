@@ -1,4 +1,4 @@
-// The service's lifecycle (A2 3.3.1): starting → binding → ready → draining → stopped.
+// The service's lifecycle: starting → binding → ready → draining → stopped.
 //
 //   starting  Refuse root, an elevated Administrator and package identity (64) before anything is
 //             written. Create the state folder user-only and refuse one that others can write (64).
@@ -6,15 +6,16 @@
 //             service's is touched. Then, as the holder only: machine.json, ipc.key, service.json
 //             with state "starting". An update cut off by a crash is finished or rolled back
 //             first (version/repair.ts); when current then names another version, exit 75.
-//   binding   Pick the endpoint (A2 3.2.1), remove a stale socket file from this install's own
+//   binding   Pick the endpoint, remove a stale socket file from this install's own
 //             socket folder, listen. A Windows pipe name that is taken gets a new instance ID,
 //             three tries in all, then exit 70.
 //   ready     service.json says "ready". Spaces open in parallel after it (STARTUP below).
-//   draining  Stop accepting connections, let them finish for up to 5 s, close each space within
-//             its bound (an open in progress is not waited for past it), release the writer
-//             locks, remove service.json if it is still ours, release service.lock. Then the
-//             exit: 0, 75 for a requested restart, 70 after lost ownership. A step that fails is
-//             skipped, so the drain always ends with its exit code.
+//   draining  End the background runs (their containers are killed), stop accepting
+//             connections, let them finish for up to 5 s, close each space within its bound (an
+//             open in progress is not waited for past it), release the writer locks, remove
+//             service.json if it is still ours, release service.lock. Then the exit: 0, 75 for a
+//             requested restart, 70 after lost ownership. A step that fails is skipped, so the
+//             drain always ends with its exit code.
 //
 // A crash at any point leaves what the next start recovers from: a lock the OS released, a stale
 // service.json, a stale socket file, a temporary file of an atomic write. A start that fails after

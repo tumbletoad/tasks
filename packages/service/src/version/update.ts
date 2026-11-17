@@ -1,39 +1,40 @@
-// `tasks update --from <archive>`, `--rollback` and `--repair` (A2 3.12.6, the subset of A7 3.13
-// M6.12: a local archive, no hosted channel). The installed version replaces itself, in this order:
-//   1. update.lock for the whole update (A2 3.2.3). A second update waits for it; then any journal
-//      it finds is an interrupted update, which is finished or rolled back first (repair.ts).
+// `tasks update --from <archive>`, `--rollback` and `--repair`: from a local archive, no hosted
+// channel. The installed version replaces itself, in this order:
+//   1. update.lock for the whole update. A second update waits for it; then any journal it finds
+//      is an interrupted update, which is finished or rolled back first (repair.ts).
 //   2. The release is verified with the keys the INSTALLED version carries (UPDATE_KEYS in lib/):
 //      the raw Ed25519 signature of SHA256SUMS beside the archive, then the archive's SHA-256 against
 //      its line there (release.ts). Nothing of the archive is unpacked, loaded or run before that.
 //   3. The archive's entries pass the install scripts' rule (archive.ts checkEntries) before
-//      anything is written; the journal names the staging folder before it is made.
+//      anything is written. Background runs end with the service, so while it runs the update now
+//      holds new runs back, waits up to 15 minutes for the running ones, and then asks: stop them,
+//      or give the update up with nothing changed (waitForRuns). Then the journal is written; it
+//      names the staging folder before that folder is made.
 //   4. The archive is unpacked into `versions/.staging-<random>`, every file is checked against its
 //      manifest.json, and the folder is renamed to `versions/<v>`, or a folder already there must
-//      equal it (A2 3.12.4 step 7).
+//      equal it.
 //   5. The candidate's self-test runs through its own version-local launcher
 //      (`versions/<v>/bin/tasks doctor --self-test --json`): integrity, the runtime gate and the
 //      candidate's checks. Authenticity was settled in step 2; this is the functional half.
 //   6. The journal records each stable launcher the switch changes, with its old and new SHA-256
 //      (phase `staged`), and on Windows each one is staged as `bin\<name>.new` (checked, flushed)
-//      before `current` changes (A2 3.12.6 step 8). Then `current` is switched atomically
+//      before `current` changes. Then `current` is switched atomically
 //      (`switched`), then each changed launcher is swapped for its staged copy, one at a time,
 //      `tasks.exe` first: by one rename where Windows allows it, else by renaming the running one
 //      aside and the new one in (switch.ts placeLauncher; `launchers_done`), and install.json
 //      records the version.
-//   7. The service is restarted through the OS (A2 3.12.6 step 11): a supervised service is asked
-//      for `service/shutdown {restart: true}` and its manager starts it again from the new current;
+//   7. The service is restarted through the OS: a supervised service is asked for
+//      `service/shutdown {restart: true}` and its manager starts it again from the new current;
 //      one nobody supervises is stopped and started. The update waits up to 30 s for a handshake
-//      that names the new version. Sessions keep running in their own processes and reconnect
-//      (A2 3.11). Background runs end with the service, so before anything changes the update
-//      holds new runs back, waits up to 15 minutes for the running ones, and then asks: stop them,
-//      or give the update up (waitForRuns).
-//   8. The journal goes and the lock is let go. A failure after the switch rolls back (A2 3.12.6
-//      step 13) through the same repair: phase `rolling_back`, current and the launchers back, the
-//      old service again, the reason in install.json for doctor.
+//      that names the new version. Sessions keep running in their own processes and reconnect;
+//      background runs were settled in step 3.
+//   8. The journal goes and the lock is let go. A failure after the switch rolls back through the
+//      same repair: phase `rolling_back`, current and the launchers back, the old service again,
+//      the reason in install.json for doctor.
 // It never removes a version folder and never touches a person's data: spaces, `<config>` and
 // `<state>` beyond its own files (update.lock, update.json, install.json, and the self-test's
 // folders in `<state>/tmp/`). A migration, if the new version needs one, runs later, when the new
-// version opens a space, behind its verified backup (A1).
+// version opens a space, behind its verified backup.
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {

@@ -1,4 +1,4 @@
-// `tasks update --from <archive> | --rollback | --repair [--yes] [--stop-runs]` (A2 3.12.6): the
+// `tasks update --from <archive> | --rollback | --repair [--yes] [--stop-runs]`: the
 // installed version replaces itself from a local release archive, goes back to the version before
 // the last switch, or finishes an update that was cut off. The updater is the service's
 // (`@tasks/service/version-update`), loaded only for this command; it verifies the archive with
@@ -6,7 +6,7 @@
 //
 // It runs only through the install's own command, which runs the version current names: an
 // installed version vouches for its successor, never another one. An agent's shell may not run it,
-// as it may not stop the service (A2 3.3.5, 3.12.6): the update restarts it. Before the
+// as it may not stop the service: the update restarts it. Before the
 // restart it asks once in a terminal; `--yes` answers for a script, and without a terminal and
 // without `--yes` nothing is changed (exit 2). The restart ends background runs: the update waits
 // for them, then asks whether to stop them; `--stop-runs` answers for a script, and without a
