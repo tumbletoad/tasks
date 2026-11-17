@@ -27,7 +27,7 @@ import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
 import { itemsOf, type RowItem } from "../list/items.ts";
 import { List, type Place } from "../list/List.tsx";
-import { folderRefusal } from "../row/launch.ts";
+import { folderRefusal, type FolderRefusal } from "../row/launch.ts";
 import { contextFor, type Grouping, type RowView } from "../row/model.ts";
 import type { RowActions } from "../row/actions.ts";
 import type { Clock } from "../row/dates.ts";
@@ -455,6 +455,18 @@ export function TaskList({
     [loadReceipts],
   );
 
+  /** Each task's last Open refused on its folder, until an Open of it goes through. */
+  const [refusals, setRefusals] = useState<ReadonlyMap<string, FolderRefusal>>(new Map());
+  const refuse = useCallback((task: string, refused: FolderRefusal | undefined) => {
+    setRefusals((known) => {
+      if (known.get(task) === refused) return known;
+      const next = new Map(known);
+      if (refused === undefined) next.delete(task);
+      else next.set(task, refused);
+      return next;
+    });
+  }, []);
+
   /** Puts a brief on the clipboard, in the person's click (A4 3.4.6). */
   const toClipboard = useCallback(
     (text: string, pack = false) => {
@@ -498,12 +510,14 @@ export function TaskList({
         api
           .openLaunch(task.id, instance.key, requestId())
           .then(({ receipt, copy }) => {
+            refuse(task.id, undefined);
             shown(task, receipt);
             if (copy !== undefined) toClipboard(copy);
           })
           .catch((error: unknown) => {
             if (live.failed(error)) return;
             const refused = folderRefusal(error);
+            refuse(task.id, refused);
             if (refused === undefined) say(t("row.openFailed"));
             else if (refused.folder === undefined) say(t("row.openWorkFolder"));
             else say(t("row.openFolder", { reason: refused.reason, folder: refused.folder }));
@@ -544,7 +558,7 @@ export function TaskList({
         setCurrent(task.id);
       },
     };
-  }, [api, live, edits, expandTask, chosen, collapse, say, shown, t, toClipboard]);
+  }, [api, live, edits, expandTask, chosen, collapse, refuse, say, shown, t, toClipboard]);
 
   const onCurrent = useCallback((key: string) => {
     setCurrent(key);
@@ -576,6 +590,7 @@ export function TaskList({
       setsize={item.setsize}
       actions={actions}
       leaving={leavingOf(item.key)}
+      refused={refusals.get(item.key)}
       {...(place.index === undefined ? {} : { index: place.index })}
       {...(place.start === undefined ? {} : { start: place.start })}
       measure={place.measure}

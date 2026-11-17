@@ -22,7 +22,7 @@ import { Expanded } from "../task/Expanded.tsx";
 import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
 import type { RowActions } from "./actions.ts";
-import { tileClick } from "./launch.ts";
+import { tileClick, type FolderRefusal } from "./launch.ts";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
 import {
@@ -87,6 +87,8 @@ export interface RowProps {
   readonly actions: RowActions;
   /** Checked off and in its hold, or completed by someone else and leaving (A5 3.12). */
   readonly leaving?: Leaving | undefined;
+  /** Its last Open, refused on its folder: the expanded task says so at once. */
+  readonly refused?: FolderRefusal | undefined;
   /** In a virtual list: the item's index and its offset from the list's top, in px. */
   readonly index?: number;
   readonly start?: number;
@@ -391,6 +393,7 @@ function RowView({
   setsize,
   actions,
   leaving,
+  refused,
   index,
   start,
   measure,
@@ -613,7 +616,13 @@ function RowView({
       </div>
       {expanded ? (
         <div className={styles.body} id={body} role="region" aria-label={task.title}>
-          <Expanded task={task} receipts={receipts} instances={instances} actions={actions} />
+          <Expanded
+            task={task}
+            receipts={receipts}
+            instances={instances}
+            actions={actions}
+            refused={refused}
+          />
         </div>
       ) : null}
     </li>
