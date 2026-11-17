@@ -4,7 +4,8 @@
 // WebSocket gets a single-use ticket instead (live.ts).
 //
 // Registry entries go through contracts' generated client (`/api/v1/op/<entry>`): Open and Copy
-// are A4's `launch.open`. A task's receipts have a route of their own (`/api/v1/launch/list`).
+// are A4's `launch.open`. A task's receipts, and Run, a task's runs and Stop, have routes of their
+// own (`/api/v1/launch/…`).
 import { httpHeader } from "@tasks/brand";
 import { createClient, type Client } from "@tasks/contracts/generated/client.ts";
 import { TOKEN_SHAPE } from "./stored.ts";
@@ -20,6 +21,35 @@ export interface Instance {
   readonly glyph: string;
   readonly ring: number;
   readonly route: string;
+  /** It can work on a task in the background: Run. */
+  readonly runs?: true;
+}
+
+/**
+ * A background run as the page shows it (the service's UiRun). `asked`, `answer` and `error` are
+ * the person's and the agent's text: shown as untrusted text, never HTML.
+ */
+export interface Run {
+  readonly id: string;
+  readonly instance: string;
+  readonly state: string;
+  readonly reason: string | null;
+  /** Why a queued run waits. */
+  readonly waiting?: string;
+  readonly queued_at: number;
+  readonly started_at: number | null;
+  readonly ended_at: number | null;
+  /** The person's words; null: the run works on the task. */
+  readonly asked: string | null;
+  readonly outcome?: string;
+  readonly cleanup?: string;
+  /** The agent's answer, or its question when it needs the person. */
+  readonly answer: string | null;
+  readonly answer_final: boolean;
+  readonly answer_cut: boolean;
+  readonly error?: string;
+  /** Grows with every change of the run: of two reads, the higher is newer. */
+  readonly version: number;
 }
 
 export type ReceiptState =
@@ -56,11 +86,14 @@ export class StaleBuild extends Error {}
 export class Refused extends Error {
   readonly status: number;
   readonly code: string;
+  /** The answer's `data`: why, in the service's fixed words. */
+  readonly data: Readonly<Record<string, unknown>>;
 
-  constructor(status: number, code: string) {
+  constructor(status: number, code: string, data: Readonly<Record<string, unknown>> = {}) {
     super(code);
     this.status = status;
     this.code = code;
+    this.data = data;
   }
 }
 
@@ -123,10 +156,20 @@ export class Api {
 
   async #result<T>(path: string, input: unknown): Promise<T> {
     const reply = await this.post(path, JSON.stringify(input));
-    const parsed = JSON.parse(reply.body) as { result?: T; error?: { code?: unknown } };
+    const parsed = JSON.parse(reply.body) as {
+      result?: T;
+      error?: { code?: unknown; data?: unknown };
+    };
     if (reply.status !== 200 || parsed.result === undefined) {
       const code = parsed.error?.code;
-      throw new Refused(reply.status, typeof code === "string" ? code : "unknown");
+      const data = parsed.error?.data;
+      throw new Refused(
+        reply.status,
+        typeof code === "string" ? code : "unknown",
+        typeof data === "object" && data !== null && !Array.isArray(data)
+          ? (data as Record<string, unknown>)
+          : {},
+      );
     }
     return parsed.result;
   }
@@ -206,5 +249,32 @@ export class Api {
   async receipts(task: string): Promise<Receipt[]> {
     const reply = await this.#result<{ receipts: Receipt[] }>("/api/v1/launch/list", { task });
     return reply.receipts;
+  }
+
+  /**
+   * Run: `instance` works on the task in the background, with `text` as its request, or on the
+   * task itself without one. The words go in the body, never a URL. The same `id` again is the
+   * same run.
+   */
+  async startRun(task: string, instance: string, id: string, text?: string): Promise<Run> {
+    const reply = await this.#result<{ run: Run }>("/api/v1/launch/run", {
+      task,
+      instance,
+      request_id: id,
+      ...(text === undefined || text.trim() === "" ? {} : { text }),
+    });
+    return reply.run;
+  }
+
+  /** A task's newest runs, oldest first. */
+  async runs(task: string): Promise<Run[]> {
+    const reply = await this.#result<{ runs: Run[] }>("/api/v1/launch/runs", { task });
+    return reply.runs;
+  }
+
+  /** Stop: the run as it is right after the service took the Stop. */
+  async stopRun(run: string): Promise<Run> {
+    const reply = await this.#result<{ run: Run }>("/api/v1/launch/stop", { run });
+    return reply.run;
   }
 }

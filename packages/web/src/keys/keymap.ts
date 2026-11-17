@@ -101,13 +101,20 @@ export const KEYMAP = [
     inFields: true,
   },
 
-  // Shift+Enter is the field's own new line. Ctrl+Shift+Enter is kept for Run.
+  // Shift+Enter is the field's own new line.
   { id: "note", scope: "composer", keys: [{ key: "Enter" }], label: "keys.note", inFields: true },
   {
     id: "open-first",
     scope: "composer",
     keys: [{ key: "Enter", mod: true }],
     label: "keys.openFirst",
+    inFields: true,
+  },
+  {
+    id: "run-first",
+    scope: "composer",
+    keys: [{ key: "Enter", mod: true, shift: true }],
+    label: "keys.runFirst",
     inFields: true,
   },
 ] as const satisfies readonly KeyAction[];

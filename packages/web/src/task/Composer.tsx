@@ -6,11 +6,16 @@
 // clipboard. Text typed meanwhile stays. Until then the draft is kept (composer.ts), so a reload
 // brings it back.
 //
-// Enter saves a note and Ctrl+Enter opens the first instance (keymap.ts): never while an input
-// method composes. Run, an agent working without a window, is not offered until it can start.
+// Run starts an agent that works on the task in the background, without a window, with the text
+// as its request (without text it works on the task): one button for the first instance that can
+// run, and, when several can, a menu beside it with the others. Its words clear once the service
+// queued the run, which holds them; a refusal keeps them.
+//
+// Enter saves a note, Ctrl+Enter opens the first instance and Ctrl+Shift+Enter runs the first
+// that can (keymap.ts): never while an input method composes.
 import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { Toolbar } from "react-aria-components";
-import { requestId, type Instance, type Receipt } from "../api.ts";
+import { Button, Menu, MenuItem, MenuTrigger, Popover, Toolbar } from "react-aria-components";
+import { requestId, type Instance, type Receipt, type Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useMachine } from "../app/machine.ts";
@@ -19,7 +24,9 @@ import { useT, type MessageId } from "../i18n/intl.tsx";
 import { actionOf, ariaKeys, isMac, keysOf } from "../keys/keymap.ts";
 import { useKeyLabel } from "../keys/labels.ts";
 import type { AskField, RowActions } from "../row/actions.ts";
-import { CopyIcon } from "../row/icons.tsx";
+import { ChevronIcon as ChevronDownIcon } from "../app/Icons.tsx";
+import { CopyIcon, RunIcon } from "../row/icons.tsx";
+import { runners } from "./runs.ts";
 import { tileState } from "../row/launch.ts";
 import type { TaskRow } from "../store/rows.ts";
 import { typingIn } from "../kept.ts";
@@ -38,7 +45,18 @@ import {
 } from "./composer.ts";
 import css from "./Expanded.module.css";
 
-const styles = classes(css, ["input", "strip", "button", "glyph", "hint", "gap"]);
+const styles = classes(css, [
+  "input",
+  "strip",
+  "button",
+  "glyph",
+  "hint",
+  "gap",
+  "runs",
+  "others",
+  "runMenu",
+  "runItem",
+]);
 
 const STUBS: Readonly<Record<AskField, MessageId>> = {
   summary: "ask.summary",
@@ -51,6 +69,8 @@ const STUBS: Readonly<Record<AskField, MessageId>> = {
 export interface ComposerProps {
   readonly task: TaskRow;
   readonly receipts: readonly Receipt[];
+  /** The task's runs, oldest first: Run waits while one of its own starts from here. */
+  readonly runs?: readonly Run[];
   readonly instances: readonly Instance[];
   readonly actions: RowActions;
 }
@@ -72,6 +92,9 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
   const sending = useRef<string | undefined>(undefined);
   /** The instances whose Open is on its way from here. */
   const [opening, setOpening] = useState<ReadonlySet<string>>(new Set());
+  /** A Run on its way from here: the words it carries, until the service answered. */
+  const starting = useRef<string | undefined>(undefined);
+  const [runningFrom, setRunningFrom] = useState(false);
 
   const write = (next: string) => {
     setText(next);
@@ -170,6 +193,20 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     });
   };
 
+  /** Run with `instance`: one at a time from here, so a double press starts one run. */
+  const run = (instance: Instance) => {
+    if (starting.current !== undefined) return;
+    const request = words;
+    starting.current = request;
+    setRunningFrom(true);
+    void actions.run(task, instance, request === "" ? undefined : request).then((queued) => {
+      starting.current = undefined;
+      setRunningFrom(false);
+      // The service holds the words in the run: they went somewhere.
+      if (queued !== undefined && request !== "") sent(request);
+    });
+  };
+
   const copy = (event: MouseEvent<HTMLButtonElement>) => {
     const request = words;
     void actions.copy(task, event.shiftKey, request === "" ? undefined : request).then((ok) => {
@@ -192,7 +229,15 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
 
   const noteKeys = keysOf("note", singleKeys);
   const openKeys = keysOf("open-first", singleKeys);
+  const runKeys = keysOf("run-first", singleKeys);
   const first = instances[0];
+  const [runner, ...others] = runners(instances);
+  // A task without a folder of its own runs in the space's work folder, as Open does.
+  const runTip = (instance: Instance) =>
+    t(task.place === undefined ? "composer.runTipWorkFolder" : "composer.runTip", {
+      label: instance.label,
+      words: words === "" ? "task" : "words",
+    });
 
   return (
     <>
@@ -222,6 +267,10 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
               if (why === undefined) open(first);
               else say(why);
             }
+          } else if (action === "run-first") {
+            event.preventDefault();
+            if (runner === undefined) say(t("composer.noRunner"));
+            else run(runner);
           }
         }}
       />
@@ -280,6 +329,66 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
             </button>
           );
         })}
+        {runner === undefined ? null : (
+          <span className={styles.runs}>
+            <button
+              type="button"
+              className={styles.button}
+              data-part="run"
+              data-ring={runner.ring}
+              aria-disabled={runningFrom}
+              aria-keyshortcuts={ariaKeys(runKeys, mac)}
+              aria-description={runTip(runner)}
+              data-tip={runTip(runner)}
+              onClick={() => {
+                run(runner);
+              }}
+            >
+              <RunIcon />
+              {t("composer.run", { label: runner.label })}
+              {runKeys[0] === undefined ? null : (
+                <kbd className={styles.hint} aria-hidden="true">
+                  {keyLabel(runKeys[0])}
+                </kbd>
+              )}
+            </button>
+            {others.length === 0 ? null : (
+              <MenuTrigger>
+                <Button
+                  className={`${styles.button} ${styles.others}`}
+                  data-part="run-other"
+                  aria-label={t("composer.runOther")}
+                >
+                  <ChevronDownIcon />
+                </Button>
+                <Popover className={styles.runMenu} placement="bottom end" offset={4}>
+                  <Menu
+                    aria-label={t("composer.runOther")}
+                    onAction={(key) => {
+                      const chosen = others.find((i) => i.key === key);
+                      if (chosen !== undefined) run(chosen);
+                    }}
+                  >
+                    {others.map((instance) => (
+                      <MenuItem
+                        key={instance.key}
+                        id={instance.key}
+                        className={styles.runItem}
+                        data-ring={instance.ring}
+                        textValue={t("composer.run", { label: instance.label })}
+                      >
+                        <span className={styles.glyph} aria-hidden="true">
+                          {instance.glyph}
+                        </span>
+                        {t("composer.run", { label: instance.label })}
+                      </MenuItem>
+                    ))}
+                  </Menu>
+                </Popover>
+              </MenuTrigger>
+            )}
+          </span>
+        )}
         <span className={styles.gap} aria-hidden="true" />
         <button
           type="button"

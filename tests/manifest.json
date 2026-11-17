@@ -2332,6 +2332,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "M6.page.run-words",
+      "title": "A run's thread entry says in plain words that it waits and why, works, stops, is done, needs the person with its question, did not start, was interrupted by a restart, failed with the agent's error or ran past its limit, and how its processes ended; Stop is offered only while it may still work",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.run-follow",
+      "title": "The page shows a run as the service has it: a read keeps a newer state the page shows (its own Stop) and a run queued after the read began; the row's marker says working or needs you by the instance's label; Run is offered by what the service says an instance can do; a refusal's words come from the service's reason",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.routes.folders",
       "title": "A launch opens in the task's own folder, else its project's, else the space's work folder, in the terminal route, the link and Copy alike; a folder only on another machine opens nothing here and never the work folder, and Copy names that machine",
       "owner": "M6",

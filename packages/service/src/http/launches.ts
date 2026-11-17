@@ -95,6 +95,8 @@ export interface UiRun {
   readonly answer_final: boolean;
   readonly answer_cut: boolean;
   readonly error?: string;
+  /** Grows with every change of the run. */
+  readonly version: number;
 }
 
 /** The page's view of a run record. */
@@ -121,6 +123,7 @@ export function uiRun(run: RunRecord, waiting?: string): UiRun {
     answer: result?.text ?? null,
     answer_final: result?.textFinal === true,
     answer_cut: result?.textCut === true,
+    version: run.version,
   };
 }
 

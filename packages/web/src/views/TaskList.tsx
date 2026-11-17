@@ -15,7 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { requestId, type Instance, type Receipt } from "../api.ts";
+import { requestId, type Instance, type Receipt, type Run } from "../api.ts";
 import { useToast } from "../app/frame.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
@@ -36,11 +36,13 @@ import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
 import { rowOfFacts } from "../task/detail.ts";
+import { mergeRuns, runRefusal, stopping } from "../task/runs.ts";
 import css from "./TaskList.module.css";
 
 const styles = classes(css, ["line", "announce"]);
 
 const NO_RECEIPTS: readonly Receipt[] = [];
+const NO_RUNS: readonly Run[] = [];
 /** How long a row an agent added keeps its accent (A5 3.20: 1.2 s). */
 const FRESH_MS = 1_200;
 /** Agents' changes are announced once the burst has been quiet this long (A5 3.15 item 10). */
@@ -130,6 +132,9 @@ export function TaskList({
     return merged ?? state.tasks;
   }, [state.tasks, holding, expanded]);
   const [receipts, setReceipts] = useState<ReadonlyMap<string, readonly Receipt[]>>(new Map());
+  /** The runs of the tasks the tab follows, oldest first, as the service last said. */
+  const [runs, setRuns] = useState<ReadonlyMap<string, readonly Run[]>>(new Map());
+  const runReads = useRef(new Latest());
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [announcement, setAnnouncement] = useState("");
   /** The URL's task, read with `task.get` because the live rows do not hold it. */
@@ -238,13 +243,37 @@ export function TaskList({
     [api, live],
   );
 
+  const loadRuns = useCallback(
+    (task: string) => {
+      const newest = runReads.current.begin(task);
+      api
+        .runs(task)
+        .then((list) => {
+          if (newest()) {
+            setRuns((known) => new Map(known).set(task, mergeRuns(known.get(task) ?? [], list)));
+          }
+        })
+        .catch((error: unknown) => {
+          live.failed(error);
+        });
+    },
+    [api, live],
+  );
+
   // A launch event refreshes the receipts of its task, which the tab follows from then on, so a
-  // tile mirrors a launch made in another tab or at the terminal. A fresh snapshot refreshes all.
+  // tile mirrors a launch made in another tab or at the terminal. A run event refreshes the runs
+  // of a task the tab follows: every tab, and a reload, shows a run as the service has it. A fresh
+  // snapshot refreshes all.
   useEffect(
     () =>
       live.onChanges(({ changes, reset }) => {
         const named = new Set<string>(reset ? watched.current : []);
+        const ran = new Set<string>(reset ? watched.current : []);
         for (const change of changes) {
+          if (change.type === "run") {
+            if (change.task !== undefined && watched.current.has(change.task)) ran.add(change.task);
+            continue;
+          }
           if (change.type !== "launch") continue;
           // A launch the feed does not tie to a task refreshes every task the tab follows.
           if (change.task === undefined) for (const task of watched.current) named.add(task);
@@ -254,8 +283,9 @@ export function TaskList({
           watched.current.add(task);
           loadReceipts(task);
         }
+        for (const task of ran) loadRuns(task);
       }),
-    [live, loadReceipts],
+    [live, loadReceipts, loadRuns],
   );
 
   // An update that takes the expanded task out of the live rows (completed, archived) carries its
@@ -361,8 +391,9 @@ export function TaskList({
       setInjected((known) => (known?.id === task.id ? known : inStore ? undefined : task));
       watched.current.add(task.id);
       loadReceipts(task.id);
+      loadRuns(task.id);
     },
-    [loadReceipts, live],
+    [loadReceipts, loadRuns, live],
   );
 
   /**
@@ -453,6 +484,26 @@ export function TaskList({
       loadReceipts(task.id);
     },
     [loadReceipts],
+  );
+
+  /**
+   * A run as the service just answered for it shows at once, in its place among the task's runs,
+   * unless a newer read has it further along; the task's runs are read again.
+   */
+  const showRun = useCallback(
+    (task: string, run: Run, reload = true) => {
+      setRuns((known) => {
+        const list = known.get(task) ?? [];
+        const at = list.findIndex((r) => r.id === run.id);
+        if (at < 0) return new Map(known).set(task, [...list, run]);
+        if ((list[at]?.version ?? -1) > run.version) return known;
+        const next = [...list];
+        next[at] = run;
+        return new Map(known).set(task, next);
+      });
+      if (reload) loadRuns(task);
+    },
+    [loadRuns],
   );
 
   /** Each task's last Open refused on its folder, until an Open of it goes through. */
@@ -566,6 +617,41 @@ export function TaskList({
             return false;
           });
       },
+      // Run: the service queues the run and answers at once; the thread shows it from then on,
+      // and the feed brings each of its steps. A refusal starts nothing and says why where the
+      // person clicked; the folder line says it too when the folder is the reason.
+      run: (task, instance, text) => {
+        watched.current.add(task.id);
+        return api
+          .startRun(task.id, instance.key, requestId(), text)
+          .then((run) => {
+            refuse(task.id, undefined);
+            showRun(task.id, run);
+            return run;
+          })
+          .catch((error: unknown) => {
+            if (live.failed(error)) return undefined;
+            const refused = runRefusal(error);
+            if (refused.reason === "folder_missing" && refused.folder !== undefined) {
+              refuse(task.id, { reason: "path_missing", folder: refused.folder });
+            }
+            say(t("run.refused", { ...refused.words, label: instance.label }));
+            return undefined;
+          });
+      },
+      // Stop answers at once: the entry says it is stopping, and the record then says what ended.
+      stop: (task, run) => {
+        showRun(task.id, stopping(run), false);
+        api
+          .stopRun(run.id)
+          .then((after) => {
+            showRun(task.id, after);
+          })
+          .catch((error: unknown) => {
+            if (!live.failed(error)) say(t("run.stopFailed"));
+            loadRuns(task.id);
+          });
+      },
       // The star is a person's edit like any other (A5 3.11): shown at once, with a base, undoable.
       star: (task, on) => {
         edits.edit(task, starChange(on, latest.current.today));
@@ -587,7 +673,21 @@ export function TaskList({
         setCurrent(task.id);
       },
     };
-  }, [api, live, edits, expandTask, chosen, collapse, refuse, say, shown, t, toClipboard]);
+  }, [
+    api,
+    live,
+    edits,
+    expandTask,
+    chosen,
+    collapse,
+    refuse,
+    say,
+    shown,
+    showRun,
+    loadRuns,
+    t,
+    toClipboard,
+  ]);
 
   const onCurrent = useCallback((key: string) => {
     setCurrent(key);
@@ -611,6 +711,7 @@ export function TaskList({
       project={item.project}
       instances={state.instances}
       receipts={receipts.get(item.key) ?? NO_RECEIPTS}
+      runs={runs.get(item.key) ?? NO_RUNS}
       ctx={ctx}
       expanded={expanded === item.key}
       current={place.current}

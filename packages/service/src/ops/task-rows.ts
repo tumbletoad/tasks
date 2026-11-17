@@ -46,12 +46,7 @@ export interface CompactRun {
 }
 
 export type CompactValue =
-  | string
-  | number
-  | boolean
-  | readonly CompactSource[]
-  | CompactPlace
-  | CompactRun;
+  string | number | boolean | readonly CompactSource[] | CompactPlace | CompactRun;
 export type CompactRow = Readonly<Record<string, CompactValue>>;
 
 /** The machine the feed looks at folders on: its ID, the person's home there, its platform. */
