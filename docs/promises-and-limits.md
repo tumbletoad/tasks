@@ -109,7 +109,11 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Open and a background run start nothing in a folder that this machine marked for the task or
   its project when its marker is gone or now names only other projects, tasks or spaces. Open says
   so, and you choose to use the folder, which marks it, or to give the task another folder. A
-  folder this machine never marked for it is marked at its next Open without a question.
+  folder this machine never marked for it is marked at its next Open without a question, and so
+  is the very folder that was marked when only its marker went (`git clean -x`). A folder made
+  again at the same path, such as a fresh clone, asks. On a file system that records no creation
+  time, a folder deleted and made again at once can reuse the old one's file number and be taken
+  for it.
 - Opening with a particular account uses that account's settings of the agent app.
 - Tasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.

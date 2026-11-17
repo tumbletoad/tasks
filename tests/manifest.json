@@ -761,7 +761,7 @@
     },
     {
       "id": "A1.3.15.folders.marker",
-      "title": "The marker in a project's or a task's folder: the owners' IDs and an ignore file, no task text; a launch's look finds its own marker, another owner's or another space's, a marker gone after it was written, a marker that cannot be read; an old folder without one is marked quietly; what was marked outlives a restart; a folder that takes no marker opens as before; a clear takes the owner off and the last one the marker; a folder moved with another keeps its marker; a checkout's git status stays clean",
+      "title": "The marker in a project's or a task's folder: the owners' IDs and an ignore file, no task text; a launch's look finds its own marker, another owner's or another space's, a marker gone after it was written from a folder made again at the path, a marker that cannot be read; an old folder without one is marked quietly, and so is the folder that was marked when only its marker went (git clean -x); what was marked outlives a restart; a folder that takes no marker opens as before; a clear takes the owner off and the last one the marker; a folder moved with another keeps its marker; a checkout's git status stays clean",
       "source": "A1 3.15",
       "owner": "M4",
       "kind": "ci",
