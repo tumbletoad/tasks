@@ -322,7 +322,6 @@ export {
   type ProjectDelete,
   type ProjectMove,
   type ProjectPatch,
-  type JsonValue,
   type AsOf,
   type Base,
   type ConflictEntity,

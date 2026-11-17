@@ -7,6 +7,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { exportBundle, provenBackup } from "@tasks/storage";
+import { checkedDriver } from "@tasks/testkit";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";
@@ -64,7 +66,7 @@ const show = async (task: string): Promise<Json> =>
   (await call("task.get", { task }))["task"] as Json;
 const refs = (rows: unknown): string[] => (rows as Json[]).map((r) => String(r["ref"]));
 
-describe("[A1.compat.imported-space] a space with prototype imports in its history opens, lists, searches, shows and undoes", () => {
+describe("[A1.compat.imported-space] a space with prototype imports in its history opens, lists, searches, shows, undoes, backs up and restores", () => {
   test(
     "the imported tasks read as before, their history names the import, and later changes undo",
     async () => {
@@ -116,6 +118,22 @@ describe("[A1.compat.imported-space] a space with prototype imports in its histo
         tasks: ["M-1"],
       });
       expect((await show("M-1"))["summary"]).not.toBe("Changed by the person after the import");
+      expect(await call("history.redo", { request_id: rid() })).toMatchObject({
+        result: "redone",
+        tasks: ["M-1"],
+      });
+      expect((await show("M-1"))["summary"]).toBe("Changed by the person after the import");
+      // The import commits were never on the person's undo stack, so undo stops after their own.
+      await call("history.undo", { request_id: rid() });
+      await expect(call("history.undo", { request_id: rid() })).rejects.toMatchObject({
+        code: "not_found",
+      });
+      await call("history.redo", { request_id: rid() });
+
+      // A task still answers to its ID in the earlier tool.
+      expect((await show("t-eb2a8db7"))["title"]).toBe(
+        "Follow up on the time zone fix for the clinic",
+      );
 
       // The space's view renders every imported task that was not undone.
       const view = join(folder, "view");
@@ -126,6 +144,29 @@ describe("[A1.compat.imported-space] a space with prototype imports in its histo
       );
       const catalog = readFileSync(join(view, "catalog.jsonl"), "utf8").trim().split("\n");
       expect(catalog.slice(1)).toHaveLength(48);
+      expect(catalog.join("\n")).toContain("Order printer toner");
+    },
+    LONG,
+  );
+
+  test(
+    "it backs up, exports and restores",
+    async () => {
+      const checked = await checkedDriver();
+      const backup = await provenBackup(checked, folder, { kind: "manual" });
+      const bundle = await exportBundle(checked, folder, { mode: "backup", withJsonl: true });
+      expect(bundle.manifest.seq).toBe(backup.sidecar.seq);
+
+      await call("task.update", {
+        task: "M-1",
+        set: { summary: "Changed after the backup" },
+        base: await asOf(),
+        request_id: rid(),
+      });
+      await service.spaceManager.restoreInPlace(0, backup.file);
+      expect((await show("M-1"))["summary"]).toBe("Changed by the person after the import");
+      const active = await call("task.search", { scope: "active", limit: 50 });
+      expect((active["rows"] as unknown[]).length).toBe(34);
     },
     LONG,
   );

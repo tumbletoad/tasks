@@ -333,10 +333,6 @@ export interface TaskValues {
   due?: Due | null;
 }
 
-/** Plain JSON data, as `ext` values and an exchange item's base hold it. */
-export type JsonValue =
-  string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
-
 /** Where a task goes: a group and, optionally, a sibling to stand next to. */
 export interface Placement {
   /** An area ID or slug. `null`: no area. */

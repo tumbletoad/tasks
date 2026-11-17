@@ -1058,7 +1058,7 @@
     },
     {
       "id": "A1.compat.imported-space",
-      "title": "A space made by the last build with the prototype importer, holding an import, the person's later change of an imported task and a second import applied and undone, opens as its machine's writer, lists, searches and renders the imported tasks, keeps the undone ones gone, names the import in a task's history, and undoes a change made now and the one made before",
+      "title": "A space made by the last build with the prototype importer, holding an import, the person's later change of an imported task and a second import applied and undone, opens as its machine's writer, lists, searches and renders the imported tasks, keeps the undone ones gone, finds a task by its ID in the earlier tool, names the import in a task's history, undoes and redoes a change made now and the one made before, and backs up, exports and restores",
       "owner": "M7",
       "kind": "ci",
       "profiles": ["v1"]
