@@ -104,6 +104,7 @@ import {
   type SpaceView,
 } from "./spaces.ts";
 import type { OpsHost } from "../ops/index.ts";
+import { FolderMarkers, MARKS_FILE } from "../ops/marker.ts";
 import { MemoryGrants, type GrantStore } from "../local/index.ts";
 import { LaunchService, type LaunchOptions, type OpenTaskRequest } from "../launch/index.ts";
 import { RunService, type RunOptions } from "../runs/service.ts";
@@ -528,6 +529,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       KEY_FILE,
       MACHINE_FILE,
       SESSIONS_FILE,
+      MARKS_FILE,
     ]);
     // T3's machine state (M2.11) is written the same way, in its own folder.
     const t3Temps = removeStaleTemps(join(layout.state, T3_STATE_DIR), t3FileNames());
@@ -693,6 +695,12 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     } catch {
       personHome = undefined;
     }
+    // The markers in projects' and tasks' folders, which the writes leave and a launch checks.
+    const markers = new FolderMarkers({
+      file: join(layout.state, MARKS_FILE),
+      platform,
+      ...(personHome === undefined ? {} : { home: personHome }),
+    });
     const hub = {
       status,
       requestStop: (o: { restart: boolean }) => {
@@ -706,6 +714,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         platform,
         ...(personHome === undefined ? {} : { home: personHome }),
         dataFolder: layout.data,
+        markers,
         bindings,
         defaultSpace: () => defaults.get(),
         homes,
@@ -869,6 +878,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       instances: () => instances,
       install,
       commandFolder: layout.bin,
+      markers,
       ...(accountHome === undefined ? {} : { home: accountHome }),
     });
     launching.service = launches;

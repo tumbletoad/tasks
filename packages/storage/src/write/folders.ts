@@ -120,10 +120,9 @@ export function rebased(path: string, from: string, to: string, os: FolderOs): s
 }
 
 /**
- * Where a task's folder `path` goes when its project's folder changes from `from` to `to`: as
- * `rebased`, but nowhere when one of the two folders is the other or inside it. The project then
- * names a folder around or inside the one it had, the folders below are still where they were,
- * and moving them would name folders that are not there.
+ * Where a folder `path` goes when the folder `from` was moved to `to`: as `rebased`, but nowhere
+ * when one of the two folders is the other or inside it. No folder can be moved into itself, so
+ * such a change names another folder, and the folders below are still where they were.
  */
 export function carriedTo(
   path: string,
@@ -188,11 +187,8 @@ export const FOLDER_SQL = {
     "SELECT f.* FROM folders f JOIN projects p ON p.id = f.owner_id " +
     "WHERE f.machine_id = $machine AND f.owner_kind = 'project' AND f.deleted_at IS NULL " +
     "AND p.deleted_at IS NULL ORDER BY f.created_seq, f.id",
-  /** The live folders of a project's tasks on a machine, whatever the task's state. */
-  taskFoldersOfProject:
-    "SELECT f.* FROM folders f JOIN tasks t ON t.id = f.owner_id " +
-    "WHERE f.machine_id = $machine AND f.owner_kind = 'task' AND f.deleted_at IS NULL " +
-    "AND t.project_id = $project ORDER BY f.id",
+  /** Every live folder on a machine, a project's or a task's, whatever its owner's state. */
+  liveOn: "SELECT * FROM folders WHERE machine_id = $machine AND deleted_at IS NULL ORDER BY id",
   machineOs: "SELECT os FROM machines WHERE id = $id",
   machine: "SELECT id, name, os FROM machines WHERE id = $id",
   task: "SELECT id, project_id FROM tasks WHERE id = $id",

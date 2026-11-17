@@ -4,11 +4,20 @@
 // folder fields come with the agent tools' own step. A folder is an absolute path on this machine,
 // or one under `~`; the service stores it with the home written as `~` and checks it at bind: it
 // exists and is a folder, it is not inside Tasks' own data, and no other live project has it here.
-// Changing a project's folder moves its tasks' folders inside the old one along.
+// A folder changed after it was moved takes every folder inside it along.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeLine } from "../safe-text.ts";
-import { AsOf, Base, idPattern, Replayed, RequestId, TaskRef, TaskRefInput } from "../schemas.ts";
+import {
+  AsOf,
+  Base,
+  idPattern,
+  InsideFolders,
+  Replayed,
+  RequestId,
+  TaskRef,
+  TaskRefInput,
+} from "../schemas.ts";
 import { requestId } from "./fixture.ts";
 
 export const FOLDER_ACTIONS = ["add_project", "set", "clear"] as const;
@@ -18,7 +27,7 @@ export const FolderManageInput = z.strictObject({
     .enum(FOLDER_ACTIONS)
     .describe("add_project makes a project for a folder; set and clear a project's or a task's"),
   project: safeLine(250)
-    .describe('set, clear: "Area/Project", or a name, slug or ID; add_project: its name')
+    .describe('set, clear: "Area/Project", a name, slug or ID; add_project: name or folder\'s')
     .optional(),
   task: TaskRefInput.describe("set, clear: the task, such as M-14").optional(),
   area: safeLine(120).describe("add_project: the new project's area, by name").optional(),
@@ -31,8 +40,6 @@ export const FolderManageInput = z.strictObject({
   base: Base.optional(),
   request_id: RequestId,
 });
-
-const Count = z.int().min(0).max(1_000_000);
 
 export const FolderManageResult = z.strictObject({
   action: z.enum(FOLDER_ACTIONS).describe("The action"),
@@ -52,7 +59,7 @@ export const FolderManageResult = z.strictObject({
     .max(4096)
     .describe("The folder here as stored, the home as ~; absent once cleared")
     .optional(),
-  moved: Count.describe("Task folders that moved along with the project's").optional(),
+  ...InsideFolders,
   as_of: AsOf,
   replayed: Replayed.optional(),
 });

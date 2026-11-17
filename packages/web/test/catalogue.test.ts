@@ -93,6 +93,9 @@ const SAMPLE = {
   part: "tools",
   on: "yes",
   apps: "Codex",
+  of: "project",
+  owners: "the project Billing",
+  repo: "portal-web",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

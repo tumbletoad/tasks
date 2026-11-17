@@ -100,6 +100,7 @@ const DigestFolder = z.union([
     path: z.string().describe("The folder, the home written as ~"),
     of: z.enum(["task", "project"]).describe("The task's own folder or its project's"),
     missing: z.literal(true).describe("Not found on this machine now").optional(),
+    repo: z.string().max(255).describe("The Git repository it holds, by name").optional(),
   }),
   z.strictObject({
     machine: z.string().describe("The machine its folder is on: it opens there"),
