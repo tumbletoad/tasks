@@ -18,7 +18,9 @@
 // - The server's requests are answered as the run's permission says, while reading goes on. A
 //   question for the person is never answered for them: a blocking one interrupts the turn, one
 //   the turn ends with is kept, and the work ends as needing the person, with the question as its
-//   text. A request kind this driver does not know gets the protocol's "method not found".
+//   text. A question of an agent the run's agent started hears that no one answered. A request
+//   kind this driver does not know gets the protocol's "method not found".
+// - The thread is given work only once its folder, as the server reports it, is the run's.
 // - Stop asks the server to interrupt the turn, and waits for nothing: during start-up, with no
 //   turn yet, the work ends at once.
 import {
