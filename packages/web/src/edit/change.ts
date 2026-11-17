@@ -46,7 +46,27 @@ export interface Change {
    * of one field replaces only that one (A5 3.11).
    */
   readonly parts?: readonly Change[];
+  /** What made a one-field change: `changeOf` makes it again, after a reload. */
+  readonly source?: Source;
 }
+
+interface Named {
+  readonly id: string;
+  readonly title: string;
+}
+
+/** A one-field change as the control made it: its builder and that builder's arguments. */
+export type Source =
+  | { readonly kind: "title"; readonly title: string }
+  | { readonly kind: "star"; readonly on: boolean; readonly today: string }
+  | { readonly kind: "priority"; readonly level: number }
+  | { readonly kind: "effort"; readonly effort?: string }
+  | { readonly kind: "due"; readonly date?: string; readonly words?: string }
+  | { readonly kind: "status"; readonly status: string }
+  | { readonly kind: "inbox" }
+  | { readonly kind: "waiting"; readonly person?: string }
+  | { readonly kind: "grouping"; readonly area: Named; readonly project?: Named }
+  | { readonly kind: "restore"; readonly field: string; readonly value: unknown };
 
 /** Words for a value: a message, or the person's own text. */
 export type Words = Msg | string;
@@ -60,10 +80,12 @@ export function titleChange(title: string): Change {
     overlay: { set: { title } },
     said: { id: "toast.title" },
     shown: plain(title),
+    source: { kind: "title", title },
   };
 }
 
 export function starChange(on: boolean, today: string): Change {
+  const source: Source = { kind: "star", on, today };
   return on
     ? {
         fields: ["focus"],
@@ -71,6 +93,7 @@ export function starChange(on: boolean, today: string): Change {
         overlay: { set: { focus_on: today } },
         said: { id: "toast.starred" },
         shown: { id: "edit.starOn" },
+        source,
       }
     : {
         fields: ["focus"],
@@ -78,6 +101,7 @@ export function starChange(on: boolean, today: string): Change {
         overlay: { set: {}, clear: ["focus_on"] },
         said: { id: "toast.unstarred" },
         shown: { id: "edit.starOff" },
+        source,
       };
 }
 
@@ -90,6 +114,7 @@ export function priorityChange(level: number): Change {
     overlay: { set: { priority: level } },
     said: level >= 1 && level <= 3 ? { id: "toast.priority", values: { value: shown } } : cleared,
     shown,
+    source: { kind: "priority", level },
   };
 }
 
@@ -104,6 +129,7 @@ export function effortChange(effort: string | undefined): Change {
         overlay: { set: {}, clear: ["effort"] },
         said: { id: "toast.effortCleared" },
         shown: none,
+        source: { kind: "effort" },
       }
     : {
         fields: ["effort"],
@@ -111,6 +137,7 @@ export function effortChange(effort: string | undefined): Change {
         overlay: { set: { effort } },
         said: { id: "toast.effort", values: { value: effort } },
         shown: plain(effort),
+        source: { kind: "effort", effort },
       };
 }
 
@@ -123,6 +150,7 @@ export function dueChange(date: string | undefined, words: Words | undefined): C
         overlay: { set: {}, clear: ["due_date", "due_at", "due_tz"] },
         said: { id: "toast.dueCleared" },
         shown: none,
+        source: { kind: "due" },
       }
     : {
         fields: ["due"],
@@ -130,6 +158,7 @@ export function dueChange(date: string | undefined, words: Words | undefined): C
         overlay: { set: { due_date: date }, clear: ["due_at", "due_tz"] },
         said: { id: "toast.due", values: { value: words ?? plain(date) } },
         shown: words ?? plain(date),
+        source: { kind: "due", date, ...(typeof words === "string" ? { words } : {}) },
       };
 }
 
@@ -152,6 +181,7 @@ export function statusChange(status: string): Change {
     overlay: { set: { status } },
     said: { id: "toast.status", values: { value: statusWords(status) } },
     shown: statusWords(status),
+    source: { kind: "status", status },
   };
 }
 
@@ -163,6 +193,7 @@ export function triageChange(): Change {
     overlay: { set: { inbox: false } },
     said: { id: "toast.triaged" },
     shown: { id: "edit.outOfInbox" },
+    source: { kind: "inbox" },
   };
   const joined = joinChanges([out, statusChange("open")]);
   return { ...(joined ?? out), said: { id: "toast.triaged" }, shown: { id: "status.open" } };
@@ -176,6 +207,7 @@ export function waitingChange(person: string | undefined): Change {
         overlay: { set: {}, clear: ["waiting_on"] },
         said: { id: "toast.waitingCleared" },
         shown: none,
+        source: { kind: "waiting" },
       }
     : {
         fields: ["waiting_on"],
@@ -183,6 +215,7 @@ export function waitingChange(person: string | undefined): Change {
         overlay: { set: { waiting_on: person } },
         said: { id: "toast.waiting", values: { value: person } },
         shown: plain(person),
+        source: { kind: "waiting", person },
       };
 }
 
@@ -204,6 +237,11 @@ export function groupingChange(
         : { set: { area_id: area.id, project_id: project.id } },
     said: { id: "toast.moved", values: { value: shown } },
     shown,
+    source: {
+      kind: "grouping",
+      area: { id: area.id, title: area.title },
+      ...(project === undefined ? {} : { project: { id: project.id, title: project.title } }),
+    },
   };
 }
 
@@ -260,6 +298,11 @@ export function restoreChange(field: string, value: unknown): Change | undefined
             : { set: { area_id: area }, clear: ["project_id"] },
         said: { id: "toast.restored" },
         shown: { id: "edit.restoredGroup" },
+        source: {
+          kind: "restore",
+          field,
+          value: { area_id: area, project_id: typeof project === "string" ? project : null },
+        },
       };
     }
     default:
@@ -293,4 +336,77 @@ export function joinChanges(changes: readonly Change[]): Change | undefined {
     shown: { id: "edit.restoredMany", values: { count: changes.length } },
     parts: changes.flatMap((c) => c.parts ?? [c]),
   };
+}
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/u;
+/** An entity's ID as the page reads one: a short prefix and its base32 body. */
+const ID = /^[a-z]{1,4}_[0-9a-z]{1,64}$/u;
+
+const text = (value: unknown, max: number): value is string =>
+  typeof value === "string" && value !== "" && value.length <= max;
+
+function namedOf(value: unknown): Named | undefined {
+  if (!isRecord(value)) return undefined;
+  const { id, title } = value;
+  return typeof id === "string" && ID.test(id) && text(title, 300) ? { id, title } : undefined;
+}
+
+/**
+ * The change a source makes, the same as its control made it; undefined for anything a control
+ * could not have made. A source read back from the browser's storage is untrusted, so only its
+ * values are used, each checked, and the change is built the one way.
+ */
+export function changeOf(source: unknown): Change | undefined {
+  if (!isRecord(source)) return undefined;
+  const s = source;
+  switch (s["kind"]) {
+    case "title":
+      return text(s["title"], 1_000) ? titleChange(s["title"]) : undefined;
+    case "star": {
+      const today = s["today"];
+      if (typeof s["on"] !== "boolean" || typeof today !== "string") return undefined;
+      return today === "" || DAY.test(today) ? starChange(s["on"], today) : undefined;
+    }
+    case "priority": {
+      const level = s["level"];
+      return typeof level === "number" && Number.isInteger(level) && level >= 1 && level <= 4
+        ? priorityChange(level)
+        : undefined;
+    }
+    case "effort":
+      if (s["effort"] === undefined) return effortChange(undefined);
+      return text(s["effort"], 40) ? effortChange(s["effort"]) : undefined;
+    case "due": {
+      const date = s["date"];
+      if (date === undefined) return dueChange(undefined, undefined);
+      if (typeof date !== "string" || !DAY.test(date)) return undefined;
+      return dueChange(date, text(s["words"], 80) ? s["words"] : undefined);
+    }
+    case "status":
+      return text(s["status"], 40) && /^[a-z_]+$/u.test(s["status"])
+        ? statusChange(s["status"])
+        : undefined;
+    case "inbox":
+      return triageChange().parts?.find((part) => part.fields[0] === "inbox");
+    case "waiting":
+      if (s["person"] === undefined) return waitingChange(undefined);
+      return text(s["person"], 300) ? waitingChange(s["person"]) : undefined;
+    case "grouping": {
+      const area = namedOf(s["area"]);
+      const project = s["project"] === undefined ? undefined : namedOf(s["project"]);
+      if (area === undefined || (s["project"] !== undefined && project === undefined)) {
+        return undefined;
+      }
+      return groupingChange(area, project);
+    }
+    case "restore": {
+      if (s["field"] !== "grouping" || !isRecord(s["value"])) return undefined;
+      const { area_id: area, project_id: project } = s["value"];
+      if (typeof area !== "string" || !ID.test(area)) return undefined;
+      if (project !== null && (typeof project !== "string" || !ID.test(project))) return undefined;
+      return restoreChange("grouping", { area_id: area, project_id: project });
+    }
+    default:
+      return undefined;
+  }
 }

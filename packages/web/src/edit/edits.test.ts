@@ -17,7 +17,14 @@ import {
   waitingChange,
 } from "./change.ts";
 import { ASK_MS } from "./calls.ts";
-import { Edits, HOLD_MS, COLLAPSE_MS, type Toast } from "./edits.ts";
+import {
+  Edits,
+  HOLD_MS,
+  COLLAPSE_MS,
+  type Toast,
+  type Unsaved,
+  type UnsavedKeeper,
+} from "./edits.ts";
 
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
 const INCARNATION = "ai_0123456789abcdefghjkmnpq";
@@ -53,7 +60,7 @@ class World {
   readonly answers = new Map<string, ((input: Record<string, unknown>) => unknown)[]>();
   seq = 10;
 
-  constructor(rows: readonly TaskRow[]) {
+  constructor(rows: readonly TaskRow[], keeper?: UnsavedKeeper) {
     this.store = new LiveStore({
       space: SPACE.id,
       frames: this.frames,
@@ -98,6 +105,7 @@ class World {
       onChanges: (listener) => this.store.onChanges(listener),
       rowOf: (ref) => [...this.store.getState().tasks.values()].find((t) => t.ref === ref),
       newRequest: () => `rq-${String((requests += 1))}`,
+      ...(keeper === undefined ? {} : { keeper }),
     });
     this.edits.onToast((t) => this.toasts.push(t));
   }
@@ -559,6 +567,43 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     });
     w.edits.dismiss("t_00001", "due");
     expect(w.edits.unsaved("t_00001", "due")).toBeUndefined();
+  });
+
+  test("what waits is handed to the keeper as it changes, and what the keeper held waits again in a new page's edits", async () => {
+    const kept: (readonly Unsaved[])[] = [];
+    const keeper: UnsavedKeeper = {
+      load: () => [],
+      save: (unsaved) => {
+        kept.push([...new Set(unsaved.values())]);
+      },
+    };
+    const w = new World([task(1)], keeper);
+    w.answer("task.update", () => {
+      throw new Error("network");
+    });
+    w.edits.edit(task(1), effortChange("M"));
+    await flush();
+    expect(kept.at(-1)?.map((u) => [u.task, u.field, u.reason])).toEqual([
+      ["t_00001", "effort", "failed"],
+    ]);
+    // A reload: the next page's edits start with it, under its field, ready for Try again.
+    const held = kept.at(-1) ?? [];
+    const next = new World([task(1)], { load: () => [...held], save: () => undefined });
+    expect(next.edits.unsaved("t_00001", "effort")).toMatchObject({ reason: "failed" });
+    next.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["effort"],
+      as_of: next.asOf(11),
+      warnings: [],
+    }));
+    next.edits.apply("t_00001", "effort");
+    await flush();
+    expect(next.calls[0]?.input).toMatchObject({ set: { effort: "M" } });
+    expect(next.edits.unsaved("t_00001", "effort")).toBeUndefined();
+    // Discarded in the first page, it is no longer handed on.
+    w.edits.dismiss("t_00001", "effort");
+    expect(kept.at(-1)).toEqual([]);
   });
 
   test("an edit refused because someone finished the task meanwhile keeps the value, and its toast offers no Try again", async () => {

@@ -3921,7 +3921,7 @@
     },
     {
       "id": "A7.3.9.m2-13.e2e.races",
-      "title": "Against the real service in Chromium and Firefox: a Connected tile expands its row and starts no launch, a receipt list that answers late does not take Confirmed away, and a task that is added keeps the draft typed while it was added",
+      "title": "Against the real service in Chromium and Firefox: a Connected tile expands its row and starts no launch, nor does the strip's button of that instance, which says why, a receipt list that answers late does not take Confirmed away, and a task that is added keeps the draft typed while it was added",
       "source": "A7 3.9 M2.13, A5 3.6, A5 3.9, A5 3.13",
       "owner": "M2",
       "kind": "ci",
@@ -4523,6 +4523,70 @@
       "id": "A7.3.12.m5-08.e2e.conflict",
       "title": "In Chromium and Firefox against the real service: an undo of a due date an agent changed since says who and when and changes nothing until Restore mine puts back the date from before the person's edit; an agent's change while the date popover is open shows there, and the person's pick then keeps their value under the field until Apply mine saves it",
       "source": "A5 3.11, A5 3.12, A5 3.15, A7 3.12 M5.08",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.8.web.kept",
+      "title": "Typed text kept under the product's prefix, for the browser or for the tab alone: listed per prefix, removed, kept for the tab's life when storage is full or blocked, and another tab's change heard by its name only",
+      "source": "A5 3.8, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.8.web.composer-sends",
+      "title": "A composer sends its words as typed, without the blank lines around them; a note keeps one request ID across a reload so its words are saved once; a launch's words count as gone only once the agent has them, and stay when the launch failed",
+      "source": "A5 3.8, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.8.web.leftovers",
+      "title": "When a space opens, the kept draft and waiting edits of a task the service no longer knows are forgotten; a task in the live rows, a finished one and one the service could not answer for keep theirs",
+      "source": "A5 3.8, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.11.web.kept-edits",
+      "title": "A field edit the service did not take is kept per space and comes back after a reload as its control made it, ready for Try again; a value no control could make, or kept under another name, never comes back and is removed; a tab removes only what it kept or read; a task gone for good takes its edits along",
+      "source": "A5 3.11, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-07.e2e.strip",
+      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line; Open without text sends the brief alone; an agent that has the task open is not opened again, with or without text, and says where the words can go; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
+      "source": "A5 3.8, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-07.e2e.keys",
+      "title": "In Chromium and Firefox: an Enter or Ctrl+Enter that ends an input method's composition sends nothing, the next Enter saves the note; the shortcut sheet lists the composer's keys, and Enter or Ctrl+Enter while the sheet is open sends nothing",
+      "source": "A5 3.8, A5 3.21, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-07.e2e.reload",
+      "title": "In Chromium and Firefox: the top field's text is back after a reload of its tab, per space, a second tab keeps its own through its reload, a paste over the field's limit says it was cut, and the text is gone once the task is added; a task's draft follows into a second tab where nobody types, is back after a reload and leaves nothing behind once saved as a note; a field edit not saved because the connection was down, the task changed under it or the task was finished is back after a reload with its choices, and gone once saved or discarded",
+      "source": "A5 3.8, A5 3.11, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-07.e2e.screens",
+      "title": "In Chromium and Firefox: the expanded task's strip in Sumi and Washi at 1,440 and 390 px, empty and with text, axe clean and no horizontal scroll",
+      "source": "A5 3.8, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
