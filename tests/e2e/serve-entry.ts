@@ -8,6 +8,8 @@
 // A line `stop` on stdin stops it gracefully, on every OS.
 // First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
 import "../../packages/bridge/src/safe-exit.ts";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { packageIdentity } from "../../packages/service/src/hub/identity.ts";
 import { runServe } from "../../packages/service/src/hub/serve.ts";
@@ -25,10 +27,25 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (line === "stop") process.emit("SIGTERM", "SIGTERM");
 });
 
+// The agent apps the page finds: a scratch home and the fake agents' environment (first-run.ts),
+// else an empty home with nothing on its PATH, so no test ever looks at a real agent app.
+const tasksHome = process.env["TASKS_HOME"];
+if (tasksHome === undefined) {
+  process.stderr.write("TASKS_HOME must be set\n");
+  process.exit(64);
+}
+const agentHome = process.env["E2E_AGENT_HOME"] ?? join(tasksHome, "agent-home");
+mkdirSync(agentHome, { recursive: true });
+const agentEnv = process.env["E2E_AGENT_ENV"];
+
 const code = await runServe({
   identity: () => ({ root: false, elevated: false, package: packageIdentity(process.env) }),
   http: { ports: [0], persist: false, ui },
   // Settings lists the terminals detection finds: the same two on every OS the tests run on.
   launch: { terminal: fakeTerminal(record), terminals: { host: twoTerminalsHost } },
+  agentApps: {
+    home: agentHome,
+    env: agentEnv === undefined ? { PATH: "" } : (JSON.parse(agentEnv) as Record<string, string>),
+  },
 });
 process.exit(code);
