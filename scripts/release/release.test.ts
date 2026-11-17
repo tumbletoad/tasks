@@ -35,7 +35,7 @@ import {
 import { ReleaseError, verifyRelease } from "../../packages/service/src/version/release.ts";
 import { repoRoot } from "../run.ts";
 import { gatherArchives, RELEASE_PLATFORMS } from "./gather.ts";
-import { checkReleaseFolder } from "./github.ts";
+import { checkReleaseFolder, GhError, holdRelease, releaseReadiness, type Gh } from "./github.ts";
 import { isOnMain, planRun } from "./plan.ts";
 import {
   ciReleaseSign,
@@ -56,9 +56,9 @@ import {
 import { settingsProblems, type RepositorySettings, type RulesetSettings } from "./settings.ts";
 import {
   checkPublishCommit,
-  draftAction,
   draftStep,
   rehearsalVersion,
+  releasedProblem,
   releaseVersionProblem,
   VersionRefusal,
   type ReleaseSummary,
@@ -507,6 +507,47 @@ describe("[A2.3.12.8.build.release-ci-sign] the release workflow signs with the 
     }
   });
 
+  test("the release command loads no dependency's code before the secrets leave the environment", () => {
+    // Every module the command's static imports reach runs before takeSecrets does. The
+    // workspace's own packages are followed; anything else is a dependency.
+    const seen = new Set<string>();
+    const outside: string[] = [];
+    const workspaceFile = (specifier: string): string | undefined => {
+      const parts = /^@tasks\/([^/]+)(\/.+)?$/.exec(specifier);
+      if (parts === null) return undefined;
+      const dir = join(repoRoot, "packages", parts[1] ?? "");
+      if (!existsSync(join(dir, "package.json"))) return undefined;
+      const exports = (
+        JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as {
+          exports?: Record<string, string>;
+        }
+      ).exports;
+      const target = exports?.[`.${parts[2] ?? ""}`];
+      return target === undefined ? undefined : join(dir, target);
+    };
+    const visit = (file: string) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      const text = readFileSync(file, "utf8");
+      const specifiers = [
+        ...text.matchAll(/^(?:import|export)\s(?!type\s)[^;]*?\sfrom\s+"([^"]+)"/gms),
+        ...text.matchAll(/^import\s+"([^"]+)"/gm),
+      ].map((match) => match[1] ?? "");
+      for (const specifier of specifiers) {
+        if (specifier.startsWith(".")) visit(join(file, "..", specifier));
+        else if (specifier.startsWith("node:")) continue;
+        else {
+          const own = workspaceFile(specifier);
+          if (own === undefined) outside.push(`${specifier} (from ${file})`);
+          else visit(own);
+        }
+      }
+    };
+    visit(MAIN);
+    expect(outside).toEqual([]);
+    expect(seen.size).toBeGreaterThan(3);
+  });
+
   test.runIf(process.platform !== "win32")(
     "a program the signing starts (ssh-keygen) does not inherit the secrets",
     () => {
@@ -644,7 +685,6 @@ describe("[A2.3.12.8.build.release-version] a release's version comes from packa
     const remote = (draft: boolean, assets: Record<string, string>): RemoteRelease => ({
       id: 1,
       draft,
-      target: "main",
       assets,
     });
     expect(draftStep("0.2.0", "c1", local, "c1", undefined)).toEqual({ step: "create" });
@@ -663,8 +703,10 @@ describe("[A2.3.12.8.build.release-version] a release's version comes from packa
     for (const [what, tag, found, reason] of [
       ["the tag moved to another commit", "c0", remote(true, {}), /now names commit c0/],
       ["the tag deleted", undefined, remote(true, {}), /no longer exists/],
-      ["a file with other bytes", "c1", remote(true, { a: "9" }), /other bytes/],
-      ["a file this release does not have", "c1", remote(true, { z: "1" }), /other bytes/],
+      // A draft was never public: its stale files go, the version stays.
+      ["a draft's file with other bytes", "c1", remote(true, { a: "9" }), /delete those files/],
+      ["a file this release does not have", "c1", remote(true, { z: "1" }), /delete those files/],
+      ["a published file with other bytes", "c1", remote(false, { a: "9" }), /raise the version/],
       ["a published release without a file", "c1", remote(false, { a: "1" }), /never changed/],
     ] as const) {
       expect(() => draftStep("0.2.0", "c1", local, tag, found), what).toThrow(VersionRefusal);
@@ -746,40 +788,137 @@ describe("[A2.3.12.8.build.release-tag] a version tag starts a release only when
     }
   });
 
-  test("a version released before is refused; a release made in the page with the tag is held as a draft; a draft is kept", () => {
-    const c1 = "1".repeat(40);
-    const c0 = "0".repeat(40);
-    const release = (draft: boolean, files: string[], target = "main", id = 1): ReleaseSummary => ({
-      id,
-      draft,
-      target,
-      files,
-    });
-    expect(draftAction("0.2.0", c1, [])).toEqual({ action: "create" });
+  test("a version released before is refused; a release made in the page with the tag, or a draft, is not", () => {
+    const release = (draft: boolean, files: string[]): ReleaseSummary => ({ draft, files });
+    expect(releasedProblem("0.2.0", [])).toBeUndefined();
     // Made in GitHub's page, or by gh release create: published with no files yet.
-    expect(draftAction("0.2.0", c1, [release(false, [])])).toEqual({ action: "hide", id: 1 });
+    expect(releasedProblem("0.2.0", [release(false, [])])).toBeUndefined();
     // An earlier run's draft, complete or not, or one the owner saved.
-    expect(draftAction("0.2.0", c1, [release(true, [])])).toEqual({ action: "keep", id: 1 });
-    expect(draftAction("0.2.0", c1, [release(true, ["a"], c1)])).toEqual({ action: "keep", id: 1 });
-    for (const [what, found, reason] of [
+    expect(releasedProblem("0.2.0", [release(true, ["SHA256SUMS"])])).toBeUndefined();
+    expect(releasedProblem("0.2.0", [release(false, ["SHA256SUMS"])])).toMatch(
+      /v0.2.0 is released already/,
+    );
+    expect(releasedProblem("0.2.0", [release(true, []), release(false, [])])).toMatch(
+      /2 releases for v0.2.0/,
+    );
+  });
+
+  /**
+   * A stand-in for gh that answers from what GitHub holds for the tag v0.2.0: its releases, the
+   * release environment (undefined: there is none) and the tag rulesets, or a failure for a path.
+   */
+  function fakeGitHub(holds: {
+    readonly releases?: readonly {
+      readonly id: number;
+      readonly draft: boolean;
+      readonly assets: readonly { readonly id: number; readonly name: string }[];
+    }[];
+    readonly environment?: object | undefined;
+    readonly policies?: readonly object[];
+    readonly rulesets?: readonly object[];
+    readonly fails?: string;
+  }) {
+    const calls: string[][] = [];
+    const gh: Gh = (args) => {
+      calls.push([...args]);
+      const path = args.find((arg) => arg.startsWith("repos/")) ?? "";
+      if (holds.fails !== undefined && path.includes(holds.fails)) {
+        throw new GhError(`gh api failed: HTTP 403: Resource not accessible by integration`);
+      }
+      const json = (value: unknown) => Buffer.from(JSON.stringify(value));
+      if (args.includes("PATCH")) return json({});
+      if (path.endsWith("/releases")) {
+        return Buffer.from((holds.releases ?? []).map((r) => JSON.stringify(r)).join("\n"));
+      }
+      if (path.endsWith("/environments/release")) {
+        if (holds.environment === undefined)
+          throw new GhError("gh api failed: HTTP 404: Not Found");
+        return json(holds.environment);
+      }
+      if (path.includes("/deployment-branch-policies")) {
+        return json({ branch_policies: holds.policies ?? [] });
+      }
+      const rulesets = holds.rulesets ?? [];
+      if (path.includes("/rulesets?"))
+        return json(rulesets.map((_, id) => ({ id, target: "tag" })));
+      const one = /\/rulesets\/(\d+)$/.exec(path)?.[1];
+      if (one !== undefined) return json(rulesets[Number(one)]);
+      throw new Error(`the fake has no answer for ${args.join(" ")}`);
+    };
+    return { gh, calls };
+  }
+
+  test("the run's first step turns a release published without files back into a draft, and touches nothing else", () => {
+    const empty = { id: 5, draft: false, assets: [] };
+    const page = fakeGitHub({ releases: [empty] });
+    const lines: string[] = [];
+    holdRelease({ repo: "o/r", tag: "v0.2.0", gh: page.gh, log: (l) => lines.push(l) });
+    const patches = page.calls.filter((call) => call.includes("PATCH"));
+    expect(patches).toHaveLength(1);
+    // The tag is sent again, and the target is a branch: a commit as the target would need a
+    // permission the run's token cannot have once main changes a workflow after it.
+    expect(patches[0]).toEqual(
+      expect.arrayContaining([
+        "repos/o/r/releases/5",
+        "tag_name=v0.2.0",
+        "target_commitish=main",
+        "draft=true",
+      ]),
+    );
+    expect(lines.join("\n")).toMatch(/a draft again/);
+
+    const file = { id: 1, name: "SHA256SUMS" };
+    for (const releases of [
+      [],
+      [{ id: 6, draft: false, assets: [file] }],
+      [{ id: 7, draft: true, assets: [] }],
+      [{ id: 8, draft: true, assets: [file] }],
+    ]) {
+      const other = fakeGitHub({ releases });
+      holdRelease({ repo: "o/r", tag: "v0.2.0", gh: other.gh, log: () => undefined });
+      expect(other.calls.filter((call) => call.includes("PATCH"))).toEqual([]);
+    }
+    const none = fakeGitHub({});
+    expect(() => {
+      holdRelease({ repo: "o/r", tag: "--paginate", gh: none.gh, log: () => undefined });
+    }).toThrow(Refusal);
+    expect(none.calls).toEqual([]);
+  });
+
+  test("the plan reads the settings and the releases from GitHub, and a setting it cannot read stops a release", () => {
+    const ready = {
+      environment: {
+        deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+      },
+      policies: [{ name: "v*", type: "tag" }],
+      rulesets: [
+        {
+          name: "release tags",
+          target: "tag",
+          enforcement: "active",
+          conditions: { ref_name: { include: ["refs/tags/v*"], exclude: [] } },
+          rules: [{ type: "creation" }, { type: "update" }, { type: "deletion" }],
+          current_user_can_bypass: "never",
+        },
+      ],
+    };
+    const readiness = (holds: Parameters<typeof fakeGitHub>[0]) =>
+      releaseReadiness("o/r", "0.2.0", fakeGitHub(holds).gh);
+    expect(readiness(ready)).toEqual([]);
+    expect(readiness({ ...ready, releases: [{ id: 1, draft: false, assets: [] }] })).toEqual([]);
+    for (const [what, holds, reason] of [
+      ["no environment", { ...ready, environment: undefined }, /environment does not exist/],
+      ["no ruleset", { ...ready, rulesets: [] }, /No active tag ruleset/],
+      ["rulesets that cannot be read", { ...ready, fails: "/rulesets" }, /cannot be read/],
       [
         "a version released before",
-        [release(false, ["SHA256SUMS"], c0)],
-        /v0.2.0 is released already/,
-      ],
-      [
-        "a draft with files built from another commit",
-        [release(true, ["SHA256SUMS"], c0)],
-        /holds files built from 0{40}, not from 1{40}/,
-      ],
-      [
-        "two releases for the tag",
-        [release(true, []), release(false, [], "main", 2)],
-        /2 releases for v0.2.0/,
+        { ...ready, releases: [{ id: 1, draft: false, assets: [{ id: 2, name: "SHA256SUMS" }] }] },
+        /released already/,
       ],
     ] as const) {
-      expect(() => draftAction("0.2.0", c1, found), what).toThrow(VersionRefusal);
-      expect(() => draftAction("0.2.0", c1, found), what).toThrow(reason);
+      const problems = readiness(holds);
+      expect(problems, what).toHaveLength(1);
+      expect(problems[0], what).toMatch(reason);
     }
   });
 

@@ -3262,7 +3262,7 @@
     },
     {
       "id": "A2.3.12.8.build.release-ci-sign",
-      "title": "The release workflow's signing takes the key and passphrase from its secrets only, and refuses outside GitHub Actions, any run but the push of the archives' own version tag (a pull request, a manual start, a branch, another tag), a fork, missing secrets, a key file, a test key under the release name, an unencrypted key and the placeholder; the secrets leave the environment first and appear in no message or child process",
+      "title": "The release workflow's signing takes the key and passphrase from its secrets only, and refuses outside GitHub Actions, any run but the push of the archives' own version tag (a pull request, a manual start, a branch, another tag), a fork, missing secrets, a key file, a test key under the release name, an unencrypted key and the placeholder; the secrets leave the environment before any dependency's code is loaded, and appear in no message or child process",
       "source": "A2 3.12.8",
       "owner": "M1",
       "kind": "ci",
@@ -3278,7 +3278,7 @@
     },
     {
       "id": "A2.3.12.8.build.release-version",
-      "title": "Dev and rehearsal versions are never released, a release's draft is filled, resumed or left as it is, and other bytes, a tag moved or deleted during the run or a change to a published release are refused",
+      "title": "Dev and rehearsal versions are never released, a release's draft is filled, resumed or left as it is, and other bytes (a draft's to be removed, a published release's needing a new version), a tag moved or deleted during the run or a change to a published release are refused",
       "source": "A2 3.12.8",
       "owner": "M1",
       "kind": "ci",
@@ -3286,7 +3286,7 @@
     },
     {
       "id": "A2.3.12.8.build.release-tag",
-      "title": "A version tag releases the commit it names with package.json's version, and is refused with one sentence when it is not that version, its commit is not on main, the version is a development one or was released before, or GitHub has two releases or a draft from another commit for it; a release made in GitHub's page with the tag is held as a draft until its files are complete, and publishing needs the tag to still name the built commit on main",
+      "title": "A version tag releases the commit it names with package.json's version, and is refused with one sentence when it is not that version, its commit is not on main, the version is a development one or was released before, GitHub has two releases for it, or a release setting cannot be read; a release made in GitHub's page with the tag is turned back into a draft first, with the tag sent again and a branch as its target, and nothing else is changed; publishing needs the tag to still name the built commit on main",
       "source": "A2 3.12.8",
       "owner": "M1",
       "kind": "ci",

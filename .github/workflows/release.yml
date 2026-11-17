@@ -1,14 +1,14 @@
 name: release
 
 # A release, started by making its version tag (`v` and package.json's version, on a commit on
-# main) and by nothing else. One run goes all the way: the plan checks the tag and the repository's
-# release settings before anything is built; the release's draft is made (or a release made in
-# GitHub's page with the tag is turned back into one) so nobody downloads it before its files are
-# complete; each platform's archive is built once from the tagged commit and checked there (the
-# runtime gate, a second build compared byte for byte); the signing job signs exactly those bytes
-# with the release key from the `release` environment; fresh machines install the signed files
-# with the release's own install scripts; GitHub attestations are made for every file; and the
-# publish job fills the draft, downloads every file back, checks it, and publishes it.
+# main) and by nothing else. One run goes all the way: a release made in GitHub's page with the
+# tag becomes a draft again at once, so nobody downloads it before its files are complete; the plan
+# checks the tag and the repository's release settings before anything is built; each platform's
+# archive is built once from the tagged commit and checked there (the runtime gate, a second build
+# compared byte for byte); the signing job signs exactly those bytes with the release key from the
+# `release` environment; fresh machines install the signed files with the release's own install
+# scripts; GitHub attestations are made for every file; and the publish job fills the release's
+# draft, downloads every file back, checks it, and publishes it.
 #
 # A rehearsal runs the same path without any secret and publishes nothing: the signing key is made
 # in memory in the signing job, the versions are `-rehearsal.<run>.<n>`, the install scripts are
@@ -99,11 +99,12 @@ jobs:
             pnpm release plan --mode rehearsal --ref "$REF" --run "$RUN"
           fi
 
-  # The release's one draft, before anything is signed: made for the tag, or a release made in
-  # GitHub's page turned back into one, so nobody downloads a release before its files are complete.
-  draft:
-    needs: plan
-    if: needs.plan.outputs.mode == 'release'
+  # A release made in GitHub's page with the tag is public at once, with no files: it becomes a
+  # draft again straight away, beside the plan and whatever the plan decides, so nobody downloads
+  # it before its files are complete and a refused tag does not leave it public. It runs the tag's
+  # own scripts, as the whole run does: the workflow itself is the tag's.
+  hold:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !github.event.deleted
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -112,7 +113,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ needs.plan.outputs.commit }}
 
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
@@ -120,12 +120,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Make or keep the release's draft
+      - name: Hold a release published without its files as a draft
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.plan.outputs.version }}
-          COMMIT: ${{ needs.plan.outputs.commit }}
-        run: pnpm release draft --version "$VERSION" --commit "$COMMIT"
+          TAG: ${{ github.ref_name }}
+        run: pnpm release hold --tag "$TAG"
 
   # Each archive is built once, from the commit, by that commit's own `pnpm build`: the runtime
   # gate runs on its own platform, and the release's build is made a second time and compared byte
@@ -222,7 +221,7 @@ jobs:
   # dependencies from the lockfile and no cache; the workspace runs no dependency's install script
   # (pnpm-workspace.yaml). sign-ci refuses again by itself anything but this job.
   sign:
-    needs: [plan, draft, build]
+    needs: [plan, hold, build]
     if: needs.plan.outputs.mode == 'release' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -330,13 +329,13 @@ jobs:
         with:
           subject-path: ${{ runner.temp }}/signed/current/*
 
-  # The draft gets every file (a rerun uploads only what an earlier one did not, and a file GitHub
-  # has already must be these bytes), every file is downloaded back and checked as a person's
-  # machine checks it, the tag must still name the commit on main, and the draft is published.
-  # A published release is never changed.
+  # The draft is made if there is none, and gets every file (a rerun uploads only what an earlier
+  # one did not, and a file GitHub has already must be these bytes), every file is downloaded back
+  # and checked as a person's machine checks it, the tag must still name the commit on main, and
+  # the draft is published. A published release is never changed.
   publish:
-    needs: [plan, draft, attest]
-    if: always() && needs.plan.outputs.mode == 'release' && needs.draft.result == 'success' && needs.attest.result == 'success'
+    needs: [plan, hold, attest]
+    if: always() && needs.plan.outputs.mode == 'release' && needs.hold.result == 'success' && needs.attest.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:

@@ -91,7 +91,7 @@ function previousCommit(
 /**
  * A release is planned from its tag (`ref` is the tag's name): the commit it names must be on main,
  * and its package.json's version must be a release version whose tag this is. Whether GitHub has
- * released the version already is the draft step's to tell (draftAction). A rehearsal is planned
+ * released the version already is read from GitHub (releaseReadiness). A rehearsal is planned
  * from a commit.
  */
 export function planRun(options: {

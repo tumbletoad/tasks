@@ -45,11 +45,10 @@ export function rehearsalVersion(packageVersion: string, run: number, step: numb
 
 export const releaseTag = (version: string): string => `v${version}`;
 
-/** A release GitHub has for the tag: draft or published, its target and its files' SHA-256. */
+/** A release GitHub has for the tag: draft or published, and its files' SHA-256. */
 export interface RemoteRelease {
   readonly id: number;
   readonly draft: boolean;
-  readonly target: string;
   readonly assets: Readonly<Record<string, string>>;
 }
 
@@ -90,58 +89,30 @@ export function checkPublishCommit(
   }
 }
 
-/** A release GitHub has for a tag, as the draft step needs it: whether it holds files. */
+/** A release GitHub has for a tag: whether it is a draft, and the names of its files. */
 export interface ReleaseSummary {
-  readonly id: number;
   readonly draft: boolean;
-  readonly target: string;
   readonly files: readonly string[];
 }
 
-export type DraftAction =
-  | { readonly action: "create" }
-  | { readonly action: "keep"; readonly id: number }
-  /** A release published without files (made in GitHub's page with the tag): hidden until complete. */
-  | { readonly action: "hide"; readonly id: number };
-
 /**
- * What a release run does about the releases GitHub has for the tag of `version`, before anything
- * is signed, so the run ends with one draft that becomes the release when its files are complete.
- * Refuses a version that is released already (a published release with files) and anything it
- * cannot resolve without deleting, which it leaves to the owner.
+ * Why the releases GitHub has for the tag of `version` stop a release of it before anything is
+ * built, or undefined. A published release with files means the version is released already. A
+ * published release without files is one made in GitHub's page with the tag: the run holds it as
+ * its draft.
  */
-export function draftAction(
+export function releasedProblem(
   version: string,
-  commit: string,
   releases: readonly ReleaseSummary[],
-): DraftAction {
+): string | undefined {
   const tag = releaseTag(version);
   if (releases.length > 1) {
-    throw new VersionRefusal(
-      `GitHub has ${String(releases.length)} releases for ${tag}: delete all but one by hand, then re-run the failed jobs.`,
-    );
+    return `GitHub has ${String(releases.length)} releases for ${tag}: delete all but one by hand, then re-run the failed jobs.`;
   }
-  const release = releases[0];
-  if (release === undefined) return { action: "create" };
-  if (!release.draft) {
-    if (release.files.length > 0) {
-      throw new VersionRefusal(
-        `${tag} is released already, and a version is released once: raise the version in package.json and make a new tag.`,
-      );
-    }
-    return { action: "hide", id: release.id };
+  if (releases.some((release) => !release.draft && release.files.length > 0)) {
+    return `${tag} is released already, and a version is released once: raise the version in package.json and make a new tag.`;
   }
-  // Only a release run sets a commit as the target; a release made in GitHub's page names a branch.
-  if (
-    release.files.length > 0 &&
-    /^[0-9a-f]{40}$/.test(release.target) &&
-    release.target !== commit
-  ) {
-    throw new VersionRefusal(
-      `The draft of ${tag} holds files built from ${release.target}, not from ${commit} that the tag names: delete that draft by hand, then re-run the failed jobs.`,
-    );
-  }
-  return { action: "keep", id: release.id };
+  return undefined;
 }
 
 /**
@@ -171,8 +142,11 @@ export function draftStep(
     if (local[name] !== digest) differs.push(name);
   }
   if (differs.length > 0) {
+    const files = differs.sort().join(", ");
     throw new VersionRefusal(
-      `${tag} already holds ${differs.sort().join(", ")} with other bytes or not in this release. The same version is never released with other bytes: raise the version in package.json.`,
+      remote.draft
+        ? `The draft of ${tag} holds ${files} with other bytes or not in this release, from an earlier build: delete those files or the draft by hand, then re-run the failed jobs.`
+        : `${tag} is published with ${files} with other bytes or not in this release. The same version is never released with other bytes: raise the version in package.json.`,
     );
   }
   const missing = Object.keys(local)
