@@ -14,6 +14,8 @@ import { join } from "node:path";
 
 export const FIXTURE_TEXT = "Fixture text.";
 export const FIXTURE_WORK = "C:\\fixture\\work";
+export const FIXTURE_DIAGNOSTIC = "[fixture_diagnostic] Fixture text.";
+const DIAGNOSTIC = /^\[[a-z_]{1,40}\] /;
 const FIXTURE_PATH = /^C:\\fixture\\(?:work|path-\d{1,3})$/;
 const SYNTHETIC_ID =
   /^(?:00000000-0000-4000-8000-\d{12}|toolu_fixture\d{1,4}|msg_fixture\d{1,4}|req_fixture\d{1,4}|fixture-id-\d{1,4})$/;
@@ -257,6 +259,9 @@ function cleanString(key: string, value: string, r: Replacer): string {
     return VERSION.test(value) ? value : "0.0.0";
   }
   if (VOCAB.has(value)) return value;
+  // The program's own diagnostics in a result's errors keep their mark, which says they are not
+  // words for the person.
+  if (key === "errors" && DIAGNOSTIC.test(value)) return FIXTURE_DIAGNOSTIC;
   return value === "" ? "" : FIXTURE_TEXT;
 }
 
@@ -337,6 +342,7 @@ export function checkFixtureValue(value: unknown, key = ""): string[] {
       const ok =
         v === "" ||
         v === FIXTURE_TEXT ||
+        (k === "errors" && v === FIXTURE_DIAGNOSTIC) ||
         VOCAB.has(v) ||
         TOOLS.has(v) ||
         (k === "what" && MARK.test(v)) ||

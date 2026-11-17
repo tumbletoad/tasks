@@ -209,6 +209,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.claude.driver",
+      "title": "The claude driver against a fake Claude Code that speaks exactly the recorded print-mode exchanges: the request is the program's first line of input and never an argument, the result's answer and verdict are the work's, the permission maps to Claude Code's own modes, a command and a call of Tasks' tools report their progress, a permission prompt is declined and counted, a question for the person ends the run as needing the person with the question kept and a later one changes nothing, an unknown request gets the protocol's error, a signed-out program ends with its own words and the sign-in command, background work keeps the input open until the program's own turn about it, Stop between turns, during the turn, during start-up, of a silent program and while exiting, a program that stops writing, and a whole answer after megabytes of other output",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.claude-stream.fixture-content",
       "title": "The recorded Claude Code print-mode exchanges hold only what their sanitiser writes (protocol words, built-in tool names, synthetic IDs, fixture paths, names, times, texts and numbers) and pass the stream fixtures' scan; the sanitiser drops a recording's paths, servers, skills, models, prompts and answers, and the check refuses any other value",
       "owner": "M6",
