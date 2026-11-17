@@ -1,4 +1,4 @@
-// A query planned against a space (A3 3.9.1–3.9.3): the ranked list of at most 1,000 IDs as one
+// A query planned against a space (A3 3.9.1–3.9.3): the ranked list of at most SEARCH_IDS IDs as one
 // statement, with every value bound as a parameter.
 //
 // Safe execution. The statement is built from this module's fragments only; every value of the
@@ -21,7 +21,7 @@
 import type { FolderOs, SqlValue } from "@tasks/storage";
 import { normaliseSourceKey, separatorOf, SOURCE_KINDS } from "@tasks/storage";
 import { CLI_NAME } from "@tasks/brand";
-import { AppError, type SEARCH_SCOPES } from "@tasks/contracts";
+import { AppError, SEARCH_IDS, type SEARCH_SCOPES } from "@tasks/contracts";
 import { addDays } from "../ops/dates.ts";
 import {
   isCalendarDate,
@@ -37,9 +37,6 @@ import {
 } from "./query.ts";
 
 export type Scope = (typeof SEARCH_SCOPES)[number];
-
-/** The most IDs a search freezes (A3 3.9.5); one more is read to tell `1000+`. */
-export const SEARCH_IDS = 1000;
 
 /** The space's own values a query may name, read in the search's first transaction. */
 export interface Vocabulary {

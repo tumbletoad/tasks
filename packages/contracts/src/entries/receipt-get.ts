@@ -11,7 +11,7 @@ import { AS_OF, M14, requestId } from "./fixture.ts";
 
 const Seq = z.int().min(0).max(999_999_999_999_999);
 const Instant = z.string().regex(patterns.instant);
-/** At most 50 operations a request, and up to a million in an import's (A1 3.7, A7 3.15.5). */
+/** At most 400 operations a request, and up to a million in an import's. */
 const OpIndex = z.int().min(0).max(999_999).describe("Index of the operation in the request");
 /** Any A1 ID: a task, note, log entry, source, place, area or project. */
 const RowId = z.string().regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}$/u);
@@ -193,7 +193,7 @@ export function receiptResult(
     incarnation: stored.incarnation,
     ...(result.commit === undefined ? {} : { commit: result.commit }),
     ...(result.target === undefined ? {} : { target: result.target }),
-    // An import's commit can hold far more than a request's 50 operations (A1 3.7): the first 50.
+    // A request or an import holds more operations than a reply shows: the first 50.
     results: result.results.slice(0, 50) as z.input<typeof ReceiptOpResult>[],
     ...(result.results.length > 50 ? { results_more: result.results.length - 50 } : {}),
     ...(result.conflicts.length === 0

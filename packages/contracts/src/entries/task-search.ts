@@ -10,6 +10,12 @@ import { AS_OF, M14, M3 } from "./fixture.ts";
 /** What a search looks in (A3 3.4.3): `finished` is completed or archived. */
 export const SEARCH_SCOPES = ["active", "finished", "all", "learnings"] as const;
 
+/**
+ * The most matches a search keeps for its pages: enough to walk a space of several thousand tasks
+ * a page at a time. A broader search says it found more.
+ */
+export const SEARCH_IDS = 10_000;
+
 /** A search cursor (A3 3.9.5): `c_` and 16 base32 characters. */
 export const CURSOR_PATTERN = /^c_[0-9a-hjkmnp-tv-z]{16}$/u;
 
@@ -75,9 +81,9 @@ export const TaskSearchResult = z.strictObject({
   scope: z.enum(SEARCH_SCOPES).describe("The scope searched"),
   parsed: z.string().describe("How the query was read"),
   total: z
-    .union([z.int().min(0).max(1000), z.literal("1000+")])
-    .describe("Matches: exact up to 1,000"),
-  first: z.int().min(0).max(1000).describe("Position of the first row; 0 without rows"),
+    .union([z.int().min(0).max(SEARCH_IDS), z.literal("10000+")])
+    .describe("Matches: exact up to 10,000"),
+  first: z.int().min(0).max(SEARCH_IDS).describe("Position of the first row; 0 without rows"),
   rows: z.array(SearchRow).max(50).describe("This page's rows, in the search's order"),
   cursor: z.string().regex(CURSOR_PATTERN).describe("Pass it for the next page").optional(),
 });

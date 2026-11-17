@@ -1,5 +1,5 @@
 // Search cursors bound to a snapshot (A3 3.9.5). A search's first page freezes the ordered list of
-// its matching IDs (at most 1,000) at as_of S, and every later page reads its slice of that list,
+// its matching IDs (at most SEARCH_IDS) at as_of S, and every later page reads its slice of that list,
 // so no row is skipped or repeated and the order is never computed again.
 //
 // The list lives in memory only, so a service restart drops it. Each page gets a cursor of its own
@@ -53,7 +53,7 @@ export interface FrozenSearch {
   readonly match: string | null;
   readonly limit: number;
   readonly items: readonly FrozenItem[];
-  readonly total: number | "1000+";
+  readonly total: number | "10000+";
 }
 
 interface Held {
