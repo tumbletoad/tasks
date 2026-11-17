@@ -1065,6 +1065,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.compat.imported-space",
+      "title": "A space made by the last build with the prototype importer, holding an import, the person's later change of an imported task and a second import applied and undone, opens as its machine's writer, lists, searches and renders the imported tasks, keeps the undone ones gone, names the import in a task's history, and undoes a change made now and the one made before",
+      "owner": "M7",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.14.planning-fixture.index",
       "title": "The synthetic Planning prototype's index names a place for every edge case of the M7.01 row, and each place holds what it names",
       "source": "A7 3.14 (M7.01), A7 3.15.2",

@@ -1,0 +1,32 @@
+{
+  "tasks_space": 1,
+  "space_id": "sp_21aee70tnx4nr9z7kpjbpeyrre",
+  "name": "Mira",
+  "format": {
+    "major": 0,
+    "minor": 5
+  },
+  "min_reader": "0.0.0",
+  "min_writer": "0.0.0",
+  "authority": {
+    "machine_id": "m_0caftsk1d68qbkpe94ydf8pvv4",
+    "epoch": 1,
+    "incarnation": "ai_4zx05z40q2q4apey33e7fytvzy",
+    "since_seq": 0
+  },
+  "lineage": {
+    "forked_from": null,
+    "incarnations": [
+      {
+        "incarnation": "ai_4zx05z40q2q4apey33e7fytvzy",
+        "epoch": 1,
+        "kind": "create",
+        "parent": null,
+        "machine_id": "m_0caftsk1d68qbkpe94ydf8pvv4",
+        "at": 1794929153582
+      }
+    ]
+  },
+  "transfer": null,
+  "written_by": "0.0.0"
+}
