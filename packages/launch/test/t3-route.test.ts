@@ -478,15 +478,15 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
   );
 
   test(
-    "a nested folder asks and never uses the containing project; Not now holds for 30 days",
+    "a nested folder asks and never uses the containing project; Not now holds for 30 days; Register titles it by the project",
     async () => {
       const lumen = fake.addProject(folder("lumen"), "lumen");
       folder("lumen", "docs");
-      const asked = await prepare("lumen/docs", "lumen › docs");
+      const asked = await prepare("lumen/docs", "Docs");
       expect(asked.prepared).toEqual({
         kind: "ask",
         question: "register",
-        text: "Register lumen › docs as a T3 project?",
+        text: "Register Docs as a T3 project?",
       });
 
       route.notNow(asked.place);
@@ -504,11 +504,12 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
       const registered = await route.register({
         place: asked.place,
         folder: { path: resolution.folder, identity: resolution.identity },
-        name: "lumen › docs",
+        name: "Docs",
       });
       expect(registered).toMatchObject({ kind: "bound", strategy: { type: "root" } });
+      // The T3 project takes the title of the task's project, not the folder's name.
       const docs = [...fake.projects.values()].find((p) => p.workspaceRoot === resolution.folder);
-      expect(docs).toBeDefined();
+      expect(docs?.title).toBe("Docs");
       expect(registered).toMatchObject({ projectId: docs?.id });
       const { dispatched } = await launch(machine(), "lumen/docs");
       expect(dispatched?.state).toBe("dispatched");
