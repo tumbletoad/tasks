@@ -1594,7 +1594,7 @@ export class SpaceWriter {
             if (mode === "new" && found.active.length > 0) {
               problem(
                 "VALIDATION_FAILED",
-                "An active task holds a source key of this draft: return it or link to it",
+                "An open task holds a source key of this draft: leave out create_new to get that task, or send that source without its key",
                 i,
                 "dedupe",
               );
