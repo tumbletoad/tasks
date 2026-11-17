@@ -54,7 +54,8 @@ export const WRITE_LIMITS = {
   /**
    * Bytes of JSON per request: twice the longest line a connection carries (8 MiB), because the
    * intent and its operations each hold the input's text, so no call a connection carried and its
-   * entry accepted is refused for its size.
+   * entry accepted is refused for its size. A run's answer (RUN_RESULT_TEXT_MAX_BYTES), up to six
+   * times longer as escaped JSON, fits too.
    */
   requestBytes: 16 * 1024 * 1024,
   /** Characters. */
@@ -88,11 +89,6 @@ export const WRITE_LIMITS = {
    */
   importOps: 1_000_000,
   importBytes: 512 * 1024 * 1024,
-  /**
-   * Bytes of JSON of a request that only moves runs: a run's answer (RUN_RESULT_TEXT_MAX_BYTES) is
-   * up to six times longer as escaped JSON, so such a request is never refused for its answer.
-   */
-  runBytes: 8 * 1024 * 1024,
   /** Characters of a legacy ID kept as an alias: the prototype's marker grammar (A7 3.15.2). */
   alias: 1_024,
   /**
@@ -2401,27 +2397,12 @@ export function checkRequest(value: unknown): CheckedRequest {
   // from the origin, which the credential's check below confirms.
   const importing =
     isRecord(value) && isRecord(value["actor"]) && value["actor"]["origin"] === "import";
-  // A request that only moves runs may carry a whole answer; its operations' own checks below
-  // still hold the answer to its cap.
-  const ops0 = isRecord(value) ? value["ops"] : undefined;
-  const runsOnly =
-    Array.isArray(ops0) &&
-    ops0.length > 0 &&
-    ops0.every((op) => isRecord(op) && op["kind"] === "run.transition");
   const bytes = utf8Bytes(json ?? "");
-  const maxBytes = importing
-    ? WRITE_LIMITS.importBytes
-    : runsOnly
-      ? WRITE_LIMITS.runBytes
-      : WRITE_LIMITS.requestBytes;
+  const maxBytes = importing ? WRITE_LIMITS.importBytes : WRITE_LIMITS.requestBytes;
   if (bytes > maxBytes) {
     fail(
       "TOO_LARGE",
-      importing
-        ? "The import is larger than 512 MiB"
-        : runsOnly
-          ? "The request is larger than 8 MiB"
-          : "The request is larger than 16 MiB",
+      importing ? "The import is larger than 512 MiB" : "The request is larger than 16 MiB",
       "",
     );
   }
