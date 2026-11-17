@@ -63,6 +63,7 @@ export function processFacts(): GateFacts {
     execArgv: process.execArgv,
     reportExcludesEnv: () => {
       if (!process.report.excludeEnv) return false;
+      // eslint-disable-next-line no-restricted-syntax -- the gate runs in doctor's own process, which starts no worker thread
       const report = process.report.getReport();
       return !("environmentVariables" in report);
     },
