@@ -1594,6 +1594,7 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `sections[].tasks[].due.tz` | string | yes | IANA time zone of the commitment |
 | `sections[].tasks[].area` | string | no | Area name |
 | `sections[].tasks[].project` | string | no | Project name |
+| `sections[].above` | integer, 1 to 1000 | no | Its tasks listed in an earlier section |
 | `guide` | string | no | The workflow guide asked for |
 | `hint` | string | no | What to do next |
 
@@ -2445,6 +2446,7 @@ When `view` is `"status"`:
 | `sections[].tasks[].due.tz` | string | yes | IANA time zone of the commitment |
 | `sections[].tasks[].area` | string | no | Area name |
 | `sections[].tasks[].project` | string | no | Project name |
+| `sections[].above` | integer, 1 to 1000 | no | Its tasks listed in an earlier section |
 | `guide` | string | no | The workflow guide asked for |
 | `hint` | string | no | What to do next |
 | `view` | "status" | yes | A routine's launch bound the space: the overview |

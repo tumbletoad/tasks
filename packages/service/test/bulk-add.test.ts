@@ -451,3 +451,33 @@ describe("[A3.bulk.second-pass] a second pass adds nothing", () => {
     expect(await logOf()).toEqual(["Evidence: seen again.", "Evidence: the export matches."]);
   });
 });
+
+describe("[A3.bulk.small] the counts and warnings an agent checks its work by", () => {
+  test("two drafts of one call with the same title in one group are a possible duplicate", async () => {
+    const added = await call("task.add", {
+      tasks: [
+        { title: "Order printer toner", area: "Twins" },
+        { title: "Order printer toner", area: "Twins" },
+      ],
+      request_id: rid(),
+    });
+    expect(added["warnings"]).toEqual([
+      "tasks.1: possible duplicate of tasks.0 (same area, similar title)",
+    ]);
+  });
+
+  test("a section says how many of its tasks an earlier section lists", async () => {
+    await call("task.add", {
+      tasks: [
+        { title: "Waits and is due", area: "Waits", status: "waiting", due: "today" },
+        { title: "Waits on a person", area: "Waits", status: "waiting", waiting_on: "Ops" },
+      ],
+      request_id: rid(),
+    });
+    const status = await call("space.status", { include: ["today", "waiting"] });
+    const sections = status["sections"] as Json[];
+    expect(sections[1]).toMatchObject({ name: "waiting", above: 1 });
+    const text = await tool("status", { include: ["today", "waiting"] });
+    expect(text).toMatch(/^waiting \(\d+ of \d+, 1 listed above\):$/mu);
+  });
+});

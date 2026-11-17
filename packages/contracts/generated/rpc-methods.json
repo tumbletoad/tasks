@@ -3528,6 +3528,12 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "above": {
+                  "description": "Its tasks listed in an earlier section",
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
                 "name": {
                   "description": "Section",
                   "enum": [
@@ -6154,6 +6160,12 @@
                 "items": {
                   "additionalProperties": false,
                   "properties": {
+                    "above": {
+                      "description": "Its tasks listed in an earlier section",
+                      "maximum": 1000,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
                     "name": {
                       "description": "Section",
                       "enum": [

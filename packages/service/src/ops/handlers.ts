@@ -1481,9 +1481,10 @@ function ownResults(result: WriteResult): WriteResult {
 
 /**
  * The `possible duplicate` warnings of the drafts (similar.ts, A3 3.4.5): one per draft whose
- * title is close to an active task's in the group it lands in. They go with the request, so the
- * receipt keeps them and a replay says the first call's; a draft that matched an existing task
- * drops its warning after the write (`task.add`).
+ * title is close to an active task's in the group it lands in, or to an earlier draft's of the
+ * same call, which it names by its path. They go with the request, so the receipt keeps them and a
+ * replay says the first call's; a draft that matched an existing task drops its warning after the
+ * write (`task.add`).
  */
 async function duplicateWarnings(
   call: Call,
@@ -1498,15 +1499,18 @@ async function duplicateWarnings(
   } catch (error) {
     throw storageFailure(error);
   }
+  const drafted = list.map((draft, k) => ({
+    ref: `tasks.${String(k)}`,
+    title: String(draft["title"]),
+    destination: destinations[k] as Destination,
+  }));
   return list.flatMap((draft, k) => {
     const destination = destinations[k];
     if (destination === undefined) return [];
-    const found = duplicateWarning(
-      `tasks.${String(k)}`,
-      String(draft["title"]),
-      destination,
-      siblings,
-    );
+    const found = duplicateWarning(`tasks.${String(k)}`, String(draft["title"]), destination, [
+      ...siblings,
+      ...drafted.slice(0, k),
+    ]);
     return found === undefined ? [] : [found];
   });
 }

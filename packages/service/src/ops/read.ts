@@ -1042,7 +1042,7 @@ export async function readStatus(
   autonomy: "full" | "review" | "suggest";
   statuses: { status: string; count: number }[];
   inbox: number;
-  sections: { name: string; tasks: Record<string, unknown>[] }[];
+  sections: { name: string; tasks: Record<string, unknown>[]; above?: number }[];
   /** Each task row with its place's `place_root`, `place_path`, `place_kind` and `place_identity`. */
   placed: Row[];
   /** The bound task, when one was asked for and it exists. */
@@ -1083,10 +1083,16 @@ export async function readStatus(
   // A task appears once, in its first section (A3 3.4.2).
   const shown = new Set<unknown>();
   const sections = include.map((name, i) => {
-    const rows = ((found[i] ?? []) as Row[]).filter((row) => !shown.has(row["id"]));
+    const all = (found[i] ?? []) as Row[];
+    const rows = all.filter((row) => !shown.has(row["id"]));
     const kept = rows.slice(0, SECTION_ROWS);
     for (const row of kept) shown.add(row["id"]);
-    return { name, tasks: kept.map((row) => taskRow(row, facts.refPrefix)) };
+    const above = all.length - rows.length;
+    return {
+      name,
+      tasks: kept.map((row) => taskRow(row, facts.refPrefix)),
+      ...(above === 0 ? {} : { above }),
+    };
   });
   return {
     space: facts,
