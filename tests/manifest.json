@@ -1049,6 +1049,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.5.error-retry-words",
+      "title": "An error that asks a person to try again is retryable, and one that is not retryable never asks it: the storage failures' sentences and a space the service does not serve now",
+      "source": "A3 3.5",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.write.receipts",
       "title": "A repeated request ID returns the stored result for applied results and no-ops, a different intent returns REQUEST_ID_REUSED, a no-op retried after the state changed replays the no-op; every decided outcome has one receipt in its request's transaction, keyed by writer scope, and undecided requests store none",
       "source": "A1 3.7, A1 3.8 (X12), A3 3.2.3, A3 3.7.9, A7 3.8 M1.05",

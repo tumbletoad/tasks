@@ -106,8 +106,8 @@ export const A1_ERRORS = {
   SPACE_CHANGED: unavailable("opening", true),
   /** A rollback journal beside the database: M1.06's recovery restores the space. */
   SPACE_NEEDS_RECOVERY: unavailable("needs_recovery", false),
-  /** Another writer serves the space: this one never will. */
-  SPACE_WRITER_TAKEN: unavailable("not_served", false),
+  /** Another writer in this process holds the space, mostly its last open or close: it ends. */
+  SPACE_WRITER_TAKEN: unavailable("not_served", true),
   /** Another process holds the space's writer.lock (A2 3.4: unavailable(locked_elsewhere)). */
   SPACE_LOCKED_ELSEWHERE: unavailable("not_served", false),
   /** The database file has a second name (a hard or symbolic link): never opened for writing. */
