@@ -58,6 +58,9 @@ describe("[A1.3.15.folders.repo] the repository a project's folder holds, by nam
     expect(name).toBe("billing");
     expect(repoNameOf("https://git.example.com/mira/billing.git")).toBe("billing");
     expect(repoNameOf("git.example.com:billing")).toBe("billing");
+    // The short form with an IPv6 host: no part of the address is taken for the name.
+    expect(repoNameOf("git@[2001:db8::1]:portal.git")).toBe("portal");
+    expect(repoNameOf("[2001:db8::1]:mira/portal.git")).toBe("portal");
     expect(repoNameOf("https://git.example.com/")).toBeUndefined();
   });
 

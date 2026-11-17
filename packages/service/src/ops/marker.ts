@@ -1,16 +1,16 @@
 // The marker Tasks leaves in a project's or a task's folder: `.tasks-marker/` with the IDs of the
 // space and of each project or task whose folder it is, and a `.gitignore` holding `*`, so a
 // checkout's `git status` stays clean without a change to the repository's own ignore files. It
-// holds no task text. A launch reads it just before an agent starts: a folder that names another
-// owner, or whose marker this machine wrote and is now gone, is not opened without the person's
+// holds no task text. A launch reads it just before an agent starts: a folder this machine marked
+// for the owner whose marker is now gone or names others only is not opened without the person's
 // word, so an old task never opens unseen in an unrelated repository made at the same path later.
 //
 // What this machine has marked is kept in its own state (`FolderMarks`), by owner and path: an
 // undo may give an owner back a folder, and only a folder that was marked for that owner can have
 // lost its marker. A folder Tasks cannot write to (read-only, a share) gets no marker and is
 // opened as before: that is the limit of the protection, not a refusal.
-import { closeSync, readFileSync, rmdirSync, rmSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { closeSync, lstatSync, readFileSync, rmdirSync, rmSync } from "node:fs";
+import { lstat, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { FOLDER_MARKER, PRODUCT_NAME } from "@tasks/brand";
 import { atomicWrite, createFile, makeDir, writeAll } from "@tasks/files";
@@ -32,10 +32,15 @@ export const MARKS_FILE = "folder-marks.json";
 
 const ABOUT = `${PRODUCT_NAME} keeps this folder to know which project or task this folder belongs to. Clearing the folder in ${PRODUCT_NAME} removes it.`;
 
-/** What a folder's marker says: no marker, its owners, or a marker that cannot be read. */
+/**
+ * What a folder's marker says: no marker, its owners, an owners file that is not one Tasks writes
+ * (`malformed`), or a marker this machine cannot read or should not touch (`unreadable`: a read
+ * error, or a link where the marker's folder belongs).
+ */
 export type MarkerRead =
   | { readonly state: "none" }
   | { readonly state: "owners"; readonly owners: readonly MarkerOwner[] }
+  | { readonly state: "malformed" }
   | { readonly state: "unreadable" };
 
 const same = (a: MarkerOwner, b: MarkerOwner): boolean =>
@@ -76,23 +81,38 @@ const textOf = (owners: readonly MarkerOwner[]): string =>
 
 /** The marker of the folder at `absolute`, read now. */
 export async function readMarker(absolute: string): Promise<MarkerRead> {
+  const dir = join(absolute, FOLDER_MARKER);
   let text: string;
   try {
-    text = await readFile(join(absolute, FOLDER_MARKER, MARKER_OWNERS), "utf8");
+    // A link or a junction there leads out of the person's folder: it is never read or written.
+    if ((await lstat(dir)).isSymbolicLink()) return { state: "unreadable" };
+    text = await readFile(join(dir, MARKER_OWNERS), "utf8");
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     return code === "ENOENT" || code === "ENOTDIR" ? { state: "none" } : { state: "unreadable" };
   }
   const owners = ownersOf(text);
-  return owners === undefined ? { state: "unreadable" } : { state: "owners", owners };
+  return owners === undefined ? { state: "malformed" } : { state: "owners", owners };
 }
 
 const codeOf = (error: unknown): unknown => (error as NodeJS.ErrnoException | null)?.code;
 
+/** Whether `dir` is a folder itself, not a link to one. */
+const isOwnFolder = (dir: string): boolean => {
+  try {
+    return lstatSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
+const IGNORE_ALL = "*\n";
+
 /**
  * Adds `owner` to the marker of the folder at `absolute`, making the marker when there is none.
- * False when the folder takes no marker: it cannot be written, or something that is not Tasks'
- * marker has the marker's name.
+ * An owners file that is not one Tasks writes is written over: it is in the marker's own folder.
+ * False when the folder takes no marker: it cannot be written, or something that is not a folder
+ * has the marker's name.
  */
 function addOwnerNow(absolute: string, owner: MarkerOwner, before: MarkerRead): boolean {
   if (before.state === "unreadable") return false;
@@ -100,12 +120,12 @@ function addOwnerNow(absolute: string, owner: MarkerOwner, before: MarkerRead): 
   try {
     makeDir(dir, 0o755, { recursive: false });
   } catch (error) {
-    if (codeOf(error) !== "EEXIST") return false;
+    if (codeOf(error) !== "EEXIST" || !isOwnFolder(dir)) return false;
   }
   try {
     const fd = createFile(join(dir, ".gitignore"), 0o644);
     try {
-      writeAll(fd, "*\n");
+      writeAll(fd, IGNORE_ALL);
     } finally {
       closeSync(fd);
     }
@@ -128,13 +148,22 @@ function removeOwnerNow(absolute: string, owner: MarkerOwner, before: MarkerRead
   const dir = join(absolute, FOLDER_MARKER);
   const left = before.owners.filter((o) => !same(o, owner));
   if (left.length === before.owners.length) return;
+  if (!isOwnFolder(dir)) return;
   try {
     if (left.length > 0) {
       atomicWrite(join(dir, MARKER_OWNERS), textOf(left), 0o644);
       return;
     }
     rmSync(join(dir, MARKER_OWNERS), { force: true });
-    rmSync(join(dir, ".gitignore"), { force: true });
+    // An ignore file with other words in it is the person's, and stays.
+    const ignore = join(dir, ".gitignore");
+    let words: string | undefined;
+    try {
+      words = readFileSync(ignore, "utf8");
+    } catch {
+      words = undefined;
+    }
+    if (words === IGNORE_ALL) rmSync(ignore, { force: true });
     // Only when nothing else is in it: a file a person put there stays, and so does the folder.
     rmdirSync(dir);
   } catch {
@@ -201,7 +230,7 @@ export type MarkerCheck =
   | { readonly kind: "ok" }
   /** This machine marked the folder for this owner, and the marker is gone. */
   | { readonly kind: "missing" }
-  /** The marker names other owners only, or cannot be read. */
+  /** This machine marked the folder for this owner, and its marker now names others only. */
   | { readonly kind: "other"; readonly owners: readonly MarkerOwner[] };
 
 /** How long a look at a marker, or a change to one, may take. */
@@ -281,33 +310,36 @@ export class FolderMarkers {
 
   /**
    * A folder that moved with another: its marker moved with it, inside it, so what this machine
-   * marked follows too.
+   * marked follows too. The old place stays marked: an undo gives the owner that place back, and
+   * an unrelated folder made there since is still noticed.
    */
   moved(owner: MarkerOwner, from: string, to: string): void {
-    if (!this.#marks.has(this.#key(owner, from))) return;
-    this.#marks.set(this.#key(owner, from), false);
-    this.#marks.set(this.#key(owner, to), true);
+    if (this.#marks.has(this.#key(owner, from))) this.#marks.set(this.#key(owner, to), true);
   }
 
   /**
    * The look a launch takes at its folder just before an agent starts. A folder that is not
-   * there, or does not answer, is the launch's own check to report. A folder without a marker that
-   * this machine never marked for this owner is marked now, quietly: it was set before markers.
+   * there, or does not answer, is the launch's own check to report, and one whose marker cannot
+   * be read opens as before. Only a folder this machine marked for this owner can say it is not
+   * that folder any more. One it never marked for this owner (set before markers, before the
+   * folder was there, or given back by an undo of a clear) is marked now, quietly, whatever its
+   * marker names: nothing tells it from the folder that was set.
    */
   check(owner: MarkerOwner, stored: string): Promise<MarkerCheck> {
     return this.#turn(async (): Promise<MarkerCheck> => {
       const open = await this.#folder(stored);
       if (open === undefined) return { kind: "ok" };
       const read = await bounded(() => readMarker(open), MARKER_MS);
-      if (read === "not_answering") return { kind: "ok" };
+      if (read === "not_answering" || read.state === "unreadable") return { kind: "ok" };
       const key = this.#key(owner, stored);
-      if (read.state === "unreadable") return { kind: "other", owners: [] };
-      if (read.state === "owners") {
-        if (!read.owners.some((o) => same(o, owner))) return { kind: "other", owners: read.owners };
+      if (read.state === "owners" && read.owners.some((o) => same(o, owner))) {
         this.#marks.set(key, true);
         return { kind: "ok" };
       }
-      if (this.#marks.has(key)) return { kind: "missing" };
+      if (this.#marks.has(key)) {
+        if (read.state === "none") return { kind: "missing" };
+        return { kind: "other", owners: read.state === "owners" ? read.owners : [] };
+      }
       if (addOwnerNow(open, owner, read)) this.#marks.set(key, true);
       return { kind: "ok" };
     });

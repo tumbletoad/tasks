@@ -13,8 +13,11 @@ export const REPO_MS = 500;
  * fragment never reach it): the last name of its path, without `.git`.
  */
 export function repoNameOf(url: string): string | undefined {
-  const scheme = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/]*/u.exec(url);
-  const path = scheme === null ? url.slice(url.indexOf(":") + 1) : url.slice(scheme[0].length);
+  // `scheme://host/path`, or git's short `user@host:path`, whose host may be `[an IPv6 address]`.
+  const host =
+    /^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/]*/u.exec(url) ??
+    /^(?:[^@/]*@)?(?:\[[^\]/]*\]|[^:/]*):/u.exec(url);
+  const path = host === null ? url : url.slice(host[0].length);
   const last = path
     .split("/")
     .filter((part) => part !== "")

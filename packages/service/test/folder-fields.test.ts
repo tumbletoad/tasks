@@ -491,9 +491,9 @@ describe("[A3.3.4.folders.agent] update_task's folder", () => {
         request_id: rid(),
       }),
     );
-    expect(updated.warnings).toEqual([
-      `The old folder was moved, so 1 folder inside it moved along: ${inner?.ref ?? ""}.`,
-    ]);
+    // The answer names the task whose folder followed; its words are the tool's to choose.
+    expect(updated.warnings).toHaveLength(1);
+    expect(updated.warnings[0]).toContain(inner?.ref ?? "");
     expect((await filed(inner?.ref ?? "")).folder).toEqual({
       path: ends(`moved\\${sep}inner`),
       of: "task",

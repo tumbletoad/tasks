@@ -108,9 +108,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 - Open uses the folder that was set, or says that it is not there. It never picks another folder
   silently.
-- Open and a background run start nothing in a folder whose marker names another project, task or
-  space, or whose marker Tasks wrote and is gone. Open says so, and you choose to use the folder,
-  which marks it, or to give the task another folder.
+- Open and a background run start nothing in a folder that this computer marked for the task or
+  its project when its marker is gone or now names only other projects, tasks or spaces. Open says
+  so, and you choose to use the folder, which marks it, or to give the task another folder. A
+  folder this computer never marked for it is marked at its next Open without a question.
 - Opening with a particular account uses that account's settings of the agent app.
 - Tasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.
@@ -179,4 +180,5 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A folder on a drive or share that does not answer is refused after a few seconds, but the look
   at it keeps one of Tasks' file threads busy until the system gives up.
 - A folder Tasks cannot write to, such as a read-only one, gets no marker and opens as before,
-  without that check. A marker deleted by hand is missed once, at the next Open.
+  without that check, and so does a folder whose marker cannot be read within two seconds. A
+  marker deleted by hand, or by `git clean -x`, is missed once, at the next Open.
