@@ -158,10 +158,12 @@ test.describe("[A7.3.9.m2-10.e2e.copy] Copy puts the pointer brief on the clipbo
     // Copy sits in the expanded task's strip (A5 3.7): expand the row, then copy.
     await row.locator('[data-part="title"]').click();
     await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");
-    await row
+    const copy = row
       .getByRole("toolbar")
-      .getByRole("button", { name: `Copy ${world.spare.title}` })
-      .click();
+      .getByRole("button", { name: `Copy ${world.spare.title}` });
+    // What Shift-click does is said to assistive technology too, not only in the hover label.
+    await expect(copy).toHaveAccessibleDescription(/Shift-click copies the context pack/u);
+    await copy.click();
     await expect
       .poll(() => page.evaluate(() => (window as unknown as { copied: string[] }).copied.length), {
         timeout: SLOW_MS,
@@ -210,7 +212,7 @@ test.describe("[A7.3.14.m6-11.e2e.pack] Shift+Copy puts the context pack on the 
     const copy = row
       .getByRole("toolbar")
       .getByRole("button", { name: `Copy ${world.spare.title}` });
-    await expect(copy).toHaveAttribute("title", /Shift-click copies the context pack/u);
+    await expect(copy).toHaveAttribute("data-tip", /Shift-click copies the context pack/u);
     await copy.click({ modifiers: ["Shift"] });
     await expect
       .poll(() => page.evaluate(() => (window as unknown as { copied: string[] }).copied.length), {

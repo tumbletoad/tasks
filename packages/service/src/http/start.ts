@@ -7,7 +7,7 @@ import { PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
 import { editMachineToml } from "../config/edit.ts";
 import type { OpsHost } from "../ops/index.ts";
-import { HttpApp, type UiDefaultSpace } from "./app.ts";
+import { HttpApp, type UiDefaultSpace, type UiMachine } from "./app.ts";
 import type { HttpLog } from "./events.ts";
 import type { Visibility } from "./feed.ts";
 import { DurableGrants } from "./grants.ts";
@@ -82,6 +82,8 @@ export interface HttpOptions extends HttpStart {
   readonly log: HttpLog;
   /** The machine's default space, which the page's Make default changes. */
   readonly defaults?: UiDefaultSpace;
+  /** This computer's settings, which the page's Settings reads and changes. */
+  readonly machine?: UiMachine;
   /** The status changed (a block, a move back): the hub rewrites service.json. */
   readonly onChange?: () => void;
   /**
@@ -154,6 +156,7 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
     ...(options.installed === undefined ? {} : { installed: options.installed }),
     ...(options.launch === undefined ? {} : { launch: options.launch }),
     ...(options.defaults === undefined ? {} : { defaults: options.defaults }),
+    ...(options.machine === undefined ? {} : { machine: options.machine }),
   });
   const os = OS_WORD[process.platform] ?? "linux";
   const facts: PortFacts = {

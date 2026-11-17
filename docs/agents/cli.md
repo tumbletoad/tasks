@@ -49,7 +49,7 @@ Usage: `tasks add <title> [flags]`
 | `--due` | `tasks[].due` | string | ISO date or phrase: fri, +3d |
 | `--waiting-on` | `tasks[].waiting_on` | string | Who or what it waits on |
 | `--focus` | `tasks[].focus` | boolean | Star it for today, only when the user asks |
-| `--place` | `tasks[].place` | string | Its folder: "cwd", an absolute folder, or root and path |
+| `--folder` | `tasks[].folder` | string | Its folder: "cwd", an absolute folder or one under ~ |
 | `--context` | `tasks[].context` | string | Markdown context |
 | `--log` | `tasks[].log` | string | Log entry; also added to a matched task |
 | `--on-existing` | `tasks[].on_existing` | "return" \| "add_sources" \| "create_new" | When a source key matches; default return |
@@ -64,9 +64,10 @@ Usage: `tasks area <action> [<path>] [<to>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<action>` | `action` | string | list reads; create, rename, move, archive and unarchive change a group |
+| `<action>` | `action` | string | list reads; the others change a group |
 | `<path>` | `path` | string | "Area" or "Area/Project", by name or slug; list: one area |
 | `<to>` | `to` | string | rename: the new name; move: the new area |
+| `--folder` | `folder` | string | create, set_folder: the project's folder here, "cwd" or an absolute path |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 
 ## `tasks brief`
@@ -208,7 +209,7 @@ Usage: `tasks set [<task>] <key>=<value>... [flags]`
 | Argument | Field | Type | Description |
 |---|---|---|---|
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: the bound task |
-| `--clear` | `clear` | "summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "place" \| "focus" | Fields to clear (repeatable) |
+| `--clear` | `clear` | "summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus" | Fields to clear (repeatable) |
 | `--remove-source` | `remove_sources` | string | Source keys or URLs to unlink (repeatable) |
 | `--reason` | `reason` | string | Why, shown in history and proposals |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
@@ -222,7 +223,7 @@ Usage: `tasks set [<task>] <key>=<value>... [flags]`
 | `waiting_on=` | `set.waiting_on` | string | Who or what it waits on |
 | `area=` | `set.area` | string | Area name or slug |
 | `project=` | `set.project` | string | Project name or slug |
-| `place=` | `set.place` | string | "cwd", an absolute folder, or root and path |
+| `folder=` | `set.folder` | string | "cwd", an absolute folder or one under ~ |
 | `focus=` | `set.focus` | boolean | Star it for today, only when the user asks |
 
 Only through `--input`: `context`, `add_sources`.

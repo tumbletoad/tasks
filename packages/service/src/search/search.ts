@@ -17,6 +17,7 @@ import {
   formatTaskRef,
   HAS_SEARCH_TABLES_SQL,
   ROWS_BY_IDS_SQL,
+  type FolderOs,
   type FrozenEntry,
   type Query as SqlQuery,
   type QueryResult,
@@ -78,6 +79,10 @@ export interface SearchEnv {
   readonly live: () => readonly string[];
   /** What `cwd` relates to on this machine (ops/here.ts); nothing when it is no folder here. */
   readonly here: (cwd: string) => Promise<HereSets>;
+  /** A folder given to `folder:` as this machine stores it (`cwd` already made the folder). */
+  readonly folderOf?: (
+    given: string,
+  ) => { readonly stored: string; readonly os: FolderOs } | undefined;
   /** Whether this machine's update of the space failed: a refusal of words says so. */
   readonly updateFailed?: boolean;
 }
@@ -266,6 +271,11 @@ export async function runSearch(
       ...(env.boundTask === undefined ? {} : { boundTask: env.boundTask }),
       ...(here === undefined ? {} : { here }),
       live,
+      folderOf: (value) => {
+        const given = value.toLowerCase() === "cwd" ? input.cwd : value;
+        if (given === undefined) return "no_cwd";
+        return env.folderOf?.(given) ?? "not_a_folder";
+      },
     });
     const results = await reader.transaction("deferred", [
       ...VOCABULARY,

@@ -47,29 +47,65 @@ function valueAt(input: unknown, path: readonly PropertyKey[]): unknown {
   return node;
 }
 
+/** Fields an earlier build took, and the field a caller gives instead now. */
+const RENAMED: Readonly<Record<string, string>> = { place: "folder" };
+
 /**
  * A schema failure: `too_large` when every issue is a limit (A3 3.5: over a field, item or
  * request limit), else `invalid_input`, with each issue's path and a fixed sentence. A field the
- * input leaves out is `Missing`, never a wrong type: the caller gave nothing to be wrong.
+ * input leaves out is `Missing`, never a wrong type: the caller gave nothing to be wrong. A field
+ * an earlier build took is named with the field that replaced it, so the caller fixes its call.
  */
 export function schemaFailure(
   error: {
-    readonly issues: readonly { readonly code: string; readonly path: readonly PropertyKey[] }[];
+    readonly issues: readonly {
+      readonly code: string;
+      readonly path: readonly PropertyKey[];
+      readonly keys?: readonly string[];
+    }[];
   },
   input?: unknown,
 ): AppError {
-  const issues = error.issues.slice(0, 20).map((issue) => ({
-    path: issue.path.map(String).join("."),
-    message:
-      issue.code === "invalid_type" && valueAt(input, issue.path) === undefined
-        ? "Missing"
-        : (ISSUE[issue.code] ?? "Invalid"),
-  }));
+  const renamed: string[] = [];
+  const issues = error.issues.slice(0, 20).flatMap((issue) => {
+    const path = issue.path.map(String).join(".");
+    // An old field, or its name in a list of fields such as update_task's clear.
+    const value = valueAt(input, issue.path);
+    if (
+      issue.code === "invalid_value" &&
+      typeof value === "string" &&
+      Object.hasOwn(RENAMED, value)
+    ) {
+      const now = RENAMED[value] ?? "";
+      renamed.push(`${value} is now ${now}`);
+      return [{ path, message: `Now ${now}` }];
+    }
+    const old = (issue.keys ?? []).filter((key) => Object.hasOwn(RENAMED, key));
+    if (issue.code === "unrecognized_keys" && old.length > 0) {
+      return old.map((key) => {
+        const now = RENAMED[key] ?? "";
+        renamed.push(`${key} is now ${now}`);
+        return { path: path === "" ? key : `${path}.${key}`, message: `Now ${now}` };
+      });
+    }
+    return [
+      {
+        path,
+        message:
+          issue.code === "invalid_type" && valueAt(input, issue.path) === undefined
+            ? "Missing"
+            : (ISSUE[issue.code] ?? "Invalid"),
+      },
+    ];
+  });
   const tooLarge = error.issues.every((issue) => issue.code === "too_big");
   return new AppError({
     code: tooLarge ? "too_large" : "invalid_input",
     message: tooLarge ? "The input is over a limit." : "The input does not match the operation.",
-    hint: "Run tasks help <verb> for the arguments.",
+    hint:
+      renamed.length > 0
+        ? `${[...new Set(renamed)].join(", ")}: "cwd", an absolute folder or one under ~.`
+        : "Run tasks help <verb> for the arguments.",
     data: { issues },
   });
 }
@@ -164,15 +200,18 @@ function heldWrapUp(result: WriteResult, op: number | undefined): boolean {
  * A conflict or a refusal the writer decided, as its body (A3 3.5). `hints` replaces a code's hint
  * where one entry's remedy differs: a redo's UNDO_CONFLICT has no partial form. `wrapUp` is the
  * index of complete_task's `once` wrap-up operation, the only one the writer holds whatever the
- * base. `face` is where the caller reads the hint: a command names commands, a tool tools.
+ * base. `face` is where the caller reads the hint: a command names commands, a tool tools. `own`
+ * turns the request's operation index into the caller's own, undefined for one it did not ask for.
  */
 export function resultFailure(
   result: WriteResult,
   hints: Readonly<Record<string, string>> = {},
   wrapUp?: number,
   face: Face = "mcp",
+  own: (i: number) => number | undefined = (i) => i,
 ): AppError {
   const problem = result.error;
+  const op = problem?.op === undefined ? undefined : own(problem.op);
   // complete_task on a task wrapped up already with another outcome or other learnings: the
   // writer holds the wrap-up whatever the base, so a fresh read changes nothing. The message says
   // what happened, `reason` names it for a script, and the hint says what the person can do.
@@ -187,7 +226,7 @@ export function resultFailure(
       ? { code: "conflict", message: "A field changed after the base: read again." }
       : {
           ...a1ErrorBody(problem.code, wrapped ? WRAPPED : problem.message, {
-            ...(problem.op === undefined ? {} : { op: problem.op }),
+            ...(op === undefined ? {} : { op }),
             ...(problem.field === undefined ? {} : { field: problem.field }),
             ...(problem.at === undefined ? {} : { at: problem.at }),
             ...(problem.reason === undefined ? {} : { reason: problem.reason }),

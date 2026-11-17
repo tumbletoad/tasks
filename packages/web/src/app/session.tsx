@@ -7,11 +7,12 @@
 // through the store's `useLive()` (store/hooks.ts), and creates and stops a `Live` here, nowhere
 // else. A stopped `Live` never comes back (its store takes no more messages), so every mount (a
 // new sign-in, another space, a reload) creates a fresh one.
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Api } from "../api.ts";
 import { Session, type SessionValue } from "../context.ts";
 import { Live } from "../live.ts";
 import { changeLogOf } from "./changes.ts";
+import { useMachine } from "./machine.ts";
 
 /** The browser's sign-in: its token, the build that served the page, and the way out. */
 export interface Auth {
@@ -45,6 +46,10 @@ export function SpaceSession({
   readonly children: ReactNode;
 }) {
   const auth = useAuth();
+  const control = useMachine();
+  // The feed outlives a render: it hands each message to the control the page holds now.
+  const machine = useRef(control);
+  machine.current = control;
   const [value, setValue] = useState<SessionValue | undefined>(undefined);
   useEffect(() => {
     const api = new Api(auth.token, auth.build, () => space);
@@ -54,6 +59,9 @@ export function SpaceSession({
       build: auth.build,
       onSpace: () => undefined,
       onSignedOut: auth.signedOut,
+      onMachine: (preferences) => {
+        machine.current.receive(preferences);
+      },
     });
     // Today's Changes counts from the session's start, whichever view the tab opens on.
     changeLogOf(live);

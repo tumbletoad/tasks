@@ -375,7 +375,8 @@ describe("[A2.3.8.http.feed] the change feed over WebSocket", () => {
       });
       const again = await openFeed(port, token);
       again.send({ type: "subscribe", space, cursor });
-      const resumed = await again.next((m) => m["type"] !== "hello");
+      // The first message of the subscription, after the connection's hello and settings.
+      const resumed = await again.next((m) => m["type"] !== "hello" && m["type"] !== "machine");
       expect(resumed).toMatchObject({ type: "batch", from: cursor.seq });
       expect((resumed["events"] as { request_id: string }[]).map((e) => e.request_id)).toContain(
         "feed-request-0101",

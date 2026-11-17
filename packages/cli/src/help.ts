@@ -7,7 +7,7 @@
 // command is checked against it (hints.test.ts), so no message sends a person to a command that
 // does not exist.
 import { CLI_NAME } from "@tasks/brand";
-import { CLI_SPEC, verbSpec, type VerbSpec } from "./args.ts";
+import { CLI_SPEC, takesFolder, verbSpec, type VerbSpec } from "./args.ts";
 import { IMPORT_HELP } from "./import.ts";
 import { ROOTS_HELP } from "./roots.ts";
 import { SERVICE_HELP } from "./service.ts";
@@ -236,6 +236,13 @@ export function verbHelp(verb: VerbSpec): string {
   // `tasks brief --copy` is the CLI's own: the OS's clipboard tool, else the text printed.
   if (verb.entry === "launch.open") {
     lines.push("  --copy  Put the text on the clipboard instead of printing it");
+  }
+  // `--here` and `--create` are the CLI's own: the working folder, and making a folder first.
+  if (takesFolder(verb)) {
+    lines.push(
+      "  --here  The folder you are in, as --folder",
+      "  --create  Make the folder first when it is not there",
+    );
   }
   // `tasks undo --yes` is the CLI's own: no question when a script's change is newer than yours.
   if (verb.entry === "history.undo") {

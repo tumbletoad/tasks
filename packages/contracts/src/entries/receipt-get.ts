@@ -16,7 +16,7 @@ const OpIndex = z.int().min(0).max(999_999).describe("Index of the operation in 
 /** Any A1 ID: a task, note, log entry, source, place, area or project. */
 const RowId = z.string().regex(/^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}$/u);
 /**
- * A preference's key, such as `ui.theme` (A1 3.16): a preference has no ID, and its key is its
+ * A preference's key, such as `tasks.statuses` (A1 3.16): a preference has no ID, and its key is its
  * `changes.entity_id` (A1 3.4), so `pref.set`'s result names it.
  */
 const PreferenceKey = z

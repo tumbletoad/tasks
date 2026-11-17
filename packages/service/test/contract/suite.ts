@@ -264,6 +264,16 @@ interface Later {
 
 /** Examples by `<entry> <index>`. */
 const LATER: Readonly<Record<string, Later>> = {
+  "space.status 0": {
+    owner: "the step that makes here read folders",
+    why: "here lists the tasks placed at the working folder, and the world's tasks have folders",
+    now: { result: "schema" },
+  },
+  "launch.open 0": {
+    owner: "the step that makes Open use folders",
+    why: "the brief's folder line names the task's place, and the world's tasks have folders",
+    now: { result: "schema" },
+  },
   "space.status 1": {
     owner: "M6 (routines)",
     why: "a routine's session",
@@ -313,7 +323,6 @@ const LATER: Readonly<Record<string, Later>> = {
 };
 
 const VERIFIED = new Set([
-  "space.status 0",
   "task.get 0",
   "task.get 1",
   "task.get 2",
@@ -329,7 +338,6 @@ const VERIFIED = new Set([
   "receipt.get 0",
   "receipt.get 1",
   "receipt.get 2",
-  "launch.open 0",
   "group.manage 1",
   "folder.manage 0",
   "prefs.manage 0",
@@ -761,7 +769,7 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             const input = { ...(example.input as Value) };
             // An example's base is "the as_of of a read just before": the world's own.
             if (typeof input["base"] === "string") input["base"] = await world.asOf();
-            // An example's working folder is the world's portal, where M-14 and M-15 are placed.
+            // An example's working folder is the world's portal, M-14's and M-15's folder.
             if (typeof input["cwd"] === "string") input["cwd"] = transport.portal;
             // An example's folder is the world's portal too: a folder that exists on this machine.
             if (entry.name === "folder.manage" && typeof input["folder"] === "string") {

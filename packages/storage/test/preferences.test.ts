@@ -48,61 +48,75 @@ const receipts = (status: string): unknown =>
 
 describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one write path", () => {
   test("a first set needs no base and writes the row, its create change, its commit and the projection's outbox", () => {
-    const result = submit([set("ui.theme", "washi")], { base: null });
+    const result = submit([set("tasks.statuses", ["open", "doing"])], { base: null });
     expectStatus(result, "applied");
     expect(result.results[0]).toMatchObject({
       status: "created",
-      id: "ui.theme",
+      id: "tasks.statuses",
       version: result.seq,
     });
     expect(row("SELECT key, value, schema_ver, policy FROM preferences")).toEqual({
-      key: "ui.theme",
-      value: '"washi"',
+      key: "tasks.statuses",
+      value: '["open","doing"]',
       schema_ver: 1,
       policy: 0,
     });
     const [change] = changesAt(result.seq);
     expect(change).toMatchObject({
       entity: "preferences",
-      entity_id: "ui.theme",
+      entity_id: "tasks.statuses",
       task_id: null,
       action: "create",
     });
     expect(
       JSON.parse(one("SELECT ops FROM commits WHERE seq = $seq", { seq: result.seq }) as string),
     ).toEqual([
-      { v: 1, op: "pref.set", target: "ui.theme", input: { key: "ui.theme", value: "washi" } },
+      {
+        v: 1,
+        op: "pref.set",
+        target: "tasks.statuses",
+        input: { key: "tasks.statuses", value: ["open", "doing"] },
+      },
     ]);
     expect(one("SELECT seq FROM outbox WHERE key = '*'")).toBe(result.seq);
-    expect(read("ui.theme")).toEqual({ key: "ui.theme", value: "washi", state: "set" });
+    expect(read("tasks.statuses")).toEqual({
+      key: "tasks.statuses",
+      value: ["open", "doing"],
+      state: "set",
+    });
   });
 
   test("changing a stored value needs a base, conflicts on a stale one, and records before and after", () => {
-    const first = submit([set("ui.theme", "washi")]);
+    const first = submit([set("tasks.statuses", ["open", "doing"])]);
     const stale = first.as_of;
-    const missing = submit([set("ui.theme", "system")], { base: null });
+    const missing = submit([set("tasks.statuses", ["open", "later"])], { base: null });
     expectStatus(missing, "rejected");
     expect(missing.error).toMatchObject({ code: "BASE_REQUIRED", op: 0, field: "base" });
-    expectStatus(submit([set("ui.theme", "sumi")], { base: stale }), "applied");
-    const conflict = submit([set("ui.theme", "system")], { base: stale });
+    expectStatus(submit([set("tasks.statuses", ["open"])], { base: stale }), "applied");
+    const conflict = submit([set("tasks.statuses", ["open", "later"])], { base: stale });
     expectStatus(conflict, "conflict");
     expect(conflict.conflicts).toEqual([
-      expect.objectContaining({ op: 0, entity: "preferences", id: "ui.theme", field: "value" }),
+      expect.objectContaining({
+        op: 0,
+        entity: "preferences",
+        id: "tasks.statuses",
+        field: "value",
+      }),
     ]);
-    const changed = submit([set("ui.theme", "system")]);
+    const changed = submit([set("tasks.statuses", ["open", "later"])]);
     expectStatus(changed, "applied");
-    expect(changed.results[0]).toMatchObject({ status: "updated", id: "ui.theme" });
+    expect(changed.results[0]).toMatchObject({ status: "updated", id: "tasks.statuses" });
     expect(changesAt(changed.seq)).toEqual([
       expect.objectContaining({
         entity: "preferences",
         action: "set",
         field: "value",
-        before: JSON.stringify({ value: '"sumi"', schema_ver: 1 }),
-        after: JSON.stringify({ value: '"system"', schema_ver: 1 }),
+        before: JSON.stringify({ value: '["open"]', schema_ver: 1 }),
+        after: JSON.stringify({ value: '["open","later"]', schema_ver: 1 }),
       }),
     ]);
     // The same value again changes nothing: no commit.
-    const again = submit([set("ui.theme", "system")]);
+    const again = submit([set("tasks.statuses", ["open", "later"])]);
     expectStatus(again, "unchanged");
     expect(again.seq).toBe(changed.seq);
   });
@@ -132,11 +146,14 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
   });
 
   test("two sets of one key in a request fold into one create with the last value", () => {
-    const result = submit([set("ui.theme", "washi"), set("ui.theme", "system")]);
+    const result = submit([
+      set("tasks.statuses", ["open", "doing"]),
+      set("tasks.statuses", ["open", "later"]),
+    ]);
     expectStatus(result, "applied");
     expect(result.results.map((r) => r.status)).toEqual(["created", "updated"]);
     expect(changesAt(result.seq)).toHaveLength(1);
-    expect(read("ui.theme").value).toBe("system");
+    expect(read("tasks.statuses").value).toEqual(["open", "later"]);
   });
 
   test("a preference request holds pref.set operations only, so no operation reads a preference the request changes", () => {
@@ -190,11 +207,11 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
   });
 
   test("every receipt of pref.set is receipt.get's result: applied, conflict and refused", () => {
-    const first = submit([set("ui.theme", "washi")], { base: null });
+    const first = submit([set("tasks.statuses", ["open", "doing"])], { base: null });
     const stale = first.as_of;
-    expectStatus(submit([set("ui.theme", "sumi")]), "applied");
+    expectStatus(submit([set("tasks.statuses", ["open"])]), "applied");
     const outcomes = [
-      fx.request(fx.human, [set("ui.theme", "system")], { base: stale }),
+      fx.request(fx.human, [set("tasks.statuses", ["open", "later"])], { base: stale }),
       fx.request(fx.codex, [set("autonomy.level", "full")]),
       fx.request(fx.human, [set("grouping.names", { area: "A", project: "P" })]),
     ].map((request) => {
@@ -213,7 +230,10 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
   });
 
   test("an agent writes only keys that list it; a policy key refuses it, decided with a receipt", () => {
-    expectStatus(submit([set("ui.theme", "washi")], { actor: "codex", base: null }), "applied");
+    expectStatus(
+      submit([set("tasks.statuses", ["open", "doing"])], { actor: "codex", base: null }),
+      "applied",
+    );
     for (const [key, value] of [
       ["autonomy.level", "full"],
       ["autonomy.overrides", { "task.patch.due": "apply" }],
@@ -238,7 +258,11 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
 
   test("a value outside its shape, an unknown key, a machine key and a missing value are refused before the transaction", () => {
     const cases: [Record<string, unknown>, string, string][] = [
-      [{ kind: "pref.set", key: "ui.theme", value: "purple" }, "VALIDATION_FAILED", "ops[0].value"],
+      [
+        { kind: "pref.set", key: "tasks.statuses", value: "purple" },
+        "VALIDATION_FAILED",
+        "ops[0].value",
+      ],
       [
         { kind: "pref.set", key: "tasks.dedupe_window_days", value: 3_651 },
         "VALIDATION_FAILED",
@@ -261,9 +285,10 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
         "VALIDATION_FAILED",
         "ops[0].key",
       ],
-      [{ kind: "pref.set", key: "ui.theme" }, "VALIDATION_FAILED", "ops[0].value"],
+      [{ kind: "pref.set", key: "ui.theme", value: "washi" }, "VALIDATION_FAILED", "ops[0].key"],
+      [{ kind: "pref.set", key: "tasks.statuses" }, "VALIDATION_FAILED", "ops[0].value"],
       [
-        { kind: "pref.set", key: "ui.theme", value: "sumi", extra: 1 },
+        { kind: "pref.set", key: "tasks.statuses", value: ["open"], extra: 1 },
         "VALIDATION_FAILED",
         "ops[0]",
       ],
@@ -282,7 +307,7 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
       expectStatus(result, "rejected");
       expect(result.error, JSON.stringify(op).slice(0, 80)).toMatchObject({ code, field });
       // The problem never quotes the key or the value.
-      expect(result.error?.message).not.toMatch(/purple|nothing|UI Theme|srv/);
+      expect(result.error?.message).not.toMatch(/purple|nothing|UI Theme|srv|washi/);
     }
     expect(receipts("rejected")).toBe(0);
     expect(one("SELECT count(*) FROM preferences")).toBe(0);
@@ -297,17 +322,23 @@ describe("[A1.3.16.prefs.set] pref.set is an ordinary operation through the one 
   });
 
   test("a value a newer build wrote stays unchanged and read-only; the default applies", async () => {
-    expectStatus(submit([set("ui.theme", "washi")]), "applied");
+    expectStatus(submit([set("tasks.statuses", ["open", "doing"])]), "applied");
     const raw = openWriter(await checkedDriver(), join(fx.folder, "space.db"));
     const version = (v: number) =>
-      raw.prepare("UPDATE preferences SET schema_ver = $v WHERE key = 'ui.theme'").run({ v });
+      raw.prepare("UPDATE preferences SET schema_ver = $v WHERE key = 'tasks.statuses'").run({ v });
     try {
       version(2);
-      expect(read("ui.theme")).toEqual({ key: "ui.theme", value: "sumi", state: "newer" });
-      const refused = submit([set("ui.theme", "system")]);
+      expect(read("tasks.statuses")).toEqual({
+        key: "tasks.statuses",
+        value: ["open", "waiting", "review", "backlog"],
+        state: "newer",
+      });
+      const refused = submit([set("tasks.statuses", ["open", "later"])]);
       expectStatus(refused, "rejected");
       expect(refused.error).toMatchObject({ code: "VALIDATION_FAILED", op: 0, field: "key" });
-      expect(one("SELECT value FROM preferences WHERE key = 'ui.theme'")).toBe('"washi"');
+      expect(one("SELECT value FROM preferences WHERE key = 'tasks.statuses'")).toBe(
+        '["open","doing"]',
+      );
     } finally {
       // Back as the history holds it, for the history check after the test.
       version(1);

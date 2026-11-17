@@ -63,6 +63,22 @@ the behaviour it describes, and keep each one to a sentence or two.
 - When several copies of one space are on this computer, a command without a folder reaches the
   copy that takes changes, and after a restart that is still the copy you last changed.
 
+## Projects and folders
+
+- A project has at most one folder on each computer, and a task may have its own. Two projects
+  that are not deleted never share one folder on one computer: adding a folder that a project has
+  answers with that project instead of making a second one.
+- A new task that an agent files from its working folder, with no project named, joins the project
+  whose folder holds that folder most closely. In an archived project's folder it joins no project,
+  and the agent is told.
+- Changing a project's folder moves the folders of its tasks that sit inside the old one, as one
+  undo step. An archived project keeps its folder, and a deleted one frees it.
+- Tasks never makes a folder for an agent. At the command line, `--create` makes it when you ask,
+  and an undo leaves it on disk.
+- No folder inside Tasks' own data is taken: an agent working there would change it.
+- A folder is a local path, not a secret. It travels with sync, backups and exports, and a message
+  or a history entry may name it.
+
 ## Agents
 
 - An agent that uses Tasks cannot start other agents, raise its own permissions or change your
@@ -135,3 +151,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - On a computer that several people sign in to, another person could serve a page at Tasks'
   address while Tasks is stopped.
 - An edit that could not be saved is kept in the open page. Reloading the page loses it.
+- Undo, redo and restore compare folders by the text they were given in, not by what is on disk.
+  One folder reached by two spellings, such as through a link, can end up on two projects that
+  way.
+- A folder on a drive or share that does not answer is refused after a few seconds, but the look
+  at it keeps one of Tasks' file threads busy until the system gives up.

@@ -1,6 +1,6 @@
 // The five tools through the request path (A3 3.4.2, 3.4.4, 3.4.6 to 3.4.8, 3.5, 3.9.6; A7 3.9
 // M2.03): status's `here`, session and guide; get_task's digest v0 with its bounds, its folder and
-// the paging of a sections read; update_task's place clear and context append; add_entry's links;
+// the paging of a sections read; update_task's folder clear and context append; add_entry's links;
 // `unbound` with candidates; and the fields a later step brings, each refused with that step. A
 // service in this process, fixture text and temporary folders only.
 import { mkdirSync, rmSync, symlinkSync } from "node:fs";
@@ -418,6 +418,52 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
     await call("task.finish", { task: ref, base: await asOf(), request_id: rid() }, USER);
   });
 
+  test("the digest names the task's folder, else its project's, and the text keeps it as data", async () => {
+    // A folder no other test's project has: a project's folder is its own on a machine.
+    const digest = folder("work", "digest");
+    const api = folder("work", "digest-api");
+    await call(
+      "group.manage",
+      {
+        action: "create",
+        path: "Fixture area/Fixture digest project",
+        folder: digest,
+        request_id: rid(),
+      },
+      USER,
+    );
+    const [task] = await add("Fixture task of a project with a folder");
+    const ref = task ?? "";
+    await call(
+      "task.update",
+      {
+        task: ref,
+        set: { project: "Fixture digest project" },
+        base: await asOf(),
+        request_id: rid(),
+      },
+      USER,
+    );
+    const folderOf = async () =>
+      ((await call("task.get", { task: ref }))["task"] as Json)["folder"] as Json | undefined;
+    expect(await folderOf()).toEqual({
+      path: expect.stringMatching(/digest$/u) as unknown,
+      of: "project",
+    });
+    await call(
+      "task.update",
+      { task: ref, set: { folder: api }, base: await asOf(), request_id: rid() },
+      USER,
+    );
+    expect(await folderOf()).toEqual({
+      path: expect.stringMatching(/api$/u) as unknown,
+      of: "task",
+    });
+    // A folder is text someone gave: in the text it stands inside the data block (A3 3.10).
+    const mcp = toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 });
+    const text = (await mcp("get_task", { task: ref })).content[0].text;
+    expect(text.search(/Folder: .*api\n/u)).toBeGreaterThan(text.indexOf("<<tasks-data "));
+  });
   test("a note for agents that came through an import is data, labelled import (A3 3.10)", async () => {
     const [task] = await add("Fixture imported note task");
     const ref = task ?? "";
@@ -580,31 +626,28 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
 });
 
 describe("[A3.3.4.tools.five] update_task, add_entry and complete_task", () => {
-  test("clear: [place] unbinds the task's place, with a base, and replays", async () => {
+  test("clear: [folder] takes the task's folder away, with a base, and replays", async () => {
     const [task] = await add("Fixture clear task");
     const ref = task ?? "";
-    const place = async () => {
-      await call(
-        "task.update",
-        {
-          task: ref,
-          set: { place: { root: "work", path: "lumen/portal" } },
-          base: await asOf(),
-          request_id: rid(),
-        },
-        USER,
-      );
-    };
-    await place();
-    const input = { task: ref, clear: ["place"], base: await asOf(), request_id: rid() };
+    const portal = join(w.root, "work", "lumen", "portal");
+    const setFolder = async () =>
+      call("task.update", {
+        task: ref,
+        set: { folder: portal },
+        base: await asOf(),
+        request_id: rid(),
+      });
+    expect(await setFolder()).toMatchObject({ result: "updated", fields: ["folder"] });
+    const input = { task: ref, clear: ["folder"], base: await asOf(), request_id: rid() };
     const cleared = await call("task.update", input);
-    expect(cleared).toMatchObject({ result: "updated", task: ref, fields: ["place"] });
+    expect(cleared).toMatchObject({ result: "updated", task: ref, fields: ["folder"] });
+    expect(((await call("task.get", { task: ref }))["task"] as Json)["folder"]).toBeUndefined();
     expect(await call("task.update", input)).toEqual({ ...cleared, replayed: true });
-    // Nothing bound: no change. A place set and cleared at once is refused.
+    // Nothing there: no change. A folder set and cleared at once is refused.
     expect(
       await call("task.update", {
         task: ref,
-        clear: ["place"],
+        clear: ["folder"],
         base: await asOf(),
         request_id: rid(),
       }),
@@ -612,19 +655,18 @@ describe("[A3.3.4.tools.five] update_task, add_entry and complete_task", () => {
     expect(
       await refusal("task.update", {
         task: ref,
-        set: { place: { root: "work", path: "a" } },
-        clear: ["place"],
+        set: { folder: portal },
+        clear: ["folder"],
         base: await asOf(),
         request_id: rid(),
       }),
     ).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "clear" }] } });
-    // Without a base an existing place is not cleared blind.
-    await place();
+    // Without a base an existing folder is not cleared blind.
+    await setFolder();
     expect(
-      await refusal("task.update", { task: ref, clear: ["place"], request_id: rid() }),
+      await refusal("task.update", { task: ref, clear: ["folder"], request_id: rid() }),
     ).toMatchObject({ code: "conflict", data: { cause: "BASE_REQUIRED" } });
   });
-
   test("a context append needs no base, two land, and a stale replace conflicts", async () => {
     const [task] = await add("Fixture append task");
     const read = await asOf();

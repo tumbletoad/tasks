@@ -303,7 +303,11 @@ function place(text: string, layout: Layout, edit: Edit): string | { refused: Ed
       const line = tableLines(lines, header).find(
         (l) => l.kind === "keyval" && samePath(l.key, [edit.key]),
       );
-      return line === undefined ? text : text.slice(0, line.start) + text.slice(line.end);
+      if (line?.kind !== "keyval") return text;
+      // The rest of the line is blanks, a comment and the line break: the comment is the person's.
+      const rest = text.slice(line.valueEnd, line.end).trimStart();
+      const kept = rest.startsWith("#") ? rest : "";
+      return text.slice(0, line.start) + kept + text.slice(line.end);
     }
     case "append": {
       const elements = headers.filter((h) => h.array && samePath(h.path, [edit.array]));
