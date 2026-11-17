@@ -43,7 +43,6 @@ import { misuse, StorageError } from "../errors.ts";
 import { isId, type Id } from "../ids.ts";
 import { formatTaskRef } from "../refs.ts";
 import { inRange, invalidValue, RowReader } from "../rows.ts";
-import { canonicalJson } from "./canonical.ts";
 import {
   decodeFolder,
   FOLDER_SQL,
@@ -53,15 +52,7 @@ import {
   type FolderOs,
   type FolderRow,
 } from "./folders.ts";
-import {
-  CHILD_FIELDS,
-  columnsValue,
-  EXT_TABLES,
-  extValue,
-  fieldJson,
-  isExtField,
-  TASK_FIELDS,
-} from "./fields.ts";
+import { CHILD_FIELDS, columnsValue, fieldJson, TASK_FIELDS } from "./fields.ts";
 import {
   RequestProblem,
   WRITE_LIMITS,
@@ -111,21 +102,20 @@ const TABLES: Readonly<Record<InvertibleEntity, Table>> = {
 };
 
 /**
- * A logical field's value in a row: its columns', or for `ext.<key>` the key's value in the row's
- * `ext` map (A1 3.4).
+ * A logical field's value in a row: its columns'. An `ext.<key>` field (A1 3.4) only the prototype
+ * import wrote, in commits no undo or redo reaches, so no inversion names one.
  */
 function valueIn(
   entity: InvertibleEntity,
   raw: Readonly<Record<string, unknown>>,
   field: string,
 ): unknown {
-  if (EXT_TABLES.has(entity) && isExtField(field)) return extValue(raw, field);
   return columnsValue(raw, TABLES[entity].fields[field] ?? []);
 }
 
 /** Whether `field` is a logical field of `entity`'s rows. */
 const hasField = (entity: InvertibleEntity, field: string): boolean =>
-  Object.hasOwn(TABLES[entity].fields, field) || (EXT_TABLES.has(entity) && isExtField(field));
+  Object.hasOwn(TABLES[entity].fields, field);
 
 const isInvertible = (entity: string): entity is InvertibleEntity => Object.hasOwn(TABLES, entity);
 
@@ -753,12 +743,7 @@ export function planInversions(
       throw invalidValue("changes", "after");
     }
     let passes = true;
-    // Every field, and every `ext.<key>` a later commit wrote (its provenance is in `fp`).
-    const guarded = [
-      ...Object.keys(table.fields),
-      ...Object.keys(row.fp).filter((f) => isExtField(f) && !Object.hasOwn(table.fields, f)),
-    ];
-    for (const field of guarded) {
+    for (const field of Object.keys(table.fields)) {
       if (options.creating.has(provenanceOf(row, field))) continue;
       passes = false;
       blocked(
@@ -775,17 +760,10 @@ export function planInversions(
       const theirs = !options.creating.has(state.createdSeq);
       const fields = theirs
         ? [child.field]
-        : [
-            ...Object.keys(child.fields),
-            ...Object.keys(state.fp).filter(
-              (f) => isExtField(f) && !Object.hasOwn(child.fields, f),
-            ),
-          ].filter((f) => !options.creating.has(provenanceOf(state, f)));
+        : Object.keys(child.fields).filter((f) => !options.creating.has(provenanceOf(state, f)));
       for (const field of fields) {
         passes = false;
-        const value = isExtField(field)
-          ? extValue(state.raw, field)
-          : columnsValue(state.raw, child.fields[field] ?? []);
+        const value = columnsValue(state.raw, child.fields[field] ?? []);
         blocked(
           conflict(
             {
@@ -1004,8 +982,6 @@ function readRow(conn: Connection, entity: InvertibleEntity, id: string): RowSta
 /** `UPDATE <entity> SET <columns> WHERE <its key>`, for the columns of its fields only. */
 function updateSql(entity: InvertibleEntity, columns: readonly string[]): string {
   const known = new Set<string>(Object.values(TABLES[entity].fields).flat());
-  // An `ext.<key>` field is written through the whole `ext` column (A1 3.4).
-  if (EXT_TABLES.has(entity)) known.add("ext");
   if (columns.length === 0 || columns.some((c) => !known.has(c))) {
     throw misuse("An inversion names only the columns of its fields");
   }
@@ -1547,8 +1523,6 @@ function writeInversions(
     const values: Record<string, SqlValue> = {};
     const fv = { ...row.fv };
     const fp = { ...row.fp };
-    /** The row's `ext` map as the group's `ext.<key>` inversions leave it. */
-    let ext: Record<string, unknown> | undefined;
     for (const inversion of group) {
       const { field } = inversion;
       if (!hasField(entity, field)) {
@@ -1563,27 +1537,7 @@ function writeInversions(
       if (before === after) {
         throw new StorageError("SPACE_INVALID", "A field does not hold the write it names");
       }
-      const columns = table.fields[field];
-      if (columns === undefined) {
-        // `ext.<key>`: the key set back in the row's map, null removing it (A1 3.4).
-        const raw = row.raw["ext"];
-        const map = (ext ??= JSON.parse(typeof raw === "string" ? raw : "{}") as Record<
-          string,
-          unknown
-        >);
-        const key = field.slice("ext.".length);
-        const value = parsed(after);
-        if (value === null) Reflect.deleteProperty(map, key);
-        else {
-          Object.defineProperty(map, key, {
-            value,
-            enumerable: true,
-            writable: true,
-            configurable: true,
-          });
-        }
-        values["ext"] = canonicalJson(map);
-      } else Object.assign(values, columnValues(columns, after));
+      Object.assign(values, columnValues(table.fields[field] ?? [], after));
       const prov = inversion.kind === "restore" ? inversion.prov : commit.seq;
       changes.push({
         op: commit.op,
