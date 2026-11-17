@@ -39,7 +39,13 @@ import type {
   WriteResult,
 } from "../src/write/request.ts";
 import { checkedDriver, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
-import { checkHistory, expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
+import {
+  checkHistory,
+  expectStatus,
+  fixtureCopies,
+  writeFixture,
+  type Fixture,
+} from "./write-helpers.ts";
 
 const temp = tempFolders("undo-dedupe");
 afterAll(temp.cleanup);
@@ -1392,12 +1398,14 @@ const plainDocs = (docs: Iterable<SearchDocument>): SearchDocument[] =>
     }))
     .sort((a, b) => (a.entityId < b.entityId ? -1 : a.entityId > b.entityId ? 1 : 0));
 
+/** A fresh copy of one fixture space per run: which writes apply does not depend on a flush. */
+const freshSpace = fixtureCopies(temp.make, { flush: false });
+
 const property = (seen: Record<string, number>) =>
   fc.asyncProperty(fc.array(step, { minLength: 10, maxLength: 40 }), async (generated) => {
     const steps = generated.flatMap(expand);
-    // With the search tables, so every undo and redo keeps the index too (A1 3.12). 120 fresh
-    // spaces and thousands of commits: which writes apply does not depend on a flush.
-    const space = await writeFixture(temp.make(), { flush: false });
+    // With the search tables, so every undo and redo keeps the index too (A1 3.12).
+    const space = await freshSpace();
     let now = Date.UTC(2026, 10, 13, 8);
     space.reopen({ now: () => (now += 1000) });
     const count = (label: string): void => {

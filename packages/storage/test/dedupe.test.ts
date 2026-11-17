@@ -24,6 +24,7 @@ import { checkedDriver, createFixtureSpace, TEST_MACHINE, tempFolders } from "./
 import {
   checkHistory,
   expectStatus,
+  fixtureCopies,
   MACHINE,
   writeFixture,
   type Fixture,
@@ -1001,9 +1002,12 @@ function expectSessionsModel(conn: Connection, model: SessionsModel): void {
   }
 }
 
+/** A fresh copy of one fixture space per run: which writes apply does not depend on a flush. */
+const freshSpace = fixtureCopies(temp.make, { flush: false });
+
 const sessionsProperty = (seen: Record<string, number>) =>
   fc.asyncProperty(fc.array(sessionStep, { minLength: 8, maxLength: 30 }), async (steps) => {
-    const space = await writeFixture(temp.make());
+    const space = await freshSpace();
     // One second per commit, and past the window at a jump.
     let now = Date.UTC(2026, 10, 13, 8);
     space.reopen({ now: () => (now += 1000) });
