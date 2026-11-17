@@ -1,6 +1,6 @@
 // What a run of the release workflow builds: the commit and its version, and for a rehearsal the
-// build it upgrades from. The workflow's later jobs take everything from here, so the version
-// rule is applied once, before anything is built.
+// build it upgrades from. The workflow's later jobs take everything from here, so the tag and
+// version rules are applied once, before anything is built.
 import { spawnSync } from "node:child_process";
 import { RELEASE_PLATFORMS } from "./gather.ts";
 import { keyLinesIn, Refusal } from "./release.ts";
@@ -59,7 +59,7 @@ export function keysAt(root: string, commit: string): string[] {
   return keyLinesIn(text);
 }
 
-function packageVersion(root: string, commit: string): string {
+export function packageVersion(root: string, commit: string): string {
   const text = mustGit(root, ["show", `${commit}:package.json`], `${commit} has no package.json`);
   const version = (JSON.parse(text) as { version?: unknown }).version;
   if (typeof version !== "string") throw new Refusal(`package.json at ${commit} has no version`);
@@ -88,6 +88,12 @@ function previousCommit(
   return resolved.ok ? resolved.out : undefined;
 }
 
+/**
+ * A release is planned from its tag (`ref` is the tag's name): the commit it names must be on main,
+ * and its package.json's version must be a release version whose tag this is. Whether GitHub has
+ * released the version already is the draft step's to tell (draftAction). A rehearsal is planned
+ * from a commit.
+ */
 export function planRun(options: {
   readonly root: string;
   readonly mode: Mode;
@@ -101,11 +107,6 @@ export function planRun(options: {
   for (const ref of [options.ref, options.base ?? ""]) {
     if (ref.startsWith("-")) throw new Refusal(`${ref} is not a commit or tag`);
   }
-  const commit = mustGit(
-    root,
-    ["rev-parse", "--verify", `${options.ref}^{commit}`],
-    `${options.ref} is not a commit or tag here`,
-  );
   const builds = (which: Build["which"], at: string, version: string): Build[] =>
     RELEASE_PLATFORMS.map((platform) => ({
       which,
@@ -115,35 +116,33 @@ export function planRun(options: {
       os: RUNNERS[platform] ?? "",
     }));
   if (mode === "release") {
+    const tag = options.ref;
+    const commit = mustGit(
+      root,
+      ["rev-parse", "--verify", "-q", `refs/tags/${tag}^{commit}`],
+      `There is no tag ${tag} here, so there is nothing to release.`,
+    );
     const main = options.main ?? "origin/main";
     if (!isOnMain(root, commit, main)) {
-      throw new Refusal(`${commit} is not on ${main}: a release is made only from main.`);
-    }
-    const version = packageVersion(root, commit);
-    const problem = releaseVersionProblem(version);
-    if (problem !== undefined) throw new Refusal(problem);
-    // Before anything is built or signed: a draft has no tag yet, so a tag means the version is
-    // published (or claimed by hand), and a new build of it would be a second set of bytes under
-    // its name, even from the same commit on a newer runner.
-    const tagged = git(root, [
-      "rev-parse",
-      "--verify",
-      "-q",
-      `refs/tags/${releaseTag(version)}^{commit}`,
-    ]);
-    if (tagged.ok) {
       throw new Refusal(
-        `${releaseTag(version)} exists already (commit ${tagged.out}). A version is built and signed once: raise the version in package.json.`,
+        `${tag} names ${commit}, which is not on main, so nothing was built or signed.`,
       );
     }
-    return {
-      mode,
-      commit,
-      version,
-      tag: releaseTag(version),
-      builds: builds("current", commit, version),
-    };
+    const version = packageVersion(root, commit);
+    if (tag !== releaseTag(version)) {
+      throw new Refusal(
+        `${tag} is not the version of its commit (package.json says ${version}), so nothing was built or signed.`,
+      );
+    }
+    const problem = releaseVersionProblem(version);
+    if (problem !== undefined) throw new Refusal(`${problem} Nothing was built or signed.`);
+    return { mode, commit, version, tag, builds: builds("current", commit, version) };
   }
+  const commit = mustGit(
+    root,
+    ["rev-parse", "--verify", `${options.ref}^{commit}`],
+    `${options.ref} is not a commit or tag here`,
+  );
   const version = rehearsalVersion(packageVersion(root, commit), options.run, 1);
   const from = previousCommit(root, commit, options.base);
   const previous =

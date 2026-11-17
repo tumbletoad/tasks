@@ -1,7 +1,8 @@
 // Where a release's version comes from, and what may happen to a version that GitHub already has.
 //
 // A release's version is the `version` in package.json at the commit it is built from: changing it
-// is a reviewed commit on main, like any other. Its tag is `v<version>`. The `-dev.` and
+// is a reviewed commit on main, like any other. Its tag is `v<version>`, and making that tag is
+// what starts the release. The `-dev.` and
 // `-rehearsal.` pre-releases are reserved: `pnpm build` names every ordinary build `-dev.<n>`, and a
 // rehearsal names its builds `-rehearsal.<run>.<n>`. The same version is never released with other
 // bytes: a release that GitHub already has must hold exactly these files, byte for byte, and one
@@ -62,27 +63,85 @@ export class VersionRefusal extends Error {
   override readonly name = "VersionRefusal";
 }
 
+/** What retrying a refused tag takes. The run itself never deletes a tag or a release. */
+export const TRY_AGAIN =
+  "To try again, delete the tag (and the release, if one was made for it), then make the tag again on the right commit.";
+
 /**
- * Refuses to publish a release whose commit is not a full commit on main, or whose tag already
- * names another commit: GitHub would publish it at the tag, and the files at its target.
+ * Refuses to publish files built from `built` unless it is a full commit on main and the tag still
+ * names it: GitHub publishes a release at its tag.
  */
 export function checkPublishCommit(
   version: string,
-  target: string,
+  built: string,
   tagCommit: string | undefined,
   onMain: (commit: string) => boolean,
 ): void {
   const tag = releaseTag(version);
-  if (!/^[0-9a-f]{40}$/.test(target) || !onMain(target)) {
+  if (!/^[0-9a-f]{40}$/.test(built) || !onMain(built)) {
+    throw new VersionRefusal(`${built} is not a commit on main, so ${tag} is not published.`);
+  }
+  if (tagCommit !== built) {
     throw new VersionRefusal(
-      `The release of ${tag} targets ${target}, not a commit on main. Delete that draft by hand and release again.`,
+      tagCommit === undefined
+        ? `${tag} no longer exists, so its release is not published. ${TRY_AGAIN}`
+        : `${tag} now names commit ${tagCommit}, but the release's files were built from ${built}, so it is not published. ${TRY_AGAIN}`,
     );
   }
-  if (tagCommit !== undefined && tagCommit !== target) {
+}
+
+/** A release GitHub has for a tag, as the draft step needs it: whether it holds files. */
+export interface ReleaseSummary {
+  readonly id: number;
+  readonly draft: boolean;
+  readonly target: string;
+  readonly files: readonly string[];
+}
+
+export type DraftAction =
+  | { readonly action: "create" }
+  | { readonly action: "keep"; readonly id: number }
+  /** A release published without files (made in GitHub's page with the tag): hidden until complete. */
+  | { readonly action: "hide"; readonly id: number };
+
+/**
+ * What a release run does about the releases GitHub has for the tag of `version`, before anything
+ * is signed, so the run ends with one draft that becomes the release when its files are complete.
+ * Refuses a version that is released already (a published release with files) and anything it
+ * cannot resolve without deleting, which it leaves to the owner.
+ */
+export function draftAction(
+  version: string,
+  commit: string,
+  releases: readonly ReleaseSummary[],
+): DraftAction {
+  const tag = releaseTag(version);
+  if (releases.length > 1) {
     throw new VersionRefusal(
-      `${tag} names commit ${tagCommit}, but the release's files were built from ${target}. Remove the tag if it was made by mistake, or raise the version and release again.`,
+      `GitHub has ${String(releases.length)} releases for ${tag}: delete all but one by hand, then re-run the failed jobs.`,
     );
   }
+  const release = releases[0];
+  if (release === undefined) return { action: "create" };
+  if (!release.draft) {
+    if (release.files.length > 0) {
+      throw new VersionRefusal(
+        `${tag} is released already, and a version is released once: raise the version in package.json and make a new tag.`,
+      );
+    }
+    return { action: "hide", id: release.id };
+  }
+  // Only a release run sets a commit as the target; a release made in GitHub's page names a branch.
+  if (
+    release.files.length > 0 &&
+    /^[0-9a-f]{40}$/.test(release.target) &&
+    release.target !== commit
+  ) {
+    throw new VersionRefusal(
+      `The draft of ${tag} holds files built from ${release.target}, not from ${commit} that the tag names: delete that draft by hand, then re-run the failed jobs.`,
+    );
+  }
+  return { action: "keep", id: release.id };
 }
 
 /**
@@ -99,17 +158,14 @@ export function draftStep(
   remote: RemoteRelease | undefined,
 ): DraftStep {
   const tag = releaseTag(version);
-  if (tagCommit !== undefined && tagCommit !== commit) {
+  if (tagCommit !== commit) {
     throw new VersionRefusal(
-      `${tag} already names commit ${tagCommit}, not ${commit}. A version is released from one commit only: raise the version in package.json.`,
+      tagCommit === undefined
+        ? `${tag} no longer exists, so its release is not completed. ${TRY_AGAIN}`
+        : `${tag} now names commit ${tagCommit}, not ${commit} that was built, so its release is not completed. ${TRY_AGAIN}`,
     );
   }
   if (remote === undefined) return { step: "create" };
-  if (remote.draft && remote.target !== commit) {
-    throw new VersionRefusal(
-      `The draft of ${tag} is for ${remote.target}, not ${commit}. Delete that draft by hand if it is wrong, or release its commit.`,
-    );
-  }
   const differs: string[] = [];
   for (const [name, digest] of Object.entries(remote.assets)) {
     if (local[name] !== digest) differs.push(name);

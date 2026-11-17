@@ -53,12 +53,15 @@ import {
   releaseSign,
   takeSecrets,
 } from "./release.ts";
+import { settingsProblems, type RepositorySettings, type RulesetSettings } from "./settings.ts";
 import {
   checkPublishCommit,
+  draftAction,
   draftStep,
   rehearsalVersion,
   releaseVersionProblem,
   VersionRefusal,
+  type ReleaseSummary,
   type RemoteRelease,
 } from "./version.ts";
 
@@ -136,14 +139,14 @@ const sign = (options: Partial<Parameters<typeof releaseSign>[0]> = {}) =>
     ...options,
   });
 
-/** The environment and event of the release workflow's signing job. */
+/** The environment and event of the release workflow's signing job, in the run of tag v0.2.0. */
 function releaseJob(change: Record<string, string | undefined> = {}, fork = false) {
   const event = join(work, `event-${String(Math.random()).slice(2)}.json`);
   writeFileSync(event, JSON.stringify({ repository: { fork } }));
   return {
     GITHUB_ACTIONS: "true",
-    GITHUB_EVENT_NAME: "workflow_dispatch",
-    GITHUB_REF: "refs/heads/main",
+    GITHUB_EVENT_NAME: "push",
+    GITHUB_REF: "refs/tags/v0.2.0",
     GITHUB_EVENT_PATH: event,
     ...change,
   };
@@ -380,7 +383,7 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
 });
 
 describe("[A2.3.12.8.build.release-ci-sign] the release workflow signs with the key from its secrets, only in its signing job, and the secrets reach no output or child process", () => {
-  test("signs a dispatch from main in a repository that is no fork, with the environment's secrets", () => {
+  test("signs in the run of the archives' version tag, in a repository that is no fork, with the environment's secrets", () => {
     const folder = folderOf("ci", "0.2.0", ["linux-x64", "win-x64"]);
     const signed = ciSign(folder);
     expect(signed.publicKey).toBe(pinned);
@@ -406,10 +409,20 @@ describe("[A2.3.12.8.build.release-ci-sign] the release workflow signs with the 
         releaseJob({ GITHUB_ACTIONS: undefined }),
         /only in the release workflow/,
       ],
-      ["on a pull request", releaseJob({ GITHUB_EVENT_NAME: "pull_request" }), /started by hand/],
-      ["on a push", releaseJob({ GITHUB_EVENT_NAME: "push" }), /started by hand/],
-      ["from another branch", releaseJob({ GITHUB_REF: "refs/heads/feature" }), /from main/],
-      ["from a pull request's ref", releaseJob({ GITHUB_REF: "refs/pull/7/merge" }), /from main/],
+      [
+        "on a pull request",
+        releaseJob({ GITHUB_EVENT_NAME: "pull_request", GITHUB_REF: "refs/pull/7/merge" }),
+        /version tag starts/,
+      ],
+      ["on a manual start", releaseJob({ GITHUB_EVENT_NAME: "workflow_dispatch" }), /tag starts/],
+      ["on a push to main", releaseJob({ GITHUB_REF: "refs/heads/main" }), /tag starts/],
+      ["on a push to a branch", releaseJob({ GITHUB_REF: "refs/heads/v0.2.0" }), /tag starts/],
+      ["on another tag", releaseJob({ GITHUB_REF: "refs/tags/nightly" }), /tag starts/],
+      [
+        "on another version's tag",
+        releaseJob({ GITHUB_REF: "refs/tags/v0.3.0" }),
+        /for refs\/tags\/v0.3.0/,
+      ],
       ["on a fork", releaseJob({}, true), /fork/],
       [
         "without the run's event",
@@ -626,24 +639,20 @@ describe("[A2.3.12.8.build.release-version] a release's version comes from packa
     expect(rehearsalVersion("0.3.0", 41, 0)).toBe("0.3.0-rehearsal.41.0");
   });
 
-  test("a draft is made, resumed and left as it is; other bytes, another commit or a change to a published release are refused", () => {
+  test("a draft is filled, resumed and left as it is; other bytes, a moved or deleted tag or a change to a published release are refused", () => {
     const local = { a: "1", b: "2" };
-    const remote = (
-      draft: boolean,
-      assets: Record<string, string>,
-      target = "c1",
-    ): RemoteRelease => ({
+    const remote = (draft: boolean, assets: Record<string, string>): RemoteRelease => ({
       id: 1,
       draft,
-      target,
+      target: "main",
       assets,
     });
-    expect(draftStep("0.2.0", "c1", local, undefined, undefined)).toEqual({ step: "create" });
-    expect(draftStep("0.2.0", "c1", local, undefined, remote(true, { a: "1" }))).toEqual({
+    expect(draftStep("0.2.0", "c1", local, "c1", undefined)).toEqual({ step: "create" });
+    expect(draftStep("0.2.0", "c1", local, "c1", remote(true, { a: "1" }))).toEqual({
       step: "upload",
       names: ["b"],
     });
-    expect(draftStep("0.2.0", "c1", local, undefined, remote(true, local))).toEqual({
+    expect(draftStep("0.2.0", "c1", local, "c1", remote(true, local))).toEqual({
       step: "done",
       published: false,
     });
@@ -652,24 +661,22 @@ describe("[A2.3.12.8.build.release-version] a release's version comes from packa
       published: true,
     });
     for (const [what, tag, found, reason] of [
-      ["the tag on another commit", "c0", undefined, /names commit c0/],
-      [
-        "a draft for another commit",
-        undefined,
-        remote(true, {}, "c0"),
-        /draft of v0.2.0 is for c0/,
-      ],
-      ["a file with other bytes", undefined, remote(true, { a: "9" }), /other bytes/],
-      ["a file this release does not have", undefined, remote(true, { z: "1" }), /other bytes/],
+      ["the tag moved to another commit", "c0", remote(true, {}), /now names commit c0/],
+      ["the tag deleted", undefined, remote(true, {}), /no longer exists/],
+      ["a file with other bytes", "c1", remote(true, { a: "9" }), /other bytes/],
+      ["a file this release does not have", "c1", remote(true, { z: "1" }), /other bytes/],
       ["a published release without a file", "c1", remote(false, { a: "1" }), /never changed/],
     ] as const) {
       expect(() => draftStep("0.2.0", "c1", local, tag, found), what).toThrow(VersionRefusal);
       expect(() => draftStep("0.2.0", "c1", local, tag, found), what).toThrow(reason);
     }
   });
+});
 
-  test("the plan takes the version from package.json at the commit, a release only from main, and a rehearsal upgrades from the previous build", () => {
-    const repo = join(work, "plan-repo");
+describe("[A2.3.12.8.build.release-tag] a version tag starts a release only when it is the version of a commit on main that was not released before, and the run holds the release as a draft until its files are complete", () => {
+  /** A repository whose commits on `main` carry the given package.json versions. */
+  function planRepo(name: string) {
+    const repo = join(work, name);
     mkdirSync(repo);
     const git = (...args: string[]) => {
       const ran = spawnSync("git", args, { cwd: repo, encoding: "utf8", windowsHide: true });
@@ -680,63 +687,241 @@ describe("[A2.3.12.8.build.release-version] a release's version comes from packa
     git("config", "user.email", "test@example.invalid");
     git("config", "user.name", "test");
     git("config", "commit.gpgsign", "false");
+    git("config", "tag.gpgsign", "false");
     const commit = (version: string) => {
       writeFileSync(join(repo, "package.json"), JSON.stringify({ version }));
       git("add", "package.json");
       git("commit", "-q", "-m", version);
       return git("rev-parse", "HEAD");
     };
+    const release = (tag: string) =>
+      planRun({ root: repo, mode: "release", ref: tag, run: 7, main: "main" });
+    return { repo, git, commit, release };
+  }
+
+  test("the plan builds the commit the tag names, with package.json's version, and a rehearsal upgrades from the previous build", () => {
+    const { git, commit, release, repo } = planRepo("plan-tag");
     const first = commit("0.1.0");
     const second = commit("0.2.0");
-    const plan = planRun({ root: repo, mode: "release", ref: second, run: 7, main: "main" });
-    expect(plan).toMatchObject({ version: "0.2.0", tag: "v0.2.0", commit: second });
-    expect(plan.builds.map((b) => b.platform)).toEqual(RELEASE_PLATFORMS);
+    git("tag", "v0.2.0", second);
+    // An annotated tag, as `git tag -a` and GitHub's page make them, names the same commit.
+    git("tag", "-a", "-m", "0.1.0", "v0.1.0", first);
+    expect(release("v0.2.0")).toMatchObject({ version: "0.2.0", tag: "v0.2.0", commit: second });
+    expect(release("v0.2.0").builds.map((b) => b.platform)).toEqual(RELEASE_PLATFORMS);
+    expect(release("v0.1.0")).toMatchObject({ version: "0.1.0", commit: first });
+
     const rehearsal = planRun({ root: repo, mode: "rehearsal", ref: second, run: 7 });
     expect(rehearsal.version).toBe("0.2.0-rehearsal.7.1");
+    // The newest release tag before the commit.
     expect(rehearsal.previous).toEqual({ commit: first, version: "0.1.0-rehearsal.7.0" });
     expect(rehearsal.builds).toHaveLength(6);
-    git("checkout", "-q", "-b", "side", first);
+  });
+
+  test("a tag that is not its commit's version, on a commit off main, of a development version, or missing is refused with one sentence", () => {
+    const { git, commit, release } = planRepo("plan-refused");
+    const first = commit("0.1.0");
+    git("tag", "v0.1.1", first);
+    git("tag", "0.1.0", first);
+    git("checkout", "-q", "-b", "side");
     const side = commit("0.3.0");
-    expect(() => planRun({ root: repo, mode: "release", ref: side, run: 7, main: "main" })).toThrow(
-      /only from main/,
-    );
+    git("tag", "v0.3.0", side);
     git("checkout", "-q", "main");
     const dev = commit("0.4.0-dev.3");
-    expect(() => planRun({ root: repo, mode: "release", ref: dev, run: 7, main: "main" })).toThrow(
-      /development/,
-    );
-    expect(() => planRun({ root: repo, mode: "release", ref: "--help", run: 7 })).toThrow(Refusal);
-
-    // A version with a tag (published, so built and signed once) is refused before anything is
-    // built: from another commit, and from its own commit too.
-    git("tag", "v0.2.0", second);
-    git("checkout", "-q", "main");
-    writeFileSync(join(repo, "package.json"), JSON.stringify({ version: "0.2.0" }));
-    git("commit", "-q", "-am", "0.2.0 again");
-    const again = git("rev-parse", "HEAD");
-    for (const ref of [again, second]) {
-      expect(() => planRun({ root: repo, mode: "release", ref, run: 7, main: "main" })).toThrow(
-        /v0.2.0 exists already/,
-      );
+    git("tag", "v0.4.0-dev.3", dev);
+    for (const [what, tag, reason] of [
+      [
+        "a tag that is not the version",
+        "v0.1.1",
+        /v0.1.1 is not the version of its commit \(package.json says 0.1.0\)/,
+      ],
+      ["a tag without the v", "0.1.0", /0.1.0 is not the version of its commit/],
+      ["a commit off main", "v0.3.0", /v0.3.0 names [0-9a-f]{40}, which is not on main/],
+      ["a development version", "v0.4.0-dev.3", /development or rehearsal version/],
+      ["no such tag", "v9.9.9", /There is no tag v9.9.9/],
+      ["an option for a tag", "--help", /not a commit or tag/],
+    ] as const) {
+      expect(() => release(tag), what).toThrow(Refusal);
+      expect(() => release(tag), what).toThrow(reason);
+      expect(() => release(tag), what).not.toThrow(/\n/);
     }
+  });
 
-    // Publishing: the release's commit must be a full commit on main, and its tag, if there is
-    // one, must name that commit.
+  test("a version released before is refused; a release made in the page with the tag is held as a draft; a draft is kept", () => {
+    const c1 = "1".repeat(40);
+    const c0 = "0".repeat(40);
+    const release = (draft: boolean, files: string[], target = "main", id = 1): ReleaseSummary => ({
+      id,
+      draft,
+      target,
+      files,
+    });
+    expect(draftAction("0.2.0", c1, [])).toEqual({ action: "create" });
+    // Made in GitHub's page, or by gh release create: published with no files yet.
+    expect(draftAction("0.2.0", c1, [release(false, [])])).toEqual({ action: "hide", id: 1 });
+    // An earlier run's draft, complete or not, or one the owner saved.
+    expect(draftAction("0.2.0", c1, [release(true, [])])).toEqual({ action: "keep", id: 1 });
+    expect(draftAction("0.2.0", c1, [release(true, ["a"], c1)])).toEqual({ action: "keep", id: 1 });
+    for (const [what, found, reason] of [
+      [
+        "a version released before",
+        [release(false, ["SHA256SUMS"], c0)],
+        /v0.2.0 is released already/,
+      ],
+      [
+        "a draft with files built from another commit",
+        [release(true, ["SHA256SUMS"], c0)],
+        /holds files built from 0{40}, not from 1{40}/,
+      ],
+      [
+        "two releases for the tag",
+        [release(true, []), release(false, [], "main", 2)],
+        /2 releases for v0.2.0/,
+      ],
+    ] as const) {
+      expect(() => draftAction("0.2.0", c1, found), what).toThrow(VersionRefusal);
+      expect(() => draftAction("0.2.0", c1, found), what).toThrow(reason);
+    }
+  });
+
+  test("a release is published only while its tag still names the commit it was built from, on main", () => {
+    const { git, commit, repo } = planRepo("plan-publish");
+    const first = commit("0.1.0");
+    const second = commit("0.2.0");
+    git("checkout", "-q", "-b", "side", first);
+    const side = commit("0.3.0");
     const onMain = (c: string) => isOnMain(repo, c, "main");
     expect(() => {
       checkPublishCommit("0.2.0", second, second, onMain);
     }).not.toThrow();
-    expect(() => {
-      checkPublishCommit("0.2.0", again, undefined, onMain);
-    }).not.toThrow();
-    for (const [what, target, tag, reason] of [
-      ["a branch name", "main", undefined, /not a commit on main/],
-      ["a commit off main", side, undefined, /not a commit on main/],
-      ["a tag on another commit", again, second, /v0.2.0 names commit/],
+    for (const [what, built, tag, reason] of [
+      ["a branch name", "main", "main", /not a commit on main/],
+      ["a commit off main", side, side, /not a commit on main/],
+      ["a tag moved to another commit", second, first, /v0.2.0 now names commit/],
+      ["a tag deleted", second, undefined, /v0.2.0 no longer exists/],
     ] as const) {
       expect(() => {
-        checkPublishCommit("0.2.0", target, tag, onMain);
+        checkPublishCommit("0.2.0", built, tag, onMain);
       }, what).toThrow(reason);
+    }
+  });
+});
+
+describe("[A2.3.12.8.build.release-settings] a release is refused when the repository's settings let more than the owner start one, or let the release key reach other refs", () => {
+  // As GitHub's API gives them for the owner's steps.
+  const ruleset: RulesetSettings = {
+    name: "release tags",
+    target: "tag",
+    enforcement: "active",
+    conditions: { ref_name: { include: ["refs/tags/v*"], exclude: [] } },
+    rules: [{ type: "creation" }, { type: "update" }, { type: "deletion" }],
+    current_user_can_bypass: "never",
+  };
+  const base: RepositorySettings = {
+    environment: {
+      deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
+    },
+    policies: [{ name: "v*", type: "tag" }],
+    rulesets: [ruleset],
+  };
+
+  test("the settings the owner's steps make are ready", () => {
+    expect(settingsProblems(base)).toEqual([]);
+    // The rules may sit in more than one ruleset, and one may cover every tag.
+    expect(
+      settingsProblems({
+        ...base,
+        rulesets: [
+          { ...ruleset, rules: [{ type: "creation" }] },
+          {
+            ...ruleset,
+            name: "all tags",
+            conditions: { ref_name: { include: ["~ALL"], exclude: [] } },
+            rules: [{ type: "update" }, { type: "deletion" }],
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  test("each setting that is not as it must be is named", () => {
+    for (const [what, settings, reason] of [
+      ["no environment", { ...base, environment: undefined }, /environment does not exist/],
+      [
+        "an environment open to every ref",
+        { ...base, environment: { deployment_branch_policy: null } },
+        /does not limit its secrets to tags v\*/,
+      ],
+      [
+        "an environment open to protected branches",
+        {
+          ...base,
+          environment: {
+            deployment_branch_policy: { protected_branches: true, custom_branch_policies: false },
+          },
+        },
+        /does not limit its secrets/,
+      ],
+      [
+        "an environment that also allows main",
+        { ...base, policies: [...base.policies, { name: "main", type: "branch" }] },
+        /also gives its secrets to branch main/,
+      ],
+      [
+        "an environment that allows no tag",
+        { ...base, policies: [] },
+        /gives its secrets to no tag/,
+      ],
+      [
+        "an environment that allows every tag",
+        { ...base, policies: [...base.policies, { name: "*", type: "tag" }] },
+        /also gives its secrets to tag \*/,
+      ],
+      ["no tag ruleset", { ...base, rulesets: [] }, /restricts creation, update, deletion/],
+      [
+        "a ruleset that is only evaluated",
+        { ...base, rulesets: [{ ...ruleset, enforcement: "evaluate" }] },
+        /restricts creation, update, deletion/,
+      ],
+      [
+        "a ruleset for other tags",
+        {
+          ...base,
+          rulesets: [
+            { ...ruleset, conditions: { ref_name: { include: ["refs/tags/release-*"] } } },
+          ],
+        },
+        /restricts creation/,
+      ],
+      [
+        "a ruleset with an exclusion",
+        {
+          ...base,
+          rulesets: [
+            {
+              ...ruleset,
+              conditions: { ref_name: { include: ["~ALL"], exclude: ["refs/tags/v9*"] } },
+            },
+          ],
+        },
+        /restricts creation/,
+      ],
+      [
+        "a ruleset that lets tags be moved",
+        {
+          ...base,
+          rulesets: [{ ...ruleset, rules: [{ type: "creation" }, { type: "deletion" }] }],
+        },
+        /restricts update:/,
+      ],
+      [
+        "a ruleset the workflow's token bypasses",
+        { ...base, rulesets: [{ ...ruleset, current_user_can_bypass: "always" }] },
+        /token may bypass the tag ruleset release tags/,
+      ],
+    ] as const) {
+      const problems = settingsProblems(settings);
+      expect(problems, what).toHaveLength(1);
+      expect(problems[0], what).toMatch(reason);
     }
   });
 });

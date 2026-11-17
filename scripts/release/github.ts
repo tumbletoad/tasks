@@ -1,7 +1,8 @@
-// The GitHub release of a signed folder, through the `gh` CLI with the job's own token: a draft
-// with every file, resumed by a rerun, and publishing that draft as a separate, explicit step after
-// checking every file it holds the way the product does. draftStep (version.ts) decides; this
-// module only reads what GitHub has and does what was decided.
+// What a release run reads from and does on GitHub, through the `gh` CLI with the job's own token:
+// the repository settings a release depends on, the draft that holds a release until its files are
+// complete, and publishing it once every file, downloaded back, checks out the way a person's
+// machine checks it. version.ts and settings.ts decide; this module only reads what GitHub has and
+// does what was decided. Nothing here makes or deletes a tag, or deletes a release.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -25,11 +26,21 @@ import { RELEASE_PLATFORMS } from "./gather.ts";
 import { isOnMain, keysAt } from "./plan.ts";
 import { keyLinesIn, Refusal } from "./release.ts";
 import {
+  RELEASE_ENVIRONMENT,
+  settingsProblems,
+  type EnvironmentSettings,
+  type RefPolicy,
+  type RepositorySettings,
+  type RulesetSettings,
+} from "./settings.ts";
+import {
   checkPublishCommit,
+  draftAction,
   draftStep,
   releaseTag,
   releaseVersionProblem,
   VersionRefusal,
+  type ReleaseSummary,
   type RemoteRelease,
 } from "./version.ts";
 
@@ -47,24 +58,25 @@ class GhError extends Error {
   override readonly name = "GhError";
 }
 
+const notFound = (error: unknown): boolean =>
+  error instanceof GhError && /\b404\b|Not Found/.test(error.message);
+
+const api = (path: string): unknown => JSON.parse(gh(["api", path]).toString());
+
 const sha256 = (data: Buffer): string => createHash("sha256").update(data).digest("hex");
 
 /** The commit a tag names on GitHub, or undefined when there is no such tag. */
 function tagCommit(repo: string, tag: string): string | undefined {
   let ref: { object: { type: string; sha: string } };
   try {
-    ref = JSON.parse(gh(["api", `repos/${repo}/git/ref/tags/${tag}`]).toString()) as typeof ref;
+    ref = api(`repos/${repo}/git/ref/tags/${tag}`) as typeof ref;
   } catch (error) {
-    if (error instanceof GhError && /\b404\b|Not Found/.test(error.message)) return undefined;
+    if (notFound(error)) return undefined;
     throw error;
   }
   if (ref.object.type !== "tag") return ref.object.sha;
-  const tagObject = JSON.parse(
-    gh(["api", `repos/${repo}/git/tags/${ref.object.sha}`]).toString(),
-  ) as {
-    object: { sha: string };
-  };
-  return tagObject.object.sha;
+  return (api(`repos/${repo}/git/tags/${ref.object.sha}`) as { object: { sha: string } }).object
+    .sha;
 }
 
 interface ApiRelease {
@@ -78,7 +90,7 @@ interface ApiRelease {
   }[];
 }
 
-/** The releases GitHub has for a tag, drafts included (a draft has no tag yet). */
+/** The releases GitHub shows this token for a tag: drafts only to a token that may write. */
 function releasesFor(repo: string, tag: string): ApiRelease[] {
   const lines = gh([
     "api",
@@ -93,6 +105,13 @@ function releasesFor(repo: string, tag: string): ApiRelease[] {
   return lines.map((line) => JSON.parse(line) as ApiRelease);
 }
 
+const summary = (release: ApiRelease): ReleaseSummary => ({
+  id: release.id,
+  draft: release.draft,
+  target: release.target_commitish,
+  files: release.assets.map((asset) => asset.name),
+});
+
 const assetBytes = (repo: string, id: number): Buffer =>
   gh([
     "api",
@@ -102,14 +121,11 @@ const assetBytes = (repo: string, id: number): Buffer =>
   ]);
 
 /** The one release for the tag, with each file's SHA-256, or undefined. Refuses two. */
-function remoteRelease(
-  repo: string,
-  tag: string,
-): (RemoteRelease & { raw: ApiRelease }) | undefined {
+function remoteRelease(repo: string, tag: string): RemoteRelease | undefined {
   const found = releasesFor(repo, tag);
   if (found.length > 1) {
     throw new VersionRefusal(
-      `GitHub has ${String(found.length)} releases for ${tag}. Delete the extra drafts by hand.`,
+      `GitHub has ${String(found.length)} releases for ${tag}: delete all but one by hand, then re-run the failed jobs.`,
     );
   }
   const release = found[0];
@@ -119,75 +135,125 @@ function remoteRelease(
     const digest = /^sha256:([0-9a-f]{64})$/.exec(asset.digest ?? "")?.[1];
     assets[asset.name] = digest ?? sha256(assetBytes(repo, asset.id));
   }
-  return {
-    id: release.id,
-    draft: release.draft,
-    target: release.target_commitish,
-    assets,
-    raw: release,
-  };
+  return { id: release.id, draft: release.draft, target: release.target_commitish, assets };
 }
 
-/** The files of a signed release folder, name to SHA-256. Refuses a rehearsal's. */
-export function releaseFiles(dist: string): Record<string, string> {
-  if (existsSync(join(dist, TEST_KEY_FILE))) {
-    throw new Refusal("A test key or a rehearsal signed this folder: it is never released.");
+/** The settings a release depends on, as the workflow's token reads them. */
+function readSettings(repo: string): RepositorySettings {
+  let environment: EnvironmentSettings | undefined;
+  let policies: RefPolicy[] = [];
+  try {
+    environment = api(`repos/${repo}/environments/${RELEASE_ENVIRONMENT}`) as EnvironmentSettings;
+  } catch (error) {
+    if (!notFound(error)) throw error;
   }
-  const files: Record<string, string> = {};
-  for (const name of readdirSync(dist).sort()) files[name] = sha256(readFileSync(join(dist, name)));
-  return files;
+  if (environment?.deployment_branch_policy?.custom_branch_policies === true) {
+    policies = (
+      api(
+        `repos/${repo}/environments/${RELEASE_ENVIRONMENT}/deployment-branch-policies?per_page=100`,
+      ) as { branch_policies: RefPolicy[] }
+    ).branch_policies;
+  }
+  const listed = api(`repos/${repo}/rulesets?includes_parents=true&per_page=100`) as {
+    id: number;
+    target?: string;
+  }[];
+  const rulesets = listed
+    .filter((r) => (r.target ?? "tag") === "tag")
+    .map((r) => api(`repos/${repo}/rulesets/${String(r.id)}`) as RulesetSettings);
+  return { environment, policies, rulesets };
 }
 
 /**
- * `pnpm release draft`: the draft release of the signed folder `dist`, for `commit`. A rerun
- * uploads what an earlier run did not; files GitHub has already must be these bytes.
+ * What stands in the way of releasing `version` on GitHub, read with the workflow's token before
+ * anything is built: the settings, and a version that is released already. Empty when nothing does.
+ * A setting that cannot be read counts: a release is not signed on settings nobody could check.
  */
-export function draftRelease(options: {
+export function releaseReadiness(repo: string, version: string, commit: string): string[] {
+  let problems: string[];
+  try {
+    problems = settingsProblems(readSettings(repo));
+  } catch (error) {
+    problems = [
+      `The release settings cannot be read (${error instanceof Error ? error.message : String(error)}).`,
+    ];
+  }
+  try {
+    draftAction(version, commit, releasesFor(repo, releaseTag(version)).map(summary));
+  } catch (error) {
+    if (!(error instanceof VersionRefusal)) throw error;
+    problems.push(error.message);
+  }
+  return problems;
+}
+
+const notes = (version: string): string =>
+  `${PRODUCT_NAME} ${version}. Install it with install-${version}.sh (Linux) or install-${version}.ps1 (Windows) from a folder that holds the files of this release: the script checks the signature of SHA256SUMS and the archive's hash before anything of it runs.`;
+
+const prerelease = (version: string): string => String(version.includes("-"));
+
+/** A new draft for the existing tag; `--verify-tag` keeps gh from ever making the tag. */
+function createDraft(repo: string, version: string, commit: string): void {
+  gh([
+    "release",
+    "create",
+    releaseTag(version),
+    "--repo",
+    repo,
+    "--draft",
+    "--verify-tag",
+    "--target",
+    commit,
+    "--title",
+    `${PRODUCT_NAME} ${version}`,
+    "--notes",
+    notes(version),
+    ...(version.includes("-") ? ["--prerelease"] : []),
+  ]);
+}
+
+/**
+ * `pnpm release draft`: the one draft that holds the release of `version` until its files are
+ * complete, made before anything is signed. A release made in GitHub's page with the tag is turned
+ * back into a draft, its title and notes kept, so nobody downloads it while it has no files or only
+ * some. Never makes a tag: the draft is made only for the tag that exists.
+ */
+export function holdRelease(options: {
   readonly repo: string;
-  readonly dist: string;
   readonly version: string;
   readonly commit: string;
   readonly log: (line: string) => void;
 }): void {
-  const { repo, dist, version, commit, log } = options;
+  const { repo, version, commit, log } = options;
   const problem = releaseVersionProblem(version);
   if (problem !== undefined) throw new Refusal(problem);
   const tag = releaseTag(version);
-  const local = releaseFiles(dist);
-  for (;;) {
-    const step = draftStep(version, commit, local, tagCommit(repo, tag), remoteRelease(repo, tag));
-    if (step.step === "done") {
-      log(
-        step.published
-          ? `${tag} is published already with exactly these files. Nothing was changed.`
-          : `The draft of ${tag} holds exactly these files. Publish it with the release workflow's publish mode.`,
-      );
-      return;
-    }
-    if (step.step === "create") {
-      gh([
-        "release",
-        "create",
-        tag,
-        "--repo",
-        repo,
-        "--draft",
-        "--target",
-        commit,
-        "--title",
-        `${PRODUCT_NAME} ${version}`,
-        "--notes",
-        `${PRODUCT_NAME} ${version}. Install it with install-${version}.sh (Linux) or install-${version}.ps1 (Windows) from a folder that holds the files of this release: the script checks the signature of SHA256SUMS and the archive's hash before anything of it runs.`,
-        ...(version.includes("-") ? ["--prerelease"] : []),
-      ]);
-      log(`created the draft of ${tag} for ${commit}`);
-      continue;
-    }
-    for (const name of step.names) {
-      gh(["release", "upload", tag, "--repo", repo, join(dist, name)]);
-      log(`uploaded ${name}`);
-    }
+  if (tagCommit(repo, tag) !== commit) {
+    throw new VersionRefusal(`${tag} does not name ${commit} on GitHub, so nothing was signed.`);
   }
+  const step = draftAction(version, commit, releasesFor(repo, tag).map(summary));
+  if (step.action === "create") {
+    createDraft(repo, version, commit);
+    log(`made the draft of ${tag}: it is published when its files are complete`);
+    return;
+  }
+  gh([
+    "api",
+    "--method",
+    "PATCH",
+    `repos/${repo}/releases/${String(step.id)}`,
+    "-F",
+    "draft=true",
+    "-f",
+    `target_commitish=${commit}`,
+    "-F",
+    `prerelease=${prerelease(version)}`,
+  ]);
+  log(
+    step.action === "hide"
+      ? `${tag} was published without its files: it is a draft again, with its title and notes, until they are complete`
+      : `kept the draft of ${tag}: it is published when its files are complete`,
+  );
 }
 
 /**
@@ -262,46 +328,77 @@ export function checkReleaseFolder(
   }
 }
 
+/** The signed release folder's files, name to SHA-256. Refuses a rehearsal's. */
+export function releaseFiles(dist: string): Record<string, string> {
+  if (existsSync(join(dist, TEST_KEY_FILE))) {
+    throw new Refusal("A test key or a rehearsal signed this folder: it is never released.");
+  }
+  const files: Record<string, string> = {};
+  for (const name of readdirSync(dist).sort()) files[name] = sha256(readFileSync(join(dist, name)));
+  return files;
+}
+
 /**
- * `pnpm release publish`: the draft of `version`, checked file by file as downloaded from GitHub,
- * then published. A published release is checked and left as it is.
+ * `pnpm release publish`: the signed folder `dist` into the draft of `version` (a rerun uploads
+ * only what an earlier one did not, and a file GitHub has already must be these bytes), every file
+ * downloaded back and checked, the tag checked to still name `commit` on main, then the draft
+ * published. A published release is never changed.
  */
 export function publishRelease(options: {
   readonly repo: string;
+  readonly dist: string;
   readonly version: string;
+  readonly commit: string;
   readonly work: string;
   readonly log: (line: string) => void;
 }): void {
-  const { repo, version, work, log } = options;
+  const { repo, dist, version, commit, work, log } = options;
   const problem = releaseVersionProblem(version);
   if (problem !== undefined) throw new Refusal(problem);
   const tag = releaseTag(version);
-  const release = releasesFor(repo, tag);
-  if (release.length !== 1 || release[0] === undefined) {
-    throw new Refusal(`GitHub has ${String(release.length)} releases for ${tag}, not one.`);
+  const local = releaseFiles(dist);
+  for (;;) {
+    const step = draftStep(version, commit, local, tagCommit(repo, tag), remoteRelease(repo, tag));
+    if (step.step === "done") {
+      if (step.published) {
+        log(`${tag} is published already with exactly these files. Nothing was changed.`);
+        return;
+      }
+      break;
+    }
+    if (step.step === "create") {
+      createDraft(repo, version, commit);
+      log(`made the draft of ${tag} again: it was gone`);
+      continue;
+    }
+    for (const name of step.names) {
+      gh(["release", "upload", tag, "--repo", repo, join(dist, name)]);
+      log(`uploaded ${name}`);
+    }
   }
-  const found = release[0];
-  checkPublishCommit(version, found.target_commitish, tagCommit(repo, tag), (commit) =>
-    isOnMain(repoRoot, commit),
-  );
+
+  const found = releasesFor(repo, tag);
+  const release = found[0];
+  if (found.length !== 1 || release === undefined || !release.draft) {
+    throw new VersionRefusal(
+      `The draft of ${tag} changed while it was filled: re-run the failed jobs.`,
+    );
+  }
   if (existsSync(work)) throw new Refusal(`${work} exists: publish makes it itself.`);
   mkdirSync(work, { recursive: true });
-  for (const asset of found.assets) {
+  for (const asset of release.assets) {
     if (!/^[0-9A-Za-z.+-]+$/.test(asset.name))
       throw new Refusal(`An asset has an odd name: ${asset.name}.`);
     writeFileSync(join(work, asset.name), assetBytes(repo, asset.id));
   }
-  checkReleaseFolder(work, version, RELEASE_PUBLIC_KEYS, keysAt(repoRoot, found.target_commitish));
-  log(`${tag}: every file verifies with the pinned release keys`);
-  if (!found.draft) {
-    log(`${tag} is published already. Nothing was changed.`);
-    return;
-  }
+  checkReleaseFolder(work, version, RELEASE_PUBLIC_KEYS, keysAt(repoRoot, commit));
+  log(`${tag}: every file, downloaded back, verifies with the pinned release keys`);
+  checkPublishCommit(version, commit, tagCommit(repo, tag), (c) => isOnMain(repoRoot, c));
   gh([
     "api",
     "--method",
     "PATCH",
-    `repos/${repo}/releases/${String(found.id)}`,
+    `repos/${repo}/releases/${String(release.id)}`,
     "-F",
     "draft=false",
   ]);
