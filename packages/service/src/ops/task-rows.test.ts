@@ -58,3 +58,41 @@ describe("[A3.3.4.here.folders] a row opens where the launch would", () => {
     expect(bare[0]).not.toHaveProperty("place");
   });
 });
+
+describe("[M6.page.run-row] a row says when its newest run works or needs the person", () => {
+  const run = (state: string, reason: string | null = null): Row => ({
+    id: "t_run",
+    ref: 2,
+    title: "run",
+    x_run: JSON.stringify({ state, reason, instance: "codex-work" }),
+  });
+  test("queued to stopping, and not confirmed ended, is working; a question is needs_you; the rest nothing", async () => {
+    const rows = await taskRows(
+      [
+        run("queued"),
+        run("running"),
+        run("cancelling"),
+        run("unknown", "stop_timed_out"),
+        run("failed", "needs_input"),
+        run("failed", "agent_error"),
+        run("succeeded"),
+        run("cancelled"),
+        { id: "t_none", ref: 3, title: "none", x_run: null },
+      ],
+      "M",
+    );
+    const working = { state: "working", instance: "codex-work" };
+    expect(rows.map((r) => r["run"])).toEqual([
+      working,
+      working,
+      working,
+      working,
+      { state: "needs_you", instance: "codex-work" },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(rows[0]).not.toHaveProperty("x_run");
+  });
+});

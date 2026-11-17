@@ -38,9 +38,9 @@ export const REDEEM_PATH = "/api/v1/auth/redeem";
 export const WS_TICKET_PATH = "/api/v1/ws-ticket";
 export const WS_PATH = "/api/v1/ws";
 export const OP_PREFIX = "/api/v1/op/";
-/** The page's launch receipts (launches.ts): `list`. Open is the registry's `launch.open`. */
+/** The page's launch receipts and runs (launches.ts). Open is the registry's `launch.open`. */
 export const LAUNCH_PREFIX = "/api/v1/launch/";
-export const LAUNCH_ACTIONS: readonly string[] = ["list"];
+export const LAUNCH_ACTIONS: readonly string[] = ["list", "run", "runs", "stop"];
 /** The page's space switcher (M5.01): this machine's spaces, and Make default. */
 export const SPACE_PREFIX = "/api/v1/space/";
 export const SPACE_ACTIONS: readonly string[] = ["list", "default"];

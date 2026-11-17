@@ -29,7 +29,7 @@ export const ROUTES = [
   "ws",
   /** `POST /api/v1/op/<entry>`: one registry entry with a UI face (contracts' http-routes.ts). */
   "op",
-  /** `POST /api/v1/launch/list`: a task's launch receipts (launches.ts). */
+  /** `POST /api/v1/launch/<action>`: a task's launch receipts, Run, its runs, Stop (launches.ts). */
   "launch",
   /** `POST /api/v1/space/list` and `/default`: the page's space switcher and Make default. */
   "space",

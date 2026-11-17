@@ -16,11 +16,12 @@
 //   of a note or log entry, no context, outcome or other long text is in the feed.
 // - A task's compact row (ops/task-rows.ts) also carries what its row shows of its children
 //   (A5 3.6): its first three sources with their own text and URL (`sources`), how many more it
-//   has (`sources_more`), and where it opens on this machine (`place`), from its own folder or its
-//   project's. A commit that changes a source, a link or a folder of a task therefore carries the
-//   task's row too, as an entity of its own, and one that changes a project's folder carries the
-//   rows of the project's tasks the batch holds, so the row the client holds never shows a source
-//   or a folder the space no longer has.
+//   has (`sources_more`), where it opens on this machine (`place`), from its own folder or its
+//   project's, and whether its newest background run works or needs the person (`run`). A commit
+//   that changes a source, a link, a folder or a run of a task therefore carries the task's row
+//   too, as an entity of its own, and one that changes a project's folder carries the rows of the
+//   project's tasks the batch holds, so the row the client holds never shows a source, a folder
+//   or a run state the space no longer has.
 import type { PreferenceRead } from "@tasks/contracts";
 import type { Row, WorkerConnection } from "@tasks/storage";
 import { hasFolderTable } from "../ops/read.ts";
@@ -140,8 +141,11 @@ const ACTORS = `SELECT id, kind, label FROM actors WHERE id IN (SELECT principal
 const LATER = "SELECT DISTINCT entity, entity_id, task_id FROM changes WHERE seq > $upto";
 const touched = (entity: string) =>
   `SELECT entity_id FROM changes WHERE ${IN_BATCH} AND entity = '${entity}'`;
-/** The tables whose rows a task's compact row shows (A5 3.6): a change to one carries the row. */
-const ROW_CHILDREN = ["sources", "task_sources", "folders"] as const;
+/**
+ * The tables whose rows a task's compact row shows (A5 3.6): a change to one carries the row. The
+ * row shows whether the task's newest run works or needs the person.
+ */
+const ROW_CHILDREN = ["sources", "task_sources", "folders", "runs"] as const;
 /** The projects whose folders a commit after `$after` changed: their tasks' rows show them. */
 const PROJECT_FOLDERS_CHANGED =
   "SELECT id, owner_id FROM folders WHERE owner_kind = 'project' AND id IN " +
@@ -169,6 +173,7 @@ export const ENTITY_TYPES: Readonly<Record<string, string>> = {
   places: "place",
   folders: "folder",
   launches: "launch",
+  runs: "run",
   machines: "machine",
   learnings: "learning",
   preferences: "preference",

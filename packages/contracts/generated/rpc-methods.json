@@ -3522,6 +3522,29 @@
                   "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
                   "type": "string"
                 },
+                "run": {
+                  "additionalProperties": false,
+                  "description": "Its newest background run, while it works or needs the person",
+                  "properties": {
+                    "instance": {
+                      "description": "The run's agent instance",
+                      "type": "string"
+                    },
+                    "state": {
+                      "description": "Its newest background run works, or ended asking the person",
+                      "enum": [
+                        "working",
+                        "needs_you"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "instance"
+                  ],
+                  "type": "object"
+                },
                 "sources": {
                   "description": "Its first three sources",
                   "items": {

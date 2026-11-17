@@ -112,6 +112,7 @@ import {
   type LaunchOptions,
   type OpenTaskRequest,
 } from "../launch/index.ts";
+import { runsWith } from "../runs/agent.ts";
 import { RunService, type RunOptions } from "../runs/service.ts";
 import {
   Bindings,
@@ -578,7 +579,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         home: runHome,
         version: BUILD.version,
         instances: () => instances,
-        folder: async (space, folder) => launching.service?.runFolder(space, folder),
+        folder: async (space, folder) =>
+          (await launching.service?.runFolder(space, folder)) ?? { refused: "folder_missing" },
         base: async () => launching.service?.environment.base(),
         command: () =>
           options.launch?.shimCommand ??
@@ -1025,8 +1027,17 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         db: grantsDb.db,
         grants: grantsDb.grants,
         log: httpLog,
-        // The page's tiles open through the same launch machines as the shim's claims.
-        launch: launches,
+        // The page's tiles open through the same launch machines as the shim's claims, and its
+        // Run starts the same background runs as `tasks run`, with any instance that can run.
+        launch: {
+          instances: () =>
+            launches.instances().map((tile) => {
+              const instance = instances.find((i) => i.id === tile.key);
+              return instance !== undefined && runsWith(instance) ? { ...tile, runs: true } : tile;
+            }),
+          onChange: (listener: (space: string) => void) => launches.onChange(listener),
+          runs,
+        },
         onChange: () => {
           try {
             writeServiceJson();
