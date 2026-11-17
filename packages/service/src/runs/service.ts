@@ -27,6 +27,7 @@ import {
   RunMachine,
   RUNS_FOLDER,
   Supervisor,
+  TOOLS_FILE,
   type AgentCommand,
   type Containers,
   type Hold,
@@ -45,11 +46,13 @@ import type { ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, readRunRows, readTaskRef, type TaskFolder } from "../ops/read.ts";
 import {
   buildRun,
+  runAdapter,
   runBriefHash,
   runFolder,
   runPermission,
   runsWith,
   WORK_ON_IT,
+  type BuiltRun,
   type RunAgents,
 } from "./agent.ts";
 
@@ -345,7 +348,7 @@ export class RunService {
         asked.instance !== undefined
           ? "No instance with this ID on this computer can run a task."
           : able.length === 0
-            ? "No instance on this computer can run a task: runs use a Codex instance."
+            ? "No instance on this computer can run a task: runs use a Codex or Claude Code instance."
             : "Several instances on this computer can run a task.",
         able.length === 0
           ? `Set one up with: ${CLI_NAME} setup instances`
@@ -367,7 +370,7 @@ export class RunService {
         task: task.id,
         routine: null,
         instance: instance.id,
-        adapter: "codex",
+        adapter: runAdapter(instance),
         place: null,
         // A task's run always holds what was asked: the person's words, else to work on the task.
         request: asked.request ?? WORK_ON_IT,
@@ -572,18 +575,21 @@ export class RunService {
     const agents = this.#options.agents;
     if (given === undefined && agents !== undefined) {
       const ticket = newTicket();
-      let built: AgentCommand | StartRefusal;
+      let built: BuiltRun | StartRefusal;
       try {
-        built = await buildRun(agents, served, run, this.#options.machine, ticket);
+        const toolsPath = join(this.#files.folder(run.id), TOOLS_FILE);
+        built = await buildRun(agents, served, run, this.#options.machine, ticket, toolsPath);
       } catch (error) {
         if (error instanceof AppError && error.code === "not_found")
           return { refused: "task_closed" };
         throw error;
       }
       if (typeof built === "string") return { refused: built };
-      const command = built;
+      const { command, toolsFile } = built;
       return {
         command: () => {
+          // The run's folder is there now: its tools file goes in before its program starts.
+          if (toolsFile !== undefined) this.#files.writePrivate(run.id, TOOLS_FILE, toolsFile);
           this.#tickets.set(ticket, {
             space: lane.space,
             run: run.id,

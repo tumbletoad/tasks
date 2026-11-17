@@ -5,9 +5,10 @@
 //
 // - The request is the first line on the program's input, never on its command line. The input
 //   stays open while the agent works, so a Stop can go over it.
-// - The work settles when the program exits, and it exits when its input ends. The input ends
-//   after a turn once no command the agent started in the background still runs: when one ends,
-//   Claude Code starts a turn of its own to report on it, and its answer is the run's.
+// - The program exits when its input ends. The input ends after a turn once no command the agent
+//   started in the background still runs: when one ends, Claude Code starts a turn of its own to
+//   report on it, and its answer is the run's. The work settles with that last successful result,
+//   or else when the program exits; a program that does not exit after its work is the cleanup's.
 // - The answer and the verdict are the last result event's own (streams/claude-print.ts).
 // - Nobody is there to answer: a permission prompt reaches this driver (`--permission-prompt-tool
 //   stdio`) and is declined, and the program counts it in the result. A question for the person
@@ -21,6 +22,7 @@ import {
   ANSWER_CAP_BYTES,
   LINE_CAP_BYTES,
   TEXT_CAP_BYTES,
+  type ProcessExit,
   type RunEvent,
   type RunPermission,
 } from "@tasks/contracts/runs";
@@ -129,8 +131,6 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
     let stopping = false;
     let signedOut = false;
     let question: { text: string; cut: boolean } | null = null;
-    /** The work ended with a successful result and nothing left in the background. */
-    let finished = false;
     let done = false;
     let next = 0;
     let settle: (work: Work) => void = () => undefined;
@@ -205,6 +205,33 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
       interruptTurn();
     };
 
+    /** The work, from what the program said and how it ended. */
+    const conclude = (exit: ProcessExit): void => {
+      if (done) return;
+      const end = parser.end(exit);
+      for (const event of end.events) relay(event);
+      done = true;
+      let work = workOf(end.outcome);
+      if (question !== null) {
+        work = {
+          ...work,
+          ok: false,
+          outcome: "needs_input",
+          text: question.text,
+          textCut: question.cut,
+          textFinal: false,
+          error: null,
+        };
+      } else if (stopping && work.outcome !== "interrupted") {
+        work = { ...work, ok: false, outcome: "interrupted" };
+      }
+      if (!work.ok && work.error !== null && (signedOut || SIGNED_OUT.test(work.error))) {
+        const said = `${work.error.trim()} Sign in with: claude auth login`;
+        work = { ...work, error: capText(said, TEXT_CAP_BYTES).text };
+      }
+      settle(work);
+    };
+
     const read = (text: string): void => {
       let value: unknown;
       try {
@@ -229,8 +256,11 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
           // The program ends once its input does. Background work it still waits for keeps the
           // input open: its own turn about that work follows, and Stop can still reach it.
           if (stopping || question !== null || background === 0) {
-            finished = !stopping && question === null && message["is_error"] === false;
             endInput();
+            // Done and said so: a program that then does not exit is the cleanup's to end.
+            if (!stopping && question === null && message["is_error"] === false) {
+              conclude({ code: 0, signal: null });
+            }
           }
           return;
         case "control_request":
@@ -264,34 +294,7 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
         return true;
       },
       close: endInput,
-      ended: (exit) => {
-        if (done) return;
-        const end = parser.end(exit);
-        for (const event of end.events) relay(event);
-        done = true;
-        let work = workOf(end.outcome);
-        if (question !== null) {
-          work = {
-            ...work,
-            ok: false,
-            outcome: "needs_input",
-            text: question.text,
-            textCut: question.cut,
-            textFinal: false,
-            error: null,
-          };
-        } else if (stopping && work.outcome !== "interrupted") {
-          work = { ...work, ok: false, outcome: "interrupted" };
-        } else if (finished && work.outcome === "exit_status") {
-          // Its work was done and said so: how the program then ended is the cleanup's to tell.
-          work = { ...work, ok: true, outcome: "success", error: null };
-        }
-        if (!work.ok && work.error !== null && (signedOut || SIGNED_OUT.test(work.error))) {
-          const said = `${work.error.trim()} Sign in with: claude auth login`;
-          work = { ...work, error: capText(said, TEXT_CAP_BYTES).text };
-        }
-        settle(work);
-      },
+      ended: conclude,
     };
   };
 }

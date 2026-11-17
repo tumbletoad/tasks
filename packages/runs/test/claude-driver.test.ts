@@ -256,12 +256,12 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     expect(await driver.settled).toEqual(done({ ok: false, outcome: "interrupted" }));
   });
 
-  test("Stop once the work is done and the program is exiting: the host ends the program, and the work stays done", async () => {
-    const { driver, fake, exit } = bench({ fixture: "windows-plain", ignoreEnd: true });
+  test("a program that does not exit after its work: the work settles with its answer, and a Stop then changes nothing", async () => {
+    const { driver, fake } = bench({ fixture: "windows-plain", ignoreEnd: true });
     await fake.inputEnded;
-    // Nothing to say it over: the host interrupts the program itself.
-    expect(driver.interrupt()).toBe(false);
-    exit(1);
+    expect(await driver.settled).toEqual(done({ ok: true, outcome: "success", textFinal: true }));
+    expect(driver.interrupt()).toBe(true);
+    driver.ended({ code: 1, signal: null });
     expect(await driver.settled).toEqual(done({ ok: true, outcome: "success" }));
   });
 
