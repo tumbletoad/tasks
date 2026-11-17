@@ -8,7 +8,7 @@
 // checked, until the person refreshes: results do not move under the pointer. A search that sorts
 // by effort (`sort:effort`) splits To do into one group per effort, in the service's order.
 import type { Client } from "@tasks/contracts/generated/client.ts";
-import { filterOf } from "@tasks/contracts/query-terms";
+import { filterOf, QUERY_KEYS } from "@tasks/contracts/query-terms";
 import type { Group } from "../groups.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { Page, PageSource } from "../store/queries.ts";
@@ -184,17 +184,22 @@ export function hasWords(q: string): boolean {
   return termsOf(q).some((term) => !term.filter && term.text !== "OR");
 }
 
+const KEYS: ReadonlySet<string> = new Set(QUERY_KEYS);
+
 /**
  * The words of a query as a task's title: its filters, `OR` and the words it leaves out (`-word`)
- * dropped, and a phrase without its quotes.
+ * dropped, and a phrase without its quotes. A word that only looks like a filter (`https://…`,
+ * `bug:123`) is the person's text and stays.
  */
 export function wordsOf(q: string): string {
   return termsOf(q)
-    .filter((term) => !term.filter && !term.negated && term.text !== "OR")
+    .filter((term) => !term.negated && term.text !== "OR" && !KEYS.has(term.key ?? ""))
     .map((term) =>
-      term.value.startsWith('"')
-        ? term.value.replace(/^"|"$/gu, "").replaceAll('""', '"')
-        : term.value,
+      term.filter
+        ? term.text
+        : term.value.startsWith('"')
+          ? term.value.replace(/^"|"$/gu, "").replaceAll('""', '"')
+          : term.value,
     )
     .filter((word) => word !== "")
     .join(" ");

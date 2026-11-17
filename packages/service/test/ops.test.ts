@@ -474,7 +474,12 @@ describe("[A2.3.6.ops.request-path] op/call and op/list", () => {
     expect(week?.tasks).toHaveLength(8);
     expect(week?.total).toBe(before + 12);
     expect(week?.more).toBeUndefined();
-    await add(40, "+4d");
+    // Exactly as many as the read takes: all counted, none past it.
+    await add(48 - before - 12, "+4d");
+    const full = await weekOf();
+    expect(full).toMatchObject({ total: 48 });
+    expect(full?.more).toBeUndefined();
+    await add(1, "+4d");
     expect(await weekOf()).toMatchObject({ total: 48, more: true });
   }, 120_000);
 

@@ -330,6 +330,9 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     expect(wordsOf("fence OR gate -dst")).toBe("fence gate");
     expect(wordsOf("10:30 standup x=1")).toBe("10:30 standup x=1");
     expect(wordsOf("p<=2 -is:inbox")).toBe("");
+    // Words that only look like filters are the person's text.
+    expect(wordsOf("read https://example.org/guide p:1")).toBe("read https://example.org/guide");
+    expect(wordsOf("fix bug:123 Status:open")).toBe("fix bug:123");
   });
 
   test("the fields a search reads decide which changes offer a refresh", () => {
