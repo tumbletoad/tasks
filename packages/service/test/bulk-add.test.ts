@@ -188,11 +188,9 @@ describe("[A3.bulk.shared-key] a ticket two tasks share never swallows one of th
       expect(await sourceKeys(b?.["ref"])).toEqual(["planning:s-2", "-"]);
       // In a later call too, and the agent reads which source and who holds its key.
       const third = await tool("add_tasks", { tasks: [draft("s-3")], request_id: rid() });
+      expect(third).toMatch(/^tasks\.0: created [A-Z]+-\d+ · 1 source linked without its key$/mu);
       expect(third).toMatch(
-        new RegExp(
-          `^tasks\\.0: created [A-Z]+-\\d+ · sources\\.1 linked without its key, which ${held} holds$`,
-          "mu",
-        ),
+        new RegExp(`^tasks\\.0\\.sources\\.1: its key is held by ${held}$`, "mu"),
       );
       // A second pass: each draft is its own task again, and nothing is added.
       const again = await call("task.add", {
@@ -209,6 +207,32 @@ describe("[A3.bulk.shared-key] a ticket two tasks share never swallows one of th
         request_id: rid(),
       });
       expect((alone["tasks"] as Json[])[0]).toMatchObject({ result: "exists", ref: held });
+    },
+    LONG,
+  );
+
+  test(
+    "with many held keys in one call, the agent still reads every draft's reference",
+    async () => {
+      const shared = ["jira:MANY-1", "jira:MANY-2", "jira:MANY-3"];
+      const text = await tool("add_tasks", {
+        tasks: Array.from({ length: 25 }, (_, k) => ({
+          title: `Held keys ${String(k)}`,
+          area: "Shared",
+          sources: [`planning:many-${String(k)}`, ...shared].map((key) => ({
+            key,
+            kind: "ticket",
+            title: "Ticket",
+          })),
+        })),
+        request_id: rid(),
+      });
+      const lines = text.split("\n");
+      for (let k = 0; k < 25; k += 1) {
+        expect(
+          lines.some((l) => new RegExp(`^tasks\\.${String(k)}: created [A-Z]+-\\d+`, "u").test(l)),
+        ).toBe(true);
+      }
     },
     LONG,
   );
@@ -311,6 +335,16 @@ describe("[A3.bulk.dates] work recreated from another tool keeps when it happene
     expect(unread).toMatchObject({
       data: { issues: [{ path: "tasks.0.created", message: "Not a date or an instant" }] },
     });
+    // A day the calendar lacks is a typo, never the day after.
+    for (const created of ["2025-02-30T12:00:00Z", "2025-04-31T08:00:00+02:00"]) {
+      const typo = await refusal("task.add", {
+        tasks: [{ title: "Typo", created }],
+        request_id: rid(),
+      });
+      expect(typo).toMatchObject({
+        data: { issues: [{ path: "tasks.0.created", message: "Not a date or an instant" }] },
+      });
+    }
     const note = await refusal("entry.add", {
       task: "M-1",
       kind: "note",
