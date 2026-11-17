@@ -13,11 +13,12 @@
 // search with an empty search takes the draft along as the search, and "add instead" takes the
 // search along as the draft when there is none, so nothing typed is lost either way.
 //
-// The draft is kept per space, so it survives a switch to another space and back. A draft typed
-// while an add was on its way stays. An add's text stays in the field until the feed confirms the
-// add, so the field tracks it until then: the same text is not sent again while it is on its way,
-// and when the space's session ends first (a switch of space stops its store, which then confirms
-// nothing), an add the service took drops its text from the space's kept draft.
+// The draft is kept per space for the tab (kept.ts), so it survives a switch to another space and
+// back, and a reload; another tab keeps its own. A draft typed while an add was on its way stays. An add's text stays in
+// the field until the feed confirms the add, so the field tracks it until then: the same text is
+// not sent again while it is on its way, and when the space's session ends first (a switch of
+// space stops its store, which then confirms nothing), an add the service took drops its text from
+// the space's kept draft.
 import { useNavigate, useParams, useRouter, useRouterState } from "@tanstack/react-router";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "react-aria-components";
@@ -30,6 +31,7 @@ import {
 } from "../capture/parse.ts";
 import { Session } from "../context.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
+import { tabKept } from "../kept.ts";
 import { formatDay } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
@@ -59,18 +61,49 @@ const styles = classes(css, [
   "title",
 ]);
 
+/** The field's limit: more than any title, so the shortcuts have room. */
+const FIELD_MAX = 500;
+
 /**
- * This tab's drafts of the field, per space, with the shortcuts the person kept as text: without
- * them a word turned back into text would become a shortcut again after a switch of space.
+ * The field's draft of a space, with the shortcuts the person kept as text: without them a word
+ * turned back into text would become a shortcut again after a switch of space or a reload.
  */
-const drafts = new Map<string, { readonly text: string; readonly kept: ReadonlySet<string> }>();
+interface Draft {
+  readonly text: string;
+  readonly kept: ReadonlySet<string>;
+}
+
+const draftName = (space: string) => `top.${space}`;
+
+function readTop(space: string): Draft | undefined {
+  return draftOf(tabKept.json(draftName(space)));
+}
+
+/** A kept draft, read by its shape. */
+function draftOf(value: unknown): Draft | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { text, kept } = value as { text?: unknown; kept?: unknown };
+  if (typeof text !== "string" || text === "" || text.length > FIELD_MAX) return undefined;
+  const keys = Array.isArray(kept)
+    ? kept.filter((k): k is string => typeof k === "string" && k.length <= 100).slice(0, 50)
+    : [];
+  return { text, kept: new Set(keys) };
+}
+
+function keepTop(space: string, draft: Draft | undefined): void {
+  const value =
+    draft === undefined || draft.text === ""
+      ? undefined
+      : JSON.stringify({ text: draft.text, kept: [...draft.kept] });
+  if (tabKept.read(draftName(space)) !== value) tabKept.keep(draftName(space), value);
+}
 
 /** How long the search waits for typing to pause before it reads. */
 const QUIET_MS = 150;
 
 /** Drops `text` from the space's kept draft, unless the draft has become something else. */
 function forget(space: string, text: string): void {
-  if (drafts.get(space)?.text === text) drafts.delete(space);
+  if (readTop(space)?.text === text) keepTop(space, undefined);
 }
 
 /** What a chip shows: the value its words became. */
@@ -111,10 +144,10 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
   const searching = location.pathname === `/s/${space}/search`;
   const urlQuery = searching && typeof location.search.q === "string" ? location.search.q : "";
 
-  const [text, setText] = useState(() => drafts.get(space)?.text ?? "");
+  const [text, setText] = useState(() => readTop(space)?.text ?? "");
   const [query, setQuery] = useState(urlQuery);
   /** The keys of shortcuts the person kept as text, for as long as the draft lasts. */
-  const [kept, setKept] = useState<ReadonlySet<string>>(() => drafts.get(space)?.kept ?? new Set());
+  const [kept, setKept] = useState<ReadonlySet<string>>(() => readTop(space)?.kept ?? new Set());
   const [caret, setCaret] = useState(0);
   /** Focus is in the field or its panel: the panel shows. */
   const [within, setWithin] = useState(false);
@@ -143,8 +176,7 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
   }, [space]);
 
   useEffect(() => {
-    if (text === "") drafts.delete(space);
-    else drafts.set(space, { text, kept });
+    keepTop(space, text === "" ? undefined : { text, kept });
     if (text.trim() === "") setKept((known) => (known.size === 0 ? known : new Set()));
   }, [space, text, kept]);
 
@@ -347,7 +379,7 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
           className={styles.input}
           type="text"
           value={value}
-          maxLength={500}
+          maxLength={FIELD_MAX}
           placeholder={searching ? t("top.searchPlaceholder") : t("top.newTask")}
           aria-label={label}
           aria-keyshortcuts={ariaKeys(keysOf("search", singleKeys), mac)}
@@ -371,6 +403,15 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
           }}
           onSelect={(event) => {
             setCaret(event.currentTarget.selectionStart ?? 0);
+          }}
+          onPaste={(event) => {
+            // The field takes what fits and drops the rest: say so, the clipboard still has it.
+            const pasted = event.clipboardData.getData("text/plain").length;
+            const input = event.currentTarget;
+            const chosen = (input.selectionEnd ?? 0) - (input.selectionStart ?? 0);
+            if (input.value.length - chosen + pasted > FIELD_MAX) {
+              say(t("top.pasteCut", { count: FIELD_MAX }));
+            }
           }}
           onKeyDown={(event) => {
             const action = actionOf(event.nativeEvent, "field", singleKeys);

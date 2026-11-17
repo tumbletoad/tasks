@@ -83,13 +83,16 @@ test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () =>
     await page.unroute("**/api/v1/launch/list");
 
     // Connected: a click on the tile expands the row (A5 3.6) and never starts another launch;
-    // neither does the strip's button of the connected instance.
+    // neither does the strip's button of the connected instance, which says so.
     await main.click();
     await expect(main).toHaveAttribute("aria-expanded", "false");
     await tile.click();
     await expect(main).toHaveAttribute("aria-expanded", "true");
     await expect(strip).toHaveAttribute("data-state", "connected");
-    await strip.click();
+    await expect(strip).toHaveAttribute("aria-disabled", "true");
+    await expect(strip).toHaveAccessibleDescription(/already has this task open/u);
+    // Playwright waits for a control to be enabled: the click a person can still make is forced.
+    await strip.click({ force: true });
     await expect(main).toHaveAttribute("aria-expanded", "true");
     await page.waitForTimeout(1_000);
     expect(world.terminal()).toHaveLength(before + 1);

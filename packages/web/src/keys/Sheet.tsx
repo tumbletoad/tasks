@@ -35,6 +35,7 @@ const HEADINGS: Readonly<Record<KeyScope, MessageId>> = {
   list: "keys.inList",
   strip: "keys.inStrip",
   field: "keys.inField",
+  composer: "keys.inComposer",
 };
 
 /** The parts of the view a path shows: Settings has no list, Today has the week strip too. */
@@ -42,9 +43,9 @@ export function scopesOf(path: string): KeyScope[] {
   const rest = /^\/s\/[^/]+(\/.*)?$/.exec(path)?.[1] ?? "";
   if (/^\/settings(?:\/|$)/.test(rest)) return ["page", "field"];
   if (rest === "" || rest === "/" || /^\/today\/?$/.test(rest)) {
-    return ["page", "list", "strip", "field"];
+    return ["page", "list", "strip", "field", "composer"];
   }
-  return ["page", "list", "field"];
+  return ["page", "list", "field", "composer"];
 }
 
 export function Sheet({
