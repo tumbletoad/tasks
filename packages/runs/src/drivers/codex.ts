@@ -30,6 +30,7 @@ import {
   type RunPermission,
   type Usage,
 } from "@tasks/contracts/runs";
+import { realpathSync } from "node:fs";
 import { MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
 import { capText, count, nativeId, record, string, type Json } from "../streams/values.ts";
 import { LineRpc, NO_ANSWER, RPC_ERRORS, RpcClosed, RpcError } from "./json-rpc.ts";
@@ -37,6 +38,28 @@ import type { DriverSession, OpenDriver, Work } from "./types.ts";
 
 /** The arguments after the program that start Codex's app server. */
 export const CODEX_ARGS: readonly string[] = ["app-server"];
+
+/**
+ * Whether a folder the server reports is `folder`, as the file system resolves both: links, short
+ * names and, on Windows and macOS, case.
+ */
+export function sameFolder(
+  folder: string,
+  platform: NodeJS.Platform = process.platform,
+): (cwd: string) => boolean {
+  const real = (path: string): string | undefined => {
+    try {
+      const resolved = realpathSync.native(path);
+      return platform === "win32" || platform === "darwin" ? resolved.toLowerCase() : resolved;
+    } catch {
+      return undefined;
+    }
+  };
+  return (cwd) => {
+    const expected = real(folder);
+    return expected !== undefined && real(cwd) === expected;
+  };
+}
 
 /** Tasks' own MCP server for the thread: the bridge, with the run's ticket in its environment. */
 export interface CodexTools {
@@ -54,6 +77,11 @@ export interface CodexSession {
   readonly startMs?: number;
   /** What the client calls itself in `initialize`. */
   readonly client?: { readonly version: string };
+  /**
+   * Whether the folder the server says the thread works in is the run's. A program that changes
+   * folder before Codex starts (a wrapper script) would otherwise have the agent work elsewhere.
+   */
+  readonly inFolder?: (cwd: string) => boolean;
 }
 
 /** How each permission runs a Codex thread: no one is ever asked, the sandbox decides. */
@@ -206,9 +234,15 @@ export function codexDriver(session: CodexSession): OpenDriver {
     };
     /**
      * Commands started and not completed, of the run's thread and of the agents it started, by
-     * item, with the turn that started them.
+     * item, with the thread and turn that started them.
      */
-    const running = new Map<string, string | null>();
+    const running = new Map<string, { thread: string | null; turn: string | null }>();
+    /** Forgets the commands of a thread, or of one of its turns: nothing will say they ended. */
+    const forget = (thread: string | null, turn?: string | null): void => {
+      for (const [item, of] of running) {
+        if (of.thread === thread && (turn === undefined || of.turn === turn)) running.delete(item);
+      }
+    };
     /** Threads of agents the run's agent started that are working. */
     const children = new Set<string>();
     /** Whether a message is about the run's own thread, not one of an agent it started. */
@@ -226,7 +260,8 @@ export function codexDriver(session: CodexSession): OpenDriver {
     const finish = (outcome: OutcomeReason, error: string | null = null): void => {
       if (done) return;
       done = true;
-      const question = outcome === "needs_input" ? state.question : null;
+      // A question the agent asked is what the person acts on, however the run then ended.
+      const question = state.question;
       const text = question ?? state.answer?.text ?? null;
       settle({
         ok: outcome === "success",
@@ -343,7 +378,12 @@ export function codexDriver(session: CodexSession): OpenDriver {
           if (item === undefined) return;
           const id = string(item["id"]);
           if (item["type"] === "commandExecution" && id !== undefined) {
-            if (item["status"] === "inProgress") running.set(id, string(params["turnId"]) ?? null);
+            if (item["status"] === "inProgress") {
+              running.set(id, {
+                thread: string(params["threadId"]) ?? null,
+                turn: string(params["turnId"]) ?? null,
+              });
+            }
           }
           const label = labelOf(item);
           if (label !== undefined) report({ kind: "progress", label });
@@ -362,10 +402,12 @@ export function codexDriver(session: CodexSession): OpenDriver {
               const asked = [text.trim(), questionText({ questions: item["questions"] })]
                 .filter((part) => part !== "")
                 .join("\n");
-              state.question = capText(
+              const question = capText(
                 asked === "" ? "Codex asked a question." : asked,
                 ANSWER_CAP_BYTES,
-              ).text;
+              );
+              state.question = question.text;
+              report({ kind: "answer", text: question.text, cut: question.capped, final: false });
             } else if (
               text !== "" &&
               (phase === "final_answer" || phase === null || phase === undefined)
@@ -385,10 +427,9 @@ export function codexDriver(session: CodexSession): OpenDriver {
           if (turn === undefined) return;
           const id = string(turn["id"]);
           if (!ours(params)) {
-            children.delete(string(params["threadId"]) ?? "");
-            if (turn["status"] !== "completed") {
-              for (const [item, of] of running) if (of === id) running.delete(item);
-            }
+            const thread = string(params["threadId"]) ?? "";
+            children.delete(thread);
+            if (turn["status"] !== "completed") forget(thread, id ?? null);
             check();
             return;
           }
@@ -405,16 +446,21 @@ export function codexDriver(session: CodexSession): OpenDriver {
           check();
           return;
         }
-        case "thread/status/changed": {
-          // An agent the run's agent started works while its thread is active, and a thread that
-          // stops for any reason, a turn's end or its failure, stops its work.
+        case "thread/status/changed":
+        case "thread/closed": {
+          // An agent the run's agent started works while its thread is active. Idle, its turn
+          // ended and what it left in the background goes on; closed or failed, nothing of it
+          // will say it ended.
           const thread = string(params["threadId"]);
           if (ours(params) || thread === undefined) return;
-          if (record(params["status"])?.["type"] === "active") children.add(thread);
-          else {
-            children.delete(thread);
-            check();
+          const status = method === "thread/closed" ? "closed" : record(params["status"])?.["type"];
+          if (status === "active") {
+            children.add(thread);
+            return;
           }
+          children.delete(thread);
+          if (status !== "idle") forget(thread);
+          check();
           return;
         }
         case "error": {
@@ -473,6 +519,17 @@ export function codexDriver(session: CodexSession): OpenDriver {
           report({ kind: "native-id", id });
         }
         if (state.stopping || done) return;
+        const cwd = string(thread?.["cwd"]) ?? string(record(thread?.["thread"])?.["cwd"]);
+        if (cwd !== undefined && session.inFolder !== undefined && !session.inFolder(cwd)) {
+          finish(
+            "agent_error",
+            capText(
+              `Codex started in ${cwd}, not in the task's folder, so it was given no work. Its program may change folder before it starts.`,
+              TEXT_CAP_BYTES,
+            ).text,
+          );
+          return;
+        }
         const turn = record(
           await within(
             rpc.request("turn/start", {

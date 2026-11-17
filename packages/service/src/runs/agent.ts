@@ -18,7 +18,13 @@ import {
   type AgentBase,
   type Instance,
 } from "@tasks/launch";
-import { CODEX_ARGS, codexDriver, type AgentCommand, type StartRefusal } from "@tasks/runs";
+import {
+  CODEX_ARGS,
+  codexDriver,
+  sameFolder,
+  type AgentCommand,
+  type StartRefusal,
+} from "@tasks/runs";
 import type { ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
 
@@ -158,6 +164,7 @@ export async function buildRun(
     cwd: folder.path,
     env,
     open: codexDriver({
+      inFolder: sameFolder(folder.path, agents.platform),
       request: runBrief(task.ref, task.title, run.request),
       permission: run.permission,
       tools: {

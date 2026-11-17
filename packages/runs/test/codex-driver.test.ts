@@ -306,6 +306,77 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
     driver.close();
   });
 
+  test("a helper whose thread is closed while its command runs in the background no longer holds the run", async () => {
+    const { driver, fake, say } = bench({
+      fixture: "windows-plain",
+      notifications: [
+        { method: "turn/started", params: { threadId: CHILD, turn: { id: CHILD_TURN } } },
+        {
+          method: "item/started",
+          params: {
+            threadId: CHILD,
+            turnId: CHILD_TURN,
+            item: { type: "commandExecution", id: "exec-child", status: "inProgress" },
+          },
+        },
+        {
+          method: "turn/completed",
+          params: { threadId: CHILD, turn: { id: CHILD_TURN, status: "completed", error: null } },
+        },
+      ],
+    });
+    await fake.replayed;
+    // The helper's turn ended, and its command goes on in the background: the run waits.
+    expect(await settledNow(driver)).toBeUndefined();
+    say("thread/closed", { threadId: CHILD });
+    expect(await driver.settled).toEqual(done({ ok: true, text: "Fixture text." }));
+    driver.close();
+  });
+
+  test("a question the turn ended with is kept when the wait for its background work is stopped", async () => {
+    const { driver, fake } = bench({
+      fixture: "windows-plain",
+      notifications: [
+        {
+          method: "item/started",
+          params: { item: { type: "commandExecution", id: "exec-bg", status: "inProgress" } },
+        },
+        {
+          method: "item/completed",
+          params: {
+            item: {
+              type: "agentMessage",
+              id: "ask-2",
+              text: "",
+              phase: "final_answer",
+              delivery: "async",
+              questions: [{ title: "Keep the old export?" }],
+            },
+          },
+        },
+      ],
+    });
+    await fake.replayed;
+    expect(await settledNow(driver)).toBeUndefined();
+    driver.interrupt();
+    expect(await driver.settled).toEqual(
+      done({ ok: false, outcome: "interrupted", text: "Keep the old export?" }),
+    );
+    driver.close();
+  });
+
+  test("a thread the server says works in another folder than the run's is given no work", async () => {
+    const { driver, fake } = bench(
+      { fixture: "windows-plain" },
+      { inFolder: (cwd) => cwd === "C:\\Users\\mira\\code\\portal" },
+    );
+    const work = await driver.settled;
+    expect(work).toEqual(done({ ok: false, outcome: "agent_error" }));
+    expect(work.error).toContain("C:\\fixture\\work");
+    expect(sent(fake, "turn/start")).toEqual([]);
+    driver.close();
+  });
+
   test("an app server that ends while background work still runs: the work did not finish", async () => {
     const { driver, fake } = bench({
       fixture: "windows-plain",

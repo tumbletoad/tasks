@@ -13,6 +13,7 @@ import {
   codexDriver,
   RunHost,
   RunMachine,
+  sameFolder,
   UngroupedContainers,
   WindowsContainers,
   type Containers,
@@ -128,7 +129,11 @@ async function startRun(
     args: [...(program?.args ?? []), ...CODEX_ARGS],
     cwd: work,
     env,
-    open: codexDriver({ request: "Look into the export.", permission: "full-access" }),
+    open: codexDriver({
+      request: "Look into the export.",
+      permission: "full-access",
+      inFolder: sameFolder(work),
+    }),
   }));
   return queued.id;
 }

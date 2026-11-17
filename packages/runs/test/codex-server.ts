@@ -42,6 +42,8 @@ export interface FakeScenario {
   readonly pace?: number;
   /** The server goes on after its stdin ended, as a server that hangs would. */
   readonly ignoreEnd?: boolean;
+  /** The folder `thread/start` says the thread works in, in place of the recording's. */
+  readonly cwd?: string;
   /** Program mode: where each message the client sent is appended, as a JSON line. */
   readonly log?: string;
   /** Program mode: the stand-in census token. */
@@ -194,6 +196,19 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
   /** A server line as the replay sends it: the client's IDs, the scenario's answer. */
   const rewrite = (message: Json): Json => {
     if (!("method" in message) && "id" in message && ids.has(message["id"])) {
+      const result = isObject(message["result"]) ? message["result"] : undefined;
+      const started = isObject(result?.["thread"]) ? result["thread"] : undefined;
+      if (scenario.cwd !== undefined && typeof result?.["cwd"] === "string") {
+        return {
+          ...message,
+          id: ids.get(message["id"]),
+          result: {
+            ...result,
+            cwd: scenario.cwd,
+            ...(started === undefined ? {} : { thread: { ...started, cwd: scenario.cwd } }),
+          },
+        };
+      }
       return { ...message, id: ids.get(message["id"]) };
     }
     const params = isObject(message["params"]) ? message["params"] : undefined;
@@ -402,7 +417,11 @@ async function main(): Promise<void> {
   }
   // Never outlives a minute, so a broken container cannot leave it running for long.
   setTimeout(() => process.exit(124), 60_000).unref();
-  const fake = serveCodex(process.stdin, process.stdout, scenario);
+  // As the real server, the thread works in the folder the program was started in.
+  const fake = serveCodex(process.stdin, process.stdout, {
+    ...scenario,
+    cwd: scenario.cwd ?? process.cwd(),
+  });
   const code = await fake.done;
   process.exit(code);
 }
