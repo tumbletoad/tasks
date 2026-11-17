@@ -23,16 +23,15 @@ export const RUN_HELP = `Usage: ${CLI_NAME} run <task> [--instance <id>] [--wait
        ${CLI_NAME} run show <run>
        ${CLI_NAME} run stop <run>
 
-  <task>         Start a background run: an agent works on the task in its folder, on its own
-  list [<task>]  The newest runs of the space, or of one task, with their state
-  show <run>     A run's state and its answer
-  stop <run>     Stop a run: the agent is asked to stop, then ended with what it started
+  <task>             Start a background run: an agent works on the task in its folder, on its own
+  list [<task>]      The newest runs of the space, or of one task, with their state
+  show <run>         A run's state and its answer
+  stop <run>         Stop a run: the agent is asked to stop, then ended with what it started
 
-  --instance <id>  The agent instance to use, when more than one can run tasks
-  --wait           Wait for the run to end and print its answer
-  <request>        Your words for the agent; - reads them from stdin. Without them it works on
-                   the task.
-
+  --instance <id>    The agent instance to use, when more than one can run tasks
+  --wait             Wait for the run to end and print its answer
+  <request>          Your words for the agent; - reads them from stdin. Without them it works
+                     on the task.
 A run has full access unless its instance names a narrower run_permission: it may do whatever
 your agent setup allows, without asking. Only you can start one, from a terminal.
 `;

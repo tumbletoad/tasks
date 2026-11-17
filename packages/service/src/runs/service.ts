@@ -301,10 +301,15 @@ export class RunService {
       wallMs: settings.wallMs,
       idleMs: settings.idleMs,
     };
-    const queued = await hosted.machine.queue({ ...input, limits }, requestId);
-    if (queued.state === "queued") this.#commands.set(queued.id, command);
-    void this.#supervisor.round();
-    return queued;
+    // No round may take the run before its command is known.
+    const hold = this.#supervisor.hold();
+    try {
+      const queued = await hosted.machine.queue({ ...input, limits }, requestId);
+      if (queued.state === "queued") this.#commands.set(queued.id, command);
+      return queued;
+    } finally {
+      hold.release();
+    }
   }
 
   /**
