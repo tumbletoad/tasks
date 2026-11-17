@@ -4064,6 +4064,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.12.m5-12.web-apps",
+      "title": "The page's agent apps: the first start proposes every switch that can be on, Settings shows them as they stand, Apply sends only switches that can be turned over, and a newer view keeps the person's choices that can still be made",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-12.page-apps",
       "title": "Over HTTP as the page calls them: a space from a name alone, each app's two switches with what they write, one click that adds and one that takes out again, a home that changed since the view written nowhere with the new view returned, and a space not served or a switch named twice refused",
       "owner": "M5",

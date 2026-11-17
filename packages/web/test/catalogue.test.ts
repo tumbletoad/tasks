@@ -86,6 +86,12 @@ const SAMPLE = {
   search: "Ctrl K",
   version: "0.2.0",
   running: "0.1.0",
+  prefix: "W",
+  host: "codex_app",
+  file: "~/.claude.json",
+  part: "tools",
+  on: "yes",
+  apps: "Codex",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

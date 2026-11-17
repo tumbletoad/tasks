@@ -7,7 +7,15 @@
 // through the store's `useLive()` (store/hooks.ts), and creates and stops a `Live` here, nowhere
 // else. A stopped `Live` never comes back (its store takes no more messages), so every mount (a
 // new sign-in, another space, a reload) creates a fresh one.
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Api } from "../api.ts";
 import { Session, type SessionValue } from "../context.ts";
 import { Live } from "../live.ts";
@@ -37,6 +45,13 @@ export function useMachineApi(): Api {
   return api;
 }
 
+/**
+ * Starts the tab's live session of its space again, with a fresh snapshot: what Open offers comes
+ * with a snapshot, so a change to the agent apps shows on the tiles at once.
+ */
+export const RefreshContext = createContext<() => void>(() => undefined);
+export const useRefreshSession = (): (() => void) => useContext(RefreshContext);
+
 /** The live session of one space: its calls name it, its feed subscribes to it. */
 export function SpaceSession({
   space,
@@ -51,6 +66,10 @@ export function SpaceSession({
   const machine = useRef(control);
   machine.current = control;
   const [value, setValue] = useState<SessionValue | undefined>(undefined);
+  const [round, setRound] = useState(0);
+  const refresh = useCallback(() => {
+    setRound((n) => n + 1);
+  }, []);
   useEffect(() => {
     const api = new Api(auth.token, auth.build, () => space);
     const live = new Live({
@@ -70,7 +89,11 @@ export function SpaceSession({
     return () => {
       live.stop();
     };
-  }, [auth, space]);
+  }, [auth, space, round]);
   if (value === undefined) return null;
-  return <Session.Provider value={value}>{children}</Session.Provider>;
+  return (
+    <RefreshContext.Provider value={refresh}>
+      <Session.Provider value={value}>{children}</Session.Provider>
+    </RefreshContext.Provider>
+  );
 }
