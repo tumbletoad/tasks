@@ -25,7 +25,15 @@ import {
   statSync,
   writeSync,
 } from "node:fs";
+import {
+  mkdir as mkdirAsync,
+  open as openAsync,
+  rename as renameAsync,
+  rm as rmAsync,
+  type FileHandle,
+} from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 /**
  * Sets the mode of the file or folder open at `fd` to exactly `mode` (POSIX). Windows keeps the
@@ -241,6 +249,82 @@ export function atomicWrite(
     }
   } catch (error) {
     rmSync(temp, { force: true });
+    throw error;
+  }
+}
+
+// The same writes for a person's own folders, which may be on a volume that stops answering (a
+// network share): they never hold the process while it waits, so a caller can stop waiting.
+
+/** As makeDir with `recursive: false`: only `dir`, in a folder that exists; EEXIST when taken. */
+export async function makeDirAsync(
+  dir: string,
+  mode: number,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  await mkdirAsync(dir, { mode });
+  if (platform === "win32") return;
+  const handle = await openAsync(
+    dir,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  try {
+    const uid = process.getuid?.();
+    if (uid !== undefined && (await handle.stat()).uid !== uid) {
+      throw Object.assign(new Error("A folder this call made belongs to another user"), {
+        code: "EPERM",
+      });
+    }
+    await handle.chmod(mode);
+  } finally {
+    await handle.close();
+  }
+}
+
+/** As createFile: a new file, exclusively, with exactly `mode`; the open handle. */
+export async function createFileAsync(
+  path: string,
+  mode: number,
+  platform: NodeJS.Platform = process.platform,
+): Promise<FileHandle> {
+  const handle = await openAsync(path, "wx", mode);
+  try {
+    if (platform !== "win32") await handle.chmod(mode);
+  } catch (error) {
+    await handle.close();
+    await rmAsync(path, { force: true });
+    throw error;
+  }
+  return handle;
+}
+
+/** As atomicWrite: a temporary file beside `path`, written whole and flushed, renamed over it. */
+export async function atomicWriteAsync(path: string, text: string, mode: number): Promise<void> {
+  const temp = join(
+    dirname(path),
+    `${tempPrefix(basename(path))}${String(process.pid)}.${randomBytes(4).toString("hex")}${TEMP_SUFFIX}`,
+  );
+  const handle = await createFileAsync(temp, mode);
+  try {
+    try {
+      await handle.writeFile(text, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await renameAsync(temp, path);
+        return;
+      } catch (error) {
+        const code = codeOf(error);
+        const busy = code === "EPERM" || code === "EBUSY" || code === "EACCES";
+        if (!busy || attempt >= RENAME_TRIES) throw error;
+        await sleep(RENAME_PAUSE_MS);
+      }
+    }
+  } catch (error) {
+    await rmAsync(temp, { force: true });
     throw error;
   }
 }

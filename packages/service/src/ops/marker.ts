@@ -9,11 +9,17 @@
 // undo may give an owner back a folder, and only a folder that was marked for that owner can have
 // lost its marker. A folder Tasks cannot write to (read-only, a share) gets no marker and is
 // opened as before: that is the limit of the protection, not a refusal.
-import { closeSync, lstatSync, readFileSync, rmdirSync, rmSync } from "node:fs";
-import { lstat, readFile, stat } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { lstat, readFile, rm, rmdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { FOLDER_MARKER, PRODUCT_NAME } from "@tasks/brand";
-import { atomicWrite, createFile, makeDir, writeAll } from "@tasks/files";
+import {
+  atomicWrite,
+  atomicWriteAsync,
+  createFileAsync,
+  makeDir,
+  makeDirAsync,
+} from "@tasks/files";
 import { folderKey } from "@tasks/storage";
 import { bounded, openPath, osOf } from "./folders.ts";
 
@@ -98,13 +104,13 @@ export async function readMarker(absolute: string): Promise<MarkerRead> {
 const codeOf = (error: unknown): unknown => (error as NodeJS.ErrnoException | null)?.code;
 
 /** Whether `dir` is a folder itself, not a link to one. */
-const isOwnFolder = (dir: string): boolean => {
+async function isOwnFolder(dir: string): Promise<boolean> {
   try {
-    return lstatSync(dir).isDirectory();
+    return (await lstat(dir)).isDirectory();
   } catch {
     return false;
   }
-};
+}
 
 const IGNORE_ALL = "*\n";
 
@@ -114,20 +120,24 @@ const IGNORE_ALL = "*\n";
  * False when the folder takes no marker: it cannot be written, or something that is not a folder
  * has the marker's name.
  */
-function addOwnerNow(absolute: string, owner: MarkerOwner, before: MarkerRead): boolean {
+async function addOwnerNow(
+  absolute: string,
+  owner: MarkerOwner,
+  before: MarkerRead,
+): Promise<boolean> {
   if (before.state === "unreadable") return false;
   const dir = join(absolute, FOLDER_MARKER);
   try {
-    makeDir(dir, 0o755, { recursive: false });
+    await makeDirAsync(dir, 0o755);
   } catch (error) {
-    if (codeOf(error) !== "EEXIST" || !isOwnFolder(dir)) return false;
+    if (codeOf(error) !== "EEXIST" || !(await isOwnFolder(dir))) return false;
   }
   try {
-    const fd = createFile(join(dir, ".gitignore"), 0o644);
+    const handle = await createFileAsync(join(dir, ".gitignore"), 0o644);
     try {
-      writeAll(fd, IGNORE_ALL);
+      await handle.writeFile(IGNORE_ALL, "utf8");
     } finally {
-      closeSync(fd);
+      await handle.close();
     }
   } catch (error) {
     if (codeOf(error) !== "EEXIST") return false;
@@ -135,7 +145,7 @@ function addOwnerNow(absolute: string, owner: MarkerOwner, before: MarkerRead): 
   const owners = before.state === "owners" ? before.owners : [];
   if (owners.some((o) => same(o, owner))) return true;
   try {
-    atomicWrite(join(dir, MARKER_OWNERS), textOf([...owners, owner]), 0o644);
+    await atomicWriteAsync(join(dir, MARKER_OWNERS), textOf([...owners, owner]), 0o644);
     return true;
   } catch {
     return false;
@@ -143,29 +153,27 @@ function addOwnerNow(absolute: string, owner: MarkerOwner, before: MarkerRead): 
 }
 
 /** Takes `owner` off the marker at `absolute`; the marker goes when no owner is left. */
-function removeOwnerNow(absolute: string, owner: MarkerOwner, before: MarkerRead): void {
+async function removeOwnerNow(
+  absolute: string,
+  owner: MarkerOwner,
+  before: MarkerRead,
+): Promise<void> {
   if (before.state !== "owners") return;
   const dir = join(absolute, FOLDER_MARKER);
   const left = before.owners.filter((o) => !same(o, owner));
-  if (left.length === before.owners.length) return;
-  if (!isOwnFolder(dir)) return;
+  if (left.length === before.owners.length || !(await isOwnFolder(dir))) return;
   try {
     if (left.length > 0) {
-      atomicWrite(join(dir, MARKER_OWNERS), textOf(left), 0o644);
+      await atomicWriteAsync(join(dir, MARKER_OWNERS), textOf(left), 0o644);
       return;
     }
-    rmSync(join(dir, MARKER_OWNERS), { force: true });
+    await rm(join(dir, MARKER_OWNERS), { force: true });
     // An ignore file with other words in it is the person's, and stays.
     const ignore = join(dir, ".gitignore");
-    let words: string | undefined;
-    try {
-      words = readFileSync(ignore, "utf8");
-    } catch {
-      words = undefined;
-    }
-    if (words === IGNORE_ALL) rmSync(ignore, { force: true });
+    const words = await readFile(ignore, "utf8").catch(() => undefined);
+    if (words === IGNORE_ALL) await rm(ignore, { force: true });
     // Only when nothing else is in it: a file a person put there stays, and so does the folder.
-    rmdirSync(dir);
+    await rmdir(dir);
   } catch {
     // A marker that cannot be changed stays as it is: it names an owner, and harms nothing.
   }
@@ -233,7 +241,10 @@ export type MarkerCheck =
   /** This machine marked the folder for this owner, and its marker now names others only. */
   | { readonly kind: "other"; readonly owners: readonly MarkerOwner[] };
 
-/** How long a look at a marker, or a change to one, may take. */
+/**
+ * How long a look at a marker, or a change to one, is waited for. A folder on a share that stops
+ * answering holds only its own write, never the service.
+ */
 const MARKER_MS = 2_000;
 
 /**
@@ -291,7 +302,7 @@ export class FolderMarkers {
       if (open === undefined) return false;
       const before = await bounded(() => readMarker(open), MARKER_MS);
       if (before === "not_answering") return false;
-      const done = addOwnerNow(open, owner, before);
+      const done = (await bounded(() => addOwnerNow(open, owner, before), MARKER_MS)) === true;
       if (done) this.#marks.set(this.#key(owner, stored), true);
       return done;
     });
@@ -304,7 +315,9 @@ export class FolderMarkers {
       const open = await this.#folder(stored);
       if (open === undefined) return;
       const before = await bounded(() => readMarker(open), MARKER_MS);
-      if (before !== "not_answering") removeOwnerNow(open, owner, before);
+      if (before !== "not_answering") {
+        await bounded(() => removeOwnerNow(open, owner, before), MARKER_MS);
+      }
     });
   }
 
@@ -340,7 +353,9 @@ export class FolderMarkers {
         if (read.state === "none") return { kind: "missing" };
         return { kind: "other", owners: read.state === "owners" ? read.owners : [] };
       }
-      if (addOwnerNow(open, owner, read)) this.#marks.set(key, true);
+      if ((await bounded(() => addOwnerNow(open, owner, read), MARKER_MS)) === true) {
+        this.#marks.set(key, true);
+      }
       return { kind: "ok" };
     });
   }

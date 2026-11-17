@@ -14,6 +14,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -67,6 +68,12 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
     const dir = join(folder, FOLDER_MARKER);
     expect(readdirSync(dir).sort()).toEqual([".gitignore", MARKER_OWNERS]);
     expect(readFileSync(join(dir, ".gitignore"), "utf8")).toBe("*\n");
+    if (process.platform !== "win32") {
+      // Exactly these modes, whatever the umask.
+      expect(statSync(dir).mode & 0o777).toBe(0o755);
+      expect(statSync(join(dir, ".gitignore")).mode & 0o777).toBe(0o644);
+      expect(statSync(join(dir, MARKER_OWNERS)).mode & 0o777).toBe(0o644);
+    }
     const held = JSON.parse(readFileSync(join(dir, MARKER_OWNERS), "utf8")) as {
       about: string;
       owners: unknown[];
