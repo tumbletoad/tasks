@@ -85,10 +85,10 @@ const OS = {
   },
 } as const;
 
-const values = { task: "M-14", title: "Fix appointment time zones", reference: REF } as const;
+const values = { task: "M-14", reference: REF } as const;
 
 describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compared as arrays", () => {
-  test("Claude Code's terminal route: --session-id, -n with the reference and title, the permission, extra arguments, then the brief after --", () => {
+  test("Claude Code's terminal route: --session-id, -n with the task's reference, the permission, extra arguments, then the brief after --", () => {
     const linux = cliArgv(OS.linux.claude, "sent", {
       ...values,
       session: SESSION,
@@ -101,7 +101,7 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
         "--session-id",
         SESSION,
         "-n",
-        "M-14 Fix appointment time zones",
+        "M-14",
         "--permission-mode",
         "bypassPermissions",
         "--model",
@@ -124,7 +124,7 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
         "--session-id",
         SESSION,
         "-n",
-        "M-14 Fix appointment time zones",
+        "M-14",
         "--",
         BRIEF,
       ],
@@ -211,18 +211,17 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
     expect(isUncPath("/home/mira/work")).toBe(false);
   });
 
-  test("hostile values stay one element each: a brief or title is never split or read as an option", () => {
+  test("hostile values stay one element each: a brief is never split or read as an option", () => {
     const hostile = '--help "; rm -rf ~ & echo %PATH% ^| `x` $(y)\ntwo\\';
     const built = cliArgv(OS.linux.claude, "sent", {
       ...values,
-      title: hostile.replace(/\n/gu, " "),
       session: SESSION,
       brief: hostile,
       toolEnv: [],
     });
     expect(built.argv.at(-1)).toBe(hostile);
     expect(built.argv.at(-2)).toBe("--");
-    expect(built.argv[4]).toBe(`M-14 ${hostile.replace(/\n/gu, " ")}`);
+    expect(built.argv[4]).toBe("M-14");
     expect(built.argv).toHaveLength(11);
   });
 

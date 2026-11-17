@@ -368,7 +368,7 @@
         {
           "field": "text",
           "flag": "--text",
-          "help": "Your words for the agent: they replace the brief's last line",
+          "help": "Your words for the agent: it reads them with the task",
           "repeat": false,
           "required": false,
           "type": "string"

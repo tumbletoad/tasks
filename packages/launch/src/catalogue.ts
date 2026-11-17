@@ -40,7 +40,7 @@ export interface RouteDef {
   readonly nativeId: "preset" | "returned" | "bridge" | "reference-match" | "none";
   /** The app's hard limit in characters; null when there is none (A4 3.15.3). */
   readonly maxPrompt: number | null;
-  /** Tasks's cap for brief plus composer text (A4 3.15.3). */
+  /** Tasks's cap for the brief; for Copy, the brief with the person's words. */
   readonly budget: number;
   readonly trust: "once-per-root" | "every-launch" | "project" | "none" | "unknown";
   readonly needsGui: boolean;
@@ -176,7 +176,7 @@ export const CATALOGUE: readonly TargetDef[] = [
           "--session-id",
           "{session}",
           "-n",
-          "{task.id} {task.title}",
+          "{task.id}",
           "{permission}",
           "{extra_args}",
           "--",
@@ -398,7 +398,11 @@ export const HOME_VARIABLES: readonly string[] = [
  */
 export const WHOLE_ELEMENT_PLACEHOLDERS = ["exec", "permission", "extra_args", "tool_env"] as const;
 
-/** Every placeholder of an argv or URL template, and where it may appear. */
+/**
+ * Every placeholder of an argv or URL template, and where it may appear. None stands for task
+ * text or the person's words: other accounts, shell histories and app logs can read a command
+ * line or a link, so the brief is a pointer and the task's title is not offered.
+ */
 export const PLACEHOLDERS: Readonly<Record<string, { argv: boolean; url: boolean }>> = {
   exec: { argv: true, url: false },
   permission: { argv: true, url: false },
@@ -406,10 +410,8 @@ export const PLACEHOLDERS: Readonly<Record<string, { argv: boolean; url: boolean
   tool_env: { argv: true, url: false },
   cwd: { argv: true, url: true },
   brief: { argv: true, url: true },
-  brief_file: { argv: true, url: false },
   session: { argv: true, url: true },
   "task.id": { argv: true, url: true },
-  "task.title": { argv: true, url: true },
   "launch.ref": { argv: true, url: true },
 };
 

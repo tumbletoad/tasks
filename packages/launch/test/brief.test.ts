@@ -1,8 +1,8 @@
 // The brief and its sanitiser (A4 3.15, A4 5.1 "Sanitiser properties", "Brief renderer", "Hostile
-// input tests"). The brief is what an agent reads as its first instructions, built from task data
-// that anyone may have written: these tests show that no title, path or label can leave its fence
-// (the title's quotes on the first line, the folder line) or add a line, whatever it holds, and
-// that a brief is never cut. Fixture data only.
+// input tests"). The brief is what an agent reads as its first instructions, and an Open route puts
+// it on a command line or in a link: these tests show that it holds no task text and never the
+// person's words on an Open route, that no path or label of Copy's pointer can leave its line or
+// add one, whatever it holds, and that a brief is never cut. Fixture data only.
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { PRODUCT_NAME } from "@tasks/brand";
@@ -15,6 +15,7 @@ import {
   NOTE_LINE,
   REFERENCE_SLOT,
   renderBrief,
+  REQUEST_LINE,
   sanitiseComposer,
   sanitisePath,
   sanitiseTitle,
@@ -35,7 +36,6 @@ const NAMES = { server: "tasks", tool: "get_task", command: "tasks show" } as co
 const base = (over: Partial<BriefInput> = {}): BriefInput => ({
   kind: "sent",
   task: "M-14",
-  title: "Fix appointment time zones",
   reference: REF,
   budget: 8000,
   names: NAMES,
@@ -174,7 +174,7 @@ describe("[A4.5.brief.sanitiser] the brief's sanitiser: properties and hostile t
 describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, nothing truncated", () => {
   test("the sent brief is A4 3.15.2's five lines; prefilled ends empty; the pointer adds the folder and the context-pack lines", () => {
     expect(okText(base()).split("\n")).toEqual([
-      `${PRODUCT_NAME} task M-14 "Fix appointment time zones" (launch ${REF}).`,
+      `${PRODUCT_NAME} task M-14 (launch ${REF}).`,
       ...fixedLines(REF),
       WAIT_LINE,
     ]);
@@ -216,20 +216,18 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
     );
   });
 
-  test("no hostile title, folder or label leaves its fence: the template's lines stay exactly as they are", () => {
+  test("no hostile folder or label leaves its line: the template's lines stay exactly as they are", () => {
     const inputs = fc.record({
-      title: titles,
       machine: titles,
       path: titles,
       found: fc.boolean(),
       kind: fc.constantFrom("sent" as const, "prefilled" as const, "pointer" as const),
     });
     fc.assert(
-      fc.property(inputs, ({ title, machine, path, found, kind }) => {
+      fc.property(inputs, ({ machine, path, found, kind }) => {
         const text = okText(
           base({
             kind,
-            title,
             // Room for the hostile paths, which may be as long as the longest piece twice over.
             budget: 200_000,
             folder:
@@ -239,11 +237,7 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
           }),
         );
         const lines = text.split("\n");
-        expect(lines[0]).toBe(
-          `${PRODUCT_NAME} task M-14 "${sanitiseTitle(title)}" (launch ${REF}).`,
-        );
-        // The title's quotes are the only double quotes on its line.
-        expect((lines[0] ?? "").split('"')).toHaveLength(3);
+        expect(lines[0]).toBe(`${PRODUCT_NAME} task M-14 (launch ${REF}).`);
         expect(lines.slice(1, 4)).toEqual(fixedLines(REF));
         if (kind === "sent") expect(lines).toEqual([lines[0], ...fixedLines(REF), WAIT_LINE]);
         if (kind === "prefilled") expect(lines).toHaveLength(5);
@@ -258,33 +252,58 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
         expect(isBriefSafe(text, true)).toBe(true);
         expect(Buffer.from(text, "utf8").toString("utf8")).toBe(text);
         // The reference a reader takes from the brief (Codex's reference match) is its own,
-        // whatever references the title quotes.
+        // whatever references a folder quotes.
         expect(briefReference(text)).toBe(REF);
       }),
       { numRuns: 1500 },
     );
   });
 
-  test("composer text replaces the last line; over budget it becomes a note and the last line points at it; never cut", () => {
+  test("an Open route's brief never carries the person's words: its last line says the request comes with the task, and the words are handed back to hold, whatever their length", () => {
+    const words = 'Look at "the failing test" first.\nThen fix the zone offset. Café ✓';
+    for (const kind of ["sent", "prefilled"] as const) {
+      const brief = renderBrief(base({ kind, composer: words, budget: 1000 }));
+      expect(brief).toMatchObject({ status: "ok", composer: "held", composerText: words });
+      if (brief.status !== "ok") return;
+      expect(brief.text.split("\n")).toEqual([
+        `${PRODUCT_NAME} task M-14 (launch ${REF}).`,
+        ...fixedLines(REF),
+        REQUEST_LINE,
+      ]);
+      expect(brief.text).not.toContain("failing test");
+    }
+    // A request far over every route's budget is held whole: the brief does not grow with it.
+    const long = "Please read this first. ".repeat(900);
+    const held = renderBrief(base({ composer: long, budget: 1000 }));
+    expect(held).toMatchObject({ status: "ok", composer: "held", composerText: long });
+    // Whitespace alone is no request.
+    expect(renderBrief(base({ composer: " \n " }))).toMatchObject({ composer: "none" });
+    // Over budget without words: refused for the route, never cut.
+    expect(renderBrief(base({ budget: 200 }))).toEqual({ status: "too_long" });
+  });
+
+  test("Copy's words follow the pointer on the clipboard; over Copy's budget they become a note and the last line points at it; never cut", () => {
+    const pointer = (over: Partial<BriefInput>): BriefInput =>
+      base({
+        kind: "pointer",
+        budget: 20_000,
+        folder: { kind: "folder", path: "~/work/lumen/portal", found: true },
+        ...over,
+      });
     const words = "Look at the failing test first.\nThen fix the zone offset.";
-    const sent = renderBrief(base({ composer: words }));
-    expect(sent).toMatchObject({ status: "ok", composer: "inline", removed: false });
-    if (sent.status !== "ok") return;
-    expect(sent.text.split("\n").slice(4)).toEqual(words.split("\n"));
+    const inline = renderBrief(pointer({ composer: words }));
+    expect(inline).toMatchObject({ status: "ok", composer: "inline", removed: false });
+    if (inline.status !== "ok") return;
+    expect(inline.text.split("\n").slice(6)).toEqual(words.split("\n"));
 
     const long = "Please ".repeat(200);
-    const link = renderBrief(base({ kind: "prefilled", composer: long, budget: 1000 }));
-    expect(link).toMatchObject({ status: "ok", composer: "note", composerText: long });
-    if (link.status !== "ok") return;
-    expect(link.text.split("\n").at(-1)).toBe(NOTE_LINE);
-    expect(link.text.length).toBeLessThanOrEqual(1000);
-    expect(link.text).not.toContain("Please");
-
-    // Over budget without composer text: refused for the route, never cut.
-    expect(renderBrief(base({ budget: 200 }))).toEqual({ status: "too_long" });
-    expect(renderBrief(base({ budget: 200, composer: long }))).toEqual({ status: "too_long" });
-    // Whitespace alone is no composer text.
-    expect(renderBrief(base({ composer: " \n " }))).toMatchObject({ composer: "none" });
+    const noted = renderBrief(pointer({ composer: long, budget: 1000 }));
+    expect(noted).toMatchObject({ status: "ok", composer: "note", composerText: long });
+    if (noted.status !== "ok") return;
+    expect(noted.text.split("\n").at(-1)).toBe(NOTE_LINE);
+    expect(noted.text.length).toBeLessThanOrEqual(1000);
+    expect(noted.text).not.toContain("Please");
+    expect(renderBrief(pointer({ budget: 200, composer: long }))).toEqual({ status: "too_long" });
   });
 
   test("every composer text renders: Unicode's line and paragraph separators and NEL are line breaks, and no input makes the renderer refuse its own output", () => {
@@ -292,54 +311,62 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
       text: "one\ntwo\nthree\nfour",
       removed: false,
     });
-    const inline = renderBrief(base({ composer: `first${cp(0x2028)}second` }));
+    const inline = renderBrief(
+      base({
+        kind: "pointer",
+        composer: `first${cp(0x2028)}second`,
+        folder: { kind: "folder", path: "~/work/portal", found: true },
+      }),
+    );
     expect(inline).toMatchObject({ status: "ok", composer: "inline" });
     if (inline.status === "ok")
-      expect(inline.text.split("\n").slice(4)).toEqual(["first", "second"]);
-    // Whatever the title, the folder and the person's words hold, the renderer gives a brief:
-    // what the sanitiser keeps is exactly what the shape check accepts.
+      expect(inline.text.split("\n").slice(6)).toEqual(["first", "second"]);
+    // Whatever the folder and the person's words hold, the renderer gives a brief: what the
+    // sanitiser keeps is exactly what the shape check accepts. An Open route's never holds them.
     const inputs = fc.record({
-      title: titles,
       composer: titles,
       path: titles,
       kind: fc.constantFrom("sent" as const, "prefilled" as const, "pointer" as const),
     });
     fc.assert(
-      fc.property(inputs, ({ title, composer, path, kind }) => {
+      fc.property(inputs, ({ composer, path, kind }) => {
         const brief = renderBrief(
-          base({
-            kind,
-            title,
-            composer,
-            budget: 200_000,
-            folder: { kind: "folder", path, found: true },
-          }),
+          base({ kind, composer, budget: 200_000, folder: { kind: "folder", path, found: true } }),
         );
         expect(brief.status).toBe("ok");
-        if (brief.status === "ok") expect(isBriefSafe(brief.text, true)).toBe(true);
+        if (brief.status !== "ok") return;
+        expect(isBriefSafe(brief.text, true)).toBe(true);
+        if (kind !== "pointer") {
+          const last = brief.composer === "held" ? REQUEST_LINE : kind === "sent" ? WAIT_LINE : "";
+          expect(brief.text.split("\n").slice(4)).toEqual([last]);
+        }
       }),
       { numRuns: 1500 },
     );
   });
 
-  test("the hash covers the brief with its reference as a slot and the composer text as a marker", () => {
+  test("the hash covers the brief with its reference as a slot and the person's words as a marker", () => {
     const one = renderBrief(base());
     const again = renderBrief(base({ reference: OTHER_REF }));
     const slot = renderBrief(base({ reference: REFERENCE_SLOT }));
-    const other = renderBrief(base({ title: "Another title" }));
     const withText = renderBrief(base({ composer: "first words" }));
     const otherText = renderBrief(base({ composer: "other words" }));
-    if ([one, again, slot, other, withText, otherText].some((b) => b.status !== "ok")) {
-      throw new Error("expected briefs");
-    }
+    const copied = (composer: string) =>
+      renderBrief(
+        base({ kind: "pointer", composer, folder: { kind: "work_folder", absolute: undefined } }),
+      );
+    const copyOne = copied("first words");
+    const copyOther = copied("other words");
+    const all = [one, again, slot, withText, otherText, copyOne, copyOther];
+    if (all.some((b) => b.status !== "ok")) throw new Error("expected briefs");
     const hash = (b: typeof one): string => (b.status === "ok" ? b.hash : "");
     expect(hash(one)).toMatch(/^[0-9a-f]{64}$/);
     expect(hash(again)).toBe(hash(one));
     expect(hash(slot)).toBe(hash(one));
     expect(hash(slot)).toBe(briefHash(slot.status === "ok" ? slot.text : ""));
-    expect(hash(other)).not.toBe(hash(one));
     expect(hash(withText)).not.toBe(hash(one));
     expect(hash(otherText)).toBe(hash(withText));
+    expect(hash(copyOther)).toBe(hash(copyOne));
   });
 
   test("a reference, a task reference or a name of the wrong form is refused, never rendered", () => {

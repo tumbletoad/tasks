@@ -2482,7 +2482,7 @@
             "type": "string"
           },
           "text": {
-            "description": "Your words for the agent: they replace the brief's last line",
+            "description": "Your words for the agent: it reads them with the task",
             "maxLength": 65536,
             "type": "string"
           }
@@ -2609,11 +2609,12 @@
             "type": "object"
           },
           "text": {
-            "description": "Where your words went: none given, in the brief, or saved as a note",
+            "description": "Your words: none, in the copy, saved as a note, or held for the agent",
             "enum": [
               "none",
               "inline",
-              "note"
+              "note",
+              "held"
             ],
             "type": "string"
           }
@@ -5048,6 +5049,11 @@
                 "description": "This call bound the session",
                 "type": "boolean"
               },
+              "request": {
+                "description": "The user's request for this launch: do it",
+                "maxLength": 65536,
+                "type": "string"
+              },
               "task": {
                 "additionalProperties": false,
                 "description": "The task",
@@ -5636,6 +5642,11 @@
               "bound": {
                 "description": "This call bound the session",
                 "type": "boolean"
+              },
+              "request": {
+                "description": "The user's request for this launch: do it",
+                "maxLength": 65536,
+                "type": "string"
               },
               "sections": {
                 "additionalProperties": false,

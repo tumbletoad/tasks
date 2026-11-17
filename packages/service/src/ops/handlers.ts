@@ -231,9 +231,11 @@ export interface OpsHost {
   readonly resultMismatch?: (entry: string) => void;
 }
 
-/** What `launch.open` needs of the launch service (launch/service.ts). */
+/** What `launch.open` and `task.get` need of the launch service (launch/service.ts). */
 export interface LaunchPort {
   openTask(request: OpenTaskRequest): Promise<OpenTaskResult>;
+  /** The person's words for a launch's agent, recorded as read; undefined when none are held. */
+  requestFor?(space: string, launch: string): string | undefined;
 }
 
 /** `op/call`'s params (A2 3.6.4). */
@@ -1883,6 +1885,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     let task: string;
     // Whether this call bound the connection, or found it bound already to what it asked for.
     let bound = false;
+    let launchId: string | undefined;
     if (typeof input["launch"] === "string") {
       // A3 3.7.3: bind by the launch reference, then load its task. A connection that
       // cannot hold a binding resolves the reference for this call only.
@@ -1892,6 +1895,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         bound = await bindWith(call, await bindings.redeem(slot, launch), launch.taskRef);
       }
       task = launch.task;
+      launchId = launch.id;
     } else {
       task = await taskOf(call);
     }
@@ -1914,11 +1918,19 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         bound = await bindWith(call, await bindings.bindTask(slot, read.space.id, id), undefined);
       }
     }
+    // The person's words for this launch's agent, held by the launch service since the click: served
+    // after the task was read, so a call that fails never counts as the agent having them.
+    const words =
+      launchId === undefined
+        ? undefined
+        : call.host.launches?.requestFor?.(read.space.id, launchId);
+    const request = words === undefined ? {} : { request: words };
     if (asked.length === 0) {
       return {
         view: "digest",
         as_of: read.space.asOf,
         bound,
+        ...request,
         task: digestOf(read, call.today, await digestFolder(call, read.folder)),
       };
     }
@@ -1928,6 +1940,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       view: "sections",
       as_of: read.space.asOf,
       bound,
+      ...request,
       task: taskRow(read.row, read.space.refPrefix),
       sections: page.sections,
       ...(page.before === undefined ? {} : { before: page.before }),

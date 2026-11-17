@@ -8,7 +8,8 @@
 // the page refetches when the change feed names a launch.
 //
 // No text of a task, brief or composer travels here: a receipt holds IDs, states, instants and
-// fixed codes only, as the launch record does.
+// fixed codes only, as the launch record does, and whether the launch's agent read the person's
+// request yet, which only this computer knows.
 import { AppError } from "@tasks/contracts";
 import {
   INSTANCE_KEY,
@@ -43,6 +44,8 @@ export interface UiInstance {
 export interface UiLaunchPort {
   instances(): readonly UiInstance[];
   onChange?(listener: (space: string) => void): () => void;
+  /** Whether a launch's request waits for its agent or was read; undefined when none is held. */
+  requestState?(launch: string): "waiting" | "read" | undefined;
 }
 
 /** A launch receipt as the page shows it (A5 3.9). IDs, states, instants and codes only. */
@@ -61,6 +64,13 @@ export interface UiReceipt {
    * launch recorded by a build that did not record them.
    */
   readonly terminal?: { readonly app: string; readonly source: string };
+  /**
+   * The person's words this launch holds for its agent: waiting until the agent read them,
+   * 
+ead once it did. Absent when it holds none, or no longer does (its launch ended, or this
+   * service restarted after it ended).
+   */
+  readonly request?: "waiting" | "read";
 }
 
 const MONOGRAM = /^[A-Za-z0-9]{1,2}$/;
@@ -205,6 +215,13 @@ export class UiLaunches {
     const reader = this.#space(spaceRef).reader;
     if (reader === undefined) throw invalid("The space is not served.", "space");
     const rows = await reader.all(LIST_SQL, { task });
-    return rows.flatMap((r) => receiptOf(r) ?? []).reverse();
+    const port = this.#options.port;
+    return rows
+      .flatMap((r) => receiptOf(r) ?? [])
+      .map((receipt) => {
+        const request = port?.requestState?.(receipt.id);
+        return request === undefined ? receipt : { ...receipt, request };
+      })
+      .reverse();
   }
 }

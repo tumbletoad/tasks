@@ -723,6 +723,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
             }
             return service.openTask(request);
           },
+          requestFor: (space: string, launch: string) =>
+            launching.service?.requestFor(space, launch),
         },
       },
       bindings,
