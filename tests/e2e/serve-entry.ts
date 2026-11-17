@@ -11,6 +11,7 @@ import "../../packages/bridge/src/safe-exit.ts";
 import { createInterface } from "node:readline";
 import { packageIdentity } from "../../packages/service/src/hub/identity.ts";
 import { runServe } from "../../packages/service/src/hub/serve.ts";
+import { twoTerminalsHost } from "../../packages/service/test/harness.ts";
 import { fakeTerminal } from "./fake-terminal.ts";
 
 const ui = process.env["E2E_UI"];
@@ -27,6 +28,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 const code = await runServe({
   identity: () => ({ root: false, elevated: false, package: packageIdentity(process.env) }),
   http: { ports: [0], persist: false, ui },
-  launch: { terminal: fakeTerminal(record) },
+  // Settings lists the terminals detection finds: the same two on every OS the tests run on.
+  launch: { terminal: fakeTerminal(record), terminals: { host: twoTerminalsHost } },
 });
 process.exit(code);

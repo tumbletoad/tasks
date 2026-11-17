@@ -3919,6 +3919,70 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.12.m5-11.machine-settings",
+      "title": "The theme and the single-letter keys are set and reset in machine.toml over the page's route with the person's own lines kept, every open tab's feed and a new one follow, the shell paints the theme, a restart reads them; Open's terminal says which one and why, chooses among those found (taking the old one's path out) and goes back to the default",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-11.machine-page",
+      "title": "The page's copy of this computer's settings: a change shows at once, stays once the service kept it even before the feed says so, and goes back when the service refuses it",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-11.tips",
+      "title": "The tooltip shows for the mouse only once it has stayed on a control a moment, and at once for keyboard focus",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-11.keymap",
+      "title": "One keymap for the handlers and the shortcut sheet: no two actions reachable at once share a key under the handlers' own matcher, no browser-reserved chord is taken, single keys fire on the character typed (Shift, AltGr) and never in a field, a composition, a typing widget, a dialog, with Ctrl, Cmd or Alt, or while turned off; Ctrl+K searches from a field, Ctrl+Z stays the field's",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-11.e2e.theme",
+      "title": "In Chromium and Firefox against the real service: a theme chosen in Settings shows at once, a second tab follows live, a fresh browser profile is served in it from the first paint with nothing in its storage, and a theme an older build kept in a browser is handed to this computer once",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-11.e2e.terminal",
+      "title": "In Chromium and Firefox against the real service: Settings says which terminal Open uses and why, lists the terminals found, keeps another one across a reload and goes back to this computer's default",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-11.e2e.keys",
+      "title": "In Chromium and Firefox: n, / and Ctrl+K reach the top field and ? the sheet of the view's keys; none fires while typing, composing, with Alt or inside the sheet; with single-letter keys off none fires, Ctrl+K does, the hint and the sheet say so; the tooltip shows on hover and keyboard focus, Escape closes a hover label and nothing else, and on a focused control goes with what Escape closes there",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-11.e2e.screens",
+      "title": "In Chromium and Firefox: Settings and the shortcut sheet in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
+      "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-01.e2e.task-links",
       "title": "In Chromium and Firefox: a task link opened on a machine without a default keeps its task through the space chooser, and a navigation from one task's route to another's, and Back, expands the task each route names",
       "source": "A5 3.3, A2 3.1, A7 3.12 M5.01",

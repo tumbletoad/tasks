@@ -28,6 +28,7 @@ import {
 import { Session } from "../context.ts";
 import { areaSlots, type Group } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
+import { actionOf, is } from "../keys/keymap.ts";
 import { formatDay, type Clock } from "../row/dates.ts";
 import type { TaskRow } from "../store/rows.ts";
 import { useClock } from "../row/useClock.ts";
@@ -101,7 +102,7 @@ export function TodayPage({ task, day: wantedDay, onExpand, onDay }: TodayProps)
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // Escape clears the day once nothing inside (an expanded task, an editor) has taken it.
-    if (event.key === "Escape" && !event.defaultPrevented && day !== undefined) {
+    if (is(event.nativeEvent, "close") && !event.defaultPrevented && day !== undefined) {
       event.preventDefault();
       onDay(undefined);
     }
@@ -143,15 +144,18 @@ function Strip({
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const at = cells.current.findIndex((cell) => cell === event.target);
     if (at < 0) return;
+    const action = actionOf(event.nativeEvent, "strip", true);
+    if (action !== "day" && action !== "day-ends") return;
     const rtl = getComputedStyle(event.currentTarget).direction === "rtl";
-    const moves: Readonly<Record<string, number>> = {
-      ArrowRight: rtl ? at - 1 : at + 1,
-      ArrowLeft: rtl ? at + 1 : at - 1,
-      Home: 0,
-      End: days.length - 1,
-    };
-    const to = moves[event.key];
-    if (to === undefined) return;
+    const forward = (event.key === "ArrowRight") !== rtl;
+    const to =
+      action === "day-ends"
+        ? event.key === "Home"
+          ? 0
+          : days.length - 1
+        : forward
+          ? at + 1
+          : at - 1;
     event.preventDefault();
     cells.current[Math.max(0, Math.min(days.length - 1, to))]?.focus();
   };

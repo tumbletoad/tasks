@@ -117,7 +117,14 @@ function SourceLine({
     link === undefined ? (
       <span dir="auto">{own}</span>
     ) : (
-      <a href={link.href} target="_blank" rel={LINK_REL} data-tip={tip} title={tip} dir="auto">
+      <a
+        href={link.href}
+        target="_blank"
+        rel={LINK_REL}
+        data-tip={tip}
+        aria-description={tip}
+        dir="auto"
+      >
         {own}
       </a>
     );
@@ -235,12 +242,7 @@ function PlaceLine({
       <span className={styles.icon} aria-hidden="true">
         <FolderIcon />
       </span>
-      <span
-        className={styles.muted}
-        data-fact=""
-        data-tip={t("place.workFolderTip")}
-        title={t("place.workFolderTip")}
-      >
+      <span className={styles.muted} data-fact="" data-tip={t("place.workFolderTip")}>
         {t("place.workFolder")}
       </span>
     </li>
@@ -338,8 +340,8 @@ function Strip({ task, receipts, instances, actions }: ExpandedProps) {
         type="button"
         className={styles.button}
         aria-label={t("row.copyFor", { title: task.title })}
+        aria-description={t("row.copyTip")}
         data-tip={t("row.copyTip")}
-        title={t("row.copyTip")}
         onClick={(event) => {
           actions.copy(task, event.shiftKey);
         }}

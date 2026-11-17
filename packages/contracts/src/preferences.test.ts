@@ -72,7 +72,8 @@ describe("[A1.3.16.prefs.registry] every preference is declared once, with a sha
   test("A1 3.16's keys and A3 3.8.2's policy keys are declared as the plan names them", () => {
     const table = PREFERENCES.map((p) => [p.key, p.scope, p.policy, p.writers.join("+")]);
     expect(table).toEqual([
-      ["ui.theme", "space", false, "human+agent"],
+      ["ui.theme", "machine", false, "human"],
+      ["ui.single_keys", "machine", false, "human"],
       ["tasks.statuses", "space", false, "human+agent"],
       ["tasks.effort_scale", "space", false, "human"],
       ["tasks.dedupe_window_days", "space", false, "human"],

@@ -27,6 +27,7 @@ import {
   type AdapterApp,
 } from "./commands.ts";
 import {
+  installedTerminals,
   terminalChoice,
   type ChainEntry,
   type TerminalChoice,
@@ -50,10 +51,12 @@ export interface TerminalLauncherOptions {
   readonly shimCommand: readonly string[] | undefined;
   /**
    * Detection's view of this machine, with the session's variables, the person's PATH and, on
-   * Windows, the default terminal setting read now.
+   * Windows, the default terminal setting read now. `offered`: it must also answer which terminals
+   * a person can choose, not only what the choice needs.
    */
   readonly host: (
     session: Readonly<Record<string, string>>,
+    offered: boolean,
   ) => TerminalHost | Promise<TerminalHost>;
   /**
    * Whether the program a command runs is there, right before its spawn, without blocking the
@@ -84,12 +87,24 @@ export interface TerminalStartInput {
 export class TerminalLauncher {
   readonly #o: TerminalLauncherOptions;
   readonly #spawn: Spawner;
+  #settings: TerminalSettings;
   /** The scope probe's answer, once per start of the service. */
   #scopes: Promise<boolean> | undefined;
 
   constructor(options: TerminalLauncherOptions) {
     this.#o = options;
+    this.#settings = options.settings;
     this.#spawn = options.spawn ?? osSpawner;
+  }
+
+  /** machine.toml's `[terminal]` as the next launch uses it. */
+  get settings(): TerminalSettings {
+    return this.#settings;
+  }
+
+  /** The person chose another terminal: the next launch and doctor use it. */
+  set settings(next: TerminalSettings) {
+    this.#settings = next;
   }
 
   /**
@@ -134,7 +149,19 @@ export class TerminalLauncher {
 
   /** The choice a launch now would make: settings over what this machine has now (doctor). */
   async choose(session: Readonly<Record<string, string>>): Promise<TerminalChoice> {
-    return terminalChoice(this.#o.settings, await this.#o.host(session));
+    return terminalChoice(this.#settings, await this.#o.host(session, false));
+  }
+
+  /** The choice a launch now would make, and the terminals a person can choose from here. */
+  async options(
+    session: Readonly<Record<string, string>>,
+  ): Promise<{ choice: TerminalChoice; installed: AdapterApp[] }> {
+    const settings = this.#settings;
+    const host = await this.#o.host(session, true);
+    return {
+      choice: terminalChoice(settings, host),
+      installed: installedTerminals(settings, host),
+    };
   }
 
   /**
@@ -152,8 +179,9 @@ export class TerminalLauncher {
       return { outcome: { kind: "refused", reason: "refused" }, attempts: [], scoped: false };
     }
     const scoped = await this.scopes(input.env);
-    const host = await this.#o.host(input.session);
-    const chain = terminalChoice(this.#o.settings, host).chain;
+    const host = await this.#o.host(input.session, false);
+    const settings = this.#settings;
+    const chain = terminalChoice(settings, host).chain;
     const run = this.#o.systemdRun;
     const build = (entry: ChainEntry, ticket: string, attempt: number) => {
       const command = terminalCommand({
@@ -161,8 +189,8 @@ export class TerminalLauncher {
         program: entry.program,
         shim: [...product, "shim", ticket],
         platform: this.#o.platform,
-        window: this.#o.settings.window,
-        ...(this.#o.settings.custom === undefined ? {} : { custom: this.#o.settings.custom }),
+        window: settings.window,
+        ...(settings.custom === undefined ? {} : { custom: settings.custom }),
         ...(entry.linkKind === undefined ? {} : { linkKind: entry.linkKind }),
       });
       if ("refused" in command) return command;

@@ -11,7 +11,7 @@
 //   /s/:space/area/:area/project/:project   a project of it
 //   /s/:space/search?q=                     search results of the top field (`?task=` too)
 //   /s/:space/task/:id                      a task link: resolved to its host view (host.ts)
-//   /s/:space/settings/:section             settings (M5.11; Appearance here)
+//   /s/:space/settings                    Settings (an older `settings/:section` link lands there)
 //
 // A view, an area or a project with `?task=<ref>` holds that task expanded (A5 3.3): expanding a
 // row writes it there, so a reload, Back and Forward keep the expansion, and the link stays a
@@ -29,7 +29,7 @@ import {
 import { SPACE_ID, SEGMENT } from "../route.ts";
 import { Landing } from "./Landing.tsx";
 import { AreaPage, SearchPage, TaskPage, ViewPage } from "./pages.tsx";
-import { SettingsPage, SETTINGS_SECTIONS } from "./Settings.tsx";
+import { SettingsPage } from "./Settings.tsx";
 import { SpaceSession } from "./session.tsx";
 import { Shell } from "./Shell.tsx";
 import { isView, LANDING } from "./views.ts";
@@ -149,20 +149,16 @@ const taskRoute = createRoute({
 
 const settingsRoute = createRoute({
   getParentRoute: () => spaceRoute,
+  path: "settings",
+  component: SettingsPage,
+});
+
+const settingsSectionRoute = createRoute({
+  getParentRoute: () => spaceRoute,
   path: "settings/$section",
-  component: function SettingsRoute() {
-    const { space, section } = settingsRoute.useParams();
-    const known = SETTINGS_SECTIONS.find((s) => s === section);
-    if (known === undefined) {
-      return (
-        <Navigate
-          to="/s/$space/settings/$section"
-          params={{ space, section: SETTINGS_SECTIONS[0] }}
-          replace
-        />
-      );
-    }
-    return <SettingsPage section={known} />;
+  component: function SettingsSection() {
+    const { space } = settingsSectionRoute.useParams();
+    return <Navigate to="/s/$space/settings" params={{ space }} replace />;
   },
 });
 
@@ -176,6 +172,7 @@ const routeTree = rootRoute.addChildren([
     searchRoute,
     taskRoute,
     settingsRoute,
+    settingsSectionRoute,
   ]),
 ]);
 

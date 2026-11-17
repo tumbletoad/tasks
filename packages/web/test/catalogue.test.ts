@@ -82,6 +82,7 @@ const SAMPLE = {
   open: 3,
   done: 1,
   more: "yes",
+  search: "Ctrl K",
   version: "0.2.0",
   running: "0.1.0",
 };

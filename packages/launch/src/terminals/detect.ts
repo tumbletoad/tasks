@@ -420,6 +420,30 @@ export function autoChoice(host: TerminalHost): TerminalChoice {
   };
 }
 
+/**
+ * Whether machine.toml's custom command has its program: written in the command, or the `path`
+ * that its `{terminal}` stands for.
+ */
+export function customReady(settings: TerminalSettings): boolean {
+  if (settings.custom === undefined) return false;
+  return !settings.custom.includes("{terminal}") || (settings.path ?? "") !== "";
+}
+
+/**
+ * The terminals a person can choose here: each adapter whose program is found, in the order
+ * `auto` tries them when no default names one, and the custom command when it has its program.
+ */
+export function installedTerminals(settings: TerminalSettings, host: TerminalHost): AdapterApp[] {
+  const apps: AdapterApp[] =
+    host.platform === "win32"
+      ? ["wt", "console"]
+      : host.platform === "linux"
+        ? [...LINUX_ORDER, "x-terminal-emulator"]
+        : [];
+  const found = apps.filter((app) => entryFor(host, app, "installed").program !== undefined);
+  return customReady(settings) ? [...found, "custom"] : found;
+}
+
 /** The terminals `auto` would pick, best first, that are installed here. */
 export function autoOrder(host: TerminalHost): ChainEntry[] {
   return autoChoice(host).chain;
@@ -675,18 +699,20 @@ export interface ProgramFacts {
  * blocking the service: a stalled folder on PATH must not hold up an Open, or anything else the
  * service does meanwhile. It runs the choice against what was found so far, looks at the first thing
  * it asked for and did not know, and repeats until it asks for nothing new: the same looks, in the
- * same order, as a choice that waited for each answer.
+ * same order, as a choice that waited for each answer. With `offered`, then also the terminals a
+ * person can choose, which an Open does not need.
  */
 export async function readProgramFacts(
   settings: TerminalSettings,
   host: TerminalHost,
   probe: FileProbe,
+  { offered = false }: { offered?: boolean } = {},
 ): Promise<ProgramFacts> {
   const executable = new Map<string, boolean>();
   const real = new Map<string, string | undefined>();
   for (;;) {
     const ask: { next?: { path: string; kind: "x" | "r" } } = {};
-    terminalChoice(settings, {
+    const asking: TerminalHost = {
       ...host,
       executable: (path) => {
         if (!executable.has(path)) ask.next ??= { path, kind: "x" };
@@ -696,7 +722,9 @@ export async function readProgramFacts(
         if (!real.has(path)) ask.next ??= { path, kind: "r" };
         return real.get(path);
       },
-    });
+    };
+    terminalChoice(settings, asking);
+    if (offered && ask.next === undefined) installedTerminals(settings, asking);
     const next = ask.next;
     if (next === undefined) return { executable, realpath: real };
     // Only the first unknown: what the choice asks after it depends on its answer, so a folder
