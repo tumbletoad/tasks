@@ -76,7 +76,16 @@
         "/home/mira/ok.toml"
       ]
     },
-    "preferences": {}
+    "preferences": {},
+    "runs": {
+      "limits": {
+        "runs": 3,
+        "perInstance": 2,
+        "perTask": 2
+      },
+      "wallMs": 3600000,
+      "idleMs": 1200000
+    }
   },
   "problems": [
     {
@@ -177,6 +186,16 @@
     {
       "key": "setup.managed.paths[1]",
       "code": "not_absolute",
+      "severity": "error"
+    },
+    {
+      "key": "runs.at_once",
+      "code": "invalid_value",
+      "severity": "error"
+    },
+    {
+      "key": "runs.max_minutes",
+      "code": "wrong_type",
       "severity": "error"
     }
   ]

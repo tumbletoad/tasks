@@ -155,14 +155,11 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     }
   });
 
-  test("a run moves along A4's edges: claim, start, evidence, result and times", () => {
+  test("a run moves along A4's edges: start, evidence, result and times", () => {
     const id = create();
     expectStatus(move(id, "queued", "starting"), "applied");
     time += 1_000;
-    expectStatus(
-      move(id, "starting", "starting", { evidence: { claim: "claim-1", claimed_at: time } }),
-      "applied",
-    );
+    expectStatus(move(id, "starting", "starting", { evidence: { pid: 4242 } }), "applied");
     time += 1_000;
     expectStatus(
       move(id, "starting", "running", { evidence: { pid: 4242, pid_started_at: time } }),
@@ -180,8 +177,6 @@ describe("[A1.5.write.runs] run records through the write path", () => {
       state: "succeeded",
       reason: null,
       evidence: {
-        claim: "claim-1",
-        claimed_at: started - 1_000,
         pid: 4242,
         pid_started_at: started,
         native_id: "thread-1",
@@ -210,13 +205,13 @@ describe("[A1.5.write.runs] run records through the write path", () => {
       code: "INVALID_TRANSITION",
       field: "expect",
     });
-    expectStatus(move(id, "starting", "starting", { evidence: { claim: "claim-1" } }), "applied");
+    expectStatus(move(id, "starting", "starting", { evidence: { pid: 4242 } }), "applied");
     expect(move(id, "starting", "running", { expect_version: version }).error).toMatchObject({
       code: "INVALID_TRANSITION",
       field: "expect_version",
     });
-    // A Stop decided on the unclaimed record is refused once the claim moved its version, even with
-    // the state unchanged, and a transition without a version is refused outright.
+    // A Stop decided on the record before the agent's PID is refused once the PID moved its version,
+    // even with the state unchanged, and a transition without a version is refused outright.
     expect(move(id, "starting", "cancelled", { expect_version: version }).error).toMatchObject({
       code: "INVALID_TRANSITION",
       field: "expect_version",
@@ -229,12 +224,13 @@ describe("[A1.5.write.runs] run records through the write path", () => {
       field: "ops[0].expect_version",
     });
     expect(fx.writer.run(id)?.state).toBe("starting");
-    expect(
-      move(id, "starting", "starting", { evidence: { claim: "claim-2" } }).error,
-    ).toMatchObject({ code: "INVALID_TRANSITION", field: "evidence.claim" });
+    expect(move(id, "starting", "starting", { evidence: { pid: 4343 } }).error).toMatchObject({
+      code: "INVALID_TRANSITION",
+      field: "evidence.pid",
+    });
     // The same evidence again is no change.
-    expectStatus(move(id, "starting", "starting", { evidence: { claim: "claim-1" } }), "unchanged");
-    expectStatus(move(id, "starting", "unknown", { reason: "lost" }), "applied");
+    expectStatus(move(id, "starting", "starting", { evidence: { pid: 4242 } }), "unchanged");
+    expectStatus(move(id, "starting", "unknown", { reason: "stop_timed_out" }), "applied");
     expectStatus(
       move(id, "unknown", "failed", { reason: "agent_error", result: { ...RESULT, ok: false } }),
       "applied",
@@ -261,7 +257,7 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     expect(move(id, "starting", "failed", { reason: "wall" }).error).toMatchObject({
       field: "reason",
     });
-    expect(move(id, "starting", "running", { reason: "lost" }).error).toMatchObject({
+    expect(move(id, "starting", "running", { reason: "stop_timed_out" }).error).toMatchObject({
       field: "reason",
     });
     expect(move(id, "starting", "running", { result: RESULT }).error).toMatchObject({
@@ -357,7 +353,7 @@ describe("[A1.5.write.runs] run records through the write path", () => {
     time += 1;
     const c = create({ task: taskId });
     expectStatus(move(c, "queued", "cancelled"), "applied");
-    // A stop that timed out stays listed, because a later exit still settles it; a lost run not.
+    // A stop that timed out stays listed, because a later confirmation still settles it.
     const stopped = (reason: string): Id<"ru"> => {
       time += 1;
       const id = create({ task: taskId });
@@ -367,7 +363,6 @@ describe("[A1.5.write.runs] run records through the write path", () => {
       return id;
     };
     const waits = stopped("stop_timed_out");
-    stopped("lost");
     expect(fx.writer.openRuns(TEST_MACHINE).map((r) => r.id)).toEqual([a, b, waits]);
     expect(fx.writer.openRuns(newId("m"))).toEqual([]);
     expect(fx.writer.openRuns("not a machine")).toEqual([]);

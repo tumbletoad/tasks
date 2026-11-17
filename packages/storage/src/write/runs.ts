@@ -40,7 +40,7 @@ export const FINAL_RUN_STATES = [
 ] as const satisfies readonly RunState[];
 
 export const RUN_EDGES: Readonly<Record<RunState, readonly RunState[]>> = {
-  queued: ["starting", "cancelled"],
+  queued: ["starting", "cancelled", "failed"],
   starting: ["starting", "running", "failed", "cancelling", "cancelled", "reconciling", "unknown"],
   running: [
     "running",
@@ -63,8 +63,9 @@ export const RUN_EDGES: Readonly<Record<RunState, readonly RunState[]>> = {
 
 export const RUN_REASONS: Readonly<Partial<Record<RunState, readonly string[]>>> = {
   failed: [
-    "not_claimed",
-    "verify_failed",
+    "task_closed",
+    "instance_gone",
+    "folder_gone",
     "spawn_failed",
     "start_timed_out",
     "service_ended",
@@ -77,17 +78,14 @@ export const RUN_REASONS: Readonly<Partial<Record<RunState, readonly string[]>>>
     "no_output",
   ],
   timed_out: ["wall", "idle"],
-  unknown: ["lost", "stop_timed_out"],
+  unknown: ["stop_timed_out"],
 };
 
 export const RUN_EVIDENCE_FIELDS = {
-  claim: "id",
-  claimed_at: "instant",
   pid: "count",
   pid_started_at: "instant",
   native_id: "id",
-  folder_checked: "flag",
-} as const satisfies Record<string, "id" | "instant" | "count" | "flag">;
+} as const satisfies Record<string, "id" | "instant" | "count">;
 
 /** An ID in a run's evidence or result: plain characters only. */
 export const RUN_EVIDENCE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;

@@ -778,6 +778,20 @@ export class LaunchService {
     return { stored: folder.path, path };
   }
 
+  /**
+   * Whether the folder a task opens in here resolves now: what a background run checks before it
+   * starts, so it works where a launch would, and never in another machine's stead.
+   */
+  async folderUsable(space: string, folder: TaskFolder): Promise<boolean> {
+    let planned: PlanFolder | null;
+    try {
+      planned = this.#planFolder(folder);
+    } catch {
+      return false;
+    }
+    return (await this.resolveFolder(space, planned)).status === "ok";
+  }
+
   /** The route an instance takes here now (chooseRoute). Throws LaunchUnavailable. */
   #route(instance: Instance): Choice {
     return chooseRoute(instance, {

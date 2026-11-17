@@ -16,8 +16,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { renderPlist, renderUnit } from "../src/install/render.ts";
-import { applyPlan, planInstall } from "../src/install/commands.ts";
+import { renderPlist, renderUnit, withDelegate } from "../src/install/render.ts";
+import { applyPlan, delegateUnit, planInstall } from "../src/install/commands.ts";
 import { serviceEntry } from "../src/install/entries.ts";
 import {
   captureIO,
@@ -630,6 +630,46 @@ describe.skipIf(!posix)(
         "<plist><dict><key>Label</key><string>other</string></dict></plist>\n",
       );
       expect((await run(fake, "install")).code).toBe(4);
+    });
+  },
+);
+
+describe.skipIf(!posix)(
+  "[A2.3.3.3.service-install.delegate] tasks update gives a unit an earlier version wrote what background runs need",
+  () => {
+    test("Linux: a unit an earlier version wrote without Delegate=yes gets it, its other bytes kept, and systemd reads it again; a unit that says otherwise, or is not this install's, stays", async () => {
+      const fake = fakeContext({ platform: "linux", dir, tools: { linger: "no" } });
+      const unitDir = fake.ctx.roots.unitDir;
+      const unitPath = join(unitDir, UNIT);
+      const current = renderUnit({ program: fake.ctx.program, tasksHome: fake.ctx.layout.root });
+      const delegate = /^# Background runs.*\nDelegate=yes\n/m;
+      expect(current).toMatch(delegate);
+      // What an earlier version wrote, with a value the person tuned.
+      const earlier = current.replace(delegate, "").replace("RestartSec=2", "RestartSec=7");
+      mkdirSync(unitDir, { recursive: true });
+      writeFileSync(unitPath, earlier);
+      expect(await delegateUnit(fake.ctx)).toBe(true);
+      expect(readFileSync(unitPath, "utf8")).toBe(current.replace("RestartSec=2", "RestartSec=7"));
+      expect(changes(fake)).toEqual(["systemctl --user daemon-reload"]);
+      // Once it has the line, and for a unit that says otherwise, nothing changes.
+      expect(await delegateUnit(fake.ctx)).toBe(false);
+      const refused = earlier.replace("KillMode=mixed", "KillMode=mixed\nDelegate=no");
+      writeFileSync(unitPath, refused);
+      expect(await delegateUnit(fake.ctx)).toBe(false);
+      expect(readFileSync(unitPath, "utf8")).toBe(refused);
+      const foreign = `${earlier}ExecStartPre=/usr/bin/true\n`;
+      writeFileSync(unitPath, foreign);
+      expect(await delegateUnit(fake.ctx)).toBe(false);
+      expect(readFileSync(unitPath, "utf8")).toBe(foreign);
+      expect(changes(fake)).toEqual(["systemctl --user daemon-reload"]);
+      // The section's end is found whatever follows it; a continued last line is left alone.
+      expect(
+        withDelegate("[Service]\nExecStart=/x serve\n\n[Install]\nWantedBy=default.target\n"),
+      ).toBe(
+        "[Service]\nExecStart=/x serve\n# Background runs: each in a child cgroup of this unit, which the service manages itself.\nDelegate=yes\n\n[Install]\nWantedBy=default.target\n",
+      );
+      expect(withDelegate("[Service]\nEnvironment=A=1 \\\n[Install]\n")).toBeUndefined();
+      expect(withDelegate("[Unit]\nDescription=x\n")).toBeUndefined();
     });
   },
 );

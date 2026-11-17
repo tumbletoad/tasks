@@ -68,6 +68,10 @@ export const RPC_METHODS = {
   "feed/subscribe": CLI,
   "service/status": CLI,
   "service/shutdown": OPERATOR,
+  // `tasks update`: hold new runs back while the update waits for the running ones, and stop them
+  // when the person says so. Not an agent's: the update restarts the service.
+  "runs/hold": OPERATOR,
+  "runs/stop_held": OPERATOR,
   "ui/mint_code": OPERATOR,
   // `tasks service port <n> [--reuse]` (A2 3.8.2 step 5): the person resolves a foreign holder.
   "service/port": USER,

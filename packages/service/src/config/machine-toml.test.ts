@@ -187,6 +187,7 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
         "instance",
         "approvals",
         "setup",
+        "runs",
       ]),
     );
   });

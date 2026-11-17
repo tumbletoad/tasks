@@ -130,7 +130,16 @@
         "/home/mira/dotfiles/codex"
       ]
     },
-    "preferences": {}
+    "preferences": {},
+    "runs": {
+      "limits": {
+        "runs": 4,
+        "perInstance": 2,
+        "perTask": 1
+      },
+      "wallMs": 5400000,
+      "idleMs": 900000
+    }
   },
   "problems": [
     {

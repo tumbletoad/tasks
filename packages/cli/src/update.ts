@@ -1,4 +1,4 @@
-// `tasks update --from <archive> | --rollback | --repair [--yes]` (A2 3.12.6, A7 3.13 M6.12): the
+// `tasks update --from <archive> | --rollback | --repair [--yes] [--stop-runs]`: the
 // installed version replaces itself from a local release archive, goes back to the version before
 // the last switch, or finishes an update that was cut off. The updater is the service's
 // (`@tasks/service/version-update`), loaded only for this command; it verifies the archive with
@@ -6,9 +6,11 @@
 //
 // It runs only through the install's own command, which runs the version current names: an
 // installed version vouches for its successor, never another one. An agent's shell may not run it,
-// as it may not stop the service (A2 3.3.5, 3.12.6): the update restarts it. Before the
+// as it may not stop the service: the update restarts it. Before the
 // restart it asks once in a terminal; `--yes` answers for a script, and without a terminal and
-// without `--yes` nothing is changed (exit 2).
+// without `--yes` nothing is changed (exit 2). The restart ends background runs: the update waits
+// for them, then asks whether to stop them; `--stop-runs` answers for a script, and without a
+// terminal and without it the update is given up with nothing changed (exit 2).
 import { resolve } from "node:path";
 import { PRODUCT_NAME } from "@tasks/brand";
 import { hostFacts } from "@tasks/service/paths";
@@ -20,19 +22,27 @@ import { migrationLines } from "./migrations.ts";
 import { printUsage } from "./output.ts";
 
 export const UPDATE_USAGE =
-  "tasks update --from <archive> [--yes], tasks update --rollback [--yes] or tasks update --repair";
+  "tasks update --from <archive> [--yes] [--stop-runs], tasks update --rollback [--yes] [--stop-runs] or tasks update --repair [--stop-runs]";
+
+interface Answers {
+  readonly yes: boolean;
+  /** Background runs still running after the wait are stopped without a question. */
+  readonly stopRuns: boolean;
+}
 
 type Parsed =
-  | { readonly verb: "from"; readonly archive: string; readonly yes: boolean }
-  | { readonly verb: "rollback" | "repair"; readonly yes: boolean };
+  | ({ readonly verb: "from"; readonly archive: string } & Answers)
+  | ({ readonly verb: "rollback" | "repair" } & Answers);
 
 function parse(args: readonly string[]): Parsed | undefined {
   let verb: Parsed["verb"] | undefined;
   let archive: string | undefined;
   let yes = false;
+  let stopRuns = false;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === "--yes" && !yes) yes = true;
+    else if (arg === "--stop-runs" && !stopRuns) stopRuns = true;
     else if (arg === "--from" && verb === undefined && args[i + 1] !== undefined) {
       verb = "from";
       archive = args[i + 1];
@@ -42,7 +52,9 @@ function parse(args: readonly string[]): Parsed | undefined {
     } else return undefined;
   }
   if (verb === undefined) return undefined;
-  return verb === "from" ? { verb, archive: archive ?? "", yes } : { verb, yes };
+  return verb === "from"
+    ? { verb, archive: archive ?? "", yes, stopRuns }
+    : { verb, yes, stopRuns };
 }
 
 export async function updateCommand(
@@ -82,8 +94,8 @@ export async function updateCommand(
     );
   }
   const control = update.osServiceControl(ctx, io.env);
+  const ask = io.tty.stdin && io.tty.stdout ? install.processIO().ask : undefined;
   if (parsed.verb !== "repair" && !parsed.yes && (await control.running()) !== undefined) {
-    const ask = io.tty.stdin && io.tty.stdout ? install.processIO().ask : undefined;
     if (ask === undefined) {
       return fail(
         "The update restarts the service. Run it again with --yes to go ahead without a question.",
@@ -91,10 +103,23 @@ export async function updateCommand(
       );
     }
     const yes = await ask(
-      "The update restarts the service. Sessions and runs keep running and reconnect. Restart now? [y/N] ",
+      "The update restarts the service. Sessions keep running and reconnect; background runs are waited for first. Restart now? [y/N] ",
     );
     if (!yes) return fail("Nothing was changed.", 2);
   }
+  // Runs still running once the wait is over: the option answers for a script, a person is asked,
+  // and without either the update is given up, so no run a person waits for ends unasked.
+  const decide = async (): Promise<"stop" | "give_up"> => {
+    if (parsed.stopRuns) return "stop";
+    if (ask === undefined) {
+      io.stderr("Run it again when they finished, or with --stop-runs to stop them.\n");
+      return "give_up";
+    }
+    const stop = await ask(
+      "Stop these runs and update now? Each keeps its answer so far. No gives up the update. [y/N] ",
+    );
+    return stop ? "stop" : "give_up";
+  };
   const options = {
     facts: hostFacts(io.env, io.platform),
     keys: UPDATE_KEYS,
@@ -104,6 +129,7 @@ export async function updateCommand(
     say: (line: string) => {
       if (!globals.json) io.stdout(`${line}\n`);
     },
+    runs: { decide },
   };
   const began = Date.now();
   let result: UpdateResult;

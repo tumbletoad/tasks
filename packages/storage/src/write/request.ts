@@ -2079,12 +2079,8 @@ function runEvidence(f: Fields, key: string): RunEvidence {
     }
     const kind = RUN_EVIDENCE_FIELDS[name as keyof typeof RUN_EVIDENCE_FIELDS];
     const fits =
-      kind === "flag"
-        ? typeof item === "boolean"
-        : kind === "id"
-          ? typeof item === "string" && RUN_EVIDENCE_ID.test(item)
-          : inRange(item, kind);
-    if (!fits) f.fail("VALIDATION_FAILED", "Expected an ID, an instant, a count or a flag", key);
+      kind === "id" ? typeof item === "string" && RUN_EVIDENCE_ID.test(item) : inRange(item, kind);
+    if (!fits) f.fail("VALIDATION_FAILED", "Expected an ID, an instant or a count", key);
     evidence[name] = item as string | number | boolean;
   }
   return evidence;

@@ -23,6 +23,7 @@ import { writeVersionManifest } from "../../packages/service/src/version/folder.
 import { finishInstall } from "../../packages/service/src/version/install.ts";
 import { archiveName, type Platform } from "../../packages/service/src/version/release.ts";
 import { currentVersion } from "../../packages/service/src/version/switch.ts";
+import type { HeldRun, RunsHold } from "../../packages/service/src/install/context.ts";
 import type {
   RunningService,
   SelfTest,
@@ -211,6 +212,74 @@ export class FakeControl implements ServiceControl {
   waitFor(version: string): Promise<boolean> {
     this.calls.push(`wait ${version}`);
     return Promise.resolve(this.version === version);
+  }
+
+  /** The service's background runs, when a test gives it some. */
+  runs: FakeRuns | undefined;
+
+  /** Linux: the unit's Delegate=yes added, when a test gives the service a unit to change. */
+  delegateUnit?: () => Promise<boolean>;
+
+  holdRuns(): Promise<RunsHold | "silent" | undefined> {
+    const runs = this.runs;
+    if (runs === undefined || this.version === undefined) return Promise.resolve(undefined);
+    this.calls.push("hold");
+    if (runs.silent) return Promise.resolve("silent");
+    return Promise.resolve(runs.hold(this.calls));
+  }
+}
+
+/**
+ * A stand-in service's runs: what blocks an update, which a test changes, and the runs that do not
+ * stop in time when asked to.
+ */
+export class FakeRuns {
+  blocking: HeldRun[];
+  /** The runs left after a Stop of all. */
+  stubborn: HeldRun[] = [];
+  /** The service takes a hold but does not say what blocks it. */
+  silent = false;
+  #waiters: (() => void)[] = [];
+  /** Which life of the service a hold belongs to: one ends with its service. */
+  #life = 0;
+
+  constructor(blocking: HeldRun[]) {
+    this.blocking = blocking;
+  }
+
+  /** What blocks becomes `next`, as the service would tell it. */
+  set(next: HeldRun[]): void {
+    this.blocking = next;
+    for (const resolve of this.#waiters.splice(0)) resolve();
+  }
+
+  /** The service ended by itself and started again: its holds end, and `next` blocks now. */
+  restarted(next: HeldRun[]): void {
+    this.#life += 1;
+    this.set(next);
+  }
+
+  hold(calls: string[]): RunsHold {
+    const life = this.#life;
+    const current = () => this.#life;
+    return {
+      blocking: () => this.blocking,
+      changed: () =>
+        new Promise<void>((resolve) => {
+          this.#waiters.push(resolve);
+        }),
+      get held() {
+        return current() === life;
+      },
+      stopAll: () => {
+        calls.push("stop runs");
+        this.blocking = this.stubborn;
+        return Promise.resolve(this.stubborn);
+      },
+      release: () => {
+        calls.push("release");
+      },
+    };
   }
 }
 

@@ -261,6 +261,13 @@ function spacesText(spaces: readonly { readonly state: string }[]): string {
 }
 
 /** The UI line of status: the listener's address, or A2 3.8.2's moved line or blocked message. */
+/** Whether background runs can be contained here; nothing for a service that hosts none. */
+function runsText(runs: Extract<ServiceAnswer, { answers: true }>["runs"]): string | undefined {
+  if (runs === null) return undefined;
+  if (runs.available === null) return "not checked yet";
+  return runs.available ? "can run here" : `off. ${runs.message}`;
+}
+
 function uiText(http: Extract<ServiceAnswer, { answers: true }>["http"]): string {
   if (http === null) return "no listener";
   if (http.blocked !== null) return blockedMessage(http.port);
@@ -330,6 +337,8 @@ export function statusText(ctx: ServiceContext, report: StatusReport): string {
   }
   if (s.answers) {
     lines.push(`  Spaces:   ${spacesText(s.spaces)}`, `  UI:       ${uiText(s.http)}`);
+    const runs = runsText(s.runs);
+    if (runs !== undefined) lines.push(`  Runs:     ${runs}`);
   }
   if (!report.program_present) lines.push(`  Build:    missing at ${report.program}`);
   return `${lines.join("\n")}\n`;

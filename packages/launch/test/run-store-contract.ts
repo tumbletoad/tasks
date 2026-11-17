@@ -49,14 +49,14 @@ const PATHS: Record<RunState, { next: RunState; patch?: RunPatch }[]> = {
   cancelling: [{ next: "starting" }, { next: "cancelling" }],
   reconciling: [{ next: "starting" }, { next: "reconciling" }],
   succeeded: [{ next: "starting" }, { next: "running" }, { next: "succeeded" }],
-  failed: [{ next: "starting" }, { next: "failed", patch: { reason: "not_claimed" } }],
+  failed: [{ next: "starting" }, { next: "failed", patch: { reason: "spawn_failed" } }],
   timed_out: [
     { next: "starting" },
     { next: "running" },
     { next: "timed_out", patch: { reason: "wall" } },
   ],
   cancelled: [{ next: "cancelled" }],
-  unknown: [{ next: "starting" }, { next: "unknown", patch: { reason: "lost" } }],
+  unknown: [{ next: "starting" }, { next: "unknown", patch: { reason: "stop_timed_out" } }],
 };
 
 /** The patch a transition into `next` needs. */
@@ -64,7 +64,7 @@ function patchFor(from: RunState, next: RunState): RunPatch {
   if (from === next) return { evidence: { pid: 4242 } };
   if (next === "failed") return { reason: "agent_error" };
   if (next === "timed_out") return { reason: "idle" };
-  if (next === "unknown") return { reason: from === "cancelling" ? "stop_timed_out" : "lost" };
+  if (next === "unknown") return { reason: "stop_timed_out" };
   return {};
 }
 
@@ -431,12 +431,16 @@ export function runStoreContract(
         }
       }
       const run = await runIn("starting");
-      for (const patch of [{}, { reason: "wall" as const }, { reason: "lost" as const }]) {
+      for (const patch of [
+        {},
+        { reason: "wall" as const },
+        { reason: "stop_timed_out" as const },
+      ]) {
         const refused = await refusal(store.transitionRun(run.id, seenRun(run), "failed", patch));
         expect(refused).toMatchObject({ code: "invalid", field: "patch.reason" });
       }
       const noReason = await refusal(
-        store.transitionRun(run.id, seenRun(run), "running", { reason: "lost" }),
+        store.transitionRun(run.id, seenRun(run), "running", { reason: "stop_timed_out" }),
       );
       expect(noReason.field).toBe("patch.reason");
     });
@@ -444,7 +448,7 @@ export function runStoreContract(
     test("a compare-and-set on the state and the version moves nothing when it loses", async () => {
       const run = await runIn("starting");
       const claimed = await store.transitionRun(run.id, seenRun(run), "starting", {
-        evidence: { claim: "claim-1", claimed_at: run.queuedAt + 1 },
+        evidence: { pid: 4242, pid_started_at: run.queuedAt + 1 },
       });
       // The record the caller read is gone: its version moved.
       const stale = await refusal(store.transitionRun(run.id, seenRun(run), "running"));
@@ -464,27 +468,31 @@ export function runStoreContract(
     test("evidence only grows, a result goes in once and only entering a final state, each state has its time", async () => {
       const run = await runIn("starting");
       const claimed = await store.transitionRun(run.id, seenRun(run), "starting", {
-        evidence: { claim: "claim-1" },
+        evidence: { pid: 4242 },
       });
       const other = await refusal(
         store.transitionRun(claimed.id, seenRun(claimed), "starting", {
-          evidence: { claim: "claim-2" },
+          evidence: { pid: 4343 },
         }),
       );
       expect(other).toMatchObject({ code: "evidence", current: claimed });
       const same = await store.transitionRun(claimed.id, seenRun(claimed), "starting", {
-        evidence: { claim: "claim-1" },
+        evidence: { pid: 4242 },
       });
       expect(same).toEqual(claimed);
       backend.advance(1_000);
       const running = await store.transitionRun(claimed.id, seenRun(claimed), "running", {
-        evidence: { pid: 4242, native_id: "thread-0001" },
+        evidence: { pid: 4242, pid_started_at: 1_800_000_000_000, native_id: "thread-0001" },
       });
-      expect(running.evidence).toEqual({ claim: "claim-1", pid: 4242, native_id: "thread-0001" });
+      expect(running.evidence).toEqual({
+        pid: 4242,
+        pid_started_at: 1_800_000_000_000,
+        native_id: "thread-0001",
+      });
       expect(running.startedAt).toBe(running.at.running);
       const early = await refusal(
         store.transitionRun(running.id, seenRun(running), "running", {
-          evidence: { folder_checked: true },
+          evidence: { native_id: "thread-0002" },
           result: RESULT,
         }),
       );
@@ -498,8 +506,8 @@ export function runStoreContract(
       expect(Object.keys(done.at)).toEqual(["queued", "starting", "running", "succeeded"]);
       expect((done.at.succeeded ?? 0) - (done.at.running ?? 0)).toBeGreaterThanOrEqual(60_000);
       // An unknown run settled later keeps one result.
-      const lost = await runIn("unknown");
-      const settled = await store.transitionRun(lost.id, seenRun(lost), "failed", {
+      const unsure = await runIn("unknown");
+      const settled = await store.transitionRun(unsure.id, seenRun(unsure), "failed", {
         reason: "no_result",
         result: { ...RESULT, ok: false, outcome: "no_result" },
       });
@@ -512,10 +520,11 @@ export function runStoreContract(
       for (const state of RUN_STATES) {
         const run = await runIn(state);
         backend.advance(1);
-        if (!(FINAL_RUN_STATES as readonly RunState[]).includes(state)) expected.push(run.id);
+        // An unknown run awaits the confirmation that its container is empty: it stays listed.
+        if (!(FINAL_RUN_STATES as readonly RunState[]).includes(state) || state === "unknown") {
+          expected.push(run.id);
+        }
       }
-      // A stop that timed out: a later exit still settles it, so it stays on the list. The unknown
-      // run above is lost, which nothing settles any more.
       const stopping = await runIn("cancelling");
       const timedOut = await store.transitionRun(stopping.id, seenRun(stopping), "unknown", {
         reason: "stop_timed_out",

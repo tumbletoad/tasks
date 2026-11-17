@@ -50,18 +50,21 @@ Finishes an install. The install scripts run it through the new version's own la
 checks the version and switches to it. A person does not run it.
 `;
 
-const UPDATE_HELP = `Usage: ${CLI_NAME} update --from <archive> [--yes]
-       ${CLI_NAME} update --rollback [--yes]
-       ${CLI_NAME} update --repair
+const UPDATE_HELP = `Usage: ${CLI_NAME} update --from <archive> [--yes] [--stop-runs]
+       ${CLI_NAME} update --rollback [--yes] [--stop-runs]
+       ${CLI_NAME} update --repair [--stop-runs]
 
 Updates this install from a signed release archive, goes back to the version before the last
 update, or finishes an update that was cut off. It restarts the service, and asks once in a
-terminal before it does.
+terminal before it does. The restart ends background runs, so new runs wait meanwhile and the
+update waits up to 15 minutes for the running ones; then it asks whether to stop them or give
+the update up.
 
   --from <archive>  The release archive to update from
   --rollback        Go back to the version before the last update
   --repair          Finish an update that was cut off
   --yes             Restart the service without asking (for a script)
+  --stop-runs       Stop runs still running after the wait without asking (for a script)
 `;
 
 const SERVE_HELP = `Usage: ${CLI_NAME} serve

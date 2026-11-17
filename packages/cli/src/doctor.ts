@@ -314,6 +314,7 @@ interface Status {
   uptime_ms?: number;
   protocol?: { min?: number; max?: number };
   http?: HttpStatusView | null;
+  runs?: { available: boolean | null; reason?: string; message?: string };
   spaces?: {
     entry: number;
     id?: string;
@@ -404,6 +405,7 @@ async function serviceChecks(
       { id: "spaces", status: "skip", detail: "No service to ask." },
       { id: "requests", status: "skip", detail: "No service to ask." },
       { id: "http", status: "skip", detail: "No service to ask." },
+      { id: "runs", status: "skip", detail: "No service to ask." },
       ...launch.LAUNCH_ROWS_WITHOUT_SERVICE,
     ];
   }
@@ -462,6 +464,7 @@ async function serviceChecks(
     });
     checks.push(await requestCheck(session, spaces));
     checks.push(await httpCheck(status.http, io.platform, io.env));
+    checks.push(runsCheck(status.runs));
     checks.push(...(await launch.launchChecks(session, live)));
     return checks;
   } catch (error) {
@@ -481,11 +484,31 @@ async function serviceChecks(
       { id: "spaces", status: "skip", detail: "No service to ask." },
       { id: "requests", status: "skip", detail: "No service to ask." },
       { id: "http", status: "skip", detail: "No service to ask." },
+      { id: "runs", status: "skip", detail: "No service to ask." },
       ...launch.LAUNCH_ROWS_WITHOUT_SERVICE,
     ];
   } finally {
     session?.close();
   }
+}
+
+/**
+ * Whether background runs can be contained here, as the service found at its start. Where a person
+ * can change that (an earlier unit without Delegate=yes, a missing tasks-run.exe), a warning with
+ * what to do; on a platform without containers, only a note.
+ */
+function runsCheck(runs: Status["runs"]): Check {
+  if (runs === undefined || runs.available === null) {
+    return { id: "runs", status: "skip", detail: "The service has not checked yet." };
+  }
+  if (runs.available) {
+    return { id: "runs", status: "ok", detail: "Background runs can be contained here." };
+  }
+  return {
+    id: "runs",
+    status: runs.reason === "unsupported_platform" ? "skip" : "warn",
+    detail: `Background runs are off. ${runs.message ?? ""}`.trimEnd(),
+  };
 }
 
 const VERSION_WORD = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
