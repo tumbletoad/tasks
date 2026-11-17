@@ -3,10 +3,8 @@
 //   pnpm seed --out <folder> [--seed <text>] [--tasks <n>]
 //
 // The space goes to <folder>/mira, which must not exist yet; <folder> is made when it is not there.
-// The same seed and size give the same
-// space on every machine: the script prints its content digest, which tests compare. The scale
-// corpus (--scale) and the synthetic prototype folder (--planning) arrive with the steps that need
-// them (M1.15, M7).
+// The same seed and size give the same space on every machine: the script prints its content
+// digest, which tests compare.
 import { isAbsolute, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { makeDir } from "../packages/files/src/index.ts";
@@ -22,7 +20,6 @@ import {
 const USAGE = "Usage: pnpm seed --out <folder> [--seed <text>] [--tasks <n>]";
 
 async function main(argv: string[]): Promise<number> {
-  if (argv.includes("--planning")) return (await import("./seed-planning.ts")).seedPlanning(argv);
   let values: { out?: string | undefined; seed?: string | undefined; tasks?: string | undefined };
   try {
     ({ values } = parseArgs({

@@ -90,7 +90,7 @@ const files: Record<string, string> = {
 
   // Violations that stay strict in tests.
   "packages/launch/src/index.test.ts": imports(STORAGE),
-  "packages/importer-planning/test/import.ts": imports(STORAGE),
+  "packages/runs/test/import.ts": imports(STORAGE),
   "packages/service/src/lab.test.ts": imports(SPIKE),
   "packages/service/src/sqlite.test.ts": imports("node:sqlite"),
 };
@@ -109,9 +109,9 @@ const expected = [
   "helpers-through-the-runner: packages/service/src/setup/run.ts -> child_process",
   // dependency-cruiser reports a cycle once, at its first edge.
   "no-circular: packages/service/src/a.ts -> packages/service/src/b.ts",
-  "no-storage-from-launch-runs-importer: packages/importer-planning/test/import.ts -> packages/storage/src/index.ts",
-  "no-storage-from-launch-runs-importer: packages/launch/src/index.test.ts -> packages/storage/src/index.ts",
-  "no-storage-from-launch-runs-importer: packages/launch/src/index.ts -> packages/storage/src/index.ts",
+  "no-storage-from-launch-runs: packages/launch/src/index.test.ts -> packages/storage/src/index.ts",
+  "no-storage-from-launch-runs: packages/launch/src/index.ts -> packages/storage/src/index.ts",
+  "no-storage-from-launch-runs: packages/runs/test/import.ts -> packages/storage/src/index.ts",
   `no-undeclared-dependency: packages/runs/src/index.ts -> ${TINY}`,
   "not-to-unresolvable: packages/service/src/missing.ts -> ./nowhere.ts",
   `only-storage-better-sqlite3: packages/service/src/sqlite3.ts -> ${SQLITE3}`,

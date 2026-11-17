@@ -4,7 +4,6 @@ export * from "./a1-errors.ts";
 export * from "./define.ts";
 export * from "./errors.ts";
 export * from "./http.ts";
-export * from "./import-planning.ts";
 export * from "./operations.ts";
 export * from "./preferences.ts";
 export * from "./registry.ts";
@@ -35,24 +34,6 @@ export { createCaller, type Caller, type ClientTransport } from "./client-runtim
 export { entryAdd, EntryAddInput, EntryAddResult } from "./entries/entry-add.ts";
 export { historyRedo, HistoryRedoInput, HistoryRedoResult } from "./entries/history-redo.ts";
 export { historyUndo, HistoryUndoInput, HistoryUndoResult } from "./entries/history-undo.ts";
-export {
-  IMPORT_FIELDS,
-  importPlanningApply,
-  ImportPlanningApplyInput,
-  ImportPlanningApplyResult,
-  importPlanningUndo,
-  ImportPlanningUndoInput,
-  ImportPlanningUndoResult,
-} from "./entries/import-planning-apply.ts";
-export {
-  IMPORT_RUN,
-  ImportPlanningCounts,
-  importPlanningPreview,
-  ImportPlanningPreviewInput,
-  ImportPlanningPreviewResult,
-  PREVIEW_ROWS,
-  PREVIEW_TOKEN,
-} from "./entries/import-planning-preview.ts";
 export {
   GROUP_ACTIONS,
   GROUP_LIMITS,

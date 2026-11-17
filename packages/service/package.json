@@ -32,7 +32,6 @@
     "@tasks/bridge": "workspace:*",
     "@tasks/contracts": "workspace:*",
     "@tasks/files": "workspace:*",
-    "@tasks/importer-planning": "workspace:*",
     "@tasks/launch": "workspace:*",
     "@tasks/projection": "workspace:*",
     "@tasks/runs": "workspace:*",

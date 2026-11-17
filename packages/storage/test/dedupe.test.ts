@@ -492,8 +492,8 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
       id: anew.id,
       lifecycle: "active",
     });
-    // none: a task whatever holds the key (the importer's legacy tasks, A7 3.15.3), and the
-    // source the key names is linked, never written twice.
+    // none: a task whatever holds the key, and the source the key names is linked, never written
+    // twice.
     const legacy = draft(["jira:FIX-1"], { dedupe: "none" });
     expect(submit(legacy.ops).results[0]).toMatchObject({ status: "created", id: legacy.id });
     expect(holders(fx.reader, "jira:FIX-1")).toEqual([first.id, anew.id, legacy.id].sort());

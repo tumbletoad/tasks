@@ -663,8 +663,8 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     });
     expect(plan.conflicts).toEqual([]);
     expect(plan.inversions).toHaveLength(75);
-    // One per child table of a task and one for a source's links, never one per created row: an
-    // importer's commit holds thousands, and a source's links have no index by source.
+    // One per child table of a task and one for a source's links, never one per created row: a
+    // commit can hold many, and a source's links have no index by source.
     expect(scans).toBeLessThanOrEqual(9);
   });
 

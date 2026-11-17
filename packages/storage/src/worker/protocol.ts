@@ -190,27 +190,11 @@ export interface Calls {
   registerMachine: { args: { handle: number }; result: boolean };
   /** The actor a connection writes as, added on its first act (`SpaceWriter.actor`). */
   actor: {
-    args: { handle: number; actorKind: "human" | "agent" | "import"; label: string };
+    args: { handle: number; actorKind: "human" | "agent"; label: string };
     result: Id<"ac">;
   };
   /** One write request to a space's writer (A1 3.7). */
   submit: { args: { handle: number; request: unknown }; result: WriteResult };
-  /**
-   * An import's request behind a verified barrier backup (backup/barrier.ts, A7 3.15.5): the
-   * worker serves nothing else meanwhile, so no write runs between the snapshot and the request.
-   */
-  importSubmit: {
-    args: {
-      handle: number;
-      request: unknown;
-      /** The machine-local `backup.dir`, when set. */
-      backupDir?: string;
-      appVersion?: string;
-      /** The state the request was decided on (BarrierOptions.expect). */
-      expect?: { seq: number; incarnation: string };
-    };
-    result: { result: WriteResult; backup?: BackupRecord };
-  };
   /** A request's receipt in a writer scope (A1 3.8, A3 3.2.3's `receipt.get`), or null. */
   receipt: { args: { handle: number; lookup: ReceiptLookup }; result: Receipt | null };
   /** A launch record (A4 3.16.1), or null. (`id` names the request itself.) */
