@@ -422,7 +422,7 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
             const input = event.currentTarget;
             const chosen = (input.selectionEnd ?? 0) - (input.selectionStart ?? 0);
             if (input.value.length - chosen + pasted > FIELD_MAX) {
-              say(t("top.pasteCut", { max: FIELD_MAX }));
+              say(t("top.pasteCut", { count: FIELD_MAX }));
             }
           }}
           onKeyDown={(event) => {

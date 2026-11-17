@@ -45,7 +45,7 @@
   "top.newTask": "New task",
   "top.add": "Add the task",
   "top.addFailed": "The task was not added. Try again.",
-  "top.pasteCut": "Only the first {max} characters fit here. The rest is still on the clipboard.",
+  "top.pasteCut": "Only the first {count} characters fit here. The rest is still on the clipboard.",
   "top.search": "Search",
   "top.searchPlaceholder": "Search: words or filters",
   "top.toSearch": "Search instead",
