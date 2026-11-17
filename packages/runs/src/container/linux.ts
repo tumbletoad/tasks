@@ -232,9 +232,12 @@ export class LinuxContainers implements Containers {
         env: spec.env,
         // Its own session and process group, so an interrupt reaches the agent's group only.
         detached: true,
-        stdio: ["ignore", "pipe", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe", "pipe"],
       },
     );
+    // An agent that exits before it read its input closes the pipe: what was not read is lost,
+    // and its exit says how it ended.
+    child.stdin.on("error", () => undefined);
     const exited = new Promise<AgentExit>((resolve) => {
       child.once("exit", (code, signal) => {
         resolve({ code, signal });
@@ -255,9 +258,8 @@ export class LinuxContainers implements Containers {
     }
     const pid = child.pid ?? -1;
     this.live.set(spec.name, { child, dir, pid });
-    const { stdout, stderr } = child;
-    if (stdout === null || stderr === null) throw new Error("spawn gave no pipes");
-    return { name: spec.name, pid, stdout, stderr, exited };
+    const { stdin, stdout, stderr } = child;
+    return { name: spec.name, pid, stdin, stdout, stderr, exited };
   }
 
   interrupt(name: string): Promise<boolean> {

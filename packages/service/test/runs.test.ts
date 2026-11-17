@@ -336,6 +336,7 @@ function fakeBoxes() {
       const contained: Contained = {
         name: spec.name,
         pid,
+        stdin: new PassThrough(),
         stdout: box.stdout,
         stderr: box.stderr,
         exited,

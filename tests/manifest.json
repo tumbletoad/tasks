@@ -2741,6 +2741,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.2.detect.program",
+      "title": "The program a run starts for an instance is resolved before it starts, without running anything: a bare name from the agent's PATH, a Windows npm .cmd shim as Node with its package's entry, an npm link on Linux as Node with its script; a shim without an entry, a PowerShell script and a missing program are refused",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.2.4.config.golden",
       "title": "machine.toml per OS (golden files for Linux, Windows and macOS): every section read strictly into typed values, remote_allowed false by default, and typed problems that name the key and a fixed code, never the value",
       "source": "A2 3.2.4, A4 3.2, A4 3.6.1, A1 3.15, A7 3.9 M2.06",

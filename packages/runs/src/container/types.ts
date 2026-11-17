@@ -3,8 +3,9 @@
 // names a container, records the name, and asks this module to start, stop and confirm it.
 //
 // Linux: a child cgroup of the service's own systemd user unit (linux.ts). Windows: a named job
-// object held by tasks-run.exe (windows.ts). Elsewhere nothing is contained, so Run is not offered.
-import type { Readable } from "node:stream";
+// object held by tasks-run.exe (windows.ts). Where neither can be made, the agent's process tree
+// as Tasks can find it (ungrouped.ts), which can never be confirmed empty.
+import type { Readable, Writable } from "node:stream";
 
 /** What to start inside a new container. */
 export interface ContainerSpec {
@@ -34,6 +35,11 @@ export interface Contained {
   readonly name: string;
   /** The agent's process ID. */
   readonly pid: number;
+  /**
+   * The agent's stdin. Ending it is the agent's end of input and nothing else: the container and
+   * what holds it stay as they are.
+   */
+  readonly stdin: Writable;
   /** The agent's stdout and stderr, shared with every process that inherited them. */
   readonly stdout: Readable;
   readonly stderr: Readable;

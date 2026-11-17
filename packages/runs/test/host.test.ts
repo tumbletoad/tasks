@@ -90,7 +90,7 @@ function childContainers(): Containers & { exited: Promise<void> } {
     exited,
     probe: () => Promise.resolve({ available: true, kind: "job" }),
     start: (spec) => {
-      const child = spawn(spec.command, [...spec.args], { stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(spec.command, [...spec.args], { stdio: ["pipe", "pipe", "pipe"] });
       children.set(spec.name, child);
       const exit = new Promise<AgentExit>((resolve) => {
         child.once("exit", (code, signal) => {
@@ -108,6 +108,7 @@ function childContainers(): Containers & { exited: Promise<void> } {
           resolve({
             name: spec.name,
             pid: child.pid,
+            stdin: child.stdin,
             stdout: child.stdout,
             stderr: child.stderr,
             exited: exit,

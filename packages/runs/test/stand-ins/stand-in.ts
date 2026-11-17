@@ -18,6 +18,8 @@
 //                Windows: prints the process that started it ("parent <pid>"). Then waits.
 //   argv         prints the arguments after `--` as JSON and exits 0
 //   nest         Linux: moves itself into a new cgroup below its own, prints "ready", waits
+//   stdin        prints "ready", then "got <line>" for each line of its stdin, and "stdin ended"
+//                when it ends; then waits
 // Modes that talk Claude's stream (`claude -p --output-format stream-json`), for the run host:
 //   talk         prints a message, and on an interrupt prints its result and exits 0
 //   chatty       like talk, and prints another message every 200 ms
@@ -254,6 +256,22 @@ switch (mode) {
     say(`${JSON.stringify(positionals.slice(1))}\n`);
     process.exit(0);
     break;
+  case "stdin": {
+    say("ready\n");
+    let pending = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk: string) => {
+      pending += chunk;
+      for (let at = pending.indexOf("\n"); at >= 0; at = pending.indexOf("\n")) {
+        say(`got ${pending.slice(0, at)}\n`);
+        pending = pending.slice(at + 1);
+      }
+    });
+    process.stdin.on("end", () => {
+      say("stdin ended\n");
+    });
+    break;
+  }
   case "idle":
     break;
   case "daemonize":

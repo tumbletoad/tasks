@@ -230,6 +230,7 @@ export class SupervisorWorld {
         return Promise.resolve({
           name,
           pid: this.#pids,
+          stdin: new PassThrough(),
           stdout: box.stdout,
           stderr: box.stderr,
           exited,

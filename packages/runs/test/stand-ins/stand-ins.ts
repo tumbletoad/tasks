@@ -21,6 +21,7 @@ export type StandInMode =
   | "handles"
   | "argv"
   | "nest"
+  | "stdin"
   | "talk"
   | "chatty"
   | "detach-stay"

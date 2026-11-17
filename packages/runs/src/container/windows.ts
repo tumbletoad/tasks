@@ -136,17 +136,20 @@ export class WindowsContainers implements Containers {
         cwd: spec.cwd,
         env: spec.env,
         windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe", "pipe", "pipe"],
       },
     );
     const control = helper.stdio[3] as Writable | null;
     const events = helper.stdio[4] as Readable | null;
-    const { stdout, stderr } = helper;
-    if (control === null || events === null || stdout === null || stderr === null) {
+    const { stdin, stdout, stderr } = helper;
+    if (control === null || events === null) {
       helper.kill();
       throw new Error("spawn gave no pipes");
     }
     control.on("error", () => undefined);
+    // The helper's stdin is the agent's: the helper never reads it, so its end reaches the agent
+    // alone. An agent that exited before it read its input closes the pipe.
+    stdin.on("error", () => undefined);
     // Ended: the process exited and its last event line was read. Its stdout can stay open longer,
     // in a process of the job that is still being ended.
     const helperEnded = new Promise<void>((resolve) => {
@@ -191,7 +194,7 @@ export class WindowsContainers implements Containers {
               helperEnded,
             };
             this.live.set(spec.name, live);
-            resolve({ name: spec.name, pid, stdout, stderr, exited });
+            resolve({ name: spec.name, pid, stdin, stdout, stderr, exited });
           } else if (word === "error") {
             failure =
               rest[0] === "exists" ? "exists" : `the agent did not start (${rest.join(" ")})`;

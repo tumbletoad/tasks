@@ -400,6 +400,42 @@ describe("[A4.3.11.8.container.start] the agent starts in its container with its
     }
   });
 
+  test("the agent reads a live stdin, and its end reaches the agent alone", async (ctx) => {
+    need(ctx);
+    const service = await startService(`stdin-${newToken()}`);
+    try {
+      const { token, name } = await start(service, "stdin");
+      await waitFor(
+        "ready",
+        () => output(service, name),
+        (o) => o.head.includes("ready"),
+      );
+      await service.request("write", { name, text: "first line\nsecond " });
+      await service.request("write", { name, text: "line\n" });
+      await waitFor(
+        "two lines",
+        () => output(service, name),
+        (o) => o.head.includes("got second line"),
+      );
+      await service.request("endStdin", { name });
+      await waitFor(
+        "the end of input",
+        () => output(service, name),
+        (o) => o.head.includes("stdin ended"),
+      );
+      // The end of the agent's input is no command: the container and the agent are as they were.
+      await sleep(300);
+      expect(census(token)).toHaveLength(1);
+      expect(await service.request<Confirmation>("confirm", { name })).toMatchObject({
+        state: "occupied",
+      });
+      expect(await service.request("interrupt", { name })).toEqual({ delivered: true });
+      await killAndConfirm(service, name, token);
+    } finally {
+      await service.close();
+    }
+  });
+
   test("the agent holds none of the service's control pipes", async (ctx) => {
     need(ctx);
     const service = await startService(`handles-${newToken()}`);
