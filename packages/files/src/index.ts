@@ -168,17 +168,24 @@ export interface MakeDirOptions {
 
 /**
  * Creates `dir`, one folder at a time and never with mkdir's recursive flag. A folder whose mkdir
- * this call saw succeed gets exactly `mode`; one that was already there (EEXIST), or that another
- * process made first, is someone's choice and keeps its mode. A file where a folder belongs throws
- * EEXIST. Returns the folders this call made, outermost first.
+ * this call saw succeed gets exactly `mode`, or with `"umask"` what a plain mkdir gives it under the
+ * process's umask: a person's own folder, such as a checkout, not one of the product's. One that was
+ * already there (EEXIST), or that another process made first, is someone's choice and keeps its
+ * mode. A file where a folder belongs throws EEXIST. Returns the folders this call made, outermost
+ * first.
  */
-export function makeDir(dir: string, mode = 0o700, options: MakeDirOptions = {}): string[] {
+export function makeDir(
+  dir: string,
+  mode: number | "umask" = 0o700,
+  options: MakeDirOptions = {},
+): string[] {
   const recursive = options.recursive ?? true;
   const platform = options.platform ?? process.platform;
+  const exact = mode === "umask" ? undefined : mode;
   const made: string[] = [];
   const makeOne = (folder: string, top: boolean): void => {
     try {
-      mkdirSync(folder, { mode });
+      mkdirSync(folder, { mode: exact ?? 0o777 });
     } catch (error) {
       if (!recursive && top) throw error;
       const code = codeOf(error);
@@ -187,14 +194,14 @@ export function makeDir(dir: string, mode = 0o700, options: MakeDirOptions = {})
       if (code !== "ENOENT" || parent === folder) throw error;
       makeOne(parent, false);
       try {
-        mkdirSync(folder, { mode });
+        mkdirSync(folder, { mode: exact ?? 0o777 });
       } catch (again) {
         if (codeOf(again) === "EEXIST" && isFolder(folder)) return;
         throw again;
       }
     }
     made.push(folder);
-    if (platform !== "win32") setNewFolderMode(folder, mode);
+    if (platform !== "win32" && exact !== undefined) setNewFolderMode(folder, exact);
   };
   makeOne(resolve(dir), true);
   return made;

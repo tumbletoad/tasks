@@ -1584,38 +1584,42 @@ describe("[A1.5.bundle.secret-scan] the export's secret scan", () => {
     expect(existsSync(bundle.file)).toBe(true);
   });
 
-  test("a secret in a task, in its history or in an attachment refuses the export and writes nothing", async () => {
+  test("a secret in a task or in an attachment is a warning that names its kind and place, and the bundle is written", async () => {
     const checked = await checkedDriver();
     const { folder } = await createFixtureSpace(folders.make());
     await writeCommits(folder, 2);
     const conn = await rawWriter(folder);
     try {
       conn.prepare("UPDATE tasks SET context = $text WHERE ref = 1").run({
-        text: `Deploy with ${token} tomorrow.`,
+        text: `Deploy with ${token} tomorrow, and ${token} again.`,
       });
     } finally {
       conn.close();
     }
+    const names: string[] = [];
     for (const withJsonl of [false, true]) {
-      const error = await expectCode(
-        () => exportBundle(checked, folder, { mode: "backup", withJsonl }),
-        "EXPORT_SECRET_FOUND",
-      );
-      expect(error.message).toContain("github_token");
-      expect(error.message).toContain("tasks.context");
-      expect(error.message).not.toContain(token);
-      expect(readdirSync(join(folder, "exports"))).toEqual([]);
+      const bundle = await exportBundle(checked, folder, {
+        mode: "backup",
+        withJsonl,
+        now: () => names.length + 1,
+      });
+      names.push(bundle.name);
+      expect(existsSync(bundle.file)).toBe(true);
+      // Each kind and place once, and never the text.
+      expect(bundle.secrets).toEqual([{ kind: "github_token", place: "tasks.context" }]);
+      expect(JSON.stringify(bundle.secrets)).not.toContain(token);
     }
-    // Edited away, the token is still in the vacuumed snapshot's rows only if a row holds it:
-    // here none does, and the export passes.
+    expect(readdirSync(join(folder, "exports")).sort()).toEqual(names.sort());
+
+    // Edited away, the token is in the vacuumed snapshot only if a row still holds it: none does.
     const clean = await rawWriter(folder);
     try {
       clean.prepare("UPDATE tasks SET context = '' WHERE ref = 1").run();
     } finally {
       clean.close();
     }
-    const bundle = await exportBundle(checked, folder, { mode: "backup" });
-    // No byte of the deleted text is in the bundle's database: the snapshot was vacuumed.
+    const bundle = await exportBundle(checked, folder, { mode: "backup", now: () => 10 });
+    expect(bundle.secrets).toEqual([]);
     const out = folders.make();
     await readBundle(bundle.file, BUNDLE_POLICY, {
       extractTo: (name) => (name === "space.db" ? join(out, "space.db") : undefined),
@@ -1624,12 +1628,9 @@ describe("[A1.5.bundle.secret-scan] the export's secret scan", () => {
 
     // An attachment that holds a token.
     await addAttachment(folder, Buffer.from(`key file\n${token}\n`), null);
-    const blobError = await expectCode(
-      () => exportBundle(checked, folder, { mode: "backup" }),
-      "EXPORT_SECRET_FOUND",
-    );
-    expect(blobError.message).toContain("attachment");
-    expect(readdirSync(join(folder, "exports"))).toEqual([bundle.name]);
+    const withBlob = await exportBundle(checked, folder, { mode: "backup", now: () => 11 });
+    expect(withBlob.secrets).toEqual([{ kind: "github_token", place: "an attachment" }]);
+    expect(existsSync(withBlob.file)).toBe(true);
   });
 
   test("a long token across the boundary of the attachment's read chunks is found", async () => {
@@ -1647,12 +1648,8 @@ describe("[A1.5.bundle.secret-scan] the export's secret scan", () => {
     ].join(".");
     const blob = Buffer.from(`${" ".repeat(1024 * 1024 - 4_000)}${jwt}\n`);
     await addAttachment(folder, blob, null);
-    const error = await expectCode(
-      () => exportBundle(checked, folder, { mode: "backup" }),
-      "EXPORT_SECRET_FOUND",
-    );
-    expect(error.message).toContain("jwt");
-    expect(readdirSync(join(folder, "exports"))).toEqual([]);
+    const bundle = await exportBundle(checked, folder, { mode: "backup" });
+    expect(bundle.secrets).toEqual([{ kind: "jwt", place: "an attachment" }]);
   });
 
   test("an attachment reached through a link out of the space, into the secrets folder, is refused", async () => {
