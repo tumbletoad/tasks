@@ -9,6 +9,7 @@
 // up (organize's list), an unknown one is `not_found`. Where the caller asks to create the group by
 // that name, a close one is new too: "Release 2" beside "Release 1" is meant.
 import { AppError } from "@tasks/contracts";
+import { way, type Face } from "./errors.ts";
 import type { GroupName, GroupNames } from "./read.ts";
 
 /** A3 3.4.5: an unknown name this close to an existing one is a typo, not a new group. */
@@ -96,6 +97,8 @@ export function resolveGroup(
     readonly area?: string | undefined;
     readonly lookup?: boolean;
     readonly create?: boolean;
+    /** Where the caller reads the hint: how to create a group there. */
+    readonly face?: Face;
   } = {},
 ): string | undefined {
   const { area } = options;
@@ -147,10 +150,18 @@ export function resolveGroup(
     });
   }
   if (close.length > 0 && options.create !== true) {
+    const face = options.face ?? "mcp";
+    const tool = way(
+      face,
+      "group.manage",
+      `create "${kind === "area" ? "<area>" : "<area>/<project>"}"`,
+    );
+    const how =
+      tool === undefined ? "" : face === "mcp" ? ` with ${tool} action create` : `: ${tool}`;
     throw new AppError({
       code: "invalid_input",
       message: `No ${kind} has this name, and one is close to it.`,
-      hint: "Use the existing name if it is the same group: see the suggestions.",
+      hint: `Use the existing name if it is the same group: see the suggestions. If it is another one, create it first${how}, then use its name.`,
       data: { issues: [{ path, message: "Close to an existing name" }], suggestions },
     });
   }

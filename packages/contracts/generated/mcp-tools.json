@@ -11,6 +11,11 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "at": {
+            "description": "When a log entry was made, only for older work: ISO date or instant",
+            "maxLength": 40,
+            "type": "string"
+          },
           "kind": {
             "default": "progress",
             "description": "question flags it for the user; note: a note for the user",
@@ -82,7 +87,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Use for work left for later and for items from email, chat or tickets: 1 to 25 tasks per call, never TODOs in files. Give a source's item its key (jira:KEY); a match answers exists. folder \"cwd\" files a task in your folder's project; with no area or project it goes to the Inbox.",
+      "description": "For work left for later and items from email, chat or tickets: 1 to 25 tasks a call, never TODOs in files. Key only the source a task is (jira:KEY): a match answers exists; other links take no key. folder \"cwd\" files a task in your folder's project; no area or project: the Inbox.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -121,6 +126,11 @@
                   "maxLength": 8000,
                   "type": "string"
                 },
+                "created": {
+                  "description": "When it was created, only for work that existed before: ISO date or instant",
+                  "maxLength": 40,
+                  "type": "string"
+                },
                 "due": {
                   "description": "ISO date or phrase: fri, +3d",
                   "maxLength": 40,
@@ -146,7 +156,7 @@
                   "type": "boolean"
                 },
                 "log": {
-                  "description": "Log entry; also added to a matched task",
+                  "description": "Log entry; also added to a matched task that lacks it",
                   "maxLength": 2000,
                   "type": "string"
                 },
@@ -286,6 +296,11 @@
             "maxLength": 4096,
             "type": "string"
           },
+          "finished": {
+            "description": "When it was done, only for work done before it was recorded: ISO date or instant",
+            "maxLength": 40,
+            "type": "string"
+          },
           "follow_ups": {
             "description": "Tasks to create, as for task.add",
             "items": {
@@ -299,6 +314,11 @@
                 "context": {
                   "description": "Markdown context",
                   "maxLength": 8000,
+                  "type": "string"
+                },
+                "created": {
+                  "description": "When it was created, only for work that existed before: ISO date or instant",
+                  "maxLength": 40,
                   "type": "string"
                 },
                 "due": {
@@ -326,7 +346,7 @@
                   "type": "boolean"
                 },
                 "log": {
-                  "description": "Log entry; also added to a matched task",
+                  "description": "Log entry; also added to a matched task that lacks it",
                   "maxLength": 2000,
                   "type": "string"
                 },
