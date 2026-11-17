@@ -706,7 +706,7 @@
     },
     {
       "id": "A1.5.write.folders",
-      "title": "Folders through the write path: a project created with its folder in one commit and one undo step, the path stored exactly as sent; a project's folder change with a base that moves its tasks' folders inside the old one; FOLDER_TAKEN for a second live project on one folder, nested folders allowed; a project's delete removing its folders on every machine and its restore bringing them back but one another project took, named in the result; an undo that meets a taken folder is a conflict and its partial form brings the project back without it; a folder changed to one inside or around the old one moves no task folder, a deleted task's moves with a real move; a stale base meets a task that joined the project or a folder cleared since as a conflict; a deleted project never holds a live folder or task, through undo, redo, a task's restore or several operations of one request; one request changes an owner's folder once; a task's folder set, changed and cleared; paths the request's machine cannot name refused",
+      "title": "Folders through the write path: a project created with its folder in one commit and one undo step, the path stored exactly as sent; a moved folder, with a base, carrying every folder inside it, other projects' and their tasks' too, in one undo step, a task's moved folder carrying a project's inside it, and a change without carry changing the owner's folder alone; a move refused whole when it would land a project inside it on another live project's folder; FOLDER_TAKEN for a second live project on one folder, nested folders allowed; a project's delete removing its folders on every machine and its restore bringing them back but one another project took, named in the result; an undo that meets a taken folder is a conflict and its partial form brings the project back without it; a folder changed to one inside or around the old one moves no task folder, a deleted task's moves with a real move; a stale base meets a folder the move would carry or a folder cleared since as a conflict; a deleted project never holds a live folder or task, through undo, redo, a task's restore or several operations of one request; one request changes an owner's folder once; a task's folder set, changed and cleared; paths the request's machine cannot name refused",
       "source": "A1 3.6, A1 3.10, A1 3.15",
       "owner": "M4",
       "kind": "ci",
@@ -714,7 +714,7 @@
     },
     {
       "id": "A1.5.write.folders-model",
-      "title": "Property tests over random folder sets and clears, task moves, deletes and restores, project moves, deletes and restores, undos and redos on a Linux and a Windows machine, with an agent's changes between: one live folder per owner and machine, never two live projects on one folder by the machine's case rule, a deleted project holds no live folder or task and a task is in its project's area, a project's folder change moves exactly its tasks' folders inside the old one by an oracle of the test's own, an undo applied whole gives back the space as it was and its redo the space the commit left, and the history invariants hold",
+      "title": "Property tests over random folder sets and clears, task moves, deletes and restores, project moves, deletes and restores, undos and redos on a Linux and a Windows machine, with an agent's changes between: one live folder per owner and machine, never two live projects on one folder by the machine's case rule, a deleted project holds no live folder or task and a task is in its project's area, a project's or a task's moved folder carries exactly every other folder inside the old one on that machine, and a change without carry the owner's folder alone, by an oracle of the test's own, an undo applied whole gives back the space as it was and its redo the space the commit left, and the history invariants hold",
       "source": "A1 3.10, A1 3.15",
       "owner": "M4",
       "kind": "ci",
@@ -753,8 +753,24 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.15.folders.marker",
+      "title": "The marker in a project's or a task's folder: the owners' IDs and an ignore file, no task text; a launch's look finds its own marker, another owner's or another space's, a marker gone after it was written, a marker that cannot be read; an old folder without one is marked quietly; what was marked outlives a restart; a folder that takes no marker opens as before; a clear takes the owner off and the last one the marker; a folder moved with another keeps its marker; a checkout's git status stays clean",
+      "source": "A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.15.folders.repo",
+      "title": "The repository a project's folder holds, by name, from the folder's own Git configuration: origin's or the first remote's, none for no remote, a local remote or a folder that is not a checkout, the name alone for an address with a token, and none when the configuration does not answer in time",
+      "source": "A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.15.folders.request-path",
-      "title": "Folders through the request path of a running service: a project made for a folder in one change, its folder changed with its task's folder moving along, undone and redone in one step each, a folder another project has answered as that project or refused naming it, a project's folder cleared; a folder inside the Tasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; a retry that replays after the project was renamed; a new project named by several drafts or by calls at once made once; an agent's task filed into an area and project it names first, created with it; a project's folder that does not answer refused in time, holding up no other call of the space, and its late answer writing nothing",
+      "title": "Folders through the request path of a running service: a project made for a folder in one change, named after its folder when no name is given; the folder moved on disk with a task's folder and another project's inside it moving along, undone and redone in one step each; a folder given another while it is still there leaving the folders inside it, named in the answer; the repository's name in the project list without its address; a folder another project has answered as that project or refused naming it, a project's folder cleared; a folder inside the Tasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; a retry that replays after the project was renamed; a new project named by several drafts or by calls at once made once; an agent's task filed into an area and project it names first, created with it; a project's folder that does not answer refused in time, holding up no other call of the space, and its late answer writing nothing",
       "source": "A1 3.15, A3 3.4.5",
       "owner": "M4",
       "kind": "ci",
@@ -2389,6 +2405,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.routes.markers",
+      "title": "A launch reads its folder's marker before an agent starts: a folder set through the service is marked with IDs only; its own marker opens; a checkout moved aside with an unrelated one at its path opens nothing, says its marker is missing and opens once the person opens it anyway, marking it; a task's folder whose marker names another project opens nothing and names that project; Copy reads no marker; a folder that takes no marker opens as before",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.5.search.parser",
       "title": "The query language: A3 3.9.2's examples parse into words, phrases, OR groups and filters; quotes, doubled quotes and letter-only keys; an unknown key or value fails with a suggestion and never quotes the query; OR, negation, limits and values are checked; is:new and is:changed are refused naming their step; a query that names a lifecycle widens the default scope; and random strings parse or are refused as invalid_input, with parsed reading back as the same query",
       "source": "A3 3.9.2, A3 3.5, A3 5, A7 3.10 M3.05",
@@ -3638,6 +3661,13 @@
       "id": "A4.5.e2e.open-folder",
       "title": "Playwright against the real service process: a task with no folder shows the work folder, the expanded task shows the folder it was given, and Open after that folder went sends nothing to the fake terminal and says on the page that the folder was not found, naming it",
       "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.e2e.open-marker",
+      "title": "Playwright against the real service process: the expanded task's folder line names the Git repository in it; Open after the checkout was replaced at its path sends nothing to the fake terminal and says its marker is missing, and the toast's Use this folder opens it there and marks it",
+      "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
     },

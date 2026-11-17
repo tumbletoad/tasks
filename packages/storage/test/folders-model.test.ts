@@ -7,9 +7,11 @@
 // - an owner has at most one live folder per machine;
 // - two live projects never have one folder on one machine, by that machine's case rule;
 // - a deleted project holds no live folder and no live task, and a task is in its project's area;
-// - a project's folder change moved exactly its tasks' folders inside the old one, to the same
-//   place inside the new one, unless the new folder is around or inside the old one, and changed
-//   no other folder (worked out here apart from the writer's code);
+// - a folder change that says the folder was moved (`carry`) moved every other folder on that
+//   machine that is the old one or inside it, projects' and tasks' alike, to the same place inside
+//   the new one, unless the new folder is around or inside the old one, and changed no other
+//   folder; one that does not say so changed the owner's folder alone (worked out here apart from
+//   the writer's code);
 // - an undo that applied whole, of a commit nobody else's change followed, gives back the space as
 //   it was before that commit, and its redo the space as that commit left it.
 // Each run ends with A1's history invariants (write-helpers.ts: checkHistory). Fixture paths only:
@@ -41,9 +43,9 @@ const AREAS = 2;
 type Who = "human" | "agent";
 
 type Step =
-  | { kind: "project_set"; who: Who; m: number; p: number; path: number }
+  | { kind: "project_set"; who: Who; m: number; p: number; path: number; carry: boolean }
   | { kind: "project_clear"; m: number; p: number }
-  | { kind: "task_set"; m: number; t: number; path: number }
+  | { kind: "task_set"; m: number; t: number; path: number; carry: boolean }
   | { kind: "task_clear"; m: number; t: number }
   | { kind: "move"; who: Who; t: number; p: number }
   | { kind: "task_delete"; who: Who; t: number; restore: boolean }
@@ -69,11 +71,21 @@ const step: fc.Arbitrary<Step> = fc.oneof(
       m,
       p,
       path,
+      carry: fc.boolean(),
     }),
     weight: 6,
   },
   { arbitrary: fc.record({ kind: fc.constant("project_clear" as const), m, p }), weight: 1 },
-  { arbitrary: fc.record({ kind: fc.constant("task_set" as const), m, t, path }), weight: 4 },
+  {
+    arbitrary: fc.record({
+      kind: fc.constant("task_set" as const),
+      m,
+      t,
+      path,
+      carry: fc.boolean(),
+    }),
+    weight: 4,
+  },
   { arbitrary: fc.record({ kind: fc.constant("task_clear" as const), m, t }), weight: 1 },
   {
     arbitrary: fc.record({
@@ -151,7 +163,14 @@ const groupStep: fc.Arbitrary<Step> = fc.oneof(
   { arbitrary: fc.record({ kind: fc.constant("delete" as const), who: either, p }), weight: 2 },
   { arbitrary: fc.record({ kind: fc.constant("restore" as const), who: either, p }), weight: 2 },
   {
-    arbitrary: fc.record({ kind: fc.constant("project_set" as const), who: either, m, p, path }),
+    arbitrary: fc.record({
+      kind: fc.constant("project_set" as const),
+      who: either,
+      m,
+      p,
+      path,
+      carry: fc.boolean(),
+    }),
     weight: 2,
   },
   { arbitrary: fc.record({ kind: fc.constant("project_clear" as const), m, p }), weight: 1 },
@@ -313,9 +332,9 @@ function checkInvariants(w: World): void {
 }
 
 /**
- * Where a task's folder lands when its project's folder changes from `from` to `to`, worked out
- * here apart from the writer's code: inside the old folder it moves, unless one of the two
- * folders is the other or inside it, when nothing moves.
+ * Where a folder lands when the folder `from` was moved to `to`, worked out here apart from the
+ * writer's code: inside the old folder it moves, unless one of the two folders is the other or
+ * inside it, when nothing moves.
  */
 function expectedMove(path: string, from: string, to: string, os: FolderOs): string {
   const sep = os === "windows" ? "\\" : "/";
@@ -357,6 +376,7 @@ async function run(steps: readonly Step[]): Promise<void> {
               kind: "project.folder_set",
               project: w.projects[s.p] ?? "",
               path: PATHS[machine?.os ?? "linux"][s.path] ?? "",
+              ...(s.carry ? { carry: true } : {}),
             },
           ];
           break;
@@ -369,6 +389,7 @@ async function run(steps: readonly Step[]): Promise<void> {
               kind: "task.folder_set",
               task: w.tasks[s.t] ?? "",
               path: PATHS[machine?.os ?? "linux"][s.path] ?? "",
+              ...(s.carry ? { carry: true } : {}),
             },
           ];
           break;
@@ -466,34 +487,29 @@ async function run(steps: readonly Step[]): Promise<void> {
       }
       expect(["applied", "unchanged", "conflict", "rejected"]).toContain(result.status);
       checkInvariants(w);
-      // A project's folder change on a machine moved exactly its tasks' folders inside the old one.
-      if (s.kind === "project_set" && result.status === "applied" && machine !== undefined) {
-        const project = w.projects[s.p] ?? "";
-        const old = beforeFolders.find(
-          (f) => f.live && f.kind === "project" && f.owner === project && f.machine === machine.id,
-        );
+      // A folder change on a machine moved exactly the folders inside the old one, when it said so.
+      if (
+        (s.kind === "project_set" || s.kind === "task_set") &&
+        result.status === "applied" &&
+        machine !== undefined
+      ) {
+        const kind = s.kind === "project_set" ? "project" : "task";
+        const owner = s.kind === "project_set" ? (w.projects[s.p] ?? "") : (w.tasks[s.t] ?? "");
+        const mine = (f: FolderState) =>
+          f.kind === kind && f.owner === owner && f.machine === machine.id;
+        const old = beforeFolders.find((f) => f.live && mine(f));
         const to = PATHS[machine.os][s.path] ?? "";
-        const inProject = new Set(
-          Object.entries(before.tasks)
-            .filter(([, owner]) => owner === project)
-            .map(([task]) => task),
-        );
         const after = new Map(folders(w).map((f) => [f.id, f]));
         for (const f of beforeFolders) {
           if (!f.live) continue;
-          const now = after.get(f.id);
           let expected = f.path;
-          if (f.kind === "project" && f.owner === project && f.machine === machine.id)
-            expected = to;
-          else if (
-            old !== undefined &&
-            f.kind === "task" &&
-            f.machine === machine.id &&
-            inProject.has(f.owner)
-          ) {
+          if (mine(f)) expected = to;
+          else if (s.carry && old !== undefined && f.machine === machine.id) {
             expected = expectedMove(f.path, old.path, to, machine.os);
           }
-          expect(now?.path, "a folder change moves exactly the folders inside").toBe(expected);
+          expect(after.get(f.id)?.path, "a folder change moves exactly the folders inside").toBe(
+            expected,
+          );
         }
       }
     }
@@ -504,7 +520,7 @@ async function run(steps: readonly Step[]): Promise<void> {
 }
 
 describe("[A1.5.write.folders-model] random folder operations, deletes, restores, undos and redos on two machines", () => {
-  test("one folder per owner and machine, never two live projects on one folder, moves carry exactly the folders inside, and undo gives back what was", async () => {
+  test("one folder per owner and machine, never two live projects on one folder, a moved folder carries exactly every folder inside it, and undo gives back what was", async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(step, { minLength: 5, maxLength: 40 }), async (steps) => {
         await run(steps);

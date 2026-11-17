@@ -4,8 +4,8 @@
 // its folder, sets and clears one, and answers with the project that has a folder already; the
 // digest names a task's folder; search finds tasks by folder; and the refusals of a folder the
 // service cannot take name their reason and a way on. Temporary folders and fixture text only.
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { join, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   GroupManageResult,
@@ -477,5 +477,26 @@ describe("[A3.3.4.folders.agent] update_task's folder", () => {
     );
     expect(updated).toMatchObject({ result: "updated", fields: ["folder"] });
     expect((await filed(task?.ref ?? "")).folder).toEqual({ path: ends("deeper"), of: "task" });
+  });
+
+  test("a task's folder moved on disk takes another task's folder inside it along, and says so", async () => {
+    const [outer] = (await addHere("Fixture outer task", folder("moving"))).tasks;
+    const [inner] = (await addHere("Fixture inner task", folder("moving", "inner"))).tasks;
+    renameSync(join(root, "work", "moving"), join(root, "work", "moved"));
+    const updated = TaskUpdateResult.parse(
+      await call(agent, "task.update", {
+        task: outer?.ref ?? "",
+        set: { folder: join(root, "work", "moved") },
+        base: await asOf(),
+        request_id: rid(),
+      }),
+    );
+    // The answer names the task whose folder followed; its words are the tool's to choose.
+    expect(updated.warnings).toHaveLength(1);
+    expect(updated.warnings[0]).toContain(inner?.ref ?? "");
+    expect((await filed(inner?.ref ?? "")).folder).toEqual({
+      path: ends(`moved\\${sep}inner`),
+      of: "task",
+    });
   });
 });

@@ -151,7 +151,11 @@ export class Api {
     task: string,
     instance: string | undefined,
     id: string,
-    { pack = false, text }: { readonly pack?: boolean; readonly text?: string } = {},
+    {
+      pack = false,
+      text,
+      markFolder = false,
+    }: { readonly pack?: boolean; readonly text?: string; readonly markFolder?: boolean } = {},
   ): Promise<{ receipt: Receipt; copy: string | undefined }> {
     const result = await this.client.launch.open({
       task,
@@ -159,6 +163,8 @@ export class Api {
       // Shift+Copy (A4 3.15.5): the context pack in place of the pointer brief.
       ...(pack ? { pack: true } : {}),
       ...(text === undefined || text.trim() === "" ? {} : { text }),
+      // The person chose to open the task in a folder whose marker is gone or another's.
+      ...(markFolder ? { mark_folder: true } : {}),
       request_id: id,
     });
     const { launch } = result;

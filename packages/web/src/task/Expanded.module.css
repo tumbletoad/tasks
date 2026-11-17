@@ -163,6 +163,12 @@
   color: var(--k-muted);
 }
 
+.repo {
+  color: var(--k-muted);
+  font-style: italic;
+  unicode-bidi: isolate;
+}
+
 .muted + .muted,
 a + .muted,
 [dir] + .muted {

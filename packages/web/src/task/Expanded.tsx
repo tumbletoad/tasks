@@ -52,6 +52,7 @@ const styles = classes(css, [
   "mono",
   "acts",
   "act",
+  "repo",
   "hairline",
   "line",
   "composer",
@@ -188,6 +189,7 @@ function PlaceLine({
   };
   if (folder !== undefined && "path" in folder) {
     const missing = folder.missing === true;
+    const repo = folder.repo === undefined ? undefined : t("place.repo", { repo: folder.repo });
     return (
       <li className={styles.link} data-part="place" data-state={missing ? "missing" : "here"}>
         <span className={styles.icon} aria-hidden="true">
@@ -197,6 +199,11 @@ function PlaceLine({
           <span className={`${styles.mono} ${missing ? styles.muted : ""}`} dir="ltr">
             {folder.path}
           </span>
+          {repo === undefined ? null : (
+            <span className={styles.repo} data-tip={t("place.repoTip")}>
+              {repo}
+            </span>
+          )}
           {missing ? <span className={styles.muted}> {t("place.missing")}</span> : null}
         </span>
         <span className={styles.acts}>

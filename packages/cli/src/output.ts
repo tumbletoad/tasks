@@ -229,6 +229,27 @@ const GROUP_DONE: Readonly<Record<string, string>> = {
   proposed: "Proposed for",
 };
 
+/** What a folder change did to the folders inside the old one, a line each. */
+function insideLines(result: Result): string[] {
+  const moved = typeof result["moved"] === "number" ? result["moved"] : 0;
+  const stayed = typeof result["stayed"] === "number" ? result["stayed"] : 0;
+  if (moved === 0 && stayed === 0) return [];
+  const list = ((moved > 0 ? result["followed"] : result["kept"]) as Result[] | undefined) ?? [];
+  const folders = (n: number) => `${String(n)} folder${n === 1 ? "" : "s"}`;
+  const lines = [
+    moved > 0
+      ? `The old folder was moved: ${folders(moved)} inside it moved along.`
+      : `The old folder is still there: ${folders(stayed)} inside it ${stayed === 1 ? "stays where it is" : "stay where they are"}.`,
+  ];
+  for (const f of list) {
+    const who = f["kind"] === "task" ? str(f["ref"]) : `project ${str(f["name"])}`;
+    lines.push(`  ${who}  ${str(f["folder"])}${f["missing"] === true ? "  (not there now)" : ""}`);
+  }
+  const more = (moved > 0 ? moved : stayed) - list.length;
+  if (more > 0) lines.push(`  and ${String(more)} more`);
+  return lines;
+}
+
 export function render(entry: string, result: Result, space: string): string {
   const lines: string[] = [];
   switch (entry) {
@@ -388,13 +409,11 @@ export function render(entry: string, result: Result, space: string): string {
         const done = GROUP_DONE[str(result["result"])] ?? str(result["result"]);
         const folder = typeof group["folder"] === "string" ? `: ${group["folder"]}` : "";
         lines.push(`${done} ${str(group["kind"])} ${str(group["name"])}${folder}`);
-        if (typeof result["moved"] === "number" && result["moved"] > 0) {
-          lines.push(`${String(result["moved"])} task folders moved along.`);
-        }
+        lines.push(...insideLines(result));
       }
-      // A project a line, with its folder on this machine.
+      // A project a line, with the repository in its folder and the folder on this machine.
       const project = (g: Result) =>
-        `  ${str(g["name"])} (${str(g["active"])})${typeof g["folder"] === "string" ? `  ${g["folder"]}` : ""}`;
+        `  ${str(g["name"])}${typeof g["repo"] === "string" ? ` [${g["repo"]}]` : ""} (${str(g["active"])})${typeof g["folder"] === "string" ? `  ${g["folder"]}` : ""}`;
       for (const area of (result["areas"] as Result[] | undefined) ?? []) {
         lines.push(`${str(area["name"])} (${str(area["active"])})`);
         lines.push(...((area["projects"] as Result[] | undefined) ?? []).map(project));
