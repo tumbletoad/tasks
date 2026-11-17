@@ -200,7 +200,8 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
       expect(existsSync(join(folder, FOLDER_MARKER, "owners.json"))).toBe(true);
       expect(await violations(page)).toEqual([]);
     } finally {
-      rmSync(temp, { recursive: true, force: true });
+      // The fake agent works in the folder for a few seconds, and Windows keeps a folder in use.
+      rmSync(temp, { recursive: true, force: true, maxRetries: 60, retryDelay: 250 });
     }
   });
 });
