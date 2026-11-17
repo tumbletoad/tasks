@@ -28,6 +28,7 @@ import {
 import { dateIn } from "../ops/dates.ts";
 import { invalid } from "../ops/errors.ts";
 import { keysOf, present, taskRow } from "../ops/read.ts";
+import { endingOf, endingText } from "../ops/task-rows.ts";
 import {
   cursorExpired,
   type FrozenItem,
@@ -421,16 +422,21 @@ function rowOf(
   const base = taskRow(row, prefix);
   const snippet = item.doc === null ? undefined : snippets.get(item.doc);
   const marked = str(snippet?.["snippet"]);
-  const shown =
+  const matched =
     snippet !== undefined &&
     snippet["entity"] === item.entity &&
     snippet["task_id"] === entry.id &&
     (search.audience === "user" || snippet["audience"] === "all") &&
-    marked.includes(MATCH_START)
-      ? { snippet: cut(unmarked(marked), ROW_CUTS.snippet), snippet_from: snippet["kind"] }
-      : str(row["summary"]) === ""
-        ? {}
-        : { snippet: cut(str(row["summary"]), ROW_CUTS.snippet) };
+    marked.includes(MATCH_START);
+  const ended = endingOf(endingText(row));
+  const ending = ended === undefined ? {} : { ending: cut(ended, ROW_CUTS.snippet) };
+  // A finished task's ending takes the summary's place, as in the Completed view; where the words
+  // matched still shows.
+  const shown = matched
+    ? { snippet: cut(unmarked(marked), ROW_CUTS.snippet), snippet_from: snippet["kind"] }
+    : str(row["summary"]) === "" || ended !== undefined
+      ? {}
+      : { snippet: cut(str(row["summary"]), ROW_CUTS.snippet) };
   const completedAt = row["completed_at"];
   return {
     ...base,
@@ -440,6 +446,7 @@ function rowOf(
       ? { completed: dateIn(completedAt, timeZone) }
       : {}),
     ...shown,
+    ...ending,
     ...(Number(row["touched"]) > search.seq ? { changed: true } : {}),
   };
 }

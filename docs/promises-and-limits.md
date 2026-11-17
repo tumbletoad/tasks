@@ -103,7 +103,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Opening with a particular account uses that account's settings of the agent app.
 - Tasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.
-- Restarting or updating Tasks does not end an agent session it opened.
+- Restarting or updating Tasks does not end an agent session it opened. On Linux this needs
+  systemd to give each terminal a scope of its own: where it cannot, a restart may end the sessions
+  in the terminals Tasks opened, and `tasks doctor` warns of that.
 - The brief an agent gets when a task opens holds the task's title and reference, not its notes or
   sources. An instruction too long for it is kept as a note, never cut.
 - Tasks never changes another app's trust or approval settings.
