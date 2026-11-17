@@ -3,6 +3,7 @@
 // its writer in this thread, and its reader behind the service's reader interface.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { PREFERENCES } from "@tasks/contracts";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { Operation, WriteResult } from "@tasks/storage";
 import { writeFixture, type Fixture } from "@tasks/storage/write-helpers";
@@ -64,10 +65,9 @@ describe("[A1.3.16.prefs.read] the service reads preferences through the registr
 
   test("the snapshot carries every space preference and flag; a batch names a changed one", async () => {
     const start = (await readHead(readerOf(fx.reader))).cursor.seq;
-    const result = submit([{ kind: "pref.set", key: "ui.theme", value: "washi" }]);
+    const result = submit([{ kind: "pref.set", key: "tasks.dedupe_window_days", value: 7 }]);
     const snapshot = await readSnapshot(readerOf(fx.reader));
     expect(snapshot.preferences.map((p) => p.key)).toEqual([
-      "ui.theme",
       "tasks.statuses",
       "tasks.effort_scale",
       "tasks.dedupe_window_days",
@@ -80,7 +80,11 @@ describe("[A1.3.16.prefs.read] the service reads preferences through the registr
       "projection.enabled",
       "features.search_trigram",
     ]);
-    expect(snapshot.preferences[0]).toEqual({ key: "ui.theme", value: "washi", state: "set" });
+    expect(snapshot.preferences.find((p) => p.key === "tasks.dedupe_window_days")).toEqual({
+      key: "tasks.dedupe_window_days",
+      value: 7,
+      state: "set",
+    });
     expect(snapshot.preferences.find((p) => p.key === "projection.enabled")).toEqual({
       key: "projection.enabled",
       value: true,
@@ -89,7 +93,13 @@ describe("[A1.3.16.prefs.read] the service reads preferences through the registr
     const { batch } = await readBatch(readerOf(fx.reader), start);
     const event = batch.events.find((e) => e.seq === result.seq);
     expect(event?.entities).toEqual([
-      { type: "preference", id: "ui.theme", row: null, changed: [], created: true },
+      {
+        type: "preference",
+        id: "tasks.dedupe_window_days",
+        row: null,
+        changed: [],
+        created: true,
+      },
     ]);
   });
 
@@ -120,6 +130,6 @@ describe("[A1.3.16.prefs.read] the service reads preferences through the registr
       policy: true,
       writers: ["human"],
     });
-    expect(all).toHaveLength(13);
+    expect(all).toHaveLength(PREFERENCES.length);
   });
 });

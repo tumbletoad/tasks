@@ -15,6 +15,7 @@ import { whoOf, type Leaving } from "../edit/edits.ts";
 import { Unsaved } from "../edit/Unsaved.tsx";
 import { useEdits } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
+import { is } from "../keys/keymap.ts";
 import { useIntl } from "react-intl";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 import { Expanded } from "../task/Expanded.tsx";
@@ -475,7 +476,7 @@ function RowView({
             />
           )}
         </span>
-        <span className={styles.check} data-tip={completedTip} title={completedTip}>
+        <span className={styles.check} data-tip={completedTip}>
           {/* Check-off is final at once (D12): the row holds, the toast offers Undo (A5 3.12). */}
           <input
             type="checkbox"
@@ -518,7 +519,7 @@ function RowView({
                 }}
                 onDoubleClick={edit}
                 onKeyDown={(event) => {
-                  if (event.key === "F2") {
+                  if (is(event.nativeEvent, "rename")) {
                     event.preventDefault();
                     edit();
                   }
@@ -564,7 +565,6 @@ function RowView({
               className={styles.summary}
               data-part={model.ending === undefined ? "summary" : "ending"}
               data-tip={expanded ? t("ask.tip") : undefined}
-              title={expanded ? t("ask.tip") : undefined}
               onClick={(event) => {
                 // Expanded, the line is an agent's to change: a click asks one (A5 3.11), unless
                 // it ends a selection of its text.

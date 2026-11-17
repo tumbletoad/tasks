@@ -333,20 +333,33 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "list reads; create, rename, move, archive and unarchive change a group",
+            "description": "list reads; the others change a group",
             "enum": [
               "list",
               "create",
               "rename",
               "move",
               "archive",
-              "unarchive"
+              "unarchive",
+              "set_folder",
+              "clear_folder"
             ],
             "type": "string"
           },
           "base": {
             "description": "as_of from your last read, verbatim",
             "maxLength": 40,
+            "type": "string"
+          },
+          "cwd": {
+            "description": "Your working folder, as an absolute path",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "folder": {
+            "description": "create, set_folder: the project's folder here, \"cwd\" or an absolute path",
+            "maxLength": 4096,
+            "minLength": 1,
             "type": "string"
           },
           "mode": {
@@ -392,7 +405,9 @@
         "project.move",
         "project.archive",
         "area.unarchive",
-        "project.unarchive"
+        "project.unarchive",
+        "project.folder_set",
+        "project.folder_clear"
       ],
       "output": {
         "additionalProperties": false,
@@ -405,7 +420,9 @@
               "rename",
               "move",
               "archive",
-              "unarchive"
+              "unarchive",
+              "set_folder",
+              "clear_folder"
             ],
             "type": "string"
           },
@@ -445,6 +462,10 @@
                         "maximum": 1000000000,
                         "minimum": 0,
                         "type": "integer"
+                      },
+                      "folder": {
+                        "description": "Its folder on this machine, the home as ~",
+                        "type": "string"
                       },
                       "id": {
                         "description": "Project ID",
@@ -495,6 +516,10 @@
             "additionalProperties": false,
             "description": "A write: the group it changed",
             "properties": {
+              "folder": {
+                "description": "Its folder on this machine, the home as ~",
+                "type": "string"
+              },
               "id": {
                 "description": "Its ID",
                 "pattern": "^[ap]_[0-9a-hjkmnp-tv-z]{26}$",
@@ -520,6 +545,12 @@
             ],
             "type": "object"
           },
+          "moved": {
+            "description": "Task folders that moved along with the project's",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          },
           "projects": {
             "description": "Active projects without an area",
             "items": {
@@ -530,6 +561,10 @@
                   "maximum": 1000000000,
                   "minimum": 0,
                   "type": "integer"
+                },
+                "folder": {
+                  "description": "Its folder on this machine, the home as ~",
+                  "type": "string"
                 },
                 "id": {
                   "description": "Project ID",
@@ -565,13 +600,16 @@
             "type": "boolean"
           },
           "result": {
-            "description": "A write: what happened",
+            "description": "A write: what happened; exists: another project has this folder",
             "enum": [
               "created",
+              "exists",
               "renamed",
               "moved",
               "archived",
               "unarchived",
+              "folder_set",
+              "folder_cleared",
               "no_change",
               "proposed"
             ],
@@ -3757,6 +3795,12 @@
                   "description": "Star it for today, only when the user asks",
                   "type": "boolean"
                 },
+                "folder": {
+                  "description": "Its folder: \"cwd\", an absolute folder or one under ~",
+                  "maxLength": 4096,
+                  "minLength": 1,
+                  "type": "string"
+                },
                 "inbox": {
                   "description": "Put it in the Inbox for the user",
                   "type": "boolean"
@@ -3774,36 +3818,6 @@
                     "create_new"
                   ],
                   "type": "string"
-                },
-                "place": {
-                  "anyOf": [
-                    {
-                      "maxLength": 4096,
-                      "pattern": "^(?:cwd$|\\/|[A-Za-z]:[\\\\/]|[\\\\/]{2})",
-                      "type": "string"
-                    },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "path": {
-                          "description": "Relative path inside the root",
-                          "maxLength": 1024,
-                          "type": "string"
-                        },
-                        "root": {
-                          "description": "Root name or ID",
-                          "maxLength": 120,
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "root",
-                        "path"
-                      ],
-                      "type": "object"
-                    }
-                  ],
-                  "description": "Its folder: \"cwd\", an absolute folder, or root and path"
                 },
                 "priority": {
                   "description": "1 highest, 4 none",
@@ -3914,7 +3928,7 @@
         "task.create",
         "log.add",
         "source.add",
-        "place.set",
+        "task.folder_set",
         "area.create",
         "project.create"
       ],
@@ -4080,6 +4094,12 @@
                   "description": "Star it for today, only when the user asks",
                   "type": "boolean"
                 },
+                "folder": {
+                  "description": "Its folder: \"cwd\", an absolute folder or one under ~",
+                  "maxLength": 4096,
+                  "minLength": 1,
+                  "type": "string"
+                },
                 "inbox": {
                   "description": "Put it in the Inbox for the user",
                   "type": "boolean"
@@ -4097,36 +4117,6 @@
                     "create_new"
                   ],
                   "type": "string"
-                },
-                "place": {
-                  "anyOf": [
-                    {
-                      "maxLength": 4096,
-                      "pattern": "^(?:cwd$|\\/|[A-Za-z]:[\\\\/]|[\\\\/]{2})",
-                      "type": "string"
-                    },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "path": {
-                          "description": "Relative path inside the root",
-                          "maxLength": 1024,
-                          "type": "string"
-                        },
-                        "root": {
-                          "description": "Root name or ID",
-                          "maxLength": 120,
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "root",
-                        "path"
-                      ],
-                      "type": "object"
-                    }
-                  ],
-                  "description": "Its folder: \"cwd\", an absolute folder, or root and path"
                 },
                 "priority": {
                   "description": "1 highest, 4 none",
@@ -4282,7 +4272,7 @@
         "task.create",
         "log.add",
         "source.add",
-        "place.set",
+        "task.folder_set",
         "area.create",
         "project.create"
       ],
@@ -4364,6 +4354,13 @@
             "description": "Task reference",
             "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
             "type": "string"
+          },
+          "warnings": {
+            "description": "Warnings, one sentence each",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "wrap_state": {
             "description": "Wrap-up state",
@@ -4865,6 +4862,46 @@
                     "description": "Starred for today",
                     "type": "boolean"
                   },
+                  "folder": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "of": {
+                            "description": "The task's own folder, or its project's",
+                            "enum": [
+                              "task",
+                              "project"
+                            ],
+                            "type": "string"
+                          },
+                          "path": {
+                            "description": "The folder on this machine, the home as ~",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "of"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "machine": {
+                            "description": "Only on this other machine",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "machine"
+                        ],
+                        "type": "object"
+                      }
+                    ],
+                    "description": "Its folder: its own, else its project's"
+                  },
                   "id": {
                     "description": "Task ID",
                     "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
@@ -5163,33 +5200,6 @@
                   "outcome": {
                     "description": "Outcome of the last completion",
                     "type": "string"
-                  },
-                  "place": {
-                    "additionalProperties": false,
-                    "description": "Its place on this machine",
-                    "properties": {
-                      "folder": {
-                        "description": "Its folder on this machine, resolved now",
-                        "type": "string"
-                      },
-                      "path": {
-                        "description": "Path inside the root",
-                        "type": "string"
-                      },
-                      "root": {
-                        "description": "Root name",
-                        "type": "string"
-                      },
-                      "unresolved": {
-                        "description": "Why it resolves to no folder here now",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "root",
-                      "path"
-                    ],
-                    "type": "object"
                   },
                   "priority": {
                     "description": "1 highest, 4 none",
@@ -6831,7 +6841,7 @@
                 "effort",
                 "due",
                 "waiting_on",
-                "place",
+                "folder",
                 "focus"
               ],
               "type": "string"
@@ -6920,39 +6930,15 @@
                 "description": "Star it for today, only when the user asks",
                 "type": "boolean"
               },
+              "folder": {
+                "description": "\"cwd\", an absolute folder or one under ~",
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
               "inbox": {
                 "description": "In the Inbox",
                 "type": "boolean"
-              },
-              "place": {
-                "anyOf": [
-                  {
-                    "maxLength": 4096,
-                    "pattern": "^(?:cwd$|\\/|[A-Za-z]:[\\\\/]|[\\\\/]{2})",
-                    "type": "string"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "path": {
-                        "description": "Relative path inside the root",
-                        "maxLength": 1024,
-                        "type": "string"
-                      },
-                      "root": {
-                        "description": "Root name or ID",
-                        "maxLength": 120,
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "root",
-                      "path"
-                    ],
-                    "type": "object"
-                  }
-                ],
-                "description": "\"cwd\", an absolute folder, or root and path"
               },
               "priority": {
                 "description": "1 highest, 4 none",
@@ -7007,8 +6993,8 @@
         "task.move",
         "source.add",
         "source.unlink",
-        "place.set",
-        "place.clear",
+        "task.folder_set",
+        "task.folder_clear",
         "area.create",
         "project.create"
       ],

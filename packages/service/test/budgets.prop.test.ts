@@ -14,6 +14,7 @@ import { opCall, type Caller } from "../src/ops/index.ts";
 import { join } from "node:path";
 import { contractWorld } from "./contract/suite.ts";
 import { classSession, grantHome } from "./ops-helpers.ts";
+import { placeTasks } from "./places-helper.ts";
 
 type Json = Record<string, unknown>;
 const LONG = 1_200_000;
@@ -252,24 +253,29 @@ async function runCorpus(size: number, pool: readonly string[], heavyCount: numb
   };
   const pick = (i: number): string => pool[i % pool.length] ?? "x";
 
-  // Tasks, 25 drafts a call: odd one-line titles and summaries, a third placed in the portal and a
-  // third in the folder above it.
+  // Tasks, 25 drafts a call: odd one-line titles and summaries, a third in the portal folder and a
+  // third in the folder above it. Status's `here` reads places, so they are placed there too.
   const refs: string[] = [];
   for (let start = 0; start < size; start += 25) {
+    const at = (i: number): string | undefined =>
+      i % 3 === 0 ? "lumen/portal" : i % 3 === 1 ? "lumen" : undefined;
     const drafts = Array.from({ length: Math.min(25, size - start) }, (_, k) => {
       const i = start + k;
+      const path = at(i);
       return {
         title: clamp(`T${String(i)} ${pick(i)}`, LIMIT(300)),
         summary: clamp(pick(i + 1), LIMIT(400)),
-        ...(i % 3 === 0
-          ? { place: { root: "work", path: "lumen/portal" } }
-          : i % 3 === 1
-            ? { place: { root: "work", path: "lumen" } }
-            : {}),
+        ...(path === undefined ? {} : { folder: join(w.root, "work", path) }),
       };
     });
     const added = await call("task.add", { tasks: drafts, request_id: rid() });
-    refs.push(...(added["tasks"] as Json[]).map((t) => String(t["ref"])));
+    const made = (added["tasks"] as Json[]).map((t) => String(t["ref"]));
+    refs.push(...made);
+    const places = made.flatMap((task, k) => {
+      const path = at(start + k);
+      return path === undefined ? [] : [{ task, root: "work", path }];
+    });
+    if (places.length > 0) await placeTasks(w.service.ops, places, space);
   }
 
   // A few heavy tasks: a context near 64 KiB, notes for agents short and long, other notes, fifty

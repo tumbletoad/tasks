@@ -19,6 +19,7 @@ import {
   within,
   type ServiceJson,
 } from "../../packages/service/test/harness.ts";
+import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { checkedDriver, seedMira } from "../../packages/testkit/src/index.ts";
 import { addBulkTasks, addFinishedTasks, type FinishedCounts } from "./bulk.ts";
@@ -59,6 +60,11 @@ export interface World {
   readonly spare: FixtureTask;
   /** The `tasks open` URL of a fresh code, landing on `to`. */
   signInUrl(to: string): Promise<string>;
+  /**
+   * Sets one of this computer's settings (`ui.theme`, `ui.single_keys`) as the page does, or resets
+   * it with null. The tests of a worker share its service: a test that changes one puts it back.
+   */
+  machine(key: string, value: unknown): Promise<void>;
   /** The fake terminal's command lines so far. */
   terminal(): TerminalCall[];
   /** An agent logs on a task, through the service's request path as an agent does. */
@@ -196,6 +202,8 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     let ops = 0;
     /** When this world's sign-in URLs were handed out, for the service's redeem limit. */
     const redeems: number[] = [];
+    /** The world's own sign-in for `machine`, made once. */
+    let token: string | undefined;
     return {
       origin,
       mira: { id: opened.space.spaceId, name: opened.space.name },
@@ -218,6 +226,19 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           port: number;
         };
         return `http://127.0.0.1:${String(minted.port)}/#k=${minted.code}&to=${encodeURIComponent(to)}`;
+      },
+      machine: async (key, value) => {
+        const port = Number(new URL(origin).port);
+        if (token === undefined) {
+          redeems.push(Date.now());
+          const minted = (await user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
+            code: string;
+          };
+          const signed = await post(port, "/api/v1/auth/redeem", { code: minted.code });
+          token = (JSON.parse(signed.body) as { token: string }).token;
+        }
+        const reply = await post(port, "/api/v1/machine/pref", { key, value }, { token });
+        if (reply.status !== 200) throw new Error(`machine/pref answered ${String(reply.status)}`);
       },
       terminal: () =>
         readFileSync(record, "utf8")

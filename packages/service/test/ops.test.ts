@@ -1,6 +1,7 @@
 // The request path for operations (A2 3.6.4 op/call and op/list; A3 3.4, 3.5, 3.7.9; M1.10)
 // through a real service in this process and real tasks-local/1 sessions of each CLI class.
 // Fixture text only.
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
@@ -30,6 +31,8 @@ let service: RunningService;
 let home: string;
 let cleanup: () => void;
 let spaceFolder: string;
+/** A folder of the person's work, outside the space's and the Tasks home. */
+let workFolder: string;
 const sessions: RpcSession[] = [];
 
 const session = async (cls: CliClass, env: Record<string, string> = {}): Promise<RpcSession> => {
@@ -48,6 +51,8 @@ beforeAll(async () => {
   const temp = tempRoot("ops");
   cleanup = temp.cleanup;
   home = join(temp.root, "h");
+  workFolder = join(temp.root, "work", "fixture");
+  mkdirSync(join(workFolder, "two"), { recursive: true, mode: 0o700 });
   service = await startService({
     env: serviceEnv(home),
     identity: () => ({ root: false, elevated: false, package: null }),
@@ -646,6 +651,8 @@ function recordingHost(sent: WriteRequest[]): OpsHost {
   };
   return {
     machine: service.ops.machine,
+    ...(service.ops.home === undefined ? {} : { home: service.ops.home }),
+    ...(service.ops.dataFolder === undefined ? {} : { dataFolder: service.ops.dataFolder }),
     spaces: () =>
       service.ops
         .spaces()
@@ -668,12 +675,12 @@ describe("[A2.3.6.ops.launch-rule] launches stay the user's on the request path 
       const op = (entry: string, input: Record<string, unknown>) =>
         opCall(host, caller, { op: entry, input, space: "Mira" });
       const from = sent.length;
-      // Every write entry of M1, with each part a draft can carry: a log entry, a source, a place.
+      // Every write entry of M1, with each part a draft can carry: a log entry, a source, a folder.
       const draft = (title: string) => ({
         title,
         log: "Fixture log.",
         sources: [{ kind: "ticket", title: "Fixture ticket", key: `fixture:${cls}:${title}` }],
-        place: { root: "work", path: "fixture" },
+        folder: workFolder,
       });
       const added = TaskAddResult.parse(
         await op("task.add", { tasks: [draft("Fixture rule task")], request_id: rid() }),
@@ -683,7 +690,7 @@ describe("[A2.3.6.ops.launch-rule] launches stay the user's on the request path 
       const updated = TaskUpdateResult.parse(
         await op("task.update", {
           task: ref,
-          set: { summary: "Fixture summary", place: { root: "work", path: "fixture/two" } },
+          set: { summary: "Fixture summary", folder: join(workFolder, "two") },
           add_sources: [{ kind: "ticket", title: "Fixture other", key: `fixture:${cls}:other` }],
           base: read.as_of,
           request_id: rid(),
@@ -719,7 +726,7 @@ describe("[A2.3.6.ops.launch-rule] launches stay the user's on the request path 
           "task.create",
           "log.add",
           "source.add",
-          "place.set",
+          "task.folder_set",
           "task.patch",
           "task.complete",
           // complete_task's outcome is the task's wrap-up (A3 3.4.8).

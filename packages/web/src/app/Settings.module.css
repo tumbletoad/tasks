@@ -1,11 +1,39 @@
 .settings {
-  padding-block: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 560px;
+  padding-block: 16px 32px;
+}
+
+/* Where the settings are kept: said once, quietly. */
+.where {
+  margin: 0;
+  color: var(--k-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.heading {
+  margin: 0;
+  color: var(--k-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.5rem;
 }
 
 .group {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  align-self: stretch;
 }
 
 /* t-label: 12 / 16, muted. */
@@ -37,7 +65,9 @@
   background: var(--k-hover);
 }
 
-.option[data-focus-visible] {
+.option[data-focus-visible],
+.switch[data-focus-visible],
+.button[data-focus-visible] {
   outline: 2px solid var(--k-focus);
   outline-offset: 2px;
 }
@@ -65,8 +95,98 @@
   font-size: 0.8125rem;
 }
 
+/* A switch: a track with a thumb that moves to the end and takes the accent when on. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.switch[data-hovered] {
+  background: var(--k-hover);
+}
+
+.track {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  width: 32px;
+  height: 18px;
+  padding: 2px;
+  border: 1.5px solid var(--k-control);
+  border-radius: 9px;
+  transition: background-color var(--k-fast) var(--k-ease);
+}
+
+.thumb {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--k-control);
+  transition: transform var(--k-fast) var(--k-ease);
+}
+
+.switch[data-selected] .track {
+  border-color: var(--k-accent);
+  background: var(--k-accent);
+}
+
+.switch[data-selected] .thumb {
+  background: var(--k-accent-ink);
+  transform: translateX(14px);
+}
+
+.switch[data-selected] .thumb:dir(rtl) {
+  transform: translateX(-14px);
+}
+
+.description,
+.status {
+  margin: 0;
+  padding-inline: 10px;
+  color: var(--k-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.button {
+  min-height: 32px;
+  padding: 0 12px;
+  margin-inline-start: 10px;
+  border: 1px solid var(--k-line-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--k-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.button[data-hovered] {
+  background: var(--k-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track,
+  .thumb {
+    transition: none;
+  }
+}
+
 @media (forced-colors: active) {
   .option[data-selected] .dot {
     border-color: Highlight;
+  }
+
+  .switch[data-selected] .track {
+    border-color: Highlight;
+    background: Highlight;
+  }
+
+  .thumb {
+    background: CanvasText;
   }
 }

@@ -159,6 +159,20 @@ export class UiFolderInvalid extends Error {}
 export const BUILD_PLACEHOLDER = "__TASKS_BUILD__";
 
 /**
+ * Where a built `index.html` takes this computer's theme, so the first paint is already in it,
+ * in a fresh browser too. Replaced per response: the person may change it at any time.
+ */
+export const THEME_PLACEHOLDER = "__TASKS_THEME__";
+const THEMES: readonly string[] = ["sumi", "washi", "system"];
+
+/** The shell as one response serves it: the nonce and the theme in their places. */
+export function shellFor(index: string, nonce: string, theme: string): string {
+  return index
+    .replaceAll(NONCE_PLACEHOLDER, nonce)
+    .replaceAll(THEME_PLACEHOLDER, THEMES.includes(theme) ? theme : "sumi");
+}
+
+/**
  * What is wrong with a built `index.html` against its files (A2 3.8.3 "Asset integrity", A5
  * 3.26): every script is a file of the bundle with the integrity hash of its bytes, and so is every
  * stylesheet and module preload; no inline script, and no inline style without the nonce; the

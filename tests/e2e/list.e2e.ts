@@ -11,13 +11,11 @@
 // Programmatic scrolling also skips the compositor's own smooth scrolling, so it is a stricter test
 // of coverage than a wheel, and no test of smoothness.
 import { expect, type Page } from "@playwright/test";
-import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { BULK_TASKS, test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
 import { SLOW_MS } from "./world.ts";
 
-const THEME_KEY = `${PRODUCT_ID}.theme`;
 /**
  * At least this many rows in the scroll test's area view, whichever area it is: three of every six
  * bulk tasks are in Lumen's projects and two in Home's (bulk.ts `PLACES`).
@@ -292,12 +290,7 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
     }
 
     for (const theme of ["sumi", "washi"] as const) {
-      await page.evaluate(
-        (value) => {
-          localStorage.setItem(value.key, value.theme);
-        },
-        { key: THEME_KEY, theme },
-      );
+      await bulk.machine("ui.theme", theme);
       for (const width of [1440, 390]) {
         await page.setViewportSize({ width, height: 900 });
         await page.reload();
@@ -348,5 +341,7 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
         }
       }
     }
+    // The tests of a worker share its service: the theme goes back to its default.
+    await bulk.machine("ui.theme", null);
   });
 });

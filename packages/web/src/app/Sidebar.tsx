@@ -129,12 +129,12 @@ export function Sidebar({ space }: { readonly space: string }) {
       )}
       <div className={styles.foot}>
         <Link
-          to="/s/$space/settings/$section"
-          params={{ space, section: "appearance" }}
+          to="/s/$space/settings"
+          params={{ space }}
           className={styles.gear}
           activeProps={{ "aria-current": "page" }}
           aria-label={t("nav.settings")}
-          title={t("nav.settings")}
+          data-tip={t("nav.settings")}
         >
           <SettingsIcon />
         </Link>

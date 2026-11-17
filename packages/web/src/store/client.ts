@@ -2,6 +2,7 @@
 // 3.8), feeding the live store (store.ts). All task data comes this way; there is no polling
 // beside it and no second path for data.
 //
+// - `machine`: this computer's settings of the page, handed to the page as they come.
 // - `hello`, then `subscribe {space, cursor?}`: with the cursor the store resumes from, so a
 //   reconnect continues where the tab was; without one for the first snapshot or a fresh one.
 // - Every snapshot, batch and error goes to the store's frame queue in arrival order.
@@ -20,7 +21,7 @@ import type { PageRoute } from "../route.ts";
 import { browserFrames } from "./browser-frames.ts";
 import type { FrameClock } from "./frame.ts";
 import type { Overlay } from "./pending.ts";
-import { parseMessage, type Cursor } from "./rows.ts";
+import { parseMessage, type Cursor, type MachinePreference } from "./rows.ts";
 import { LiveStore, type Changes, type LiveState, type Sent, type Touched } from "./store.ts";
 
 const RETRY_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
@@ -35,6 +36,8 @@ export interface LiveOptions {
   readonly onSpace: (space: string) => void;
   /** The token is no longer good: the page forgets it. */
   readonly onSignedOut: () => void;
+  /** This computer's settings of the page, as the feed carries them (the theme, the keys). */
+  readonly onMachine?: (preferences: readonly MachinePreference[]) => void;
   /** The frame clock (tests pass their own). */
   readonly frames?: FrameClock;
 }
@@ -160,7 +163,8 @@ export class Live {
         this.#hello(message.build);
       } else if (message.type === "installed") {
         this.store.setInstalled(message.version, this.#running);
-      } else this.store.push(message);
+      } else if (message.type === "machine") this.#options.onMachine?.(message.preferences);
+      else this.store.push(message);
     };
     ws.onclose = (event: CloseEvent) => {
       if (this.#ws !== ws) return;

@@ -21,6 +21,7 @@ import { briefNames } from "../src/launch/open.ts";
 import { instanceToml, readLog, tempRoot } from "./harness.ts";
 import { bridgeContext } from "./mcp-helpers.ts";
 import { classSession, errorOf, grantHome } from "./ops-helpers.ts";
+import { placeTask } from "./places-helper.ts";
 import { LAB_ROOT, ShimLab } from "./shim-harness.ts";
 
 const WINDOWS = process.platform === "win32";
@@ -108,12 +109,14 @@ async function addTask(
     {
       space: r.lab.spaceId,
       op: "task.add",
-      input: { tasks: [{ title, place: { root: LAB_ROOT, path: folder } }], request_id: rid() },
+      input: { tasks: [{ title }], request_id: rid() },
     },
     { timeoutMs: 60_000 },
   )) as { tasks: { id: string; ref: string }[] };
   const task = added.tasks[0];
   if (task === undefined) throw new Error("no task");
+  // The launch reads places, which no tool binds any more.
+  await placeTask(r.lab.running.ops, task.id, LAB_ROOT, folder, r.lab.spaceId);
   return task;
 }
 

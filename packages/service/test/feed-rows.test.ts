@@ -12,6 +12,7 @@ import { startService, type RunningService } from "../src/hub/service.ts";
 import { readBatch, readHead, readSnapshot, type FeedHere } from "../src/http/feed.ts";
 import { classSession } from "./ops-helpers.ts";
 import { configOf, removeRuntimeDir, serviceEnv, tempRoot } from "./harness.ts";
+import { placeTasks, unplaceTask } from "./places-helper.ts";
 
 let service: RunningService;
 let home: string;
@@ -81,20 +82,22 @@ const byTitle = (rows: Rows, title: string) => rows.find((r) => r["title"] === t
 
 describe("[A5.3.6.http.row-children] a task's row carries its sources and its place's state here", () => {
   test("the snapshot: three sources with their own text, how many more, here and missing places", async () => {
-    TaskAddResult.parse(
+    const added = TaskAddResult.parse(
       await call("task.add", {
         tasks: [
-          {
-            title: "Fixture four sources",
-            sources: [source(1), source(2), source(3), source(4)],
-            place: { root: "work", path: "lumen/portal" },
-          },
-          { title: "Fixture gone folder", place: { root: "work", path: "lumen/api" } },
+          { title: "Fixture four sources", sources: [source(1), source(2), source(3), source(4)] },
+          { title: "Fixture gone folder" },
           { title: "Fixture plain" },
         ],
         request_id: rid(),
       }),
     );
+    // The feed's rows read places, which no tool binds any more.
+    const [placed, gone] = added.tasks.map((t) => t.ref ?? "");
+    await placeTasks(service.ops, [
+      { task: placed ?? "", root: "work", path: "lumen/portal" },
+      { task: gone ?? "", root: "work", path: "lumen/api" },
+    ]);
     rmSync(join(work, "lumen", "api"), { recursive: true });
 
     const snapshot = await readSnapshot(reader, here);
@@ -134,13 +137,7 @@ describe("[A5.3.6.http.row-children] a task's row carries its sources and its pl
       base: read.as_of,
       request_id: rid(),
     });
-    const second = TaskGetResult.parse(await call("task.get", { task: "M-2" }));
-    await call("task.update", {
-      task: "M-2",
-      clear: ["place"],
-      base: second.as_of,
-      request_id: rid(),
-    });
+    await unplaceTask(service.ops, "M-2");
     const { batch } = await readBatch(reader, start, { here });
     expect(batch.events).toHaveLength(2);
     const [link, unplace] = batch.events;

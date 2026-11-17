@@ -117,7 +117,14 @@ function SourceLine({
     link === undefined ? (
       <span dir="auto">{own}</span>
     ) : (
-      <a href={link.href} target="_blank" rel={LINK_REL} data-tip={tip} title={tip} dir="auto">
+      <a
+        href={link.href}
+        target="_blank"
+        rel={LINK_REL}
+        data-tip={tip}
+        aria-description={tip}
+        dir="auto"
+      >
         {own}
       </a>
     );
@@ -159,7 +166,10 @@ function keyRef(kind: string, key: string): string | undefined {
   return ref !== "" && ref.length <= 40 && !/\s/u.test(ref) ? ref : undefined;
 }
 
-/** The place's line: its folder here, a folder not found, another machine, or the work folder. */
+/**
+ * The folder's line: the task's folder here (its own or its project's), another machine, or the
+ * work folder.
+ */
 function PlaceLine({
   task,
   detail,
@@ -169,7 +179,7 @@ function PlaceLine({
 }) {
   const t = useT();
   const say = useToast();
-  const place = detail?.task.place;
+  const folder = detail?.task.folder;
   const copy = (text: string) => {
     navigator.clipboard.writeText(text).then(
       () => {
@@ -180,50 +190,47 @@ function PlaceLine({
       },
     );
   };
-  if (place !== undefined) {
-    const found = place.folder;
-    const shown = found ?? (place.path === "" ? place.root : `${place.root}/${place.path}`);
+  if (folder !== undefined && "path" in folder) {
     return (
-      <li
-        className={styles.link}
-        data-part="place"
-        data-state={found === undefined ? "missing" : "here"}
-      >
+      <li className={styles.link} data-part="place" data-state="here">
         <span className={styles.icon} aria-hidden="true">
           <FolderIcon />
         </span>
         <span data-fact="">
-          <span className={`${styles.mono} ${found === undefined ? styles.muted : ""}`} dir="ltr">
-            {shown}
+          <span className={styles.mono} dir="ltr">
+            {folder.path}
           </span>
-          {found === undefined ? <span className={styles.muted}> {t("place.missing")}</span> : null}
         </span>
-        {found === undefined ? null : (
-          <span className={styles.acts}>
-            <button
-              type="button"
-              className={styles.act}
-              aria-label={t("place.copy")}
-              data-tip={t("place.copy")}
-              onClick={() => {
-                copy(found);
-              }}
-            >
-              <CopyIcon />
-            </button>
-          </span>
-        )}
+        <span className={styles.acts}>
+          <button
+            type="button"
+            className={styles.act}
+            aria-label={t("place.copy")}
+            data-tip={t("place.copy")}
+            onClick={() => {
+              copy(folder.path);
+            }}
+          >
+            <CopyIcon />
+          </button>
+        </span>
       </li>
     );
   }
-  if (task.place?.state === "elsewhere") {
+  const elsewhere =
+    folder !== undefined
+      ? folder.machine
+      : task.place?.state === "elsewhere"
+        ? task.place.machine
+        : undefined;
+  if (elsewhere !== undefined) {
     return (
       <li className={styles.link} data-part="place" data-state="elsewhere">
         <span className={styles.icon} aria-hidden="true">
           <FolderElsewhereIcon />
         </span>
         <span className={styles.muted} data-fact="" dir="auto">
-          {t("place.elsewhere", { machine: task.place.machine })}
+          {t("place.elsewhere", { machine: elsewhere })}
         </span>
       </li>
     );
@@ -235,12 +242,7 @@ function PlaceLine({
       <span className={styles.icon} aria-hidden="true">
         <FolderIcon />
       </span>
-      <span
-        className={styles.muted}
-        data-fact=""
-        data-tip={t("place.workFolderTip")}
-        title={t("place.workFolderTip")}
-      >
+      <span className={styles.muted} data-fact="" data-tip={t("place.workFolderTip")}>
         {t("place.workFolder")}
       </span>
     </li>
@@ -338,8 +340,8 @@ function Strip({ task, receipts, instances, actions }: ExpandedProps) {
         type="button"
         className={styles.button}
         aria-label={t("row.copyFor", { title: task.title })}
+        aria-description={t("row.copyTip")}
         data-tip={t("row.copyTip")}
-        title={t("row.copyTip")}
         onClick={(event) => {
           actions.copy(task, event.shiftKey);
         }}

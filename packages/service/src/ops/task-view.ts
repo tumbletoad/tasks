@@ -3,7 +3,6 @@
 // so every face returns the same result; MCP's text is its rendering (mcp/render.ts).
 import type { Row } from "@tasks/storage";
 import { invalid } from "./errors.ts";
-import type { PlaceState } from "./here.ts";
 import {
   buildPage,
   parseToken,
@@ -64,13 +63,15 @@ export const DIGEST_RANGES: {
   log: { upto: null, limit: DIGEST_LIMITS.log },
 };
 
-export type { PlaceState };
+/** A digest's folder: the one work opens in here, its own or its project's, else where one is. */
+export type DigestFolder =
+  { readonly path: string; readonly of: "task" | "project" } | { readonly machine: string };
 
-/** The digest of A3 3.9.6, v0. `place` is the task's place resolved now, when it has one here. */
+/** The digest of A3 3.9.6, v0, with the task's folder when it or its project has one. */
 export function digestOf(
   read: TaskRead,
   today: string,
-  place: PlaceState | undefined,
+  folder: DigestFolder | undefined,
 ): Record<string, unknown> {
   const { row, counts } = read;
   const cut: Record<string, number> = {};
@@ -105,15 +106,7 @@ export function digestOf(
     ...(typeof row["created_at"] === "number" && Number.isFinite(row["created_at"])
       ? { created: new Date(row["created_at"]).toISOString() }
       : {}),
-    ...(read.place === undefined
-      ? {}
-      : {
-          place: {
-            root: text(read.place["root_id"]),
-            path: text(read.place["rel_path"]),
-            ...(place ?? {}),
-          },
-        }),
+    ...(folder === undefined ? {} : { folder }),
     ...present("wrap_state", row["wrap_state"]),
     ...(outcome === "" ? {} : { outcome: field("outcome", outcome, DIGEST_LIMITS.outcome) }),
     learnings: [],

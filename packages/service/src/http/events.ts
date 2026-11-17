@@ -33,6 +33,8 @@ export const ROUTES = [
   "launch",
   /** `POST /api/v1/space/list` and `/default`: the page's space switcher and Make default. */
   "space",
+  /** `POST /api/v1/machine/pref` and `/terminal`: Settings for this computer. */
+  "machine",
   /** Another path under `/api/`. */
   "api_other",
   /** Any other path. */

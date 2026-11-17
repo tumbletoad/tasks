@@ -226,6 +226,20 @@ export interface HelloMessage {
   readonly installed: string | undefined;
 }
 
+/** A setting of this computer as the feed carries it: its key and value, or its default. */
+export interface MachinePreference {
+  readonly key: string;
+  readonly value: unknown;
+  /** `default`: nobody chose it. */
+  readonly state: string;
+}
+
+/** This computer's settings of the page, after `hello` and again on each change. */
+export interface MachineMessage {
+  readonly type: "machine";
+  readonly preferences: readonly MachinePreference[];
+}
+
 /** The install's version changed while the service runs: undefined when it is the service's again. */
 export interface InstalledMessage {
   readonly type: "installed";
@@ -233,7 +247,7 @@ export interface InstalledMessage {
 }
 
 export type FeedMessage =
-  SnapshotMessage | BatchMessage | ErrorMessage | HelloMessage | InstalledMessage;
+  SnapshotMessage | BatchMessage | ErrorMessage | HelloMessage | MachineMessage | InstalledMessage;
 
 const VERSION = /^[0-9A-Za-z.+-]{1,64}$/;
 const versionOf = (value: unknown): string | undefined =>
@@ -447,6 +461,22 @@ export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" 
       return { type: "installed", version: versionOf(value["version"]) };
     case "error":
       return { type: "error", code: isString(value["code"]) ? value["code"] : "" };
+    case "machine": {
+      const list = value["preferences"];
+      if (!Array.isArray(list)) return undefined;
+      const preferences = list.flatMap((item: unknown) =>
+        isRecord(item) && isString(item["key"])
+          ? [
+              {
+                key: item["key"],
+                value: item["value"],
+                state: isString(item["state"]) ? item["state"] : "",
+              },
+            ]
+          : [],
+      );
+      return { type: "machine", preferences };
+    }
     case "snapshot": {
       const space = value["space"];
       const cursor = cursorOf(value["cursor"]);
