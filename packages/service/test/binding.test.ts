@@ -482,9 +482,10 @@ describe("[A3.3.7.binding.folder] a working folder, a hint or an argument never 
     async () => {
       const task = await user("task.get", { task: "M-4", sections: ["history"] });
       const taskId = String((task["task"] as Json)["id"]);
-      await user("task.update", {
+      await user("folder.manage", {
+        action: "set",
         task: "M-4",
-        set: { place: w.portal },
+        folder: w.portal,
         base: (await user("space.status", {}))["as_of"],
         request_id: rid(),
       });

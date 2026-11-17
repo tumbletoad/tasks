@@ -139,7 +139,6 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
     name: "roots",
     summary: "Retired: a task opens in its own folder or its project's",
     help: ROOTS_HELP,
-    subcommands: ["list", "add"],
   },
   {
     name: "view",
