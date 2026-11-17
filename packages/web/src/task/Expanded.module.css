@@ -520,12 +520,9 @@ a + .muted,
   gap: 8px;
 }
 
-/* Between Note and the agents. */
-.rule {
-  align-self: stretch;
-  width: 1px;
-  margin: 4px 2px;
-  background: var(--k-line-strong);
+/* Note stands a little apart from the agents. */
+.button[data-part="note"] {
+  margin-right: 8px;
 }
 
 /* Copy stands apart, at the strip's end. */

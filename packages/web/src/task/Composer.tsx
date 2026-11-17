@@ -26,7 +26,7 @@ import { typingIn } from "../kept.ts";
 import { DRAFT_MAX, keepDraft, onAsk, onDraft, readDraft } from "./composer.ts";
 import css from "./Expanded.module.css";
 
-const styles = classes(css, ["input", "strip", "button", "glyph", "hint", "gap", "rule"]);
+const styles = classes(css, ["input", "strip", "button", "glyph", "hint", "gap"]);
 
 const STUBS: Readonly<Record<AskField, MessageId>> = {
   summary: "ask.summary",
@@ -66,9 +66,13 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     keepDraft(space, task.id, next);
   };
 
-  /** The words went somewhere: the field clears, unless the person has typed on since. */
+  /**
+   * The words went somewhere: the kept draft and the field clear, each unless the person has
+   * typed on since (here, in another tab, or in this task's composer opened again).
+   */
   const sent = (words: string) => {
-    if (now.current.trim() === words) write("");
+    if (readDraft(space, task.id).trim() === words) keepDraft(space, task.id, "");
+    if (now.current.trim() === words) setText("");
   };
 
   // A request starts here: its stub follows what the person had written, which stays.
@@ -195,7 +199,7 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
             </kbd>
           )}
         </button>
-        {instances.length === 0 ? null : <span className={styles.rule} aria-hidden="true" />}
+
         {instances.map((instance, i) => {
           const busy = opening.has(instance.key) || tileState(receipts, instance.key) === "opening";
           const tip = busy
