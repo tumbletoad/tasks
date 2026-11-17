@@ -13,6 +13,7 @@ import { ROOTS_HELP } from "./roots.ts";
 import { SERVICE_HELP } from "./service.ts";
 import { SETUP_HELP } from "./setup.ts";
 import { SPACE_HELP } from "./space.ts";
+import { RUN_HELP } from "./runs.ts";
 import { VIEW_HELP } from "./view.ts";
 
 export interface LocalCommand {
@@ -143,6 +144,13 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
     summary: "List and add this machine's roots, the folders places live under",
     help: ROOTS_HELP,
     subcommands: ["list", "add"],
+  },
+  {
+    name: "run",
+    summary:
+      "Start a background run of a task with an agent, list runs, show a run's answer, stop a run",
+    help: RUN_HELP,
+    subcommands: ["list", "show", "stop"],
   },
   {
     name: "view",

@@ -6,10 +6,17 @@
 // one supervisor, which starts queued runs within machine.toml's `[runs]` limits, holds new starts
 // while an update waits, and removes old run folders.
 import { dirname, join } from "node:path";
-import { PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
-import { RUN_LIMITS, type NewRun, type RunLimits, type RunRecord } from "@tasks/contracts/runs";
-import { SpaceExecutionStore } from "@tasks/launch";
+import {
+  FINAL_RUN_STATES,
+  RUN_LIMITS,
+  type NewRun,
+  type RunLimits,
+  type RunRecord,
+} from "@tasks/contracts/runs";
+import { decodeRun, newTicket, SpaceExecutionStore, type BridgeTicket } from "@tasks/launch";
+import { decodeRunRow } from "@tasks/storage";
 import {
   containers as platformContainers,
   FallbackContainers,
@@ -35,7 +42,15 @@ import { DEFAULT_RUN_SETTINGS, type RunSettings } from "../config/machine-toml.t
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
 import type { ServedSpace } from "../ops/index.ts";
-import { readLaunchTask, readTaskRef } from "../ops/read.ts";
+import { readLaunchTask, readRunRows, readTaskRef } from "../ops/read.ts";
+import {
+  buildRun,
+  runBriefHash,
+  runFolder,
+  runPermission,
+  runsWith,
+  type RunAgents,
+} from "./agent.ts";
 
 /** What a start of the service may set for runs. Tests pass their containers or times. */
 export interface RunOptions {
@@ -71,6 +86,33 @@ export interface RunServiceOptions extends RunOptions {
   readonly folderUsable?: (space: string, place: RunPlace) => Promise<boolean>;
   /** Whether an update of this install has not finished (its journal is there). Default: no. */
   readonly updating?: () => boolean;
+  /** What a run starts, built from its record. Without it only the internal call starts runs. */
+  readonly agents?: RunAgents;
+}
+
+/** What a run ticket names: the run its bridge acts for. */
+interface RunTicket {
+  readonly space: string;
+  readonly run: string;
+  readonly task: string | null;
+  readonly instance: string;
+  used: boolean;
+}
+
+/** A run as a person sees it in a list: its record and its task's reference. */
+export interface ListedRun {
+  readonly run: RunRecord;
+  readonly task: string | null;
+}
+
+/** What `tasks run` asks: a task, the instance to use or none, and the person's words. */
+export interface RunRequest {
+  /** The task's reference or ID. */
+  readonly task: string;
+  readonly instance?: string;
+  /** The person's request, or null for "work on this task". */
+  readonly request: string | null;
+  readonly requestId: string;
 }
 
 /** How often spaces that opened since are recovered, and the queue looked at. */
@@ -121,6 +163,8 @@ export class RunService {
   readonly #lanes = new Map<string, Lane>();
   /** What runs for each run the internal call queued, until it starts. */
   readonly #commands = new Map<string, (run: RunRecord) => AgentCommand | Promise<AgentCommand>>();
+  /** The tickets of the runs this service started, by ticket. */
+  readonly #tickets = new Map<string, RunTicket>();
   readonly #supervisor: Supervisor;
   #probe: Promise<ProbeResult> | undefined;
   #probed: ProbeResult | undefined;
@@ -262,6 +306,169 @@ export class RunService {
     return queued;
   }
 
+  /**
+   * `tasks run`: queues a run of a task, to start once its limits allow, built from its record
+   * then. Refused at once with the person's words when it could not start here: no such task, a
+   * task that is done, no instance that runs tasks, or a folder on another computer or not found.
+   * A repeat of the same request ID gives the run it queued, and starts nothing twice.
+   */
+  async queueTask(space: string, asked: RunRequest): Promise<RunRecord> {
+    const agents = this.#options.agents;
+    const served = this.#served(space);
+    const hosted = await this.#space(space);
+    if (agents === undefined || served?.reader === undefined || hosted === undefined) {
+      throw refusal("not_served", "The space is not open on this machine.");
+    }
+    let task: Awaited<ReturnType<typeof readLaunchTask>>;
+    try {
+      task = await readLaunchTask(served.reader, asked.task, this.#options.machine);
+    } catch (error) {
+      if (error instanceof AppError && error.code === "not_found") {
+        throw refusal("task_not_found", "No task has this reference in this space.");
+      }
+      throw error;
+    }
+    if (!task.active) throw refusal("task_closed", "This task is done or deleted.");
+    const able = agents.instances().filter(runsWith);
+    const instance =
+      asked.instance === undefined
+        ? able.length === 1
+          ? able[0]
+          : undefined
+        : able.find((i) => i.id === asked.instance);
+    if (instance === undefined) {
+      const ids = able.map((i) => i.id).join(", ");
+      throw refusal(
+        "instance",
+        asked.instance !== undefined
+          ? "No instance with this ID can run tasks here."
+          : able.length === 0
+            ? "No instance here can run tasks: runs use a Codex instance."
+            : "Several instances can run tasks here.",
+        able.length === 0
+          ? `Set one up with: ${CLI_NAME} setup instances`
+          : `Name one with --instance: ${ids}`,
+      );
+    }
+    const folder = await runFolder(agents, served, task.id, this.#options.machine);
+    if (!folder.ok) {
+      throw folder.reason === "other_machine"
+        ? refusal(
+            "other_machine",
+            `This task's folder is on another computer (${folder.machine}): it runs there.`,
+          )
+        : refusal("folder_missing", "This task's folder is not found on this computer.");
+    }
+    const settings = this.#settings();
+    const queued = await hosted.machine.queue(
+      {
+        task: task.id,
+        routine: null,
+        instance: instance.id,
+        adapter: "codex",
+        place: null,
+        request: asked.request,
+        briefHash: runBriefHash(task.ref, task.title),
+        permission: runPermission(instance),
+        limits: { ...RUN_LIMITS.task, wallMs: settings.wallMs, idleMs: settings.idleMs },
+      },
+      asked.requestId,
+    );
+    void this.#supervisor.round();
+    return queued;
+  }
+
+  /** A space's newest runs, or a task's, each with its task's reference. */
+  async list(space: string, task?: string): Promise<ListedRun[]> {
+    const served = this.#served(space);
+    if (served?.reader === undefined) {
+      throw refusal("not_served", "The space is not open on this machine.");
+    }
+    let id: string | undefined;
+    if (task !== undefined) {
+      try {
+        id = (await readLaunchTask(served.reader, task, this.#options.machine)).id;
+      } catch (error) {
+        if (error instanceof AppError && error.code === "not_found") {
+          throw refusal("task_not_found", "No task has this reference in this space.");
+        }
+        throw error;
+      }
+    }
+    const rows = await readRunRows(served.reader, id);
+    return rows.flatMap(({ row, ref }) => {
+      try {
+        return [{ run: decodeRun(decodeRunRow(row)), task: ref }];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  /**
+   * One run as a person reads it: its record, with the answer saved so far while it has none in
+   * its record yet, and why it waits when it is queued.
+   */
+  async show(
+    space: string,
+    run: string,
+  ): Promise<{ run: RunRecord; task: string | null; answer: string | null } | undefined> {
+    const record = await this.read(space, run).catch(() => undefined);
+    if (record === undefined) return undefined;
+    const served = this.#served(space);
+    const task =
+      record.task === null || served?.reader === undefined
+        ? null
+        : ((await readTaskRef(served.reader, record.task).catch(() => undefined)) ?? null);
+    let answer: string | null = record.result?.text ?? null;
+    if (answer === null && !FINAL.has(record.state)) {
+      try {
+        answer = this.#files.readAnswer(record.id)?.text ?? null;
+      } catch {
+        answer = null;
+      }
+    }
+    return { run: record, task, answer };
+  }
+
+  /** What a run's ticket names for the bridge, or undefined for no ticket of a live run. */
+  bridgeTicket(ticket: string): BridgeTicket | undefined {
+    const found = this.#tickets.get(ticket);
+    if (found === undefined) return undefined;
+    return {
+      space: found.space,
+      launch: found.run,
+      task: found.task,
+      used: found.used,
+      // A run's bridge may connect whenever the agent starts it, for as long as the run runs.
+      inWindow: true,
+    };
+  }
+
+  /** Spends a run ticket's first redemption. */
+  redeemBridge(ticket: string): { space: string; launch: string } | undefined {
+    const found = this.#tickets.get(ticket);
+    if (found === undefined || found.used) return undefined;
+    found.used = true;
+    return { space: found.space, launch: found.run };
+  }
+
+  /** Whether a run this service started still runs. */
+  agentRuns(run: string): boolean {
+    return [...this.#lanes.values()].some((lane) => lane.host.hosted().includes(run));
+  }
+
+  /**
+   * Whether a run of `instance` runs in `space` now: Tasks gave that run its tools, so its agent
+   * may use them in that space whether or not its home was set up for it.
+   */
+  allows(instance: string, space: string): boolean {
+    for (const ticket of this.#tickets.values()) {
+      if (ticket.instance === instance && ticket.space === space) return true;
+    }
+    return false;
+  }
+
   /** The person's Stop: a queued run is cancelled at once and never starts. */
   async stop(space: string, run: string): Promise<RunRecord | undefined> {
     const after = await (await this.#required(space)).host.stop(run);
@@ -344,24 +551,59 @@ export class RunService {
   }
 
   /**
-   * A queued run checked again right before it starts, and what runs for it. Its command is
-   * taken only once its `starting` commit landed, so a start that did not land can be tried again.
+   * A queued run checked again right before it starts, and what runs for it, built from its
+   * record. Its command is taken only once its `starting` commit landed, so a start that did not
+   * land can be tried again; its ticket names it to the bridge from then until it ends.
    */
   async #prepare(lane: Lane, run: RunRecord): Promise<Prepared> {
-    const served = this.#options.spaces().find((s) => s.id === lane.space && isOpen(s));
+    const served = this.#served(lane.space);
     if (served === undefined) throw new Error("The space is not open on this machine");
+    const given = this.#commands.get(run.id);
+    const agents = this.#options.agents;
+    if (given === undefined && agents !== undefined) {
+      const ticket = newTicket();
+      let built: AgentCommand | StartRefusal;
+      try {
+        built = await buildRun(agents, served, run, this.#options.machine, ticket);
+      } catch (error) {
+        if (error instanceof AppError && error.code === "not_found")
+          return { refused: "task_closed" };
+        throw error;
+      }
+      if (typeof built === "string") return { refused: built };
+      const command = built;
+      return {
+        command: () => {
+          this.#tickets.set(ticket, {
+            space: lane.space,
+            run: run.id,
+            task: run.task,
+            instance: run.instance,
+            used: false,
+          });
+          const forget = (): void => {
+            this.#tickets.delete(ticket);
+          };
+          void lane.host.ended(run.id).then(forget, forget);
+          return command;
+        },
+      };
+    }
     const refused = await this.#check(served, run);
-    const command = this.#commands.get(run.id);
-    if (refused !== undefined || command === undefined) {
+    if (refused !== undefined || given === undefined) {
       this.#commands.delete(run.id);
       return { refused: refused ?? "spawn_failed" };
     }
     return {
       command: (started) => {
         this.#commands.delete(run.id);
-        return command(started);
+        return given(started);
       },
     };
+  }
+
+  #served(space: string): ServedSpace | undefined {
+    return this.#options.spaces().find((s) => s.id === space && isOpen(s));
   }
 
   /** What a queued run needs, read now: its task open, its instance and its folder still there. */
@@ -485,6 +727,17 @@ export class RunService {
     });
   }
 }
+
+/** A refusal of `tasks run`, in the person's words. */
+const refusal = (reason: string, message: string, hint?: string): AppError =>
+  new AppError({
+    code: reason === "task_not_found" ? "not_found" : "invalid_input",
+    message,
+    ...(hint === undefined ? {} : { hint }),
+    data: { reason },
+  });
+
+const FINAL: ReadonlySet<string> = new Set(FINAL_RUN_STATES);
 
 const isOpen = (space: ServedSpace): boolean =>
   space.state === "open" && space.writer !== undefined && space.id !== undefined;

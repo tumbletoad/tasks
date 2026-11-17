@@ -72,6 +72,12 @@ export const RPC_METHODS = {
   // when the person says so. Not an agent's: the update restarts the service.
   "runs/hold": OPERATOR,
   "runs/stop_held": OPERATOR,
+  // `tasks run`: starting a run is the person's own, since a run may change whatever their agent
+  // setup allows, without asking; reading runs and stopping one is any command of theirs.
+  "runs/start": USER,
+  "runs/list": OPERATOR,
+  "runs/show": OPERATOR,
+  "runs/stop": OPERATOR,
   "ui/mint_code": OPERATOR,
   // `tasks service port <n> [--reuse]` (A2 3.8.2 step 5): the person resolves a foreign holder.
   "service/port": USER,

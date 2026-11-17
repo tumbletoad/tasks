@@ -561,6 +561,11 @@ function grantedTarget(
   );
 }
 
+/** The space a person's own command means: the one it names, else the machine's default. */
+export function personSpace(host: OpsHost, named: string | undefined): ServedSpace {
+  return pickByRule(host, { class: "cli-interactive", env: {} }, named);
+}
+
 function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): ServedSpace {
   const live = host.spaces().filter((s) => s.state !== "closed");
   // A bridge's environment is not passed (A3 3.7.2: TASKS_SPACE never chooses its space).

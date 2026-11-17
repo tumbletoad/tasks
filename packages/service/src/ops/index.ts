@@ -5,6 +5,7 @@ export {
   defaultOf,
   opCall,
   opList,
+  personSpace,
   type OpCallParams,
   type OpsHost,
   type ServedSpace,
