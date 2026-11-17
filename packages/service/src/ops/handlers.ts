@@ -713,6 +713,7 @@ async function submit(
         machine_id: call.host.machine.id as Id<"m">,
         origin: principal.origin,
         ...(principal.session === undefined ? {} : { session_id: principal.session as Id<"se"> }),
+        ...(principal.run === undefined ? {} : { run_id: principal.run as Id<"ru"> }),
       },
       ...(typeof input["base"] === "string" ? { base: input["base"] } : {}),
       ...(typeof input["reason"] === "string" ? { reason: input["reason"] } : {}),

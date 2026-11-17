@@ -43,6 +43,12 @@ export interface FakeScenario {
   readonly token?: string;
   /** Program mode: the first command leaves a detached idle stand-in behind, with the token. */
   readonly leave?: boolean;
+  /**
+   * At the recorded tool call, this tool of the server the thread's configuration names under
+   * `tasks` is called for real: its command, arguments and environment, with `home` as the
+   * install's home. Its answer goes to the log as `{"tool_result": …}`.
+   */
+  readonly callTool?: { readonly name: string; readonly arguments: Json; readonly home: string };
 }
 
 interface Line {
@@ -98,6 +104,8 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
     output.write(`${JSON.stringify(message)}\n`);
   };
   const ids = new Map<unknown, unknown>();
+  /** Tasks' own server as the client's thread/start named it. */
+  let tasksServer: Json | undefined;
   const finalItems = new Set<unknown>();
   let thread: unknown;
   let turn: unknown;
@@ -155,6 +163,11 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
       if (message === undefined) return false;
       if (isRequest && message["method"] === method && "id" in message) {
         ids.set(expected["id"], message["id"]);
+        if (method === "thread/start") {
+          const config = isObject(message["params"]) ? message["params"]["config"] : undefined;
+          const entry = isObject(config) ? config["mcp_servers.tasks"] : undefined;
+          tasksServer = isObject(entry) ? entry : undefined;
+        }
         if (method === scenario.stallAt) stalled = true;
         return true;
       }
@@ -253,6 +266,17 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
       ) {
         leave(scenario.token);
       }
+      if (
+        scenario.callTool !== undefined &&
+        tasksServer !== undefined &&
+        message["method"] === "item/started" &&
+        item?.["type"] === "mcpToolCall"
+      ) {
+        const result = await callTool(tasksServer, scenario.callTool);
+        if (scenario.log !== undefined) {
+          appendFileSync(scenario.log, `${JSON.stringify({ tool_result: result })}\n`);
+        }
+      }
       send(message);
       if (message["method"] === "turn/started" && isObject(params["turn"])) {
         turn = params["turn"]["id"];
@@ -296,6 +320,48 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
     return code;
   })();
   return { received, done };
+}
+
+/** Calls one tool of an MCP server over its stdio, as an agent would: its answer, or its error. */
+async function callTool(
+  server: Json,
+  call: NonNullable<FakeScenario["callTool"]>,
+): Promise<unknown> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
+  const own = isObject(server["env"]) ? server["env"] : {};
+  for (const [key, value] of Object.entries(own)) if (typeof value === "string") env[key] = value;
+  env["TASKS_HOME"] = call.home;
+  const args = Array.isArray(server["args"]) ? server["args"].map(String) : [];
+  const child = spawn(String(server["command"]), args, { env, stdio: ["pipe", "pipe", "ignore"] });
+  const answers = new Map<number, (value: Json) => void>();
+  createInterface({ input: child.stdout, crlfDelay: Infinity }).on("line", (line) => {
+    try {
+      const message = JSON.parse(line) as Json;
+      if (typeof message["id"] === "number") answers.get(message["id"])?.(message);
+    } catch {
+      // Not a message.
+    }
+  });
+  const ask = (id: number, method: string, params: Json): Promise<Json> =>
+    new Promise((resolve) => {
+      answers.set(id, resolve);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    });
+  try {
+    await ask(1, "initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "codex-fake", version: "0.0.0" },
+    });
+    child.stdin.write(
+      `${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`,
+    );
+    const answer = await ask(2, "tools/call", { name: call.name, arguments: call.arguments });
+    return answer["result"] ?? answer["error"];
+  } finally {
+    child.stdin.end();
+  }
 }
 
 /** A detached idle stand-in, as a command that starts a process and returns would leave. */

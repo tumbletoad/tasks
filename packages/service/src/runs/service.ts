@@ -49,6 +49,7 @@ import {
   runFolder,
   runPermission,
   runsWith,
+  WORK_ON_IT,
   type RunAgents,
 } from "./agent.ts";
 
@@ -367,7 +368,8 @@ export class RunService {
         instance: instance.id,
         adapter: "codex",
         place: null,
-        request: asked.request,
+        // A task's run always holds what was asked: the person's words, else to work on the task.
+        request: asked.request ?? WORK_ON_IT,
         briefHash: runBriefHash(task.ref, task.title),
         permission: runPermission(instance),
         limits: { ...RUN_LIMITS.task, wallMs: settings.wallMs, idleMs: settings.idleMs },

@@ -1614,6 +1614,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.run.door",
+      "title": "tasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of Tasks' tools binds to the run's session and is recorded with the run's ID, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, and a missing task is refused",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.codex.driver",
       "title": "The codex driver against a fake app server that speaks exactly the recorded exchanges: the request goes over the protocol, the final answer is the work's, a narrower mode runs in Codex's own sandbox, each server request kind is answered as the permission says while the turn goes on, a blocking question ends the run as needing the person with the question kept, an unknown request kind gets the protocol's error, Stop during start-up and during a turn, a server that stops answering, background work after the turn, and a whole answer after megabytes of other output",
       "owner": "M6",
