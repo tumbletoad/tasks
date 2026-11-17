@@ -26,7 +26,8 @@ function wire(message: unknown) {
     parsed === undefined ||
     parsed.type === "hello" ||
     parsed.type === "installed" ||
-    parsed.type === "error"
+    parsed.type === "error" ||
+    parsed.type === "machine"
   ) {
     throw new Error("not a feed message");
   }

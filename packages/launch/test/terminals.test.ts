@@ -17,6 +17,7 @@ import {
   DESKTOP_READ_MS,
   desktopReader,
   fileProbe,
+  installedTerminals,
   linkKindOf,
   listedIds,
   osTerminalHost,
@@ -423,6 +424,37 @@ const settings = (over: Partial<TerminalSettings> = {}): TerminalSettings => ({
 const apps = (chain: readonly ChainEntry[]): string[] => chain.map((e) => e.app);
 
 describe("[A4.5.terminal.chain] which terminal, and which after it", () => {
+  test("the terminals a person can choose are the ones found here, and the custom command when set", () => {
+    const linux = fakeHost("linux", [
+      "/usr/bin/kitty",
+      "/usr/bin/gnome-terminal",
+      "/usr/bin/x-terminal-emulator",
+    ]);
+    expect(installedTerminals(settings(), linux)).toEqual([
+      "kitty",
+      "gnome-terminal",
+      "x-terminal-emulator",
+    ]);
+    const own = ["kitty", "gnome-terminal", "x-terminal-emulator", "custom"];
+    expect(
+      installedTerminals(settings({ custom: ["{terminal}", "{shim}"], path: "/opt/t" }), linux),
+    ).toEqual(own);
+    expect(installedTerminals(settings({ custom: ["/opt/t", "-e", "{shim}"] }), linux)).toEqual(
+      own,
+    );
+    // `{terminal}` without a path has no program to start: it is no choice.
+    expect(installedTerminals(settings({ custom: ["{terminal}", "{shim}"] }), linux)).toEqual(
+      own.slice(0, -1),
+    );
+    const alias = "C:\\Apps\\wt.exe";
+    const ps = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+    const windows = (programs: string[]) =>
+      fakeHost("win32", programs, { windowsApps: "C:\\Apps", powershell: ps });
+    expect(installedTerminals(settings(), windows([alias, ps]))).toEqual(["wt", "console"]);
+    expect(installedTerminals(settings(), windows([ps]))).toEqual(["console"]);
+    expect(installedTerminals(settings(), fakeHost("darwin", []))).toEqual([]);
+  });
+
   test("a chosen terminal with its configured fallbacks; with none configured, the other installed ones", () => {
     const host = fakeHost("linux", ["/usr/bin/gnome-terminal", "/usr/bin/kitty"]);
     expect(
@@ -1073,6 +1105,16 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
     ]);
     expect(looked).not.toContain("/later/bin/kitty");
     expect(new Set(looked).size).toBe(looked.length);
+    // A terminal set with its fallbacks: an Open looks only for those, while Settings still offers
+    // every one found.
+    const chosen = settings({ app: "gnome-terminal", fallbacks: ["konsole"] });
+    looked.length = 0;
+    await readProgramFacts(chosen, osTerminalHost(input), probe);
+    expect(looked.some((path) => path.endsWith("/kitty"))).toBe(false);
+    const found = await readProgramFacts(chosen, osTerminalHost(input), probe, { offered: true });
+    expect(installedTerminals(chosen, osTerminalHost({ ...input, programs: found }))).toEqual([
+      "kitty",
+    ]);
   });
 
   test("the probe reads the real file system: a program, a missing one and a link", async () => {
@@ -1192,6 +1234,34 @@ describe("[A4.5.terminal.windows-default] Windows' Default terminal application,
     });
     expect(started.terminal).toEqual({ app: "console", source: "windows" });
     expect(reads).toBe(2);
+  });
+
+  test("a terminal chosen while the service runs is the one the next launch starts", async () => {
+    const wt = "C:\\Apps\\wt.exe";
+    const spawned = recorder({ [POWERSHELL]: { exit: 0 }, [wt]: { exit: 0 } });
+    const launcher = new TerminalLauncher({
+      platform: "win32",
+      settings: settings({ app: "console" }),
+      install: "0123456789",
+      shimCommand: [WIN_TASKS],
+      host: () =>
+        Promise.resolve(
+          fakeHost("win32", [wt, POWERSHELL], { windowsApps: "C:\\Apps", powershell: POWERSHELL }),
+        ),
+      systemdRun: undefined,
+      spawn: spawned.spawn,
+      sleep: instant,
+    });
+    launcher.settings = settings({ app: "wt" });
+    const started = await launcher.start({
+      launch: LAUNCH,
+      folder: "C:\\work",
+      tickets: tickets().control,
+      env: {},
+      session: {},
+    });
+    expect(started.terminal).toEqual({ app: "wt", source: "configured" });
+    expect(spawned.requests[0]?.argv[0]).toBe(wt);
   });
 });
 

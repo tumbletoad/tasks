@@ -4,8 +4,9 @@
 // Adding is the field's own mode and the fast path: click it, type, Enter. The text's shortcuts
 // (a date, p1 to p3, #area/project, @person, *) show under the field as what they became, each
 // with a cross that keeps its words as text, and the title they leave. In an area's view the task
-// lands in that area unless the person turns that off. Searching is a page state, the search
-// route: `/` (outside a text field) or the lens at the field's start enter it, and the field then
+// lands in that area unless the person turns that off. `n` (outside a text field) comes here to add.
+// Searching is a page state, the search route: `/` (outside a text field), Ctrl+K or the lens at
+// the field's start enter it, and the field then
 // says so in its icon, its name and its placeholder, before anything is pressed. Typing there
 // shows the results after a short quiet; Enter or the down arrow moves to the first result, never
 // adds; Escape goes back to where the person was. Each mode keeps its own text: switching to
@@ -32,8 +33,11 @@ import { useT, type Translate } from "../i18n/intl.tsx";
 import { formatDay } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
+import { actionOf, ariaKeys, isMac, keysOf } from "../keys/keymap.ts";
+import { useKeyLabel } from "../keys/labels.ts";
 import { onFieldRequest, wantResults } from "./field.ts";
 import { useToast } from "./frame.ts";
+import { useMachine } from "./machine.ts";
 import { CrossIcon, PlusIcon, SearchIcon } from "./Icons.tsx";
 import css from "./TopBar.module.css";
 import { classes } from "./css.ts";
@@ -69,14 +73,6 @@ function forget(space: string, text: string): void {
   if (drafts.get(space)?.text === text) drafts.delete(space);
 }
 
-/** Whether a key press belongs to a text field or an IME composition, where `/` is a character. */
-function typing(event: KeyboardEvent): boolean {
-  const target = event.target;
-  if (event.isComposing) return true;
-  if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
-}
-
 /** What a chip shows: the value its words became. */
 function chipLabel(t: Translate, chip: Chip, locale: string): string {
   switch (chip.kind) {
@@ -107,6 +103,11 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
   const router = useRouter();
   const location = useRouterState({ select: (s) => s.location });
   const params: { area?: string; project?: string } = useParams({ strict: false });
+  const { singleKeys } = useMachine();
+  const mac = useMemo(isMac, []);
+  const keyLabel = useKeyLabel();
+  /** The key that searches, shown in the field: `/`, or Ctrl K while single keys are off. */
+  const hint = keysOf("search", singleKeys)[0];
   const searching = location.pathname === `/s/${space}/search`;
   const urlQuery = searching && typeof location.search.q === "string" ? location.search.q : "";
 
@@ -222,37 +223,27 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
     else startSearch(query === "" ? text : query);
   };
 
-  const request = useRef({ searching, endSearch });
-  request.current = { searching, endSearch };
+  const request = useRef({ searching, endSearch, startSearch });
+  request.current = { searching, endSearch, startSearch };
   useEffect(
     () =>
       onFieldRequest((asked) => {
-        if (request.current.searching) request.current.endSearch(asked.text);
-        else {
-          setText((current) => (current.trim() === "" ? asked.text : current));
+        const now = request.current;
+        if (asked.kind === "search") {
+          // A search starts, or the one on screen gets the field back.
+          if (now.searching) field.current?.focus();
+          else now.startSearch("");
+        } else if (now.searching) {
+          now.endSearch(asked.kind === "add" ? asked.text : undefined);
+        } else {
+          if (asked.kind === "add") {
+            setText((current) => (current.trim() === "" ? asked.text : current));
+          }
           field.current?.focus();
         }
       }),
     [],
   );
-
-  // `/` outside a text field starts a search, or returns to the one on screen.
-  const startSearchRef = useRef(startSearch);
-  startSearchRef.current = startSearch;
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || typing(event)) {
-        return;
-      }
-      event.preventDefault();
-      if (request.current.searching) field.current?.focus();
-      else startSearchRef.current("");
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-    };
-  }, []);
 
   const areas = useMemo(() => [...state.areas.values()], [state.areas]);
   const projects = useMemo(() => [...state.projects.values()], [state.projects]);
@@ -359,7 +350,7 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
           maxLength={500}
           placeholder={searching ? t("top.searchPlaceholder") : t("top.newTask")}
           aria-label={label}
-          aria-keyshortcuts="/"
+          aria-keyshortcuts={ariaKeys(keysOf("search", singleKeys), mac)}
           aria-describedby={showPanel ? "top-capture" : undefined}
           autoComplete="off"
           spellCheck={!searching}
@@ -382,12 +373,13 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
             setCaret(event.currentTarget.selectionStart ?? 0);
           }}
           onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing) return;
+            const action = actionOf(event.nativeEvent, "field", singleKeys);
+            const close = actionOf(event.nativeEvent, "page", singleKeys) === "close";
             if (searching) {
-              if (event.key === "Escape") {
+              if (close) {
                 event.preventDefault();
                 endSearch();
-              } else if (event.key === "Enter" || event.key === "ArrowDown") {
+              } else if (action === "add" || action === "results") {
                 event.preventDefault();
                 const q = query.trim();
                 writeQuery(q === "" ? "" : query);
@@ -396,18 +388,18 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
               }
               return;
             }
-            if (event.key === "Tab" && !event.shiftKey && suggestions[0] !== undefined) {
+            if (action === "suggestion" && suggestions[0] !== undefined) {
               event.preventDefault();
               take(suggestions[0].insert);
-            } else if (event.key === "Enter") {
+            } else if (action === "add") {
               event.preventDefault();
               add();
             }
           }}
         />
-        {searching ? null : (
+        {searching || hint === undefined ? null : (
           <kbd className={styles.hint} aria-hidden="true">
-            {t("top.slash")}
+            {keyLabel(hint)}
           </kbd>
         )}
         {showPanel ? (

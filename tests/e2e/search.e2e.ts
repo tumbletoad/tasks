@@ -7,12 +7,9 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Page } from "@playwright/test";
-import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
 import { showsSpace } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
-
-const THEME_KEY = `${PRODUCT_ID}.theme`;
 
 const adding = (page: Page) => page.getByRole("textbox", { name: "New task" });
 const searching = (page: Page) => page.getByRole("textbox", { name: "Search" });
@@ -424,12 +421,7 @@ test.describe("[A7.3.12.m5-10.e2e.screens] The capture and the search in both th
       });
       try {
         const page = await context.newPage();
-        await page.addInitScript(
-          (value) => {
-            localStorage.setItem(value.key, value.theme);
-          },
-          { key: THEME_KEY, theme },
-        );
+        await world.machine("ui.theme", theme);
         await open(page, world, "/today");
         await adding(page).fill(`Order ${word} netting by fri p1 #home/garden * @Jonas`);
         await expect(panel(page).getByRole("listitem")).toHaveCount(5);
@@ -467,6 +459,8 @@ test.describe("[A7.3.12.m5-10.e2e.screens] The capture and the search in both th
         await context.close();
       }
     }
+    // The tests of a worker share its service: the theme goes back to its default.
+    await world.machine("ui.theme", null);
   });
 });
 

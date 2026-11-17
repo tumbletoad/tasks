@@ -9,12 +9,9 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Locator, type Page } from "@playwright/test";
-import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
-
-const THEME_KEY = `${PRODUCT_ID}.theme`;
 
 /** The local calendar day `days` from today, YYYY-MM-DD. */
 function day(days: number): string {
@@ -424,12 +421,7 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
       });
       try {
         const page = await context.newPage();
-        await page.addInitScript(
-          (value) => {
-            localStorage.setItem(value.key, value.theme);
-          },
-          { key: THEME_KEY, theme },
-        );
+        await world.machine("ui.theme", theme);
         await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
         await showsSpace(page, world.mira.name);
         const row = rowOf(page, ref);
@@ -497,5 +489,7 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
         await context.close();
       }
     }
+    // The tests of a worker share its service: the theme goes back to its default.
+    await world.machine("ui.theme", null);
   });
 });

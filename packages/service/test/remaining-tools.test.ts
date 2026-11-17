@@ -641,21 +641,19 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       "tasks.dedupe_window_days",
       "tasks.effort_scale",
       "tasks.statuses",
-      "ui.theme",
     ]);
     const shown = new Set(described.prefs.map((p) => p.key));
     expect(
       PREFERENCES.filter((p) => !shown.has(p.key)).map((p) => [p.key, p.scope, p.shape.type]),
     ).toEqual([
+      ["ui.theme", "machine", "enum"],
+      ["ui.single_keys", "machine", "boolean"],
       ["grouping.names", "space", "object"],
       ["autonomy.overrides", "space", "map"],
       ["autonomy.areas", "space", "map"],
       ["projection.dir", "machine", "path"],
     ]);
-    expect(described.prefs.filter((p) => p.writable).map((p) => p.key)).toEqual([
-      "tasks.statuses",
-      "ui.theme",
-    ]);
+    expect(described.prefs.filter((p) => p.writable).map((p) => p.key)).toEqual(["tasks.statuses"]);
     expect(described.prefs.find((p) => p.key === "targets.default")).toMatchObject({
       policy: true,
       writable: false,

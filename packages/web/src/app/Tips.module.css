@@ -1,0 +1,26 @@
+/* The tooltip: a small raised label beside its element. It is placed once measured, so it never
+   shows at the window's corner first. */
+.tip {
+  position: fixed;
+  z-index: 50;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 4px 8px;
+  border: 1px solid var(--k-line-strong);
+  border-radius: 6px;
+  background: var(--k-raised);
+  color: var(--k-text);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.tip[data-placed="false"] {
+  visibility: hidden;
+}
+
+@media (forced-colors: active) {
+  .tip {
+    border-color: CanvasText;
+  }
+}

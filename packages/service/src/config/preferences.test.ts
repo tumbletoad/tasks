@@ -26,14 +26,24 @@ describe("[A1.3.16.prefs.machine] machine preferences live in machine.toml with 
   test("a valid value is read; a key not set reads its default", () => {
     const empty = parseMachineConfig("", "linux");
     expect(readMachinePreferences(empty.config)).toEqual([
+      { key: "ui.theme", value: "sumi", state: "default" },
+      { key: "ui.single_keys", value: true, state: "default" },
       { key: "projection.dir", value: null, state: "default" },
     ]);
     const { config, problems } = parseMachineConfig(
-      '[preferences]\n"projection.dir" = "/srv/tasks-view"\n',
+      [
+        "[preferences]",
+        '"projection.dir" = "/srv/tasks-view"',
+        '"ui.theme" = "washi"',
+        '"ui.single_keys" = false',
+        "",
+      ].join("\n"),
       "linux",
     );
     expect(problems).toEqual([]);
     expect(readMachinePreferences(config)).toEqual([
+      { key: "ui.theme", value: "washi", state: "set" },
+      { key: "ui.single_keys", value: false, state: "set" },
       { key: "projection.dir", value: "/srv/tasks-view", state: "set" },
     ]);
   });
@@ -42,7 +52,7 @@ describe("[A1.3.16.prefs.machine] machine preferences live in machine.toml with 
     const text = [
       "[preferences]",
       '"projection.dir" = "views"',
-      '"ui.theme" = "washi"',
+      '"autonomy.level" = "full"',
       '"ui.unknown" = "secret-value"',
       "",
     ].join("\n");
@@ -51,10 +61,10 @@ describe("[A1.3.16.prefs.machine] machine preferences live in machine.toml with 
     expect(problems).toEqual([
       { key: "preferences.projection.dir", code: "not_absolute", severity: "error" },
       // A space preference lives in the space, where it travels with backups and exports.
-      { key: "preferences.ui.theme", code: "invalid_value", severity: "error" },
+      { key: "preferences.autonomy.level", code: "invalid_value", severity: "error" },
       { key: "preferences.ui.unknown", code: "unknown_key", severity: "warning" },
     ]);
-    expect(JSON.stringify(problems)).not.toMatch(/views|washi|secret/);
+    expect(JSON.stringify(problems)).not.toMatch(/views|full|secret/);
     // A Windows path on Linux is not absolute there, and the other way round.
     const windows = parseMachineConfig('[preferences]\n"projection.dir" = "C:\\\\v"\n', "linux");
     expect(windows.problems.map((p) => p.code)).toEqual(["not_absolute"]);
@@ -88,7 +98,9 @@ describe("[A1.3.16.prefs.machine] machine preferences live in machine.toml with 
     const reset = readFileSync(path, "utf8");
     expect(reset).toBe(`${before}\r\n[preferences]\r\n`);
     expect(loadMachineConfig(dir).problems).toEqual([]);
-    expect(readMachinePreferences(loadMachineConfig(dir).config)[0]?.state).toBe("default");
+    expect(
+      readMachinePreferences(loadMachineConfig(dir).config).find((p) => p.key === "projection.dir"),
+    ).toMatchObject({ state: "default" });
   });
 
   test("a reset of a key that is not set writes nothing, and makes no file", () => {
@@ -102,7 +114,9 @@ describe("[A1.3.16.prefs.machine] machine preferences live in machine.toml with 
     const path = join(dir, MACHINE_TOML);
     writeFileSync(path, "", { mode: 0o600 });
     for (const [key, value] of [
-      ["ui.theme", "washi"],
+      ["autonomy.level", "full"],
+      ["ui.theme", "purple"],
+      ["ui.single_keys", "no"],
       ["ui.unknown", "x"],
       ["projection.dir", 3],
       ["projection.dir", "relative/view"],
@@ -134,11 +148,11 @@ describe("[A1.3.16.prefs.machine] machine preferences live in machine.toml with 
     expect(readFileSync(join(target, MACHINE_TOML), "utf8")).toBe(before);
   });
 
-  test("unset removes only its own line, and a key set another way is refused", () => {
+  test("unset removes only its own setting, its comment stays, and a key set another way is refused", () => {
     const text = '[preferences]\n"projection.dir" = "/a" # mine\n"other.key" = 1\n';
     expect(
       applyEdits(text, [{ op: "unset", table: ["preferences"], key: "projection.dir" }]),
-    ).toEqual({ ok: true, text: '[preferences]\n"other.key" = 1\n' });
+    ).toEqual({ ok: true, text: '[preferences]\n# mine\n"other.key" = 1\n' });
     expect(applyEdits(text, [{ op: "unset", table: ["preferences"], key: "missing" }])).toEqual({
       ok: true,
       text,

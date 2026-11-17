@@ -5,12 +5,10 @@
 // shows in its month with its own mark, and a task finished while the list is open joins it with
 // every row it showed still there. Screenshots in Sumi and Washi at 1440 and 390 px. Fixture data.
 import { expect, type Page, type Route } from "@playwright/test";
-import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { FINISHED_TASKS, test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
-const THEME_KEY = `${PRODUCT_ID}.theme`;
 const SUMMARY = "Check the beds after the frost";
 
 /** The size of the list a row is in, as the row says it, for the row of the task titled so. */
@@ -279,6 +277,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
     finished,
   }) => {
     for (const theme of ["sumi", "washi"] as const) {
+      await finished.machine("ui.theme", theme);
       for (const width of [1440, 390]) {
         const context = await browser.newContext({
           bypassCSP: true,
@@ -287,12 +286,6 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
         });
         try {
           const page = await context.newPage();
-          await page.addInitScript(
-            (value) => {
-              localStorage.setItem(value.key, value.theme);
-            },
-            { key: THEME_KEY, theme },
-          );
           // Opened wide, where the sidebar names the space, then narrowed.
           await openCompleted(page, finished);
           if (width !== 1440) await page.setViewportSize({ width, height: 844 });
@@ -312,5 +305,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
         }
       }
     }
+    // The tests of a worker share its service: the theme goes back to its default.
+    await finished.machine("ui.theme", null);
   });
 });
