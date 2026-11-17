@@ -25,10 +25,10 @@
 //
 // The service records what create, open, close, restore and claim do in machine.toml, so it holds
 // after a restart. When it cannot, the answer's `not_remembered` line says why, on stderr.
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { CLI_NAME } from "@tasks/brand";
 import { isAmbiguity, onlySpace } from "@tasks/service/copies";
-import { hostFacts, resolveLayout } from "@tasks/service/paths";
+import { defaultSpaceFolder, hostFacts, resolveLayout } from "@tasks/service/paths";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
@@ -131,24 +131,8 @@ function options(
 const absolute = (io: Io, path: string): string =>
   isAbsolute(path) ? resolve(path) : resolve(io.cwd, path);
 
-/** A name's folder name: lower case letters, digits and hyphens. */
-function slugOf(name: string): string {
-  const slug = name
-    .normalize("NFKD")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  return slug === "" ? "space" : slug;
-}
-
-/**
- * Where a new space goes by default: the data folder's `spaces/<slug>`, so `~/.tasks/spaces/<slug>`
- * or `<TASKS_HOME>/spaces/<slug>` (A2 3.2.1).
- */
-function defaultFolder(io: Io, name: string): string {
-  return join(resolveLayout(hostFacts(io.env, io.platform)).spaces, slugOf(name));
-}
+const defaultFolder = (io: Io, name: string): string =>
+  defaultSpaceFolder(resolveLayout(hostFacts(io.env, io.platform)), name);
 
 /** A1 3.2's two actions for a database that failed its check, as the person runs them. */
 const CHECK_FAILED_WAY = [

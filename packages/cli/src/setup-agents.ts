@@ -54,7 +54,7 @@ import {
   AGENT_APPS,
   appLabel,
   applyBlock,
-  applyHome,
+  applyWithRow,
   approveToolsHint,
   BLOCK_FORS,
   blockCanonical,
@@ -94,8 +94,8 @@ import {
   type HomeView,
   type Outcome,
   type OutcomeReason,
-  type PlanItem,
   type PrintApp,
+  type RowCall,
   type SetupInput,
 } from "@tasks/service/setup";
 import { UsageError, type Globals } from "./args.ts";
@@ -540,7 +540,7 @@ export async function agentsCommand(
             });
           }
           const done: Outcome[] = [];
-          for (const item of items) done.push(await applyOne(input, item, space, call));
+          for (const item of items) done.push(await applyWithRow(input, item, space, rowCall(call)));
           return { outcomes: done, blocks: (planned ?? []).map((b) => applyBlock(input, b)) };
         });
         return report(io, globals, "apply", outcomes, [], blocks);
@@ -651,53 +651,16 @@ type Selected = (view: {
   };
 }) => boolean;
 
-/** One home's apply: its agent-home row first (the service checks the class), then the entry. */
-async function applyOne(
-  input: SetupInput,
-  item: PlanItem,
-  space: string,
-  call: Call,
-): Promise<Outcome> {
-  const { view, change } = item;
-  const { home } = view;
-  // A registered home's row is renewed for the space its entry names, unless this apply names a
-  // space for new entries: an entry of another space is then left (`other_space`).
-  const target = view.state === "registered" && space === "" ? (view.record?.space ?? "") : space;
-  const registered = view.state === "registered" && view.record?.space === target;
-  if (view.state !== "not_registered" && !registered) {
-    return applyHome(input, view, target, null);
-  }
-  if (view.state === "not_registered" && (change === undefined || typeof change === "string")) {
-    return applyHome(input, view, space, null, change);
-  }
-  let granted: Record<string, unknown>;
-  try {
-    granted = await call("setup/home_grant", {
-      app: home.app,
-      home: home.home,
-      instance: home.instance,
-      account: home.account,
-      hosts: home.hosts,
-      space: target,
-    });
-  } catch (error) {
-    // The service refused the row or is gone: this home is left as it is, the others still run
-    // and every outcome is reported. A refusal of a taken instance is named as such (A3 3.7.8).
-    const taken = bodyOf(asAppError(error)).data?.["reason"] === "instance_taken";
-    return { home, result: "failed", reason: taken ? "instance_taken" : "grant_failed" };
-  }
-  const grant = (granted["grant"] as { grant?: unknown } | undefined)?.grant;
-  const grantId = typeof grant === "string" ? grant : null;
-  const outcome = await applyHome(input, view, target, grantId, change);
-  if (outcome.result === "failed" && granted["created"] === true && grantId !== null) {
+/** The service's row verbs, each refusal as the AppError it carries. */
+const rowCall =
+  (call: Call): RowCall =>
+  async (method, params) => {
     try {
-      await call("setup/home_revoke", { grants: [grantId] });
-    } catch {
-      // The row stays; `--remove` revokes the rows of homes without an entry of setup's.
+      return await call(method, params);
+    } catch (error) {
+      throw new AppError(bodyOf(asAppError(error)));
     }
-  }
-  return outcome;
-}
+  };
 
 /** Whether apply registers a home, so it needs the space new entries name (from the service). */
 const needsSpace = (views: readonly HomeView[]): boolean =>
