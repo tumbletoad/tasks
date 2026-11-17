@@ -107,11 +107,9 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
         .getByRole("toolbar")
         .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
         .click();
-      const said = page
-        .getByRole("status")
-        .filter({
-          hasText: `Folder not found on this computer: ${set.folder}. Nothing was started.`,
-        });
+      const said = page.getByRole("status").filter({
+        hasText: `Folder not found on this computer: ${set.folder}. Nothing was started.`,
+      });
       await expect(said).toBeVisible({ timeout: SLOW_MS });
       expect(world.terminal()).toHaveLength(before);
       await expect(row.locator('[data-part="tile"]')).toHaveAttribute("data-state", "ready");

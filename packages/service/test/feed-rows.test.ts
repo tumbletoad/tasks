@@ -143,8 +143,7 @@ describe("[A5.3.6.http.row-children] a task's row carries its sources and where 
       base: read.as_of,
       request_id: rid(),
     });
-    const asOf = async () =>
-      ((await call("space.status", {})) as { as_of: string }).as_of;
+    const asOf = async () => ((await call("space.status", {})) as { as_of: string }).as_of;
     await call("folder.manage", {
       action: "clear",
       task: "M-2",
