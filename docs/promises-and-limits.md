@@ -71,8 +71,16 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A new task that an agent files from its working folder, with no project named, joins the project
   whose folder holds that folder most closely. In an archived project's folder it joins no project,
   and the agent is told.
-- Changing a project's folder moves the folders of its tasks that sit inside the old one, as one
-  undo step. An archived project keeps its folder, and a deleted one frees it.
+- When you move a folder on disk and then give its project or task the new folder, every folder
+  Tasks knows inside the old one moves along, other projects' and tasks' included, as one undo
+  step on that computer. When the old folder is still there, nothing else moves, and you are told
+  which folders stayed. Tasks itself never moves files.
+- An archived project keeps its folder, and a deleted one frees it.
+- A project made for a folder is named after it unless you name it. The Git repository in a
+  project's folder is shown by name only, never by its address.
+- Tasks leaves a small `.tasks-marker` folder in each project's and task's folder, holding only
+  which space and project or task it belongs to, and ignored by Git. Clearing the folder in Tasks
+  removes it.
 - Tasks never makes a folder for an agent. At the command line, `--create` makes it when you ask,
   and an undo leaves it on disk.
 - No folder inside Tasks' own data is taken: an agent working there would change it.
@@ -93,6 +101,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 - Open uses the folder that was set, or says that it is not there. It never picks another folder
   silently.
+- Open and a background run start nothing in a folder whose marker names another project, task or
+  space, or whose marker Tasks wrote and is gone. Open says so, and you choose to use the folder,
+  which marks it, or to give the task another folder.
 - Opening with a particular account uses that account's settings of the agent app.
 - Tasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.
@@ -160,3 +171,5 @@ the behaviour it describes, and keep each one to a sentence or two.
   way.
 - A folder on a drive or share that does not answer is refused after a few seconds, but the look
   at it keeps one of Tasks' file threads busy until the system gives up.
+- A folder Tasks cannot write to, such as a read-only one, gets no marker and opens as before,
+  without that check. A marker deleted by hand is missed once, at the next Open.
