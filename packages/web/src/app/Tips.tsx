@@ -1,5 +1,5 @@
-// The page's one tooltip: the small label an element carries in `data-tip`, shown beside it after a
-// short rest of the mouse, and at once when the keyboard brings focus to it. It is never the only
+// The page's one tooltip: the small label an element carries in `data-tip`, shown beside it once the
+// mouse has stayed on it a moment, and at once when the keyboard brings focus to it. It is never the only
 // way to learn what a control does: the element's accessible name, or its `aria-description` when
 // the label says more than the name, carries the same words, so the label itself is hidden from
 // assistive technology. Escape closes it (WCAG 1.4.13): a label
@@ -12,7 +12,7 @@ import { classes } from "./css.ts";
 
 const styles = classes(css, ["tip"]);
 
-/** How long the mouse rests on an element before its label shows. */
+/** How long the mouse stays on an element, moving or not, before its label shows. */
 const REST_MS = 500;
 /** How long the label waits for the pointer to come onto it before it goes. */
 const GRACE_MS = 150;
