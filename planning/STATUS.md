@@ -2,7 +2,7 @@
 
 One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
 
-**Done so far:** 71 of 101, and M2.04b, M4.01b and M4.05b outside the base count.
+**Done so far:** 73 of 101, and M2.04b, M4.01b and M4.05b outside the base count.
 
 **Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 11 · M5 14 · M6 16 · M7 2 · total 101. Plus the gates G1 and G2, the grant gate M2.04b, and the conditional steps listed apart.
 
@@ -159,12 +159,12 @@ M4.05b and M4.01b are not in the base count.
 | M5.04 | Today | M5.03 | S | done |
 | M5.05 | Status, area, Completed, Agents views | M5.03 | S | done |
 | M5.06 | Expanded task | M5.03 | M | done |
-| M5.07 | Composer and action strip | M5.06 | S | doing |
+| M5.07 | Composer and action strip | M5.06 | S | done |
 | M5.08 | Editing, check-off, undo | M5.06, M3.02 | M | done |
 | M5.09 | Receipts, proposals, digest | M5.06, M4.02 | M | todo |
 | M5.10 | Quick capture and search | M5.03, M3.05 | S | done |
 | M5.11 | Settings, flags, keyboard | M5.01, M3.11 | M | done |
-| M5.12 | First-run setup | M5.11, M4.05 | S | ready |
+| M5.12 | First-run setup | M5.11, M4.05 | S | doing |
 | M5.13 | UI quality pass | M5.01–M5.12 | M RM | todo |
 | M5.14 | Add project and folders in the page | M4.09, M6.16, M5.06 | M | todo |
 
@@ -177,7 +177,7 @@ M4.05b and M4.01b are not in the base count.
 | M6.03 | Run shim | M6.01, M2.08 | M | done |
 | M6.04 | Cancellation | M6.03 | M | done |
 | M6.05 | Stream parsers | M0.11 | S | done |
-| M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | todo |
+| M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | doing |
 | M6.07 | Routines: Refresh and Wrap-up | M6.06, M4.07 | M | todo |
 | M6.08 | The Tasks work folder | M6.06, M2.11 | S | todo |
 | M6.09 | Run and Refresh UI | M5.07, M6.07, M6.08 | M | todo |
@@ -187,7 +187,7 @@ M4.05b and M4.01b are not in the base count.
 | M6.13 | Stable Windows launchers | M6.12 | S | done |
 | M6.14 | Real-run contract evals | M6.07, M4.08 | S RM | todo |
 | M6.15 | Real machines: Refresh, cancel, receipts | M6.01–M6.14 | S RM | todo |
-| M6.16 | Launch and service on folders | M4.09 | M | doing |
+| M6.16 | Launch and service on folders | M4.09 | M | done |
 
 ## M7: switch-over (v1)
 
