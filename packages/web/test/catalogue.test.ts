@@ -42,6 +42,7 @@ const SAMPLE = {
   title: "Fix appointment time zones",
   label: "Claude Code",
   reason: "no terminal",
+  words: "agent exited",
   status: "waiting",
   weekday: "Sat",
   day: 14,
