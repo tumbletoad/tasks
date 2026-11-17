@@ -12,9 +12,5 @@ docs/agents/
 dist/
 coverage/
 
-# Byte-exact fixtures, written by pnpm seed --planning.
-fixtures/planning-prototype/
-fixtures/planning-prototype.index.json
-
 # Golden files: test output compared byte for byte (vitest's toMatchFileSnapshot).
 packages/*/test/golden/

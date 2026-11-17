@@ -276,19 +276,6 @@ importers:
 
   packages/files: {}
 
-  packages/importer-planning:
-    dependencies:
-      '@tasks/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-    devDependencies:
-      fast-check:
-        specifier: 4.10.2
-        version: 4.10.2
-      vitest:
-        specifier: 5.1.0
-        version: 5.1.0(@types/node@26.6.6)(happy-dom@21.0.4)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2))
-
   packages/launch:
     dependencies:
       '@tasks/brand':
@@ -387,9 +374,6 @@ importers:
       '@tasks/files':
         specifier: workspace:*
         version: link:../files
-      '@tasks/importer-planning':
-        specifier: workspace:*
-        version: link:../importer-planning
       '@tasks/launch':
         specifier: workspace:*
         version: link:../launch

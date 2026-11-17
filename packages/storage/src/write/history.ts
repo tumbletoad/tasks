@@ -317,8 +317,8 @@ const CHILDREN: Readonly<Partial<Record<InvertibleEntity, readonly Child[]>>> = 
 
 /**
  * The live children of every parent in `$parents` (a JSON array of IDs), in one statement per
- * child table: an importer's commit creates thousands of rows, and a source's links have no index
- * by source, so a statement per created row would scan the links once per source.
+ * child table: a commit can create many rows, and a source's links have no index by source, so a
+ * statement per created row would scan the links once per source.
  */
 const childSql = (c: Child): string =>
   `SELECT ${c.key} AS key, ${c.task} AS task, ${c.parent} AS parent, * FROM ${c.entity} ` +
@@ -589,7 +589,7 @@ type Where = Omit<FieldConflict, "op" | "ref" | "by" | "at" | "version">;
  * Names conflicts for operation `op`: a conflict on `where`, with the commit at `version` (who
  * wrote the field, and when) and its task's reference.
  */
-export function namer(
+function namer(
   conn: Connection,
   options: { refPrefix: string; op: number },
 ): (where: Where, version: number) => FieldConflict {
