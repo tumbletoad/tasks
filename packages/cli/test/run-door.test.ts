@@ -130,11 +130,12 @@ afterAll(async () => {
 const user = (argv: string[], stdin?: string) =>
   runMain(argv, { home, tty: true, ...(stdin === undefined ? {} : { stdin }) });
 
-/** Every file under `dir`, with its path. */
+/** Every file under `dir` that holds content, with its path: no folder, socket or pipe. */
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
-    return statSync(path).isDirectory() ? files(path) : [path];
+    const facts = statSync(path);
+    return facts.isDirectory() ? files(path) : facts.isFile() ? [path] : [];
   });
 }
 
