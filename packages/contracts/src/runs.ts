@@ -14,8 +14,8 @@
 // ---------------------------------------------------------------------------------------------
 // Adapters and caps
 
-/** The two v1 run adapters (A4 3.11.1, 3.11.3). `t3-thread` joins after v1 (3.11.12). */
-export const RUN_ADAPTERS = ["claude-print", "codex-exec"] as const;
+/** The run adapters: the driver a run's agent is spoken to with. */
+export const RUN_ADAPTERS = ["claude-print", "codex-exec", "codex"] as const;
 export type RunAdapterId = (typeof RUN_ADAPTERS)[number];
 
 /**

@@ -219,7 +219,7 @@ export const OPEN_SETS = {
   "launches.route": ["terminal", "link", "t3-mcp", "t3-cli", "clipboard"],
   // A4 3.11.1's run adapters, and A4 3.11.2's run states: A1 3.4 gives `runs.state` no CHECK, so
   // a later adapter's state needs no table rebuild (packages/contracts: RUN_ADAPTERS, RUN_STATES).
-  "runs.adapter": ["claude-print", "codex-exec"],
+  "runs.adapter": ["claude-print", "codex-exec", "codex"],
   "runs.state": [
     "queued",
     "starting",

@@ -1614,6 +1614,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.codex.driver",
+      "title": "The codex driver against a fake app server that speaks exactly the recorded exchanges: the request goes over the protocol, the final answer is the work's, a narrower mode runs in Codex's own sandbox, each server request kind is answered as the permission says while the turn goes on, a blocking question ends the run as needing the person with the question kept, an unknown request kind gets the protocol's error, Stop during start-up and during a turn, a server that stops answering, background work after the turn, and a whole answer after megabytes of other output",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.codex.run",
+      "title": "A Codex run in the run host with real processes, its program resolved from an npm shim (.cmd on Windows): start to answer with both results kept, Stop during a turn, Stop while the app server will not end after its work, and a process the agent left behind ended with the cleanup saying so, in a job object and without a process group, with nothing of a test left alive; on Windows Ctrl+C reaches the app server through Node's wrapper",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.json-rpc.lines",
       "title": "JSON-RPC over lines with requests in both directions: answers matched by ID, error answers with their code, the other side's requests answered by the handler or with method not found and never with a handler's private error, a slow answer holding up nothing after it, a request left open answered later, lines read whole in bounded memory with bad and over-long lines skipped, and every open request ended when the connection ends",
       "owner": "M6",
