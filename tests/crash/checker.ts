@@ -758,6 +758,8 @@ interface StoredOp {
   status: string;
   id: string;
   entry?: string;
+  /** A source made without its key, which this active task holds. */
+  held_by?: string;
 }
 
 /** The value of a task's field right after commit `seq`: its change there, or the one before. */
@@ -988,10 +990,12 @@ function requestIntent(
         const link = `${op.task}|${sourceId}`;
         allow("sources", sourceId, "create");
         allow("task_sources", link, "create");
-        // A new source has the content sent; one found by its key keeps its own (A1 3.6).
+        // A new source has the content sent; one found by its key keeps its own (A1 3.6). A key an
+        // active task holds stays that task's: the new task's source is made without it.
         const fresh = createdHere("sources", sourceId);
         const source = fresh ?? existsAt("sources", sourceId);
-        const content: Row = { source_key: op.source.key ?? null, deleted_at: null };
+        const key = result.held_by === undefined ? (op.source.key ?? null) : null;
+        const content: Row = { source_key: key, deleted_at: null };
         if (fresh !== undefined) {
           Object.assign(content, {
             kind: op.source.kind,
