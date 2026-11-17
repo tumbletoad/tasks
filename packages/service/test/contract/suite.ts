@@ -6,7 +6,7 @@
 //
 // It builds the examples' world through the transport itself (only registry operations), as far
 // as this build's operations can: Mira's tasks M-1 to M-15, with M-3 completed, M-14 and M-15
-// with the portal folder as their own, and M-14's notes, log entries, source and
+// given the portal as their folder, and M-14's notes, log entries, source and
 // receipts. Then every example of every entry runs:
 //
 // - VERIFIED examples give a result that matches the entry's output schema and the documented
@@ -17,7 +17,7 @@
 // - LATER examples need a feature a later step builds. Each names that step and the outcome it
 //   gives now. When the step lands, that outcome changes, the suite fails, and the step moves its
 //   example to VERIFIED. No example can be left out: the suite fails on an example in neither list.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
@@ -28,7 +28,7 @@ import type { HttpStart } from "../../src/http/index.ts";
 import { startService, type RunningService, type StartOptions } from "../../src/hub/service.ts";
 import { renderError } from "../../src/mcp/index.ts";
 import { opCall } from "../../src/ops/index.ts";
-import { configOf, removeRuntimeDir, serviceEnv, tempRoot } from "../harness.ts";
+import { removeRuntimeDir, serviceEnv, tempRoot } from "../harness.ts";
 import { classSession, grantHome, revokeHome } from "../ops-helpers.ts";
 
 /** The request IDs of the registry's examples (contracts' entries/fixture.ts). */
@@ -61,6 +61,8 @@ export interface ContractTransport {
   readonly binds: boolean;
   /** A launch reference for the task in the world, for an example's `launch` (`ContractWorld.launch`). */
   launch(task: string): Promise<string>;
+  /** Gives the task the portal as its folder here, as the person does (`ContractWorld.folder`). */
+  folder(task: string): Promise<void>;
   /**
    * Whether the face carries an entry at all. One it does not (a UI-only entry has no command)
    * has no examples on it. Default: every entry.
@@ -76,8 +78,13 @@ export interface ContractWorld {
   readonly path: string;
   /** The space's ID. */
   readonly space: string;
-  /** `<root work>/lumen/portal`: an existing folder under this machine's root `work`. */
+  /** `<work>/lumen/portal`: an existing folder of this machine. */
   readonly portal: string;
+  /**
+   * Gives `task` (a reference) the portal as its own folder on this machine, as the person does
+   * in the page: through the request path in this process, since not every face carries it.
+   */
+  folder(task: string): Promise<void>;
   /**
    * A terminal launch of `task` (a reference or ID), opened, dispatched and claimed in this process
    * as its shim would claim it (the world's terminal keeps the ticket, its process probe says every
@@ -109,22 +116,20 @@ export const WORLD_START = "windows:1";
 /** The plan of a world launch: nothing is ever started from it. */
 const WORLD_PLAN: SpawnPlan = {
   argv: [process.execPath],
-  place: null,
+  folder: null,
   env: {},
   title: "Fixture launch",
   afterExit: "close",
 };
 
 /**
- * The examples' machine and space: a service in this process whose machine.toml maps the root
- * `work` to a temporary folder holding `lumen/portal`, and one space, Mira (prefix M), created by
- * the user. Every folder and file is created with its mode, so the umask does not matter.
+ * The examples' machine and space: a service in this process, a temporary folder holding
+ * `work/lumen/portal`, and one space, Mira (prefix M), created by the user. Every folder and file
+ * is created with its mode, so the umask does not matter.
  */
 export async function contractWorld(
   label: string,
   options: {
-    /** More roots: an ID and a folder relative to the world's temporary folder, created. */
-    readonly roots?: Readonly<Record<string, string>>;
     /** Start the UI listener too, on a port the OS chooses, never persisted. */
     readonly http?: HttpStart;
     /** Launching's clock and more, over the world's terminal and probe. */
@@ -136,14 +141,6 @@ export async function contractWorld(
   const work = join(temp.root, "work");
   const portal = join(work, "lumen", "portal");
   mkdirSync(portal, { recursive: true, mode: 0o700 });
-  mkdirSync(configOf(home), { recursive: true, mode: 0o700 });
-  let toml = `[roots.work]\nlabel = "Work"\npath = ${JSON.stringify(work)}\n`;
-  for (const [id, folder] of Object.entries(options.roots ?? {})) {
-    const path = join(temp.root, folder);
-    mkdirSync(path, { recursive: true, mode: 0o700 });
-    toml += `\n[roots.${id}]\npath = ${JSON.stringify(path)}\n`;
-  }
-  writeFileSync(join(configOf(home), "machine.toml"), toml, { mode: 0o600 });
   const tickets = new Map<string, string>();
   const service = await startService({
     env: serviceEnv(home),
@@ -222,6 +219,24 @@ export async function contractWorld(
     }
     return { id: intent.id, reference: intent.reference, ticket, attachment: claimed.attachment };
   };
+  let folders = 0;
+  const folder = async (task: string): Promise<void> => {
+    folders += 1;
+    await opCall(
+      service.ops,
+      { class: "cli-interactive", env: {} },
+      {
+        op: "folder.manage",
+        input: {
+          action: "set",
+          task,
+          folder: portal,
+          request_id: `contract-folder-${String(folders).padStart(6, "0")}`,
+        },
+        space,
+      },
+    );
+  };
   return {
     service,
     home,
@@ -229,6 +244,7 @@ export async function contractWorld(
     space,
     portal,
     root: temp.root,
+    folder,
     launch,
     close: async () => {
       await service.stop();
@@ -496,9 +512,7 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
           Object.keys(launch["at"] as Value),
         ],
         text: value["text"],
-        copy: copy
-          .replaceAll(reference, "{ref}")
-          .replace(/^(Folder: work › lumen\/portal) \(.*\)$/mu, "$1 ({folder})"),
+        copy: copy.replaceAll(reference, "{ref}").replace(/^Folder: .*$/mu, "Folder: {folder}"),
       };
     }
     case "import.planning.preview": {
@@ -833,14 +847,8 @@ async function buildWorld(t: ContractTransport): Promise<{ asOf(): Promise<strin
   }));
   await t.call("task.add", { tasks, request_id: rid() }, "user");
 
-  // M-14 and M-15 in the portal folder, as the user gives it to them.
-  for (const task of ["M-14", "M-15"]) {
-    await t.call(
-      "task.update",
-      { task, set: { folder: t.portal }, base: await asOf(), request_id: rid() },
-      "user",
-    );
-  }
+  // M-14 and M-15 in the portal folder, as the user gives it them: the tasks `here` names.
+  for (const task of ["M-14", "M-15"]) await t.folder(task);
 
   // M-3: completed and wrapped up with a learning, with its context, a note and its ticket.
   await t.call(

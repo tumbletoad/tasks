@@ -167,8 +167,8 @@ function keyRef(kind: string, key: string): string | undefined {
 }
 
 /**
- * The folder's line: the task's folder here (its own or its project's), another machine, or the
- * work folder.
+ * The folder's line: where the task opens here (its own folder or its project's, the home as `~`),
+ * a folder not found, another machine, or the work folder.
  */
 function PlaceLine({
   task,
@@ -191,15 +191,17 @@ function PlaceLine({
     );
   };
   if (folder !== undefined && "path" in folder) {
+    const missing = folder.missing === true;
     return (
-      <li className={styles.link} data-part="place" data-state="here">
+      <li className={styles.link} data-part="place" data-state={missing ? "missing" : "here"}>
         <span className={styles.icon} aria-hidden="true">
           <FolderIcon />
         </span>
         <span data-fact="">
-          <span className={styles.mono} dir="ltr">
+          <span className={`${styles.mono} ${missing ? styles.muted : ""}`} dir="ltr">
             {folder.path}
           </span>
+          {missing ? <span className={styles.muted}> {t("place.missing")}</span> : null}
         </span>
         <span className={styles.acts}>
           <button
@@ -218,7 +220,7 @@ function PlaceLine({
     );
   }
   const elsewhere =
-    folder !== undefined
+    folder !== undefined && "machine" in folder
       ? folder.machine
       : task.place?.state === "elsewhere"
         ? task.place.machine
@@ -235,7 +237,7 @@ function PlaceLine({
       </li>
     );
   }
-  // No place on this machine: Open and Run use the space's work folder (A5 3.7, U25).
+  // No folder for this task here: Open and Run use the space's work folder (A5 3.7, U25).
   if (detail === undefined || task.place !== undefined) return null;
   return (
     <li className={styles.link} data-part="place" data-state="work_folder">

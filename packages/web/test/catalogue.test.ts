@@ -56,6 +56,7 @@ const SAMPLE = {
   text: "Wrong appointment times since Sunday · Ana Reyes",
   domain: "mail.example",
   machine: "mira-desktop",
+  folder: "~/work/portal",
   by: "Codex",
   what: "Codex prepared the changelog",
   why: "needs_recovery",

@@ -391,7 +391,8 @@ export class T3Route {
   /**
    * Binds the task's resolved folder to T3 (A4 3.4.1 steps 1 to 4): an exact project root or an
    * existing worktree, else the Register question, else, after Not now, unavailable for 30 days.
-   * `place` keys the answer (the place's ID); `name` is the place's display name for the question.
+   * `place` keys the Not now answer: the folder as the space stores it. `name` is the title of the
+   * task's project, which the question names and the registered T3 project takes as its title.
    */
   async prepare(input: {
     readonly place: string;
@@ -416,8 +417,9 @@ export class T3Route {
   }
 
   /**
-   * Register (A4 3.4.1 step 4): `t3_project_create` for exactly the folder, then step 2 again. A
-   * folder that still binds to nothing is unavailable; it is never bound to a containing project.
+   * Register (A4 3.4.1 step 4): `t3_project_create` for exactly the folder, titled by `name`, the
+   * task's project, then step 2 again. A folder that still binds to nothing is unavailable; it is
+   * never bound to a containing project.
    */
   async register(input: {
     readonly place: string;
@@ -439,7 +441,7 @@ export class T3Route {
     return again.kind === "ask" ? { kind: "unavailable", reason: "not_registered" } : again;
   }
 
-  /** Not now (A4 3.4.1 step 4): T3 is unavailable for this place for 30 days. */
+  /** Not now (A4 3.4.1 step 4): T3 is unavailable for this folder for 30 days. */
   notNow(place: string): void {
     const now = this.#now();
     rememberNotNow(this.#options.files, place, now + NOT_NOW_MS, now);

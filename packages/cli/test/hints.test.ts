@@ -140,9 +140,7 @@ describe("[A2.3.10.cli.hints] every command a message names exists", () => {
       "tasks service reload",
     ]);
     // A command that takes a subcommand is checked mid-sentence too.
-    expect(unknownCommands("Add it with tasks roots mend <id> <folder>.")).toEqual([
-      "tasks roots mend",
-    ]);
+    expect(unknownCommands("Fix it with tasks view mend <folder>.")).toEqual(["tasks view mend"]);
     expect(unknownCommands("Add it with tasks space open <folder>.")).toEqual([]);
     // English about tasks and SQL's table are not in a command's place, whatever their words.
     expect(unknownCommands("those tasks get no owner")).toEqual([]);

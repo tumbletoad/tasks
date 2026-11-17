@@ -74,6 +74,23 @@ export interface LaunchModel {
   readonly machine?: string;
 }
 
+/** Why an Open was refused on its folder: nothing was started, and the person can say where. */
+export interface FolderRefusal {
+  readonly reason: string;
+  /** The folder as the space stores it, the home as `~`; absent for the space's work folder. */
+  readonly folder?: string;
+}
+
+/** The service's refusal of a launch on its folder (`data.field` "task"), read by its shape. */
+export function folderRefusal(error: unknown): FolderRefusal | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const data = (error as Error & { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return undefined;
+  const { field, reason, folder } = data as Record<string, unknown>;
+  if (field !== "task" || typeof reason !== "string") return undefined;
+  return typeof folder === "string" ? { reason, folder } : { reason };
+}
+
 /**
  * The tile of a task: the effective instance (A4: the area's default, then the space's; the page
  * gets the pinned instances in order and takes the first), its state from the task's receipts,

@@ -185,16 +185,11 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
       base({
         kind: "pointer",
         budget: 20_000,
-        folder: {
-          kind: "place",
-          root: "work",
-          path: "lumen/portal",
-          absolute: "/home/mira/work/lumen/portal",
-        },
+        folder: { kind: "folder", path: "~/work/lumen/portal", found: true },
       }),
     );
     expect(pointer.split("\n").slice(4)).toEqual([
-      "Folder: work › lumen/portal (/home/mira/work/lumen/portal)",
+      "Folder: ~/work/lumen/portal",
       `If you have no tasks tools, ask me to paste the context pack (Shift+Copy in ${PRODUCT_NAME}).`,
     ]);
     const work = okText(
@@ -206,34 +201,41 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
     expect(work.split("\n")[4]).toBe(
       `Folder: ${PRODUCT_NAME} work folder (C:\\k\\workdirs\\space-1)`,
     );
-    const away = okText(base({ kind: "pointer", folder: { kind: "elsewhere" } }));
-    expect(away.split("\n")[4]).toBe("Folder: on another machine");
+    const away = okText(
+      base({ kind: "pointer", folder: { kind: "elsewhere", machine: "mira-laptop" } }),
+    );
+    expect(away.split("\n")[4]).toBe("Folder: on mira-laptop");
     const missing = okText(
       base({
         kind: "pointer",
-        folder: { kind: "place", root: "work", path: "", absolute: undefined },
+        folder: { kind: "folder", path: "C:\\Users\\mira\\code\\portal", found: false },
       }),
     );
-    expect(missing.split("\n")[4]).toBe("Folder: work (not found on this machine)");
+    expect(missing.split("\n")[4]).toBe(
+      "Folder: C:\\Users\\mira\\code\\portal (not found on this computer)",
+    );
   });
 
   test("no hostile title, folder or label leaves its fence: the template's lines stay exactly as they are", () => {
     const inputs = fc.record({
       title: titles,
-      root: fc.constantFrom("work", "home"),
+      machine: titles,
       path: titles,
-      absolute: titles,
+      found: fc.boolean(),
       kind: fc.constantFrom("sent" as const, "prefilled" as const, "pointer" as const),
     });
     fc.assert(
-      fc.property(inputs, ({ title, root, path, absolute, kind }) => {
+      fc.property(inputs, ({ title, machine, path, found, kind }) => {
         const text = okText(
           base({
             kind,
             title,
             // Room for the hostile paths, which may be as long as the longest piece twice over.
             budget: 200_000,
-            folder: { kind: "place", root, path, absolute },
+            folder:
+              path.length % 3 === 0
+                ? { kind: "elsewhere", machine }
+                : { kind: "folder", path, found },
           }),
         );
         const lines = text.split("\n");
@@ -247,7 +249,7 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
         if (kind === "prefilled") expect(lines).toHaveLength(5);
         if (kind === "pointer") {
           expect(lines).toHaveLength(6);
-          expect(lines[4]?.startsWith(`Folder: ${root} `)).toBe(true);
+          expect(lines[4]?.startsWith("Folder: ")).toBe(true);
           expect(lines[5]).toBe(
             `If you have no tasks tools, ask me to paste the context pack (Shift+Copy in ${PRODUCT_NAME}).`,
           );
@@ -310,7 +312,7 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
             title,
             composer,
             budget: 200_000,
-            folder: { kind: "place", root: "work", path, absolute: path },
+            folder: { kind: "folder", path, found: true },
           }),
         );
         expect(brief.status).toBe("ok");

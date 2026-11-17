@@ -27,6 +27,10 @@ import { FAKE_INSTANCE_TOML, type TerminalCall } from "./fake-terminal.ts";
 
 const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
 
+/** The service runs as the sample's machine, so that machine's folders take this OS's form. */
+const OS =
+  process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux";
+
 /** Generous bounds: a loaded machine must not fail a test that is only slow. */
 export const SLOW_MS = 120_000;
 
@@ -58,6 +62,8 @@ export interface World {
    * world, and a task already launched shows a Connected tile, which opens nothing.
    */
   readonly spare: FixtureTask;
+  /** Mira's portal project's folder, as the space stores it: a temporary folder that exists. */
+  readonly portal: string;
   /** The `tasks open` URL of a fresh code, landing on `to`. */
   signInUrl(to: string): Promise<string>;
   /**
@@ -103,7 +109,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     const home = join(temp.root, "h");
     const spacesRoot = join(temp.root, "spaces");
     mkdirSync(spacesRoot, { recursive: true });
-    const seeded = await seedMira(spacesRoot, { tasks: 12 });
+    const seeded = await seedMira(spacesRoot, { tasks: 12, os: OS });
 
     // The service's machine is the seeded space's authority, so the space opens for writing.
     const opened = openSpace(await checkedDriver(), seeded.folder, { role: "reader" });
@@ -136,14 +142,14 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     if (options.bulk !== undefined) {
       await addBulkTasks(
         seeded.folder,
-        { id: machine, name: "mira-desktop", os: "linux" },
+        { id: machine, name: "mira-desktop", os: OS },
         options.bulk,
       );
     }
     if (options.finished !== undefined) {
       await addFinishedTasks(
         seeded.folder,
-        { id: machine, name: "mira-desktop", os: "linux" },
+        { id: machine, name: "mira-desktop", os: OS },
         options.finished,
       );
     }
@@ -158,12 +164,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       { mode: 0o600 },
     );
     // The fake agent is this machine's one instance: the page draws its tile (A5 3.6).
-    registerSpaces(
-      home,
-      [{ path: seeded.folder, id: opened.space.spaceId }],
-      {},
-      FAKE_INSTANCE_TOML,
-    );
+    registerSpaces(home, [{ path: seeded.folder, id: opened.space.spaceId }], FAKE_INSTANCE_TOML);
 
     const record = join(temp.root, "terminal.jsonl");
     writeFileSync(record, "");
@@ -195,6 +196,33 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       },
       { timeoutMs: SLOW_MS },
     );
+    // The sample's portal folders are on Mira's machine, which is not here: this machine's are
+    // temporary folders, so a launch of her tasks opens somewhere real. Her first task's own
+    // folder inside the portal's moves along with it.
+    const portalFolder = join(temp.root, "work", "lumen", "portal");
+    mkdirSync(join(portalFolder, "appointments"), { recursive: true });
+    const status = (await user.call(
+      "op/call",
+      { space: opened.space.spaceId, op: "space.status", input: {} },
+      { timeoutMs: SLOW_MS },
+    )) as { as_of: string };
+    const portal = (
+      (await user.call(
+        "op/call",
+        {
+          space: opened.space.spaceId,
+          op: "folder.manage",
+          input: {
+            action: "set",
+            project: "lumen-portal",
+            folder: portalFolder,
+            base: status.as_of,
+            request_id: "e2e-mira-portal-folder-01",
+          },
+        },
+        { timeoutMs: SLOW_MS },
+      )) as { folder: string }
+    ).folder;
     const agent = await classSession(home, endpoint, "cli-agent", { CLAUDECODE: "1" });
     sessions.push(agent);
 
@@ -222,6 +250,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       studio: { id: created.space.id, name: created.space.name },
       task,
       spare,
+      portal,
       signInUrl: async (to) => {
         await roomToRedeem();
         const minted = (await user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {

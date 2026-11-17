@@ -63,11 +63,16 @@ export const DIGEST_RANGES: {
   log: { upto: null, limit: DIGEST_LIMITS.log },
 };
 
-/** A digest's folder: the one work opens in here, its own or its project's, else where one is. */
+/**
+ * Where the task opens on this machine, as the digest says it: its own folder or its project's,
+ * in stored form, and whether it is missing now; or the machine its folder is on. None: the
+ * space's work folder.
+ */
 export type DigestFolder =
-  { readonly path: string; readonly of: "task" | "project" } | { readonly machine: string };
+  | { readonly path: string; readonly of: "task" | "project"; readonly missing?: true }
+  | { readonly machine: string };
 
-/** The digest of A3 3.9.6, v0, with the task's folder when it or its project has one. */
+/** The digest of A3 3.9.6, v0, with where the task opens on this machine. */
 export function digestOf(
   read: TaskRead,
   today: string,

@@ -1,5 +1,5 @@
 // Machine-local configuration (A2 3.2.4): reading machine.toml strictly, editing it without
-// touching other bytes, and the roots' revisions in machine state.
+// touching other bytes.
 export {
   checkMachineConfig,
   DEFAULT_CONFIG,
@@ -34,5 +34,4 @@ export {
 } from "./edit.ts";
 export { configRefusal, unsafeConfigMessage } from "./messages.ts";
 export { readMachinePreferences, setMachinePreference } from "./preferences.ts";
-export { ROOTS_FILE, syncRootRevisions, type RootRevisions } from "./root-revs.ts";
 export { decodeConfig, MAX_CONFIG_BYTES, parseToml } from "./toml.ts";
