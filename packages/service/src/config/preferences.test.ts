@@ -148,11 +148,11 @@ describe("[A1.3.16.prefs.machine] machine preferences live in machine.toml with 
     expect(readFileSync(join(target, MACHINE_TOML), "utf8")).toBe(before);
   });
 
-  test("unset removes only its own line, and a key set another way is refused", () => {
+  test("unset removes only its own setting, its comment stays, and a key set another way is refused", () => {
     const text = '[preferences]\n"projection.dir" = "/a" # mine\n"other.key" = 1\n';
     expect(
       applyEdits(text, [{ op: "unset", table: ["preferences"], key: "projection.dir" }]),
-    ).toEqual({ ok: true, text: '[preferences]\n"other.key" = 1\n' });
+    ).toEqual({ ok: true, text: '[preferences]\n# mine\n"other.key" = 1\n' });
     expect(applyEdits(text, [{ op: "unset", table: ["preferences"], key: "missing" }])).toEqual({
       ok: true,
       text,

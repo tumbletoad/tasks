@@ -168,13 +168,14 @@ describe("[A7.3.12.m5-11.machine-settings] this computer's settings, kept in mac
         '# my terminal\n[terminal]\napp = "ghostty" # the fast one\n',
       );
 
-      // Back to the default: the line goes, the table and the comment stay.
+      // Back to the default: the setting goes, every comment stays, the line's own on a line of
+      // its own.
       const auto = await terminal({ app: "auto" });
       expect(auto.body["result"]).toMatchObject({
         terminal: { chosen: "auto", used: { app: "ghostty", source: "installed", found: true } },
       });
       const back = machineToml(world);
-      expect(own(back)).toBe("# my terminal\n[terminal]\n");
+      expect(own(back)).toBe("# my terminal\n[terminal]\n# the fast one\n");
       // Again: nothing to change, nothing written.
       expect((await terminal({ app: "auto" })).status).toBe(200);
       expect(machineToml(world)).toBe(back);
@@ -187,7 +188,9 @@ describe("[A7.3.12.m5-11.machine-settings] this computer's settings, kept in mac
         back.replace("[terminal]\n", `[terminal]\napp = "kitty"\npath = '${KITTY}'\n`),
       );
       expect((await terminal({ app: "ghostty" })).status).toBe(200);
-      expect(own(machineToml(world))).toBe('# my terminal\n[terminal]\napp = "ghostty"\n');
+      expect(own(machineToml(world))).toBe(
+        '# my terminal\n[terminal]\napp = "ghostty"\n# the fast one\n',
+      );
     },
   );
 });
