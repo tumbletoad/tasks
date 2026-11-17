@@ -1594,6 +1594,8 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `sections[].tasks[].due.tz` | string | yes | IANA time zone of the commitment |
 | `sections[].tasks[].area` | string | no | Area name |
 | `sections[].tasks[].project` | string | no | Project name |
+| `sections[].total` | integer, 0 to 1000000000 | yes | Its tasks not listed in an earlier section |
+| `sections[].more` | true | no | It has more tasks than total says |
 | `sections[].above` | integer, 1 to 1000 | no | Its tasks listed in an earlier section |
 | `guide` | string | no | The workflow guide asked for |
 | `hint` | string | no | What to do next |
@@ -1757,7 +1759,8 @@ Result:
           "due": "2026-11-13",
           "project": "Lumen Health"
         }
-      ]
+      ],
+      "total": 1
     }
   ]
 }
@@ -2447,6 +2450,8 @@ When `view` is `"status"`:
 | `sections[].tasks[].due.tz` | string | yes | IANA time zone of the commitment |
 | `sections[].tasks[].area` | string | no | Area name |
 | `sections[].tasks[].project` | string | no | Project name |
+| `sections[].total` | integer, 0 to 1000000000 | yes | Its tasks not listed in an earlier section |
+| `sections[].more` | true | no | It has more tasks than total says |
 | `sections[].above` | integer, 1 to 1000 | no | Its tasks listed in an earlier section |
 | `guide` | string | no | The workflow guide asked for |
 | `hint` | string | no | What to do next |

@@ -892,7 +892,8 @@ const SECTION_ROWS = 8;
  * statement reads enough rows to fill its section after the earlier sections took theirs: at most
  * 8 rows for each of the 5 other sections, plus its own 8.
  */
-const SECTION_LIMIT = `LIMIT ${String(SECTION_ROWS * 6)}`;
+const SECTION_READ = SECTION_ROWS * 6;
+const SECTION_LIMIT = `LIMIT ${String(SECTION_READ)}`;
 const SECTION_SQL: Readonly<Record<string, Statement>> = {
   today: {
     sql:
@@ -1061,7 +1062,13 @@ export async function readStatus(
   autonomy: "full" | "review" | "suggest";
   statuses: { status: string; count: number }[];
   inbox: number;
-  sections: { name: string; tasks: Record<string, unknown>[]; above?: number }[];
+  sections: {
+    name: string;
+    tasks: Record<string, unknown>[];
+    total: number;
+    more?: true;
+    above?: number;
+  }[];
   /** The task rows `here` asked for, each with `x_own_here`. */
   here: Row[];
   /** The bound task, when one was asked for and it exists. */
@@ -1109,6 +1116,9 @@ export async function readStatus(
     return {
       name,
       tasks: kept.map((row) => taskRow(row, facts.refPrefix)),
+      total: rows.length,
+      // The statement's own limit cut the section: its count is a lower bound.
+      ...(all.length >= SECTION_READ ? { more: true as const } : {}),
       ...(above === 0 ? {} : { above }),
     };
   });

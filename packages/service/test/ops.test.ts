@@ -453,6 +453,31 @@ describe("[A2.3.6.ops.request-path] op/call and op/list", () => {
     expect(sections[0]?.tasks.map((task) => task.id)).toContain(id);
   });
 
+  test("a status section counts all its tasks, not the eight it lists, and says when its read stopped short", async () => {
+    const s = await session("cli-interactive");
+    const add = async (n: number, due: string) => {
+      for (let done = 0; done < n; done += 25) {
+        const tasks = Array.from({ length: Math.min(25, n - done) }, (_, i) => ({
+          title: `Fixture counted ${due} ${String(done + i)}`,
+          due,
+        }));
+        await call(s, "task.add", { tasks, request_id: rid() });
+      }
+    };
+    const weekOf = async () =>
+      SpaceStatusResult.parse(await call(s, "space.status", { include: ["week"] })).sections?.[0];
+    // The tests above leave a few tasks due this week.
+    const before = (await weekOf())?.total ?? 0;
+    expect(before).toBeLessThan(8);
+    await add(12, "+3d");
+    const week = await weekOf();
+    expect(week?.tasks).toHaveLength(8);
+    expect(week?.total).toBe(before + 12);
+    expect(week?.more).toBeUndefined();
+    await add(40, "+4d");
+    expect(await weekOf()).toMatchObject({ total: 48, more: true });
+  }, 120_000);
+
   test("the user-only space verbs refuse the script and agent classes", async () => {
     for (const [cls, env] of [
       ["cli-script", {}],
