@@ -24,20 +24,6 @@
         "enabled": true
       }
     ],
-    "roots": [
-      {
-        "id": "projects",
-        "label": "Projects",
-        "path": "C:\\Users\\mira\\Projects",
-        "runs": true
-      },
-      {
-        "id": "share",
-        "label": "share",
-        "path": "\\\\nas\\share\\mira",
-        "runs": false
-      }
-    ],
     "terminal": {
       "app": "wt",
       "path": null,
@@ -107,5 +93,11 @@
       "idleMs": 1200000
     }
   },
-  "problems": []
+  "problems": [
+    {
+      "key": "roots",
+      "code": "retired",
+      "severity": "warning"
+    }
+  ]
 }

@@ -94,14 +94,15 @@ const LogOutput = z.strictObject({
 
 const DigestSource = SourceOutput.extend({ cut: Cut.optional() });
 
-/** The folder work on the task opens in: its own here, else its project's here, else elsewhere. */
+/** Where the task opens on this machine: a folder here, or the machine its folder is on. */
 const DigestFolder = z.union([
   z.strictObject({
-    path: z.string().describe("The folder on this machine, the home as ~"),
-    of: z.enum(["task", "project"]).describe("The task's own folder, or its project's"),
+    path: z.string().describe("The folder, the home written as ~"),
+    of: z.enum(["task", "project"]).describe("The task's own folder or its project's"),
+    missing: z.literal(true).describe("Not found on this machine now").optional(),
   }),
   z.strictObject({
-    machine: z.string().describe("Only on this other machine"),
+    machine: z.string().describe("The machine its folder is on: it opens there"),
   }),
 ]);
 
@@ -125,7 +126,9 @@ export const TaskDetail = TaskRow.extend({
   waiting_on: z.string().describe("Who or what it waits on").optional(),
   focus: z.boolean().describe("Starred for today"),
   created: z.string().regex(patterns.instant).describe("When it was created").optional(),
-  folder: DigestFolder.describe("Its folder: its own, else its project's").optional(),
+  folder: DigestFolder.describe(
+    "Where it opens on this machine; none: in the space's work folder",
+  ).optional(),
   wrap_state: WrapState.optional(),
   outcome: z.string().describe("Outcome of the last completion").optional(),
   learnings: Learnings,

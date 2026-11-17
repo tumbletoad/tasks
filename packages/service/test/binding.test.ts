@@ -16,7 +16,6 @@ import { contractWorld, type ContractWorld, type WorldLaunch } from "./contract/
 import { stateOf } from "./harness.ts";
 import { bridgeContext, openMcp, RawMcp, textOf } from "./mcp-helpers.ts";
 import { classSession, errorOf, grantHome } from "./ops-helpers.ts";
-import { placeTask } from "./places-helper.ts";
 
 type Json = Record<string, unknown>;
 const LONG = 180_000;
@@ -483,8 +482,13 @@ describe("[A3.3.7.binding.folder] a working folder, a hint or an argument never 
     async () => {
       const task = await user("task.get", { task: "M-4", sections: ["history"] });
       const taskId = String((task["task"] as Json)["id"]);
-      // Status's `here` reads the task's place in the portal folder.
-      await placeTask(w.service.ops, "M-4", "work", "lumen/portal", w.space);
+      await user("folder.manage", {
+        action: "set",
+        task: "M-4",
+        folder: w.portal,
+        base: (await user("space.status", {}))["as_of"],
+        request_id: rid(),
+      });
       const agent = await connect({
         cwd: w.portal,
         env: { TASKS_TASK: taskId, TASKS_SPACE: "sp_0000000000000000000000000z" },

@@ -25,7 +25,7 @@ import {
   type AgentBase,
   type EnvironmentSource,
   type LaunchIntent,
-  type PlanPlace,
+  type PlanFolder,
   type SpawnPlan,
   type TerminalHost,
 } from "@tasks/launch";
@@ -38,7 +38,7 @@ import {
   type InteractiveAgentReport,
 } from "@tasks/testkit";
 import { readLog, waitFor } from "./harness.ts";
-import { LAB_ROOT, LONG_MS, ShimLab, shimSession, type LabOptions } from "./shim-harness.ts";
+import { LONG_MS, ShimLab, shimSession, type LabOptions } from "./shim-harness.ts";
 
 const WINDOWS = process.platform === "win32";
 /** Where the fake machine keeps each terminal. */
@@ -161,12 +161,13 @@ async function rig(
 
 /** A plan whose agent is testkit's fake interactive agent, reporting to `report`. */
 function agentPlan(
+  lab: ShimLab,
   report: string,
   options: {
     release?: string;
     argv?: readonly string[];
     title?: string;
-    place?: PlanPlace | null;
+    folder?: PlanFolder | null;
   } = {},
 ): SpawnPlan {
   return {
@@ -176,7 +177,7 @@ function agentPlan(
       maxMs: 120_000,
       argv: options.argv ?? [],
     }),
-    place: options.place === undefined ? { root: LAB_ROOT, path: "portal" } : options.place,
+    folder: options.folder === undefined ? lab.labFolder() : options.folder,
     env: {},
     title: options.title ?? "Fixture launch",
     afterExit: "close",
@@ -237,7 +238,7 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
       const report = join(lab.work, "agent-report.json");
       const release = join(lab.work, "release");
       const t0 = performance.now();
-      const intent = await lab.open(agentPlan(report, { release }));
+      const intent = await lab.open(agentPlan(lab, report, { release }));
       const dispatched = await lab.running.launches.dispatch(lab.spaceId, intent.id);
       // Dispatched at once: the client exited 0 long before its shim's claim.
       expect(dispatched?.state).toBe("dispatched");
@@ -344,7 +345,7 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
       const { lab } = r;
       const report = join(lab.work, "agent-report.json");
       const release = join(lab.work, "release");
-      const intent = await lab.launch(agentPlan(report, { release }));
+      const intent = await lab.launch(agentPlan(lab, report, { release }));
       await lab.waitIntent(intent.id, (i) => i.state === "confirmed", "Confirmed");
       r.spawner.trackLogs([r.terminalLog]); // its shim and terminal, alive now
       expect(terminalsStarted(r)).toHaveLength(1);
@@ -363,7 +364,7 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
       const { lab } = r;
       const report = join(lab.work, "agent-report.json");
       const release = join(lab.work, "release");
-      const intent = await lab.launch(agentPlan(report, { release }));
+      const intent = await lab.launch(agentPlan(lab, report, { release }));
       await lab.waitIntent(intent.id, (i) => i.state === "confirmed", "Confirmed");
       r.spawner.trackLogs([r.terminalLog]); // its shim and terminal, alive now
       const started = terminalsStarted(r);
@@ -416,7 +417,7 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
       const { lab } = r;
       const report = join(lab.work, "agent-report.json");
       const release = join(lab.work, "release");
-      const intent = await lab.launch(agentPlan(report, { release }));
+      const intent = await lab.launch(agentPlan(lab, report, { release }));
       await lab.waitIntent(intent.id, (i) => i.state === "confirmed", "Confirmed");
       r.spawner.trackLogs([r.terminalLog]); // its shim and terminal, alive now
       const started = terminalsStarted(r);
@@ -448,7 +449,7 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
       const { lab } = r;
       const report = join(lab.work, "agent-report.json");
       const release = join(lab.work, "release");
-      const intent = await lab.launch(agentPlan(report, { release }));
+      const intent = await lab.launch(agentPlan(lab, report, { release }));
       await lab.waitIntent(intent.id, (i) => i.state === "confirmed", "Confirmed");
       r.spawner.trackLogs([r.terminalLog]); // its shim and terminal, alive now
       const started = terminalsStarted(r);
@@ -502,7 +503,7 @@ const HOSTILE_TITLES = [
   "",
 ];
 
-/** Hostile folder names a place may have on this OS. */
+/** Hostile folder names a folder may have on this OS. */
 const HOSTILE_FOLDERS = WINDOWS
   ? [
       "it's quoted",
@@ -542,14 +543,17 @@ describe("[A4.5.terminal.hostile] hostile titles and folders reach the fake agen
       for (const [i, title] of HOSTILE_TITLES.entries()) {
         const report = join(lab.work, `title-${String(i)}.json`);
         const argv = ["--title", title, title];
-        const intent = await lab.launch(agentPlan(report, { title, argv }), `title-${String(i)}`);
+        const intent = await lab.launch(
+          agentPlan(lab, report, { title, argv }),
+          `title-${String(i)}`,
+        );
         runs.push([intent, report, argv]);
       }
       // Very long: within one argument's limit on Linux (128 KiB), past Windows' command line.
       const long = `long ${"é".repeat(40_000)}`;
       const longReport = join(lab.work, "title-long.json");
       const longIntent = await lab.launch(
-        agentPlan(longReport, { title: long.slice(0, 1_000), argv: [long] }),
+        agentPlan(lab, longReport, { title: long.slice(0, 1_000), argv: [long] }),
         "title-long",
       );
       for (const [intent, report, argv] of runs) {
@@ -598,13 +602,14 @@ describe("[A4.5.terminal.hostile] hostile titles and folders reach the fake agen
           continue;
         }
         const report = join(lab.root, `folder-${String(i)}.json`);
-        const plan = agentPlan(report, { place: { root: LAB_ROOT, path: name }, argv: [name] });
+        const path = join(lab.work, name);
+        const plan = agentPlan(lab, report, { folder: { stored: path, path }, argv: [name] });
         let intent: LaunchIntent;
         try {
           intent = await lab.launch(plan, `folder-${String(i)}`);
         } catch (error) {
-          // Refused at the click: the plan's place is no place's path (M2.08's plan check), or
-          // the place cannot be one on this machine. Nothing was made, nothing started.
+          // Refused at the click: the plan's folder holds a control character (the plan check),
+          // or the folder cannot be used on this machine. Nothing was made, nothing started.
           if (error instanceof LaunchFolderUnavailable) {
             outcomes.push(`${String(i)}:refused-${error.reason}`);
           } else {
@@ -635,17 +640,17 @@ describe("[A4.5.terminal.hostile] hostile titles and folders reach the fake agen
         expect(seen.argv).toEqual([name]);
         outcomes.push(`${String(i)}:exact`);
       }
-      // Every name a place can hold reached the agent exactly. Linux: a newline or a backslash in a
-      // name is no place's (the plan check refuses it at the click). Windows: a folder past the OS's
-      // limit for a process's working directory starts nothing (Failed refused), or works where the
-      // path fits.
+      // Every name a folder can hold reached the agent exactly. Linux: a newline in a name is a
+      // control character no folder holds (the plan check refuses it at the click). Windows: a
+      // folder past the OS's limit for a process's working directory starts nothing (Failed
+      // refused), or works where the path fits.
       const exact = (from: number, to: number): string[] =>
         Array.from({ length: to - from }, (_, k) => `${String(from + k)}:exact`);
       if (WINDOWS) {
         expect(outcomes.slice(0, 8)).toEqual(exact(0, 8));
         expect(["8:exact", "8:failed-refused", "8:failed-verify_failed"]).toContain(outcomes[8]);
       } else {
-        expect(outcomes).toEqual([...exact(0, 8), "8:refused-plan", "9:refused-plan", "10:exact"]);
+        expect(outcomes).toEqual([...exact(0, 8), "8:refused-plan", "9:exact", "10:exact"]);
       }
       // No folder, and no part of one, reached a terminal's argv: only its working directory.
       for (const record of terminalsStarted(r)) {
@@ -701,7 +706,7 @@ describe("[A4.5.environment.login-shell] via_login_shell: a fresh snapshot in th
       const release = join(lab.work, "release");
       const argv = ["--flag", "$(id) `id`"];
       const intent = await lab.launch({
-        ...agentPlan(report, { release, argv }),
+        ...agentPlan(lab, report, { release, argv }),
         loginShell: true,
       });
       await lab.waitIntent(intent.id, (i) => i.state === "confirmed", "Confirmed");
@@ -740,7 +745,7 @@ describe("[A4.5.environment.login-shell] via_login_shell: a fresh snapshot in th
       const { lab } = r;
       const report = join(lab.work, "agent-report.json");
       const release = join(lab.work, "release");
-      const intent = await lab.launch({ ...agentPlan(report, { release }), loginShell: true });
+      const intent = await lab.launch({ ...agentPlan(lab, report, { release }), loginShell: true });
       expect(asked.map((a) => a.folder)).toEqual([lab.folder]);
       // The service restarts before the shim claims: what the dispatch took is gone with it.
       await lab.stopService();
