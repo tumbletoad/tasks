@@ -5,6 +5,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { CLI_NAME } from "@tasks/brand";
 import { AppError, type ErrorBody } from "@tasks/contracts";
 import { toolCaller } from "../src/mcp/index.ts";
 import { dateIn, localTimeZone } from "../src/ops/dates.ts";
@@ -318,5 +319,71 @@ describe("[A3.bulk.dates] work recreated from another tool keeps when it happene
       request_id: rid(),
     });
     expect(note).toMatchObject({ data: { issues: [{ path: "at" }] } });
+  });
+});
+
+describe("[A3.bulk.refusals] a refusal says what to change", () => {
+  const plain = (title: string): Json => ({ title, area: "Refusals" });
+
+  test("a limit names the field, what it takes and what it got, in the words of the caller's face", async () => {
+    const many = await tool("add_tasks", {
+      tasks: Array.from({ length: 26 }, (_, k) => plain(`Plain ${String(k)}`)),
+      request_id: rid(),
+    });
+    expect(many.split("\n")).toEqual([
+      "error too_large: The input is over a limit.",
+      "- tasks: At most 25 items, not 26",
+    ]);
+    const long = await tool("add_tasks", {
+      tasks: [plain("Fine"), { ...plain("x".repeat(250)), summary: "y".repeat(300) }],
+      request_id: rid(),
+    });
+    expect(long).toContain("- tasks.1.title: At most 200 characters, not 250");
+    expect(long).toContain("- tasks.1.summary: At most 240 characters, not 300");
+    const shell = await refusal("task.add", {
+      tasks: Array.from({ length: 26 }, (_, k) => plain(`Plain ${String(k)}`)),
+      request_id: rid(),
+    });
+    expect(shell.hint).toBe(`Run ${CLI_NAME} help add for the arguments.`);
+    const id = await tool("add_tasks", { tasks: [plain("Fine")], request_id: "abc" });
+    expect(id).toContain("- request_id: 16 to 64 characters from A-Z, a-z, 0-9, _ and -");
+  });
+
+  test("a status or effort the space lacks lists what it has, at the draft that sent it", async () => {
+    const effort = await tool("add_tasks", {
+      tasks: [plain("One"), { ...plain("Two"), effort: "2h" }, plain("Three")],
+      request_id: rid(),
+    });
+    expect(effort.split("\n")).toEqual([
+      "error invalid_input: Not an effort of this space. Use one of the space's efforts: S, M, L. Put another estimate in context.",
+      "- tasks.1.effort: Not an effort of this space",
+    ]);
+    const status = await tool("add_tasks", {
+      tasks: [{ ...plain("Delegated"), status: "delegated" }],
+      request_id: rid(),
+    });
+    expect(status).toContain("Use one of the space's statuses: open, waiting, review, backlog.");
+    expect(status).toContain("- tasks.0.status: Not a status of this space");
+  });
+
+  test("a base from elsewhere and a name close to another are said plainly, with the way out", async () => {
+    const added = await call("task.add", { tasks: [plain("Based")], request_id: rid() });
+    const ref = String((added["tasks"] as Json[])[0]?.["ref"]);
+    const stale = await tool("complete_task", {
+      task: ref,
+      outcome: "Done.",
+      base: "1.1.aaaaaaaa",
+      request_id: rid(),
+    });
+    expect(stale).toContain(
+      "The base is from another copy of the space, or from before it was restored: read again.",
+    );
+    const close = await tool("add_tasks", {
+      tasks: [{ title: "Close", area: "Refusal" }],
+      request_id: rid(),
+    });
+    expect(close).toContain(
+      "If it is another one, create it first with organize action create, then use its name.",
+    );
   });
 });

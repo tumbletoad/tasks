@@ -3204,7 +3204,7 @@ function checkBase(base: Base, asOf: AsOf): void {
   if (base.epoch !== asOf.epoch || !incarnation) {
     problem(
       "EPOCH_CHANGED",
-      "The base comes from another epoch or incarnation: read again",
+      "The base is from another copy of the space, or from before it was restored: read again",
       undefined,
       "base",
     );

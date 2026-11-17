@@ -1003,6 +1003,22 @@ export function keysOf(key: "tasks.statuses" | "tasks.effort_scale", row: unknow
     : [];
 }
 
+const EFFORT_SCALE: Statement = {
+  sql: "SELECT value, schema_ver FROM preferences WHERE key = 'tasks.effort_scale'",
+  mode: "get",
+};
+
+/** The status keys and the effort keys a task of the space may take, in their order. */
+export async function readTaskKeys(
+  reader: WorkerConnection,
+): Promise<{ status: string[]; effort: string[] }> {
+  const [statuses, efforts] = await snapshot(reader, [STATUS_ORDER, EFFORT_SCALE]);
+  return {
+    status: keysOf("tasks.statuses", statuses),
+    effort: keysOf("tasks.effort_scale", efforts),
+  };
+}
+
 function levelOf(row: unknown): "full" | "review" | "suggest" {
   const { value } = readPreference("autonomy.level", storedOf(row));
   return value === "full" || value === "suggest" ? value : "review";

@@ -2316,6 +2316,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.bulk.refusals",
+      "title": "A refusal says what to change: a limit names the field, its limit and how much was sent, with the command's own help at the command line and no command-line hint for an agent; a request ID names its form; a status or effort the space lacks lists what it has, at the draft that sent it; a base from elsewhere is said plainly; a name close to another says how to create a different group",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.5.search.parser",
       "title": "The query language: A3 3.9.2's examples parse into words, phrases, OR groups and filters; quotes, doubled quotes and letter-only keys; an unknown key or value fails with a suggestion and never quotes the query; OR, negation, limits and values are checked; is:new and is:changed are refused naming their step; a query that names a lifecycle widens the default scope; and random strings parse or are refused as invalid_input, with parsed reading back as the same query",
       "source": "A3 3.9.2, A3 3.5, A3 5, A7 3.10 M3.05",

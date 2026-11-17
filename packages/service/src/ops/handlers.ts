@@ -109,6 +109,7 @@ import {
   spaceUnavailable,
   storageFailure,
   unsupported,
+  type PathOf,
 } from "./errors.ts";
 import { SearchCursors } from "../search/cursors.ts";
 import { runSearch, type SearchInput } from "../search/search.ts";
@@ -134,6 +135,7 @@ import {
   readSpace,
   readStatus,
   readTask,
+  readTaskKeys,
   readTaskRef,
   logOf,
   noteOf,
@@ -415,7 +417,7 @@ async function callWith(
   }
   checkHiddenFields(entry, input, principal.audience);
   const parsed = parseInput(entry, principal.audience, input);
-  if (!parsed.success) throw schemaFailure(parsed.error, input);
+  if (!parsed.success) throw schemaFailure(parsed.error, input, principal.origin, entry.name);
   checkActionFields(entry, parsed.data);
   if (params.space !== undefined && typeof params.space !== "string") {
     throw invalid("space", "Expected a space ID or name");
@@ -674,6 +676,8 @@ async function submit(
      * a refusal's `op` counts the handler's own operations, as its results do (`ownResults`).
      */
     readonly inserted?: { readonly at: number; readonly count: number };
+    /** The input path of the caller's own operation `i`, with the field a refusal names. */
+    readonly pathOf?: PathOf;
   } = {},
 ): Promise<WriteResult> {
   const writer = writerOf(call.space);
@@ -735,12 +739,65 @@ async function submit(
         ? undefined
         : (i: number): number | undefined =>
             i < inserted.at ? i : i < inserted.at + inserted.count ? undefined : i - inserted.count;
-    throw resultFailure(result, options.hints, options.wrapUp, principal.origin, own);
+    const field = result.error?.field;
+    const keyed = field === "status" || field === "effort" ? field : undefined;
+    let hints = options.hints;
+    if (result.error?.code === "VALIDATION_FAILED" && keyed !== undefined) {
+      const keys = await readTaskKeys(readerOf(call.space)).catch(() => undefined);
+      if (keys !== undefined) {
+        hints = { ...hints, VALIDATION_FAILED: allowedHint(keyed, keys[keyed]) };
+      }
+    }
+    throw resultFailure(result, hints, options.wrapUp, principal.origin, own, options.pathOf);
   }
   return result;
 }
 
 const replayed = (result: WriteResult) => (result.replayed === true ? { replayed: true } : {});
+
+/** What a status or an effort may be in this space, as a refusal's hint. */
+function allowedHint(field: "status" | "effort", keys: readonly string[]): string {
+  return field === "status"
+    ? `Use one of the space's statuses: ${keys.join(", ")}.`
+    : `Use one of the space's efforts: ${keys.join(", ")}. Put another estimate in context.`;
+}
+
+/** The writer's name of a draft's field where the caller's input names it otherwise. */
+const DRAFT_INPUT: Readonly<Record<string, string>> = { dedupe: "on_existing" };
+
+/**
+ * Where each operation of drafts came from in the input (`at(k)` for draft `k`), so a refusal
+ * names the draft and its field: the draft's own field for its task.create, its log, a source by
+ * `sources`, its folder.
+ */
+function draftPathOf(
+  ops: readonly Operation[],
+  ids: readonly string[],
+  at: (k: number) => string,
+  sources: ReadonlyMap<number, string>,
+): PathOf {
+  return (i, field) => {
+    const source = sources.get(i);
+    if (source !== undefined) return source;
+    const op = ops[i];
+    if (op === undefined) return undefined;
+    const task = op.kind === "task.create" ? op.id : "task" in op ? op.task : undefined;
+    const k = typeof task === "string" ? ids.indexOf(task) : -1;
+    if (k < 0) return undefined;
+    switch (op.kind) {
+      case "task.create":
+        return field !== undefined && /^[a-z_]+$/u.test(field)
+          ? `${at(k)}.${DRAFT_INPUT[field] ?? field}`
+          : at(k);
+      case "log.add":
+        return `${at(k)}.log`;
+      case "task.folder_set":
+        return `${at(k)}.folder`;
+      default:
+        return at(k);
+    }
+  };
+}
 
 /**
  * A1's `source_differs` (A3 3.4.6): a source that exists already keeps its metadata, and the reply
@@ -1338,6 +1395,7 @@ async function resolvedDrafts(
     throw storageFailure(error);
   }
   const groups: Operation[] = [];
+  const face = call.principal.origin;
   // The groups an earlier draft makes join the names, with the slugs the writer will give them, so
   // a later draft resolves them by the same rules as the space's own: one call answers as its
   // drafts sent one by one would.
@@ -1355,7 +1413,7 @@ async function resolvedDrafts(
       const out = { ...draft };
       const area = draft["area"];
       if (typeof area === "string") {
-        let id = resolveGroup(working, "area", area, `${at}.area`);
+        let id = resolveGroup(working, "area", area, `${at}.area`, { face });
         if (id === undefined) {
           const created = newId("a");
           made.add(created);
@@ -1379,7 +1437,10 @@ async function resolvedDrafts(
           within !== undefined && made.has(within)
             ? { ...working, projects: projects.filter((p) => p.area === within) }
             : working;
-        let id = resolveGroup(among, "project", project, `${at}.project`, { area: within });
+        let id = resolveGroup(among, "project", project, `${at}.project`, {
+          area: within,
+          face,
+        });
         if (id === undefined) {
           const created = newId("p");
           projects.push({
@@ -1734,6 +1795,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       await submit(call, [...named.groups, ...ops], {
         warnings: [...duplicates, ...folders.warnings],
         inserted: { at: 0, count: named.groups.length },
+        pathOf: draftPathOf(ops, ids, at, sourcePaths),
       }),
     );
     const outcomes = list.map((_, k) => draftOutcome(result, firsts[k] ?? 0));
@@ -1863,6 +1925,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       await submit(call, [...groups, ...ops], {
         active: true,
         inserted: { at: 0, count: groups.length },
+        pathOf: (i, field) =>
+          ops[i]?.kind === "task.patch" && field !== undefined && /^[a-z_]+$/u.test(field)
+            ? `set.${field}`
+            : undefined,
       }),
     );
     const updated = result.status === "applied";
@@ -1978,6 +2044,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...(own > 1 ? { wrapUp: 1 } : {}),
         inserted: { at: own, count: groups.length },
         warnings: folders.warnings,
+        pathOf: draftPathOf(ops, ids, at, sourcePaths),
       }),
     );
     const outcomes = follow.map((_, k) => draftOutcome(result, firsts[k] ?? 0));
@@ -2516,7 +2583,9 @@ async function folderWrite(
     }
     let area: string | undefined;
     if (typeof input["area"] === "string") {
-      area = replay ? REPLAY_GROUP : resolveGroup(names, "area", input["area"], "area");
+      area = replay
+        ? REPLAY_GROUP
+        : resolveGroup(names, "area", input["area"], "area", { face: call.principal.origin });
       if (area === undefined) {
         area = newId("a");
         ops.push({ kind: "area.create", id: area as Id<"a">, title: input["area"].trim() });
@@ -2733,6 +2802,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     // The group created is created as named; an area named only to hold it keeps the typo check.
     let area = resolveGroup(names, "area", path.area, "path", {
       create: path.project === undefined,
+      face: call.principal.origin,
     });
     if (area === undefined) {
       area = newId("a");
@@ -2801,7 +2871,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
       if (kind !== "project") {
         throw invalid("path", "Only a project moves to another area", "Name it as Area/Project.");
       }
-      let target = resolveGroup(names, "area", to ?? "", "to");
+      let target = resolveGroup(names, "area", to ?? "", "to", { face: call.principal.origin });
       if (target === undefined) {
         target = newId("a");
         ops.push({ kind: "area.create", id: target as Id<"a">, title: to ?? "" });
