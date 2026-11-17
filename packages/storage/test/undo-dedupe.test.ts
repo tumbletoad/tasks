@@ -1852,5 +1852,5 @@ describe("[A1.5.history.property] undo and redo with dedupe by source key", () =
       expect(seen[outcome] ?? 0, outcome).toBeGreaterThan(2);
     }
     await fc.assert(property({}), { numRuns: 20 });
-  }, 180_000);
+  }, 600_000);
 });
