@@ -1282,8 +1282,15 @@
     },
     {
       "id": "A2.3.3.hub.refusals",
-      "title": "The service refuses root, an elevated Administrator, an elevation it cannot check and package identity with 64 before writing anything, reads the integrity level by SID from the whoami in the loader's System32 whatever SystemRoot says, refuses a state folder others can write, and refuses a file where the state folder belongs with 64 and a line",
+      "title": "The service refuses root, an elevated Administrator, an elevation it cannot check and package identity with 64 before writing anything, reads the integrity level by SID from the whoami in the system's own System32 whatever SystemRoot says, refuses a state folder others can write, and refuses a file where the state folder belongs with 64 and a line",
       "source": "A2 3.3.1, A2 3.5, A6 3.16.1, A7 3.8 M1.08",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.3.hub.system32-workers",
+      "title": "Looking for System32 never ends the process: a process whose worker threads run, start and end while it looks runs on and finds the folder, and lint refuses a diagnostic report in product code",
       "owner": "M1",
       "kind": "ci",
       "profiles": ["v1"]

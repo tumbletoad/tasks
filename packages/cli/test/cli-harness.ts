@@ -12,7 +12,7 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isAgentMarker } from "@tasks/bridge/protocol";
+import { isAgentMarker, LocalError } from "@tasks/bridge/protocol";
 import {
   diagnostics,
   openSession,
@@ -166,7 +166,7 @@ export async function startWorld(
       tasks,
       close: async () => {
         try {
-          await reportLostService(service, home, path).catch(() => undefined);
+          await reportLostService(service, home, ready).catch(() => undefined);
           for (const child of children) child.kill("SIGKILL");
           if (install === undefined) service.send("stop");
           else {
@@ -201,26 +201,47 @@ export async function startWorld(
   }
 }
 
+/** How long a service whose endpoint failed may take to be seen as ended. */
+const EXIT_SEEN_MS = 5_000;
+
+/** A failed probe's error, with the transport's reason and detail when it has them. */
+function probeError(error: unknown): string {
+  if (error instanceof LocalError) return `${error.reason} (${error.detail})`;
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
+/** An exit code, with its NTSTATUS in hex on Windows, where a native crash ends with one. */
+function exitText(code: number | null): string {
+  if (code === null || process.platform !== "win32" || code < 0x100) return String(code);
+  return `${String(code)} (0x${(code >>> 0).toString(16).toUpperCase()})`;
+}
+
 /**
  * A service that ended, or stopped answering, before its test stopped it fails the commands after
- * it with an error that says nothing about why: its state, its stderr, the end of its log and its
- * crash files go to this test's stderr, so the failure carries its cause.
+ * it with an error that says nothing about why: the probe's error, whether service.json still names
+ * the service the test started, how it ended, its stderr, the end of its log and its crash files go
+ * to this test's stderr, so the failure carries its cause.
  */
-async function reportLostService(service: Proc, home: string, path: string): Promise<void> {
+async function reportLostService(service: Proc, home: string, saved: ServiceJson): Promise<void> {
+  const path = saved.endpoint?.path ?? "";
+  let probe: string | undefined;
+  if (service.child.exitCode === null && service.child.signalCode === null) {
+    try {
+      (await openSession(home, path, 10_000)).close();
+      return;
+    } catch (error) {
+      probe = probeError(error);
+    }
+    // A process that crashes closes its endpoint before its parent sees the exit.
+    await within(service.exit, EXIT_SEEN_MS, "the exit").catch(() => undefined);
+  }
   const { exitCode, signalCode } = service.child;
   const running = exitCode === null && signalCode === null;
-  const answers =
-    running &&
-    (await Promise.resolve()
-      .then(() => openSession(home, path, 10_000))
-      .then(
-        (session) => {
-          session.close();
-          return true;
-        },
-        () => false,
-      ));
-  if (answers) return;
+  const now = readServiceJson(home);
+  const same = (field: "pid" | "instance") =>
+    now === undefined ? "no service.json" : now[field] === saved[field] ? "same" : "changed";
+  const endpoint =
+    now === undefined ? "no service.json" : now.endpoint?.path === path ? "same" : "changed";
   let found: { file: string; text: string }[];
   try {
     found = diagnostics(home);
@@ -234,8 +255,10 @@ async function reportLostService(service: Proc, home: string, path: string): Pro
   process.stderr.write(
     [
       running
-        ? `The service stopped answering before its test stopped it: service.json says ${String(readServiceJson(home)?.state)}`
-        : `The service ended before its test stopped it: exit ${String(exitCode)}, signal ${String(signalCode)}`,
+        ? `The service stopped answering before its test stopped it: service.json says ${String(now?.state)}`
+        : `The service ended before its test stopped it: exit ${exitText(exitCode)}, signal ${String(signalCode)}`,
+      `A new connection: ${probe ?? "not tried, the service had ended"}`,
+      `service.json against the start: pid ${same("pid")}, instance ${same("instance")}, endpoint ${endpoint}`,
       `--- its stderr ---\n${service.stderr()}`,
       ...files,
       "",
