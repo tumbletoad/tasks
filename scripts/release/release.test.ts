@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { writeTarGz, writeZip } from "../build/archive.ts";
 import { archiveName, type Platform } from "../build/platforms.ts";
@@ -35,7 +35,14 @@ import {
 import { ReleaseError, verifyRelease } from "../../packages/service/src/version/release.ts";
 import { repoRoot } from "../run.ts";
 import { gatherArchives, RELEASE_PLATFORMS } from "./gather.ts";
-import { checkReleaseFolder, GhError, holdRelease, releaseReadiness, type Gh } from "./github.ts";
+import {
+  checkReleaseFolder,
+  GhError,
+  holdRelease,
+  publishRelease,
+  releaseReadiness,
+  type Gh,
+} from "./github.ts";
 import { isOnMain, planRun } from "./plan.ts";
 import {
   ciReleaseSign,
@@ -57,6 +64,7 @@ import { settingsProblems, type RepositorySettings, type RulesetSettings } from 
 import {
   checkPublishCommit,
   draftStep,
+  isLatest,
   rehearsalVersion,
   releasedProblem,
   releaseVersionProblem,
@@ -803,6 +811,14 @@ describe("[A2.3.12.8.build.release-tag] a version tag starts a release only when
     );
   });
 
+  test("a release becomes the latest unless it is a pre-release or a higher version is published", () => {
+    expect(isLatest("0.2.0", [])).toBe(true);
+    expect(isLatest("0.2.0", ["0.1.0", "0.2.0", "0.3.0-rc.1", "nightly"])).toBe(true);
+    // A fix tagged while 0.2.0 was still building, and published first.
+    expect(isLatest("0.2.0", ["0.2.1"])).toBe(false);
+    expect(isLatest("0.3.0-rc.1", [])).toBe(false);
+  });
+
   /**
    * A stand-in for gh that answers from what GitHub holds for the tag v0.2.0: its releases, the
    * release environment (undefined: there is none) and the tag rulesets, or a failure for a path.
@@ -863,9 +879,14 @@ describe("[A2.3.12.8.build.release-tag] a version tag starts a release only when
         "tag_name=v0.2.0",
         "target_commitish=main",
         "draft=true",
+        "prerelease=false",
       ]),
     );
     expect(lines.join("\n")).toMatch(/a draft again/);
+    // A candidate made in the page without "pre-release" ticked is one all the same.
+    const candidate = fakeGitHub({ releases: [empty] });
+    holdRelease({ repo: "o/r", tag: "v0.3.0-rc.1", gh: candidate.gh, log: () => undefined });
+    expect(candidate.calls.find((call) => call.includes("PATCH"))).toContain("prerelease=true");
 
     const file = { id: 1, name: "SHA256SUMS" };
     for (const releases of [
@@ -878,11 +899,112 @@ describe("[A2.3.12.8.build.release-tag] a version tag starts a release only when
       holdRelease({ repo: "o/r", tag: "v0.2.0", gh: other.gh, log: () => undefined });
       expect(other.calls.filter((call) => call.includes("PATCH"))).toEqual([]);
     }
+    // Two releases for the tag stop the run before anything is signed; an empty published one is
+    // still held first.
+    const two = fakeGitHub({ releases: [empty, { id: 7, draft: true, assets: [] }] });
+    expect(() => {
+      holdRelease({ repo: "o/r", tag: "v0.2.0", gh: two.gh, log: () => undefined });
+    }).toThrow(/2 releases for v0.2.0/);
+    expect(two.calls.filter((call) => call.includes("PATCH"))).toHaveLength(1);
+
     const none = fakeGitHub({});
     expect(() => {
       holdRelease({ repo: "o/r", tag: "--paginate", gh: none.gh, log: () => undefined });
     }).toThrow(Refusal);
     expect(none.calls).toEqual([]);
+  });
+
+  test("publishing makes the draft, uploads every file, checks them downloaded back, and only then publishes", () => {
+    const folder = folderOf("publish-run", "0.2.0", [...RELEASE_PLATFORMS]);
+    ciSign(folder);
+    const commit = "c".repeat(40);
+    /** GitHub as the publish step sees it: the tag on `commit`, and `published` released before. */
+    function github(published: readonly string[], served = (data: Buffer) => data) {
+      const assets: { id: number; name: string; data: Buffer }[] = [];
+      let release: { id: number; draft: boolean } | undefined;
+      const patches: string[][] = [];
+      const gh: Gh = (args) => {
+        const path = args.find((arg) => arg.startsWith("repos/")) ?? "";
+        const json = (value: unknown) => Buffer.from(JSON.stringify(value));
+        if (args[0] === "release" && args[1] === "create") {
+          expect(args).toEqual(expect.arrayContaining(["--draft", "--verify-tag", "main"]));
+          release = { id: 9, draft: true };
+          return Buffer.alloc(0);
+        }
+        if (args[0] === "release" && args[1] === "upload") {
+          const file = args.at(-1) ?? "";
+          assets.push({ id: assets.length + 1, name: basename(file), data: readFileSync(file) });
+          return Buffer.alloc(0);
+        }
+        if (args.includes("PATCH")) {
+          patches.push([...args]);
+          if (release !== undefined && args.includes("draft=false")) release.draft = false;
+          return json({});
+        }
+        if (path.endsWith("/git/ref/tags/v0.2.0")) {
+          return json({ object: { type: "commit", sha: commit } });
+        }
+        if (path.endsWith("/releases") && args.join(" ").includes("select(.draft == false)")) {
+          return Buffer.from(published.map((version) => `v${version}`).join("\n"));
+        }
+        if (path.endsWith("/releases")) {
+          if (release === undefined) return Buffer.alloc(0);
+          return json({
+            ...release,
+            assets: assets.map(({ id, name, data }) => ({
+              id,
+              name,
+              digest: `sha256:${createHash("sha256").update(data).digest("hex")}`,
+            })),
+          });
+        }
+        const asset = /\/releases\/assets\/(\d+)$/.exec(path)?.[1];
+        const found = assets.find((a) => String(a.id) === asset);
+        if (found !== undefined) return served(found.data);
+        throw new Error(`the fake has no answer for ${args.join(" ")}`);
+      };
+      return { gh, patches, names: () => assets.map((a) => a.name).sort() };
+    }
+    let n = 0;
+    const publish = (gh: Gh) => {
+      n += 1;
+      publishRelease({
+        repo: "o/r",
+        dist: folder,
+        version: "0.2.0",
+        commit,
+        work: join(work, `published-${String(n)}`),
+        log: () => undefined,
+        gh,
+        trust: { pinned: [pinned], installerKeys: [pinned], onMain: (c) => c === commit },
+      });
+    };
+
+    const first = github(["0.1.0"]);
+    publish(first.gh);
+    expect(first.names()).toEqual(readdirSync(folder).sort());
+    expect(first.patches).toHaveLength(1);
+    expect(first.patches[0]).toEqual(
+      expect.arrayContaining([
+        "tag_name=v0.2.0",
+        "target_commitish=main",
+        "draft=false",
+        "prerelease=false",
+        "make_latest=true",
+      ]),
+    );
+
+    // A fix published during this version's run stays the latest.
+    const behind = github(["0.2.1"]);
+    publish(behind.gh);
+    expect(behind.patches[0]).toContain("make_latest=false");
+
+    // Bytes that GitHub serves back otherwise are never published.
+    const changed = github([], (data) => Buffer.concat([data, Buffer.from("x")]));
+    expect(() => {
+      publish(changed.gh);
+    }).toThrow(Refusal);
+    expect(changed.patches).toEqual([]);
   });
 
   test("the plan reads the settings and the releases from GitHub, and a setting it cannot read stops a release", () => {

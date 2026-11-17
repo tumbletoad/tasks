@@ -8,7 +8,7 @@
 // bytes: a release that GitHub already has must hold exactly these files, byte for byte, and one
 // that is published is never changed.
 import { isVersionName } from "../../packages/service/src/version/folder.ts";
-import { isAppVersion } from "../../packages/storage/src/manifest.ts";
+import { compareAppVersions, isAppVersion } from "../../packages/storage/src/manifest.ts";
 
 /** The pattern the service's log accepts for a version (packages/service/src/hub/log.ts). */
 const LOG_VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,40})?$/;
@@ -44,6 +44,19 @@ export function rehearsalVersion(packageVersion: string, run: number, step: numb
 }
 
 export const releaseTag = (version: string): string => `v${version}`;
+
+/**
+ * Whether publishing `version` makes it GitHub's latest release, given the versions published
+ * already: never a pre-release, and a release only when no published release (pre-releases are
+ * never the latest) is higher.
+ */
+export function isLatest(version: string, published: readonly string[]): boolean {
+  if (version.includes("-")) return false;
+  return published.every(
+    (other) =>
+      other.includes("-") || !isAppVersion(other) || compareAppVersions(other, version) <= 0,
+  );
+}
 
 /** A release GitHub has for the tag: draft or published, and its files' SHA-256. */
 export interface RemoteRelease {

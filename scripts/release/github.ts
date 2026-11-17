@@ -41,6 +41,7 @@ import {
 import {
   checkPublishCommit,
   draftStep,
+  isLatest,
   releasedProblem,
   releaseTag,
   releaseVersionProblem,
@@ -128,8 +129,17 @@ const assetBytes = (gh: Gh, repo: string, id: number): Buffer =>
     `repos/${repo}/releases/assets/${String(id)}`,
   ]);
 
-/** Changes a release of `tag`; the tag is sent again so GitHub keeps the release on it. */
-const editRelease = (gh: Gh, repo: string, tag: string, id: number, draft: boolean): Buffer =>
+/**
+ * Changes a release of `tag`: the tag is sent again so GitHub keeps the release on it, and whether
+ * it is a pre-release follows the version, whatever the page or gh made it.
+ */
+const editRelease = (
+  gh: Gh,
+  repo: string,
+  tag: string,
+  id: number,
+  fields: { readonly draft: boolean; readonly latest?: boolean },
+): Buffer =>
   gh([
     "api",
     "--method",
@@ -140,8 +150,26 @@ const editRelease = (gh: Gh, repo: string, tag: string, id: number, draft: boole
     "-f",
     `target_commitish=${MAIN}`,
     "-F",
-    `draft=${String(draft)}`,
+    `draft=${String(fields.draft)}`,
+    "-F",
+    `prerelease=${String(tag.includes("-"))}`,
+    ...(fields.latest === undefined ? [] : ["-f", `make_latest=${String(fields.latest)}`]),
   ]);
+
+/** The versions of the releases GitHub has published, from their tags. */
+const publishedVersions = (gh: Gh, repo: string): string[] =>
+  gh([
+    "api",
+    `repos/${repo}/releases`,
+    "--paginate",
+    "--jq",
+    `.[] | select(.draft == false) | .tag_name`,
+  ])
+    .toString()
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("v"))
+    .map((line) => line.slice(1));
 
 /** The one release for the tag, with each file's SHA-256, or undefined. Refuses two. */
 function remoteRelease(gh: Gh, repo: string, tag: string): RemoteRelease | undefined {
@@ -241,7 +269,8 @@ function createDraft(gh: Gh, repo: string, version: string): void {
  * made in GitHub's page (or by `gh release create`) with the tag is public at once and has no files
  * yet: it becomes a draft again, its title and notes kept, so nobody downloads it before its files
  * are complete, and so it is not left public when the run refuses the tag. Any other release for
- * the tag is left as it is.
+ * the tag is left as it is. Two releases for the tag are refused here, before anything is signed:
+ * only this job's token sees drafts.
  */
 export function holdRelease(options: {
   readonly repo: string;
@@ -251,10 +280,11 @@ export function holdRelease(options: {
 }): void {
   const { repo, tag, log, gh = runGh } = options;
   if (!/^v[0-9A-Za-z.+-]+$/.test(tag)) throw new Refusal(`${tag} is not a version tag.`);
+  const releases = releasesFor(gh, repo, tag);
   let held = 0;
-  for (const release of releasesFor(gh, repo, tag)) {
+  for (const release of releases) {
     if (release.draft || release.assets.length > 0) continue;
-    editRelease(gh, repo, tag, release.id, true);
+    editRelease(gh, repo, tag, release.id, { draft: true });
     held += 1;
   }
   log(
@@ -262,6 +292,11 @@ export function holdRelease(options: {
       ? `${tag} was published without its files: it is a draft again, with its title and notes, until they are complete`
       : `${tag} has no published release without files: nothing to hold`,
   );
+  if (releases.length > 1) {
+    throw new VersionRefusal(
+      `GitHub has ${String(releases.length)} releases for ${tag}: delete all but one by hand, then re-run the failed jobs.`,
+    );
+  }
 }
 
 /**
@@ -350,7 +385,9 @@ export function releaseFiles(dist: string): Record<string, string> {
  * `pnpm release publish`: the signed folder `dist` into the draft of `version` (a rerun uploads
  * only what an earlier one did not, and a file GitHub has already must be these bytes), every file
  * downloaded back and checked, the tag checked to still name `commit` on main, then the draft
- * published. A published release is never changed.
+ * published. It becomes GitHub's latest release unless it is a pre-release or a higher version
+ * is published already (a fix tagged during an earlier version's run may publish first). A
+ * published release is never changed.
  */
 export function publishRelease(options: {
   readonly repo: string;
@@ -359,9 +396,15 @@ export function publishRelease(options: {
   readonly commit: string;
   readonly work: string;
   readonly log: (line: string) => void;
+  readonly gh?: Gh;
+  /** What publishing checks against: main's release keys, and the commit's, and main itself. */
+  readonly trust?: {
+    readonly pinned: readonly string[];
+    readonly installerKeys: readonly string[];
+    readonly onMain: (commit: string) => boolean;
+  };
 }): void {
-  const { repo, dist, version, commit, work, log } = options;
-  const gh = runGh;
+  const { repo, dist, version, commit, work, log, gh = runGh } = options;
   const problem = releaseVersionProblem(version);
   if (problem !== undefined) throw new Refusal(problem);
   const tag = releaseTag(version);
@@ -406,9 +449,15 @@ export function publishRelease(options: {
       throw new Refusal(`An asset has an odd name: ${asset.name}.`);
     writeFileSync(join(work, asset.name), assetBytes(gh, repo, asset.id));
   }
-  checkReleaseFolder(work, version, RELEASE_PUBLIC_KEYS, keysAt(repoRoot, commit));
+  const trust = options.trust ?? {
+    pinned: RELEASE_PUBLIC_KEYS,
+    installerKeys: keysAt(repoRoot, commit),
+    onMain: (c: string) => isOnMain(repoRoot, c),
+  };
+  checkReleaseFolder(work, version, trust.pinned, trust.installerKeys);
   log(`${tag}: every file, downloaded back, verifies with the pinned release keys`);
-  checkPublishCommit(version, commit, tagCommit(gh, repo, tag), (c) => isOnMain(repoRoot, c));
-  editRelease(gh, repo, tag, release.id, false);
-  log(`published ${tag}`);
+  checkPublishCommit(version, commit, tagCommit(gh, repo, tag), trust.onMain);
+  const latest = isLatest(version, publishedVersions(gh, repo));
+  editRelease(gh, repo, tag, release.id, { draft: false, latest });
+  log(latest ? `published ${tag}, the latest release` : `published ${tag}`);
 }

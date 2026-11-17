@@ -3286,7 +3286,7 @@
     },
     {
       "id": "A2.3.12.8.build.release-tag",
-      "title": "A version tag releases the commit it names with package.json's version, and is refused with one sentence when it is not that version, its commit is not on main, the version is a development one or was released before, GitHub has two releases for it, or a release setting cannot be read; a release made in GitHub's page with the tag is turned back into a draft first, with the tag sent again and a branch as its target, and nothing else is changed; publishing needs the tag to still name the built commit on main",
+      "title": "A version tag releases the commit it names with package.json's version, and is refused with one sentence when it is not that version, its commit is not on main, the version is a development one or was released before, GitHub has two releases for it, or a release setting cannot be read; a release made in GitHub's page with the tag is turned back into a draft first, with the tag sent again, a branch as its target and pre-release as its version says, nothing else is changed, and two releases for the tag stop the run before signing; publishing makes the draft, uploads every file, checks them downloaded back and needs the tag to still name the built commit on main before it publishes, and the release becomes the latest unless it is a pre-release or a higher version is published",
       "source": "A2 3.12.8",
       "owner": "M1",
       "kind": "ci",
