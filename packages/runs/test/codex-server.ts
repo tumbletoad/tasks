@@ -31,6 +31,11 @@ export interface FakeScenario {
   readonly floodBytes?: number;
   /** Server requests sent once the turn started, each answered before the replay goes on. */
   readonly requests?: readonly { readonly method: string; readonly params: Json }[];
+  /**
+   * Notifications sent once the turn started, after the requests: of the recorded thread and turn
+   * unless their params name others, as an agent the run's agent started would.
+   */
+  readonly notifications?: readonly { readonly method: string; readonly params: Json }[];
   /** At this client method the server stops answering anything, and keeps reading. */
   readonly stallAt?: string;
   /** The recorded gaps between server lines, times this. Default 0: no gaps. */
@@ -41,8 +46,11 @@ export interface FakeScenario {
   readonly log?: string;
   /** Program mode: the stand-in census token. */
   readonly token?: string;
-  /** Program mode: the first command leaves a detached idle stand-in behind, with the token. */
-  readonly leave?: boolean;
+  /**
+   * Program mode: the first command leaves an idle stand-in behind, with the token: detached, or
+   * in the agent's own process group, as a command started in the background with `&` would.
+   */
+  readonly leave?: "detached" | "in-group";
   /**
    * At the recorded tool call, this tool of the server the thread's configuration names under
    * `tasks` is called for real: its command, arguments and environment, with `home` as the
@@ -67,9 +75,11 @@ export function readFixture(name: string): Line[] {
     .map((line) => JSON.parse(line) as Line);
 }
 
-/** A running fake: what the client sent, and whether it ended. */
+/** A running fake: what the client sent, whether it sent all of the recording, and its end. */
 export interface FakeCodex {
   readonly received: Json[];
+  /** Every recorded line was sent, or the replay stopped early. */
+  readonly replayed: Promise<void>;
   readonly done: Promise<number>;
 }
 
@@ -259,12 +269,12 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
         flood();
       }
       if (
-        scenario.leave === true &&
+        scenario.leave !== undefined &&
         scenario.token !== undefined &&
         message["method"] === "item/started" &&
         item?.["type"] === "commandExecution"
       ) {
-        leave(scenario.token);
+        leave(scenario.token, scenario.leave);
       }
       if (
         scenario.callTool !== undefined &&
@@ -296,6 +306,12 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
               unexpected(answer);
             }
           }
+          for (const notification of scenario.notifications ?? []) {
+            send({
+              method: notification.method,
+              params: { threadId: thread, turnId: turn, ...notification.params },
+            });
+          }
         }
       }
       if (message["method"] === "turn/started") completed = false;
@@ -304,8 +320,9 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
     return 0;
   };
 
+  const replaying = replay();
   const done = (async () => {
-    const code = await replay();
+    const code = await replaying;
     // Whatever else the client says is answered as it comes, until its output ends.
     for (;;) {
       const message = await next();
@@ -319,7 +336,7 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
     }
     return code;
   })();
-  return { received, done };
+  return { received, replayed: replaying.then(() => undefined), done };
 }
 
 /** Calls one tool of an MCP server over its stdio, as an agent would: its answer, or its error. */
@@ -364,11 +381,11 @@ async function callTool(
   }
 }
 
-/** A detached idle stand-in, as a command that starts a process and returns would leave. */
-function leave(token: string): void {
+/** An idle stand-in, as a command that starts a process and returns would leave. */
+function leave(token: string, how: "detached" | "in-group"): void {
   const standIn = join(import.meta.dirname, "stand-ins", "stand-in.ts");
   spawn(process.execPath, [standIn, "idle", `--token=${token}`], {
-    detached: true,
+    detached: how === "detached",
     stdio: "ignore",
     windowsHide: true,
   }).unref();

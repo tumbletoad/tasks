@@ -165,10 +165,14 @@ export class UngroupedContainers implements Containers {
     }
   }
 
+  /** Ends what can be found of the run; the run is forgotten once the agent ended too. */
   async kill(name: string): Promise<void> {
     checkName(name);
     const live = this.live.get(name);
     if (live === undefined) return;
+    void live.exited.then(() => {
+      if (this.live.get(name) === live) this.live.delete(name);
+    });
     if (this.platform === "win32") {
       if (!live.done) await this.taskkillTree(live.pid);
       return;
@@ -183,14 +187,16 @@ export class UngroupedContainers implements Containers {
     }
   }
 
-  /** Waits up to `waitMs` for the agent to end; what else is left cannot be counted. */
+  /**
+   * Waits up to `waitMs` for the agent to end; what else is left cannot be counted. The run stays
+   * known for the kill that follows: what the agent left in its group is found from it.
+   */
   async confirmEmpty(name: string, options: ConfirmOptions = {}): Promise<Confirmation> {
     checkName(name);
     const live = this.live.get(name);
     if (live !== undefined && !live.done && (options.waitMs ?? 0) > 0) {
       await Promise.race([live.exited, sleep(options.waitMs)]);
     }
-    if (live?.done === true) this.live.delete(name);
     return UNCONFIRMABLE;
   }
 

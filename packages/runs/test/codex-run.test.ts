@@ -128,7 +128,7 @@ async function startRun(
     args: [...(program?.args ?? []), ...CODEX_ARGS],
     cwd: work,
     env,
-    open: codexDriver({ cwd: work, request: "Look into the export.", permission: "full-access" }),
+    open: codexDriver({ request: "Look into the export.", permission: "full-access" }),
   }));
   return queued.id;
 }
@@ -207,7 +207,7 @@ describe("[A4.3.11.codex.run] a Codex run in the run host: the program resolved 
       const b = bench(make());
       const id = await startRun(
         b,
-        { fixture: "windows-command", token, leave: true, answer: "Left one running." },
+        { fixture: "windows-command", token, leave: "detached", answer: "Left one running." },
         `l-${token}`,
       );
       const after = await b.host.ended(id);
@@ -216,6 +216,21 @@ describe("[A4.3.11.codex.run] a Codex run in the run host: the program resolved 
         result: { text: "Left one running.", cleanup: "ended_leftovers" },
       });
       expect(census(token)).toEqual([]);
+    });
+
+    test(`${kind}: a process the agent left in its own group after it exited is ended`, async (ctx: TestContext) => {
+      // On Windows a process tree of Node ends with its parent, so nothing would be left to end.
+      if (windows) ctx.skip("Linux and macOS: what is left in the agent's process group");
+      const token = newToken();
+      const b = bench(make());
+      const id = await startRun(
+        b,
+        { fixture: "windows-command", token, leave: "in-group", answer: "Left one running." },
+        `g-${token}`,
+      );
+      const after = await b.host.ended(id);
+      expect(after).toMatchObject({ state: "succeeded", result: { text: "Left one running." } });
+      await waitForCensus(token, (pids) => pids.length === 0);
     });
   }
 

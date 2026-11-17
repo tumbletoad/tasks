@@ -18,6 +18,8 @@ interface Bench {
   readonly fake: FakeCodex;
   readonly events: RunEvent[];
   readonly toServer: PassThrough;
+  /** Says what the server says, beside the replay. */
+  readonly say: (method: string, params: Record<string, unknown>) => void;
 }
 
 function bench(scenario: FakeScenario, session: Partial<CodexSession> = {}): Bench {
@@ -26,14 +28,29 @@ function bench(scenario: FakeScenario, session: Partial<CodexSession> = {}): Ben
   const fake = serveCodex(toServer, fromServer, scenario);
   const events: RunEvent[] = [];
   const driver = codexDriver({
-    cwd: "C:\\Users\\mira\\code\\portal",
     request: "Look into the export.",
     permission: "full-access",
     tools: TOOLS,
     ...session,
   })({ stdin: toServer, stdout: fromServer }, (event) => events.push(event));
-  return { driver, fake, events, toServer };
+  const say = (method: string, params: Record<string, unknown>): void => {
+    fromServer.write(`${JSON.stringify({ method, params })}\n`);
+  };
+  return { driver, fake, events, toServer, say };
 }
+
+/** The work, or undefined while it has not settled. */
+async function settledNow(driver: DriverSession): Promise<Work | undefined> {
+  // Whatever the server said was read first.
+  for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  const pending = Symbol("pending");
+  const first = await Promise.race([driver.settled, Promise.resolve(pending)]);
+  return first === pending ? undefined : first;
+}
+
+const THREAD = "00000000-0000-4000-8000-000000000002";
+const CHILD = "00000000-0000-4000-8000-0000000000c1";
+const CHILD_TURN = "00000000-0000-4000-8000-0000000000c2";
 
 /** The client's messages of one method. */
 const sent = (fake: FakeCodex, method: string) =>
@@ -74,9 +91,9 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
     expect(turn?.["params"]).toMatchObject({
       input: [{ type: "text", text: "Look into the export." }],
     });
+    // No cwd: the thread works in the server's own folder, and Codex records no trust for it.
     const [thread] = sent(fake, "thread/start");
     expect(thread?.["params"]).toEqual({
-      cwd: "C:\\Users\\mira\\code\\portal",
       approvalPolicy: "never",
       sandbox: "danger-full-access",
       config: {
@@ -189,6 +206,122 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
     await until("the turn interrupted", () => sent(fake, "turn/interrupt").length === 1);
     driver.close();
     expect(await fake.done).toBe(0);
+  });
+
+  test("a question the turn ends with is kept, and the run needs the person, not done", async () => {
+    const { driver } = bench({
+      fixture: "windows-plain",
+      notifications: [
+        {
+          method: "item/completed",
+          params: {
+            item: {
+              type: "agentMessage",
+              id: "ask-1",
+              text: "Two exports exist.",
+              phase: "final_answer",
+              delivery: "async",
+              questions: [{ title: "Which one should I fix?", options: ["CSV", "PDF"] }],
+            },
+          },
+        },
+      ],
+    });
+    expect(await driver.settled).toEqual(
+      done({
+        ok: false,
+        outcome: "needs_input",
+        text: "Two exports exist.\nWhich one should I fix? (CSV, PDF)",
+        textFinal: false,
+      }),
+    );
+    driver.close();
+  });
+
+  test("an agent the run's agent started works in a thread of its own: its turn and answer are never the run's", async () => {
+    const { driver } = bench({
+      fixture: "windows-plain",
+      answer: "The run's own answer.",
+      notifications: [
+        { method: "thread/started", params: { thread: { id: CHILD } } },
+        { method: "turn/started", params: { threadId: CHILD, turn: { id: CHILD_TURN } } },
+        {
+          method: "item/completed",
+          params: {
+            threadId: CHILD,
+            turnId: CHILD_TURN,
+            item: {
+              type: "agentMessage",
+              id: "c-1",
+              text: "A helper's answer.",
+              phase: "final_answer",
+            },
+          },
+        },
+        {
+          method: "turn/completed",
+          params: { threadId: CHILD, turn: { id: CHILD_TURN, status: "completed", error: null } },
+        },
+      ],
+    });
+    expect(await driver.settled).toEqual(
+      done({ ok: true, text: "The run's own answer.", textFinal: true, nativeId: THREAD }),
+    );
+    driver.close();
+  });
+
+  test("the run's turn completed while an agent it started still works: the run waits for it, and that agent's end is not the run's", async () => {
+    const { driver, fake, say } = bench({
+      fixture: "windows-plain",
+      notifications: [
+        { method: "turn/started", params: { threadId: CHILD, turn: { id: CHILD_TURN } } },
+      ],
+    });
+    await fake.replayed;
+    expect(await settledNow(driver)).toBeUndefined();
+    say("turn/completed", {
+      threadId: CHILD,
+      turn: { id: CHILD_TURN, status: "failed", error: { message: "A helper failed." } },
+    });
+    expect(await driver.settled).toEqual(
+      done({ ok: true, text: "Fixture text.", textFinal: true }),
+    );
+    driver.close();
+  });
+
+  test("an agent the run's agent started whose thread stops without ending its turn no longer holds the run", async () => {
+    const { driver, fake, say } = bench({
+      fixture: "windows-plain",
+      notifications: [
+        {
+          method: "thread/status/changed",
+          params: { threadId: CHILD, status: { type: "active" } },
+        },
+      ],
+    });
+    await fake.replayed;
+    expect(await settledNow(driver)).toBeUndefined();
+    say("thread/status/changed", { threadId: CHILD, status: { type: "systemError" } });
+    expect(await driver.settled).toEqual(done({ ok: true, text: "Fixture text." }));
+    driver.close();
+  });
+
+  test("an app server that ends while background work still runs: the work did not finish", async () => {
+    const { driver, fake } = bench({
+      fixture: "windows-plain",
+      notifications: [
+        {
+          method: "item/started",
+          params: { item: { type: "commandExecution", id: "exec-bg", status: "inProgress" } },
+        },
+      ],
+    });
+    await fake.replayed;
+    expect(await settledNow(driver)).toBeUndefined();
+    driver.ended({ code: 1, signal: null });
+    expect(await driver.settled).toEqual(
+      done({ ok: false, outcome: "no_result", text: "Fixture text.", textFinal: false }),
+    );
   });
 
   test("a request kind the driver does not know gets the protocol's error, and the run goes on", async () => {

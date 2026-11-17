@@ -87,14 +87,15 @@ export class FallbackContainers implements Containers {
   }
 
   async kill(name: string): Promise<void> {
-    await (await this.#of(name)).kill(name);
+    const box = await this.#of(name);
+    await box.kill(name);
+    // Without a group, the kill is the last thing that can be done for the run.
+    if (box === this.#ungrouped) this.#started.delete(name);
   }
 
   async confirmEmpty(name: string, options?: ConfirmOptions): Promise<Confirmation> {
     const confirmed = await (await this.#of(name)).confirmEmpty(name, options);
-    if (confirmed.state === "empty" || confirmed.state === "unconfirmable") {
-      this.#started.delete(name);
-    }
+    if (confirmed.state === "empty") this.#started.delete(name);
     return confirmed;
   }
 

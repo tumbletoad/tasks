@@ -3,17 +3,22 @@
 // (orchestration-v2/Adapters/CodexAdapterV2.ts); the message shapes are the few this driver
 // reads, from what a real app server said (fixtures/codex-app-server).
 //
-// - Start: `initialize`, `initialized`, `thread/start` with the run's folder, the permission's
-//   approval policy and sandbox, and Tasks' own tools in the thread's configuration (the person's
-//   other tools stay as they are), then `turn/start` with the request. The request goes over the
-//   protocol, never on a command line.
-// - The work is settled when the turn completed and no command it started is still running: a
-//   command left running in the background ends later, and the run waits for it.
+// - Start: `initialize`, `initialized`, `thread/start` with the permission's approval policy and
+//   sandbox and Tasks' own tools in the thread's configuration (the person's other tools stay as
+//   they are), then `turn/start` with the request. The request goes over the protocol, never on a
+//   command line. The thread works in the server's own folder, the run's: a `cwd` in
+//   `thread/start` makes Codex record a git folder as trusted in the person's own settings when
+//   the run may write there.
+// - The work is the run's own thread. Agents it starts work in threads of their own, on the same
+//   connection: their turns, answers and errors are never the run's.
+// - The work is settled when the thread's turn completed, no command it started is still running
+//   and no agent it started still works: what goes on in the background ends later, and the run
+//   waits for it.
 // - The answer is the message the protocol marks as the final answer, never just the last text.
 // - The server's requests are answered as the run's permission says, while reading goes on. A
-//   question for the person is never answered for them: the turn is interrupted and the work ends
-//   as needing the person, with the question as its text. A request kind this driver does not
-//   know gets the protocol's "method not found".
+//   question for the person is never answered for them: a blocking one interrupts the turn, one
+//   the turn ends with is kept, and the work ends as needing the person, with the question as its
+//   text. A request kind this driver does not know gets the protocol's "method not found".
 // - Stop asks the server to interrupt the turn, and waits for nothing: during start-up, with no
 //   turn yet, the work ends at once.
 import {
@@ -41,8 +46,6 @@ export interface CodexTools {
 }
 
 export interface CodexSession {
-  /** The run's folder. */
-  readonly cwd: string;
   /** The person's request, sent as the turn's input. */
   readonly request: string;
   readonly permission: RunPermission;
@@ -96,16 +99,20 @@ function labelOf(item: Json): ProgressLabel | undefined {
   }
 }
 
-/** A question for the person as text: each question with its choices. */
+/**
+ * A question for the person as text: each question with its choices. Blocking questions name
+ * theirs `question` with `{label}` choices, the ones a turn ends with `title` with plain ones.
+ */
 function questionText(params: Json): string {
   const questions = Array.isArray(params["questions"]) ? params["questions"] : [];
   const lines: string[] = [];
   for (const q of questions) {
     const question = record(q);
     if (question === undefined) continue;
-    const text = string(question["question"]) ?? string(question["header"]) ?? "";
+    const text =
+      string(question["question"]) ?? string(question["title"]) ?? string(question["header"]) ?? "";
     const options = (Array.isArray(question["options"]) ? question["options"] : [])
-      .map((o) => string(record(o)?.["label"]))
+      .map((o) => string(o) ?? string(record(o)?.["label"]))
       .filter((label): label is string => label !== undefined && label !== "");
     lines.push(options.length > 0 ? `${text} (${options.join(", ")})` : text);
   }
@@ -113,6 +120,12 @@ function questionText(params: Json): string {
   if (lines.length === 0 && message !== undefined) lines.push(message);
   return lines.join("\n").trim();
 }
+
+/** A message the turn ends with that asks the person, rather than answers: its questions. */
+const asksPerson = (item: Json): boolean =>
+  item["delivery"] === "async" &&
+  Array.isArray(item["questions"]) &&
+  (item["questions"] as unknown[]).length > 0;
 
 /** Words of an error that say the agent is not signed in. */
 const SIGNED_OUT = /\b(?:401|unauthori[sz]ed|not logged in|log ?in|sign ?in|authenticat)/iu;
@@ -191,8 +204,18 @@ export function codexDriver(session: CodexSession): OpenDriver {
       question: null,
       stopping: false,
     };
-    /** Commands started and not completed, by item, with the turn that started them. */
+    /**
+     * Commands started and not completed, of the run's thread and of the agents it started, by
+     * item, with the turn that started them.
+     */
     const running = new Map<string, string | null>();
+    /** Threads of agents the run's agent started that are working. */
+    const children = new Set<string>();
+    /** Whether a message is about the run's own thread, not one of an agent it started. */
+    const ours = (params: Json): boolean => {
+      const thread = string(params["threadId"]);
+      return thread === undefined || state.thread === null || thread === state.thread;
+    };
 
     let done = false;
     const stopped = (): boolean => state.stopping;
@@ -222,8 +245,10 @@ export function codexDriver(session: CodexSession): OpenDriver {
 
     /** Settles once the turn completed and nothing it started still runs. */
     const check = (): void => {
-      if (done || !state.turnDone || running.size > 0) return;
-      if (state.turnStatus === "completed") {
+      if (done || !state.turnDone || running.size > 0 || children.size > 0) return;
+      if (state.turnStatus === "completed" && state.question !== null) {
+        finish("needs_input");
+      } else if (state.turnStatus === "completed") {
         state.final = state.answer !== null;
         if (state.answer !== null) report({ kind: "answer", ...state.answer, final: true });
         finish("success");
@@ -287,6 +312,8 @@ export function codexDriver(session: CodexSession): OpenDriver {
     });
 
     rpc.onNotification((method, raw) => {
+      // Settled work is saved as it is: what the server says while it closes changes none of it.
+      if (done) return;
       state.heard = true;
       const params = record(raw) ?? {};
       switch (method) {
@@ -301,6 +328,10 @@ export function codexDriver(session: CodexSession): OpenDriver {
         case "turn/started": {
           const id = string(record(params["turn"])?.["id"]);
           if (id === undefined) return;
+          if (!ours(params)) {
+            children.add(string(params["threadId"]) ?? "");
+            return;
+          }
           // A turn the server starts by itself after background work is the work going on.
           state.turn = id;
           state.turnDone = false;
@@ -324,10 +355,18 @@ export function codexDriver(session: CodexSession): OpenDriver {
           const id = string(item["id"]);
           if (id !== undefined) running.delete(id);
           if (item["status"] === "declined") state.declined += 1;
-          if (item["type"] === "agentMessage") {
+          if (item["type"] === "agentMessage" && ours(params)) {
             const text = string(item["text"]) ?? "";
             const phase = item["phase"];
-            if (
+            if (asksPerson(item)) {
+              const asked = [text.trim(), questionText({ questions: item["questions"] })]
+                .filter((part) => part !== "")
+                .join("\n");
+              state.question = capText(
+                asked === "" ? "Codex asked a question." : asked,
+                ANSWER_CAP_BYTES,
+              ).text;
+            } else if (
               text !== "" &&
               (phase === "final_answer" || phase === null || phase === undefined)
             ) {
@@ -343,29 +382,54 @@ export function codexDriver(session: CodexSession): OpenDriver {
         }
         case "turn/completed": {
           const turn = record(params["turn"]);
-          const id = string(turn?.["id"]);
-          if (turn === undefined || (state.turn !== null && id !== state.turn)) return;
+          if (turn === undefined) return;
+          const id = string(turn["id"]);
+          if (!ours(params)) {
+            children.delete(string(params["threadId"]) ?? "");
+            if (turn["status"] !== "completed") {
+              for (const [item, of] of running) if (of === id) running.delete(item);
+            }
+            check();
+            return;
+          }
+          if (state.turn !== null && id !== state.turn) return;
           state.turn = id ?? state.turn;
           state.turnDone = true;
           state.turnStatus = string(turn["status"]) ?? "failed";
           state.turnError = string(record(turn["error"])?.["message"]) ?? null;
           if (state.turnStatus !== "completed") {
-            // An interrupted or failed turn leaves its commands without an end of their own.
-            for (const [item, of] of running) if (of === null || of === id) running.delete(item);
+            // The work ended with the turn: what it left going has no end of its own to wait for.
+            running.clear();
+            children.clear();
           }
           check();
           return;
         }
+        case "thread/status/changed": {
+          // An agent the run's agent started works while its thread is active, and a thread that
+          // stops for any reason, a turn's end or its failure, stops its work.
+          const thread = string(params["threadId"]);
+          if (ours(params) || thread === undefined) return;
+          if (record(params["status"])?.["type"] === "active") children.add(thread);
+          else {
+            children.delete(thread);
+            check();
+          }
+          return;
+        }
         case "error": {
+          if (!ours(params)) return;
           const error = record(params["error"]);
           if (params["willRetry"] !== true) state.lastError = string(error?.["message"]) ?? null;
           return;
         }
         case "thread/tokenUsage/updated":
+          if (!ours(params)) return;
           state.usage = usageOf(record(params["tokenUsage"])) ?? state.usage;
           if (state.usage !== null) report({ kind: "usage", ...state.usage });
           return;
         case "mcpServer/startupStatus/updated":
+          if (!ours(params)) return;
           if (params["name"] !== MCP_SERVER_KEY || state.appTools === null) return;
           if (params["status"] === "ready") state.appTools = "connected";
           else if (params["status"] === "failed" || params["status"] === "error") {
@@ -395,7 +459,6 @@ export function codexDriver(session: CodexSession): OpenDriver {
         const thread = record(
           await within(
             rpc.request("thread/start", {
-              cwd: session.cwd,
               approvalPolicy: policy.approvalPolicy,
               sandbox: policy.sandbox,
               ...(config === undefined ? {} : { config }),
@@ -457,12 +520,7 @@ export function codexDriver(session: CodexSession): OpenDriver {
       ended: () => {
         rpc.close();
         if (done) return;
-        // Whatever the turn left running ended with the server.
-        if (state.turnDone && state.turnStatus === "completed") {
-          running.clear();
-          check();
-          return;
-        }
+        // The server ended while the work went on, background work included: it did not finish.
         if (state.stopping) finish("interrupted");
         else if (!state.heard && state.thread === null) finish("no_output");
         else finish("no_result", state.lastError === null ? null : errorText(state.lastError));

@@ -158,7 +158,6 @@ export async function buildRun(
     cwd: folder.path,
     env,
     open: codexDriver({
-      cwd: folder.path,
       request: runBrief(task.ref, task.title, run.request),
       permission: run.permission,
       tools: {

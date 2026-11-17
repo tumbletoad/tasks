@@ -412,6 +412,48 @@ describe("[A4.3.11.9.run.folder] a queued run checks the folder a launch of its 
   }, 120_000);
 });
 
+describe("[A4.3.11.9.run.stop-unknown] Stop of a run whose processes were not confirmed ended ends them by force", () => {
+  test("a process that outlived the kill leaves the run unknown; once it can be ended, Stop settles the run as it ended", async () => {
+    const { home, spaceId } = await setUp("runs-unknown");
+    const boxes = fakeBoxes();
+    // What the agent left survives the run's own kill, until it is ended by its name.
+    const left = new Set<string>();
+    const containers: Containers = {
+      ...boxes.containers,
+      start: async (spec) => {
+        left.add(spec.name);
+        return boxes.containers.start(spec);
+      },
+      confirmEmpty: (name, options) =>
+        left.has(name)
+          ? Promise.resolve({ state: "occupied", detail: "left" })
+          : boxes.containers.confirmEmpty(name, options),
+      recover: (name, options) => {
+        left.delete(name);
+        return boxes.containers.recover(name, options);
+      },
+    };
+    const service = await start(home, {
+      containers,
+      times: { stopGraceMs: 500, confirmMs: 200, closeMs: 200 },
+    });
+    const task = await addTask(home, service, 1);
+    const run = await service.runs.start(
+      spaceId,
+      input(task),
+      "runs-unknown-run-000001",
+      agent(ANSWERS, home),
+    );
+    await runUntil(service, spaceId, run.id, (r) => r.state === "running", "the run");
+    await service.runs.stop(spaceId, run.id);
+    await runUntil(service, spaceId, run.id, (r) => r.state === "unknown", "the run unknown");
+    expect(await service.runs.stop(spaceId, run.id)).toMatchObject({
+      state: "cancelled",
+      result: { text: "Stopped with what was found." },
+    });
+  }, 120_000);
+});
+
 describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: what blocks it, nothing new starts, Stop on request, and the hold goes with its connection", () => {
   test("the hold names the running run with its task, a new run waits with the reason update, stop_held stops the run with its answer, and closing the hold's connection lets the queue move", async () => {
     const { home, spaceId } = await setUp(

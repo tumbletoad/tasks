@@ -472,9 +472,14 @@ export class RunService {
     return false;
   }
 
-  /** The person's Stop: a queued run is cancelled at once and never starts. */
+  /**
+   * The person's Stop: a queued run is cancelled at once and never starts, and one whose processes
+   * were not confirmed ended (`unknown`) is ended by force.
+   */
   async stop(space: string, run: string): Promise<RunRecord | undefined> {
-    const after = await (await this.#required(space)).host.stop(run);
+    const { host } = await this.#required(space);
+    let after = await host.stop(run);
+    if (after?.state === "unknown") after = await host.forceEnd(run);
     if (after?.state === "cancelled") this.#commands.delete(run);
     void this.#supervisor.round();
     return after;
