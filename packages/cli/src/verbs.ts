@@ -7,8 +7,8 @@
 // receipt exists: with --request-id the CLI first asks for the receipt in its own writer scope
 // (`receipt.get`), and when there is one it sends the same input with the receipt's `as_of` as
 // base. The receipt's fingerprint covers the input without the base, so the service replays the
-// stored result and nothing is expanded again. Without a receipt it reads the task and sends that
-// read's `as_of`.
+// stored result and nothing is expanded again. Without a receipt it reads the base (baseRead) and
+// sends that read's `as_of`.
 import { randomBytes } from "node:crypto";
 import { isAbsolute, join, resolve } from "node:path";
 import { LocalError } from "@tasks/bridge/protocol";
@@ -125,6 +125,31 @@ function spaceName(session: Session, globals: Globals, result: Record<string, un
   );
 }
 
+/**
+ * The read whose `as_of` is the base of a write that has none: for a verb about a task, that task,
+ * or without one the session's bound task, as the write itself takes it; else the read action of
+ * the verb's own entry (a group's change reads the groups, a setting's the settings), which shows
+ * the space as the person sees it now. A create makes something new and needs no base: undefined.
+ */
+export function baseRead(
+  verb: Pick<VerbSpec, "entry" | "actions" | "positionals" | "flags">,
+  input: Readonly<Record<string, unknown>>,
+): { readonly op: string; readonly input: Record<string, unknown> } | undefined {
+  const task = input["task"];
+  if (
+    typeof task === "string" ||
+    [...verb.positionals, ...verb.flags].some((arg) => arg.field === "task")
+  ) {
+    return { op: "task.get", input: typeof task === "string" ? { task } : {} };
+  }
+  const actions = verb.actions;
+  const read = actions?.reads[0];
+  if (actions === undefined || read === undefined || input[actions.field] === "create") {
+    return undefined;
+  }
+  return { op: verb.entry, input: { [actions.field]: read } };
+}
+
 /** What a verb adds to the generic path: `tasks undo`'s check and question. */
 export interface VerbHooks {
   /** Fills fields of the input that the verb's arguments do not give. */
@@ -211,19 +236,9 @@ export async function runVerb(
         };
         if (receipt.found && receipt.as_of !== undefined) input["base"] = receipt.as_of;
       }
-      if (input["base"] === undefined && typeof input["task"] === "string") {
-        const read = (await opCall(session, globals, "task.get", { task: input["task"] })) as {
-          as_of?: string;
-        };
-        if (typeof read.as_of === "string") input["base"] = read.as_of;
-      }
-      // A change to a group names no task: the person's base is the groups as they are now.
-      if (
-        input["base"] === undefined &&
-        verb.entry === "group.manage" &&
-        input["action"] !== "create"
-      ) {
-        const read = (await opCall(session, globals, "group.manage", { action: "list" })) as {
+      const source = input["base"] === undefined ? baseRead(verb, input) : undefined;
+      if (source !== undefined) {
+        const read = (await opCall(session, globals, source.op, source.input)) as {
           as_of?: string;
         };
         if (typeof read.as_of === "string") input["base"] = read.as_of;
