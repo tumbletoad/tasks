@@ -3,11 +3,16 @@
 //
 // Verify line: Open sends the shim to the fake terminal, the receipt reaches Confirmed, a log entry
 // appears. Two tabs on two spaces stay on their own space.
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect } from "@playwright/test";
-import { CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
+import {
+  CLI_NAME,
+  FOLDER_MARKER,
+  PRODUCT_ID,
+  PRODUCT_NAME,
+} from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
@@ -133,6 +138,70 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
       await page.screenshot({ path: test.info().outputPath("open-folder-gone.png") });
     } finally {
       rmSync(temp, { recursive: true, force: true });
+    }
+  });
+});
+
+test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that may be another one", () => {
+  test("the folder's line names its repository; a checkout replaced at its path starts nothing until the person uses it", async ({
+    page,
+    world,
+  }) => {
+    await watchViolations(page);
+    const temp = mkdtempSync(join(tmpdir(), "tasks-e2e-marker-"));
+    try {
+      const folder = join(temp, "portal");
+      mkdirSync(join(folder, ".git"), { recursive: true });
+      writeFileSync(
+        join(folder, ".git", "config"),
+        '[remote "origin"]\n\turl = https://git.example.com/mira/portal-web.git\n',
+      );
+      const project = test.info().project.name;
+      const added = (await world.op(world.mira.id, "task.add", {
+        tasks: [{ title: `Tag the portal release (${project})`, inbox: true }],
+      })) as { tasks: readonly { ref: string }[] };
+      const ref = added.tasks[0]?.ref ?? "";
+      const base = ((await world.op(world.mira.id, "task.get", { task: ref })) as { as_of: string })
+        .as_of;
+      const set = (await world.op(world.mira.id, "folder.manage", {
+        action: "set",
+        task: ref,
+        folder,
+        base,
+      })) as { folder: string };
+
+      await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+      await showsSpace(page, world.mira.name);
+      const row = page.locator(`li[data-task="${ref}"]`);
+      await row.locator('[data-part="title"]').click();
+      const line = row.locator('[data-part="place"]');
+      await expect(line).toHaveAttribute("data-state", "here", { timeout: SLOW_MS });
+      await expect(line).toContainText(`${set.folder} [portal-web]`);
+      await page.screenshot({ path: test.info().outputPath("open-marker-repo.png") });
+
+      // The checkout is moved aside and an unrelated folder made at its path.
+      renameSync(folder, join(temp, "portal-aside"));
+      mkdirSync(folder);
+      const before = world.terminal().length;
+      const open = row
+        .getByRole("toolbar")
+        .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` });
+      await open.click();
+      const said = page.getByRole("status").filter({
+        hasText: `This may not be the folder set for this task: its Tasks marker is missing. ${set.folder}. Nothing was started.`,
+      });
+      await expect(said).toBeVisible({ timeout: SLOW_MS });
+      expect(world.terminal()).toHaveLength(before);
+      await page.screenshot({ path: test.info().outputPath("open-marker-missing.png") });
+
+      // The person uses this folder: it opens there, and is marked as the task's.
+      await said.getByRole("button", { name: "Use this folder" }).click();
+      await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
+      expect(existsSync(join(folder, FOLDER_MARKER, "owners.json"))).toBe(true);
+      expect(await violations(page)).toEqual([]);
+    } finally {
+      // The fake agent works in the folder for a few seconds, and Windows keeps a folder in use.
+      rmSync(temp, { recursive: true, force: true, maxRetries: 60, retryDelay: 250 });
     }
   });
 });

@@ -99,40 +99,72 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expect(live()).toEqual({ [`project:${id}`]: decomposed });
   });
 
-  test("changing a project's folder needs a base and moves its tasks' folders inside the old one, as one undo step", () => {
+  test("a moved folder needs a base and carries every folder inside it, other projects' and their tasks' too, as one undo step", () => {
     const project = newProject("Portal two", "~/work/portal");
     const inside = newTask("Header", project, "~/work/portal/web/header");
     const same = newTask("Root", project, "~/work/portal");
     const outside = newTask("Docs", project, "~/work/portal-docs");
-    const elsewhere = newTask("Not in the project", undefined, "~/work/portal/other");
+    const loose = newTask("Not in the project", undefined, "~/work/portal/other");
+    const nested = newProject("Portal api", "~/work/portal/api");
+    const nestedTask = newTask("Api task", nested, "~/work/portal/api/v2");
     const before = live();
     const unbased = fx.writer.submit(
-      fx.request(fx.human, [{ kind: "project.folder_set", project, path: "~/Code/portal" }]),
+      fx.request(fx.human, [
+        { kind: "project.folder_set", project, path: "~/Code/portal", carry: true },
+      ]),
     );
     expect(unbased.error?.code).toBe("BASE_REQUIRED");
-    const moved = submit([{ kind: "project.folder_set", project, path: "~/Code/portal" }]);
+    const moved = submit([
+      { kind: "project.folder_set", project, path: "~/Code/portal", carry: true },
+    ]);
     expectStatus(moved, "applied");
     expect(live()).toEqual({
-      ...before,
       [`project:${project}`]: "~/Code/portal",
       [`task:${inside}`]: "~/Code/portal/web/header",
       [`task:${same}`]: "~/Code/portal",
       [`task:${outside}`]: "~/work/portal-docs",
-      [`task:${elsewhere}`]: "~/work/portal/other",
+      [`task:${loose}`]: "~/Code/portal/other",
+      [`project:${nested}`]: "~/Code/portal/api",
+      [`task:${nestedTask}`]: "~/Code/portal/api/v2",
     });
     expectStatus(undo(), "applied");
     expect(live()).toEqual(before);
     expectStatus(redo(), "applied");
     expect(live()[`task:${inside}`]).toBe("~/Code/portal/web/header");
-    // Clearing the project's folder leaves its tasks' folders as they are.
+    // A task's folder moved on disk carries what is inside it as well, a project's included.
+    expectStatus(
+      submit([{ kind: "task.folder_set", task: same, path: "~/code/portal-moved", carry: true }]),
+      "applied",
+    );
+    expect(live()).toMatchObject({
+      [`project:${project}`]: "~/code/portal-moved",
+      [`project:${nested}`]: "~/code/portal-moved/api",
+      [`task:${loose}`]: "~/code/portal-moved/other",
+    });
+    // Clearing the project's folder leaves the folders inside it as they are.
     expectStatus(submit([{ kind: "project.folder_clear", project }]), "applied");
     expect(live()[`project:${project}`]).toBeUndefined();
-    expect(live()[`task:${inside}`]).toBe("~/Code/portal/web/header");
+    expect(live()[`task:${inside}`]).toBe("~/code/portal-moved/web/header");
     // A clear of nothing is no change.
     expectStatus(submit([{ kind: "project.folder_clear", project }]), "unchanged");
   });
 
-  test("a stale base is a conflict on a task folder the move would carry", () => {
+  test("a folder changed without carry changes the owner's folder alone", () => {
+    const project = newProject("Repointed", "~/work/wrong");
+    const task = newTask("Inner", project, "~/work/wrong/inner");
+    const other = newProject("Inside", "~/work/wrong/inside");
+    expectStatus(
+      submit([{ kind: "project.folder_set", project, path: "~/work/right" }]),
+      "applied",
+    );
+    expect(live()).toMatchObject({
+      [`project:${project}`]: "~/work/right",
+      [`task:${task}`]: "~/work/wrong/inner",
+      [`project:${other}`]: "~/work/wrong/inside",
+    });
+  });
+
+  test("a stale base is a conflict on a folder the move would carry", () => {
     const project = newProject("Moves", "~/work/moves");
     const task = newTask("Inner", project, "~/work/moves/inner");
     const stale = fx.base();
@@ -141,7 +173,7 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
       "applied",
     );
     const conflict = submit(
-      [{ kind: "project.folder_set", project, path: "~/work/moved" }],
+      [{ kind: "project.folder_set", project, path: "~/work/moved", carry: true }],
       fx.human,
       {
         base: stale,
@@ -283,20 +315,20 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expectStatus(submit([{ kind: "task.delete", task: trashed }]), "applied");
     // The project is really the web folder: the folders below stay where they are.
     expectStatus(
-      submit([{ kind: "project.folder_set", project, path: "~/work/portal/web" }]),
+      submit([{ kind: "project.folder_set", project, path: "~/work/portal/web", carry: true }]),
       "applied",
     );
     expect(live()[`task:${web}`]).toBe("~/work/portal/web");
     expect(live()[`task:${api}`]).toBe("~/work/portal/api");
     // And back out to the folder around it.
     expectStatus(
-      submit([{ kind: "project.folder_set", project, path: "~/work/portal" }]),
+      submit([{ kind: "project.folder_set", project, path: "~/work/portal", carry: true }]),
       "applied",
     );
     expect(live()[`task:${web}`]).toBe("~/work/portal/web");
     // A real move carries every task's folder inside, a deleted task's too.
     expectStatus(
-      submit([{ kind: "project.folder_set", project, path: "~/Code/portal" }]),
+      submit([{ kind: "project.folder_set", project, path: "~/Code/portal", carry: true }]),
       "applied",
     );
     expect(live()).toMatchObject({
@@ -306,22 +338,17 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     });
   });
 
-  test("a task that joined the project after the base is a conflict on a folder change that would move its folder", () => {
-    const project = newProject("Joined", "~/work/joined");
-    const loose = newTask("Loose", undefined, "~/work/joined/data");
-    const stale = fx.base();
-    // An agent files the task into the project after the person read it.
-    expectStatus(submit([{ kind: "task.move", task: loose, project }], fx.codex), "applied");
-    const conflict = submit(
-      [{ kind: "project.folder_set", project, path: "~/work/elsewhere" }],
-      fx.human,
-      { base: stale },
-    );
-    expectStatus(conflict, "conflict");
-    expect(conflict.conflicts).toEqual([
-      expect.objectContaining({ entity: "tasks", field: "grouping", task: loose }),
-    ]);
-    expect(live()[`task:${loose}`]).toBe("~/work/joined/data");
+  test("a move that would land a project inside it on another live project's folder is refused whole", () => {
+    const project = newProject("Outer", "~/work/outer");
+    const inner = newProject("Inner", "~/work/outer/app");
+    const holder = newProject("Holder", "~/Code/app");
+    const before = live();
+    const refused = submit([{ kind: "project.folder_set", project, path: "~/Code", carry: true }]);
+    expectStatus(refused, "rejected");
+    expect(refused.error).toMatchObject({ code: "FOLDER_TAKEN" });
+    expect(live()).toEqual(before);
+    expect(live()[`project:${holder}`]).toBe("~/Code/app");
+    expect(live()[`project:${inner}`]).toBe("~/work/outer/app");
   });
 
   test("setting a folder from a base before another's clear is a conflict; without a base it sets", () => {
