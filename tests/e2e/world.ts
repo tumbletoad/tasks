@@ -204,6 +204,18 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     const redeems: number[] = [];
     /** The world's own sign-in for `machine`, made once. */
     let token: string | undefined;
+    // The service redeems at most 10 codes a minute. A worker's tests sign in more often than that
+    // when they run fast: every redeem, the page's and the world's own, waits for room.
+    const roomToRedeem = async (): Promise<void> => {
+      const now = Date.now();
+      while (redeems.length > 0 && (redeems[0] ?? 0) <= now - REDEEM_WINDOW_MS) redeems.shift();
+      if (redeems.length >= REDEEMS_PER_WINDOW) {
+        const wait = (redeems[0] ?? now) + REDEEM_WINDOW_MS + 250 - now;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        redeems.shift();
+      }
+      redeems.push(Date.now());
+    };
     return {
       origin,
       mira: { id: opened.space.spaceId, name: opened.space.name },
@@ -211,16 +223,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       task,
       spare,
       signInUrl: async (to) => {
-        // The service redeems at most 10 codes a minute (A2 3.8.3). A worker's tests sign in
-        // more often than that when they run fast: wait for room rather than be signed out.
-        const now = Date.now();
-        while (redeems.length > 0 && (redeems[0] ?? 0) <= now - REDEEM_WINDOW_MS) redeems.shift();
-        if (redeems.length >= REDEEMS_PER_WINDOW) {
-          const wait = (redeems[0] ?? now) + REDEEM_WINDOW_MS + 250 - now;
-          await new Promise((resolve) => setTimeout(resolve, wait));
-          redeems.shift();
-        }
-        redeems.push(Date.now());
+        await roomToRedeem();
         const minted = (await user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
           code: string;
           port: number;
@@ -230,11 +233,13 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       machine: async (key, value) => {
         const port = Number(new URL(origin).port);
         if (token === undefined) {
-          redeems.push(Date.now());
+          await roomToRedeem();
           const minted = (await user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
             code: string;
           };
           const signed = await post(port, "/api/v1/auth/redeem", { code: minted.code });
+          if (signed.status !== 200)
+            throw new Error(`auth/redeem answered ${String(signed.status)}`);
           token = (JSON.parse(signed.body) as { token: string }).token;
         }
         const reply = await post(port, "/api/v1/machine/pref", { key, value }, { token });
