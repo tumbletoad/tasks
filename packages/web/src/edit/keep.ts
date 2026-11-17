@@ -88,7 +88,10 @@ export function unsavedKeeper(space: string): UnsavedKeeper {
       return found;
     },
     save(unsaved) {
-      const next = new Map<string, { readonly unsaved: Unsaved; readonly value: string | undefined }>();
+      const next = new Map<
+        string,
+        { readonly unsaved: Unsaved; readonly value: string | undefined }
+      >();
       for (const each of unsaved.values()) {
         const name = nameOf(each);
         const before = known.get(name);

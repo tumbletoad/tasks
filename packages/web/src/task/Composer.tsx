@@ -2,15 +2,15 @@
 // goes. Note saves it as a note on the task. Open starts an agent instance on the task with the
 // text as its request (without text it opens as the tile does). Copy puts the brief on the
 // clipboard with the text, Shift+Copy the context pack. Each clears the field once its text has
-// gone somewhere: the note was saved, the launch was recorded and did not fail, the brief is on
-// the clipboard. Text typed meanwhile stays. Until then the draft is kept (composer.ts), so a
-// reload brings it back.
+// gone somewhere: the note was saved, the launch reached the agent, the brief is on the
+// clipboard. Text typed meanwhile stays. Until then the draft is kept (composer.ts), so a reload
+// brings it back.
 //
 // Enter saves a note and Ctrl+Enter opens the first instance (keymap.ts): never while an input
 // method composes. Run, an agent working without a window, is not offered until it can start.
 import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Toolbar } from "react-aria-components";
-import { requestId, type Instance, type Receipt, type ReceiptState } from "../api.ts";
+import { requestId, type Instance, type Receipt } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useMachine } from "../app/machine.ts";
@@ -23,13 +23,22 @@ import { CopyIcon } from "../row/icons.tsx";
 import { tileState } from "../row/launch.ts";
 import type { TaskRow } from "../store/rows.ts";
 import { typingIn } from "../kept.ts";
-import { DRAFT_MAX, keepDraft, onAsk, onDraft, readDraft } from "./composer.ts";
+import {
+  DRAFT_MAX,
+  carry,
+  delivered,
+  keepDraft,
+  keepNote,
+  onAsk,
+  onDraft,
+  readDraft,
+  readNote,
+  settled,
+  wordsOf,
+} from "./composer.ts";
 import css from "./Expanded.module.css";
 
 const styles = classes(css, ["input", "strip", "button", "glyph", "hint", "gap"]);
-
-/** A launch that ends here started nothing: the composer keeps its text. */
-const FAILED: ReadonlySet<ReceiptState> = new Set(["failed", "unknown"]);
 
 const STUBS: Readonly<Record<AskField, MessageId>> = {
   summary: "ask.summary",
@@ -59,8 +68,8 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
   /** The text on screen, for answers that arrive later. */
   const now = useRef(text);
   now.current = text;
-  /** The note on its way, and the request ID a retry of the same words takes again. */
-  const note = useRef<{ text: string; id: string; sending: boolean } | undefined>(undefined);
+  /** The words of the note on their way from this tab. */
+  const sending = useRef<string | undefined>(undefined);
   /** The instances whose Open is on its way from here. */
   const [opening, setOpening] = useState<ReadonlySet<string>>(new Set());
 
@@ -74,9 +83,15 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
    * typed on since (here, in another tab, or in this task's composer opened again).
    */
   const sent = (words: string) => {
-    if (readDraft(space, task.id).trim() === words) keepDraft(space, task.id, "");
-    if (now.current.trim() === words) setText("");
+    if (wordsOf(readDraft(space, task.id)) === words) keepDraft(space, task.id, "");
+    if (wordsOf(now.current) === words) setText("");
   };
+
+  // A launch that carries the words clears them once they reached the agent; a failed one leaves
+  // them here.
+  useEffect(() => {
+    for (const words of settled(space, task.id, receipts)) sent(words);
+  });
 
   // A request starts here: its stub follows what the person had written, which stays.
   useEffect(
@@ -85,7 +100,9 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
         if (ask.space !== space || ask.task !== task.id) return;
         const stub = t(STUBS[ask.field]);
         const before = field.current?.value ?? "";
-        const next = before.trim() === "" ? stub : `${before.trimEnd()}\n${stub}`;
+        const joined = before.trim() === "" ? stub : `${before.trimEnd()}\n${stub}`;
+        // A field already full keeps what the person wrote: the stub is only a start.
+        const next = joined.length > DRAFT_MAX ? before : joined;
         setText(next);
         keepDraft(space, task.id, next);
         requestAnimationFrame(() => {
@@ -107,26 +124,28 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     [space, task.id],
   );
 
-  const words = text.trim();
+  const words = wordsOf(text);
 
   const addNote = () => {
     if (words === "") {
       field.current?.focus();
       return;
     }
-    const known = note.current;
-    if (known?.sending === true && known.text === words) return;
-    // The same words again after a failure are the same request: the service saves them once.
-    const id = known?.text === words ? known.id : requestId();
-    const mine = { text: words, id, sending: true };
-    note.current = mine;
+    if (sending.current === words) return;
+    // The same words again (after a failure, a reload, or from another tab) are the same request:
+    // the service saves them once.
+    const known = readNote(space, task.id);
+    const id = known?.words === words ? known.id : requestId();
+    keepNote(space, task.id, { words, id });
+    sending.current = words;
     api.client.entry.add({ task: task.id, kind: "note", text: words, request_id: id }).then(
       () => {
-        if (note.current === mine) note.current = undefined;
+        if (sending.current === words) sending.current = undefined;
+        if (readNote(space, task.id)?.id === id) keepNote(space, task.id, undefined);
         sent(words);
       },
       (error: unknown) => {
-        mine.sending = false;
+        if (sending.current === words) sending.current = undefined;
         if (!live.failed(error)) say(t("composer.noteFailed"));
       },
     );
@@ -144,8 +163,10 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
         next.delete(instance.key);
         return next;
       });
-      const took = receipt !== undefined && !FAILED.has(receipt.state) && !before.has(receipt.id);
-      if (took && request !== "") sent(request);
+      if (receipt === undefined || before.has(receipt.id) || request === "") return;
+      const reached = delivered(receipt);
+      if (reached === true) sent(request);
+      else if (reached === undefined) carry(space, task.id, receipt.id, request);
     });
   };
 

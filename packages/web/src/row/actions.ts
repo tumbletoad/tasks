@@ -15,7 +15,8 @@ export interface RowActions {
   readonly expand: (task: TaskRow) => void;
   /**
    * Open the task in an instance, with the composer's `text` as the request: the receipt of the
-   * launch the service recorded or returned, or undefined when it recorded none.
+   * launch the service recorded or returned, or undefined when it recorded none or the brief an
+   * app takes by paste did not reach the clipboard.
    */
   readonly open: (task: TaskRow, instance: Instance, text?: string) => Promise<Receipt | undefined>;
   /**

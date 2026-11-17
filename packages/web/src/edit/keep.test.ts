@@ -213,9 +213,11 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
     expect(tabB.load()).toHaveLength(1);
     tabB.save(asMap([unsaved(titleChange("Newer"), 4)]));
     tabA.save(new Map());
-    expect(unsavedKeeper(SPACE).load().map((u) => u.change.source)).toEqual([
-      titleChange("Newer").source,
-    ]);
+    expect(
+      unsavedKeeper(SPACE)
+        .load()
+        .map((u) => u.change.source),
+    ).toEqual([titleChange("Newer").source]);
     tabB.save(new Map());
     expect(stored()).toEqual([]);
     // A task gone for good takes its edits with it.

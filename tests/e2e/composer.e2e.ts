@@ -47,7 +47,7 @@ const kept = (page: Page): Promise<Record<string, string>> =>
     for (const storage of [localStorage, sessionStorage]) {
       for (let i = 0; i < storage.length; i += 1) {
         const key = storage.key(i) ?? "";
-        if (/\.(draft|top|unsaved)\./u.test(key) && key.startsWith(prefix)) {
+        if (/\.(draft|note|top|unsaved)\./u.test(key) && key.startsWith(prefix)) {
           found[key] = storage.getItem(key) ?? "";
         }
       }
@@ -150,7 +150,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     ]);
 
     // Ctrl+Enter opens the first instance with the text as the request; the field clears once the
-    // launch is recorded, and the terminal gets the shim's command line only.
+    // agent has it, and the terminal gets the shim's command line only.
     const before = world.terminal().length;
     const open = strip.getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` });
     await expect(open).toHaveAttribute("aria-keyshortcuts", /^(Control|Meta)\+Enter$/u);
@@ -163,7 +163,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
       text: `Compare the three listings (${tag})`,
     });
     expect(JSON.stringify(world.terminal().at(-1))).not.toContain("Compare the three listings");
-    await expect(composer).toHaveValue("");
+    await expect(composer).toHaveValue("", { timeout: SLOW_MS });
     expect(Object.keys(await kept(page))).toEqual([]);
     expect(await violations(page)).toEqual([]);
   });
@@ -366,6 +366,47 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await page.reload();
     await expect(composer).toHaveValue("", { timeout: SLOW_MS });
     await second.close();
+  });
+
+  test("a note whose answer was lost is saved once when it is sent again after a reload", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, { title: `Fix the gate (${tag})`, area: "home" });
+    await openTask(page, world, ref);
+    const composer = composerOf(page, ref);
+    const added = calls(page, "entry.add");
+    // The service saves the note, but its answer never reaches the page.
+    await page.route("**/api/v1/op/entry.add", async (route) => {
+      await route.fetch();
+      await route.abort();
+    });
+    await composer.fill(`Buy a new latch (${tag})`);
+    await page.keyboard.press("Enter");
+    await expect
+      .poll(
+        async () =>
+          JSON.stringify(
+            await world.op(world.mira.id, "task.get", { task: ref, sections: ["notes"] }),
+          ),
+        { timeout: SLOW_MS },
+      )
+      .toContain(`Buy a new latch (${tag})`);
+    await expect.poll(() => added.length).toBe(1);
+    await expect(composer).toHaveValue(`Buy a new latch (${tag})`);
+    await page.unroute("**/api/v1/op/entry.add");
+
+    await page.reload();
+    await expect(composer).toHaveValue(`Buy a new latch (${tag})`, { timeout: SLOW_MS });
+    await composer.focus();
+    await page.keyboard.press("Enter");
+    await expect(composer).toHaveValue("", { timeout: SLOW_MS });
+    await expect(notes(page, ref)).toHaveCount(1);
+    expect(added).toHaveLength(2);
+    const ids = added.map((r) => (r.postDataJSON() as { request_id: string }).request_id);
+    expect(ids[1]).toBe(ids[0]);
+    expect(Object.keys(await kept(page))).toEqual([]);
   });
 
   test("a field edit that was not saved is back after a reload with its choices: the connection was down, the task changed under it, the task was finished", async ({

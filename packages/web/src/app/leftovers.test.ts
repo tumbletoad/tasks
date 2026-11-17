@@ -74,4 +74,24 @@ describe("[A5.3.8.web.leftovers] the kept text of a task gone for good is forgot
     expect(draftTasks(SPACE).sort()).toEqual(["tk_done", "tk_down", "tk_live"]);
     expect(unsavedTasks(SPACE)).toEqual([]);
   });
+
+  test("many finished tasks with drafts do not keep a gone one from being forgotten", async () => {
+    const finished = Array.from({ length: 30 }, (_, i) => `tk_done${String(i).padStart(2, "0")}`);
+    for (const task of finished) keepDraft(SPACE, task, `Draft of ${task}`);
+    keepDraft(SPACE, "tk_zgone", "Draft of a task deleted for good");
+    const answers: Record<string, () => unknown> = {
+      tk_zgone: () => {
+        throw refusal("not_found");
+      },
+    };
+    for (const task of finished) answers[task] = () => ({ task: { lifecycle: "completed" } });
+    const { api, asked } = apiOf(answers);
+    for (let opening = 0; opening < 20 && draftTasks(SPACE).includes("tk_zgone"); opening += 1) {
+      asked.length = 0;
+      await forgetGone(SPACE, api, () => false);
+      expect(asked.length).toBeLessThanOrEqual(20);
+    }
+    expect(draftTasks(SPACE)).not.toContain("tk_zgone");
+    expect(draftTasks(SPACE)).toHaveLength(30);
+  });
 });

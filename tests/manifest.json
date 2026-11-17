@@ -4353,6 +4353,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.8.web.composer-sends",
+      "title": "A composer sends its words as typed, without the blank lines around them; a note keeps one request ID across a reload so its words are saved once; a launch's words count as gone only once the agent has them, and stay when the launch failed",
+      "source": "A5 3.8, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.8.web.leftovers",
       "title": "When a space opens, the kept draft and waiting edits of a task the service no longer knows are forgotten; a task in the live rows, a finished one and one the service could not answer for keep theirs",
       "source": "A5 3.8, A7 3.12 M5.07",

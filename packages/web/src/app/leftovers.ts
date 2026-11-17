@@ -23,7 +23,13 @@ export async function forgetGone(
   known: (task: string) => boolean,
 ): Promise<void> {
   const tasks = new Set([...draftTasks(space), ...unsavedTasks(space)]);
-  const asked = [...tasks].filter((task) => task !== "" && !known(task)).slice(0, MAX_ASKED);
+  const unknown = [...tasks].filter((task) => task !== "" && !known(task));
+  // A random few each time: tasks that still exist never keep the others from being asked about.
+  for (let i = unknown.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [unknown[i], unknown[j]] = [unknown[j] as string, unknown[i] as string];
+  }
+  const asked = unknown.slice(0, MAX_ASKED);
   for (const task of asked) {
     try {
       await api.client.task.get({ task });

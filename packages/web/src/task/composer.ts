@@ -1,10 +1,11 @@
-// The composer's drafts and the seam for "click-to-ask". A draft is kept per space and task
-// in the browser (kept.ts) until it is saved as a note, goes with a launch, or is cleared, so a reload brings it
-// back. A draft read back is untrusted text, shown only as the text area's value.
+// The composer's drafts and the seam for "click-to-ask". A draft is kept per space and task in
+// the browser (kept.ts) until it is saved as a note, reaches an agent, or is cleared, so a reload
+// brings it back. A draft read back is untrusted text, shown only as the text area's value.
 //
 // An agent-only field asks through `askFor`: the request's stub ("Change the summary: ") goes into
 // the task's draft after what the person had written there, and the field takes focus. Nothing is
 // sent until the person acts.
+import type { Receipt } from "../api.ts";
 import type { AskField } from "../row/actions.ts";
 import { browserKept, onKept } from "../kept.ts";
 
@@ -12,6 +13,14 @@ import { browserKept, onKept } from "../kept.ts";
 export const DRAFT_MAX = 20_000;
 
 const nameOf = (space: string, task: string) => `draft.${space}.${task}`;
+const noteOf = (space: string, task: string) => `note.${space}.${task}`;
+
+/**
+ * What a draft sends: as typed, without the blank lines around it. The first line keeps its
+ * indent, so pasted code arrives as it was. Empty when nothing was typed.
+ */
+export const wordsOf = (text: string): string =>
+  text.trim() === "" ? "" : text.replace(/^(?:[ \t]*\r?\n)+/u, "").trimEnd();
 
 export function readDraft(space: string, task: string): string {
   const value = browserKept.read(nameOf(space, task));
@@ -20,6 +29,69 @@ export function readDraft(space: string, task: string): string {
 
 export function keepDraft(space: string, task: string, text: string): void {
   browserKept.keep(nameOf(space, task), text === "" || text.length > DRAFT_MAX ? undefined : text);
+  if (text === "") browserKept.keep(noteOf(space, task), undefined);
+}
+
+/** A note on its way: its words and the request ID that saves them once, also after a reload. */
+export interface NoteRequest {
+  readonly words: string;
+  readonly id: string;
+}
+
+export function readNote(space: string, task: string): NoteRequest | undefined {
+  const value = browserKept.json(noteOf(space, task));
+  if (typeof value !== "object" || value === null) return undefined;
+  const { words, id } = value as { words?: unknown; id?: unknown };
+  if (typeof words !== "string" || words === "" || words.length > DRAFT_MAX) return undefined;
+  if (typeof id !== "string" || !/^[0-9a-f-]{36}$/u.test(id)) return undefined;
+  return { words, id };
+}
+
+export function keepNote(space: string, task: string, note: NoteRequest | undefined): void {
+  browserKept.keep(noteOf(space, task), note === undefined ? undefined : JSON.stringify(note));
+}
+
+/**
+ * Whether a launch's words reached the agent: true once the agent confirmed or a link or the
+ * clipboard handed them over, false when it failed or the service lost track of it, undefined
+ * while it is on its way.
+ */
+export function delivered(receipt: Receipt): boolean | undefined {
+  if (receipt.state === "failed" || receipt.state === "unknown") return false;
+  if (receipt.state === "confirmed") return true;
+  if (receipt.state === "dispatched" && receipt.route !== "terminal") return true;
+  return undefined;
+}
+
+/**
+ * The launches that carry a composer's words, by draft, until they settle. Kept for the tab, so a
+ * task collapsed and expanded again still clears what its launch delivered.
+ */
+const carrying = new Map<string, Map<string, string>>();
+
+export function carry(space: string, task: string, receipt: string, words: string): void {
+  const name = nameOf(space, task);
+  const launches = carrying.get(name) ?? new Map<string, string>();
+  launches.set(receipt, words);
+  carrying.set(name, launches);
+}
+
+/** The words of the task's launches that delivered them; each launch that settled is let go. */
+export function settled(space: string, task: string, receipts: readonly Receipt[]): string[] {
+  const name = nameOf(space, task);
+  const launches = carrying.get(name);
+  if (launches === undefined) return [];
+  const done: string[] = [];
+  for (const receipt of receipts) {
+    const words = launches.get(receipt.id);
+    if (words === undefined) continue;
+    const reached = delivered(receipt);
+    if (reached === undefined) continue;
+    launches.delete(receipt.id);
+    if (reached) done.push(words);
+  }
+  if (launches.size === 0) carrying.delete(name);
+  return done;
 }
 
 /** Another tab changed this task's draft. */

@@ -498,9 +498,10 @@ export function TaskList({
         watched.current.add(task.id);
         return api
           .openLaunch(task.id, instance.key, requestId(), text === undefined ? {} : { text })
-          .then(({ receipt, copy }) => {
+          .then(async ({ receipt, copy }) => {
             shown(task, receipt);
-            if (copy !== undefined) void toClipboard(copy);
+            // The app takes the brief by paste: without it on the clipboard the words did not go.
+            if (copy !== undefined && !(await toClipboard(copy))) return undefined;
             return receipt;
           })
           .catch((error: unknown) => {
