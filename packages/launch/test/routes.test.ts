@@ -23,7 +23,7 @@ import type { Instance } from "../src/sections.ts";
 
 const REF = `L7KQ2${launchRefCheck("7KQ2") ?? ""}`;
 const SESSION = presetSession("sp_0abcdefghjkmnpqrstvwxyz01", "request-0000000000000001");
-const BRIEF = `${PRODUCT_NAME} task M-14 "Fix appointment time zones" (launch ${REF}).\nRead the task.`;
+const BRIEF = `${PRODUCT_NAME} task M-14 (launch ${REF}).\nRead the task.`;
 
 const instance = (over: Partial<Instance> & Pick<Instance, "id" | "target">): Instance => ({
   label: "Fixture",
