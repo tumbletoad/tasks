@@ -224,8 +224,8 @@ export interface StartOptions {
   /** Background runs: the containers, tasks-run.exe and the host's times, for tests. */
   readonly runs?: RunOptions;
   /**
-   * The page's agent apps: the environment and home folder they are looked for in, for tests.
-   * Default: the person's own, as Open's agents get them.
+   * The page's agent apps: the environment and home folder they are looked for in, and the home
+   * the page shows as `~`, for tests. Default: the person's own, as Open's agents get them.
    */
   readonly agentApps?: { readonly env?: Env; readonly home?: string };
 }
@@ -949,7 +949,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       // The page's New space, Open folder and agent apps: the sign-in is the person (`ui`).
       const pageSpaces = pageSpaceVerbs({
         layout,
-        userHome: personHome,
+        userHome: options.agentApps?.home ?? personHome,
         spaces: hub.spaces,
       });
       const apps = agentAppVerbs({

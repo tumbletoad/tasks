@@ -3,7 +3,7 @@
 // folder takes a folder that holds a space already. The first start, the space switcher and any
 // later visit use this same form.
 import { useEffect, useId, useState, type SyntheticEvent } from "react";
-import { Button, Heading, Input, Label, TextField } from "react-aria-components";
+import { Button, Heading } from "react-aria-components";
 import { Refused, SignedOut, type MadeSpace } from "../api.ts";
 import { useT } from "../i18n/intl.tsx";
 import { classes } from "./css.ts";
@@ -45,6 +45,46 @@ export function SpaceForm({
     <NewSpace onMode={onMode} onMade={onMade} headingLevel={headingLevel} />
   ) : (
     <OpenFolder onMode={onMode} onMade={onMade} headingLevel={headingLevel} />
+  );
+}
+
+/**
+ * A text field with its label: a native label for its input, which names it without
+ * `aria-labelledby` (Firefox's page process crashes when a name is read through a label that way).
+ */
+function Field({
+  label,
+  onChange,
+  mono = false,
+  ...input
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly mono?: boolean;
+  readonly placeholder: string;
+  readonly required?: boolean;
+  readonly maxLength?: number;
+  readonly autoFocus?: boolean;
+  readonly "aria-describedby"?: string;
+}) {
+  const id = useId();
+  return (
+    <div className={styles.field}>
+      <label className={styles.label} htmlFor={id}>
+        {label}
+      </label>
+      <input
+        {...input}
+        id={id}
+        type="text"
+        spellCheck={false}
+        className={mono ? `${styles.input} ${styles.mono}` : styles.input}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+      />
+    </div>
   );
 }
 
@@ -126,36 +166,37 @@ function NewSpace({
         {t("start.title")}
       </Heading>
       <p className={styles.lead}>{t("start.lead")}</p>
-      <TextField
-        className={styles.field}
+      <Field
+        label={t("start.name")}
         value={name}
         onChange={setName}
-        isRequired
+        required
         maxLength={100}
         autoFocus
         aria-describedby={proposalId}
-      >
-        <Label className={styles.label}>{t("start.name")}</Label>
-        <Input className={styles.input} placeholder={t("start.namePlaceholder")} />
-      </TextField>
+        placeholder={t("start.namePlaceholder")}
+      />
       <p id={proposalId} className={styles.note} aria-live="polite">
-        {proposal === undefined || more
+        {proposal === undefined
           ? t("start.where")
           : t("start.proposal", { prefix: proposal.prefix, folder: proposal.folder })}
       </p>
       {more ? (
         <>
-          <TextField className={styles.field} value={prefix} onChange={setPrefix} maxLength={6}>
-            <Label className={styles.label}>{t("start.prefix")}</Label>
-            <Input className={styles.input} placeholder={proposal?.prefix ?? ""} />
-          </TextField>
-          <TextField className={styles.field} value={folder} onChange={setFolder}>
-            <Label className={styles.label}>{t("start.folder")}</Label>
-            <Input
-              className={`${styles.input} ${styles.mono}`}
-              placeholder={proposal?.folder ?? ""}
-            />
-          </TextField>
+          <Field
+            label={t("start.prefix")}
+            value={prefix}
+            onChange={setPrefix}
+            maxLength={6}
+            placeholder={proposal?.prefix ?? ""}
+          />
+          <Field
+            label={t("start.folder")}
+            value={folder}
+            onChange={setFolder}
+            mono
+            placeholder={proposal?.folder ?? ""}
+          />
           <p className={styles.note}>{t("start.moreNote")}</p>
         </>
       ) : null}
@@ -228,13 +269,15 @@ function OpenFolder({
         {t("start.openTitle")}
       </Heading>
       <p className={styles.lead}>{t("start.openLead")}</p>
-      <TextField className={styles.field} value={folder} onChange={setFolder} isRequired autoFocus>
-        <Label className={styles.label}>{t("start.folder")}</Label>
-        <Input
-          className={`${styles.input} ${styles.mono}`}
-          placeholder={t("start.folderPlaceholder")}
-        />
-      </TextField>
+      <Field
+        label={t("start.folder")}
+        value={folder}
+        onChange={setFolder}
+        required
+        autoFocus
+        mono
+        placeholder={t("start.folderPlaceholder")}
+      />
       {error === undefined ? null : (
         <p className={styles.error} role="alert">
           {error}

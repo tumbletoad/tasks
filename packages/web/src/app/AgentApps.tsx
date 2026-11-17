@@ -230,7 +230,7 @@ export function AgentApps({
       )}
       {pending.length === 0 ? null : (
         <div className={styles.changes} data-part="changes">
-          <Heading level={3}>{t("apps.changes")}</Heading>
+          <Heading level={headingLevel + 1}>{t("apps.changes")}</Heading>
           <ul>
             {pending.map((p) => (
               <li key={switchKey(p.row.key, p.part)}>{changeText(t, p)}</li>
