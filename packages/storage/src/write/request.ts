@@ -887,14 +887,17 @@ export interface ProjectDelete {
 
 /**
  * `project.folder_set` and `task.folder_set`: the owner's folder on the request's machine, as that
- * machine spells it, the home written as `~`. The path is stored exactly as sent. A project's
- * change moves its tasks' folders that are its old folder or inside it, on that machine, along.
+ * machine spells it, the home written as `~`. The path is stored exactly as sent. With `carry`,
+ * the folder was moved on disk: every other folder on that machine that is the old folder or
+ * inside it, a project's or a task's, moves along to the same place inside the new one, unless one
+ * of the two folders is the other or inside it.
  */
 export interface FolderSet {
   kind: "project.folder_set" | "task.folder_set";
   project?: string;
   task?: string;
   path: string;
+  carry?: boolean;
 }
 
 /** `project.folder_clear` and `task.folder_clear`: removes the owner's folder on this machine. */
@@ -1999,10 +2002,12 @@ function checkOperation(value: unknown, i: number): Operation {
           "path",
         );
       }
-      op =
+      const set: FolderSet =
         kind === "project.folder_set"
           ? { kind, project: requiredGroup(f, "project"), path: path as string }
           : { kind, task: f.reference("task"), path: path as string };
+      if (f.has("carry")) set.carry = f.boolean("carry");
+      op = set;
       break;
     }
     case "project.folder_clear":
