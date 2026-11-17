@@ -101,6 +101,26 @@ describe("[A3.3.4.folders.cli] folders at the command line", () => {
     expect(json(created)).toMatchObject({ group: { folder: ends("already-here") } });
   });
 
+  test("tasks area set_folder --here and clear_folder change a project's folder", async () => {
+    const at = folder("ledger");
+    const created = await tasks(["area", "create", "Fixture area/Fixture ledger"], w.root);
+    expect(created.code, created.stderr).toBe(0);
+    const set = await tasks(
+      ["area", "set_folder", "Fixture area/Fixture ledger", "--here", "--json"],
+      at,
+    );
+    expect(set.code, set.stdout + set.stderr).toBe(0);
+    expect(json(set)).toMatchObject({ result: "folder_set", group: { folder: ends("ledger") } });
+    const cleared = await tasks(
+      ["area", "clear_folder", "Fixture area/Fixture ledger", "--json"],
+      w.root,
+    );
+    expect(cleared.code, cleared.stdout + cleared.stderr).toBe(0);
+    expect(json(cleared)).toMatchObject({ result: "folder_cleared" });
+    const listed = await tasks(["area", "list"], w.root);
+    expect(listed.stdout).toMatch(/\n {2}Fixture ledger \(0\)\n/u);
+  });
+
   test("a refused call removes the folder --create made for it", async () => {
     const parent = folder("refused");
     // A folder inside Tasks' own data is refused after the CLI made it.

@@ -4,7 +4,7 @@
 // its folder, sets and clears one, and answers with the project that has a folder already; the
 // digest names a task's folder; search finds tasks by folder; and the refusals of a folder the
 // service cannot take name their reason and a way on. Temporary folders and fixture text only.
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
@@ -308,6 +308,27 @@ describe("[A3.3.4.folders.agent] organize's folders and the refusals", () => {
       }),
     );
     expect(noTaskCwd).toMatchObject({ code: "invalid_input", data: { reason: "no_cwd" } });
+    const file = join(folder("files"), "notes.txt");
+    writeFileSync(file, "fixture");
+    expect(
+      await refused(
+        call(agent, "task.add", {
+          tasks: [{ title: "Fixture in a file", folder: file }],
+          request_id: rid(),
+        }),
+      ),
+    ).toMatchObject({
+      code: "invalid_input",
+      data: { reason: "not_a_directory", issues: [{ path: "tasks.0.folder" }] },
+    });
+    expect(
+      await refused(
+        call(agent, "task.add", {
+          tasks: [{ title: "Fixture in the home", folder: home }],
+          request_id: rid(),
+        }),
+      ),
+    ).toMatchObject({ code: "invalid_input", data: { reason: "folder_reserved" } });
     // Nothing was made for the refused project.
     const listed = GroupManageResult.parse(await call(agent, "group.manage", { action: "list" }));
     expect(JSON.stringify(listed)).not.toContain("Nowhere");

@@ -217,6 +217,17 @@ export async function runVerb(
         };
         if (typeof read.as_of === "string") input["base"] = read.as_of;
       }
+      // A change to a group names no task: the person's base is the groups as they are now.
+      if (
+        input["base"] === undefined &&
+        verb.entry === "group.manage" &&
+        input["action"] !== "create"
+      ) {
+        const read = (await opCall(session, globals, "group.manage", { action: "list" })) as {
+          as_of?: string;
+        };
+        if (typeof read.as_of === "string") input["base"] = read.as_of;
+      }
     }
     const open = session;
     const send = async (sent: Record<string, unknown>): Promise<number> => {
