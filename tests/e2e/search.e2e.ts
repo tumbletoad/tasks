@@ -255,7 +255,8 @@ test.describe("[A7.3.12.m5-10.e2e.search] Search results are a list like any oth
     await expect(page.locator(`main li[data-task="${done ?? ""}"]`)).not.toContainText("In trays");
     await expect(page.locator(`main li[data-task="${dropped ?? ""}"]`)).not.toContainText("rack");
 
-    await searching(page).fill(`${word} pesto p1`);
+    // Only the words go into the new task: the search's filters and its sort stay behind.
+    await searching(page).fill(`${word} pesto p1 status:open sort:effort`);
     await page.getByRole("button", { name: `Add “${word} pesto p1” as a task` }).click();
     await expect(adding(page)).toHaveValue(`${word} pesto p1`);
     await expect(adding(page)).toBeFocused();
@@ -335,6 +336,32 @@ test.describe("[A7.3.12.m5-10.e2e.changes] A result that changes while the list 
       })
       .toEqual([`Order ${word} saplings`, `Prune the ${word} hedge`].sort());
     await expect(changed).toHaveCount(0);
+  });
+});
+
+test.describe("[A7.3.12.e2e.equals-filter] A filter written with = is read as the service reads it", () => {
+  test("p=3 is a filter: a change of priority offers a refresh, and Add takes only the words", async ({
+    page,
+    world,
+  }) => {
+    const word = wordOf("quince");
+    const [moved] = await addTasks(world, [
+      { title: `Water the ${word} pots`, area: "home", priority: 3 },
+      { title: `Feed the ${word} pots`, area: "home", priority: 3 },
+    ]);
+    await openSearch(page, world, `${word} p=3`);
+    await expect(titles(page, "To do")).toHaveCount(2);
+    await expect(page.getByRole("button", { name: `Add “${word}” as a task` })).toBeVisible();
+    const changed = page.getByRole("status").filter({ hasText: "Results changed." });
+    await expect(changed).toHaveCount(0);
+    const { as_of } = await read(world, moved ?? "");
+    await world.op(
+      world.mira.id,
+      "task.update",
+      { task: moved, set: { priority: 2 }, base: as_of },
+      "agent",
+    );
+    await expect(changed).toBeVisible({ timeout: SLOW_MS });
   });
 });
 
