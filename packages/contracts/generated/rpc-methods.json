@@ -196,7 +196,7 @@
             "type": "string"
           },
           "project": {
-            "description": "set, clear: \"Area/Project\", or a name, slug or ID; add_project: its name",
+            "description": "set, clear: \"Area/Project\", a name, slug or ID; add_project: name or folder's",
             "maxLength": 250,
             "type": "string"
           },
@@ -250,8 +250,92 @@
             "maxLength": 4096,
             "type": "string"
           },
+          "followed": {
+            "description": "The first of them",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "folder": {
+                  "description": "Where it is now, the home as ~",
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "Whose folder it is",
+                  "enum": [
+                    "project",
+                    "task"
+                  ],
+                  "type": "string"
+                },
+                "missing": {
+                  "const": true,
+                  "description": "No folder is there on this machine now",
+                  "type": "boolean"
+                },
+                "name": {
+                  "description": "A project's name",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "folder"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "kept": {
+            "description": "The first of them",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "folder": {
+                  "description": "Where it is now, the home as ~",
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "Whose folder it is",
+                  "enum": [
+                    "project",
+                    "task"
+                  ],
+                  "type": "string"
+                },
+                "missing": {
+                  "const": true,
+                  "description": "No folder is there on this machine now",
+                  "type": "boolean"
+                },
+                "name": {
+                  "description": "A project's name",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "folder"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
           "moved": {
-            "description": "Task folders that moved along with the project's",
+            "description": "Folders inside the old one that moved along: it was moved",
             "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
@@ -303,6 +387,12 @@
               "no_change"
             ],
             "type": "string"
+          },
+          "stayed": {
+            "description": "Folders inside the old one that stayed: it is still there",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -481,6 +571,11 @@
                         "description": "Name",
                         "type": "string"
                       },
+                      "repo": {
+                        "description": "The Git repository in its folder, by name",
+                        "maxLength": 255,
+                        "type": "string"
+                      },
                       "slug": {
                         "description": "Slug",
                         "type": "string"
@@ -517,6 +612,48 @@
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
+          "followed": {
+            "description": "The first of them",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "folder": {
+                  "description": "Where it is now, the home as ~",
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "Whose folder it is",
+                  "enum": [
+                    "project",
+                    "task"
+                  ],
+                  "type": "string"
+                },
+                "missing": {
+                  "const": true,
+                  "description": "No folder is there on this machine now",
+                  "type": "boolean"
+                },
+                "name": {
+                  "description": "A project's name",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "folder"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
           "group": {
             "additionalProperties": false,
             "description": "A write: the group it changed",
@@ -550,9 +687,51 @@
             ],
             "type": "object"
           },
+          "kept": {
+            "description": "The first of them",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "folder": {
+                  "description": "Where it is now, the home as ~",
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "Whose folder it is",
+                  "enum": [
+                    "project",
+                    "task"
+                  ],
+                  "type": "string"
+                },
+                "missing": {
+                  "const": true,
+                  "description": "No folder is there on this machine now",
+                  "type": "boolean"
+                },
+                "name": {
+                  "description": "A project's name",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "folder"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
           "moved": {
-            "description": "Task folders that moved along with the project's",
-            "maximum": 1000000000,
+            "description": "Folders inside the old one that moved along: it was moved",
+            "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
           },
@@ -578,6 +757,11 @@
                 },
                 "name": {
                   "description": "Name",
+                  "type": "string"
+                },
+                "repo": {
+                  "description": "The Git repository in its folder, by name",
+                  "maxLength": 255,
                   "type": "string"
                 },
                 "slug": {
@@ -619,6 +803,12 @@
               "proposed"
             ],
             "type": "string"
+          },
+          "stayed": {
+            "description": "Folders inside the old one that stayed: it is still there",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
           },
           "total_areas": {
             "description": "Active areas",
@@ -2271,6 +2461,10 @@
             "maxLength": 64,
             "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$",
             "type": "string"
+          },
+          "mark_folder": {
+            "description": "Open although the folder's marker is gone or another's, and mark it",
+            "type": "boolean"
           },
           "pack": {
             "description": "Copy the context pack: the task's text, for an app without the tools",
@@ -4970,6 +5164,11 @@
                           },
                           "path": {
                             "description": "The folder, the home written as ~",
+                            "type": "string"
+                          },
+                          "repo": {
+                            "description": "The Git repository it holds, by name",
+                            "maxLength": 255,
                             "type": "string"
                           }
                         },

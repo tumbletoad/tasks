@@ -296,7 +296,11 @@ const storedFolder = (folder: DigestTask["folder"]): string[][] =>
     ? []
     : "machine" in folder
       ? [[`Opens on: ${clip(folder.machine, 80)}`]]
-      : [[`Folder: ${clip(folder.path, 200)}`]];
+      : [
+          [
+            `Folder: ${clip(folder.path, 200)}${folder.repo === undefined ? "" : ` [${clip(folder.repo, 80)}]`}`,
+          ],
+        ];
 
 const SECTION_NAMES = ["context", "notes", "log", "sources", "outcome", "history"];
 
@@ -616,7 +620,22 @@ function addRendered(result: OutputOf<"task.add">): Rendered {
 type Groups = OutputOf<"group.manage">;
 
 function groupsRendered(result: Groups, organize: string): Rendered {
-  const project = (p: Groups["projects"][number]) => `${p.name} (${String(p.active)})`;
+  const project = (p: Groups["projects"][number]) =>
+    `${p.name}${p.repo === undefined ? "" : ` [${p.repo}]`} (${String(p.active)}${p.folder === undefined ? "" : `, ${p.folder}`})`;
+  const inside = result.followed ?? result.kept ?? [];
+  const insideLine =
+    inside.length === 0
+      ? []
+      : [
+          [
+            `${result.moved === undefined ? `Stayed, the old folder is still there: ${String(result.stayed ?? 0)}` : `Moved along: ${String(result.moved)}`} · ${inside
+              .map(
+                (f) =>
+                  `${f.kind === "task" ? (f.ref ?? "") : (f.name ?? "")} ${f.folder}${f.missing === true ? " (not there)" : ""}`,
+              )
+              .join(" · ")}`,
+          ],
+        ];
   const head = `${String(result.total_areas)} area${result.total_areas === 1 ? "" : "s"} · ${String(result.total_projects)} project${result.total_projects === 1 ? "" : "s"} · as_of ${result.as_of}${replayed(result)}`;
   const done =
     result.result === undefined
@@ -632,6 +651,7 @@ function groupsRendered(result: Groups, organize: string): Rendered {
       {
         data: true,
         units: [
+          ...insideLine,
           ...result.areas.map((area) => [
             `${area.name} (${String(area.active)})`,
             ...(area.projects.length === 0

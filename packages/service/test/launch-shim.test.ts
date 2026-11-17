@@ -346,10 +346,11 @@ describe("[A4.5.shim.folder] the folder: resolved right before the launch, check
       // a file, or only on another machine, which is never this machine's work folder.
       const usable = (folder: Parameters<typeof l.running.launches.folderUsable>[1]) =>
         l.running.launches.folderUsable(l.spaceId, folder);
-      expect(await usable({ kind: "task", path: l.folder })).toBe(true);
+      const owner = "t_0000000000000000000000000a";
+      expect(await usable({ kind: "task", path: l.folder, owner })).toBe(true);
       expect(await usable({ kind: "none" })).toBe(true);
-      expect(await usable({ kind: "project", path: missing })).toBe(false);
-      expect(await usable({ kind: "task", path: file })).toBe(false);
+      expect(await usable({ kind: "project", path: missing, owner })).toBe(false);
+      expect(await usable({ kind: "task", path: file, owner })).toBe(false);
       expect(await usable({ kind: "other_machine", machine: "mira-laptop" })).toBe(false);
 
       // It resolves at the click; its folder goes before the person confirms.

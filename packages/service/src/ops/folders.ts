@@ -26,7 +26,14 @@ import { realpath, stat } from "node:fs/promises";
 import { posix, win32 } from "node:path";
 import { PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
-import { FOLDER_PATH_MAX, folderKey, rebased, segmentsOf, type FolderOs } from "@tasks/storage";
+import {
+  carriedTo,
+  FOLDER_PATH_MAX,
+  folderKey,
+  rebased,
+  segmentsOf,
+  type FolderOs,
+} from "@tasks/storage";
 
 /** Why a folder is not bound. */
 export type FolderReason =
@@ -152,6 +159,15 @@ export function storedForm(
   const stored = under ? ["~", ...own.slice(homeParts.length)].join(sep) : absolute;
   if (Array.from(stored).length > FOLDER_PATH_MAX) return "invalid_path";
   return { stored, absolute };
+}
+
+/** The longest project name a folder's name gives (organize's names take as many). */
+const NAME_MAX = 120;
+
+/** A folder's own name, as a project made from it is called: none for a drive or a root. */
+export function folderName(absolute: string, platform: NodeJS.Platform): string | undefined {
+  const name = pathFor(platform).basename(absolute);
+  return name === "" ? undefined : Array.from(name).slice(0, NAME_MAX).join("");
 }
 
 /** A stored path of this machine as it opens it: `~` expanded with the home. */
@@ -344,6 +360,55 @@ export async function deepestProject<P extends ProjectFolder>(
     if (best === undefined || distance < best.distance) best = { project, distance };
   });
   return best === undefined ? undefined : { project: best.project, exact: best.distance === 0 };
+}
+
+/** A folder inside the one that changed, and where it goes. */
+export interface Follower {
+  readonly kind: "project" | "task";
+  readonly owner: string;
+  readonly label: string;
+  readonly from: string;
+  readonly to: string;
+}
+
+/**
+ * What a folder change from `old` to `next` does to the folders inside the old one (`here`, every
+ * live folder on this machine, the owner's own among them):
+ * - `carry`: the old folder is gone, so it was moved, and every folder inside it moves along, as
+ *   a move in a file manager takes everything inside the folder with it;
+ * - `stay`: the old folder is still there, so the owner was given another folder and nothing was
+ *   moved: the folders inside stay where they are and are named;
+ * - `none`: no folder is inside the old one, or the change names the folder itself, one inside it
+ *   or one around it.
+ * A look that does not answer in time counts as there: nothing moves on a guess.
+ */
+export async function moveOf(
+  old: string | undefined,
+  next: Folder,
+  self: { readonly kind: "project" | "task"; readonly owner: string },
+  here: readonly { kind: "project" | "task"; owner: string; label: string; path: string }[],
+  facts: Pick<BindFacts, "home" | "platform">,
+): Promise<{ kind: "carry" | "stay" | "none"; inside: Follower[] }> {
+  if (old === undefined) return { kind: "none", inside: [] };
+  const os = osOf(facts.platform);
+  const inside: Follower[] = [];
+  for (const folder of here) {
+    if (folder.kind === self.kind && folder.owner === self.owner) continue;
+    const to = carriedTo(folder.path, old, next.stored, os);
+    if (to === undefined || to === folder.path) continue;
+    inside.push({ ...folder, from: folder.path, to });
+  }
+  if (inside.length === 0) return { kind: "none", inside };
+  const gone = await bounded(async () => {
+    try {
+      await stat(expanded(old, facts.home, facts.platform));
+      return false;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      return code === "ENOENT" || code === "ENOTDIR";
+    }
+  });
+  return { kind: gone === true ? "carry" : "stay", inside };
 }
 
 /**

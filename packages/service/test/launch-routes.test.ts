@@ -7,10 +7,18 @@
 // the runtime's quoting into one command line and the child's parsing back (CreateProcess). The
 // link route's opener is a recording spawner: no real link is opened, no real agent starts, and
 // no real agent home is read. Fixture data and temporary folders only.
-import { chmodSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { envVar, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
+import { envVar, FOLDER_MARKER, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
 import type { RpcSession } from "@tasks/bridge/protocol";
 import {
   NOTE_LINE,
@@ -783,6 +791,75 @@ describe("[A4.5.routes.folders] a launch opens in the task's folder, else its pr
       expect(r.lab.folders.size).toBe(started);
       expect(opened).toHaveLength(links);
       expect((await elsewhere(undefined)).copy?.split("\n")[4]).toBe("Folder: on mira-laptop");
+    },
+  );
+});
+
+describe("[A4.5.routes.markers] a launch reads its folder's marker before an agent starts", () => {
+  test(
+    "its own marker opens; a marker gone or another's opens nothing and says whose, until the person opens it anyway; a folder that takes none opens",
+    { timeout: 300_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("routes-markers");
+      await addProject(r, "Portal", "portal-checkout");
+      const inProject = await addTask(r, "Fixture marked project", undefined, "Portal");
+      const marker = join(r.lab.work, "portal-checkout", FOLDER_MARKER);
+      // Setting the folder marked it: the IDs only, no task text.
+      const held = readFileSync(join(marker, "owners.json"), "utf8");
+      expect(held).toContain(r.lab.spaceId);
+      expect(held).not.toContain("Fixture");
+      expect(readFileSync(join(marker, ".gitignore"), "utf8")).toBe("*\n");
+
+      // The checkout is moved aside, and an unrelated one is made at the same path.
+      renameSync(join(r.lab.work, "portal-checkout"), join(r.lab.work, "portal-aside"));
+      mkdirSync(join(r.lab.work, "portal-checkout"));
+      const started = r.lab.folders.size;
+      const missing = errorOf(
+        await open(r, { task: inProject.ref, instance: "claude" }).catch((e: unknown) => e),
+      );
+      expect(missing).toMatchObject({
+        code: "invalid_input",
+        message: expect.stringContaining("marker is missing") as unknown,
+        data: { field: "task", reason: "marker_missing", of: "project" },
+      });
+      expect(r.lab.folders.size).toBe(started);
+      // The person opens it anyway: the folder is marked as the project's, and opens.
+      const anyway = (await open(r, { task: inProject.ref, instance: "claude", mark_folder: true }))
+        .result.launch;
+      await waitFor(() => r.lab.folders.get(anyway.id), LONG_MS, "the terminal's folder");
+      expect(readFileSync(join(marker, "owners.json"), "utf8")).toContain(r.lab.spaceId);
+
+      // A project's folder with its own marker opens.
+      await addProject(r, "Billing", "billing");
+      const billing = await addTask(r, "Fixture billing", undefined, "Billing");
+      const ours = (await open(r, { task: billing.ref, instance: "claude" })).result.launch;
+      await waitFor(() => r.lab.folders.get(ours.id), LONG_MS, "the terminal's folder");
+
+      // A task's own folder whose marker names another project of the space.
+      const own = await addTask(r, "Fixture own folder", "shared-folder");
+      writeFileSync(
+        join(r.lab.work, "shared-folder", FOLDER_MARKER, "owners.json"),
+        readFileSync(join(r.lab.work, "billing", FOLDER_MARKER, "owners.json"), "utf8"),
+      );
+      const other = errorOf(
+        await open(r, { task: own.ref, instance: "claude-link" }).catch((e: unknown) => e),
+      );
+      expect(other).toMatchObject({
+        data: { reason: "marker_other", of: "task", owners: ["the project Billing"] },
+      });
+      expect(opened).toHaveLength(0);
+      // Copy starts nothing, so it reads no marker.
+      expect((await open(r, { task: own.ref })).result.launch.state).toBe("dispatched");
+
+      // A folder that takes no marker opens as before.
+      mkdirSync(join(r.lab.work, "unmarkable"));
+      writeFileSync(join(r.lab.work, "unmarkable", FOLDER_MARKER), "the person's own file");
+      const plain = await addTask(r, "Fixture unmarkable", "unmarkable");
+      const free = (await open(r, { task: plain.ref, instance: "claude" })).result.launch;
+      await waitFor(() => r.lab.folders.get(free.id), LONG_MS, "the terminal's folder");
+      const events = readLog(r.lab.home).filter((e) => e["ev"] === "launch.folder_unmarked");
+      expect(events.map((e) => e["reason"])).toEqual(["marker_missing", "marker_other"]);
     },
   );
 });
