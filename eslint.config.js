@@ -172,6 +172,8 @@ export default defineConfig([
     "**/coverage/",
     "packages/contracts/generated/",
     "docs/agents/",
+    "tests/e2e/results/",
+    "tests/e2e/report/",
   ]),
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,

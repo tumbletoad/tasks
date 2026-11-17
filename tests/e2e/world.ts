@@ -20,6 +20,7 @@ import {
   within,
   type ServiceJson,
 } from "../../packages/service/test/harness.ts";
+import { REDEEM_PER_MINUTE } from "../../packages/service/src/http/auth.ts";
 import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { checkedDriver, seedMira } from "../../packages/testkit/src/index.ts";
@@ -35,8 +36,6 @@ const OS =
 /** Generous bounds: a loaded machine must not fail a test that is only slow. */
 export const SLOW_MS = 120_000;
 
-/** The service's redeem limit (A2 3.8.3: 10 codes a minute). */
-const REDEEMS_PER_WINDOW = 10;
 const REDEEM_WINDOW_MS = 60_000;
 
 export interface SpaceInfo {
@@ -236,10 +235,26 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
 
     let logs = 0;
     let ops = 0;
-    /** When this world's sign-in URLs were handed out, for the service's redeem limit. */
+    /** For each of this world's redeems, a time at or after the service counted it. */
     const redeems: number[] = [];
     /** The world's own sign-in for `machine`, made once. */
     let token: string | undefined;
+    // The service redeems only so many codes a minute, and a worker's tests sign in more often
+    // than that when they run fast: every redeem, the page's and the world's own, waits for room.
+    // A page redeems its code some time after its URL is handed out, however slow the machine,
+    // but before the test asks for the next sign-in (it waits for the signed-in page first). So
+    // the last redeem counts as made now, and the window is counted from there, not from a guess.
+    const roomToRedeem = async (): Promise<void> => {
+      if (redeems.length > 0) redeems[redeems.length - 1] = Date.now();
+      for (;;) {
+        const now = Date.now();
+        while (redeems.length > 0 && (redeems[0] ?? 0) <= now - REDEEM_WINDOW_MS) redeems.shift();
+        if (redeems.length < REDEEM_PER_MINUTE) break;
+        const wait = (redeems[0] ?? now) + REDEEM_WINDOW_MS - now + 1;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+      redeems.push(Date.now());
+    };
     return {
       origin,
       mira: { id: opened.space.spaceId, name: opened.space.name },
@@ -249,16 +264,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       spare,
       portal,
       signInUrl: async (to) => {
-        // The service redeems at most 10 codes a minute (A2 3.8.3). A worker's tests sign in
-        // more often than that when they run fast: wait for room rather than be signed out.
-        const now = Date.now();
-        while (redeems.length > 0 && (redeems[0] ?? 0) <= now - REDEEM_WINDOW_MS) redeems.shift();
-        if (redeems.length >= REDEEMS_PER_WINDOW) {
-          const wait = (redeems[0] ?? now) + REDEEM_WINDOW_MS + 250 - now;
-          await new Promise((resolve) => setTimeout(resolve, wait));
-          redeems.shift();
-        }
-        redeems.push(Date.now());
+        await roomToRedeem();
         const minted = (await user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
           code: string;
           port: number;
@@ -268,11 +274,13 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       machine: async (key, value) => {
         const port = Number(new URL(origin).port);
         if (token === undefined) {
-          redeems.push(Date.now());
+          await roomToRedeem();
           const minted = (await user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
             code: string;
           };
           const signed = await post(port, "/api/v1/auth/redeem", { code: minted.code });
+          if (signed.status !== 200)
+            throw new Error(`auth/redeem answered ${String(signed.status)}`);
           token = (JSON.parse(signed.body) as { token: string }).token;
         }
         const reply = await post(port, "/api/v1/machine/pref", { key, value }, { token });
