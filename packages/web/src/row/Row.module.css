@@ -1,8 +1,8 @@
 /*
  * The task row (A5 3.6, 3.20): marker 16 px, check 24 px, title and summary (flex), then fixed
- * columns: due 64, age 40, priority 28, sources 76, folder 24, star 24, launch 30. Widths are fixed,
- * so columns line up on every row. Narrow lists drop sources, folder, age and priority, in that
- * order; due, star and launch never drop. Hover gives a subtle background and nothing else. Tokens
+ * columns: due 64, age 40, priority 28, effort 24, sources 76, folder 24, star 24, launch 30. Widths
+ * are fixed, so columns line up on every row. Narrow lists drop sources, folder, age, and priority
+ * with effort, in that order; due, star and launch never drop. Hover gives a subtle background and nothing else. Tokens
  * only.
  */
 
@@ -302,7 +302,7 @@
 /* The fixed columns, on the title line. */
 .slots {
   display: grid;
-  grid-template-columns: 64px 40px 28px 76px 24px 24px 30px;
+  grid-template-columns: 64px 40px 28px 24px 76px 24px 24px 30px;
   align-items: center;
   column-gap: 6px;
   height: 24px;
@@ -316,6 +316,7 @@
 .row[data-expanded="true"] .due,
 .row[data-expanded="true"] .age,
 .row[data-expanded="true"] .prio,
+.row[data-expanded="true"] .effort,
 .row[data-expanded="true"] .sources,
 .row[data-expanded="true"] .folder {
   visibility: hidden;
@@ -399,6 +400,15 @@
   border-radius: 999px;
   box-shadow: inset 0 0 0 1px var(--k-control);
   color: var(--k-text-2);
+}
+
+/* Effort is a quiet fact: the scale's key in small muted type, cut when a scale's key is long. */
+.effort {
+  font-size: 0.6875rem;
+  line-height: 1.125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sources {
@@ -619,11 +629,11 @@ a.source:hover {
   }
 }
 
-/* Narrow lists drop columns: sources, then folder, then age, then priority (A5 3.6). The list is
+/* Narrow lists drop columns: sources, then folder, then age, then priority and effort (A5 3.6). The list is
    a size container, so this follows the list's width, not the window's. */
 @container (max-width: 659px) {
   .slots {
-    grid-template-columns: 64px 40px 28px 24px 24px 30px;
+    grid-template-columns: 64px 40px 28px 24px 24px 24px 30px;
   }
 
   .sources {
@@ -638,7 +648,7 @@ a.source:hover {
 
 @container (max-width: 589px) {
   .slots {
-    grid-template-columns: 64px 40px 28px 24px 30px;
+    grid-template-columns: 64px 40px 28px 24px 24px 30px;
   }
 
   .folder {
@@ -648,7 +658,7 @@ a.source:hover {
 
 @container (max-width: 549px) {
   .slots {
-    grid-template-columns: 64px 28px 24px 30px;
+    grid-template-columns: 64px 28px 24px 24px 30px;
   }
 
   .age {
@@ -658,11 +668,12 @@ a.source:hover {
 
 @container (max-width: 509px) {
   .slots {
-    grid-template-columns: 56px 24px 30px;
+    grid-template-columns: 64px 24px 30px;
     column-gap: 4px;
   }
 
-  .prio {
+  .prio,
+  .effort {
     display: none;
   }
 

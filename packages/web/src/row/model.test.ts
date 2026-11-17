@@ -349,22 +349,37 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
     return { text: say(model.due?.text), tone: model.due?.tone, tip: say(model.due?.tip) };
   };
 
-  test("due: late, today, tomorrow, within six days, later, another year; never colour alone", () => {
+  test("due: late, today, tomorrow, within six days, later, months away; never colour alone", () => {
     expect(due({ due_date: "2026-11-10" })).toEqual({
       text: "2d late",
       tone: "late",
       tip: "Due Tuesday 10 November",
     });
+    // Late by at most two digits, so it fits the column: days, weeks, then years.
+    expect(due({ due_date: "2026-08-05" }).text).toBe("99d late");
+    expect(due({ due_date: "2026-08-04" }).text).toBe("14w late");
+    expect(due({ due_date: "2024-12-13" }).text).toBe("99w late");
+    expect(due({ due_date: "2024-12-12" }).text).toBe("1y late");
     expect(due({ due_date: "2026-11-12" }).text).toBe("Today");
     expect(due({ due_date: "2026-11-13" }).text).toBe("Tomorrow");
     expect(due({ due_date: "2026-11-14" })).toMatchObject({ text: "Sat 14", tone: "soon" });
     expect(due({ due_date: "2026-11-18" })).toMatchObject({ text: "Wed 18", tone: "soon" });
     expect(due({ due_date: "2026-11-19" })).toMatchObject({ text: "19 Nov", tone: "later" });
+    // A day and month without a year read as the coming one, into the next year too; the tip
+    // names the year.
     expect(due({ due_date: "2027-01-12" })).toEqual({
-      text: "12 Jan 2027",
+      text: "12 Jan",
       tone: "later",
       tip: "Due Tuesday 12 January 2027",
     });
+    expect(due({ due_date: "2027-08-30" }).text).toBe("30 Aug");
+    // Further off, the month and the year: the day is in the tip.
+    expect(due({ due_date: "2027-09-12" })).toEqual({
+      text: "Sep 2027",
+      tone: "later",
+      tip: "Due Sunday 12 September 2027",
+    });
+    expect(due({ due_date: "2031-11-12" }).text).toBe("Nov 2031");
   });
 
   test("a timed due shows its time today and its day otherwise, in the viewer's zone", () => {
@@ -423,6 +438,19 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
         ctx("open", "area"),
       ).priority?.level;
     expect([1, 2, 3, 4, undefined].map(level)).toEqual([1, 2, 3, undefined, undefined]);
+  });
+
+  test("effort: its key as a quiet mark with a tip, in the description after priority; nothing without one or once finished", () => {
+    const model = (fields: Partial<TaskRow>, view: RowView = "open") =>
+      renderRow(row(task({ title: "t", ...fields })), ctx(view, "area"));
+    const m = model({ effort: "M", priority: 2 });
+    expect(m.effort?.key).toBe("M");
+    expect(say(m.effort?.tip)).toBe("Effort M");
+    const described = m.description.map(say);
+    expect(described.indexOf("effort M")).toBe(described.indexOf("priority 2") + 1);
+    expect(model({}).effort).toBeUndefined();
+    expect(model({ effort: "" }).effort).toBeUndefined();
+    expect(model({ effort: "L", lifecycle: "completed" }, "completed").effort).toBeUndefined();
   });
 
   test("the launch tile: the first pinned instance, its receipts, Copy only and the blocks", () => {

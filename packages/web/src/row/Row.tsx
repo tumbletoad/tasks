@@ -55,6 +55,7 @@ const styles = classes(css, [
   "due",
   "age",
   "prio",
+  "effort",
   "sources",
   "source",
   "more",
@@ -120,6 +121,7 @@ function Slots({
     <div className={styles.slots}>
       <span
         className={styles.due}
+        data-part="due"
         data-tone={model.due?.tone}
         data-tip={model.due === undefined ? undefined : say(model.due.tip)}
       >
@@ -134,6 +136,13 @@ function Slots({
       </span>
       <span className={styles.prio} data-level={model.priority?.level}>
         {model.priority === undefined ? null : say(model.priority.text)}
+      </span>
+      <span
+        className={styles.effort}
+        data-part="effort"
+        data-tip={model.effort === undefined ? undefined : say(model.effort.tip)}
+      >
+        {model.effort?.key}
       </span>
       <span className={styles.sources}>
         {model.sources.shown.map((source, i) => {

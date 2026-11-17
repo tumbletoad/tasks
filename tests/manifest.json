@@ -4050,6 +4050,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.6.e2e.row-due-effort",
+      "title": "In Chromium and Firefox against the real service, in both themes at 1,440, 1,280 and 390 px: every form of a due date (tomorrow, a weekday, a day, the next year's day, a month and year, late in days, weeks and years) fits its column as measured in the page, and a task's effort shows as its key with a tip, hidden where the list is narrow",
+      "source": "A5 3.6",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.e2e.equals-filter",
       "title": "In Chromium and Firefox against the real service: a search with p=3 reads it as a filter, so a change of a result's priority offers a refresh, and Add as a task takes only the words",
       "source": "A5 3.13, A3 3.9.2",

@@ -51,6 +51,8 @@ const SAMPLE = {
   date: "Friday 13 November",
   time: "10:30",
   days: 2,
+  weeks: 15,
+  years: 2,
   n: 3,
   level: 1,
   person: "Tom Haas",
