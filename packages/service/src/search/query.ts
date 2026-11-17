@@ -21,34 +21,23 @@
 //
 // Errors are `invalid_input` with fixed sentences: no word of the query reaches a message (A3 3.5).
 // A suggestion from this module's own vocabulary goes into the hint.
-import { AppError, normaliseLine } from "@tasks/contracts";
+import {
+  AppError,
+  filterOf,
+  normaliseLine,
+  QUERY_KEYS,
+  type QueryKey,
+  type QueryOp,
+} from "@tasks/contracts";
 import { unsupported } from "../ops/errors.ts";
 
 export const QUERY_LIMITS = { length: 500, terms: 20 } as const;
 
-export const KEYS = [
-  "status",
-  "area",
-  "project",
-  "p",
-  "effort",
-  "due",
-  "is",
-  "has",
-  "source",
-  "by",
-  "created",
-  "updated",
-  "completed",
-  "on",
-  "folder",
-  "id",
-  "sort",
-] as const;
-export type Key = (typeof KEYS)[number];
+export const KEYS = QUERY_KEYS;
+export type Key = QueryKey;
 
-export const OPS = [":", "<", "<=", ">", ">="] as const;
-export type Op = (typeof OPS)[number];
+export const OPS = [":", "<", "<=", ">", ">="] as const satisfies readonly QueryOp[];
+export type Op = QueryOp;
 
 const COMPARISONS: readonly Op[] = OPS;
 const EQUALS: readonly Op[] = [":"];
@@ -294,7 +283,6 @@ function checkValue(key: Key, op: Op, value: string): void {
 // Parsing
 
 const SPACE = /\s/u;
-const FILTER = /^([A-Za-z]+)(<=|>=|:|<|>|=)/;
 
 /** A quoted string from the quote at `at`: its text and the index after its closing quote. */
 function readQuoted(text: string, at: number): [string, number] {
@@ -340,17 +328,14 @@ function tokens(text: string): Token[] {
     let end = i;
     while (end < text.length && !SPACE.test(text[end] ?? "")) end += 1;
     const word = text.slice(i, end);
-    const filter = FILTER.exec(word);
-    const key = lower(filter?.[1] ?? "");
-    const known = (KEYS as readonly string[]).includes(key);
-    // `p=3` is how many other tools write `p:3`. Behind any other word `=` is text, as in `x=1`.
-    if (filter !== null && (filter[2] !== "=" || known)) {
-      const op = (filter[2] === "=" ? ":" : filter[2]) as Op;
-      if (!known) {
+    const filter = filterOf(word);
+    if (filter !== undefined) {
+      const { key, op } = filter;
+      if (!(KEYS as readonly string[]).includes(key)) {
         const found = suggest(key, KEYS, KEY_ALIASES);
         throw queryProblem("The query has an unknown key", didYouMean(found), found);
       }
-      const at = i + filter[0].length;
+      const at = i + filter.length;
       let value: string;
       if (text[at] === '"') {
         [value, i] = readQuoted(text, at);

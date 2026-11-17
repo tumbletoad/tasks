@@ -1711,7 +1711,6 @@ function draftOps(
   if (toInbox(draft, agent)) create.inbox = true;
   // `return`, the default, is A1's: an active match takes the draft's log entry, nothing else.
   if (draft["on_existing"] === "add_sources") create.link_sources = true;
-  // A new task beside finished ones; refused against an active one (A3 3.4.5: invalid_input).
   if (draft["on_existing"] === "create_new") create.dedupe = "new";
   for (const key of ["summary", "status", "effort", "waiting_on", "context"] as const) {
     if (typeof draft[key] === "string") create[key] = draft[key];

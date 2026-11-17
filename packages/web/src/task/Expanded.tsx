@@ -18,6 +18,7 @@ import type { Instance, Receipt } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useT } from "../i18n/intl.tsx";
+import type { FolderRefusal } from "../row/launch.ts";
 import type { AskField, RowActions } from "../row/actions.ts";
 import {
   BulbIcon,
@@ -63,6 +64,8 @@ export interface ExpandedProps {
   readonly receipts: readonly Receipt[];
   readonly instances: readonly Instance[];
   readonly actions: RowActions;
+  /** The last Open of this task, refused on its folder; none once an Open went through. */
+  readonly refused?: FolderRefusal | undefined;
 }
 
 /** Two texts a person reads as the same: case, spacing and a closing full stop aside. */
@@ -170,9 +173,12 @@ function keyRef(kind: string, key: string): string | undefined {
 function PlaceLine({
   task,
   detail,
+  refused,
 }: {
   readonly task: TaskRow;
   readonly detail: Detail | undefined;
+  /** An Open refused on the folder since the detail was read: what it found is the newer word. */
+  readonly refused: FolderRefusal | undefined;
 }) {
   const t = useT();
   const say = useToast();
@@ -187,9 +193,19 @@ function PlaceLine({
       },
     );
   };
-  if (folder !== undefined && "path" in folder) {
-    const missing = folder.missing === true;
-    const repo = folder.repo === undefined ? undefined : t("place.repo", { repo: folder.repo });
+  const shown =
+    refused?.folder !== undefined
+      ? { path: refused.folder, words: t("place.refused", { reason: refused.reason }) }
+      : folder !== undefined && "path" in folder
+        ? {
+            path: folder.path,
+            words: folder.missing === true ? t("place.missing") : undefined,
+            repo: folder.repo === undefined ? undefined : t("place.repo", { repo: folder.repo }),
+          }
+        : undefined;
+  if (shown !== undefined) {
+    const missing = shown.words !== undefined;
+    const repo = "repo" in shown ? shown.repo : undefined;
     return (
       <li className={styles.link} data-part="place" data-state={missing ? "missing" : "here"}>
         <span className={styles.icon} aria-hidden="true">
@@ -197,14 +213,14 @@ function PlaceLine({
         </span>
         <span data-fact="">
           <span className={`${styles.mono} ${missing ? styles.muted : ""}`} dir="ltr">
-            {folder.path}
+            {shown.path}
           </span>
           {repo === undefined ? null : (
             <span className={styles.repo} data-tip={t("place.repoTip")}>
               {repo}
             </span>
           )}
-          {missing ? <span className={styles.muted}> {t("place.missing")}</span> : null}
+          {missing ? <span className={styles.muted}> {shown.words}</span> : null}
         </span>
         <span className={styles.acts}>
           <button
@@ -213,7 +229,7 @@ function PlaceLine({
             aria-label={t("place.copy")}
             data-tip={t("place.copy")}
             onClick={() => {
-              copy(folder.path);
+              copy(shown.path);
             }}
           >
             <CopyIcon />
@@ -314,10 +330,14 @@ function Context({
   );
 }
 
-export function Expanded({ task, receipts, instances, actions }: ExpandedProps) {
+export function Expanded({ task, receipts, instances, actions, refused }: ExpandedProps) {
   const t = useT();
   const clock = useClock(false);
   const { detail, failed } = useDetail(task.id);
+  // A refusal holds until the detail is read again: that read says where the folder stands then.
+  const [held, setHeld] = useState<{ refused: FolderRefusal; detail: Detail | undefined }>();
+  if (refused !== held?.refused) setHeld(refused === undefined ? undefined : { refused, detail });
+  const fresh = held !== undefined && held.refused === refused && held.detail === detail;
   const sources: readonly SourceOutput[] =
     detail?.sources ??
     (task.sources ?? []).map((s) => ({
@@ -365,7 +385,7 @@ export function Expanded({ task, receipts, instances, actions }: ExpandedProps) 
               onAsk={askOn(ask, task, "sources")}
             />
           ))}
-          <PlaceLine task={task} detail={detail} />
+          <PlaceLine task={task} detail={detail} refused={fresh ? refused : undefined} />
           {learnings.map((learning, i) => (
             <li
               key={`learning:${String(i)}`}

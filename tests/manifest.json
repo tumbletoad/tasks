@@ -1064,6 +1064,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.receipt.folder-reason",
+      "title": "A launch whose folder no longer resolved right before it started keeps the folder's own reason, and its receipt says it in the words of Open's refusal; any other reason reads as its code",
+      "source": "A4 3.3, A4 3.9.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.5.error-retry-words",
+      "title": "An error that asks a person to try again is retryable, and one that is not retryable never asks it: the storage failures' sentences and a space the service does not serve now",
+      "source": "A3 3.5",
+      "owner": "M1",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.write.receipts",
       "title": "A repeated request ID returns the stored result for applied results and no-ops, a different intent returns REQUEST_ID_REUSED, a no-op retried after the state changed replays the no-op; every decided outcome has one receipt in its request's transaction, keyed by writer scope, and undecided requests store none",
       "source": "A1 3.7, A1 3.8 (X12), A3 3.2.3, A3 3.7.9, A7 3.8 M1.05",
@@ -3975,6 +3991,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.6.e2e.row-due-effort",
+      "title": "In Chromium and Firefox against the real service, in both themes at 1,440, 1,280 and 390 px: every form of a due date (tomorrow, a weekday, a day, the next year's day, a month and year, late in days, weeks and years) fits its column as measured in the page, and a task's effort shows as its key with a tip, hidden where the list is narrow",
+      "source": "A5 3.6",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.e2e.equals-filter",
+      "title": "In Chromium and Firefox against the real service: a search with p=3 reads it as a filter, so a change of a result's priority offers a refresh, and Add as a task takes only the words",
+      "source": "A5 3.13, A3 3.9.2",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-10.e2e.search",
       "title": "In Chromium and Firefox against the real service: / starts a search and the field says so, results are the one list (expand into the URL, check-off with the toast and Ctrl+Z, the row staying checked after its hold), finished tasks are a group of their own, a search with words offers to add it as a task, and Escape returns to the view with the draft as it was",
       "source": "A5 3.13, A7 3.12 M5.10",
@@ -4640,7 +4672,7 @@
     },
     {
       "id": "A1.5.write.dedupe",
-      "title": "task.create upserts by the keys of its draft's sources: an active match returns existing with matched_by and takes only the draft's entries, link_sources links its sources, several active matches are ambiguous, a task finished within tasks.dedupe_window_days returns existing with its lifecycle and an older one does not, dedupe new refuses an active match and none never matches, a removed link or a deleted task never matches, the request's own links and lifecycle changes count, a change to a matched draft's fields is left out, and a request that returned existing, retried after the window, replays existing",
+      "title": "task.create upserts by the keys of its draft's sources: an active match returns existing with matched_by and takes only the draft's entries, link_sources links its sources, several active matches are ambiguous, a task finished within tasks.dedupe_window_days returns existing with its lifecycle and an older one does not, dedupe new always creates and leaves a key an active task holds with that task, none never matches, a removed link or a deleted task never matches, the request's own links and lifecycle changes count, a change to a matched draft's fields is left out, and a request that returned existing, retried after the window, replays existing",
       "source": "A1 3.6, A1 3.8, A1 5, A3 3.4.5, A3 3.11.1, A7 3.10 M3.06",
       "owner": "M3",
       "kind": "ci",

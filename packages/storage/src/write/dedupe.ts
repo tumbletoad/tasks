@@ -296,6 +296,19 @@ export class Dedupe {
     return { ...found, held };
   }
 
+  /**
+   * A draft that asks for a new task whatever its keys match (`dedupe: new`): each key an active
+   * task holds goes to it without the key, so every key keeps one live holder.
+   */
+  held(keys: readonly string[]): Map<string, Id<"t">> {
+    const held = new Map<string, Id<"t">>();
+    for (const key of keys) {
+      const [holder] = this.match([key], false).active;
+      if (holder !== undefined) held.set(key, holder);
+    }
+    return held;
+  }
+
   /** The request links `task` to a source of `key` without the key (`decide`'s `held`). */
   plain(key: string, task: Id<"t">): void {
     const tasks = this.#plain.get(key) ?? new Set();

@@ -132,6 +132,9 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
         hasText: `Folder not found on this computer: ${set.folder}. Nothing was started.`,
       });
       await expect(said).toBeVisible({ timeout: SLOW_MS });
+      // The expanded task's folder line says the same at once, not "here" until a reload.
+      await expect(line).toHaveAttribute("data-state", "missing");
+      await expect(line).toContainText(`${set.folder} Not found on this computer`);
       expect(world.terminal()).toHaveLength(before);
       await expect(row.locator('[data-part="tile"]')).toHaveAttribute("data-state", "ready");
       expect(await violations(page)).toEqual([]);
