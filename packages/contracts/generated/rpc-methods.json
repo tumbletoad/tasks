@@ -2390,6 +2390,11 @@
                   "minimum": 1,
                   "type": "integer"
                 },
+                "more": {
+                  "const": true,
+                  "description": "It has more tasks than total says",
+                  "type": "boolean"
+                },
                 "name": {
                   "description": "Section",
                   "enum": [
@@ -2497,11 +2502,18 @@
                     "type": "object"
                   },
                   "type": "array"
+                },
+                "total": {
+                  "description": "Its tasks not listed in an earlier section",
+                  "maximum": 1000000000,
+                  "minimum": 0,
+                  "type": "integer"
                 }
               },
               "required": [
                 "name",
-                "tasks"
+                "tasks",
+                "total"
               ],
               "type": "object"
             },
@@ -5042,6 +5054,11 @@
                       "minimum": 1,
                       "type": "integer"
                     },
+                    "more": {
+                      "const": true,
+                      "description": "It has more tasks than total says",
+                      "type": "boolean"
+                    },
                     "name": {
                       "description": "Section",
                       "enum": [
@@ -5149,11 +5166,18 @@
                         "type": "object"
                       },
                       "type": "array"
+                    },
+                    "total": {
+                      "description": "Its tasks not listed in an earlier section",
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "integer"
                     }
                   },
                   "required": [
                     "name",
-                    "tasks"
+                    "tasks",
+                    "total"
                   ],
                   "type": "object"
                 },

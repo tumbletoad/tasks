@@ -1,5 +1,7 @@
 // Shared set-up for the write-path tests: a fixture space with a writer, three actors, two areas
 // and a project, and a history checker that every test runs on the result. Fixture text only.
+import { cpSync } from "node:fs";
+import { basename, join } from "node:path";
 import { expect } from "vitest";
 import type { Connection } from "../src/driver.ts";
 import { newId, type Id } from "../src/ids.ts";
@@ -7,6 +9,7 @@ import type { SchemaStep } from "../src/schema.ts";
 import { rebuildSearchIndex } from "../src/search/documents.ts";
 import { hasSearchTables } from "../src/search/tables.ts";
 import { openSpace, type OpenedSpace, type OpenSpaceOptions } from "../src/space.ts";
+import type { CheckedDriver } from "../src/startup-check.ts";
 import { CHILD_FIELDS, TASK_FIELDS, type TaskField } from "../src/write/fields.ts";
 import { isPosition } from "../src/write/positions.ts";
 import {
@@ -65,19 +68,54 @@ export function steppingClock(): () => number {
  * of times: a flush costs about 4 ms on GitHub's Windows runner and far more while other tests
  * flush beside it. What survives a crash is the crash harness's subject (A7 3.18.1), at FULL.
  */
-export async function writeFixture(
-  parent: string,
-  options: { steps?: readonly SchemaStep[]; flush?: boolean } = {},
-): Promise<Fixture> {
-  const created = await createFixtureSpace(parent, "mira", {}, options.steps);
-  const checked = await checkedDriver();
-  const openAt = (folder: string, open: OpenSpaceOptions): OpenedSpace =>
+export async function writeFixture(parent: string, options: FixtureOptions = {}): Promise<Fixture> {
+  return openFixture(await seedFixture(parent, options), options);
+}
+
+interface FixtureOptions {
+  steps?: readonly SchemaStep[];
+  flush?: boolean;
+}
+
+/** A closed fixture space and the IDs its rows were written with. */
+interface FixtureSeed {
+  folder: string;
+  spaceId: Id<"sp">;
+  human: Id<"ac">;
+  ids: { codex: Id<"ac">; claude: Id<"ac">; lumen: Id<"a">; home: Id<"a">; project: Id<"p"> };
+}
+
+/**
+ * Fixture spaces for a property that needs a fresh one per run: the space is made once, and each
+ * call opens a copy of its files in a fresh folder of `make`. Making a space runs every schema
+ * step and waits out a scanner on its folder's rename, which on a Windows runner costs far more
+ * than the run that uses it.
+ */
+export function fixtureCopies(
+  make: () => string,
+  options: FixtureOptions = {},
+): () => Promise<Fixture> {
+  let seeded: Promise<FixtureSeed> | undefined;
+  return async () => {
+    seeded ??= seedFixture(make(), options);
+    const seed = await seeded;
+    const folder = join(make(), basename(seed.folder));
+    cpSync(seed.folder, folder, { recursive: true });
+    return openFixture({ ...seed, folder }, options);
+  };
+}
+
+const opener =
+  (checked: CheckedDriver, options: FixtureOptions) =>
+  (folder: string, open: OpenSpaceOptions): OpenedSpace =>
     options.steps === undefined
       ? openSpace(checked, folder, open)
       : openSpaceAt(checked, folder, open, options.steps);
-  const opened = openAt(created.folder, { role: "writer" });
+
+async function seedFixture(parent: string, options: FixtureOptions): Promise<FixtureSeed> {
+  const created = await createFixtureSpace(parent, "mira", {}, options.steps);
+  const opened = opener(await checkedDriver(), options)(created.folder, { role: "writer" });
   const conn = opened.conn;
-  if (options.flush === false) conn.pragma("synchronous", "OFF");
   const ids = {
     codex: newId("ac"),
     claude: newId("ac"),
@@ -85,6 +123,25 @@ export async function writeFixture(
     home: newId("a"),
     project: newId("p"),
   };
+  try {
+    writeFixtureRows(conn, created.actors.human, created.space.spaceId, ids);
+  } finally {
+    conn.close();
+  }
+  return {
+    folder: created.folder,
+    spaceId: created.space.spaceId,
+    human: created.actors.human,
+    ids,
+  };
+}
+
+function writeFixtureRows(
+  conn: Connection,
+  human: Id<"ac">,
+  spaceId: Id<"sp">,
+  ids: FixtureSeed["ids"],
+): void {
   conn.transaction("immediate", () => {
     const actor = conn.prepare(
       "INSERT INTO actors (id, kind, label, instance_id, routine_id, created_at) " +
@@ -101,34 +158,42 @@ export async function writeFixture(
       slug: "lumen",
       title: "Lumen",
       position: "a0",
-      by: created.actors.human,
+      by: human,
     });
     area.run({
       id: ids.home,
       slug: "home",
       title: "Home",
       position: "a1",
-      by: created.actors.human,
+      by: human,
     });
     conn
       .prepare(
         "INSERT INTO projects (id, area_id, slug, title, position, created_at, created_by, " +
           "created_seq, version) VALUES ($id, $area, 'portal', 'Portal', 'a0', 0, $by, 0, 0)",
       )
-      .run({ id: ids.project, area: ids.lumen, by: created.actors.human });
+      .run({ id: ids.project, area: ids.lumen, by: human });
     const alias = conn.prepare(
       "INSERT INTO aliases (namespace, alias, entity_kind, entity_id, created_at) " +
         "VALUES ($namespace, $alias, $kind, $id, 0)",
     );
     alias.run({ namespace: "planning", alias: LEGACY.alias, kind: "task", id: LEGACY.task });
-    alias.run({ namespace: "ref_prefix", alias: "MI", kind: "space", id: created.space.spaceId });
+    alias.run({ namespace: "ref_prefix", alias: "MI", kind: "space", id: spaceId });
     alias.run({ namespace: "slug", alias: "old-portal", kind: "project", id: ids.project });
     // The rows above went in beside the writer, so the index learns of them as a migration's
     // rebuild would.
     if (hasSearchTables(conn)) rebuildSearchIndex(conn);
   });
+}
+
+async function openFixture(seed: FixtureSeed, options: FixtureOptions): Promise<Fixture> {
+  const { ids, folder, spaceId } = seed;
+  const checked = await checkedDriver();
+  const openAt = opener(checked, options);
+  const opened = openAt(folder, { role: "writer" });
+  if (options.flush === false) opened.conn.pragma("synchronous", "OFF");
   let writer = SpaceWriter.open(opened, { machine: MACHINE, now: steppingClock() });
-  const reader = openSpace(checked, created.folder, { role: "reader" }).conn;
+  const reader = openSpace(checked, folder, { role: "reader" }).conn;
   const credential = (id: Id<"ac">, kind: "human" | "agent", scope: string): Credential => ({
     scope_id: scope,
     principal_id: id,
@@ -138,12 +203,12 @@ export async function writeFixture(
   });
   let counter = 0;
   const fixture: Fixture = {
-    folder: created.folder,
-    spaceId: created.space.spaceId,
+    folder,
+    spaceId,
     writer,
     reopen: (writerOptions = {}) => {
       fixture.writer.close();
-      const again = openAt(created.folder, { role: "writer" });
+      const again = openAt(folder, { role: "writer" });
       if (options.flush === false) again.conn.pragma("synchronous", "OFF");
       writer = SpaceWriter.open(again, {
         machine: MACHINE,
@@ -154,7 +219,7 @@ export async function writeFixture(
       return writer;
     },
     reader,
-    human: credential(created.actors.human, "human", "cli:fixture"),
+    human: credential(seed.human, "human", "cli:fixture"),
     codex: credential(ids.codex, "agent", "grant:codex"),
     claude: credential(ids.claude, "agent", "grant:claude"),
     areas: { lumen: ids.lumen, home: ids.home },
@@ -163,7 +228,7 @@ export async function writeFixture(
     request: (actor, ops, extra = {}) => {
       counter += 1;
       return {
-        space_id: created.space.spaceId,
+        space_id: spaceId,
         request_id: `fixture-request-${String(counter).padStart(6, "0")}`,
         actor,
         ops,

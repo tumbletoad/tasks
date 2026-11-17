@@ -157,9 +157,10 @@ function statusParts(result: Status, bound?: boolean): Part[] {
   for (const section of result.sections ?? []) {
     parts.push({
       data: true,
+      total: section.total,
       // A task is listed once, in its first section: the count says where the rest are.
       title: (kept, total) =>
-        `${section.name} (${String(kept)} of ${String(total)}${section.above === undefined ? "" : `, ${String(section.above)} listed above`}):`,
+        `${section.name} (${String(kept)} of ${String(total)}${section.more === true ? "+" : ""}${section.above === undefined ? "" : `, ${String(section.above)} listed above`}):`,
       units: section.tasks.map((row) => [`  ${rowLine(row)}`]),
     });
   }

@@ -453,6 +453,36 @@ describe("[A2.3.6.ops.request-path] op/call and op/list", () => {
     expect(sections[0]?.tasks.map((task) => task.id)).toContain(id);
   });
 
+  test("a status section counts all its tasks, not the eight it lists, and says when its read stopped short", async () => {
+    const s = await session("cli-interactive");
+    const add = async (n: number, due: string) => {
+      for (let done = 0; done < n; done += 25) {
+        const tasks = Array.from({ length: Math.min(25, n - done) }, (_, i) => ({
+          title: `Fixture counted ${due} ${String(done + i)}`,
+          due,
+        }));
+        await call(s, "task.add", { tasks, request_id: rid() });
+      }
+    };
+    const weekOf = async () =>
+      SpaceStatusResult.parse(await call(s, "space.status", { include: ["week"] })).sections?.[0];
+    // The tests above leave a few tasks due this week.
+    const before = (await weekOf())?.total ?? 0;
+    expect(before).toBeLessThan(8);
+    await add(12, "+3d");
+    const week = await weekOf();
+    expect(week?.tasks).toHaveLength(8);
+    expect(week?.total).toBe(before + 12);
+    expect(week?.more).toBeUndefined();
+    // Exactly as many as the read takes: all counted, none past it.
+    await add(48 - before - 12, "+4d");
+    const full = await weekOf();
+    expect(full).toMatchObject({ total: 48 });
+    expect(full?.more).toBeUndefined();
+    await add(1, "+4d");
+    expect(await weekOf()).toMatchObject({ total: 48, more: true });
+  }, 120_000);
+
   test("the user-only space verbs refuse the script and agent classes", async () => {
     for (const [cls, env] of [
       ["cli-script", {}],
@@ -521,20 +551,16 @@ describe("[A3.3.4.add.upsert] task.add upserts by source key (A3 3.4.5, A1 3.6)"
     expect(read.task.log).toHaveLength(1);
     expect(read.task.title).toBe("Fixture upsert task");
 
-    // create_new against an active match: invalid_input, so a refresh never makes two.
-    const refused = await call(
-      s,
-      "task.add",
-      {
-        tasks: [{ title: "Fixture duplicate", sources: [ticket(1)], on_existing: "create_new" }],
-        request_id: rid(),
-      },
-      mira,
-    ).catch((e: unknown) => e);
-    expect(errorOf(refused)).toMatchObject({
-      code: "invalid_input",
-      data: { cause: "VALIDATION_FAILED", op: 0, field: "dedupe" },
-    });
+    // create_new against an active match: a new task, and the key stays with the task that held
+    // it, so a refresh without create_new still finds that one.
+    const split = await add([
+      { title: "Fixture split off", sources: [ticket(1)], on_existing: "create_new" },
+    ]);
+    expect(split.tasks[0]).toMatchObject({ result: "created", lifecycle: "active" });
+    expect(split.tasks[0]?.ref).not.toBe(ref);
+    expect((await add([{ title: "Fixture upsert", sources: [ticket(1)] }])).tasks[0]).toMatchObject(
+      { result: "exists", ref },
+    );
 
     // add_sources links the draft's other source, which then finds the task too.
     const linked = await add([
