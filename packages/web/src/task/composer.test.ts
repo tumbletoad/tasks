@@ -56,7 +56,7 @@ describe("[A5.3.8.web.composer-sends] a composer sends what was typed once, and 
     expect(readNote(SPACE, "tk_1")).toBeUndefined();
   });
 
-  test("a launch's words count as gone only once its agent read them; they stay when it failed or went on without reading them", () => {
+  test("a launch's words count as gone only once its agent read them; they stay when it failed, went on without reading them, or nothing is known of them", () => {
     expect(delivered(receipt("a", "prepared", "waiting"))).toBeUndefined();
     expect(delivered(receipt("a", "prepared"))).toBeUndefined();
     expect(delivered(receipt("a", "dispatching"))).toBeUndefined();
@@ -64,11 +64,14 @@ describe("[A5.3.8.web.composer-sends] a composer sends what was typed once, and 
     expect(delivered(receipt("a", "confirmed", "waiting"))).toBeUndefined();
     expect(delivered(receipt("a", "dispatched", "read"))).toBe("reached");
     expect(delivered(receipt("a", "unknown", "read"))).toBe("reached");
-    expect(delivered(receipt("a", "failed", "waiting"))).toBe("failed");
-    expect(delivered(receipt("a", "unknown"))).toBe("failed");
-    // Its agent ended, or a restart lost them, and nobody read them.
-    expect(delivered(receipt("a", "confirmed"))).toBe("unread");
-    expect(delivered(receipt("a", "dispatched"))).toBe("unread");
+    expect(delivered(receipt("a", "failed", "waiting"))).toBe("kept");
+    expect(delivered(receipt("a", "unknown"))).toBe("kept");
+    // Its agent ended, and nobody read them.
+    expect(delivered(receipt("a", "confirmed", "unread"))).toBe("unread");
+    expect(delivered(receipt("a", "dispatched", "unread"))).toBe("unread");
+    // The service restarted since they went: whether the agent read them is not known.
+    expect(delivered(receipt("a", "confirmed"))).toBe("kept");
+    expect(delivered(receipt("a", "dispatched"))).toBe("kept");
 
     carry(SPACE, "tk_1", "l1", "Compare the listings");
     carry(SPACE, "tk_1", "l2", "Book the van");
@@ -84,10 +87,10 @@ describe("[A5.3.8.web.composer-sends] a composer sends what was typed once, and 
     const done = settled(SPACE, "tk_1", [
       receipt("l1", "failed"),
       receipt("l2", "confirmed", "read"),
-      receipt("l3", "confirmed"),
+      receipt("l3", "confirmed", "unread"),
     ]);
     expect(done.map((d) => [d.words, d.delivery])).toEqual([
-      ["Compare the listings", "failed"],
+      ["Compare the listings", "kept"],
       ["Book the van", "reached"],
       ["Ask about parking", "unread"],
     ]);

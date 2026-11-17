@@ -53,18 +53,19 @@ export function keepNote(space: string, task: string, note: NoteRequest | undefi
 
 /**
  * Where a launch's words are, now that Tasks holds them for its agent: `reached` once the agent
- * read them, `failed` when the launch failed or the service lost track of it with them unread,
- * `unread` when the launch went on without its agent ever reading them (it ended, or a restart
- * of the service lost them), undefined while they wait. Only `reached` clears the field.
+ * read them, `unread` when they went with a launch whose agent never read them, `kept` when the
+ * launch failed or nothing is known of them any more (the service restarted since), undefined
+ * while they wait. Only `reached` clears the field, and only `unread` says so.
  */
-export type Delivery = "reached" | "failed" | "unread" | undefined;
+export type Delivery = "reached" | "unread" | "kept" | undefined;
 
 export function delivered(receipt: Receipt): Delivery {
   if (receipt.request === "read") return "reached";
-  if (receipt.state === "failed") return "failed";
+  if (receipt.state === "failed") return "kept";
+  if (receipt.request === "unread") return "unread";
   if (receipt.request === "waiting") return undefined;
   if (receipt.state === "prepared" || receipt.state === "dispatching") return undefined;
-  return receipt.state === "unknown" ? "failed" : "unread";
+  return "kept";
 }
 
 /**

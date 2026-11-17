@@ -44,8 +44,8 @@ export interface UiInstance {
 export interface UiLaunchPort {
   instances(): readonly UiInstance[];
   onChange?(listener: (space: string) => void): () => void;
-  /** Whether a launch's request waits for its agent or was read; undefined when none is held. */
-  requestState?(launch: string): "waiting" | "read" | undefined;
+  /** Where a launch's request is: waiting, read, gone unread, or undefined when none is known. */
+  requestState?(launch: string): "waiting" | "read" | "unread" | undefined;
 }
 
 /** A launch receipt as the page shows it (A5 3.9). IDs, states, instants and codes only. */
@@ -66,10 +66,10 @@ export interface UiReceipt {
   readonly terminal?: { readonly app: string; readonly source: string };
   /**
    * The person's words this launch holds for its agent: waiting until the agent read them, read
-   * once it did. Absent when it holds none, or no longer does (its launch ended, or this service
-   * restarted after it ended).
+   * once it did, unread when they went with a launch whose agent never read them. Absent when it
+   * held none, or this service started after they went.
    */
-  readonly request?: "waiting" | "read";
+  readonly request?: "waiting" | "read" | "unread";
 }
 
 const MONOGRAM = /^[A-Za-z0-9]{1,2}$/;

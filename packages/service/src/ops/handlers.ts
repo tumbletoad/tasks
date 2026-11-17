@@ -1920,24 +1920,28 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         bound = await bindWith(call, await bindings.bindTask(slot, read.space.id, id), undefined);
       }
     }
-    // The person's words for this launch's agent, held by the launch service since the click: served
-    // after the task was read, so a call that fails never counts as the agent having them.
-    const words =
-      launchId === undefined
-        ? undefined
-        : call.host.launches?.requestFor?.(read.space.id, launchId);
-    const request = words === undefined ? {} : { request: words };
+    // The person's words for this launch's agent, held by the launch service since the click: taken
+    // once the answer is otherwise whole, since taking them tells the page the agent has them.
+    const requestOf = (): { request?: string } => {
+      const words =
+        launchId === undefined
+          ? undefined
+          : call.host.launches?.requestFor?.(read.space.id, launchId);
+      return words === undefined ? {} : { request: words };
+    };
     if (asked.length === 0) {
+      const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
       return {
         view: "digest",
         as_of: read.space.asOf,
         bound,
-        ...request,
-        task: digestOf(read, call.today, await digestFolder(call, read.folder)),
+        ...requestOf(),
+        task: digest,
       };
     }
     const logLimit = typeof input["log_limit"] === "number" ? input["log_limit"] : 20;
     const page = sectionsOf(read, pagePlan(asked, input["before"], logLimit));
+    const request = requestOf();
     return {
       view: "sections",
       as_of: read.space.asOf,

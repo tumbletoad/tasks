@@ -38,9 +38,10 @@ export interface Receipt {
   readonly terminal?: { readonly app: string; readonly source: string };
   /**
    * The words the person typed, which Tasks holds for the launch's agent: `waiting` until the
-   * agent read them, `read` once it did. Absent when it holds none (any more).
+   * agent read them, `read` once it did, `unread` when they went with a launch whose agent never
+   * read them. Absent when none are known (none were held, or the service restarted since).
    */
-  readonly request?: "waiting" | "read";
+  readonly request?: "waiting" | "read" | "unread";
 }
 
 /** Open's terminal as Settings shows it (the service's TerminalView): fixed words only. */

@@ -54,7 +54,7 @@ describe("[A4.5.routes.request-store] a launch's request is held in its own fold
     expect(again.text(SPACE, LAUNCH)).toBe(WORDS);
   });
 
-  test("removed with its folder when nothing else is in it; a launch's own files stay; a read one is still known as read", () => {
+  test("removed with its folder when nothing else is in it; a launch's own files stay; one gone is known as read or unread until a restart", () => {
     const at = root();
     const store = new LaunchRequests(at);
     store.put({ space: SPACE, launch: LAUNCH, route: "link", at: 1 }, WORDS);
@@ -68,7 +68,11 @@ describe("[A4.5.routes.request-store] a launch's request is held in its own fold
     writeFileSync(join(at, OTHER, "launch.json"), "{}");
     store.remove(OTHER);
     expect(readdirSync(join(at, OTHER))).toEqual(["launch.json"]);
-    expect(store.state(OTHER)).toBeUndefined();
+    expect(store.state(OTHER)).toBe("unread");
+    // A restart knows nothing of them: no page is told they went unread when they may not have.
+    const again = new LaunchRequests(at);
+    expect(again.state(LAUNCH)).toBeUndefined();
+    expect(again.state(OTHER)).toBeUndefined();
   });
 
   test("a write a crash cut short is removed at the next start and with its request", () => {
@@ -90,7 +94,7 @@ describe("[A4.5.routes.request-store] a launch's request is held in its own fold
     const store = new LaunchRequests(at);
     store.put({ space: SPACE, launch: LAUNCH, route: "terminal", at: 1 }, WORDS);
     rmSync(join(at, LAUNCH), { recursive: true, force: true });
-    expect(store.state(LAUNCH)).toBeUndefined();
+    expect(store.state(LAUNCH)).toBe("unread");
     expect(store.text(SPACE, LAUNCH)).toBeUndefined();
     expect(store.list()).toEqual([]);
   });

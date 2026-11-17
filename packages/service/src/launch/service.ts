@@ -796,7 +796,7 @@ export class LaunchService {
     return text;
   }
 
-  /** Whether a launch's request waits for its agent or was read; undefined when none is held. */
+  /** Where a launch's request is: waiting, read, gone unread, or undefined when none is known. */
   requestState(launch: string): RequestState {
     return this.#requests.state(launch);
   }

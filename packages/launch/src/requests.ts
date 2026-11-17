@@ -28,8 +28,8 @@ export const REQUEST_MAX = 131_072;
 /** The largest file read back. */
 const MAX_FILE = 1024 * 1024;
 
-/** Launches whose request was read and is gone since, remembered for the page's receipts. */
-const READ_KEPT = 1024;
+/** Launches whose request is gone, remembered for the page's receipts. */
+const GONE_KEPT = 1024;
 
 export type RequestRoute = "terminal" | "link";
 
@@ -44,8 +44,11 @@ export interface HeldRequest {
   readonly read: boolean;
 }
 
-/** Whether a launch's request waits for its agent, was read, or none is held. */
-export type RequestState = "waiting" | "read" | undefined;
+/**
+ * Whether a launch's request waits for its agent, was read, went unread with its launch, or none
+ * is known: none was held, or this service started after it went.
+ */
+export type RequestState = "waiting" | "read" | "unread" | undefined;
 
 interface RequestFile extends HeldRequest {
   readonly format: 1;
@@ -68,7 +71,7 @@ function checkFile(value: unknown, launch: string): RequestFile | undefined {
 export class LaunchRequests {
   readonly root: string;
   readonly #held = new Map<string, HeldRequest>();
-  readonly #read = new Set<string>();
+  readonly #gone = new Map<string, "read" | "unread">();
 
   /**
    * Reads every request under the root. One that cannot be read is removed: no agent can be
@@ -142,7 +145,7 @@ export class LaunchRequests {
       if (exists(this.#file(launch))) return entry.read ? "read" : "waiting";
       this.#forget(launch);
     }
-    return this.#read.has(launch) ? "read" : undefined;
+    return this.#gone.get(launch);
   }
 
   /** Removes the request of `launch`, and its folder when nothing else is in it. */
@@ -155,12 +158,11 @@ export class LaunchRequests {
   #forget(launch: string): void {
     const entry = this.#held.get(launch);
     this.#held.delete(launch);
-    if (entry?.read === true) {
-      this.#read.add(launch);
-      if (this.#read.size > READ_KEPT) {
-        const oldest = this.#read.values().next().value;
-        if (oldest !== undefined) this.#read.delete(oldest);
-      }
+    if (entry === undefined) return;
+    this.#gone.set(launch, entry.read ? "read" : "unread");
+    if (this.#gone.size > GONE_KEPT) {
+      const oldest = this.#gone.keys().next().value;
+      if (oldest !== undefined) this.#gone.delete(oldest);
     }
   }
 

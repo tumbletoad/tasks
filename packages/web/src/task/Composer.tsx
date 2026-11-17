@@ -25,7 +25,6 @@ import type { TaskRow } from "../store/rows.ts";
 import { typingIn } from "../kept.ts";
 import {
   DRAFT_MAX,
-  carry,
   keepDraft,
   keepNote,
   onAsk,
@@ -161,18 +160,14 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     if (opening.has(instance.key)) return;
     setOpening((known) => new Set(known).add(instance.key));
     const request = words;
-    // A click while a launch of the instance lives returns that launch: it takes no new request.
-    const before = new Set(receipts.filter((r) => r.instance === instance.key).map((r) => r.id));
-    void actions.open(task, instance, request === "" ? undefined : request).then((receipt) => {
+    // The launch carries the words from the open action (carry), so the field clears once its
+    // agent read them.
+    void actions.open(task, instance, request === "" ? undefined : request).then(() => {
       setOpening((known) => {
         const next = new Set(known);
         next.delete(instance.key);
         return next;
       });
-      if (receipt === undefined || before.has(receipt.id) || request === "") return;
-      // Tasks holds the words for the agent: the field clears once it read them, which may be
-      // before this answer came.
-      if (receipt.request !== undefined) carry(space, task.id, receipt.id, request);
     });
   };
 
