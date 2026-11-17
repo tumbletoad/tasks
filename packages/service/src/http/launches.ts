@@ -65,10 +65,9 @@ export interface UiReceipt {
    */
   readonly terminal?: { readonly app: string; readonly source: string };
   /**
-   * The person's words this launch holds for its agent: waiting until the agent read them,
-   * 
-ead once it did. Absent when it holds none, or no longer does (its launch ended, or this
-   * service restarted after it ended).
+   * The person's words this launch holds for its agent: waiting until the agent read them, read
+   * once it did. Absent when it holds none, or no longer does (its launch ended, or this service
+   * restarted after it ended).
    */
   readonly request?: "waiting" | "read";
 }
