@@ -42,8 +42,8 @@ export interface FakeScenario {
   readonly pace?: number;
   /** The server goes on after its stdin ended, as a server that hangs would. */
   readonly ignoreEnd?: boolean;
-  /** The folder `thread/start` says the thread works in, in place of the recording's. */
-  readonly cwd?: string;
+  /** The folder `thread/start` says the thread works in, in place of the recording's; null: none. */
+  readonly cwd?: string | null;
   /** Program mode: where each message the client sent is appended, as a JSON line. */
   readonly log?: string;
   /** Program mode: the stand-in census token. */
@@ -69,6 +69,9 @@ interface Line {
 
 const isObject = (value: unknown): value is Json =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const withoutCwd = (value: Json): Json =>
+  Object.fromEntries(Object.entries(value).filter(([key]) => key !== "cwd"));
 
 export function readFixture(name: string): Line[] {
   return readFileSync(join(FIXTURES, `${name}.jsonl`), "utf8")
@@ -199,13 +202,16 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
       const result = isObject(message["result"]) ? message["result"] : undefined;
       const started = isObject(result?.["thread"]) ? result["thread"] : undefined;
       if (scenario.cwd !== undefined && typeof result?.["cwd"] === "string") {
+        const cwd = scenario.cwd === null ? {} : { cwd: scenario.cwd };
+        const rest = withoutCwd(result);
+        const thread = started === undefined ? undefined : withoutCwd(started);
         return {
           ...message,
           id: ids.get(message["id"]),
           result: {
-            ...result,
-            cwd: scenario.cwd,
-            ...(started === undefined ? {} : { thread: { ...started, cwd: scenario.cwd } }),
+            ...rest,
+            ...cwd,
+            ...(thread === undefined ? {} : { thread: { ...thread, ...cwd } }),
           },
         };
       }

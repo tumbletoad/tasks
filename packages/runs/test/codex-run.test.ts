@@ -4,7 +4,8 @@
 // group everywhere. What is alive is counted from the operating system (the stand-in census).
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
+import type { RunEvent } from "@tasks/contracts/runs";
 import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
 import { nodeDetectHost, resolveProgram } from "@tasks/launch";
 import { afterAll, beforeAll, describe, expect, test, type TestContext } from "vitest";
@@ -17,6 +18,7 @@ import {
   UngroupedContainers,
   WindowsContainers,
   type Containers,
+  RunFiles,
   type RunFolders,
   type SavedAnswer,
 } from "../src/index.ts";
@@ -86,11 +88,11 @@ afterAll(() => {
   if (work !== "") rmSync(work, { recursive: true, force: true });
 });
 
-function bench(containers: Containers, times: Record<string, number> = {}) {
+function bench(containers: Containers, times: Record<string, number> = {}, folders?: RunFolders) {
   const store = new MemoryExecutionStore(new MemoryDurable(() => Date.UTC(2026, 10, 17)));
   const machine = new RunMachine({ store, machine: MACHINE });
   const saved = new Map<string, SavedAnswer>();
-  const files: RunFolders = {
+  const files: RunFolders = folders ?? {
     prepare: () => undefined,
     saveAnswer: (id, answer) => saved.set(id, answer),
     readAnswer: (id) => saved.get(id),
@@ -101,11 +103,15 @@ function bench(containers: Containers, times: Record<string, number> = {}) {
   return { host, machine };
 }
 
-/** Queues and starts one Codex run of `scenario`; resolves with its ID once it started. */
+/**
+ * Queues and starts one Codex run of `scenario`; resolves with its ID once it started. `seen` hears
+ * each event of the driver after the host did.
+ */
 async function startRun(
   b: ReturnType<typeof bench>,
   scenario: FakeScenario,
   label: string,
+  seen?: (event: RunEvent) => void,
 ): Promise<string> {
   const queued = await b.machine.queue(
     {
@@ -124,16 +130,21 @@ async function startRun(
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
   env["FAKE_CODEX_SCENARIO"] = JSON.stringify(scenario);
+  const open = codexDriver({
+    request: "Look into the export.",
+    permission: "full-access",
+    inFolder: sameFolder(work),
+  });
   await b.host.start(queued.id, () => ({
     command: program?.command ?? "",
     args: [...(program?.args ?? []), ...CODEX_ARGS],
     cwd: work,
     env,
-    open: codexDriver({
-      request: "Look into the export.",
-      permission: "full-access",
-      inFolder: sameFolder(work),
-    }),
+    open: (pipes, report) =>
+      open(pipes, (event) => {
+        report(event);
+        seen?.(event);
+      }),
   }));
   return queued.id;
 }
@@ -238,6 +249,81 @@ describe("[A4.3.11.codex.run] a Codex run in the run host: the program resolved 
       await waitForCensus(token, (pids) => pids.length === 0);
     });
   }
+
+  test("a question the turn ended with is what the run's folder keeps after a later answer, so a crash of the service recovers the question", async () => {
+    const token = newToken();
+    const root = join(work, `state-${token}`, "runs");
+    const b = bench(new UngroupedContainers(), {}, new RunFiles(root));
+    let after: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => {
+      after = resolve;
+    });
+    const id = await startRun(
+      b,
+      {
+        fixture: "windows-plain",
+        token,
+        notifications: [
+          // Background work that never ends holds the run open, as a crash would find it.
+          {
+            method: "item/started",
+            params: { item: { type: "commandExecution", id: "exec-bg", status: "inProgress" } },
+          },
+          {
+            method: "item/completed",
+            params: {
+              item: {
+                type: "agentMessage",
+                id: "ask-1",
+                text: "",
+                phase: "final_answer",
+                delivery: "async",
+                questions: [{ title: "Keep the old export?" }],
+              },
+            },
+          },
+          {
+            method: "item/completed",
+            params: {
+              item: {
+                type: "agentMessage",
+                id: "later-1",
+                text: "An answer after the question.",
+                phase: "final_answer",
+              },
+            },
+          },
+          // Read after the later answer, on the same line of messages: everything before it is done.
+          { method: "item/started", params: { item: { type: "webSearch", id: "web-1" } } },
+        ],
+      },
+      `q-${token}`,
+      (event) => {
+        if (event.kind === "progress" && event.label === "web") after();
+      },
+    );
+    await answered;
+    expect(new RunFiles(root).readAnswer(id)).toMatchObject({
+      text: "Keep the old export?",
+      final: false,
+    });
+    await b.host.stop(id);
+    expect(await b.host.ended(id)).toMatchObject({ result: { text: "Keep the old export?" } });
+    expect(new RunFiles(root).readAnswer(id)).toMatchObject({ text: "Keep the old export?" });
+    await waitForCensus(token, (pids) => pids.length === 0);
+  });
+
+  test("the folder check resolves both folders as the file system does, without holding the service", async () => {
+    const same = sameFolder(work);
+    const answered = same(work);
+    expect(answered).toBeInstanceOf(Promise);
+    expect(await answered).toBe(true);
+    expect(await same(`${work}${sep}`)).toBe(true);
+    if (windows || process.platform === "darwin") expect(await same(work.toUpperCase())).toBe(true);
+    expect(await same(join(work, "npm"))).toBe(false);
+    expect(await same(join(work, "not-here"))).toBe(false);
+    expect(await sameFolder(join(work, "not-here"))(join(work, "not-here"))).toBe(false);
+  });
 
   test("Windows: Ctrl+C reaches the app server behind the shim, through Node's own wrapper", async (ctx) => {
     if (!windows) ctx.skip("a console's Ctrl+C is Windows'");

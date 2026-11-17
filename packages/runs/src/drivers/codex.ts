@@ -30,7 +30,7 @@ import {
   type RunPermission,
   type Usage,
 } from "@tasks/contracts/runs";
-import { realpathSync } from "node:fs";
+import { realpath } from "node:fs/promises";
 import { MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
 import { capText, count, nativeId, record, string, type Json } from "../streams/values.ts";
 import { LineRpc, NO_ANSWER, RPC_ERRORS, RpcClosed, RpcError } from "./json-rpc.ts";
@@ -41,23 +41,24 @@ export const CODEX_ARGS: readonly string[] = ["app-server"];
 
 /**
  * Whether a folder the server reports is `folder`, as the file system resolves both: links, short
- * names and, on Windows and macOS, case.
+ * names and, on Windows and macOS, case. Asynchronous, because a share that stops answering would
+ * otherwise hold the service's every request and timer.
  */
 export function sameFolder(
   folder: string,
   platform: NodeJS.Platform = process.platform,
-): (cwd: string) => boolean {
-  const real = (path: string): string | undefined => {
+): (cwd: string) => Promise<boolean> {
+  const real = async (path: string): Promise<string | undefined> => {
     try {
-      const resolved = realpathSync.native(path);
+      const resolved = await realpath(path);
       return platform === "win32" || platform === "darwin" ? resolved.toLowerCase() : resolved;
     } catch {
       return undefined;
     }
   };
-  return (cwd) => {
-    const expected = real(folder);
-    return expected !== undefined && real(cwd) === expected;
+  return async (cwd) => {
+    const [expected, said] = await Promise.all([real(folder), real(cwd)]);
+    return expected !== undefined && said === expected;
   };
 }
 
@@ -80,8 +81,9 @@ export interface CodexSession {
   /**
    * Whether the folder the server says the thread works in is the run's. A program that changes
    * folder before Codex starts (a wrapper script) would otherwise have the agent work elsewhere.
+   * Given, a thread whose folder is not said, or not checked within `startMs`, gets no work.
    */
-  readonly inFolder?: (cwd: string) => boolean;
+  readonly inFolder?: (cwd: string) => Promise<boolean>;
 }
 
 /** How each permission runs a Codex thread: no one is ever asked, the sandbox decides. */
@@ -214,7 +216,7 @@ export function codexDriver(session: CodexSession): OpenDriver {
       usage: Usage | null;
       appTools: AppToolsState | null;
       declined: number;
-      question: string | null;
+      question: { text: string; cut: boolean } | null;
       stopping: boolean;
     } = {
       thread: null,
@@ -253,23 +255,35 @@ export function codexDriver(session: CodexSession): OpenDriver {
 
     let done = false;
     const stopped = (): boolean => state.stopping;
+    /** Whether the work is stopped or settled: read again after each wait. */
+    const over = (): boolean => state.stopping || done;
     let settle: (work: Work) => void = () => undefined;
     const settled = new Promise<Work>((resolve) => {
       settle = resolve;
     });
+    /**
+     * What the run says: a question the agent asked, once it asked one, however the run then ends,
+     * since that is what the person acts on; else its answer. The run's folder keeps the same.
+     */
+    const said = (): { text: string; cut: boolean; final: boolean } | null => {
+      if (state.question !== null) return { ...state.question, final: false };
+      return state.answer === null ? null : { ...state.answer, final: state.final };
+    };
+    const keep = (): void => {
+      const told = said();
+      if (told !== null) report({ kind: "answer", ...told });
+    };
     const finish = (outcome: OutcomeReason, error: string | null = null): void => {
       if (done) return;
       done = true;
-      // A question the agent asked is what the person acts on, however the run then ended.
-      const question = state.question;
-      const text = question ?? state.answer?.text ?? null;
+      const told = said();
       settle({
         ok: outcome === "success",
         outcome,
         nativeId: state.thread,
-        text,
-        textCut: question === null && (state.answer?.cut ?? false),
-        textFinal: question === null && state.final,
+        text: told?.text ?? null,
+        textCut: told?.cut ?? false,
+        textFinal: told?.final ?? false,
         error,
         usage: state.usage,
         appTools: state.appTools,
@@ -285,7 +299,7 @@ export function codexDriver(session: CodexSession): OpenDriver {
         finish("needs_input");
       } else if (state.turnStatus === "completed") {
         state.final = state.answer !== null;
-        if (state.answer !== null) report({ kind: "answer", ...state.answer, final: true });
+        keep();
         finish("success");
       } else if (state.turnStatus === "interrupted") {
         finish(state.question !== null ? "needs_input" : "interrupted");
@@ -301,11 +315,14 @@ export function codexDriver(session: CodexSession): OpenDriver {
       });
     };
 
+    const ask = (text: string): void => {
+      const question = capText(text === "" ? "Codex asked a question." : text, ANSWER_CAP_BYTES);
+      state.question = { text: question.text, cut: question.capped };
+      keep();
+    };
+
     const needsPerson = (text: string): typeof NO_ANSWER => {
-      state.question = capText(
-        text === "" ? "Codex asked a question." : text,
-        ANSWER_CAP_BYTES,
-      ).text;
+      ask(text);
       interruptTurn();
       finish("needs_input");
       return NO_ANSWER;
@@ -314,6 +331,10 @@ export function codexDriver(session: CodexSession): OpenDriver {
     rpc.onRequest((method, raw) => {
       state.heard = true;
       const params = record(raw) ?? {};
+      // An agent the run's agent started asks its own questions: no person will answer them, and
+      // that agent carries on or fails by itself, as its parent's turn goes on. Approvals are
+      // answered alike for every thread: all of them are the run's work, under its permission.
+      const helper = !ours(params);
       const full = session.permission === "full-access";
       const edits = full || session.permission === "auto-edit";
       switch (method) {
@@ -338,9 +359,9 @@ export function codexDriver(session: CodexSession): OpenDriver {
             ? { permissions: params["permissions"] ?? {}, scope: "turn" }
             : { permissions: {}, scope: "turn" };
         case "item/tool/requestUserInput":
-          return needsPerson(questionText(params));
+          return helper ? { answers: {} } : needsPerson(questionText(params));
         case "mcpServer/elicitation/request":
-          return needsPerson(questionText(params));
+          return helper ? { action: "decline" } : needsPerson(questionText(params));
         default:
           throw new RpcError(RPC_ERRORS.methodNotFound, `Method not found: ${method}`);
       }
@@ -399,22 +420,18 @@ export function codexDriver(session: CodexSession): OpenDriver {
             const text = string(item["text"]) ?? "";
             const phase = item["phase"];
             if (asksPerson(item)) {
-              const asked = [text.trim(), questionText({ questions: item["questions"] })]
-                .filter((part) => part !== "")
-                .join("\n");
-              const question = capText(
-                asked === "" ? "Codex asked a question." : asked,
-                ANSWER_CAP_BYTES,
+              ask(
+                [text.trim(), questionText({ questions: item["questions"] })]
+                  .filter((part) => part !== "")
+                  .join("\n"),
               );
-              state.question = question.text;
-              report({ kind: "answer", text: question.text, cut: question.capped, final: false });
             } else if (
               text !== "" &&
               (phase === "final_answer" || phase === null || phase === undefined)
             ) {
               const capped = capText(text, ANSWER_CAP_BYTES);
               state.answer = { text: capped.text, cut: capped.capped };
-              report({ kind: "answer", ...state.answer, final: false });
+              if (state.question === null) keep();
             } else if (text !== "") {
               report({ kind: "message", text: capText(text).text });
             }
@@ -487,6 +504,23 @@ export function codexDriver(session: CodexSession): OpenDriver {
       }
     });
 
+    /** Why the thread works outside the run's folder, or null when it works in it. */
+    const outside = async (cwd: string | undefined): Promise<string | null> => {
+      if (session.inFolder === undefined) return null;
+      if (cwd === undefined || cwd === "") {
+        return "Codex did not say which folder it works in, so it was given no work.";
+      }
+      let same: boolean;
+      try {
+        same = await within(session.inFolder(cwd), startMs);
+      } catch {
+        return "The task's folder did not answer in time, so Codex was given no work.";
+      }
+      return same
+        ? null
+        : `Codex started in ${cwd}, not in the task's folder, so it was given no work. Its program may change folder before it starts.`;
+    };
+
     const start = async (): Promise<void> => {
       try {
         await within(
@@ -519,15 +553,13 @@ export function codexDriver(session: CodexSession): OpenDriver {
           report({ kind: "native-id", id });
         }
         if (state.stopping || done) return;
-        const cwd = string(thread?.["cwd"]) ?? string(record(thread?.["thread"])?.["cwd"]);
-        if (cwd !== undefined && session.inFolder !== undefined && !session.inFolder(cwd)) {
-          finish(
-            "agent_error",
-            capText(
-              `Codex started in ${cwd}, not in the task's folder, so it was given no work. Its program may change folder before it starts.`,
-              TEXT_CAP_BYTES,
-            ).text,
-          );
+        const elsewhere = await outside(
+          string(thread?.["cwd"]) ?? string(record(thread?.["thread"])?.["cwd"]),
+        );
+        // A Stop that came while the folder was checked ended the work already.
+        if (over()) return;
+        if (elsewhere !== null) {
+          finish("agent_error", capText(elsewhere, TEXT_CAP_BYTES).text);
           return;
         }
         const turn = record(

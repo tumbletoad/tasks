@@ -365,14 +365,156 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
     driver.close();
   });
 
+  test("a question from an agent the run's agent started is that agent's: it hears no one answered, and the run's turn goes on", async () => {
+    const requests = [
+      {
+        method: "item/tool/requestUserInput",
+        params: {
+          threadId: CHILD,
+          turnId: CHILD_TURN,
+          itemId: "ask-c",
+          isBlocking: true,
+          questions: [{ id: "q1", header: "Export", question: "Which one?", options: [] }],
+        },
+      },
+      {
+        method: "mcpServer/elicitation/request",
+        params: {
+          threadId: CHILD,
+          turnId: CHILD_TURN,
+          serverName: "docs",
+          mode: "form",
+          message: "Fill in the export's name.",
+          requestedSchema: { type: "object", properties: {} },
+        },
+      },
+    ];
+    const { driver, fake } = bench({ fixture: "windows-plain", requests });
+    expect(await driver.settled).toEqual(
+      done({ ok: true, outcome: "success", text: "Fixture text.", textFinal: true }),
+    );
+    expect(answerTo(fake, 100)?.["result"]).toEqual({ answers: {} });
+    expect(answerTo(fake, 101)?.["result"]).toEqual({ action: "decline" });
+    expect(sent(fake, "turn/interrupt")).toEqual([]);
+    driver.close();
+  });
+
+  test("a form the run's own thread is asked to fill in ends the run as needing the person", async () => {
+    const requests = [
+      {
+        method: "mcpServer/elicitation/request",
+        params: {
+          serverName: "docs",
+          mode: "form",
+          message: "Fill in the export's name.",
+          requestedSchema: { type: "object", properties: {} },
+        },
+      },
+    ];
+    const { driver, fake } = bench({ fixture: "windows-plain", requests });
+    expect(await driver.settled).toEqual(
+      done({ ok: false, outcome: "needs_input", text: "Fill in the export's name." }),
+    );
+    expect(answerTo(fake, 100)).toBeUndefined();
+    driver.close();
+  });
+
+  test("a question the turn ended with stays what the run says when a later answer comes: in what is saved, too", async () => {
+    const { driver, fake, events, say } = bench({
+      fixture: "windows-plain",
+      answer: "An answer after the question.",
+      notifications: [
+        {
+          method: "item/started",
+          params: { item: { type: "commandExecution", id: "exec-bg", status: "inProgress" } },
+        },
+        {
+          method: "item/completed",
+          params: {
+            item: {
+              type: "agentMessage",
+              id: "ask-3",
+              text: "",
+              phase: "final_answer",
+              delivery: "async",
+              questions: [{ title: "Keep the old export?" }],
+            },
+          },
+        },
+      ],
+    });
+    await fake.replayed;
+    expect(await settledNow(driver)).toBeUndefined();
+    // What the run's folder keeps is the last answer event: a crash now recovers it.
+    const saved = events.filter((e) => e.kind === "answer").at(-1);
+    expect(saved).toMatchObject({ text: "Keep the old export?", final: false });
+    say("item/completed", {
+      item: { type: "commandExecution", id: "exec-bg", status: "completed" },
+    });
+    expect(await driver.settled).toEqual(
+      done({ ok: false, outcome: "needs_input", text: "Keep the old export?", textFinal: false }),
+    );
+    expect(events.filter((e) => e.kind === "answer").at(-1)).toMatchObject({
+      text: "Keep the old export?",
+    });
+    driver.close();
+  });
+
   test("a thread the server says works in another folder than the run's is given no work", async () => {
     const { driver, fake } = bench(
       { fixture: "windows-plain" },
-      { inFolder: (cwd) => cwd === "C:\\Users\\mira\\code\\portal" },
+      { inFolder: (cwd) => Promise.resolve(cwd === "C:\\Users\\mira\\code\\portal") },
     );
     const work = await driver.settled;
     expect(work).toEqual(done({ ok: false, outcome: "agent_error" }));
     expect(work.error).toContain("C:\\fixture\\work");
+    expect(sent(fake, "turn/start")).toEqual([]);
+    driver.close();
+  });
+
+  test("a thread the server names no folder for is given no work when the folder is checked", async () => {
+    const { driver, fake } = bench(
+      { fixture: "windows-plain", cwd: null },
+      { inFolder: () => Promise.resolve(true) },
+    );
+    const work = await driver.settled;
+    expect(work).toEqual(done({ ok: false, outcome: "agent_error" }));
+    expect(work.error).toContain("did not say which folder");
+    expect(sent(fake, "turn/start")).toEqual([]);
+    driver.close();
+  });
+
+  test("a folder check that does not answer: Stop still ends the work at once, and no turn starts after it", async () => {
+    let answer: (same: boolean) => void = () => undefined;
+    let asked = false;
+    const { driver, fake } = bench(
+      { fixture: "windows-plain" },
+      {
+        inFolder: () => {
+          asked = true;
+          return new Promise<boolean>((resolve) => {
+            answer = resolve;
+          });
+        },
+      },
+    );
+    await until("the folder checked", () => asked);
+    driver.interrupt();
+    expect(await driver.settled).toEqual(done({ ok: false, outcome: "interrupted" }));
+    answer(true);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sent(fake, "turn/start")).toEqual([]);
+    driver.close();
+  });
+
+  test("a folder check that does not answer in time gives no work, in words of its own", async () => {
+    const { driver, fake } = bench(
+      { fixture: "windows-plain" },
+      { startMs: 200, inFolder: () => new Promise<boolean>(() => undefined) },
+    );
+    const work = await driver.settled;
+    expect(work).toEqual(done({ ok: false, outcome: "agent_error" }));
+    expect(work.error).toContain("did not answer in time");
     expect(sent(fake, "turn/start")).toEqual([]);
     driver.close();
   });
