@@ -356,7 +356,7 @@ export function List({
     if (item === undefined) return "";
     if (item.group.kind === "inbox") return t("group.inbox");
     if (item.group.kind === "loose") return t("group.noArea");
-    if (item.group.label !== undefined) return t(item.group.label);
+    if (item.group.label !== undefined) return t(item.group.label, item.group.labelValues);
     return item.group.title ?? "";
   };
   const total = virtual ? virtualizer.getTotalSize() : undefined;

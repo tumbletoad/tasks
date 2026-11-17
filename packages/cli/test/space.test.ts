@@ -411,7 +411,7 @@ describe("[A2.3.10.cli.space-export] tasks space export writes a bundle that res
     }
   }, 180_000);
 
-  test("a secret-shaped title refuses the export, naming its kind and place but never the text", async () => {
+  test("a secret-shaped title is a warning with its kind and place, never the text, and the bundle is written", async () => {
     // Built from parts: the source holds no token.
     const token = ["gh", "p_", "aB3dE5".repeat(6)].join("");
     const folder = join(world.root, "s", "secretive");
@@ -428,18 +428,21 @@ describe("[A2.3.10.cli.space-export] tasks space export writes a bundle that res
     ]);
     expect(added.code, added.stdout + added.stderr).toBe(0);
     const ran = await user(["space", "export", folder, "--json"]);
-    expect(ran.code, ran.stdout).toBe(2);
-    const error = parsed(ran.stdout)["error"] as {
-      code: string;
-      data: { cause: string; secret: { kind: string; place: string } };
+    expect(ran.code, ran.stdout + ran.stderr).toBe(0);
+    const bundle = parsed(ran.stdout)["export"] as {
+      file: string;
+      secrets: { kind: string; place: string }[];
     };
-    expect(error.code).toBe("invalid_input");
-    expect(error.data.cause).toBe("EXPORT_SECRET_FOUND");
-    expect(error.data.secret.kind).toBe("github_token");
-    // The first table that holds it, by name: the title's history comes before the task.
-    expect(error.data.secret.place).toMatch(/^[a-z_]+\.[a-z_]+$/);
+    expect(existsSync(bundle.file)).toBe(true);
+    expect(bundle.secrets).toContainEqual({ kind: "github_token", place: "tasks.title" });
+    for (const s of bundle.secrets) expect(s.place).toMatch(/^[a-z_]+\.[a-z_]+$/);
     expect(ran.stdout + ran.stderr).not.toContain(token);
-    expect(readdirSync(join(folder, "exports"))).toEqual([]);
+
+    const said = await user(["space", "export", folder]);
+    expect(said.code, said.stdout + said.stderr).toBe(0);
+    expect(said.stdout).toMatch(/Warning: .*github token in tasks\.title/);
+    expect(said.stdout + said.stderr).not.toContain(token);
+    expect(readdirSync(join(folder, "exports"))).toHaveLength(2);
     expect((await user(["space", "close", folder, "--json"])).code).toBe(0);
   }, 180_000);
 });

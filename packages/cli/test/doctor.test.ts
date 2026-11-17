@@ -151,7 +151,7 @@ describe("[A2.3.13.cli.doctor] tasks doctor --self-test", () => {
       expect(report.checks.find((c) => c.id === "launch.terminal")).toMatchObject({
         id: "launch.terminal",
         status: "ok",
-        detail: `Terminals open in ${process.platform === "win32" ? "Windows Terminal" : "kitty"}: set in machine.toml.`,
+        detail: `Terminals open in ${process.platform === "win32" ? "Windows Terminal" : "kitty"}: your choice in Settings.`,
       });
     }
 

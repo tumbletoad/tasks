@@ -94,7 +94,7 @@ export const TERMINAL_NAMES: Readonly<Record<string, string>> = {
 
 /** Why a terminal was chosen, in a few words. */
 export const TERMINAL_SOURCE_WORDS: Readonly<Record<string, string>> = {
-  configured: "set in machine.toml",
+  configured: "your choice in Settings",
   fallback: "a fallback",
   terminal_var: "$TERMINAL",
   desktop: "the desktop's default",
@@ -119,15 +119,15 @@ export function terminalCheck(terminal: unknown): Check {
   const app = typeof terminal["app"] === "string" ? TERMINAL_NAMES[terminal["app"]] : undefined;
   const source =
     typeof terminal["source"] === "string" ? TERMINAL_SOURCE_WORDS[terminal["source"]] : undefined;
-  const set = "To choose one, set [terminal] app in machine.toml.";
+  const set = "To choose one, open Settings and pick it under Terminal.";
   if (app === undefined || source === undefined || terminal["found"] !== true) {
     return {
       id,
       status: "warn",
       detail:
         app === undefined
-          ? `No terminal ${PRODUCT_NAME} can open was found, so Open in a terminal app fails. Install one, or set [terminal] app in machine.toml.`
-          : `${app} (${source ?? "chosen"}) was not found, so Open tries the next terminal. Install it, or change [terminal] in machine.toml.`,
+          ? `No terminal ${PRODUCT_NAME} can open was found, so Open in a terminal app fails. Install one, or choose one in Settings under Terminal.`
+          : `${app} (${source ?? "chosen"}) was not found, so Open tries the next terminal. Install it, or choose another in Settings under Terminal.`,
     };
   }
   const unread = terminal["unread"];

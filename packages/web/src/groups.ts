@@ -30,6 +30,8 @@ export interface Group {
   readonly title?: string;
   /** A section's heading, from the catalogue. */
   readonly label?: MessageId;
+  /** The heading's values, such as the effort a search's group holds. */
+  readonly labelValues?: Readonly<Record<string, string>>;
   /** The area's colour slot, 1 to 8. */
   readonly slot?: number;
   readonly sections: readonly Section[];
