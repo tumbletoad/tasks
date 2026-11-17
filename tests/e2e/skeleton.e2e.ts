@@ -79,11 +79,15 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
     try {
       const folder = join(temp, "portal");
       mkdirSync(folder);
-      const title = `Ship the portal release (${test.info().project.name})`;
+      const project = test.info().project.name;
       const added = (await world.op(world.mira.id, "task.add", {
-        tasks: [{ title, inbox: true }],
+        tasks: [
+          { title: `Ship the portal release (${project})`, inbox: true },
+          { title: `Read the release notes (${project})`, inbox: true },
+        ],
       })) as { tasks: readonly { ref: string }[] };
       const ref = added.tasks[0]?.ref ?? "";
+      const plain = added.tasks[1]?.ref ?? "";
       const set = (await world.op(world.mira.id, "folder.manage", {
         action: "set",
         task: ref,
@@ -92,6 +96,15 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
 
       await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
       await showsSpace(page, world.mira.name);
+      // A task with no folder, in no project: it opens in the space's work folder.
+      const other = page.locator(`li[data-task="${plain}"]`);
+      await other.locator('[data-part="title"]').click();
+      await expect(other.locator('[data-part="place"]')).toHaveAttribute(
+        "data-state",
+        "work_folder",
+        { timeout: SLOW_MS },
+      );
+      await expect(other.locator('[data-part="place"]')).toContainText("Tasks work folder");
       const row = page.locator(`li[data-task="${ref}"]`);
       await row.locator('[data-part="title"]').click();
       await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");

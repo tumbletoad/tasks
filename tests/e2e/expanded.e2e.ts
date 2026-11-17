@@ -122,7 +122,7 @@ const shownFacts = (page: Page, ref: string) =>
   }, ref);
 
 test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, untrusted text as text", () => {
-  test("content, sources with their own text, the work folder, the thread and the facts, each fact once", async ({
+  test("content, sources with their own text, the project's folder, the thread and the facts, each fact once", async ({
     page,
     world,
   }) => {
@@ -166,9 +166,9 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
     const doc = body.locator('[data-part="source"][data-kind="doc"]');
     await expect(doc).toHaveText("Document");
     await expect(doc.locator("a")).toHaveAttribute("href", "https://docs.example/brief");
-    // No folder on this machine: Open and Run use the space's work folder.
-    await expect(body.locator('[data-part="place"]')).toHaveAttribute("data-state", "work_folder");
-    await expect(body.locator('[data-part="place"]')).toContainText("Tasks work folder");
+    // No folder of its own: it opens in its project's.
+    await expect(body.locator('[data-part="place"]')).toHaveAttribute("data-state", "here");
+    await expect(body.locator('[data-part="place"]')).toContainText(world.portal);
 
     // The context is Markdown, never HTML: the markup shows as text and nothing of it runs.
     const context = body.locator('[data-part="context"]');

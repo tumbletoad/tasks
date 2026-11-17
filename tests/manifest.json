@@ -3421,7 +3421,7 @@
     },
     {
       "id": "A4.5.e2e.open-folder",
-      "title": "Playwright against the real service process: the expanded task shows the folder it was given, and Open after that folder went sends nothing to the fake terminal and says on the page that the folder was not found, naming it",
+      "title": "Playwright against the real service process: a task with no folder shows the work folder, the expanded task shows the folder it was given, and Open after that folder went sends nothing to the fake terminal and says on the page that the folder was not found, naming it",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4020,7 +4020,7 @@
     },
     {
       "id": "A7.3.12.m5-06.e2e.expanded",
-      "title": "In Chromium and Firefox against the real service: a task link lands on the area view with the task expanded; sources show their own text with the key first and the person after, a blocked scheme as text; the work folder line; the context as Markdown whose markup stays text and runs nothing; the last six thread entries then Earlier; the facts with short labels; no fact string twice; a new agent entry appears live; no CSP report",
+      "title": "In Chromium and Firefox against the real service: a task link lands on the area view with the task expanded; sources show their own text with the key first and the person after, a blocked scheme as text; the project's folder line; the context as Markdown whose markup stays text and runs nothing; the last six thread entries then Earlier; the facts with short labels; no fact string twice; a new agent entry appears live; no CSP report",
       "source": "A5 3.7, A5 3.3, A5 3.26, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",
