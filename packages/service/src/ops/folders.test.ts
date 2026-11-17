@@ -37,6 +37,10 @@ describe("[A1.3.15.folders.stored-form] a folder as the space stores it, the hom
     expect(storedForm(decomposed, home, "linux")).toMatchObject({ stored: decomposed });
     expect(storedForm("relative/x", home, "linux")).toBe("not_absolute");
     expect(storedForm("/srv/../etc", home, "linux")).toBe("invalid_path");
+    expect(storedForm("/srv/./portal/.", home, "linux")).toMatchObject({ stored: "/srv/portal" });
+    expect(storedForm("C:\\work\\.\\portal", "C:\\Users\\mira", "win32")).toMatchObject({
+      stored: "C:\\work\\portal",
+    });
     expect(storedForm("/srv/a\u0007b", home, "linux")).toBe("invalid_path");
     expect(expanded("~/work/tasks", home, "linux")).toBe("/home/mira/work/tasks");
     expect(expanded("/srv/build", home, "linux")).toBe("/srv/build");

@@ -128,8 +128,9 @@ export function storedForm(
   const parts = body.split(sep);
   // A root keeps its own separator: `/` and `C:\`.
   const head = parts[0] ?? "";
-  const rest = parts.slice(1).filter((part) => part !== "");
-  if (rest.some((part) => part === "." || part === "..")) return "invalid_path";
+  const rest = parts.slice(1).filter((part) => part !== "" && part !== ".");
+  // `a/link/..` is not `a` when `link` is a link, so `..` is not folded away by its text.
+  if (rest.includes("..")) return "invalid_path";
   let absolute: string;
   if (unc) {
     if (head === "" || rest.length === 0) return "not_absolute";
