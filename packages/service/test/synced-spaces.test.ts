@@ -391,6 +391,74 @@ describe("[A1.5.sync.recheck] a folder the check could not see is checked again 
   );
 
   test(
+    "a person's close that meets the recheck's reopen stands: the space stays closed",
+    async () => {
+      const world = setUp("syrx");
+      const folder = join(world.root, "spaces", "mira");
+      await existingSpace(world, folder);
+      registerSpaces(world.home, [folder]);
+      const service = await startService({
+        env: serviceEnv(world.home),
+        identity: () => ({ root: false, elevated: false, package: null }),
+        maintenance: false,
+        say: () => undefined,
+        spaceOptions: { syncHost: seesAfter(world, folder, 1), recheckDelaysMs: [50] },
+      });
+      running.push(service);
+      await service.spacesSettled;
+      // The person closes the space just as the recheck has seen a local folder and closes the
+      // read-only space to open it again.
+      let closed: Promise<void> | undefined;
+      const log = service.log.log.bind(service.log);
+      service.log.log = (ev, fields) => {
+        log(ev, fields);
+        if (ev === "space.folder_rechecked") closed = service.spaceManager.close(0);
+      };
+      await until("the recheck", () => closed !== undefined);
+      await closed;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(service.spaces()[0]?.state).toBe("closed");
+    },
+    LONG,
+  );
+
+  test(
+    "a check that sees a local folder and then fails again does not start its delays over",
+    async () => {
+      const world = setUp("syrb");
+      const folder = join(world.root, "spaces", "mira");
+      await existingSpace(world, folder);
+      registerSpaces(world.home, [folder]);
+      // Every open's look fails and every recheck's look sees a local folder.
+      const host = fixtureHost(world.root, {});
+      let rounds = 0;
+      const flaky: SyncHost = {
+        ...host,
+        kind: (path) => {
+          if (path === folder) rounds += 1;
+          return rounds % 2 === 1 ? Promise.reject(new Error("a stand-in fault")) : host.kind(path);
+        },
+      };
+      const service = await startService({
+        env: serviceEnv(world.home),
+        identity: () => ({ root: false, elevated: false, package: null }),
+        maintenance: false,
+        say: () => undefined,
+        spaceOptions: { syncHost: flaky, recheckDelaysMs: [50, 50] },
+      });
+      running.push(service);
+      await service.spacesSettled;
+      // The open, two rechecks with the reopen each leads to, and no more.
+      await until("the last reopen", () => rounds >= 5);
+      await until("the space to settle", () => service.spaces()[0]?.state === "read_only");
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      expect(rounds).toBe(5);
+      expect(service.spaces()[0]).toMatchObject({ state: "read_only", reason: "synced_folder" });
+    },
+    LONG,
+  );
+
+  test(
     "a check that fails and then sees a synced folder keeps the space read-only, in its words",
     async () => {
       const world = setUp("syrc");

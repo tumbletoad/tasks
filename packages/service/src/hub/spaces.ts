@@ -393,6 +393,13 @@ class Hosted {
   daily: NodeJS.Timeout | undefined;
   /** The next look at a folder the check could not see (#recheck). */
   recheck: NodeJS.Timeout | undefined;
+  /**
+   * The delay the next recheck takes: a reopen after a look that saw a local folder goes on with
+   * the delays left, so a check that answers differently each time does not start them over.
+   */
+  recheckNext = 0;
+  /** Counts a person's closes, which an open the service begins by itself must not undo. */
+  closes = 0;
   /** The maintenance run in progress. */
   maintaining: Promise<void> | undefined;
   /** Whether the space's backups work, as its upkeep and the person's backups last found. */
@@ -885,7 +892,9 @@ export class SpaceManager {
 
   /** Closes one space, within its bound (`tasks space close`, and before a restore in place). */
   async close(entry: number): Promise<void> {
-    await this.#close(this.#space(entry), this.#closeMs);
+    const space = this.#space(entry);
+    space.closes += 1;
+    await this.#close(space, this.#closeMs);
   }
 
   /**
@@ -1371,7 +1380,7 @@ export class SpaceManager {
       await this.#learnName(space);
       space.message = reason === "check_failed" ? CHECK_FAILED : folderMessage(check);
       this.#readOnly(space, reason, undefined, { ms: Math.round(performance.now() - t0) });
-      if (reason === "synced_folder" && isUnchecked(check)) this.#recheck(space, 0);
+      if (reason === "synced_folder" && isUnchecked(check)) this.#recheck(space, space.recheckNext);
       return true;
     } catch (error) {
       await this.#release(space);
@@ -1627,8 +1636,10 @@ export class SpaceManager {
     const delay = (this.#options.recheckDelaysMs ?? RECHECK_DELAYS_MS)[n];
     if (delay === undefined) return;
     const attempt = space.attempt;
+    const closes = space.closes;
     const current = (): boolean =>
       space.attempt === attempt &&
+      space.closes === closes &&
       !space.stopping &&
       !this.#draining &&
       space.state === "read_only" &&
@@ -1644,9 +1655,15 @@ export class SpaceManager {
           this.#options.log.log("space.folder_rechecked", { entry: space.index, verdict: "local" });
           await this.#exclusive(space, async () => {
             await this.#close(space, this.#closeMs);
-            if (space.stuck || this.#isDraining()) return;
+            // A person's close that met this one stands: the space stays closed.
+            if (space.closes !== closes || space.stuck || this.#isDraining()) return;
             space.reset();
-            await this.#begin(space);
+            space.recheckNext = n + 1;
+            try {
+              await this.#begin(space);
+            } finally {
+              space.recheckNext = 0;
+            }
           });
         } else if (isUnchecked(check)) {
           this.#recheck(space, n + 1);
