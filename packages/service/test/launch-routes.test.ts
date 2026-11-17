@@ -23,10 +23,9 @@ import {
 } from "@tasks/launch";
 import { FAKE_CLI_AGENT, type CliAgentReport } from "@tasks/testkit";
 import { briefNames, chooseRoute, codexEntryOf, LaunchUnavailable } from "../src/launch/open.ts";
-import { instanceToml, readLog, tempRoot, waitFor } from "./harness.ts";
+import { instanceToml, readLog, stateOf, tempRoot, waitFor } from "./harness.ts";
 import { errorOf, classSession } from "./ops-helpers.ts";
-import { placeTask } from "./places-helper.ts";
-import { LAB_ROOT, LONG_MS, ShimLab } from "./shim-harness.ts";
+import { LONG_MS, ShimLab } from "./shim-harness.ts";
 
 const WINDOWS = process.platform === "win32";
 
@@ -168,31 +167,49 @@ async function rig(label: string, opener: number | "hang" = 0): Promise<Rig> {
 let requests = 0;
 const rid = (): string => `routes-request-${String((requests += 1)).padStart(6, "0")}`;
 
-/** Adds a task as the person, placed under the lab's root at `folder` (made first), or nowhere. */
+/** One write through the request path as the person. */
+const write = (r: Rig, op: string, input: Record<string, unknown>) =>
+  r.user.call(
+    "op/call",
+    { space: r.lab.spaceId, op, input: { ...input, request_id: rid() } },
+    { timeoutMs: 60_000 },
+  );
+
+/**
+ * Adds a task as the person, with its own folder `<work>/<folder>` (made first), in `project`
+ * when one is named. The folder as the space stores it comes back with it.
+ */
 async function addTask(
   r: Rig,
   title: string,
   folder?: string,
-): Promise<{ id: string; ref: string }> {
-  if (folder !== undefined) mkdirSync(join(r.lab.work, folder), { recursive: true });
-  const added = (await r.user.call(
-    "op/call",
-    {
-      space: r.lab.spaceId,
-      op: "task.add",
-      input: {
-        tasks: [{ title }],
-        request_id: rid(),
-      },
-    },
-    { timeoutMs: 60_000 },
-  )) as { tasks: { id: string; ref: string }[] };
+  project?: string,
+): Promise<{ id: string; ref: string; folder?: string }> {
+  const added = (await write(r, "task.add", {
+    tasks: [{ title, ...(project === undefined ? {} : { area: "Client work", project }) }],
+  })) as { tasks: { id: string; ref: string }[] };
   const task = added.tasks[0];
   if (task === undefined) throw new Error("no task");
-  // The launch reads places, which no tool binds any more.
-  if (folder !== undefined)
-    await placeTask(r.lab.running.ops, task.id, LAB_ROOT, folder, r.lab.spaceId);
-  return task;
+  if (folder === undefined) return task;
+  mkdirSync(join(r.lab.work, folder), { recursive: true });
+  const set = (await write(r, "folder.manage", {
+    action: "set",
+    task: task.ref,
+    folder: join(r.lab.work, folder),
+  })) as { folder: string };
+  return { ...task, folder: set.folder };
+}
+
+/** Makes the project `name` for the folder `<work>/<folder>` (made first): its stored form. */
+async function addProject(r: Rig, name: string, folder: string): Promise<string> {
+  mkdirSync(join(r.lab.work, folder), { recursive: true });
+  const made = (await write(r, "folder.manage", {
+    action: "add_project",
+    project: name,
+    area: "Client work",
+    folder: join(r.lab.work, folder),
+  })) as { folder: string };
+  return made.folder;
 }
 
 interface Opened {
@@ -444,7 +461,6 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
     async () => {
       const r = await rig("copy");
       const task = await addTask(r, HOSTILE_TITLE, HOSTILE_FOLDER);
-      const folder = realpathSync.native(join(r.lab.work, HOSTILE_FOLDER));
       const first = await open(r, { task: task.ref });
       expect(first.result.launch).toMatchObject({
         route: "clipboard",
@@ -454,7 +470,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(first.result.copy).toBe(
         briefFor("pointer", task, HOSTILE_TITLE, first.result.launch.reference, {
           budget: 20_000,
-          folder: { kind: "place", root: LAB_ROOT, path: HOSTILE_FOLDER, absolute: folder },
+          folder: { kind: "folder", path: task.folder ?? "", found: true },
         }),
       );
       const again = await open(r, { task: task.ref, request_id: first.requestId });
@@ -554,7 +570,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       // What the request path read for each call: the retry read the task after an edit.
       const request = (title: string, version: number) => ({
         space: r.lab.spaceId,
-        task: { id: task.id, ref: task.ref, title, version, place: null, elsewhere: false },
+        task: { id: task.id, ref: task.ref, title, version, folder: { kind: "none" as const } },
         instance: undefined,
         composer: undefined,
         requestId,
@@ -622,7 +638,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
   });
 
   test(
-    "refused before anything is recorded: an instance not set up, a route not built here, a folder that does not resolve",
+    "refused before anything is recorded: an instance not set up, a route not built here, a folder not found on this computer",
     { timeout: 300_000 },
     async () => {
       const r = await rig("refusals");
@@ -649,7 +665,9 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       });
       expect(await refusal({ task: placed.ref, instance: "claude" })).toMatchObject({
         code: "invalid_input",
-        data: { field: "task", reason: "path_missing" },
+        message: "Folder not found on this computer.",
+        hint: expect.stringContaining("give the task or its project another folder") as unknown,
+        data: { field: "task", reason: "path_missing", folder: placed.folder },
       });
       // Words over the terminal's budget would become a note: the refused click saves none.
       const long = `${"Please read this first. ".repeat(400)}End.`;
@@ -669,7 +687,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       // Nothing was recorded for any of them; Copy still works and says the folder is not here.
       const copied = await open(r, { task: placed.ref });
       expect(copied.result.copy).toContain(
-        `Folder: ${LAB_ROOT} › gone (not found on this machine)`,
+        `Folder: ${placed.folder ?? ""} (not found on this computer)`,
       );
       const launches: LaunchIntent | undefined = await r.lab.running.launches.read(
         r.lab.spaceId,
@@ -682,6 +700,89 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(receipts).toMatch(/^L[0-9A-Z]{5}$/u);
       const events = readLog(r.lab.home).filter((e) => e["ev"] === "launch.unavailable");
       expect(events.map((e) => e["reason"])).toEqual(["not_set_up", "no_route"]);
+    },
+  );
+});
+
+describe("[A4.5.routes.folders] a launch opens in the task's folder, else its project's, else on its machine, else in the work folder", () => {
+  test(
+    "the terminal starts there, the link names it and Copy says it; a folder only on another machine opens nothing here",
+    { timeout: 300_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("routes-folders");
+      const project = await addProject(r, "Portal", "portal-project");
+      const own = await addTask(r, "Fixture own folder", "own-folder", "Portal");
+      const inProject = await addTask(r, "Fixture in the project", undefined, "Portal");
+      const none = await addTask(r, "Fixture without a folder");
+      const real = (name: string) => realpathSync.native(join(r.lab.work, name));
+      const work = () =>
+        realpathSync.native(join(stateOf(r.lab.home), "workdirs", `space-${r.lab.spaceId}`));
+
+      /** Where each route opens `task`: the terminal's folder, the link's cwd, Copy's line. */
+      const routes = async (task: { ref: string }) => {
+        const terminal = (await open(r, { task: task.ref, instance: "claude" })).result.launch;
+        const started = await waitFor(
+          () => r.lab.folders.get(terminal.id),
+          LONG_MS,
+          "the terminal's folder",
+        );
+        const link = (await open(r, { task: task.ref, instance: "claude-link" })).result.launch;
+        await r.lab.waitIntent(link.id, (i) => i.state === "dispatched", "Dispatched");
+        const url = opened.at(-1)?.argv.at(-1) ?? "";
+        const copy = (await open(r, { task: task.ref })).result.copy ?? "";
+        return {
+          terminal: started,
+          link: new URL(url).searchParams.get("cwd"),
+          copy: copy.split("\n")[4],
+        };
+      };
+
+      expect(await routes(own)).toEqual({
+        terminal: real("own-folder"),
+        link: real("own-folder"),
+        copy: `Folder: ${own.folder ?? ""}`,
+      });
+      expect(await routes(inProject)).toEqual({
+        terminal: real("portal-project"),
+        link: real("portal-project"),
+        copy: `Folder: ${project}`,
+      });
+      expect(await routes(none)).toEqual({
+        terminal: work(),
+        link: work(),
+        copy: `Folder: ${PRODUCT_NAME} work folder (${work()})`,
+      });
+
+      // A folder only on another machine: Open names that machine and never falls back to the
+      // work folder; Copy says where it opens. The request path reads it so; here it is given.
+      const service = r.lab.running.launches;
+      const elsewhere = (instance: string | undefined) =>
+        service.openTask({
+          space: r.lab.spaceId,
+          task: {
+            id: none.id,
+            ref: none.ref,
+            title: "Fixture without a folder",
+            version: 1,
+            folder: { kind: "other_machine", machine: "mira-laptop" },
+          },
+          instance,
+          composer: undefined,
+          requestId: rid(),
+          saveNote: () => Promise.resolve(),
+        });
+      const started = r.lab.folders.size;
+      const links = opened.length;
+      for (const instance of ["claude", "claude-link"]) {
+        await expect(elsewhere(instance), instance).rejects.toMatchObject({
+          name: "LaunchUnavailable",
+          reason: "other_machine",
+        });
+      }
+      expect(r.lab.folders.size).toBe(started);
+      expect(opened).toHaveLength(links);
+      expect((await elsewhere(undefined)).copy?.split("\n")[4]).toBe("Folder: on mira-laptop");
     },
   );
 });

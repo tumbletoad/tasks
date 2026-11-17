@@ -5,17 +5,13 @@
 // command line. Tasks' own tools are the bridge, given to the agent's thread with the run's ticket
 // in their environment, so what the agent changes through them is recorded as the run's.
 import { createHash } from "node:crypto";
-import { statSync } from "node:fs";
-import { join, posix, win32 } from "node:path";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
 import { findEntry, cliFaces } from "@tasks/contracts";
 import type { RunPermission, RunRecord } from "@tasks/contracts/runs";
 import {
   ADDED,
   agentEnvironment,
-  ensureWorkFolder,
   nodeDetectHost,
-  workFolderPath,
   resolveProgram,
   sanitiseComposer,
   sanitiseTitle,
@@ -24,19 +20,22 @@ import {
 } from "@tasks/launch";
 import { CODEX_ARGS, codexDriver, type AgentCommand, type StartRefusal } from "@tasks/runs";
 import type { ServedSpace } from "../ops/index.ts";
-import { readLaunchFolder, readLaunchTask } from "../ops/read.ts";
+import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
 
 /** What building a run needs of the service. */
 export interface RunAgents {
   readonly platform: NodeJS.Platform;
-  /** The account's home folder: what `~` means in a folder. */
+  /** The account's home folder, where the agent's program is looked for as Open looks for it. */
   readonly home: string | undefined;
-  /** The install's machine state: the spaces' work folders are in it. */
-  readonly stateDir: string;
   /** This build's version, which the agent hears as its client's. */
   readonly version: string;
   /** machine.toml's instances as they are now. */
   instances(): readonly Instance[];
+  /**
+   * The folder a launch of the space's task would work in here, resolved now (the space's work
+   * folder for a task without one), or undefined when it is not found.
+   */
+  folder(space: string, folder: TaskFolder): Promise<string | undefined>;
   /** Where the agent's environment starts: the person's own, as Open's agents get it. */
   base(): Promise<AgentBase | undefined>;
   /** Tasks' own command, program first: the bridge runs as `<it> mcp …`. */
@@ -61,51 +60,21 @@ export type RunFolder =
   | { readonly ok: false; readonly reason: "other_machine"; readonly machine: string }
   | { readonly ok: false; readonly reason: "folder_missing" };
 
-/** A path with `~` for the account's home made absolute. */
-function expandHome(path: string, home: string | undefined, platform: NodeJS.Platform): string {
-  if (home === undefined || !(path === "~" || /^~[\\/]/u.test(path))) return path;
-  const p = platform === "win32" ? win32 : posix;
-  return path === "~" ? home : p.join(home, path.slice(2));
-}
-
-const isFolder = (path: string): boolean => {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-};
-
 /**
- * The task's folder on this machine as Open uses it (its own, else its project's), the space's
- * work folder when the task has none anywhere, or why the run cannot start: its folder is on
- * another computer, or not found here.
+ * The task's folder on this machine as Open uses it (its own, else its project's, else the
+ * space's work folder), or why the run cannot start: its folder is on another computer, or not
+ * found here.
  */
 export async function runFolder(
   agents: RunAgents,
-  served: ServedSpace,
-  task: string,
-  machine: string,
+  space: string,
+  folder: TaskFolder,
 ): Promise<RunFolder> {
-  const reader = served.reader;
-  const space = served.id;
-  if (reader === undefined || space === undefined) return { ok: false, reason: "folder_missing" };
-  const found = await readLaunchFolder(reader, task, machine);
-  switch (found.kind) {
-    case "task":
-    case "project": {
-      const path = expandHome(found.folder.path, agents.home, agents.platform);
-      return isFolder(path) ? { ok: true, path } : { ok: false, reason: "folder_missing" };
-    }
-    case "other_machine":
-      return { ok: false, reason: "other_machine", machine: found.machine.name };
-    case "none": {
-      const work = ensureWorkFolder(agents.stateDir, space);
-      return work.status === "ok"
-        ? { ok: true, path: join(agents.stateDir, ...workFolderPath(space).split("/")) }
-        : { ok: false, reason: "folder_missing" };
-    }
+  if (folder.kind === "other_machine") {
+    return { ok: false, reason: "other_machine", machine: folder.machine };
   }
+  const path = await agents.folder(space, folder);
+  return path === undefined ? { ok: false, reason: "folder_missing" } : { ok: true, path };
 }
 
 /** The CLI verb that reads a task, for the brief: `tasks show`. */
@@ -163,7 +132,7 @@ export async function buildRun(
   if (run.task === null || reader === undefined || space === undefined) return "spawn_failed";
   const task = await readLaunchTask(reader, run.task, machine);
   if (!task.active) return "task_closed";
-  const folder = await runFolder(agents, served, run.task, machine);
+  const folder = await runFolder(agents, space, task.folder);
   if (!folder.ok) return "folder_gone";
   const command = agents.command();
   if (command === undefined || command.length === 0) return "spawn_failed";

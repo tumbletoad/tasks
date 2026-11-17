@@ -1,61 +1,39 @@
-// `tasks roots` from the CLI (A1 3.15, A2 3.10; M2.07): the user adds a root from an interactive
-// terminal, with a folder relative to the working folder; a script cannot. A real service child,
-// fixture text only.
-import { mkdirSync, readFileSync } from "node:fs";
+// `tasks roots` is retired: it points to where tasks open now and changes nothing, so a person or a
+// script that still calls it learns why, and machine.toml keeps every byte. No service is needed.
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { configOf } from "@tasks/service/test/harness";
-import { runMain, startWorld, type CliWorld } from "./cli-harness.ts";
+import { afterEach, describe, expect, test } from "vitest";
+import { configOf, tempRoot } from "@tasks/service/test/harness";
+import { runMain } from "./cli-harness.ts";
 
-let world: CliWorld;
+const cleanups: (() => void)[] = [];
+afterEach(() => {
+  for (const cleanup of cleanups.splice(0)) cleanup();
+});
 
-beforeAll(async () => {
-  world = await startWorld("rt");
-  mkdirSync(join(world.root, "work", "lumen", "portal"), { recursive: true });
-  mkdirSync(join(world.root, "work", "lumen", "api"), { recursive: true });
-}, 180_000);
+describe("[A1.3.15.roots.retired] tasks roots is a pointer and changes nothing", () => {
+  test("list says where tasks open now; add fails and writes nothing; machine.toml keeps its bytes", async () => {
+    const { root, cleanup } = tempRoot("rt");
+    cleanups.push(cleanup);
+    const home = join(root, "h");
+    mkdirSync(configOf(home), { recursive: true, mode: 0o700 });
+    const file = join(configOf(home), "machine.toml");
+    const text = '# Mira\'s machine\n[roots.work]\npath = "/home/mira/work"\n';
+    writeFileSync(file, text, { mode: 0o600 });
 
-afterAll(async () => {
-  await world.close();
-}, 120_000);
+    const listed = await runMain(["roots"], { home, tty: true });
+    expect(listed.code).toBe(0);
+    expect(listed.stdout).toContain("Roots are retired.");
+    expect(listed.stdout).toContain("its project's folder");
+    const json = await runMain(["roots", "list", "--json"], { home });
+    expect(JSON.parse(json.stdout)).toEqual({ roots: [], retired: true });
 
-const run = (argv: string[], cwd: string, tty = false) =>
-  runMain(argv, { home: world.home, cwd, tty });
-const parsed = (stdout: string) => JSON.parse(stdout) as Record<string, unknown>;
-
-describe("[A1.3.15.roots.add] tasks roots from the CLI", () => {
-  test("the user adds a root with a relative folder, and a script is refused", async () => {
-    const script = await run(["roots", "add", "work", "work", "--json"], world.root);
-    expect(script.code).toBe(5);
-    expect(parsed(script.stdout)).toMatchObject({ error: { code: "forbidden" } });
-
-    const added = await run(
-      ["roots", "add", "work", "work", "--label", "Work", "--runs", "--json"],
-      world.root,
-      true,
-    );
-    expect(added.code, added.stderr).toBe(0);
-    expect(parsed(added.stdout)).toEqual({
-      root: { id: "work", label: "Work", path: join(world.root, "work"), runs: true, rev: 1 },
+    const added = await runMain(["roots", "add", "oss", join(root, "oss"), "--json"], {
+      home,
+      tty: true,
     });
-    const toml = readFileSync(join(configOf(world.home), "machine.toml"), "utf8");
-    expect(toml).toContain("[roots.work]");
-    expect(toml).toContain("runs = true");
-
-    const listed = await run(["roots", "--json"], world.root);
-    expect(parsed(listed.stdout)).toMatchObject({ roots: [{ id: "work", label: "Work" }] });
-    const text = await run(["roots"], world.root);
-    expect(text.stdout).toContain("work  Work");
-  }, 180_000);
-
-  test("--help prints the help and runs nothing", async () => {
-    for (const args of [
-      ["roots", "add", "x", "y", "--help"],
-      ["help", "roots"],
-    ]) {
-      const ran = await run(args, world.root, true);
-      expect(ran.code).toBe(0);
-      expect(ran.stdout).toMatch(/^Usage: tasks roots/);
-    }
+    expect(added.code).not.toBe(0);
+    expect(JSON.parse(added.stdout)).toMatchObject({ error: { code: "invalid_input" } });
+    expect(readFileSync(file, "utf8")).toBe(text);
   });
 });

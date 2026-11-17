@@ -24,7 +24,6 @@
         "enabled": true
       }
     ],
-    "roots": [],
     "terminal": {
       "app": "auto",
       "path": null,
@@ -95,6 +94,11 @@
       "severity": "warning"
     },
     {
+      "key": "roots",
+      "code": "retired",
+      "severity": "warning"
+    },
+    {
       "key": "http.port",
       "code": "invalid_value",
       "severity": "error"
@@ -122,16 +126,6 @@
     {
       "key": "spaces[4].path",
       "code": "duplicate",
-      "severity": "error"
-    },
-    {
-      "key": "roots.Bad Root",
-      "code": "invalid_value",
-      "severity": "error"
-    },
-    {
-      "key": "roots.nopath.path",
-      "code": "missing",
       "severity": "error"
     },
     {

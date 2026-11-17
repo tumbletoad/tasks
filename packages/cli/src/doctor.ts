@@ -163,13 +163,21 @@ export function configCheck(io: Pick<Io, "env" | "platform">): Check {
   }
   const fatal = fatalProblems(loaded.problems);
   if (fatal.length > 0) return { id: "config", status: "fail", detail: configRefusal(fatal) };
+  const retired = loaded.problems.filter((p) => p.code === "retired");
+  const others = loaded.problems.filter((p) => p.code !== "retired");
   if (loaded.problems.length > 0) {
-    const keys = loaded.problems.map((p) => (p.key === "" ? p.code : `${p.key} (${p.code})`));
-    return {
-      id: "config",
-      status: "warn",
-      detail: `machine.toml has problems that drop only their entry: ${named(keys)}.`,
-    };
+    const keys = others.map((p) => (p.key === "" ? p.code : `${p.key} (${p.code})`));
+    const parts = [
+      ...(keys.length === 0
+        ? []
+        : [`machine.toml has problems that drop only their entry: ${named(keys)}.`]),
+      ...(retired.length === 0
+        ? []
+        : [
+            `machine.toml's [roots] lines do nothing now: a task opens in its own folder or its project's. ${PRODUCT_NAME} leaves them as they are, and you can remove them.`,
+          ]),
+    ];
+    return { id: "config", status: "warn", detail: parts.join(" ") };
   }
   return { id: "config", status: "ok", detail: "machine.toml is valid." };
 }

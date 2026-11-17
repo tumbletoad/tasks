@@ -2,9 +2,10 @@
 // the fake app server (packages/runs/test/codex-server.ts) as the instance's Codex: the request
 // reaches the agent over its protocol and no command line, the answer is in the run's record, the
 // agent's own call of Tasks' tools is recorded as the run's, a retry starts nothing twice, a
-// queued run starts after a restart, and only the person starts one. Fixture spaces only.
+// queued run starts after a restart, only the person starts one, and a folder that is not here
+// refuses it. Fixture spaces only.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startService, type RunningService } from "@tasks/service/hub";
@@ -72,7 +73,8 @@ beforeAll(async () => {
     { mode: 0o600 },
   );
   mkdirSync(join(root, "spaces"));
-  const seeded = await seedMira(join(root, "spaces"), { tasks: 1, machineId: machine });
+  const os = windows ? "windows" : process.platform === "darwin" ? "macos" : "linux";
+  const seeded = await seedMira(join(root, "spaces"), { tasks: 1, machineId: machine, os });
   spaceId = (
     JSON.parse(readFileSync(join(seeded.folder, "space.json"), "utf8")) as { space_id: Id<"sp"> }
   ).space_id;
@@ -91,7 +93,6 @@ beforeAll(async () => {
   registerSpaces(
     home,
     [seeded.folder],
-    {},
     instanceToml({
       id: "codex",
       target: "codex-cli",
@@ -292,5 +293,22 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
     expect(JSON.parse(missing.stdout)).toMatchObject({ error: { code: "not_found" } });
     const help = await user(["help", "run"]);
     expect(help.stdout).toContain("tasks run <task>");
+  });
+
+  test("a task whose folder is not found here is refused with that reason, and nothing is queued", async () => {
+    const folder = join(root, "work", "portal");
+    mkdirSync(folder, { recursive: true, mode: 0o700 });
+    const added = await user(["add", "Tidy the portal", "--folder", folder, "--json"]);
+    expect(added.code, added.stdout + added.stderr).toBe(0);
+    const placed = (JSON.parse(added.stdout) as { tasks: { id: string }[] }).tasks[0]?.id ?? "";
+    rmSync(folder, { recursive: true });
+
+    const refused = await user(["run", placed, "--json", "Tidy it."]);
+    expect(refused.code).not.toBe(0);
+    expect(JSON.parse(refused.stdout)).toMatchObject({
+      error: { code: "invalid_input", data: { reason: "folder_missing" } },
+    });
+    const listed = await user(["run", "list", placed, "--json"]);
+    expect((JSON.parse(listed.stdout) as { runs: unknown[] }).runs).toEqual([]);
   });
 });

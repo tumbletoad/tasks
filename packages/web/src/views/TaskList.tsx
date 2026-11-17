@@ -27,6 +27,7 @@ import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
 import { itemsOf, type RowItem } from "../list/items.ts";
 import { List, type Place } from "../list/List.tsx";
+import { folderRefusal } from "../row/launch.ts";
 import { contextFor, type Grouping, type RowView } from "../row/model.ts";
 import type { RowActions } from "../row/actions.ts";
 import type { Clock } from "../row/dates.ts";
@@ -501,7 +502,11 @@ export function TaskList({
             if (copy !== undefined) toClipboard(copy);
           })
           .catch((error: unknown) => {
-            if (!live.failed(error)) say(t("row.openFailed"));
+            if (live.failed(error)) return;
+            const refused = folderRefusal(error);
+            if (refused === undefined) say(t("row.openFailed"));
+            else if (refused.folder === undefined) say(t("row.openWorkFolder"));
+            else say(t("row.openFolder", { reason: refused.reason, folder: refused.folder }));
           });
       },
       // Copy (A4 3.4.6): the pointer brief, as a launch of its own whose reference an agent redeems.

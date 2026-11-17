@@ -626,6 +626,7 @@ function mcpContract(era: "legacy" | "modern"): () => Promise<ContractTransport>
     };
     return {
       portal: w.portal,
+      folder: (task) => w.folder(task),
       binds: true,
       launch: async (task) => (await w.launch(task)).reference,
       call: async (name, input, actor) => {

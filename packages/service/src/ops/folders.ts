@@ -160,6 +160,41 @@ export function expanded(stored: string, home: string, platform: NodeJS.Platform
   return stored === "~" || stored.startsWith(`~${sep}`) ? `${home}${stored.slice(1)}` : stored;
 }
 
+/**
+ * The absolute path a stored folder opens on this machine: `~` expanded with the home, or
+ * undefined for a home path when the home is not known.
+ */
+export function openPath(
+  stored: string,
+  home: string | undefined,
+  platform: NodeJS.Platform,
+): string | undefined {
+  const sep = platform === "win32" ? "\\" : "/";
+  if (stored !== "~" && !stored.startsWith(`~${sep}`)) return stored;
+  return home === undefined ? undefined : expanded(stored, home, platform);
+}
+
+/**
+ * Whether a stored folder is a folder on this machine now: `here` when it is there and is a
+ * folder, a link to one included, else `missing`. A look that does not answer in time is missing.
+ */
+export async function folderState(
+  stored: string,
+  home: string | undefined,
+  platform: NodeJS.Platform,
+): Promise<"here" | "missing"> {
+  const open = openPath(stored, home, platform);
+  if (open === undefined) return "missing";
+  const found = await bounded(async () => {
+    try {
+      return (await stat(open)).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+  return found === true ? "here" : "missing";
+}
+
 /** Runs a look at the disk, or answers `not_answering` once it took longer than `ms`. */
 export async function bounded<T>(
   look: () => Promise<T>,

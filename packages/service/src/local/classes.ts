@@ -101,9 +101,6 @@ export const RPC_METHODS = {
   "space/use": USER,
   // `tasks view rebuild` (A1 3.13, M3.10): a space's projection checked and rendered again.
   "view/rebuild": USER,
-  // `tasks roots` (A1 3.15, M2.07): the list for every CLI, adding a root for the user only.
-  "roots/list": CLI,
-  "roots/add": USER,
   // `tasks setup instances` (A4 3.2): writing and taking back [[instance]] entries, for the user.
   "instances/add": USER,
   "instances/remove": USER,

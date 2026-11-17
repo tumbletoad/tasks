@@ -1,7 +1,7 @@
 // Background runs in the service: the probe at start, each open space's recovery, and a run
 // started through the internal call. Services run in this process on temporary homes; fixture
 // spaces and generated agents only.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -20,7 +20,7 @@ import { seedMira } from "@tasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import type { Logger } from "../src/hub/log.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
-import type { ServedSpace } from "../src/ops/index.ts";
+import { opCall, type ServedSpace } from "../src/ops/index.ts";
 import { RunService } from "../src/runs/service.ts";
 import { holdRuns } from "../src/install/context.ts";
 import {
@@ -64,14 +64,15 @@ async function setUp(label: string, machineToml = "") {
     { mode: 0o600 },
   );
   mkdirSync(join(root, "spaces"));
-  const seeded = await seedMira(join(root, "spaces"), { tasks: 1, machineId: machine });
+  // The space's machine is this one, with this OS: its folders take this OS's form.
+  const os = windows ? "windows" : process.platform === "darwin" ? "macos" : "linux";
+  const seeded = await seedMira(join(root, "spaces"), { tasks: 1, machineId: machine, os });
   const manifest = JSON.parse(readFileSync(join(seeded.folder, "space.json"), "utf8")) as {
     space_id: Id<"sp">;
   };
   registerSpaces(
     home,
     [seeded.folder],
-    {},
     instanceToml({
       id: "claude-work",
       target: "claude-cli",
@@ -365,6 +366,51 @@ function fakeBoxes() {
   };
   return { containers, live, finish: (name: string) => end(name, "Found it in the export.") };
 }
+
+describe("[A4.3.11.9.run.folder] a queued run checks the folder a launch of its task would use, right before it starts", () => {
+  test("a task whose folder went is refused as folder_gone and nothing starts; a task without a folder runs", async () => {
+    const { root, home, spaceId } = await setUp("runs-folder");
+    const boxes = fakeBoxes();
+    const service = await start(home, { containers: boxes.containers });
+    const placed = await addTask(home, service, 1);
+    const plain = await addTask(home, service, 2);
+    const folder = join(root, "work", "portal");
+    mkdirSync(folder, { recursive: true, mode: 0o700 });
+    await opCall(
+      service.ops,
+      { class: "cli-interactive", env: {} },
+      {
+        op: "folder.manage",
+        input: { action: "set", task: placed, folder, request_id: "runs-folder-set-000001" },
+        space: spaceId,
+      },
+    );
+    rmSync(folder, { recursive: true });
+
+    const command = agent(ANSWERS, home);
+    const gone = await service.runs.start(
+      spaceId,
+      input(placed),
+      "runs-folder-run-000001",
+      command,
+    );
+    expect(
+      await runUntil(service, spaceId, gone.id, (r) => r.state !== "queued", "the check"),
+    ).toMatchObject({ state: "failed", reason: "folder_gone" });
+    expect(boxes.live.size).toBe(0);
+
+    const runs = await service.runs.start(spaceId, input(plain), "runs-folder-run-000002", command);
+    await runUntil(
+      service,
+      spaceId,
+      runs.id,
+      (r) => r.state === "running",
+      "the run in the work folder",
+    );
+    boxes.finish(runs.id);
+    expect(await service.runs.ended(spaceId, runs.id)).toMatchObject({ state: "succeeded" });
+  }, 120_000);
+});
 
 describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: what blocks it, nothing new starts, Stop on request, and the hold goes with its connection", () => {
   test("the hold names the running run with its task, a new run waits with the reason update, stop_held stops the run with its answer, and closing the hold's connection lets the queue move", async () => {

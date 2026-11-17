@@ -71,7 +71,11 @@ export function bulkTask(n: number): Operation {
   };
 }
 
-type Machine = { readonly id: string; readonly name: string; readonly os: "linux" };
+type Machine = {
+  readonly id: string;
+  readonly name: string;
+  readonly os: "linux" | "macos" | "windows";
+};
 
 /**
  * Writes `requests` into the space at `folder`, as its owner, on the authority's machine. `now`

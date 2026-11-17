@@ -30,7 +30,14 @@
 import { createHash } from "node:crypto";
 import { PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
 import { isLaunchRef } from "../intents.ts";
-import { type BriefFolder, briefHash, COMPOSER_MARK, REFERENCE_SLOT, TASK_REF } from "./render.ts";
+import {
+  type BriefFolder,
+  briefHash,
+  COMPOSER_MARK,
+  folderLine as folderOf,
+  REFERENCE_SLOT,
+  TASK_REF,
+} from "./render.ts";
 import { sanitiseComposer, sanitisePath, sanitiseTitle } from "./sanitise.ts";
 
 /** A4 3.15.5: the pack's budget, in UTF-16 code units. */
@@ -458,24 +465,4 @@ export function renderContextPack(input: PackInput): Pack {
     left: leftOf(keep),
     over: isOver,
   };
-}
-
-function folderOf(folder: BriefFolder): string {
-  switch (folder.kind) {
-    case "place": {
-      const shown =
-        folder.path === ""
-          ? sanitisePath(folder.root)
-          : `${sanitisePath(folder.root)} › ${sanitisePath(folder.path)}`;
-      const where =
-        folder.absolute === undefined ? "not found on this machine" : sanitisePath(folder.absolute);
-      return `Folder: ${shown} (${where})`;
-    }
-    case "work_folder":
-      return folder.absolute === undefined
-        ? `Folder: ${PRODUCT_NAME} work folder`
-        : `Folder: ${PRODUCT_NAME} work folder (${sanitisePath(folder.absolute)})`;
-    case "elsewhere":
-      return "Folder: on another machine";
-  }
 }
