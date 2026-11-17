@@ -651,11 +651,32 @@ export const EVENTS = {
     fields: { state: RUN_STATES, reason: Object.values(RUN_REASONS).flat() },
   },
   "run.recovered": { lvl: "info", c: "launch", fields: { runs: "int" } },
+  // A queued run that could no longer start, by why; run folders retention removed, by count; an
+  // update's hold on new starts taken or let go.
+  "run.refused": { lvl: "info", c: "launch", fields: { reason: RUN_REASONS.failed } },
+  "run.removed": { lvl: "info", c: "launch", fields: { folders: "int" } },
+  "runs.hold": { lvl: "info", c: "launch", fields: { held: "bool" } },
   "run.failed": {
     lvl: "warn",
     c: "launch",
     fields: {
-      stage: ["probe", "prepare", "host", "started", "late_start", "answer", "evidence", "settle"],
+      stage: [
+        "probe",
+        "prepare",
+        "host",
+        "started",
+        "late_start",
+        "answer",
+        "evidence",
+        "settle",
+        "round",
+        "read",
+        "unstarted",
+        "start",
+        "stop_all",
+        "retain",
+        "remove",
+      ],
       type: "error_type",
       code: "error_code",
     },

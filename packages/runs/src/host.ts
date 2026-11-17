@@ -267,6 +267,24 @@ export class RunHost {
   }
 
   /**
+   * A `starting` run no flow of this host holds while the service runs: its `starting` commit
+   * reached the store after the host had given up waiting for it, so nothing started it. Once its
+   * container is confirmed empty by its name it fails `start_timed_out`; any other run is returned
+   * as it is.
+   */
+  async settleUnstarted(id: string): Promise<RunRecord | undefined> {
+    if (this.#isClosed() || this.#flows.has(id)) return this.#machine.read(id);
+    const run = await this.#machine.read(id);
+    if (run?.state !== "starting" || this.#flows.has(id)) return run;
+    const end: RunEnd = { kind: "start_failed", reason: "start_timed_out" };
+    const confirmed = await this.#recoverContainer(containerName(id));
+    if (confirmed.state === "empty") return this.#settle(id, end);
+    const flow = this.#flows.get(id) ?? this.#flow(id);
+    flow.pending = end;
+    return this.#settle(id, { kind: "not_confirmed" });
+  }
+
+  /**
    * At the service's start: every open run of this machine that no flow of this host holds, and
    * every `unknown` one, is settled once its container is confirmed empty by its name: `failed`
    * (`service_ended`) with its last saved answer, or `cancelled` after an accepted Stop. One that

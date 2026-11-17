@@ -46,6 +46,7 @@ export {
 export {
   defaultServiceContext,
   describeInstall,
+  holdRuns,
   probeService,
   processAlive,
   processStartTime,
@@ -54,6 +55,8 @@ export {
   resolvedPath,
   shutdownService,
   type DefaultContextOptions,
+  type HeldRun,
+  type RunsHold,
   type RestartResult,
   type InstallFacts,
   type Probe,
