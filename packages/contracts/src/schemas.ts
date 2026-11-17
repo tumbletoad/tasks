@@ -146,7 +146,9 @@ export const TaskDraft = z.strictObject({
   status: safeLine(40).describe("A status of the space; default open").optional(),
   inbox: z.boolean().describe("Put it in the Inbox for the user").optional(),
   priority: Priority.describe("1 highest, 4 none").optional(),
-  effort: safeLine(20).describe("Effort, such as S, M or L").optional(),
+  effort: safeLine(20)
+    .describe("Estimate from time and difficulty: S under 30 min, M to half a day, L more")
+    .optional(),
   due: safeLine(40).describe("ISO date or phrase: fri, +3d").optional(),
   waiting_on: safeLine(80).describe("Who or what it waits on").optional(),
   focus: z.boolean().describe("Star it for today, only when the user asks").optional(),

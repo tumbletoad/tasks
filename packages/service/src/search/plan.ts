@@ -14,7 +14,8 @@
 //   own MATCH, so `-word` works alone, where FTS5's binary NOT cannot.
 // - With text, a task's score is its best document's `-bm25(10, 3, 2)` (×1.2 for the task's own
 //   document) times A3 3.9.3's boosts; ties go to the most recent change, then the ID. Without
-//   text, the order is due date (none last), priority, most recent change, ID.
+//   text, the order is due date (none last), priority, most recent change, ID. `sort:effort` puts
+//   the effort scale's order before either, tasks without an effort last.
 // - Agents see documents with audience `all` only, in matches, negations, snippets and `has:notes`.
 // - Filters are SQL over the task, each wrapped so a NULL is false and a negation is exact.
 import type { FolderOs, SqlValue } from "@tasks/storage";
@@ -27,6 +28,7 @@ import {
   queryProblem,
   RELATIVE_DAYS,
   RELATIVE_TIME,
+  sortOf,
   suggest,
   termsOf,
   type FilterTerm,
@@ -489,6 +491,9 @@ function filterCondition(term: FilterTerm, ctx: PlanContext, b: Binder): string 
     }
     case "folder":
       return folderCondition(term, ctx, b);
+    case "sort":
+      // An order, not a filter (effortOrder).
+      return "1";
     case "id": {
       if (term.value.startsWith("t_")) return `t.id = ${b.bind(term.value)}`;
       const [prefix = "", number = "0"] = term.value.toUpperCase().split("-");
@@ -516,6 +521,17 @@ function filterWhere(query: Query, ctx: PlanContext, b: Binder): string[] {
   return out;
 }
 
+/**
+ * The ORDER BY terms `sort:` puts first: the task's place in the space's effort scale, smallest
+ * first or largest first, a task without an effort, or with one the scale no longer has, last.
+ */
+function effortOrder(query: Query, ctx: PlanContext, b: Binder): string {
+  const sort = sortOf(query);
+  if (sort === undefined) return "";
+  const rank = `(SELECT e.key FROM json_each(${b.bind(JSON.stringify(ctx.vocabulary.efforts))}) e WHERE e.value = t.effort)`;
+  return `${rank} IS NULL, ${rank}${sort === "-effort" ? " DESC" : ""}, `;
+}
+
 // ---------------------------------------------------------------------------------------------
 // The statement
 
@@ -541,6 +557,7 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
   const audience = ctx.audience === "agent" ? " AND d.audience = 'all'" : "";
   const where = ["t.deleted_at IS NULL", ...filterWhere(query, ctx, b)];
   const lifecycles = LIFECYCLES[ctx.scope];
+  const order = effortOrder(query, ctx, b);
   const limit = b.bind(SEARCH_IDS + 1);
 
   if (ctx.scope === "learnings") {
@@ -556,12 +573,12 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
       match === null
         ? "SELECT l.id AS id, t.ref AS ref, NULL AS doc, NULL AS entity FROM learnings l " +
           `JOIN tasks t ON t.id = l.task_id WHERE ${where.join(" AND ")} ` +
-          `ORDER BY l.created_at DESC, l.id LIMIT ${limit}`
+          `ORDER BY ${order}l.created_at DESC, l.id LIMIT ${limit}`
         : `SELECT l.id AS id, t.ref AS ref, d.doc AS doc, d.entity_id AS entity, ${BM25} AS score ` +
           "FROM search_fts JOIN search_docs d ON d.doc = search_fts.rowid " +
           "JOIN learnings l ON l.id = d.entity_id JOIN tasks t ON t.id = l.task_id " +
           `WHERE search_fts MATCH ${b.bind(match)} AND d.kind = 'learning'${audience} AND ` +
-          `${where.join(" AND ")} ORDER BY score DESC, l.created_at DESC, l.id LIMIT ${limit}`;
+          `${where.join(" AND ")} ORDER BY ${order}score DESC, l.created_at DESC, l.id LIMIT ${limit}`;
     return { kind: "learnings", sql, params: b.params, match };
   }
 
@@ -577,7 +594,7 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
     const sql =
       "SELECT t.id AS id, t.ref AS ref, NULL AS doc, NULL AS entity FROM tasks t " +
       `WHERE ${where.join(" AND ")} ` +
-      `ORDER BY ${DUE} IS NULL, ${DUE}, t.priority, t.touched DESC, t.id LIMIT ${limit}`;
+      `ORDER BY ${order}${DUE} IS NULL, ${DUE}, t.priority, t.touched DESC, t.id LIMIT ${limit}`;
     return { kind: "tasks", sql, params: b.params, match };
   }
 
@@ -614,6 +631,6 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
     "SELECT t.id AS id, t.ref AS ref, hit.doc AS doc, hit.entity AS entity, " +
     `hit.score * ${boosts.join(" * ")} AS score ` +
     `FROM hit JOIN tasks t ON t.id = hit.task_id WHERE ${where.join(" AND ")} ` +
-    `ORDER BY score DESC, t.touched DESC, t.id LIMIT ${limit}`;
+    `ORDER BY ${order}score DESC, t.touched DESC, t.id LIMIT ${limit}`;
   return { kind: "tasks", sql, params: b.params, match };
 }

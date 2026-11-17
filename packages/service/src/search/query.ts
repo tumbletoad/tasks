@@ -8,6 +8,9 @@
 //   `10:30` stays a word; an unknown key fails with a suggestion. A value may be quoted. A known
 //   key with `=` (`p=3`) is read as `p:3`.
 // - OR joins words with words or filters with filters, and never a negated term.
+// - `sort:effort` lists the smallest effort first by the space's scale, `sort:-effort` the largest;
+//   tasks without an effort come last either way. It filters nothing, so it stands alone: never
+//   negated, never in an OR, once.
 // - At most 500 characters and 20 terms.
 //
 // Parsing checks everything that does not depend on the space: the keys, the operators each key
@@ -40,6 +43,7 @@ export const KEYS = [
   "on",
   "folder",
   "id",
+  "sort",
 ] as const;
 export type Key = (typeof KEYS)[number];
 
@@ -67,6 +71,7 @@ const KEY_OPS: Readonly<Record<Key, readonly Op[]>> = {
   on: EQUALS,
   folder: EQUALS,
   id: EQUALS,
+  sort: EQUALS,
 };
 
 /** Words people try for a key, and the key they mean. */
@@ -83,7 +88,12 @@ const KEY_ALIASES: Readonly<Record<string, Key>> = {
   changed: "updated",
   done: "completed",
   where: "on",
+  order: "sort",
 };
+
+/** What `sort:` takes: the effort scale's order, smallest first, or with `-` largest first. */
+export const SORT_VALUES = ["effort", "-effort"] as const;
+export type Sort = (typeof SORT_VALUES)[number];
 
 export const IS_VALUES = [
   "inbox",
@@ -267,6 +277,12 @@ function checkValue(key: Key, op: Op, value: string): void {
     case "id":
       if (/^[A-Za-z]{1,6}-[1-9][0-9]{0,9}$/.test(value) || /^t_[0-9a-z]{26}$/.test(value)) return;
       throw queryProblem("An id: value is a task reference such as M-14", "Use id:M-14.");
+    case "sort":
+      if ((SORT_VALUES as readonly string[]).includes(v)) return;
+      throw queryProblem(
+        "A sort: value is effort or -effort",
+        "Use sort:effort for the smallest effort first.",
+      );
     default:
       // status, area, project, effort, source, on and folder name the space's own values or this
       // machine's folders (plan.ts).
@@ -395,6 +411,13 @@ export function parseQuery(given: string): Query {
       throw queryProblem("OR joins words with words or filters with filters");
     }
   }
+  const sorts = groups.flat().filter((t) => t.type === "filter" && t.key === "sort");
+  if (sorts.some((t) => t.negated)) {
+    throw queryProblem("A sort cannot be negated", "Use sort:-effort for the largest first.");
+  }
+  if (sorts.length > 1 || groups.some((g) => g.length > 1 && sorts.some((s) => g.includes(s)))) {
+    throw queryProblem("A query sorts once, outside any OR", "Use one sort:effort on its own.");
+  }
   // A word or phrase made only of characters the index's tokenizer surely drops (A1 3.12's
   // unicode61) could match nothing and would empty the whole AND: it is left out, and `parsed` shows
   // that. Anything else goes to the index as written, since only SQLite's own tables say for sure
@@ -463,6 +486,12 @@ export function printQuery(query: Query): string {
 
 /** The query's terms, in order. */
 export const termsOf = (query: Query): Term[] => query.groups.flat();
+
+/** The order the query asks for with `sort:`, if any. */
+export function sortOf(query: Query): Sort | undefined {
+  const term = termsOf(query).find((t) => t.type === "filter" && t.key === "sort");
+  return term === undefined ? undefined : (lower((term as FilterTerm).value) as Sort);
+}
 
 /**
  * Whether the query asks for completed or archived tasks itself: then a call without a scope

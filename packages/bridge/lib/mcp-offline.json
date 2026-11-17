@@ -178,7 +178,7 @@
                       "type": "string"
                     },
                     "effort": {
-                      "description": "Effort, such as S, M or L",
+                      "description": "Estimate from time and difficulty: S under 30 min, M to half a day, L more",
                       "maxLength": 20,
                       "type": "string"
                     },
@@ -358,7 +358,7 @@
                       "type": "string"
                     },
                     "effort": {
-                      "description": "Effort, such as S, M or L",
+                      "description": "Estimate from time and difficulty: S under 30 min, M to half a day, L more",
                       "maxLength": 20,
                       "type": "string"
                     },
@@ -942,7 +942,7 @@
                 "type": "integer"
               },
               "q": {
-                "description": "Words, \"phrases\" and filters, such as status:open p<=2",
+                "description": "Words, \"phrases\", filters such as status:open p<=2, and sort:effort",
                 "maxLength": 500,
                 "type": "string"
               },
@@ -1377,7 +1377,7 @@
                       "type": "string"
                     },
                     "effort": {
-                      "description": "Effort, such as S, M or L",
+                      "description": "Estimate from time and difficulty: S under 30 min, M to half a day, L more",
                       "maxLength": 20,
                       "type": "string"
                     },
@@ -1557,7 +1557,7 @@
                       "type": "string"
                     },
                     "effort": {
-                      "description": "Effort, such as S, M or L",
+                      "description": "Estimate from time and difficulty: S under 30 min, M to half a day, L more",
                       "maxLength": 20,
                       "type": "string"
                     },
@@ -2141,7 +2141,7 @@
                 "type": "integer"
               },
               "q": {
-                "description": "Words, \"phrases\" and filters, such as status:open p<=2",
+                "description": "Words, \"phrases\", filters such as status:open p<=2, and sort:effort",
                 "maxLength": 500,
                 "type": "string"
               },

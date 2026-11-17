@@ -1777,7 +1777,7 @@ MCP tool `add_tasks`, "Add tasks": Use for work left for later and for items fro
 | A1 operations | `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `add_tasks`, CLI `tasks add`, UI |
 | Errors | `invalid_input`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1577, reported |
+| Definition, estimated tokens | 1601, reported |
 | Result budget, estimated tokens | typical 80, max 2000 |
 
 ### Input
@@ -1792,7 +1792,7 @@ MCP tool `add_tasks`, "Add tasks": Use for work left for later and for items fro
 | `tasks[].status` | string, max 40 | no | A status of the space; default open |
 | `tasks[].inbox` | boolean | no | Put it in the Inbox for the user |
 | `tasks[].priority` | integer, 1 to 4 | no | 1 highest, 4 none |
-| `tasks[].effort` | string, max 20 | no | Effort, such as S, M or L |
+| `tasks[].effort` | string, max 20 | no | Estimate from time and difficulty: S under 30 min, M to half a day, L more |
 | `tasks[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `tasks[].waiting_on` | string, max 80 | no | Who or what it waits on |
 | `tasks[].focus` | boolean | no | Star it for today, only when the user asks |
@@ -1907,7 +1907,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | A1 operations | `task.complete`, `task.archive`, `task.wrap_up`, `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `complete_task`, CLI `tasks done`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1824, reported |
+| Definition, estimated tokens | 1849, reported |
 | Result budget, estimated tokens | typical 100, max 1500 |
 
 ### Input
@@ -1926,7 +1926,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].status` | string, max 40 | no | A status of the space; default open |
 | `follow_ups[].inbox` | boolean | no | Put it in the Inbox for the user |
 | `follow_ups[].priority` | integer, 1 to 4 | no | 1 highest, 4 none |
-| `follow_ups[].effort` | string, max 20 | no | Effort, such as S, M or L |
+| `follow_ups[].effort` | string, max 20 | no | Estimate from time and difficulty: S under 30 min, M to half a day, L more |
 | `follow_ups[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `follow_ups[].waiting_on` | string, max 80 | no | Who or what it waits on |
 | `follow_ups[].focus` | boolean | no | Star it for today, only when the user asks |
@@ -2799,14 +2799,14 @@ MCP tool `search`, "Search tasks and learnings": Use to find tasks before you ad
 | A1 operations | none |
 | Faces | MCP `search`, CLI `tasks find`, UI |
 | Errors | `invalid_input`, `cursor_expired`, `space_unavailable`, `forbidden` |
-| Definition, estimated tokens | 527, reported |
+| Definition, estimated tokens | 533, reported |
 | Result budget, estimated tokens | typical 1000, max 3000 |
 
 ### Input
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `q` | string, max 500 | no | Words, "phrases" and filters, such as status:open p<=2 |
+| `q` | string, max 500 | no | Words, "phrases", filters such as status:open p<=2, and sort:effort |
 | `scope` | "active" \| "finished" \| "all" \| "learnings" | no | active by default; finished is completed or archived |
 | `limit` | integer, 1 to 50 | no | Rows per page; default 15 |
 | `cursor` | string, max 40 | no | Next page: the last page's cursor, alone |

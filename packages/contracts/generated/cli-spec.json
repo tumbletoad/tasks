@@ -184,7 +184,7 @@
         {
           "field": "tasks[].effort",
           "flag": "--effort",
-          "help": "Effort, such as S, M or L",
+          "help": "Estimate from time and difficulty: S under 30 min, M to half a day, L more",
           "repeat": false,
           "required": false,
           "type": "string"
@@ -497,7 +497,7 @@
       "positionals": [
         {
           "field": "q",
-          "help": "Words, \"phrases\" and filters, such as status:open p<=2",
+          "help": "Words, \"phrases\", filters such as status:open p<=2, and sort:effort",
           "name": "q",
           "required": false,
           "type": "string"
