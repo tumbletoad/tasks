@@ -24,7 +24,7 @@ function apiOf(answers: Record<string, () => unknown>): { api: Api; asked: strin
           try {
             return Promise.resolve(answers[task]?.());
           } catch (error) {
-            return Promise.reject(error as Error);
+            return Promise.reject(error instanceof Error ? error : new Error(String(error)));
           }
         },
       },
