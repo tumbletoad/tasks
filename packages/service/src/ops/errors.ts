@@ -50,11 +50,36 @@ function valueAt(input: unknown, path: readonly PropertyKey[]): unknown {
 /** Fields an earlier build took, and the field a caller gives instead now. */
 const RENAMED: Readonly<Record<string, string>> = { place: "folder" };
 
+/** The form of a field whose pattern the caller cannot see in its name, by the field's name. */
+const FORMATS: Readonly<Record<string, string>> = {
+  request_id: "16 to 64 characters from A-Z, a-z, 0-9, _ and -",
+};
+
+/**
+ * A limit as the caller fixes it: what the field takes at most and how much it was given. Only
+ * lengths and counts, never the value.
+ */
+function overLimit(maximum: unknown, origin: unknown, value: unknown): string {
+  const most = typeof maximum === "number" || typeof maximum === "bigint" ? String(maximum) : "";
+  if (most === "") return ISSUE["too_big"] ?? "Over its limit";
+  if (origin === "string") {
+    const given = typeof value === "string" ? `, not ${String(value.length)}` : "";
+    return `At most ${most} characters${given}`;
+  }
+  if (origin === "array") {
+    const given = Array.isArray(value) ? `, not ${String(value.length)}` : "";
+    return `At most ${most} items${given}`;
+  }
+  return `At most ${most}`;
+}
+
 /**
  * A schema failure: `too_large` when every issue is a limit (A3 3.5: over a field, item or
- * request limit), else `invalid_input`, with each issue's path and a fixed sentence. A field the
- * input leaves out is `Missing`, never a wrong type: the caller gave nothing to be wrong. A field
- * an earlier build took is named with the field that replaced it, so the caller fixes its call.
+ * request limit), else `invalid_input`, with each issue's path and a fixed sentence: a limit says
+ * how much the field takes and how much it got, a format what it looks like. A field the input
+ * leaves out is `Missing`, never a wrong type: the caller gave nothing to be wrong. A field an
+ * earlier build took is named with the field that replaced it, so the caller fixes its call.
+ * `face` and `entry` say where the caller reads its help: a command names its own.
  */
 export function schemaFailure(
   error: {
@@ -62,9 +87,13 @@ export function schemaFailure(
       readonly code: string;
       readonly path: readonly PropertyKey[];
       readonly keys?: readonly string[];
+      readonly maximum?: unknown;
+      readonly origin?: unknown;
     }[];
   },
   input?: unknown,
+  face: Face = "mcp",
+  entry?: string,
 ): AppError {
   const renamed: string[] = [];
   const issues = error.issues.slice(0, 20).flatMap((issue) => {
@@ -88,24 +117,33 @@ export function schemaFailure(
         return { path: path === "" ? key : `${path}.${key}`, message: `Now ${now}` };
       });
     }
+    const format = FORMATS[String(issue.path[issue.path.length - 1])];
     return [
       {
         path,
         message:
-          issue.code === "invalid_type" && valueAt(input, issue.path) === undefined
+          issue.code === "invalid_type" && value === undefined
             ? "Missing"
-            : (ISSUE[issue.code] ?? "Invalid"),
+            : issue.code === "too_big"
+              ? overLimit(issue.maximum, issue.origin, value)
+              : issue.code === "invalid_format" && format !== undefined
+                ? format
+                : (ISSUE[issue.code] ?? "Invalid"),
       },
     ];
   });
   const tooLarge = error.issues.every((issue) => issue.code === "too_big");
+  const found = face === "cli" && entry !== undefined ? findEntry(entry) : undefined;
+  const verb = found === undefined ? undefined : cliFaces(found)[0]?.verb;
+  const help = verb === undefined ? undefined : `Run ${CLI_NAME} help ${verb} for the arguments.`;
+  const hint =
+    renamed.length > 0
+      ? `${[...new Set(renamed)].join(", ")}: "cwd", an absolute folder or one under ~.`
+      : help;
   return new AppError({
     code: tooLarge ? "too_large" : "invalid_input",
     message: tooLarge ? "The input is over a limit." : "The input does not match the operation.",
-    hint:
-      renamed.length > 0
-        ? `${[...new Set(renamed)].join(", ")}: "cwd", an absolute folder or one under ~.`
-        : "Run tasks help <verb> for the arguments.",
+    ...(hint === undefined ? {} : { hint }),
     data: { issues },
   });
 }
@@ -120,11 +158,14 @@ export function storageFailure(error: unknown): AppError {
   return new AppError({ code: "internal", message: "Something went wrong in the service." });
 }
 
+/** The input path of the caller's own operation `op`, with the field a refusal names there. */
+export type PathOf = (op: number, field: string | undefined) => string | undefined;
+
 /** Where the caller reads a hint: the commands a person types, an agent's tools, or the UI. */
 export type Face = "cli" | "mcp" | "ui";
 
 /** How the caller on `face` does `entry`: the command or the tool, or nothing in the UI. */
-function way(face: Face, entry: string, args: string): string | undefined {
+export function way(face: Face, entry: string, args: string): string | undefined {
   const found = findEntry(entry);
   if (face === "mcp") return found?.faces.mcp?.tool ?? entry;
   if (face === "ui") return undefined;
@@ -202,6 +243,7 @@ function heldWrapUp(result: WriteResult, op: number | undefined): boolean {
  * index of complete_task's `once` wrap-up operation, the only one the writer holds whatever the
  * base. `face` is where the caller reads the hint: a command names commands, a tool tools. `own`
  * turns the request's operation index into the caller's own, undefined for one it did not ask for.
+ * `pathOf` names where in the input that operation came from, so the caller fixes that draft.
  */
 export function resultFailure(
   result: WriteResult,
@@ -209,6 +251,7 @@ export function resultFailure(
   wrapUp?: number,
   face: Face = "mcp",
   own: (i: number) => number | undefined = (i) => i,
+  pathOf?: PathOf,
 ): AppError {
   const problem = result.error;
   const op = problem?.op === undefined ? undefined : own(problem.op);
@@ -221,7 +264,8 @@ export function resultFailure(
     : problem === undefined
       ? undefined
       : (hints[problem.code] ?? hintOf(problem.code, face));
-  const base: ErrorBody =
+  const path = op === undefined ? undefined : pathOf?.(op, problem?.field);
+  let base: ErrorBody =
     problem === undefined
       ? { code: "conflict", message: "A field changed after the base: read again." }
       : {
@@ -233,6 +277,9 @@ export function resultFailure(
           }),
           ...(hint === undefined ? {} : { hint }),
         };
+  if (path !== undefined && problem !== undefined) {
+    base = { ...base, data: { ...base.data, issues: [{ path, message: problem.message }] } };
+  }
   if (result.status !== "conflict") {
     return new AppError(result.replayed === true ? withReplay(base) : base);
   }

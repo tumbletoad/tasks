@@ -285,6 +285,14 @@ export function fit(rendered: Rendered, maxTokens: number, random: Random = rand
   return best.lines.join("\n");
 }
 
+/** Whether `fit` keeps every unit of `rendered`, whatever marker it draws. */
+export function fitsWhole(rendered: Rendered, maxTokens: number): boolean {
+  const budget = Math.floor(maxTokens * BYTES_PER_TOKEN.result);
+  const units = cuttable(rendered.parts);
+  const marker = "Z".repeat(LONG_MARKER_LENGTH);
+  return sizeOf(compose(rendered, marker, units, units.length)) <= budget;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Helpers for renderers
 

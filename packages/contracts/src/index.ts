@@ -100,6 +100,7 @@ export {
 export { taskReopen, TaskReopenInput, TaskReopenResult } from "./entries/task-reopen.ts";
 export {
   CURSOR_PATTERN,
+  SEARCH_IDS,
   SEARCH_SCOPES,
   SearchGoneRow,
   SearchLearningRow,

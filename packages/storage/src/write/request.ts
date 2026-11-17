@@ -1,4 +1,4 @@
-// What the writer accepts and returns (A1 3.5 to 3.7, 3.21). A request names 1 to 50 A1
+// What the writer accepts and returns (A1 3.5 to 3.7, 3.21). A request names its A1
 // operations, the credential fields A2 takes from the connection, an optional base and a reason.
 // These are the writer's internal interface, behind the registry entries of packages/contracts:
 // a handler expands an entry's input into these operations (A3 3.2.1), and the service sends them
@@ -45,10 +45,19 @@ import {
 // Limits (A1 3.7)
 
 export const WRITE_LIMITS = {
-  /** Operations per request. Internal importers may commit more in one commit (M7). */
-  ops: 50,
-  /** Bytes of JSON per request. */
-  requestBytes: 512 * 1024,
+  /**
+   * Operations per request: one transaction holds the space's writer, and its receipt keeps a
+   * result per operation. The largest call an entry takes fits: 25 task drafts, each with its log
+   * entry, 10 sources, a folder and a new area and project (375). An import commits more.
+   */
+  ops: 400,
+  /**
+   * Bytes of JSON per request: twice the longest line a connection carries (8 MiB), because the
+   * intent and its operations each hold the input's text, so no call a connection carried and its
+   * entry accepted is refused for its size. A run's answer (RUN_RESULT_TEXT_MAX_BYTES), up to six
+   * times longer as escaped JSON, fits too.
+   */
+  requestBytes: 16 * 1024 * 1024,
   /** Characters. */
   title: 300,
   summary: 400,
@@ -80,11 +89,6 @@ export const WRITE_LIMITS = {
    */
   importOps: 1_000_000,
   importBytes: 512 * 1024 * 1024,
-  /**
-   * Bytes of JSON of a request that only moves runs: a run's answer (RUN_RESULT_TEXT_MAX_BYTES) is
-   * up to six times longer as escaped JSON, so such a request is never refused for its answer.
-   */
-  runBytes: 8 * 1024 * 1024,
   /** Characters of a legacy ID kept as an alias: the prototype's marker grammar (A7 3.15.2). */
   alias: 1_024,
   /**
@@ -245,6 +249,11 @@ export interface OpResult {
   version: number;
   /** `source.add` on an existing source: the fields the input gives otherwise (A1 3.6). */
   differs?: string[];
+  /**
+   * `source.add` of a new draft whose key another active task holds: that task's reference. The
+   * source was linked without the key (Dedupe.decide).
+   */
+  held_by?: string;
   /** A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). */
   matched_by?: "source_key";
   lifecycle?: TaskLifecycle;
@@ -395,8 +404,8 @@ export interface TaskCreate extends TaskValues, Placement {
    */
   link_sources?: boolean;
   /**
-   * The creation instant, which an import takes from the prototype (A7 3.15.3: 09:00 on the
-   * `(added …)` day). Absent: the commit's instant. An import's only.
+   * The creation instant of work that existed before it was added here: an import's from the
+   * prototype, an agent's from the tool it recreates. Absent: the commit's instant.
    */
   created_at?: number;
 }
@@ -435,10 +444,7 @@ export interface TaskComplete {
    * INVALID_TRANSITION: complete_task's way to finish a task whatever the user did first (A3 3.4.8).
    */
   if_active?: boolean;
-  /**
-   * `completed_at`, which an import takes from the prototype (A7 3.15.3: a check event's time, or
-   * 09:00 on a `(done …)` day). Absent: the commit's instant. An import's only.
-   */
+  /** `completed_at` of work done before it was recorded here. Absent: the commit's instant. */
   at?: number;
 }
 
@@ -535,10 +541,7 @@ export interface LogAdd {
   body: string;
   /** Default `progress`. */
   log_kind?: LogKind;
-  /**
-   * The entry's instant, which an import takes from the prototype (A7 3.15.3: 09:00 on an
-   * evidence's `source_date`). Absent: the commit's instant. An import's only.
-   */
+  /** The instant of an entry made before it was added here. Absent: the commit's instant. */
   at?: number;
 }
 
@@ -1055,7 +1058,7 @@ export const IMPORT_OPERATIONS: ReadonlySet<OperationKind> = new Set([
  * The prototype import's request (A1 3.21; A7 3.15.5): origin `import`, the user as the principal
  * and the import actor as the author, which the writer checks in its transaction. It is the
  * request that uses an import's powers: the import's operations and fields (creation and completion
- * instants, `ext`), a preview guard, or more than a request's 50 operations. Another request of
+ * instants, `ext`), a preview guard, or more operations than a request may hold. Another request of
  * origin `import` (A1 3.14's working-copy import, whose author is the human) has none of them.
  */
 export function isImportRequest(request: CheckedRequest): boolean {
@@ -2305,7 +2308,8 @@ function sourceFields(f: Fields): SourceFields {
   }
   const who = f.optText("who", line);
   if (who !== undefined) source.who = who;
-  const ref = f.optText("ref", line);
+  // A key a source is linked without stays as its reference (Dedupe.decide).
+  const ref = f.optText("ref", { chars: WRITE_LIMITS.sourceKey, line: true });
   if (ref !== undefined) source.ref = ref;
   const url = f.optText("url", { chars: WRITE_LIMITS.url, line: true });
   if (url !== undefined) source.url = url;
@@ -2394,27 +2398,12 @@ export function checkRequest(value: unknown): CheckedRequest {
   // from the origin, which the credential's check below confirms.
   const importing =
     isRecord(value) && isRecord(value["actor"]) && value["actor"]["origin"] === "import";
-  // A request that only moves runs may carry a whole answer; its operations' own checks below
-  // still hold the answer to its cap.
-  const ops0 = isRecord(value) ? value["ops"] : undefined;
-  const runsOnly =
-    Array.isArray(ops0) &&
-    ops0.length > 0 &&
-    ops0.every((op) => isRecord(op) && op["kind"] === "run.transition");
   const bytes = utf8Bytes(json ?? "");
-  const maxBytes = importing
-    ? WRITE_LIMITS.importBytes
-    : runsOnly
-      ? WRITE_LIMITS.runBytes
-      : WRITE_LIMITS.requestBytes;
+  const maxBytes = importing ? WRITE_LIMITS.importBytes : WRITE_LIMITS.requestBytes;
   if (bytes > maxBytes) {
     fail(
       "TOO_LARGE",
-      importing
-        ? "The import is larger than 512 MiB"
-        : runsOnly
-          ? "The request is larger than 8 MiB"
-          : "The request is larger than 512 KiB",
+      importing ? "The import is larger than 512 MiB" : "The request is larger than 16 MiB",
       "",
     );
   }
@@ -2436,7 +2425,11 @@ export function checkRequest(value: unknown): CheckedRequest {
   }
   const list = ops as unknown[];
   if (list.length > (importing ? WRITE_LIMITS.importOps : WRITE_LIMITS.ops)) {
-    fail("TOO_LARGE", `A request has at most ${importing ? "1,000,000" : "50"} operations`, "ops");
+    fail(
+      "TOO_LARGE",
+      `A request has at most ${importing ? "1,000,000" : String(WRITE_LIMITS.ops)} operations`,
+      "ops",
+    );
   }
   const request: CheckedRequest = {
     space_id: spaceId,
@@ -2569,18 +2562,37 @@ function checkPreview(f: Fields): PreviewGuard {
   return guard;
 }
 
-/** The fields of the operations that only an import request may carry (isImportRequest). */
+/**
+ * The fields of the operations that make a request of origin `import` an import (isImportRequest):
+ * those only an import may carry, and the times an import keeps from the prototype.
+ */
 function importFields(op: Operation): boolean {
   switch (op.kind) {
     case "task.create":
-      return op.created_at !== undefined || op.ext !== undefined;
-    case "task.patch":
-      return op.set?.ext !== undefined;
+      return op.created_at !== undefined || importOnly(op);
     case "task.complete":
     case "log.add":
       return op.at !== undefined;
+    default:
+      return importOnly(op);
+  }
+}
+
+/**
+ * The operations and fields only an import writes. When a task was created or finished, or a log
+ * entry made, any caller may say: an agent that recreates work from another tool keeps its dates.
+ */
+function importOnly(op: Operation): boolean {
+  switch (op.kind) {
+    case "task.create":
+      return op.ext !== undefined;
+    case "task.patch":
+      return op.set?.ext !== undefined;
     case "source.add":
       return op.source.ext !== undefined;
+    case "task.complete":
+    case "log.add":
+      return false;
     default:
       return IMPORT_OPERATIONS.has(op.kind);
   }
@@ -2588,22 +2600,22 @@ function importFields(op: Operation): boolean {
 
 /**
  * The prototype import's request and the undo of one (A7 3.15.5). Only a request of origin
- * `import` holds the import's operations and fields, a preview, more than 50 operations or more
- * than 512 KiB (isImportRequest); such a request comes from the user as the principal with the
+ * `import` holds the import's operations and fields, a preview, or more operations or bytes than
+ * a plain request (isImportRequest); such a request comes from the user as the principal with the
  * import actor as the author (the writer checks the author's kind), and never joins an undo stack,
  * because its exchange is never undone by one (A1 3.6). Another request of origin `import` is a
  * plain request. An `import.undo` is a request of its own, from a human, with no base, never
  * undoable.
  */
 function checkImportRequest(f: Fields, request: CheckedRequest, bytes: number): void {
-  // One classifier: a request of origin `import` may be larger than 512 KiB only when it is an
+  // One classifier: a request of origin `import` may be larger than a plain one only when it is an
   // import (isImportRequest), which the writer then holds to the import actor.
   const importing = isImportRequest(request);
   if (request.actor.origin === "import" && !importing && bytes > WRITE_LIMITS.requestBytes) {
-    fail("TOO_LARGE", "The request is larger than 512 KiB", "");
+    fail("TOO_LARGE", "The request is larger than 16 MiB", "");
   }
   if (request.actor.origin !== "import") {
-    const at = request.ops.findIndex(importFields);
+    const at = request.ops.findIndex(importOnly);
     if (at >= 0) {
       fail("VALIDATION_FAILED", "Only an import writes this", `ops[${String(at)}]`, at);
     }
@@ -2679,7 +2691,8 @@ function checkWarnings(value: unknown): string[] {
         Array.from(line).length <= 500 &&
         !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(line),
     );
-  if (!ok) fail("VALIDATION_FAILED", "Expected at most 50 warnings of one line each", "warnings");
+  if (!ok)
+    fail("VALIDATION_FAILED", "Expected at most one warning of one line per operation", "warnings");
   return [...(value as string[])];
 }
 

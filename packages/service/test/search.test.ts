@@ -9,7 +9,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { AppError, SEARCH_SCOPES, TaskSearchResult } from "@tasks/contracts";
+import { AppError, SEARCH_IDS, SEARCH_SCOPES, TaskSearchResult } from "@tasks/contracts";
 import { indexChanges, rebuildSearchIndex, type Operation, type WriteResult } from "@tasks/storage";
 import {
   addLearning,
@@ -786,30 +786,31 @@ describe("[A3.5.search.cursors] cursor pages under random writes, deletions and 
     expect(String(next.rows[0]?.["title"])).toMatch(/renamed/);
   });
 
-  test("more than 1,000 matches freeze the first 1,000, and total says 1000+", async () => {
+  test("more matches than a search keeps freeze the first ones, and total says so", async () => {
     const word = "bulkword";
-    for (let n = 0; n < 21; n += 1) {
+    const batch = 400;
+    for (let n = 0; n * batch <= SEARCH_IDS; n += 1) {
       created(
         submit(
           fx,
-          Array.from({ length: 50 }, (_, i) => ({
+          Array.from({ length: batch }, (_, i) => ({
             kind: "task.create" as const,
-            title: `${word} ${String(n * 50 + i)}`,
+            title: `${word} ${String(n * batch + i)}`,
           })),
         ),
       );
     }
     let page = await search({ q: word, limit: 50 });
-    expect(page.total).toBe("1000+");
+    expect(page.total).toBe(`${String(SEARCH_IDS)}+`);
     const seen = ids(page);
     while (page.cursor !== undefined) {
       page = await search({ cursor: page.cursor });
       seen.push(...ids(page));
     }
-    expect(seen).toHaveLength(1000);
-    expect(new Set(seen).size).toBe(1000);
-    expect(page.first).toBe(951);
-  }, 120_000);
+    expect(seen).toHaveLength(SEARCH_IDS);
+    expect(new Set(seen).size).toBe(SEARCH_IDS);
+    expect(page.first).toBe(SEARCH_IDS - 49);
+  }, 300_000);
 
   test("an epoch, incarnation, binding, idle or restart ends a cursor with its reason", async () => {
     const word = "expireword";
