@@ -316,6 +316,8 @@ interface Status {
     /** What happened and what to run, when the space is not open for writing. */
     message?: string;
     migrated?: Migrated;
+    /** An open space whose backups are not working: what happened and what to do. */
+    backup?: { why?: string; message?: string };
   }[];
 }
 
@@ -413,12 +415,19 @@ async function serviceChecks(
     });
     checks.push({ id: "endpoint", status: "ok", detail: "The handshake verified with ipc.key." });
     const spaces = status.spaces ?? [];
-    // A space the person closed is as they left it, not a problem.
+    // A space the person closed is as they left it, not a problem. One whose backups are not
+    // working is.
     const bad = spaces.filter(
-      (s) => s.state !== "open" && s.state !== "read_only" && s.state !== "closed",
+      (s) =>
+        (s.state !== "open" && s.state !== "read_only" && s.state !== "closed") ||
+        s.backup !== undefined,
     );
     // A space's way out names `<folder>`, which tasks space list shows: this row holds no path.
-    const folders = spaces.some((s) => s.message?.includes("<folder>") === true)
+    const folders = spaces.some(
+      (s) =>
+        s.message?.includes("<folder>") === true ||
+        s.backup?.message?.includes("<folder>") === true,
+    )
       ? " Run tasks space list to see each space's folder."
       : "";
     // What this run of the service migrated: an update shows here until the next restart.
@@ -438,7 +447,8 @@ async function serviceChecks(
                   s.migrated !== undefined && migratedSince(s.migrated, started)
                     ? `. ${migratedLine(s.migrated)}`
                     : "";
-                return `${name}: ${s.state}${reason}${message}${migrated}`;
+                const backup = s.backup?.message === undefined ? "" : `. ${s.backup.message}`;
+                return `${name}: ${s.state}${reason}${message}${migrated}${backup}`;
               })
               .join("; ") + folders,
     });
