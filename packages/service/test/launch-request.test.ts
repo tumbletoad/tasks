@@ -232,7 +232,8 @@ async function mcpAgent(r: Rig, cwd: string) {
 async function cliShow(r: Rig, brief: string): Promise<{ request?: string }> {
   const command = /run `\S+ ([^`]+)`\.$/mu.exec(brief)?.[1];
   if (command === undefined) throw new Error("The brief names no command");
-  const { TASKS_SPACE: _space, ...outside } = process.env;
+  const outside = { ...process.env };
+  delete outside["TASKS_SPACE"];
   const child = spawn(process.execPath, [CLI_BIN, ...command.split(" "), "--json"], {
     env: { ...outside, TASKS_HOME: r.lab.home, CLAUDECODE: "1" },
     stdio: ["ignore", "pipe", "pipe"],

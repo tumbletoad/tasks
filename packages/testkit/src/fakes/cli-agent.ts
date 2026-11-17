@@ -75,7 +75,8 @@ function readTask(spec: string): CliAgentReport["read"] {
   const [file, ...rest] = command;
   if (file === undefined) return { code: null, error: "no_command" };
   // The brief's command alone: without the launch's TASKS_SPACE, as in an app opened by a link.
-  const { TASKS_SPACE: _space, ...outside } = env;
+  const outside = { ...env };
+  delete outside["TASKS_SPACE"];
   const ran = spawnSync(file, [...rest, ...brief.command, "--json"], {
     env: { ...outside, TASKS_HOME: home },
     encoding: "utf8",
