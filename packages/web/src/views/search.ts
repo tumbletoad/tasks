@@ -52,6 +52,10 @@ export function rowOfFound(
     ref: row.ref,
     title: row.title,
     ...(summary === undefined || summary === "" ? {} : { summary }),
+    // A finished task's row says how it ended in the summary's place, as in Completed. A completed
+    // task has an ending only once it is wrapped up: the feed then keeps it while it stays so.
+    ...(row.ending === undefined ? {} : { ending: row.ending }),
+    ...(row.ending !== undefined && row.lifecycle === "completed" ? { wrap_state: "wrapped" } : {}),
     status: row.status,
     inbox: row.inbox,
     lifecycle: row.lifecycle,

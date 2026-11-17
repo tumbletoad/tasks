@@ -6,21 +6,12 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, FinishedRow, TaskFinishedResult } from "@tasks/contracts";
-import {
-  newId,
-  type Connection,
-  type Id,
-  type Operation,
-  type Row,
-  type WorkerConnection,
-  type WriteResult,
-} from "@tasks/storage";
+import { newId, type Id, type Operation, type WriteResult } from "@tasks/storage";
 import { MACHINE, writeFixture, type Fixture } from "@tasks/storage/write-helpers";
 import { readBatch } from "../src/http/feed.ts";
 import type { Caller } from "../src/ops/caller.ts";
 import { opCall, type OpsHost } from "../src/ops/index.ts";
-import type { SearchReader } from "../src/search/search.ts";
-import { tempRoot } from "./harness.ts";
+import { readerOf, tempRoot } from "./harness.ts";
 
 let temp: { root: string; cleanup: () => void };
 let fx: Fixture;
@@ -39,27 +30,6 @@ afterAll(() => {
   fx.close();
   temp.cleanup();
 });
-
-/** The service's reader, in this thread: each call is one deferred read transaction. */
-function readerOf(conn: Connection): WorkerConnection {
-  const reader: SearchReader = {
-    transaction: (mode, queries) =>
-      Promise.resolve(
-        conn.transaction(mode, () =>
-          queries.map((q) => {
-            const statement = conn.prepare(q.sql);
-            if (q.mode === "get") return statement.get(q.params) ?? null;
-            if (q.mode === "all") {
-              const rows: Row[] = statement.all(q.params);
-              return rows;
-            }
-            return statement.run(q.params);
-          }),
-        ),
-      ),
-  };
-  return reader as unknown as WorkerConnection;
-}
 
 const host = (): OpsHost => ({
   machine: { id: MACHINE.id },

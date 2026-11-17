@@ -68,7 +68,7 @@ import { readAccounts, type AccountFacts } from "./accounts.ts";
 import { accountsCheck, httpCheck, type HttpStatusView } from "./doctor-http.ts";
 import type { Io } from "./io.ts";
 import { migratedLine, migratedSince, type Migrated } from "./migrations.ts";
-import { bodyOf, printUsage } from "./output.ts";
+import { bodyOf, printUsage, RESTART_HINT } from "./output.ts";
 import type { AgentsSetupOptions } from "./setup-agents.ts";
 import { asAppError } from "./verbs.ts";
 
@@ -355,7 +355,7 @@ export async function requestCheck(session: Session, spaces: Status["spaces"]): 
       return {
         id: "requests",
         status: "fail",
-        detail: `The service has no operation for tasks ${missing.join(", ")}: a restart is pending.`,
+        detail: `The service has no operation for tasks ${missing.join(", ")}. ${RESTART_HINT}`,
       };
     }
     const served = (spaces ?? []).filter(
@@ -421,7 +421,7 @@ async function serviceChecks(
     checks.push({
       id: "service",
       status: !speaks ? "fail" : sameBuild ? "ok" : "warn",
-      detail: `Running ${String(status.version)} (${String(status.build)}), up ${String(Math.round((status.uptime_ms ?? 0) / 1000))} s, protocol ${String(range?.min)}-${String(range?.max)}${sameBuild ? "" : `; this CLI is ${CLI_BUILD.version} (${CLI_BUILD.build}): a restart is pending`}.`,
+      detail: `Running ${String(status.version)} (${String(status.build)}), up ${String(Math.round((status.uptime_ms ?? 0) / 1000))} s, protocol ${String(range?.min)}-${String(range?.max)}${sameBuild ? "." : `; this CLI is ${CLI_BUILD.version} (${CLI_BUILD.build}). ${RESTART_HINT}`}`,
     });
     checks.push({ id: "endpoint", status: "ok", detail: "The handshake verified with ipc.key." });
     const spaces = status.spaces ?? [];
