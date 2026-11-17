@@ -18,8 +18,9 @@ import { inRange } from "../rows.ts";
 /** The columns a page shows of a task, with its area and project titles. */
 const TASK_COLUMNS =
   "t.id, t.ref, t.title, t.summary, t.lifecycle, t.status, t.inbox, t.priority, t.effort, " +
-  "t.due_date, t.due_at, t.due_tz, t.focus_on, t.completed_at, t.outcome, t.touched, " +
-  "t.version, t.deleted_at, a.title AS area_title, p.title AS project_title";
+  "t.due_date, t.due_at, t.due_tz, t.focus_on, t.completed_at, t.outcome, t.archived_reason, " +
+  "t.wrap_state, t.touched, t.version, t.deleted_at, a.title AS area_title, " +
+  "p.title AS project_title";
 
 export const ROWS_BY_IDS_SQL = {
   tasks:
