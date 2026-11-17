@@ -6,8 +6,7 @@ import { PRODUCT_NAME } from "@tasks/brand";
 import type { AnyEntry } from "@tasks/contracts";
 import { AppError, findEntry } from "@tasks/contracts";
 import type { ConnectionClass } from "../local/index.ts";
-import type { BoundSession, Slot } from "./binding.ts";
-import { runOf } from "./grant.ts";
+import { runOf, type BoundSession, type Slot } from "./binding.ts";
 
 export interface Caller {
   readonly class: ConnectionClass;

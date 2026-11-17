@@ -29,7 +29,6 @@
 import { CLI_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
 import { MANUAL_INSTANCE } from "@tasks/launch";
-import type { BoundSession } from "./binding.ts";
 import type { Caller } from "./caller.ts";
 
 /**
@@ -48,13 +47,6 @@ export interface HomeGate {
    */
   may(instance: string, space: string, run?: string): boolean;
 }
-
-/** A background run's ID: a session a run's ticket bound names its run among its launches. */
-const RUN_ID = /^ru_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
-
-/** The background run a session acts for, when a run's ticket bound it. */
-export const runOf = (session: BoundSession | undefined): string | undefined =>
-  session?.launches.find((id) => RUN_ID.test(id));
 
 /**
  * The refusal (A3 3.5, 3.7.8): `forbidden` with rule `grant`. One body for every case (a space the

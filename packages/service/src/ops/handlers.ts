@@ -77,8 +77,8 @@ import {
   type OpenTaskResult,
   type PackContent,
 } from "../launch/open.ts";
-import { type BindOutcome, type BindingPort, type FoundLaunch } from "./binding.ts";
-import { checkGrant, grantRefused, homesOf, runOf, type HomeGate } from "./grant.ts";
+import { runOf, type BindOutcome, type BindingPort, type FoundLaunch } from "./binding.ts";
+import { checkGrant, grantRefused, homesOf, type HomeGate } from "./grant.ts";
 import { addDays, dateIn, dueDate, localTimeZone } from "./dates.ts";
 import { GUIDE_STEPS, GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";

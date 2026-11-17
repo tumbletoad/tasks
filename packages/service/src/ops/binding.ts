@@ -28,6 +28,13 @@ export interface BoundSession {
   readonly launches: readonly string[];
 }
 
+/** A background run's ID: a session a run's ticket bound names its run among its launches. */
+const RUN_ID = /^ru_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
+
+/** The background run a session acts for, when a run's ticket bound it. */
+export const runOf = (session: BoundSession | undefined): string | undefined =>
+  session?.launches.find((id) => RUN_ID.test(id));
+
 /** Where a native session ID came from (A3 3.7.2). Recorded, never used to bind before M4.06. */
 export const NATIVE_SOURCES = ["claude", "t3", "codex"] as const;
 export type NativeSource = (typeof NATIVE_SOURCES)[number];
