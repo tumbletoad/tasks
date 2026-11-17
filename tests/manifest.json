@@ -209,6 +209,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.claude-stream.fixture-content",
+      "title": "The recorded Claude Code print-mode exchanges hold only what their sanitiser writes (protocol words, built-in tool names, synthetic IDs, fixture paths, names, times, texts and numbers) and pass the stream fixtures' scan; the sanitiser drops a recording's paths, servers, skills, models, prompts and answers, and the check refuses any other value",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.codex-app-server.fixture-content",
       "title": "The recorded codex app-server exchanges hold only what their sanitiser writes (protocol words, synthetic IDs, fixture paths, texts and numbers) and pass the stream fixtures' scan; the sanitiser drops a recording's paths, account, machine name, prompts, answers and ticket, and the check refuses any other value",
       "owner": "M6",
