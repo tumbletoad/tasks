@@ -29,20 +29,6 @@
         "enabled": false
       }
     ],
-    "roots": [
-      {
-        "id": "work",
-        "label": "Work",
-        "path": "/home/mira/work",
-        "runs": true
-      },
-      {
-        "id": "oss",
-        "label": "oss",
-        "path": "/home/mira/oss",
-        "runs": false
-      }
-    ],
     "terminal": {
       "app": "ghostty",
       "path": null,
@@ -146,5 +132,11 @@
     },
     "preferences": {}
   },
-  "problems": []
+  "problems": [
+    {
+      "key": "roots",
+      "code": "retired",
+      "severity": "warning"
+    }
+  ]
 }

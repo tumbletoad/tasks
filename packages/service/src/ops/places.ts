@@ -56,7 +56,7 @@ const SENTENCES: Readonly<Record<Reason, string>> = {
 };
 
 const HINTS: Partial<Record<Reason, string>> = {
-  outside_roots: "Only the user adds roots: tasks roots add <id> <folder>.",
+  outside_roots: "Roots are retired: the person gives the task or its project a folder.",
   ambiguous_root: "Keep one of the roots that name this folder in machine.toml.",
   no_cwd: "Pass cwd as an absolute path.",
   unknown_root: "Name the root by its ID: tasks roots.",
@@ -91,7 +91,7 @@ export function placeRefused(at: string, reason: Reason, roots?: readonly string
  * place. It names no root, so a replay, which reads the stored result, warns the same.
  */
 export function outsideWarning(at: string): string {
-  return `${at}: the folder is under no root of this machine, so the task has no place (PLACE_OUTSIDE_ROOTS). Only the user adds roots: tasks roots add.`;
+  return `${at}: the folder is under no root of this machine, so the task has no place (PLACE_OUTSIDE_ROOTS). Roots are retired: the person gives the task or its project a folder.`;
 }
 
 /**

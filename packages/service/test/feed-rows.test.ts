@@ -143,13 +143,21 @@ describe("[A5.3.6.http.row-children] a task's row carries its sources and where 
       base: read.as_of,
       request_id: rid(),
     });
-    await call("folder.manage", { action: "clear", task: "M-2", request_id: rid() });
+    const asOf = async () =>
+      ((await call("space.status", {})) as { as_of: string }).as_of;
+    await call("folder.manage", {
+      action: "clear",
+      task: "M-2",
+      base: await asOf(),
+      request_id: rid(),
+    });
     rmSync(join(work, "lumen", "portal"), { recursive: true });
     mkdirSync(join(work, "lumen", "portal-next"), { recursive: true });
     await call("folder.manage", {
       action: "set",
       project: "Portal",
       folder: join(work, "lumen", "portal-next"),
+      base: await asOf(),
       request_id: rid(),
     });
     const { batch } = await readBatch(reader, start, { here });

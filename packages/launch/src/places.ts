@@ -69,6 +69,8 @@ export const RESOLVE_REASONS = [
    * or not inside its parent by identity.
    */
   "unsafe_folder",
+  /** The folder's drive or share did not answer in time: nothing was started. */
+  "not_answering",
 ] as const;
 export type ResolveReason = (typeof RESOLVE_REASONS)[number];
 

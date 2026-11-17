@@ -24,14 +24,6 @@
         "enabled": true
       }
     ],
-    "roots": [
-      {
-        "id": "work",
-        "label": "work",
-        "path": "/Users/mira/work",
-        "runs": false
-      }
-    ],
     "terminal": {
       "app": "custom",
       "path": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
@@ -73,5 +65,11 @@
     },
     "preferences": {}
   },
-  "problems": []
+  "problems": [
+    {
+      "key": "roots",
+      "code": "retired",
+      "severity": "warning"
+    }
+  ]
 }

@@ -91,7 +91,7 @@ import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
 import type { ConnectionInfo, RpcContext, RpcHandlers } from "../local/index.ts";
 import type { ServedSpace } from "../ops/index.ts";
-import { openPath } from "../ops/folders.ts";
+import { bounded, openPath } from "../ops/folders.ts";
 import type { TaskFolder } from "../ops/read.ts";
 import {
   briefNames,
@@ -126,6 +126,12 @@ const REFERENCE_LENGTH_STAND_IN = "L00000";
 
 /** A4 3.6.3: shims are checked by PID and start time every 30 s; the sweep runs with it. */
 export const CHECK_MS = 30_000;
+
+/**
+ * How long a launch's look at its folder may take: long enough for a drive to spin up, short
+ * enough that a share that does not answer gives the person its reason instead of a hung click.
+ */
+const RESOLVE_MS = 10_000;
 
 /**
  * At most this many via_login_shell bases are kept for their claims at once; a launch past it has
@@ -580,7 +586,8 @@ export class LaunchService {
     if (choice.route !== "clipboard" && task.folder.kind === "other_machine") {
       throw this.#unavailable("other_machine");
     }
-    const folder = this.#planFolder(task.folder);
+    // Copy starts nothing: its brief says where the task opens (#briefOf).
+    const folder = choice.route === "clipboard" ? null : this.planFolder(task.folder);
     // A link opens the folder resolved now (and again at its dispatch); a UNC one cannot.
     if (choice.route === "link") {
       const where = await this.resolveFolder(space, folder);
@@ -709,12 +716,14 @@ export class LaunchService {
   }
 
   /**
-   * The folder a plan of the task holds: its own folder or its project's here, `~` expanded with
-   * the account's home, or null for the work folder. Throws LaunchFolderUnavailable for a home
-   * path when the home is not known. A folder on another machine only has none here.
+   * The folder a launch or a run of the task works in here: its own folder or its project's, `~`
+   * expanded with the account's home, or null for the space's work folder. A folder only on
+   * another machine throws LaunchUnavailable (`other_machine`): it is never this machine's work
+   * folder. A home path when the home is not known throws LaunchFolderUnavailable.
    */
-  #planFolder(folder: TaskFolder): PlanFolder | null {
-    if (folder.kind !== "task" && folder.kind !== "project") return null;
+  planFolder(folder: TaskFolder): PlanFolder | null {
+    if (folder.kind === "other_machine") throw new LaunchUnavailable("other_machine");
+    if (folder.kind === "none") return null;
     const path = openPath(folder.path, this.#options.home, this.#options.platform);
     if (path === undefined) throw new LaunchFolderUnavailable("path_missing", folder.path);
     return { stored: folder.path, path };
@@ -746,7 +755,7 @@ export class LaunchService {
       else {
         let planned: PlanFolder | null | undefined;
         try {
-          planned = this.#planFolder(own);
+          planned = this.planFolder(own);
         } catch {
           planned = undefined;
         }
@@ -902,11 +911,16 @@ export class LaunchService {
    * The folder a launch of `space` with this plan folder would work in, resolved now: the folder,
    * or for none the space's work folder. `open` and the dispatch step ask it.
    */
-  resolveFolder(space: string, folder: PlanFolder | null): Promise<FolderResolution> {
-    return resolveLaunchFolder(folder, space, {
-      stateDir: this.#options.stateDir,
-      platform: this.#options.platform,
-    });
+  async resolveFolder(space: string, folder: PlanFolder | null): Promise<FolderResolution> {
+    const found = await bounded(
+      () =>
+        resolveLaunchFolder(folder, space, {
+          stateDir: this.#options.stateDir,
+          platform: this.#options.platform,
+        }),
+      RESOLVE_MS,
+    );
+    return found === "not_answering" ? { status: "failed", reason: "not_answering" } : found;
   }
 
   /**

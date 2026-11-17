@@ -666,7 +666,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(await refusal({ task: placed.ref, instance: "claude" })).toMatchObject({
         code: "invalid_input",
         message: "Folder not found on this computer.",
-        hint: expect.stringContaining("Choose the folder again"),
+        hint: expect.stringContaining("give the task or its project another folder"),
         data: { field: "task", reason: "path_missing", folder: placed.folder },
       });
       // Words over the terminal's budget would become a note: the refused click saves none.

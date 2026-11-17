@@ -3025,10 +3025,14 @@ function launchError(error: unknown): unknown {
           ? "Folder not found on this computer."
           : reason === "not_a_directory"
             ? "The task's folder is a file on this computer, not a folder."
-            : "This task's folder cannot be used on this computer.",
+            : reason === "not_answering"
+              ? "The task's folder did not answer in time."
+              : "This task's folder cannot be used on this computer.",
       ...(folder === undefined
         ? {}
-        : { hint: "Choose the folder again, or connect the drive it is on, then open the task." }),
+        : {
+            hint: "Connect the drive it is on, or give the task or its project another folder, then open it again.",
+          }),
       data: { field: "task", reason, ...(folder === undefined ? {} : { folder }) },
     });
   }
