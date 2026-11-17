@@ -886,6 +886,39 @@ describe("[A4.5.shim.attach] machine state in folders", () => {
     }
   });
 
+  test("after an update, a launch the build before folders wrote is read back with the folder its terminal started in", async () => {
+    const temp = tempFolder();
+    temps.push(temp);
+    const root = join(temp.path, "launch");
+    records = new FolderRecords(root);
+    boot();
+    const { id, ticket } = await dispatched();
+    await claim(ticket);
+    const file = join(root, id, "launch.json");
+    const written = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown> & {
+      plan: Record<string, unknown>;
+    };
+    // That build's plan held a place where it now holds a folder.
+    const older = (place: unknown, resolved: boolean): string => {
+      const plan: Record<string, unknown> = { ...written.plan, place };
+      delete plan["folder"];
+      const file: Record<string, unknown> = { ...written, plan };
+      if (resolved) file["folder"] = FOLDER;
+      else delete file["folder"];
+      return JSON.stringify(file);
+    };
+    writeFileSync(file, older({ root: "work", path: "lumen/portal" }, true));
+    const placed = new FolderRecords(root).get(id);
+    expect(placed?.plan.folder).toEqual({ stored: FOLDER.path, path: FOLDER.path });
+    expect(placed?.folder).toEqual(FOLDER);
+    expect(placed?.attachment?.pid).toBe(SHIM_PID);
+    writeFileSync(file, older(null, true));
+    expect(new FolderRecords(root).get(id)?.plan.folder).toBeNull();
+    // A place never dispatched names no folder here: that launch is left out and never starts.
+    writeFileSync(file, older({ root: "work", path: "lumen/portal" }, false));
+    expect(new FolderRecords(root).get(id)).toBeUndefined();
+  });
+
   test("a plan too large for a launch file is refused at the click; every plan taken is read back after a restart", async () => {
     const temp = tempFolder();
     temps.push(temp);

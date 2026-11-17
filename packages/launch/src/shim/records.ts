@@ -201,11 +201,26 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
   return Buffer.byteLength(JSON.stringify(plan), "utf8") <= PLAN_MAX_BYTES ? plan : undefined;
 }
 
+/**
+ * A plan as a build before folders wrote it, with a `place` where a plan now has its `folder`: an
+ * agent started by that build may still be running after an update, and its shim reattaches to
+ * its launch. Its place was resolved at dispatch into `resolved`, the folder its terminal started
+ * in. No place is the work folder, as no folder is now. A place never dispatched names no folder
+ * this build can find, so that launch is left out and never starts.
+ */
+function withFolder(plan: unknown, resolved: unknown): unknown {
+  if (!isObject(plan) || "folder" in plan || !("place" in plan)) return plan;
+  const { place, ...rest } = plan;
+  if (place === null) return { ...rest, folder: null };
+  const path = isObject(resolved) ? resolved["path"] : undefined;
+  return typeof path === "string" ? { ...rest, folder: { stored: path, path } } : undefined;
+}
+
 /** A launch file as read from disk, checked field by field; undefined when it is not one. */
 export function checkLaunchFile(value: unknown): LaunchFile | undefined {
   if (!isObject(value) || value["format"] !== 1) return undefined;
   const { space, launch, reference, task, createdAt, folder, ticket, attachment, agent } = value;
-  const plan = checkPlan(value["plan"]);
+  const plan = checkPlan(withFolder(value["plan"], folder));
   if (plan === undefined) return undefined;
   if (typeof space !== "string" || !SPACE_ID.test(space)) return undefined;
   if (typeof launch !== "string" || !LAUNCH_ID.test(launch) || !isLaunchRef(reference)) {
