@@ -211,7 +211,7 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     expect(work.error).toBe("Fixture text. Sign in with: claude auth login");
   });
 
-  test("background work goes on after the turn: the input stays open, and the program's own turn about it is the answer", async () => {
+  test("background work goes on after the turn: the run waits, and the program's own turn about it is the answer", async () => {
     const { driver, fake, events } = bench({ fixture: "windows-background", pace: 0.05 });
     const work = await driver.settled;
     expect(work).toEqual(done({ ok: true, outcome: "success", textFinal: true }));

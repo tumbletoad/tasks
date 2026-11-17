@@ -246,6 +246,9 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
           if (message["subtype"] === "init") turn = true;
           else if (message["subtype"] === "background_tasks_changed") {
             background = array(message["tasks"])?.length ?? 0;
+            // Between turns, the last of it ended: the program's own turn about it follows with
+            // its input ended too, and then it exits, also if it starts no turn at all.
+            if (background === 0 && !turn) endInput();
           }
           return;
         case "assistant":
