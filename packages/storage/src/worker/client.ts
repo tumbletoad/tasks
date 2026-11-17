@@ -289,6 +289,8 @@ export interface ClaimCopyOptions {
   machine: MachineInfo;
   /** Epochs this machine knows for the space besides the copy's (`spaces_seen`, M1.08). */
   knownEpochs?: readonly number[];
+  /** The lowest next task reference the claimed copy may give (restore/claim.ts). */
+  refFloor?: number;
   appVersion?: string;
   busyTimeoutMs?: number;
   holder?: HolderFacts;
@@ -301,6 +303,8 @@ export interface InPlaceRestoreOptions {
   machineId: Id<"m">;
   /** Epochs this machine knows for the space besides the backup's and the live space's. */
   knownEpochs?: readonly number[];
+  /** A next task reference other copies of the space reached (restore/restore.ts). */
+  refFloor?: number;
   appVersion?: string;
   busyTimeoutMs?: number;
   holder?: HolderFacts;
@@ -617,7 +621,11 @@ export class StorageWorker {
         probe,
         machine,
         settings,
-        { kind: "claim", knownEpochs: [...(options.knownEpochs ?? [])] },
+        {
+          kind: "claim",
+          knownEpochs: [...(options.knownEpochs ?? [])],
+          ...(options.refFloor === undefined ? {} : { refFloor: options.refFloor }),
+        },
         {
           ...(options.holder === undefined ? {} : { facts: options.holder }),
           ...(options.onLock === undefined ? {} : { onLock: options.onLock }),
@@ -652,6 +660,7 @@ export class StorageWorker {
           folder: dir,
           machineId: options.machineId,
           knownEpochs: [...(options.knownEpochs ?? [])],
+          ...(options.refFloor === undefined ? {} : { refFloor: options.refFloor }),
           ...(options.appVersion === undefined ? {} : { appVersion: options.appVersion }),
           ...(options.busyTimeoutMs === undefined ? {} : { busyTimeoutMs: options.busyTimeoutMs }),
           ...(options.holder === undefined ? {} : { holder: options.holder }),

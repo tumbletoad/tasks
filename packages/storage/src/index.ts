@@ -443,4 +443,9 @@ export {
   type WriteSeams,
 } from "./write/writer.ts";
 export { planImportRevert, recomputeToken, type ImportRevert } from "./write/imports.ts";
-export { submitBehindBackup, type BarrierOptions, type BarrierResult } from "./backup/barrier.ts";
+export {
+  provenBackup,
+  submitBehindBackup,
+  type BarrierOptions,
+  type BarrierResult,
+} from "./backup/barrier.ts";

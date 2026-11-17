@@ -736,7 +736,14 @@ export class HttpApp {
           .map((first) => {
             const copy = copyOf(live, first.id ?? "");
             const s = copy === undefined || isAmbiguity(copy) ? first : copy;
-            return { id: s.id, name: s.name ?? "", state: s.state, ...reasonOf(s) };
+            return {
+              id: s.id,
+              name: s.name ?? "",
+              state: s.state,
+              ...reasonOf(s),
+              // An open space whose backups are not working: a fixed word (hub/backup-health.ts).
+              ...(s.backup === undefined ? {} : { backup: s.backup }),
+            };
           });
         // A space that never opened has no ID or name yet, but the person must still learn that
         // it is there and why it is not open, never that the computer has no space.
