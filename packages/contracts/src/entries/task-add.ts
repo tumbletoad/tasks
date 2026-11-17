@@ -57,7 +57,8 @@ export const taskAdd = defineEntry({
   scope: "space:write",
   remote: "write",
   audience: "caller",
-  ops: ["task.create", "log.add", "source.add", "place.set"],
+  // A new area or project name creates it, in the same commit as the drafts that name it.
+  ops: ["task.create", "log.add", "source.add", "place.set", "area.create", "project.create"],
   input: TaskAddInput,
   agent: { max: under("tasks[]", DRAFT_AGENT_MAX) },
   defaults: [["mode", "apply"]],

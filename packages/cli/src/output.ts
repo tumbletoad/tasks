@@ -359,7 +359,14 @@ export function render(entry: string, result: Result, space: string): string {
       lines.push(...searchLines(result));
       break;
     case "group.manage": {
-      // `tasks area list` (A3 3.4.10): each area with its active tasks, its projects below it.
+      // `tasks area list` (A3 3.4.10): each area with its active tasks, its projects below it. A
+      // write says what it did to which group first.
+      const group = result["group"] as Result | undefined;
+      if (typeof result["result"] === "string" && group !== undefined) {
+        const done = result["result"] === "no_change" ? "No change to" : str(result["result"]);
+        const what = `${done.charAt(0).toUpperCase()}${done.slice(1)}`;
+        lines.push(`${what} ${str(group["kind"])} ${str(group["name"])}`);
+      }
       const named = (g: Result) => `${str(g["name"])} (${str(g["active"])})`;
       for (const area of (result["areas"] as Result[] | undefined) ?? []) {
         lines.push(named(area));

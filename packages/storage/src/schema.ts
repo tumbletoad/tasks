@@ -144,6 +144,8 @@ export const CLOSED_ENUMS: Readonly<
   },
   // Schema 0.4: the search index's document kinds (search/tables.ts SEARCH_DOC_KINDS).
   search_docs: { kind: ["task", "note", "log", "learning", "project", "area"] },
+  // Schema 0.5: a folder belongs to a project or a task.
+  folders: { owner_kind: ["project", "task"] },
 };
 
 /**
@@ -209,6 +211,8 @@ export const OPEN_SETS = {
     // Schema 0.3 (M6.01).
     "sessions",
     "runs",
+    // Schema 0.5.
+    "folders",
   ],
   "outbox.topic": ["projection", "redact"],
   // A4 3.1's routes. Later targets may add one (remote launches, A1 3.4's open-set rule).
@@ -260,6 +264,7 @@ export const JSON_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   exchange_items: ["base"],
   sessions: ["detail", "fv", "fp"],
   runs: ["spec", "detail", "result", "fv", "fp"],
+  folders: ["fv", "fp"],
 };
 
 /**
