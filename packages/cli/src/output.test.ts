@@ -179,6 +179,29 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     expect(shown("active")).toBe("M-25  Fixture task  (open, p2)\n");
   });
 
+  test("a task's folder says whose it is and when it is not on this computer", () => {
+    const folderLine = (folder: Record<string, unknown>) =>
+      render(
+        "task.get",
+        {
+          as_of: "1.1046.5n0w8k3q",
+          task: { ref: "M-25", title: "Fixture task", status: "open", priority: 2, folder },
+        },
+        "Mira",
+      ).split("\n")[1];
+    expect(folderLine({ path: "~/work/portal", of: "task" })).toBe("  folder: ~/work/portal");
+    expect(folderLine({ path: "~/work/portal", of: "project" })).toBe(
+      "  folder: ~/work/portal (its project's)",
+    );
+    expect(folderLine({ path: "~/work/portal", of: "task", missing: true })).toBe(
+      "  folder: ~/work/portal (not found on this computer)",
+    );
+    expect(folderLine({ path: "~/work/portal", of: "project", missing: true })).toBe(
+      "  folder: ~/work/portal (its project's, not found on this computer)",
+    );
+    expect(folderLine({ machine: "mira-laptop" })).toBe("  folder: on mira-laptop");
+  });
+
   test("no service: exit 6 with A2 3.3.6's message, and tasks alone still answers", async () => {
     const home = mkdtempSync(join(tmpdir(), "kc-"));
     try {
