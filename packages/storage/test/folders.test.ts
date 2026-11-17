@@ -153,7 +153,10 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     const project = newProject("Repointed", "~/work/wrong");
     const task = newTask("Inner", project, "~/work/wrong/inner");
     const other = newProject("Inside", "~/work/wrong/inside");
-    expectStatus(submit([{ kind: "project.folder_set", project, path: "~/work/right" }]), "applied");
+    expectStatus(
+      submit([{ kind: "project.folder_set", project, path: "~/work/right" }]),
+      "applied",
+    );
     expect(live()).toMatchObject({
       [`project:${project}`]: "~/work/right",
       [`task:${task}`]: "~/work/wrong/inner",
@@ -340,9 +343,7 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     const inner = newProject("Inner", "~/work/outer/app");
     const holder = newProject("Holder", "~/Code/app");
     const before = live();
-    const refused = submit([
-      { kind: "project.folder_set", project, path: "~/Code", carry: true },
-    ]);
+    const refused = submit([{ kind: "project.folder_set", project, path: "~/Code", carry: true }]);
     expectStatus(refused, "rejected");
     expect(refused.error).toMatchObject({ code: "FOLDER_TAKEN" });
     expect(live()).toEqual(before);

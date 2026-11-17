@@ -4382,7 +4382,12 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       if (kind === "project") movedProjects.push({ id: owner.id, moved: op.path });
       for (const project of movedProjects) {
         if (folderHolder(conn, machine, project.moved, os, project.id) !== undefined) {
-          problem("FOLDER_TAKEN", "Another live project has this folder on this machine", i, "path");
+          problem(
+            "FOLDER_TAKEN",
+            "Another live project has this folder on this machine",
+            i,
+            "path",
+          );
         }
       }
       return;

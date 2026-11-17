@@ -1,10 +1,11 @@
 // Folders through the request path of a running service, over real tasks-local/1 sessions: a
-// project made for a folder in one change, its folder changed with its task's folder moving
-// along, the undo and redo of that change, an agent's project created by name, and the checks at
+// project made for a folder in one change, the folder moved on disk with everything inside it
+// following, a folder given another while it is still there, the undo and redo of a move, the
+// repository's name in a project's list, an agent's project created by name, and the checks at
 // bind: a folder inside Tasks' own data, a folder that is not there, and a folder another project
 // has; and a retry that replays after a rename. The folders are temporary ones of this test.
 // Fixture text only.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { FolderManageResult, HistoryUndoResult, TaskAddResult } from "@tasks/contracts";
@@ -87,11 +88,12 @@ afterAll(async () => {
 }, 60_000);
 
 describe("[A1.3.15.folders.request-path] folders through the request path of a running service", () => {
-  test("a project made for a folder, its folder changed with its task's inside it, then undone and redone", async () => {
+  test("a project made for a folder, the folder moved with a task's and another project's inside it, then undone and redone", async () => {
     const user = await session("cli-interactive");
     const portal = folder("portal");
     const web = folder("portal", "web");
-    const moved = folder("portal2");
+    const api = folder("portal", "api");
+    const moved = join(root, "work", "portal2");
     const added = FolderManageResult.parse(
       await call(user, "folder.manage", {
         action: "add_project",
@@ -128,7 +130,14 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
       folder: { path: own.folder },
     });
 
-    // The project's folder moves, and the task's folder inside the old one moves with it.
+    // A project of its own inside the portal's folder, named after its folder.
+    const inner = FolderManageResult.parse(
+      await call(user, "folder.manage", { action: "add_project", folder: api, request_id: rid() }),
+    );
+    expect(inner).toMatchObject({ result: "created", owner: { name: "api" } });
+
+    // The person moves the folder, then tells Tasks: everything inside it moves along.
+    renameSync(portal, moved);
     const changed = FolderManageResult.parse(
       await call(user, "folder.manage", {
         action: "set",
@@ -138,11 +147,19 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
         request_id: rid(),
       }),
     );
-    expect(changed).toMatchObject({ result: "set", moved: 1 });
-    const after = await readLaunchFolder(reader(), taskId, machine);
-    expect(after.kind === "task" && after.folder.path).toBe(
-      `${changed.folder ?? ""}${changed.folder?.includes("\\") === true ? "\\" : "/"}web`,
+    const s = changed.folder?.includes("\\") === true ? "\\" : "/";
+    expect(changed).toMatchObject({ result: "set", moved: 2 });
+    expect(new Set(changed.followed?.map((f) => JSON.stringify(f)))).toEqual(
+      new Set([
+        JSON.stringify({ kind: "task", ref, folder: `${changed.folder ?? ""}${s}web` }),
+        JSON.stringify({ kind: "project", name: "api", folder: `${changed.folder ?? ""}${s}api` }),
+      ]),
     );
+    const after = await readLaunchFolder(reader(), taskId, machine);
+    expect(after.kind === "task" && after.folder.path).toBe(`${changed.folder ?? ""}${s}web`);
+    expect((await readFolders(reader(), "project", inner.owner.id)).map((f) => f.path)).toEqual([
+      `${changed.folder ?? ""}${s}api`,
+    ]);
     expect((await readFolders(reader(), "project", project)).map((f) => f.path)).toEqual([
       changed.folder,
     ]);
@@ -204,6 +221,64 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
       ),
     ).toMatchObject({ result: "cleared" });
     expect(await readLaunchFolder(reader(), taskId, machine)).toMatchObject({ kind: "task" });
+  });
+
+  test("a folder given another while it is still there leaves the folders inside it where they are, and says which", async () => {
+    const user = await session("cli-interactive");
+    const wrong = folder("wrong");
+    const right = folder("right");
+    const made = FolderManageResult.parse(
+      await call(user, "folder.manage", {
+        action: "add_project",
+        project: "Repointed",
+        folder: wrong,
+        request_id: rid(),
+      }),
+    );
+    const [task] = TaskAddResult.parse(
+      await call(user, "task.add", {
+        tasks: [{ title: "Inside the first folder", folder: folder("wrong", "inner") }],
+        request_id: rid(),
+      }),
+    ).tasks;
+    const changed = FolderManageResult.parse(
+      await call(user, "folder.manage", {
+        action: "set",
+        project: made.owner.id,
+        folder: right,
+        base: await asOf(user),
+        request_id: rid(),
+      }),
+    );
+    const s = made.folder?.includes("\\") === true ? "\\" : "/";
+    expect(changed).toMatchObject({
+      result: "set",
+      stayed: 1,
+      kept: [{ kind: "task", ref: task?.ref, folder: `${made.folder ?? ""}${s}inner` }],
+    });
+    expect(changed.moved).toBeUndefined();
+  });
+
+  test("a project's list names the repository in its folder, never its address", async () => {
+    const user = await session("cli-interactive");
+    const checkout = folder("checkout");
+    mkdirSync(join(checkout, ".git"), { mode: 0o700 });
+    writeFileSync(
+      join(checkout, ".git", "config"),
+      '[remote "origin"]\n\turl = https://mira:fixture-token@git.example.com/mira/portal-web.git\n',
+      { mode: 0o600 },
+    );
+    await call(user, "folder.manage", {
+      action: "add_project",
+      project: "Checked out",
+      folder: checkout,
+      request_id: rid(),
+    });
+    const listed = await call(user, "group.manage", { action: "list" });
+    expect(JSON.stringify(listed)).not.toContain("fixture-token");
+    expect(JSON.stringify(listed)).not.toContain("git.example.com");
+    const projects = (listed as { projects: { name: string; repo?: string }[] }).projects;
+    expect(projects.find((p) => p.name === "Checked out")).toMatchObject({ repo: "portal-web" });
   });
 
   test("a folder inside Tasks' own data, one that is not there, and a file are refused, and nothing is written", async () => {

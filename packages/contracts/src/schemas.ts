@@ -231,6 +231,37 @@ export const WrapState = z.enum(["pending", "wrapped"]).describe("Wrap-up state"
 export const Replayed = z.boolean().describe("True when a retry returned the stored result");
 export const Warnings = z.array(z.string()).describe("Warnings, one sentence each");
 
+/** A folder inside one whose change a write made: one that moved along with it, or stayed. */
+export const InsideFolder = z.strictObject({
+  kind: z.enum(["project", "task"]).describe("Whose folder it is"),
+  name: z.string().describe("A project's name").optional(),
+  ref: TaskRef.optional(),
+  folder: z.string().max(4096).describe("Where it is now, the home as ~"),
+  missing: z.literal(true).describe("No folder is there on this machine now").optional(),
+});
+
+/**
+ * What a folder change did to the folders inside the old one: an old folder that is gone was
+ * moved, and every folder inside it moved along; one that is still there was replaced, and they
+ * stayed.
+ */
+export const InsideFolders = {
+  moved: z
+    .int()
+    .min(0)
+    .max(1_000_000)
+    .describe("Folders inside the old one that moved along: it was moved")
+    .optional(),
+  followed: z.array(InsideFolder).max(20).describe("The first of them").optional(),
+  stayed: z
+    .int()
+    .min(0)
+    .max(1_000_000)
+    .describe("Folders inside the old one that stayed: it is still there")
+    .optional(),
+  kept: z.array(InsideFolder).max(20).describe("The first of them").optional(),
+};
+
 /**
  * A task's due commitment as A1 3.4 stores it: a date-only `due_date`, never shifted to UTC, or a
  * timed `due_at` with its IANA zone `due_tz`. A task without one leaves the field out.

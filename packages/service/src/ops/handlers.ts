@@ -33,7 +33,6 @@ import {
   type PrefValue,
 } from "@tasks/contracts";
 import {
-  carriedTo,
   folderKey,
   freeSlug,
   isId,
@@ -87,12 +86,16 @@ import {
   deepestProject,
   folderState,
   expanded,
+  folderName,
   folderRefused,
+  moveOf,
+  openPath,
   osOf,
   reservedBy,
   storedForm,
   type BindFacts,
   type Folder,
+  type Follower,
 } from "./folders.ts";
 import {
   byOf,
@@ -104,6 +107,7 @@ import {
   storageFailure,
   unsupported,
 } from "./errors.ts";
+import { repoName } from "./repo.ts";
 import { SearchCursors } from "../search/cursors.ts";
 import { runSearch, type SearchInput } from "../search/search.ts";
 import { editDistance, resolveGroup } from "./groups.ts";
@@ -118,6 +122,7 @@ import {
   readFoldersHere,
   readHereTasks,
   readProjectFolders,
+  readMove,
   readReceipt,
   readScriptChange,
   readUndoTarget,
@@ -138,6 +143,7 @@ import {
   type TaskFolder,
   type TaskRead,
   type BindRead,
+  type MoveRead,
   type Destination,
   type GroupNames,
   type ProjectFolderRow,
@@ -987,20 +993,24 @@ async function hereFor(
   };
 }
 
-/** Where a task opens on this machine, for the digest: its folder and whether it is there now. */
+/**
+ * Where a task opens on this machine, for the digest: its folder, whether it is there now and the
+ * repository it holds.
+ */
 async function digestFolder(call: Call, folder: TaskFolder): Promise<DigestFolder | undefined> {
   switch (folder.kind) {
     case "task":
     case "project": {
-      const state = await folderState(
-        folder.path,
-        call.host.home,
-        call.host.platform ?? process.platform,
-      );
+      const platform = call.host.platform ?? process.platform;
+      const state = await folderState(folder.path, call.host.home, platform);
+      const open = openPath(folder.path, call.host.home, platform);
+      const repo =
+        state === "missing" || open === undefined ? undefined : await repoName(open, platform);
       return {
         path: folder.path,
         of: folder.kind,
         ...(state === "missing" ? { missing: true } : {}),
+        ...(repo === undefined ? {} : { repo }),
       };
     }
     case "other_machine":
@@ -1093,16 +1103,15 @@ async function taskFolder(
 }
 
 /**
- * The checks at bind of `project`'s folder on this machine (folders.ts), and of its tasks' folders
- * that move along from its old one here: none may land in Tasks' own data. `taken`: another live
- * project has the folder here. `moved`: how many task folders move along.
+ * The checks at bind of `project`'s folder on this machine (folders.ts). `taken`: another live
+ * project has the folder here.
  */
 async function projectFolderChecked(
   facts: BindFacts & { readonly home: string },
   project: string,
   folder: Folder,
   read: BindRead,
-): Promise<{ readonly taken?: ProjectFolderRow; readonly moved?: number }> {
+): Promise<{ readonly taken?: ProjectFolderRow }> {
   const others = read.projects.filter((p) => p.project !== project);
   const problem = await checkFolder(folder, { ...facts, projects: others });
   if (problem?.reason === "folder_taken" && problem.project !== undefined) {
@@ -1112,17 +1121,97 @@ async function projectFolderChecked(
     };
   }
   if (problem !== undefined) throw folderRefused("folder", problem.reason);
-  const old = read.current;
-  if (old === undefined || old.path === folder.stored) return {};
-  let moved = 0;
-  for (const task of read.tasks) {
-    const to = carriedTo(task.path, old.path, folder.stored, osOf(facts.platform));
-    if (to === undefined || to === task.path) continue;
-    moved += 1;
-    const reason = await reservedBy(expanded(to, facts.home, facts.platform), facts);
-    if (reason !== undefined) throw folderRefused("folder", reason, { task: task.ref });
+  return {};
+}
+
+/** The folders inside an owner's old folder: what moved along with it, or what stayed. */
+interface FolderMove {
+  readonly carry: boolean;
+  readonly inside: readonly Follower[];
+  /** The followers whose new place is not a folder on this machine now. */
+  readonly missing: ReadonlySet<Follower>;
+}
+
+const NO_MOVE: FolderMove = { carry: false, inside: [], missing: new Set() };
+
+/**
+ * What changing an owner's folder here to `folder` does to the folders inside its old one
+ * (`moveOf`). The folders that move along are checked as a bind checks one: none may land in
+ * Tasks' own data.
+ */
+async function folderMove(
+  call: Call,
+  facts: BindFacts & { readonly home: string },
+  owner: { readonly kind: "project" | "task"; readonly id: string },
+  folder: Folder,
+): Promise<FolderMove> {
+  let read: MoveRead;
+  try {
+    read = await readMove(readerOf(call.space), owner, call.host.machine.id);
+  } catch (error) {
+    throw storageFailure(error);
   }
-  return { moved };
+  const plan = await moveOf(
+    read.current,
+    folder,
+    { kind: owner.kind, owner: read.owner ?? owner.id },
+    read.here,
+    facts,
+  );
+  if (plan.kind !== "carry") return { ...NO_MOVE, inside: plan.inside };
+  const missing = new Set<Follower>();
+  for (const follower of plan.inside) {
+    const absolute = expanded(follower.to, facts.home, facts.platform);
+    const reason = await reservedBy(absolute, facts);
+    if (reason !== undefined) {
+      throw folderRefused(
+        "folder",
+        reason,
+        follower.kind === "task" ? { task: follower.label } : {},
+      );
+    }
+    if ((await folderState(follower.to, facts.home, facts.platform)) === "missing") {
+      missing.add(follower);
+    }
+  }
+  return { carry: true, inside: plan.inside, missing };
+}
+
+/** At most this many folders that moved along or stayed are named in an answer. */
+const FOLLOWERS_SHOWN = 20;
+
+/** A move's part of folder.manage's and organize's answer (FolderMove). */
+function moveAnswer(move: FolderMove): Record<string, unknown> {
+  if (move.inside.length === 0) return {};
+  const named = move.inside.slice(0, FOLLOWERS_SHOWN).map((f) => ({
+    kind: f.kind,
+    ...(f.kind === "task" ? { ref: f.label } : { name: f.label }),
+    folder: move.carry ? f.to : f.from,
+    ...(move.missing.has(f) ? { missing: true } : {}),
+  }));
+  return move.carry
+    ? { moved: move.inside.length, followed: named }
+    : { stayed: move.inside.length, kept: named };
+}
+
+/** The same in words, for a tool whose answer has warnings only. */
+function moveWarnings(move: FolderMove): string[] {
+  if (move.inside.length === 0) return [];
+  const names = move.inside
+    .slice(0, FOLLOWERS_SHOWN)
+    .map((f) => (f.kind === "task" ? f.label : `project ${f.label}`))
+    .join(", ");
+  const count = String(move.inside.length);
+  if (!move.carry) {
+    return [
+      `The old folder is still there, so ${count} folders inside it stay where they are: ${names}.`,
+    ];
+  }
+  const missing =
+    move.missing.size === 0 ? "" : ` ${String(move.missing.size)} of them are not there now.`;
+  return [
+    `The old folder was moved, so ${count} folders inside it moved along: ${names}.${missing}`,
+  ];
 }
 
 /** What binding an owner's folder on this machine reads first (read.ts). */
@@ -1809,17 +1898,27 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // The folder last, so the other operations keep their indexes in a replay, which checks no
     // folder (draftFolders) and sends a stand-in when nothing else is in the request.
     const folder = set["folder"];
+    let move = NO_MOVE;
     if (typeof folder === "string") {
       let stored: string | undefined;
       if (!(await applied(call))) {
         try {
-          stored = (await taskFolder(call, folder, "set.folder", bindFacts(call))).stored;
+          const facts = bindFacts(call);
+          const checked = await taskFolder(call, folder, "set.folder", facts);
+          move = await folderMove(call, facts, { kind: "task", id: task }, checked);
+          stored = checked.stored;
         } catch (error) {
           if (!(error instanceof AppError) || !(await applied(call))) throw error;
         }
       }
-      if (stored !== undefined) ops.push({ kind: "task.folder_set", task, path: stored });
-      else if (ops.length === 0) ops.push({ kind: "task.folder_clear", task });
+      if (stored !== undefined) {
+        ops.push({
+          kind: "task.folder_set",
+          task,
+          path: stored,
+          ...(move.carry ? { carry: true } : {}),
+        });
+      } else if (ops.length === 0) ops.push({ kind: "task.folder_clear", task });
     }
     if (clearFolder) ops.push({ kind: "task.folder_clear", task });
     fields.push(...Object.keys(set), ...clear);
@@ -1845,7 +1944,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       // Unread, the fields the call set stand in.
       fields: !updated ? [] : facts === undefined ? named : changedFields(named, facts),
       as_of: result.as_of,
-      warnings: [...differsWarnings(result, sourcePaths), ...result.warnings],
+      warnings: [
+        ...differsWarnings(result, sourcePaths),
+        ...result.warnings,
+        ...(updated && result.replayed !== true ? moveWarnings(move) : []),
+      ],
       ...replayed(result),
     };
   },
@@ -2296,9 +2399,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const action = String(input["action"]);
     const folder = typeof input["folder"] === "string" ? input["folder"] : undefined;
     if (action === "add_project") {
-      if (input["project"] === undefined) {
-        throw invalid("project", "Required to add a project", "Name the new project.");
-      }
       if (input["task"] !== undefined) throw invalid("task", "A new project takes no task");
     } else {
       if ((input["project"] === undefined) === (input["task"] === undefined)) {
@@ -2443,8 +2543,14 @@ async function folderWrite(
   }
 
   if (action === "add_project") {
-    const name = String(input["project"]).trim();
     const folder = must(stored);
+    const name =
+      typeof input["project"] === "string" && input["project"].trim() !== ""
+        ? input["project"].trim()
+        : folderName(folder.absolute, facts.platform);
+    if (name === undefined) {
+      throw invalid("project", "A drive or a root has no name to give the project", "Name it.");
+    }
     const projectId = newId("p");
     const ops: Operation[] = [];
     if (!replay) {
@@ -2503,7 +2609,7 @@ async function folderWrite(
     // The writer resolves the reference; its result names the task by ID.
     owner = { kind: "task", id: String(input["task"]) };
   }
-  let moved: number | undefined;
+  let move = NO_MOVE;
   if (!replay && action === "set") {
     const folder = must(stored);
     if (owner.kind === "project") {
@@ -2514,17 +2620,18 @@ async function folderWrite(
         await bindRead(call, "project", owner.id),
       );
       if (checked.taken !== undefined) throw takenBy(checked.taken);
-      moved = checked.moved;
     } else {
       const problem = await checkFolder(folder, facts);
       if (problem !== undefined) throw folderRefused("folder", problem.reason);
     }
+    move = await folderMove(call, facts, owner, folder);
   }
+  const carry = move.carry ? { carry: true } : {};
   const op: Operation =
     action === "set"
       ? owner.kind === "project"
-        ? { kind: "project.folder_set", project: owner.id, path: must(stored).stored }
-        : { kind: "task.folder_set", task: owner.id, path: must(stored).stored }
+        ? { kind: "project.folder_set", project: owner.id, path: must(stored).stored, ...carry }
+        : { kind: "task.folder_set", task: owner.id, path: must(stored).stored, ...carry }
       : owner.kind === "project"
         ? { kind: "project.folder_clear", project: owner.id }
         : { kind: "task.folder_clear", task: owner.id };
@@ -2553,7 +2660,7 @@ async function folderWrite(
       ...(done?.ref === undefined ? {} : { ref: done.ref }),
     },
     ...(action === "set" ? { folder: must(stored).stored } : {}),
-    ...(changed && moved !== undefined && result.replayed !== true ? { moved } : {}),
+    ...(changed && result.replayed !== true ? moveAnswer(move) : {}),
     as_of: result.as_of,
     ...replayed(result),
   };
@@ -2675,7 +2782,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   const ops: Operation[] = [];
   let group: WrittenGroup;
   let done = GROUP_DONE[action] ?? "no_change";
-  let moved: number | undefined;
+  let move = NO_MOVE;
   if (action === "create") {
     // The group created is created as named; an area named only to hold it keeps the typo check.
     let area = resolveGroup(names, "area", path.area, "path", {
@@ -2762,8 +2869,13 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
         await bindRead(call, "project", id),
       );
       if (checked.taken !== undefined) throw takenBy(checked.taken);
-      moved = checked.moved;
-      ops.push({ kind: "project.folder_set", project: id, path: folder.stored });
+      move = await folderMove(call, facts, { kind: "project", id }, folder);
+      ops.push({
+        kind: "project.folder_set",
+        project: id,
+        path: folder.stored,
+        ...(move.carry ? { carry: true } : {}),
+      });
       group = { ...group, folder: folder.stored };
     } else if (action === "clear_folder") {
       ops.push({ kind: "project.folder_clear", project: id });
@@ -2798,15 +2910,15 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     as_of: asOf ?? read.space.asOf,
     result: outcome,
     group,
-    ...(outcome !== "no_change" && moved !== undefined && !replay ? { moved } : {}),
+    ...(outcome !== "no_change" && !replay ? moveAnswer(move) : {}),
     ...(replay ? { replayed: true } : {}),
   };
 }
 
 /** The space's active areas and projects, and the projects' folders on this machine. */
 interface GroupsHere extends Awaited<ReturnType<typeof readGroups>> {
-  /** A project's folder here, by its ID. */
-  readonly folders: ReadonlyMap<string, string>;
+  /** A project's folder here, and the name of the repository it holds, by the project's ID. */
+  readonly folders: ReadonlyMap<string, { readonly stored: string; readonly repo?: string }>;
 }
 
 /**
@@ -2818,21 +2930,37 @@ async function readGroupsHere(call: Call, reader: WorkerConnection): Promise<Gro
   const folders = await readProjectFolders(reader, call.host.machine.id).catch(
     (): ProjectFolderRow[] => [],
   );
-  return { ...read, folders: new Map(folders.map((f) => [f.project, f.stored])) };
+  const platform = call.host.platform ?? process.platform;
+  const repos = await Promise.all(
+    folders.map((f) => {
+      const open = openPath(f.stored, call.host.home, platform);
+      return open === undefined ? Promise.resolve(undefined) : repoName(open, platform);
+    }),
+  );
+  return {
+    ...read,
+    folders: new Map(
+      folders.map((f, k) => {
+        const repo = repos[k];
+        return [f.project, { stored: f.stored, ...(repo === undefined ? {} : { repo }) }];
+      }),
+    ),
+  };
 }
 
-/** A group row as the result names it, a project with its folder here. */
+/** A group row as the result names it, a project with its folder here and the repository in it. */
 function groupRow(
   row: Row,
-  folders?: ReadonlyMap<string, string>,
-): { id: string; slug: string; name: string; active: number; folder?: string } {
+  folders?: GroupsHere["folders"],
+): { id: string; slug: string; name: string; active: number; folder?: string; repo?: string } {
   const folder = folders?.get(String(row["id"]));
   return {
     id: String(row["id"]),
     slug: String(row["slug"]),
     name: String(row["title"]),
     active: Number(row["active"]),
-    ...(folder === undefined ? {} : { folder }),
+    ...(folder === undefined ? {} : { folder: folder.stored }),
+    ...(folder?.repo === undefined ? {} : { repo: folder.repo }),
   };
 }
 

@@ -170,7 +170,7 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `action` | "add_project" \| "set" \| "clear" | yes | add_project makes a project for a folder; set and clear a project's or a task's |
-| `project` | string, max 250 | no | set, clear: "Area/Project", or a name, slug or ID; add_project: its name |
+| `project` | string, max 250 | no | set, clear: "Area/Project", a name, slug or ID; add_project: name or folder's |
 | `task` | string, max 40 | no | set, clear: the task, such as M-14 |
 | `area` | string, max 120 | no | add_project: the new project's area, by name |
 | `folder` | string, 1 to 4096 | no | add_project, set: an absolute folder on this machine, or one under ~ |
@@ -189,7 +189,20 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | `owner.name` | string | no | A project's name |
 | `owner.ref` | string | no | Task reference |
 | `folder` | string, max 4096 | no | The folder here as stored, the home as ~; absent once cleared |
-| `moved` | integer, 0 to 1000000 | no | Task folders that moved along with the project's |
+| `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved |
+| `followed` | object[], max 20 items | no | The first of them |
+| `followed[].kind` | "project" \| "task" | yes | Whose folder it is |
+| `followed[].name` | string | no | A project's name |
+| `followed[].ref` | string | no | Task reference |
+| `followed[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
+| `followed[].missing` | true | no | No folder is there on this machine now |
+| `stayed` | integer, 0 to 1000000 | no | Folders inside the old one that stayed: it is still there |
+| `kept` | object[], max 20 items | no | The first of them |
+| `kept[].kind` | "project" \| "task" | yes | Whose folder it is |
+| `kept[].name` | string | no | A project's name |
+| `kept[].ref` | string | no | Task reference |
+| `kept[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
+| `kept[].missing` | true | no | No folder is there on this machine now |
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 
@@ -274,6 +287,7 @@ MCP tool `organize`, "List or shape areas and projects": Use to see the user's a
 | `areas[].projects[].name` | string | yes | Name |
 | `areas[].projects[].active` | integer, 0 to 1000000000 | yes | Active tasks |
 | `areas[].projects[].folder` | string | no | Its folder on this machine, the home as ~ |
+| `areas[].projects[].repo` | string, max 255 | no | The Git repository in its folder, by name |
 | `areas[].more_projects` | integer, 0 to 1000000000 | no | Projects left out of the list |
 | `projects` | object[] | yes | Active projects without an area |
 | `projects[].id` | string | yes | Project ID |
@@ -281,6 +295,7 @@ MCP tool `organize`, "List or shape areas and projects": Use to see the user's a
 | `projects[].name` | string | yes | Name |
 | `projects[].active` | integer, 0 to 1000000000 | yes | Active tasks |
 | `projects[].folder` | string | no | Its folder on this machine, the home as ~ |
+| `projects[].repo` | string, max 255 | no | The Git repository in its folder, by name |
 | `total_areas` | integer, 0 to 1000000000 | yes | Active areas |
 | `total_projects` | integer, 0 to 1000000000 | yes | Active projects |
 | `result` | "created" \| "exists" \| "renamed" \| "moved" \| "archived" \| "unarchived" \| "folder_set" \| "folder_cleared" \| "no_change" \| "proposed" | no | A write: what happened; exists: another project has this folder |
@@ -289,7 +304,20 @@ MCP tool `organize`, "List or shape areas and projects": Use to see the user's a
 | `group.id` | string | yes | Its ID |
 | `group.name` | string | yes | Its name now |
 | `group.folder` | string | no | Its folder on this machine, the home as ~ |
-| `moved` | integer, 0 to 1000000000 | no | Task folders that moved along with the project's |
+| `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved |
+| `followed` | object[], max 20 items | no | The first of them |
+| `followed[].kind` | "project" \| "task" | yes | Whose folder it is |
+| `followed[].name` | string | no | A project's name |
+| `followed[].ref` | string | no | Task reference |
+| `followed[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
+| `followed[].missing` | true | no | No folder is there on this machine now |
+| `stayed` | integer, 0 to 1000000 | no | Folders inside the old one that stayed: it is still there |
+| `kept` | object[], max 20 items | no | The first of them |
+| `kept[].kind` | "project" \| "task" | yes | Whose folder it is |
+| `kept[].name` | string | no | A project's name |
+| `kept[].ref` | string | no | Task reference |
+| `kept[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
+| `kept[].missing` | true | no | No folder is there on this machine now |
 | `proposal` | string | no | Proposal ID |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 
@@ -2240,6 +2268,7 @@ When `view` is `"digest"`:
 | `task.folder.path` | string | yes | The folder, the home written as ~ |
 | `task.folder.of` | "task" \| "project" | yes | The task's own folder or its project's |
 | `task.folder.missing` | true | no | Not found on this machine now |
+| `task.folder.repo` | string, max 255 | no | The Git repository it holds, by name |
 | `task.folder.machine` | string | yes | The machine its folder is on: it opens there |
 | `task.wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
 | `task.outcome` | string | no | Outcome of the last completion |

@@ -1662,6 +1662,77 @@ export async function readBind(
   };
 }
 
+/** A live folder on this machine with its owner, as a move's answer names it. */
+export interface FolderHere {
+  readonly kind: "project" | "task";
+  readonly owner: string;
+  /** A project's name, or a task's reference. */
+  readonly label: string;
+  readonly path: string;
+}
+
+/** What a folder change on this machine reads first: the owner's folder and every live one here. */
+export interface MoveRead {
+  readonly current: string | undefined;
+  /** The owner's ID, when it has a folder here. */
+  readonly owner: string | undefined;
+  readonly here: readonly FolderHere[];
+}
+
+const FOLDERS_ON: Statement = {
+  sql:
+    "SELECT f.owner_kind AS kind, f.owner_id AS owner, f.path AS path, p.title AS name, " +
+    "t.ref AS ref FROM folders f " +
+    "LEFT JOIN projects p ON f.owner_kind = 'project' AND p.id = f.owner_id " +
+    "LEFT JOIN tasks t ON f.owner_kind = 'task' AND t.id = f.owner_id " +
+    "WHERE f.machine_id = $machine AND f.deleted_at IS NULL ORDER BY f.id",
+  mode: "all",
+};
+const TASK_FOLDER_HERE_OF_MATCH: Statement = {
+  sql:
+    "SELECT owner_id, path FROM folders WHERE owner_kind = 'task' AND machine_id = $machine " +
+    `AND deleted_at IS NULL AND owner_id = ${MATCH}`,
+  mode: "get",
+};
+const PROJECT_FOLDER_HERE: Statement = {
+  sql:
+    "SELECT owner_id, path FROM folders WHERE owner_kind = 'project' AND owner_id = $owner " +
+    "AND machine_id = $machine AND deleted_at IS NULL",
+  mode: "get",
+};
+
+/**
+ * One snapshot of what a folder change on `machine` reads: the owner's folder there (a project by
+ * ID, a task by reference or ID) and every live folder there.
+ */
+export async function readMove(
+  reader: WorkerConnection,
+  owner: { readonly kind: "project" | "task"; readonly id: string },
+  machine: string,
+): Promise<MoveRead> {
+  const key = taskKey(owner.id);
+  const [space, current, here] = await snapshot(
+    reader,
+    [SPACE, owner.kind === "task" ? TASK_FOLDER_HERE_OF_MATCH : PROJECT_FOLDER_HERE, FOLDERS_ON],
+    { owner: owner.id, machine, id: key.id, ref: key.ref, alias: key.alias },
+  );
+  const facts = spaceFacts(space);
+  const found = current as Row | null | undefined;
+  const path = found?.["path"];
+  const id = found?.["owner_id"];
+  return {
+    current: typeof path === "string" ? path : undefined,
+    owner: typeof id === "string" ? id : undefined,
+    here: (here as Row[]).map((r) => ({
+      kind: r["kind"] === "task" ? "task" : "project",
+      owner: text(r["owner"]),
+      label:
+        r["kind"] === "task" ? formatTaskRef(facts.refPrefix, Number(r["ref"])) : text(r["name"]),
+      path: text(r["path"]),
+    })),
+  };
+}
+
 /** Where a new task lands, as a duplicate check compares it (similar.ts). */
 export interface Destination {
   readonly project: string | null;
