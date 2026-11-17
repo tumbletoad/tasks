@@ -281,18 +281,13 @@ export const CATALOGUE: readonly TargetDef[] = [
       urlScheme: "codex",
     },
     testedVersions: ">=0.166.0 <0.200.0",
+    // A run speaks Codex's app server, whose thread takes the mode itself (the codex driver):
+    // no run needs flags.
     permissionArgs: {
-      // A4 3.11.6: a Codex run with `inherit` asks the user to pick a mode first.
       inherit: { open: [], run: null },
-      "full-access": {
-        open: ["--dangerously-bypass-approvals-and-sandbox"],
-        run: ["--dangerously-bypass-approvals-and-sandbox"],
-      },
-      "auto-edit": {
-        open: ["-s", "workspace-write", "-a", "on-request"],
-        run: ["-s", "workspace-write"],
-      },
-      "read-only": { open: ["-s", "read-only", "-a", "on-request"], run: ["-s", "read-only"] },
+      "full-access": { open: ["--dangerously-bypass-approvals-and-sandbox"], run: null },
+      "auto-edit": { open: ["-s", "workspace-write", "-a", "on-request"], run: null },
+      "read-only": { open: ["-s", "read-only", "-a", "on-request"], run: null },
     },
     run: "codex",
   },
