@@ -589,7 +589,6 @@ a + .muted,
 
 .button[data-default] .hint {
   color: inherit;
-  opacity: 0.75;
 }
 
 .button svg {

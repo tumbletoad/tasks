@@ -225,7 +225,10 @@ export function ariaKeys(bindings: readonly Binding[], mac: boolean): string | u
     [
       ...(binding.mod === true ? [mac ? "Meta" : "Control"] : []),
       ...(binding.shift === true ? ["Shift"] : []),
-      named[binding.key] ?? (binding.mod === true ? binding.key.toUpperCase() : binding.key),
+      named[binding.key] ??
+        (binding.mod === true && binding.key.length === 1
+          ? binding.key.toUpperCase()
+          : binding.key),
     ].join("+"),
   );
   return parts.length === 0 ? undefined : parts.join(" ");

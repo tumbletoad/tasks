@@ -84,6 +84,13 @@ export function onKept(name: string, listener: (value: string | undefined) => vo
   };
 }
 
+/**
+ * Whether the person is typing in `element`: it has focus, in the window that has focus. Only
+ * then does a field keep its own text when another tab changes what is kept.
+ */
+export const typingIn = (element: Element | null): boolean =>
+  element !== null && document.hasFocus() && document.activeElement === element;
+
 /** A kept JSON value, parsed; undefined when it is missing or not JSON. */
 export function readKeptJson(name: string): unknown {
   const text = readKept(name);

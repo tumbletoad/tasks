@@ -332,6 +332,7 @@
   "edit.restoredGroup": "Your area and project",
   "edit.restoredMany": "Your {count} values",
   "edit.changedBy": "{who, select, user {Changed elsewhere just now} import {Changed by the import just now} other {Changed by {by} just now}}",
+  "edit.changedByEarlier": "{who, select, user {Changed elsewhere} import {Changed by the import} other {Changed by {by}}}",
   "edit.notSaved": "Not saved",
   "edit.notSavedFinished": "Not saved: the task is finished",
   "edit.copyValue": "Copy: {value}",

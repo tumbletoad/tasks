@@ -203,5 +203,6 @@ describe("[A7.3.12.m5-11.keymap] one keymap: no key does two things, and single 
     expect(off.find((a) => a.id === "next")?.keys).toEqual([{ key: "ArrowDown" }]);
     expect(ariaKeys([{ key: "/" }, { key: "k", mod: true }], false)).toBe("/ Control+K");
     expect(ariaKeys([{ key: "k", mod: true }], true)).toBe("Meta+K");
+    expect(ariaKeys([{ key: "Enter", mod: true }], false)).toBe("Control+Enter");
   });
 });

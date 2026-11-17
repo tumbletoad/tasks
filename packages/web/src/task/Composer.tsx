@@ -22,6 +22,7 @@ import type { AskField, RowActions } from "../row/actions.ts";
 import { CopyIcon } from "../row/icons.tsx";
 import { tileState } from "../row/launch.ts";
 import type { TaskRow } from "../store/rows.ts";
+import { typingIn } from "../kept.ts";
 import { DRAFT_MAX, keepDraft, onAsk, onDraft, readDraft } from "./composer.ts";
 import css from "./Expanded.module.css";
 
@@ -90,11 +91,11 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     [space, task.id, t],
   );
 
-  // Another tab of this task changed the draft: this one follows while the person is not typing.
+  // Another tab of this task changed the draft: this one follows unless the person types here.
   useEffect(
     () =>
       onDraft(space, task.id, (next) => {
-        if (document.activeElement !== field.current) setText(next);
+        if (!typingIn(field.current)) setText(next);
       }),
     [space, task.id],
   );

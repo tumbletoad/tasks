@@ -31,7 +31,7 @@ import {
 } from "../capture/parse.ts";
 import { Session } from "../context.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
-import { keep, onKept, readKept, readKeptJson } from "../kept.ts";
+import { keep, onKept, readKept, readKeptJson, typingIn } from "../kept.ts";
 import { formatDay } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
@@ -184,7 +184,7 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
   useEffect(
     () =>
       onKept(draftName(space), () => {
-        if (document.activeElement === field.current) return;
+        if (typingIn(field.current)) return;
         const draft = readTop(space);
         setText(draft?.text ?? "");
         setKept(draft?.kept ?? new Set());

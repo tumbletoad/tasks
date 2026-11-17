@@ -4271,9 +4271,49 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.8.web.leftovers",
+      "title": "When a space opens, the kept draft and waiting edits of a task the service no longer knows are forgotten; a task in the live rows, a finished one and one the service could not answer for keep theirs",
+      "source": "A5 3.8, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.11.web.kept-edits",
       "title": "A field edit the service did not take is kept per space and comes back after a reload as its control made it, ready for Try again; a value no control could make, or kept under another name, never comes back and is removed; a tab removes only what it kept or read; a task gone for good takes its edits along",
       "source": "A5 3.11, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-07.e2e.strip",
+      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line; Open without text sends the brief alone; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
+      "source": "A5 3.8, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-07.e2e.keys",
+      "title": "In Chromium and Firefox: an Enter or Ctrl+Enter that ends an input method's composition sends nothing, the next Enter saves the note; the shortcut sheet lists the composer's keys, and Enter or Ctrl+Enter while the sheet is open sends nothing",
+      "source": "A5 3.8, A5 3.21, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-07.e2e.reload",
+      "title": "In Chromium and Firefox: the top field's text is back after a reload, per space, shows in a second tab and is gone everywhere once the task is added; a task's draft follows into a second tab where nobody types, is back after a reload and leaves nothing behind once saved as a note; a field edit not saved because the connection was down, the task changed under it or the task was finished is back after a reload with its choices, and gone once saved or discarded",
+      "source": "A5 3.8, A5 3.11, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-07.e2e.screens",
+      "title": "In Chromium and Firefox: the expanded task's strip in Sumi and Washi at 1,440 and 390 px, empty and with text, axe clean and no horizontal scroll",
+      "source": "A5 3.8, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
