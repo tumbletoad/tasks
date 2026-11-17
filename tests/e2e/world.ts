@@ -195,6 +195,11 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     // folder inside the portal's moves along with it.
     const portalFolder = join(temp.root, "work", "lumen", "portal");
     mkdirSync(join(portalFolder, "appointments"), { recursive: true });
+    const status = (await user.call(
+      "op/call",
+      { space: opened.space.spaceId, op: "space.status", input: {} },
+      { timeoutMs: SLOW_MS },
+    )) as { as_of: string };
     const portal = (
       (await user.call(
         "op/call",
@@ -205,6 +210,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
             action: "set",
             project: "lumen-portal",
             folder: portalFolder,
+            base: status.as_of,
             request_id: "e2e-mira-portal-folder-01",
           },
         },

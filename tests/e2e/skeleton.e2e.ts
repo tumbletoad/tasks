@@ -88,10 +88,13 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
       })) as { tasks: readonly { ref: string }[] };
       const ref = added.tasks[0]?.ref ?? "";
       const plain = added.tasks[1]?.ref ?? "";
+      const base = ((await world.op(world.mira.id, "task.get", { task: ref })) as { as_of: string })
+        .as_of;
       const set = (await world.op(world.mira.id, "folder.manage", {
         action: "set",
         task: ref,
         folder,
+        base,
       })) as { folder: string };
 
       await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
