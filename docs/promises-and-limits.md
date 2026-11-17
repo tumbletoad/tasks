@@ -53,8 +53,6 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A restored copy cannot be edited until you make it the current copy.
 - Apart from that clean-up of scheduled backups, Tasks never deletes your data or a backup as a
   side effect of something else.
-- An import first makes a backup that has passed a trial restore, and without one it changes
-  nothing.
 - An export refuses text that matches a known kind of secret, such as an access token or a private
   key, and says what kind it is and where, without printing it.
 - A space is upgraded only after a backup of it has passed a trial restore. A failed upgrade

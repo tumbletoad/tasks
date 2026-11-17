@@ -29,7 +29,7 @@ pnpm verify
 | `pnpm e2e` | The browser tests against a real service, in Chromium and Firefox (`--project` picks one). Needs `pnpm exec playwright install chromium firefox` once. Not part of `pnpm verify` |
 | `pnpm gen` | Regenerates `packages/contracts/generated/` and the generated docs |
 | `pnpm tasks <args>` | Runs the CLI from source. `pnpm tasks serve` serves the page from `packages/web/dist` once `pnpm build:web` has built it |
-| `pnpm seed --out <folder>` | Builds the sample space from fixture data. `--planning` writes the synthetic prototype folder |
+| `pnpm seed --out <folder>` | Builds the sample space from fixture data |
 | `pnpm crash --minutes <n>` | Crash-injection harness |
 | `pnpm build:web` | Builds the browser page into `packages/web/dist` |
 | `pnpm build` | Version folder, archive and `SHA256SUMS` in `dist/` (needs the network). `--sign test` signs with a throwaway key and writes test install scripts |
