@@ -4,18 +4,10 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import {
-  newId,
-  type Connection,
-  type Id,
-  type Operation,
-  type Row,
-  type WorkerConnection,
-} from "@tasks/storage";
+import { newId, type Id, type Operation } from "@tasks/storage";
 import { writeFixture, type Fixture } from "@tasks/storage/write-helpers";
 import { readSnapshot } from "../src/http/feed.ts";
-import type { SearchReader } from "../src/search/search.ts";
-import { tempRoot } from "./harness.ts";
+import { readerOf, tempRoot } from "./harness.ts";
 
 let temp: { root: string; cleanup: () => void };
 let fx: Fixture;
@@ -43,26 +35,6 @@ afterAll(() => {
   fx.close();
   temp.cleanup();
 });
-
-function readerOf(conn: Connection): WorkerConnection {
-  const reader: SearchReader = {
-    transaction: (mode, queries) =>
-      Promise.resolve(
-        conn.transaction(mode, () =>
-          queries.map((q) => {
-            const statement = conn.prepare(q.sql);
-            if (q.mode === "get") return statement.get(q.params) ?? null;
-            if (q.mode === "all") {
-              const rows: Row[] = statement.all(q.params);
-              return rows;
-            }
-            return statement.run(q.params);
-          }),
-        ),
-      ),
-  };
-  return reader as unknown as WorkerConnection;
-}
 
 /** The person's own change at `at`, on their undo stack; an undo carries no base. */
 function submit(ops: Operation[], at: number): void {

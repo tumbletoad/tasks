@@ -476,11 +476,13 @@ function searchLine(row: SearchRow): string {
         row.snippet_from === undefined || row.snippet_from === "task"
           ? ""
           : `${row.snippet_from}: `;
-      // A snippet that only repeats the title (a match in the title alone) costs tokens for nothing.
+      // A finished task without a match in its text says how it ended in the summary's place.
+      const line = row.snippet ?? row.ending;
+      // A line that only repeats the title (a match in the title alone) costs tokens for nothing.
       const snippet =
-        row.snippet === undefined || row.snippet === row.title
+        line === undefined || line === row.title
           ? ""
-          : ` — ${from}${clip(row.snippet, SEARCH_CUTS.snippet)}`;
+          : ` — ${from}${clip(line, SEARCH_CUTS.snippet)}`;
       return `${join(
         row.ref,
         state,

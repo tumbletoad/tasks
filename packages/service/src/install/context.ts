@@ -278,30 +278,40 @@ export function readServiceRecord(state: string): ServiceRecord | undefined {
   return { pid, instance, state: at, installId, endpoint: path, ageMs };
 }
 
-/** Whether a process with this PID exists (EPERM: it does, as another user's). */
+/**
+ * Whether a process with this PID runs (EPERM: it does, as another user's). On Linux a process that
+ * exited and that its parent has not collected yet still answers the signal: its state in `/proc`
+ * says it is gone.
+ */
 export function processAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    if ((error as NodeJS.ErrnoException).code !== "EPERM") return false;
   }
+  const state = procStat(pid)?.[0];
+  return state !== "Z" && state !== "X";
 }
 
 /**
- * A process's start time on Linux: field 22 of `/proc/<pid>/stat`, in clock ticks since boot. The
- * command name in field 2 may hold spaces and parentheses, so the fields are counted after its
- * last `)`. Undefined on other systems and when the process does not exist.
+ * The fields of `/proc/<pid>/stat` from field 3 (the state) on, on Linux. The command name in field
+ * 2 may hold spaces and parentheses, so the fields are counted after its last `)`. Undefined on
+ * other systems and when the process does not exist.
  */
-export function processStartTime(pid: number): string | undefined {
+function procStat(pid: number): string[] | undefined {
   if (process.platform !== "linux") return undefined;
   try {
     const stat = readFileSync(`/proc/${String(pid)}/stat`, "utf8");
-    const start = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
-    return start !== undefined && /^\d+$/.test(start) ? start : undefined;
+    return stat.slice(stat.lastIndexOf(")") + 2).split(" ");
   } catch {
     return undefined;
   }
+}
+
+/** A process's start time on Linux: field 22 of `/proc/<pid>/stat`, in clock ticks since boot. */
+export function processStartTime(pid: number): string | undefined {
+  const start = procStat(pid)?.[19];
+  return start !== undefined && /^\d+$/.test(start) ? start : undefined;
 }
 
 /** The transport's reasons a probe reports as they are; every other failure is `unreachable`. */
