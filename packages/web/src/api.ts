@@ -36,6 +36,11 @@ export interface Receipt {
   readonly at: Readonly<Partial<Record<ReceiptState, number>>>;
   /** A terminal launch: the terminal Dispatched and why it was chosen, as fixed words. */
   readonly terminal?: { readonly app: string; readonly source: string };
+  /**
+   * The words the person typed, which Tasks holds for the launch's agent: `waiting` until the
+   * agent read them, `read` once it did. Absent when it holds none (any more).
+   */
+  readonly request?: "waiting" | "read";
 }
 
 /** Open's terminal as Settings shows it (the service's TerminalView): fixed words only. */
@@ -181,6 +186,8 @@ export class Api {
         state: launch.state,
         reason: launch.reason ?? null,
         at,
+        // Open holds the words for the agent: they wait until it reads them.
+        ...(result.text === "held" ? { request: "waiting" as const } : {}),
       },
       copy: result.copy,
     };

@@ -816,7 +816,10 @@ export class LaunchService {
         const intent = await this.read(held.space, held.launch).catch(() => undefined);
         keep = intent?.state !== "failed";
       }
-      if (!keep) this.#requests.remove(held.launch);
+      if (!keep) {
+        this.#requests.remove(held.launch);
+        this.#changed(held.space);
+      }
     }
   }
 
@@ -1311,7 +1314,11 @@ export class LaunchService {
       this.#refused("report", outcome.reason);
       throw answer(outcome.reason);
     }
-    if (outcome.ended) this.#attachments.delete(context.connection);
+    if (outcome.ended) {
+      this.#attachments.delete(context.connection);
+      // The agent ended: its request is no use to anyone now.
+      this.#requests.remove(attachment.launch);
+    }
     if (outcome.folder !== undefined) {
       this.#options.log.log("launch.folder_refused", { stage: "shim", reason: outcome.folder });
     }

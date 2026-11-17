@@ -52,15 +52,19 @@ export function keepNote(space: string, task: string, note: NoteRequest | undefi
 }
 
 /**
- * Whether a launch's words reached the agent: true once the agent confirmed or a link or the
- * clipboard handed them over, false when it failed or the service lost track of it, undefined
- * while it is on its way.
+ * Where a launch's words are, now that Tasks holds them for its agent: `reached` once the agent
+ * read them, `failed` when the launch failed or the service lost track of it with them unread,
+ * `unread` when the launch went on without its agent ever reading them (it ended, or a restart
+ * of the service lost them), undefined while they wait. Only `reached` clears the field.
  */
-export function delivered(receipt: Receipt): boolean | undefined {
-  if (receipt.state === "failed" || receipt.state === "unknown") return false;
-  if (receipt.state === "confirmed") return true;
-  if (receipt.state === "dispatched" && receipt.route !== "terminal") return true;
-  return undefined;
+export type Delivery = "reached" | "failed" | "unread" | undefined;
+
+export function delivered(receipt: Receipt): Delivery {
+  if (receipt.request === "read") return "reached";
+  if (receipt.state === "failed") return "failed";
+  if (receipt.request === "waiting") return undefined;
+  if (receipt.state === "prepared" || receipt.state === "dispatching") return undefined;
+  return receipt.state === "unknown" ? "failed" : "unread";
 }
 
 /**
@@ -76,19 +80,26 @@ export function carry(space: string, task: string, receipt: string, words: strin
   carrying.set(name, launches);
 }
 
-/** The words of the task's launches that delivered them; each launch that settled is let go. */
-export function settled(space: string, task: string, receipts: readonly Receipt[]): string[] {
+/** A launch that settled with the words it carried. */
+export interface Settled {
+  readonly words: string;
+  readonly receipt: Receipt;
+  readonly delivery: Exclude<Delivery, undefined>;
+}
+
+/** The task's launches that settled, with their words; each one is let go. */
+export function settled(space: string, task: string, receipts: readonly Receipt[]): Settled[] {
   const name = nameOf(space, task);
   const launches = carrying.get(name);
   if (launches === undefined) return [];
-  const done: string[] = [];
+  const done: Settled[] = [];
   for (const receipt of receipts) {
     const words = launches.get(receipt.id);
     if (words === undefined) continue;
-    const reached = delivered(receipt);
-    if (reached === undefined) continue;
+    const delivery = delivered(receipt);
+    if (delivery === undefined) continue;
     launches.delete(receipt.id);
-    if (reached) done.push(words);
+    done.push({ words, receipt, delivery });
   }
   if (launches.size === 0) carrying.delete(name);
   return done;

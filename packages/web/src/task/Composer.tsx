@@ -1,10 +1,10 @@
 // The composer: what the person types about a task, and the one strip under it where that text
 // goes. Note saves it as a note on the task. Open starts an agent instance on the task with the
-// text as its request (without text it opens as the tile does). Copy puts the brief on the
-// clipboard with the text, Shift+Copy the context pack. Each clears the field once its text has
-// gone somewhere: the note was saved, the launch reached the agent, the brief is on the
-// clipboard. Text typed meanwhile stays. Until then the draft is kept (composer.ts), so a reload
-// brings it back.
+// text as its request, which Tasks holds for the agent and never puts on a command line or in a
+// link (without text it opens as the tile does). Copy puts the brief on the clipboard with the
+// text, Shift+Copy the context pack. Each clears the field once its text has gone somewhere: the
+// note was saved, the agent read the request, the brief is on the clipboard. Text typed meanwhile
+// stays. Until then the draft is kept (composer.ts), so a reload brings it back.
 //
 // Enter saves a note and Ctrl+Enter opens the first instance (keymap.ts): never while an input
 // method composes. Run, an agent working without a window, is not offered until it can start.
@@ -26,7 +26,6 @@ import { typingIn } from "../kept.ts";
 import {
   DRAFT_MAX,
   carry,
-  delivered,
   keepDraft,
   keepNote,
   onAsk,
@@ -87,10 +86,17 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     if (wordsOf(now.current) === words) setText("");
   };
 
-  // A launch that carries the words clears them once they reached the agent; a failed one leaves
-  // them here.
+  // A launch that carries the words clears them once its agent read them. A failed one leaves them
+  // here, and one whose agent went on without reading them says so.
   useEffect(() => {
-    for (const words of settled(space, task.id, receipts)) sent(words);
+    for (const done of settled(space, task.id, receipts)) {
+      if (done.delivery === "reached") sent(done.words);
+      else if (done.delivery === "unread") {
+        const label =
+          instances.find((i) => i.key === done.receipt.instance)?.label ?? done.receipt.instance;
+        say(t("composer.notRead", { label }));
+      }
+    }
   });
 
   // A request starts here: its stub follows what the person had written, which stays.
@@ -164,9 +170,8 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
         return next;
       });
       if (receipt === undefined || before.has(receipt.id) || request === "") return;
-      const reached = delivered(receipt);
-      if (reached === true) sent(request);
-      else if (reached === undefined) carry(space, task.id, receipt.id, request);
+      // Tasks holds the words for the agent: the field clears once it read them.
+      if (receipt.request === "waiting") carry(space, task.id, receipt.id, request);
     });
   };
 

@@ -24,7 +24,7 @@ import {
   NOTE_LINE,
   presetSession,
   renderBrief,
-  sanitiseTitle,
+  REQUEST_LINE,
   type LaunchIntent,
   type SpawnRequest,
   type SpawnedProcess,
@@ -271,7 +271,6 @@ const hex16 = (text: string): string =>
 function briefFor(
   kind: "sent" | "prefilled" | "pointer",
   task: { ref: string },
-  title: string,
   reference: string,
   options: {
     composer?: string;
@@ -282,7 +281,6 @@ function briefFor(
   const brief = renderBrief({
     kind,
     task: task.ref,
-    title,
     reference,
     budget: options.budget ?? 8000,
     names: briefNames(),
@@ -308,7 +306,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       });
       expect(result.launch).toMatchObject({ route: "terminal", instance: "claude" });
       expect(result.copy).toBeUndefined();
-      expect(result.text).toBe("inline");
+      expect(result.text).toBe("held");
       const launch = result.launch;
       const confirmed = await r.lab.waitIntent(
         launch.id,
@@ -318,12 +316,12 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       const report = await reportAt(r.report("claude"));
 
       const session = presetSession(r.lab.spaceId, requestId);
-      const brief = briefFor("sent", task, HOSTILE_TITLE, launch.reference, { composer: COMPOSER });
+      const brief = briefFor("sent", task, launch.reference, { composer: COMPOSER });
       const golden = [
         "--session-id",
         session,
         "-n",
-        `${task.ref} ${sanitiseTitle(HOSTILE_TITLE)}`,
+        task.ref,
         "--permission-mode",
         "bypassPermissions",
         "--",
@@ -332,11 +330,15 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(report.argv).toEqual(golden);
       expect(report.utf8).toEqual(golden.map(hex8));
       expect(report.utf16).toEqual(golden.map(hex16));
-      // The fences held: the title's line, the composer text as the last lines, nothing more.
+      // A pointer: the two references, no title, and the person's words held for the agent.
       expect(brief.split("\n")[0]).toBe(
-        `${PRODUCT_NAME} task ${task.ref} "${sanitiseTitle(HOSTILE_TITLE)}" (launch ${launch.reference}).`,
+        `${PRODUCT_NAME} task ${task.ref} (launch ${launch.reference}).`,
       );
-      expect(brief.split("\n").slice(4)).toEqual(COMPOSER.split("\n"));
+      expect(brief.split("\n").slice(4)).toEqual([REQUEST_LINE]);
+      for (const arg of report.argv) {
+        expect(arg).not.toContain("quotes");
+        expect(arg).not.toContain("Look at");
+      }
       // It started in the resolved folder, by identity.
       const id = statSync(folder, { bigint: true });
       expect(report.cwdId).toBe(`${id.dev.toString()}:${id.ino.toString()}`);
@@ -370,7 +372,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         `mcp_servers.${MCP_SERVER_KEY}.env_vars=["${envVar("TICKET")}"]`,
         "--dangerously-bypass-approvals-and-sandbox",
         "--",
-        briefFor("sent", task, HOSTILE_TITLE, launch.reference),
+        briefFor("sent", task, launch.reference),
       ];
       expect(report.argv).toEqual(golden);
       expect(report.utf16).toEqual(golden.map(hex16));
@@ -401,9 +403,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         "-c",
         `mcp_servers.${MCP_SERVER_KEY}.env_vars=["${envVar("TICKET")}"]`,
       ]);
-      expect(result.copy).toBe(
-        briefFor("prefilled", task, "Fix appointment time zones", result.launch.reference),
-      );
+      expect(result.copy).toBe(briefFor("prefilled", task, result.launch.reference));
     },
   );
 
@@ -436,7 +436,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect([...query.keys()]).toEqual(["cwd", "q"]);
       expect(query.get("cwd")).toBe(folder);
       expect(query.get("q")).toBe(
-        briefFor("prefilled", task, HOSTILE_TITLE, result.launch.reference, { budget: 1000 }),
+        briefFor("prefilled", task, result.launch.reference, { budget: 1000 }),
       );
       expect(url).toMatch(/^[A-Za-z0-9:/?&=%._~-]+$/u);
     },
@@ -464,7 +464,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
   );
 
   test(
-    "Copy: the pointer brief with the folder line, Dispatched at once; a repeat replays; long words become a note",
+    "Copy: the pointer brief with the folder line, Dispatched at once; a repeat replays; words past Copy's budget become a note, and Open holds them instead",
     { timeout: 300_000 },
     async () => {
       const r = await rig("copy");
@@ -476,7 +476,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         state: "dispatched",
       });
       expect(first.result.copy).toBe(
-        briefFor("pointer", task, HOSTILE_TITLE, first.result.launch.reference, {
+        briefFor("pointer", task, first.result.launch.reference, {
           budget: 20_000,
           folder: { kind: "folder", path: task.folder ?? "", found: true },
         }),
@@ -485,11 +485,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(again.result.launch.id).toBe(first.result.launch.id);
       expect(again.result.copy).toBe(first.result.copy);
 
-      // Words longer than the route's budget: saved as a note for agents, and the brief says so.
-      opened.length = 0;
-      const long = `${"Please read this first. ".repeat(900)}End.`;
-      const noted = await open(r, { task: task.ref, instance: "claude-link", text: long });
-      expect(noted.result.text).toBe("note");
+      // Words longer than Copy's budget: saved as a note for agents, and the brief says so.
       const notes = async (): Promise<number> => {
         const digest = (await r.user.call(
           "op/call",
@@ -498,20 +494,36 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         )) as { task: { instructions: unknown[]; more: { instructions: number } } };
         return digest.task.instructions.length + digest.task.more.instructions;
       };
+      const long = `${"Please read this first. ".repeat(900)}End.`;
+      const longer = `${long}\n${long}`;
+      const noted = await open(r, { task: task.ref, text: longer });
+      expect(noted.result.text).toBe("note");
       expect(await notes()).toBe(1);
-      await r.lab.waitIntent(noted.result.launch.id, (i) => i.state === "dispatched", "Dispatched");
+      expect(noted.result.copy?.split("\n").at(-1)).toBe(NOTE_LINE);
+      expect(noted.result.copy).not.toContain("Please read this first.");
+      // A repeated click saves no second note.
+      const repeat = await open(r, { task: task.ref, text: longer, request_id: noted.requestId });
+      expect(repeat.result.launch.id).toBe(noted.result.launch.id);
+      expect(await notes()).toBe(1);
+
+      // Open holds the words for the agent whatever their length: no note, a pointer in the link.
+      opened.length = 0;
+      const held = await open(r, { task: task.ref, instance: "claude-link", text: long });
+      expect(held.result.text).toBe("held");
+      await r.lab.waitIntent(held.result.launch.id, (i) => i.state === "dispatched", "Dispatched");
       const q = new URL(opened[0]?.argv.at(-1) ?? "x:").searchParams.get("q") ?? "";
-      expect(q.split("\n").at(-1)).toBe(NOTE_LINE);
+      expect(q.split("\n").at(-1)).toBe(REQUEST_LINE);
       expect(q).not.toContain("Please read this first.");
-      // A repeated click saves no second note and opens nothing more.
-      const repeat = await open(r, {
+      expect(await notes()).toBe(1);
+      // A repeated click replays: the words are still held, and nothing more opens.
+      const again2 = await open(r, {
         task: task.ref,
         instance: "claude-link",
         text: long,
-        request_id: noted.requestId,
+        request_id: held.requestId,
       });
-      expect(repeat.result.launch.id).toBe(noted.result.launch.id);
-      expect(await notes()).toBe(1);
+      expect(again2.result.launch.id).toBe(held.result.launch.id);
+      expect(again2.result.text).toBe("held");
       expect(opened).toHaveLength(1);
     },
   );
@@ -524,7 +536,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       const task = await addTask(r, "Fix appointment time zones");
       const other = await addTask(r, "Another task");
       const first = await open(r, { task: task.ref });
-      // The task changes between the click and its retry (its title, so its brief's hash too).
+      // The task changes between the click and its retry.
       const read = (await r.user.call(
         "op/call",
         { space: r.lab.spaceId, op: "task.get", input: { task: task.ref } },
@@ -548,7 +560,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(again.result.launch.id).toBe(first.result.launch.id);
       expect(again.result.launch.state).toBe("dispatched");
       expect(again.result.copy?.split("\n")[0]).toBe(
-        `${PRODUCT_NAME} task ${task.ref} "Fix appointment time zones today" (launch ${first.result.launch.reference}).`,
+        `${PRODUCT_NAME} task ${task.ref} (launch ${first.result.launch.reference}).`,
       );
       // The request ID names one click: another task under it is refused, and nothing is made.
       let refused: unknown;
@@ -592,7 +604,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(retry.intent.id).toBe(first.intent.id);
       expect(retry.intent.state).toBe("dispatched");
       expect(retry.copy?.split("\n")[0]).toBe(
-        `${PRODUCT_NAME} task ${task.ref} "Fix appointment time zones today" (launch ${first.intent.reference}).`,
+        `${PRODUCT_NAME} task ${task.ref} (launch ${first.intent.reference}).`,
       );
     },
   );
@@ -677,7 +689,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         hint: expect.stringContaining("give the task or its project another folder") as unknown,
         data: { field: "task", reason: "path_missing", folder: placed.folder },
       });
-      // Words over the terminal's budget would become a note: the refused click saves none.
+      // A refused click with words saves no note and holds nothing.
       const long = `${"Please read this first. ".repeat(400)}End.`;
       expect(await refusal({ task: placed.ref, instance: "claude", text: long })).toMatchObject({
         code: "invalid_input",

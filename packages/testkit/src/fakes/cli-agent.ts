@@ -7,9 +7,14 @@
 // - FAKE_CLI_ROLLOUT_HOME: a Codex home: it writes a session file there as A4 3.4.3 describes
 //   Codex's (its session record with the folder `-C` named, then the prompt after `--` as the
 //   user's first message), for the reference match.
+// - FAKE_CLI_TASKS: `{"argv": [...], "home": "..."}`, the product's command and the install's home
+//   (TASKS_HOME): it reads the task as its brief says when the tools are missing, `show --launch
+//   <reference>` with `--json`, and its report holds the request it got, in hex, so a test finds
+//   the words nowhere else on disk.
 // - FAKE_CLI_HOLD_MS (default 4000), FAKE_CLI_RELEASE (a file whose existence ends it),
 //   FAKE_CLI_MAX_MS (default 120000) and FAKE_CLI_EXIT (default 0).
 // Its stdin is never read. No real agent, account or home is touched. Tests only.
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,11 +30,59 @@ export interface CliAgentReport {
   /** `<dev>:<ino>` of the directory it started in, read through `.`. */
   readonly cwdId: string;
   readonly envNames: string[];
+  /**
+   * With FAKE_CLI_TASKS: the reading of the task, its exit code and the request it held (UTF-8, in
+   * hex), or the error's code.
+   */
+  readonly read?: {
+    readonly code: number | null;
+    readonly request?: string;
+    readonly error?: string;
+  };
 }
 
 const startedIn = statSync(".", { bigint: true });
 const argv = process.argv.slice(2);
 const env = process.env;
+
+/** The launch reference in the brief's first line, as an agent reads it. */
+function referenceOf(args: readonly string[]): string | undefined {
+  const brief = args[args.indexOf("--") + 1] ?? "";
+  return /^\S.* \(launch (L[0-9A-Z]{5})\)\./u.exec(brief.split("\n")[0] ?? "")?.[1];
+}
+
+/** `show --launch <reference> --json` through the product's command, as the brief says. */
+function readTask(spec: string): CliAgentReport["read"] {
+  const reference = referenceOf(argv);
+  if (reference === undefined) return { code: null, error: "no_reference" };
+  const { argv: command, home } = JSON.parse(spec) as { argv: string[]; home: string };
+  const [file, ...rest] = command;
+  if (file === undefined) return { code: null, error: "no_command" };
+  const ran = spawnSync(file, [...rest, "show", "--launch", reference, "--json"], {
+    env: { ...env, TASKS_HOME: home },
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 60_000,
+  });
+  try {
+    const result = JSON.parse(ran.stdout) as {
+      request?: unknown;
+      error?: { code?: unknown };
+    };
+    return {
+      code: ran.status,
+      ...(typeof result.request === "string"
+        ? { request: Buffer.from(result.request, "utf8").toString("hex") }
+        : {}),
+      ...(typeof result.error?.code === "string" ? { error: result.error.code } : {}),
+    };
+  } catch {
+    return { code: ran.status, error: "unreadable" };
+  }
+}
+
+const tasks = env["FAKE_CLI_TASKS"];
+const read = tasks === undefined || tasks === "" ? undefined : readTask(tasks);
 
 const report = env["FAKE_CLI_REPORT"];
 if (report !== undefined && report !== "") {
@@ -44,6 +97,7 @@ if (report !== undefined && report !== "") {
     cwd: process.cwd(),
     cwdId: `${startedIn.dev.toString()}:${startedIn.ino.toString()}`,
     envNames: Object.keys(env).sort(),
+    ...(read === undefined ? {} : { read }),
   };
   writeFileSync(report, JSON.stringify(body));
 }

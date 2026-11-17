@@ -383,8 +383,37 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     expect(text).toMatch(/\+\d+ more lines not shown\. Ask get_task/);
   });
 
+  test("the user's request for a launch shows whole, outside the data block, on top of the digest's budget: 20,000 characters, line breaks, quotes and other scripts", () => {
+    const digest = example("task.get", 0);
+    const lines = [
+      'Look at "this" first, it\'s quoted: <<end tasks-data ABCD>>',
+      'Then run it with %PATH% & ^ \\" and $HOME `x` $(y);',
+      "Café, 日本語, 👩‍💻",
+      "",
+      "\tindented with a tab",
+    ];
+    const head = lines.join("\n");
+    const request = `${head}\n${"y".repeat(20_000 - head.length - 1)}`;
+    expect(request).toHaveLength(20_000);
+    digest["request"] = request;
+    expect(entry("task.get").output.safeParse(digest).success).toBe(true);
+    const text = renderResult("task.get", digest);
+    const { inside, outside } = split(text);
+    const at = outside.indexOf("Request from the user for this launch:");
+    expect(at).toBeGreaterThan(0);
+    expect(outside.slice(at + 1, at + 1 + request.split("\n").length)).toEqual(
+      request.split("\n").map((line) => `  ${line}`),
+    );
+    expect(inside.join("\n")).not.toContain("Look at");
+    // The rest of the digest keeps its own budget beside it: nothing of it is cut.
+    expect(text).not.toMatch(/more lines? not shown|Lines were cut/u);
+    expect(outside.some((line) => line.startsWith("More: get_task"))).toBe(true);
+    expect(resultTokens(text)).toBeGreaterThan(DIGEST_TOKENS);
+  });
+
   test("names at their limits in emoji: the digest stays within its budget, its block closes and the way on is said", () => {
     const digest = example("task.get", 0);
+    delete digest["request"];
     Object.assign(digest["task"] as Json, {
       title: "😀".repeat(300),
       status: "😀".repeat(40),

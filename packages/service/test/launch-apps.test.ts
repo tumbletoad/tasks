@@ -185,7 +185,6 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
         const brief = renderBrief({
           kind: "prefilled",
           task: task.ref,
-          title: "Fix appointment time zones",
           reference: result.launch.reference,
           budget: 2_000,
           names: briefNames(),
