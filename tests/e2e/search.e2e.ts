@@ -226,16 +226,34 @@ test.describe("[A7.3.12.m5-10.e2e.search] Search results are a list like any oth
     world,
   }) => {
     const word = wordOf("sorrel");
-    const [done] = await addTasks(world, [
-      { title: `Sow ${word} seeds`, area: "home" },
+    const [done, , dropped] = await addTasks(world, [
+      { title: `Sow ${word} seeds`, area: "home", summary: "In trays first." },
       { title: `Cut ${word} for soup`, area: "home" },
+      { title: `Dry ${word} leaves`, area: "home", summary: "On the rack." },
     ]);
-    const { as_of } = await read(world, done ?? "");
-    await world.op(world.mira.id, "task.finish", { task: done, base: as_of });
+    await world.op(world.mira.id, "task.finish", {
+      task: done,
+      outcome: "Sown in the cold frame.\nThe rest of the outcome.",
+      base: (await read(world, done ?? "")).as_of,
+    });
+    await world.op(world.mira.id, "task.finish", {
+      task: dropped,
+      status: "dropped",
+      outcome: "Too damp to dry this year.",
+      base: (await read(world, dropped ?? "")).as_of,
+    });
     await openSearch(page, world, word);
     await expect(searching(page)).toHaveValue(word);
     await expect(titles(page, "To do")).toHaveText([`Cut ${word} for soup`]);
-    await expect(titles(page, "Completed")).toHaveText([`Sow ${word} seeds`]);
+    await expect(titles(page, "Completed")).toHaveCount(2);
+    // A finished task says how it ended where the summary goes, as in Completed.
+    const ending = (id: string | undefined) =>
+      page.locator(`main li[data-task="${id ?? ""}"] [data-part="ending"] > [dir]`);
+    await expect(ending(done)).toHaveText("Sown in the cold frame.");
+    await expect(ending(dropped)).toHaveText("Too damp to dry this year.");
+    // Their summaries do not show beside it.
+    await expect(page.locator(`main li[data-task="${done ?? ""}"]`)).not.toContainText("In trays");
+    await expect(page.locator(`main li[data-task="${dropped ?? ""}"]`)).not.toContainText("rack");
 
     await searching(page).fill(`${word} pesto p1`);
     await page.getByRole("button", { name: `Add “${word} pesto p1” as a task` }).click();
@@ -413,6 +431,15 @@ test.describe("[A7.3.12.m5-10.e2e.screens] The capture and the search in both th
       },
       { title: `Plant ${word} whips`, area: "home", priority: 3 },
     ]);
+    // A finished match, so the results show the Completed group and how its task ended.
+    const [picked] = await addTasks(world, [
+      { title: `Pick the ${word} crop`, area: "home", summary: "Before the first frost." },
+    ]);
+    await world.op(world.mira.id, "task.finish", {
+      task: picked,
+      outcome: "Eleven kilos, most of it for jam.",
+      base: (await read(world, picked ?? "")).as_of,
+    });
     for (const theme of ["sumi", "washi"] as const) {
       const context = await browser.newContext({
         bypassCSP: true,

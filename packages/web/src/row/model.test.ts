@@ -316,7 +316,7 @@ describe("[A5.3.6.web.render-row] renderRow, one case per view", () => {
     ]);
   });
 
-  test("Completed says how a task ended where the summary goes; other views keep the summary", () => {
+  test("a finished task says how it ended where the summary goes, in Completed and in search; a reopened one shows its summary", () => {
     const shipped = task({
       title: "Fix the report",
       summary: "Check the March totals",
@@ -327,7 +327,11 @@ describe("[A5.3.6.web.render-row] renderRow, one case per view", () => {
       ending: "Shipped the fix.",
       summary: "Check the March totals",
     });
-    expect(renderRow(row(shipped), ctx("today", "flat")).ending).toBeUndefined();
+    // Search results draw their rows as Today does.
+    expect(renderRow(row(shipped), ctx("today", "flat")).ending).toBe("Shipped the fix.");
+    // A row reopened under the pointer keeps the ending it was read with; it is no longer how it ended.
+    const reopened = { ...shipped, lifecycle: "active" as const };
+    expect(renderRow(row(reopened), ctx("today", "flat")).ending).toBeUndefined();
     const plain = task({ title: "x", summary: "Next step", lifecycle: "completed" });
     expect(renderRow(row(plain), ctx("completed", "flat")).ending).toBeUndefined();
   });

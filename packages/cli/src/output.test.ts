@@ -302,6 +302,18 @@ describe("[A3.5.search.find] tasks find prints a search page", () => {
             completed: "2026-04-03",
             snippet: "Always store UTC",
             snippet_from: "learning",
+            ending: "Reports convert at render time.",
+          },
+          {
+            kind: "task",
+            id: "t_4c8e2g6j0m3p7r1t5v9x3z7b1d",
+            ref: "M-4",
+            title: "Retry the export",
+            lifecycle: "archived",
+            status: "open",
+            inbox: false,
+            priority: 4,
+            ending: "Not needed after all.",
           },
           {
             kind: "task",
@@ -323,9 +335,10 @@ describe("[A3.5.search.find] tasks find prints a search page", () => {
       "Mira",
     );
     expect(text.split("\n")).toEqual([
-      '16–20 of 37 · scope all · parsed: zone OR "time zone"',
+      '16–21 of 37 · scope all · parsed: zone OR "time zone"',
       "M-14 · open · P1 · M · due 2026-11-13 · Lumen Health · Fix appointment time zones — …stored without zone… *",
       "M-3 · completed 2026-04-03 · Fix DST bug in reports — learning: Always store UTC",
+      "M-4 · dropped · Retry the export — Not needed after all.",
       "M-15 · open · due 2026-11-13T09:30:00.000Z (Europe/Lisbon) · Call the clinic",
       "M-22 · deleted since this search",
       "M-9 · redacted since this search",
