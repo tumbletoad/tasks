@@ -3727,8 +3727,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         position: placed.position,
         source_at: column("source_at", "source_at", null),
         reviewed_at: column("reviewed_at", "reviewed_at", null),
-        // An import keeps the prototype's creation instant, and the task is the user's who
-        // applied it (A7 3.15.3); the import actor authors its entries.
+        // An imported task is the user's who applied it; the import actor authors its entries.
         created_at: op.created_at ?? run.at,
         created_by: isImportRequest(run.request) ? actor.principal_id : author,
         session: actor.session_id ?? null,
@@ -3800,7 +3799,6 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       }
       // A1 3.11.1: with an outcome the task is wrapped at once, else it waits for its wrap-up.
       // An earlier outcome stays until a new one replaces it (A1 3.11.3).
-      // An import keeps the prototype's time of the check-off (A7 3.15.3).
       const doneAt = op.at ?? run.at;
       update(conn, target, {
         lifecycle: "completed",

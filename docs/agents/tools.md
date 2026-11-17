@@ -70,7 +70,7 @@ MCP tool `add_entry`, "Log on a task": Use often while working: log progress, ev
 | A1 operations | `log.add`, `note.add` |
 | Faces | MCP `add_entry`, CLI `tasks log`, `tasks note`, UI |
 | Errors | `invalid_input`, `unbound`, `not_found`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 638, reported |
+| Definition, estimated tokens | 699, reported |
 | Result budget, estimated tokens | typical 40, max 80 |
 
 ### Input
@@ -84,6 +84,7 @@ MCP tool `add_entry`, "Log on a task": Use often while working: log progress, ev
 | `links[].title` | string, max 200 | yes | Link title |
 | `links[].url` | string, max 2048 | yes | URL |
 | `for_agents` | boolean | no, user only | Address the note to agents |
+| `at` | string, max 40 | no | When a log entry was made, only for older work: ISO date or instant |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 
 ### Output
@@ -1777,7 +1778,7 @@ MCP tool `add_tasks`, "Add tasks": For work left for later and items from email,
 | A1 operations | `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `add_tasks`, CLI `tasks add`, UI |
 | Errors | `invalid_input`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1577, reported |
+| Definition, estimated tokens | 1645, reported |
 | Result budget, estimated tokens | typical 80, max 2000 |
 
 ### Input
@@ -1796,6 +1797,7 @@ MCP tool `add_tasks`, "Add tasks": For work left for later and items from email,
 | `tasks[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `tasks[].waiting_on` | string, max 80 | no | Who or what it waits on |
 | `tasks[].focus` | boolean | no | Star it for today, only when the user asks |
+| `tasks[].created` | string, max 40 | no | When it was created, only for work that existed before: ISO date or instant |
 | `tasks[].folder` | string, 1 to 4096 | no | Its folder: "cwd", an absolute folder or one under ~ |
 | `tasks[].sources` | object[], max 10 items | no | Where it came from |
 | `tasks[].sources[].key` | string, max 512 | no | <namespace>:<id>, such as jira:LUM-212 |
@@ -1910,7 +1912,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | A1 operations | `task.complete`, `task.archive`, `task.wrap_up`, `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `complete_task`, CLI `tasks done`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1824, reported |
+| Definition, estimated tokens | 1962, reported |
 | Result budget, estimated tokens | typical 100, max 1500 |
 
 ### Input
@@ -1933,6 +1935,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `follow_ups[].waiting_on` | string, max 80 | no | Who or what it waits on |
 | `follow_ups[].focus` | boolean | no | Star it for today, only when the user asks |
+| `follow_ups[].created` | string, max 40 | no | When it was created, only for work that existed before: ISO date or instant |
 | `follow_ups[].folder` | string, 1 to 4096 | no | Its folder: "cwd", an absolute folder or one under ~ |
 | `follow_ups[].sources` | object[], max 10 items | no | Where it came from |
 | `follow_ups[].sources[].key` | string, max 512 | no | <namespace>:<id>, such as jira:LUM-212 |
@@ -1944,6 +1947,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].context` | string, max 65536; agents: string, max 8000 | no | Markdown context |
 | `follow_ups[].log` | string, max 16384; agents: string, max 2000 | no | Log entry; also added to a matched task |
 | `follow_ups[].on_existing` | "return" \| "add_sources" \| "create_new" | no | When a source key matches; default return |
+| `finished` | string, max 40 | no | When it was done, only for work done before it was recorded: ISO date or instant |
 | `base` | string, max 40 | yes | as_of from your last read, verbatim |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 | `mode` | "apply" \| "propose" | no, default `"apply"` | propose: ask the user to decide |

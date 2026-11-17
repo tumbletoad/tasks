@@ -86,7 +86,7 @@ import {
 } from "../launch/open.ts";
 import { type BindOutcome, type BindingPort, type FoundLaunch } from "./binding.ts";
 import { checkGrant, grantRefused, homesOf, type HomeGate } from "./grant.ts";
-import { addDays, dateIn, dueDate, localTimeZone } from "./dates.ts";
+import { addDays, dateIn, dueDate, localTimeZone, pastInstant } from "./dates.ts";
 import { GUIDE_STEPS, GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, type Match } from "./here.ts";
 import {
@@ -1023,6 +1023,27 @@ function due(value: unknown, today: string, path: string): { date: string } | un
   return { date };
 }
 
+/**
+ * When something the caller recreates really happened (a draft's `created`, complete_task's
+ * `finished`, an entry's `at`), as an instant: never in the future.
+ */
+function pastAt(call: Call, value: unknown, path: string): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const now = (call.host.now ?? Date.now)();
+  const at = pastInstant(value, now, (call.host.timeZone ?? localTimeZone)());
+  if (at === "future") {
+    throw invalid(path, "In the future", "Give when it really happened: today or earlier.");
+  }
+  if (at === undefined) {
+    throw invalid(
+      path,
+      "Not a date or an instant",
+      "Use an ISO date, or an instant with its offset such as 2026-03-02T14:05:00Z.",
+    );
+  }
+  return at;
+}
+
 function sourceFields(source: Record<string, unknown>, path: string): SourceFields {
   const fields: SourceFields = {
     kind: source["kind"] as SourceFields["kind"],
@@ -1438,15 +1459,18 @@ async function duplicateWarnings(
  * the Inbox (`toInbox`).
  */
 function draftOps(
+  call: Call,
   draft: Record<string, unknown>,
   id: Id<"t">,
-  today: string,
   path: string,
   start: number,
   sourcePaths: Map<number, string>,
   agent: boolean,
 ): Operation[] {
+  const { today } = call;
   const create: TaskCreate = { kind: "task.create", id, title: String(draft["title"]) };
+  const created = pastAt(call, draft["created"], `${path}.created`);
+  if (created !== undefined) create.created_at = created;
   if (toInbox(draft, agent)) create.inbox = true;
   // `return`, the default, is A1's: an active match takes the draft's log entry, nothing else.
   if (draft["on_existing"] === "add_sources") create.link_sources = true;
@@ -1698,9 +1722,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const sourcePaths = new Map<number, string>();
     list.forEach((draft, k) => {
       firsts.push(ops.length);
-      ops.push(
-        ...draftOps(draft, ids[k] as Id<"t">, call.today, at(k), ops.length, sourcePaths, agent),
-      );
+      ops.push(...draftOps(call, draft, ids[k] as Id<"t">, at(k), ops.length, sourcePaths, agent));
     });
     const duplicates = await duplicateWarnings(call, list, agent);
     // The folders last, so the drafts' operations keep their indexes in a replay, which sends none.
@@ -1866,6 +1888,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw invalid("for_agents", "Only a note is addressed to agents");
     }
     const body = withLinks(String(input["text"]), input["links"]);
+    if (kind === "note" && input["at"] !== undefined) {
+      throw invalid("at", "A note is dated when it is written", "Give the entry a log kind.");
+    }
+    const at = pastAt(call, input["at"], "at");
     const task = await taskOf(call);
     const op: Operation =
       kind === "note"
@@ -1875,7 +1901,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
             body,
             addressee: input["for_agents"] === true ? "agents" : "self",
           }
-        : { kind: "log.add", task, body, log_kind: kind as never };
+        : {
+            kind: "log.add",
+            task,
+            body,
+            log_kind: kind as never,
+            ...(at === undefined ? {} : { at }),
+          };
     const result = await submit(call, [op]);
     const done = opAt(result, 0);
     return {
@@ -1894,17 +1926,25 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const task = await taskOf(call);
     const outcome = typeof input["outcome"] === "string" ? input["outcome"] : undefined;
     const learnings = Array.isArray(input["learnings"]) ? (input["learnings"] as string[]) : [];
+    const dropped = input["status"] === "dropped";
+    if (dropped && input["finished"] !== undefined) {
+      throw invalid("finished", "A dropped task keeps no time it was done", "Leave out finished.");
+    }
+    const finishedAt = pastAt(call, input["finished"], "finished");
     // A3 3.4.8, decided by the writer on the task as it finds it: an active task is completed
     // (done) or archived (dropped), one the user finished first is left as it is (`if_active`),
     // and the outcome and learnings are its wrap-up, `once`: a task wrapped already is no change
     // with the same outcome and a conflict otherwise. The operations follow from the input alone,
     // so a replay's stored result lines up with them whatever the task's state is now.
     const ops: Operation[] = [
-      {
-        kind: input["status"] === "dropped" ? "task.archive" : "task.complete",
-        task,
-        if_active: true,
-      },
+      dropped
+        ? { kind: "task.archive", task, if_active: true }
+        : {
+            kind: "task.complete",
+            task,
+            if_active: true,
+            ...(finishedAt === undefined ? {} : { at: finishedAt }),
+          },
     ];
     if (outcome !== undefined || learnings.length > 0) {
       ops.push({
@@ -1926,9 +1966,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const firsts: number[] = [];
     follow.forEach((draft, k) => {
       firsts.push(ops.length);
-      ops.push(
-        ...draftOps(draft, ids[k] as Id<"t">, call.today, at(k), ops.length, sourcePaths, agent),
-      );
+      ops.push(...draftOps(call, draft, ids[k] as Id<"t">, at(k), ops.length, sourcePaths, agent));
     });
     ops.push(...folders.ops);
     // New groups after the task's own operations, so its wrap-up keeps its index, and before the

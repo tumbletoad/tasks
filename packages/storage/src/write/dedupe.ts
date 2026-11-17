@@ -20,13 +20,14 @@
 //   within `tasks.dedupe_window_days` of the request's instant is the match, the one finished last,
 //   and nothing follows: the caller decides whether to reopen it or create anew.
 //
-// A task finished at its `completed_at`, else at the instant of the commit whose write its
-// lifecycle holds (an archived task has no completion time): its provenance, so an undo or redo
-// that sets a finish back keeps the finish's own instant (A1 3.10). Commit instants never go back,
-// so two finishes can share one: the later commit is the one finished last. A removed link or a
-// deleted task never matches, so an undone create holds no key. Everything is read inside the
-// writer's transaction, so two requests never both create a task for one key: the single writer
-// decides them one after the other (A1 3.9).
+// A task finished, for the window, when this space recorded it: at the instant of the commit whose
+// write its lifecycle holds, its provenance, so an undo or redo that sets a finish back keeps the
+// finish's own instant (A1 3.10). A completion dated earlier (an import, or work an agent recreates
+// from another tool) is recent here all the same, so sending the same work again finds it. Commit
+// instants never go back, so two finishes can share one: the later commit is the one finished
+// last. A removed link or a deleted task never matches, so an undone create holds no key.
+// Everything is read inside the writer's transaction, so two requests never both create a task for
+// one key: the single writer decides them one after the other (A1 3.9).
 //
 // The start-state read follows `task_sources` from each source, and `task_sources` has no index on
 // `source_id` in schema 0.2, so it scans the links once per request that names a key that exists.
@@ -45,7 +46,7 @@ const SQL = {
   holders:
     "SELECT source_id, task_id FROM task_sources WHERE removed_at IS NULL " +
     "AND source_id IN (SELECT value FROM json_each($sources))",
-  task: "SELECT ref, lifecycle, completed_at, deleted_at, created_seq, fp FROM tasks WHERE id = $id",
+  task: "SELECT ref, lifecycle, deleted_at, created_seq, fp FROM tasks WHERE id = $id",
   commitAt: "SELECT at FROM commits WHERE seq = $seq",
   keysOf:
     "SELECT coalesce(s.source_key, s.ref) AS k FROM task_sources l " +
@@ -96,7 +97,7 @@ const byFinish = (a: Holder, b: Holder): number =>
 /**
  * The commit whose write a task's lifecycle holds: its provenance (`fp`, A1 3.10), else its
  * create. Not the commit that last wrote it (`fv`): an undo of a reopen writes the lifecycle back,
- * and the task finished when the write it holds again was made, as its `completed_at` says.
+ * and the task finished when the write it holds again was made.
  */
 function lifecycleSeq(r: RowReader): number {
   const fp = r.json("fp");
@@ -352,7 +353,7 @@ export class Dedupe {
     let finished: Holder["finished"] = null;
     if (lifecycle !== "active") {
       const seq = lifecycleSeq(r);
-      finished = { at: r.optInt("completed_at", "instant") ?? this.#commitAt(seq), seq };
+      finished = { at: this.#commitAt(seq), seq };
     }
     const holder: Holder = {
       lifecycle,

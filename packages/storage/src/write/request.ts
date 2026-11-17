@@ -408,8 +408,8 @@ export interface TaskCreate extends TaskValues, Placement {
    */
   link_sources?: boolean;
   /**
-   * The creation instant, which an import takes from the prototype (A7 3.15.3: 09:00 on the
-   * `(added …)` day). Absent: the commit's instant. An import's only.
+   * The creation instant of work that existed before it was added here: an import's from the
+   * prototype, an agent's from the tool it recreates. Absent: the commit's instant.
    */
   created_at?: number;
 }
@@ -448,10 +448,7 @@ export interface TaskComplete {
    * INVALID_TRANSITION: complete_task's way to finish a task whatever the user did first (A3 3.4.8).
    */
   if_active?: boolean;
-  /**
-   * `completed_at`, which an import takes from the prototype (A7 3.15.3: a check event's time, or
-   * 09:00 on a `(done …)` day). Absent: the commit's instant. An import's only.
-   */
+  /** `completed_at` of work done before it was recorded here. Absent: the commit's instant. */
   at?: number;
 }
 
@@ -548,10 +545,7 @@ export interface LogAdd {
   body: string;
   /** Default `progress`. */
   log_kind?: LogKind;
-  /**
-   * The entry's instant, which an import takes from the prototype (A7 3.15.3: 09:00 on an
-   * evidence's `source_date`). Absent: the commit's instant. An import's only.
-   */
+  /** The instant of an entry made before it was added here. Absent: the commit's instant. */
   at?: number;
 }
 
@@ -2586,18 +2580,37 @@ function checkPreview(f: Fields): PreviewGuard {
   return guard;
 }
 
-/** The fields of the operations that only an import request may carry (isImportRequest). */
+/**
+ * The fields of the operations that make a request of origin `import` an import (isImportRequest):
+ * those only an import may carry, and the times an import keeps from the prototype.
+ */
 function importFields(op: Operation): boolean {
   switch (op.kind) {
     case "task.create":
-      return op.created_at !== undefined || op.ext !== undefined;
-    case "task.patch":
-      return op.set?.ext !== undefined;
+      return op.created_at !== undefined || importOnly(op);
     case "task.complete":
     case "log.add":
       return op.at !== undefined;
+    default:
+      return importOnly(op);
+  }
+}
+
+/**
+ * The operations and fields only an import writes. When a task was created or finished, or a log
+ * entry made, any caller may say: an agent that recreates work from another tool keeps its dates.
+ */
+function importOnly(op: Operation): boolean {
+  switch (op.kind) {
+    case "task.create":
+      return op.ext !== undefined;
+    case "task.patch":
+      return op.set?.ext !== undefined;
     case "source.add":
       return op.source.ext !== undefined;
+    case "task.complete":
+    case "log.add":
+      return false;
     default:
       return IMPORT_OPERATIONS.has(op.kind);
   }
@@ -2620,7 +2633,7 @@ function checkImportRequest(f: Fields, request: CheckedRequest, bytes: number): 
     fail("TOO_LARGE", "The request is larger than 16 MiB", "");
   }
   if (request.actor.origin !== "import") {
-    const at = request.ops.findIndex(importFields);
+    const at = request.ops.findIndex(importOnly);
     if (at >= 0) {
       fail("VALIDATION_FAILED", "Only an import writes this", `ops[${String(at)}]`, at);
     }

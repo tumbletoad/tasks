@@ -11,6 +11,11 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "at": {
+            "description": "When a log entry was made, only for older work: ISO date or instant",
+            "maxLength": 40,
+            "type": "string"
+          },
           "kind": {
             "default": "progress",
             "description": "question flags it for the user; note: a note for the user",
@@ -119,6 +124,11 @@
                 "context": {
                   "description": "Markdown context",
                   "maxLength": 8000,
+                  "type": "string"
+                },
+                "created": {
+                  "description": "When it was created, only for work that existed before: ISO date or instant",
+                  "maxLength": 40,
                   "type": "string"
                 },
                 "due": {
@@ -286,6 +296,11 @@
             "maxLength": 4096,
             "type": "string"
           },
+          "finished": {
+            "description": "When it was done, only for work done before it was recorded: ISO date or instant",
+            "maxLength": 40,
+            "type": "string"
+          },
           "follow_ups": {
             "description": "Tasks to create, as for task.add",
             "items": {
@@ -299,6 +314,11 @@
                 "context": {
                   "description": "Markdown context",
                   "maxLength": 8000,
+                  "type": "string"
+                },
+                "created": {
+                  "description": "When it was created, only for work that existed before: ISO date or instant",
+                  "maxLength": 40,
                   "type": "string"
                 },
                 "due": {

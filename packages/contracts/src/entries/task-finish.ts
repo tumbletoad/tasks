@@ -13,6 +13,7 @@ import {
   HeldSources,
   Lifecycle,
   Mode,
+  PastInput,
   ProposalId,
   Replayed,
   RequestId,
@@ -37,6 +38,9 @@ export const TaskFinishInput = z.strictObject({
     .describe("Lessons reusable beyond this task")
     .optional(),
   follow_ups: z.array(TaskDraft).max(10).describe("Tasks to create, as for task.add").optional(),
+  finished: PastInput.describe(
+    "When it was done, only for work done before it was recorded: ISO date or instant",
+  ).optional(),
   base: Base,
   request_id: RequestId,
   mode: Mode,

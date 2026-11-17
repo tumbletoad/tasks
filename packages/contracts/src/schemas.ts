@@ -137,6 +137,12 @@ export const SourceInput = z.strictObject({
  */
 export const FolderInput = z.string().min(1).max(4096);
 
+/**
+ * When something happened, for work that existed before it was added here: an ISO date or an
+ * instant with its offset, never in the future. The service reads it (ops/dates.ts).
+ */
+export const PastInput = z.string().max(40);
+
 /** One task to create (A3 3.4.5). */
 export const TaskDraft = z.strictObject({
   title: TitleInput.describe("Title"),
@@ -150,6 +156,9 @@ export const TaskDraft = z.strictObject({
   due: safeLine(40).describe("ISO date or phrase: fri, +3d").optional(),
   waiting_on: safeLine(80).describe("Who or what it waits on").optional(),
   focus: z.boolean().describe("Star it for today, only when the user asks").optional(),
+  created: PastInput.describe(
+    "When it was created, only for work that existed before: ISO date or instant",
+  ).optional(),
   folder: FolderInput.describe('Its folder: "cwd", an absolute folder or one under ~').optional(),
   sources: z.array(SourceInput).max(10).describe("Where it came from").optional(),
   context: ContextInput.describe("Markdown context").optional(),

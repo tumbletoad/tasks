@@ -5,7 +5,9 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { AppError, type ErrorBody } from "@tasks/contracts";
 import { toolCaller } from "../src/mcp/index.ts";
+import { dateIn, localTimeZone } from "../src/ops/dates.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
@@ -25,6 +27,14 @@ const AGENT: Caller = { class: "cli-script", env: {} };
 
 async function call(op: string, input: Json, caller: Caller = AGENT): Promise<Json> {
   return (await opCall(w.service.ops, caller, { op, input })) as Json;
+}
+async function refusal(op: string, input: Json, caller: Caller = AGENT): Promise<ErrorBody> {
+  const error = await call(op, input, caller).then(
+    () => undefined,
+    (e: unknown) => e,
+  );
+  if (!(error instanceof AppError)) throw new Error(`${op} was not refused`);
+  return error.toBody();
 }
 /** What an agent reads back from a tool. */
 async function tool(name: string, args: Json): Promise<string> {
@@ -201,4 +211,112 @@ describe("[A3.bulk.shared-key] a ticket two tasks share never swallows one of th
     },
     LONG,
   );
+});
+
+const USER: Caller = { class: "cli-interactive", env: {} };
+
+/** A finished task's row in the Completed list, by its reference. */
+async function finishedRow(ref: unknown): Promise<Json | undefined> {
+  const rows = (await call("task.finished", { limit: 200 }, USER))["rows"] as Json[];
+  return rows.find((row) => row["ref"] === ref);
+}
+
+/** When get_task says the task was created, and when its newest log entry was made. */
+async function timesOf(ref: unknown): Promise<{ created: string; log: string | undefined }> {
+  const task = (await call("task.get", { task: ref }))["task"] as Json;
+  const log = task["log"] as Json[];
+  return { created: String(task["created"]), log: log[0]?.["at"] as string | undefined };
+}
+
+describe("[A3.bulk.dates] work recreated from another tool keeps when it happened", () => {
+  test(
+    "add_tasks takes when a task was created, complete_task when it was done, add_entry when a log entry was made",
+    async () => {
+      const added = await call("task.add", {
+        tasks: [
+          { title: "Dated by day", area: "History", created: "2025-03-04" },
+          { title: "Dated by instant", area: "History", created: "2025-03-04T14:05:00+01:00" },
+        ],
+        request_id: rid(),
+      });
+      const [byDay, byInstant] = added["tasks"] as Json[];
+      const day = (await timesOf(byDay?.["ref"])).created;
+      expect(dateIn(Date.parse(day), localTimeZone())).toBe("2025-03-04");
+      expect((await timesOf(byInstant?.["ref"])).created).toBe("2025-03-04T13:05:00.000Z");
+
+      await call("task.finish", {
+        task: byInstant?.["ref"],
+        outcome: "Shipped in the old tool.",
+        finished: "2025-04-01T10:00:00Z",
+        base: await asOf(),
+        request_id: rid(),
+      });
+      expect(await finishedRow(byInstant?.["ref"])).toMatchObject({
+        completed_at: Date.parse("2025-04-01T10:00:00Z"),
+        finished_at: Date.parse("2025-04-01T10:00:00Z"),
+      });
+      await call("entry.add", {
+        task: byDay?.["ref"],
+        kind: "evidence",
+        text: "Measured in the old tool.",
+        at: "2025-03-05",
+        request_id: rid(),
+      });
+      const log = (await timesOf(byDay?.["ref"])).log;
+      expect(dateIn(Date.parse(String(log)), localTimeZone())).toBe("2025-03-05");
+
+      // A second pass finds the task finished long ago by its key: nothing new.
+      const keyed = {
+        title: "Done long ago",
+        area: "History",
+        created: "2024-12-01",
+        sources: [{ key: "planning:old-1", kind: "doc", title: "Old item" }],
+      };
+      const first = (await call("task.add", { tasks: [keyed], request_id: rid() }))[
+        "tasks"
+      ] as Json[];
+      await call("task.finish", {
+        task: first[0]?.["ref"],
+        outcome: "Done.",
+        finished: "2025-01-02",
+        base: await asOf(),
+        request_id: rid(),
+      });
+      const again = (await call("task.add", { tasks: [keyed], request_id: rid() }))[
+        "tasks"
+      ] as Json[];
+      expect(again[0]).toMatchObject({
+        result: "exists",
+        ref: first[0]?.["ref"],
+        lifecycle: "completed",
+      });
+    },
+    LONG,
+  );
+
+  test("a time in the future, or one it cannot read, is refused at its field", async () => {
+    const future = await refusal("task.add", {
+      tasks: [{ title: "Not yet", created: "2999-01-01" }],
+      request_id: rid(),
+    });
+    expect(future).toMatchObject({
+      code: "invalid_input",
+      data: { issues: [{ path: "tasks.0.created", message: "In the future" }] },
+    });
+    const unread = await refusal("task.add", {
+      tasks: [{ title: "Someday", created: "last spring" }],
+      request_id: rid(),
+    });
+    expect(unread).toMatchObject({
+      data: { issues: [{ path: "tasks.0.created", message: "Not a date or an instant" }] },
+    });
+    const note = await refusal("entry.add", {
+      task: "M-1",
+      kind: "note",
+      text: "A note.",
+      at: "2025-01-01",
+      request_id: rid(),
+    });
+    expect(note).toMatchObject({ data: { issues: [{ path: "at" }] } });
+  });
 });

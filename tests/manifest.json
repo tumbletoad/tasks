@@ -2309,6 +2309,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.bulk.dates",
+      "title": "An agent recreating work keeps its dates: add_tasks takes when a task was created (a date at nine in the morning, or an instant), complete_task when it was done and add_entry when a log entry was made; a time in the future or one it cannot read is refused at its field; a task finished long ago is still found by its key on a second pass",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.5.search.parser",
       "title": "The query language: A3 3.9.2's examples parse into words, phrases, OR groups and filters; quotes, doubled quotes and letter-only keys; an unknown key or value fails with a suggestion and never quotes the query; OR, negation, limits and values are checked; is:new and is:changed are refused naming their step; a query that names a lifecycle widens the default scope; and random strings parse or are refused as invalid_input, with parsed reading back as the same query",
       "source": "A3 3.9.2, A3 3.5, A3 5, A7 3.10 M3.05",

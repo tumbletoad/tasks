@@ -1195,8 +1195,8 @@ function expand(s: Step): Step[] {
 /**
  * The oracle for a draft's match (A1 3.6 rules 1 to 3), on the state before its request at
  * instant `at`: its keys' holders, the first active one by reference, else the one finished last
- * within the window. A task finished at its `completed_at`, else at the commit whose write its
- * lifecycle holds (its provenance), never at an undo that set that write back.
+ * within the window. A task finished at the commit whose write its lifecycle holds (its
+ * provenance), never at an undo that set that write back.
  */
 function expectedMatch(
   conn: Connection,
@@ -1215,10 +1215,9 @@ function expectedMatch(
     const fv = JSON.parse(String(r["fv"])) as Record<string, number>;
     const fp = JSON.parse(String(r["fp"])) as Record<string, number>;
     const seq = fp["lifecycle"] ?? Number(r["created_seq"]);
-    const finished =
-      typeof r["completed_at"] === "number"
-        ? r["completed_at"]
-        : Number(conn.prepare("SELECT at FROM commits WHERE seq = $seq").get({ seq })?.["at"]);
+    const finished = Number(
+      conn.prepare("SELECT at FROM commits WHERE seq = $seq").get({ seq })?.["at"],
+    );
     return {
       id: String(r["id"]),
       ref: Number(r["ref"]),
