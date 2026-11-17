@@ -12,7 +12,7 @@
 // - Right before a queued run starts, what it needs is checked again (`prepare`): one that can no
 //   longer start fails with why, before anything exists for it.
 // - While an update holds the supervisor, or an update has not finished, nothing new starts;
-//   queued runs wait and say so.
+//   queued runs wait and say so. Where no process group can hold runs they start all the same.
 // - A run folder goes once its run is final, confirmed, saved in its space and old (retain).
 import {
   FINAL_RUN_STATES,
@@ -35,9 +35,7 @@ export type WaitReason =
   /** Its task has as many runs as allowed already. */
   | "task_limit"
   /** An update waits for the runs to finish before it restarts the service. */
-  | "update"
-  /** Runs cannot be contained on this machine now (the container probe failed). */
-  | "unavailable";
+  | "update";
 
 /** One space's runs: its run machine and its host, recovered before the supervisor gets it. */
 export interface Lane {
@@ -100,8 +98,6 @@ export interface SupervisorOptions {
   readonly lanes: () => readonly Lane[];
   /** The limits as the person set them now. */
   readonly limits: () => QueueLimits;
-  /** Whether runs can be contained on this machine now. */
-  readonly available: () => Promise<boolean>;
   /**
    * Checks a queued run again right before it starts, and names what runs. A check that throws
    * leaves the run queued for the next round.
@@ -438,8 +434,6 @@ export class Supervisor {
 
     if (this.held) {
       this.#waiting = new Map(queued.map((slot) => [slot.id, "update" as const]));
-    } else if (queued.length > 0 && !(await this.#available())) {
-      this.#waiting = new Map(queued.map((slot) => [slot.id, "unavailable" as const]));
     } else {
       await this.#startWhatFits(read, records, queued, active);
     }
@@ -495,14 +489,6 @@ export class Supervisor {
       if (now !== undefined && (!FINAL.has(now.state) || awaitsConfirmation(now))) out.push(now);
     }
     return out;
-  }
-
-  async #available(): Promise<boolean> {
-    try {
-      return await this.#options.available();
-    } catch {
-      return false;
-    }
   }
 
   /**

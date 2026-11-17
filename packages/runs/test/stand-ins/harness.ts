@@ -2,7 +2,7 @@
 // force as a crash would. On Linux it runs as the main process of a transient user unit with
 // Delegate=yes, as the real service runs in its unit; on Windows it is a plain child of the test.
 //
-//   node harness.ts [<tasks-run.exe>]
+//   node harness.ts [<tasks-run.exe> | ungrouped]
 //
 // It reads one JSON request per line on stdin and answers each on stdout, in order:
 //   {"op":"hello"}                                  -> {"pid":<n>}
@@ -26,6 +26,7 @@ import { createInterface } from "node:readline";
 import {
   ContainerError,
   containers,
+  UngroupedContainers,
   type AgentExit,
   type Containers,
 } from "../../src/container/index.ts";
@@ -38,7 +39,10 @@ interface Output {
 }
 
 const helper = process.argv[2];
-const make = (): Containers => containers(helper === undefined ? {} : { runHelper: helper });
+const make = (): Containers =>
+  helper === "ungrouped"
+    ? new UngroupedContainers()
+    : containers(helper === undefined ? {} : { runHelper: helper });
 let box = make();
 const exits = new Map<string, Promise<AgentExit>>();
 const outputs = new Map<string, Output>();

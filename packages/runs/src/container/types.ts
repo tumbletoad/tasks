@@ -76,7 +76,11 @@ export type UnavailableReason =
   | "check_failed";
 
 export type ProbeResult =
-  | { readonly available: true; readonly kind: "cgroup" | "job" }
+  | {
+      readonly available: true;
+      /** `tree`: no process group; the agent's process tree as Tasks can find it. */
+      readonly kind: "cgroup" | "job" | "tree";
+    }
   | {
       readonly available: false;
       readonly reason: UnavailableReason;

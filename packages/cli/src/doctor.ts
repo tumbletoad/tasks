@@ -37,7 +37,7 @@
 // checks are skipped too: the build runs them in every version folder it makes.
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
 import { PROTOCOL } from "@tasks/bridge/protocol";
 import {
   configRefusal,
@@ -485,21 +485,22 @@ async function serviceChecks(
 }
 
 /**
- * Whether background runs can be contained here, as the service found at its start. Where a person
- * can change that (an earlier unit without Delegate=yes, a missing tasks-run.exe), a warning with
- * what to do; on a platform without containers, only a note.
+ * Whether background runs get a process group here, as the service found at its start. Runs start
+ * either way; where a person can give them one (an earlier unit without Delegate=yes, a missing
+ * tasks-run.exe), a warning with what to do; on a platform without process groups, only a note.
  */
 function runsCheck(runs: Status["runs"]): Check {
   if (runs === undefined || runs.available === null) {
     return { id: "runs", status: "skip", detail: "The service has not checked yet." };
   }
   if (runs.available) {
-    return { id: "runs", status: "ok", detail: "Background runs can be contained here." };
+    return { id: "runs", status: "ok", detail: "Background runs each get a process group here." };
   }
   return {
     id: "runs",
     status: runs.reason === "unsupported_platform" ? "skip" : "warn",
-    detail: `Background runs are off. ${runs.message ?? ""}`.trimEnd(),
+    detail:
+      `Background runs get no process group here, so Stop ends what ${PRODUCT_NAME} can find of a run. ${runs.message ?? ""}`.trimEnd(),
   };
 }
 

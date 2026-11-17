@@ -1,10 +1,10 @@
-// Background runs in the service: at start, the probe of this machine's containers (on Linux it is
-// also when the service moves itself into its unit's `main` cgroup); then for each space open as
-// this machine's a run host over its execution store, whose recovery settles the space's open runs
-// before any of them is hosted again; and over all of them one supervisor, which starts queued runs
-// within machine.toml's `[runs]` limits, holds new starts while an update waits, and removes old
-// run folders. A run is queued only through `start`, an internal call: no person or agent can
-// start one yet.
+// Background runs in the service: at start, the probe of this machine's process groups (on Linux
+// it is also when the service moves itself into its unit's `main` cgroup), which decides only how a
+// run's processes are ended: in a process group where one can be made, else as far as Tasks can
+// find them. Then for each space open as this machine's a run host over its execution store, whose
+// recovery settles the space's open runs before any of them is hosted again; and over all of them
+// one supervisor, which starts queued runs within machine.toml's `[runs]` limits, holds new starts
+// while an update waits, and removes old run folders.
 import { dirname, join } from "node:path";
 import { PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
@@ -12,7 +12,9 @@ import { RUN_LIMITS, type NewRun, type RunLimits, type RunRecord } from "@tasks/
 import { SpaceExecutionStore } from "@tasks/launch";
 import {
   containers as platformContainers,
+  FallbackContainers,
   RUN_HELPER,
+  UngroupedContainers,
   RunFiles,
   RunHost,
   RunMachine,
@@ -37,8 +39,10 @@ import { readLaunchTask, readTaskRef } from "../ops/read.ts";
 
 /** What a start of the service may set for runs. Tests pass their containers or times. */
 export interface RunOptions {
-  /** This platform's containers. Default: the cgroup or job containers (`containers()`). */
+  /** This platform's process groups. Default: the cgroup or job containers (`containers()`). */
   readonly containers?: Containers;
+  /** Where no process group can be made. Default: the agent's process tree as Tasks finds it. */
+  readonly ungrouped?: Containers;
   /** Windows: tasks-run.exe. Default: the one in this version folder's `bin`. */
   readonly runHelper?: string;
   readonly times?: Partial<RunTimes>;
@@ -85,11 +89,6 @@ interface HostLife {
   closed: boolean;
 }
 
-/** Runs cannot start here; the message says why, for the person. */
-export class RunsUnavailable extends Error {
-  override readonly name = "RunsUnavailable";
-}
-
 /** A run an update would cut short, as the updater shows it to the person. */
 export interface RunBlocker {
   readonly space: string;
@@ -100,7 +99,7 @@ export interface RunBlocker {
   readonly state: string;
 }
 
-/** Whether runs can be contained here, for `service status` and doctor. */
+/** Whether runs get a process group here, for `service status` and doctor. */
 export type RunsStatus =
   | { readonly available: true }
   | { readonly available: false; readonly reason: string; readonly message: string }
@@ -135,17 +134,21 @@ export class RunService {
 
   constructor(options: RunServiceOptions) {
     this.#options = options;
-    this.#containers =
+    const grouped =
       options.containers ??
       platformContainers({
         platform: options.platform,
         runHelper: options.runHelper ?? defaultRunHelper(),
       });
+    this.#containers = new FallbackContainers(
+      grouped,
+      options.ungrouped ?? new UngroupedContainers({ platform: options.platform }),
+      async () => (await this.probe()).available,
+    );
     this.#files = new RunFiles(join(options.stateDir, RUNS_FOLDER));
     this.#supervisor = new Supervisor({
       lanes: () => [...this.#lanes.values()],
       limits: () => this.#settings().limits,
-      available: async () => (await this.probe()).available,
       prepare: (lane, run) => this.#prepare(lane, run),
       ...(options.updating === undefined ? {} : { updating: options.updating }),
       folders: this.#files,
@@ -236,9 +239,8 @@ export class RunService {
   }
 
   /**
-   * Queues a run to start in its container with `command`, once its limits allow. Its time limits
-   * are `[runs]`'s unless it names its own. Internal: nothing reaches it from a person or an agent
-   * yet. Throws RunsUnavailable when runs cannot be contained here.
+   * Queues a run to start with `command`, once its limits allow. Its time limits are `[runs]`'s
+   * unless it names its own.
    */
   async start(
     space: string,
@@ -246,8 +248,6 @@ export class RunService {
     requestId: string,
     command: (run: RunRecord) => AgentCommand | Promise<AgentCommand>,
   ): Promise<RunRecord> {
-    const probe = await this.probe();
-    if (!probe.available) throw new RunsUnavailable(probe.message);
     const hosted = await this.#space(space);
     if (hosted === undefined) throw new Error("The space is not open on this machine");
     const settings = this.#settings();

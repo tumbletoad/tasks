@@ -21,7 +21,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import type { Logger } from "../src/hub/log.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
 import type { ServedSpace } from "../src/ops/index.ts";
-import { RunService, RunsUnavailable } from "../src/runs/service.ts";
+import { RunService } from "../src/runs/service.ts";
 import { holdRuns } from "../src/install/context.ts";
 import {
   instanceToml,
@@ -280,7 +280,7 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
     }
   });
 
-  test("where runs cannot be contained, the probe says why and the internal call refuses", async () => {
+  test("where no process group can hold runs, the probe says why and a run starts anyway: its work is done, and its cleanup says Tasks ended what it could find", async () => {
     const { home, spaceId } = await setUp("runs-none");
     // On Windows without tasks-run.exe; elsewhere a service outside a delegated systemd unit.
     const runs = windows ? { runHelper: join(home, "missing", "tasks-run.exe") } : undefined;
@@ -290,9 +290,17 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
     if (probe.available) return;
     expect(probe.message.length).toBeGreaterThan(20);
     const task = await addTask(home, service, 1);
-    await expect(
-      service.runs.start(spaceId, input(task), "runs-service-run-000003", agent(ANSWERS, home)),
-    ).rejects.toBeInstanceOf(RunsUnavailable);
+    const queued = await service.runs.start(
+      spaceId,
+      input(task),
+      "runs-service-run-000003",
+      agent(ANSWERS, home),
+    );
+    const done = await service.runs.ended(spaceId, queued.id);
+    expect(done).toMatchObject({
+      state: "succeeded",
+      result: { text: "Found it in the export.", cleanup: "ended_found" },
+    });
   });
 });
 

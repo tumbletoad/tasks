@@ -284,6 +284,66 @@ describe("[A4.3.11.8.container.interrupt] an interrupt reaches the agent, which 
   });
 });
 
+describe("[A4.3.11.8.container.ungrouped] without a process group, a run still starts, reads its stdin, and Stop ends what Tasks can find of its process tree", () => {
+  /** A stand-in service whose runs get no process group, on every OS. */
+  async function ungrouped(): Promise<Service> {
+    const service = await Service.plain("ungrouped");
+    services.push(service);
+    return service;
+  }
+
+  test("an agent and its child that ignore the interrupt are ended, and nothing claims to confirm it", async () => {
+    const service = await ungrouped();
+    try {
+      const { token, name } = await start(service, "ignore-stop");
+      await waitForCensus(token, (pids) => pids.length === 2);
+      await service.request("kill", { name });
+      await waitForCensus(token, (pids) => pids.length === 0);
+      expect(await service.request("confirm", { name, waitMs: 5_000 })).toEqual({
+        state: "unconfirmable",
+      });
+    } finally {
+      await service.close();
+    }
+  });
+
+  test("an agent that keeps starting children is ended with them", async () => {
+    const service = await ungrouped();
+    try {
+      const { token, name } = await start(service, "fork-late");
+      await waitForCensus(token, (pids) => pids.length >= 4);
+      await service.request("kill", { name });
+      await waitForCensus(token, (pids) => pids.length === 0);
+    } finally {
+      await service.close();
+    }
+  });
+
+  test("the agent reads its stdin, and its end is no command", async () => {
+    const service = await ungrouped();
+    try {
+      const { token, name } = await start(service, "stdin");
+      await waitFor(
+        "ready",
+        () => output(service, name),
+        (o) => o.head.includes("ready"),
+      );
+      await service.request("write", { name, text: "hello\n" });
+      await service.request("endStdin", { name });
+      await waitFor(
+        "the end of input",
+        () => output(service, name),
+        (o) => o.head.includes("got hello") && o.head.includes("stdin ended"),
+      );
+      expect(census(token)).toHaveLength(1);
+      await service.request("kill", { name });
+      await waitForCensus(token, (pids) => pids.length === 0);
+    } finally {
+      await service.close();
+    }
+  });
+});
+
 describe("[A4.3.11.8.container.crash] killing the service by force leaves nothing of its runs, and recover confirms each container empty", () => {
   test("the service killed by force with three runs, then recovered by name", async (ctx) => {
     need(ctx);

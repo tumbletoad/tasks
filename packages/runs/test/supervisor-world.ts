@@ -176,7 +176,6 @@ export class SupervisorWorld {
     return new Supervisor({
       lanes: () => this.#lanes,
       limits: () => this.limits,
-      available: () => Promise.resolve(true),
       prepare: (_lane, run) =>
         Promise.resolve(
           run.task !== null && this.closedTasks.has(run.task)

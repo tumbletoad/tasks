@@ -636,7 +636,7 @@ export const EVENTS = {
   "runs.probe": {
     lvl: "info",
     c: "launch",
-    fields: { available: "bool", kind: ["cgroup", "job"], reason: UNAVAILABLE_RUN_REASONS },
+    fields: { available: "bool", kind: ["cgroup", "job", "tree"], reason: UNAVAILABLE_RUN_REASONS },
   },
   "run.started": { lvl: "info", c: "launch", fields: { adapter: RUN_ADAPTERS } },
   "run.settled": {
