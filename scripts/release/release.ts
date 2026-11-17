@@ -4,8 +4,8 @@
 //   - releaseSign: by hand, the key in a file and its passphrase asked at a terminal. Refuses any
 //     CI.
 //   - ciReleaseSign: the release workflow's signing job, the key and its passphrase from that job's
-//     secrets. Refuses anything but a dispatch of the release workflow from main in the canonical
-//     repository, with the release environment's secrets present.
+//     secrets. Refuses anything but the run that the push of the archives' version tag started, in
+//     a repository that is not a fork, with the release environment's secrets present.
 //   - rehearsalSign: a key made in memory for the call, so the whole release path can run on a pull
 //     request. Its output says it is a rehearsal (version, file names, a marker file) and no product
 //     trusts its key.
@@ -46,7 +46,7 @@ import {
   writeSums,
   type Signed,
 } from "../build/signing.ts";
-import { isRehearsalVersion, releaseVersionProblem } from "./version.ts";
+import { isRehearsalVersion, releaseTag, releaseVersionProblem } from "./version.ts";
 
 /** A refusal: the release script prints its message and exits 2, having signed nothing. */
 export class Refusal extends Error {
@@ -74,11 +74,11 @@ export function refuseInCi(env: Env): void {
 }
 
 /**
- * Refuses every job but the release workflow's signing job: GitHub Actions, a manual dispatch (a
- * pull request, push or schedule never signs a release), from main, in a repository that is not a
- * fork, and with the release environment's secrets present. GitHub does not tell a step which
- * environment its job runs in; the secrets are what that environment gives, and only to jobs that
- * reference it from a branch its policy allows. Checked before any secret is read.
+ * Refuses every job but the release workflow's signing job: GitHub Actions, the push of a version
+ * tag (a pull request, a branch, a dispatch or a schedule never signs a release), in a repository
+ * that is not a fork, and with the release environment's secrets present. GitHub does not tell a
+ * step which environment its job runs in; the secrets are what that environment gives, and only to
+ * jobs that reference it from a ref its policy allows. Checked before any secret is read.
  */
 export function refuseOutsideReleaseJob(
   env: Env,
@@ -89,13 +89,10 @@ export function refuseOutsideReleaseJob(
       "pnpm release sign-ci runs only in the release workflow. On your own machine: pnpm release sign.",
     );
   }
-  if (env["GITHUB_EVENT_NAME"] !== "workflow_dispatch") {
+  if (env["GITHUB_EVENT_NAME"] !== "push" || !(env["GITHUB_REF"] ?? "").startsWith("refs/tags/v")) {
     throw new Refusal(
-      `A release is signed only in a run started by hand (workflow_dispatch), not on ${env["GITHUB_EVENT_NAME"] ?? "this event"}.`,
+      `A release is signed only in the run a version tag starts, not on ${env["GITHUB_EVENT_NAME"] ?? "this event"} of ${env["GITHUB_REF"] ?? "this ref"}.`,
     );
-  }
-  if (env["GITHUB_REF"] !== "refs/heads/main") {
-    throw new Refusal("A release is signed only in a run of the workflow from main.");
   }
   let fork: unknown;
   try {
@@ -438,6 +435,11 @@ export function ciReleaseSign(options: CiSignOptions): ReleaseSigned {
   const pinned = options.pinned ?? RELEASE_PUBLIC_KEYS;
   const folder = { kind: "release" as const, pinned, committed: pinned };
   const prepared = prepareFolder(options.dist, folder);
+  if (options.env["GITHUB_REF"] !== `refs/tags/${releaseTag(prepared.version)}`) {
+    throw new Refusal(
+      `The archives are ${prepared.version}, but this run is for ${options.env["GITHUB_REF"] ?? "no tag"}. Nothing was signed.`,
+    );
+  }
   const key = readReleaseKey(options.secrets.key, options.secrets.passphrase);
   return signFolder(options.dist, prepared, key, folder);
 }
