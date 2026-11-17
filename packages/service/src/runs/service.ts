@@ -462,12 +462,14 @@ export class RunService {
   }
 
   /**
-   * Whether a run of `instance` runs in `space` now: Tasks gave that run its tools, so its agent
-   * may use them in that space whether or not its home was set up for it.
+   * Whether `run`, of `instance`, runs in `space` now: Tasks gave that run its tools, so its own
+   * calls may use that space whether or not its home was set up for it.
    */
-  allows(instance: string, space: string): boolean {
+  allows(instance: string, space: string, run: string): boolean {
     for (const ticket of this.#tickets.values()) {
-      if (ticket.instance === instance && ticket.space === space) return true;
+      if (ticket.run === run && ticket.instance === instance && ticket.space === space) {
+        return true;
+      }
     }
     return false;
   }

@@ -177,6 +177,11 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
       "the request at the agent",
     );
     expect(commandLines()).not.toContain("MARKREQ7Q2");
+    // The run's own calls may use its space, though the instance's home was never set up for it;
+    // no other connection of that home may.
+    const live = (await service?.runs.list(spaceId, task))?.[0]?.run.id ?? "";
+    expect(service?.ops.homes?.may("codex", spaceId, live)).toBe(true);
+    expect(service?.ops.homes?.may("codex", spaceId)).toBe(false);
     const ran = await running;
     expect(ran.code, ran.stdout + ran.stderr).toBe(0);
     expect(ran.stdout).toContain(ANSWER_MARK);

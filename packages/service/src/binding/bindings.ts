@@ -536,7 +536,7 @@ export class Bindings implements BindingPort {
       // is not spent and the launch records nothing of this connection (A3 has A4 refuse such a
       // launch before dispatch). Asked here, in the section, so a row revoked while this bind
       // waited for it counts.
-      if (!this.#options.homes.may(slot.instance, found.space)) {
+      if (!this.#options.homes.may(slot.instance, found.space, found.launch)) {
         this.#ignored("ticket", "grant");
         return Promise.resolve(false);
       }

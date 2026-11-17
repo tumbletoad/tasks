@@ -7,6 +7,7 @@ import type { AnyEntry } from "@tasks/contracts";
 import { AppError, findEntry } from "@tasks/contracts";
 import type { ConnectionClass } from "../local/index.ts";
 import type { BoundSession, Slot } from "./binding.ts";
+import { runOf } from "./grant.ts";
 
 export interface Caller {
   readonly class: ConnectionClass;
@@ -120,7 +121,7 @@ export function principalOf(cls: ConnectionClass, machine: string, grant?: strin
  * a second receipt lookup when it wrote unbound before it bound.
  */
 export function sessionPrincipal(slot: Slot, session: BoundSession): Principal {
-  const run = session.launches.find((id) => RUN_ID.test(id));
+  const run = runOf(session);
   return {
     audience: "agent",
     actorKind: "agent",
@@ -138,9 +139,6 @@ export function sessionPrincipal(slot: Slot, session: BoundSession): Principal {
 /** Whether the class may call user-only entries: `ui` and `cli-interactive` (A2 3.6.5, A3 3.2.3). */
 export const isUserClass = (cls: ConnectionClass): boolean =>
   cls === "ui" || cls === "cli-interactive";
-
-/** A run's ID: a session a run's ticket bound names its run among its launches. */
-const RUN_ID = /^ru_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
 
 const USER_ONLY = (): AppError =>
   new AppError({

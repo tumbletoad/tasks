@@ -673,10 +673,12 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       spaces: () => made.spaces?.served() ?? [],
       defaultSpace: () => defaults.get(),
     });
-    // A run's agent was given Tasks' tools by Tasks itself: while the run runs, its instance may
-    // use the run's space whether or not its home was set up for it.
+    // A run's agent was given Tasks' tools by Tasks itself: while the run runs, the run's own
+    // calls may use its space whether or not its home was set up for it. No other connection of
+    // that home may.
     const homes: typeof registered = {
-      may: (home, space) => registered.may(home, space) || runs.allows(home, space),
+      may: (home, space, run) =>
+        registered.may(home, space) || (run !== undefined && runs.allows(home, space, run)),
     };
     // Session binding (A3 3.7): the launch side it needs is the launch service's, made below.
     const bindings = new Bindings({
