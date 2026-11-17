@@ -174,6 +174,28 @@ describe("[A2.3.13.cli.doctor] tasks doctor --self-test", () => {
     expect(broken.code).toBe(1);
     expect(status(JSON.parse(broken.stdout) as Report, "requests")).toBe("fail");
 
+    // A service that runs another version than this CLI: the row names the command that fixes it.
+    const behind = await runMain(["doctor", "--json"], {
+      home: world.home,
+      main: {
+        wrap: (session) => ({
+          bound: session.bound,
+          close: () => {
+            session.close();
+          },
+          call: async (...args: Parameters<typeof session.call>) => {
+            const answer = await session.call(...args);
+            return args[0] === "service/status"
+              ? { ...(answer as object), version: "0.0.1-older" }
+              : answer;
+          },
+        }),
+      },
+    });
+    const row = (JSON.parse(behind.stdout) as Report).checks.find((c) => c.id === "service");
+    expect(row?.status).toBe("warn");
+    expect(row?.detail).toContain("Restart the service: tasks service restart.");
+
     writeFileSync(
       join(world.home, "state", "crash", "20261112T080000Z-1.json"),
       JSON.stringify({ event: "service.crash" }),

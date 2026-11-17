@@ -51,6 +51,14 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       "M-14 · open · P1 · M · due 2026-11-13 (Fri) · Client work / Lumen Health · Fix appointment time zones — …stored without zone and converted twice…",
       "M-3 · completed 2026-04-03 · P2 · Client work / Lumen Health · Fix DST bug in reports — learning: Always store UTC plus the clinic's zone ID, never offsets.",
     ]);
+    // A finished task without a match in its text says how it ended where the snippet goes.
+    const dropped = example("task.search", 0);
+    const m3 = (dropped["rows"] as Json[])[1] as Json;
+    delete m3["snippet"];
+    delete m3["snippet_from"];
+    expect(split(renderResult("task.search", dropped)).inside[2]).toBe(
+      "M-3 · completed 2026-04-03 · P2 · Client work / Lumen Health · Fix DST bug in reports — Reports convert to the clinic's zone at render time.",
+    );
     const gone = split(renderResult("task.search", example("task.search", 1)));
     expect(gone.outside).toEqual([`16 of 17 · scope active · as_of ${AS_OF}`]);
     expect(gone.inside).toEqual(["Query: status:open p<=2", "M-14 · deleted since this search"]);

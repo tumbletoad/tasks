@@ -2837,8 +2837,9 @@ MCP tool `search`, "Search tasks and learnings": Use to find tasks before you ad
 | `rows[].project` | string | no | Project name |
 | `rows[].kind` | "task" | yes | A task |
 | `rows[].completed` | string | no | When it was completed |
-| `rows[].snippet` | string | no | Where it matched, else its summary |
+| `rows[].snippet` | string | no | Where it matched, else its summary when it has no ending |
 | `rows[].snippet_from` | "task" \| "note" \| "log" \| "learning" | no | The text the snippet comes from |
+| `rows[].ending` | string | no | A finished task's ending, one line: why it was dropped, or its outcome |
 | `rows[].changed` | true | no | Changed since the search ran |
 | `rows[].kind` | "learning" | yes | A learning |
 | `rows[].id` | string | yes | Learning ID |
@@ -2906,7 +2907,8 @@ Result:
       "project": "Lumen Health",
       "completed": "2026-04-03",
       "snippet": "Always store UTC plus the clinic's zone ID, never offsets.",
-      "snippet_from": "learning"
+      "snippet_from": "learning",
+      "ending": "Reports convert to the clinic's zone at render time."
     }
   ]
 }

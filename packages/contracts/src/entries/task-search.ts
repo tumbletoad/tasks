@@ -33,10 +33,17 @@ const IsoDate = z.string().regex(patterns.isoDate);
 export const SearchTaskRow = TaskRow.extend({
   kind: z.literal("task").describe("A task"),
   completed: IsoDate.describe("When it was completed").optional(),
-  snippet: z.string().describe("Where it matched, else its summary").optional(),
+  snippet: z
+    .string()
+    .describe("Where it matched, else its summary when it has no ending")
+    .optional(),
   snippet_from: z
     .enum(["task", "note", "log", "learning"])
     .describe("The text the snippet comes from")
+    .optional(),
+  ending: z
+    .string()
+    .describe("A finished task's ending, one line: why it was dropped, or its outcome")
     .optional(),
   changed: Changed,
 });
@@ -140,6 +147,7 @@ export const taskSearch = defineEntry({
             completed: "2026-04-03",
             snippet: "Always store UTC plus the clinic's zone ID, never offsets.",
             snippet_from: "learning",
+            ending: "Reports convert to the clinic's zone at render time.",
           },
         ],
       },
