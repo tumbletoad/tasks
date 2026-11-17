@@ -27,16 +27,6 @@ export function createClient(transport: ClientTransport) {
       /** Undo your newest change in the space, field by field as long as nobody changed it. */
       undo: (input: InputOf<"history.undo">): Promise<OutputOf<"history.undo">> => call("history.undo", input),
     },
-    import: {
-      planning: {
-        /** Apply a dry run of the Planning prototype import, behind a verified backup. */
-        apply: (input: InputOf<"import.planning.apply">): Promise<OutputOf<"import.planning.apply">> => call("import.planning.apply", input),
-        /** Dry run of the Planning prototype import: a report and a preview token. */
-        preview: (input: InputOf<"import.planning.preview">): Promise<OutputOf<"import.planning.preview">> => call("import.planning.preview", input),
-        /** Undo an applied import; a task changed since stays as it is and is listed. */
-        undo: (input: InputOf<"import.planning.undo">): Promise<OutputOf<"import.planning.undo">> => call("import.planning.undo", input),
-      },
-    },
     launch: {
       /** Open a task in an agent app on this machine, or Copy its pointer brief. */
       open: (input: InputOf<"launch.open">): Promise<OutputOf<"launch.open">> => call("launch.open", input),

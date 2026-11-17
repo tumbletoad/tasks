@@ -8,7 +8,6 @@
 // does not exist.
 import { CLI_NAME } from "@tasks/brand";
 import { CLI_SPEC, takesFolder, verbSpec, type VerbSpec } from "./args.ts";
-import { IMPORT_HELP } from "./import.ts";
 import { ROOTS_HELP } from "./roots.ts";
 import { SERVICE_HELP } from "./service.ts";
 import { SETUP_HELP } from "./setup.ts";
@@ -148,12 +147,6 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
     summary: "Check a space's generated view/ and render it again (view rebuild)",
     help: VIEW_HELP,
     subcommands: ["rebuild"],
-  },
-  {
-    name: "import",
-    summary: "Preview the import of the Planning prototype (import planning <folder> --dry-run)",
-    help: IMPORT_HELP,
-    subcommands: ["planning"],
   },
   {
     name: "setup",

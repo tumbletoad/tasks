@@ -20,9 +20,9 @@ const TEST_FILE = "(\\.test\\.tsx?$|/test/|^tests/)";
 const TEST_CODE = `(${TEST_FILE}|^scripts/|^packages/testkit/)`;
 
 // Rules that stay strict for tests too: testkit-only-from-tests (it binds production code only),
-// spikes-never-imported, the two SQLite rules, and no-storage-from-launch-runs-importer. Tests of
-// launch, runs and importer-planning reach a space through testkit or the service, as the
-// packages themselves do (A7 3.2, 3.18.1).
+// spikes-never-imported, the two SQLite rules, and no-storage-from-launch-runs. Tests of launch
+// and runs reach a space through testkit or the service, as the packages themselves do (A7 3.2,
+// 3.18.1).
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {
@@ -68,12 +68,12 @@ module.exports = {
       to: { path: "(^|/)better-sqlite3(/|$)" },
     },
     {
-      name: "no-storage-from-launch-runs-importer",
+      name: "no-storage-from-launch-runs",
       comment:
-        "launch, runs and importer-planning change state only through operations sent to the " +
-        "space worker. They never import storage (A7 3.2).",
+        "launch and runs change state only through operations sent to the space worker. They " +
+        "never import storage (A7 3.2).",
       severity: "error",
-      from: { path: "^packages/(launch|runs|importer-planning)/" },
+      from: { path: "^packages/(launch|runs)/" },
       to: { path: "^packages/storage/" },
     },
     {
