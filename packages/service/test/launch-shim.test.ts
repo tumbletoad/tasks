@@ -356,7 +356,8 @@ describe("[A4.5.shim.folder] the folder: resolved right before the launch, check
       const intent = await l.open(l.plan());
       renameSync(l.folder, `${l.folder}-moved`);
       const after = await l.running.launches.dispatch(l.spaceId, intent.id);
-      expect(after).toMatchObject({ state: "failed", reason: "cancelled" });
+      // The launch keeps the folder's own reason, so the page can say why later.
+      expect(after).toMatchObject({ state: "failed", reason: "path_missing" });
       // No ticket, no terminal, no shim, and nothing left in machine state.
       expect(l.tickets.size).toBe(0);
       expect(l.shims).toEqual([]);
@@ -429,7 +430,7 @@ describe("[A4.5.launch.open-replay] a repeated Open request returns its intent, 
       // The confirmation fails it before anything starts; its machine state goes, and a replay of
       // its Open returns it as it is now without making any again.
       const after = await l.running.launches.dispatch(l.spaceId, first.id);
-      expect(after).toMatchObject({ state: "failed", reason: "cancelled" });
+      expect(after).toMatchObject({ state: "failed", reason: "path_missing" });
       const late = await l.running.launches.open(l.spaceId, click, request, l.plan());
       expect(late).toMatchObject({ id: first.id, state: "failed" });
       expect(l.running.launches.host.record(first.id)).toBeUndefined();

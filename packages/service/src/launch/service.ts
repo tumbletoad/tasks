@@ -1341,8 +1341,8 @@ export class LaunchService {
 
   /**
    * The route's external call. Terminal only so far: right before the launch the folder is
-   * resolved again (A4 3.3); a folder that no longer resolves fails the launch as a check
-   * before anything external (`cancelled`), with its reason in the log. Then the environment's
+   * resolved again (A4 3.3); a folder that no longer resolves fails the launch before anything
+   * external, with the folder's own reason as the launch's. Then the environment's
    * snapshot is brought up to date (A4 3.8: before the terminal, so the claim never waits for a
    * shell), the ticket is issued with the folder's check, and the terminal adapters start the
    * terminal in that folder by their acceptance rules (A4 3.6.2).
@@ -1377,7 +1377,7 @@ export class LaunchService {
     const where = await this.resolveFolder(pending.space, pending.folder);
     if (where.status === "failed") {
       this.#options.log.log("launch.folder_refused", { stage: "dispatch", reason: where.reason });
-      return { kind: "refused", reason: "cancelled" };
+      return { kind: "refused", reason: where.reason };
     }
     if (isUncPath(where.folder)) {
       this.#log("launch.unavailable", "unc");
@@ -1421,7 +1421,7 @@ export class LaunchService {
       this.#options.log.log("launch.folder_refused", { stage: "dispatch", reason: where.reason });
       // No ticket was issued and nothing started: nothing more can come from its machine state.
       this.host.release(intent.id);
-      return { kind: "refused", reason: "cancelled" };
+      return { kind: "refused", reason: where.reason };
     }
     // `via_login_shell` (A4 3.8): the person's login shell runs now, in the task's folder, and its
     // environment is this launch's base. The agent still starts directly from the shim, after its

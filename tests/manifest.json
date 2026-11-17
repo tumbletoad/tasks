@@ -1049,6 +1049,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.receipt.folder-reason",
+      "title": "A launch whose folder no longer resolved right before it started keeps the folder's own reason, and its receipt says it in the words of Open's refusal; any other reason reads as its code",
+      "source": "A4 3.3, A4 3.9.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.5.error-retry-words",
       "title": "An error that asks a person to try again is retryable, and one that is not retryable never asks it: the storage failures' sentences and a space the service does not serve now",
       "source": "A3 3.5",

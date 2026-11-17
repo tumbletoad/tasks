@@ -658,6 +658,19 @@ export const LAUNCH_FAIL_REASONS = [
   "agent_exited",
   "folder_mismatch",
   "interrupted",
+  // The folder's own reason, when it no longer resolved right before the launch.
+  "invalid_path",
+  "root_missing",
+  "root_unavailable",
+  "path_missing",
+  "not_a_directory",
+  "not_a_file",
+  "escapes_root",
+  "identity_mismatch",
+  "identity_unavailable",
+  "folder_changed",
+  "unsafe_folder",
+  "not_answering",
 ] as const;
 
 /** A4's reason codes of Unknown. */
