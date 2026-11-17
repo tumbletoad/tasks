@@ -72,9 +72,10 @@
 // ends, or the process exit does. The lock lives in the space's worker, beside the writer it
 // guards, so a worker that hangs keeps both until the process exits.
 import { realpathSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { CLI_NAME } from "@tasks/brand";
 import {
+  DATABASE_FILE,
   DEFAULT_DRIVER,
   decodeRevision,
   encodeRevision,
@@ -82,6 +83,7 @@ import {
   formatRevision,
   LATEST_REVISION,
   readManifest,
+  RANGES,
   RETENTION,
   SpaceLockedElsewhere,
   StorageError,
@@ -103,6 +105,7 @@ import {
 } from "./lock.ts";
 import type { Reconciled } from "@tasks/projection";
 import type { Logger, SpaceReason } from "./log.ts";
+import { BackupWatch, type BackupTroubleView } from "./backup-health.ts";
 import { MaintenanceFailed, type Maintenance } from "./maintenance.ts";
 import { BUILD } from "./build.ts";
 import { ProjectionRunner } from "./projection.ts";
@@ -194,6 +197,8 @@ export interface SpaceView {
    * described(), for people.
    */
   readonly migrated?: LastMigration;
+  /** An open space whose backups are not working: what happened and what to do. */
+  readonly backup?: BackupTroubleView;
   /** What the folder check found (A1 3.2), when it found a sync client or a network file system. */
   readonly folder_check?: {
     readonly verdict: "synced" | "network";
@@ -375,6 +380,8 @@ class Hosted {
   daily: NodeJS.Timeout | undefined;
   /** The maintenance run in progress. */
   maintaining: Promise<void> | undefined;
+  /** Whether the space's backups work, as its upkeep and the person's backups last found. */
+  readonly backups = new BackupWatch();
   /** A restore in place or a claim through the manager, in progress. */
   replacing: Promise<unknown> | undefined;
   /**
@@ -459,6 +466,7 @@ class Hosted {
     this.closing = undefined;
     this.check = undefined;
     this.message = undefined;
+    this.backups.reset();
   }
 
   /** What a person reads about the state: its own message, else its way out (space-ways.ts). */
@@ -469,6 +477,7 @@ class Hosted {
   view(): SpaceView {
     const check = this.check;
     const message = this.shown();
+    const backup = this.state === "open" ? this.backups.view() : undefined;
     return {
       entry: this.index,
       state: this.state,
@@ -478,6 +487,7 @@ class Hosted {
       ...(this.code === undefined ? {} : { code: this.code }),
       ...(this.holder === undefined ? {} : { holder: this.holder }),
       ...(message === undefined ? {} : { message }),
+      ...(backup === undefined ? {} : { backup }),
       ...(check === undefined || check.verdict === "local"
         ? {}
         : {
@@ -599,6 +609,7 @@ export class SpaceManager {
       .filter((space) => !space.forgotten)
       .map((space) => {
         const message = space.shown();
+        const backup = space.view().backup;
         return {
           id: space.id,
           registered: space.registered,
@@ -606,6 +617,7 @@ export class SpaceManager {
           state: space.state,
           ...(space.reason === undefined ? {} : { reason: space.reason }),
           ...(message === undefined ? {} : { message }),
+          ...(backup === undefined ? {} : { backup: backup.why }),
           writer: space.state === "open" ? space.writer : undefined,
           reader: space.state === "open" || space.state === "read_only" ? space.reader : undefined,
           folder: space.folder,
@@ -871,6 +883,14 @@ export class SpaceManager {
     return this.#space(entry).projection?.rebuild();
   }
 
+  /**
+   * A backup the person made of the space passed its trial restore: whatever its upkeep found wrong
+   * with its backups is over.
+   */
+  backedUp(entry: number, at: number): void {
+    this.#space(entry).backups.proven(at);
+  }
+
   /** A backup of the space found its search index damaged: its writer repairs it (#repairSearch). */
   repairSearch(entry: number): void {
     this.#repairSearch(this.#space(entry));
@@ -891,9 +911,11 @@ export class SpaceManager {
     // the restore goes into a new folder (`--to`).
     await this.#refuseUnwritableFolder(space, { synced: true });
     return this.#changed(space, async (worker, settings) => {
+      const refFloor = await this.#refFloor(space, worker);
       const restored = await worker.restoreInPlace(backupFile, space.folder, {
         machineId: this.#options.machine.id,
         knownEpochs: knownEpochs(settings),
+        ...(refFloor === undefined ? {} : { refFloor }),
         holder: this.#holderFacts,
       });
       // Another database is in place: what failed before is forgotten (A1 3.17). Its state
@@ -916,9 +938,11 @@ export class SpaceManager {
       throw new StorageError("STORAGE_MISUSE", "Only a read-only copy is claimed");
     }
     return this.#changed(space, async (worker, settings) => {
+      const refFloor = await this.#refFloor(space, worker);
       const claim = await worker.claimSpace(space.folder, {
         machine: this.#options.machine,
         knownEpochs: knownEpochs(settings),
+        ...(refFloor === undefined ? {} : { refFloor }),
         holder: this.#holderFacts,
         // Watched while the claim writes, as a writer is.
         onLock: (lock) => {
@@ -1626,6 +1650,7 @@ export class SpaceManager {
     if (maintenance === undefined || spaceId === undefined) return;
     const now = (this.#options.now?.() ?? new Date()).getTime();
     const t0 = performance.now();
+    const begun = space.backups.begin();
     space.maintaining = maintenance
       .run({
         folder: space.folder,
@@ -1649,12 +1674,14 @@ export class SpaceManager {
             unverified: report.unverified,
             ms: Math.round(performance.now() - t0),
           });
+          space.backups.ran(begun, report);
           if (report.searchIndexDamaged === true) this.#repairSearch(space);
         },
         (error: unknown) => {
           // A run the service's drain ended is no failure of the space.
           if (error instanceof MaintenanceFailed && error.stopped) return;
           const code = error instanceof MaintenanceFailed ? error.code : undefined;
+          space.backups.failed(begun, code);
           log.log("space.maintenance_failed", {
             entry: space.index,
             space: spaceId,
@@ -1932,6 +1959,61 @@ export class SpaceManager {
       return readSpaceSettings(this.#options.settingsDir, spaceId);
     } catch {
       return {};
+    }
+  }
+
+  /**
+   * The highest next task reference among the other copies of `space` this service knows (a
+   * restored copy and its original, A1 3.3): a claim or a restore in place of `space` goes on from
+   * there, so it never gives a reference one of them gave. Read through a served copy's reader, else
+   * through a reader of its own in `worker`. A copy that cannot be read adds nothing.
+   */
+  async #refFloor(space: Hosted, worker: StorageWorker): Promise<number | undefined> {
+    const id = space.id ?? space.registered;
+    const self = canonicalFolder(space.folder);
+    let floor: number | undefined;
+    for (const other of this.#spaces) {
+      if (other === space || (other.id ?? other.registered) !== id) continue;
+      if (canonicalFolder(other.folder) === self) continue;
+      const next = await this.#nextRefOf(other, id, worker).catch(() => undefined);
+      if (next !== undefined && (floor === undefined || next > floor)) floor = next;
+    }
+    return floor;
+  }
+
+  /** The next task reference of the copy `space`, while its folder still holds the space `id`. */
+  async #nextRefOf(
+    space: Hosted,
+    id: Id<"sp">,
+    worker: StorageWorker,
+  ): Promise<number | undefined> {
+    const read = async (conn: WorkerConnection): Promise<number | undefined> => {
+      const row = await bounded(
+        conn.get<{ next_ref?: unknown; space_id?: unknown }>(
+          "SELECT next_ref, space_id FROM space WHERE one = 1",
+        ),
+        this.#openMs,
+      );
+      const next = row?.next_ref;
+      return row?.space_id === id &&
+        typeof next === "number" &&
+        Number.isSafeInteger(next) &&
+        next >= RANGES.taskRef.min &&
+        next <= RANGES.taskRef.max + 1
+        ? next
+        : undefined;
+    };
+    if (space.reader !== undefined) return read(space.reader);
+    // The one column, read as it is: a copy that no longer opens as a space (damaged, or newer
+    // than this build) still gave out its references.
+    const conn = await bounded(
+      worker.open(join(space.folder, DATABASE_FILE), "reader"),
+      this.#openMs,
+    );
+    try {
+      return await read(conn);
+    } finally {
+      await conn.close().catch(() => undefined);
     }
   }
 }

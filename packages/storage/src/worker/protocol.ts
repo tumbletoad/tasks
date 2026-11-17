@@ -106,7 +106,7 @@ export type WriterPurpose =
   /** The writer: migrated first when the space's revision is older, then the write path. */
   | { kind: "write"; backupDir?: string }
   /** A claim of a read-only copy (A1 3.18): the claim commit, then the connection closes. */
-  | { kind: "claim"; knownEpochs: number[] };
+  | { kind: "claim"; knownEpochs: number[]; refFloor?: number };
 
 /** An opened connection. A writer's is held until `proceed`. */
 export interface OpenedFile {
@@ -171,6 +171,7 @@ export interface Calls {
       folder: string;
       machineId: Id<"m">;
       knownEpochs: number[];
+      refFloor?: number;
       appVersion?: string;
       busyTimeoutMs?: number;
       holder?: HolderFacts;
