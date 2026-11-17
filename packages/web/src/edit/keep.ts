@@ -7,14 +7,7 @@
 // control builds it (`changeOf`), so a value read back is only ever one a control could have made.
 import { keep, keptNames, readKeptJson } from "../kept.ts";
 import { changeOf, type Field } from "./change.ts";
-import type { Unsaved } from "./edits.ts";
-
-export interface UnsavedKeeper {
-  /** The space's kept edits, each once. */
-  load(): Unsaved[];
-  /** The tab's edits that wait now, as the edits' state holds them (one under each field). */
-  save(unsaved: ReadonlyMap<string, Unsaved>): void;
-}
+import type { Unsaved, UnsavedKeeper } from "./edits.ts";
 
 const FIELDS: ReadonlySet<string> = new Set<Field>([
   "title",

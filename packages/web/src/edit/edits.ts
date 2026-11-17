@@ -45,7 +45,6 @@ import {
   type Turn,
 } from "./calls.ts";
 import { joinChanges, restoreChange, type Change, type Field } from "./change.ts";
-import type { UnsavedKeeper } from "./keep.ts";
 
 /** How long a checked-off row stays where it is (A5 3.12). */
 export const HOLD_MS = 4_000;
@@ -88,6 +87,14 @@ export interface Leaving {
   readonly at?: number;
 }
 
+/** Where the edits that wait are kept across a reload (keep.ts). */
+export interface UnsavedKeeper {
+  /** The space's kept edits, each once. */
+  load(): Unsaved[];
+  /** The tab's edits that wait now, as the edits' state holds them (one under each field). */
+  save(unsaved: ReadonlyMap<string, Unsaved>): void;
+}
+
 export interface EditState {
   readonly unsaved: ReadonlyMap<string, Unsaved>;
   readonly leaving: ReadonlyMap<string, Leaving>;
@@ -114,7 +121,6 @@ export interface EditDeps {
   /** False once the tab's session stopped: an unanswered request is not asked about any more. */
   readonly alive?: () => boolean;
   readonly timers?: Timers;
-  /** Where the edits that wait are kept across a reload (keep.ts). */
   readonly keeper?: UnsavedKeeper;
 }
 

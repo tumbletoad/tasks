@@ -17,8 +17,14 @@ import {
   waitingChange,
 } from "./change.ts";
 import { ASK_MS } from "./calls.ts";
-import { Edits, HOLD_MS, COLLAPSE_MS, type Toast, type Unsaved } from "./edits.ts";
-import type { UnsavedKeeper } from "./keep.ts";
+import {
+  Edits,
+  HOLD_MS,
+  COLLAPSE_MS,
+  type Toast,
+  type Unsaved,
+  type UnsavedKeeper,
+} from "./edits.ts";
 
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
 const INCARNATION = "ai_0123456789abcdefghjkmnpq";
