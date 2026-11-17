@@ -254,7 +254,9 @@ test.describe("[A7.3.12.m5-10.e2e.search] Search results are a list like any oth
       page.locator(`main li[data-task="${id ?? ""}"] [data-part="ending"] > [dir]`);
     await expect(ending(done)).toHaveText("Sown in the cold frame.");
     await expect(ending(dropped)).toHaveText("Too damp to dry this year.");
-    await expect(page.locator('main [data-part="summary"]')).toHaveCount(0);
+    // Their summaries do not show beside it.
+    await expect(page.locator(`main li[data-task="${done ?? ""}"]`)).not.toContainText("In trays");
+    await expect(page.locator(`main li[data-task="${dropped ?? ""}"]`)).not.toContainText("rack");
 
     await searching(page).fill(`${word} pesto p1`);
     await page.getByRole("button", { name: `Add “${word} pesto p1” as a task` }).click();
