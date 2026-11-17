@@ -14,6 +14,7 @@ export {
 } from "./service.ts";
 export {
   LaunchFolderUnavailable,
+  LaunchFolderUnmarked,
   LaunchUnavailable,
   UNAVAILABLE_REASONS,
   type LaunchTask,

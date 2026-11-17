@@ -151,12 +151,15 @@ export class Api {
     instance: string | undefined,
     id: string,
     pack = false,
+    markFolder = false,
   ): Promise<{ receipt: Receipt; copy: string | undefined }> {
     const result = await this.client.launch.open({
       task,
       ...(instance === undefined ? {} : { instance }),
       // Shift+Copy (A4 3.15.5): the context pack in place of the pointer brief.
       ...(pack ? { pack: true } : {}),
+      // The person chose to open the task in a folder whose marker is gone or another's.
+      ...(markFolder ? { mark_folder: true } : {}),
       request_id: id,
     });
     const { launch } = result;

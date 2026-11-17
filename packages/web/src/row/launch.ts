@@ -79,16 +79,49 @@ export interface FolderRefusal {
   readonly reason: string;
   /** The folder as the space stores it, the home as `~`; absent for the space's work folder. */
   readonly folder?: string;
+  /** A marker's refusal: whose folder the launch used, the task's own or its project's. */
+  readonly of?: "task" | "project";
+  /** A marker's refusal: whose the folder's marker says it is instead, in the service's words. */
+  readonly owners?: readonly string[];
 }
+
+/** The reasons a folder's marker gives: the person may open the task there anyway. */
+export const MARKER_REASONS: ReadonlySet<string> = new Set(["marker_missing", "marker_other"]);
 
 /** The service's refusal of a launch on its folder (`data.field` "task"), read by its shape. */
 export function folderRefusal(error: unknown): FolderRefusal | undefined {
   if (!(error instanceof Error)) return undefined;
   const data = (error as Error & { data?: unknown }).data;
   if (typeof data !== "object" || data === null) return undefined;
-  const { field, reason, folder } = data as Record<string, unknown>;
+  const { field, reason, folder, of, owners } = data as Record<string, unknown>;
   if (field !== "task" || typeof reason !== "string") return undefined;
-  return typeof folder === "string" ? { reason, folder } : { reason };
+  return {
+    reason,
+    ...(typeof folder === "string" ? { folder } : {}),
+    ...(of === "task" || of === "project" ? { of } : {}),
+    ...(Array.isArray(owners)
+      ? { owners: owners.filter((o): o is string => typeof o === "string") }
+      : {}),
+  };
+}
+
+/**
+ * The words of a marker's refusal, as message values: which owner's folder it is, and why it may
+ * be another folder (`missing`, `other` with the owners named, or `unread`).
+ */
+export function markerWords(refused: FolderRefusal): {
+  of: string;
+  why: string;
+  owners: string;
+  folder: string;
+} {
+  const owners = refused.owners ?? [];
+  return {
+    of: refused.of ?? "task",
+    why: refused.reason === "marker_missing" ? "missing" : owners.length > 0 ? "other" : "unread",
+    owners: owners.join(", "),
+    folder: refused.folder ?? "",
+  };
 }
 
 /**

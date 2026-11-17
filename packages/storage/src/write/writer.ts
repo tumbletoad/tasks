@@ -2490,22 +2490,20 @@ export class SpaceWriter {
           const touches: Touch[] = [];
           if (row !== undefined) {
             // Another folder for the one there: the base covers the folder the caller saw, and
-            // the task folders inside it that move along with a project's, with each task's place
-            // in the project, so a task that joined it since is not moved unseen.
+            // with `carry` every folder inside it that moves along, so one set since is not moved
+            // unseen.
             const found = decodeFolder(row);
             target = found.id;
             touches.push(...folderTouches(row, ["path"], parent));
-            if (owner.kind === "project") {
+            if (op.carry === true) {
               for (const inside of conn
-                .prepare(FOLDER_SQL.taskFoldersOfProject)
-                .all({ machine: folder.machine, project: owner.id })) {
+                .prepare(FOLDER_SQL.liveOn)
+                .all({ machine: folder.machine })) {
                 const moved = decodeFolder(inside);
+                if (moved.id === found.id) continue;
                 if (carriedTo(moved.path, found.path, op.path, folder.os) === undefined) continue;
-                const owned = task(moved.ownerId, "task", true);
-                touches.push(
-                  ...folderTouches(inside, ["path"], owned),
-                  ...taskTouches(owned, ["grouping"]),
-                );
+                const owned = moved.ownerKind === "task" ? task(moved.ownerId, "task", true) : null;
+                touches.push(...folderTouches(inside, ["path"], owned));
               }
             }
           } else {
@@ -4411,6 +4409,7 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
       const { machine, os } = must(staged.folder, "A folder has its machine");
       const kind = owner.kind === "task" ? "task" : "project";
       const row = conn.prepare(FOLDER_SQL.liveOf).get({ kind, owner: owner.id, machine });
+      const movedProjects: { id: string; moved: string }[] = [];
       if (row === undefined) {
         conn.prepare(SQL.insertFolder).run({
           id: staged.target,
@@ -4428,25 +4427,34 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         if (found.path !== op.path) {
           conn.prepare(SQL.folderPath).run({ id: found.id, path: op.path });
           wrote(run, i, "folders", found.id, staged.task, ["path"]);
-          // The project's tasks' folders inside its old folder move along, the rest of each path
-          // as it is: one change, one undo.
-          if (kind === "project") {
-            for (const inside of conn
-              .prepare(FOLDER_SQL.taskFoldersOfProject)
-              .all({ machine, project: owner.id })) {
-              const task = decodeFolder(inside);
-              const moved = carriedTo(task.path, found.path, op.path, os);
-              if (moved === undefined || moved === task.path) continue;
-              ensureStart(conn, run, "folders", task.id);
-              conn.prepare(SQL.folderPath).run({ id: task.id, path: moved });
-              wrote(run, i, "folders", task.id, task.ownerId as Id<"t">, ["path"]);
+          // A moved folder takes every folder inside it along, the rest of each path as it is:
+          // one change, one undo.
+          if (op.carry === true) {
+            for (const inside of conn.prepare(FOLDER_SQL.liveOn).all({ machine })) {
+              const other = decodeFolder(inside);
+              if (other.id === found.id) continue;
+              const moved = carriedTo(other.path, found.path, op.path, os);
+              if (moved === undefined || moved === other.path) continue;
+              ensureStart(conn, run, "folders", other.id);
+              conn.prepare(SQL.folderPath).run({ id: other.id, path: moved });
+              const task = other.ownerKind === "task" ? (other.ownerId as Id<"t">) : null;
+              wrote(run, i, "folders", other.id, task, ["path"]);
+              if (other.ownerKind === "project") movedProjects.push({ id: other.ownerId, moved });
             }
           }
         }
       }
       // Two live projects never share one folder on one machine, by the machine's case rule.
-      if (kind === "project" && folderHolder(conn, machine, op.path, os, owner.id) !== undefined) {
-        problem("FOLDER_TAKEN", "Another live project has this folder on this machine", i, "path");
+      if (kind === "project") movedProjects.push({ id: owner.id, moved: op.path });
+      for (const project of movedProjects) {
+        if (folderHolder(conn, machine, project.moved, os, project.id) !== undefined) {
+          problem(
+            "FOLDER_TAKEN",
+            "Another live project has this folder on this machine",
+            i,
+            "path",
+          );
+        }
       }
       return;
     }
