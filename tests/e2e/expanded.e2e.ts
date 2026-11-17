@@ -324,23 +324,27 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     await expect(page).toHaveURL(`${world.origin}${view}?task=${ref}`);
 
     // Tab walks the header's controls, then the card: its facts, its source link, the composer,
-    // then the strip.
+    // then the strip, which is one stop: the arrows walk it from Note to Copy.
+    const active = () =>
+      page.evaluate(() => {
+        const e = document.activeElement;
+        if (e === null) return "";
+        return `${e.tagName.toLowerCase()}:${e.getAttribute("data-part") ?? e.textContent.trim()}`;
+      });
     const reached: string[] = [];
     for (let i = 0; i < 25; i += 1) {
       await page.keyboard.press("Tab");
-      reached.push(
-        await page.evaluate(() => {
-          const e = document.activeElement;
-          if (e === null) return "";
-          return `${e.tagName.toLowerCase()}:${e.getAttribute("data-part") ?? e.textContent.trim()}`;
-        }),
-      );
-      if (reached.at(-1)?.startsWith("button:") && reached.at(-1)?.includes("Copy")) break;
+      reached.push(await active());
+      if (reached.at(-1) === "button:note") break;
     }
     expect(reached).toContain("button:star");
     expect(reached).toContain("button:collapse");
     expect(reached.some((r) => r.startsWith("a:"))).toBe(true);
-    expect(reached.at(-1)).toMatch(/^button:.*Copy/);
+    expect(reached.slice(-2)).toEqual(["textarea:composer", "button:note"]);
+    for (let i = 0; i < 6 && (await active()) !== "button:copy"; i += 1) {
+      await page.keyboard.press("ArrowRight");
+    }
+    expect(await active()).toBe("button:copy");
 
     // Escape from inside the card collapses it and puts focus on its title.
     await page.keyboard.press("Escape");

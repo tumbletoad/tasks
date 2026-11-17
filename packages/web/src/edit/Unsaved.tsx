@@ -15,6 +15,11 @@ import { useEditState, useEdits } from "./useEdits.ts";
 
 const styles = classes(css, ["line", "why", "act", "value"]);
 
+/** A conflict this recent still reads "just now": one kept from before a reload may be older. */
+const RECENT_MS = 120_000;
+
+const recent = (at: number | undefined): boolean => at === undefined || Date.now() - at < RECENT_MS;
+
 export function Unsaved({
   task,
   field,
@@ -79,7 +84,12 @@ export function Unsaved({
   return (
     <span className={styles.line} data-part="unsaved" data-reason={unsaved.reason} role="status">
       <span className={styles.why}>
-        {conflict ? t("edit.changedBy", whoOf(unsaved.by ?? "")) : t("edit.notSaved")}
+        {conflict
+          ? t(
+              recent(unsaved.at) ? "edit.changedBy" : "edit.changedByEarlier",
+              whoOf(unsaved.by ?? ""),
+            )
+          : t("edit.notSaved")}
       </span>
       <button
         type="button"

@@ -5,6 +5,7 @@ import { requestId, type Api } from "../api.ts";
 import { Session } from "../context.ts";
 import type { Live } from "../live.ts";
 import { Edits, type EditState } from "./edits.ts";
+import { unsavedKeeper } from "./keep.ts";
 
 const controllers = new WeakMap<Live, Edits>();
 
@@ -24,6 +25,7 @@ export function editsOf(live: Live, api: Api): Edits {
       },
       newRequest: requestId,
       alive: () => !live.stopped,
+      ...(live.spaceId === undefined ? {} : { keeper: unsavedKeeper(live.spaceId) }),
     });
     controllers.set(live, edits);
   }
