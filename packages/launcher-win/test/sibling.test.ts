@@ -11,7 +11,6 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -243,11 +242,20 @@ describe.runIf(windows)(
       expect(readdirSync(join(outside, "tools"))).toEqual(["tasks.exe"]);
     });
 
-    test("from the daily install's command folder the journal is the data folder's, and share must be a plain folder", () => {
-      // The daily layout: <base>\share\tasks with the stable launchers in <base>\bin, and a
-      // stand-in profile folder, never the real one: its .tasks\state holds the journal.
+    /**
+     * The daily layout: <base>\share\tasks with the stable launchers in <base>\bin, and a stand-in
+     * profile folder, never the real one: its .tasks\state holds the journal. With `junction`,
+     * share is a junction to <base>\share-real from the start, so no folder a launcher has run
+     * from is ever renamed (Windows refuses that while a scanner still reads a file in it).
+     */
+    function daily(junction = false) {
       count += 1;
       const base = join(work, `daily-${String(count)}`);
+      mkdirSync(base);
+      if (junction) {
+        mkdirSync(join(base, "share-real"));
+        symlinkSync(join(base, "share-real"), join(base, "share"), "junction");
+      }
       const root = join(base, "share", "tasks");
       const profile = join(base, "profile");
       mkdirSync(root, { recursive: true });
@@ -257,6 +265,16 @@ describe.runIf(windows)(
       const command = join(base, "bin");
       expect(stable(root)).toBe(join(command, "tasks.exe"));
       const start = () => run(stable(root), ["version"], { env: { USERPROFILE: profile } });
+      return { root, profile, command, start };
+    }
+
+    const dailyJournal = (profile: string) => {
+      mkdirSync(join(profile, ".tasks", "state"), { recursive: true });
+      writeFileSync(join(profile, ".tasks", "state", "update.json"), "{}");
+    };
+
+    test("from the daily install's command folder the journal is the data folder's, and share must be a plain folder", () => {
+      const { root, profile, command, start } = daily();
 
       // A journal in <root>\state is not the daily install's: nothing is put back.
       rmSync(join(command, "tasksw.exe"));
@@ -267,21 +285,19 @@ describe.runIf(windows)(
       expect(readdirSync(command)).toEqual(["tasks.exe"]);
 
       // The journal in %USERPROFILE%\.tasks\state: the sibling of the version current names.
-      mkdirSync(join(profile, ".tasks", "state"), { recursive: true });
-      writeFileSync(join(profile, ".tasks", "state", "update.json"), "{}");
+      dailyJournal(profile);
       ran = start();
       expect(ran.status, ran.stderr).toBe(0);
       expect(ran.stderr).toMatch(/put .*tasksw\.exe back from versions\\0\.2\.0/);
       expect(bytes(join(command, "tasksw.exe"))).toEqual(bytes(own(root, NEW, "tasksw.exe")));
 
       // A junction at share: the launcher refuses to run, and the repair reads nothing through it.
-      rmSync(join(command, "tasksw.exe"));
-      const moved = join(base, "share-real");
-      renameSync(join(base, "share"), moved);
-      symlinkSync(moved, join(base, "share"), "junction");
-      ran = start();
+      const behind = daily(true);
+      dailyJournal(behind.profile);
+      rmSync(join(behind.command, "tasksw.exe"));
+      ran = behind.start();
       expect(ran.status).toBe(70);
-      expect(readdirSync(command)).toEqual(["tasks.exe"]);
+      expect(readdirSync(behind.command)).toEqual(["tasks.exe"]);
     });
   },
 );
