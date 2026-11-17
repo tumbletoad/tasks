@@ -10,6 +10,13 @@ export const StarIcon = () => (
   </Icon>
 );
 
+/** A pencil: words written and not sent yet. */
+export const PencilIcon = () => (
+  <Icon>
+    <path d="M14.5 5.5 18.5 9.5M4.5 19.5l1-4.5L15.8 4.7a1.4 1.4 0 0 1 2 0l1.5 1.5a1.4 1.4 0 0 1 0 2L9 18.5Z" />
+  </Icon>
+);
+
 export const FolderIcon = () => (
   <Icon>
     <path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z" />

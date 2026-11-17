@@ -167,6 +167,7 @@
   "row.markerChanged": "Changed by {by} · {time}",
   "row.markerChangedWhat": "{what} · {time}",
   "row.markerNeedsInput": "{by} needs your input",
+  "row.markerDraft": "Unsent words in its composer",
   "row.tile.ready": "Open in {label}",
   "row.tile.opening": "Opening in {label}",
   "row.tile.notConfirmed": "Opened in {label} · not confirmed",
@@ -189,6 +190,7 @@
   "row.desc.starred": "starred",
   "row.desc.changed": "changed by {by}",
   "row.desc.needsInput": "needs your input",
+  "row.desc.draft": "unsent words in its composer",
 
   "list.updated": "{count, plural, one {# task} other {# tasks}} updated by {actor}",
 

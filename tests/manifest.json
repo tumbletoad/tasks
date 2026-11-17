@@ -4239,6 +4239,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.6.web.draft-mark",
+      "title": "A row whose composer holds unsent words shows a quiet mark in the marker column; it comes and goes with the draft, blank lines are no draft, and another tab's draft or send moves it too",
+      "source": "A5 3.6, A5 3.8",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.26.web.markdown",
       "title": "Task Markdown (context, notes, log, outcome, learnings) renders as React elements of an allow-list (paragraphs and line breaks, strong lines, lists, quotes, fenced and inline code, emphasis, links): raw HTML and the XSS payloads show as text, and only https, http and mailto links open, in a new tab with no opener and no referrer",
       "source": "A5 3.26, A5 3.7, A7 3.12 M5.06",
