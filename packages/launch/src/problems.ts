@@ -43,6 +43,8 @@ export const PROBLEM_CODES = [
   "not_for_target",
   /** A second instance of a target that has a single instance (A4 3.2). */
   "single_instance",
+  /** A section this build no longer reads (`[roots]`): its lines do nothing. A warning. */
+  "retired",
 ] as const;
 
 export type ProblemCode = (typeof PROBLEM_CODES)[number];

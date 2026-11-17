@@ -1,5 +1,5 @@
 // The hub reads machine.toml (A2 3.2.4, M2.06): it hosts the enabled
-// [[spaces]], takes [log] level, keeps each root's root_rev, and refuses a file it cannot start
+// [[spaces]], takes [log] level, leaves a retired [roots] section as it is, and refuses a file it cannot start
 // with (64) with a line that names the key and code but no value. Its problems are acted on after
 // service.lock, so a second start still exits 73. Temporary homes and fixture spaces only.
 import { createHash } from "node:crypto";
@@ -69,7 +69,7 @@ const lit = (path: string) => `'${path}'`;
 
 describe("[A2.3.2.4.hub.spaces] the hub hosts machine.toml's spaces and refuses a file it cannot start with", () => {
   test(
-    "the enabled [[spaces]] open in order and a disabled one is listed closed, [log] level, and each root's revision in machine state",
+    "the enabled [[spaces]] open in order and a disabled one is listed closed, [log] level, and a retired [roots] section is named and left as it is",
     async () => {
       const { root, cleanup } = tempRoot("cfg");
       cleanups.push(cleanup);
@@ -111,6 +111,11 @@ describe("[A2.3.2.4.hub.spaces] the hub hosts machine.toml's spaces and refuses 
           "",
         ].join("\n"),
       );
+      // The roots' revisions an older build kept: no longer read or written, and left where it is.
+      const revisions = join(stateOf(home), "roots.json");
+      const oldRevisions = '{"format":1,"roots":{"work":{"rev":3}}}\n';
+      writeFileSync(revisions, oldRevisions, { mode: 0o600 });
+      const tomlBefore = readFileSync(join(configOf(home), "machine.toml"));
       const service = await startService({
         env: serviceEnv(home),
         identity: () => PLAIN,
@@ -133,13 +138,14 @@ describe("[A2.3.2.4.hub.spaces] the hub hosts machine.toml's spaces and refuses 
       expect(events.find((e) => e["ev"] === "config.loaded")).toMatchObject({
         present: true,
         spaces: 2,
-        roots: 1,
         instances: 0,
-        problems: 0,
+        problems: 1,
       });
-      expect(events.find((e) => e["ev"] === "config.roots_changed")).toMatchObject({ changed: 1 });
-      const revs = JSON.parse(readFileSync(join(stateOf(home), "roots.json"), "utf8")) as unknown;
-      expect(revs).toMatchObject({ format: 1, roots: { work: { rev: 1 } } });
+      expect(events.filter((e) => e["ev"] === "config.problem")).toEqual([
+        expect.objectContaining({ section: "roots", code: "retired", severity: "warning" }),
+      ]);
+      expect(readFileSync(revisions, "utf8")).toBe(oldRevisions);
+      expect(readFileSync(join(configOf(home), "machine.toml")).equals(tomlBefore)).toBe(true);
     },
     LONG,
   );

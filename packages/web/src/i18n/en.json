@@ -120,6 +120,8 @@
   "row.copyFailed": "The browser did not allow copying.",
   "row.openIn": "Open in {label}",
   "row.openFailed": "The launch was not recorded. Try again.",
+  "row.openFolder": "{reason, select, path_missing {Folder not found on this computer} not_a_directory {The task's folder is a file on this computer} not_answering {The task's folder did not answer in time} other {The task's folder cannot be used on this computer}}: {folder}. Nothing was started.",
+  "row.openWorkFolder": "The space's work folder cannot be used on this computer. Nothing was started.",
   "row.done": "Done: {title}",
   "row.dropped": "Dropped: {title}",
   "row.star": "Star",
@@ -189,6 +191,7 @@
   "source.tip": "{domain} · {url}",
   "source.kind": "{kind, select, email {Mail} chat {Chat} ticket {Ticket} pr {Pull request} issue {Issue} doc {Document} calendar {Event} crash {Crash} session {Session} book {Book} web {Web page} other {Source}}",
 
+  "place.missing": "Not found on this machine",
   "place.elsewhere": "On {machine}",
   "place.workFolder": "{product} work folder",
   "place.workFolderTip": "This task has no folder: Open and Run use the space's {product} work folder",

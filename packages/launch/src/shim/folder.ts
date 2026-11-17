@@ -1,19 +1,16 @@
-// The folder a terminal launch works in (A4 3.3): resolved by the service right
-// before the launch, checked by the shim inside it.
+// The folder a terminal launch works in: resolved by the service right before the launch, checked
+// by the shim inside it.
 //
-// A plan names a place (a root ID and a relative path on this machine, with the remote the place
-// recorded) or none. A place resolves through `resolvePlace` with this machine's live roots, and
-// never falls back to anything else (R11): a place that is missing, outside its root or on another
-// machine leaves the route disabled with its reason. A plan with no place is a task with no place
-// at all (A1's `none`): it works in the space's Tasks work folder on this machine,
-// `<machine state>/workdirs/space-<space ID>/`, created on first use, empty and user-only, and
-// resolved exactly as a place is, with the machine state folder as its root (A4 3.3: "Steps 2 to 4
-// above apply, with machine state in place of the root"). So every launch has a folder check, and
-// the shim runs the same check for both. Telling `none` from `other_machine` is the caller's: a
-// task whose place is on another machine never reaches a plan here.
+// A plan names a folder (the task's or its project's on this machine) or none. A folder resolves
+// as the absolute path it is, and never falls back to anything else: a folder that is missing or
+// is a file fails the launch with its reason. A plan with no folder works in the space's Tasks work
+// folder on this machine, `<machine state>/workdirs/space-<space ID>/`, created on first use, empty
+// and user-only, and resolved as a place under the machine state folder. So every launch has a
+// folder check, and the shim runs the same check for both. Telling `none` from `other_machine` is
+// the caller's: a task whose folder is only on another machine never reaches a plan here.
 //
-// The work folder is Tasks's own, so it is held to more than a place (A1 3.15, A4 3.3: the same
-// check-then-use rule as for places): before anything is made in it or below it,
+// The work folder is Tasks's own, so it is held to more than a person's folder: before anything is
+// made in it or below it,
 // `workdirs` and then the space's folder must each be a real folder (not a link, a junction or any
 // other reparse point: on Windows a directory entry reports every reparse point as a link), this
 // user's (POSIX: its owner; Node reads no owner on Windows, where the state folder's ACL admits
@@ -37,13 +34,13 @@ import { join, posix, win32 } from "node:path";
 import { makeDir } from "@tasks/files";
 import {
   identityOf,
+  resolveFolder,
   resolvePlace,
   type FolderIdentity,
-  type Resolution,
+  type FolderResolution,
   type ResolveReason,
-  type RootFolder,
 } from "../places.ts";
-import type { PlanPlace } from "./records.ts";
+import type { PlanFolder } from "./records.ts";
 
 /**
  * The root ID the work folder resolves under, in a list of its own: the machine state folder.
@@ -55,8 +52,6 @@ export const WORK_ROOT = "<state>";
 export const workFolderPath = (space: string): string => `workdirs/space-${space}`;
 
 export interface LaunchFolderOptions {
-  /** This machine's roots, as they are now (machine.toml's, and those `tasks roots add` wrote). */
-  readonly roots: readonly RootFolder[];
   /** The install's machine state folder (A2 3.2.1 `<state>`), which holds the work folders. */
   readonly stateDir: string;
   readonly platform?: NodeJS.Platform;
@@ -185,34 +180,25 @@ export function ensureWorkFolder(stateDir: string, space: string): WorkFolderChe
 }
 
 /**
- * The folder a launch of `space` works in, resolved now: the plan's place through this machine's
- * roots, or for no place the space's work folder (made on first use, and checked as Tasks's own)
- * through the machine state folder. The result is `resolvePlace`'s: on `ok`, `folder` is where the
- * shim's terminal starts and `check` is what the shim checks there.
+ * The folder a launch of `space` works in, resolved now: the plan's folder, or for none the space's
+ * work folder (made on first use, and checked as Tasks's own) under the machine state folder. On
+ * `ok`, `folder` is where the shim's terminal starts and `check` is what the shim checks there.
  */
 export async function resolveLaunchFolder(
-  place: PlanPlace | null,
+  folder: PlanFolder | null,
   space: string,
   options: LaunchFolderOptions,
-): Promise<Resolution> {
+): Promise<FolderResolution> {
   const platform = options.platform ?? process.platform;
-  if (place !== null) {
-    return resolvePlace(
-      {
-        root: place.root,
-        path: place.path,
-        kind: "folder",
-        ...(place.gitRemote === undefined ? {} : { gitRemote: place.gitRemote }),
-      },
-      options.roots,
-      { platform },
-    );
-  }
+  if (folder !== null) return resolveFolder(folder.path, { platform });
   const made = ensureWorkFolder(options.stateDir, space);
-  if (made.status === "failed") return { status: "failed", reason: made.reason, root: WORK_ROOT };
-  return resolvePlace(
+  if (made.status === "failed") return { status: "failed", reason: made.reason };
+  const found = await resolvePlace(
     { root: WORK_ROOT, path: workFolderPath(space), kind: "folder" },
     [{ id: WORK_ROOT, path: options.stateDir }],
     { platform },
   );
+  return found.status === "ok"
+    ? { status: "ok", folder: found.folder, identity: found.identity, check: found.check }
+    : { status: "failed", reason: found.reason };
 }

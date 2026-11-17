@@ -206,7 +206,7 @@ try {
   const { command, args } = fakeAgentCommand(SUCCESS_FIXTURE, { maxMs: 600_000 });
   const plan: SpawnPlan = {
     argv: [command, ...args],
-    place: null,
+    folder: null,
     env: {},
     title: "Fixture launch",
     afterExit: "close",

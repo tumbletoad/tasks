@@ -1,7 +1,7 @@
 // The shim's machine state (A4 3.6.3 "Launch folder", 3.9.1): one folder per launch
 // under the install's launch folders, `<launch root>/<launch ID>/`, 0700, holding
 // - `launch.json` (0600, replaced atomically, written by the service): the spawn plan (argv, the
-//   place or none, the instance's environment, the title), from dispatch the folder resolved right
+//   folder or none, the instance's environment, the title), from dispatch the folder resolved right
 //   before the launch with the check the shim runs there, the ticket's hash and the use of its two
 //   roles, and once claimed the attachment credential's hash with the shim's PID and start time;
 // - `exit.json` (written atomically by the shim when the service cannot be reached, A4 3.6.3 step 9).
@@ -15,8 +15,7 @@ import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, makeDir } from "@tasks/files";
 import { isLaunchRef } from "../intents.ts";
-import { isPlacePath, RESOLVE_REASONS, type FolderCheck, type ResolveReason } from "../places.ts";
-import { ROOT_ID } from "../sections.ts";
+import { RESOLVE_REASONS, type FolderCheck, type ResolveReason } from "../places.ts";
 import { LAUNCH_ID, TASK_ID } from "../store.ts";
 import { isHash } from "./secrets.ts";
 import {
@@ -26,7 +25,6 @@ import {
   FAILED_REASONS,
   isBoundedText,
   isPid,
-  REMOTE,
   REPLY_BOUNDS,
   START_TIME,
   type AfterExit,
@@ -34,13 +32,12 @@ import {
   type FailedReason,
 } from "./wire.ts";
 
-/** A plan's place: a folder place of this machine, as the space stores it (A1 3.15). */
-export interface PlanPlace {
-  readonly root: string;
-  /** `/`-separated, relative to the root; `""` is the root itself. */
+/** A plan's folder: the task's or its project's folder on this machine. */
+export interface PlanFolder {
+  /** As the space stores it, the home as `~`: what the person is shown. */
+  readonly stored: string;
+  /** The absolute path this machine opens, `~` expanded. */
   readonly path: string;
-  /** The repository's remote the place recorded at bind time, to be found again. */
-  readonly gitRemote?: string;
 }
 
 /** What the claim's reply hands the shim to start (A4 3.6.3 step 3), kept from the click. */
@@ -48,11 +45,11 @@ export interface SpawnPlan {
   /** The absolute executable first: the route's argv (M2.10 builds it). */
   readonly argv: readonly string[];
   /**
-   * Where the agent works: the task's place on this machine, or null for a task with no place at
-   * all (the space's work folder, folder.ts). Resolved right before the launch, never at the click
-   * only: the folder is a fact of this machine's tree at that moment (A1 3.15).
+   * Where the agent works: the task's or its project's folder on this machine, or null for the
+   * space's work folder (folder.ts). Resolved right before the launch, never at the click only:
+   * the folder is a fact of this machine's tree at that moment.
    */
-  readonly place: PlanPlace | null;
+  readonly folder: PlanFolder | null;
   /** The instance's `env` (A4 3.8 layer 3). */
   readonly env: Readonly<Record<string, string>>;
   /** For the terminal title and the announce line. */
@@ -143,20 +140,23 @@ const isEnv = (value: unknown): value is Record<string, string> =>
     ([name, v]) => AGENT_ENV_NAME.test(name) && isText(v, REPLY_BOUNDS.value),
   );
 
+// eslint-disable-next-line no-control-regex -- the controls are what this refuses.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/u;
+
+/** A path a plan's folder holds: text without a control character, at most 4,096 characters. */
+const isFolderText = (value: unknown): value is string =>
+  isText(value, REPLY_BOUNDS.path) && value !== "" && !CONTROL.test(value);
+
 /**
- * A plan's place, checked: a root ID of machine.toml's form and a place's path by any OS's rules
- * (the resolve applies this machine's), or null. Anything else is no place a launch can work in.
+ * A plan's folder, checked as text, or null. Whether the path is a folder of this machine is the
+ * resolve's to say, right before the launch.
  */
-export function checkPlanPlace(value: unknown): PlanPlace | null | undefined {
+export function checkPlanFolder(value: unknown): PlanFolder | null | undefined {
   if (value === null) return null;
-  if (!isObject(value)) return undefined;
-  const { root, path, gitRemote } = value;
-  if (typeof root !== "string" || !ROOT_ID.test(root)) return undefined;
-  if (typeof path !== "string" || !isPlacePath(path, "linux")) return undefined;
-  if (gitRemote !== undefined && (typeof gitRemote !== "string" || !REMOTE.test(gitRemote))) {
-    return undefined;
-  }
-  return { root, path, ...(gitRemote === undefined ? {} : { gitRemote }) };
+  if (!isObject(value) || Object.keys(value).length !== 2) return undefined;
+  const { stored, path } = value;
+  if (!isFolderText(stored) || !isFolderText(path)) return undefined;
+  return { stored, path };
 }
 
 /** The plan, checked: a plan that is not one starts nothing. */
@@ -167,8 +167,8 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
     return undefined;
   }
   if (!argv.every((a): a is string => isText(a, REPLY_BOUNDS.arg))) return undefined;
-  const place = checkPlanPlace(value["place"]);
-  if (place === undefined || !isEnv(env) || !isText(title, REPLY_BOUNDS.title)) return undefined;
+  const folder = checkPlanFolder(value["folder"]);
+  if (folder === undefined || !isEnv(env) || !isText(title, REPLY_BOUNDS.title)) return undefined;
   if (!(AFTER_EXIT_MODES as readonly unknown[]).includes(afterExit)) return undefined;
   if (loginShell !== undefined && typeof loginShell !== "boolean") return undefined;
   // The folder's elements: distinct indices of empty elements after the executable.
@@ -188,7 +188,7 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
   }
   const plan: SpawnPlan = {
     argv,
-    place,
+    folder,
     env,
     title,
     afterExit: afterExit as AfterExit,
@@ -201,11 +201,26 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
   return Buffer.byteLength(JSON.stringify(plan), "utf8") <= PLAN_MAX_BYTES ? plan : undefined;
 }
 
+/**
+ * A plan as a build before folders wrote it, with a `place` where a plan now has its `folder`: an
+ * agent started by that build may still be running after an update, and its shim reattaches to
+ * its launch. Its place was resolved at dispatch into `resolved`, the folder its terminal started
+ * in. No place is the work folder, as no folder is now. A place never dispatched names no folder
+ * this build can find, so that launch is left out and never starts.
+ */
+function withFolder(plan: unknown, resolved: unknown): unknown {
+  if (!isObject(plan) || "folder" in plan || !("place" in plan)) return plan;
+  const { place, ...rest } = plan;
+  if (place === null) return { ...rest, folder: null };
+  const path = isObject(resolved) ? resolved["path"] : undefined;
+  return typeof path === "string" ? { ...rest, folder: { stored: path, path } } : undefined;
+}
+
 /** A launch file as read from disk, checked field by field; undefined when it is not one. */
 export function checkLaunchFile(value: unknown): LaunchFile | undefined {
   if (!isObject(value) || value["format"] !== 1) return undefined;
   const { space, launch, reference, task, createdAt, folder, ticket, attachment, agent } = value;
-  const plan = checkPlan(value["plan"]);
+  const plan = checkPlan(withFolder(value["plan"], folder));
   if (plan === undefined) return undefined;
   if (typeof space !== "string" || !SPACE_ID.test(space)) return undefined;
   if (typeof launch !== "string" || !LAUNCH_ID.test(launch) || !isLaunchRef(reference)) {

@@ -74,6 +74,7 @@ If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checko
 
 ## Never
 - push to main, rewrite published history or skip hooks;
+- make, move or delete a release tag (`v*`), or start a release in any other way: only the owner releases;
 - delete a person's data or a backup as a side effect of something else;
 - put real task data, real names of people or organisations, or facts about a person's machines,
   accounts or paths in the repository, its logs, fixtures, screenshots or pull requests;

@@ -272,16 +272,27 @@ function headerLine(
 type DigestTask = Extract<TaskGet, { view: "digest" }>["task"];
 
 /**
- * The task's folder: a path and a machine's name are text someone gave, so they stand inside the
- * data block (A3 3.10).
+ * The header's folder line, in fixed words: whose folder the task opens in on this machine and
+ * whether it is there now, or that it opens on another machine.
  */
-const folderLine = (folder: DigestTask["folder"]): string[][] => {
-  if (folder === undefined) return [];
-  if ("machine" in folder) return [[`Folder: on ${clip(folder.machine, 80)}, not here`]];
-  return [
-    [`Folder: ${clip(folder.path, 400)}${folder.of === "project" ? " (its project's)" : ""}`],
-  ];
-};
+function folderLine(folder: NonNullable<DigestTask["folder"]>): string {
+  if ("machine" in folder) return "Folder: on another machine, where it opens";
+  const whose = folder.of === "task" ? "its own folder" : "its project's folder";
+  return folder.missing === true
+    ? `Folder: ${whose}, not found on this machine`
+    : `Folder: ${whose} on this machine`;
+}
+
+/**
+ * The folder's path, or the machine it is on: text someone wrote, so it stands inside the data
+ * block (A3 3.10).
+ */
+const storedFolder = (folder: DigestTask["folder"]): string[][] =>
+  folder === undefined
+    ? []
+    : "machine" in folder
+      ? [[`Opens on: ${clip(folder.machine, 80)}`]]
+      : [[`Folder: ${clip(folder.path, 200)}`]];
 
 const SECTION_NAMES = ["context", "notes", "log", "sources", "outcome", "history"];
 
@@ -292,6 +303,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
   const parts: Part[] = [
     fixed(
       headerLine(task, result.as_of),
+      task.folder === undefined ? undefined : folderLine(task.folder),
       result.bound ? "Session: bound to this task by this call" : undefined,
     ),
     instructionsPart(
@@ -308,7 +320,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
         [
           `Status: ${join(task.status, task.effort !== undefined && `Effort: ${task.effort}`, group(task) !== undefined && `Group: ${group(task) ?? ""}`)}`,
         ],
-        ...folderLine(task.folder),
+        ...storedFolder(task.folder),
       ],
     },
     {
