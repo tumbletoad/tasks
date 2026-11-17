@@ -66,12 +66,16 @@ export function unsavedOf(value: unknown): Unsaved | undefined {
 export function unsavedKeeper(space: string): UnsavedKeeper {
   const prefix = `unsaved.${space}.`;
   const nameOf = (unsaved: Unsaved) => `${prefix}${unsaved.task}.${unsaved.field}`;
-  /** What this tab kept or read, by name: the only ones it removes. */
-  let known = new Map<string, Unsaved>();
+  /**
+   * What this tab kept or read, by name, with the value it kept or read: it removes a name only
+   * while that value is still there, so a newer edit another tab kept under it stays.
+   */
+  let known = new Map<string, { readonly unsaved: Unsaved; readonly value: string | undefined }>();
   return {
     load() {
       const found: Unsaved[] = [];
       for (const name of browserKept.names(prefix)) {
+        const value = browserKept.read(name);
         const unsaved = unsavedOf(browserKept.json(name));
         // Not one of ours: it is removed, so it is never read again as anything.
         if (unsaved === undefined || nameOf(unsaved) !== name) {
@@ -79,19 +83,26 @@ export function unsavedKeeper(space: string): UnsavedKeeper {
           continue;
         }
         found.push(unsaved);
-        known.set(name, unsaved);
+        known.set(name, { unsaved, value });
       }
       return found;
     },
     save(unsaved) {
-      const next = new Map<string, Unsaved>();
-      for (const each of unsaved.values()) next.set(nameOf(each), each);
-      for (const [name, each] of next) {
-        if (known.get(name) === each) continue;
+      const next = new Map<string, { readonly unsaved: Unsaved; readonly value: string | undefined }>();
+      for (const each of unsaved.values()) {
+        const name = nameOf(each);
+        const before = known.get(name);
+        if (before?.unsaved === each) {
+          next.set(name, before);
+          continue;
+        }
         const value = keptOf(each);
         if (value !== undefined) browserKept.keep(name, value);
+        next.set(name, { unsaved: each, value });
       }
-      for (const name of known.keys()) if (!next.has(name)) browserKept.keep(name, undefined);
+      for (const [name, { value }] of known) {
+        if (!next.has(name) && browserKept.read(name) === value) browserKept.keep(name, undefined);
+      }
       known = next;
     },
   };

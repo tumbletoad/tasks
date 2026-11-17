@@ -203,6 +203,21 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
     expect(reloaded.load().map((u) => u.task)).toEqual(["tk_00001"]);
     reloaded.save(new Map());
     expect(stored()).toEqual([]);
+    // Two tabs read one edit; the second keeps a newer one in its place. The first discards the
+    // edit it read, and the newer one stays.
+    const kept = unsaved(titleChange("Old"), 4);
+    unsavedKeeper(SPACE).save(asMap([kept]));
+    const tabA = unsavedKeeper(SPACE);
+    const tabB = unsavedKeeper(SPACE);
+    expect(tabA.load()).toHaveLength(1);
+    expect(tabB.load()).toHaveLength(1);
+    tabB.save(asMap([unsaved(titleChange("Newer"), 4)]));
+    tabA.save(new Map());
+    expect(unsavedKeeper(SPACE).load().map((u) => u.change.source)).toEqual([
+      titleChange("Newer").source,
+    ]);
+    tabB.save(new Map());
+    expect(stored()).toEqual([]);
     // A task gone for good takes its edits with it.
     tab.save(asMap([unsaved(titleChange("Again"), 3), unsaved(priorityChange(1), 3)]));
     forgetUnsaved(SPACE, "tk_00003");
