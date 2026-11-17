@@ -186,7 +186,8 @@ export async function taskRows(
         x_source_count: count,
         x_place_here: placeHere,
         x_place_elsewhere: elsewhere,
-        x_ending: ending,
+        x_reason: reason,
+        x_outcome: outcome,
         ref,
         ...own
       } = row;
@@ -198,7 +199,14 @@ export async function taskRows(
       if (shown.length > 0) out["sources"] = shown;
       const more = Number(count ?? 0) - shown.length;
       if (more > 0) out["sources_more"] = more;
-      const ended = endingOf(ending);
+      const ended = endingOf(
+        endingText({
+          lifecycle: own["lifecycle"],
+          wrap_state: own["wrap_state"],
+          archived_reason: reason,
+          outcome,
+        }),
+      );
       if (ended !== undefined) out["ending"] = ended;
       const place = parsed(placeHere);
       if (here !== undefined && isPlain(place)) {
@@ -224,15 +232,23 @@ export interface FinishedRequest {
 
 const CHECKED_OFF = "(t.lifecycle = 'completed' AND t.wrap_state IS 'pending')";
 
+/** What `endingOf` reads of a finished task: only their start, since a row shows one line. */
+const ENDING_COLUMNS =
+  "substr(t.archived_reason, 1, 2000) AS x_reason, substr(t.outcome, 1, 2000) AS x_outcome";
+
 /**
  * The text a finished task's row says it ended with: why it was dropped, else its outcome once it
  * is wrapped up. A reopen keeps the outcome as the previous result and clears the wrap state, so an
- * outcome without one is an earlier finish's, not this one's. Only its start is read: a row shows
- * one line of it.
+ * outcome without one is an earlier finish's, not this one's. An active task has none.
  */
-const ENDING =
-  "substr(CASE WHEN t.lifecycle = 'archived' AND trim(t.archived_reason) <> '' THEN " +
-  "t.archived_reason WHEN t.wrap_state = 'wrapped' THEN t.outcome END, 1, 2000)";
+export function endingText(task: Readonly<Record<string, unknown>>): string | undefined {
+  const { lifecycle, wrap_state: wrap, archived_reason: reason, outcome } = task;
+  if (lifecycle !== "completed" && lifecycle !== "archived") return undefined;
+  if (lifecycle === "archived" && typeof reason === "string" && reason.trim() !== "") {
+    return reason;
+  }
+  return wrap === "wrapped" && typeof outcome === "string" ? outcome : undefined;
+}
 
 /** The most UTF-16 code units of an ending a row carries, its ellipsis included. */
 export const ENDING_MAX = 300;
@@ -269,7 +285,7 @@ function finishedSql(request: FinishedRequest): string {
   if (request.checkedOff === false) where.push(`NOT ${CHECKED_OFF}`);
   const from = request.after === undefined ? "" : "WHERE k.at < $at OR (k.at = $at AND k.id < $id)";
   return (
-    `SELECT ${TASK_COLUMNS}, ${ENDING} AS x_ending FROM (SELECT k.id, k.at FROM (SELECT ` +
+    `SELECT ${TASK_COLUMNS}, ${ENDING_COLUMNS} FROM (SELECT k.id, k.at FROM (SELECT ` +
     `t.id AS id, ${FINISHED_AT} AS at FROM tasks t WHERE ${where.join(" AND ")}) k ${from} ORDER BY k.at DESC, k.id DESC ` +
     "LIMIT $limit) p JOIN tasks t ON t.id = p.id ORDER BY p.at DESC, p.id DESC"
   );

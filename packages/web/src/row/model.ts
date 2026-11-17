@@ -124,11 +124,7 @@ export interface RowInput {
   readonly place?: PlaceFact;
   readonly marker?: MarkerFact;
   readonly launchBlock?: LaunchBlock;
-  /**
-   * When the task's current wait began, in milliseconds since the epoch: Waiting's age column shows
-   * the time spent waiting (A5 3.5, 3.6). The page does not get it yet; until it does, the age is
-   * the task's own and its tooltip says "Created".
-   */
+  /** When the task's current wait began, in ms since the epoch: Waiting's age column counts from it. */
   readonly waitingSince?: number;
 }
 
@@ -157,7 +153,7 @@ export interface RowModel {
   /** The summary line's prefix on views that mix areas: the area dot and the project or area. */
   readonly prefix?: { readonly slot?: number; readonly text: string };
   readonly summary?: string;
-  /** Completed's line in the place of the summary: how the task ended (`TaskRow.ending`). */
+  /** A finished task's line in the place of the summary: how it ended (`TaskRow.ending`). */
   readonly ending?: string;
   readonly due?: {
     readonly text: Msg;
@@ -530,7 +526,9 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
 
   const summary = task.summary !== undefined && task.summary !== "" ? task.summary : undefined;
   const ending =
-    finished && task.ending !== undefined && task.ending !== "" ? task.ending : undefined;
+    task.lifecycle !== "active" && task.ending !== undefined && task.ending !== ""
+      ? task.ending
+      : undefined;
   return {
     id: task.id,
     ref: task.ref,
