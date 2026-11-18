@@ -63,10 +63,11 @@ const KEYS: ReadonlySet<string> = new Set(QUERY_KEYS);
  * caller's to take off first.
  *
  * A person who types ordinary text never meets a filter error for it. A key is letters only, so
- * `10:30` is a word; a link (`https://…`) is a word whatever its scheme; and a prefix that is no
- * key is a word (`re:`, `mailto:…`, `C:\…`, `port:8080`) unless it is plainly a misspelt key
- * (`stauts:open`), with a value right behind it. An alias is read as its key (`prio:1` is `p:1`).
- * `p=3` is how many other tools write `p:3`, so `=` makes a filter behind a key or an alias.
+ * `10:30` is a word; a drive path (`P:\…`, `c:/…`) is a word; a link (`https://…`) is a word
+ * unless its scheme is a key (`folder://server/share`); and a prefix that is no key is a word
+ * (`re:`, `mailto:…`, `port:8080`) unless it is plainly a misspelt key (`stauts:open`), with a
+ * value right behind it. An alias is read as its key (`prio:1` is `p:1`). `p=3` is how many other
+ * tools write `p:3`, so `=` makes a filter behind a key or an alias.
  */
 export function filterOf(word: string): QueryFilter | MistypedFilter | undefined {
   const found = FILTER.exec(word);
@@ -75,10 +76,13 @@ export function filterOf(word: string): QueryFilter | MistypedFilter | undefined
   const op = found[2] ?? "";
   const length = found[0].length;
   const rest = word.slice(length);
+  if (op === ":" && written.length === 1 && /^[\\/]/u.test(rest)) return undefined;
+  if (KEYS.has(written)) {
+    return { key: written as QueryKey, op: op === "=" ? ":" : (op as QueryOp), length };
+  }
   if (op === ":" && rest.startsWith("//")) return undefined;
-  const key: QueryKey | undefined = KEYS.has(written)
-    ? (written as QueryKey)
-    : Object.hasOwn(QUERY_KEY_ALIASES, written) && rest !== ""
+  const key: QueryKey | undefined =
+    Object.hasOwn(QUERY_KEY_ALIASES, written) && rest !== ""
       ? QUERY_KEY_ALIASES[written]
       : undefined;
   if (key !== undefined) return { key, op: op === "=" ? ":" : (op as QueryOp), length };

@@ -335,6 +335,7 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     expect(wordsOf("read https://example.org/guide p:1")).toBe("read https://example.org/guide");
     expect(wordsOf("fix bug:123 Status:open")).toBe("fix bug:123");
     expect(wordsOf("fence prio:1 re: gate")).toBe("fence re: gate");
+    expect(wordsOf("sync P:\\repo folder://server/share/repo")).toBe("sync P:\\repo");
   });
 
   test("the fields a search reads decide which changes offer a refresh", () => {

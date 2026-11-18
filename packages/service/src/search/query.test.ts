@@ -107,6 +107,8 @@ describe("[A3.5.search.parser] the query language", () => {
       "port:8080",
       "bug:123",
     ]);
+    // A drive's letter that is also a key is still a drive.
+    expect(words("P:\\repo p:/work")).toEqual(["P:\\repo", "p:/work"]);
     // An alias with nothing behind it is a word too: `Priority: high` is prose.
     expect(words("Priority: high")).toEqual(["Priority:", "high"]);
     // Only the language's own words: never a property every object inherits.
@@ -121,6 +123,9 @@ describe("[A3.5.search.parser] the query language", () => {
     expect(printQuery(parseQuery("priority=2"))).toBe("p:2");
     // A known key keeps a path for its value.
     expect(words("folder:/home/mira/work/portal")).toEqual(["folder:/home/mira/work/portal"]);
+    expect(parseQuery("folder://server/share/portal").groups.flat()).toEqual([
+      { type: "filter", key: "folder", op: ":", value: "//server/share/portal", negated: false },
+    ]);
   });
 
   test("an accepted query's parsed form is itself within the limits", () => {
