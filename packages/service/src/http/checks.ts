@@ -47,7 +47,7 @@ export const LAUNCH_ACTIONS: readonly string[] = ["list"];
  */
 export const SPACE_PREFIX = "/api/v1/space/";
 export const SPACE_ACTIONS: readonly string[] = ["list", "default", "propose", "create", "open"];
-/** Settings: this computer's preferences the page sets, Open's terminal, and the agent apps. */
+/** Settings: this machine's preferences the page sets, Open's terminal, and the agent apps. */
 export const MACHINE_PREFIX = "/api/v1/machine/";
 export const MACHINE_ACTIONS: readonly string[] = ["pref", "terminal", "apps", "apps_apply"];
 export const HEALTHZ_PATH = "/healthz";

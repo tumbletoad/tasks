@@ -324,8 +324,8 @@ const REASONS: Readonly<
   not_a_file: ["is not a regular file", "are not regular files"],
   other_owner: ["belongs to another user", "belong to another user"],
   world_writable: [
-    "can be changed by every user on this computer",
-    "can be changed by every user on this computer",
+    "can be changed by every user on this machine",
+    "can be changed by every user on this machine",
   ],
   open_to_others: [
     "can be opened by other users, not only by you",

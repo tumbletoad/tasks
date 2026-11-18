@@ -57,10 +57,7 @@ import {
   CHILD_FIELDS,
   columnsValue,
   DERIVED_COLUMNS,
-  EXT_TABLES,
-  extValue,
   fieldJson,
-  isExtField,
   TASK_FIELDS,
   type PatchableField,
   type TaskField,
@@ -277,9 +274,6 @@ type Entity =
   | "preferences"
   | "areas"
   | "projects"
-  | "aliases"
-  | "exchanges"
-  | "exchange_items"
   | "folders";
 
 /** A task row as the write path needs it, checked against its domain. */
@@ -318,7 +312,6 @@ function columnsOf(entity: Entity, field: string): readonly string[] {
           entity === "runs" ||
           entity === "learnings" ||
           entity === "preferences" ||
-          entity === "aliases" ||
           entity === "areas" ||
           entity === "projects" ||
           entity === "folders"
@@ -329,12 +322,8 @@ function columnsOf(entity: Entity, field: string): readonly string[] {
   return columns;
 }
 
-/**
- * A logical field's value in a row (A1 3.4): its columns' value, or for `ext.<key>` the key's
- * value in the row's `ext` map.
- */
+/** A logical field's value in a row (A1 3.4): its columns' value. */
 function valueOf(entity: Entity, row: Readonly<Record<string, unknown>>, field: string): unknown {
-  if (EXT_TABLES.has(entity) && isExtField(field)) return extValue(row, field);
   return columnsValue(row, columnsOf(entity, field));
 }
 
@@ -651,9 +640,7 @@ const SQL = {
   projectRow: "SELECT * FROM projects WHERE id = $id",
   lastArea: "SELECT max(position) AS p FROM areas",
   lastProject: "SELECT max(position) AS p FROM projects WHERE area_id IS $area",
-  aliasRow: "SELECT * FROM aliases WHERE namespace = $namespace AND alias = $alias",
-  exchangeRow: "SELECT * FROM exchanges WHERE id = $id",
-  itemRow: "SELECT * FROM exchange_items WHERE exchange_id = $exchange AND task_id = $task",
+
   // Areas and projects (A1 3.6): their fields, by the column names of fields.ts.
   areaBySlugAny: "SELECT id FROM areas WHERE slug = $slug AND deleted_at IS NULL",
   projectSlugTaken: "SELECT id FROM projects WHERE slug = $slug AND deleted_at IS NULL",
@@ -777,12 +764,6 @@ function readRow(conn: Connection, entity: Entity, id: string): Row {
   if (entity === "task_sources") {
     const [task, source] = id.split("|");
     row = conn.prepare(SQL.link).get({ task: task ?? "", source: source ?? "" });
-  } else if (entity === "aliases") {
-    const cut = id.indexOf("|");
-    row = conn.prepare(SQL.aliasRow).get({ namespace: id.slice(0, cut), alias: id.slice(cut + 1) });
-  } else if (entity === "exchange_items") {
-    const [exchange, task] = id.split("|");
-    row = conn.prepare(SQL.itemRow).get({ exchange: exchange ?? "", task: task ?? "" });
   } else {
     const sql = {
       tasks: SQL.task,
@@ -796,7 +777,6 @@ function readRow(conn: Connection, entity: Entity, id: string): Row {
       preferences: SQL.preferenceRow,
       areas: SQL.areaRow,
       projects: SQL.projectRow,
-      exchanges: SQL.exchangeRow,
       folders: FOLDER_SQL.folder,
     }[entity];
     row = conn.prepare(sql).get({ id });
@@ -833,8 +813,6 @@ function setVersions(
     conn.prepare(SQL.projectVersions).run({ ...maps, id: row.id });
   } else if (row.entity === "folders") {
     conn.prepare(SQL.folderVersions).run({ ...maps, id: row.id });
-  } else if (row.entity === "aliases") {
-    // An alias has no versions: its change rows are its history (fields.ts).
   } else throw misuse("No operation of this build changes that row after its create");
 }
 

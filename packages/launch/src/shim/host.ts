@@ -102,7 +102,7 @@ export type ReportOutcome =
       readonly kind: "applied";
       readonly intent: LaunchIntent | undefined;
       readonly ended: boolean;
-      /** For a folder the shim's check refused: its reason, for the service's log. */
+      /** For a folder the shim's check refused: its reason, which the launch records too. */
       readonly folder?: ResolveReason;
     }
   | { readonly kind: "refused"; readonly reason: HostRefusal };
@@ -157,16 +157,21 @@ const exitCode = (code: number | null): Evidence =>
     ? { exit_code: code }
     : {};
 
-/** What an agent's end means for its launch (A4 3.9.2's terminal row). */
+/**
+ * What an agent's end means for its launch (A4 3.9.2's terminal row). A folder the shim's check
+ * refused is recorded with the folder's own reason, so the task says why.
+ */
 export function exitObservation(exit: {
   spawned: boolean;
   settled: boolean;
   code: number | null;
   ran_ms: number;
   failed?: FailedReason | undefined;
+  folder?: ResolveReason | undefined;
 }): Observation {
   if (!exit.spawned || exit.failed !== undefined) {
-    return { kind: "failed", reason: "verify_failed" };
+    const folder = exit.failed === "verify" ? exit.folder : undefined;
+    return { kind: "failed", reason: folder ?? "verify_failed" };
   }
   // A Confirmed launch whose agent later exits stays Confirmed (A4 3.9.2): a settled agent
   // confirms, with its exit code; one that ended within 3 s failed.
@@ -523,6 +528,7 @@ export class ShimHost {
           code: null,
           ran_ms: 0,
           failed: reason as FailedReason,
+          folder: folderReason,
         });
         ends = true;
         break;

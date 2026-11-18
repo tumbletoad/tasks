@@ -36,7 +36,7 @@ export interface FreshWorld {
   readonly spaces: string;
   /** The `tasks open` URL of a fresh code, landing on `to`. */
   signInUrl(to: string): Promise<string>;
-  /** Sets one of this computer's settings as the page does, or resets it with null. */
+  /** Sets one of this machine's settings as the page does, or resets it with null. */
   machine(key: string, value: unknown): Promise<void>;
   /** An operation as the person at a terminal makes it. */
   op(space: string, op: string, input: Record<string, unknown>): Promise<unknown>;

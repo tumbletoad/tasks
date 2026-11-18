@@ -214,7 +214,7 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
       }),
     );
     expect(missing.split("\n")[4]).toBe(
-      "Folder: C:\\Users\\mira\\code\\portal (not found on this computer)",
+      "Folder: C:\\Users\\mira\\code\\portal (not found on this machine)",
     );
   });
 

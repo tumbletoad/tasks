@@ -453,7 +453,7 @@ describe("[A2.3.10.5.copies.service] copies of one space served side by side", (
         remembered: true,
       });
       expect(CLAIM_WARNING).toBe(
-        "If another computer still has this space, its later changes will not appear here.",
+        "If another machine still has this space, its later changes will not appear here.",
       );
       expect(recorded(w)).toEqual([
         { id: mira.id, path: mira.folder, enabled: false },

@@ -300,7 +300,8 @@ describe("[A4.5.shim.folder] the folder: resolved right before the launch, check
       const shim = l.shims[0];
       if (shim === undefined) throw new Error("no shim was started");
       const failed = await l.waitIntent(intent.id, (i) => i.state === "failed", "the failure");
-      expect(failed.reason).toBe("verify_failed");
+      // The folder's own reason is recorded, so the task says why.
+      expect(failed.reason).toBe("folder_changed");
       expect(failed.evidence.pid).toBeUndefined();
       shim.endInput(); // Enter, for the line the person reads
       expect((await l.shimExit(shim)).code).toBe(1);

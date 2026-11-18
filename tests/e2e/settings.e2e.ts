@@ -1,5 +1,5 @@
 // Settings and the keyboard end to end (A7 3.12 M5.11), in Chromium and Firefox, against the real
-// service process: the theme is this computer's, so a second tab and a fresh browser profile
+// service process: the theme is this machine's, so a second tab and a fresh browser profile
 // follow it; Open's terminal is chosen among those found and goes back to the default; the keys
 // work where they should and never where a person types; the sheet lists what works; the
 // single-letter setting takes the single keys away; the tooltip shows on hover and on keyboard
@@ -38,7 +38,7 @@ async function rest(page: Page): Promise<void> {
   await page.locator("main").focus();
 }
 
-test.describe("[A7.3.12.m5-11.e2e.theme] The theme is this computer's: every tab and browser here follows it", () => {
+test.describe("[A7.3.12.m5-11.e2e.theme] The theme is this machine's: every tab and browser here follows it", () => {
   test("a choice shows at once, a second tab follows live, a fresh profile paints it first, and the browser keeps nothing", async ({
     page,
     browser,
@@ -82,7 +82,7 @@ test.describe("[A7.3.12.m5-11.e2e.theme] The theme is this computer's: every tab
     }
   });
 
-  test("a theme an older build kept in this browser is handed to this computer once", async ({
+  test("a theme an older build kept in this browser is handed to this machine once", async ({
     browser,
     world,
   }) => {
@@ -101,7 +101,7 @@ test.describe("[A7.3.12.m5-11.e2e.theme] The theme is this computer's: every tab
       await expect
         .poll(() => page.evaluate((key) => localStorage.getItem(key), LEGACY_THEME_KEY))
         .toBeNull();
-      // This computer holds it now: the shell is served in it.
+      // This machine holds it now: the shell is served in it.
       await page.reload();
       await expect(html(page)).toHaveAttribute("data-theme", "washi");
     } finally {
@@ -119,7 +119,7 @@ test.describe("[A7.3.12.m5-11.e2e.terminal] Open's terminal: which one and why, 
     await open(page, world, "/settings");
     const group = terminal(page);
     await expect(group.getByRole("radio")).toHaveCount(3);
-    await expect(group.getByRole("radio", { name: "This computer's default" })).toBeChecked();
+    await expect(group.getByRole("radio", { name: "This machine's default" })).toBeChecked();
     await expect(group).toContainText("Open uses Ghostty: the first one found.");
     try {
       await choose(group, "kitty");
@@ -130,7 +130,7 @@ test.describe("[A7.3.12.m5-11.e2e.terminal] Open's terminal: which one and why, 
       await expect(terminal(page).getByRole("radio", { name: "kitty" })).toBeChecked();
       await page.screenshot({ path: test.info().outputPath("terminal-kitty-1440.png") });
     } finally {
-      await choose(terminal(page), "This computer's default");
+      await choose(terminal(page), "This machine's default");
     }
     await expect(terminal(page)).toContainText("Open uses Ghostty: the first one found.");
   });

@@ -22,7 +22,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { FOLDER_MARKER } from "@tasks/brand";
-import { FolderMarkers, MARKER_OWNERS, readMarker, type MarkerOwner } from "./marker.ts";
+import {
+  FolderMarkers,
+  identityFrom,
+  MARKER_OWNERS,
+  readMarker,
+  type MarkerOwner,
+} from "./marker.ts";
 
 let base = "";
 beforeAll(() => {
@@ -136,17 +142,48 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
     const { folder, markers } = fresh();
     expect(await markers.check(task, folder)).toEqual({ kind: "ok" });
     expect(await readMarker(folder)).toEqual({ state: "owners", owners: [task] });
-    // From then on, its marker going is noticed.
-    rmSync(join(folder, FOLDER_MARKER), { recursive: true });
+    // From then on, another folder made at its path is noticed.
+    renameSync(folder, `${folder}-aside`);
+    mkdirSync(folder);
     expect(await markers.check(task, folder)).toEqual({ kind: "missing" });
+  });
+
+  test("a marker gone from the very folder that was marked, as git clean -x leaves it, is put back without a question", async () => {
+    const { folder, markers } = fresh();
+    await markers.mark(project, folder);
+    rmSync(join(folder, FOLDER_MARKER), { recursive: true });
+    writeFileSync(join(folder, "build.log"), "made after the clean");
+    expect(await markers.check(project, folder)).toEqual({ kind: "ok" });
+    expect(await readMarker(folder)).toEqual({ state: "owners", owners: [project] });
+    // Moved aside with its marker gone, and an unrelated folder made at the path: that one asks.
+    rmSync(join(folder, FOLDER_MARKER), { recursive: true });
+    renameSync(folder, `${folder}-aside`);
+    mkdirSync(folder);
+    expect(await markers.check(project, folder)).toEqual({ kind: "missing" });
+  });
+
+  test("a file system that keeps no creation time or no usable file number gives no identity, so a gone marker still asks", () => {
+    const known = { dev: 7n, ino: 42n, birthtimeNs: 1_700_000_000_000_000_000n };
+    expect(identityFrom(known)).toBe("7:42:1700000000000000000");
+    expect(identityFrom({ ...known, birthtimeNs: 0n })).toBeUndefined();
+    expect(identityFrom({ ...known, ino: 0n })).toBeUndefined();
+    expect(identityFrom({ ...known, ino: -1n })).toBeUndefined();
+    expect(identityFrom({ ...known, ino: 2n ** 64n - 1n })).toBeUndefined();
   });
 
   test("what this machine marked outlives the service: a new start still knows the marker should be there", async () => {
     const { folder, markers, file } = fresh();
     await markers.mark(task, folder);
     rmSync(join(folder, FOLDER_MARKER), { recursive: true });
-    const again = new FolderMarkers({ file, home: base });
-    expect(await again.check(task, folder)).toEqual({ kind: "missing" });
+    // The same folder, after a new start: its marker is put back.
+    expect(await new FolderMarkers({ file, home: base }).check(task, folder)).toEqual({
+      kind: "ok",
+    });
+    renameSync(folder, `${folder}-aside`);
+    mkdirSync(folder);
+    expect(await new FolderMarkers({ file, home: base }).check(task, folder)).toEqual({
+      kind: "missing",
+    });
   });
 
   test("a folder that takes no marker opens as before, without the protection", async () => {
@@ -205,7 +242,7 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
     expect(await markers.check(project, folder)).toEqual({ kind: "ok" });
   });
 
-  test("a folder that moved with another keeps its marker, and its marker is still missed when gone", async () => {
+  test("a folder that moved with another keeps its marker, and an unrelated folder at its old place is missed", async () => {
     const { folder, markers } = fresh();
     const inner = join(folder, "inner");
     mkdirSync(inner);
@@ -214,9 +251,11 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
     renameSync(folder, moved);
     markers.moved(task, inner, join(moved, "inner"));
     expect(await readMarker(join(moved, "inner"))).toEqual({ state: "owners", owners: [task] });
-    // Gone before any launch looked at the new place: only the move told this machine.
+    // Gone before any launch looked at the new place: only the move told this machine, and the
+    // folder there is the one that was marked, so its marker is put back.
     rmSync(join(moved, "inner", FOLDER_MARKER), { recursive: true });
-    expect(await markers.check(task, join(moved, "inner"))).toEqual({ kind: "missing" });
+    expect(await markers.check(task, join(moved, "inner"))).toEqual({ kind: "ok" });
+    expect(await readMarker(join(moved, "inner"))).toEqual({ state: "owners", owners: [task] });
     // An undo gives the task its old place back, where an unrelated folder was made since.
     mkdirSync(inner, { recursive: true });
     expect(await markers.check(task, inner)).toEqual({ kind: "missing" });

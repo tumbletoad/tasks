@@ -7,14 +7,16 @@ import { newId, type Id } from "../src/ids.ts";
 import { openWriter } from "../src/open.ts";
 import { normaliseSourceKey, type Operation, type WriteResult } from "../src/write/request.ts";
 import { checkedDriver, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
-import { checkHistory, expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
+import { checkHistory, expectStatus, type Fixture, fixtureCopies } from "./write-helpers.ts";
 
 const temp = tempFolders("children");
+/** The fixture space, made once and copied for each test. */
+const fixture = fixtureCopies(temp.make);
 afterAll(temp.cleanup);
 
 let fx: Fixture;
 beforeEach(async () => {
-  fx = await writeFixture(temp.make());
+  fx = await fixture();
 });
 afterEach(() => {
   checkHistory(fx.reader);
