@@ -1,59 +1,53 @@
-// Today (A5 3.4): the week strip, then Focus, This week, Next and Changes, with no heading above
-// them. The sections and their membership are `todayOf` (app/views.ts), a pure function of the live
-// rows; this component hands their rows to the one list (TaskList), which draws every row and
-// keeps the list's rules: nothing moves under focus, and the expanded task stays at its place in
-// its section until it is collapsed (`holdExpanded`), its reference in the URL's `?task=`.
+// Today (A5 3.4): today's date and a few numbers about the day, then Focus, This week, Next and
+// Changes, with no heading above them. The sections and their membership are `todayOf`
+// (app/views.ts), a pure function of the live rows; this component hands their rows to the one
+// list (TaskList), which draws every row and keeps the list's rules: nothing moves under focus,
+// and the expanded task stays at its place in its section until it is collapsed (`holdExpanded`),
+// its reference in the URL's `?task=`.
 //
-// The strip is the one place the date appears (U1). Clicking a day narrows Focus and This week to
-// it (`?day=` in the URL); clicking it again, or Escape, clears that.
-import {
-  useCallback,
-  useContext,
-  useMemo,
-  useRef,
-  useSyncExternalStore,
-  type KeyboardEvent,
-} from "react";
+// The numbers count what the page each links to lists: late and due today (Search), waiting on
+// others (Waiting), and done this week (Completed). Each keeps its place and width as it changes,
+// and none is guessed: done this week shows a dash until its read answers.
+import { Link } from "@tanstack/react-router";
+import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useIntl } from "react-intl";
 import { changeLogOf } from "../app/changes.ts";
 import { classes } from "../app/css.ts";
 import {
+  dayNumbersOf,
   holdExpanded,
   isTodaySection,
-  STRIP_MARKS,
-  stripDays,
   TODAY_LABEL,
   todayOf,
-  type StripDay,
+  weekStartOf,
+  type DayNumbers,
 } from "../app/views.ts";
 import { Session } from "../context.ts";
-import { areaSlots, type Group } from "../groups.ts";
-import { useT } from "../i18n/intl.tsx";
-import { actionOf, is } from "../keys/keymap.ts";
+import type { Group } from "../groups.ts";
+import { useT, type MessageId } from "../i18n/intl.tsx";
 import { formatDay, type Clock } from "../row/dates.ts";
+import { affects } from "../store/queries.ts";
 import type { TaskRow } from "../store/rows.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
+import { countFinished, type FinishedCounts } from "./finished.ts";
 import css from "./Today.module.css";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
 
-const styles = classes(css, ["strip", "day", "weekday", "date", "marks", "mark", "plus"]);
+const styles = classes(css, ["day", "date", "numbers", "number", "value", "label", "sub"]);
 
 /** Agents' changes may touch any task, so Today announces and fades in every agent's row. */
 const ANY = (): boolean => true;
-/** The titles of a day's tasks in its tooltip. */
-const TIP_SEPARATOR = " · ";
+
+const COMPLETED = { kind: "completed" } as const;
 
 export interface TodayProps {
   /** The task the URL holds expanded. */
   readonly task?: string | undefined;
-  /** The strip's chosen day, from the URL: ignored unless it is one of the strip's days. */
-  readonly day?: string | undefined;
   readonly onExpand: (task: TaskRow | undefined, gone?: boolean) => void;
-  /** The person chose a day in the strip, or cleared it: the page puts it in the URL. */
-  readonly onDay: (day: string | undefined) => void;
 }
 
-export function TodayPage({ task, day: wantedDay, onExpand, onDay }: TodayProps) {
+export function TodayPage({ task, onExpand }: TodayProps) {
   const t = useT();
   const { live } = useContext(Session);
   const state = useLive();
@@ -64,13 +58,12 @@ export function TodayPage({ task, day: wantedDay, onExpand, onDay }: TodayProps)
     [state.tasks],
   );
   const clock = useClock(timed);
-  const days = useMemo(() => stripDays(clock), [clock]);
-  const day = wantedDay !== undefined && days.includes(wantedDay) ? wantedDay : undefined;
-  const slots = useMemo(() => areaSlots(state.areas.values()), [state.areas]);
   const today = useMemo(
-    () => todayOf(state.tasks.values(), clock, { day, changes, slots }),
-    [state.tasks, clock, day, changes, slots],
+    () => todayOf(state.tasks.values(), clock, { changes }),
+    [state.tasks, clock, changes],
   );
+  const numbers = useMemo(() => dayNumbersOf(state.tasks.values(), clock), [state.tasks, clock]);
+  const finished = useFinished(clock);
 
   // The sections of the rows the list hands over: the live rows and the rows in their check-off
   // hold (A5 3.12), so a checked-off task stays at its place for the hold here too.
@@ -79,7 +72,7 @@ export function TodayPage({ task, day: wantedDay, onExpand, onDay }: TodayProps)
       const sections = holdExpanded(
         tasks === state.tasks
           ? today.sections
-          : todayOf(tasks.values(), clock, { day, changes, slots }).sections,
+          : todayOf(tasks.values(), clock, { changes }).sections,
         held === undefined
           ? undefined
           : {
@@ -97,20 +90,12 @@ export function TodayPage({ task, day: wantedDay, onExpand, onDay }: TodayProps)
         sections: [{ key: section.key, tasks: section.tasks }],
       }));
     },
-    [today, state.tasks, clock, day, changes, slots],
+    [today, state.tasks, clock, changes],
   );
 
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    // Escape clears the day once nothing inside (an expanded task, an editor) has taken it.
-    if (is(event.nativeEvent, "close") && !event.defaultPrevented && day !== undefined) {
-      event.preventDefault();
-      onDay(undefined);
-    }
-  };
-
   return (
-    <div onKeyDown={onKeyDown}>
-      <Strip days={today.strip} chosen={day} clock={clock} onChoose={onDay} />
+    <div>
+      <Day clock={clock} numbers={numbers} finished={finished} />
       <TaskList
         key="today"
         view="today"
@@ -126,107 +111,122 @@ export function TodayPage({ task, day: wantedDay, onExpand, onDay }: TodayProps)
   );
 }
 
-function Strip({
-  days,
-  chosen,
+/**
+ * The tasks completed today and this week, read again when a task is finished or reopened, after
+ * a fresh snapshot, and when the day changes. Only the newest read applies; until the first answer
+ * there is none, and a failed read keeps the last answer.
+ */
+function useFinished(clock: Clock): FinishedCounts | undefined {
+  const { api, live } = useContext(Session);
+  const [counts, setCounts] = useState<FinishedCounts | undefined>(undefined);
+  const { today, timeZone } = clock;
+  useEffect(() => {
+    let alive = true;
+    let asked = 0;
+    const read = () => {
+      asked += 1;
+      const mine = asked;
+      countFinished((input) => api.client.task.finished(input), weekStartOf(today), today, timeZone)
+        .then((found) => {
+          if (alive && mine === asked) setCounts(found);
+        })
+        .catch(() => undefined);
+    };
+    read();
+    const stop = live.store.onChanges(({ changes, reset }) => {
+      if (reset || changes.some((change) => affects(COMPLETED, change))) read();
+    });
+    return () => {
+      alive = false;
+      stop();
+    };
+  }, [api, live, today, timeZone]);
+  return counts;
+}
+
+/** Today's date, then the day's numbers, each a link to the page that lists what it counts. */
+function Day({
   clock,
-  onChoose,
+  numbers,
+  finished,
 }: {
-  readonly days: readonly StripDay[];
-  readonly chosen: string | undefined;
   readonly clock: Clock;
-  readonly onChoose: (date: string | undefined) => void;
+  readonly numbers: DayNumbers;
+  readonly finished: FinishedCounts | undefined;
 }) {
   const t = useT();
-  const cells = useRef<(HTMLButtonElement | null)[]>([]);
-  // One cell in the tab order: the chosen day, else today. The arrows move between the cells.
-  const stop = chosen ?? days[0]?.date;
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const at = cells.current.findIndex((cell) => cell === event.target);
-    if (at < 0) return;
-    const action = actionOf(event.nativeEvent, "strip", true);
-    if (action !== "day" && action !== "day-ends") return;
-    const rtl = getComputedStyle(event.currentTarget).direction === "rtl";
-    const forward = (event.key === "ArrowRight") !== rtl;
-    const to =
-      action === "day-ends"
-        ? event.key === "Home"
-          ? 0
-          : days.length - 1
-        : forward
-          ? at + 1
-          : at - 1;
-    event.preventDefault();
-    cells.current[Math.max(0, Math.min(days.length - 1, to))]?.focus();
+  const intl = useIntl();
+  const { live } = useContext(Session);
+  const space = live.spaceId ?? "";
+  const date = t("row.fullDate", {
+    weekday: formatDay(clock.today, clock.locale, { weekday: "long" }),
+    day: Number(clock.today.slice(8, 10)),
+    month: formatDay(clock.today, clock.locale, { month: "long" }),
+  });
+  /** A number's figure: a dash while it is not known yet. */
+  const figure = (n: number | undefined, more = false) =>
+    n === undefined ? DASH : more ? t("today.atLeast", { n }) : intl.formatNumber(n);
+  const item = (
+    kind: string,
+    label: MessageId,
+    n: number | undefined,
+    to: { readonly q: string } | { readonly view: "waiting" | "completed" },
+    more = false,
+    sub?: string,
+  ) => {
+    const shown = figure(n, more);
+    const inner = (
+      <>
+        <span className={styles.value} data-zero={n === 0 || undefined}>
+          {shown}
+          {sub === undefined ? null : <span className={styles.sub}>{sub}</span>}
+        </span>
+        <span className={styles.label}>{t(label)}</span>
+      </>
+    );
+    const common = {
+      className: styles.number,
+      "data-kind": kind,
+      "aria-label":
+        sub === undefined
+          ? t("today.numberName", { label: t(label), value: shown })
+          : t("today.numberNameSub", { label: t(label), value: shown, sub }),
+    };
+    return (
+      <li key={kind}>
+        {"q" in to ? (
+          <Link to="/s/$space/search" params={{ space }} search={{ q: to.q }} {...common}>
+            {inner}
+          </Link>
+        ) : (
+          <Link to="/s/$space/$view" params={{ space, view: to.view }} {...common}>
+            {inner}
+          </Link>
+        )}
+      </li>
+    );
   };
   return (
-    <div className={styles.strip} role="group" aria-label={t("today.strip")} onKeyDown={onKeyDown}>
-      {days.map((cell, i) => {
-        const p = {
-          weekday: formatDay(cell.date, clock.locale, { weekday: "long" }),
-          weekdayShort: formatDay(cell.date, clock.locale, { weekday: "short" }),
-          day: Number(cell.date.slice(8, 10)),
-          month: formatDay(cell.date, clock.locale, { month: "long" }),
-          monthShort: formatDay(cell.date, clock.locale, { month: "short" }),
-        };
-        const titles = cell.marks.map((mark) => mark.title).join(TIP_SEPARATOR);
-        const tipId = `strip-${cell.date}`;
-        return (
-          <button
-            key={cell.date}
-            ref={(element) => {
-              cells.current[i] = element;
-            }}
-            type="button"
-            className={styles.day}
-            data-date={cell.date}
-            aria-label={t("row.fullDate", { weekday: p.weekday, day: p.day, month: p.month })}
-            aria-current={cell.today ? "date" : undefined}
-            aria-pressed={chosen === cell.date}
-            aria-describedby={titles === "" ? undefined : tipId}
-            data-tip={titles === "" ? undefined : titles}
-            tabIndex={cell.date === stop ? 0 : -1}
-            onClick={() => {
-              onChoose(chosen === cell.date ? undefined : cell.date);
-            }}
-          >
-            <span className={styles.weekday} aria-hidden="true">
-              {p.weekdayShort}
-            </span>
-            <span className={styles.date} aria-hidden="true">
-              {cell.today ? t("row.date", { day: p.day, month: p.monthShort }) : p.day}
-            </span>
-            <span className={styles.marks} aria-hidden="true">
-              {cell.marks.slice(0, STRIP_MARKS).map((mark, m) => (
-                <span
-                  key={`${mark.task}:${String(m)}`}
-                  className={
-                    mark.slot === undefined
-                      ? styles.mark
-                      : `${styles.mark} slot-${String(mark.slot)}`
-                  }
-                  data-ring={mark.ring}
-                />
-              ))}
-              {cell.marks.length > STRIP_MARKS ? <PlusMark /> : null}
-            </span>
-            {titles === "" ? null : (
-              <span id={tipId} hidden>
-                {titles}
-              </span>
-            )}
-          </button>
-        );
-      })}
+    <div className={styles.day} data-part="day">
+      <p className={styles.date} data-part="date">
+        {date}
+      </p>
+      <ul className={styles.numbers} aria-label={t("today.numbers")}>
+        {item("late", "today.late", numbers.late, { q: "is:overdue" })}
+        {item("due", "today.dueToday", numbers.dueToday, { q: "due:today" })}
+        {item("waiting", "today.waiting", numbers.waiting, { view: "waiting" })}
+        {item(
+          "done",
+          "today.doneWeek",
+          finished?.week,
+          { view: "completed" },
+          finished?.more ?? false,
+          finished === undefined ? undefined : t("today.doneToday", { n: finished.today }),
+        )}
+      </ul>
     </div>
   );
 }
 
-/** The small plus after four marks: more tasks that day than the strip draws. */
-function PlusMark() {
-  return (
-    <svg className={styles.plus} viewBox="0 0 8 8" aria-hidden="true" focusable="false">
-      <path d="M4 1v6M1 4h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
+/** What a number shows until it is known. */
+const DASH = "–";

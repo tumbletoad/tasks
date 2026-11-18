@@ -1,22 +1,24 @@
-// Today's selection (A5 3.4) as plain data: the fixture example of A5 3.4, the orders, the day
-// filter, the Next limit, Changes, and a property over generated tasks that no task is in two
-// sections and every selected task meets its section's rule. Fixture data only.
+// Today's selection (A5 3.4) as plain data: the fixture example of A5 3.4, the orders, the Next
+// limit, Changes, the day's numbers, and a property over generated tasks that no task is in two
+// sections, every selected task meets its section's rule and the numbers count what they say.
+// Fixture data only.
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import type { TaskRow } from "../live.ts";
 import { dateOf, dayNumber, localDate, type Clock } from "../row/dates.ts";
 import {
   CHANGES_LIMIT,
+  dayNumbersOf,
   dueDayOf,
   holdExpanded,
   inFocus,
   inNext,
   inWeek,
   isStarred,
-  onDay,
   todayOf,
   type TaskChange,
   type TodaySection,
+  weekStartOf,
 } from "./views.ts";
 
 /** Thursday 12 November 2026, 10:00 in Amsterdam (A5's fixture day). */
@@ -47,7 +49,7 @@ const task = (patch: Partial<TaskRow>): TaskRow => {
 const titles = (today: ReturnType<typeof todayOf>) =>
   Object.fromEntries(today.sections.map((s) => [s.key, s.tasks.map((t) => t.title)]));
 
-describe("[A5.3.4.web.today] Today's sections and week strip", () => {
+describe("[A5.3.4.web.today] Today's sections and numbers", () => {
   test("the fixture example of A5 3.4", () => {
     const lumen = "ar_lumen";
     const home = "ar_home";
@@ -99,13 +101,9 @@ describe("[A5.3.4.web.today] Today's sections and week strip", () => {
       }),
       task({ title: "Call the plumber", inbox: true }),
     ];
-    const slots = new Map([
-      [lumen, 1],
-      [home, 4],
-    ]);
     const review = tasks.find((t) => t.status === "review");
     const changes: TaskChange[] = [{ task: review?.id ?? "", actor: "Claude Code", at: CLOCK.now }];
-    const today = todayOf(tasks, CLOCK, { slots, changes });
+    const today = todayOf(tasks, CLOCK, { changes });
     expect(titles(today)).toEqual({
       focus: ["Fix appointment time zones", "Investigate checkout crash on Android 15"],
       week: [
@@ -118,29 +116,8 @@ describe("[A5.3.4.web.today] Today's sections and week strip", () => {
       next: ["Book the moving van", "File the Q4 VAT return", "Release 1.9 with structured fields"],
       changes: ["Agent finished the docs migration, check it"],
     });
-    // The strip: seven days, today first; area-coloured marks, a ring for a follow-up day.
-    expect(today.strip.map((d) => d.date)).toEqual([
-      "2026-11-12",
-      "2026-11-13",
-      "2026-11-14",
-      "2026-11-15",
-      "2026-11-16",
-      "2026-11-17",
-      "2026-11-18",
-    ]);
-    expect(today.strip.map((d) => d.today)).toEqual([
-      true,
-      false,
-      false,
-      false,
-      false,
-      false,
-      false,
-    ]);
-    const marks = today.strip.map((d) =>
-      d.marks.map((m) => (m.ring ? "ring" : `a${String(m.slot)}`)),
-    );
-    expect(marks).toEqual([[], ["a1"], ["a1", "a4"], [], ["ring"], ["a1", "a4"], []]);
+    // Nothing is late or due today in the fixture; one task waits on someone.
+    expect(dayNumbersOf(tasks, CLOCK)).toEqual({ late: 0, dueToday: 0, waiting: 1 });
   });
 
   test("Focus: late first by oldest due, then due today, then priority, due date and age", () => {
@@ -227,28 +204,24 @@ describe("[A5.3.4.web.today] Today's sections and week strip", () => {
     expect(titles(todayOf(tasks, CLOCK, { nextLimit: 0 })).next).toBeUndefined();
   });
 
-  test("the strip's day narrows Focus and This week to that day, and Next stays", () => {
+  test("the day's numbers: late by its due day, due today at any time of it, and what Waiting lists", () => {
     const tasks = [
-      task({ title: "starred undated", focus_on: "2026-11-12" }),
-      task({ title: "due today", due_date: "2026-11-12" }),
-      task({ title: "due Sat", due_date: "2026-11-14" }),
-      task({ title: "planned Sat", planned_for: "2026-11-14", due_date: "2026-11-17" }),
-      task({ title: "starred due Sat", focus_on: "2026-11-12", due_date: "2026-11-14" }),
-      task({ title: "open undated", priority: 2 }),
+      task({ title: "late", due_date: "2026-11-10" }),
+      task({ title: "late backlog", due_date: "2026-11-01", status: "backlog" }),
+      // Its time has passed, but it is today's: Search's due:today finds it, not is:overdue.
+      task({ title: "today at 09:30", due_at: Date.UTC(2026, 10, 12, 8, 30) }),
+      task({ title: "today", due_date: "2026-11-12", inbox: true }),
+      task({ title: "tomorrow", due_date: "2026-11-13" }),
+      task({ title: "waiting", status: "waiting" }),
+      task({ title: "waiting in the Inbox", status: "waiting", inbox: true }),
+      task({ title: "done late", due_date: "2026-11-01", lifecycle: "completed" }),
     ];
-    expect(titles(todayOf(tasks, CLOCK, { day: "2026-11-14" }))).toEqual({
-      focus: ["starred due Sat"],
-      week: ["due Sat", "planned Sat"],
-      next: ["open undated"],
-    });
-    expect(titles(todayOf(tasks, CLOCK, { day: "2026-11-12" }))).toEqual({
-      focus: ["due today"],
-      next: ["open undated"],
-    });
-    // A task the filter hides keeps its section: it never drops into Next.
-    expect(titles(todayOf(tasks, CLOCK, { day: "2026-11-18" }))).toEqual({
-      next: ["open undated"],
-    });
+    expect(dayNumbersOf(tasks, CLOCK)).toEqual({ late: 2, dueToday: 2, waiting: 1 });
+    // The week starts on Monday: Thursday 12 November's is the 9th, a Monday's is itself.
+    expect(weekStartOf("2026-11-12")).toBe("2026-11-09");
+    expect(weekStartOf("2026-11-09")).toBe("2026-11-09");
+    expect(weekStartOf("2026-11-15")).toBe("2026-11-09");
+    expect(weekStartOf("2026-01-01")).toBe("2025-12-29");
   });
 
   test("Changes: agents' changes to tasks no section above holds, newest first, five at most", () => {
@@ -413,7 +386,6 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
         fc.array(fc.record({ i: fc.nat(60), ago: fc.integer({ min: 0, max: 9 * 86_400_000 }) }), {
           maxLength: 20,
         }),
-        maybe(fc.integer({ min: 0, max: 6 })),
         fc.integer({ min: 0, max: 6 }),
         maybe(
           fc.record({
@@ -422,12 +394,10 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
             index: fc.nat(10),
           }),
         ),
-        (CLOCK, drafts, changeDrafts, dayDraft, nextLimit, holdDraft) => {
+        (CLOCK, drafts, changeDrafts, nextLimit, holdDraft) => {
           const base = dayNumber(CLOCK.today) ?? 0;
-          const DAYS = Array.from({ length: 21 }, (_, i) => dateOf(base - 10 + i));
           const dayAt = (offset: number | undefined) =>
             offset === undefined ? undefined : dateOf(base + offset);
-          const day = dayAt(dayDraft);
           const tasks = drafts.map((d, i) => {
             const row = {
               id: `ts_${String(i).padStart(3, "0")}`,
@@ -452,7 +422,7 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
               at: CLOCK.now - c.ago,
             }))
             .sort((a, b) => b.at - a.at);
-          const today = todayOf(tasks, CLOCK, { day, nextLimit, changes });
+          const today = todayOf(tasks, CLOCK, { nextLimit, changes });
 
           const seen = new Map<string, TodaySection>();
           for (const section of today.sections) {
@@ -469,14 +439,13 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
           const sectionOf = (key: TodaySection) =>
             today.sections.find((s) => s.key === key)?.tasks ?? [];
           // Every task against the oracle: Focus and This week hold exactly what their rule
-          // selects (narrowed by the chosen day), Next only its candidates, Changes nothing above.
+          // selects, Next only its candidates, Changes nothing above.
           const candidates = tasks.filter((t) => ruleOf(t, CLOCK) === "next");
           for (const t of tasks) {
             const rule = ruleOf(t, CLOCK);
             const shown = seen.get(t.id);
             if (rule === "focus" || rule === "week") {
-              const visible = day === undefined || daysOf(t, CLOCK).includes(day);
-              expect(shown, `${t.id} by rule ${rule}`).toBe(visible ? rule : undefined);
+              expect(shown, `${t.id} by rule ${rule}`).toBe(rule);
             } else if (rule === "next") {
               expect([undefined, "next", "changes"]).toContain(shown);
             } else if (t.lifecycle === "active") {
@@ -502,29 +471,16 @@ describe("[A5.3.4.web.today-disjoint] property: no task in two sections", () => 
             if (isStarred(t, CLOCK.today)) expect(rule).toBe("focus");
             const due = dueDayOf(t, CLOCK);
             if (due !== undefined) expect(daysOf(t, CLOCK)[0]).toBe(due);
-            if (day !== undefined)
-              expect(onDay(t, day, CLOCK)).toBe(daysOf(t, CLOCK).includes(day));
           }
-          // The strip: seven days from today; its marks are exactly the Focus and This week
-          // tasks' days in it, a task's planned day only when it is not its due day.
-          expect(today.strip.map((d) => d.date)).toEqual(DAYS.slice(10, 17));
-          expect(today.strip.map((d) => d.today)).toEqual([
-            true,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-          ]);
-          for (const cell of today.strip) {
-            const want = tasks
-              .filter((t) => ruleOf(t, CLOCK) === "focus" || ruleOf(t, CLOCK) === "week")
-              .filter((t) => daysOf(t, CLOCK).includes(cell.date))
-              .map((t) => t.id)
-              .sort();
-            expect(cell.marks.map((m) => m.task).sort()).toEqual(want);
-          }
+          // The numbers count the open tasks by their due day, as Search reads it.
+          const active = tasks.filter((t) => t.lifecycle === "active");
+          const dueOf = (t: TaskRow) =>
+            t.due_at !== undefined ? localDate(t.due_at, CLOCK.timeZone) : t.due_date;
+          expect(dayNumbersOf(tasks, CLOCK)).toEqual({
+            late: active.filter((t) => (dueOf(t) ?? CLOCK.today) < CLOCK.today).length,
+            dueToday: active.filter((t) => dueOf(t) === CLOCK.today).length,
+            waiting: active.filter((t) => t.status === "waiting" && !t.inbox).length,
+          });
           // Holding the expanded task keeps every section disjoint and puts it where it was.
           if (holdDraft !== undefined) {
             const heldTask = tasks[holdDraft.i];

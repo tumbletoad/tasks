@@ -195,8 +195,6 @@ test.describe("[A7.3.12.m5-11.e2e.keys] The keys: each where it works, never whe
     for (const heading of ["Anywhere", "On a task", "In the top field"]) {
       await expect(sheet(page).getByRole("heading", { name: heading })).toBeVisible();
     }
-    // The week strip is Today's: not in the Inbox's sheet.
-    await expect(sheet(page).getByRole("heading", { name: "In the week" })).toHaveCount(0);
     await expect(sheet(page).locator('[data-action="new"]')).toHaveText("n");
     await expect(sheet(page).locator('[data-action="search"]')).toContainText("/");
     // Inside the sheet, the page's keys wait.
@@ -204,14 +202,6 @@ test.describe("[A7.3.12.m5-11.e2e.keys] The keys: each where it works, never whe
     await expect(addField(page)).not.toBeFocused();
     await page.keyboard.press("Escape");
     await expect(sheet(page)).toHaveCount(0);
-
-    // Today's sheet has the week's keys.
-    await page.goto(`${world.origin}/s/${world.mira.id}/today`);
-    await showsSpace(page, world.mira.name);
-    await rest(page);
-    await page.keyboard.press("?");
-    await expect(sheet(page).getByRole("heading", { name: "In the week" })).toBeVisible();
-    await page.keyboard.press("Escape");
   });
 
   test("with single-letter keys off, no single key fires, chords still do, and the sheet says so", async ({

@@ -16,10 +16,10 @@ import {
   type KeyScope,
 } from "./keymap.ts";
 
-const SCOPES: readonly KeyScope[] = ["page", "list", "strip", "field", "composer"];
+const SCOPES: readonly KeyScope[] = ["page", "list", "field", "composer"];
 const ACTIONS = KEYMAP as readonly KeyAction[];
 
-/** Focus is in one of list, strip, field and composer at a time; the page's keys with each. */
+/** Focus is in one of list, field and composer at a time; the page's keys with each. */
 const together = (a: KeyScope, b: KeyScope): boolean => a === b || a === "page" || b === "page";
 
 /** The key press that types `binding`, on `target`. */
@@ -195,7 +195,6 @@ describe("[A7.3.12.m5-11.keymap] one keymap: no key does two things, and single 
   test("the sheet lists what works: without single keys, an action keeps only its other keys", () => {
     const on = actionsIn(["page", "list"], true).map((a) => a.id);
     expect(on).toEqual(expect.arrayContaining(["new", "search", "sheet", "next", "rename"]));
-    expect(on).not.toContain("day");
     const off = actionsIn(["page", "list"], false);
     expect(off.map((a) => a.id)).not.toContain("new");
     expect(off.map((a) => a.id)).not.toContain("next-group");
