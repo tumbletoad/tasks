@@ -79,6 +79,11 @@ export interface World {
   terminal(): TerminalCall[];
   /** The cases the next runs of the task `ref` play, in order (a world with runs). */
   codex(ref: string, cases: readonly FakeCodexCase[]): void;
+  /**
+   * The cases still left for the task `ref`: a run's fake Codex takes its case once its program
+   * runs, which can be after the run's record says it runs.
+   */
+  codexLeft(ref: string): FakeCodexCase[];
   /** An agent logs on a task, through the service's request path as an agent does. */
   agentLog(space: string, task: string, text: string): Promise<void>;
   /**
@@ -328,6 +333,8 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         known[task] = [...next];
         writeFileSync(cases, JSON.stringify(known));
       },
+      codexLeft: (task) =>
+        (JSON.parse(readFileSync(cases, "utf8")) as Record<string, FakeCodexCase[]>)[task] ?? [],
       terminal: () =>
         readFileSync(record, "utf8")
           .split("\n")

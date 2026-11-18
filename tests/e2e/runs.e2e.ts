@@ -188,6 +188,8 @@ test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a sec
       "Waiting to start: this task's other run ends first.",
       { timeout: SLOW_MS },
     );
+    // The first run's Codex has taken its case: the next is the queued run's.
+    await expect.poll(() => world.codexLeft(ref), { timeout: SLOW_MS }).toEqual(["answer"]);
     await runsOf(page, ref).first().getByRole("button", { name: /^Stop/u }).click();
     await expect(stateOf(queued)).toContainText("Done.", { timeout: SLOW_MS });
     await expect(queued.locator('[data-part="run-said"]')).toContainText(
@@ -316,6 +318,7 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
     await expect(stateOf(runsOf(page, working).first())).toContainText("is working on it", {
       timeout: SLOW_MS,
     });
+    await expect.poll(() => world.codexLeft(working), { timeout: SLOW_MS }).toEqual(["answer"]);
     await composerOf(page, working).fill("Then summarise what changed");
     await runButton(page, working).click();
     await expect(stateOf(runsOf(page, working).nth(1))).toContainText("Waiting to start");
