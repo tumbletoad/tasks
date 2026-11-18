@@ -301,7 +301,7 @@ test.describe("[A7.3.12.m5-14.e2e.open-refused] Open refused on its folder offer
       const row = page.locator(`li[data-task="${first}"]`);
       const before = world.terminal().length;
       await row.locator('[data-part="tile"]').click();
-      await expect(toast(page)).toContainText("Folder not found on this machine");
+      await expect(toast(page)).toContainText("was not found on this machine");
       expect(world.terminal()).toHaveLength(before);
       await expect(toastAction(page)).toHaveText("Choose another folder");
       await toastAction(page).click();
