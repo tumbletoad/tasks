@@ -95,12 +95,69 @@
 }
 
 .foot {
+  display: flex;
+  gap: 4px;
   margin-block-start: auto;
   padding-block-start: 20px;
 }
 
+/* An area's New project: over the end of its row, shown while the row has the pointer or focus. */
+.area {
+  position: relative;
+}
+
+.add {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--k-raised);
+  color: var(--k-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--k-fast) var(--k-ease);
+}
+
+.add svg {
+  width: 14px;
+  height: 14px;
+}
+
+.area > .item:hover + .add,
+.add[data-hovered],
+.add[data-focus-visible] {
+  opacity: 1;
+}
+
+.add[data-hovered] {
+  color: var(--k-text);
+}
+
+.add[data-focus-visible] {
+  outline: 2px solid var(--k-focus);
+  outline-offset: 1px;
+}
+
+/* A touch screen has no hover: the way stays in sight. */
+@media (hover: none) {
+  .add {
+    opacity: 1;
+    background: transparent;
+  }
+}
+
 .gear {
   display: inline-grid;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   place-items: center;
   width: 32px;
   height: 32px;
@@ -112,6 +169,7 @@
 }
 
 .gear:hover,
+.gear[data-focus-visible],
 .gear[aria-current="page"] {
   background: var(--k-hover);
   color: var(--k-text);

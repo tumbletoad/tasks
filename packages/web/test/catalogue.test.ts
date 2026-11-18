@@ -99,6 +99,7 @@ const SAMPLE = {
   of: "project",
   owners: "the project Billing",
   repo: "portal-web",
+  names: "M-14, Billing",
   limit: "wall",
   opened: "Opened in Ghostty, the desktop's default",
   ran: "2 min",
