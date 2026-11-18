@@ -39,11 +39,11 @@ export const WS_TICKET_PATH = "/api/v1/ws-ticket";
 export const WS_PATH = "/api/v1/ws";
 export const OP_PREFIX = "/api/v1/op/";
 /**
- * The page's launch receipts and a task's folder in the file manager (launches.ts): `list` and
- * `folder`. Open is the registry's `launch.open`.
+ * The page's launch receipts, runs, and a task's folder in the file manager (launches.ts). Open is
+ * the registry's `launch.open`.
  */
 export const LAUNCH_PREFIX = "/api/v1/launch/";
-export const LAUNCH_ACTIONS: readonly string[] = ["list", "folder"];
+export const LAUNCH_ACTIONS: readonly string[] = ["list", "run", "runs", "stop", "folder"];
 /**
  * The page's space switcher: this machine's spaces, Make default, and New space (a name's
  * proposal, then the space) and Open folder.

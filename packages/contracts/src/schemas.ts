@@ -318,7 +318,8 @@ const Count = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
 /**
  * A task's compact row: the change feed's form, which the page's lists draw. A column that is null
  * in the space is left out. It carries no long text (context, outcome, notes), only what a row
- * shows of its children: its first three sources, how many more, and where it opens here.
+ * shows of its children: its first three sources, how many more, where it opens here, and its
+ * newest background run while it works or needs the person.
  */
 export const CompactTaskRow = z.strictObject({
   id: TaskId,
@@ -373,6 +374,15 @@ export const CompactTaskRow = z.strictObject({
       }),
     ])
     .describe("Where it opens on this machine: its folder there, or another machine")
+    .optional(),
+  run: z
+    .strictObject({
+      state: z
+        .enum(["working", "needs_you"])
+        .describe("Its newest background run works, or ended asking the person"),
+      instance: z.string().describe("The run's agent instance"),
+    })
+    .describe("Its newest background run, while it works or needs the person")
     .optional(),
 });
 

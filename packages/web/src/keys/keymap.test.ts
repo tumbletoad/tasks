@@ -166,7 +166,7 @@ describe("[A7.3.12.m5-11.keymap] one keymap: no key does two things, and single 
     expect(actionOf(press({ key: "k", mod: true }, inside), "page", true)).toBeUndefined();
   });
 
-  test("in a task's composer: Enter saves a note, Shift+Enter is a new line, Ctrl+Enter opens, and a composition keeps its Enter", () => {
+  test("in a task's composer: Enter saves a note, Shift+Enter is a new line, Ctrl+Enter opens, Ctrl+Shift+Enter runs, and a composition keeps its Enter", () => {
     document.body.innerHTML = "<textarea></textarea>";
     const field = document.body.querySelector("textarea");
     const enter = { key: "Enter" };
@@ -180,9 +180,15 @@ describe("[A7.3.12.m5-11.keymap] one keymap: no key does two things, and single 
     expect(actionOf(press(enter, field, { metaKey: true, ctrlKey: false }), "composer", true)).toBe(
       "open-first",
     );
-    // Ctrl+Shift+Enter is kept for Run: today it is nothing.
+    expect(actionOf(press({ key: "Enter", mod: true, shift: true }, field), "composer", true)).toBe(
+      "run-first",
+    );
     expect(
-      actionOf(press({ key: "Enter", mod: true, shift: true }, field), "composer", true),
+      actionOf(
+        press({ key: "Enter", mod: true, shift: true }, field, { isComposing: true }),
+        "composer",
+        true,
+      ),
     ).toBeUndefined();
     // The Enter that ends an input method's composition is the composition's.
     expect(actionOf(press(enter, field, { isComposing: true }), "composer", true)).toBeUndefined();

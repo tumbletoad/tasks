@@ -17,9 +17,22 @@ function built(): string {
 
 export const test = base.extend<
   object,
-  { world: World; bulk: World; finished: World; large: World }
+  { world: World; bulk: World; finished: World; runs: World; large: World }
 >({
-  // A fourth, started only by the tests that use it: Mira grown to the size of a space in use.
+  // A fourth, started only by the tests that use it: the fake Codex can run tasks there too.
+  runs: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const world = await startWorld(built(), { runs: true });
+      try {
+        await use(world);
+      } finally {
+        await world.close();
+      }
+    },
+    { scope: "worker", timeout: 240_000 },
+  ],
+  // A fifth, started only by the tests that use it: Mira grown to the size of a space in use.
   large: [
     // eslint-disable-next-line no-empty-pattern
     async ({}, use) => {
