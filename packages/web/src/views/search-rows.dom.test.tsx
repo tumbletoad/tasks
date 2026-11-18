@@ -9,7 +9,7 @@ import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
-import type { TaskRow } from "../store/rows.ts";
+import { withTaskRow, type TaskRow } from "../store/rows.ts";
 import { FakeFrames } from "../../test/fake-frames.ts";
 import { searchGroups, type FoundRow } from "./search.ts";
 import { TaskList } from "./TaskList.tsx";
@@ -84,6 +84,11 @@ const open = [found(1, { due_date: "2026-11-20" })];
 const finished = [
   found(2, { lifecycle: "completed", completed_on: "2026-11-10" }),
   found(3, { lifecycle: "archived", completed_on: "2026-11-12" }),
+  // Reopened since the search found it: it keeps its place until a refresh, as an open task.
+  withTaskRow(found(4, { lifecycle: "completed", completed_on: "2026-11-11" }), {
+    ...found(4, {}),
+    version: 2,
+  }),
 ];
 
 /** What a row's columns say: its date column's tip, and whether priority and effort show. */
@@ -106,5 +111,8 @@ describe("[A5.3.13.web.search-finished] a search's Completed rows look as they d
     expect(columns("t_00003")).toMatchObject({ tip: "Dropped Thursday 12 November" });
     expect(columns("t_00001")).toMatchObject({ priority: true, effort: true });
     expect(columns("t_00001").tip).not.toMatch(/Completed|Dropped/);
+    expect(columns("t_00004")).toMatchObject({ priority: true, effort: true });
+    expect(columns("t_00004").tip ?? "").not.toMatch(/Completed|Dropped/);
+    expect(finished[2]).not.toHaveProperty("completed_on");
   });
 });

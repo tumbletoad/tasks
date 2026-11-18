@@ -117,9 +117,9 @@ const TASK_COLUMNS: ReadonlySet<string> = new Set([
 /**
  * A row a paged query shows, brought up to a task's post-change compact row from the feed. The
  * compact row leaves out what is null, so each task column is taken from it or removed; what else
- * the shown row carries (a search snippet) stays. Its `ending` stays only while the task is finished
- * the same way: a reopen or a new wrap-up makes it an earlier finish's, which the feed cannot
- * replace. A row at a newer version than the feed's stays as it is: the feed brings the newer change
+ * the shown row carries (a search snippet) stays. Its `ending` and `completed_on` stay only while
+ * the task is finished the same way: a reopen or a new wrap-up makes them an earlier finish's, which
+ * the feed cannot replace. A row at a newer version than the feed's stays as it is: the feed brings the newer change
  * too.
  */
 export function withTaskRow<R>(shown: R, after: Readonly<Record<string, unknown>>): R {
@@ -129,7 +129,8 @@ export function withTaskRow<R>(shown: R, after: Readonly<Record<string, unknown>
   if (typeof have === "number" && typeof next === "number" && have >= next) return shown;
   const same = row["lifecycle"] === after["lifecycle"] && row["wrap_state"] === after["wrap_state"];
   const kept = Object.entries(row).filter(
-    ([column]) => !TASK_COLUMNS.has(column) && (same || column !== "ending"),
+    ([column]) =>
+      !TASK_COLUMNS.has(column) && (same || (column !== "ending" && column !== "completed_on")),
   );
   return { ...Object.fromEntries(kept), ...after } as R;
 }

@@ -618,7 +618,7 @@ export function TaskList({
       project={item.project}
       instances={state.instances}
       receipts={receipts.get(item.key) ?? NO_RECEIPTS}
-      ctx={item.finished ? finishedCtx : ctx}
+      ctx={item.finished && item.task.lifecycle !== "active" ? finishedCtx : ctx}
       expanded={expanded === item.key}
       current={place.current}
       fresh={fresh.has(item.key)}
