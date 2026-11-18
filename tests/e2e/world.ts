@@ -17,6 +17,7 @@ import {
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
+import { startTimes } from "../../packages/launch/src/process.ts";
 import { openSpace } from "../../packages/storage/src/index.ts";
 import {
   registerSpaces,
@@ -425,9 +426,27 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         }
       },
       close: async () => {
-        // Every held agent ends with the world.
+        // The shims are detached, as a terminal's are, and work in the world's folders. Every held
+        // agent ends, and each shim reports its agent's end while the service still runs, and goes.
         for (const name of readdirSync(holds)) {
           if (!name.endsWith(".pids")) rmSync(join(holds, name), { force: true });
+        }
+        // A shim is known by its PID and start time, so a PID the OS gave to another process since
+        // is not waited for.
+        const shims = readFileSync(record, "utf8")
+          .split("\n")
+          .filter((line) => line !== "")
+          .map((line) => JSON.parse(line) as TerminalCall)
+          .flatMap((call) =>
+            call.pid === undefined || call.start === undefined
+              ? []
+              : [{ pid: call.pid, start: call.start }],
+          );
+        const until = Date.now() + SLOW_MS;
+        while (shims.length > 0 && Date.now() < until) {
+          const live = await startTimes(shims.map((s) => s.pid)).catch(() => undefined);
+          if (live !== undefined && !shims.some((s) => live.get(s.pid) === s.start)) break;
+          await new Promise((resolve) => setTimeout(resolve, 250));
         }
         await stop().catch(() => services.stopAll());
         removeRuntimeDir(json);

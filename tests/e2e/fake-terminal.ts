@@ -13,6 +13,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CLI_NAME } from "../../packages/brand/src/index.ts";
+import { startTimes } from "../../packages/launch/src/process.ts";
 import type { TerminalStart } from "../../packages/service/src/launch/index.ts";
 import { instanceToml } from "../../packages/service/test/harness.ts";
 import { FAKE_CLI_AGENT } from "../../packages/testkit/src/index.ts";
@@ -58,11 +59,13 @@ export interface TerminalCall {
   readonly argv: readonly string[];
   /** The shim's process, which a test may end as a closed window or a kill would. */
   readonly pid?: number;
+  /** Its start time as the OS records it: the PID names this process only while they match. */
+  readonly start?: string;
 }
 
 /** The service's terminal seam: records `tasks shim <ticket>` and runs it in the folder. */
 export function fakeTerminal(record: string): TerminalStart {
-  return ({ intent, ticket, folder }) => {
+  return async ({ intent, ticket, folder }) => {
     // Detached, as a terminal's window is: it outlives a service that stops (on Windows a child
     // that is not ends with the service), and on POSIX it is a process group of its own, which a
     // test hangs up as a closed window does.
@@ -73,15 +76,19 @@ export function fakeTerminal(record: string): TerminalStart {
       windowsHide: true,
       detached: true,
     });
+    shim.on("error", () => undefined);
+    shim.unref();
+    const { pid } = shim;
+    const start =
+      pid === undefined ? undefined : (await startTimes([pid]).catch(() => undefined))?.get(pid);
     const call: TerminalCall = {
       launch: intent.id,
       argv: [CLI_NAME, "shim", ticket],
-      ...(shim.pid === undefined ? {} : { pid: shim.pid }),
+      ...(pid === undefined ? {} : { pid }),
+      ...(start === undefined ? {} : { start }),
     };
     appendFileSync(record, `${JSON.stringify(call)}\n`);
-    shim.on("error", () => undefined);
-    shim.unref();
     // A handoff: the window would open later, and the claim window decides.
-    return Promise.resolve({ kind: "accepted" });
+    return { kind: "accepted" };
   };
 }
