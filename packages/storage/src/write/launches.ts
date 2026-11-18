@@ -47,12 +47,12 @@ export const LAUNCH_SQL = {
   /**
    * The intent in flight for a task and instance on a machine, newest first (A4 3.9.1): in
    * Dispatching, or clicked less than 5 s from now on either side, on the wall clock that
-   * `detail.at.prepared` records. A clock that stepped back neither keeps an old click young
-   * nor makes a new one old.
+   * `detail.at.prepared` records, unless it failed already: a click after a failure opens again.
+   * A clock that stepped back neither keeps an old click young nor makes a new one old.
    */
   focus:
     "SELECT id FROM launches WHERE task_id = $task AND instance_id = $instance " +
-    "AND machine_id = $machine " +
+    "AND machine_id = $machine AND state <> 'failed' " +
     "AND (state = 'dispatching' OR (json_extract(detail, '$.at.prepared') > $since " +
     "AND json_extract(detail, '$.at.prepared') < $until)) " +
     "ORDER BY created_at DESC, id DESC LIMIT 1",
