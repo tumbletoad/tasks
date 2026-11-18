@@ -72,6 +72,11 @@ export interface World {
    * world, and a task whose session still runs shows a Running tile.
    */
   readonly spare: FixtureTask;
+  /**
+   * The reference of Mira's task with a Confirmed terminal launch whose record names no end, as
+   * builds before this one recorded every session.
+   */
+  readonly launched: string;
   /** Mira's portal project's folder, as the space stores it: a temporary folder that exists. */
   readonly portal: string;
   /** The `tasks open` URL of a fresh code, landing on `to`. */
@@ -85,12 +90,20 @@ export interface World {
   terminal(): TerminalCall[];
   /** The fake agent reads no request on this task, as an agent without the tools or a shell. */
   leaveUnread(ref: string): void;
-  /** The fake agents started on this task from now on run until `release`. */
-  hold(ref: string): void;
+  /**
+   * The fake agents started on this task from now on run until `release`, or with `exit` end at
+   * once with that code, as an agent that cannot start.
+   */
+  hold(ref: string, exit?: number): void;
   /** The held agents of this task end, as an agent the person quits. */
   release(ref: string): void;
   /** The PIDs of the held agents started on this task, oldest first. */
   heldAgents(ref: string): number[];
+  /**
+   * Stops the service, runs `whileStopped`, and starts it again on the same home: the page's
+   * origin changes with its port, so a page signs in again.
+   */
+  restart(whileStopped?: () => Promise<void>): Promise<void>;
   /** An agent logs on a task, through the service's request path as an agent does. */
   agentLog(space: string, task: string, text: string): Promise<void>;
   /**
@@ -134,6 +147,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     let machine: string;
     let task: FixtureTask;
     let spare: FixtureTask;
+    let launched: string;
     try {
       machine = opened.space.authority.machineId;
       const rows = opened.conn
@@ -154,6 +168,14 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       }
       task = first;
       spare = second;
+      const confirmed = opened.conn
+        .prepare(
+          "SELECT t.ref AS ref FROM launches l JOIN tasks t ON t.id = l.task_id " +
+            "WHERE l.state = 'confirmed' AND l.route = 'terminal' LIMIT 1",
+        )
+        .get<{ ref: number }>();
+      if (confirmed === undefined) throw new Error("the fixture has no Confirmed launch");
+      launched = `${opened.space.refPrefix}-${String(confirmed.ref)}`;
     } finally {
       opened.conn.close();
     }
@@ -194,17 +216,31 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
 
     const record = join(temp.root, "terminal.jsonl");
     writeFileSync(record, "");
-    const proc = services.start(home, { script: ENTRY, env: { E2E_UI: ui, E2E_TERMINAL: record } });
-    json = await waitReady(home, proc.pid);
-    const endpoint = json.endpoint?.path;
-    const http = json["http"] as { port?: number } | null;
-    if (endpoint === undefined || typeof http?.port !== "number") {
-      throw new Error("the service reports no endpoint or UI port");
-    }
-    const origin = `http://127.0.0.1:${String(http.port)}`;
-
-    const user = await classSession(home, endpoint, "cli-interactive");
-    sessions.push(user);
+    /** One life of the service: its process, its page's origin and its two sessions. */
+    const boot = async () => {
+      const proc = services.start(home, {
+        script: ENTRY,
+        env: { E2E_UI: ui, E2E_TERMINAL: record },
+      });
+      json = await waitReady(home, proc.pid);
+      const endpoint = json.endpoint?.path;
+      const http = json["http"] as { port?: number } | null;
+      if (endpoint === undefined || typeof http?.port !== "number") {
+        throw new Error("the service reports no endpoint or UI port");
+      }
+      const user = await classSession(home, endpoint, "cli-interactive");
+      sessions.push(user);
+      const agent = await classSession(home, endpoint, "cli-agent", { CLAUDECODE: "1" });
+      sessions.push(agent);
+      return { proc, origin: `http://127.0.0.1:${String(http.port)}`, user, agent };
+    };
+    let life = await boot();
+    const stop = async () => {
+      for (const s of sessions.splice(0)) s.close();
+      life.proc.send("stop");
+      await within(life.proc.exit, SLOW_MS, "the service did not stop");
+    };
+    const { user } = life;
     const created = (await user.call(
       "space/create",
       { name: "Studio", path: join(spacesRoot, "studio"), ref_prefix: "S" },
@@ -254,8 +290,6 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         { timeoutMs: SLOW_MS },
       )) as { folder: string }
     ).folder;
-    const agent = await classSession(home, endpoint, "cli-agent", { CLAUDECODE: "1" });
-    sessions.push(agent);
 
     let logs = 0;
     let ops = 0;
@@ -280,26 +314,29 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       redeems.push(Date.now());
     };
     return {
-      origin,
+      get origin() {
+        return life.origin;
+      },
       mira: { id: opened.space.spaceId, name: opened.space.name },
       studio: { id: created.space.id, name: created.space.name },
       quiet: { id: quiet.space.id, name: quiet.space.name },
       task,
       spare,
+      launched,
       portal,
       signInUrl: async (to) => {
         await roomToRedeem();
-        const minted = (await user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
+        const minted = (await life.user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
           code: string;
           port: number;
         };
         return `http://127.0.0.1:${String(minted.port)}/#k=${minted.code}&to=${encodeURIComponent(to)}`;
       },
       machine: async (key, value) => {
-        const port = Number(new URL(origin).port);
+        const port = Number(new URL(life.origin).port);
         if (token === undefined) {
           await roomToRedeem();
-          const minted = (await user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
+          const minted = (await life.user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
             code: string;
           };
           const signed = await post(port, "/api/v1/auth/redeem", { code: minted.code });
@@ -318,8 +355,8 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       leaveUnread: (ref) => {
         appendFileSync(unread, `${ref}\n`);
       },
-      hold: (ref) => {
-        writeFileSync(join(holds, ref), "");
+      hold: (ref, exit) => {
+        writeFileSync(join(holds, ref), exit === undefined ? "" : `exit ${String(exit)}`);
       },
       release: (ref) => {
         rmSync(join(holds, ref), { force: true });
@@ -334,7 +371,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       },
       agentLog: async (space, taskId, text) => {
         logs += 1;
-        await agent.call(
+        await life.agent.call(
           "op/call",
           {
             space,
@@ -351,7 +388,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       },
       op: async (space, op, input, as = "user") => {
         ops += 1;
-        return (as === "user" ? user : agent).call(
+        return (as === "user" ? life.user : life.agent).call(
           "op/call",
           {
             space,
@@ -365,16 +402,19 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           { timeoutMs: SLOW_MS },
         );
       },
+      restart: async (whileStopped) => {
+        await stop();
+        await whileStopped?.();
+        life = await boot();
+        // The page's sign-in for `machine` was the stopped service's port's.
+        token = undefined;
+      },
       close: async () => {
-        for (const s of sessions.splice(0)) s.close();
         // Every held agent ends with the world.
         for (const name of readdirSync(holds)) {
           if (!name.endsWith(".pids")) rmSync(join(holds, name), { force: true });
         }
-        proc.send("stop");
-        await within(proc.exit, SLOW_MS, "the service did not stop").catch(() =>
-          services.stopAll(),
-        );
+        await stop().catch(() => services.stopAll());
         removeRuntimeDir(json);
         temp.cleanup();
       },

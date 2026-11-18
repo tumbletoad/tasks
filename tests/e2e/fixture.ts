@@ -15,7 +15,23 @@ function built(): string {
   return ui;
 }
 
-export const test = base.extend<object, { world: World; bulk: World; finished: World }>({
+export const test = base.extend<
+  object,
+  { world: World; bulk: World; finished: World; restartable: World }
+>({
+  // A world of its own for the tests that stop and start its service, so no other test meets it.
+  restartable: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const world = await startWorld(built());
+      try {
+        await use(world);
+      } finally {
+        await world.close();
+      }
+    },
+    { scope: "worker", timeout: 240_000 },
+  ],
   // A second world, started only by the tests that use it: Mira with 5,000 more open tasks.
   bulk: [
     // eslint-disable-next-line no-empty-pattern

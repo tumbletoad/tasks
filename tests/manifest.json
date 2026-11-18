@@ -3837,8 +3837,16 @@
     },
     {
       "id": "A7.3.9.m2-13.e2e.races",
-      "title": "Against the real service in Chromium and Firefox: a Connected tile expands its row and starts no launch, nor does the strip's button of that instance, which says why, a receipt list that answers late does not take Confirmed away, and a task that is added keeps the draft typed while it was added",
+      "title": "Against the real service in Chromium and Firefox: a Running tile expands its row and starts no launch, the strip opens a second session only when asked, a receipt list that answers late does not take Running away, and a task that is added keeps the draft typed while it was added",
       "source": "A7 3.9 M2.13, A5 3.6, A5 3.9, A5 3.13",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.9.e2e.session-end",
+      "title": "Against the real service in Chromium and Firefox: a session is shown as running while it runs, in a second tab too, and once its agent quits, its window closes, its shim is killed or it ends while the service is stopped, nothing shows it as running and Open works again in the strip and on the tile; a double click starts one session; a Confirmed launch an earlier build recorded without an end is shown as opened; screens of running, ended, did not start and opened",
+      "source": "A5 3.6, A5 3.9",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
