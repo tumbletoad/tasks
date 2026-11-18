@@ -5,12 +5,13 @@
 // command itself, a real `tasks shim <ticket>` in the resolved folder, with no window. The shim
 // claims, verifies the folder and starts the instance's agent: testkit's fake Claude Code, which
 // takes the brief as any CLI does, reads the person's request through the product's command and
-// runs for a few seconds, so the launch settles as Confirmed.
+// runs for a few seconds, so the launch settles as Confirmed. A task listed in the record's
+// `.refuse` file has its next launch refused instead, as a terminal that would not start.
 //
 // The command line is exactly `<cli> shim <ticket>` (A4 3.6.2): no task text, title or folder.
 // Fixture data only. Tests only.
 import { spawn } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CLI_NAME } from "../../packages/brand/src/index.ts";
 import type { TerminalStart } from "../../packages/service/src/launch/index.ts";
@@ -32,9 +33,9 @@ export const FAKE_INSTANCE = {
 /**
  * The instance's table in machine.toml: Claude Code's target, run as the fake, which reads the
  * person's request as its brief says without the tools (`tasks show --launch`) from the install of
- * `home`, except on the tasks the file `unread` lists.
+ * `home`.
  */
-export function fakeInstanceToml(home: string, unread: string): string {
+export function fakeInstanceToml(home: string): string {
   return instanceToml({
     id: FAKE_INSTANCE.key,
     target: "claude-cli",
@@ -45,7 +46,6 @@ export function fakeInstanceToml(home: string, unread: string): string {
       // Long enough to settle (3 s), short enough to end on its own.
       FAKE_CLI_HOLD_MS: "6000",
       FAKE_CLI_TASKS: JSON.stringify({ argv: [process.execPath, CLI_BIN], home }),
-      FAKE_CLI_UNREAD: unread,
     },
   });
 }
@@ -56,9 +56,25 @@ export interface TerminalCall {
   readonly argv: readonly string[];
 }
 
+/** The file of task IDs whose next launch the fake terminal refuses, one a line. */
+export const refuseFile = (record: string): string => `${record}.refuse`;
+
+/** Whether the next launch of `task` is to be refused: once, then the line goes. */
+function refused(record: string, task: string | null): boolean {
+  const file = refuseFile(record);
+  if (task === null || !existsSync(file)) return false;
+  const lines = readFileSync(file, "utf8").split("\n");
+  const at = lines.indexOf(task);
+  if (at === -1) return false;
+  lines.splice(at, 1);
+  writeFileSync(file, lines.join("\n"));
+  return true;
+}
+
 /** The service's terminal seam: records `tasks shim <ticket>` and runs it in the folder. */
 export function fakeTerminal(record: string): TerminalStart {
   return ({ intent, ticket, folder }) => {
+    if (refused(record, intent.task)) return Promise.resolve({ kind: "refused" });
     const call: TerminalCall = { launch: intent.id, argv: [CLI_NAME, "shim", ticket] };
     appendFileSync(record, `${JSON.stringify(call)}\n`);
     const shim = spawn(process.execPath, [CLI_BIN, "shim", ticket], {

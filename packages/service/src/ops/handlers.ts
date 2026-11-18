@@ -131,6 +131,7 @@ import {
   readUndoTarget,
   readSpacePreferences,
   readLaunchTask,
+  readPersonsNote,
   readSiblings,
   readSpace,
   readStatus,
@@ -158,6 +159,7 @@ import {
   digestOf,
   pagePlan,
   pageRanges,
+  requestText,
   sectionsOf,
   type DigestFolder,
 } from "./task-view.ts";
@@ -228,11 +230,9 @@ export interface OpsHost {
   readonly resultMismatch?: (entry: string) => void;
 }
 
-/** What `launch.open` and `task.get` need of the launch service (launch/service.ts). */
+/** What `launch.open` needs of the launch service (launch/service.ts). */
 export interface LaunchPort {
   openTask(request: OpenTaskRequest): Promise<OpenTaskResult>;
-  /** The person's words for a launch's agent, recorded as read; undefined when none are held. */
-  requestFor?(space: string, launch: string): string | undefined;
 }
 
 /** `op/call`'s params (A2 3.6.4). */
@@ -964,7 +964,10 @@ const launchUnknown = (typo: boolean): AppError =>
  * than 24 hours is `launch_expired` with its task. A connection that cannot bind resolves the
  * reference with this alone; binding decides the rest (binding/).
  */
-async function launchOf(call: Call, reference: unknown): Promise<FoundLaunch & { task: string }> {
+async function launchOf(
+  call: Call,
+  reference: unknown,
+): Promise<FoundLaunch & { task: string; request: string | undefined }> {
   if (!isLaunchRef(reference)) throw launchUnknown(true);
   let found;
   try {
@@ -992,7 +995,9 @@ async function launchOf(call: Call, reference: unknown): Promise<FoundLaunch & {
     });
   }
   const boundAt = launch.evidence["bound_at"];
+  const request = launch.evidence["request"];
   return {
+    request: typeof request === "string" ? request : undefined,
     id: launch.id,
     reference: launch.reference,
     space: found.space.id,
@@ -1877,8 +1882,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
   "task.get": async (call) => {
     const { input } = call;
-    const asked = Array.isArray(input["sections"]) ? (input["sections"] as string[]) : [];
-    if (asked.length === 0 && input["before"] !== undefined) {
+    const sections = Array.isArray(input["sections"]) ? (input["sections"] as string[]) : [];
+    if (sections.length === 0 && input["before"] !== undefined) {
       throw invalid("before", "A before token pages a sections read", "Pass its sections too.");
     }
     const reader = readerOf(call.space);
@@ -1887,7 +1892,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     let task: string;
     // Whether this call bound the connection, or found it bound already to what it asked for.
     let bound = false;
-    let launchId: string | undefined;
+    // The note the launch names as the person's request.
+    let asked: string | undefined;
     if (typeof input["launch"] === "string") {
       // A3 3.7.3: bind by the launch reference, then load its task. A connection that
       // cannot hold a binding resolves the reference for this call only.
@@ -1897,17 +1903,17 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         bound = await bindWith(call, await bindings.redeem(slot, launch), launch.taskRef);
       }
       task = launch.task;
-      launchId = launch.id;
+      asked = launch.request;
     } else {
       task = await taskOf(call);
     }
     const machine = call.host.machine.id;
     const ranges =
-      asked.length === 0
+      sections.length === 0
         ? DIGEST_RANGES
         : pageRanges(
             pagePlan(
-              asked,
+              sections,
               input["before"],
               typeof input["log_limit"] === "number" ? input["log_limit"] : 20,
             ),
@@ -1920,33 +1926,34 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         bound = await bindWith(call, await bindings.bindTask(slot, read.space.id, id), undefined);
       }
     }
-    // The person's words for this launch's agent, held by the launch service since the click: taken
-    // once the answer is otherwise whole, since taking them tells the page the agent has them.
-    const requestOf = (): { request?: string } => {
-      const words =
-        launchId === undefined
-          ? undefined
-          : call.host.launches?.requestFor?.(read.space.id, launchId);
-      return words === undefined ? {} : { request: words };
-    };
-    if (asked.length === 0) {
+    // What the person asked this launch's agent to do: the note the launch names, while it is there.
+    let request: Record<string, unknown> | undefined;
+    if (asked !== undefined) {
+      let body: string | undefined;
+      try {
+        body = await readPersonsNote(reader, String(read.row["id"]), asked);
+      } catch (error) {
+        throw storageFailure(error);
+      }
+      if (body !== undefined) request = { note: asked, ...requestText(body) };
+    }
+    if (sections.length === 0) {
       const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
       return {
         view: "digest",
         as_of: read.space.asOf,
         bound,
-        ...requestOf(),
+        ...(request === undefined ? {} : { request }),
         task: digest,
       };
     }
     const logLimit = typeof input["log_limit"] === "number" ? input["log_limit"] : 20;
-    const page = sectionsOf(read, pagePlan(asked, input["before"], logLimit));
-    const request = requestOf();
+    const page = sectionsOf(read, pagePlan(sections, input["before"], logLimit));
     return {
       view: "sections",
       as_of: read.space.asOf,
       bound,
-      ...request,
+      ...(request === undefined ? {} : { request }),
       task: taskRow(read.row, read.space.refPrefix),
       sections: page.sections,
       ...(page.before === undefined ? {} : { before: page.before }),
@@ -2335,8 +2342,30 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw storageFailure(error);
     }
     const requestId = String(input["request_id"]);
-    const text = typeof input["text"] === "string" ? input["text"] : undefined;
+    let text = typeof input["text"] === "string" ? input["text"] : undefined;
     const instance = typeof input["instance"] === "string" ? input["instance"] : undefined;
+    // Open again with a request already on the task: a note the person wrote, as it is now.
+    const requestNote = typeof input["request"] === "string" ? input["request"] : undefined;
+    if (requestNote !== undefined) {
+      if (instance === undefined)
+        throw invalid("request", "Copy takes no request note", "Pass instance.");
+      if (text !== undefined) throw invalid("request", "Pass text or request, not both");
+      let body: string | undefined;
+      try {
+        body = await readPersonsNote(readerOf(call.space), read.id, requestNote);
+      } catch (error) {
+        throw storageFailure(error);
+      }
+      if (body === undefined) {
+        throw new AppError({
+          code: "not_found",
+          message: "The task has no note of yours with this reference.",
+          hint: "Type the request again.",
+          data: { field: "request" },
+        });
+      }
+      text = body;
+    }
     // Shift+Copy (A4 3.15.5): the context pack is a Copy, so it takes no instance.
     let pack: PackContent | undefined;
     if (input["pack"] === true) {
@@ -2364,24 +2393,26 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         task: read,
         instance,
         composer: text,
+        ...(requestNote === undefined ? {} : { requestNote }),
         requestId,
         ...(pack === undefined ? {} : { pack }),
         ...(input["mark_folder"] === true ? { markFolder: true } : {}),
-        // Over budget, the person's words become a note addressed to agents (A4 3.15.3): the
-        // note entry's own request path, under a request ID the click's derives, so a repeated
-        // click replays the note instead of adding a second one.
-        saveNote: async (body) => {
-          await opCall(host, call.caller, {
+        // The person's words as a note of theirs: the note entry's own request path, an undoable
+        // step of theirs, under a request ID the click's derives, so a repeated click finds the
+        // note instead of adding a second one.
+        saveNote: async (body, forAgents) => {
+          const saved = (await opCall(host, call.caller, {
             space,
             op: "entry.add",
             input: {
               task: read.id,
               kind: "note",
               text: body,
-              for_agents: true,
+              ...(forAgents ? { for_agents: true } : {}),
               request_id: noteRequestOf(requestId),
             },
-          });
+          })) as { entry: string };
+          return saved.entry;
         },
       });
     } catch (error) {
@@ -2392,6 +2423,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       launch: launchReceipt(opened.intent),
       ...(opened.copy === undefined ? {} : { copy: opened.copy }),
       text: opened.composer,
+      ...(opened.note === undefined ? {} : { note: opened.note }),
     };
   },
 

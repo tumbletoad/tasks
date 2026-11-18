@@ -9,8 +9,9 @@
 // background run of a task, reads a task's runs (refetched when the feed names a run) and stops
 // one, on the service's runs (runs/service.ts), the same ones `tasks run` uses.
 //
-// A receipt holds IDs, states, instants and fixed codes only, as the launch record does, and
-// whether the launch's agent read the person's request yet, which only this machine knows. A run
+// A receipt holds IDs, states, instants and fixed codes only, as the launch record does. The
+// person's request for a launch is a note on the task, which the page reads with the task's other
+// notes: a receipt names it by its reference. A run
 // as the page reads it holds the person's request and the agent's answer, task text that travels
 // in a request's or a response's body only.
 import { AppError, RequestId } from "@tasks/contracts";
@@ -56,8 +57,6 @@ export interface UiInstance {
 export interface UiLaunchPort {
   instances(): readonly UiInstance[];
   onChange?(listener: (space: string) => void): () => void;
-  /** Where a launch's request is: waiting, read, gone unread, or undefined when none is known. */
-  requestState?(launch: string): "waiting" | "read" | "unread" | undefined;
 }
 
 /**
@@ -154,13 +153,12 @@ export interface UiReceipt {
    * launch recorded by a build that did not record them.
    */
   readonly terminal?: { readonly app: string; readonly source: string };
-  /**
-   * The person's words this launch holds for its agent: waiting until the agent read them, read
-   * once it did, unread when they went with a launch whose agent never read them. Absent when it
-   * held none, or this service started after they went.
-   */
-  readonly request?: "waiting" | "read" | "unread";
+  /** The note on the task that holds what the person asked the launch's agent, such as `n2`. */
+  readonly request?: string;
 }
+
+/** A note's entry reference, as a launch's evidence names its request. */
+const NOTE_REF = /^n[1-9][0-9]{0,5}$/u;
 
 const MONOGRAM = /^[A-Za-z0-9]{1,2}$/;
 
@@ -211,6 +209,7 @@ const LIST_SQL =
 export function receiptOf(row: Record<string, unknown>): UiReceipt | undefined {
   const at: Partial<Record<IntentState, number>> = {};
   let terminal: UiReceipt["terminal"];
+  let request: string | undefined;
   try {
     const detail = JSON.parse(String(row["detail"])) as {
       at?: Record<string, unknown>;
@@ -231,6 +230,8 @@ export function receiptOf(row: Record<string, unknown>): UiReceipt | undefined {
     ) {
       terminal = { app, source };
     }
+    const asked = detail.evidence?.["request"];
+    if (typeof asked === "string" && NOTE_REF.test(asked)) request = asked;
   } catch {
     return undefined;
   }
@@ -244,6 +245,7 @@ export function receiptOf(row: Record<string, unknown>): UiReceipt | undefined {
     reason: typeof reason === "string" ? reason : null,
     at,
     ...(terminal === undefined ? {} : { terminal }),
+    ...(request === undefined ? {} : { request }),
   };
 }
 
@@ -318,14 +320,7 @@ export class UiLaunches {
     const reader = this.#space(spaceRef).reader;
     if (reader === undefined) throw invalid("The space is not served.", "space");
     const rows = await reader.all(LIST_SQL, { task });
-    const port = this.#options.port;
-    return rows
-      .flatMap((r) => receiptOf(r) ?? [])
-      .map((receipt) => {
-        const request = port?.requestState?.(receipt.id);
-        return request === undefined ? receipt : { ...receipt, request };
-      })
-      .reverse();
+    return rows.flatMap((r) => receiptOf(r) ?? []).reverse();
   }
 
   /**

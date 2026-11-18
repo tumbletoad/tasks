@@ -506,6 +506,9 @@ export function Expanded({ task, receipts, runs, instances, actions, refused }: 
             runs={runs}
             instances={instances}
             partial={detail.partial}
+            onOpenAgain={(note, instance) => {
+              void actions.open(task, instance, undefined, note.ref);
+            }}
             onStop={(run) => {
               actions.stop(task, run);
             }}

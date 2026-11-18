@@ -368,7 +368,15 @@
         {
           "field": "text",
           "flag": "--text",
-          "help": "Your words for the agent: it reads them with the task",
+          "help": "Your words for the agent: saved on the task as this launch's request",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "request",
+          "flag": "--request",
+          "help": "Open with a note of yours on the task as the request, such as n2",
           "repeat": false,
           "required": false,
           "type": "string"

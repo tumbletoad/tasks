@@ -47,18 +47,22 @@ export const LAUNCH_SQL = {
   /**
    * The intent in flight for a task and instance on a machine, newest first (A4 3.9.1): in
    * Dispatching, or clicked less than 5 s from now on either side, on the wall clock that
-   * `detail.at.prepared` records. A clock that stepped back neither keeps an old click young
-   * nor makes a new one old.
+   * `detail.at.prepared` records, unless it failed already: a click after a failure opens again.
+   * A clock that stepped back neither keeps an old click young nor makes a new one old.
    */
   focus:
     "SELECT id FROM launches WHERE task_id = $task AND instance_id = $instance " +
-    "AND machine_id = $machine " +
+    "AND machine_id = $machine AND state <> 'failed' " +
     "AND (state = 'dispatching' OR (json_extract(detail, '$.at.prepared') > $since " +
     "AND json_extract(detail, '$.at.prepared') < $until)) " +
     "ORDER BY created_at DESC, id DESC LIMIT 1",
   referenceTaken:
     "SELECT 1 AS taken FROM launches WHERE reference = $reference AND created_at > $since LIMIT 1",
   place: "SELECT machine_id, deleted_at FROM places WHERE id = $id",
+  /** The note a launch names as its request: one of its task's, not deleted. */
+  request:
+    "SELECT 1 AS found FROM notes WHERE task_id = $task AND ordinal = $ordinal " +
+    "AND deleted_at IS NULL",
   insert:
     "INSERT INTO launches (id, reference, task_id, session_id, instance_id, machine_id, route, " +
     "place_id, task_version, brief_hash, state, reason, detail, created_at, updated_at, " +

@@ -99,6 +99,8 @@ const SAMPLE = {
   of: "project",
   owners: "the project Billing",
   repo: "portal-web",
+  left: 1_200,
+  max: 20_000,
   names: "M-14, Billing",
   limit: "wall",
 };

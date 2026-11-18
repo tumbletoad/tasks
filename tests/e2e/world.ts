@@ -27,7 +27,7 @@ import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { checkedDriver, seedMira } from "../../packages/testkit/src/index.ts";
 import { addBulkTasks, addFinishedTasks, type FinishedCounts } from "./bulk.ts";
 import type { FakeCodexCase } from "./codex-cases.ts";
-import { fakeInstanceToml, type TerminalCall } from "./fake-terminal.ts";
+import { fakeInstanceToml, refuseFile, type TerminalCall } from "./fake-terminal.ts";
 
 const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
 
@@ -84,8 +84,8 @@ export interface World {
    * runs, which can be after the run's record says it runs.
    */
   codexLeft(ref: string): FakeCodexCase[];
-  /** The fake agent reads no request on this task, as an agent without the tools or a shell. */
-  leaveUnread(ref: string): void;
+  /** The fake terminal refuses the next launch of this task (its ID), as one that would not start. */
+  refuseNextOpen(task: string): void;
   /** An agent logs on a task, through the service's request path as an agent does. */
   agentLog(space: string, task: string, text: string): Promise<void>;
   /**
@@ -190,14 +190,12 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     );
     // The fake agent is this machine's first instance: the page draws its tile (A5 3.6). A world
     // with runs has the fake Codex after it.
-    const unread = join(temp.root, "unread.txt");
-    writeFileSync(unread, "");
     const cases = join(temp.root, "codex-cases.json");
     writeFileSync(cases, "{}");
     registerSpaces(
       home,
       [{ path: seeded.folder, id: opened.space.spaceId }],
-      fakeInstanceToml(home, unread) +
+      fakeInstanceToml(home) +
         (options.runs === true
           ? [CODEX_INSTANCE, CODEX_OTHER]
               .map((codex) =>
@@ -344,8 +342,8 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           .split("\n")
           .filter((line) => line !== "")
           .map((line) => JSON.parse(line) as TerminalCall),
-      leaveUnread: (ref) => {
-        appendFileSync(unread, `${ref}\n`);
+      refuseNextOpen: (task) => {
+        appendFileSync(refuseFile(record), `${task}\n`);
       },
       agentLog: async (space, taskId, text) => {
         logs += 1;

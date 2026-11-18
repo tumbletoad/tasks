@@ -1,14 +1,15 @@
 // launch.open: Open a task in an agent app, or Copy its pointer brief (A4 3.4, 3.4.6, 3.9, 3.15;
 // A5 3.8). The user's only (R7): no agent tool launches. One click is one launch intent, recorded
 // before anything external happens; a repeated request returns the same intent and starts
-// nothing (A1 3.8, A4 3.9.1). The composer text never reaches the space or a command line: Open
-// holds it for the launch's agent, which reads it with `get_task` and the launch reference; Copy
-// puts it after the pointer on the clipboard, or over Copy's budget saves it as a note addressed
-// to agents that the brief points at (A4 3.15.3).
+// nothing (A1 3.8, A4 3.9.1). The composer text never goes on a command line or into a link: Open
+// saves it on the task as a note of the person's that the launch names as its request, before the
+// launch is recorded, and the agent reads it with `get_task` and the launch reference. Copy puts it
+// after the pointer on the clipboard, or over Copy's budget saves it as a note addressed to agents
+// that the brief points at (A4 3.15.3).
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeText } from "../safe-text.ts";
-import { idPattern, RequestId, TaskRefInput, USER_LIMITS } from "../schemas.ts";
+import { idPattern, patterns, RequestId, TaskRefInput, USER_LIMITS } from "../schemas.ts";
 import { requestId } from "./fixture.ts";
 
 /** A4 3.1's launch reference: `L`, four symbols and a check character. */
@@ -28,7 +29,13 @@ export const LaunchOpenInput = z.strictObject({
     .describe("The instance to open in, from this machine's; leave out to Copy")
     .optional(),
   text: safeText(USER_LIMITS.note)
-    .describe("Your words for the agent: it reads them with the task")
+    .describe("Your words for the agent: saved on the task as this launch's request")
+    .optional(),
+  request: z
+    .string()
+    .max(7)
+    .regex(patterns.entryRef)
+    .describe("Open with a note of yours on the task as the request, such as n2")
     .optional(),
   pack: z
     .boolean()
@@ -72,8 +79,13 @@ export const LaunchOpenResult = z.strictObject({
     .describe("Text for the clipboard: the pointer brief, context pack or brief to paste")
     .optional(),
   text: z
-    .enum(["none", "inline", "note", "held"])
-    .describe("Your words: none, in the copy, saved as a note, or held for the agent"),
+    .enum(["none", "inline", "note", "request"])
+    .describe("Your words: none, in the copy, saved as a note, or this launch's request"),
+  note: z
+    .string()
+    .regex(patterns.entryRef)
+    .describe("The note on the task that holds your words")
+    .optional(),
 });
 
 const BRIEF = [

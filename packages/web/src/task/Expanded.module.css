@@ -389,6 +389,30 @@ a + .muted,
   line-height: 1.125rem;
   color: var(--k-muted);
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.askedBox > [data-clamped="true"] {
+  max-height: calc(10 * 1.125rem + 1px);
+  overflow: hidden;
+}
+
+/* A launch that did not open: open it again with what was asked. */
+.again {
+  margin-top: 6px;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--k-control);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--k-text);
+  cursor: pointer;
+}
+
+.again:hover {
+  background: var(--k-hover);
 }
 
 .runState {
@@ -753,6 +777,13 @@ a + .muted,
 /* Copy stands apart, at the strip's end. */
 .gap {
   flex: 1 1 0;
+}
+
+/* How much more fits, near the composer's limit: said before a click, never after. */
+.limit {
+  font-size: 0.75rem;
+  color: var(--k-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .hint {
