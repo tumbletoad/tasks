@@ -3,7 +3,7 @@
 // and the words of a refusal. Fixture runs only.
 import { describe, expect, test } from "vitest";
 import { Refused, type Instance, type Run } from "../api.ts";
-import { mergeRuns, runMarker, runRefusal, runners, runView, stopping } from "./runs.ts";
+import { mergeRuns, runMarker, runRefusal, runners, runView, withStops } from "./runs.ts";
 
 const run = (patch: Partial<Run> = {}): Run => ({
   id: "ru_00r5mfcw5rfzxb9enb2vg50z3g",
@@ -115,21 +115,45 @@ describe("[M6.page.run-words] a run's entry says what is the case and what the p
 
 describe("[M6.page.run-follow] the page shows a run as the service has it", () => {
   test("a read keeps what the page holds newer, and a run queued after the read began", () => {
-    const shown = stopping(run({ version: 4 }));
-    expect(shown.state).toBe("cancelling");
+    const answered = run({ state: "cancelling", version: 5 });
     const queuedLater = run({
       id: "ru_00r5mfcw5rfzxb9enb2vg50z3h",
       queued_at: 2_000,
       state: "queued",
     });
     const stale = [run({ version: 4 })];
-    expect(mergeRuns([shown, queuedLater], stale)).toEqual([shown, queuedLater]);
-    // The service's next step wins over the page's own.
-    const later = run({ state: "cancelled", version: 5 });
-    expect(mergeRuns([shown], [later])).toEqual([later]);
+    expect(mergeRuns([answered, queuedLater], stale)).toEqual([answered, queuedLater]);
+    // The service's next step wins over what the page held.
+    const later = run({ state: "cancelled", version: 6 });
+    expect(mergeRuns([answered], [later])).toEqual([later]);
     // A run that left the read's window is not kept.
     const old = run({ id: "ru_00r5mfcw5rfzxb9enb2vg50z3j", queued_at: 10 });
     expect(mergeRuns([old], [run({ queued_at: 1_000 })]).map((r) => r.id)).not.toContain(old.id);
+  });
+
+  test("a Stop on its way shows as stopping; without it, the run shows with its Stop again", () => {
+    const working = run({ state: "running", version: 4 });
+    const other = run({ id: "ru_00r5mfcw5rfzxb9enb2vg50z3h", state: "running", version: 2 });
+    const list = [working, other];
+    const pressed = new Map([[working.id, 4]]);
+    const shown = withStops(list, pressed);
+    expect(shown.map((r) => r.state)).toEqual(["cancelling", "running"]);
+    expect(runView(shown[0] ?? working, "Codex").stoppable).toBe(false);
+    // A stale read while the Stop is on its way does not undo it.
+    expect(withStops([run({ state: "running", version: 4 }), other], pressed)[0]?.state).toBe(
+      "cancelling",
+    );
+    // The service is further along: its record shows.
+    const ended = run({ state: "succeeded", version: 5 });
+    expect(withStops([ended, other], pressed)[0]).toBe(ended);
+    // The Stop failed and is forgotten: the run is as the service has it, with its Stop.
+    const after = withStops(list, new Map());
+    expect(after).toBe(list);
+    expect(runView(after[0] ?? working, "Codex").stoppable).toBe(true);
+    // A queued run shows stopped at once.
+    expect(
+      withStops([run({ state: "queued", version: 1 })], new Map([[working.id, 1]]))[0]?.state,
+    ).toBe("cancelled");
   });
 
   test("the row's marker: working, or needing the person, named by the instance's label", () => {

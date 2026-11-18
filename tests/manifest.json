@@ -2347,7 +2347,14 @@
     },
     {
       "id": "M6.page.run-follow",
-      "title": "The page shows a run as the service has it: a read keeps a newer state the page shows (its own Stop) and a run queued after the read began; the row's marker says working or needs you by the instance's label; Run is offered by what the service says an instance can do; a refusal's words come from the service's reason",
+      "title": "The page shows a run as the service has it: a read keeps a newer state and a run queued after the read began; a Stop on its way shows as stopping, and one that did not reach the service leaves the run with its Stop; the row's marker says working or needs you by the instance's label; Run is offered by what the service says an instance can do; a refusal's words come from the service's reason",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.run-once",
+      "title": "One press of Run is one run: the second click of a double click and a held key start nothing more, and a Run that got no answer, pressed again with the same words, carries the same request ID; a refusal forgets it",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

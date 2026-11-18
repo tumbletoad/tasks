@@ -15,7 +15,7 @@
 // that can (keymap.ts): never while an input method composes.
 import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Button, Dialog, DialogTrigger, Popover, Toolbar } from "react-aria-components";
-import { requestId, type Instance, type Receipt, type Run } from "../api.ts";
+import { requestId, type Instance, type Receipt } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useMachine } from "../app/machine.ts";
@@ -67,8 +67,6 @@ const STUBS: Readonly<Record<AskField, MessageId>> = {
 export interface ComposerProps {
   readonly task: TaskRow;
   readonly receipts: readonly Receipt[];
-  /** The task's runs, oldest first: Run waits while one of its own starts from here. */
-  readonly runs?: readonly Run[];
   readonly instances: readonly Instance[];
   readonly actions: RowActions;
 }
@@ -194,7 +192,7 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     });
   };
 
-  /** Run with `instance`: one at a time from here, so a double press starts one run. */
+  /** Run with `instance`: one at a time from here. */
   const run = (instance: Instance) => {
     if (starting.current !== undefined) return;
     const request = words;
@@ -270,6 +268,8 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
             }
           } else if (action === "run-first") {
             event.preventDefault();
+            // A held key repeats: one press is one run.
+            if (event.repeat) return;
             if (runner === undefined) say(t("composer.noRunner"));
             else run(runner);
           }
@@ -341,7 +341,9 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
               aria-keyshortcuts={ariaKeys(runKeys, mac)}
               aria-description={runTip(runner)}
               data-tip={runTip(runner)}
-              onClick={() => {
+              onClick={(event) => {
+                // A double click is one Run, even when the first one's answer came in between.
+                if (event.detail > 1) return;
                 run(runner);
               }}
             >

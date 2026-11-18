@@ -15,7 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { requestId, type Instance, type Receipt, type Run } from "../api.ts";
+import { Refused, requestId, type Instance, type Receipt, type Run } from "../api.ts";
 import { useToast } from "../app/frame.ts";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
@@ -36,7 +36,7 @@ import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
 import { rowOfFacts } from "../task/detail.ts";
-import { mergeRuns, runRefusal, stopping } from "../task/runs.ts";
+import { mergeRuns, runRefusal, withStops } from "../task/runs.ts";
 import css from "./TaskList.module.css";
 
 const styles = classes(css, ["line", "announce"]);
@@ -134,6 +134,10 @@ export function TaskList({
   const [receipts, setReceipts] = useState<ReadonlyMap<string, readonly Receipt[]>>(new Map());
   /** The runs of the tasks the tab follows, oldest first, as the service last said. */
   const [runs, setRuns] = useState<ReadonlyMap<string, readonly Run[]>>(new Map());
+  /** The runs whose Stop is on its way, each with its version when Stop was pressed. */
+  const [stops, setStops] = useState<ReadonlyMap<string, number>>(new Map());
+  /** Per task, the Run that got no answer: what it asked and its request ID. */
+  const unanswered = useRef(new Map<string, { readonly asked: string; readonly id: string }>());
   const runReads = useRef(new Latest());
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [announcement, setAnnouncement] = useState("");
@@ -625,18 +629,31 @@ export function TaskList({
       },
       // Run: the service queues the run and answers at once; the thread shows it from then on,
       // and the feed brings each of its steps. A refusal starts nothing and says why where the
-      // person clicked; the folder line says it too when the folder is the reason.
+      // person clicked; the folder line says it too when the folder is the reason. When no answer
+      // came, the run may have been queued: the same Run again carries the same request ID, so
+      // the service gives that run back instead of starting a second.
       run: (task, instance, text) => {
         watched.current.add(task.id);
+        const asked = `${instance.key}\n${text ?? ""}`;
+        const before = unanswered.current.get(task.id);
+        const id = before?.asked === asked ? before.id : requestId();
         return api
-          .startRun(task.id, instance.key, requestId(), text)
+          .startRun(task.id, instance.key, id, text)
           .then((run) => {
+            unanswered.current.delete(task.id);
             refuse(task.id, undefined);
             showRun(task.id, run);
             return run;
           })
           .catch((error: unknown) => {
+            if (error instanceof Refused) unanswered.current.delete(task.id);
+            else unanswered.current.set(task.id, { asked, id });
             if (live.failed(error)) return undefined;
+            if (!(error instanceof Refused)) {
+              say(t("run.unanswered"));
+              loadRuns(task.id);
+              return undefined;
+            }
             const refused = runRefusal(error);
             if (refused.reason === "folder_missing" && refused.folder !== undefined) {
               refuse(task.id, { reason: "path_missing", folder: refused.folder });
@@ -645,15 +662,26 @@ export function TaskList({
             return undefined;
           });
       },
-      // Stop answers at once: the entry says it is stopping, and the record then says what ended.
+      // Stop answers at once: the entry says it is stopping until the service answers, and the
+      // record then says what ended. Without an answer the run shows as the service last said,
+      // with its Stop.
       stop: (task, run) => {
-        showRun(task.id, stopping(run), false);
+        setStops((known) => new Map(known).set(run.id, run.version));
+        const answered = () => {
+          setStops((known) => {
+            const next = new Map(known);
+            next.delete(run.id);
+            return next;
+          });
+        };
         api
           .stopRun(run.id)
           .then((after) => {
+            answered();
             showRun(task.id, after);
           })
           .catch((error: unknown) => {
+            answered();
             if (!live.failed(error)) say(t("run.stopFailed"));
             loadRuns(task.id);
           });
@@ -717,7 +745,7 @@ export function TaskList({
       project={item.project}
       instances={state.instances}
       receipts={receipts.get(item.key) ?? NO_RECEIPTS}
-      runs={runs.get(item.key) ?? NO_RUNS}
+      runs={withStops(runs.get(item.key) ?? NO_RUNS, stops)}
       ctx={ctx}
       expanded={expanded === item.key}
       current={place.current}

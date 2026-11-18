@@ -156,8 +156,8 @@ export function runMarker(
 
 /**
  * A task's runs as a read gave them, joined with what the page holds: a run the page holds at a
- * newer version (a Stop it showed at once, an answer that came after the read began) stays, and
- * so does a run newer than every run the read has (queued after the read began).
+ * newer version (the answer to a Stop or a Run that came after the read began) stays, and so does
+ * a run newer than every run the read has (queued after the read began).
  */
 export function mergeRuns(known: readonly Run[], read: readonly Run[]): Run[] {
   const held = new Map(known.map((r) => [r.id, r]));
@@ -171,13 +171,22 @@ export function mergeRuns(known: readonly Run[], read: readonly Run[]): Run[] {
   return out;
 }
 
-/** The run a Stop makes of `run` at once, before the service answers: one step ahead of it. */
+/** How `run` shows while its Stop is on its way. */
 export function stopping(run: Run): Run {
-  return {
-    ...run,
-    state: run.state === "queued" ? "cancelled" : "cancelling",
-    version: run.version + 0.5,
-  };
+  return { ...run, state: run.state === "queued" ? "cancelled" : "cancelling" };
+}
+
+/**
+ * A task's runs as the page shows them: a run whose Stop is on its way (`stops`, its version when
+ * Stop was pressed) shows as stopping, unless the service already has it further along. The same
+ * list when no Stop applies, so a row keeps its props.
+ */
+export function withStops(
+  runs: readonly Run[],
+  stops: ReadonlyMap<string, number>,
+): readonly Run[] {
+  const held = (run: Run) => (stops.get(run.id) ?? -1) >= run.version;
+  return runs.some(held) ? runs.map((run) => (held(run) ? stopping(run) : run)) : runs;
 }
 
 /**

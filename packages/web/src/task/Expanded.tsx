@@ -433,13 +433,7 @@ export function Expanded({ task, receipts, runs, instances, actions, refused }: 
         ) : null}
       </div>
       <div className={styles.composer}>
-        <Composer
-          task={task}
-          receipts={receipts}
-          runs={runs}
-          instances={instances}
-          actions={actions}
-        />
+        <Composer task={task} receipts={receipts} instances={instances} actions={actions} />
       </div>
     </div>
   );
