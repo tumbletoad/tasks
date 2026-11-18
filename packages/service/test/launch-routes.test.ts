@@ -534,6 +534,18 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(again2.result.launch.id).toBe(held.result.launch.id);
       expect(again2.result.text).toBe("held");
       expect(opened).toHaveLength(1);
+      // Another tab's click straight after is given the same launch with its own words: they are
+      // not held, and a retry of that click does not say they are.
+      const other = await open(r, { task: task.ref, instance: "claude-link", text: "Other words" });
+      expect(other.result.launch.id).toBe(held.result.launch.id);
+      expect(other.result.text).toBe("none");
+      const otherAgain = await open(r, {
+        task: task.ref,
+        instance: "claude-link",
+        text: "Other words",
+        request_id: other.requestId,
+      });
+      expect(otherAgain.result.text).toBe("none");
     },
   );
 
