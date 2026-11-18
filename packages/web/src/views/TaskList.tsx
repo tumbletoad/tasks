@@ -618,23 +618,52 @@ export function TaskList({
                 loadReceipts(task.id);
                 return undefined;
               }
-              const refused = folderRefusal(error);
-              // The folder line says what the refusal found, unless the folder is there and
-              // only its marker asks.
-              refuse(
-                task.id,
-                refused === undefined || MARKER_REASONS.has(refused.reason) ? undefined : refused,
-              );
-              if (refused === undefined) say(t("row.openFailed"));
-              else if (MARKER_REASONS.has(refused.reason)) {
+              const found = folderRefusal(error);
+              if (found === undefined) {
+                refuse(task.id, undefined);
+                say(t("row.openFailed"));
+                return undefined;
+              }
+              // The expanded task's folder line says what was found and offers the ways on: use
+              // this folder (a marker's question), or choose another. The toast says it once.
+              const marker = MARKER_REASONS.has(found.reason);
+              const refused: FolderRefusal = marker
+                ? {
+                    ...found,
+                    anyway: () => {
+                      void launch(true);
+                    },
+                  }
+                : found;
+              refuse(task.id, refused);
+              const chooseAnother = {
+                label: { id: "row.chooseFolder" } as const,
+                run: () => {
+                  refuse(task.id, { ...refused, choose: true });
+                  if (latest.current.expanded !== task.id) {
+                    chosen(task.ref);
+                    expandTask(task);
+                    changed.current?.(task);
+                  }
+                },
+              };
+              if (marker) {
                 say(t("row.openMarker", markerWords(refused)), {
                   label: { id: "row.openAnyway" },
                   run: () => {
                     void launch(true);
                   },
                 });
-              } else if (refused.folder === undefined) say(t("row.openWorkFolder"));
-              else say(t("row.openFolder", { reason: refused.reason, folder: refused.folder }));
+              } else if (refused.reason === "other_machine") {
+                say(t("row.openElsewhere"), chooseAnother);
+              } else if (refused.folder === undefined) {
+                say(t("row.openWorkFolder"));
+              } else {
+                say(
+                  t("row.openFolder", { reason: refused.reason, folder: refused.folder }),
+                  chooseAnother,
+                );
+              }
               return undefined;
             });
         };

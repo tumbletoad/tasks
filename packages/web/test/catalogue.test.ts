@@ -101,6 +101,7 @@ const SAMPLE = {
   repo: "portal-web",
   left: 1_200,
   max: 20_000,
+  names: "M-14, Billing",
   limit: "wall",
 };
 

@@ -128,6 +128,7 @@ import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
 import { homeGate } from "./home-gate.ts";
 import { SeenCalls } from "./agent-homes.ts";
 import { agentAppVerbs, personEnv } from "./agent-apps.ts";
+import { pageFolderVerbs } from "./page-folders.ts";
 import { pageSpaceVerbs } from "./page-spaces.ts";
 import { within } from "./wait.ts";
 
@@ -1033,6 +1034,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         instances: hub.instances,
         spaceName: (id) => made.spaces?.served().find((s) => s.id === id)?.name,
       });
+      const pageFolders = pageFolderVerbs({ ops: hub.ops });
       const running = await startHttp({
         ...options.http,
         installed:
@@ -1058,6 +1060,11 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         apps: {
           view: (input) => apps.view(input, "ui"),
           apply: (input) => apps.apply(input, "ui"),
+        },
+        folders: {
+          list: (input, space) => pageFolders.list(input, "ui", space),
+          make: (input) => pageFolders.make(input, "ui"),
+          project: (input, space) => pageFolders.project(input, "ui", space),
         },
         db: grantsDb.db,
         grants: grantsDb.grants,

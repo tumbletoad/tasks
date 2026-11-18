@@ -11,6 +11,8 @@ import { readDetail, type Detail } from "./detail.ts";
 
 export interface DetailState {
   readonly detail: Detail | undefined;
+  /** Where the feed was when `detail` was asked for: a write of what it shows goes with this base. */
+  readonly base?: string | undefined;
   /** The last read failed; `detail` is the one before it, if any. */
   readonly failed: boolean;
   /** The task is not in the space (purged, or never was). */
@@ -33,9 +35,10 @@ export function useDetail(task: string): DetailState {
     const reads = new Latest();
     const load = () => {
       const newest = reads.begin(task);
+      const base = live.store.asOf;
       readDetail(api.client, task)
         .then((detail) => {
-          if (current && newest()) setState({ detail, failed: false, missing: false });
+          if (current && newest()) setState({ detail, base, failed: false, missing: false });
         })
         .catch((error: unknown) => {
           if (!current || !newest() || live.failed(error)) return;

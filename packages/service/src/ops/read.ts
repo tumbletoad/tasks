@@ -1435,6 +1435,29 @@ export async function readProjectFolders(
   return (rows as Row[]).map(projectFolderRow);
 }
 
+const PROJECT_FOLDERS_ALL: Statement = {
+  sql:
+    "SELECT f.machine_id AS machine, m.name AS machine_name, f.path AS path FROM folders f " +
+    "JOIN machines m ON m.id = f.machine_id JOIN projects p ON p.id = f.owner_id " +
+    "WHERE f.owner_kind = 'project' AND f.owner_id = $project AND f.deleted_at IS NULL " +
+    "AND p.deleted_at IS NULL ORDER BY m.name, f.id",
+  mode: "all",
+};
+
+/** A live project's live folders on every machine, with each machine's name. */
+export async function readProjectFolderAll(
+  reader: WorkerConnection,
+  project: string,
+): Promise<{ machine: string; machineName: string; stored: string }[]> {
+  if (!(await hasFolderTable(reader))) return [];
+  const [rows] = await snapshot(reader, [PROJECT_FOLDERS_ALL], { project });
+  return (rows as Row[]).map((r) => ({
+    machine: text(r["machine"]),
+    machineName: text(r["machine_name"]),
+    stored: text(r["path"]),
+  }));
+}
+
 /** One snapshot of what a folder's bind on `machine` checks (BindRead). */
 export async function readBind(
   reader: WorkerConnection,
