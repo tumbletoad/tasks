@@ -607,6 +607,7 @@ export const LAUNCH_EVIDENCE_FIELDS = {
   bound_at: "instant",
   terminal: "id",
   terminal_source: "id",
+  request: "id",
 } as const satisfies Record<string, "id" | "instant" | "count" | "flag">;
 
 /** An ID in evidence: a native session or thread ID, a grant, a claim, a file identity. */

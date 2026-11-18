@@ -8,8 +8,8 @@
 // the page refetches when the change feed names a launch.
 //
 // No text of a task, brief or composer travels here: a receipt holds IDs, states, instants and
-// fixed codes only, as the launch record does, and whether the launch's agent read the person's
-// request yet, which only this computer knows.
+// fixed codes only, as the launch record does. The person's request for a launch is a note on the
+// task, which the page reads with the task's other notes.
 import { AppError } from "@tasks/contracts";
 import {
   INSTANCE_KEY,
@@ -44,8 +44,6 @@ export interface UiInstance {
 export interface UiLaunchPort {
   instances(): readonly UiInstance[];
   onChange?(listener: (space: string) => void): () => void;
-  /** Where a launch's request is: waiting, read, gone unread, or undefined when none is known. */
-  requestState?(launch: string): "waiting" | "read" | "unread" | undefined;
 }
 
 /** A launch receipt as the page shows it (A5 3.9). IDs, states, instants and codes only. */
@@ -64,12 +62,6 @@ export interface UiReceipt {
    * launch recorded by a build that did not record them.
    */
   readonly terminal?: { readonly app: string; readonly source: string };
-  /**
-   * The person's words this launch holds for its agent: waiting until the agent read them, read
-   * once it did, unread when they went with a launch whose agent never read them. Absent when it
-   * held none, or this service started after they went.
-   */
-  readonly request?: "waiting" | "read" | "unread";
 }
 
 const MONOGRAM = /^[A-Za-z0-9]{1,2}$/;
@@ -214,13 +206,6 @@ export class UiLaunches {
     const reader = this.#space(spaceRef).reader;
     if (reader === undefined) throw invalid("The space is not served.", "space");
     const rows = await reader.all(LIST_SQL, { task });
-    const port = this.#options.port;
-    return rows
-      .flatMap((r) => receiptOf(r) ?? [])
-      .map((receipt) => {
-        const request = port?.requestState?.(receipt.id);
-        return request === undefined ? receipt : { ...receipt, request };
-      })
-      .reverse();
+    return rows.flatMap((r) => receiptOf(r) ?? []).reverse();
   }
 }

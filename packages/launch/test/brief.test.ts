@@ -261,12 +261,12 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
     );
   });
 
-  test("an Open route's brief never carries the person's words: its last line says the request comes with the task, and the words are handed back to hold, whatever their length", () => {
-    // Held exactly as typed: an emoji's zero-width joiner stays.
+  test("an Open route's brief never carries the person's words: its last line says the request comes with the task, and the words are handed back to save, whatever their length", () => {
+    // Exactly as typed: an emoji's zero-width joiner stays.
     const words = `Look at "the failing test" first.\nThen fix the zone offset. Café ${cp(0x1f469, 0x200d, 0x1f4bb)}`;
     for (const kind of ["sent", "prefilled"] as const) {
       const brief = renderBrief(base({ kind, composer: words, budget: 1000 }));
-      expect(brief).toMatchObject({ status: "ok", composer: "held", composerText: words });
+      expect(brief).toMatchObject({ status: "ok", composer: "request", composerText: words });
       if (brief.status !== "ok") return;
       expect(brief.text.split("\n")).toEqual([
         `${PRODUCT_NAME} task M-14 (launch ${REF}).`,
@@ -275,10 +275,10 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
       ]);
       expect(brief.text).not.toContain("failing test");
     }
-    // A request far over every route's budget is held whole: the brief does not grow with it.
+    // A request far over every route's budget is handed back whole: the brief does not grow with it.
     const long = "Please read this first. ".repeat(900);
-    const held = renderBrief(base({ composer: long, budget: 1000 }));
-    expect(held).toMatchObject({ status: "ok", composer: "held", composerText: long });
+    const saved = renderBrief(base({ composer: long, budget: 1000 }));
+    expect(saved).toMatchObject({ status: "ok", composer: "request", composerText: long });
     // Whitespace alone is no request.
     expect(renderBrief(base({ composer: " \n " }))).toMatchObject({ composer: "none" });
     // Over budget without words: refused for the route, never cut.
@@ -340,7 +340,7 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
         if (brief.status !== "ok") return;
         expect(isBriefSafe(brief.text, true)).toBe(true);
         if (kind !== "pointer") {
-          const last = brief.composer === "held" ? REQUEST_LINE : kind === "sent" ? WAIT_LINE : "";
+          const last = brief.composer === "request" ? REQUEST_LINE : kind === "sent" ? WAIT_LINE : "";
           expect(brief.text.split("\n").slice(4)).toEqual([last]);
         }
       }),

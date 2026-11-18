@@ -1871,6 +1871,17 @@ export class SpaceWriter {
               problem("VALIDATION_FAILED", "The place is on another machine", i, "place");
             }
           }
+          const asked = op.evidence?.["request"];
+          if (asked !== undefined) {
+            const ordinal = /^n([1-9][0-9]{0,5})$/u.exec(String(asked))?.[1];
+            const found =
+              ordinal === undefined
+                ? undefined
+                : conn.prepare(LAUNCH_SQL.request).get({ task: parent, ordinal: Number(ordinal) });
+            if (found === undefined) {
+              problem("NOT_FOUND", "The task has no note with this reference", i, "evidence.request");
+            }
+          }
           const record = { task: parent, ...inputOf(op, "task") };
           // A second click on the same task and instance while an intent is in Dispatching or
           // younger than 5 s gets that intent (A4 3.9.1), in this request or before it. Its age

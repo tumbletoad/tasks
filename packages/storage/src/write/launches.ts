@@ -59,6 +59,10 @@ export const LAUNCH_SQL = {
   referenceTaken:
     "SELECT 1 AS taken FROM launches WHERE reference = $reference AND created_at > $since LIMIT 1",
   place: "SELECT machine_id, deleted_at FROM places WHERE id = $id",
+  /** The note a launch names as its request: one of its task's, not deleted. */
+  request:
+    "SELECT 1 AS found FROM notes WHERE task_id = $task AND ordinal = $ordinal " +
+    "AND deleted_at IS NULL",
   insert:
     "INSERT INTO launches (id, reference, task_id, session_id, instance_id, machine_id, route, " +
     "place_id, task_version, brief_hash, state, reason, detail, created_at, updated_at, " +

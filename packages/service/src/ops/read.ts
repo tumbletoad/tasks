@@ -28,6 +28,7 @@ import {
   PREFERENCES,
   preferenceValue,
   readPreference,
+  REQUEST_LAUNCHES,
   type PreferenceRead,
 } from "@tasks/contracts";
 import type { FoldersHere } from "./here.ts";
@@ -150,7 +151,12 @@ const authorOf = (e: string): string =>
  * else, or imported, is a note like the others.
  */
 const INSTRUCTION = `(n.addressee = 'agents' AND x.kind = 'human' AND NOT ${imported("n")})`;
-const NOTE_COLUMNS = `n.ordinal, n.addressee, n.body, n.created_at, ${authorOf("n")} AS author`;
+/** The launches that name note `n` as their request, oldest first: `[[reference, instance]]`. */
+const REQUEST_FOR =
+  "(SELECT json_group_array(json_array(l.reference, l.instance_id) ORDER BY l.created_at, l.id) " +
+  "FROM launches l WHERE l.task_id = n.task_id " +
+  "AND json_extract(l.detail, '$.evidence.request') = 'n' || n.ordinal)";
+const NOTE_COLUMNS = `n.ordinal, n.addressee, n.body, n.created_at, ${authorOf("n")} AS author, ${REQUEST_FOR} AS request_for`;
 const NOTES_FROM = `FROM notes n JOIN actors x ON x.id = n.author_id WHERE n.task_id = ${MATCH} AND n.deleted_at IS NULL`;
 /** Newest first, from ordinal `$iupto` down (all when null), at most `$ilimit`. */
 const INSTRUCTIONS: Statement = {
@@ -265,14 +271,38 @@ export function taskRow(row: Row, prefix: string): Record<string, unknown> {
   };
 }
 
-/** A note as the results show it: `text` is its body, in full. */
-export const noteOf = (row: Row) => ({
-  ref: `n${String(row["ordinal"])}`,
-  author: text(row["author"]),
-  for_agents: row["addressee"] === "agents",
-  at: iso(row["created_at"]),
-  text: text(row["body"]),
-});
+/**
+ * A note as the results show it: `text` is its body, in full, and `request_for` the launches it
+ * was the person's request for, the newest REQUEST_LAUNCHES.
+ */
+export const noteOf = (row: Row) => {
+  const launches = requestFor(row["request_for"]);
+  return {
+    ref: `n${String(row["ordinal"])}`,
+    author: text(row["author"]),
+    for_agents: row["addressee"] === "agents",
+    at: iso(row["created_at"]),
+    text: text(row["body"]),
+    ...(launches.length === 0 ? {} : { request_for: launches }),
+  };
+};
+
+function requestFor(value: unknown): { launch: string; instance: string }[] {
+  let list: unknown;
+  try {
+    list = typeof value === "string" ? JSON.parse(value) : [];
+  } catch {
+    list = [];
+  }
+  if (!Array.isArray(list)) return [];
+  return list
+    .flatMap((pair: unknown) =>
+      Array.isArray(pair) && typeof pair[0] === "string" && typeof pair[1] === "string"
+        ? [{ launch: pair[0], instance: pair[1] }]
+        : [],
+    )
+    .slice(-REQUEST_LAUNCHES);
+}
 
 export const logOf = (row: Row) => ({
   ref: `l${String(row["ordinal"])}`,
@@ -500,6 +530,29 @@ export async function readLaunch(
       evidence,
     },
   };
+}
+
+/** A note the space's human wrote on a task, not imported and not removed, by its ordinal. */
+const PERSONS_NOTE: Statement = {
+  sql:
+    "SELECT n.body FROM notes n JOIN actors x ON x.id = n.author_id WHERE n.task_id = $task " +
+    `AND n.ordinal = $ordinal AND n.deleted_at IS NULL AND x.kind = 'human' AND NOT ${imported("n")}`,
+  mode: "get",
+};
+
+/**
+ * The text of a note the person wrote on task `task` (an ID), by its reference such as `n2`:
+ * undefined when the task has none, or it was removed or written by anyone else.
+ */
+export async function readPersonsNote(
+  reader: WorkerConnection,
+  task: string,
+  ref: string,
+): Promise<string | undefined> {
+  const ordinal = /^n([1-9][0-9]{0,5})$/u.exec(ref)?.[1];
+  if (ordinal === undefined) return undefined;
+  const [row] = await snapshot(reader, [PERSONS_NOTE], { task, ordinal: Number(ordinal) });
+  return isPlain(row) ? text(row["body"]) : undefined;
 }
 
 /** The bound task's reference and how many notes the user addressed to agents it has. */

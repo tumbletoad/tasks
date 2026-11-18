@@ -174,6 +174,11 @@ export const EVIDENCE_FIELDS = {
    */
   terminal: "id",
   terminal_source: "id",
+  /**
+   * The person's note on the task that holds what they asked the launch's agent to do: its entry
+   * reference, such as `n2`. Known at Prepared: the note is saved before the launch is recorded.
+   */
+  request: "id",
 } as const satisfies Record<string, EvidenceKind>;
 
 export type EvidenceKey = keyof typeof EVIDENCE_FIELDS;

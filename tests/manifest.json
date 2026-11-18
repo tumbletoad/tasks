@@ -2332,22 +2332,15 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A4.5.routes.request-store",
-      "title": "The words a person typed for an agent are held for one launch in that launch's own folder: once per launch, private (0700 folder, 0600 file), read back exactly after a restart, marked read; removed with their folder when nothing else is in it, gone with a launch folder removed under them; a file that is not a request is removed at the next start",
-      "owner": "M5",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A4.5.routes.request",
-      "title": "What a person types before Open, 20,000 characters with line breaks, quotes, other scripts and an emoji, reaches the agent exactly through Tasks on every route that takes it: Claude Code's and Codex's terminal routes (the fake agent reads it with show --launch as its brief says), Codex's assisted open, the claude-cli:// link, Claude Desktop and the Codex app (an agent's get_task, its tool text whole); it is in no process's command line (Linux /proc, Windows' process table), no URL opened, no log line and no file but the launch's own request; a terminal launch's request goes with its launch, a link's once its reference no longer binds; Copy puts the words on the clipboard and holds nothing",
+      "title": "What a person types before Open, up to 20,000 characters with line breaks, quotes, other scripts and an emoji, is a note of theirs on the task at the click that the launch names, and reaches the agent through Tasks on every route that takes it: Claude Code's and Codex's terminal routes (the fake agent reads it with show --launch as its brief says, the same again, its first 8,000 characters with the rest in the note), Codex's assisted open, the claude-cli:// link, Claude Desktop and the Codex app (an agent's get_task, twice the same, its tool text whole); it is in no process's command line (Linux /proc, Windows' process table), no URL opened, no log line and no file outside the space; Copy puts the words on the clipboard and saves nothing",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
-      "id": "A4.5.routes.request-restart",
-      "title": "A request a crashed service left is removed at its next start once its launch no longer needs it: a terminal launch whose agent ended while the service was down at once, a link launch's once its reference no longer binds",
+      "id": "A4.5.routes.request-task",
+      "title": "A launch's request is task data from the click: it is on the task after a service stopped right after the click; a get_task the agent never got marks nothing and a launch past its day loses nothing; a second click that got an earlier launch keeps its words as a plain note, also on a retry; a second session with the pointer is refused it while one that loads the task sees it as history with its launch; one undo takes back the request and nothing else, and Open again with the note writes no second one; a refused click (no route, no folder, no marker) writes nothing",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

@@ -9,9 +9,10 @@
 //   user's first message), for the reference match.
 // - FAKE_CLI_TASKS: `{"argv": [...], "home": "..."}`, the product's command and the install's home
 //   (TASKS_HOME): it reads the task as its brief says when the tools are missing, the brief's
-//   command with `--json` and without the launch's TASKS_SPACE, and its report holds the request it got, in hex, so a test finds
-//   the words nowhere else on disk. FAKE_CLI_UNREAD names a file of task references, one a line:
-//   on those tasks it reads nothing, as an agent without Tasks' tools or a shell.
+//   command with `--json` and without the launch's TASKS_SPACE, and its report holds the request it
+//   got, in hex, so a test finds the words nowhere else on disk, with the note that holds them.
+//   FAKE_CLI_UNREAD names a file of task references, one a line: on those tasks it reads nothing,
+//   as an agent without Tasks' tools or a shell.
 // - FAKE_CLI_HOLD_MS (default 4000), FAKE_CLI_RELEASE (a file whose existence ends it),
 //   FAKE_CLI_MAX_MS (default 120000) and FAKE_CLI_EXIT (default 0).
 // Its stdin is never read. No real agent, account or home is touched. Tests only.
@@ -32,12 +33,14 @@ export interface CliAgentReport {
   readonly cwdId: string;
   readonly envNames: string[];
   /**
-   * With FAKE_CLI_TASKS: the reading of the task, its exit code and the request it held (UTF-8, in
-   * hex), or the error's code.
+   * With FAKE_CLI_TASKS: the reading of the task, its exit code and the request it got (UTF-8, in
+   * hex), the note that holds it and how many characters the result left out, or the error's code.
    */
   readonly read?: {
     readonly code: number | null;
     readonly request?: string;
+    readonly note?: string;
+    readonly cut?: number;
     readonly error?: string;
   };
 }
@@ -85,14 +88,17 @@ function readTask(spec: string): CliAgentReport["read"] {
   });
   try {
     const result = JSON.parse(ran.stdout) as {
-      request?: unknown;
+      request?: { text?: unknown; note?: unknown; cut?: unknown };
       error?: { code?: unknown };
     };
+    const request = result.request;
     return {
       code: ran.status,
-      ...(typeof result.request === "string"
-        ? { request: Buffer.from(result.request, "utf8").toString("hex") }
+      ...(typeof request?.text === "string"
+        ? { request: Buffer.from(request.text, "utf8").toString("hex") }
         : {}),
+      ...(typeof request?.note === "string" ? { note: request.note } : {}),
+      ...(typeof request?.cut === "number" ? { cut: request.cut } : {}),
       ...(typeof result.error?.code === "string" ? { error: result.error.code } : {}),
     };
   } catch {

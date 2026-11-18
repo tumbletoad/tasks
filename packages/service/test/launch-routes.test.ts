@@ -230,6 +230,7 @@ interface Opened {
   };
   readonly copy?: string;
   readonly text: string;
+  readonly note?: string;
 }
 
 const open = async (
@@ -308,7 +309,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       });
       expect(result.launch).toMatchObject({ route: "terminal", instance: "claude" });
       expect(result.copy).toBeUndefined();
-      expect(result.text).toBe("held");
+      expect(result.text).toBe("request");
       const launch = result.launch;
       const confirmed = await r.lab.waitIntent(
         launch.id,
@@ -332,7 +333,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(report.argv).toEqual(golden);
       expect(report.utf8).toEqual(golden.map(hex8));
       expect(report.utf16).toEqual(golden.map(hex16));
-      // A pointer: the two references, no title, and the person's words held for the agent.
+      // A pointer: the two references, no title, and the person's words saved for the agent.
       expect(brief.split("\n")[0]).toBe(
         `${PRODUCT_NAME} task ${task.ref} (launch ${launch.reference}).`,
       );
@@ -508,16 +509,17 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(repeat.result.launch.id).toBe(noted.result.launch.id);
       expect(await notes()).toBe(1);
 
-      // Open holds the words for the agent whatever their length: no note, a pointer in the link.
+      // Open saves the words whatever their length as the launch's request, a note of the
+      // person's that is not addressed to every agent: a pointer in the link.
       opened.length = 0;
       const held = await open(r, { task: task.ref, instance: "claude-link", text: long });
-      expect(held.result.text).toBe("held");
+      expect(held.result.text).toBe("request");
       await r.lab.waitIntent(held.result.launch.id, (i) => i.state === "dispatched", "Dispatched");
       const q = new URL(opened[0]?.argv.at(-1) ?? "x:").searchParams.get("q") ?? "";
       expect(q.split("\n").at(-1)).toBe(REQUEST_LINE);
       expect(q).not.toContain("Please read this first.");
       expect(await notes()).toBe(1);
-      // A repeated click replays: the words are still held, and nothing more opens.
+      // A repeated click replays: the same note is the request, and nothing more opens.
       const again2 = await open(r, {
         task: task.ref,
         instance: "claude-link",
@@ -525,7 +527,8 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         request_id: held.requestId,
       });
       expect(again2.result.launch.id).toBe(held.result.launch.id);
-      expect(again2.result.text).toBe("held");
+      expect(again2.result.text).toBe("request");
+      expect(again2.result.note).toBe(held.result.note);
       expect(opened).toHaveLength(1);
     },
   );
@@ -596,7 +599,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         instance: undefined,
         composer: undefined,
         requestId,
-        saveNote: () => Promise.resolve(),
+        saveNote: () => Promise.resolve("n1"),
       });
       const service = r.lab.running.launches;
       const [first, retry] = await Promise.all([
@@ -792,7 +795,7 @@ describe("[A4.5.routes.folders] a launch opens in the task's folder, else its pr
           instance,
           composer: undefined,
           requestId: rid(),
-          saveNote: () => Promise.resolve(),
+          saveNote: () => Promise.resolve("n1"),
         });
       const started = r.lab.folders.size;
       const links = opened.length;

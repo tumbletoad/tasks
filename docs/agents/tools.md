@@ -589,7 +589,8 @@ Open a task in an agent app on this machine, or Copy its pointer brief.
 |---|---|---|---|
 | `task` | string, max 40 | yes | Task ref (M-14) or ID |
 | `instance` | string, max 64 | no | The instance to open in, from this machine's; leave out to Copy |
-| `text` | string, max 65536 | no | Your words for the agent: it reads them with the task |
+| `text` | string, max 65536 | no | Your words for the agent: saved on the task as this launch's request |
+| `request` | string, max 7 | no | Open with a note of yours on the task as the request, such as n2 |
 | `pack` | boolean | no | Copy the context pack: the task's text, for an app without the tools |
 | `mark_folder` | boolean | no | Open although the folder's marker is gone or another's, and mark it |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
@@ -613,7 +614,8 @@ Open a task in an agent app on this machine, or Copy its pointer brief.
 | `launch.at.failed` | integer, 0 to 253402300799999 | no | When it failed |
 | `launch.at.unknown` | integer, 0 to 253402300799999 | no | When the service lost track of it |
 | `copy` | string, max 200000 | no | Text for the clipboard: the pointer brief, context pack or brief to paste |
-| `text` | "none" \| "inline" \| "note" \| "held" | yes | Your words: none, in the copy, saved as a note, or held for the agent |
+| `text` | "none" \| "inline" \| "note" \| "request" | yes | Your words: none, in the copy, saved as a note, or this launch's request |
+| `note` | string | no | The note on the task that holds your words |
 
 ### Examples
 
@@ -1796,7 +1798,10 @@ When `view` is `"digest"`:
 | `view` | "digest" | yes | A bounded digest of the task |
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `bound` | boolean | yes | This call bound the session |
-| `request` | string, max 65536 | no | The user's request for this launch: do it |
+| `request` | object | no | The user's request for this launch: do it |
+| `request.note` | string | yes | The note that holds it |
+| `request.text` | string, max 8000 | yes | The request |
+| `request.cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task` | object | yes | The task |
 | `task.id` | string | yes | Task ID |
 | `task.ref` | string | yes | Task reference |
@@ -1831,6 +1836,9 @@ When `view` is `"digest"`:
 | `task.instructions[].for_agents` | boolean | yes | A note from the user addressed to agents |
 | `task.instructions[].at` | string | yes | When, ISO date and time |
 | `task.instructions[].text` | string | yes | Note text |
+| `task.instructions[].request_for` | object[], max 20 items | no | The user's request for these launches, oldest first: history, not yours to do |
+| `task.instructions[].request_for[].launch` | string | yes | The launch reference |
+| `task.instructions[].request_for[].instance` | string, max 64 | yes | The agent instance it opened |
 | `task.instructions[].cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.instructions[].slice` | object | no | Only this part of the text is on this page |
 | `task.instructions[].slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
@@ -1842,6 +1850,9 @@ When `view` is `"digest"`:
 | `task.notes[].for_agents` | boolean | yes | A note from the user addressed to agents |
 | `task.notes[].at` | string | yes | When, ISO date and time |
 | `task.notes[].text` | string | yes | Note text |
+| `task.notes[].request_for` | object[], max 20 items | no | The user's request for these launches, oldest first: history, not yours to do |
+| `task.notes[].request_for[].launch` | string | yes | The launch reference |
+| `task.notes[].request_for[].instance` | string, max 64 | yes | The agent instance it opened |
 | `task.notes[].cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.notes[].slice` | object | no | Only this part of the text is on this page |
 | `task.notes[].slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
@@ -1885,7 +1896,10 @@ When `view` is `"sections"`:
 | `view` | "sections" | yes | The sections asked for, in full |
 | `as_of` | string | yes | Read position; pass it as base on your next write |
 | `bound` | boolean | yes | This call bound the session |
-| `request` | string, max 65536 | no | The user's request for this launch: do it |
+| `request` | object | no | The user's request for this launch: do it |
+| `request.note` | string | yes | The note that holds it |
+| `request.text` | string, max 8000 | yes | The request |
+| `request.cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task` | object | yes | The task |
 | `task.id` | string | yes | Task ID |
 | `task.ref` | string | yes | Task reference |
@@ -1907,6 +1921,9 @@ When `view` is `"sections"`:
 | `sections.instructions[].for_agents` | boolean | yes | A note from the user addressed to agents |
 | `sections.instructions[].at` | string | yes | When, ISO date and time |
 | `sections.instructions[].text` | string | yes | Note text |
+| `sections.instructions[].request_for` | object[], max 20 items | no | The user's request for these launches, oldest first: history, not yours to do |
+| `sections.instructions[].request_for[].launch` | string | yes | The launch reference |
+| `sections.instructions[].request_for[].instance` | string, max 64 | yes | The agent instance it opened |
 | `sections.instructions[].cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `sections.instructions[].slice` | object | no | Only this part of the text is on this page |
 | `sections.instructions[].slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
@@ -1923,6 +1940,9 @@ When `view` is `"sections"`:
 | `sections.notes[].for_agents` | boolean | yes | A note from the user addressed to agents |
 | `sections.notes[].at` | string | yes | When, ISO date and time |
 | `sections.notes[].text` | string | yes | Note text |
+| `sections.notes[].request_for` | object[], max 20 items | no | The user's request for these launches, oldest first: history, not yours to do |
+| `sections.notes[].request_for[].launch` | string | yes | The launch reference |
+| `sections.notes[].request_for[].instance` | string, max 64 | yes | The agent instance it opened |
 | `sections.notes[].cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `sections.notes[].slice` | object | no | Only this part of the text is on this page |
 | `sections.notes[].slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
@@ -2045,7 +2065,10 @@ Result:
   "view": "digest",
   "as_of": "1.1046.5n0w8k3q",
   "bound": true,
-  "request": "Check the 11-12 clinic export first,\nthen fix the offset.",
+  "request": {
+    "note": "n2",
+    "text": "Check the 11-12 clinic export first,\nthen fix the offset."
+  },
   "task": {
     "id": "t_5m2k8q0w3z7r1c9d4f6h8j0n2p",
     "ref": "M-14",
@@ -2075,7 +2098,21 @@ Result:
         "text": "Keep the old export format until Lumen confirms the change."
       }
     ],
-    "notes": [],
+    "notes": [
+      {
+        "ref": "n2",
+        "author": "user",
+        "for_agents": false,
+        "at": "2026-11-12T10:20:00Z",
+        "text": "Check the 11-12 clinic export first,\nthen fix the offset.",
+        "request_for": [
+          {
+            "launch": "L7KQ2M",
+            "instance": "claude-work"
+          }
+        ]
+      }
+    ],
     "log": [
       {
         "ref": "l2",
