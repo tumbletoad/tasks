@@ -60,14 +60,10 @@ export function choicesOf(listing: FolderListing | undefined, make: boolean): Ch
 }
 
 /**
- * The folder a field's text names: its trailing separators dropped, but a root keeps its own
- * (`/`, `C:\`), and `~` with one is the home. Undefined for an empty text.
+ * The folder a field's text names, as typed: the service drops a trailing separator by the rules
+ * of its own system, where a `\` can be part of a Linux folder's name. Undefined for an empty text.
  */
 export function chosenFolder(text: string): string | undefined {
   const trimmed = text.trim();
-  if (trimmed === "") return undefined;
-  if (/^[\\/]$|^[A-Za-z]:[\\/]?$/u.test(trimmed)) return trimmed;
-  let end = trimmed.length;
-  while (end > 1 && (trimmed[end - 1] === "/" || trimmed[end - 1] === "\\")) end -= 1;
-  return trimmed.slice(0, end);
+  return trimmed === "" ? undefined : trimmed;
 }

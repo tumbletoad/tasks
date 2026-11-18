@@ -73,7 +73,7 @@ export function ProjectFolder({ project }: { readonly project: string }) {
       {view === undefined ? null : view === "failed" ? (
         <span className={`${styles.words} ${styles.muted}`}>{t("folder.lineFailed")}</span>
       ) : here !== undefined ? (
-        <span className={styles.words}>
+        <span className={styles.words} title={here.folder}>
           <span
             className={`${styles.path} ${here.state === "missing" ? styles.muted : ""}`}
             dir="ltr"
@@ -145,8 +145,8 @@ export function ProjectFolder({ project }: { readonly project: string }) {
           onClose={() => {
             setChoosing(false);
           }}
-          onChoose={async (folder) => {
-            await writes.setProject(project, folder);
+          onChoose={async (folder, base) => {
+            await writes.setProject(project, folder, base);
             load();
           }}
         />

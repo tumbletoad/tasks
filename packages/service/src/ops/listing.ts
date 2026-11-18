@@ -49,6 +49,28 @@ export function nodeListFs(platform: NodeJS.Platform): ListFs {
   };
 }
 
+/**
+ * The same disk, where a look at a path still on its way is shared, not started again. A time
+ * limit stops the waiting, not the look: on a share that stopped answering, every keystroke and
+ * every new start would otherwise hold one more of the few threads all of the service's disk work
+ * shares, until the share gives up.
+ */
+export function sharedLooks(fs: ListFs): ListFs {
+  const pending = new Map<string, Promise<boolean>>();
+  return {
+    ...fs,
+    isFolder: (path) => {
+      const found = pending.get(path);
+      if (found !== undefined) return found;
+      const look = fs.isFolder(path).finally(() => {
+        pending.delete(path);
+      });
+      pending.set(path, look);
+      return look;
+    },
+  };
+}
+
 /** At most this many entries are read from one folder; the rest is left for a narrower prefix. */
 export const SCAN_MAX = 20_000;
 /** At most this many folders are shown from one folder. */
@@ -222,6 +244,8 @@ export async function listFolders(text: string, facts: ListFacts): Promise<Listi
   const up = above === undefined || typeof above === "string" ? undefined : shownFolder(above, sep);
   const ms = facts.ms ?? LOOK_MS;
   const deadline = Date.now() + ms;
+  // One time limit for the whole look: each step gets what is left of it.
+  const left = () => Math.max(1, deadline - Date.now());
   const looked = await bounded(async (): Promise<FolderReason | undefined> => {
     try {
       return (await facts.fs.isFolder(form.absolute)) ? undefined : "not_a_directory";
@@ -229,7 +253,7 @@ export async function listFolders(text: string, facts: ListFacts): Promise<Listi
       const code = (error as NodeJS.ErrnoException).code;
       return code === "ENOENT" || code === "ENOTDIR" ? "folder_missing" : "folder_unreadable";
     }
-  }, ms);
+  }, left());
   if (looked !== undefined) return { kind: "problem", sep, reason: looked, at };
 
   const prefix = split.prefix;
@@ -259,7 +283,7 @@ export async function listFolders(text: string, facts: ListFacts): Promise<Listi
       const code = (error as NodeJS.ErrnoException).code;
       return code === "ENOENT" || code === "ENOTDIR" ? "folder_missing" : "folder_unreadable";
     }
-  }, ms);
+  }, left());
   const scanned = await scan;
   if (scanned === "not_answering") {
     if (!read.started) return { kind: "problem", sep, reason: "not_answering", at };
@@ -273,12 +297,7 @@ export async function listFolders(text: string, facts: ListFacts): Promise<Listi
   // A link is listed only when it leads to a folder: its target is looked at, never listed.
   const links = found.filter((f) => f.link);
   const leads = await Promise.all(
-    links.map((f) =>
-      bounded(
-        () => facts.fs.isFolder(join(f.name)).catch(() => false),
-        Math.max(1, deadline - Date.now()),
-      ),
-    ),
+    links.map((f) => bounded(() => facts.fs.isFolder(join(f.name)).catch(() => false), left())),
   );
   const dead = new Set(links.filter((_, k) => leads[k] !== true).map((f) => f.name));
   const kept = found.filter((f) => !dead.has(f.name));
@@ -306,7 +325,8 @@ export async function listFolders(text: string, facts: ListFacts): Promise<Listi
     const stored = named === undefined ? form.stored : storedOf(named.name);
     const absolute = named === undefined ? form.absolute : join(named.name);
     const name = folderName(absolute, platform);
-    const repo = await facts.fs.repo(absolute).catch(() => undefined);
+    const found = await bounded(() => facts.fs.repo(absolute).catch(() => undefined), left());
+    const repo = found === "not_answering" ? undefined : found;
     const project = projectOf(stored, projects, os);
     exact = {
       folder: stored,

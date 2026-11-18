@@ -12,6 +12,7 @@ import {
   listFolders,
   makeFolder,
   nodeListFs,
+  sharedLooks,
   type KnownProject,
   type ListFs,
 } from "../ops/listing.ts";
@@ -63,7 +64,7 @@ export function pageFolderVerbs(host: PageFoldersHost): {
   readonly project: Verb;
 } {
   const platform = host.ops.platform ?? process.platform;
-  const fs = host.fs ?? nodeListFs(platform);
+  const fs = sharedLooks(host.fs ?? nodeListFs(platform));
   const homeOf = (): string => {
     const home = host.ops.home;
     if (home === undefined) {

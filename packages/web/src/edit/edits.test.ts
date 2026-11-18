@@ -1511,4 +1511,54 @@ describe("[A7.3.12.m5-14.web-write] a folder or project write: in turn, its toas
     );
     expect(w.toasts).toEqual([]);
   });
+
+  test("goes out with the base a dialog opened at, past the tab's own commits only", async () => {
+    const w = new World([task(1)]);
+    const bases: (string | undefined)[] = [];
+    const send =
+      (answer: { result: string; as_of: string }) =>
+      (_request: string, base: string | undefined) => {
+        bases.push(base);
+        return Promise.resolve(answer);
+      };
+    // The dialog opened at 10; the tab's own write lands at 11.
+    await w.edits.write(send({ result: "set", as_of: w.asOf(11) }), () => undefined);
+    await w.edits.write(send({ result: "set", as_of: w.asOf(12) }), () => undefined, {
+      base: w.asOf(10),
+    });
+    expect(bases).toEqual([w.asOf(10), w.asOf(11)]);
+    // Another project had the folder: nothing was written at 13, which another may have made.
+    await w.edits.write(send({ result: "exists", as_of: w.asOf(13) }), () => undefined);
+    await w.edits.write(send({ result: "set", as_of: w.asOf(14) }), () => undefined, {
+      base: w.asOf(12),
+    });
+    expect(bases.at(-1)).toBe(w.asOf(12));
+  });
+
+  test("an answer that was lost and found by its receipt reaches the caller as the receipt's word", async () => {
+    const w = new World([task(1)]);
+    let request = "";
+    w.answer("receipt.get", () => ({
+      found: true,
+      request,
+      status: "applied",
+      decided_at: "2026-11-12T10:00:00.000Z",
+      as_of: w.asOf(11),
+      incarnation: INCARNATION,
+      commit: `op_${"11".padStart(26, "0")}`,
+      results: [{ i: 0, status: "updated", id: "p_1", version: 11 }],
+      warnings: [],
+    }));
+    const written = w.edits.write(
+      (sent) => {
+        request = sent;
+        return new Promise<{ result: string; as_of: string }>(() => undefined);
+      },
+      (value) => ("receipt" in value ? { id: "toast.folderCleared" } : undefined),
+    );
+    await vi.advanceTimersByTimeAsync(ASK_MS);
+    await flush();
+    expect(await written).toEqual({ result: "updated", as_of: w.asOf(11), receipt: true });
+    expect(w.lastToast()).toMatchObject({ kind: "undo", text: { id: "toast.folderCleared" } });
+  });
 });

@@ -70,6 +70,11 @@
   cursor: pointer;
 }
 
+.up[data-focus-visible] {
+  outline: 2px solid var(--k-focus);
+  outline-offset: 1px;
+}
+
 .up[data-hovered] {
   background: var(--k-hover);
   color: var(--k-text);
@@ -140,10 +145,10 @@
   white-space: nowrap;
 }
 
-/* A project's folder line, and the task's folder actions: quiet words that say what they do. */
+/* A project's folder line, and the task's folder actions: quiet words that say what they do. The
+   line is one row whatever the path's length, so the list below it never moves. */
 .line {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
   min-height: 36px;
@@ -154,8 +159,11 @@
 }
 
 .words {
+  flex: 0 1 auto;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .path {
@@ -174,7 +182,7 @@
 
 .acts {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex: none;
   gap: 2px;
 }
 

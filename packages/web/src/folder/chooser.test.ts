@@ -43,12 +43,9 @@ describe("[A7.3.12.m5-14.web-chooser] the folder chooser's choices and the folde
     expect(choicesOf({ kind: "problem", sep: "/", reason: "folder_missing" }, true)).toEqual([]);
   });
 
-  test("the folder a text names drops its trailing separators, but a root keeps its own", () => {
-    expect(chosenFolder("  ~/work/portal/ ")).toBe("~/work/portal");
-    expect(chosenFolder("~/")).toBe("~");
-    expect(chosenFolder("C:\\Users\\mira\\")).toBe("C:\\Users\\mira");
-    expect(chosenFolder("C:\\")).toBe("C:\\");
-    expect(chosenFolder("/")).toBe("/");
-    expect(chosenFolder("")).toBeUndefined();
+  test("the folder a text names is the text as typed, so a Linux name ending in \\ stays itself", () => {
+    expect(chosenFolder("  ~/work/portal/ ")).toBe("~/work/portal/");
+    expect(chosenFolder("/home/mira/draft\\/")).toBe("/home/mira/draft\\/");
+    expect(chosenFolder("  ")).toBeUndefined();
   });
 });

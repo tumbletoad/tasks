@@ -539,6 +539,7 @@
   "folder.use": "Use this folder",
   "folder.cancel": "Cancel",
   "folder.notSet": "The folder was not set. Try again.",
+  "folder.changedElsewhere": "This folder was changed elsewhere while you chose. Use this folder again to replace it.",
   "folder.notCleared": "The folder was not cleared. Try again.",
   "folder.lineFailed": "This project's folder could not be read.",
   "folder.noneHere": "No folder on this computer",

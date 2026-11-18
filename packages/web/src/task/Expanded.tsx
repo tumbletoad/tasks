@@ -244,8 +244,8 @@ function PlaceLine({
       onClose={() => {
         setChoosing(false);
       }}
-      onChoose={async (chosen) => {
-        await writes.setTask(task, chosen);
+      onChoose={async (chosen, base) => {
+        await writes.setTask(task, chosen, base);
       }}
     />
   ) : null;

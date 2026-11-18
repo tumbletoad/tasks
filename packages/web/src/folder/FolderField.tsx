@@ -74,6 +74,14 @@ export function FolderField({
   const reads = useRef(new Latest());
   const looked = useRef(onLook);
   looked.current = onLook;
+  const typed = useRef(value);
+  typed.current = value;
+  const list = useRef<HTMLUListElement>(null);
+
+  useEffect(() => {
+    if (active === undefined) return;
+    list.current?.children[active]?.scrollIntoView({ block: "nearest" });
+  }, [active]);
 
   useEffect(() => {
     const newest = reads.current.begin("list");
@@ -115,10 +123,13 @@ export function FolderField({
       return;
     }
     setMaking(true);
+    const asked = typed.current;
     api
       .makeFolder(choice.value)
       .then(
         (made) => {
+          // The person typed on while it was made: their newer text stays.
+          if (typed.current !== asked) return;
           if (made.folder !== undefined) onChange(made.folder);
           else setListing({ kind: "problem", sep: listing?.sep ?? "/", reason: made.reason ?? "" });
         },
@@ -201,6 +212,8 @@ export function FolderField({
         placeholder={placeholder ?? t("folder.placeholder")}
         dir="ltr"
         onChange={(event) => {
+          // A choice of the old text is not Enter's to take once the text changed.
+          setActive(undefined);
           onChange(event.target.value);
         }}
         onKeyDown={onKey}
@@ -210,7 +223,6 @@ export function FolderField({
           {up === undefined ? null : (
             <Button
               className={styles.up}
-              excludeFromTabOrder
               aria-label={t("folder.up", { folder: up })}
               onPress={() => {
                 onChange(up);
@@ -224,7 +236,13 @@ export function FolderField({
             {at ?? t("folder.startHere")}
           </span>
         </div>
-        <ul id={listId} role="listbox" aria-label={t("folder.choices")} className={styles.list}>
+        <ul
+          ref={list}
+          id={listId}
+          role="listbox"
+          aria-label={t("folder.choices")}
+          className={styles.list}
+        >
           {choices.map((choice, k) => (
             <li
               key={choice.key}

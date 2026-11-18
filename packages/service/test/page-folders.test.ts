@@ -2,7 +2,7 @@
 // by name and bounded in time and size. A fake disk covers what no test machine has (a share that
 // stops answering, Windows drives and shares on any OS); a scratch folder covers links, files and
 // permissions on the real disk. Scratch folders only.
-import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { pageFolderVerbs } from "../src/hub/page-folders.ts";
@@ -147,6 +147,54 @@ describe("[A7.3.12.m5-14.folders-list] The chooser lists folders by name, bounde
     expect(names(listing)).toHaveLength(200);
     const narrow = await listFolders("/data/f4999", linux(fs, { ms: 10_000 }));
     expect(names(narrow)).toContain("f4999");
+    // It stops reading at the cap, even when no folder read so far is shown.
+    let read = 0;
+    const counted: ListFs = {
+      ...fs,
+      entries: async function* (path) {
+        for await (const entry of fs.entries(path)) {
+          read += 1;
+          yield entry;
+        }
+      },
+    };
+    const capped = await listFolders("/data/zzz", linux(counted, { ms: 10_000, scanMax: 1_000 }));
+    expect(capped).toMatchObject({ kind: "list", more: true, folders: [] });
+    expect(read).toBeLessThanOrEqual(1_001);
+  });
+
+  it("a folder whose look is still on its way is not looked at again", async () => {
+    let looks = 0;
+    const base = fakeFs({}, { hang: ["/mnt/gone"] });
+    const fs: ListFs = {
+      ...base,
+      isFolder: (path) => {
+        looks += 1;
+        return base.isFolder(path);
+      },
+    };
+    const verbs = pageFolderVerbs({
+      ops: { machine: { id: "m_x" }, spaces: () => [], platform: "linux", home: "/home/mira" },
+      fs,
+      ms: 50,
+    });
+    // The person types on in a folder of a share that stopped answering.
+    for (const typed of ["/mnt/gone/a", "/mnt/gone/ab", "/mnt/gone/abc"]) {
+      expect(await verbs.list({ path: typed }, "ui")).toMatchObject({ reason: "not_answering" });
+    }
+    expect(looks).toBe(1);
+  });
+
+  it("on Linux a folder whose name ends in a backslash is that folder, not its sibling", async () => {
+    const fs = fakeFs({
+      "/home/mira": { "draft\\": "dir", draft: "dir" },
+      "/home/mira/draft\\": {},
+    });
+    expect(await listFolders("~/draft\\/", linux(fs))).toMatchObject({
+      kind: "list",
+      at: "~/draft\\/",
+      exact: { folder: "~/draft\\", name: "draft\\" },
+    });
   });
 
   it("a folder that does not answer in time is said so, and one that stops answering gives what it read", async () => {
@@ -322,6 +370,12 @@ describe("[A7.3.12.m5-14.folders-disk] On this computer's disk: links said so, f
     const sep = process.platform === "win32" ? "\\" : "/";
     const made = await makeFolder(join(temp.root, "fresh"), facts);
     expect(made).toEqual({ folder: `~${sep}fresh` });
+    if (process.platform !== "win32") {
+      // The mode a plain mkdir gives under the same umask, not the product's own private one.
+      mkdirSync(join(temp.root, "plain"));
+      const mode = (path: string) => statSync(path).mode & 0o777;
+      expect(mode(join(temp.root, "fresh"))).toBe(mode(join(temp.root, "plain")));
+    }
     expect(await makeFolder(join(temp.root, "fresh"), facts)).toEqual({ folder: `~${sep}fresh` });
     expect(await makeFolder(join(temp.root, "no", "parent"), facts)).toEqual({
       reason: "folder_missing",

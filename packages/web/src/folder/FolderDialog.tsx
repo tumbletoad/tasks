@@ -33,6 +33,12 @@ export function refusalText(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/** A refusal because someone changed what the write covers after the dialog opened. */
+function changedSince(error: unknown): boolean {
+  const { code, data } = (error ?? {}) as { code?: unknown; data?: { cause?: unknown } };
+  return code === "conflict" && data?.cause === "VERSION_CONFLICT";
+}
+
 /**
  * What the folder in the field is: its name and repository, or the project that has it, unless
  * that is the project the folder is chosen for (`owner`).
@@ -73,18 +79,24 @@ export function FolderDialog({
   /** The text the field starts with: the folder there is now, or empty. */
   readonly start: string;
   readonly onClose: () => void;
-  /** Writes the folder: resolves when it is done, or rejects with the refusal. */
-  readonly onChoose: (folder: string) => Promise<void>;
+  /**
+   * Writes the folder with `base`, what the page showed when the dialog opened: resolves when it
+   * is done, or rejects with the refusal.
+   */
+  readonly onChoose: (folder: string, base: string | undefined) => Promise<void>;
   /** The project the folder is chosen for: its own folder is no other project's. */
   readonly owner?: string;
 }) {
   const t = useT();
-  const { api } = useContext(Session);
+  const { api, live } = useContext(Session);
   const leadId = useId();
   const [text, setText] = useState(start);
   const [look, setLook] = useState<FolderLook>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  // A folder set elsewhere while the dialog is open is not replaced unseen: the first Use says so,
+  // and the next one replaces it.
+  const [base, setBase] = useState(() => live.store.asOf);
   const folder = chosenFolder(text);
 
   const submit = (event: SyntheticEvent) => {
@@ -92,8 +104,11 @@ export function FolderDialog({
     if (busy || folder === undefined) return;
     setBusy(true);
     setError(undefined);
-    onChoose(folder).then(onClose, (failed: unknown) => {
-      setError(refusalText(failed, t("folder.notSet")));
+    onChoose(folder, base).then(onClose, (failed: unknown) => {
+      if (changedSince(failed)) {
+        setBase(live.store.asOf);
+        setError(t("folder.changedElsewhere"));
+      } else setError(refusalText(failed, t("folder.notSet")));
       setBusy(false);
     });
   };

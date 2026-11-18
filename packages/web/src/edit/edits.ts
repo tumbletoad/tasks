@@ -169,8 +169,18 @@ function receiptError(found: Found): Error {
   });
 }
 
+/** A write's answer learned from its receipt: where it landed, and whether it changed anything. */
+export interface WriteReceipt {
+  readonly result: "updated" | "no_change";
+  readonly as_of: string;
+  readonly receipt: true;
+}
+
+/** The results of a write that made no commit: another project had the folder, or nothing changed. */
+const WROTE_NOTHING: ReadonlySet<string> = new Set(["no_change", "exists"]);
+
 /** A write's receipt as its answer: where it landed, and whether it changed anything. */
-function writeOf(found: Found): Decision<{ result: string; as_of: string }> {
+function writeOf(found: Found): Decision<Omit<WriteReceipt, "receipt">> {
   if (found.status === "applied" || found.status === "proposed") {
     return { ok: true, value: { result: "updated", as_of: found.as_of } };
   }
@@ -675,26 +685,35 @@ export class Edits {
    * writes already on their way, and before any made after it. Once it changed something, its
    * toast says `said` and its Undo names its own commit; Ctrl+Z takes it back as the newest change.
    * The caller reads the answer, a refusal included, and says what a refusal means. Its base is
-   * what the screen showed when the person acted, moved past the tab's own commits since.
+   * `base`, what a dialog showed when it opened, or else the screen's now, moved past the tab's own
+   * commits since. When the answer was lost and its receipt decided it, the caller gets only the
+   * receipt's word (`WriteReceipt`).
    */
   write<T extends { as_of?: string; result?: unknown }>(
     send: (request: string, base: string | undefined) => Promise<T>,
-    said: (value: T) => Msg | undefined,
-  ): Promise<T> {
-    const seen = this.#deps.asOf();
+    said: (value: T | WriteReceipt) => Msg | undefined,
+    options: { readonly base?: string | undefined } = {},
+  ): Promise<T | WriteReceipt> {
+    const seen = options.base ?? this.#deps.asOf();
     const ahead = allOf(this.#ahead());
-    const { turn, made } = this.#turn<T>(ahead);
+    const { turn, made } = this.#turn<T | WriteReceipt>(ahead);
     const sent = this.#deps.write(async (request) => {
       try {
         if (!(await ahead.wait())) throw new NotSent();
         // The same base for a second send with the same request ID: one intent, sent again.
         const base = this.#ownRun(seen);
-        const one = this.#call(
+        const one = this.#call<T | WriteReceipt>(
           request,
           () => send(request, base),
-          (found) => writeOf(found) as Decision<T>,
+          (found) => {
+            const decided = writeOf(found);
+            return decided.ok
+              ? { ok: true, value: { ...decided.value, receipt: true as const } }
+              : decided;
+          },
           (result) => {
-            if (typeof result.as_of === "string" && result.result !== "no_change") {
+            // `as_of` of an answer that wrote nothing is only the head, which may be another's.
+            if (typeof result.as_of === "string" && !WROTE_NOTHING.has(String(result.result))) {
               this.#ownCommits.add(result.as_of);
             }
           },
