@@ -11,6 +11,7 @@ import {
   isToolEnvList,
   routeOf,
   targetDef,
+  type BriefComposer,
   type BriefKind,
   type BriefNames,
   type Instance,
@@ -35,7 +36,7 @@ export const UNAVAILABLE_REASONS = [
   "other_machine",
   /** `claude-cli://` refuses a UNC folder (A4 3.3 step 4). */
   "unc",
-  /** The brief does not fit the route's budget even without composer text (A4 3.15.3). */
+  /** The brief does not fit the route's budget (A4 3.15.3). */
   "too_long",
 ] as const;
 export type UnavailableReason = (typeof UNAVAILABLE_REASONS)[number];
@@ -112,12 +113,15 @@ export interface OpenTaskRequest {
   readonly task: LaunchTask;
   /** The instance's key; undefined is Copy (A4 3.4.6). */
   readonly instance: string | undefined;
-  /** The person's own words for the agent (A5 3.8), never stored in the space. */
+  /**
+   * The person's own words for the agent (A5 3.8), never stored in the space: an Open route holds
+   * them for the launch's agent, Copy puts them on the clipboard.
+   */
   readonly composer: string | undefined;
   /** The click's request ID (A1 3.8): a repeat replays the same intent. */
   readonly requestId: string;
   /**
-   * Over budget, the composer text is saved as a note addressed to agents (A4 3.15.3), before the
+   * Copy's words over its budget are saved as a note addressed to agents (A4 3.15.3), before the
    * intent is recorded. The request path saves it under the click's own request ID.
    */
   readonly saveNote: (text: string) => Promise<void>;
@@ -144,8 +148,8 @@ export interface OpenTaskResult {
   readonly intent: LaunchIntent;
   /** Text for the person's clipboard: Copy's pointer brief, the Codex assisted open's brief. */
   readonly copy: string | undefined;
-  /** Where the composer text went. */
-  readonly composer: "none" | "inline" | "note";
+  /** Where the composer text went: held is an Open route's request, which the agent reads. */
+  readonly composer: BriefComposer;
   /** The sanitiser removed something from the composer text (A4 3.15.6's quiet notice). */
   readonly removed: boolean;
 }

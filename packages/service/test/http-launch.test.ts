@@ -172,9 +172,7 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
     };
     expect(result.launch).toMatchObject({ route: "clipboard", state: "dispatched" });
     const lines = result.copy.split("\n");
-    expect(lines[0]).toBe(
-      `${PRODUCT_NAME} task ${task.ref} "Sign the lease" (launch ${result.launch.reference}).`,
-    );
+    expect(lines[0]).toBe(`${PRODUCT_NAME} task ${task.ref} (launch ${result.launch.reference}).`);
     expect(lines[4]?.startsWith(`Folder: ${PRODUCT_NAME} work folder (`)).toBe(true);
     expect(lines).toHaveLength(6);
   });

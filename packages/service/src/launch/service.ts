@@ -35,6 +35,7 @@ import {
   isUncPath,
   customReady,
   LaunchMachine,
+  LaunchRequests,
   MATCH_POLL_MS,
   MATCH_WINDOW_MS,
   needsDefault,
@@ -52,6 +53,7 @@ import {
   regPath,
   renderBrief,
   renderContextPack,
+  REQUEST_KEEP_MS,
   resolveLaunchFolder,
   routeOf,
   sanitiseComposer,
@@ -85,6 +87,7 @@ import {
   type ProcessProbe,
   type RecordStore,
   type ReportMethod,
+  type RequestState,
   type Route,
   type SpawnPlan,
 } from "@tasks/launch";
@@ -348,6 +351,8 @@ export class LaunchService {
     string,
     { readonly space: string; readonly match: ReferenceMatch; readonly at: number }
   >();
+  /** The person's words for each launch's agent, in the launch's own folder (requests.ts). */
+  readonly #requests: LaunchRequests;
   readonly #timers = new Set<NodeJS.Timeout>();
   readonly #listeners = new Set<(space: string) => void>();
   /** `launch.open` calls under way, by space and request ID: the last of each queue. */
@@ -355,6 +360,7 @@ export class LaunchService {
 
   constructor(options: LaunchServiceOptions) {
     this.#options = options;
+    this.#requests = new LaunchRequests(options.root);
     this.environment = options.environment ?? defaultEnvironment(options);
     this.host = new ShimHost({
       records: options.records ?? new FolderRecords(options.root),
@@ -670,16 +676,8 @@ export class LaunchService {
     // the same lines and the same hash (the hash holds the reference as a slot).
     const probe = brief(REFERENCE_LENGTH_STAND_IN);
     if (probe.status !== "ok") throw this.#unavailable("too_long");
+    // Copy's words over its budget: saved before the intent is recorded.
     if (probe.composer === "note" && probe.composerText !== undefined) {
-      // The note is saved before the intent is recorded: a terminal click whose folder cannot be
-      // used is refused first, so a refused click saves nothing (the link's was checked above).
-      if (choice.route === "terminal") {
-        const where = await this.resolveFolder(space, folder);
-        if (where.status === "failed") {
-          this.#options.log.log("launch.folder_refused", { stage: "open", reason: where.reason });
-          throw new LaunchFolderUnavailable(where.reason, folder?.stored);
-        }
-      }
       await request.saveNote(probe.composerText);
     }
 
@@ -702,7 +700,6 @@ export class LaunchService {
         const text = brief(reference);
         const built = cliArgv(chosen, choice.prompt ?? "sent", {
           task: task.ref,
-          title,
           reference,
           toolEnv,
           ...(session === undefined ? {} : { session }),
@@ -742,6 +739,22 @@ export class LaunchService {
           );
     const text = brief(intent.reference);
     if (text.status !== "ok") throw this.#unavailable("too_long");
+    // The person's words wait for the agent in the launch's own folder before anything starts. A
+    // launch that started already takes no new request.
+    let composer = probe.composer;
+    if (composer === "held") {
+      const words = probe.composerText;
+      const route = choice.route;
+      const held =
+        words !== undefined &&
+        intent.state === "prepared" &&
+        (route === "terminal" || route === "link") &&
+        this.#requests.put(
+          { space, launch: intent.id, route, at: (this.#options.now ?? Date.now)() },
+          words,
+        );
+      if (!held) composer = "none";
+    }
     if (choice.route === "link" && intent.state === "prepared" && !this.#links.has(intent.id)) {
       const link =
         instance !== undefined && isBuiltInTarget(instance.target)
@@ -777,9 +790,48 @@ export class LaunchService {
     return {
       intent,
       copy: choice.copy ? text.text : undefined,
-      composer: probe.composer,
+      composer,
       removed: probe.removed,
     };
+  }
+
+  /**
+   * The words the person typed for a launch's agent, for a call that names the launch by its
+   * reference (`task.get`), and that the agent read them: the page then clears its field.
+   * Undefined when none are held for it.
+   */
+  requestFor(space: string, launch: string): string | undefined {
+    const text = this.#requests.text(space, launch);
+    if (text === undefined) return undefined;
+    if (this.#requests.markRead(launch)) this.#changed(space);
+    return text;
+  }
+
+  /** Where a launch's request is: waiting, read, gone unread, or undefined when none is known. */
+  requestState(launch: string): RequestState {
+    return this.#requests.state(launch);
+  }
+
+  /**
+   * Removes the requests no launch needs any more: a terminal launch's once its machine state is
+   * gone (it ended, or never dispatched), a link launch's once it failed or its reference no longer
+   * binds. Runs with every round, so a restart removes what an ended launch left.
+   */
+  async #sweepRequests(): Promise<void> {
+    const now = (this.#options.now ?? Date.now)();
+    for (const held of this.#requests.list()) {
+      let keep: boolean;
+      if (held.route === "terminal") keep = this.host.record(held.launch) !== undefined;
+      else if (now - held.at >= REQUEST_KEEP_MS) keep = false;
+      else {
+        const intent = await this.read(held.space, held.launch).catch(() => undefined);
+        keep = intent?.state !== "failed";
+      }
+      if (!keep) {
+        this.#requests.remove(held.launch);
+        this.#changed(held.space);
+      }
+    }
   }
 
   /**
@@ -926,7 +978,7 @@ export class LaunchService {
       renderBrief({
         kind: choice.kind,
         task: task.ref,
-        title: task.title,
+        space,
         reference,
         composer: request.composer,
         ...(folder === undefined ? {} : { folder }),
@@ -963,10 +1015,13 @@ export class LaunchService {
       }
     }
     const given = request.composer?.trim() ?? "";
+    // An Open route's words are the launch's request, held since the first call, or gone.
+    const held = this.#requests.state(intent.id) !== undefined;
     const bare: OpenTaskResult = {
       intent,
       copy: undefined,
-      composer: given === "" ? "none" : "inline",
+      composer:
+        given === "" ? "none" : intent.route === "clipboard" ? "inline" : held ? "held" : "none",
       removed: false,
     };
     if (choice?.route !== intent.route) return bare;
@@ -975,7 +1030,7 @@ export class LaunchService {
     return {
       intent,
       copy: choice.copy ? text.text : undefined,
-      composer: text.composer,
+      composer: text.composer === "held" && !held ? "none" : text.composer,
       removed: text.removed,
     };
   }
@@ -1020,6 +1075,9 @@ export class LaunchService {
     }
     await this.host.check().catch((error: unknown) => {
       this.#failed("check", error);
+    });
+    await this.#sweepRequests().catch((error: unknown) => {
+      this.#failed("sweep", error);
     });
     this.#pruneMatches();
     // A link click whose dispatch never ran: its intent expires in Prepared (A4 3.9.1).
@@ -1281,7 +1339,11 @@ export class LaunchService {
       this.#refused("report", outcome.reason);
       throw answer(outcome.reason);
     }
-    if (outcome.ended) this.#attachments.delete(context.connection);
+    if (outcome.ended) {
+      this.#attachments.delete(context.connection);
+      // The agent ended: its request is no use to anyone now.
+      this.#requests.remove(attachment.launch);
+    }
     if (outcome.folder !== undefined) {
       this.#options.log.log("launch.folder_refused", { stage: "shim", reason: outcome.folder });
     }

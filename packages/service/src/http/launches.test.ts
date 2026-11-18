@@ -108,6 +108,7 @@ describe("[M6.page.run-view] the page's view of a run", () => {
   test("Run checks what the page sent before anything is queued", async () => {
     const queued: unknown[] = [];
     const port: UiRunPort = {
+      runnable: (key) => key === "codex-work",
       queueTask: (_space, asked) => {
         queued.push(asked);
         return Promise.resolve(record());
@@ -129,7 +130,13 @@ describe("[M6.page.run-view] the page's view of a run", () => {
           },
         ],
       },
-      port: { instances: () => [], runs: port },
+      port: {
+        instances: () => [
+          { key: "codex-work", label: "Codex", glyph: "Cx", ring: 1, route: "terminal" },
+          { key: "claude", label: "Claude", glyph: "Cl", ring: 2, route: "terminal" },
+        ],
+      },
+      runs: port,
       log: () => undefined,
       changed: () => undefined,
     });
@@ -143,6 +150,11 @@ describe("[M6.page.run-view] the page's view of a run", () => {
       launches.run(space, { task, request_id: id, text: "x".repeat(70_000) }),
     ).rejects.toThrow("longer");
     expect(queued).toEqual([]);
+    // The page offers Run for the instances the service says can run.
+    expect(launches.instances().map((i) => [i.key, i.runs])).toEqual([
+      ["codex-work", true],
+      ["claude", undefined],
+    ]);
     // Blank words are no words: the run works on the task.
     await launches.run(space, { task, request_id: id, text: "  \n" });
     await launches.run(space, { task, request_id: id, text: "Check the export" });

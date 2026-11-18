@@ -64,7 +64,7 @@ import { newNonce, securityHeaders, type CachePolicy } from "./csp.ts";
 import { methodWord, type HttpClass, type HttpLog, type Refusal, type Route } from "./events.ts";
 import type { Visibility } from "./feed.ts";
 import type { RedeemCheck } from "./holders.ts";
-import { UiLaunches, type UiLaunchPort } from "./launches.ts";
+import { UiLaunches, type UiLaunchPort, type UiRunPort } from "./launches.ts";
 import type { HttpLimits } from "./limits.ts";
 import { shellFor, type UiBundle } from "./page.ts";
 import type { StartHttpTimer } from "./timers.ts";
@@ -98,6 +98,8 @@ export interface AppOptions {
   readonly installed?: () => string | undefined;
   /** The hub's launch service, for the page's tiles (launches.ts). None: no tile, Copy only. */
   readonly launch?: UiLaunchPort;
+  /** The service's background runs, for the page's Run (launches.ts). None: no Run. */
+  readonly runs?: UiRunPort;
   /** The machine's default space (hub/default-space.ts). None: the page cannot change it. */
   readonly defaults?: UiDefaultSpace;
   /** This computer's settings (hub/machine-settings.ts). None: Settings changes nothing here. */
@@ -255,6 +257,7 @@ export class HttpApp {
     this.launches = new UiLaunches({
       host: options.ops,
       port: options.launch,
+      runs: options.runs,
       log: options.log,
       changed: (space) => {
         this.feed.poke(space);

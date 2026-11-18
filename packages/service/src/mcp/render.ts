@@ -7,6 +7,7 @@ import {
   LIMITS,
   findEntry,
   messageWithHint,
+  resultTokens,
   type ErrorBody,
   type OutputOf,
 } from "@tasks/contracts";
@@ -304,6 +305,34 @@ const storedFolder = (folder: DigestTask["folder"]): string[][] =>
 
 const SECTION_NAMES = ["context", "notes", "log", "sources", "outcome", "history"];
 
+/**
+ * The user's request for the launch the call named: their own words, the instruction to act on,
+ * so they stand outside the data block, whole, each line as typed after a two-space indent.
+ */
+function requestPart(request: string | undefined): Part[] {
+  if (request === undefined) return [];
+  return [
+    {
+      fixed: true,
+      whole: true,
+      units: [
+        ["Request from the user for this launch:"],
+        ...request.split("\n").map((line) => [`  ${line}`]),
+      ],
+    },
+  ];
+}
+
+/** The tokens the request's lines take: its room on top of the result's budget. */
+const requestTokens = (request: string | undefined): number =>
+  request === undefined
+    ? 0
+    : resultTokens(
+        requestPart(request)
+          .flatMap((part) => part.units.flat())
+          .join("\n"),
+      ) + 1;
+
 function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: string): Rendered {
   const task = result.task;
   const { more } = task;
@@ -314,6 +343,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
       task.folder === undefined ? undefined : folderLine(task.folder),
       result.bound ? "Session: bound to this task by this call" : undefined,
     ),
+    ...requestPart(result.request),
     instructionsPart(
       task.instructions,
       task.instructions.length + more.instructions,
@@ -396,6 +426,7 @@ function sectionsRendered(
   });
   const parts: Part[] = [fixed(headerLine(task, result.as_of))];
   if (result.bound) parts.push(fixed("Session: bound to this task by this call"));
+  parts.push(...requestPart(result.request));
   let byOthers: Note[] = [];
   if (sections.instructions !== undefined) {
     // Only what the user wrote stands outside the data block as instructions (A3 3.10).
@@ -713,7 +744,11 @@ function prefsRendered(result: Prefs): Rendered {
 type Renderer = (
   result: never,
   tools: { readonly getTask: string; readonly tool: string },
-) => Rendered & { max?: number };
+) => Rendered & {
+  max?: number;
+  /** Tokens on top of every budget: the user's request, which is never cut. */
+  extra?: number;
+};
 
 const RENDERERS: Readonly<Record<string, Renderer>> = {
   "space.status": (result: Status) => ({
@@ -725,8 +760,11 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
     if (result.view === "status") {
       return { parts: statusParts(result, result.bound), more: STATUS_MORE };
     }
-    if (result.view === "digest") return { ...digestRendered(result, getTask), max: DIGEST_TOKENS };
-    return sectionsRendered(result, getTask);
+    const extra = requestTokens(result.request);
+    if (result.view === "digest") {
+      return { ...digestRendered(result, getTask), max: DIGEST_TOKENS, extra };
+    }
+    return { ...sectionsRendered(result, getTask), extra };
   },
   "task.update": (result: OutputOf<"task.update">) => {
     const fields = result.fields.length === 0 ? "" : `: ${result.fields.join(", ")}`;
@@ -859,9 +897,12 @@ function rendered(entryName: string, result: unknown): { text: Rendered; max: nu
   const entry = findEntry(entryName);
   const max = budgetOf(entryName);
   const text = (
-    renderer as (r: unknown, t: { getTask: string; tool: string }) => Rendered & { max?: number }
+    renderer as (
+      r: unknown,
+      t: { getTask: string; tool: string },
+    ) => Rendered & { max?: number; extra?: number }
   )(result, { getTask: toolOf("task.get"), tool: entry?.faces.mcp?.tool ?? entryName });
-  return { text, max: Math.min(max, text.max ?? max, LIMITS.result) };
+  return { text, max: Math.min(max, text.max ?? max, LIMITS.result) + (text.extra ?? 0) };
 }
 
 // ---------------------------------------------------------------------------------------------

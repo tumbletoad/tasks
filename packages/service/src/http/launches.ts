@@ -9,9 +9,10 @@
 // background run of a task, reads a task's runs (refetched when the feed names a run) and stops
 // one, on the service's runs (runs/service.ts), the same ones `tasks run` uses.
 //
-// A receipt holds IDs, states, instants and fixed codes only, as the launch record does. A run as
-// the page reads it holds the person's request and the agent's answer, task text that travels in
-// a request's or a response's body only.
+// A receipt holds IDs, states, instants and fixed codes only, as the launch record does, and
+// whether the launch's agent read the person's request yet, which only this computer knows. A run
+// as the page reads it holds the person's request and the agent's answer, task text that travels
+// in a request's or a response's body only.
 import { AppError, RequestId } from "@tasks/contracts";
 import { RUN_REQUEST_MAX_BYTES, type RunRecord, type RunState } from "@tasks/contracts/runs";
 import {
@@ -45,17 +46,22 @@ export interface UiInstance {
 
 /**
  * The hub's launch service as the page sees it: the instances Open can open a task in here, and
- * a way to hear that a space's launch records changed (the feed catches up at once). With `runs`,
- * the page starts, reads and stops a task's background runs too.
+ * a way to hear that a space's launch records changed (the feed catches up at once).
  */
 export interface UiLaunchPort {
   instances(): readonly UiInstance[];
   onChange?(listener: (space: string) => void): () => void;
-  readonly runs?: UiRunPort;
+  /** Where a launch's request is: waiting, read, gone unread, or undefined when none is known. */
+  requestState?(launch: string): "waiting" | "read" | "unread" | undefined;
 }
 
-/** The service's background runs, as the page uses them (runs/service.ts). */
+/**
+ * The service's background runs, as the page starts, reads and stops a task's runs
+ * (runs/service.ts), and which instances can run.
+ */
 export interface UiRunPort {
+  /** Whether the instance with this key can work on a task in the background. */
+  runnable(instance: string): boolean;
   queueTask(
     space: string,
     asked: {
@@ -143,6 +149,12 @@ export interface UiReceipt {
    * launch recorded by a build that did not record them.
    */
   readonly terminal?: { readonly app: string; readonly source: string };
+  /**
+   * The person's words this launch holds for its agent: waiting until the agent read them, read
+   * once it did, unread when they went with a launch whose agent never read them. Absent when it
+   * held none, or this service started after they went.
+   */
+  readonly request?: "waiting" | "read" | "unread";
 }
 
 const MONOGRAM = /^[A-Za-z0-9]{1,2}$/;
@@ -233,12 +245,14 @@ export function receiptOf(row: Record<string, unknown>): UiReceipt | undefined {
 export interface UiLaunchesOptions {
   readonly host: OpsHost;
   readonly port: UiLaunchPort | undefined;
+  /** The service's runs. None: no instance runs and Run is refused. */
+  readonly runs?: UiRunPort | undefined;
   readonly log: HttpLog;
   /** A launch record changed: the feed's subscribers of that space catch up. */
   readonly changed: (space: string) => void;
 }
 
-/** The page's tiles and receipts, over the hub's launch service. */
+/** The page's tiles, receipts and runs, over the hub's launch service and runs. */
 export class UiLaunches {
   readonly #options: UiLaunchesOptions;
   readonly #unlisten: (() => void) | undefined;
@@ -250,10 +264,21 @@ export class UiLaunches {
     });
   }
 
-  /** The instances the page draws a tile for. None without a launch service: Copy only. */
+  /**
+   * The instances the page draws a tile for, each marked when it can run. None without a launch
+   * service: Copy only.
+   */
   instances(): UiInstance[] {
     const port = this.#options.port;
-    return port === undefined ? [] : checkInstances(port.instances());
+    const runs = this.#options.runs;
+    if (port === undefined) return [];
+    return checkInstances(
+      port
+        .instances()
+        .map((tile) =>
+          runs?.runnable(tile.key) === true ? { ...tile, runs: true as const } : tile,
+        ),
+    );
   }
 
   close(): void {
@@ -288,7 +313,14 @@ export class UiLaunches {
     const reader = this.#space(spaceRef).reader;
     if (reader === undefined) throw invalid("The space is not served.", "space");
     const rows = await reader.all(LIST_SQL, { task });
-    return rows.flatMap((r) => receiptOf(r) ?? []).reverse();
+    const port = this.#options.port;
+    return rows
+      .flatMap((r) => receiptOf(r) ?? [])
+      .map((receipt) => {
+        const request = port?.requestState?.(receipt.id);
+        return request === undefined ? receipt : { ...receipt, request };
+      })
+      .reverse();
   }
 
   /**
@@ -358,7 +390,7 @@ export class UiLaunches {
   }
 
   #runs(): UiRunPort {
-    const runs = this.#options.port?.runs;
+    const runs = this.#options.runs;
     if (runs === undefined) {
       throw new AppError({
         code: "service_unavailable",

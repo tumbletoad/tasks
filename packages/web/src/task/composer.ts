@@ -52,45 +52,78 @@ export function keepNote(space: string, task: string, note: NoteRequest | undefi
 }
 
 /**
- * Whether a launch's words reached the agent: true once the agent confirmed or a link or the
- * clipboard handed them over, false when it failed or the service lost track of it, undefined
- * while it is on its way.
+ * Where a launch's words are, now that Tasks holds them for its agent: `reached` once the agent
+ * read them, `unread` when they went with a launch whose agent never read them, `kept` when the
+ * launch failed or nothing is known of them any more (the service restarted since), undefined
+ * while they wait. Only `reached` clears the field, and only `unread` says so.
  */
-export function delivered(receipt: Receipt): boolean | undefined {
-  if (receipt.state === "failed" || receipt.state === "unknown") return false;
-  if (receipt.state === "confirmed") return true;
-  if (receipt.state === "dispatched" && receipt.route !== "terminal") return true;
-  return undefined;
+export type Delivery = "reached" | "unread" | "kept" | undefined;
+
+export function delivered(receipt: Receipt): Delivery {
+  if (receipt.request === "read") return "reached";
+  if (receipt.state === "failed") return "kept";
+  if (receipt.request === "unread") return "unread";
+  if (receipt.request === "waiting") return undefined;
+  if (receipt.state === "prepared" || receipt.state === "dispatching") return undefined;
+  return "kept";
 }
 
 /**
- * The launches that carry a composer's words, by draft, until they settle. Kept for the tab, so a
- * task collapsed and expanded again still clears what its launch delivered.
+ * The launches that carry a task's words, by receipt, until they settle. Kept with the draft, since
+ * an agent may read them long after the click: a reload still clears what it read.
  */
-const carrying = new Map<string, Map<string, string>>();
+const carryOf = (space: string, task: string) => `carry.${space}.${task}`;
 
-export function carry(space: string, task: string, receipt: string, words: string): void {
-  const name = nameOf(space, task);
-  const launches = carrying.get(name) ?? new Map<string, string>();
-  launches.set(receipt, words);
-  carrying.set(name, launches);
+/** The most launches kept for one task: one that never settles is let go after these. */
+const CARRIED_MAX = 16;
+
+function readCarrying(space: string, task: string): Map<string, string> {
+  const value = browserKept.json(carryOf(space, task));
+  const launches = new Map<string, string>();
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return launches;
+  for (const [receipt, words] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof words === "string" && words !== "" && words.length <= DRAFT_MAX) {
+      launches.set(receipt, words);
+    }
+  }
+  return launches;
 }
 
-/** The words of the task's launches that delivered them; each launch that settled is let go. */
-export function settled(space: string, task: string, receipts: readonly Receipt[]): string[] {
-  const name = nameOf(space, task);
-  const launches = carrying.get(name);
-  if (launches === undefined) return [];
-  const done: string[] = [];
+function keepCarrying(space: string, task: string, launches: Map<string, string>): void {
+  const kept = [...launches].slice(-CARRIED_MAX);
+  browserKept.keep(
+    carryOf(space, task),
+    kept.length === 0 ? undefined : JSON.stringify(Object.fromEntries(kept)),
+  );
+}
+
+export function carry(space: string, task: string, receipt: string, words: string): void {
+  const launches = readCarrying(space, task);
+  launches.set(receipt, words);
+  keepCarrying(space, task, launches);
+}
+
+/** A launch that settled with the words it carried. */
+export interface Settled {
+  readonly words: string;
+  readonly receipt: Receipt;
+  readonly delivery: Exclude<Delivery, undefined>;
+}
+
+/** The task's launches that settled, with their words; each one is let go. */
+export function settled(space: string, task: string, receipts: readonly Receipt[]): Settled[] {
+  const launches = readCarrying(space, task);
+  if (launches.size === 0) return [];
+  const done: Settled[] = [];
   for (const receipt of receipts) {
     const words = launches.get(receipt.id);
     if (words === undefined) continue;
-    const reached = delivered(receipt);
-    if (reached === undefined) continue;
+    const delivery = delivered(receipt);
+    if (delivery === undefined) continue;
     launches.delete(receipt.id);
-    if (reached) done.push(words);
+    done.push({ words, receipt, delivery });
   }
-  if (launches.size === 0) carrying.delete(name);
+  if (done.length > 0) keepCarrying(space, task, launches);
   return done;
 }
 

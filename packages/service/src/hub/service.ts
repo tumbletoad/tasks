@@ -769,6 +769,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
             }
             return service.openTask(request);
           },
+          requestFor: (space: string, launch: string) =>
+            launching.service?.requestFor(space, launch),
         },
       },
       bindings,
@@ -1062,16 +1064,19 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         db: grantsDb.db,
         grants: grantsDb.grants,
         log: httpLog,
-        // The page's tiles open through the same launch machines as the shim's claims, and its
-        // Run starts the same background runs as `tasks run`, with any instance that can run.
-        launch: {
-          instances: () =>
-            launches.instances().map((tile) => {
-              const instance = instances.find((i) => i.id === tile.key);
-              return instance !== undefined && runsWith(instance) ? { ...tile, runs: true } : tile;
-            }),
-          onChange: (listener: (space: string) => void) => launches.onChange(listener),
-          runs,
+        // The page's tiles open through the same launch machines as the shim's claims.
+        launch: launches,
+        // The page's Run starts the same background runs as `tasks run`, with any instance that
+        // can run.
+        runs: {
+          queueTask: (space, asked) => runs.queueTask(space, asked),
+          list: (space, task) => runs.list(space, task),
+          stop: (space, run) => runs.stop(space, run),
+          waiting: (run) => runs.waiting(run),
+          runnable: (key) => {
+            const instance = instances.find((i) => i.id === key);
+            return instance !== undefined && runsWith(instance);
+          },
         },
         onChange: () => {
           try {
