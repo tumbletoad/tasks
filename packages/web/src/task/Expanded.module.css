@@ -493,7 +493,7 @@ a + .muted,
 }
 
 /* Who it waits on: an outlined text field. */
-.text {
+.waitingOn {
   width: 100%;
   height: 26px;
   padding: 0 10px;
@@ -504,7 +504,7 @@ a + .muted,
   font-size: 0.8125rem;
 }
 
-.text::placeholder {
+.waitingOn::placeholder {
   color: var(--k-muted);
 }
 
