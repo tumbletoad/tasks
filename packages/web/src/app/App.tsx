@@ -1,4 +1,4 @@
-// The signed-in page: the router inside the browser's sign-in and this computer's settings. When
+// The signed-in page: the router inside the browser's sign-in and this machine's settings. When
 // the service refuses the token, the page forgets it and shows the signed-out page (A2 3.8.4
 // step 5).
 import { RouterProvider } from "@tanstack/react-router";

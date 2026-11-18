@@ -104,7 +104,7 @@ export interface AppOptions {
   readonly machine?: UiMachine;
   /** New space and Open folder (hub/page-spaces.ts). None: the page makes no space. */
   readonly spaces?: UiSpaces;
-  /** This computer's agent apps (hub/agent-apps.ts). None: the page shows none. */
+  /** This machine's agent apps (hub/agent-apps.ts). None: the page shows none. */
   readonly apps?: UiApps;
 }
 
@@ -118,7 +118,7 @@ export interface UiSpaces {
   readonly open: UiVerb;
 }
 
-/** This computer's agent apps: what was found and each switch, and the switches turned over. */
+/** This machine's agent apps: what was found and each switch, and the switches turned over. */
 export interface UiApps {
   readonly view: UiVerb;
   readonly apply: UiVerb;

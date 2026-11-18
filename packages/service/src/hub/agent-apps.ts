@@ -1,4 +1,4 @@
-// The page's agent apps (Settings, and the first start): what was found on this computer, and per
+// The page's agent apps (Settings, and the first start): what was found on this machine, and per
 // app and home two switches, each the person's own act when they press Apply:
 //
 //   open   "Open tasks in this app": the home's [[instance]] in machine.toml (instances.ts), which
@@ -165,7 +165,7 @@ function userOnly(cls: ConnectionClass): void {
   if (!isUserClass(cls)) {
     throw new AppError({
       code: "forbidden",
-      message: "Only the user can change this computer's agent apps.",
+      message: "Only the user can change this machine's agent apps.",
       hint: "Ask the user to do this in Settings.",
       data: { rule: "user_only" },
     });
