@@ -1,6 +1,7 @@
 // The `claude` driver against a fake Claude Code that speaks exactly the recorded exchanges
 // (claude-fake.ts, fixtures/claude-stream), over a pair of in-memory pipes. As the run host does,
-// the program's end is told to the driver once the fake's input ended and it exited.
+// the driver is closed once its work settled, and the program's end is told to the driver once the
+// fake's input ended and it exited.
 import { PassThrough } from "node:stream";
 import { describe, expect, test } from "vitest";
 import type { RunEvent } from "@tasks/contracts/runs";
@@ -14,6 +15,8 @@ interface Bench {
   readonly events: RunEvent[];
   /** Tells the driver the program exited. */
   readonly exit: (code: number | null) => void;
+  /** Whether the program's input was still open when the work settled. */
+  readonly openAtSettle: Promise<boolean>;
 }
 
 function bench(scenario: FakeClaudeScenario, request = "Look into the export."): Bench {
@@ -23,6 +26,11 @@ function bench(scenario: FakeClaudeScenario, request = "Look into the export."):
   const events: RunEvent[] = [];
   const driver = claudeDriver({ request })({ stdin: toProgram, stdout: fromProgram }, (event) => {
     events.push(event);
+  });
+  const openAtSettle = driver.settled.then(() => {
+    const open = !toProgram.writableEnded;
+    driver.close();
+    return open;
   });
   const exit = (code: number | null): void => {
     // What the program wrote before it exited is read first.
@@ -34,7 +42,7 @@ function bench(scenario: FakeClaudeScenario, request = "Look into the export."):
   void fake.done.then((code) => {
     exit(code);
   });
-  return { driver, fake, events, exit };
+  return { driver, fake, events, exit, openAtSettle };
 }
 
 /** The work, or undefined while it has not settled. */
@@ -59,7 +67,10 @@ const ofType = (fake: FakeClaude, type: string) => fake.received.filter((m) => m
 
 describe("[A4.3.11.claude.driver] the claude driver against the recorded print mode", () => {
   test("a plain run: the request is the program's first line of input, and the result's answer is the work's", async () => {
-    const { driver, fake, events } = bench({ fixture: "windows-plain", answer: "All done." });
+    const { driver, fake, events, openAtSettle } = bench({
+      fixture: "windows-plain",
+      answer: "All done.",
+    });
     expect(await driver.settled).toEqual(
       done({
         ok: true,
@@ -75,7 +86,8 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
       message: { role: "user", content: [{ type: "text", text: "Look into the export." }] },
     });
     expect(events).toContainEqual({ kind: "native-id", id: SESSION });
-    // The input ended after the result: that is what lets the program exit.
+    // The work settles before anything is closed; closing the input is what lets the program exit.
+    expect(await openAtSettle).toBe(true);
     await fake.inputEnded;
   });
 
@@ -98,8 +110,16 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     expect(claudeArgs("auto-edit")).toEqual(
       expect.arrayContaining(["acceptEdits", "--allowedTools", "mcp__tasks"]),
     );
+    // Read-only keeps the question tool, and a mode that brings its prompts to the driver.
     const narrow = claudeArgs("read-only");
-    expect(narrow).toEqual(expect.arrayContaining(["dontAsk", "--tools", "Read,Glob,Grep"]));
+    expect(narrow).toEqual(
+      expect.arrayContaining([
+        "--permission-mode",
+        "default",
+        "--tools",
+        "Read,Glob,Grep,AskUserQuestion",
+      ]),
+    );
     expect(narrow).not.toContain("--mcp-config");
     const file = JSON.parse(
       claudeToolsFile({
@@ -218,6 +238,35 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     // Both turns ended with a result: the run waited for the second.
     expect(events.filter((e) => e.kind === "answer" && e.final)).toHaveLength(2);
     await fake.inputEnded;
+  });
+
+  test("a question in the program's own turn about finished background work reaches the driver and ends the run as needing the person", async () => {
+    const question = {
+      subtype: "can_use_tool",
+      tool_name: "AskUserQuestion",
+      requires_user_interaction: true,
+      input: { questions: [{ question: "Keep the export?", options: [{ label: "Yes" }] }] },
+      tool_use_id: "toolu_x3",
+    };
+    const { driver, fake } = bench({
+      fixture: "windows-background",
+      pace: 0.05,
+      requests: [question],
+    });
+    expect(await driver.settled).toEqual(
+      done({ ok: false, outcome: "needs_input", text: "Keep the export? (Yes)" }),
+    );
+    expect(ofType(fake, "control_response").map((m) => m["response"])).toContainEqual(
+      expect.objectContaining({ request_id: "fake-request-0" }),
+    );
+    await fake.inputEnded;
+  });
+
+  test("a failed result or a question settles the work without waiting for a program that does not exit", async () => {
+    const failed = bench({ fixture: "windows-signed-out", ignoreEnd: true });
+    expect(await failed.driver.settled).toEqual(done({ ok: false, outcome: "agent_error" }));
+    const asked = bench({ fixture: "windows-question", ignoreEnd: true });
+    expect(await asked.driver.settled).toEqual(done({ ok: false, outcome: "needs_input" }));
   });
 
   test("Stop between turns, while background work goes on: the input ends, and the work is interrupted with its answer kept", async () => {

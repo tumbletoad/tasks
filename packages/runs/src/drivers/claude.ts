@@ -5,10 +5,11 @@
 //
 // - The request is the first line on the program's input, never on its command line. The input
 //   stays open while the agent works, so a Stop can go over it.
-// - The program exits when its input ends. The input ends after a turn once no command the agent
-//   started in the background still runs: when one ends, Claude Code starts a turn of its own to
-//   report on it, and its answer is the run's. The work settles with that last successful result,
-//   or else when the program exits; a program that does not exit after its work is the cleanup's.
+// - The work settles with the first result after which no command the agent started in the
+//   background still runs: when one ends, Claude Code starts a turn of its own to report on it, and
+//   that turn's answer is the run's. Until then the input stays open, since a prompt or a question
+//   in that turn needs it. The host closes the input once the work is saved, and the program exits;
+//   one that does not is the cleanup's.
 // - The answer and the verdict are the last result event's own (streams/claude-print.ts).
 // - Nobody is there to answer: a permission prompt reaches this driver (`--permission-prompt-tool
 //   stdio`) and is declined, and the program counts it in the result. A question for the person
@@ -52,11 +53,13 @@ export interface ClaudeSession {
 const MODES: Readonly<Record<RunPermission, readonly string[]>> = {
   "full-access": ["--permission-mode", "bypassPermissions"],
   "auto-edit": ["--permission-mode", "acceptEdits", "--allowedTools", `mcp__${MCP_SERVER_KEY}`],
+  // Not `dontAsk`: it refuses a question before this driver hears it, and the run would end as if
+  // done. Every other tool's prompt reaches the driver and is declined.
   "read-only": [
     "--permission-mode",
-    "dontAsk",
+    "default",
     "--tools",
-    "Read,Glob,Grep",
+    "Read,Glob,Grep,AskUserQuestion",
     "--allowedTools",
     `mcp__${MCP_SERVER_KEY}`,
   ],
@@ -246,9 +249,6 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
           if (message["subtype"] === "init") turn = true;
           else if (message["subtype"] === "background_tasks_changed") {
             background = array(message["tasks"])?.length ?? 0;
-            // Between turns, the last of it ended: the program's own turn about it follows with
-            // its input ended too, and then it exits, also if it starts no turn at all.
-            if (background === 0 && !turn) endInput();
           }
           return;
         case "assistant":
@@ -256,14 +256,10 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
           return;
         case "result":
           turn = false;
-          // The program ends once its input does. Background work it still waits for keeps the
-          // input open: its own turn about that work follows, and Stop can still reach it.
+          // Background work still going on brings a turn of its own, which this result is not.
+          // The result says how the work ended, so the exit is not waited for.
           if (stopping || question !== null || background === 0) {
-            endInput();
-            // Done and said so: a program that then does not exit is the cleanup's to end.
-            if (!stopping && question === null && message["is_error"] === false) {
-              conclude({ code: 0, signal: null });
-            }
+            conclude({ code: 0, signal: null });
           }
           return;
         case "control_request":

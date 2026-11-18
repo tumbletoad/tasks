@@ -37,7 +37,10 @@ export interface FakeClaudeScenario {
   readonly answer?: string;
   /** Bytes of other output (a command's output) sent before and after the last result. */
   readonly floodBytes?: number;
-  /** Control requests the program sends after its first line, each answered before it goes on. */
+  /**
+   * Control requests the program sends at the start of its last turn, each answered before it goes
+   * on. Once its input ended, a request fails in the program and its turn goes on without it.
+   */
   readonly requests?: readonly Json[];
   /** The program writes nothing at all (`init`), or stops before its result; it keeps reading. */
   readonly stallAt?: "init" | "result";
@@ -168,6 +171,8 @@ export function serveClaude(
   };
   let session: unknown = "00000000-0000-4000-8000-000000000001";
   let resulted = false;
+  /** A turn goes on: from the request, or the program's own `init`, to its result. */
+  let inTurn = true;
   /** An interrupt the recording did not have ended the turn: the rest of it is not sent. */
   let turnOver = false;
   /** The program says nothing more, and keeps reading. */
@@ -198,9 +203,10 @@ export function serveClaude(
         response: request["subtype"] === "interrupt" ? { still_queued: [] } : {},
       },
     });
-    if (request["subtype"] === "interrupt" && !turnOver && !resulted) {
+    if (request["subtype"] === "interrupt" && !turnOver && inTurn) {
       turnOver = true;
       resulted = true;
+      inTurn = false;
       send({
         type: "result",
         subtype: "error_during_execution",
@@ -271,13 +277,14 @@ export function serveClaude(
     }
   };
 
-  const ask = async (): Promise<boolean> => {
+  const ask = async (): Promise<void> => {
     for (const [n, request] of (scenario.requests ?? []).entries()) {
+      if (ended) return;
       const id = `fake-request-${String(n)}`;
       send({ type: "control_request", request_id: id, request });
       for (;;) {
         const answer = await next();
-        if (answer === undefined) return false;
+        if (answer === undefined) return;
         if (
           answer["type"] === "control_response" &&
           isObject(answer["response"]) &&
@@ -288,14 +295,15 @@ export function serveClaude(
         unexpected(answer);
       }
     }
-    return true;
   };
 
   const lastResult = lines.findLastIndex((l) => l.dir === "recv" && l.msg["type"] === "result");
+  const lastInit = lines.findLastIndex(
+    (l) => l.dir === "recv" && l.msg["type"] === "system" && l.msg["subtype"] === "init",
+  );
 
   const replay = async (): Promise<number> => {
     let last = 0;
-    let asked = false;
     let left = false;
     let called = false;
     for (const [index, line] of lines.entries()) {
@@ -362,12 +370,13 @@ export function serveClaude(
         }
       }
       send(message);
-      if (type === "result") resulted = true;
-      if (index === lastResult) flood();
-      if (!asked && type === "system" && subtype === "init") {
-        asked = true;
-        if (!(await ask())) return 1;
+      if (type === "result") {
+        resulted = true;
+        inTurn = false;
       }
+      if (type === "system" && subtype === "init") inTurn = true;
+      if (index === lastResult) flood();
+      if (index === lastInit) await ask();
     }
     return 0;
   };
@@ -381,11 +390,7 @@ export function serveClaude(
       if (message === undefined) break;
       unexpected(message);
     }
-    if (scenario.ignoreEnd === true) {
-      // Something must keep a program alive once its input is gone.
-      setInterval(() => undefined, 1 << 30);
-      await new Promise<never>(() => undefined);
-    }
+    if (scenario.ignoreEnd === true) await new Promise<never>(() => undefined);
     return code;
   })();
   return { received, replayed: replaying.then(() => undefined), inputEnded, done };
@@ -427,6 +432,8 @@ async function main(): Promise<void> {
   }
   // Never outlives a minute, so a broken container cannot leave it running for long.
   setTimeout(() => process.exit(124), 60_000).unref();
+  // A program that ignores the end of its input needs something to keep it alive.
+  if (scenario.ignoreEnd === true) setInterval(() => undefined, 1 << 30);
   const args = process.argv.slice(2);
   if (scenario.log !== undefined) {
     appendFileSync(scenario.log, `${JSON.stringify({ argv: args, cwd: process.cwd() })}\n`);

@@ -139,7 +139,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A Claude Code run gets Tasks' tools in a file in the run's folder. The file holds the run's
   ticket, which opens your space only while the run runs.
 - A Claude Code run asks no one: what Claude Code would ask you to approve is declined and
-  counted in the run's record, and a question for you ends the run with the question.
+  counted in the run's record, and a question for you ends the run with the question. A narrower
+  `run_permission` uses Claude Code's own modes, so a tool you approved in your Claude Code
+  settings, such as another MCP server's, stays approved in it.
 - A run's folder on this computer keeps the agent's raw output and its answer, which are task
   text. It is removed after 14 days or past the newest 200 runs, once the answer is in the run's
   record. The agent's own history, such as Codex's or Claude Code's sessions, keeps the run's
