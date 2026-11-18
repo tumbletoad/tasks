@@ -2,15 +2,16 @@
 // real service process with fixture data.
 //
 // Verify line: no task in two sections (also a property test, `A5.3.4.web.today-disjoint`), and
-// the date appears once. Also: the strip's day by keyboard, the expanded task that an update would
-// move stays where it is with `?task=` kept, Changes shows an agent's change off Today, axe finds
+// the date appears once. Also: the day's numbers follow a task finished while the page is open,
+// keep their places and link to what they count, the expanded task that an update would move
+// stays where it is with `?task=` kept, Changes shows an agent's change off Today, axe finds
 // nothing on Today in either theme, nothing scrolls horizontally at 390 px, and the screenshots in
 // Sumi and Washi at 1,440 and 390 px for review. The seeded space and the world's other tests add
 // tasks of their own, so the assertions name this test's tasks and the rules, never a whole list.
 // Dates are relative to the day the test runs, as the service's star is (it stars for its today).
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
@@ -23,12 +24,10 @@ function day(days: number) {
   const name = (options: Intl.DateTimeFormatOptions) => date.toLocaleDateString("en", options);
   return {
     iso: `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
-    /** The cell's accessible name: "Thursday 12 November". */
+    /** Today's date as the page shows it: "Thursday 12 November". */
     full: `${name({ weekday: "long" })} ${String(date.getDate())} ${name({ month: "long" })}`,
-    /** Today's cell: "12 Nov". */
+    /** A date in a row or a fact: "12 Nov". */
     short: `${String(date.getDate())} ${name({ month: "short" })}`,
-    weekday: name({ weekday: "long" }),
-    month: name({ month: "long" }),
   };
 }
 
@@ -41,6 +40,8 @@ interface TodayTasks {
   readonly lease: string;
   readonly dentist: string;
   readonly review: { readonly id: string; readonly ref: string };
+  /** Due yesterday: late. */
+  readonly renew: string;
 }
 
 const asOf = async (world: World, ref: string): Promise<string> =>
@@ -60,10 +61,17 @@ async function seed(world: World, tag: string): Promise<TodayTasks> {
       { title: `Sign the lease (${tag})`, area: "home", due: day(2).iso, priority: 3 },
       { title: `Dentist check-up (${tag})`, area: "home", due: day(5).iso, priority: 2 },
       { title: `Docs migration (${tag})`, area: "lumen", status: "review" },
+      { title: `Renew the domain (${tag})`, area: "home", due: day(-1).iso },
     ],
   })) as Added;
-  const [star, lease, dentist, review] = added.tasks;
-  if (star === undefined || lease === undefined || dentist === undefined || review === undefined) {
+  const [star, lease, dentist, review, renew] = added.tasks;
+  if (
+    star === undefined ||
+    lease === undefined ||
+    dentist === undefined ||
+    review === undefined ||
+    renew === undefined
+  ) {
     throw new Error("the tasks were not added");
   }
   // Starred today: the star is the person's (A5 3.4).
@@ -72,7 +80,7 @@ async function seed(world: World, tag: string): Promise<TodayTasks> {
     set: { focus: true },
     base: await asOf(world, star.ref),
   });
-  return { star: star.ref, lease: lease.ref, dentist: dentist.ref, review };
+  return { star: star.ref, lease: lease.ref, dentist: dentist.ref, review, renew: renew.ref };
 }
 
 const section = (page: Page, name: string) => page.locator(`main section[aria-label="${name}"]`);
@@ -86,8 +94,12 @@ async function openToday(page: Page, world: World): Promise<void> {
   await showsSpace(page, world.mira.name);
 }
 
-test.describe("[A7.3.12.m5-04.e2e.today] Today: the strip and its sections", () => {
-  test("no task in two sections, the date once, the strip's day by keyboard, the expanded task held, Changes", async ({
+/** The number in a link's name ("Late: 2"), or NaN while it is a dash. */
+const countIn = async (link: Locator): Promise<number> =>
+  Number(/: ([\d,]+)/.exec((await link.getAttribute("aria-label")) ?? "")?.[1]?.replace(",", ""));
+
+test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its sections", () => {
+  test("no task in two sections, the date once, the numbers live and linked, the expanded task held, Changes", async ({
     page,
     world,
   }) => {
@@ -96,21 +108,40 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: the strip and its sections", () 
     await watchViolations(page);
     await openToday(page, world);
 
-    // The strip: seven days from today, today's cell the only date on the screen.
-    const strip = page.getByRole("group", { name: "The next seven days" });
-    await expect(strip.getByRole("button")).toHaveCount(7);
+    // Today's date, once on the screen.
     const today = day(0);
-    const todayCell = strip.getByRole("button", { name: today.full, exact: true });
-    await expect(todayCell).toHaveAttribute("aria-current", "date");
-    await expect(todayCell).toContainText(today.short);
+    await expect(page.locator('[data-part="date"]')).toHaveText(today.full);
     await expect(row(page, tasks.star)).toBeVisible({ timeout: SLOW_MS });
-    const text = await shownText(page);
-    expect(text.split(today.short)).toHaveLength(2);
-    expect(text).not.toContain(today.weekday);
-    expect(text).not.toContain(today.month);
+    expect((await shownText(page)).split(today.full)).toHaveLength(2);
     // No heading above the sections: the sidebar and the tab's title name the view.
     await expect(page.locator("main h1")).toHaveCount(0);
 
+    // The day's numbers, in their places; Done this week reads the service once it answers.
+    const numbers = page.getByRole("list", { name: "Your day" });
+    const late = numbers.getByRole("link", { name: /^Late: / });
+    const done = numbers.getByRole("link", { name: /^Done this week: / });
+    await expect(numbers.getByRole("link")).toHaveCount(4);
+    await expect(done).toHaveAttribute("aria-label", /^Done this week: \d/, { timeout: SLOW_MS });
+    expect(await countIn(late)).toBeGreaterThanOrEqual(1);
+    const places = await numbers
+      .getByRole("link")
+      .evaluateAll((links) => links.map((l) => Math.round(l.getBoundingClientRect().left)));
+    const before = await countIn(done);
+    // A task is finished while the page is open: the count follows, and nothing moves.
+    await world.op(world.mira.id, "task.finish", {
+      task: tasks.renew,
+      base: await asOf(world, tasks.renew),
+    });
+    await expect(done).toHaveAttribute(
+      "aria-label",
+      new RegExp(`^Done this week: ${String(before + 1)}, \\d+ today$`),
+      { timeout: SLOW_MS },
+    );
+    expect(
+      await numbers
+        .getByRole("link")
+        .evaluateAll((links) => links.map((l) => Math.round(l.getBoundingClientRect().left))),
+    ).toEqual(places);
     // Each task in the first section that selects it, and in no other.
     await expect(section(page, "Focus").locator(`li[data-task="${tasks.star}"]`)).toHaveCount(1);
     await expect(section(page, "This week").locator(`li[data-task="${tasks.lease}"]`)).toHaveCount(
@@ -124,25 +155,6 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: the strip and its sections", () 
       .locator("main li[data-key]")
       .evaluateAll((items) => items.map((item) => item.getAttribute("data-key")));
     expect(new Set(keys).size).toBe(keys.length);
-    // The lease's day marks it, and its tooltip names it.
-    const leaseDay = strip.getByRole("button", { name: day(2).full, exact: true });
-    await expect(leaseDay).toHaveAttribute("data-tip", new RegExp(`Sign the lease \\(${tag}\\)`));
-
-    // The strip by keyboard: the arrows move along it, Enter chooses a day, Escape clears it.
-    await todayCell.focus();
-    await page.keyboard.press("ArrowRight");
-    await page.keyboard.press("ArrowRight");
-    await expect(leaseDay).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(new RegExp(`/today\\?day=${day(2).iso}$`));
-    await expect(leaseDay).toHaveAttribute("aria-pressed", "true");
-    await expect(row(page, tasks.lease)).toBeVisible();
-    await expect(row(page, tasks.dentist)).toHaveCount(0);
-    await expect(row(page, tasks.star)).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(page).toHaveURL(/\/today$/);
-    await expect(row(page, tasks.dentist)).toBeVisible();
-
     // The expanded task stays in its section while an update would move it, `?task=` kept.
     const dentist = row(page, tasks.dentist);
     await dentist.locator('[data-part="title"]').click();
@@ -178,6 +190,15 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: the strip and its sections", () 
 
     await page.screenshot({ path: test.info().outputPath("today-flow.png"), fullPage: true });
     expect(await violations(page)).toEqual([]);
+
+    // A number leads to what it counts: Late to the search for what is overdue.
+    const overdue = await countIn(late);
+    await late.click();
+    await expect(page).toHaveURL(/\/search\?q=is%3Aoverdue$/);
+    await expect(page.locator("main li[data-key]")).toHaveCount(overdue, { timeout: SLOW_MS });
+    await page.goBack();
+    await numbers.getByRole("link", { name: /^Waiting on others: / }).click();
+    await expect(page).toHaveURL(/\/waiting$/);
   });
 
   test("screenshots in Sumi and Washi at 1,440 and 390 px, axe clean, no horizontal scroll", async ({

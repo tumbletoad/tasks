@@ -7,7 +7,8 @@
 // instances it draws a tile for, from the hub's launch service, and a task's last receipts, which
 // the page refetches when the change feed names a launch. And Run: the page's click starts a
 // background run of a task, reads a task's runs (refetched when the feed names a run) and stops
-// one, on the service's runs (runs/service.ts), the same ones `tasks run` uses.
+// one, on the service's runs (runs/service.ts), the same ones `tasks run` uses. And a task's folder
+// shown in the file manager. The page's sign-in is the person: no agent reaches these routes.
 //
 // A receipt holds IDs, states, instants and fixed codes only, as the launch record does, and
 // whether the launch's agent read the person's request yet, which only this machine knows. A run
@@ -27,10 +28,13 @@ import {
   TERMINAL_APPS,
   TERMINAL_SOURCES,
   type IntentState,
+  type OpenResult,
   type Route,
 } from "@tasks/launch";
 import { findSpace, isAmbiguity } from "../ops/copies.ts";
+import { launchError } from "../ops/handlers.ts";
 import type { OpsHost, ServedSpace } from "../ops/index.ts";
+import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
 import { WORK_ON_IT } from "../runs/agent.ts";
 import type { HttpLog } from "./events.ts";
 
@@ -58,6 +62,15 @@ export interface UiLaunchPort {
   onChange?(listener: (space: string) => void): () => void;
   /** Where a launch's request is: waiting, read, gone unread, or undefined when none is known. */
   requestState?(launch: string): "waiting" | "read" | "unread" | undefined;
+  /** Shows the folder a task opens in here in the file manager (LaunchService.showFolder). */
+  showFolder?(space: string, folder: TaskFolder): Promise<OpenResult>;
+}
+
+/** What a folder's file manager answered: it opened, or it ran and said nothing either way. */
+export interface FolderShown {
+  readonly result: "opened" | "unknown";
+  /** This computer's name: the folder opens here, also for a page looked at from elsewhere. */
+  readonly machine: string | undefined;
 }
 
 /**
@@ -308,6 +321,45 @@ export class UiLaunches {
       });
     }
     return space;
+  }
+
+  /**
+   * Shows a task's folder in this computer's file manager: the folder the task itself names here,
+   * never a path the page sends. A folder that is gone, on another computer, or a file, and a
+   * computer where no file manager answers, are refused with the reason.
+   */
+  async showFolder(
+    spaceRef: string | undefined,
+    input: Record<string, unknown>,
+  ): Promise<FolderShown> {
+    const { task } = input;
+    if (typeof task !== "string" || !TASK_ID.test(task)) {
+      throw invalid("Expected a task ID.", "task");
+    }
+    const space = this.#space(spaceRef);
+    const show = this.#options.port?.showFolder?.bind(this.#options.port);
+    if (show === undefined || space.reader === undefined || space.id === undefined) {
+      throw new AppError({
+        code: "space_unavailable",
+        message: "This space cannot open folders on this machine now.",
+      });
+    }
+    const { machine } = this.#options.host;
+    const read = await readLaunchTask(space.reader, task, machine.id);
+    let result: OpenResult;
+    try {
+      result = await show(space.id, read.folder);
+    } catch (error) {
+      throw launchError(error);
+    }
+    if (result !== "opened" && result !== "unknown") {
+      throw new AppError({
+        code: "invalid_input",
+        message: "No file manager answered on this computer.",
+        data: { field: "task", reason: "no_file_manager" },
+      });
+    }
+    return { result, machine: machine.name };
   }
 
   /** A task's launch receipts, newest last (at most ten). */
