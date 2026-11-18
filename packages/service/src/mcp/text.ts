@@ -16,7 +16,8 @@
 //   (A3 3.9.6's digest) and never clip what a reader asked for in full;
 // - every shortening is said: a cut unit is counted on the closing `+N more` line, which says how
 //   to ask for the rest, and a cut inside a line ends in `... (+N chars)`;
-// - a note the user addressed to agents is never cut inside (A3 3.9.6, 3.10);
+// - a note the user addressed to agents is never cut inside (A3 3.9.6, 3.10), and the user's
+//   request for a launch is never cut at all;
 // - the markers, the overflow lines and the closing line are never cut: when even the fixed parts
 //   are over the budget, the longest other lines are cut inside, so the block always closes.
 import { randomInt } from "node:crypto";
@@ -38,6 +39,11 @@ export interface Part {
   readonly data?: boolean;
   /** Never cut: the header, the hint, the way to the rest. */
   readonly fixed?: boolean;
+  /**
+   * Never cut, not even inside a line when the fixed parts are over the budget: the user's own
+   * request for a launch, which the renderer gives room of its own. Only with `fixed`.
+   */
+  readonly whole?: boolean;
   /** Lines kept or cut together. A cut takes whole units, the last first. */
   readonly units: readonly (readonly string[])[];
   /**
@@ -184,7 +190,7 @@ function compose(
     const overflow = shown < count ? (part.overflow?.(shown, count) ?? []) : [];
     if (lines.length === 0 && overflow.length === 0) return;
     block(part.data === true);
-    for (const line of lines) push(line);
+    for (const line of lines) push(line, part.whole === true);
     for (const line of overflow) push(line, true);
   });
   block(false);

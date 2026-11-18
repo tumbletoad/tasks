@@ -7,11 +7,17 @@
 // - FAKE_CLI_ROLLOUT_HOME: a Codex home: it writes a session file there as A4 3.4.3 describes
 //   Codex's (its session record with the folder `-C` named, then the prompt after `--` as the
 //   user's first message), for the reference match.
+// - FAKE_CLI_TASKS: `{"argv": [...], "home": "..."}`, the product's command and the install's home
+//   (TASKS_HOME): it reads the task as its brief says when the tools are missing, the brief's
+//   command with `--json` and without the launch's TASKS_SPACE, and its report holds the request it got, in hex, so a test finds
+//   the words nowhere else on disk. FAKE_CLI_UNREAD names a file of task references, one a line:
+//   on those tasks it reads nothing, as an agent without Tasks' tools or a shell.
 // - FAKE_CLI_HOLD_MS (default 4000), FAKE_CLI_RELEASE (a file whose existence ends it),
 //   FAKE_CLI_MAX_MS (default 120000) and FAKE_CLI_EXIT (default 0).
 // Its stdin is never read. No real agent, account or home is touched. Tests only.
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** What the fake CLI writes to its report file. */
@@ -25,11 +31,77 @@ export interface CliAgentReport {
   /** `<dev>:<ino>` of the directory it started in, read through `.`. */
   readonly cwdId: string;
   readonly envNames: string[];
+  /**
+   * With FAKE_CLI_TASKS: the reading of the task, its exit code and the request it held (UTF-8, in
+   * hex), or the error's code.
+   */
+  readonly read?: {
+    readonly code: number | null;
+    readonly request?: string;
+    readonly error?: string;
+  };
 }
 
 const startedIn = statSync(".", { bigint: true });
 const argv = process.argv.slice(2);
 const env = process.env;
+
+/**
+ * The task's reference in the brief's first line, and the arguments of the command its second
+ * line says to run without the tools, as an agent reads them.
+ */
+function briefOf(args: readonly string[]): { task: string; command: string[] } | undefined {
+  const lines = (args[args.indexOf("--") + 1] ?? "").split("\n");
+  const task = / task (\S+) \(launch L[0-9A-Z]{5}\)\./u.exec(lines[0] ?? "")?.[1];
+  const command = /run `\S+ ([^`]+)`\.$/u.exec(lines[1] ?? "")?.[1];
+  return task === undefined || command === undefined
+    ? undefined
+    : { task, command: command.split(" ") };
+}
+
+/** Whether the task is one this fake leaves unread (FAKE_CLI_UNREAD). */
+function leftUnread(task: string): boolean {
+  const list = env["FAKE_CLI_UNREAD"];
+  if (list === undefined || list === "" || !existsSync(list)) return false;
+  return readFileSync(list, "utf8").split(/\r?\n/u).includes(task);
+}
+
+/** `show --launch <reference> --json` through the product's command, as the brief says. */
+function readTask(spec: string): CliAgentReport["read"] {
+  const brief = briefOf(argv);
+  if (brief === undefined) return { code: null, error: "no_reference" };
+  if (leftUnread(brief.task)) return { code: null, error: "left_unread" };
+  const { argv: command, home } = JSON.parse(spec) as { argv: string[]; home: string };
+  const [file, ...rest] = command;
+  if (file === undefined) return { code: null, error: "no_command" };
+  // The brief's command alone: without the launch's TASKS_SPACE, as in an app opened by a link.
+  const outside = { ...env };
+  delete outside["TASKS_SPACE"];
+  const ran = spawnSync(file, [...rest, ...brief.command, "--json"], {
+    env: { ...outside, TASKS_HOME: home },
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 60_000,
+  });
+  try {
+    const result = JSON.parse(ran.stdout) as {
+      request?: unknown;
+      error?: { code?: unknown };
+    };
+    return {
+      code: ran.status,
+      ...(typeof result.request === "string"
+        ? { request: Buffer.from(result.request, "utf8").toString("hex") }
+        : {}),
+      ...(typeof result.error?.code === "string" ? { error: result.error.code } : {}),
+    };
+  } catch {
+    return { code: ran.status, error: "unreadable" };
+  }
+}
+
+const tasks = env["FAKE_CLI_TASKS"];
+const read = tasks === undefined || tasks === "" ? undefined : readTask(tasks);
 
 const report = env["FAKE_CLI_REPORT"];
 if (report !== undefined && report !== "") {
@@ -44,6 +116,7 @@ if (report !== undefined && report !== "") {
     cwd: process.cwd(),
     cwdId: `${startedIn.dev.toString()}:${startedIn.ino.toString()}`,
     envNames: Object.keys(env).sort(),
+    ...(read === undefined ? {} : { read }),
   };
   writeFileSync(report, JSON.stringify(body));
 }

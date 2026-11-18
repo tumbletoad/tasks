@@ -51,8 +51,7 @@ function rollout(
   return `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`;
 }
 
-const brief = (ref: string): string =>
-  `${PRODUCT_NAME} task M-14 "Fix" (launch ${ref}).\nRead the task.`;
+const brief = (ref: string): string => `${PRODUCT_NAME} task M-14 (launch ${ref}).\nRead the task.`;
 
 let home = "";
 beforeEach(() => {
@@ -148,8 +147,8 @@ describe("[A4.5.routes.codex-match] Codex's reference match: only this launch's 
     expect(theirs.look(at)).toBe("first");
   });
 
-  test("the reference counts only in the brief's own place: not in a title, not in what Codex adds itself", () => {
-    // Another launch's brief whose title names this launch's reference: the title is task data.
+  test("the reference counts only in the brief's own place: not in other text, not in what Codex adds itself", () => {
+    // Another launch's first line that quotes this launch's reference before its own.
     const quoting = `${PRODUCT_NAME} task M-14 "Follow up launch ${REF} (launch ${REF})." (launch ${OTHER}).\nRead the task.`;
     expect(matchRollout(rollout({ prompt: quoting }), TARGET)).toBeUndefined();
     expect(readRollout(rollout({ prompt: quoting }), TARGET, false)).toEqual({ kind: "other" });

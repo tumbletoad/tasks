@@ -21,7 +21,7 @@ import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { starChange, statusChange, triageChange } from "../edit/change.ts";
 import { useEditState, useEdits } from "../edit/useEdits.ts";
-import { askFor } from "../task/composer.ts";
+import { askFor, carry } from "../task/composer.ts";
 import { areaSlots, groupTasks, type Group, type GroupTasks } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
@@ -522,6 +522,12 @@ export function TaskList({
               shown(task, receipt);
               // The app takes the brief by paste: without it on the clipboard the words did not go.
               if (copy !== undefined && !(await toClipboard(copy))) return undefined;
+              // Tasks holds the words for this launch's agent: the composer's field keeps them
+              // until it read them, also after "Open anyway".
+              const space = live.spaceId;
+              if (text !== undefined && receipt.request !== undefined && space !== undefined) {
+                carry(space, task.id, receipt.id, text);
+              }
               return receipt;
             })
             .catch((error: unknown) => {

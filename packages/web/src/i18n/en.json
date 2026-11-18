@@ -507,6 +507,7 @@
   "composer.noteEmpty": "Type a note first",
   "composer.noteFailed": "The note was not saved. It is still in the field.",
   "composer.noAgent": "No agent is set up here. Copy the brief instead.",
+  "composer.notRead": "{label} did not read your request. It is still in the field.",
   "composer.opening": "{label} is opening",
   "composer.hasSession": "{label} already has this task open. Write to it there, or Copy the brief with what you typed.",
   "composer.openTip": "Start {label} on this task",
