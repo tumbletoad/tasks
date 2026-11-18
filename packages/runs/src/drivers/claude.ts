@@ -5,11 +5,13 @@
 //
 // - The request is the first line on the program's input, never on its command line. The input
 //   stays open while the agent works, so a Stop can go over it.
-// - The work settles with the first result after which no command the agent started in the
-//   background still runs: when one ends, Claude Code starts a turn of its own to report on it, and
-//   that turn's answer is the run's. Until then the input stays open, since a prompt or a question
-//   in that turn needs it. The host closes the input once the work is saved, and the program exits;
-//   one that does not is the cleanup's.
+// - The work settles with the first result after which no turn is queued and no helper agent the
+//   agent started in the background still works: when one ends, Claude Code starts a turn of its
+//   own to report on it, and that turn's answer is the run's. Until then the input stays open,
+//   since a prompt or a question in that turn needs it. A background command does not hold the
+//   work, as Claude Code's own SDK decides: it may be a server that never ends. The host closes the
+//   input once the work is saved, which ends such a command, and the program exits; one that does
+//   not is the cleanup's.
 // - The answer and the verdict are the last result event's own (streams/claude-print.ts).
 // - Nobody is there to answer: a permission prompt reaches this driver (`--permission-prompt-tool
 //   stdio`) and is declined, and the program counts it in the result. A question for the person
@@ -104,6 +106,9 @@ const DECLINED = "This is a background run: no one is there to approve this, so 
 const UNANSWERED =
   "This is a background run: no one is there to answer now. The run ends with your question.";
 
+/** Background work whose end brings a turn of its own: helper agents and workflows. */
+const BRINGS_TURN: ReadonlySet<unknown> = new Set(["local_agent", "local_workflow"]);
+
 /** Words of an error that say the program is not signed in. */
 const SIGNED_OUT = /\b(?:401|unauthori[sz]ed|not logged in|log ?in|sign ?in|authenticat)/iu;
 
@@ -129,8 +134,8 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
     let inputEnded = false;
     /** A turn goes on: from the request, or a turn the program starts by itself, to its result. */
     let turn = true;
-    /** Commands the agent left running in the background, as the program last listed them. */
-    let background = 0;
+    /** Helpers the agent left working in the background, as the program last listed them. */
+    let helpers = 0;
     let stopping = false;
     let signedOut = false;
     let question: { text: string; cut: boolean } | null = null;
@@ -248,20 +253,23 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
         case "system":
           if (message["subtype"] === "init") turn = true;
           else if (message["subtype"] === "background_tasks_changed") {
-            background = array(message["tasks"])?.length ?? 0;
+            helpers = (array(message["tasks"]) ?? []).filter((task) =>
+              BRINGS_TURN.has(record(task)?.["task_type"]),
+            ).length;
           }
           return;
         case "assistant":
           if (message["error"] === "authentication_failed") signedOut = true;
           return;
-        case "result":
+        case "result": {
           turn = false;
-          // Background work still going on brings a turn of its own, which this result is not.
-          // The result says how the work ended, so the exit is not waited for.
-          if (stopping || question !== null || background === 0) {
-            conclude({ code: 0, signal: null });
-          }
+          // A queued turn, or a helper still working, brings a turn of its own, which this result
+          // is not. The result says how the work ended, so the exit is not waited for.
+          const queued = message["queued_turn_count"];
+          const more = helpers > 0 || (typeof queued === "number" && queued > 0);
+          if (stopping || question !== null || !more) conclude({ code: 0, signal: null });
           return;
+        }
         case "control_request":
           control(message);
           return;
@@ -270,10 +278,18 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
       }
     };
 
+    // One line at a time through both the parser and the driver, so the work settles at the same
+    // line however the output was cut into chunks, and nothing after that line counts.
     stdout.on("data", (chunk: Buffer) => {
-      if (done) return;
-      for (const event of parser.push(chunk)) relay(event);
-      for (const line of lines.push(chunk)) if (line.kind === "line") read(line.line.text);
+      let start = 0;
+      while (start < chunk.length && !done) {
+        const newline = chunk.indexOf(0x0a, start);
+        const end = newline === -1 ? chunk.length : newline + 1;
+        const piece = chunk.subarray(start, end);
+        start = end;
+        for (const event of parser.push(piece)) relay(event);
+        for (const line of lines.push(piece)) if (line.kind === "line") read(line.line.text);
+      }
     });
 
     write({

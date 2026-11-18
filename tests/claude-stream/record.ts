@@ -56,6 +56,11 @@ const CASES: Readonly<Record<string, Case>> = {
     mode: "bypassPermissions",
     interruptOnTool: "PowerShell",
   },
+  "background-agent": {
+    request:
+      "Use the Agent tool with run_in_background true (general-purpose subagent, model haiku) with this task for the subagent: run the shell command `ping -n 6 127.0.0.1`, then reply with the word pong. Do not wait for the subagent: reply with the word launched right away.",
+    mode: "bypassPermissions",
+  },
   "stop-background": {
     request:
       "Start the shell command `ping -n 30 127.0.0.1` as a background task (run_in_background true). Do not wait for it and do not check on it: reply with the word started right away.",

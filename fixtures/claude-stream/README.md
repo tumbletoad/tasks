@@ -10,6 +10,7 @@ Each line is `{"dir", "ms", "msg"}`: `send` (client to program), `recv` (program
 | `windows-command` | a turn that runs a command |
 | `windows-tool` | a tool call to an MCP server named `tasks` in a file given with `--mcp-config` |
 | `windows-background` | a command started in the background: the turn ends, the program starts a turn of its own when the command ended, and the input ends after that turn |
+| `windows-background-agent` | a helper agent started in the background: the turn ends, the helper works and ends, and the program starts a turn of its own about it |
 | `windows-stop-background` | the same, stopped after the first turn: an interrupt with no turn going on, then the end of the input, which ends the background command |
 | `windows-interrupt` | an interrupt (`control_request` `interrupt`) while a command runs |
 | `windows-question` | `AskUserQuestion` reaches the client as `can_use_tool` with `requires_user_interaction`; denied with `interrupt: true` and interrupted |

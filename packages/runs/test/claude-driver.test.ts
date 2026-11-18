@@ -7,7 +7,12 @@ import { describe, expect, test } from "vitest";
 import type { RunEvent } from "@tasks/contracts/runs";
 import { claudeArgs, claudeDriver, claudeToolsFile } from "../src/drivers/claude.ts";
 import type { DriverSession, Work } from "../src/drivers/types.ts";
-import { serveClaude, type FakeClaude, type FakeClaudeScenario } from "./claude-fake.ts";
+import {
+  readClaudeFixture,
+  serveClaude,
+  type FakeClaude,
+  type FakeClaudeScenario,
+} from "./claude-fake.ts";
 
 interface Bench {
   readonly driver: DriverSession;
@@ -231,8 +236,8 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     expect(work.error).toBe("Fixture text. Sign in with: claude auth login");
   });
 
-  test("background work goes on after the turn: the run waits, and the program's own turn about it is the answer", async () => {
-    const { driver, fake, events } = bench({ fixture: "windows-background", pace: 0.05 });
+  test("a helper agent working in the background holds the work: the program's own turn about it is the answer", async () => {
+    const { driver, fake, events } = bench({ fixture: "windows-background-agent", pace: 0.05 });
     const work = await driver.settled;
     expect(work).toEqual(done({ ok: true, outcome: "success", textFinal: true }));
     // Both turns ended with a result: the run waited for the second.
@@ -240,7 +245,17 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     await fake.inputEnded;
   });
 
-  test("a question in the program's own turn about finished background work reaches the driver and ends the run as needing the person", async () => {
+  test("a command left in the background does not hold the work: it settles with the turn's answer, before the input closes", async () => {
+    for (const fixture of ["windows-background", "windows-stop-background"]) {
+      const { driver, events, openAtSettle } = bench({ fixture, pace: 0.05 });
+      expect(await driver.settled).toEqual(done({ ok: true, outcome: "success" }));
+      expect(events.filter((e) => e.kind === "answer" && e.final)).toHaveLength(1);
+      // Closing the input after the work is saved is what ends the command.
+      expect(await openAtSettle).toBe(true);
+    }
+  });
+
+  test("a question in the program's own turn about a finished helper reaches the driver and ends the run as needing the person", async () => {
     const question = {
       subtype: "can_use_tool",
       tool_name: "AskUserQuestion",
@@ -249,7 +264,7 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
       tool_use_id: "toolu_x3",
     };
     const { driver, fake } = bench({
-      fixture: "windows-background",
+      fixture: "windows-background-agent",
       pace: 0.05,
       requests: [question],
     });
@@ -262,6 +277,59 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     await fake.inputEnded;
   });
 
+  test("a result with a turn queued after it does not settle the work: the queued turn's result does", async () => {
+    const recorded = readClaudeFixture("windows-plain").filter((l) => l.dir === "recv");
+    const init = recorded.find((l) => l.msg["subtype"] === "init")?.msg ?? {};
+    const result = recorded.find((l) => l.msg["type"] === "result")?.msg ?? {};
+    const stream = [
+      init,
+      { ...result, result: "First.", queued_turn_count: 1 },
+      init,
+      { ...result, result: "Second.", queued_turn_count: 0 },
+    ];
+    const toProgram = new PassThrough();
+    const fromProgram = new PassThrough();
+    const driver = claudeDriver({ request: "Look." })(
+      { stdin: toProgram, stdout: fromProgram },
+      () => undefined,
+    );
+    fromProgram.write(`${JSON.stringify(stream[0])}\n${JSON.stringify(stream[1])}\n`);
+    expect(await settledNow(driver)).toBeUndefined();
+    fromProgram.write(`${JSON.stringify(stream[2])}\n${JSON.stringify(stream[3])}\n`);
+    expect(await driver.settled).toEqual(done({ ok: true, text: "Second." }));
+    driver.close();
+  });
+
+  test("the work settles at the same line however the output is cut into chunks", async () => {
+    const recorded = readClaudeFixture("windows-plain").filter((l) => l.dir === "recv");
+    const init = recorded.find((l) => l.msg["subtype"] === "init")?.msg ?? {};
+    const result = recorded.find((l) => l.msg["type"] === "result")?.msg ?? {};
+    const failed = { ...result, is_error: true, subtype: "error_during_execution", result: "" };
+    const lines = [init, { ...result, result: "Done." }, failed].map(
+      (m) => `${JSON.stringify(m)}\n`,
+    );
+    const verdicts: unknown[] = [];
+    for (const chunks of [[lines.join("")], lines]) {
+      const toProgram = new PassThrough();
+      const fromProgram = new PassThrough();
+      const events: RunEvent[] = [];
+      const driver = claudeDriver({ request: "Look." })(
+        { stdin: toProgram, stdout: fromProgram },
+        (event) => events.push(event),
+      );
+      for (const chunk of chunks) fromProgram.write(chunk);
+      const work = await driver.settled;
+      verdicts.push({ ok: work.ok, outcome: work.outcome, text: work.text });
+      // Nothing after the settling line reaches the run's events.
+      expect(events.filter((e) => e.kind === "answer")).toHaveLength(1);
+      driver.close();
+    }
+    expect(verdicts).toEqual([
+      { ok: true, outcome: "success", text: "Done." },
+      { ok: true, outcome: "success", text: "Done." },
+    ]);
+  });
+
   test("a failed result or a question settles the work without waiting for a program that does not exit", async () => {
     const failed = bench({ fixture: "windows-signed-out", ignoreEnd: true });
     expect(await failed.driver.settled).toEqual(done({ ok: false, outcome: "agent_error" }));
@@ -269,15 +337,13 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     expect(await asked.driver.settled).toEqual(done({ ok: false, outcome: "needs_input" }));
   });
 
-  test("Stop between turns, while background work goes on: the input ends, and the work is interrupted with its answer kept", async () => {
-    const { driver, fake, events } = bench({ fixture: "windows-stop-background" });
+  test("Stop between turns, while a helper works in the background: the input ends, and the work is interrupted", async () => {
+    const { driver, fake, events } = bench({ fixture: "windows-background-agent", pace: 0.05 });
     await until("the first turn ended", () => events.some((e) => e.kind === "answer" && e.final));
     expect(await settledNow(driver)).toBeUndefined();
     expect(driver.interrupt()).toBe(true);
     await fake.inputEnded;
-    expect(await driver.settled).toEqual(
-      done({ ok: false, outcome: "interrupted", text: "Fixture text." }),
-    );
+    expect(await driver.settled).toEqual(done({ ok: false, outcome: "interrupted" }));
   });
 
   test("Stop during the turn interrupts it over the input, and the work ends interrupted", async () => {
