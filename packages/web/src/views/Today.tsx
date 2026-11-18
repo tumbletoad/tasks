@@ -221,7 +221,10 @@ function Day({
           finished?.week,
           { view: "completed" },
           finished?.more ?? false,
-          finished === undefined ? undefined : t("today.doneToday", { n: finished.today }),
+          // Today's share only once there is one: "0 · 0 today" says nothing twice.
+          finished === undefined || finished.today === 0
+            ? undefined
+            : t("today.doneToday", { n: finished.today }),
         )}
       </ul>
     </div>

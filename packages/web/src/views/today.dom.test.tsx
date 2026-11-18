@@ -299,7 +299,7 @@ describe("[A5.3.4.web.today-page] Today's date, numbers and sections in a DOM", 
     expect(numbers().at(-1)?.[1]).toBe("Done this week: –");
     release();
     await settle();
-    expect(numbers().at(-1)?.[1]).toBe("Done this week: 0, 0 today");
+    expect(numbers().at(-1)?.[1]).toBe("Done this week: 0");
     const reads = finishedReads;
     // An agent finishes a task: the count is read again, and its link keeps its place.
     finished = [done(2, NOW)];

@@ -151,10 +151,11 @@ button.fold:hover {
   background: var(--k-slot, var(--k-muted));
 }
 
+/* A project's name a step in from its area's. */
 .projects {
   margin: 2px 0 4px;
   padding: 0;
-  padding-inline-start: 26px;
+  padding-inline-start: 38px;
   list-style: none;
 }
 
