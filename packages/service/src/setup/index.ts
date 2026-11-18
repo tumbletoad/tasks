@@ -24,6 +24,8 @@ export {
   type T3Skip,
 } from "./hosts.ts";
 export { addEntry, removeEntry, type JsonEdit } from "./json-edit.ts";
+export { blockOf, distinctLabels, wireOf, type Offer } from "./offers.ts";
+export { applyWithRow, type RowCall } from "./rows.ts";
 export { parseStrictJson, type StrictJson } from "./json.ts";
 export {
   GIT_MS,
