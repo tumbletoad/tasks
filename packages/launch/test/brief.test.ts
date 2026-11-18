@@ -340,7 +340,8 @@ describe("[A4.5.brief.renderer] the brief renderer: templates, fences, budgets, 
         if (brief.status !== "ok") return;
         expect(isBriefSafe(brief.text, true)).toBe(true);
         if (kind !== "pointer") {
-          const last = brief.composer === "request" ? REQUEST_LINE : kind === "sent" ? WAIT_LINE : "";
+          const last =
+            brief.composer === "request" ? REQUEST_LINE : kind === "sent" ? WAIT_LINE : "";
           expect(brief.text.split("\n").slice(4)).toEqual([last]);
         }
       }),
