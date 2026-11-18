@@ -8,7 +8,7 @@
 // its place in the list or its state (expanded, current, fresh) changes. Every prop it takes is a
 // value the list keeps by identity, so a store update that touches one task renders one row.
 import { memo, useContext, useEffect, useRef, useState, type CSSProperties } from "react";
-import type { Instance, Receipt } from "../api.ts";
+import type { Instance, Receipt, Run } from "../api.ts";
 import { Session } from "../context.ts";
 import { titleChange } from "../edit/change.ts";
 import { whoOf, type Leaving } from "../edit/edits.ts";
@@ -20,6 +20,7 @@ import { useIntl } from "react-intl";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 import { useHasDraft } from "../task/composer.ts";
 import { Expanded } from "../task/Expanded.tsx";
+import { runMarker } from "../task/runs.ts";
 import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
 import type { RowActions } from "./actions.ts";
@@ -79,6 +80,8 @@ export interface RowProps {
   readonly project: ProjectRow | undefined;
   readonly instances: readonly Instance[];
   readonly receipts: readonly Receipt[];
+  /** The task's background runs, oldest first, once the tab follows the task. */
+  readonly runs: readonly Run[];
   readonly ctx: RowContext;
   readonly expanded: boolean;
   /** The row in the tab order (the roving tabindex). */
@@ -396,6 +399,7 @@ function RowView({
   project,
   instances,
   receipts,
+  runs,
   ctx,
   expanded,
   current,
@@ -412,11 +416,13 @@ function RowView({
   const t = useT();
   const intl = useIntl();
   const place = placeFact(task.place);
+  const marker = runMarker(task.run, instances);
   const { live } = useContext(Session);
   const draft = useHasDraft(live.spaceId ?? "", task.id);
   const model = renderRow(
     {
       task,
+      ...(marker === undefined ? {} : { marker }),
       ...(area === undefined ? {} : { area: { title: area.title, slot: slot ?? 1 } }),
       ...(project === undefined ? {} : { project: { title: project.title } }),
       instances,
@@ -635,6 +641,7 @@ function RowView({
           <Expanded
             task={task}
             receipts={receipts}
+            runs={runs}
             instances={instances}
             actions={actions}
             refused={refused}

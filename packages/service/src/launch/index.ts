@@ -8,6 +8,7 @@ export {
   type LaunchInstance,
   type LaunchOptions,
   type LaunchServiceOptions,
+  type RunFolderFound,
   type TerminalSeams,
   type TerminalStart,
   type TerminalView,

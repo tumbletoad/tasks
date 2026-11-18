@@ -13,7 +13,7 @@
 //   GET  /api/v1/ws?ticket=…    the change feed (ws.ts)
 //   POST /api/v1/op/<entry>     one registry entry with a UI face, on the request path of the CLI
 //                               (Open and Copy are `launch.open`, A4 3.4, 3.15)
-//   POST /api/v1/launch/list    a task's launch receipts (launches.ts)
+//   POST /api/v1/launch/…       a task's launch receipts, and Run, a task's runs and Stop (launches.ts)
 //   POST /api/v1/space/list     this machine's spaces and its default space (the space switcher)
 //   POST /api/v1/space/default  Make default: machine.toml's `[service] default_space`
 //   POST /api/v1/machine/pref    Settings: set or reset a machine preference of the page's
@@ -67,7 +67,7 @@ import { newNonce, securityHeaders, type CachePolicy } from "./csp.ts";
 import { methodWord, type HttpClass, type HttpLog, type Refusal, type Route } from "./events.ts";
 import type { Visibility } from "./feed.ts";
 import type { RedeemCheck } from "./holders.ts";
-import { UiLaunches, type UiLaunchPort } from "./launches.ts";
+import { UiLaunches, type UiLaunchPort, type UiRunPort } from "./launches.ts";
 import type { HttpLimits } from "./limits.ts";
 import { shellFor, type UiBundle } from "./page.ts";
 import type { StartHttpTimer } from "./timers.ts";
@@ -101,6 +101,8 @@ export interface AppOptions {
   readonly installed?: () => string | undefined;
   /** The hub's launch service, for the page's tiles (launches.ts). None: no tile, Copy only. */
   readonly launch?: UiLaunchPort;
+  /** The service's background runs, for the page's Run (launches.ts). None: no Run. */
+  readonly runs?: UiRunPort;
   /** The machine's default space (hub/default-space.ts). None: the page cannot change it. */
   readonly defaults?: UiDefaultSpace;
   /** This machine's settings (hub/machine-settings.ts). None: Settings changes nothing here. */
@@ -267,6 +269,7 @@ export class HttpApp {
     this.launches = new UiLaunches({
       host: options.ops,
       port: options.launch,
+      runs: options.runs,
       log: options.log,
       changed: (space) => {
         this.feed.poke(space);
@@ -762,11 +765,15 @@ export class HttpApp {
     }
   }
 
-  /** `POST /api/v1/launch/list`: a task's receipts (checks.ts admits no other action). */
+  /**
+   * `POST /api/v1/launch/<action>` (checks.ts admits these only): `list`, a task's receipts;
+   * `run`, the person's Run; `runs`, a task's runs; `stop`, the person's Stop of a run. The UI's
+   * grant is the person, the only one who starts or stops a run from here.
+   */
   async #launch(
     res: ServerResponse,
     port: number,
-    _action: string,
+    action: string,
     input: Record<string, unknown>,
     space: string | undefined,
   ): Promise<void> {
@@ -775,7 +782,14 @@ export class HttpApp {
       return;
     }
     try {
-      const result = { receipts: await this.launches.list(space, input) };
+      const result =
+        action === "run"
+          ? { run: await this.launches.run(space, input) }
+          : action === "runs"
+            ? { runs: await this.launches.runs(space, input) }
+            : action === "stop"
+              ? { run: await this.launches.stop(space, input) }
+              : { receipts: await this.launches.list(space, input) };
       this.#json(res, port, 200, { result });
     } catch (error) {
       const body: ErrorBody =

@@ -26,7 +26,7 @@ import {
   type PeerCheck,
   type RedeemCheck,
 } from "./holders.ts";
-import type { UiLaunchPort } from "./launches.ts";
+import type { UiLaunchPort, UiRunPort } from "./launches.ts";
 import { DEFAULT_HTTP_LIMITS, type HttpLimits } from "./limits.ts";
 import { isTaken, listenHttp, type HttpListener } from "./listener.ts";
 import { blockedMessage } from "./messages.ts";
@@ -104,6 +104,8 @@ export interface HttpOptions extends HttpStart {
    * space as the shim's claims, recovery and the sweep. Default: none, Copy only.
    */
   readonly launch?: UiLaunchPort;
+  /** The service's background runs, which the page's Run starts (launches.ts). Default: none. */
+  readonly runs?: UiRunPort;
 }
 
 export interface RunningHttp {
@@ -168,6 +170,7 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
     ...(options.visible === undefined ? {} : { visible: options.visible }),
     ...(options.installed === undefined ? {} : { installed: options.installed }),
     ...(options.launch === undefined ? {} : { launch: options.launch }),
+    ...(options.runs === undefined ? {} : { runs: options.runs }),
     ...(options.defaults === undefined ? {} : { defaults: options.defaults }),
     ...(options.machine === undefined ? {} : { machine: options.machine }),
     ...(options.spaces === undefined ? {} : { spaces: options.spaces }),

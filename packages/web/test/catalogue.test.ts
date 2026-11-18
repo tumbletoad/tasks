@@ -100,6 +100,7 @@ const SAMPLE = {
   owners: "the project Billing",
   repo: "portal-web",
   names: "M-14, Billing",
+  limit: "wall",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {
