@@ -226,8 +226,11 @@ export class LiveCore {
           changes.push({ ...base, task: entity.task });
           // A1 3.5: a task's `touched` becomes the commit's seq when a child row changes, and
           // nothing else of the task does. The feed carries the child, not the task's row, so the
-          // held row takes the mark here. A launch is no child (it moves no `touched`).
-          const held = entity.type === "launch" ? undefined : maps.task.get(entity.task);
+          // held row takes the mark here. A launch or a run is no child (it moves no `touched`).
+          const held =
+            entity.type === "launch" || entity.type === "run"
+              ? undefined
+              : maps.task.get(entity.task);
           if (held !== undefined && ((held as TaskRow).touched ?? 0) < event.seq) {
             maps.task.set(entity.task, { ...held, touched: event.seq });
             this.#dirty.add("task");

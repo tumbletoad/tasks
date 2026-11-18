@@ -7,6 +7,8 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { TaskAddResult, TaskGetResult } from "@tasks/contracts";
+import { RUN_LIMITS } from "@tasks/contracts/runs";
+import { SpaceExecutionStore } from "@tasks/launch";
 import type { RpcSession } from "@tasks/bridge/protocol";
 import type { WorkerConnection } from "@tasks/storage";
 import { startService, type RunningService } from "../src/hub/service.ts";
@@ -182,6 +184,99 @@ describe("[A5.3.6.http.row-children] a task's row carries its sources and where 
       title: "Fixture four sources",
       place: { state: "here" },
     });
+  });
+});
+
+describe("[M6.page.run-feed] a run's change carries its task's row, which shows the run", () => {
+  test("queued and running show working, a question needs you, the end shows none; each batch names the run's task", async () => {
+    const added = TaskAddResult.parse(
+      await call("task.add", { tasks: [{ title: "Fixture run" }], request_id: rid() }),
+    );
+    const task = added.tasks[0]?.id ?? "";
+    const served = service.ops.spaces().find((s) => s.writer !== undefined);
+    const writer = served?.writer;
+    if (writer === undefined || served?.id === undefined) throw new Error("no space is open");
+    const machine = service.ops.machine.id;
+    const store = new SpaceExecutionStore({
+      writer,
+      spaceId: served.id,
+      credential: {
+        scope_id: `runs:${machine}`,
+        principal_id: await writer.actor("human", "user"),
+        actor_kind: "human",
+        machine_id: machine,
+        origin: "ui",
+      },
+    });
+    const runOf = async (from: number) => {
+      const { batch } = await readBatch(reader, from, { here });
+      const run = batch.events.flatMap((e) => e.entities).filter((e) => e.type === "run");
+      const rows = batch.events.flatMap((e) => e.entities).filter((e) => e.type === "task");
+      return { run, row: rows.at(-1)?.row };
+    };
+    const input = {
+      task,
+      routine: null,
+      machine,
+      instance: "codex-work",
+      adapter: "codex" as const,
+      place: null,
+      request: "Fixture request",
+      briefHash: "0123456789abcdef".repeat(4),
+      permission: "full-access" as const,
+      limits: RUN_LIMITS.task,
+    };
+    const asks = (run: { readonly id: string; readonly version: number }) =>
+      store.transitionRun(run.id, { state: "queued", version: run.version }, "failed", {
+        reason: "needs_input",
+        result: {
+          ok: false,
+          outcome: "needs_input",
+          exitCode: 0,
+          signal: null,
+          nativeId: null,
+          text: "Fixture question?",
+          error: null,
+          usage: null,
+          appTools: null,
+          declined: 0,
+          permissionDenials: 0,
+          durationMs: 1,
+        },
+      });
+    let from = (await readHead(reader)).cursor.seq;
+    const queued = await store.createRun(input, rid());
+    let seen = await runOf(from);
+    expect(seen.run.map((e) => e.task)).toEqual([task]);
+    expect(seen.row).toMatchObject({ run: { state: "working", instance: "codex-work" } });
+    from = (await readHead(reader)).cursor.seq;
+    await asks(queued);
+    seen = await runOf(from);
+    expect(seen.run.map((e) => e.task)).toEqual([task]);
+    expect(seen.row).toMatchObject({ run: { state: "needs_you", instance: "codex-work" } });
+    // The snapshot holds the same.
+    const snapshot = await readSnapshot(reader, here);
+    expect(snapshot.tasks.find((r) => r["id"] === task)).toMatchObject({
+      run: { state: "needs_you" },
+    });
+    // A follow-up stopped before it started does not hide the run that still works.
+    await store.createRun(input, rid());
+    const followUp = await store.createRun(input, rid());
+    from = (await readHead(reader)).cursor.seq;
+    await store.transitionRun(
+      followUp.id,
+      { state: "queued", version: followUp.version },
+      "cancelled",
+      {},
+    );
+    seen = await runOf(from);
+    expect(seen.row).toMatchObject({ run: { state: "working", instance: "codex-work" } });
+    // A newer run's question shows over the older run that still works.
+    const question = await store.createRun(input, rid());
+    from = (await readHead(reader)).cursor.seq;
+    await asks(question);
+    seen = await runOf(from);
+    expect(seen.row).toMatchObject({ run: { state: "needs_you", instance: "codex-work" } });
   });
 });
 

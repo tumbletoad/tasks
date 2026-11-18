@@ -103,10 +103,14 @@ export type PlaceFact =
   | { readonly kind: "elsewhere"; readonly machine: string }
   | { readonly kind: "work_folder" };
 
-/** The row's marker (A5 3.14): an agent changed the task, or a run needs the person's input. */
+/**
+ * The row's marker (A5 3.14): an agent changed the task, a run needs the person's input, or a run
+ * works on it in the background.
+ */
 export type MarkerFact =
   | { readonly kind: "changed"; readonly by: string; readonly what?: string; readonly at: number }
-  | { readonly kind: "needs_input"; readonly by: string };
+  | { readonly kind: "needs_input"; readonly by: string }
+  | { readonly kind: "working"; readonly by: string };
 
 /** Everything the row function reads about one task. */
 export interface RowInput {
@@ -144,8 +148,8 @@ export interface RowModel {
   readonly title: string;
   /** The checkbox's name: "Done: <title>", or "Dropped: <title>" for a dropped task. */
   readonly done: Msg;
-  /** At most one: an agent's change or question first, then the person's own unsent words. */
-  readonly marker?: { readonly kind: "changed" | "needs_input" | "draft"; readonly tip: Msg };
+  /** At most one: a run's or an agent's state first, then the person's own unsent words. */
+  readonly marker?: { readonly kind: MarkerFact["kind"] | "draft"; readonly tip: Msg };
   /** The inline status chip, when the view does not imply the status. */
   readonly chip?: {
     readonly kind: "waiting" | "review" | "backlog" | "other";
@@ -532,6 +536,9 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
   if (row.marker?.kind === "needs_input") {
     marker = { kind: "needs_input", tip: msg("row.markerNeedsInput", { by: row.marker.by }) };
     description.push(msg("row.desc.needsInput"));
+  } else if (row.marker?.kind === "working") {
+    marker = { kind: "working", tip: msg("row.markerWorking", { by: row.marker.by }) };
+    description.push(msg("row.desc.working", { by: row.marker.by }));
   } else if (row.marker?.kind === "changed") {
     const time = formatInstant(row.marker.at, ctx.clock, TIME);
     marker = {

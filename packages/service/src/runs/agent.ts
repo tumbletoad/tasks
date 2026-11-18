@@ -29,6 +29,7 @@ import {
   type AgentCommand,
   type StartRefusal,
 } from "@tasks/runs";
+import type { RunFolderFound } from "../launch/index.ts";
 import type { ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
 
@@ -43,9 +44,10 @@ export interface RunAgents {
   instances(): readonly Instance[];
   /**
    * The folder a launch of the space's task would work in here, resolved now (the space's work
-   * folder for a task without one), or undefined when it is not found.
+   * folder for a task without one), or why it cannot be used: not found, or its marker says it
+   * may be another folder.
    */
-  folder(space: string, folder: TaskFolder): Promise<string | undefined>;
+  folder(space: string, folder: TaskFolder): Promise<RunFolderFound>;
   /** Where the agent's environment starts: the person's own, as Open's agents get it. */
   base(): Promise<AgentBase | undefined>;
   /** Tasks' own command, program first: the bridge runs as `<it> mcp …`. */
@@ -74,12 +76,17 @@ export function runPermission(instance: Instance): RunPermission {
 export type RunFolder =
   | { readonly ok: true; readonly path: string }
   | { readonly ok: false; readonly reason: "other_machine"; readonly machine: string }
-  | { readonly ok: false; readonly reason: "folder_missing" };
+  | {
+      readonly ok: false;
+      readonly reason: "folder_missing" | "marker_missing" | "marker_other";
+      /** The folder as the space stores it; none for the space's work folder. */
+      readonly folder?: string;
+    };
 
 /**
  * The task's folder on this machine as Open uses it (its own, else its project's, else the
- * space's work folder), or why the run cannot start: its folder is on another machine, or not
- * found here.
+ * space's work folder), or why the run cannot start: its folder is on another machine, not found
+ * here, or its marker says it may be another folder.
  */
 export async function runFolder(
   agents: RunAgents,
@@ -89,8 +96,13 @@ export async function runFolder(
   if (folder.kind === "other_machine") {
     return { ok: false, reason: "other_machine", machine: folder.machine };
   }
-  const path = await agents.folder(space, folder);
-  return path === undefined ? { ok: false, reason: "folder_missing" } : { ok: true, path };
+  const found = await agents.folder(space, folder);
+  if ("path" in found) return { ok: true, path: found.path };
+  return {
+    ok: false,
+    reason: found.refused,
+    ...(found.folder === undefined ? {} : { folder: found.folder }),
+  };
 }
 
 /** The CLI verb that reads a task, for the brief: `tasks show`. */
