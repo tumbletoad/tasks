@@ -1452,3 +1452,63 @@ describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives 
     });
   });
 });
+
+describe("[A7.3.12.m5-14.web-write] a folder or project write: in turn, its toast's Undo names its commit, a refusal is the caller's", () => {
+  test("waits for the edit before it, shows its toast once it applied, and Undo names its own commit", async () => {
+    const w = new World([task(1)]);
+    let answerEdit!: (value: unknown) => void;
+    w.answer("task.update", () => new Promise((resolve) => (answerEdit = resolve)));
+    w.edits.edit(task(1), priorityChange(1));
+    const sent: string[] = [];
+    const written = w.edits.write(
+      (request) => {
+        sent.push(request);
+        return Promise.resolve({ result: "set", as_of: w.asOf(12) });
+      },
+      () => ({ id: "toast.folderCleared" }),
+    );
+    await flush();
+    // The folder write waits for the edit made before it.
+    expect(sent).toEqual([]);
+    answerEdit({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: w.asOf(11),
+      warnings: [],
+    });
+    await flush();
+    expect(sent).toHaveLength(1);
+    expect(await written).toEqual({ result: "set", as_of: w.asOf(12) });
+    expect(w.lastToast()).toMatchObject({ kind: "undo", text: { id: "toast.folderCleared" } });
+    w.feed([task(1, { version: 2 })], sent[0] ?? "", []);
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: "op_x",
+      tasks: [],
+      task_count: 0,
+      as_of: w.asOf(13),
+    }));
+    w.lastToast()?.action?.run();
+    await flush();
+    expect(w.calls.at(-1)).toMatchObject({
+      name: "history.undo",
+      input: { commit: `op_${"11".padStart(26, "0")}` },
+    });
+  });
+
+  test("a refusal reaches the caller and shows no toast; a write that changed nothing shows none", async () => {
+    const w = new World([task(1)]);
+    const refused = w.edits.write(
+      () => Promise.reject(appError("conflict", { reason: "folder_taken" })),
+      () => ({ id: "toast.folderCleared" }),
+    );
+    await expect(refused).rejects.toMatchObject({ code: "conflict" });
+    expect(w.toasts).toEqual([]);
+    await w.edits.write(
+      () => Promise.resolve({ result: "no_change", as_of: w.asOf(10) }),
+      () => undefined,
+    );
+    expect(w.toasts).toEqual([]);
+  });
+});

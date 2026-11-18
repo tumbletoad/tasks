@@ -670,6 +670,61 @@ export class Edits {
     });
   }
 
+  /**
+   * A person's write that is no field of one task (a new project, a folder): in turn after the
+   * writes already on their way, and before any made after it. Once it changed something, its
+   * toast says `said` and its Undo names its own commit; Ctrl+Z takes it back as the newest change.
+   * The caller reads the answer, a refusal included, and says what a refusal means.
+   */
+  write<T extends { as_of?: string; result?: unknown }>(
+    send: (request: string) => Promise<T>,
+    said: (value: T) => Msg | undefined,
+  ): Promise<T> {
+    const ahead = allOf(this.#ahead());
+    const { turn, made } = this.#turn<T>(ahead);
+    const sent = this.#deps.write(async (request) => {
+      try {
+        if (!(await ahead.wait())) throw new NotSent();
+        const one = this.#call(
+          request,
+          () => send(request),
+          (found) => writeOf(found) as Decision<T>,
+          (result) => {
+            if (typeof result.as_of === "string" && result.result !== "no_change") {
+              this.#ownCommits.add(result.as_of);
+            }
+          },
+        );
+        made(one);
+        return await one.answer;
+      } catch (error) {
+        made(undefined);
+        throw error;
+      }
+    });
+    this.#mine.add(sent.request);
+    this.#gate = turn;
+    this.#release(sent.answer, () => {
+      if (this.#gate === turn) this.#gate = undefined;
+    });
+    return sent.answer.then((value) => {
+      const text = said(value);
+      if (text !== undefined) {
+        this.#toast({
+          kind: "undo",
+          text,
+          action: {
+            label: { id: "toast.undo" },
+            run: () => {
+              void this.undo(sent);
+            },
+          },
+        });
+      }
+      return value;
+    });
+  }
+
   // -------------------------------------------------------------------------------------------
 
   /**

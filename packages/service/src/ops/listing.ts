@@ -7,6 +7,7 @@
 // What the person typed decides what is listed: a path that ends in a separator (or `~`, or a
 // root) lists that folder; any other lists its parent, with the last name as a prefix to complete.
 import { opendir, stat } from "node:fs/promises";
+import { posix, win32 } from "node:path";
 import { makeDirAsync } from "@tasks/files";
 import { folderKey, type FolderOs } from "@tasks/storage";
 import {
@@ -109,6 +110,8 @@ export type Listing =
       readonly at: string;
       /** The name typed after `at`, which the folders listed start with (case aside). */
       readonly prefix: string;
+      /** The folder that holds `at`, as the person reads it: none at a root. */
+      readonly up?: string;
       readonly folders: readonly Listed[];
       /** More folders, or entries, than were shown or read: a longer prefix narrows them. */
       readonly more: boolean;
@@ -214,6 +217,9 @@ export async function listFolders(text: string, facts: ListFacts): Promise<Listi
   const form = storedForm(split.folder, home, platform);
   if (typeof form === "string") return { kind: "problem", sep, reason: form };
   const at = shownFolder(form, sep);
+  const parent = (platform === "win32" ? win32 : posix).dirname(form.absolute);
+  const above = parent === form.absolute ? undefined : storedForm(parent, home, platform);
+  const up = above === undefined || typeof above === "string" ? undefined : shownFolder(above, sep);
   const ms = facts.ms ?? LOOK_MS;
   const deadline = Date.now() + ms;
   const looked = await bounded(async (): Promise<FolderReason | undefined> => {
@@ -314,6 +320,7 @@ export async function listFolders(text: string, facts: ListFacts): Promise<Listi
     sep,
     at,
     prefix,
+    ...(up === undefined ? {} : { up }),
     folders,
     more,
     ...(exact === undefined ? {} : { exact }),

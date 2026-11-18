@@ -18,6 +18,11 @@ import type { Instance, Receipt } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useT } from "../i18n/intl.tsx";
+import { Button } from "react-aria-components";
+import { FolderDialog, refusalText } from "../folder/FolderDialog.tsx";
+import folderCss from "../folder/Folder.module.css";
+import { useFolderWrites } from "../folder/writes.ts";
+import type { MessageId } from "../i18n/intl.tsx";
 import type { FolderRefusal } from "../row/launch.ts";
 import type { AskField, RowActions } from "../row/actions.ts";
 import {
@@ -58,6 +63,7 @@ const styles = classes(css, [
   "line",
   "composer",
 ]);
+const line = classes(folderCss, ["act"]);
 
 export interface ExpandedProps {
   readonly task: TaskRow;
@@ -168,7 +174,8 @@ function keyRef(kind: string, key: string): string | undefined {
 
 /**
  * The folder's line: where the task opens here (its own folder or its project's, the home as `~`),
- * a folder not found, another machine, or the work folder.
+ * a folder not found, another machine, or the work folder. Quiet words at its end set, change or
+ * clear the task's own folder; after an Open refused on the folder they are the ways on.
  */
 function PlaceLine({
   task,
@@ -182,7 +189,66 @@ function PlaceLine({
 }) {
   const t = useT();
   const say = useToast();
+  const writes = useFolderWrites();
+  const [choosing, setChoosing] = useState(false);
+  // The toast's "Choose another folder" opens the chooser, once for each time it is asked.
+  const [asked, setAsked] = useState<FolderRefusal>();
+  if (refused?.choose === true && asked !== refused) {
+    setAsked(refused);
+    setChoosing(true);
+  }
   const folder = detail?.task.folder;
+  const own = folder !== undefined && "path" in folder && folder.of === "task" ? folder : undefined;
+  const marker = refused?.anyway;
+  const ways = (choose: MessageId) => (
+    <>
+      {marker === undefined ? null : (
+        <Button className={line.act} onPress={marker}>
+          {t("row.openAnyway")}
+        </Button>
+      )}
+      <Button
+        className={line.act}
+        data-quiet={refused === undefined || undefined}
+        onPress={() => {
+          setChoosing(true);
+        }}
+      >
+        {t(refused === undefined ? choose : "row.chooseFolder")}
+      </Button>
+      {own === undefined || refused !== undefined ? null : (
+        <Button
+          className={line.act}
+          data-quiet
+          onPress={() => {
+            writes.clearTask(task).catch((error: unknown) => {
+              say(refusalText(error, t("folder.notCleared")));
+            });
+          }}
+        >
+          {t("folder.clear")}
+        </Button>
+      )}
+    </>
+  );
+  const chooser = choosing ? (
+    <FolderDialog
+      title={t("folder.forTask", { ref: task.ref })}
+      {...(folder !== undefined &&
+      "path" in folder &&
+      folder.of === "project" &&
+      refused === undefined
+        ? { lead: t("folder.taskLead") }
+        : {})}
+      start={own?.path ?? ""}
+      onClose={() => {
+        setChoosing(false);
+      }}
+      onChoose={async (chosen) => {
+        await writes.setTask(task, chosen);
+      }}
+    />
+  ) : null;
   const copy = (text: string) => {
     navigator.clipboard.writeText(text).then(
       () => {
@@ -195,7 +261,11 @@ function PlaceLine({
   };
   const shown =
     refused?.folder !== undefined
-      ? { path: refused.folder, words: t("place.refused", { reason: refused.reason }) }
+      ? {
+          path: refused.folder,
+          // A marker's question is the toast's to word: the folder itself is there.
+          words: marker === undefined ? t("place.refused", { reason: refused.reason }) : undefined,
+        }
       : folder !== undefined && "path" in folder
         ? {
             path: folder.path,
@@ -234,7 +304,9 @@ function PlaceLine({
           >
             <CopyIcon />
           </button>
+          {ways(own === undefined ? "folder.ownChange" : "folder.change")}
         </span>
+        {chooser}
       </li>
     );
   }
@@ -253,6 +325,8 @@ function PlaceLine({
         <span className={styles.muted} data-fact="" dir="auto">
           {t("place.elsewhere", { machine: elsewhere })}
         </span>
+        <span className={styles.acts}>{ways("folder.chooseHere")}</span>
+        {chooser}
       </li>
     );
   }
@@ -266,6 +340,8 @@ function PlaceLine({
       <span className={styles.muted} data-fact="" data-tip={t("place.workFolderTip")}>
         {t("place.workFolder")}
       </span>
+      <span className={styles.acts}>{ways("folder.choose")}</span>
+      {chooser}
     </li>
   );
 }

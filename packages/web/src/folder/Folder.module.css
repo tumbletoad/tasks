@@ -1,0 +1,212 @@
+/* The folder chooser and the folder lines: a path field over a list of one fixed height, so what
+   is below never moves as the list fills. Tokens only. */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: stretch;
+  min-width: 0;
+}
+
+.label {
+  color: var(--k-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--k-control);
+  background: var(--k-sunken);
+  color: var(--k-text);
+  font-family: var(--k-font-mono);
+  font-size: 0.8125rem;
+}
+
+.input::placeholder {
+  color: var(--k-muted);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--k-focus);
+  outline-offset: 1px;
+}
+
+.browse {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--k-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.where {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px 0 10px;
+  border-bottom: 1px solid var(--k-line);
+  color: var(--k-muted);
+  font-family: var(--k-font-mono);
+  font-size: 0.75rem;
+}
+
+.up {
+  flex: none;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--k-muted);
+  font-family: var(--k-font-ui);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.up[data-hovered] {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+.list {
+  height: 196px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--k-text);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.choice:hover,
+.choice[data-active] {
+  background: var(--k-hover);
+}
+
+.choice[data-active] {
+  box-shadow: inset 0 0 0 1px var(--k-focus);
+}
+
+.choice[data-kind="make"] {
+  color: var(--k-accent);
+}
+
+.icon {
+  display: inline-grid;
+  flex: none;
+  color: var(--k-muted);
+}
+
+.icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choice .name {
+  flex: 1 1 auto;
+}
+
+.mark {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  color: var(--k-muted);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A project's folder line, and the task's folder actions: quiet words that say what they do. */
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 36px;
+  padding: 4px 10px;
+  color: var(--k-text);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.words {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.path {
+  font-family: var(--k-font-mono);
+}
+
+.repo {
+  color: var(--k-muted);
+  font-style: italic;
+  unicode-bidi: isolate;
+}
+
+.muted {
+  color: var(--k-muted);
+}
+
+.acts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.act {
+  min-height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--k-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.act[data-hovered] {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+.act[data-focus-visible] {
+  outline: 2px solid var(--k-focus);
+  outline-offset: 1px;
+}
+
+.note {
+  min-height: 2rem;
+  margin: 0;
+  padding: 6px 10px;
+  border-top: 1px solid var(--k-line);
+  color: var(--k-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}

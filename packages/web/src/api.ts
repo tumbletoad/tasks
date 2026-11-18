@@ -85,6 +85,62 @@ function madeSpace(value: unknown): MadeSpace {
   };
 }
 
+/** A project a listed folder belongs to. */
+export interface FolderProject {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** The folder a person's text names exactly (the service's `Exact`). */
+export interface ExactFolder {
+  /** As the space stores it, the home as `~`. */
+  readonly folder: string;
+  /** The name a project made from it gets: none for a drive or a root. */
+  readonly name?: string;
+  readonly repo?: string;
+  readonly project?: FolderProject;
+}
+
+/** What the folder chooser shows for a text (the service's ops/listing.ts `Listing`). */
+export type FolderListing =
+  | {
+      readonly kind: "start";
+      readonly sep: string;
+      readonly places: readonly { readonly folder: string; readonly project?: string }[];
+      readonly roots: readonly string[];
+    }
+  | {
+      readonly kind: "list";
+      readonly sep: string;
+      readonly at: string;
+      readonly prefix: string;
+      /** The folder that holds `at`; none at a root. */
+      readonly up?: string;
+      readonly folders: readonly {
+        readonly name: string;
+        readonly link?: true;
+        readonly project?: FolderProject;
+      }[];
+      readonly more: boolean;
+      readonly exact?: ExactFolder;
+    }
+  | {
+      readonly kind: "problem";
+      readonly sep: string;
+      readonly reason: string;
+      readonly at?: string;
+    };
+
+/** A project's folder line: its folder here, and the computers where it has one. */
+export interface ProjectFolderView {
+  readonly here?: {
+    readonly folder: string;
+    readonly state: "here" | "missing";
+    readonly repo?: string;
+  };
+  readonly elsewhere: readonly string[];
+}
+
 /** A fresh request ID (A1 3.8): 128 random bits, new per intended change. */
 export const requestId = (): string => crypto.randomUUID();
 
@@ -200,6 +256,21 @@ export class Api {
   /** The switches the person turned over, each with the token its view showed. */
   async applyAgentApps(space: string, changes: readonly unknown[]): Promise<unknown> {
     return this.#result("/api/v1/machine/apps_apply", { space, changes });
+  }
+
+  /** The folder chooser: the folders in the folder `path` names, or where to begin. */
+  async folders(path: string): Promise<FolderListing> {
+    return this.#result("/api/v1/machine/folders", { path });
+  }
+
+  /** The folder chooser's new folder, in a folder that exists. */
+  async makeFolder(path: string): Promise<{ folder?: string; reason?: string }> {
+    return this.#result("/api/v1/machine/folder_make", { path });
+  }
+
+  /** A project's folder here, with its repository, and the computers where it has one. */
+  async projectFolder(project: string): Promise<ProjectFolderView> {
+    return this.#result("/api/v1/machine/project_folder", { project });
   }
 
   /** A single-use ticket for the feed's WebSocket. */

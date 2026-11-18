@@ -109,7 +109,8 @@ describe("[A7.3.12.m5-14.folders-list] The chooser lists folders by name, bounde
       "/home/mira/work": { portal: "dir", billing: "dir" },
     });
     const all = await listFolders("~/", linux(fs));
-    expect(all).toMatchObject({ kind: "list", at: "~/", prefix: "" });
+    expect(all).toMatchObject({ kind: "list", at: "~/", prefix: "", up: "/home/" });
+    expect(await listFolders("/", linux(fs))).not.toHaveProperty("up");
     // Folders only, in name order whatever the case, a dot folder only when the prefix asks.
     expect(names(all)).toEqual(["work", "Writing"]);
     expect(names(await listFolders("~/w", linux(fs)))).toEqual(["work", "Writing"]);
@@ -224,6 +225,7 @@ describe("[A7.3.12.m5-14.folders-list] The chooser lists folders by name, bounde
     // Forward slashes are a Windows path's too; the home is ~.
     expect(await listFolders("~/code/", windows)).toMatchObject({
       at: "~\\code\\",
+      up: "~\\",
       folders: [{ name: "portal" }],
     });
     expect(await listFolders("C:\\Users\\mira\\code\\PORTAL", windows)).toMatchObject({

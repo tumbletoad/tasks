@@ -4943,6 +4943,20 @@
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.web-write",
+      "title": "A folder or project write from the page waits for the edits before it, shows its toast once it applied with an Undo that names its own commit, and leaves a refusal to the caller without a toast",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.web-chooser",
+      "title": "The folder chooser begins at the home, the folders that hold the projects and the roots, lists a folder's folders with a way to make a new one, and takes the folder a text names without its trailing separator",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }

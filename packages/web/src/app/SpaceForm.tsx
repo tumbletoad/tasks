@@ -5,6 +5,7 @@
 import { useEffect, useId, useState, type SyntheticEvent } from "react";
 import { Button, Heading } from "react-aria-components";
 import { Refused, SignedOut, type MadeSpace } from "../api.ts";
+import { FolderField } from "../folder/FolderField.tsx";
 import { useT } from "../i18n/intl.tsx";
 import { classes } from "./css.ts";
 import { useAuth, useMachineApi } from "./session.tsx";
@@ -18,7 +19,6 @@ const styles = classes(css, [
   "input",
   "label",
   "lead",
-  "mono",
   "note",
   "primary",
   "quiet",
@@ -55,13 +55,11 @@ export function SpaceForm({
 function Field({
   label,
   onChange,
-  mono = false,
   ...input
 }: {
   readonly label: string;
   readonly value: string;
   readonly onChange: (value: string) => void;
-  readonly mono?: boolean;
   readonly placeholder: string;
   readonly required?: boolean;
   readonly maxLength?: number;
@@ -79,7 +77,7 @@ function Field({
         id={id}
         type="text"
         spellCheck={false}
-        className={mono ? `${styles.input} ${styles.mono}` : styles.input}
+        className={styles.input}
         onChange={(event) => {
           onChange(event.target.value);
         }}
@@ -190,11 +188,12 @@ function NewSpace({
             maxLength={6}
             placeholder={proposal?.prefix ?? ""}
           />
-          <Field
+          <FolderField
+            api={api}
             label={t("start.folder")}
             value={folder}
             onChange={setFolder}
-            mono
+            make={false}
             placeholder={proposal?.folder ?? ""}
           />
           <p className={styles.note}>{t("start.moreNote")}</p>
@@ -269,13 +268,13 @@ function OpenFolder({
         {t("start.openTitle")}
       </Heading>
       <p className={styles.lead}>{t("start.openLead")}</p>
-      <Field
+      <FolderField
+        api={api}
         label={t("start.folder")}
         value={folder}
         onChange={setFolder}
-        required
+        make={false}
         autoFocus
-        mono
         placeholder={t("start.folderPlaceholder")}
       />
       {error === undefined ? null : (
