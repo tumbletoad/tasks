@@ -604,6 +604,8 @@ export const LAUNCH_EVIDENCE_FIELDS = {
   pid_started_at: "instant",
   folder_checked: "flag",
   exit_code: "count",
+  ran_ms: "count",
+  lost_at: "instant",
   bound_at: "instant",
   terminal: "id",
   terminal_source: "id",

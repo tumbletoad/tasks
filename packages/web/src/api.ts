@@ -42,6 +42,13 @@ export interface Receipt {
    * read them. Absent when none are known (none were held, or the service restarted since).
    */
   readonly request?: "waiting" | "read" | "unread";
+  /**
+   * A Confirmed launch's session as the service knows it: `running` now, or `ended`. Absent when
+   * it cannot know, which the page never shows as running.
+   */
+  readonly session?: "running" | "ended";
+  /** How long its agent ran, when its end was reported with it. */
+  readonly ran_ms?: number;
 }
 
 /** Open's terminal as Settings shows it (the service's TerminalView): fixed words only. */

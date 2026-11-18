@@ -568,6 +568,13 @@ export class LaunchMachine {
         // Nor is a clipboard launch, which A4 3.9.2 never makes Unknown: nothing runs there.
         if (intent.route === "terminal" && intent.evidence.claim === undefined) return undefined;
         if (intent.route === "clipboard") return undefined;
+        // A session that did run stays Confirmed; the record says it is no longer followed, so
+        // nothing shows it as running.
+        if (state === "confirmed") {
+          return intent.route === "terminal"
+            ? { next: "confirmed", evidence: { lost_at: this.#now() } }
+            : undefined;
+        }
         return state === "dispatching" || state === "dispatched"
           ? { next: "unknown", reason: "lost" }
           : undefined;

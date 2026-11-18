@@ -166,6 +166,13 @@ export const EVIDENCE_FIELDS = {
   folder_checked: "flag",
   /** The agent's exit code, for a launch that ended (`launch.exited`). */
   exit_code: "count",
+  /** Terminal: the agent ended after running this long, as its shim measured it. */
+  ran_ms: "count",
+  /**
+   * Terminal: when the service found the shim of a Confirmed launch gone without a report. Its
+   * agent most likely ended with it, but nothing says when or whether it did.
+   */
+  lost_at: "instant",
   /** The bridge redeemed the ticket or the launch reference (A3). */
   bound_at: "instant",
   /**

@@ -464,8 +464,7 @@ function chipOf(task: TaskRow, ctx: RowContext): RowModel["chip"] {
 const LAUNCH_TIP: Readonly<Record<string, MessageId>> = {
   ready: "row.tile.ready",
   opening: "row.tile.opening",
-  not_confirmed: "row.tile.notConfirmed",
-  connected: "row.tile.connected",
+  running: "row.tile.running",
   unavailable: "row.tile.unavailable",
   elsewhere: "row.tile.elsewhere",
   copy_only: "row.tile.copyOnly",

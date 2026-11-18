@@ -5,7 +5,15 @@
 // `ui/mint_code` over the socket, in the URL's fragment. The fake agent writes through the socket
 // as an agent does (class `cli-agent`).
 // Fixture data only. Tests only.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
@@ -61,7 +69,7 @@ export interface World {
   readonly task: FixtureTask;
   /**
    * Another task of Mira's in an area, for a second launch: the tests of one worker share the
-   * world, and a task already launched shows a Connected tile, which opens nothing.
+   * world, and a task whose session still runs shows a Running tile.
    */
   readonly spare: FixtureTask;
   /** Mira's portal project's folder, as the space stores it: a temporary folder that exists. */
@@ -77,6 +85,12 @@ export interface World {
   terminal(): TerminalCall[];
   /** The fake agent reads no request on this task, as an agent without the tools or a shell. */
   leaveUnread(ref: string): void;
+  /** The fake agents started on this task from now on run until `release`. */
+  hold(ref: string): void;
+  /** The held agents of this task end, as an agent the person quits. */
+  release(ref: string): void;
+  /** The PIDs of the held agents started on this task, oldest first. */
+  heldAgents(ref: string): number[];
   /** An agent logs on a task, through the service's request path as an agent does. */
   agentLog(space: string, task: string, text: string): Promise<void>;
   /**
@@ -170,10 +184,12 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     // The fake agent is this machine's one instance: the page draws its tile (A5 3.6).
     const unread = join(temp.root, "unread.txt");
     writeFileSync(unread, "");
+    const holds = join(temp.root, "holds");
+    mkdirSync(holds);
     registerSpaces(
       home,
       [{ path: seeded.folder, id: opened.space.spaceId }],
-      fakeInstanceToml(home, unread),
+      fakeInstanceToml(home, unread, holds),
     );
 
     const record = join(temp.root, "terminal.jsonl");
@@ -302,6 +318,20 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       leaveUnread: (ref) => {
         appendFileSync(unread, `${ref}\n`);
       },
+      hold: (ref) => {
+        writeFileSync(join(holds, ref), "");
+      },
+      release: (ref) => {
+        rmSync(join(holds, ref), { force: true });
+      },
+      heldAgents: (ref) => {
+        const file = join(holds, `${ref}.pids`);
+        if (!existsSync(file)) return [];
+        return readFileSync(file, "utf8")
+          .split("\n")
+          .filter((line) => line !== "")
+          .map(Number);
+      },
       agentLog: async (space, taskId, text) => {
         logs += 1;
         await agent.call(
@@ -337,6 +367,10 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       },
       close: async () => {
         for (const s of sessions.splice(0)) s.close();
+        // Every held agent ends with the world.
+        for (const name of readdirSync(holds)) {
+          if (!name.endsWith(".pids")) rmSync(join(holds, name), { force: true });
+        }
         proc.send("stop");
         await within(proc.exit, SLOW_MS, "the service did not stop").catch(() =>
           services.stopAll(),

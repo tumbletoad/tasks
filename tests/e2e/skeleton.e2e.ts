@@ -1,8 +1,8 @@
 // The skeleton page end to end (A7 3.9 M2.13), in Chromium and Firefox, against the real service
 // process with fixture data and the fake terminal behind the launch tile.
 //
-// Verify line: Open sends the shim to the fake terminal, the receipt reaches Confirmed, a log entry
-// appears. Two tabs on two spaces stay on their own space.
+// Verify line: Open sends the shim to the fake terminal, the session runs, a log entry appears.
+// Two tabs on two spaces stay on their own space.
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,7 +21,7 @@ import { SLOW_MS } from "./world.ts";
 const TOKEN_KEY = `${PRODUCT_ID}.token`;
 
 test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
-  test("Open sends the shim to the fake terminal, the receipt reaches Confirmed, a log entry appears", async ({
+  test("Open sends the shim to the fake terminal, the session runs, a log entry appears", async ({
     page,
     world,
   }) => {
@@ -39,7 +39,9 @@ test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
     // The row's one tile is the effective instance's (A5 3.6).
     const tile = row.locator('[data-part="tile"]');
     await expect(tile).toHaveAccessibleName(`Open in ${FAKE_INSTANCE.label}`);
-    // Expanding the row shows its thread and a button per instance; Open on the fake agent's.
+    // Expanding the row shows its thread and a button per instance; Open on the fake agent's,
+    // which runs until the test lets it end.
+    world.hold(world.task.ref);
     await row.locator('[data-part="title"]').click();
     await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");
     await row
@@ -56,11 +58,11 @@ test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
     expect(call?.argv[2]).toMatch(/^[0-9A-HJKMNP-TV-Z]{24}$/);
     expect(JSON.stringify(call)).not.toContain(world.task.title);
 
-    // The receipt reaches Confirmed, live in the expanded row, and the tile shows it.
-    const confirmed = row.locator('[data-entry][data-state="confirmed"]');
-    await expect(confirmed).toBeVisible({ timeout: SLOW_MS });
-    await expect(confirmed).toContainText(`Open in ${FAKE_INSTANCE.label}`);
-    await expect(tile).toHaveAttribute("data-state", "connected");
+    // The session runs, live in the expanded row, and the tile shows it.
+    const running = row.locator('[data-entry][data-state="running"]');
+    await expect(running).toBeVisible({ timeout: SLOW_MS });
+    await expect(running).toContainText(`Opened in ${FAKE_INSTANCE.label} · running`);
+    await expect(tile).toHaveAttribute("data-state", "running");
 
     // The agent logs on the task, as an agent does: the entry appears without a reload.
     const text = `Reproduced the time zone shift in ${test.info().project.name}.`;
@@ -71,6 +73,8 @@ test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
 
     expect(await violations(page)).toEqual([]);
     await page.screenshot({ path: test.info().outputPath("open-confirmed.png") });
+    world.release(world.task.ref);
+    await expect(row.locator('[data-entry][data-state="ended"]')).toBeVisible({ timeout: SLOW_MS });
   });
 });
 

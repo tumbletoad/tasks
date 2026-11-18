@@ -32,9 +32,10 @@ export const FAKE_INSTANCE = {
 /**
  * The instance's table in machine.toml: Claude Code's target, run as the fake, which reads the
  * person's request as its brief says without the tools (`tasks show --launch`) from the install of
- * `home`, except on the tasks the file `unread` lists.
+ * `home`, except on the tasks the file `unread` lists. On a task `holds` has a file for, the fake
+ * runs until that file is removed.
  */
-export function fakeInstanceToml(home: string, unread: string): string {
+export function fakeInstanceToml(home: string, unread: string, holds: string): string {
   return instanceToml({
     id: FAKE_INSTANCE.key,
     target: "claude-cli",
@@ -46,6 +47,7 @@ export function fakeInstanceToml(home: string, unread: string): string {
       FAKE_CLI_HOLD_MS: "6000",
       FAKE_CLI_TASKS: JSON.stringify({ argv: [process.execPath, CLI_BIN], home }),
       FAKE_CLI_UNREAD: unread,
+      FAKE_CLI_HOLDS: holds,
     },
   });
 }
@@ -54,19 +56,28 @@ export function fakeInstanceToml(home: string, unread: string): string {
 export interface TerminalCall {
   readonly launch: string;
   readonly argv: readonly string[];
+  /** The shim's process, which a test may end as a closed window or a kill would. */
+  readonly pid?: number;
 }
 
 /** The service's terminal seam: records `tasks shim <ticket>` and runs it in the folder. */
 export function fakeTerminal(record: string): TerminalStart {
   return ({ intent, ticket, folder }) => {
-    const call: TerminalCall = { launch: intent.id, argv: [CLI_NAME, "shim", ticket] };
-    appendFileSync(record, `${JSON.stringify(call)}\n`);
+    // Its own process group on POSIX, as in a terminal's window: a test hangs the group up as a
+    // closed window does.
     const shim = spawn(process.execPath, [CLI_BIN, "shim", ticket], {
       cwd: folder,
       env: process.env,
       stdio: "ignore",
       windowsHide: true,
+      detached: process.platform !== "win32",
     });
+    const call: TerminalCall = {
+      launch: intent.id,
+      argv: [CLI_NAME, "shim", ticket],
+      ...(shim.pid === undefined ? {} : { pid: shim.pid }),
+    };
+    appendFileSync(record, `${JSON.stringify(call)}\n`);
     shim.on("error", () => undefined);
     shim.unref();
     // A handoff: the window would open later, and the claim window decides.

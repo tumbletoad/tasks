@@ -467,9 +467,11 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
     const tile = (extra: Partial<RowInput>) => renderRow(row(t, extra), ctx("open", "area")).launch;
     expect(tile({}).state).toBe("ready");
     expect(say(tile({}).tip)).toBe("Open in Codex · work");
-    expect(tile({ receipts: [receipt("confirmed")] }).state).toBe("connected");
+    const running = { ...receipt("confirmed"), session: "running" as const };
+    expect(tile({ receipts: [running] }).state).toBe("running");
+    expect(tile({ receipts: [receipt("confirmed")] }).state).toBe("ready");
     // Another instance's receipt says nothing about the effective instance's tile.
-    expect(tile({ receipts: [receipt("confirmed", "cc")] }).state).toBe("ready");
+    expect(tile({ receipts: [{ ...running, instance: "cc" }] }).state).toBe("ready");
     expect(tile({ instances: [] }).state).toBe("copy_only");
     expect(tile({ launchBlock: { kind: "none" } }).state).toBe("none");
     expect(
@@ -480,8 +482,8 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
     );
     expect(tileClick(tile({ instances: [] }).state)).toBe("copy");
     // A launch state that is not Ready is the last part of the description.
-    const connected = renderRow(row(t, { receipts: [receipt("confirmed")] }), ctx("open", "area"));
-    expect(say(connected.description.at(-1))).toBe("Connected · Codex · work");
+    const runs = renderRow(row(t, { receipts: [running] }), ctx("open", "area"));
+    expect(say(runs.description.at(-1))).toBe("Codex · work · running");
   });
 
   test("sources: up to three with their own text and domain, then +N; only safe schemes link", () => {

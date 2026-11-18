@@ -168,12 +168,16 @@ export function exitObservation(exit: {
   if (!exit.spawned || exit.failed !== undefined) {
     return { kind: "failed", reason: "verify_failed" };
   }
-  // A Confirmed launch whose agent later exits stays Confirmed (A4 3.9.2): a settled agent
-  // confirms, with its exit code; one that ended within 3 s failed.
+  // How long it ran is what tells the page the session ended, also for an exit by a signal.
+  const ended: Evidence = {
+    ...exitCode(exit.code),
+    ran_ms: Math.min(Math.max(0, Math.round(exit.ran_ms)), MAX_COUNT),
+  };
+  // The session did happen: a settled agent confirms, and one that ended within 3 s failed.
   if (exit.settled || exit.ran_ms >= SETTLE_MS) {
-    return { kind: "confirmed", evidence: { folder_checked: true, ...exitCode(exit.code) } };
+    return { kind: "confirmed", evidence: { folder_checked: true, ...ended } };
   }
-  return { kind: "failed", reason: "agent_exited", evidence: exitCode(exit.code) };
+  return { kind: "failed", reason: "agent_exited", evidence: ended };
 }
 
 export class ShimHost {
@@ -587,6 +591,18 @@ export class ShimHost {
   agentRuns(launch: string): boolean {
     const record = this.#records.get(launch);
     return record?.agent !== undefined && record.attachment !== undefined;
+  }
+
+  /**
+   * Whether the launch's session runs now, for the page: its agent started and its shim's process
+   * is still there. A shim that ended without a report stops counting at once, before the PID
+   * check settles its launch.
+   */
+  running(launch: string): boolean {
+    const record = this.#records.get(launch);
+    const held = record?.attachment;
+    if (record?.agent === undefined || held === undefined) return false;
+    return this.#probe.mayRun?.(held.pid, held.startTime) ?? true;
   }
 
   /**

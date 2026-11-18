@@ -8,8 +8,8 @@
 // the page refetches when the change feed names a launch.
 //
 // No text of a task, brief or composer travels here: a receipt holds IDs, states, instants and
-// fixed codes only, as the launch record does, and whether the launch's agent read the person's
-// request yet, which only this computer knows.
+// fixed codes only, as the launch record does, and what only this computer knows: whether the
+// launch's agent read the person's request yet, and whether its session runs now.
 import { AppError } from "@tasks/contracts";
 import {
   INSTANCE_KEY,
@@ -46,6 +46,8 @@ export interface UiLaunchPort {
   onChange?(listener: (space: string) => void): () => void;
   /** Where a launch's request is: waiting, read, gone unread, or undefined when none is known. */
   requestState?(launch: string): "waiting" | "read" | "unread" | undefined;
+  /** Whether the launch's session runs now, as this service follows it. */
+  running?(launch: string): boolean;
 }
 
 /** A launch receipt as the page shows it (A5 3.9). IDs, states, instants and codes only. */
@@ -70,6 +72,14 @@ export interface UiReceipt {
    * held none, or this service started after they went.
    */
   readonly request?: "waiting" | "read" | "unread";
+  /**
+   * A Confirmed launch's session: `running` while this service follows it and it runs, `ended`
+   * once its agent's end was reported. Absent when the service does not know: a link or a T3
+   * launch, a shim that went without a word, a launch of another computer or of an earlier build.
+   */
+  readonly session?: "running" | "ended";
+  /** How long its agent ran, when its end was reported with it. */
+  readonly ran_ms?: number;
 }
 
 const MONOGRAM = /^[A-Za-z0-9]{1,2}$/;
@@ -116,43 +126,60 @@ const LIST_SQL =
   "SELECT id, reference, instance_id, route, state, reason, detail FROM launches " +
   "WHERE task_id = $task ORDER BY created_at DESC, id DESC LIMIT 10";
 
-/** A `launches` row as the page's receipt, or undefined for a detail that does not parse. */
-export function receiptOf(row: Record<string, unknown>): UiReceipt | undefined {
-  const at: Partial<Record<IntentState, number>> = {};
-  let terminal: UiReceipt["terminal"];
+/**
+ * A `launches` row as the page's receipt, or undefined for a detail that does not parse. `runs`
+ * says whether this service follows the launch's session as running now: it counts only for a
+ * Confirmed launch whose record names no end.
+ */
+export function receiptOf(
+  row: Record<string, unknown>,
+  runs: (launch: string) => boolean = () => false,
+): UiReceipt | undefined {
+  let parsed: unknown;
   try {
-    const detail = JSON.parse(String(row["detail"])) as {
-      at?: Record<string, unknown>;
-      evidence?: Record<string, unknown>;
-    };
-    for (const [state, value] of Object.entries(detail.at ?? {})) {
-      if (typeof value === "number") at[state as IntentState] = value;
-    }
-    // Only the fixed words reach the page: anything else is left out, never shown.
-    const app = detail.evidence?.["terminal"];
-    const source = detail.evidence?.["terminal_source"];
-    if (
-      typeof app === "string" &&
-      typeof source === "string" &&
-      app !== "auto" &&
-      (TERMINAL_APPS as readonly string[]).includes(app) &&
-      (TERMINAL_SOURCES as readonly string[]).includes(source)
-    ) {
-      terminal = { app, source };
-    }
+    parsed = JSON.parse(String(row["detail"]));
   } catch {
     return undefined;
   }
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const detail = parsed as { at?: Record<string, unknown>; evidence?: Record<string, unknown> };
+  const at: Partial<Record<IntentState, number>> = {};
+  for (const [state, value] of Object.entries(detail.at ?? {})) {
+    if (typeof value === "number") at[state as IntentState] = value;
+  }
+  const evidence = detail.evidence ?? {};
+  // Only the fixed words reach the page: anything else is left out, never shown.
+  const app = evidence["terminal"];
+  const source = evidence["terminal_source"];
+  const terminal =
+    typeof app === "string" &&
+    typeof source === "string" &&
+    app !== "auto" &&
+    (TERMINAL_APPS as readonly string[]).includes(app) &&
+    (TERMINAL_SOURCES as readonly string[]).includes(source)
+      ? { app, source }
+      : undefined;
+  const id = String(row["id"]);
+  const state = String(row["state"]) as IntentState;
   const reason = row["reason"];
+  const ran = evidence["ran_ms"];
+  const ranMs = typeof ran === "number" && Number.isSafeInteger(ran) && ran >= 0 ? ran : undefined;
+  // An earlier build recorded an agent's end by its exit code alone.
+  const ended = ranMs !== undefined || evidence["exit_code"] !== undefined;
+  const lost = evidence["lost_at"] !== undefined;
+  const session =
+    state !== "confirmed" ? undefined : ended ? "ended" : !lost && runs(id) ? "running" : undefined;
   return {
-    id: String(row["id"]),
+    id,
     reference: String(row["reference"]),
     instance: String(row["instance_id"]),
     route: String(row["route"]),
-    state: String(row["state"]) as IntentState,
+    state,
     reason: typeof reason === "string" ? reason : null,
     at,
     ...(terminal === undefined ? {} : { terminal }),
+    ...(session === undefined ? {} : { session }),
+    ...(ranMs === undefined ? {} : { ran_ms: ranMs }),
   };
 }
 
@@ -215,8 +242,9 @@ export class UiLaunches {
     if (reader === undefined) throw invalid("The space is not served.", "space");
     const rows = await reader.all(LIST_SQL, { task });
     const port = this.#options.port;
+    const runs = (launch: string): boolean => port?.running?.(launch) ?? false;
     return rows
-      .flatMap((r) => receiptOf(r) ?? [])
+      .flatMap((r) => receiptOf(r, runs) ?? [])
       .map((receipt) => {
         const request = port?.requestState?.(receipt.id);
         return request === undefined ? receipt : { ...receipt, request };
