@@ -1,7 +1,7 @@
 // Doctor's HTTP and accounts rows: the UI's port moved or blocked by another program's listener,
 // a port in a Windows excluded range, the Host and Origin self-test (a request with
 // `Host: evil.example` must get 421), a CSP with a fresh nonce on index.html, and how many other
-// user accounts the computer has. Only codes, counts and ports reach the output: never a token,
+// user accounts the machine has. Only codes, counts and ports reach the output: never a token,
 // name or SID.
 import { win32 } from "node:path";
 import { helperOutput } from "@tasks/launch/helpers";
@@ -159,7 +159,7 @@ export async function httpCheck(
 /** The `accounts` row: information, never a warning. */
 export function accountsCheck(facts: AccountFacts | undefined): Check {
   if (facts === undefined) {
-    return { id: "accounts", status: "skip", detail: "The computer's accounts could not be read." };
+    return { id: "accounts", status: "skip", detail: "The machine's accounts could not be read." };
   }
   const { others, sandbox } = countAccounts(facts);
   const count = others === 0 ? "No" : String(others);
@@ -170,6 +170,6 @@ export function accountsCheck(facts: AccountFacts | undefined): Check {
   return {
     id: "accounts",
     status: "ok",
-    detail: `${count} other user account${others === 1 ? "" : "s"} on this computer${left}.`,
+    detail: `${count} other user account${others === 1 ? "" : "s"} on this machine${left}.`,
   };
 }

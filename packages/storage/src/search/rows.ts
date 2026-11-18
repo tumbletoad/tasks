@@ -15,12 +15,21 @@ import type { Row } from "../driver.ts";
 import { StorageError } from "../errors.ts";
 import { inRange } from "../rows.ts";
 
+/**
+ * When a finished task (`t`) was finished: its completion, or for a dropped task, which keeps no
+ * completion time, the commit whose write its lifecycle holds (its provenance, else its create),
+ * so an undo that brings a drop back keeps the drop's own time.
+ */
+export const FINISHED_AT_SQL =
+  "COALESCE(t.completed_at, (SELECT c.at FROM commits c WHERE c.seq = " +
+  "COALESCE(json_extract(t.fp, '$.lifecycle'), t.created_seq)), t.created_at)";
+
 /** The columns a page shows of a task, with its area and project titles. */
 const TASK_COLUMNS =
   "t.id, t.ref, t.title, t.summary, t.lifecycle, t.status, t.inbox, t.priority, t.effort, " +
   "t.due_date, t.due_at, t.due_tz, t.focus_on, t.completed_at, t.outcome, t.archived_reason, " +
-  "t.wrap_state, t.touched, t.version, t.deleted_at, a.title AS area_title, " +
-  "p.title AS project_title";
+  `t.wrap_state, t.touched, t.version, t.deleted_at, CASE WHEN t.lifecycle <> 'active' THEN ` +
+  `${FINISHED_AT_SQL} END AS finished_at, a.title AS area_title, p.title AS project_title`;
 
 export const ROWS_BY_IDS_SQL = {
   tasks:

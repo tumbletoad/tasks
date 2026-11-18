@@ -258,8 +258,9 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     for (const q of ["sort=effort", 'sort:"-effort"']) {
       expect(sortsByEffort(q)).toBe(true);
     }
-    // No key of the query language: the service refuses it, and nothing is sorted.
-    expect(sortsByEffort("order:effort")).toBe(false);
+    // An alias is read as its key, here as in the service.
+    expect(sortsByEffort("order:effort")).toBe(true);
+    expect(sortsByEffort("sorted:effort")).toBe(false);
     // The search's order: S, S, L, then XL (no longer in the scale) among the tasks without one.
     const found = (
       [
@@ -333,6 +334,8 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     // Words that only look like filters are the person's text.
     expect(wordsOf("read https://example.org/guide p:1")).toBe("read https://example.org/guide");
     expect(wordsOf("fix bug:123 Status:open")).toBe("fix bug:123");
+    expect(wordsOf("fence prio:1 re: gate")).toBe("fence re: gate");
+    expect(wordsOf("sync P:\\repo folder://server/share/repo")).toBe("sync P:\\repo");
   });
 
   test("the fields a search reads decide which changes offer a refresh", () => {

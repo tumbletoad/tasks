@@ -179,7 +179,7 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     expect(shown("active")).toBe("M-25  Fixture task  (open, p2)\n");
   });
 
-  test("a task's folder says whose it is and when it is not on this computer", () => {
+  test("a task's folder says whose it is and when it is not on this machine", () => {
     const folderLine = (folder: Record<string, unknown>) =>
       render(
         "task.get",
@@ -194,10 +194,10 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
       "  folder: ~/work/portal (its project's)",
     );
     expect(folderLine({ path: "~/work/portal", of: "task", missing: true })).toBe(
-      "  folder: ~/work/portal (not found on this computer)",
+      "  folder: ~/work/portal (not found on this machine)",
     );
     expect(folderLine({ path: "~/work/portal", of: "project", missing: true })).toBe(
-      "  folder: ~/work/portal (its project's, not found on this computer)",
+      "  folder: ~/work/portal (its project's, not found on this machine)",
     );
     expect(folderLine({ machine: "mira-laptop" })).toBe("  folder: on mira-laptop");
   });

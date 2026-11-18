@@ -157,7 +157,7 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await flip(page, toolsFor("Codex"), true);
     fresh.touchCodex();
     await page.getByRole("button", { name: "Apply" }).click();
-    await expect(page.getByRole("alert")).toContainText("Something changed on this computer");
+    await expect(page.getByRole("alert")).toContainText("Something changed on this machine");
     await page.screenshot({ path: test.info().outputPath("settings-apps-changed-1440.png") });
     expect(fresh.codexConfig()).not.toContain("[mcp_servers.tasks]");
     // The choice stays, against the new view: one more press applies it.

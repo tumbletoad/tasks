@@ -46,7 +46,7 @@ describe("[A2.3.13.cli.doctor-http] doctor's accounts and HTTP rows", () => {
     expect(accountsCheck(win)).toEqual({
       id: "accounts",
       status: "ok",
-      detail: "No other user accounts on this computer (not counting 1 agent sandbox account).",
+      detail: "No other user accounts on this machine (not counting 1 agent sandbox account).",
     });
     // One profile path is a single string in PowerShell's JSON; the second person counts.
     const two = windowsAccounts(
@@ -81,10 +81,10 @@ describe("[A2.3.13.cli.doctor-http] doctor's accounts and HTTP rows", () => {
     expect(accountsCheck({ me: "501", accounts: ["501", "502", "503"], sandbox: [] })).toEqual({
       id: "accounts",
       status: "ok",
-      detail: "2 other user accounts on this computer.",
+      detail: "2 other user accounts on this machine.",
     });
     expect(accountsCheck({ me: "501", accounts: ["501", "502"], sandbox: [] }).detail).toBe(
-      "1 other user account on this computer.",
+      "1 other user account on this machine.",
     );
     expect(accountsCheck(undefined).status).toBe("skip");
   });

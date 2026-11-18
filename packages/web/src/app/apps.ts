@@ -1,4 +1,4 @@
-// This computer's agent apps as the page reads them (the service's hub/agent-apps.ts): each answer
+// This machine's agent apps as the page reads them (the service's hub/agent-apps.ts): each answer
 // is checked by its shape before the page uses it. Each row has up to two switches; what the
 // person turns over is sent with the token its view showed, and the service writes it only when
 // nothing changed since.

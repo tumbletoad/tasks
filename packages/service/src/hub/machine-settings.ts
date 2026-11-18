@@ -1,6 +1,6 @@
-// This computer's settings as the page reads and changes them: the theme and the single-letter keys
+// This machine's settings as the page reads and changes them: the theme and the single-letter keys
 // (machine preferences in machine.toml's `[preferences]`), and the terminal Open uses (`[terminal]
-// app`). They are the person's on this computer, the same in every space and tab, and only the
+// app`). They are the person's on this machine, the same in every space and tab, and only the
 // person changes them: the page's grant is the person, and no agent tool reaches this module.
 //
 // Every change is one splice of machine.toml that keeps the rest of the file (config/edit.ts), and
@@ -49,6 +49,7 @@ function refused(reason: EditRefusal): AppError {
         code: "conflict",
         message: "machine.toml changed while the setting was being saved.",
         hint: "Try again.",
+        data: { retryable: true },
       });
     case "invalid_value":
       return new AppError({
@@ -81,7 +82,7 @@ const notASetting = (): AppError =>
   new AppError({
     code: "invalid_input",
     message: "Settings has no such setting.",
-    data: { issues: [{ path: "key", message: "Not a setting of this computer" }] },
+    data: { issues: [{ path: "key", message: "Not a setting of this machine" }] },
   });
 
 export class MachineSettings {
@@ -182,7 +183,7 @@ export class MachineSettings {
         if (view === null || !view.installed.includes(chosen)) {
           throw new AppError({
             code: "not_found",
-            message: "That terminal was not found on this computer.",
+            message: "That terminal was not found on this machine.",
           });
         }
       }

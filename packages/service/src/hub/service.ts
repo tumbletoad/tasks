@@ -934,7 +934,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       ...(accountHome === undefined ? {} : { home: accountHome }),
     });
     launching.service = launches;
-    // Settings for this computer (M5.11): the page's theme and keys, and Open's terminal.
+    // Settings for this machine (M5.11): the page's theme and keys, and Open's terminal.
     const machineSettings = new MachineSettings({
       configDir: layout.config,
       platform,

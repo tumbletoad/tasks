@@ -1,0 +1,54 @@
+name: rerun unacquired
+
+# GitHub gives up on a hosted job that no runner takes within about 15 minutes ("The job was not
+# acquired by Runner of type hosted even after multiple attempts"), which macOS arm64 runners hit
+# when they are short. The job never started, so it says nothing about the code, but its run shows
+# failed. This runs such a build again, at most twice, and only when every job that did not pass
+# never got a runner: a job that ran and failed is never run again by this.
+#
+# A workflow_run workflow runs from the default branch, with this repository's token, and checks
+# out nothing: no code of the pull request runs here.
+on:
+  workflow_run:
+    workflows: [build]
+    types: [completed]
+
+permissions:
+  actions: write
+
+jobs:
+  rerun:
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt < 3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Run the build again when its only failures never got a runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ github.event.workflow_run.id }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW: ${{ github.event.workflow_run.workflow_id }}
+        run: |
+          set -euo pipefail
+          jobs=$(gh api "repos/$REPO/actions/runs/$RUN/attempts/$ATTEMPT/jobs?per_page=100")
+          failed=$(jq '[.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")]' <<<"$jobs")
+          if [ "$(jq 'length' <<<"$failed")" -eq 0 ]; then
+            echo "No job failed."
+            exit 0
+          fi
+          ran=$(jq '[.[] | select((.runner_name // "") != "" or (.steps | length) > 0)] | length' <<<"$failed")
+          if [ "$ran" -ne 0 ]; then
+            echo "A job ran and failed: that is the code's to fix, not a runner's."
+            exit 0
+          fi
+          # A newer run of this branch has the newest commit: running this older one again would
+          # cancel it through the build's concurrency group.
+          newest=$(gh api "repos/$REPO/actions/workflows/$WORKFLOW/runs?branch=$BRANCH&per_page=1" --jq '.workflow_runs[0].id')
+          if [ "$newest" != "$RUN" ]; then
+            echo "A newer build of $BRANCH runs: nothing to run again."
+            exit 0
+          fi
+          jq -r '.[] | "Never got a runner: \(.name)"' <<<"$failed"
+          gh run rerun "$RUN" --failed --repo "$REPO"

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// This computer's settings as the page holds them: a change shows at once, stays once the service
+// This machine's settings as the page holds them: a change shows at once, stays once the service
 // kept it whether or not the feed has said so yet, and goes back when the service refuses it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -50,7 +50,7 @@ afterEach(() => {
   container.remove();
 });
 
-describe("[A7.3.12.m5-11.machine-page] the page's copy of this computer's settings", () => {
+describe("[A7.3.12.m5-11.machine-page] the page's copy of this machine's settings", () => {
   test("a kept change stays when the service's answer comes before the feed's message", async () => {
     const { api, calls } = fakeApi();
     act(() => {

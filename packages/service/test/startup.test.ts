@@ -226,7 +226,7 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
         state: "read_only",
         reason: "not_authority",
         id: other.space.spaceId,
-        message: expect.stringContaining("Another computer owns this space") as unknown,
+        message: expect.stringContaining("Another machine owns this space") as unknown,
       },
     ]);
     expect(events(home, "space.read_only")).toEqual([

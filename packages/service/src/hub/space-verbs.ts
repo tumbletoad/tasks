@@ -71,11 +71,11 @@ import type { SpaceManager, SpaceView } from "./spaces.ts";
 import type { FolderCheck } from "./sync-folders.ts";
 
 /**
- * A6 3.5's warning at a claim: the copy becomes this machine's, and another computer that still
+ * A6 3.5's warning at a claim: the copy becomes this machine's, and another machine that still
  * has the space goes on without it.
  */
 export const CLAIM_WARNING =
-  "If another computer still has this space, its later changes will not appear here.";
+  "If another machine still has this space, its later changes will not appear here.";
 
 export interface SpaceVerbsHost {
   readonly manager: Pick<
@@ -189,6 +189,19 @@ function spaceOf(result: AdminResult): Id<"sp"> {
 /** The export modes a person can ask for now: transfer comes with M3.08. */
 const EXPORT_MODES = ["backup", "fork", "transfer"] as const;
 
+/**
+ * A view rebuild of a space that is not open here: it needs the space open first, so a retry on
+ * its own does not help.
+ */
+export function viewNotKept(state: string): AppError {
+  return new AppError({
+    code: "space_unavailable",
+    message: `${PRODUCT_NAME} keeps a space's view only while the space is open on this machine.`,
+    hint: `Run ${CLI_NAME} space list to see why it is not open.`,
+    data: { reason: "not_served", retryable: false, state },
+  });
+}
+
 /** A storage failure, or a worker's code, as A3's error body. */
 function failure(error: unknown): AppError {
   if (error instanceof AppError) return error;
@@ -274,16 +287,16 @@ function notClaimable(view: SpaceView): AppError {
     return new AppError({
       code: "invalid_input",
       message:
-        "This space belongs to another computer, so it is not claimed where it is. Make a copy of it this computer's: export it, close it, restore the bundle into a new folder and claim that copy.",
+        "This space belongs to another machine, so it is not claimed where it is. Make a copy of it this machine's: export it, close it, restore the bundle into a new folder and claim that copy.",
       hint: `${CLI_NAME} space export <folder>; ${CLI_NAME} space close <folder>; ${CLI_NAME} space restore <bundle> --to <new folder>; ${CLI_NAME} space claim <new folder>`,
-      data: { issues: [{ path: "space", message: "Another computer's space" }] },
+      data: { issues: [{ path: "space", message: "Another machine's space" }] },
     });
   }
   return new AppError({
     code: "invalid_input",
     message:
       view.state === "open"
-        ? "This space takes writes on this computer already: there is nothing to claim."
+        ? "This space takes writes on this machine already: there is nothing to claim."
         : "Only a restored copy is claimed, and this space is not one.",
     hint: `${CLI_NAME} space list shows a restored copy as read_only: read_only_copy.`,
     data: { issues: [{ path: "space", message: "Not a restored copy" }] },
@@ -565,21 +578,15 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
     "view/rebuild": async (params, cls) => {
       userOnly(cls);
       const view = find(required(params, "space"));
-      const unavailable = (): AppError =>
-        new AppError({
-          code: "space_unavailable",
-          message: `${PRODUCT_NAME} keeps a space's view only while the space is open on this machine.`,
-          data: { reason: "not_served", retryable: view.state === "open", state: view.state },
-        });
       const running = view.state === "open" ? manager.rebuildView(view.entry) : undefined;
-      if (running === undefined) throw unavailable();
+      if (running === undefined) throw viewNotKept(view.state);
       try {
         const found = await running;
         return { checked: found.checked, queued: found.queued, forgotten: found.forgotten };
       } catch (error) {
         if (error instanceof StorageError) throw failure(error);
         // The projection ended before its reconciliation ran: the space closed meanwhile.
-        throw unavailable();
+        throw viewNotKept("closed");
       }
     },
 
@@ -773,7 +780,7 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       if (original !== undefined) {
         throw new AppError({
           code: "invalid_input",
-          message: `The original of this copy is open on this computer. Close it first, then claim the copy again: ${command(["space", "close", manager.folderOf(original.entry)], "space close <folder>")}`,
+          message: `The original of this copy is open on this machine. Close it first, then claim the copy again: ${command(["space", "close", manager.folderOf(original.entry)], "space close <folder>")}`,
           data: { issues: [{ path: "space", message: "Its original is open" }] },
         });
       }

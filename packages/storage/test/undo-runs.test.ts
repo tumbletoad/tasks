@@ -24,17 +24,19 @@ import {
   expectStatus,
   MACHINE,
   steppingClock,
-  writeFixture,
   type Fixture,
+  fixtureCopies,
 } from "./write-helpers.ts";
 
 const temp = tempFolders("undo-runs");
+/** The fixture space, made once and copied for each test. */
+const fixture = fixtureCopies(temp.make);
 afterAll(temp.cleanup);
 
 let fx: Fixture;
 let ui: Credential;
 beforeEach(async () => {
-  fx = await writeFixture(temp.make());
+  fx = await fixture();
   // A run is the person's (R7): the service writes it with the person's UI credential.
   ui = { ...fx.human, scope_id: "ui:fixture", origin: "ui" };
 });

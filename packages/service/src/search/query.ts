@@ -4,9 +4,10 @@
 //
 // - Words are ANDed. `OR` (upper case, alone) joins its two neighbours. A leading `-` negates. A
 //   quote starts a phrase, which runs to the next quote (`""` inside is one quote) or to the end.
-// - `key:value` and `key<value` (also `<=`, `>`, `>=`) are filters. A key is letters only, so
-//   `10:30` stays a word; an unknown key fails with a suggestion. A value may be quoted. A known
-//   key with `=` (`p=3`) is read as `p:3`.
+// - `key:value` and `key<value` (also `<=`, `>`, `>=`) are filters, and an alias (`prio:1`) is read
+//   as its key. Ordinary text that only looks like one (`10:30`, `re:`, `https://…`, `C:\…`) is a
+//   word; a plainly misspelt key (`stauts:open`) fails with a suggestion (`filterOf`). A value may
+//   be quoted. A key with `=` (`p=3`) is read as `p:3`.
 // - OR joins words with words or filters with filters, and never a negated term.
 // - `sort:effort` lists the smallest effort first by the space's scale, `sort:-effort` the largest;
 //   tasks without an effort come last either way. It filters nothing, so it stands alone: never
@@ -23,6 +24,7 @@
 // A suggestion from this module's own vocabulary goes into the hint.
 import {
   AppError,
+  editDistance,
   filterOf,
   normaliseLine,
   QUERY_KEYS,
@@ -61,23 +63,6 @@ const KEY_OPS: Readonly<Record<Key, readonly Op[]>> = {
   folder: EQUALS,
   id: EQUALS,
   sort: EQUALS,
-};
-
-/** Words people try for a key, and the key they mean. */
-const KEY_ALIASES: Readonly<Record<string, Key>> = {
-  prio: "p",
-  pri: "p",
-  priority: "p",
-  state: "status",
-  proj: "project",
-  ref: "id",
-  task: "id",
-  label: "has",
-  modified: "updated",
-  changed: "updated",
-  done: "completed",
-  where: "on",
-  order: "sort",
 };
 
 /** What `sort:` takes: the effort scale's order, smallest first, or with `-` largest first. */
@@ -157,37 +142,11 @@ export function queryProblem(message: string, hint?: string, suggestions?: strin
   });
 }
 
-/** Edit distance, for suggestions. */
-function distance(a: string, b: string): number {
-  const x = Array.from(a);
-  const y = Array.from(b);
-  let row = Array.from({ length: y.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= x.length; i += 1) {
-    const next = [i];
-    for (let j = 1; j <= y.length; j += 1) {
-      next[j] = Math.min(
-        (row[j] ?? 0) + 1,
-        (next[j - 1] ?? 0) + 1,
-        (row[j - 1] ?? 0) + (x[i - 1] === y[j - 1] ? 0 : 1),
-      );
-    }
-    row = next;
-  }
-  return row[y.length] ?? 0;
-}
-
-/** Up to three of `options` close to `word`: an alias, a prefix either way, or two edits away. */
-export function suggest(
-  word: string,
-  options: readonly string[],
-  aliases: Readonly<Record<string, string>> = {},
-): string[] {
+/** Up to three of `options` close to `word`: a prefix either way, or two edits away. */
+export function suggest(word: string, options: readonly string[]): string[] {
   const w = word.toLowerCase();
-  // An own entry only: `constructor` is no alias, whatever every object inherits.
-  const alias = Object.hasOwn(aliases, w) ? aliases[w] : undefined;
-  if (alias !== undefined) return [alias];
   return options
-    .map((option) => ({ option, d: distance(w, option.toLowerCase()) }))
+    .map((option) => ({ option, d: editDistance(w, option.toLowerCase()) }))
     .filter(
       ({ option, d }) =>
         d <= Math.min(2, Math.max(1, Math.floor(option.length / 2))) ||
@@ -330,9 +289,9 @@ function tokens(text: string): Token[] {
     const word = text.slice(i, end);
     const filter = filterOf(word);
     if (filter !== undefined) {
-      const { key, op } = filter;
-      if (!(KEYS as readonly string[]).includes(key)) {
-        const found = suggest(key, KEYS, KEY_ALIASES);
+      const { key } = filter;
+      if (key === undefined) {
+        const found = [...filter.suggestions];
         throw queryProblem("The query has an unknown key", didYouMean(found), found);
       }
       const at = i + filter.length;
@@ -343,7 +302,7 @@ function tokens(text: string): Token[] {
         value = text.slice(at, end);
         i = end;
       }
-      out.push({ type: "filter", key: key as Key, op, value, negated });
+      out.push({ type: "filter", key, op: filter.op, value, negated });
       continue;
     }
     i = end;
