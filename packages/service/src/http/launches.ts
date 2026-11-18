@@ -14,7 +14,12 @@
 // as the page reads it holds the person's request and the agent's answer, task text that travels
 // in a request's or a response's body only.
 import { AppError, RequestId } from "@tasks/contracts";
-import { RUN_REQUEST_MAX_BYTES, type RunRecord, type RunState } from "@tasks/contracts/runs";
+import {
+  isOpenRun,
+  RUN_REQUEST_MAX_BYTES,
+  type RunRecord,
+  type RunState,
+} from "@tasks/contracts/runs";
 import {
   INSTANCE_KEY,
   isRoute,
@@ -359,7 +364,7 @@ export class UiLaunches {
     return uiRun(queued, runs.waiting(queued.id));
   }
 
-  /** A task's newest runs, oldest first. */
+  /** A task's newest runs, and every older one that may still work, oldest first. */
   async runs(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiRun[]> {
     const runs = this.#runs();
     const { task } = input;
@@ -367,7 +372,7 @@ export class UiLaunches {
       throw invalid("Expected a task ID.", "task");
     const listed = await runs.list(this.#space(spaceRef).id ?? "", task);
     return listed
-      .slice(0, RUNS_SHOWN)
+      .filter(({ run }, at) => at < RUNS_SHOWN || isOpenRun(run))
       .map(({ run }) => uiRun(run, runs.waiting(run.id)))
       .reverse();
   }

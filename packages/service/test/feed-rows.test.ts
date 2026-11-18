@@ -214,22 +214,20 @@ describe("[M6.page.run-feed] a run's change carries its task's row, which shows 
       const rows = batch.events.flatMap((e) => e.entities).filter((e) => e.type === "task");
       return { run, row: rows.at(-1)?.row };
     };
+    const input = {
+      task,
+      routine: null,
+      machine,
+      instance: "codex-work",
+      adapter: "codex" as const,
+      place: null,
+      request: "Fixture request",
+      briefHash: "0123456789abcdef".repeat(4),
+      permission: "full-access" as const,
+      limits: RUN_LIMITS.task,
+    };
     let from = (await readHead(reader)).cursor.seq;
-    const queued = await store.createRun(
-      {
-        task,
-        routine: null,
-        machine,
-        instance: "codex-work",
-        adapter: "codex",
-        place: null,
-        request: "Fixture request",
-        briefHash: "0123456789abcdef".repeat(4),
-        permission: "full-access",
-        limits: RUN_LIMITS.task,
-      },
-      rid(),
-    );
+    const queued = await store.createRun(input, rid());
     let seen = await runOf(from);
     expect(seen.run.map((e) => e.task)).toEqual([task]);
     expect(seen.row).toMatchObject({ run: { state: "working", instance: "codex-work" } });
@@ -259,6 +257,18 @@ describe("[M6.page.run-feed] a run's change carries its task's row, which shows 
     expect(snapshot.tasks.find((r) => r["id"] === task)).toMatchObject({
       run: { state: "needs_you" },
     });
+    // A follow-up stopped before it started does not hide the run that still works.
+    await store.createRun(input, rid());
+    const followUp = await store.createRun(input, rid());
+    from = (await readHead(reader)).cursor.seq;
+    await store.transitionRun(
+      followUp.id,
+      { state: "queued", version: followUp.version },
+      "cancelled",
+      {},
+    );
+    seen = await runOf(from);
+    expect(seen.row).toMatchObject({ run: { state: "working", instance: "codex-work" } });
   });
 });
 

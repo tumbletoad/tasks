@@ -163,4 +163,43 @@ describe("[M6.page.run-view] the page's view of a run", () => {
       { task, request: "Check the export", requestId: id },
     ]);
   });
+
+  test("a task's runs: the newest, and an older one that still works, so its Stop stays", async () => {
+    // Newest first, as the service lists them: twelve ended runs, then one that still works.
+    const listed = Array.from({ length: 13 }, (_, at) =>
+      record({
+        id: `ru_00r5mfcw5rfzxb9enb2vg5${String(at).padStart(2, "0")}`,
+        state: at === 12 ? "running" : "succeeded",
+      }),
+    );
+    const launches = new UiLaunches({
+      host: {
+        machine: { id: "m_00r5mfcw5rfzxb9enb2vg50z3j" },
+        spaces: () => [
+          {
+            id: "sp_00r5mfcw5rfzxb9enb2vg50z3k",
+            name: "Mira",
+            state: "open",
+            writer: undefined,
+            reader: {} as never,
+          },
+        ],
+      },
+      port: { instances: () => [] },
+      runs: {
+        runnable: () => true,
+        queueTask: () => Promise.reject(new Error("not here")),
+        list: () => Promise.resolve(listed.map((run) => ({ run }))),
+        stop: () => Promise.resolve(undefined),
+        waiting: () => undefined,
+      },
+      log: () => undefined,
+      changed: () => undefined,
+    });
+    const shown = await launches.runs("sp_00r5mfcw5rfzxb9enb2vg50z3k", {
+      task: "t_00r5mfcw5rfzxb9enb2vg50z3h",
+    });
+    expect(shown.map((r) => r.state)).toEqual(["running", ...Array<string>(10).fill("succeeded")]);
+    expect(shown[0]?.id).toBe(listed[12]?.id);
+  });
 });
