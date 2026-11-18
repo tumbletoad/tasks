@@ -63,14 +63,15 @@ export interface TerminalCall {
 /** The service's terminal seam: records `tasks shim <ticket>` and runs it in the folder. */
 export function fakeTerminal(record: string): TerminalStart {
   return ({ intent, ticket, folder }) => {
-    // Its own process group on POSIX, as in a terminal's window: a test hangs the group up as a
-    // closed window does.
+    // Detached, as a terminal's window is: it outlives a service that stops (on Windows a child
+    // that is not ends with the service), and on POSIX it is a process group of its own, which a
+    // test hangs up as a closed window does.
     const shim = spawn(process.execPath, [CLI_BIN, "shim", ticket], {
       cwd: folder,
       env: process.env,
       stdio: "ignore",
       windowsHide: true,
-      detached: process.platform !== "win32",
+      detached: true,
     });
     const call: TerminalCall = {
       launch: intent.id,
