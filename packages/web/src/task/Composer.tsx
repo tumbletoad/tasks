@@ -346,6 +346,10 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
                 if (event.detail > 1) return;
                 run(runner);
               }}
+              onKeyDown={(event) => {
+                // A held Enter repeats the button's click: one press is one Run.
+                if (event.key === "Enter" && event.repeat) event.preventDefault();
+              }}
             >
               <RunIcon />
               {t("composer.run", { label: runner.label })}

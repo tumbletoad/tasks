@@ -77,17 +77,15 @@ const foldersOf = (kind: "task" | "project", owner: string): string =>
   `f.owner_kind = '${kind}' AND f.owner_id = ${owner} AND f.deleted_at IS NULL ` +
   "ORDER BY f.created_seq DESC, f.id) x)";
 
-/**
- * The run the task's row shows, as JSON: its state, reason and instance. One that may still hold
- * processes comes before a newer one that ended, so stopping a follow-up never hides a run that
- * still works.
- */
-const ROW_RUN =
+/** A run that may still hold processes (contracts' `isOpenRun`). */
+const OPEN_RUN =
+  `(r.state IN (${OPEN_RUN_STATES.map((s) => `'${s}'`).join(", ")}) OR ` +
+  "(r.state = 'unknown' AND r.reason = 'stop_timed_out'))";
+
+/** The task's newest run, of those `where` admits, as JSON: its state, reason and instance. */
+const newestRun = (where: string) =>
   "(SELECT json_object('state', r.state, 'reason', r.reason, 'instance', r.instance_id) " +
-  "FROM runs r WHERE r.task_id = t.id ORDER BY CASE WHEN r.state IN " +
-  `(${OPEN_RUN_STATES.map((s) => `'${s}'`).join(", ")}) OR ` +
-  "(r.state = 'unknown' AND r.reason = 'stop_timed_out') THEN 0 ELSE 1 END, " +
-  "r.queued_at DESC, r.id DESC LIMIT 1)";
+  `FROM runs r WHERE r.task_id = t.id${where} ORDER BY r.queued_at DESC, r.id DESC LIMIT 1)`;
 
 /**
  * A task row's columns. `folders`: the space has the folders and runs tables (schema 0.5 on); a
@@ -118,7 +116,8 @@ export function taskColumns(folders: boolean): string {
     "ts.task_id = t.id AND ts.removed_at IS NULL AND s.deleted_at IS NULL) AS x_source_count" +
     (folders
       ? `, ${foldersOf("task", "t.id")} AS x_folders_own, ` +
-        `${foldersOf("project", "t.project_id")} AS x_folders_project, ${ROW_RUN} AS x_run`
+        `${foldersOf("project", "t.project_id")} AS x_folders_project, ` +
+        `${newestRun("")} AS x_run, ${newestRun(` AND ${OPEN_RUN}`)} AS x_run_open`
       : "")
   );
 }
@@ -190,8 +189,8 @@ function sourcesOf(value: unknown): CompactSource[] {
   return out;
 }
 
-/** What the row shows of the run in `x_run`: working while it may still hold processes. */
-export function runOf(value: unknown): CompactRun | undefined {
+/** A run of `x_run` or `x_run_open` as the row shows it on its own, or nothing. */
+function rowRun(value: unknown): CompactRun | undefined {
   const run = parsed(value);
   if (!isPlain(run) || typeof run["instance"] !== "string") return undefined;
   const { state, reason, instance } = run;
@@ -203,6 +202,15 @@ export function runOf(value: unknown): CompactRun | undefined {
   }
   if (state === "failed" && reason === "needs_input") return { state: "needs_you", instance };
   return undefined;
+}
+
+/**
+ * What the row shows of a task's runs: its newest, while it works or asks the person something;
+ * else an older one that may still hold processes, so stopping a follow-up never hides a run that
+ * still works.
+ */
+export function runOf(newest: unknown, open?: unknown): CompactRun | undefined {
+  return rowRun(newest) ?? rowRun(open);
 }
 
 /** The folders of `x_folders_own` or `x_folders_project`, newest first, with machine names. */
@@ -254,6 +262,7 @@ export async function taskRows(
         x_folders_own: ownFolders,
         x_folders_project: projectFolders,
         x_run: newest,
+        x_run_open: open,
         x_reason: reason,
         x_outcome: outcome,
         ref,
@@ -276,7 +285,7 @@ export async function taskRows(
         }),
       );
       if (ended !== undefined) out["ending"] = ended;
-      const run = runOf(newest);
+      const run = runOf(newest, open);
       if (run !== undefined) out["run"] = run;
       if (here !== undefined) {
         const names = new Map<string, string>();

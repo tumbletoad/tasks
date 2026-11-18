@@ -254,6 +254,8 @@ export function TaskList({
         .runs(task)
         .then((list) => {
           if (newest()) {
+            // The service answered since a Run got none: that run shows here if it started.
+            unanswered.current.delete(task);
             setRuns((known) => new Map(known).set(task, mergeRuns(known.get(task) ?? [], list)));
           }
         })
@@ -629,9 +631,10 @@ export function TaskList({
       },
       // Run: the service queues the run and answers at once; the thread shows it from then on,
       // and the feed brings each of its steps. A refusal starts nothing and says why where the
-      // person clicked; the folder line says it too when the folder is the reason. When no answer
-      // came, the run may have been queued: the same Run again carries the same request ID, so
-      // the service gives that run back instead of starting a second.
+      // person clicked; the folder line says it too when the folder is the reason. Without an
+      // answer, or with the service's internal failure, the run may have been queued: until the
+      // service answers again, the same Run carries the same request ID, so the service gives
+      // that run back instead of starting a second.
       run: (task, instance, text) => {
         watched.current.add(task.id);
         const asked = `${instance.key}\n${text ?? ""}`;
@@ -646,10 +649,11 @@ export function TaskList({
             return run;
           })
           .catch((error: unknown) => {
-            if (error instanceof Refused) unanswered.current.delete(task.id);
+            const refusedHere = error instanceof Refused && error.code !== "internal";
+            if (refusedHere) unanswered.current.delete(task.id);
             else unanswered.current.set(task.id, { asked, id });
             if (live.failed(error)) return undefined;
-            if (!(error instanceof Refused)) {
+            if (!refusedHere) {
               say(t("run.unanswered"));
               loadRuns(task.id);
               return undefined;

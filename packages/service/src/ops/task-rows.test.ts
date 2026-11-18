@@ -95,4 +95,33 @@ describe("[M6.page.run-row] a row says when its newest run works or needs the pe
     ]);
     expect(rows[0]).not.toHaveProperty("x_run");
   });
+
+  test("a newer run's question shows over an older run that may still work; an ended follow-up does not hide it", async () => {
+    const json = (state: string, reason: string | null = null) =>
+      JSON.stringify({ state, reason, instance: "codex-work" });
+    const rows = await taskRows(
+      [
+        {
+          id: "t_asks",
+          ref: 4,
+          title: "asks",
+          x_run: json("failed", "needs_input"),
+          x_run_open: json("unknown", "stop_timed_out"),
+        },
+        {
+          id: "t_works",
+          ref: 5,
+          title: "works",
+          x_run: json("cancelled"),
+          x_run_open: json("running"),
+        },
+      ],
+      "M",
+    );
+    expect(rows.map((r) => r["run"])).toEqual([
+      { state: "needs_you", instance: "codex-work" },
+      { state: "working", instance: "codex-work" },
+    ]);
+    expect(rows[0]).not.toHaveProperty("x_run_open");
+  });
 });

@@ -226,29 +226,31 @@ describe("[M6.page.run-feed] a run's change carries its task's row, which shows 
       permission: "full-access" as const,
       limits: RUN_LIMITS.task,
     };
+    const asks = (run: { readonly id: string; readonly version: number }) =>
+      store.transitionRun(run.id, { state: "queued", version: run.version }, "failed", {
+        reason: "needs_input",
+        result: {
+          ok: false,
+          outcome: "needs_input",
+          exitCode: 0,
+          signal: null,
+          nativeId: null,
+          text: "Fixture question?",
+          error: null,
+          usage: null,
+          appTools: null,
+          declined: 0,
+          permissionDenials: 0,
+          durationMs: 1,
+        },
+      });
     let from = (await readHead(reader)).cursor.seq;
     const queued = await store.createRun(input, rid());
     let seen = await runOf(from);
     expect(seen.run.map((e) => e.task)).toEqual([task]);
     expect(seen.row).toMatchObject({ run: { state: "working", instance: "codex-work" } });
     from = (await readHead(reader)).cursor.seq;
-    await store.transitionRun(queued.id, { state: "queued", version: queued.version }, "failed", {
-      reason: "needs_input",
-      result: {
-        ok: false,
-        outcome: "needs_input",
-        exitCode: 0,
-        signal: null,
-        nativeId: null,
-        text: "Fixture question?",
-        error: null,
-        usage: null,
-        appTools: null,
-        declined: 0,
-        permissionDenials: 0,
-        durationMs: 1,
-      },
-    });
+    await asks(queued);
     seen = await runOf(from);
     expect(seen.run.map((e) => e.task)).toEqual([task]);
     expect(seen.row).toMatchObject({ run: { state: "needs_you", instance: "codex-work" } });
@@ -269,6 +271,12 @@ describe("[M6.page.run-feed] a run's change carries its task's row, which shows 
     );
     seen = await runOf(from);
     expect(seen.row).toMatchObject({ run: { state: "working", instance: "codex-work" } });
+    // A newer run's question shows over the older run that still works.
+    const question = await store.createRun(input, rid());
+    from = (await readHead(reader)).cursor.seq;
+    await asks(question);
+    seen = await runOf(from);
+    expect(seen.row).toMatchObject({ run: { state: "needs_you", instance: "codex-work" } });
   });
 });
 

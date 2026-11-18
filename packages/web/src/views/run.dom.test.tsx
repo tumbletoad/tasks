@@ -65,6 +65,9 @@ const record = (patch: Partial<Run> = {}): Run => ({
   ...patch,
 });
 
+const lost = () => Promise.reject(new TypeError("Failed to fetch"));
+const queued = () => Promise.resolve(record({ state: "queued", version: 1 }));
+
 interface Started {
   readonly id: string;
   readonly text: string | undefined;
@@ -78,10 +81,13 @@ let started: Started[];
 let startAnswer: (call: number) => Promise<Run>;
 let listed: readonly Run[];
 let stopAnswer: () => Promise<Run>;
+/** The service does not answer: a read of the runs fails as Run does. */
+let down: boolean;
 
 beforeEach(async () => {
   started = [];
   listed = [];
+  down = false;
   startAnswer = () => Promise.resolve(record({ state: "queued", version: 1 }));
   stopAnswer = () => Promise.reject(new TypeError("Failed to fetch"));
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
@@ -135,7 +141,7 @@ beforeEach(async () => {
       },
     },
     receipts: () => Promise.resolve([]),
-    runs: () => Promise.resolve(listed),
+    runs: () => (down ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve(listed)),
     startRun: (_task: string, _instance: string, id: string, text?: string) => {
       started.push({ id, text });
       return startAnswer(started.length);
@@ -191,7 +197,7 @@ const settle = () =>
 const composer = () =>
   container.querySelector<HTMLTextAreaElement>(`li[data-key="${TASK.id}"] [data-part="composer"]`);
 const runButton = () =>
-  container.querySelector<HTMLButtonElement>(`li[data-key="${TASK.id}"] [data-part="run"]`);
+  container.querySelector<HTMLButtonElement>(`li[data-key="${TASK.id}"] button[data-part="run"]`);
 
 const type = (value: string) => {
   act(() => {
@@ -229,40 +235,64 @@ const runKeys = (repeat: boolean) => {
 };
 
 describe("[M6.page.run-once] one press is one run, and a Run without an answer is not started twice", () => {
-  test("pressed again after no answer, the same words carry the same request ID", async () => {
-    startAnswer = (call) =>
-      call === 1
-        ? Promise.reject(new TypeError("Failed to fetch"))
-        : Promise.resolve(record({ state: "queued", version: 1, asked: "Check it" }));
+  test("until the service answers again, the same words carry the same request ID", async () => {
     expect(runButton()).not.toBeNull();
+    down = true;
+    startAnswer = (call) => (call <= 2 ? lost() : queued());
     type("Check it");
     click(1);
     await settle();
-    // No answer: the words stay.
+    // No answer: the words stay, and pressing again is the same request.
     expect(composer()?.value).toBe("Check it");
     click(1);
     await settle();
-    expect(started).toHaveLength(2);
+    click(1);
+    await settle();
+    expect(started).toHaveLength(3);
     expect(started[1]).toEqual(started[0]);
+    expect(started[2]).toEqual(started[0]);
     expect(composer()?.value).toBe("");
-    // Other words are another run.
+  });
+
+  test("other words are another run", async () => {
+    down = true;
+    startAnswer = lost;
+    type("Check it");
+    click(1);
+    await settle();
     type("Something else");
     click(1);
     await settle();
-    expect(started[2]?.id).not.toBe(started[0]?.id);
+    click(1);
+    await settle();
+    expect(started.map((s) => s.text)).toEqual(["Check it", "Something else", "Something else"]);
+    expect(started[1]?.id).not.toBe(started[0]?.id);
+    expect(started[2]?.id).toBe(started[1]?.id);
   });
 
-  test("a refusal forgets the request: the next Run is a new one", async () => {
-    startAnswer = (call) =>
-      call === 1
-        ? Promise.reject(new Refused(400, "invalid_input", undefined, { reason: "task_closed" }))
-        : Promise.resolve(record({ state: "queued", version: 1 }));
+  test("once the service answered a read, the thread shows what started: the next Run is a new one", async () => {
+    startAnswer = (call) => (call === 1 ? lost() : queued());
     click(1);
     await settle();
     click(1);
     await settle();
     expect(started).toHaveLength(2);
     expect(started[1]?.id).not.toBe(started[0]?.id);
+  });
+
+  test("the service's internal failure may follow a queued run: the same request; a refusal forgets it", async () => {
+    down = true;
+    startAnswer = (call) =>
+      call === 1
+        ? Promise.reject(new Refused(500, "internal"))
+        : call === 2
+          ? Promise.reject(new Refused(400, "invalid_input", undefined, { reason: "task_closed" }))
+          : queued();
+    for (let i = 0; i < 3; i += 1) {
+      click(1);
+      await settle();
+    }
+    expect(started.map((s) => s.id === started[0]?.id)).toEqual([true, true, false]);
   });
 
   test("the second click of a double click and a held key start nothing more", async () => {
@@ -279,6 +309,21 @@ describe("[M6.page.run-once] one press is one run, and a Run without an answer i
     runKeys(true);
     await settle();
     expect(started).toHaveLength(2);
+    // A held Enter on the Run button does not repeat its click; a single press clicks.
+    const enter = (repeat: boolean) => {
+      const press = new KeyboardEvent("keydown", {
+        key: "Enter",
+        repeat,
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        runButton()?.dispatchEvent(press);
+      });
+      return press.defaultPrevented;
+    };
+    expect(enter(false)).toBe(false);
+    expect(enter(true)).toBe(true);
   });
 });
 
