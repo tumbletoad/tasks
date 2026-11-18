@@ -531,6 +531,7 @@ function setupError(error: unknown): unknown {
       code: "conflict",
       message: "Another setup is changing the agent apps right now.",
       hint: "Try again when it has finished.",
+      data: { retryable: true },
     });
   }
   if (error instanceof SetupStateInvalid || error instanceof SetupStateUnsafe) {
