@@ -570,6 +570,10 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(row(plain)).not.toHaveProperty("ending");
     expect(row(open)).toMatchObject({ snippet: "Open summary." });
     expect(row(open)).not.toHaveProperty("ending");
+    // The day each finished, completed or dropped, as the Completed view shows it.
+    const days = [shipped, dropped, plain].map((id) => row(id)?.["completed"]);
+    expect(days).toEqual([expect.any(String), expect.any(String), expect.any(String)]);
+    expect(row(open)).not.toHaveProperty("completed");
     const hit = (await search({ q: "endnoteword", scope: "finished" })).rows[0];
     expect(hit).toMatchObject({
       id: noted,

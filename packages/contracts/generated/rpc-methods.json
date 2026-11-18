@@ -5488,7 +5488,7 @@
                       "type": "boolean"
                     },
                     "completed": {
-                      "description": "When it was completed",
+                      "description": "When it was completed or dropped",
                       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
                       "type": "string"
                     },

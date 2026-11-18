@@ -2422,7 +2422,7 @@ MCP tool `search`, "Search tasks and learnings": Use to find tasks before you ad
 | `rows[].area` | string | no | Area name |
 | `rows[].project` | string | no | Project name |
 | `rows[].kind` | "task" | yes | A task |
-| `rows[].completed` | string | no | When it was completed |
+| `rows[].completed` | string | no | When it was completed or dropped |
 | `rows[].snippet` | string | no | Where it matched, else its summary when it has no ending |
 | `rows[].snippet_from` | "task" \| "note" \| "log" \| "learning" | no | The text the snippet comes from |
 | `rows[].ending` | string | no | A finished task's ending, one line: why it was dropped, or its outcome |
