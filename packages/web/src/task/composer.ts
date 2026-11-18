@@ -41,14 +41,20 @@ export function hasDraft(space: string, task: string): boolean {
 }
 
 const draftWatchers = new Set<() => void>();
+let stopHearing: (() => void) | undefined;
 
-/** A task's draft came or went, in this tab or another. */
+/** A task's draft came or went, in this tab or another: one listener for every row. */
 function watchDrafts(watcher: () => void): () => void {
   draftWatchers.add(watcher);
-  const stop = onKeptUnder("draft.", watcher);
+  stopHearing ??= onKeptUnder("draft.", () => {
+    for (const each of draftWatchers) each();
+  });
   return () => {
     draftWatchers.delete(watcher);
-    stop();
+    if (draftWatchers.size === 0) {
+      stopHearing?.();
+      stopHearing = undefined;
+    }
   };
 }
 
