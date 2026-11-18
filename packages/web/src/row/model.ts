@@ -123,6 +123,8 @@ export interface RowInput {
   readonly sourcesMore?: number;
   readonly place?: PlaceFact;
   readonly marker?: MarkerFact;
+  /** The task's composer holds words the person has not sent. */
+  readonly draft?: boolean;
   readonly launchBlock?: LaunchBlock;
   /** When the task's current wait began, in ms since the epoch: Waiting's age column counts from it. */
   readonly waitingSince?: number;
@@ -142,7 +144,8 @@ export interface RowModel {
   readonly title: string;
   /** The checkbox's name: "Done: <title>", or "Dropped: <title>" for a dropped task. */
   readonly done: Msg;
-  readonly marker?: { readonly kind: "changed" | "needs_input"; readonly tip: Msg };
+  /** At most one: an agent's change or question first, then the person's own unsent words. */
+  readonly marker?: { readonly kind: "changed" | "needs_input" | "draft"; readonly tip: Msg };
   /** The inline status chip, when the view does not imply the status. */
   readonly chip?: {
     readonly kind: "waiting" | "review" | "backlog" | "other";
@@ -539,6 +542,9 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
           : msg("row.markerChangedWhat", { what: row.marker.what, time }),
     };
     description.push(msg("row.desc.changed", { by: row.marker.by }));
+  } else if (row.draft === true) {
+    marker = { kind: "draft", tip: msg("row.markerDraft") };
+    description.push(msg("row.desc.draft"));
   }
 
   const launch = launchOf(row.instances, row.receipts, row.launchBlock);

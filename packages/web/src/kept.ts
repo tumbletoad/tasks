@@ -113,6 +113,20 @@ export function onKept(name: string, listener: (value: string | undefined) => vo
   };
 }
 
+/** Another tab of this browser kept or removed something under `prefix`. */
+export function onKeptUnder(prefix: string, listener: () => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  const wanted = PREFIX + prefix;
+  const heard = (event: StorageEvent) => {
+    if (event.storageArea !== null && event.storageArea !== globalThis.localStorage) return;
+    if (event.key === null || event.key.startsWith(wanted)) listener();
+  };
+  window.addEventListener("storage", heard);
+  return () => {
+    window.removeEventListener("storage", heard);
+  };
+}
+
 /**
  * Whether the person is typing in `element`: it has focus, in the window that has focus. Only
  * then does a field keep its own text when another tab changes what is kept.

@@ -2858,7 +2858,7 @@ interface WrittenGroup {
  */
 async function groupWrite(call: Call, action: string): Promise<unknown> {
   const { input } = call;
-  const path = groupPath(input);
+  let path = groupPath(input);
   const to = typeof input["to"] === "string" ? input["to"].trim() : undefined;
   if ((action === "rename" || action === "move") && (to === undefined || to === "")) {
     throw invalid("to", `Required to ${action}`, action === "move" ? "Name the area." : undefined);
@@ -2875,12 +2875,24 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     );
   }
   const folderAction = action === "set_folder" || action === "clear_folder";
-  if ((folderAction || given !== undefined) && path.project === undefined) {
+  if (folderAction && path.project === undefined) {
     throw invalid("path", "Only a project has a folder", "Name it as Area/Project.");
   }
   const facts = given === undefined ? undefined : bindFacts(call);
   const folder =
     given === undefined || facts === undefined ? undefined : folderOf(call, given, "folder", facts);
+  // An area and a folder: a project in the area named after the folder, as add_project names one.
+  if (folder !== undefined && facts !== undefined && path.project === undefined) {
+    const named = folderName(folder.absolute, facts.platform);
+    if (named === undefined) {
+      throw invalid(
+        "path",
+        "A drive or a root has no name to give the project",
+        "Name it as Area/Project.",
+      );
+    }
+    path = { area: path.area, project: named };
+  }
   if (await applied(call)) {
     // A retry of a decided write: the writer replays it. Its names and its folder are not looked
     // at again, since a rename it made would refuse its own retry; a stand-in operation carries it
@@ -3478,13 +3490,13 @@ async function unmarkedError(call: Call, error: LaunchFolderUnmarked): Promise<A
   }
   const why =
     error.reason === "marker_missing"
-      ? `its ${APP_NAME} marker is missing`
+      ? `The folder has no ${APP_NAME} marker`
       : names.length === 0
-        ? `its ${APP_NAME} marker cannot be read`
-        : `its ${APP_NAME} marker names ${[...new Set(names)].join(", ")}`;
+        ? `The folder's ${APP_NAME} marker cannot be read`
+        : `The folder's ${APP_NAME} marker names ${[...new Set(names)].join(", ")}`;
   return new AppError({
     code: "invalid_input",
-    message: `This may not be the folder that was set for ${whose}: ${why}. Nothing was started.`,
+    message: `${why}, so it may not be the folder set for ${whose}. Nothing was started.`,
     hint: `To use this folder and mark it, open it again with --mark-folder. Or give ${whose} another folder.`,
     data: {
       field: "task",
@@ -3515,12 +3527,12 @@ export function launchError(error: unknown): unknown {
       code: "invalid_input",
       message:
         reason === "path_missing"
-          ? "Folder not found on this computer."
+          ? "Folder not found on this machine."
           : reason === "not_a_directory"
-            ? "The task's folder is a file on this computer, not a folder."
+            ? "The task's folder is a file on this machine, not a folder."
             : reason === "not_answering"
               ? "The task's folder did not answer in time."
-              : "This task's folder cannot be used on this computer.",
+              : "This task's folder cannot be used on this machine.",
       ...(folder === undefined
         ? {}
         : {

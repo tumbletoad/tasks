@@ -1,5 +1,5 @@
 // The words a person typed for an agent when they pressed Open, held for that launch on this
-// computer: never on a command line, in a link or in the space. The agent reads them through
+// machine: never on a command line, in a link or in the space. The agent reads them through
 // Tasks' tools with its launch reference (`get_task`, or `tasks show --launch` without the tools).
 //
 // Each one is `request.json` (0600) in the launch's own folder under the install's launch root

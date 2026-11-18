@@ -1,6 +1,6 @@
-// This computer's settings of the page, as every component reads them: the theme and whether
+// This machine's settings of the page, as every component reads them: the theme and whether
 // single-letter keys work. The service keeps them (machine.toml) and the feed brings each change,
-// so every tab and every browser on this computer follows. A change applies here at once and goes
+// so every tab and every browser on this machine follows. A change applies here at once and goes
 // to the service; when the service refuses it, the page goes back to what the service holds.
 import {
   createContext,

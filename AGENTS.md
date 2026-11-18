@@ -62,7 +62,7 @@ If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checko
 - Work in your own folder. Delete it by its full name, and stop only processes you started.
 
 ## Verify and merge
-- `pnpm verify` passes. On Windows run it from PowerShell 7. For UI work `pnpm e2e` passes too.
+- `pnpm verify` passes, on Windows from PowerShell 7. CI runs `pnpm e2e`; UI work runs it on Windows too.
 - The pull request says what changed for a person and shows the evidence: the check's output with
   the OS, and for UI work screenshots of the states that changed. Say what you did not test.
 - A question for the owner goes in the pull request with the default you chose. Carry on with it.

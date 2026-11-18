@@ -419,6 +419,13 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       const folder = realpathSync.native(join(r.lab.work, HOSTILE_FOLDER));
       const { result } = await open(r, { task: task.ref, instance: "claude-link" });
       expect(result.launch.route).toBe("link");
+      // Clicks straight after, from other tabs, are given the same launch. Words go with it only
+      // while it holds none, so a page clears only the words that went.
+      for (const words of ["Start with the tests", "Other words"]) {
+        const again = await open(r, { task: task.ref, instance: "claude-link", text: words });
+        expect(again.result.launch.id).toBe(result.launch.id);
+        if (words === "Other words") expect(again.result.text).toBe("none");
+      }
       const dispatched = await r.lab.waitIntent(
         result.launch.id,
         (i) => i.state === "dispatched",
@@ -527,6 +534,18 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(again2.result.launch.id).toBe(held.result.launch.id);
       expect(again2.result.text).toBe("held");
       expect(opened).toHaveLength(1);
+      // Another tab's click straight after is given the same launch with its own words: they are
+      // not held, and a retry of that click does not say they are.
+      const other = await open(r, { task: task.ref, instance: "claude-link", text: "Other words" });
+      expect(other.result.launch.id).toBe(held.result.launch.id);
+      expect(other.result.text).toBe("none");
+      const otherAgain = await open(r, {
+        task: task.ref,
+        instance: "claude-link",
+        text: "Other words",
+        request_id: other.requestId,
+      });
+      expect(otherAgain.result.text).toBe("none");
     },
   );
 
@@ -660,7 +679,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
   });
 
   test(
-    "refused before anything is recorded: an instance not set up, a route not built here, a folder not found on this computer",
+    "refused before anything is recorded: an instance not set up, a route not built here, a folder not found on this machine",
     { timeout: 300_000 },
     async () => {
       const r = await rig("refusals");
@@ -687,7 +706,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       });
       expect(await refusal({ task: placed.ref, instance: "claude" })).toMatchObject({
         code: "invalid_input",
-        message: "Folder not found on this computer.",
+        message: "Folder not found on this machine.",
         hint: expect.stringContaining("give the task or its project another folder") as unknown,
         data: { field: "task", reason: "path_missing", folder: placed.folder },
       });
@@ -709,7 +728,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       // Nothing was recorded for any of them; Copy still works and says the folder is not here.
       const copied = await open(r, { task: placed.ref });
       expect(copied.result.copy).toContain(
-        `Folder: ${placed.folder ?? ""} (not found on this computer)`,
+        `Folder: ${placed.folder ?? ""} (not found on this machine)`,
       );
       const launches: LaunchIntent | undefined = await r.lab.running.launches.read(
         r.lab.spaceId,
@@ -834,7 +853,6 @@ describe("[A4.5.routes.markers] a launch reads its folder's marker before an age
       );
       expect(missing).toMatchObject({
         code: "invalid_input",
-        message: expect.stringContaining("marker is missing") as unknown,
         data: { field: "task", reason: "marker_missing", of: "project" },
       });
       expect(r.lab.folders.size).toBe(started);

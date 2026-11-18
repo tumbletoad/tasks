@@ -137,12 +137,12 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
         .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
         .click();
       const said = page.getByRole("status").filter({
-        hasText: `Folder not found on this computer: ${set.folder}. Nothing was started.`,
+        hasText: `The folder ${set.folder} was not found on this machine. Nothing was started.`,
       });
       await expect(said).toBeVisible({ timeout: SLOW_MS });
       // The expanded task's folder line says the same at once, not "here" until a reload.
       await expect(line).toHaveAttribute("data-state", "missing");
-      await expect(line).toContainText(`${set.folder} Not found on this computer`);
+      await expect(line).toContainText(`${set.folder} · not found on this machine`);
       expect(world.terminal()).toHaveLength(before);
       await expect(row.locator('[data-part="tile"]')).toHaveAttribute("data-state", "ready");
       expect(await violations(page)).toEqual([]);
@@ -252,18 +252,24 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
       const open = row
         .getByRole("toolbar")
         .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` });
+      const composer = row.locator('[data-part="composer"]');
+      await composer.fill("Tag it after the tests pass");
       await open.click();
       const said = page.getByRole("status").filter({
-        hasText: `This may not be the folder set for this task: its Tasks marker is missing. ${set.folder}. Nothing was started.`,
+        hasText: `The folder ${set.folder} has no Tasks marker, so it may not be the folder set for this task. Nothing was started.`,
       });
       await expect(said).toBeVisible({ timeout: SLOW_MS });
       expect(world.terminal()).toHaveLength(before);
       await page.screenshot({ path: test.info().outputPath("open-marker-missing.png") });
 
-      // The person uses this folder: it opens there, and is marked as the task's.
+      // Nothing started, so the words wait in the field.
+      await expect(composer).toHaveValue("Tag it after the tests pass");
+      // The person uses this folder: it opens there with the words, is marked as the task's, and
+      // the field clears once the agent has them, as after any Open.
       await said.getByRole("button", { name: "Use this folder" }).click();
       await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
       expect(existsSync(join(folder, FOLDER_MARKER, "owners.json"))).toBe(true);
+      await expect(composer).toHaveValue("", { timeout: SLOW_MS });
       expect(await violations(page)).toEqual([]);
     } finally {
       // The fake agent works in the folder for a few seconds, and Windows keeps a folder in use.

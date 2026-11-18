@@ -5,14 +5,22 @@ import { StorageError } from "../src/errors.ts";
 import { isId } from "../src/ids.ts";
 import { StorageWorker } from "../src/worker/client.ts";
 import { tempFolders } from "./space-helpers.ts";
-import { checkHistory, MACHINE, writeFixture, type Fixture } from "./write-helpers.ts";
+import {
+  checkHistory,
+  MACHINE,
+  writeFixture,
+  type Fixture,
+  fixtureCopies,
+} from "./write-helpers.ts";
 
 const temp = tempFolders("actors");
+/** The fixture space, made once and copied for each test. */
+const fixture = fixtureCopies(temp.make);
 afterAll(temp.cleanup);
 
 let fx: Fixture;
 beforeEach(async () => {
-  fx = await writeFixture(temp.make());
+  fx = await fixture();
 });
 afterEach(() => {
   checkHistory(fx.reader);

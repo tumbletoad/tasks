@@ -309,7 +309,7 @@ check_folder() {
   fi
   case ${verdict%% *} in
     other_owner) fail "$1, $3, belongs to another user, so nothing was installed. $fix" ;;
-    world_writable) fail "Every user on this computer can change $1, $3, so nothing was installed. $fix" ;;
+    world_writable) fail "Every user on this machine can change $1, $3, so nothing was installed. $fix" ;;
     *)
       name=$(timeout -k 1 5 find "$1" -prune -printf '%g\n' 2> /dev/null) || name=''
       case $name in '' | *[!0-9]*) ;; *) name='' ;; esac

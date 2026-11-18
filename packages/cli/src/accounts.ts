@@ -1,4 +1,4 @@
-// Doctor's accounts row: how many other user accounts this computer has, as plain information.
+// Doctor's accounts row: how many other user accounts this machine has, as plain information.
 // Nothing behaves differently when there are others, so the row is never a warning; the limit it
 // stands for is in docs/promises-and-limits.md.
 //

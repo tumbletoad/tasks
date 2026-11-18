@@ -107,7 +107,7 @@ const row = (view: AppsView, app: string) => {
   return found;
 };
 
-describe("[A7.3.12.m5-12.page-gate] Only the person changes this computer's agent apps", () => {
+describe("[A7.3.12.m5-12.page-gate] Only the person changes this machine's agent apps", () => {
   it("refuses an agent's connection, a script and the bridge before it reads anything", async () => {
     // Nothing of the host is read before the refusal: an empty one would fail if it were.
     const verbs = agentAppVerbs({} as AgentAppsHost);

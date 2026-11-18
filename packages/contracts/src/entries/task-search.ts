@@ -38,7 +38,7 @@ const IsoDate = z.string().regex(patterns.isoDate);
 /** A task that matched (A3 3.9.4): its row, a title cut at 90 characters, a snippet at 100. */
 export const SearchTaskRow = TaskRow.extend({
   kind: z.literal("task").describe("A task"),
-  completed: IsoDate.describe("When it was completed").optional(),
+  completed: IsoDate.describe("When it was completed or dropped").optional(),
   snippet: z
     .string()
     .describe("Where it matched, else its summary when it has no ending")

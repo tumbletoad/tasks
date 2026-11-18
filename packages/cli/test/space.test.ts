@@ -157,7 +157,7 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
     const early = await user(["space", "claim", copyFolder, "--json"]);
     expect(early.code).toBe(2);
     const said = String((parsed(early.stdout)["error"] as Record<string, unknown>)["message"]);
-    expect(said).toMatch(/^The original of this copy is open on this computer\. /u);
+    expect(said).toMatch(/^The original of this copy is open on this machine\. /u);
     expect(said).toContain(`${CLI_NAME} space close `);
     expect(said).toContain(world.spaceFolder);
     // Two copies are called Mira now: the name means the writable one, the original (A2 3.10.5).
@@ -591,7 +591,7 @@ describe("[A2.3.10.cli.space-needs-recovery] a space that needs recovery says wh
 });
 
 describe("[A2.3.10.cli.space-words] what tasks space says, and the ways it names work", () => {
-  test("another computer's space: claim names the way that works, the way works, and the claim prints A6's warning", async () => {
+  test("another machine's space: claim names the way that works, the way works, and the claim prints A6's warning", async () => {
     const theirs = join(world.root, "s", "theirs");
     createSpace(await checkedDriver(), theirs, {
       name: "Theirs",
@@ -606,7 +606,7 @@ describe("[A2.3.10.cli.space-words] what tasks space says, and the ways it names
     });
     const refused = await user(["space", "claim", theirs]);
     expect(refused.code).toBe(2);
-    expect(refused.stderr).toContain("This space belongs to another computer");
+    expect(refused.stderr).toContain("This space belongs to another machine");
     for (const step of [
       `${CLI_NAME} space export <folder>`,
       `${CLI_NAME} space close <folder>`,
@@ -629,14 +629,14 @@ describe("[A2.3.10.cli.space-words] what tasks space says, and the ways it names
     expect(claimed.code, claimed.stdout + claimed.stderr).toBe(0);
     expect(claimed.stdout).toMatch(/^Claimed Theirs .* open /mu);
     expect(claimed.stdout).toContain(
-      "If another computer still has this space, its later changes will not appear here.\n",
+      "If another machine still has this space, its later changes will not appear here.\n",
     );
     // An open space is not claimed, and says why.
     const again = await user(["space", "claim", mine, "--json"]);
     expect(again.code).toBe(2);
     expect(parsed(again.stdout)).toMatchObject({
       error: {
-        message: "This space takes writes on this computer already: there is nothing to claim.",
+        message: "This space takes writes on this machine already: there is nothing to claim.",
       },
     });
     expect((await user(["space", "close", mine])).code).toBe(0);

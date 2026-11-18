@@ -10,7 +10,7 @@
 //
 // No text of a task, brief or composer travels here: a receipt holds IDs, states, instants and
 // fixed codes only, as the launch record does, and whether the launch's agent read the person's
-// request yet, which only this computer knows.
+// request yet, which only this machine knows.
 import { AppError } from "@tasks/contracts";
 import {
   INSTANCE_KEY,
