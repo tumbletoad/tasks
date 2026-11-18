@@ -101,6 +101,10 @@ const SAMPLE = {
   repo: "portal-web",
   names: "M-14, Billing",
   limit: "wall",
+  opened: "Opened in Ghostty, the desktop's default",
+  ran: "2 min",
+  hours: 1,
+  minutes: 5,
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

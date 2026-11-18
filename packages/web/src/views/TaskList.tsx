@@ -554,7 +554,7 @@ export function TaskList({
           changed.current?.(task);
         }
       },
-      // A tile whose launch is on its way or done (A5 3.6): the row expands, and stays expanded.
+      // A tile whose session runs: the row expands, and stays expanded.
       expand: (task) => {
         if (latest.current.expanded !== task.id) {
           chosen(task.ref);

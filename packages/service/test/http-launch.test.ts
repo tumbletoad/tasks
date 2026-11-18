@@ -144,11 +144,14 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       // No text of the task travels with a receipt.
       expect(JSON.stringify(receipts)).not.toContain("appointment");
 
-      // The feed tells the page a launch changed (its receipts are read by task).
+      // The feed tells the page a launch changed, and of which task: a tab follows the receipts
+      // of the tasks it shows by their task.
       await feed.next(
         (m) =>
           m["type"] === "batch" &&
-          JSON.stringify(m["events"]).includes(`"type":"launch","id":"${String(launch["id"])}"`),
+          JSON.stringify(m["events"]).includes(
+            `"type":"launch","id":"${String(launch["id"])}","task":"${task.id}"`,
+          ),
       );
       feed.ws.close();
     },

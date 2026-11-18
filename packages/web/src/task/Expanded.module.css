@@ -315,7 +315,7 @@ a + .muted,
   --k-ring: var(--k-slot-8);
 }
 
-.entry[data-state="confirmed"] .mark {
+.entry[data-state="running"] .mark {
   box-shadow: inset 0 0 0 1px var(--k-accent);
   color: var(--k-accent);
 }
@@ -355,7 +355,7 @@ a + .muted,
   color: var(--k-text-2);
 }
 
-.entry[data-state="confirmed"] .state::before {
+.entry[data-state="running"] .state::before {
   content: "";
   display: inline-block;
   width: 6px;
@@ -856,12 +856,12 @@ a + .muted,
   --k-ring: var(--k-slot-8);
 }
 
-.button[data-state="connected"] .glyph {
+.button[data-state="running"] .glyph {
   box-shadow: inset 0 0 0 1px var(--k-accent);
   color: var(--k-accent);
 }
 
-.button[data-default][data-state="connected"] .glyph {
+.button[data-default][data-state="running"] .glyph {
   box-shadow: inset 0 0 0 2px var(--k-accent-ink);
   color: var(--k-accent-ink);
 }

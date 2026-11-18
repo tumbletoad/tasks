@@ -17,8 +17,21 @@ function built(): string {
 
 export const test = base.extend<
   object,
-  { world: World; bulk: World; finished: World; runs: World }
+  { world: World; bulk: World; finished: World; runs: World; restartable: World }
 >({
+  // A world of its own for the tests that stop and start its service, so no other test meets it.
+  restartable: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const world = await startWorld(built());
+      try {
+        await use(world);
+      } finally {
+        await world.close();
+      }
+    },
+    { scope: "worker", timeout: 240_000 },
+  ],
   // A fourth, started only by the tests that use it: the fake Codex can run tasks there too.
   runs: [
     // eslint-disable-next-line no-empty-pattern

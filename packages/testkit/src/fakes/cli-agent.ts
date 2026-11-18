@@ -14,10 +14,21 @@
 //   on those tasks it reads nothing, as an agent without Tasks' tools or a shell.
 // - FAKE_CLI_HOLD_MS (default 4000), FAKE_CLI_RELEASE (a file whose existence ends it),
 //   FAKE_CLI_MAX_MS (default 120000) and FAKE_CLI_EXIT (default 0).
+// - FAKE_CLI_HOLDS: a folder. On a task whose reference names a file there, it runs until that
+//   file is gone (10 minutes at most) instead, or ends at once when the file says `exit <code>`,
+//   and it adds its PID as a line to `<ref>.pids` there, so a test can end it as a closed window
+//   would.
 // Its stdin is never read. No real agent, account or home is touched. Tests only.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 /** What the fake CLI writes to its report file. */
@@ -100,6 +111,22 @@ function readTask(spec: string): CliAgentReport["read"] {
   }
 }
 
+/** The file that holds this agent while it is there (FAKE_CLI_HOLDS), when its task has one. */
+function heldBy(): string | undefined {
+  const folder = env["FAKE_CLI_HOLDS"];
+  const task = briefOf(argv)?.task;
+  if (folder === undefined || folder === "" || task === undefined) return undefined;
+  const file = join(folder, task);
+  if (!existsSync(file)) return undefined;
+  appendFileSync(join(folder, `${task}.pids`), `${String(process.pid)}\n`);
+  // `exit <code>` in the file: the agent ends at once, as one that cannot start.
+  const at = /^exit (\d{1,3})$/u.exec(readFileSync(file, "utf8").trim());
+  if (at !== null) process.exit(Number(at[1]));
+  return file;
+}
+
+const held = heldBy();
+
 const tasks = env["FAKE_CLI_TASKS"];
 const read = tasks === undefined || tasks === "" ? undefined : readTask(tasks);
 
@@ -158,14 +185,17 @@ if (rolloutHome !== undefined && rolloutHome !== "") {
 }
 
 const code = Number(env["FAKE_CLI_EXIT"] ?? "0");
-const hold = Number(env["FAKE_CLI_HOLD_MS"] ?? "4000");
-const max = Number(env["FAKE_CLI_MAX_MS"] ?? "120000");
+const hold = held === undefined ? Number(env["FAKE_CLI_HOLD_MS"] ?? "4000") : Infinity;
+const max = held === undefined ? Number(env["FAKE_CLI_MAX_MS"] ?? "120000") : 600_000;
 const release = env["FAKE_CLI_RELEASE"];
+const released = (): boolean =>
+  held === undefined
+    ? release !== undefined && release !== "" && existsSync(release)
+    : !existsSync(held);
 const started = Date.now();
 const timer = setInterval(() => {
   const ran = Date.now() - started;
-  const released = release !== undefined && release !== "" && existsSync(release);
-  if (ran >= max || ((release === undefined || release === "") && ran >= hold) || released) {
+  if (ran >= max || ((release === undefined || release === "") && ran >= hold) || released()) {
     clearInterval(timer);
     process.exit(code);
   }

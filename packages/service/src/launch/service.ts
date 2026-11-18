@@ -812,6 +812,11 @@ export class LaunchService {
     return this.#requests.state(launch);
   }
 
+  /** Whether the launch's session runs now: its shim is here, attached, and its agent started. */
+  running(launch: string): boolean {
+    return this.host.running(launch);
+  }
+
   /**
    * Removes the requests no launch needs any more: a terminal launch's once its machine state is
    * gone (it ended, or never dispatched), a link launch's once it failed or its reference no longer

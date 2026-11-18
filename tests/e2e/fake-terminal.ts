@@ -13,6 +13,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CLI_NAME } from "../../packages/brand/src/index.ts";
+import { startTimes } from "../../packages/launch/src/process.ts";
 import type { TerminalStart } from "../../packages/service/src/launch/index.ts";
 import { instanceToml } from "../../packages/service/test/harness.ts";
 import { FAKE_CLI_AGENT } from "../../packages/testkit/src/index.ts";
@@ -32,9 +33,10 @@ export const FAKE_INSTANCE = {
 /**
  * The instance's table in machine.toml: Claude Code's target, run as the fake, which reads the
  * person's request as its brief says without the tools (`tasks show --launch`) from the install of
- * `home`, except on the tasks the file `unread` lists.
+ * `home`, except on the tasks the file `unread` lists. On a task `holds` has a file for, the fake
+ * runs until that file is removed.
  */
-export function fakeInstanceToml(home: string, unread: string): string {
+export function fakeInstanceToml(home: string, unread: string, holds: string): string {
   return instanceToml({
     id: FAKE_INSTANCE.key,
     target: "claude-cli",
@@ -46,6 +48,7 @@ export function fakeInstanceToml(home: string, unread: string): string {
       FAKE_CLI_HOLD_MS: "6000",
       FAKE_CLI_TASKS: JSON.stringify({ argv: [process.execPath, CLI_BIN], home }),
       FAKE_CLI_UNREAD: unread,
+      FAKE_CLI_HOLDS: holds,
     },
   });
 }
@@ -54,22 +57,38 @@ export function fakeInstanceToml(home: string, unread: string): string {
 export interface TerminalCall {
   readonly launch: string;
   readonly argv: readonly string[];
+  /** The shim's process, which a test may end as a closed window or a kill would. */
+  readonly pid?: number;
+  /** Its start time as the OS records it: the PID names this process only while they match. */
+  readonly start?: string;
 }
 
 /** The service's terminal seam: records `tasks shim <ticket>` and runs it in the folder. */
 export function fakeTerminal(record: string): TerminalStart {
-  return ({ intent, ticket, folder }) => {
-    const call: TerminalCall = { launch: intent.id, argv: [CLI_NAME, "shim", ticket] };
-    appendFileSync(record, `${JSON.stringify(call)}\n`);
+  return async ({ intent, ticket, folder }) => {
+    // Detached, as a terminal's window is: it outlives a service that stops (on Windows a child
+    // that is not ends with the service), and on POSIX it is a process group of its own, which a
+    // test hangs up as a closed window does.
     const shim = spawn(process.execPath, [CLI_BIN, "shim", ticket], {
       cwd: folder,
       env: process.env,
       stdio: "ignore",
       windowsHide: true,
+      detached: true,
     });
     shim.on("error", () => undefined);
     shim.unref();
+    const { pid } = shim;
+    const start =
+      pid === undefined ? undefined : (await startTimes([pid]).catch(() => undefined))?.get(pid);
+    const call: TerminalCall = {
+      launch: intent.id,
+      argv: [CLI_NAME, "shim", ticket],
+      ...(pid === undefined ? {} : { pid }),
+      ...(start === undefined ? {} : { start }),
+    };
+    appendFileSync(record, `${JSON.stringify(call)}\n`);
     // A handoff: the window would open later, and the claim window decides.
-    return Promise.resolve({ kind: "accepted" });
+    return { kind: "accepted" };
   };
 }

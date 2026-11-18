@@ -2,8 +2,12 @@
 // on it does. Pure, so every state is a unit test.
 import type { Instance, Receipt, ReceiptState } from "../api.ts";
 
-/** The tile's states that follow a receipt (A5 3.6). */
-export type ReceiptTileState = "ready" | "opening" | "not_confirmed" | "connected";
+/**
+ * The tile's states that follow the receipts: an Open on its way, a session the service follows as
+ * running, or ready to open. A session that ended, or one the service cannot follow, blocks
+ * nothing.
+ */
+export type ReceiptTileState = "ready" | "opening" | "running";
 
 /** Every state the tile slot shows (A5 3.6's table). */
 export type TileState =
@@ -19,31 +23,41 @@ export type TileState =
 
 const OPENING: readonly ReceiptState[] = ["prepared", "dispatching"];
 
-/** The tile's state for its instance's latest receipt on this task. */
+/**
+ * Whether a launch is still on its way. A terminal launch is until its shim settles it. A link
+ * launch has gone once its app was asked: nothing follows it after that.
+ */
+const opening = (receipt: Receipt): boolean =>
+  OPENING.includes(receipt.state) || (receipt.state === "dispatched" && receipt.route !== "link");
+
+/**
+ * The tile's state for its instance on this task: Opening while its latest launch is on its way,
+ * Running while any of its sessions runs, else Ready.
+ */
 export function tileState(receipts: readonly Receipt[], instance: string): ReceiptTileState {
-  const latest = receipts.filter((r) => r.instance === instance).at(-1);
-  if (latest === undefined) return "ready";
-  if (OPENING.includes(latest.state)) return "opening";
-  // A terminal launch stays Opening in Dispatched until its shim settles it; a link launch stays
-  // there until it is confirmed (A5 3.6, 3.9).
-  if (latest.state === "dispatched") return latest.route === "link" ? "not_confirmed" : "opening";
-  if (latest.state === "confirmed") return "connected";
-  return "ready";
+  const mine = receipts.filter((r) => r.instance === instance);
+  const latest = mine.at(-1);
+  if (latest !== undefined && opening(latest)) return "opening";
+  return mine.some(isRunning) ? "running" : "ready";
 }
+
+/** Whether the service follows this launch's session as running now. */
+export const isRunning = (receipt: Receipt): boolean =>
+  receipt.state === "confirmed" && receipt.session === "running";
 
 export type TileAction = "open" | "expand" | "copy" | "none";
 
 /**
- * What a click on the tile does (A5 3.6): only Ready opens. A launch on its way or done expands the
- * task to its thread, so the tile never starts a duplicate session. Unavailable expands to where
- * "Choose folder" or Copy is; Copy only copies the brief; Elsewhere and None do nothing in v1.
+ * What a click on the tile does (A5 3.6): Ready opens. Running expands the task, where its thread
+ * shows the session and the strip opens another: a second session is a choice, never a slip.
+ * Unavailable expands to where "Choose folder" or Copy is; Copy only copies the brief; Opening,
+ * Elsewhere and None do nothing.
  */
 export function tileClick(state: TileState): TileAction {
   switch (state) {
     case "ready":
       return "open";
-    case "not_confirmed":
-    case "connected":
+    case "running":
     case "unavailable":
       return "expand";
     case "copy_only":

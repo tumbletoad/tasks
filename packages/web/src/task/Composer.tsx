@@ -213,18 +213,15 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     });
   };
 
-  /** Why an instance does not open now, as its tip says it; undefined when it opens. */
-  const held = (instance: Instance): string | undefined => {
-    const state = tileState(receipts, instance.key);
-    if (opening.has(instance.key) || state === "opening") {
-      return t("composer.opening", { label: instance.label });
-    }
-    // A click would return the launch it has, which takes no new request.
-    if (state === "connected" || state === "not_confirmed") {
-      return t("composer.hasSession", { label: instance.label });
-    }
-    return undefined;
-  };
+  /**
+   * Why an instance does not open now, as its tip says it; undefined when it opens. Only an Open on
+   * its way holds it: a click then would return that very launch. A running session does not: the
+   * button says it opens another.
+   */
+  const held = (instance: Instance): string | undefined =>
+    opening.has(instance.key) || tileState(receipts, instance.key) === "opening"
+      ? t("composer.opening", { label: instance.label })
+      : undefined;
 
   const noteKeys = keysOf("note", singleKeys);
   const openKeys = keysOf("open-first", singleKeys);
@@ -296,11 +293,18 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
 
         {instances.map((instance, i) => {
           const why = held(instance);
+          const state = tileState(receipts, instance.key);
+          const another = state === "running";
           const tip =
             why ??
-            t(words === "" ? "composer.openTip" : "composer.openWithTip", {
-              label: instance.label,
-            });
+            t(
+              another
+                ? "composer.anotherTip"
+                : words === ""
+                  ? "composer.openTip"
+                  : "composer.openWithTip",
+              { label: instance.label },
+            );
           return (
             <button
               key={instance.key}
@@ -308,7 +312,7 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
               className={styles.button}
               data-part="open"
               data-default={i === 0 ? "" : undefined}
-              data-state={tileState(receipts, instance.key)}
+              data-state={state}
               data-ring={instance.ring}
               aria-disabled={why !== undefined}
               aria-keyshortcuts={i === 0 ? ariaKeys(openKeys, mac) : undefined}
@@ -321,7 +325,7 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
               <span className={styles.glyph} aria-hidden="true">
                 {instance.glyph}
               </span>
-              {t("row.openIn", { label: instance.label })}
+              {t(another ? "composer.openAnother" : "row.openIn", { label: instance.label })}
               {i === 0 && openKeys[0] !== undefined ? (
                 <kbd className={styles.hint} aria-hidden="true">
                   {keyLabel(openKeys[0])}
