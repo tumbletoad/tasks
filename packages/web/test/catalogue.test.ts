@@ -101,6 +101,7 @@ const SAMPLE = {
   repo: "portal-web",
   left: 1_200,
   max: 20_000,
+  limit: "wall",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

@@ -14,7 +14,7 @@
 // is rendered as text or as Markdown that is never HTML, and links open only through allowed
 // schemes (A5 3.26).
 import { useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import type { Instance, Receipt } from "../api.ts";
+import type { Instance, Receipt, Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useT } from "../i18n/intl.tsx";
@@ -62,6 +62,8 @@ const styles = classes(css, [
 export interface ExpandedProps {
   readonly task: TaskRow;
   readonly receipts: readonly Receipt[];
+  /** Its background runs, oldest first. */
+  readonly runs: readonly Run[];
   readonly instances: readonly Instance[];
   readonly actions: RowActions;
   /** The last Open of this task, refused on its folder; none once an Open went through. */
@@ -330,7 +332,7 @@ function Context({
   );
 }
 
-export function Expanded({ task, receipts, instances, actions, refused }: ExpandedProps) {
+export function Expanded({ task, receipts, runs, instances, actions, refused }: ExpandedProps) {
   const t = useT();
   const clock = useClock(false);
   const { detail, failed } = useDetail(task.id);
@@ -416,10 +418,14 @@ export function Expanded({ task, receipts, instances, actions, refused }: Expand
             notes={detail.notes}
             log={detail.log}
             receipts={receipts}
+            runs={runs}
             instances={instances}
             partial={detail.partial}
             onOpenAgain={(note, instance) => {
               void actions.open(task, instance, undefined, note.ref);
+            }}
+            onStop={(run) => {
+              actions.stop(task, run);
             }}
           />
         )}

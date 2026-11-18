@@ -1,6 +1,6 @@
 // What a row's controls do (Row.tsx), apart from the row so the expanded task's seam can take it
 // too without a cycle.
-import type { Instance, Receipt } from "../api.ts";
+import type { Instance, Receipt, Run } from "../api.ts";
 import type { TaskRow } from "../store/rows.ts";
 import type { RowMove } from "./model.ts";
 
@@ -30,6 +30,13 @@ export interface RowActions {
    * composer's `text`. True once it is on the clipboard.
    */
   readonly copy: (task: TaskRow, pack?: boolean, text?: string) => Promise<boolean>;
+  /**
+   * Run: `instance` works on the task in the background, with the composer's `text` as its
+   * request. The run the service queued, or undefined when it queued none (it said why).
+   */
+  readonly run: (task: TaskRow, instance: Instance, text?: string) => Promise<Run | undefined>;
+  /** Stop a run of the task: it answers at once, and the thread follows the run's record. */
+  readonly stop: (task: TaskRow, run: Run) => void;
   readonly star: (task: TaskRow, on: boolean) => void;
   /** The view's visible move out of it (A5 3.5): "Move to Open" or "Back to open". */
   readonly move: (task: TaskRow, kind: RowMove) => void;

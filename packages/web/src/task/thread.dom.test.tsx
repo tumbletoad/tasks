@@ -98,7 +98,7 @@ describe("[A5.3.9.web.thread-request] a launch's request shows in the thread as 
     render([asked], [receipt("la_1", "L7KQ21", "prepared", AT)]);
     // Prepared says no state yet, but what was asked is there at once.
     expect(entries().map((e) => e.dataset["entry"])).toEqual(["session"]);
-    expect(askedIn(entries()[0])).toBe("You asked:Check the clinic export first");
+    expect(askedIn(entries()[0])).toBe("You asked: Check the clinic export first");
 
     render([asked], [receipt("la_1", "L7KQ21", "confirmed", AT)]);
     expect(entries()).toHaveLength(1);
@@ -110,7 +110,7 @@ describe("[A5.3.9.web.thread-request] a launch's request shows in the thread as 
     const early = note("n3", "Then fix the offset", []);
     render([early], [{ ...receipt("la_1", "L7KQ21", "dispatching", AT), request: "n3" }]);
     expect(entries().map((e) => e.dataset["entry"])).toEqual(["session"]);
-    expect(askedIn(entries()[0])).toBe("You asked:Then fix the offset");
+    expect(askedIn(entries()[0])).toBe("You asked: Then fix the offset");
 
     // An undo took the note back: the session stays, without words.
     render([], [receipt("la_1", "L7KQ21", "confirmed", AT)]);

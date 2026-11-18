@@ -220,7 +220,7 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       );
       const unauthenticated = await post(port, OPEN, { task: task.id }, { headers });
       expect(unauthenticated.status).toBe(401);
-      for (const gone of ["/api/v1/launch/open", "/api/v1/launch/run"]) {
+      for (const gone of ["/api/v1/launch/open"]) {
         expect((await post(port, gone, {}, { token, headers })).status).toBe(404);
       }
     },

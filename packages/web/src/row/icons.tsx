@@ -68,6 +68,13 @@ export const ChevronUpIcon = () => (
   </Icon>
 );
 
+/** Run: an agent works on the task in the background. A play shape, open, never filled. */
+export const RunIcon = () => (
+  <Icon>
+    <path d="M8 5.8v12.4a.8.8 0 0 0 1.2.7l9.9-6.2a.8.8 0 0 0 0-1.4L9.2 5.1a.8.8 0 0 0-1.2.7Z" />
+  </Icon>
+);
+
 /** The late due's clock glyph: late and due-soon differ by text and by this shape (A5 3.19). */
 export const ClockIcon = () => (
   <Icon>

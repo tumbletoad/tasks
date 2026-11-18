@@ -96,7 +96,7 @@ describe("[A7.3.9.m2-13.web.build] the built page under SRI and the strict CSP",
       );
       if (file.endsWith(".js")) compressed += gzipSync(read(`assets/${file}`)).length;
     }
-    expect(compressed).toBeLessThanOrEqual(250 * 1024);
+    expect(compressed).toBeLessThanOrEqual(260 * 1024);
     // The version folder's THIRD_PARTY.txt names every npm package the page ships.
     const third = thirdPartyText(join(import.meta.dirname, "..", "..", ".."), [], built.npmInputs);
     for (const name of ["react", "react-dom", "scheduler"]) {

@@ -356,19 +356,25 @@ a + .muted,
   color: var(--k-due);
 }
 
-/* What the person asked a session's agent, above the session's state. */
+.entry[data-entry="run"] .mark {
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px var(--k-ring, var(--k-control));
+}
+
+/*
+ * A background run: what was asked, muted; its state in text-2 with a quiet dot by tone (working
+ * is the accent, the question the review colour), Stop beside it; then what the agent said.
+ */
 .asked {
-  margin: 2px 0 4px;
-  padding-inline-start: 10px;
-  border-inline-start: 2px solid var(--k-line);
-}
-
-.asked > p:first-child {
-  margin: 0;
-  font-size: 0.75rem;
+  margin: 1px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
   color: var(--k-muted);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
+/* A launch that did not open: open it again with what was asked. */
 .again {
   margin-top: 6px;
   padding: 3px 10px;
@@ -384,6 +390,105 @@ a + .muted,
 
 .again:hover {
   background: var(--k-hover);
+}
+
+.runState {
+  margin: 2px 0 0;
+  color: var(--k-text-2);
+  line-height: 1.5rem;
+  overflow-wrap: anywhere;
+}
+
+.runState::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-inline-end: 8px;
+  border-radius: 50%;
+  vertical-align: 0.1em;
+  box-shadow: inset 0 0 0 1.5px var(--k-muted);
+}
+
+.runState > span + span {
+  margin-inline-start: 0.3em;
+}
+
+[data-tone="working"] > .runState::before,
+[data-tone="waiting"] > .runState::before,
+[data-tone="stopping"] > .runState::before {
+  box-shadow: inset 0 0 0 1.5px var(--k-accent);
+}
+
+[data-tone="done"] > .runState::before {
+  background: var(--k-accent);
+  box-shadow: none;
+}
+
+[data-tone="needs_you"] > .runState {
+  color: var(--k-text);
+  font-weight: 500;
+}
+
+[data-tone="needs_you"] > .runState::before {
+  width: 8px;
+  height: 8px;
+  box-shadow: inset 0 0 0 2px var(--k-review);
+  background: radial-gradient(circle, var(--k-review) 0 1.5px, transparent 2px);
+}
+
+[data-tone="failed"] > .runState {
+  color: var(--k-late);
+}
+
+[data-tone="unknown"] > .runState {
+  color: var(--k-due);
+}
+
+.stop {
+  height: 24px;
+  margin-inline-start: 8px;
+  padding: 0 8px;
+  vertical-align: middle;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--k-line-strong);
+  background: none;
+  color: var(--k-text-2);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.stop:hover {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+.error {
+  margin: 2px 0 0;
+  color: var(--k-text-2);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.said,
+.question {
+  margin-top: 4px;
+  max-width: 68ch;
+  color: var(--k-text);
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.question {
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--k-review);
+}
+
+.said > [data-clamped="true"],
+.question > [data-clamped="true"] {
+  max-height: calc(10 * 1.25rem);
+  overflow: hidden;
 }
 
 /* Entry actions show on hover and on focus (A5 3.7, 3.22: what hover shows, focus shows). */
@@ -493,7 +598,7 @@ a + .muted,
 }
 
 /* Who it waits on: an outlined text field. */
-.waitingOn {
+.waitingField {
   width: 100%;
   height: 26px;
   padding: 0 10px;
@@ -501,10 +606,11 @@ a + .muted,
   border-radius: 999px;
   box-shadow: inset 0 0 0 1px var(--k-control);
   background: transparent;
+  color: var(--k-text);
   font-size: 0.8125rem;
 }
 
-.waitingOn::placeholder {
+.waitingField::placeholder {
   color: var(--k-muted);
 }
 
@@ -559,6 +665,90 @@ a + .muted,
 /* Note stands a little apart from the agents. */
 .button[data-part="note"] {
   margin-right: 8px;
+}
+
+/* Run, and beside it the menu of the other agents that can run: one control, two halves. */
+.runs {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.runs > .button:first-child:not(:last-child) {
+  border-start-end-radius: 2px;
+  border-end-end-radius: 2px;
+}
+
+.others {
+  padding: 2px 6px;
+  border-start-start-radius: 2px;
+  border-end-start-radius: 2px;
+}
+
+.others[data-focus-visible] {
+  outline: 2px solid var(--k-focus);
+  outline-offset: 2px;
+}
+
+.runMenu {
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 4px;
+  border: 1px solid var(--k-line-strong);
+  border-radius: 10px;
+  background: var(--k-raised);
+  color: var(--k-text);
+}
+
+.runMenu [role="dialog"] {
+  display: grid;
+  outline: none;
+}
+
+.runItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--k-text-2);
+  text-align: start;
+  cursor: pointer;
+}
+
+.runItem:hover,
+.runItem:focus-visible {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
+.runItem[data-ring="1"] {
+  --k-ring: var(--k-slot-1);
+}
+.runItem[data-ring="2"] {
+  --k-ring: var(--k-slot-2);
+}
+.runItem[data-ring="3"] {
+  --k-ring: var(--k-slot-3);
+}
+.runItem[data-ring="4"] {
+  --k-ring: var(--k-slot-4);
+}
+.runItem[data-ring="5"] {
+  --k-ring: var(--k-slot-5);
+}
+.runItem[data-ring="6"] {
+  --k-ring: var(--k-slot-6);
+}
+.runItem[data-ring="7"] {
+  --k-ring: var(--k-slot-7);
+}
+.runItem[data-ring="8"] {
+  --k-ring: var(--k-slot-8);
 }
 
 /* Copy stands apart, at the strip's end. */
