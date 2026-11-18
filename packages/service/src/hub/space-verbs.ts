@@ -290,7 +290,21 @@ function notClaimable(view: SpaceView): AppError {
   });
 }
 
+/**
+ * One table per host, whichever transport asks for it (the socket's handler table, the page's
+ * routes): the verbs that add a space share one queue.
+ */
+const tables = new WeakMap<SpaceVerbsHost, Readonly<Record<string, Verb>>>();
+
 export function spaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
+  const made = tables.get(host);
+  if (made !== undefined) return made;
+  const table = makeSpaceVerbs(host);
+  tables.set(host, table);
+  return table;
+}
+
+function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
   const { manager } = host;
 
   /**

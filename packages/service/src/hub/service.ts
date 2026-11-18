@@ -23,7 +23,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
-import { envVar, PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, envVar, PRODUCT_NAME } from "@tasks/brand";
 import type { Instance } from "@tasks/launch";
 import { StorageError, type Id } from "@tasks/storage";
 import {
@@ -127,6 +127,8 @@ import { currentVersion } from "../version/switch.ts";
 import { t3Files, t3FileNames, t3HomeOf, t3Host, T3_STATE_DIR } from "./t3.ts";
 import { homeGate } from "./home-gate.ts";
 import { SeenCalls } from "./agent-homes.ts";
+import { agentAppVerbs, personEnv } from "./agent-apps.ts";
+import { pageSpaceVerbs } from "./page-spaces.ts";
 import { within } from "./wait.ts";
 
 /** A2 3.12.6: while it runs, the service looks for an interrupted update every 10 s. */
@@ -234,6 +236,11 @@ export interface StartOptions {
   readonly sessions?: SessionStore;
   /** Background runs: the containers, tasks-run.exe and the host's times, for tests. */
   readonly runs?: RunOptions;
+  /**
+   * The page's agent apps: the environment and home folder they are looked for in, and the home
+   * the page shows as `~`, for tests. Default: the person's own, as Open's agents get them.
+   */
+  readonly agentApps?: { readonly env?: Env; readonly home?: string };
 }
 
 export type StopReason = "signal" | "request";
@@ -1007,6 +1014,25 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // port that another user holds or held leaves it blocked: no UI, every UI token revoked, and
     // the socket or pipe goes on serving agents and the CLI (A2 3.8.2).
     if (options.http !== undefined && grantsDb !== undefined) {
+      // The page's New space, Open folder and agent apps: the sign-in is the person (`ui`).
+      const pageSpaces = pageSpaceVerbs({
+        layout,
+        userHome: options.agentApps?.home ?? personHome,
+        spaces: hub.spaces,
+      });
+      const apps = agentAppVerbs({
+        platform,
+        configDir: layout.config,
+        stateDir: layout.state,
+        root: layout.root,
+        tasks: join(layout.bin, platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME),
+        userHome: options.agentApps?.home ?? personHome,
+        env: async () =>
+          options.agentApps?.env ?? (await personEnv(launches.environment).catch(() => env)),
+        homes: hub.agentHomes,
+        instances: hub.instances,
+        spaceName: (id) => made.spaces?.served().find((s) => s.id === id)?.name,
+      });
       const running = await startHttp({
         ...options.http,
         installed:
@@ -1024,6 +1050,15 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         ops: hub.ops,
         defaults,
         machine: machineSettings,
+        spaces: {
+          propose: (input) => pageSpaces.propose(input, "ui"),
+          create: (input) => pageSpaces.create(input, "ui"),
+          open: (input) => pageSpaces.open(input, "ui"),
+        },
+        apps: {
+          view: (input) => apps.view(input, "ui"),
+          apply: (input) => apps.apply(input, "ui"),
+        },
         db: grantsDb.db,
         grants: grantsDb.grants,
         log: httpLog,

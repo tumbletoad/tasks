@@ -116,7 +116,10 @@ test.describe("[M6.page.e2e.run] Run from the page, with and without words, and 
 
     // The person's other agent is one click away, in the menu beside Run.
     await stripOf(page, ref).getByRole("button", { name: "Run with another agent" }).click();
-    await page.getByRole("menuitem", { name: `Run with ${OTHER_LABEL}` }).click();
+    await page
+      .getByRole("dialog", { name: "Run with another agent" })
+      .getByRole("button", { name: `Run with ${OTHER_LABEL}` })
+      .click();
     const fourth = runsOf(page, ref).nth(3);
     await expect(fourth).toContainText(OTHER_LABEL);
     await expect(stateOf(fourth)).toContainText("Done.", { timeout: SLOW_MS });
@@ -364,7 +367,11 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
         // The other agent that can run is one click away, in the menu beside Run.
         await openTask(shot, world, ended);
         await stripOf(shot, ended).getByRole("button", { name: "Run with another agent" }).click();
-        await expect(shot.getByRole("menuitem", { name: `Run with ${OTHER_LABEL}` })).toBeVisible();
+        await expect(
+          shot
+            .getByRole("dialog", { name: "Run with another agent" })
+            .getByRole("button", { name: `Run with ${OTHER_LABEL}` }),
+        ).toBeVisible();
         await rowOf(shot, ended).locator('[data-part="strip"]').scrollIntoViewIfNeeded();
         await shot.screenshot({ path: test.info().outputPath(`run-menu-${theme}-1440.png`) });
         await shot.keyboard.press("Escape");

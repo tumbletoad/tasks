@@ -41,12 +41,15 @@ export const OP_PREFIX = "/api/v1/op/";
 /** The page's launch receipts and runs (launches.ts). Open is the registry's `launch.open`. */
 export const LAUNCH_PREFIX = "/api/v1/launch/";
 export const LAUNCH_ACTIONS: readonly string[] = ["list", "run", "runs", "stop"];
-/** The page's space switcher (M5.01): this machine's spaces, and Make default. */
+/**
+ * The page's space switcher: this machine's spaces, Make default, and New space (a name's
+ * proposal, then the space) and Open folder.
+ */
 export const SPACE_PREFIX = "/api/v1/space/";
-export const SPACE_ACTIONS: readonly string[] = ["list", "default"];
-/** Settings (M5.11): this computer's preferences the page sets, and Open's terminal. */
+export const SPACE_ACTIONS: readonly string[] = ["list", "default", "propose", "create", "open"];
+/** Settings: this computer's preferences the page sets, Open's terminal, and the agent apps. */
 export const MACHINE_PREFIX = "/api/v1/machine/";
-export const MACHINE_ACTIONS: readonly string[] = ["pref", "terminal"];
+export const MACHINE_ACTIONS: readonly string[] = ["pref", "terminal", "apps", "apps_apply"];
 export const HEALTHZ_PATH = "/healthz";
 export const WELL_KNOWN_PATH = "/.well-known/tasks";
 export const ASSET_PREFIX = "/assets/";

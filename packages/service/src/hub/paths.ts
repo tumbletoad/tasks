@@ -152,6 +152,20 @@ export function resolveLayout(facts: HostFacts): Layout {
   };
 }
 
+/** Where a new space goes unless the person picks a folder: `<spaces>/<the name in lower case>`. */
+export function defaultSpaceFolder(
+  layout: Pick<Layout, "platform" | "spaces">,
+  name: string,
+): string {
+  const slug = name
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  return pathFor(layout.platform).join(layout.spaces, slug === "" ? "space" : slug);
+}
+
 // ---------------------------------------------------------------------------------------------
 // The install ID (A2 3.2.1, S30)
 

@@ -161,18 +161,26 @@ describe("[M6.page.run-follow] the page shows a run as the service has it", () =
   test("a refusal's words come from the service's reason and the folder or machine it names", () => {
     expect(
       runRefusal(
-        new Refused(400, "invalid_input", { reason: "folder_missing", folder: "~/work/portal" }),
+        new Refused(400, "invalid_input", undefined, {
+          reason: "folder_missing",
+          folder: "~/work/portal",
+        }),
       ),
     ).toMatchObject({ reason: "folder_missing", folder: "~/work/portal" });
-    expect(runRefusal(new Refused(400, "invalid_input", { reason: "folder_missing" })).reason).toBe(
-      "work_folder",
-    );
+    expect(
+      runRefusal(new Refused(400, "invalid_input", undefined, { reason: "folder_missing" })).reason,
+    ).toBe("work_folder");
     expect(
       runRefusal(
-        new Refused(400, "invalid_input", { reason: "other_machine", machine: "mira-laptop" }),
+        new Refused(400, "invalid_input", undefined, {
+          reason: "other_machine",
+          machine: "mira-laptop",
+        }),
       ).words,
     ).toMatchObject({ reason: "other_machine", machine: "mira-laptop" });
-    expect(runRefusal(new Refused(413, "too_large", { field: "text" })).reason).toBe("too_large");
+    expect(runRefusal(new Refused(413, "too_large", undefined, { field: "text" })).reason).toBe(
+      "too_large",
+    );
     expect(runRefusal(new Error("offline")).reason).toBe("unknown");
   });
 });

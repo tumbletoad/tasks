@@ -86,15 +86,41 @@ export class StaleBuild extends Error {}
 export class Refused extends Error {
   readonly status: number;
   readonly code: string;
+  /** The service's own sentence for the person, when it gave one. */
+  readonly said: string | undefined;
   /** The answer's `data`: why, in the service's fixed words. */
   readonly data: Readonly<Record<string, unknown>>;
 
-  constructor(status: number, code: string, data: Readonly<Record<string, unknown>> = {}) {
+  constructor(
+    status: number,
+    code: string,
+    said?: string,
+    data: Readonly<Record<string, unknown>> = {},
+  ) {
     super(code);
     this.status = status;
     this.code = code;
+    this.said = said;
     this.data = data;
   }
+}
+
+/** A space the page made or opened. */
+export interface MadeSpace {
+  readonly id: string;
+  readonly name: string;
+  /** The space will not reopen after a restart: why, and what to do. */
+  readonly notRemembered?: string;
+}
+
+function madeSpace(value: unknown): MadeSpace {
+  const { id, name, not_remembered: line } = (value ?? {}) as Record<string, unknown>;
+  if (typeof id !== "string" || typeof name !== "string") throw new Refused(200, "unknown");
+  return {
+    id,
+    name,
+    ...(typeof line === "string" && line.length <= 2000 ? { notRemembered: line } : {}),
+  };
 }
 
 /** A fresh request ID (A1 3.8): 128 random bits, new per intended change. */
@@ -158,20 +184,64 @@ export class Api {
     const reply = await this.post(path, JSON.stringify(input));
     const parsed = JSON.parse(reply.body) as {
       result?: T;
-      error?: { code?: unknown; data?: unknown };
+      error?: { code?: unknown; message?: unknown; data?: unknown };
     };
     if (reply.status !== 200 || parsed.result === undefined) {
       const code = parsed.error?.code;
+      const message = parsed.error?.message;
       const data = parsed.error?.data;
       throw new Refused(
         reply.status,
         typeof code === "string" ? code : "unknown",
+        typeof message === "string" && message.length <= 500 ? message : undefined,
         typeof data === "object" && data !== null && !Array.isArray(data)
           ? (data as Record<string, unknown>)
           : {},
       );
     }
     return parsed.result;
+  }
+
+  /** What a new space of this name gets unless the person chooses: its prefix and its folder. */
+  async proposeSpace(name: string): Promise<{ prefix: string; folder: string }> {
+    const reply = await this.#result<{ ref_prefix?: unknown; folder?: unknown }>(
+      "/api/v1/space/propose",
+      { name },
+    );
+    return {
+      prefix: typeof reply.ref_prefix === "string" ? reply.ref_prefix : "",
+      folder: typeof reply.folder === "string" ? reply.folder : "",
+    };
+  }
+
+  /** New space: the name, and the prefix and folder when the person chose them. */
+  async createSpace(input: {
+    readonly name: string;
+    readonly prefix?: string;
+    readonly folder?: string;
+  }): Promise<MadeSpace> {
+    return madeSpace(
+      await this.#result("/api/v1/space/create", {
+        name: input.name,
+        ...(input.prefix === undefined ? {} : { ref_prefix: input.prefix }),
+        ...(input.folder === undefined ? {} : { folder: input.folder }),
+      }),
+    );
+  }
+
+  /** Open folder: a space folder on this computer, served from now on. */
+  async openSpace(folder: string): Promise<MadeSpace> {
+    return madeSpace(await this.#result("/api/v1/space/open", { folder }));
+  }
+
+  /** This computer's agent apps, for `space`: what a new entry names. */
+  async agentApps(space: string): Promise<unknown> {
+    return this.#result("/api/v1/machine/apps", { space });
+  }
+
+  /** The switches the person turned over, each with the token its view showed. */
+  async applyAgentApps(space: string, changes: readonly unknown[]): Promise<unknown> {
+    return this.#result("/api/v1/machine/apps_apply", { space, changes });
   }
 
   /** A single-use ticket for the feed's WebSocket. */

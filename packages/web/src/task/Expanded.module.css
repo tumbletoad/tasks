@@ -680,7 +680,8 @@ a + .muted,
   color: var(--k-text);
 }
 
-.runMenu [role="menu"] {
+.runMenu [role="dialog"] {
+  display: grid;
   outline: none;
 }
 
@@ -690,15 +691,18 @@ a + .muted,
   gap: 8px;
   min-height: 32px;
   padding: 2px 8px;
+  border: 0;
   border-radius: 6px;
+  background: none;
+  font: inherit;
   font-size: 0.8125rem;
   color: var(--k-text-2);
+  text-align: start;
   cursor: pointer;
-  outline: none;
 }
 
-.runItem[data-focused],
-.runItem[data-hovered] {
+.runItem:hover,
+.runItem:focus-visible {
   background: var(--k-hover);
   color: var(--k-text);
 }

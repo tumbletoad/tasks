@@ -14,7 +14,7 @@
 // Enter saves a note, Ctrl+Enter opens the first instance and Ctrl+Shift+Enter runs the first
 // that can (keymap.ts): never while an input method composes.
 import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { Button, Menu, MenuItem, MenuTrigger, Popover, Toolbar } from "react-aria-components";
+import { Button, Dialog, DialogTrigger, Popover, Toolbar } from "react-aria-components";
 import { requestId, type Instance, type Receipt, type Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
@@ -353,7 +353,7 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
               )}
             </button>
             {others.length === 0 ? null : (
-              <MenuTrigger>
+              <DialogTrigger>
                 <Button
                   className={`${styles.button} ${styles.others}`}
                   data-part="run-other"
@@ -362,30 +362,29 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
                   <ChevronDownIcon />
                 </Button>
                 <Popover className={styles.runMenu} placement="bottom end" offset={4}>
-                  <Menu
-                    aria-label={t("composer.runOther")}
-                    onAction={(key) => {
-                      const chosen = others.find((i) => i.key === key);
-                      if (chosen !== undefined) run(chosen);
-                    }}
-                  >
-                    {others.map((instance) => (
-                      <MenuItem
-                        key={instance.key}
-                        id={instance.key}
-                        className={styles.runItem}
-                        data-ring={instance.ring}
-                        textValue={t("composer.run", { label: instance.label })}
-                      >
-                        <span className={styles.glyph} aria-hidden="true">
-                          {instance.glyph}
-                        </span>
-                        {t("composer.run", { label: instance.label })}
-                      </MenuItem>
-                    ))}
-                  </Menu>
+                  <Dialog aria-label={t("composer.runOther")}>
+                    {({ close }) =>
+                      others.map((instance) => (
+                        <button
+                          key={instance.key}
+                          type="button"
+                          className={styles.runItem}
+                          data-ring={instance.ring}
+                          onClick={() => {
+                            close();
+                            run(instance);
+                          }}
+                        >
+                          <span className={styles.glyph} aria-hidden="true">
+                            {instance.glyph}
+                          </span>
+                          {t("composer.run", { label: instance.label })}
+                        </button>
+                      ))
+                    }
+                  </Dialog>
                 </Popover>
-              </MenuTrigger>
+              </DialogTrigger>
             )}
           </span>
         )}

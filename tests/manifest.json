@@ -3790,7 +3790,7 @@
     },
     {
       "id": "A5.3.15.web.live",
-      "title": "The tab's feed client applies a batch only when it reaches past its cursor without a gap, ignores a repeat, takes a fresh snapshot after a gap (asked for again on the next socket when the old one dropped), never applies another space's batch, and a feed that resumes from its cursor (after applying what it had queued) is live again without a snapshot, with its rows kept and its backoff reset",
+      "title": "The tab's feed client applies a batch only when it reaches past its cursor without a gap, ignores a repeat, takes a fresh snapshot after a gap (asked for again on the next socket when the old one dropped) or on a refresh, on the same session, never applies another space's batch, and a feed that resumes from its cursor (after applying what it had queued) is live again without a snapshot, with its rows kept and its backoff reset",
       "source": "A5 3.15, A1 3.7, A7 3.9 M2.13",
       "owner": "M2",
       "kind": "ci",
@@ -4176,6 +4176,76 @@
       "id": "A7.3.12.m5-11.e2e.screens",
       "title": "In Chromium and Firefox: Settings and the shortcut sheet in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
       "source": "A7 3.12 M5.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.page-gate",
+      "title": "The page's agent apps refuse an agent's connection, a script, the bridge and a shim before they read anything",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.web-apps",
+      "title": "The page's agent apps: the first start proposes every switch that can be on, Settings shows them as they stand, Apply sends only switches that can be turned over, and a newer view keeps the person's choices that can still be made",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.e2e.skip",
+      "title": "In Chromium and Firefox on a fresh install: a name and one button make the first space with its prefix proposed, the agent apps show the usual choice made, and Skip goes to the space with no agent app changed",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.e2e.first-start",
+      "title": "In Chromium and Firefox on a fresh install: a space with a prefix of the person's own, two agent apps found with fake commands, one switch turned off, what changes listed with exactly what is written behind one click, applied, and the task's Open button offers the app",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.e2e.settings",
+      "title": "In Chromium and Firefox: Settings shows the agent apps as they stand, takes one app's tools out, refuses a home that changed between the view and the click with the new view and the choice kept, and takes everything out again",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.e2e.switcher",
+      "title": "In Chromium and Firefox: the space switcher's New space makes a space and goes to it, and Open folder refuses a folder that is not a full path in the service's words and serves a space folder",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.e2e.screens",
+      "title": "In Chromium and Firefox: the first space's form, Open folder, the agent apps of the first start and of Settings, and New space in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.page-apps",
+      "title": "Over HTTP as the page calls them: a space from a name alone, each app's two switches with what they write, one click that adds and one that takes out again, a home that changed since the view written nowhere with the new view returned, and a space not served or a switch named twice refused",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.page-desktop",
+      "title": "Over HTTP on Windows with two Claude Desktop settings files: neither is proposed, each can take the tools, and moving them from one file to the other is one apply",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-12.page-env",
+      "title": "The agent apps are looked for in the person's environment, brought up to date first",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
