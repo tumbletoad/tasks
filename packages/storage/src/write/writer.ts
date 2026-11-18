@@ -1879,7 +1879,12 @@ export class SpaceWriter {
                 ? undefined
                 : conn.prepare(LAUNCH_SQL.request).get({ task: parent, ordinal: Number(ordinal) });
             if (found === undefined) {
-              problem("NOT_FOUND", "The task has no note with this reference", i, "evidence.request");
+              problem(
+                "NOT_FOUND",
+                "The task has no note with this reference",
+                i,
+                "evidence.request",
+              );
             }
           }
           const record = { task: parent, ...inputOf(op, "task") };

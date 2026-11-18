@@ -3,8 +3,10 @@
 // detail (detail.ts); sessions are the task's launch receipts, which the feed's launch events
 // refresh. The last six entries show, and "Earlier" reveals the rest. Each entry: the actor's mark
 // (the person's initial, an agent's initials, an instance's monogram), the actor, the mode, the
-// time, then the text, as Markdown that is never HTML (markdown.tsx). Copy on a log entry shows on
-// hover and on focus. Runs join with M6, and grouped field changes and their Revert with M5.09.
+// time, then the text, as Markdown that is never HTML (markdown.tsx). A session shows what the
+// person asked its agent (the note the launch names) above its state, and a launch that did not
+// open offers to open again with it. Copy on a log entry shows on hover and on focus. Runs join
+// with M6, and grouped field changes and their Revert with M5.09.
 import { useState } from "react";
 import type { Instance, Receipt } from "../api.ts";
 import { classes } from "../app/css.ts";
@@ -27,6 +29,8 @@ const styles = classes(css, [
   "state",
   "acts",
   "act",
+  "asked",
+  "again",
 ]);
 
 /** The entries shown before "Earlier" (A5 3.7). */
@@ -117,6 +121,10 @@ interface Item {
   readonly markdown: boolean;
   readonly kind: "note" | "log" | "session";
   readonly state?: string;
+  /** What the person asked the session's agent: the note its launch names. */
+  readonly asked?: DetailNote;
+  /** Open the session's instance again with what was asked. */
+  readonly again?: () => void;
 }
 
 const clock = new Intl.DateTimeFormat(undefined, {
@@ -138,9 +146,11 @@ export interface ThreadProps {
   readonly instances: readonly Instance[];
   /** The pages ran out before the oldest entries. */
   readonly partial: boolean;
+  /** Open an instance again with a request already on the task (its note). */
+  readonly onOpenAgain?: (note: DetailNote, instance: Instance) => void;
 }
 
-export function Thread({ notes, log, receipts, instances, partial }: ThreadProps) {
+export function Thread({ notes, log, receipts, instances, partial, onOpenAgain }: ThreadProps) {
   const t = useT();
   const say = useToast();
   const [all, setAll] = useState(false);
@@ -148,18 +158,44 @@ export function Thread({ notes, log, receipts, instances, partial }: ThreadProps
   const [focused, setFocused] = useState<string | undefined>(undefined);
 
   const items: Item[] = [];
+  // A request shows in its sessions' entries; one whose sessions are not listed shows on its own.
+  const askedBy = new Map<string, DetailNote>();
   for (const note of notes) {
+    for (const launch of note.requestFor ?? []) askedBy.set(launch.launch, note);
+  }
+  const listed = new Set(receipts.map((r) => r.reference));
+  const labelOf = (key: string) => instances.find((i) => i.key === key)?.label ?? key;
+  for (const note of notes) {
+    const launches = note.requestFor ?? [];
+    if (launches.some((l) => listed.has(l.launch))) continue;
     const { who, mark } = actorOf(note.author, t);
+    const last = launches.at(-1);
     items.push({
       key: `n:${note.ref}`,
       at: Date.parse(note.at),
       who,
       mark,
-      ...(note.forAgents ? { mode: t("thread.toAgents") } : {}),
+      ...(last !== undefined
+        ? { mode: t("thread.askedTo", { label: labelOf(last.instance) }) }
+        : note.forAgents
+          ? { mode: t("thread.toAgents") }
+          : {}),
       text: note.text,
       markdown: true,
       kind: "note",
     });
+  }
+  // Open again is offered on the newest launch of a request, when it did not open.
+  const newest = new Map<string, Receipt>();
+  for (const receipt of receipts) {
+    const note = askedBy.get(receipt.reference);
+    const known = note === undefined ? undefined : newest.get(note.ref);
+    if (
+      note !== undefined &&
+      (known === undefined || (receipt.at.prepared ?? 0) >= (known.at.prepared ?? 0))
+    ) {
+      newest.set(note.ref, receipt);
+    }
   }
   for (const entry of log) {
     const { who, mark } = actorOf(entry.author, t);
@@ -180,7 +216,18 @@ export function Thread({ notes, log, receipts, instances, partial }: ThreadProps
     const label =
       instance?.label ?? (receipt.route === "clipboard" ? t("row.copy") : receipt.instance);
     const text = receiptText(receipt, label, t);
-    if (text === undefined) continue;
+    const asked = askedBy.get(receipt.reference);
+    if (text === undefined && asked === undefined) continue;
+    const again =
+      asked !== undefined &&
+      instance !== undefined &&
+      onOpenAgain !== undefined &&
+      receipt.state === "failed" &&
+      newest.get(asked.ref) === receipt
+        ? () => {
+            onOpenAgain(asked, instance);
+          }
+        : undefined;
     items.push({
       key: `r:${receipt.id}`,
       at: receipt.at.prepared ?? 0,
@@ -188,10 +235,12 @@ export function Thread({ notes, log, receipts, instances, partial }: ThreadProps
       mark: instance?.glyph ?? label.slice(0, 2),
       ...(instance === undefined ? {} : { ring: instance.ring }),
       mode: t("thread.session"),
-      text,
+      text: text ?? "",
       markdown: false,
       kind: "session",
       state: receipt.state,
+      ...(asked === undefined ? {} : { asked }),
+      ...(again === undefined ? {} : { again }),
     });
   }
   // An instant the page cannot read sorts first rather than vanish.
@@ -265,14 +314,31 @@ export function Thread({ notes, log, receipts, instances, partial }: ThreadProps
                   </time>
                 ) : null}
               </div>
+              {item.asked === undefined ? null : (
+                <div className={styles.asked} data-part="asked" data-note={item.asked.ref}>
+                  <p>{t("thread.asked")}</p>
+                  <Markdown text={item.asked.text} className={styles.text} />
+                </div>
+              )}
               {item.markdown ? (
                 <div data-part="entry-text">
                   <Markdown text={item.text} className={styles.text} />
                 </div>
-              ) : (
+              ) : item.text === "" ? null : (
                 <p className={`${styles.text} ${styles.state}`} data-part="entry-text" dir="auto">
                   {item.text}
                 </p>
+              )}
+              {item.again === undefined ? null : (
+                <button
+                  type="button"
+                  className={styles.again}
+                  data-part="open-again"
+                  aria-label={t("thread.openAgainLabel", { label: item.who })}
+                  onClick={item.again}
+                >
+                  {t("thread.openAgain")}
+                </button>
               )}
             </div>
             <span className={styles.acts}>

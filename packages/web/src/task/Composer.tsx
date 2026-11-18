@@ -1,10 +1,10 @@
 // The composer: what the person types about a task, and the one strip under it where that text
-// goes. Note saves it as a note on the task. Open starts an agent instance on the task with the
-// text as its request, which Tasks holds for the agent and never puts on a command line or in a
-// link (without text it opens as the tile does). Copy puts the brief on the clipboard with the
-// text, Shift+Copy the context pack. Each clears the field once its text has gone somewhere: the
-// note was saved, the agent read the request, the brief is on the clipboard. Text typed meanwhile
-// stays. Until then the draft is kept (composer.ts), so a reload brings it back.
+// goes. Note saves it as a note on the task. Open saves it on the task as the request of the agent
+// it starts, which never goes on a command line or in a link (without text it opens as the tile
+// does). Copy puts the brief on the clipboard with the text, Shift+Copy the context pack. Each
+// clears the field once its text has gone somewhere: the note or the request is on the task, the
+// brief is on the clipboard. Text typed meanwhile stays. Until then the draft is kept
+// (composer.ts), so a reload brings it back. Near its limit the strip says how much more fits.
 //
 // Enter saves a note and Ctrl+Enter opens the first instance (keymap.ts): never while an input
 // method composes. Run, an agent working without a window, is not offered until it can start.
@@ -29,14 +29,17 @@ import {
   keepNote,
   onAsk,
   onDraft,
+  onSaved,
   readDraft,
   readNote,
-  settled,
   wordsOf,
 } from "./composer.ts";
 import css from "./Expanded.module.css";
 
-const styles = classes(css, ["input", "strip", "button", "glyph", "hint", "gap"]);
+const styles = classes(css, ["input", "strip", "button", "glyph", "hint", "gap", "limit"]);
+
+/** The strip says how much more fits once the field holds this much of DRAFT_MAX. */
+const LIMIT_SHOWN = DRAFT_MAX - 2_000;
 
 const STUBS: Readonly<Record<AskField, MessageId>> = {
   summary: "ask.summary",
@@ -85,18 +88,15 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     if (wordsOf(now.current) === words) setText("");
   };
 
-  // A launch that carries the words clears them once its agent read them. A failed one leaves them
-  // here, and one whose agent went on without reading them says so.
-  useEffect(() => {
-    for (const done of settled(space, task.id, receipts)) {
-      if (done.delivery === "reached") sent(done.words);
-      else if (done.delivery === "unread") {
-        const label =
-          instances.find((i) => i.key === done.receipt.instance)?.label ?? done.receipt.instance;
-        say(t("composer.notRead", { label }));
-      }
-    }
-  });
+  // An Open saved the words on the task, also one the person confirmed from a toast.
+  useEffect(
+    () =>
+      onSaved((saved) => {
+        if (saved.space === space && saved.task === task.id) sent(saved.words);
+      }),
+    // `sent` reads the field through a ref and the draft as it is kept: it never goes stale.
+    [space, task.id],
+  );
 
   // A request starts here: its stub follows what the person had written, which stays.
   useEffect(
@@ -160,8 +160,7 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     if (opening.has(instance.key)) return;
     setOpening((known) => new Set(known).add(instance.key));
     const request = words;
-    // The launch carries the words from the open action (carry), so the field clears once its
-    // agent read them.
+    // The open action says when the words are on the task (savedWords): the field clears then.
     void actions.open(task, instance, request === "" ? undefined : request).then(() => {
       setOpening((known) => {
         const next = new Set(known);
@@ -281,6 +280,11 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
             </button>
           );
         })}
+        {text.length >= LIMIT_SHOWN ? (
+          <span className={styles.limit} data-part="limit" aria-live="polite">
+            {t("composer.left", { left: Math.max(0, DRAFT_MAX - text.length), max: DRAFT_MAX })}
+          </span>
+        ) : null}
         <span className={styles.gap} aria-hidden="true" />
         <button
           type="button"

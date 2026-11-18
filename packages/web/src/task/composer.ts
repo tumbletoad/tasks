@@ -1,11 +1,10 @@
 // The composer's drafts and the seam for "click-to-ask". A draft is kept per space and task in
-// the browser (kept.ts) until it is saved as a note, reaches an agent, or is cleared, so a reload
-// brings it back. A draft read back is untrusted text, shown only as the text area's value.
+// the browser (kept.ts) until it is saved on the task (as a note, or as an Open's request), goes
+// on the clipboard, or is cleared, so a reload brings it back. A draft read back is untrusted text, shown only as the text area's value.
 //
 // An agent-only field asks through `askFor`: the request's stub ("Change the summary: ") goes into
 // the task's draft after what the person had written there, and the field takes focus. Nothing is
 // sent until the person acts.
-import type { Receipt } from "../api.ts";
 import type { AskField } from "../row/actions.ts";
 import { browserKept, onKept } from "../kept.ts";
 
@@ -51,80 +50,30 @@ export function keepNote(space: string, task: string, note: NoteRequest | undefi
   browserKept.keep(noteOf(space, task), note === undefined ? undefined : JSON.stringify(note));
 }
 
-/**
- * Where a launch's words are, now that Tasks holds them for its agent: `reached` once the agent
- * read them, `unread` when they went with a launch whose agent never read them, `kept` when the
- * launch failed or nothing is known of them any more (the service restarted since), undefined
- * while they wait. Only `reached` clears the field, and only `unread` says so.
- */
-export type Delivery = "reached" | "unread" | "kept" | undefined;
-
-export function delivered(receipt: Receipt): Delivery {
-  if (receipt.request === "read") return "reached";
-  if (receipt.state === "failed") return "kept";
-  if (receipt.request === "unread") return "unread";
-  if (receipt.request === "waiting") return undefined;
-  if (receipt.state === "prepared" || receipt.state === "dispatching") return undefined;
-  return "kept";
-}
-
-/**
- * The launches that carry a task's words, by receipt, until they settle. Kept with the draft, since
- * an agent may read them long after the click: a reload still clears what it read.
- */
-const carryOf = (space: string, task: string) => `carry.${space}.${task}`;
-
-/** The most launches kept for one task: one that never settles is let go after these. */
-const CARRIED_MAX = 16;
-
-function readCarrying(space: string, task: string): Map<string, string> {
-  const value = browserKept.json(carryOf(space, task));
-  const launches = new Map<string, string>();
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return launches;
-  for (const [receipt, words] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof words === "string" && words !== "" && words.length <= DRAFT_MAX) {
-      launches.set(receipt, words);
-    }
-  }
-  return launches;
-}
-
-function keepCarrying(space: string, task: string, launches: Map<string, string>): void {
-  const kept = [...launches].slice(-CARRIED_MAX);
-  browserKept.keep(
-    carryOf(space, task),
-    kept.length === 0 ? undefined : JSON.stringify(Object.fromEntries(kept)),
-  );
-}
-
-export function carry(space: string, task: string, receipt: string, words: string): void {
-  const launches = readCarrying(space, task);
-  launches.set(receipt, words);
-  keepCarrying(space, task, launches);
-}
-
-/** A launch that settled with the words it carried. */
-export interface Settled {
+/** Words an Open saved on a task: its request, or a note of the person's. */
+export interface Saved {
+  readonly space: string;
+  readonly task: string;
   readonly words: string;
-  readonly receipt: Receipt;
-  readonly delivery: Exclude<Delivery, undefined>;
 }
 
-/** The task's launches that settled, with their words; each one is let go. */
-export function settled(space: string, task: string, receipts: readonly Receipt[]): Settled[] {
-  const launches = readCarrying(space, task);
-  if (launches.size === 0) return [];
-  const done: Settled[] = [];
-  for (const receipt of receipts) {
-    const words = launches.get(receipt.id);
-    if (words === undefined) continue;
-    const delivery = delivered(receipt);
-    if (delivery === undefined) continue;
-    launches.delete(receipt.id);
-    done.push({ words, receipt, delivery });
-  }
-  if (done.length > 0) keepCarrying(space, task, launches);
-  return done;
+const savedListeners = new Set<(saved: Saved) => void>();
+
+/** A task's composer clears its field when an Open saved what it holds. */
+export function onSaved(listener: (saved: Saved) => void): () => void {
+  savedListeners.add(listener);
+  return () => {
+    savedListeners.delete(listener);
+  };
+}
+
+/**
+ * An Open saved `words` on the task, as Note does: the kept draft clears unless the person has
+ * typed on since, here or in another tab, and so does the field that shows them.
+ */
+export function savedWords(space: string, task: string, words: string): void {
+  if (wordsOf(readDraft(space, task)) === words) keepDraft(space, task, "");
+  for (const listener of savedListeners) listener({ space, task, words });
 }
 
 /** Another tab changed this task's draft. */

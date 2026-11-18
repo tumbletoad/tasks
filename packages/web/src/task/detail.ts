@@ -26,6 +26,8 @@ export interface DetailNote {
   readonly at: string;
   readonly text: string;
   readonly forAgents: boolean;
+  /** The launches this note was the person's request for, oldest first, by reference. */
+  readonly requestFor?: readonly { readonly launch: string; readonly instance: string }[];
 }
 
 export interface DetailLog {
@@ -92,6 +94,7 @@ export function mergePages(task: TaskFacts, pages: readonly Sections[], partial:
     at: n.at,
     text: n.text,
     forAgents: n.for_agents,
+    ...(n.request_for === undefined ? {} : { requestFor: n.request_for }),
   });
   const byTime = <E extends { at: string; ref: string }>(a: E, b: E) =>
     Date.parse(a.at) - Date.parse(b.at) || (a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : 0);

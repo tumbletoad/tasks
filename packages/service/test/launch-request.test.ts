@@ -210,15 +210,15 @@ async function addTask(r: Rig, folder: string): Promise<{ ref: string }> {
   })) as { tasks: { ref: string }[] };
   const task = added.tasks[0];
   if (task === undefined) throw new Error("no task");
-  await call(r, "folder.manage", { action: "set", task: task.ref, folder: join(r.lab.work, folder) });
+  await call(r, "folder.manage", {
+    action: "set",
+    task: task.ref,
+    folder: join(r.lab.work, folder),
+  });
   return task;
 }
 
-const open = async (
-  r: Rig,
-  input: Record<string, unknown>,
-  requestId = rid(),
-): Promise<Opened> =>
+const open = async (r: Rig, input: Record<string, unknown>, requestId = rid()): Promise<Opened> =>
   (await r.user.call(
     "op/call",
     { space: r.lab.spaceId, op: "launch.open", input: { ...input, request_id: requestId } },
@@ -608,7 +608,7 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
       await r.lab.waitIntent(result.launch.id, (i) => i.state === "dispatched", "Dispatched");
       const agent = await mcpAgent(r, folder);
       // An answer the agent never receives (a call it cancelled) is an answer like the next.
-      void (await agent.getTask({ launch: result.launch.reference }));
+      await agent.getTask({ launch: result.launch.reference });
       expect((await agent.getTask({ launch: result.launch.reference })).request).toEqual({
         note: result.note,
         text: words,
@@ -701,9 +701,9 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
       });
       expect(again).toMatchObject({ text: "request", note: result.note });
       expect(again.launch.id).not.toBe(result.launch.id);
-      expect((await notesOf(r, task.ref)).map((n) => n.request_for?.map((l) => l.launch))).toEqual(
-        [[result.launch.reference, again.launch.reference]],
-      );
+      expect((await notesOf(r, task.ref)).map((n) => n.request_for?.map((l) => l.launch))).toEqual([
+        [result.launch.reference, again.launch.reference],
+      ]);
 
       await call(r, "history.undo", {});
       expect(await notesOf(r, task.ref)).toEqual([]);
@@ -739,7 +739,9 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
       const r = await rig("request-refused");
       const task = await addTask(r, "folder-refused");
       const refusedWith = async (input: Record<string, unknown>): Promise<unknown> =>
-        errorOf(await open(r, { task: task.ref, text: "Fix it", ...input }).catch((e: unknown) => e));
+        errorOf(
+          await open(r, { task: task.ref, text: "Fix it", ...input }).catch((e: unknown) => e),
+        );
       expect(await refusedWith({ instance: "not-here" })).toMatchObject({
         data: { reason: "not_set_up" },
       });

@@ -2347,7 +2347,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // Open again with a request already on the task: a note the person wrote, as it is now.
     const requestNote = typeof input["request"] === "string" ? input["request"] : undefined;
     if (requestNote !== undefined) {
-      if (instance === undefined) throw invalid("request", "Copy takes no request note", "Pass instance.");
+      if (instance === undefined)
+        throw invalid("request", "Copy takes no request note", "Pass instance.");
       if (text !== undefined) throw invalid("request", "Pass text or request, not both");
       let body: string | undefined;
       try {

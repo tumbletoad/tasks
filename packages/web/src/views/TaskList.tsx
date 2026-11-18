@@ -21,7 +21,7 @@ import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { starChange, statusChange, triageChange } from "../edit/change.ts";
 import { useEditState, useEdits } from "../edit/useEdits.ts";
-import { askFor, carry } from "../task/composer.ts";
+import { askFor, savedWords } from "../task/composer.ts";
 import { areaSlots, groupTasks, type Group, type GroupTasks } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
@@ -508,26 +508,26 @@ export function TaskList({
       // gets it on the clipboard too.
       // A folder whose marker says it may be another one opens only when the person says so: the
       // toast asks, and its action opens it there and marks it. The composer's words stay in its
-      // field until then.
-      open: (task: TaskRow, instance: Instance, text?: string) => {
+      // field until then. Once the service saved them on the task the field clears, as for Note.
+      open: (task: TaskRow, instance: Instance, text?: string, request?: string) => {
         const launch = (markFolder: boolean): Promise<Receipt | undefined> => {
           watched.current.add(task.id);
           return api
             .openLaunch(task.id, instance.key, requestId(), {
               markFolder,
               ...(text === undefined ? {} : { text }),
+              ...(request === undefined ? {} : { request }),
             })
-            .then(async ({ receipt, copy }) => {
+            .then(async (opened) => {
+              const { receipt, copy } = opened;
               refuse(task.id, undefined);
               shown(task, receipt);
-              // The app takes the brief by paste: without it on the clipboard the words did not go.
-              if (copy !== undefined && !(await toClipboard(copy))) return undefined;
-              // Tasks holds the words for this launch's agent: the composer's field keeps them
-              // until it read them, also after "Open anyway".
               const space = live.spaceId;
-              if (text !== undefined && receipt.request !== undefined && space !== undefined) {
-                carry(space, task.id, receipt.id, text);
+              if (text !== undefined && space !== undefined && opened.note !== undefined) {
+                savedWords(space, task.id, text);
               }
+              // The app takes the brief by paste: without it on the clipboard nothing opens.
+              if (copy !== undefined && !(await toClipboard(copy))) return undefined;
               return receipt;
             })
             .catch((error: unknown) => {

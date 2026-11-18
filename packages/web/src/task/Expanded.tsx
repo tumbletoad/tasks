@@ -418,6 +418,9 @@ export function Expanded({ task, receipts, instances, actions, refused }: Expand
             receipts={receipts}
             instances={instances}
             partial={detail.partial}
+            onOpenAgain={(note, instance) => {
+              void actions.open(task, instance, undefined, note.ref);
+            }}
           />
         )}
         {failed && detail !== undefined ? (

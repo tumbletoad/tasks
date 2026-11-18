@@ -10,15 +10,13 @@
 // - FAKE_CLI_TASKS: `{"argv": [...], "home": "..."}`, the product's command and the install's home
 //   (TASKS_HOME): it reads the task as its brief says when the tools are missing, the brief's
 //   command with `--json` and without the launch's TASKS_SPACE, and its report holds the request it
-//   got, in hex, so a test finds the words nowhere else on disk, with the note that holds them.
-//   FAKE_CLI_UNREAD names a file of task references, one a line: on those tasks it reads nothing,
-//   as an agent without Tasks' tools or a shell.
+//   got, in hex, with the note that holds them.
 // - FAKE_CLI_HOLD_MS (default 4000), FAKE_CLI_RELEASE (a file whose existence ends it),
 //   FAKE_CLI_MAX_MS (default 120000) and FAKE_CLI_EXIT (default 0).
 // Its stdin is never read. No real agent, account or home is touched. Tests only.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** What the fake CLI writes to its report file. */
@@ -62,18 +60,10 @@ function briefOf(args: readonly string[]): { task: string; command: string[] } |
     : { task, command: command.split(" ") };
 }
 
-/** Whether the task is one this fake leaves unread (FAKE_CLI_UNREAD). */
-function leftUnread(task: string): boolean {
-  const list = env["FAKE_CLI_UNREAD"];
-  if (list === undefined || list === "" || !existsSync(list)) return false;
-  return readFileSync(list, "utf8").split(/\r?\n/u).includes(task);
-}
-
 /** `show --launch <reference> --json` through the product's command, as the brief says. */
 function readTask(spec: string): CliAgentReport["read"] {
   const brief = briefOf(argv);
   if (brief === undefined) return { code: null, error: "no_reference" };
-  if (leftUnread(brief.task)) return { code: null, error: "left_unread" };
   const { argv: command, home } = JSON.parse(spec) as { argv: string[]; home: string };
   const [file, ...rest] = command;
   if (file === undefined) return { code: null, error: "no_command" };

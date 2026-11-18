@@ -184,7 +184,8 @@ type Note = {
   readonly for_agents: boolean;
   readonly at: string;
   readonly text: string;
-  readonly request_for?: readonly { readonly launch: string; readonly instance: string }[] | undefined;
+  readonly request_for?:
+    readonly { readonly launch: string; readonly instance: string }[] | undefined;
   readonly cut?: number | undefined;
   readonly slice?: Slice | undefined;
 };

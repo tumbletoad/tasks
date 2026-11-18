@@ -118,10 +118,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   in the terminals Tasks opened, and `tasks doctor` warns of that.
 - The brief an agent gets when a task opens holds the task's reference, not its title, notes or
   sources. Copy's words too long for it are kept as a note, never cut.
-- What you type before Open never goes on a command line or into a link. Tasks keeps it on this
-  computer, in its own launch folder, until the agent's window closes, or for an app opened by a
-  link until the launch is a day old. The agent reads it with the task, and it stays in the field
-  until the agent did.
+- What you type before Open never goes on a command line or into a link. It is saved on the task
+  at the click, as your request to that agent, before anything starts: a launch that fails or a
+  Tasks that stops does not lose it, and one undo takes it back. The agent reads it with the task.
 - Tasks never changes another app's trust or approval settings.
 
 ## Background runs
@@ -183,6 +182,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   other has. A restore over a space, or a claim of a copy, goes on from the backup's counter when
   the earlier space's database cannot be read at all.
 - A command repeated without its request ID is a new change: a note added twice is there twice.
+- What you typed before Open is a note on the task: every agent that loads the task later reads it,
+  marked as the request of that launch, and backups and exports hold it. Undo takes it back while
+  it is your newest change; the page has no way yet to remove an older note.
 - Backups and exports are not encrypted. Their protection is that of the disk they are on.
 - Backups sit beside the space on the same disk unless you set another folder for them or copy an
   export elsewhere. A lost disk then loses them with the space.
