@@ -185,6 +185,50 @@ describe("[A7.3.12.m5-14.folders-list] The chooser lists folders by name, bounde
     expect(looks).toBe(1);
   });
 
+  it("a folder whose read stopped answering is not read again while that read is on its way", async () => {
+    let reads = 0;
+    const base = fakeFs(
+      { "/mnt/share": { a: "dir", b: "dir", c: "dir" } },
+      { slow: ["/mnt/share"] },
+    );
+    const fs: ListFs = {
+      ...base,
+      entries: (path) => {
+        reads += 1;
+        return base.entries(path);
+      },
+    };
+    const verbs = pageFolderVerbs({
+      ops: { machine: { id: "m_x" }, spaces: () => [], platform: "linux", home: "/home/mira" },
+      fs,
+      ms: 50,
+    });
+    expect(names((await verbs.list({ path: "/mnt/share/" }, "ui")) as Listing)).toEqual(["a", "b"]);
+    expect(await verbs.list({ path: "/mnt/share/b" }, "ui")).toMatchObject({
+      reason: "not_answering",
+    });
+    expect(reads).toBe(1);
+  });
+
+  it("looks only at the links it would show", async () => {
+    const tree: Record<string, Kind> = {};
+    for (let k = 0; k < 50; k += 1) tree[`l${String(k).padStart(2, "0")}`] = "link-dir";
+    const base = fakeFs({ "/data": tree });
+    let looks = 0;
+    const fs: ListFs = {
+      ...base,
+      isFolder: (path) => {
+        looks += 1;
+        return base.isFolder(path);
+      },
+    };
+    const listing = await listFolders("/data/", linux(fs, { showMax: 10 }));
+    expect(names(listing)).toHaveLength(10);
+    expect(listing).toMatchObject({ more: true });
+    // The folder itself, and the ten links shown.
+    expect(looks).toBe(11);
+  });
+
   it("on Linux a folder whose name ends in a backslash is that folder, not its sibling", async () => {
     const fs = fakeFs({
       "/home/mira": { "draft\\": "dir", draft: "dir" },

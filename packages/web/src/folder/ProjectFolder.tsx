@@ -25,13 +25,19 @@ export function ProjectFolder({ project }: { readonly project: string }) {
   const name = useLive().projects.get(project)?.title ?? "";
   const [view, setView] = useState<ProjectFolderView | "failed">();
   const [choosing, setChoosing] = useState(false);
+  // Where the feed was when the folder shown was read: its Change and Clear go with this base, so
+  // a folder set elsewhere since, still on its way here, is not replaced unseen.
+  const [base, setBase] = useState<string>();
   const reads = useRef(new Latest());
 
   const load = useCallback(() => {
     const newest = reads.current.begin(project);
+    const at = live.store.asOf;
     api.projectFolder(project).then(
       (found) => {
-        if (newest()) setView(found);
+        if (!newest()) return;
+        setView(found);
+        setBase(at);
       },
       (error: unknown) => {
         if (!live.failed(error) && newest()) setView("failed");
@@ -56,7 +62,7 @@ export function ProjectFolder({ project }: { readonly project: string }) {
   const here = view === undefined || view === "failed" ? undefined : view.here;
   const elsewhere = view === undefined || view === "failed" ? [] : view.elsewhere;
   const clear = () => {
-    writes.clearProject(project).then(load, (error: unknown) => {
+    writes.clearProject(project, base).then(load, (error: unknown) => {
       if (!live.failed(error)) say(refusalText(error, t("folder.notCleared")));
     });
   };
@@ -141,6 +147,7 @@ export function ProjectFolder({ project }: { readonly project: string }) {
               ? {}
               : { lead: t("folder.moveLead") })}
           start={here?.folder ?? ""}
+          base={base}
           owner={project}
           onClose={() => {
             setChoosing(false);

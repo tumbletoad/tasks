@@ -33,10 +33,21 @@ export function refusalText(error: unknown, fallback: string): string {
   return fallback;
 }
 
-/** A refusal because someone changed what the write covers after the dialog opened. */
-function changedSince(error: unknown): boolean {
-  const { code, data } = (error ?? {}) as { code?: unknown; data?: { cause?: unknown } };
-  return code === "conflict" && data?.cause === "VERSION_CONFLICT";
+/**
+ * A refusal because someone changed the folder after it was read: where the service found the
+ * change, and the folder there now when it says.
+ */
+function changedSince(error: unknown): { asOf?: string; now?: string } | undefined {
+  const { code, data } = (error ?? {}) as {
+    code?: unknown;
+    data?: { cause?: unknown; as_of?: unknown; conflicts?: { field?: unknown; value?: unknown }[] };
+  };
+  if (code !== "conflict" || data?.cause !== "VERSION_CONFLICT") return undefined;
+  const now = data.conflicts?.find((c) => c.field === "path")?.value;
+  return {
+    ...(typeof data.as_of === "string" ? { asOf: data.as_of } : {}),
+    ...(typeof now === "string" ? { now } : {}),
+  };
 }
 
 /**
@@ -70,6 +81,7 @@ export function FolderDialog({
   title,
   lead,
   start,
+  base: read,
   onClose,
   onChoose,
   owner,
@@ -78,11 +90,10 @@ export function FolderDialog({
   readonly lead?: string;
   /** The text the field starts with: the folder there is now, or empty. */
   readonly start: string;
+  /** Where the feed was when `start` was read: by default, where it is when the dialog opens. */
+  readonly base?: string | undefined;
   readonly onClose: () => void;
-  /**
-   * Writes the folder with `base`, what the page showed when the dialog opened: resolves when it
-   * is done, or rejects with the refusal.
-   */
+  /** Writes the folder with `base`: resolves when it is done, or rejects with the refusal. */
   readonly onChoose: (folder: string, base: string | undefined) => Promise<void>;
   /** The project the folder is chosen for: its own folder is no other project's. */
   readonly owner?: string;
@@ -94,9 +105,9 @@ export function FolderDialog({
   const [look, setLook] = useState<FolderLook>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  // A folder set elsewhere while the dialog is open is not replaced unseen: the first Use says so,
-  // and the next one replaces it.
-  const [base, setBase] = useState(() => live.store.asOf);
+  // A folder set elsewhere since it was read is not replaced unseen: the first Use says what is
+  // there now, and the next one replaces that.
+  const [base, setBase] = useState(() => read ?? live.store.asOf);
   const folder = chosenFolder(text);
 
   const submit = (event: SyntheticEvent) => {
@@ -105,9 +116,14 @@ export function FolderDialog({
     setBusy(true);
     setError(undefined);
     onChoose(folder, base).then(onClose, (failed: unknown) => {
-      if (changedSince(failed)) {
-        setBase(live.store.asOf);
-        setError(t("folder.changedElsewhere"));
+      const changed = changedSince(failed);
+      if (changed !== undefined) {
+        setBase(changed.asOf ?? live.store.asOf);
+        setError(
+          changed.now === undefined
+            ? t("folder.changedElsewhere")
+            : t("folder.changedTo", { folder: changed.now }),
+        );
       } else setError(refusalText(failed, t("folder.notSet")));
       setBusy(false);
     });

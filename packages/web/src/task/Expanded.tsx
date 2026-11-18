@@ -180,10 +180,13 @@ function keyRef(kind: string, key: string): string | undefined {
 function PlaceLine({
   task,
   detail,
+  base,
   refused,
 }: {
   readonly task: TaskRow;
   readonly detail: Detail | undefined;
+  /** Where the feed was when `detail` was read: a folder it shows is changed or cleared from it. */
+  readonly base: string | undefined;
   /** An Open refused on the folder since the detail was read: what it found is the newer word. */
   readonly refused: FolderRefusal | undefined;
 }) {
@@ -221,7 +224,7 @@ function PlaceLine({
           className={line.act}
           data-quiet
           onPress={() => {
-            writes.clearTask(task).catch((error: unknown) => {
+            writes.clearTask(task, base).catch((error: unknown) => {
               say(refusalText(error, t("folder.notCleared")));
             });
           }}
@@ -241,6 +244,7 @@ function PlaceLine({
         ? { lead: t("folder.taskLead") }
         : {})}
       start={own?.path ?? ""}
+      base={base}
       onClose={() => {
         setChoosing(false);
       }}
@@ -409,7 +413,7 @@ function Context({
 export function Expanded({ task, receipts, instances, actions, refused }: ExpandedProps) {
   const t = useT();
   const clock = useClock(false);
-  const { detail, failed } = useDetail(task.id);
+  const { detail, base, failed } = useDetail(task.id);
   // A refusal holds until the detail is read again: that read says where the folder stands then.
   const [held, setHeld] = useState<{ refused: FolderRefusal; detail: Detail | undefined }>();
   if (refused !== held?.refused) setHeld(refused === undefined ? undefined : { refused, detail });
@@ -461,7 +465,12 @@ export function Expanded({ task, receipts, instances, actions, refused }: Expand
               onAsk={askOn(ask, task, "sources")}
             />
           ))}
-          <PlaceLine task={task} detail={detail} refused={fresh ? refused : undefined} />
+          <PlaceLine
+            task={task}
+            detail={detail}
+            base={base}
+            refused={fresh ? refused : undefined}
+          />
           {learnings.map((learning, i) => (
             <li
               key={`learning:${String(i)}`}

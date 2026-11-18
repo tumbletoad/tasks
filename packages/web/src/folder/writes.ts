@@ -60,12 +60,12 @@ function said(input: FolderInput, result: FolderResult | WriteReceipt): Msg | un
   };
 }
 
-/** `base`: what the dialog showed when it opened, so a change made since is a conflict. */
+/** `base`: where the feed was when the folder shown was read, so a change made since is a conflict. */
 export interface FolderWrites {
   setTask(task: { readonly ref: string }, folder: string, base?: string): Promise<Written>;
-  clearTask(task: { readonly ref: string }): Promise<Written>;
+  clearTask(task: { readonly ref: string }, base?: string): Promise<Written>;
   setProject(project: string, folder: string, base?: string): Promise<Written>;
-  clearProject(project: string): Promise<Written>;
+  clearProject(project: string, base?: string): Promise<Written>;
   /** A project for `folder` (none: a project without a folder) in the area named `area`. */
   addProject(input: {
     readonly folder?: string;
@@ -95,9 +95,9 @@ export function folderWrites(client: Client, edits: Pick<Edits, "write">): Folde
       }));
   return {
     setTask: (task, folder, base) => manage({ action: "set", task: task.ref, folder }, base),
-    clearTask: (task) => manage({ action: "clear", task: task.ref }),
+    clearTask: (task, base) => manage({ action: "clear", task: task.ref }, base),
     setProject: (project, folder, base) => manage({ action: "set", project, folder }, base),
-    clearProject: (project) => manage({ action: "clear", project }),
+    clearProject: (project, base) => manage({ action: "clear", project }, base),
     addProject: ({ folder, name, area }) => {
       if (folder !== undefined) {
         return manage({

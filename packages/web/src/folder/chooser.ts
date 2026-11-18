@@ -61,9 +61,11 @@ export function choicesOf(listing: FolderListing | undefined, make: boolean): Ch
 
 /**
  * The folder a field's text names, as typed: the service drops a trailing separator by the rules
- * of its own system, where a `\` can be part of a Linux folder's name. Undefined for an empty text.
+ * of its own system, where a `\` can be part of a Linux folder's name. A drive letter alone is its
+ * root, as the chooser lists it. Undefined for an empty text.
  */
 export function chosenFolder(text: string): string | undefined {
   const trimmed = text.trim();
+  if (/^[A-Za-z]:$/u.test(trimmed)) return `${trimmed}\\`;
   return trimmed === "" ? undefined : trimmed;
 }

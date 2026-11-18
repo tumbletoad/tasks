@@ -23,8 +23,11 @@ import { repoName } from "./repo.ts";
 
 /** What the chooser reads of the disk: tests give a slow or strange one. */
 export interface ListFs {
-  /** The entries of a folder, in the order the OS gives them. */
-  entries(path: string): AsyncIterable<{
+  /** The entries of a folder, in the order the OS gives them; none once `deadline` is past. */
+  entries(
+    path: string,
+    deadline?: number,
+  ): AsyncIterable<{
     readonly name: string;
     isDirectory(): boolean;
     isSymbolicLink(): boolean;
@@ -57,8 +60,30 @@ export function nodeListFs(platform: NodeJS.Platform): ListFs {
  */
 export function sharedLooks(fs: ListFs): ListFs {
   const pending = new Map<string, Promise<boolean>>();
+  const reading = new Map<string, Promise<void>>();
   return {
     ...fs,
+    // One read of a folder at a time: a later one waits for the earlier to end, and gives up
+    // without reading once its own time is past.
+    entries: async function* (path, deadline) {
+      for (let busy = reading.get(path); busy !== undefined; busy = reading.get(path)) {
+        await busy;
+        if (deadline !== undefined && Date.now() > deadline) return;
+      }
+      let done = (): void => undefined;
+      reading.set(
+        path,
+        new Promise<void>((resolve) => {
+          done = resolve;
+        }),
+      );
+      try {
+        yield* fs.entries(path, deadline);
+      } finally {
+        reading.delete(path);
+        done();
+      }
+    },
     isFolder: (path) => {
       const found = pending.get(path);
       if (found !== undefined) return found;
@@ -266,7 +291,7 @@ export async function listFolders(text: string, facts: ListFacts): Promise<Listi
   const read = { count: 0, started: false };
   const scan = bounded(async (): Promise<FolderReason | undefined> => {
     try {
-      for await (const entry of facts.fs.entries(form.absolute)) {
+      for await (const entry of facts.fs.entries(form.absolute, deadline)) {
         read.started = true;
         read.count += 1;
         if (read.count > scanMax || Date.now() > deadline) {
@@ -294,21 +319,23 @@ export async function listFolders(text: string, facts: ListFacts): Promise<Listi
 
   const join = (name: string) =>
     `${form.absolute.endsWith(sep) ? form.absolute : form.absolute + sep}${name}`;
-  // A link is listed only when it leads to a folder: its target is looked at, never listed.
-  const links = found.filter((f) => f.link);
+  found.sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }),
+  );
+  const showMax = facts.showMax ?? SHOW_MAX;
+  if (found.length > showMax) more = true;
+  const shown = found.slice(0, showMax);
+  // A link is listed only when it leads to a folder: its target is looked at, never listed. Only
+  // the links that would be shown are looked at.
+  const links = shown.filter((f) => f.link);
   const leads = await Promise.all(
     links.map((f) => bounded(() => facts.fs.isFolder(join(f.name)).catch(() => false), left())),
   );
   const dead = new Set(links.filter((_, k) => leads[k] !== true).map((f) => f.name));
-  const kept = found.filter((f) => !dead.has(f.name));
-  kept.sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }),
-  );
-  const showMax = facts.showMax ?? SHOW_MAX;
-  if (kept.length > showMax) more = true;
+  const kept = shown.filter((f) => !dead.has(f.name));
   const projects = facts.projects ?? [];
   const storedOf = (name: string) => `${at}${name}`;
-  const folders: Listed[] = kept.slice(0, showMax).map((f) => {
+  const folders: Listed[] = kept.map((f) => {
     const project = projectOf(storedOf(f.name), projects, os);
     return {
       name: f.name,
