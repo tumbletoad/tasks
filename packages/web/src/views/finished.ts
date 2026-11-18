@@ -12,8 +12,8 @@ export interface FinishedCounts {
   readonly more: boolean;
 }
 
-const PAGE = 200;
-const PAGES = 5;
+/** The reads' sizes: a usual week fits the first, small one. */
+const PAGES = [50, 200, 200, 200, 200, 200] as const;
 
 /**
  * Counts the tasks completed on `today` and since `since` (a `YYYY-MM-DD` on the viewer's
@@ -28,8 +28,8 @@ export async function countFinished(
   let onToday = 0;
   let inWeek = 0;
   let cursor: string | undefined;
-  for (let page = 0; page < PAGES; page += 1) {
-    const found = await read({ limit: PAGE, ...(cursor === undefined ? {} : { cursor }) });
+  for (const limit of PAGES) {
+    const found = await read({ limit, ...(cursor === undefined ? {} : { cursor }) });
     for (const item of found.rows) {
       const row = taskRow(item);
       if (row === undefined) continue;

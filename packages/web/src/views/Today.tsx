@@ -113,24 +113,37 @@ export function TodayPage({ task, onExpand }: TodayProps) {
 
 /**
  * The tasks completed today and this week, read again when a task is finished or reopened, after
- * a fresh snapshot, and when the day changes. Only the newest read applies; until the first answer
- * there is none, and a failed read keeps the last answer.
+ * a fresh snapshot, and when the day changes. One read at a time: changes while it runs ask for
+ * one more after it, so a burst of completions costs two reads. Until the day's first answer there
+ * is none, and a failed read keeps the last answer of the same day.
  */
 function useFinished(clock: Clock): FinishedCounts | undefined {
   const { api, live } = useContext(Session);
-  const [counts, setCounts] = useState<FinishedCounts | undefined>(undefined);
   const { today, timeZone } = clock;
+  const day = `${live.spaceId ?? ""} ${today} ${timeZone}`;
+  const [found, setFound] = useState<{ day: string; counts: FinishedCounts } | undefined>();
   useEffect(() => {
     let alive = true;
-    let asked = 0;
+    let reading = false;
+    let again = false;
     const read = () => {
-      asked += 1;
-      const mine = asked;
+      if (reading) {
+        again = true;
+        return;
+      }
+      reading = true;
+      again = false;
       countFinished((input) => api.client.task.finished(input), weekStartOf(today), today, timeZone)
-        .then((found) => {
-          if (alive && mine === asked) setCounts(found);
-        })
-        .catch(() => undefined);
+        .then(
+          (counts) => {
+            if (alive && !again) setFound({ day, counts });
+          },
+          () => undefined,
+        )
+        .finally(() => {
+          reading = false;
+          if (alive && again) read();
+        });
     };
     read();
     const stop = live.store.onChanges(({ changes, reset }) => {
@@ -140,8 +153,8 @@ function useFinished(clock: Clock): FinishedCounts | undefined {
       alive = false;
       stop();
     };
-  }, [api, live, today, timeZone]);
-  return counts;
+  }, [api, live, today, timeZone, day]);
+  return found?.day === day ? found.counts : undefined;
 }
 
 /** Today's date, then the day's numbers, each a link to the page that lists what it counts. */

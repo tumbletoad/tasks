@@ -320,6 +320,30 @@ describe("[A5.3.4.web.today-page] Today's date, numbers and sections in a DOM", 
     expect(finishedReads).toBe(reads + 1);
   });
 
+  test("tasks finished in a burst cost one more read, and its answer is the one shown", async () => {
+    let release: () => void = () => undefined;
+    finishedGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    await mount(<TodayPage onExpand={() => undefined} />);
+    apply(snapshot(TASKS));
+    finished = [done(2, NOW), done(3, NOW)];
+    for (const n of [1, 2]) {
+      apply(
+        agentUpdate(
+          [{ ...(TASKS[n] as TaskRow), lifecycle: "completed", version: 2 }],
+          ["lifecycle"],
+        ),
+      );
+    }
+    expect(finishedReads).toBe(1);
+    release();
+    await settle();
+    await settle();
+    expect(finishedReads).toBe(2);
+    expect(numbers().at(-1)?.[1]).toBe("Done this week: 2, 2 today");
+  });
+
   test("a tab that wakes on a later day moves on to it when it is shown again", async () => {
     await mount(<TodayPage onExpand={() => undefined} />);
     apply(snapshot([...TASKS, task(6, { title: "Pay the deposit", due_date: "2026-11-19" })]));

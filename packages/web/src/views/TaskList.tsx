@@ -634,8 +634,8 @@ export function TaskList({
       // the toast names that computer for a page looked at through a forwarded port.
       folder: (task) => {
         api.showFolder(task.id).then(
-          ({ machine }) => {
-            say(t("row.folderShown", { machine: machine ?? "" }));
+          ({ opened, machine }) => {
+            say(t("row.folderShown", { machine: machine ?? "", opened: opened ? "yes" : "no" }));
           },
           (error: unknown) => {
             if (live.failed(error)) return;

@@ -535,18 +535,17 @@ a + .muted,
   box-shadow: inset 0 0 0 1px var(--k-line-strong);
 }
 
+/* A long status name wraps rather than being cut: two cut names could read the same. */
 .segButton {
   min-width: 0;
-  height: 26px;
-  padding: 0 4px;
-  overflow: hidden;
+  min-height: 26px;
+  padding: 2px 4px;
   border: 0;
   border-radius: 4px;
   background: transparent;
   font-size: 0.75rem;
-  line-height: 26px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
   color: var(--k-muted);
   cursor: pointer;
 }

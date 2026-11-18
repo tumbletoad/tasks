@@ -328,9 +328,19 @@ export class Api {
    * Shows the task's folder in the file manager of the computer the service runs on, which the
    * answer names. The service reads the folder from the task.
    */
-  async showFolder(task: string): Promise<{ readonly machine: string | undefined }> {
-    const reply = await this.#result<{ machine?: unknown }>("/api/v1/launch/folder", { task });
-    return { machine: typeof reply.machine === "string" ? reply.machine : undefined };
+  async showFolder(task: string): Promise<{
+    readonly opened: boolean;
+    readonly machine: string | undefined;
+  }> {
+    const reply = await this.#result<{ result?: unknown; machine?: unknown }>(
+      "/api/v1/launch/folder",
+      { task },
+    );
+    return {
+      // "unknown": the file manager was asked and did not say whether it opened the folder.
+      opened: reply.result === "opened",
+      machine: typeof reply.machine === "string" ? reply.machine : undefined,
+    };
   }
 
   async receipts(task: string): Promise<Receipt[]> {

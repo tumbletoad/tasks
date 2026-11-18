@@ -114,7 +114,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
     await large.machine("ui.theme", null);
   });
 
-  test("the facts hold their block with two, four and six statuses and effort keys", async ({
+  test("the facts hold their block with two, four and six statuses and effort keys, and long names whole", async ({
     page,
   }) => {
     test.setTimeout(600_000);
@@ -128,6 +128,11 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
       {
         statuses: ["open", "waiting", "review", "backlog", "blocked", "someday"],
         efforts: ["XS", "S", "M", "L", "XL", "XXL"],
+      },
+      // Long names that start alike: each is read whole.
+      {
+        statuses: ["open", "waiting-for-client", "waiting-for-review", "backlog"],
+        efforts: ["S", "M", "L"],
       },
     ];
     for (const scale of scales) {
@@ -147,6 +152,15 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
         await expect(effort.getByRole("radio")).toHaveCount(scale.efforts.length);
         // Statuses in one row up to four, else in even rows of three: never one left alone.
         expect(await rows(statuses)).toBe(scale.statuses.length <= 4 ? 1 : 2);
+        // No option's name is cut.
+        const cut = await statuses
+          .getByRole("radio")
+          .evaluateAll((cells) =>
+            cells
+              .filter((c) => c.scrollWidth > c.clientWidth || c.scrollHeight > c.clientHeight)
+              .map((c) => c.textContent),
+          );
+        expect(cut).toEqual([]);
         // Priority's options sit over effort's.
         const p = await edges(priority);
         const e = await edges(effort);
@@ -157,7 +171,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
           ).toBeLessThanOrEqual(1);
         }
         await facts.screenshot({
-          path: test.info().outputPath(`owner-facts-${String(scale.statuses.length)}.png`),
+          path: test.info().outputPath(`owner-facts-${scale.statuses.join("-")}.png`),
         });
       } finally {
         await world.close();
