@@ -11,8 +11,9 @@
 //   never by consecutive `seq` values, because a filtered feed leaves out commits.
 // - A batch wholly at or behind the cursor is a repeat: nothing happens.
 // - A gap (`from` beyond the cursor), another epoch or incarnation, a withheld row (`row: null`
-//   for a task, area or project: A5 3.15), a changed preference (its value comes with a snapshot)
-//   or a batch the page cannot read asks for a fresh snapshot. Until it arrives, every batch waits for it and is dropped; the rows stay on screen.
+//   for a task, area or project: A5 3.15), a changed status or effort scale (its value comes with
+//   a snapshot) or a batch the page cannot read asks for a fresh snapshot. Until it arrives, every
+//   batch waits for it and is dropped; the rows stay on screen.
 // - Each batch applies whole or not at all: it is checked first, then applied.
 // - The one value the core works out itself is a task's `touched` when a child row of it (a note,
 //   a log entry, a source) changed: A1 3.5 makes it the commit's seq, and the feed carries the
@@ -56,6 +57,9 @@ export interface Change {
 }
 
 export type ResnapshotReason = "gap" | "authority" | "withheld" | "unreadable" | "preference";
+
+/** The preferences the page holds the value of (`Scales`); the others it does not read. */
+const SCALE_KEYS: ReadonlySet<string> = new Set(["tasks.statuses", "tasks.effort_scale"]);
 
 export type Outcome =
   /** A snapshot replaced the working set. */
@@ -196,8 +200,10 @@ export class LiveCore {
       last = event.seq;
       if (event.seq <= cursor.seq) continue;
       for (const entity of event.entities) {
-        // A preference comes without its value: a snapshot carries it.
-        if (entity.type === "preference") return this.#ask("preference");
+        // A scale's preference comes without its value: a snapshot carries it.
+        if (entity.type === "preference" && SCALE_KEYS.has(entity.id)) {
+          return this.#ask("preference");
+        }
         if (!isRowType(entity.type)) continue;
         if (entity.row === null) return this.#ask("withheld");
         const row = ROW_OF[entity.type](entity.row);

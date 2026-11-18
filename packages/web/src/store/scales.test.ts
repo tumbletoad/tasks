@@ -72,5 +72,26 @@ describe("[A5.3.7.web.scales] the space's statuses and effort scale reach the pa
       ) as SnapshotMessage,
     );
     expect(core.publish()?.scales.statuses).toEqual(["open", "done"]);
+    // Another preference changes nothing the page shows: the batch applies, with no snapshot.
+    const other = core.receive({
+      type: "batch",
+      space_id: SPACE.id,
+      epoch: CURSOR.epoch,
+      incarnation: CURSOR.incarnation,
+      from: CURSOR.seq,
+      through: CURSOR.seq + 1,
+      events: [
+        {
+          seq: CURSOR.seq + 1,
+          request_id: "r2",
+          actor: { kind: "human", label: "Mira" },
+          kind: "pref.set",
+          entities: [
+            { type: "preference", id: "today.next_limit", row: null, changed: [], created: false },
+          ],
+        },
+      ],
+    });
+    expect(other.kind).not.toBe("resnapshot");
   });
 });
