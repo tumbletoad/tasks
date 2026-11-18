@@ -26,11 +26,12 @@ import {
   expectStatus,
   fixtureCopies,
   MACHINE,
-  writeFixture,
   type Fixture,
 } from "./write-helpers.ts";
 
 const temp = tempFolders("dedupe");
+/** The fixture space, made once and copied for each test. */
+const fixture = fixtureCopies(temp.make);
 afterAll(temp.cleanup);
 
 const DAY = 86_400_000;
@@ -226,7 +227,7 @@ async function rawSet(
 
 describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sources", () => {
   beforeEach(async () => {
-    fx = await writeFixture(temp.make());
+    fx = await fixture();
     // After the fixture's own commits, so every commit instant comes from this clock.
     clock.now = Date.UTC(2026, 10, 13, 8);
     fx.reopen({ now: tick });
@@ -1213,7 +1214,7 @@ describe("[A1.5.write.dedupe-sessions] overlapping keys from several sessions", 
 
 describe("[A1.5.write.dedupe-lifecycle] dedupe sees the request's archive, wrap-up, delete and restore", () => {
   beforeEach(async () => {
-    fx = await writeFixture(temp.make());
+    fx = await fixture();
     clock.now = Date.UTC(2026, 10, 13, 8);
     fx.reopen({ now: tick });
   });
