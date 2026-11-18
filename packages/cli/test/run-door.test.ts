@@ -19,8 +19,8 @@ import {
   waitFor,
 } from "@tasks/service/test/harness";
 import { classSession } from "@tasks/service/test/ops-helpers";
-import { FINAL_RUN_STATES } from "@tasks/contracts/runs";
-import { RunMachine } from "@tasks/runs";
+import { FINAL_RUN_STATES, type RunRecord } from "@tasks/contracts/runs";
+import { RunMachine, type RunEnd } from "@tasks/runs";
 import { newId, type Id } from "@tasks/storage";
 import { seedMira } from "@tasks/testkit";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
@@ -265,18 +265,32 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
   });
 
   test("a run's right to use its space ends when the run does, not once its record is read again", async () => {
-    // Every read of the run once it is final says whether its calls could still use the space.
+    // Each time the store says the run is final, its end recorded or read, the run's calls may
+    // no longer use the space.
     const after: boolean[] = [];
     let id = "";
+    const look = (record: RunRecord | undefined): void => {
+      if (record?.id === id && FINAL.has(record.state)) {
+        after.push(service?.ops.homes?.may("codex", spaceId, id) ?? false);
+      }
+    };
     const read = Reflect.get<RunMachine, "read">(RunMachine.prototype, "read");
-    const spy = vi.spyOn(RunMachine.prototype, "read").mockImplementation(async function (
+    const settle = Reflect.get<RunMachine, "settle">(RunMachine.prototype, "settle");
+    const reads = vi.spyOn(RunMachine.prototype, "read").mockImplementation(async function (
       this: RunMachine,
       run: string,
     ) {
       const record = await read.call(this, run);
-      if (run === id && record !== undefined && FINAL.has(record.state)) {
-        after.push(service?.ops.homes?.may("codex", spaceId, id) ?? false);
-      }
+      look(record);
+      return record;
+    });
+    const settles = vi.spyOn(RunMachine.prototype, "settle").mockImplementation(async function (
+      this: RunMachine,
+      run: string,
+      end: RunEnd,
+    ) {
+      const record = await settle.call(this, run, end);
+      look(record);
       return record;
     });
     try {
@@ -294,10 +308,11 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
       );
       expect(done.state).toBe("succeeded");
     } finally {
-      spy.mockRestore();
+      reads.mockRestore();
+      settles.mockRestore();
     }
-    expect(after.length).toBeGreaterThan(0);
     expect(after).not.toContain(true);
+    expect(after.length).toBeGreaterThan(1);
   });
 
   test("a retry with the same request ID starts nothing twice", async () => {

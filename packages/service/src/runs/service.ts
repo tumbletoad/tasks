@@ -469,6 +469,8 @@ export class RunService {
    * calls may use that space whether or not its home was set up for it.
    */
   allows(instance: string, space: string, run: string): boolean {
+    // The right ends as the run's end is recorded, before anyone can read that end.
+    if (this.#lanes.get(space)?.host.running(run) !== true) return false;
     for (const ticket of this.#tickets.values()) {
       if (ticket.run === run && ticket.instance === instance && ticket.space === space) {
         return true;
