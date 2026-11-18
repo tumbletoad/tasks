@@ -6,6 +6,8 @@
 //
 // It runs as `node fake-codex.ts app-server` in the task's folder, as the instance's program.
 // Fixture data only. Tests only.
+// First: this script ends through process.exit.
+import "../../packages/bridge/src/safe-exit.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { ADDED } from "../../packages/launch/src/index.ts";
