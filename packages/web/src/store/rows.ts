@@ -216,7 +216,8 @@ export const DEFAULT_SCALES: Scales = {
   efforts: ["S", "M", "L"],
 };
 
-const SCALE_KEY = /^[A-Za-z0-9_-]{1,40}$/;
+/** A status or effort key as the preference allows it (contracts' `STATUS_KEY`). */
+const SCALE_KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
 
 /** A list of keys read from a preference's value: undefined unless every item is one. */
 function keysOf(value: unknown, item: (v: unknown) => unknown): string[] | undefined {

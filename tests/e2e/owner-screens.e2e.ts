@@ -22,8 +22,16 @@ async function open(page: Page, world: World, path: string): Promise<void> {
     await page.goto(await world.signInUrl(to));
     signedIn.add(page.context());
   }
-  await showsSpace(page, world.mira.name);
+  // Narrow, the space's name is in the drawer: the page is there once its Menu is.
+  if ((page.viewportSize()?.width ?? 1440) < 1024) {
+    await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
+  } else await showsSpace(page, world.mira.name);
 }
+
+/** The space's `as_of` now, for a write's base. */
+const asOf = async (world: World): Promise<string> =>
+  ((await world.op(world.mira.id, "task.get", { task: world.task.ref })) as { as_of: string })
+    .as_of;
 
 /** How far the page scrolls sideways: none is wanted. */
 const sideways = (page: Page) =>
@@ -126,14 +134,13 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
     ];
     try {
       for (const scale of scales) {
-        const status = (await large.op(large.mira.id, "space.status", {})) as { as_of: string };
         await large.op(large.mira.id, "prefs.manage", {
           action: "set",
           set: [
             { key: "tasks.statuses", value: scale.statuses },
             { key: "tasks.effort_scale", value: scale.efforts },
           ],
-          base: status.as_of,
+          base: await asOf(large),
         });
         await open(page, large, "open");
         const first = page.locator("main li[data-key]").first();
@@ -163,14 +170,13 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
         });
       }
     } finally {
-      const status = (await large.op(large.mira.id, "space.status", {})) as { as_of: string };
       await large.op(large.mira.id, "prefs.manage", {
         action: "set",
         set: [
           { key: "tasks.statuses", value: null },
           { key: "tasks.effort_scale", value: null },
         ],
-        base: status.as_of,
+        base: await asOf(large),
       });
     }
   });

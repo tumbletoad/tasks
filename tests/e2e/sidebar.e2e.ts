@@ -148,12 +148,10 @@ test.describe("[A5.3.3.e2e.sidebar-folds] an area folds in the side menu and cou
 
     // A long project name is cut in the menu, and its tip shows all of it.
     const long = `A project whose name is far too long for the menu (${test.info().project.name})`;
-    const status = (await world.op(world.mira.id, "space.status", {})) as { as_of: string };
-    await world.op(world.mira.id, "group.manage", {
-      action: "create",
-      path: `Home/${long}`,
-      base: status.as_of,
-    });
+    const base = (
+      (await world.op(world.mira.id, "task.get", { task: world.task.ref })) as { as_of: string }
+    ).as_of;
+    await world.op(world.mira.id, "group.manage", { action: "create", path: `Home/${long}`, base });
     const item = sidebar(page).getByRole("link", {
       name: new RegExp(`^${long.replace(/[()]/g, "\\$&")}`),
     });
