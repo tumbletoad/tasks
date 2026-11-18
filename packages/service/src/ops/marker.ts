@@ -186,15 +186,27 @@ async function removeOwnerNow(
  * What identifies the folder itself, whatever its path: its volume, its file number and the
  * instant it was made. A rename keeps them and so does `git clean`; a folder made again at the path
  * (a fresh clone, a checkout moved aside and another made) has others on Windows and Linux alike.
- * Undefined when it cannot be read.
+ * Undefined when it cannot be read, or when the file system keeps no creation time (zero) or no
+ * file number that fits (zero, or all ones on ReFS): an inode used again could then pass.
  */
 export async function identityOf(open: string): Promise<string | undefined> {
   try {
-    const found = await stat(open, { bigint: true });
-    return `${found.dev.toString()}:${found.ino.toString()}:${found.birthtimeNs.toString()}`;
+    return identityFrom(await stat(open, { bigint: true }));
   } catch {
     return undefined;
   }
+}
+
+/** `identityOf` for a stat already read. */
+export function identityFrom(found: {
+  readonly dev: bigint;
+  readonly ino: bigint;
+  readonly birthtimeNs: bigint;
+}): string | undefined {
+  // All ones reads as -1 where the number is signed.
+  const noFileId = found.ino <= 0n || found.ino === 2n ** 64n - 1n;
+  if (noFileId || found.birthtimeNs <= 0n) return undefined;
+  return `${found.dev.toString()}:${found.ino.toString()}:${found.birthtimeNs.toString()}`;
 }
 
 /**

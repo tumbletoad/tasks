@@ -22,7 +22,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { FOLDER_MARKER } from "@tasks/brand";
-import { FolderMarkers, MARKER_OWNERS, readMarker, type MarkerOwner } from "./marker.ts";
+import {
+  FolderMarkers,
+  identityFrom,
+  MARKER_OWNERS,
+  readMarker,
+  type MarkerOwner,
+} from "./marker.ts";
 
 let base = "";
 beforeAll(() => {
@@ -154,6 +160,15 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
     renameSync(folder, `${folder}-aside`);
     mkdirSync(folder);
     expect(await markers.check(project, folder)).toEqual({ kind: "missing" });
+  });
+
+  test("a file system that keeps no creation time or no usable file number gives no identity, so a gone marker still asks", async () => {
+    const known = { dev: 7n, ino: 42n, birthtimeNs: 1_700_000_000_000_000_000n };
+    expect(identityFrom(known)).toBe("7:42:1700000000000000000");
+    expect(identityFrom({ ...known, birthtimeNs: 0n })).toBeUndefined();
+    expect(identityFrom({ ...known, ino: 0n })).toBeUndefined();
+    expect(identityFrom({ ...known, ino: -1n })).toBeUndefined();
+    expect(identityFrom({ ...known, ino: 2n ** 64n - 1n })).toBeUndefined();
   });
 
   test("what this machine marked outlives the service: a new start still knows the marker should be there", async () => {
