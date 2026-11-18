@@ -25,6 +25,7 @@ export * from "./shell-line.ts";
 export * from "./space-store.ts";
 export * from "./store.ts";
 export * from "./process.ts";
+export * from "./requests.ts";
 export * from "./shim/index.ts";
 export * from "./terminals/index.ts";
 export * from "./environment/index.ts";

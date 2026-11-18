@@ -36,6 +36,12 @@ export interface Receipt {
   readonly at: Readonly<Partial<Record<ReceiptState, number>>>;
   /** A terminal launch: the terminal Dispatched and why it was chosen, as fixed words. */
   readonly terminal?: { readonly app: string; readonly source: string };
+  /**
+   * The words the person typed, which Tasks holds for the launch's agent: `waiting` until the
+   * agent read them, `read` once it did, `unread` when they went with a launch whose agent never
+   * read them. Absent when none are known (none were held, or the service restarted since).
+   */
+  readonly request?: "waiting" | "read" | "unread";
 }
 
 /** Open's terminal as Settings shows it (the service's TerminalView): fixed words only. */
@@ -215,9 +221,8 @@ export class Api {
 
   /**
    * A click on a tile, or on Copy without an instance (A4's `launch.open`): the launch's receipt,
-   * for Copy (or an open whose app takes the brief by paste) the text for the clipboard, and
-   * whether this click made the launch or was given the one a click just before made. `text` is
-   * what the person typed in the composer: the agent's request.
+   * and for Copy (or an open whose app takes the brief by paste) the text for the clipboard.
+   * `text` is what the person typed in the composer: the agent's request.
    */
   async openLaunch(
     task: string,
@@ -228,7 +233,7 @@ export class Api {
       text,
       markFolder = false,
     }: { readonly pack?: boolean; readonly text?: string; readonly markFolder?: boolean } = {},
-  ): Promise<{ receipt: Receipt; copy: string | undefined; created: boolean }> {
+  ): Promise<{ receipt: Receipt; copy: string | undefined }> {
     const result = await this.client.launch.open({
       task,
       ...(instance === undefined ? {} : { instance }),
@@ -253,9 +258,10 @@ export class Api {
         state: launch.state,
         reason: launch.reason ?? null,
         at,
+        // Open holds the words for the agent: they wait until it reads them.
+        ...(result.text === "held" ? { request: "waiting" as const } : {}),
       },
       copy: result.copy,
-      created: result.created,
     };
   }
 

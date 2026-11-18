@@ -1855,7 +1855,7 @@
     },
     {
       "id": "A4.5.brief.renderer",
-      "title": "The brief renderer: A4 3.15.2's sent, prefilled and pointer templates; no hostile title, folder or label leaves its fence or changes a template line; composer text replaces the last line and over budget becomes a note with the last line pointing at it; nothing is cut, a brief over budget without composer text is refused; the hash covers the brief with its reference as a slot and never the composer text",
+      "title": "The brief renderer: A4 3.15.2's sent, prefilled and pointer templates, a pointer without the task's title; no hostile folder or label leaves its line or changes a template line; an Open route's brief never carries the person's words, whatever their length, and says the request comes with the task, handing the words back exactly to hold; Copy's words follow the pointer and over budget become a note with the last line pointing at it; nothing is cut, a brief over budget without words is refused; the hash covers the brief with its reference as a slot and never the words",
       "source": "A4 3.15.1-3.15.4, A4 3.15.6, A4 5.1, A7 3.9 M2.10",
       "owner": "M2",
       "kind": "ci",
@@ -1919,7 +1919,7 @@
     },
     {
       "id": "A4.5.routes.service",
-      "title": "Open and Copy through the service with a real shim and a fake Claude Code and Codex: the golden argv reaches the fake agent as arrays and byte for byte through the OS's real process creation, hostile titles, folders and composer text included, in the resolved folder; Codex's env_vars override and reference match; the assisted open's brief to copy; the claude-cli:// link's one URL element, and a second click straight after given the first launch says it made none and sent no words; an opener that does not answer is Unknown; Copy's pointer brief, a repeat that replays, long words saved once as a note; refusals that record nothing",
+      "title": "Open and Copy through the service with a real shim and a fake Claude Code and Codex: the golden argv reaches the fake agent as arrays and byte for byte through the OS's real process creation, hostile titles, folders and composer text included, in the resolved folder; Codex's env_vars override and reference match; the assisted open's brief to copy; the claude-cli:// link's one URL element, and clicks straight after given the same launch whose words go only while it holds none; an opener that does not answer is Unknown; Copy's pointer brief, a repeat that replays, words past Copy's budget saved once as a note while Open holds them instead; refusals that record nothing",
       "source": "A4 3.4.2, A4 3.4.3, A4 3.4.6, A4 3.6.5, A4 3.15, A7 3.9 M2.10",
       "owner": "M2",
       "kind": "ci",
@@ -2328,6 +2328,27 @@
       "id": "A4.5.routes.markers",
       "title": "A launch reads its folder's marker before an agent starts: a folder set through the service is marked with IDs only; its own marker opens; a checkout moved aside with an unrelated one at its path opens nothing, says its marker is missing and opens once the person opens it anyway, marking it; a task's folder whose marker names another project opens nothing and names that project; Copy reads no marker; a folder that takes no marker opens as before",
       "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.routes.request-store",
+      "title": "The words a person typed for an agent are held for one launch in that launch's own folder: once per launch, private (0700 folder, 0600 file), read back exactly after a restart, marked read; removed with their folder when nothing else is in it, gone with a launch folder removed under them; a file that is not a request is removed at the next start",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.routes.request",
+      "title": "What a person types before Open, 20,000 characters with line breaks, quotes, other scripts and an emoji, reaches the agent exactly through Tasks on every route that takes it: Claude Code's and Codex's terminal routes (the fake agent reads it with show --launch as its brief says), Codex's assisted open, the claude-cli:// link, Claude Desktop and the Codex app (an agent's get_task, its tool text whole); it is in no process's command line (Linux /proc, Windows' process table), no URL opened, no log line and no file but the launch's own request; a terminal launch's request goes with its launch, a link's once its reference no longer binds; Copy puts the words on the clipboard and holds nothing",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.routes.request-restart",
+      "title": "A request a crashed service left is removed at its next start once its launch no longer needs it: a terminal launch whose agent ended while the service was down at once, a link launch's once its reference no longer binds",
+      "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
@@ -4524,7 +4545,7 @@
     },
     {
       "id": "A5.3.8.web.composer-sends",
-      "title": "A composer sends its words as typed, without the blank lines around them; a note keeps one request ID across a reload so its words are saved once; a launch's words count as gone only once the agent has them, and stay when the launch failed",
+      "title": "A composer sends its words as typed, without the blank lines around them; a note keeps one request ID across a reload so its words are saved once; a launch's words count as gone only once its agent read them, and stay when the launch failed or went on without reading them",
       "source": "A5 3.8, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",
@@ -4548,8 +4569,16 @@
     },
     {
       "id": "A7.3.12.m5-07.e2e.strip",
-      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line; Open without text sends the brief alone; an agent that has the task open is not opened again, with or without text, and says where the words can go; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
+      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line and clears once the agent read it; Open without text sends the brief alone; an agent that has the task open is not opened again, with or without text, and says where the words can go; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
       "source": "A5 3.8, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.request.e2e.unread",
+      "title": "In Chromium and Firefox against the real service: Open with words on an agent that never reads the request puts the words on no command line; once the agent ended without reading them they stay in the field and in the browser's draft, and the page says the agent did not read them",
+      "source": "A5 3.8",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

@@ -146,9 +146,7 @@ export interface SpaceReceipt {
   readonly request_id: string;
   readonly status?: string;
   /** The stored result, as a replay returns it. */
-  readonly result?: {
-    readonly results: readonly { readonly id: string; readonly status?: string }[];
-  };
+  readonly result?: { readonly results: readonly { readonly id: string }[] };
 }
 
 /** A write request with launch operations (storage: `WriteRequest`). */
@@ -255,23 +253,20 @@ export class SpaceExecutionStore implements ExecutionStore {
   }
 
   /**
-   * The intent a request this scope already decided made (`created`), or was given by A4's 5 s
-   * rule, as it is now: a replay read from the receipt alone, before anything the click would be
-   * built from is read again (A1 3.8). Undefined when the scope has not decided the request or it
-   * made no intent; `createIntent` then decides it, a refusal included. Read only.
+   * The intent a request this scope already decided made (or was given by A4's 5 s rule), as it
+   * is now: a replay read from the receipt alone, before anything the click would be built from is
+   * read again (A1 3.8). Undefined when the scope has not decided the request or it made no
+   * intent; `createIntent` then decides it, a refusal included. Read only.
    */
-  async replayed(
-    requestId: string,
-  ): Promise<{ intent: LaunchIntent; created: boolean } | undefined> {
+  async replayed(requestId: string): Promise<LaunchIntent | undefined> {
     const found = await this.#writer.receipt({
       scope_id: this.#credential.scope_id,
       request_id: requestId,
     });
     if (found === null || found === undefined) return undefined;
     if (found.status !== "applied" && found.status !== "unchanged") return undefined;
-    const first = found.result?.results[0];
-    const intent = first === undefined ? undefined : await this.readIntent(first.id);
-    return intent === undefined ? undefined : { intent, created: first?.status === "created" };
+    const id = found.result?.results[0]?.id;
+    return id === undefined ? undefined : this.readIntent(id);
   }
 
   async readIntent(id: string): Promise<LaunchIntent | undefined> {

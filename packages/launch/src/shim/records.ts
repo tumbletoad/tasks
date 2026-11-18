@@ -125,7 +125,8 @@ const MAX_FILE = 1024 * 1024;
  */
 export const PLAN_MAX_BYTES = 256 * 1024;
 const INSTANT_MAX = 253_402_300_799_999;
-const SPACE_ID = /^sp_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
+/** A space's ID. */
+export const SPACE_ID = /^sp_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

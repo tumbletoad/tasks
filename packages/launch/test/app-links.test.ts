@@ -10,10 +10,10 @@ import type { SpawnRequest, SpawnedProcess } from "../src/terminals/accept.ts";
 
 const WINDOWS_FOLDER = "C:\\Users\\mira\\Work\\R&D #2 (50%+) Café";
 const LINUX_FOLDER = "/home/mira/work/R&D #2 (50%+) Café";
-const BRIEF = 'TT Tasks task M-14 "Fix zones" (launch L7KQ21).\nLook at A & B, 100% + #3.';
+const BRIEF = "TT Tasks task M-14 (launch L7KQ21).\nLook at A & B, 100% + #3.";
 
 const Q =
-  "TT%20Tasks%20task%20M-14%20%22Fix%20zones%22%20%28launch%20L7KQ21%29.%0ALook%20at%20A%20%26%20B%2C%20100%25%20%2B%20%233.";
+  "TT%20Tasks%20task%20M-14%20%28launch%20L7KQ21%29.%0ALook%20at%20A%20%26%20B%2C%20100%25%20%2B%20%233.";
 const WIN = "C%3A%5CUsers%5Cmira%5CWork%5CR%26D%20%232%20%2850%25%2B%29%20Caf%C3%A9";
 const LIN = "%2Fhome%2Fmira%2Fwork%2FR%26D%20%232%20%2850%25%2B%29%20Caf%C3%A9";
 

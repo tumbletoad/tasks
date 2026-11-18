@@ -120,8 +120,12 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Restarting or updating Tasks does not end an agent session it opened. On Linux this needs
   systemd to give each terminal a scope of its own: where it cannot, a restart may end the sessions
   in the terminals Tasks opened, and `tasks doctor` warns of that.
-- The brief an agent gets when a task opens holds the task's title and reference, not its notes or
-  sources. An instruction too long for it is kept as a note, never cut.
+- The brief an agent gets when a task opens holds the task's reference, not its title, notes or
+  sources. Copy's words too long for it are kept as a note, never cut.
+- What you type before Open never goes on a command line or into a link. Tasks keeps it on this
+  machine, in its own launch folder, until the agent's window closes, or for an app opened by a
+  link until the launch is a day old. The agent reads it with the task, and it stays in the field
+  until the agent did.
 - Tasks never changes another app's trust or approval settings.
 
 ## Background runs
@@ -148,7 +152,7 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Task text cannot run scripts or load remote images.
 - A website you visit cannot read or change your tasks through the page.
 - Logs hold no task text, and there is no telemetry. Task text leaves Tasks only where you send it:
-  the brief to the agent app you open a task in, and what an agent reads through its connection.
+  what you copy, and what an agent reads through its connection.
 - The generated folder of readable files is not where tasks are stored. A file you edit or add
   there is kept or moved to a rescue folder, never deleted.
 
