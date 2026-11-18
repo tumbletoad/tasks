@@ -141,6 +141,7 @@ export function ProjectFolder({ project }: { readonly project: string }) {
               ? {}
               : { lead: t("folder.moveLead") })}
           start={here?.folder ?? ""}
+          owner={project}
           onClose={() => {
             setChoosing(false);
           }}

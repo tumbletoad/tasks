@@ -4957,6 +4957,41 @@
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.e2e.add-project",
+      "title": "In Chromium and Firefox: New project from a folder shows its name and repository and opens the project with its folder, Undo and Redo and Ctrl+Z take it out and back, the same works by keyboard alone, a folder that is a project's already opens that project, and a project can be added without a folder",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.e2e.project-folder",
+      "title": "In Chromium and Firefox: a project's folder line shows its folder, Change after a move says what followed and the task's own folder inside follows, Undo puts both back, and Clear and Ctrl+Z take it away and back",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.e2e.task-folder",
+      "title": "In Chromium and Firefox: a task's folder line sets a folder of its own, clears it, and Ctrl+Z gives it back",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.e2e.open-refused",
+      "title": "In Chromium and Firefox: Open refused on a folder that is gone offers Choose another folder from its toast, and then opens there; a folder whose marker is missing offers Use this folder and Choose another folder on the task's folder line",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.e2e.screens",
+      "title": "In Chromium and Firefox: New project, the folder chooser, a checkout's facts, a project's folder line, its change dialog and a task's folder line in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }

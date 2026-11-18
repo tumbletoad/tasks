@@ -107,6 +107,8 @@ export function FolderField({
 
   const choices = choicesOf(listing, make);
   const choose = (choice: Choice) => {
+    // The choices are the old folder's until the new listing comes: none of them is chosen.
+    setActive(undefined);
     if (choice.kind !== "make") {
       onChange(choice.value);
       input.current?.focus();

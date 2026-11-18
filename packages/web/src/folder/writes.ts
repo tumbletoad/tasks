@@ -20,15 +20,29 @@ export interface Written {
   readonly project?: { readonly id: string; readonly name: string };
 }
 
-/** What the folders inside the old one did, in the toast's words. */
+/** At most this many folders that moved along or stayed are named in a toast. */
+const NAMED = 3;
+
+/** The folders a toast names: a task by its reference, a project by its name. */
+function namesOf(list: FolderResult["followed"], count: number): string {
+  const named = (list ?? []).slice(0, NAMED).map((f) => f.ref ?? f.name ?? "");
+  return count > named.length ? `${named.join(", ")}, …` : named.join(", ");
+}
+
+/** What the folder write did, and what the folders inside the old one did, in the toast's words. */
 function setSaid(result: FolderResult): Msg | undefined {
   if (result.result === "no_change") return undefined;
   if (result.result === "cleared") return { id: "toast.folderCleared" };
   const folder = result.folder ?? "";
   if (result.stayed !== undefined) {
-    return { id: "toast.folderSetStayed", values: { folder, count: result.stayed } };
+    const names = namesOf(result.kept, result.stayed);
+    return { id: "toast.folderSetStayed", values: { folder, count: result.stayed, names } };
   }
-  return { id: "toast.folderSet", values: { folder, count: result.moved ?? 0 } };
+  const count = result.moved ?? 0;
+  return {
+    id: "toast.folderSet",
+    values: { folder, count, names: namesOf(result.followed, count) },
+  };
 }
 
 export interface FolderWrites {
@@ -48,7 +62,12 @@ export function folderWrites(client: Client, edits: Pick<Edits, "write">): Folde
   const manage = (input: Omit<Parameters<Client["folder"]["manage"]>[0], "request_id">) =>
     edits
       .write(
-        (request) => client.folder.manage({ ...input, request_id: request }),
+        (request, base) =>
+          client.folder.manage({
+            ...input,
+            ...(base === undefined ? {} : { base }),
+            request_id: request,
+          }),
         (result: FolderResult) =>
           input.action === "add_project"
             ? result.result === "created"

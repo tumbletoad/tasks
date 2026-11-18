@@ -1,7 +1,7 @@
 // A folder chosen for a project or a task, over the page: the chooser, what the folder is (its
 // name and repository, or the project that has it), and Use this folder. A refusal is said in the
 // dialog in the service's words, and the person's text stays to correct.
-import { useContext, useId, useState, type ReactNode, type SyntheticEvent } from "react";
+import { useContext, useId, useState, type SyntheticEvent } from "react";
 import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { classes } from "../app/css.ts";
 import setup from "../app/Setup.module.css";
@@ -33,20 +33,25 @@ export function refusalText(error: unknown, fallback: string): string {
   return fallback;
 }
 
-/** What the folder in the field is: its name and repository, or the project that has it. */
+/**
+ * What the folder in the field is: its name and repository, or the project that has it, unless
+ * that is the project the folder is chosen for (`owner`).
+ */
 export function FolderFacts({
   look,
   text,
+  owner,
 }: {
   readonly look: FolderLook | undefined;
   readonly text: string;
+  readonly owner?: string | undefined;
 }) {
   const t = useT();
   const exact = look?.text === text ? look.exact : undefined;
   if (exact === undefined) return null;
   return (
     <p className={sheet.note} data-part="folder-facts">
-      {exact.project === undefined
+      {exact.project === undefined || exact.project.id === owner
         ? exact.repo === undefined
           ? t("folder.is", { name: exact.name ?? exact.folder })
           : t("folder.isRepo", { name: exact.name ?? exact.folder, repo: exact.repo })
@@ -61,7 +66,7 @@ export function FolderDialog({
   start,
   onClose,
   onChoose,
-  extra,
+  owner,
 }: {
   readonly title: string;
   readonly lead?: string;
@@ -70,8 +75,8 @@ export function FolderDialog({
   readonly onClose: () => void;
   /** Writes the folder: resolves when it is done, or rejects with the refusal. */
   readonly onChoose: (folder: string) => Promise<void>;
-  /** More actions beside Use this folder (Clear). */
-  readonly extra?: ReactNode;
+  /** The project the folder is chosen for: its own folder is no other project's. */
+  readonly owner?: string;
 }) {
   const t = useT();
   const { api } = useContext(Session);
@@ -125,7 +130,7 @@ export function FolderDialog({
               autoFocus
               {...(lead === undefined ? {} : { describedBy: leadId })}
             />
-            <FolderFacts look={look} text={text} />
+            <FolderFacts look={look} text={text} owner={owner} />
             {error === undefined ? null : (
               <p className={sheet.error} role="alert">
                 {error}
@@ -139,7 +144,6 @@ export function FolderDialog({
               >
                 {t("folder.use")}
               </Button>
-              {extra}
               <Button className={sheet.quiet} onPress={onClose}>
                 {t("folder.cancel")}
               </Button>

@@ -674,20 +674,24 @@ export class Edits {
    * A person's write that is no field of one task (a new project, a folder): in turn after the
    * writes already on their way, and before any made after it. Once it changed something, its
    * toast says `said` and its Undo names its own commit; Ctrl+Z takes it back as the newest change.
-   * The caller reads the answer, a refusal included, and says what a refusal means.
+   * The caller reads the answer, a refusal included, and says what a refusal means. Its base is
+   * what the screen showed when the person acted, moved past the tab's own commits since.
    */
   write<T extends { as_of?: string; result?: unknown }>(
-    send: (request: string) => Promise<T>,
+    send: (request: string, base: string | undefined) => Promise<T>,
     said: (value: T) => Msg | undefined,
   ): Promise<T> {
+    const seen = this.#deps.asOf();
     const ahead = allOf(this.#ahead());
     const { turn, made } = this.#turn<T>(ahead);
     const sent = this.#deps.write(async (request) => {
       try {
         if (!(await ahead.wait())) throw new NotSent();
+        // The same base for a second send with the same request ID: one intent, sent again.
+        const base = this.#ownRun(seen);
         const one = this.#call(
           request,
-          () => send(request),
+          () => send(request, base),
           (found) => writeOf(found) as Decision<T>,
           (result) => {
             if (typeof result.as_of === "string" && result.result !== "no_change") {

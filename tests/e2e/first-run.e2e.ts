@@ -204,11 +204,11 @@ test.describe("[A7.3.12.m5-12.e2e.switcher] The space switcher's New space and O
     await page.getByRole("button", { name: "Open folder" }).click();
     const open = page.getByRole("dialog", { name: "Open a space folder" });
     // A folder that is not a full path is refused in the service's words.
-    await open.getByRole("textbox", { name: "Folder" }).fill("spaces/mira");
+    await open.getByRole("combobox", { name: "Folder" }).fill("spaces/mira");
     await open.getByRole("button", { name: "Open", exact: true }).click();
     await expect(open.getByRole("alert")).toBeVisible();
     // Mira, made at the first start and forgotten since: its folder holds it still.
-    await open.getByRole("textbox", { name: "Folder" }).fill(join(fresh.spaces, "mira"));
+    await open.getByRole("combobox", { name: "Folder" }).fill(join(fresh.spaces, "mira"));
     await open.getByRole("button", { name: "Open", exact: true }).click();
     await showsSpace(page, "Mira");
   });

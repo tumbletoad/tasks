@@ -87,7 +87,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   which space and project or task it belongs to, and ignored by Git. Clearing the folder in Tasks
   removes it.
 - Tasks never makes a folder for an agent. At the command line, `--create` makes it when you ask,
-  and an undo leaves it on disk.
+  and in the page's folder chooser "Make the folder" does; an undo leaves it on disk.
+- The page's folder chooser lists the names of folders on this computer to you alone, never to an
+  agent's tools, and never reads a file. A folder that answers slowly is listed as far as it read in
+  two seconds, and a very large one up to its first 20,000 entries.
 - No folder inside Tasks' own data is taken: an agent working there would change it.
 - A folder is a local path, not a secret. It travels with sync, backups and exports, and a message
   or a history entry may name it.
