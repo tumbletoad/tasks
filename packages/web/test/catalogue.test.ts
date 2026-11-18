@@ -99,6 +99,10 @@ const SAMPLE = {
   of: "project",
   owners: "the project Billing",
   repo: "portal-web",
+  opened: "Opened in Ghostty, the desktop's default",
+  ran: "2 min",
+  hours: 1,
+  minutes: 5,
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {
