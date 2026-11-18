@@ -358,8 +358,22 @@ export class RunService {
         ? refusal(
             "other_machine",
             `This task's folder is on another machine (${folder.machine}): it runs there.`,
+            undefined,
+            { machine: folder.machine },
           )
-        : refusal("folder_missing", "This task's folder is not found on this machine.");
+        : folder.reason === "folder_missing"
+          ? refusal(
+              "folder_missing",
+              "This task's folder is not found on this machine.",
+              undefined,
+              folder.folder === undefined ? {} : { folder: folder.folder },
+            )
+          : refusal(
+              folder.reason,
+              "This may not be the folder set for this task: its marker is missing or names another task.",
+              "Open the task in this folder once to confirm it, then run it.",
+              folder.folder === undefined ? {} : { folder: folder.folder },
+            );
     }
     const settings = this.#settings();
     const queued = await hosted.machine.queue(
@@ -735,13 +749,18 @@ export class RunService {
   }
 }
 
-/** A refusal of `tasks run`, in the person's words. */
-const refusal = (reason: string, message: string, hint?: string): AppError =>
+/** A refusal of `tasks run`, in the person's words, with what the page needs to say it too. */
+const refusal = (
+  reason: string,
+  message: string,
+  hint?: string,
+  facts: Readonly<Record<string, string>> = {},
+): AppError =>
   new AppError({
     code: reason === "task_not_found" ? "not_found" : "invalid_input",
     message,
     ...(hint === undefined ? {} : { hint }),
-    data: { reason },
+    data: { ...facts, reason },
   });
 
 const FINAL: ReadonlySet<string> = new Set(FINAL_RUN_STATES);

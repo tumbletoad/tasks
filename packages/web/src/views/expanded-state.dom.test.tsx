@@ -158,6 +158,7 @@ beforeEach(() => {
       },
     },
     receipts: () => Promise.resolve([]),
+    runs: () => Promise.resolve([]),
   } as unknown as Api;
   live = new Live({
     api,

@@ -2,8 +2,9 @@
 // 3.15), and the read of finished tasks behind the page's Completed view, which gives the same
 // rows and one line of how each task ended. A column that is null in the space is left out. No
 // body of a note or log entry, no context, outcome or other long text is in it: only what a row
-// shows of the task's children, its first three sources and where it opens on the machine that
-// serves it.
+// shows of the task's children, its first three sources, where it opens on the machine that
+// serves it, and whether its newest background run works or needs the person.
+import { isOpenRun, OPEN_RUN_STATES, type RunState } from "@tasks/contracts/runs";
 import {
   decideLaunchFolder,
   FINISHED_AT_SQL,
@@ -36,7 +37,18 @@ export type CompactPlace =
   | { readonly state: "here" | "missing" }
   | { readonly state: "elsewhere"; readonly machine: string };
 
-export type CompactValue = string | number | boolean | readonly CompactSource[] | CompactPlace;
+/**
+ * The task's newest background run, as its row shows it: working (queued, running, stopping, or
+ * not confirmed ended), or ended asking the person something. Absent otherwise.
+ */
+export interface CompactRun {
+  readonly state: "working" | "needs_you";
+  /** The run's agent instance: machine.toml's key. */
+  readonly instance: string;
+}
+
+export type CompactValue =
+  string | number | boolean | readonly CompactSource[] | CompactPlace | CompactRun;
 export type CompactRow = Readonly<Record<string, CompactValue>>;
 
 /** The machine the feed looks at folders on: its ID, the person's home there, its platform. */
@@ -57,9 +69,20 @@ const foldersOf = (kind: "task" | "project", owner: string): string =>
   `f.owner_kind = '${kind}' AND f.owner_id = ${owner} AND f.deleted_at IS NULL ` +
   "ORDER BY f.created_seq DESC, f.id) x)";
 
+/** A run that may still hold processes (contracts' `isOpenRun`). */
+const OPEN_RUN =
+  `(r.state IN (${OPEN_RUN_STATES.map((s) => `'${s}'`).join(", ")}) OR ` +
+  "(r.state = 'unknown' AND r.reason = 'stop_timed_out'))";
+
+/** The task's newest run, of those `where` admits, as JSON: its state, reason and instance. */
+const newestRun = (where: string) =>
+  "(SELECT json_object('state', r.state, 'reason', r.reason, 'instance', r.instance_id) " +
+  `FROM runs r WHERE r.task_id = t.id${where} ORDER BY r.queued_at DESC, r.id DESC LIMIT 1)`;
+
 /**
- * A task row's columns. `folders`: the space has the folders table (schema 0.5 on); a space
- * served read-only at an older revision has none, and its rows show no folder.
+ * A task row's columns. `folders`: the space has the folders and runs tables (schema 0.5 on); a
+ * space served read-only at an older revision may have neither, and its rows show no folder and
+ * no run.
  */
 export function taskColumns(folders: boolean): string {
   return (
@@ -85,7 +108,8 @@ export function taskColumns(folders: boolean): string {
     "ts.task_id = t.id AND ts.removed_at IS NULL AND s.deleted_at IS NULL) AS x_source_count" +
     (folders
       ? `, ${foldersOf("task", "t.id")} AS x_folders_own, ` +
-        `${foldersOf("project", "t.project_id")} AS x_folders_project`
+        `${foldersOf("project", "t.project_id")} AS x_folders_project, ` +
+        `${newestRun("")} AS x_run, ${newestRun(` AND ${OPEN_RUN}`)} AS x_run_open`
       : "")
   );
 }
@@ -157,6 +181,30 @@ function sourcesOf(value: unknown): CompactSource[] {
   return out;
 }
 
+/** A run of `x_run` or `x_run_open` as the row shows it on its own, or nothing. */
+function rowRun(value: unknown): CompactRun | undefined {
+  const run = parsed(value);
+  if (!isPlain(run) || typeof run["instance"] !== "string") return undefined;
+  const { state, reason, instance } = run;
+  if (
+    typeof state === "string" &&
+    isOpenRun({ state: state as RunState, reason: typeof reason === "string" ? reason : null })
+  ) {
+    return { state: "working", instance };
+  }
+  if (state === "failed" && reason === "needs_input") return { state: "needs_you", instance };
+  return undefined;
+}
+
+/**
+ * What the row shows of a task's runs: its newest, while it works or asks the person something;
+ * else an older one that may still hold processes, so stopping a follow-up never hides a run that
+ * still works.
+ */
+export function runOf(newest: unknown, open?: unknown): CompactRun | undefined {
+  return rowRun(newest) ?? rowRun(open);
+}
+
 /** The folders of `x_folders_own` or `x_folders_project`, newest first, with machine names. */
 function foldersFrom(value: unknown, names: Map<string, string>): FolderView[] {
   const list = parsed(value);
@@ -205,6 +253,8 @@ export async function taskRows(
         x_source_count: count,
         x_folders_own: ownFolders,
         x_folders_project: projectFolders,
+        x_run: newest,
+        x_run_open: open,
         x_reason: reason,
         x_outcome: outcome,
         ref,
@@ -227,6 +277,8 @@ export async function taskRows(
         }),
       );
       if (ended !== undefined) out["ending"] = ended;
+      const run = runOf(newest, open);
+      if (run !== undefined) out["run"] = run;
       if (here !== undefined) {
         const names = new Map<string, string>();
         const decided = decideLaunchFolder(

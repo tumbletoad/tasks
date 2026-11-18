@@ -50,7 +50,10 @@
   background: var(--k-raised);
 }
 
-/* Marker: at most one, the changed dot, the needs-input ring or the draft's pencil (A5 3.6). */
+/*
+ * Marker: at most one, the changed dot, the needs-input ring, a run's quiet working ring or the
+ * draft's pencil (A5 3.6). The column keeps its width, so a run that starts or ends moves nothing.
+ */
 .marker {
   display: grid;
   place-items: center;
@@ -67,8 +70,16 @@
   background: var(--k-accent);
 }
 
+/* The one marker that asks for attention: a ring with a centre, in the review colour. */
 .marker[data-kind="needs_input"] > span {
-  border: 1.5px solid var(--k-review);
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--k-review);
+  background: radial-gradient(circle, var(--k-review) 0 1.5px, transparent 2px);
+}
+
+.marker[data-kind="working"] > span {
+  border: 1.5px solid var(--k-accent);
 }
 
 /* The person's own unsent words: a small muted pencil in the same place, so nothing moves. */
