@@ -4623,7 +4623,7 @@
     },
     {
       "id": "A5.3.8.web.open-once",
-      "title": "An Open that got no answer, pressed again with the same words, carries the same request ID until the service answers again, so the words are saved once; a refusal forgets it; a second click that got the first click's launch keeps its words as a note and says so",
+      "title": "An Open on its way or without an answer, pressed again with the same words (also after the task was collapsed and expanded), carries the same request ID until the service answers it, so the words are saved once, and the page says the agent may be opening; the service's refusal forgets it; a second click that got the first click's launch keeps its words as a note and says so last",
       "source": "A5 3.8, A1 3.8",
       "owner": "M5",
       "kind": "ci",

@@ -110,6 +110,9 @@ function finished(lifecycle: unknown): string | undefined {
 /** A line break as the tools' text answers split a request on (mcp/render.ts). */
 const LINE_BREAK = /\r\n|[\n\r\p{Zl}\p{Zp}]/u;
 
+/** An entry's text: a line after its first stays indented under the entry, never at the margin. */
+const entryText = (text: unknown): string => String(text).split(LINE_BREAK).join("\n    ");
+
 /** One task: its one state (the status while it is active), its priority, due date and inbox. */
 function taskLine(task: Result): string {
   const parts = [finished(task["lifecycle"]) ?? str(task["status"]), `p${str(task["priority"])}`];
@@ -358,7 +361,7 @@ export function render(entry: string, result: Result, space: string): string {
       }
       const sections = (result["sections"] ?? task) as Result;
       for (const note of (sections["instructions"] as Result[] | undefined) ?? []) {
-        lines.push(`  ${String(note["ref"])} user → agents: ${String(note["text"])}`);
+        lines.push(`  ${String(note["ref"])} user → agents: ${entryText(note["text"])}`);
       }
       if (typeof sections["context"] === "string" && sections["context"] !== "") {
         lines.push("", sections["context"]);
@@ -375,12 +378,12 @@ export function render(entry: string, result: Result, space: string): string {
             ? ""
             : ` (request for ${launches.map((l) => `launch ${String(l["launch"])}`).join(", ")})`;
         lines.push(
-          `  ${String(note["ref"])} ${String(note["author"])}${note["for_agents"] === true ? " → agents" : ""}${asked}: ${String(note["text"])}`,
+          `  ${String(note["ref"])} ${String(note["author"])}${note["for_agents"] === true ? " → agents" : ""}${asked}: ${entryText(note["text"])}`,
         );
       }
       for (const entry of (sections["log"] as Result[] | undefined) ?? []) {
         lines.push(
-          `  ${String(entry["ref"])} ${String(entry["kind"])} ${String(entry["author"])}: ${String(entry["text"])}`,
+          `  ${String(entry["ref"])} ${String(entry["kind"])} ${String(entry["author"])}: ${entryText(entry["text"])}`,
         );
       }
       for (const row of (sections["history"] as Result[] | undefined) ?? []) {

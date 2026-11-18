@@ -7,6 +7,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { AppError } from "@tasks/contracts";
 import { Refused, type Api, type Instance, type Opened, type Run } from "../api.ts";
 import { ToastContext } from "../app/frame.ts";
 import { Session } from "../context.ts";
@@ -370,20 +371,36 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
     await settle();
   };
 
-  test("until the service answers again, the same words carry the same request ID; a refusal forgets it", async () => {
+  const title = () =>
+    container.querySelector<HTMLElement>(`li[data-key="${TASK.id}"] [data-part="title"]`);
+  /** Collapse the task and expand it again: the composer is a new one, with the kept draft. */
+  const reopen = async () => {
+    act(() => {
+      title()?.click();
+    });
+    act(() => {
+      title()?.click();
+    });
+    await settle();
+  };
+
+  test("until the service answers it, the same words carry the same request ID; a refusal forgets it", async () => {
     expect(openButton()).not.toBeNull();
-    down = true;
     openAnswer = (call) =>
       call <= 2
         ? lost()
         : call === 3
-          ? Promise.reject(new Refused(400, "invalid_input"))
+          ? // The generated client's error: the service refused, so nothing was done.
+            Promise.reject(new AppError({ code: "invalid_input", message: "Refused" }))
           : Promise.resolve(opened(call, "request"));
     type("Check it");
     await open();
-    // No answer: the words stay, and pressing again is the same request, which the service
-    // replays: one note, one launch.
+    // No answer: the words stay, the page says Codex may be opening, and pressing again is the
+    // same request, which the service replays: one note, one launch. A read of the task's
+    // launches meanwhile changes nothing: an empty list does not say the words were not saved.
     expect(composer()?.value).toBe("Check it");
+    expect(toasts.at(-1)).toMatch(/did not answer, so Codex may be opening/u);
+    await reopen();
     await open();
     await open();
     await open();
@@ -393,39 +410,44 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
     expect(composer()?.value).toBe("");
   });
 
-  test("other words are another Open, and an answer of the service forgets it", async () => {
-    down = true;
-    openAnswer = lost;
+  test("an Open still on its way is the same Open after the task was collapsed and expanded; other words are another", async () => {
+    let answer: (value: Opened) => void = () => undefined;
+    openAnswer = (call) =>
+      call === 1
+        ? new Promise((resolve) => {
+            answer = resolve;
+          })
+        : lost();
     type("Check it");
     await open();
+    await reopen();
+    await open();
+    expect(opens.map((o) => o.text)).toEqual(["Check it", "Check it"]);
+    expect(opens[1]?.id).toBe(opens[0]?.id);
     type("Something else");
     await open();
-    await open();
-    expect(opens.map((o) => o.text)).toEqual(["Check it", "Something else", "Something else"]);
-    expect(opens[1]?.id).not.toBe(opens[0]?.id);
-    expect(opens[2]?.id).toBe(opens[1]?.id);
-    // A read of the task's launches answers: the thread shows what opened, so the next is new.
-    down = false;
-    const title = () =>
-      container.querySelector<HTMLElement>(`li[data-key="${TASK.id}"] [data-part="title"]`);
-    act(() => {
-      title()?.click();
-    });
-    act(() => {
-      title()?.click();
-    });
+    expect(opens[2]?.id).not.toBe(opens[0]?.id);
+    answer(opened(1, "request"));
     await settle();
-    await open();
-    expect(opens[3]?.text).toBe("Something else");
-    expect(opens[3]?.id).not.toBe(opens[1]?.id);
   });
 
-  test("a second click that got the launch of the first keeps its words as a note and says so", async () => {
+  test("a second click that got the launch of the first keeps its words as a note and says so last", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.resolve() },
+    });
     openAnswer = (call) => Promise.resolve(opened(call, "note"));
     type("And the invoices");
     await open();
     expect(composer()?.value).toBe("");
+    // An app that takes the brief by paste: the brief is copied, and what became of the words is
+    // what the page says last.
+    openAnswer = (call) => Promise.resolve({ ...opened(call, "note"), copy: "brief" });
+    type("And the receipts");
+    await open();
     expect(toasts).toEqual([
+      "Codex was already opening this task. What you typed is saved on the task as a note.",
+      "Copied",
       "Codex was already opening this task. What you typed is saved on the task as a note.",
     ]);
   });

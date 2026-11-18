@@ -50,7 +50,16 @@ function Folded({
   useLayoutEffect(() => {
     const element = box.current;
     if (element === null || open) return;
-    setLong(element.scrollHeight > element.clientHeight + 1);
+    const measure = () => {
+      setLong(element.scrollHeight > element.clientHeight + 1);
+    };
+    measure();
+    // A narrower window wraps the same text onto more lines.
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
   }, [text, open]);
   return (
     <div className={className}>

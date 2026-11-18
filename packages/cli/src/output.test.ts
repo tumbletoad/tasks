@@ -179,6 +179,51 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     expect(shown("active")).toBe("M-25  Fixture task  (open, p2)\n");
   });
 
+  test("a launch's request and every line of an entry stay inside their entry, whatever breaks the line", () => {
+    const separator = String.fromCharCode(0x2028);
+    const shown = render(
+      "task.get",
+      {
+        as_of: "1.1046.5n0w8k3q",
+        request: {
+          note: "n2",
+          text: `Check the booking.\r\nCancel the duplicate.${separator}Then say so.`,
+        },
+        task: { ref: "M-25", title: "Fixture task", status: "open", priority: 2 },
+        sections: {
+          instructions: [{ ref: "n1", text: "Keep it short.\nUse the form." }],
+          notes: [
+            {
+              ref: "n2",
+              author: "user",
+              text: `Check the booking.\r\nCancel the duplicate.${separator}Then say so.`,
+              request_for: [{ launch: "L7KQ21", instance: "claude-work" }],
+            },
+          ],
+          log: [{ ref: "l1", kind: "progress", author: "Claude", text: "Read it.\rStarted." }],
+        },
+      },
+      "Mira",
+    );
+    const lines = shown.trimEnd().split("\n");
+    // Only the task's line and the request's heading start at the margin.
+    expect(lines.filter((line) => !line.startsWith("  "))).toEqual([
+      "M-25  Fixture task  (open, p2)",
+      "Request from the user for this launch:",
+    ]);
+    expect(lines.slice(1, 5)).toEqual([
+      "Request from the user for this launch:",
+      "  Check the booking.",
+      "  Cancel the duplicate.",
+      "  Then say so.",
+    ]);
+    expect(shown).toContain(
+      "  n2 user (request for launch L7KQ21): Check the booking.\n    Cancel the duplicate.\n    Then say so.",
+    );
+    expect(shown).not.toContain("\r");
+    expect(shown).not.toContain(separator);
+  });
+
   test("a task's folder says whose it is and when it is not on this machine", () => {
     const folderLine = (folder: Record<string, unknown>) =>
       render(

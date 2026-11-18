@@ -122,6 +122,7 @@
   "row.copyFailed": "The browser did not allow copying.",
   "row.openIn": "Open in {label}",
   "row.openFailed": "The launch was not recorded. Try again.",
+  "row.openUnanswered": "{product} did not answer, so {label} may be opening. Press Open again to be sure: it does not open twice.",
   "row.openedEarlier": "{label} was already opening this task. What you typed is saved on the task as a note.",
   "row.openMarker": "{why, select, missing {The folder {folder} has no {product} marker} other {The {product} marker in {folder} names {owners}} unread {The {product} marker in {folder} cannot be read}}, so it may not be the folder set for {of, select, project {the task's project} other {this task}}. Nothing was started.",
   "row.openAnyway": "Use this folder",
