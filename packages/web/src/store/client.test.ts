@@ -228,6 +228,35 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     expect(socket().sent).toEqual([{ type: "subscribe", space: SPACE }]);
     live.stop();
   });
+
+  test("a refresh takes a fresh snapshot on the same session: what Open offers follows", async () => {
+    const live = start();
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b" });
+    receive(snapshot(5, [task("a", "One")]));
+    const before = live.getState().instances;
+    // A batch that arrived before the refresh, its frame not run yet, still applies.
+    const changed: string[] = [];
+    live.onChanges(({ changes }) => {
+      changed.push(...changes.map((c) => c.id));
+    });
+    socket().receive(batch(5, 6, [taskEvent(task("a", "Two"), 6)]));
+    live.refresh();
+    expect(live.getState().tasks.get("a")?.title).toBe("Two");
+    expect(changed).toEqual(["a"]);
+    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: SPACE });
+    // A batch from before the new snapshot is not applied over it.
+    receive(batch(6, 7, [taskEvent(task("a", "Old"), 7)]));
+    expect(live.getState().tasks.get("a")?.title).toBe("Two");
+    const instance = { key: "claude", label: "Claude Code", glyph: "C", ring: 0, route: "cli" };
+    receive({ ...snapshot(8, [task("a", "Two")]), instances: [instance] });
+    expect(live.getState().phase).toBe("live");
+    expect(live.getState().instances).not.toBe(before);
+    expect(live.getState().instances.map((i) => i.key)).toEqual(["claude"]);
+    live.stop();
+    live.refresh();
+    expect(socket().sent.filter((m) => m["type"] === "subscribe")).toHaveLength(2);
+  });
 });
 
 describe("[A5.3.15.web.installed] the page and a newer installed version", () => {

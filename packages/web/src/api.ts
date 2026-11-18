@@ -36,6 +36,12 @@ export interface Receipt {
   readonly at: Readonly<Partial<Record<ReceiptState, number>>>;
   /** A terminal launch: the terminal Dispatched and why it was chosen, as fixed words. */
   readonly terminal?: { readonly app: string; readonly source: string };
+  /**
+   * The words the person typed, which Tasks holds for the launch's agent: `waiting` until the
+   * agent read them, `read` once it did, `unread` when they went with a launch whose agent never
+   * read them. Absent when none are known (none were held, or the service restarted since).
+   */
+  readonly request?: "waiting" | "read" | "unread";
 }
 
 /** Open's terminal as Settings shows it (the service's TerminalView): fixed words only. */
@@ -56,12 +62,33 @@ export class StaleBuild extends Error {}
 export class Refused extends Error {
   readonly status: number;
   readonly code: string;
+  /** The service's own sentence for the person, when it gave one. */
+  readonly said: string | undefined;
 
-  constructor(status: number, code: string) {
+  constructor(status: number, code: string, said?: string) {
     super(code);
     this.status = status;
     this.code = code;
+    this.said = said;
   }
+}
+
+/** A space the page made or opened. */
+export interface MadeSpace {
+  readonly id: string;
+  readonly name: string;
+  /** The space will not reopen after a restart: why, and what to do. */
+  readonly notRemembered?: string;
+}
+
+function madeSpace(value: unknown): MadeSpace {
+  const { id, name, not_remembered: line } = (value ?? {}) as Record<string, unknown>;
+  if (typeof id !== "string" || typeof name !== "string") throw new Refused(200, "unknown");
+  return {
+    id,
+    name,
+    ...(typeof line === "string" && line.length <= 2000 ? { notRemembered: line } : {}),
+  };
 }
 
 /** A fresh request ID (A1 3.8): 128 random bits, new per intended change. */
@@ -123,12 +150,62 @@ export class Api {
 
   async #result<T>(path: string, input: unknown): Promise<T> {
     const reply = await this.post(path, JSON.stringify(input));
-    const parsed = JSON.parse(reply.body) as { result?: T; error?: { code?: unknown } };
+    const parsed = JSON.parse(reply.body) as {
+      result?: T;
+      error?: { code?: unknown; message?: unknown };
+    };
     if (reply.status !== 200 || parsed.result === undefined) {
       const code = parsed.error?.code;
-      throw new Refused(reply.status, typeof code === "string" ? code : "unknown");
+      const message = parsed.error?.message;
+      throw new Refused(
+        reply.status,
+        typeof code === "string" ? code : "unknown",
+        typeof message === "string" && message.length <= 500 ? message : undefined,
+      );
     }
     return parsed.result;
+  }
+
+  /** What a new space of this name gets unless the person chooses: its prefix and its folder. */
+  async proposeSpace(name: string): Promise<{ prefix: string; folder: string }> {
+    const reply = await this.#result<{ ref_prefix?: unknown; folder?: unknown }>(
+      "/api/v1/space/propose",
+      { name },
+    );
+    return {
+      prefix: typeof reply.ref_prefix === "string" ? reply.ref_prefix : "",
+      folder: typeof reply.folder === "string" ? reply.folder : "",
+    };
+  }
+
+  /** New space: the name, and the prefix and folder when the person chose them. */
+  async createSpace(input: {
+    readonly name: string;
+    readonly prefix?: string;
+    readonly folder?: string;
+  }): Promise<MadeSpace> {
+    return madeSpace(
+      await this.#result("/api/v1/space/create", {
+        name: input.name,
+        ...(input.prefix === undefined ? {} : { ref_prefix: input.prefix }),
+        ...(input.folder === undefined ? {} : { folder: input.folder }),
+      }),
+    );
+  }
+
+  /** Open folder: a space folder on this computer, served from now on. */
+  async openSpace(folder: string): Promise<MadeSpace> {
+    return madeSpace(await this.#result("/api/v1/space/open", { folder }));
+  }
+
+  /** This computer's agent apps, for `space`: what a new entry names. */
+  async agentApps(space: string): Promise<unknown> {
+    return this.#result("/api/v1/machine/apps", { space });
+  }
+
+  /** The switches the person turned over, each with the token its view showed. */
+  async applyAgentApps(space: string, changes: readonly unknown[]): Promise<unknown> {
+    return this.#result("/api/v1/machine/apps_apply", { space, changes });
   }
 
   /** A single-use ticket for the feed's WebSocket. */
@@ -181,6 +258,8 @@ export class Api {
         state: launch.state,
         reason: launch.reason ?? null,
         at,
+        // Open holds the words for the agent: they wait until it reads them.
+        ...(result.text === "held" ? { request: "waiting" as const } : {}),
       },
       copy: result.copy,
     };

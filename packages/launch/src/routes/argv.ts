@@ -3,8 +3,8 @@
 // on every OS, so golden tests compare them as arrays per target, route and OS.
 //
 // What an agent's argv may carry: the instance's own executable and arguments, the mapped
-// permission flags, fixed flags, the session ID Tasks presets, the task's reference with its
-// sanitised title (`-n`), the folder, and the rendered brief as one element after `--`, so it is
+// permission flags, fixed flags, the session ID Tasks presets, the task's reference (`-n`), the
+// folder, and the rendered brief (a pointer, no task text) as one element after `--`, so it is
 // never read as an option. Every element is one argument of an array that the shim spawns without
 // a shell (A4 3.6.3 step 6); nothing is ever joined into a command string here. The folder is not
 // known at the click (it is resolved right before the launch, A4 3.3), so its element stays
@@ -87,8 +87,6 @@ export interface ArgvValues {
   readonly session?: string;
   /** `{task.id}`: the task's reference, such as `M-14`. */
   readonly task: string;
-  /** `{task.title}`: the sanitised title (A4 3.15.6). */
-  readonly title: string;
   /** `{launch.ref}`. */
   readonly reference?: string;
   /** `{brief}`: the rendered brief. Required when the template names it. */
@@ -171,8 +169,6 @@ function textValue(name: string, values: ArgvValues): string | undefined {
       return values.session;
     case "task.id":
       return values.task;
-    case "task.title":
-      return values.title;
     case "launch.ref":
       return values.reference;
     default:
@@ -236,7 +232,6 @@ export interface UrlValues {
   readonly brief: string;
   readonly session?: string;
   readonly task?: string;
-  readonly title?: string;
   readonly reference?: string;
 }
 
@@ -253,11 +248,9 @@ export function expandUrl(template: string, values: UrlValues): string {
             ? values.session
             : key === "task.id"
               ? values.task
-              : key === "task.title"
-                ? values.title
-                : key === "launch.ref"
-                  ? values.reference
-                  : undefined;
+              : key === "launch.ref"
+                ? values.reference
+                : undefined;
     if (value === undefined) throw new RouteUnavailable("bad_value");
     return encodeUrlValue(value);
   });

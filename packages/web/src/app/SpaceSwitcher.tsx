@@ -9,17 +9,19 @@
 // list is read when the switcher appears, each time it opens, when the tab is shown again and every
 // few minutes while it is shown, so the mark comes and goes with the backups.
 //
-// "New space" and "Open folder" need a folder picker and the space verbs over HTTP; they arrive with
-// first-run setup (M5.12). Until then the CLI makes and opens spaces.
-import { Link } from "@tanstack/react-router";
+// New space and Open folder open the same form as the first start, over the page; the space it
+// makes or opens is where the tab goes next.
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
+import { Button, Dialog, DialogTrigger, Modal, ModalOverlay, Popover } from "react-aria-components";
 import { SignedOut } from "../api.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useToast } from "./frame.ts";
 import { CheckIcon, ChevronIcon } from "./Icons.tsx";
 import { useAuth, useMachineApi } from "./session.tsx";
 import { NotOpenNotes } from "./NotOpen.tsx";
+import { SpaceForm, type SpaceFormMode } from "./SpaceForm.tsx";
+import setup from "./Setup.module.css";
 import {
   backupTrouble,
   isServed,
@@ -47,7 +49,10 @@ const styles = classes(css, [
   "state",
   "title",
   "trigger",
+  "add",
+  "adds",
 ]);
+const sheet = classes(setup, ["dialog", "modal", "overlay"]);
 
 const RELIST_MS = 5 * 60_000;
 
@@ -64,6 +69,8 @@ export function SpaceSwitcher({
   const say = useToast();
   const [list, setList] = useState<SpaceList | "failed" | undefined>(undefined);
   const [busy, setBusy] = useState<string | undefined>(undefined);
+  const [adding, setAdding] = useState<SpaceFormMode | undefined>(undefined);
+  const navigate = useNavigate();
 
   const failed = useCallback(
     (error: unknown): boolean => {
@@ -122,97 +129,139 @@ export function SpaceSwitcher({
   };
 
   return (
-    <DialogTrigger
-      onOpenChange={(open) => {
-        if (open) load();
-      }}
-    >
-      <Button
-        className={styles.trigger}
-        aria-label={t(attention ? "space.switchBackup" : "space.switch", { name: name ?? "" })}
+    <>
+      <DialogTrigger
+        onOpenChange={(open) => {
+          if (open) load();
+        }}
       >
-        <span className={styles.name} dir="auto">
-          {name ?? ""}
-        </span>
-        {attention ? <span className={styles.attention} data-part="backup-attention" /> : null}
-        <ChevronIcon />
-      </Button>
-      <Popover className={styles.popover} placement="bottom start" offset={4}>
-        <Dialog className={styles.dialog} aria-label={t("space.list")}>
-          {({ close }) =>
-            list === "failed" ? (
-              <p className={styles.note}>{t("space.listFailed")}</p>
-            ) : (
-              <>
-                <ul className={styles.spaces}>
-                  {(list?.spaces ?? []).map((item) => {
-                    const current = item.id === space;
-                    const isDefault = list?.default === item.id;
-                    const served = isServed(item);
-                    return (
-                      <li key={item.id} className={styles.space}>
-                        {served ? (
-                          <Link
-                            to="/s/$space/$view"
-                            params={{ space: item.id, view: LANDING }}
-                            className={styles.pick}
-                            {...(current ? { "aria-current": "page" as const } : {})}
-                            onClick={close}
-                          >
-                            <span className={styles.mark}>{current ? <CheckIcon /> : null}</span>
-                            <span className={styles.title} dir="auto">
-                              {item.name}
+        <Button
+          className={styles.trigger}
+          aria-label={t(attention ? "space.switchBackup" : "space.switch", { name: name ?? "" })}
+        >
+          <span className={styles.name} dir="auto">
+            {name ?? ""}
+          </span>
+          {attention ? <span className={styles.attention} data-part="backup-attention" /> : null}
+          <ChevronIcon />
+        </Button>
+        <Popover className={styles.popover} placement="bottom start" offset={4}>
+          <Dialog className={styles.dialog} aria-label={t("space.list")}>
+            {({ close }) =>
+              list === "failed" ? (
+                <p className={styles.note}>{t("space.listFailed")}</p>
+              ) : (
+                <>
+                  <ul className={styles.spaces}>
+                    {(list?.spaces ?? []).map((item) => {
+                      const current = item.id === space;
+                      const isDefault = list?.default === item.id;
+                      const served = isServed(item);
+                      return (
+                        <li key={item.id} className={styles.space}>
+                          {served ? (
+                            <Link
+                              to="/s/$space/$view"
+                              params={{ space: item.id, view: LANDING }}
+                              className={styles.pick}
+                              {...(current ? { "aria-current": "page" as const } : {})}
+                              onClick={close}
+                            >
+                              <span className={styles.mark}>{current ? <CheckIcon /> : null}</span>
+                              <span className={styles.title} dir="auto">
+                                {item.name}
+                              </span>
+                              {item.state === "read_only" ? (
+                                <span className={styles.state}>{t("space.readOnly")}</span>
+                              ) : null}
+                            </Link>
+                          ) : (
+                            <span className={styles.pick} data-disabled="true">
+                              <span className={styles.mark} />
+                              <span className={styles.title} dir="auto">
+                                {item.name}
+                              </span>
+                              <span className={styles.state}>{t("space.unavailable")}</span>
                             </span>
-                            {item.state === "read_only" ? (
-                              <span className={styles.state}>{t("space.readOnly")}</span>
-                            ) : null}
-                          </Link>
-                        ) : (
-                          <span className={styles.pick} data-disabled="true">
-                            <span className={styles.mark} />
-                            <span className={styles.title} dir="auto">
-                              {item.name}
-                            </span>
-                            <span className={styles.state}>{t("space.unavailable")}</span>
-                          </span>
-                        )}
-                        {isDefault ? (
-                          <span className={styles.default}>{t("space.default")}</span>
-                        ) : (
-                          <Button
-                            className={styles.make}
-                            isDisabled={busy !== undefined}
-                            aria-label={t("space.makeDefaultFor", { name: item.name })}
-                            onPress={() => {
-                              make(item.id, item.name);
-                            }}
-                          >
-                            {t("space.makeDefault")}
-                          </Button>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-                {list === undefined ? null : (
-                  <NotOpenNotes spaces={notOpen(list)} className={styles.note} />
-                )}
-                {troubles.map((trouble) => (
-                  <p
-                    key={trouble.id}
-                    className={styles.note}
-                    data-part="backup-trouble"
-                    data-why={trouble.why}
-                    dir="auto"
-                  >
-                    {t("space.backupTrouble", { name: trouble.name, why: trouble.why })}
-                  </p>
-                ))}
-              </>
-            )
-          }
-        </Dialog>
-      </Popover>
-    </DialogTrigger>
+                          )}
+                          {isDefault ? (
+                            <span className={styles.default}>{t("space.default")}</span>
+                          ) : (
+                            <Button
+                              className={styles.make}
+                              isDisabled={busy !== undefined}
+                              aria-label={t("space.makeDefaultFor", { name: item.name })}
+                              onPress={() => {
+                                make(item.id, item.name);
+                              }}
+                            >
+                              {t("space.makeDefault")}
+                            </Button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {list === undefined ? null : (
+                    <NotOpenNotes spaces={notOpen(list)} className={styles.note} />
+                  )}
+                  {troubles.map((trouble) => (
+                    <p
+                      key={trouble.id}
+                      className={styles.note}
+                      data-part="backup-trouble"
+                      data-why={trouble.why}
+                      dir="auto"
+                    >
+                      {t("space.backupTrouble", { name: trouble.name, why: trouble.why })}
+                    </p>
+                  ))}
+                  <div className={styles.adds}>
+                    {(["new", "open"] as const).map((mode) => (
+                      <Button
+                        key={mode}
+                        className={styles.add}
+                        onPress={() => {
+                          close();
+                          setAdding(mode);
+                        }}
+                      >
+                        {t(mode === "new" ? "space.new" : "space.openFolder")}
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              )
+            }
+          </Dialog>
+        </Popover>
+      </DialogTrigger>
+      <ModalOverlay
+        className={sheet.overlay}
+        isOpen={adding !== undefined}
+        onOpenChange={(open) => {
+          if (!open) setAdding(undefined);
+        }}
+        isDismissable
+      >
+        <Modal className={sheet.modal}>
+          <Dialog
+            className={sheet.dialog}
+            aria-label={t(adding === "open" ? "start.openTitle" : "start.title")}
+          >
+            <SpaceForm
+              mode={adding ?? "new"}
+              headingLevel={2}
+              onMode={setAdding}
+              onMade={(made) => {
+                setAdding(undefined);
+                if (made.notRemembered !== undefined) say(made.notRemembered);
+                void navigate({ to: "/s/$space/$view", params: { space: made.id, view: LANDING } });
+              }}
+            />
+          </Dialog>
+        </Modal>
+      </ModalOverlay>
+    </>
   );
 }
