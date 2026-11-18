@@ -5051,6 +5051,83 @@
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.folders-gate",
+      "title": "The folder chooser's calls refuse an agent's connection, a script, the bridge and a shim before they read anything, and answer the page and a person at a terminal",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.folders-list",
+      "title": "The folder chooser lists the folders in a typed folder and completes the name typed after it, marks a project's folder, reads a huge folder up to its cap, says when a folder does not answer in time or gives what it read, names folders it may not read or cannot find, begins at the home and the folders that hold the projects, lists Windows drives and shares with ~ as the home, and makes a folder",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.folders-disk",
+      "title": "On the real disk the chooser lists folders and links to folders, marks the links, leaves out files and broken links, names a checkout's repository, says a folder without read permission is unreadable, and makes a folder",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.folders-http",
+      "title": "Over HTTP as the page calls them: a folder listed with the project that has one marked, a project's folder here and on other machines, and a new folder",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.web-write",
+      "title": "A folder or project write from the page waits for the edits before it, shows its toast once it applied with an Undo that names its own commit, and leaves a refusal to the caller without a toast",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.web-chooser",
+      "title": "The folder chooser begins at the home, the folders that hold the projects and the roots, lists a folder's folders with a way to make a new one, and takes the folder a text names without its trailing separator",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.e2e.add-project",
+      "title": "In Chromium and Firefox: New project from a folder shows its name and repository and opens the project with its folder, Undo and Redo and Ctrl+Z take it out and back, the same works by keyboard alone, a folder that is a project's already opens that project, and a project can be added without a folder",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.e2e.project-folder",
+      "title": "In Chromium and Firefox: a project's folder line shows its folder, Change after a move says what followed and the task's own folder inside follows, Undo puts both back, and Clear and Ctrl+Z take it away and back",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.e2e.task-folder",
+      "title": "In Chromium and Firefox: a task's folder line sets a folder of its own, clears it, and Ctrl+Z gives it back",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.e2e.open-refused",
+      "title": "In Chromium and Firefox: Open refused on a folder that is gone offers Choose another folder from its toast, and then opens there; a folder whose marker is missing offers Use this folder and Choose another folder on the task's folder line",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.e2e.screens",
+      "title": "In Chromium and Firefox: New project, the folder chooser, a checkout's facts, a project's folder line, its change dialog and a task's folder line in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }

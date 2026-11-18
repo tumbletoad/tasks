@@ -83,6 +83,10 @@ export interface FolderRefusal {
   readonly of?: "task" | "project";
   /** A marker's refusal: whose the folder's marker says it is instead, in the service's words. */
   readonly owners?: readonly string[];
+  /** A marker's refusal: opens the task in this folder anyway, which marks it. */
+  readonly anyway?: () => void;
+  /** The person asked to choose another folder: the expanded task's chooser opens. */
+  readonly choose?: true;
 }
 
 /** The reasons a folder's marker gives: the person may open the task there anyway. */
@@ -94,6 +98,7 @@ export function folderRefusal(error: unknown): FolderRefusal | undefined {
   const data = (error as Error & { data?: unknown }).data;
   if (typeof data !== "object" || data === null) return undefined;
   const { field, reason, folder, of, owners } = data as Record<string, unknown>;
+  if (field === "instance" && reason === "other_machine") return { reason };
   if (field !== "task" || typeof reason !== "string") return undefined;
   return {
     reason,

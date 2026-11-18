@@ -6,13 +6,16 @@
 // link's name ("Waiting, 2 tasks"). A counted view that holds nothing shows no count and a quieter
 // label, and its name says so ("Inbox, no tasks"). An area lists its projects beneath it, always:
 // projects that opened and closed with their area's view would move every entry below them.
-// Areas show no counts.
-import { Link } from "@tanstack/react-router";
-import { useMemo } from "react";
+// Areas show no counts. New project sits in the foot beside Settings, and on each area while the
+// pointer or focus is on it, over the area's row so nothing beside it moves.
+import { Link, useParams } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
+import { Button } from "react-aria-components";
 import { useIntl } from "react-intl";
+import { AddProject } from "../folder/AddProject.tsx";
 import { slotOf } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
-import { SettingsIcon, ViewIcon } from "./Icons.tsx";
+import { PlusIcon, SettingsIcon, ViewIcon } from "./Icons.tsx";
 import { useLive } from "../store/hooks.ts";
 import css from "./Sidebar.module.css";
 import { SpaceSwitcher } from "./SpaceSwitcher.tsx";
@@ -20,6 +23,8 @@ import { sidebarEntries, VIEW_LABEL, viewCounts } from "./views.ts";
 import { classes } from "./css.ts";
 
 const styles = classes(css, [
+  "add",
+  "area",
   "count",
   "dot",
   "foot",
@@ -81,6 +86,9 @@ export function Sidebar({ space }: { readonly space: string }) {
   );
   const areas = useMemo(() => [...state.areas.values()].sort(byPosition), [state.areas]);
   const projects = useMemo(() => [...state.projects.values()].sort(byPosition), [state.projects]);
+  // New project: open, and the area it goes in unless the person chooses another.
+  const [adding, setAdding] = useState<{ area: string | undefined }>();
+  const here = useParams({ strict: false });
 
   return (
     <div className={styles.sidebar}>
@@ -117,7 +125,7 @@ export function Sidebar({ space }: { readonly space: string }) {
       {areas.length === 0 ? null : (
         <ul className={styles.list} data-group="areas">
           {areas.map((area, index) => (
-            <li key={area.id}>
+            <li key={area.id} className={styles.area}>
               <Link
                 to="/s/$space/area/$area"
                 params={{ space, area: area.id }}
@@ -133,6 +141,16 @@ export function Sidebar({ space }: { readonly space: string }) {
                   {area.title}
                 </span>
               </Link>
+              <Button
+                className={styles.add}
+                aria-label={t("project.newIn", { area: area.title })}
+                data-tip={t("project.newIn", { area: area.title })}
+                onPress={() => {
+                  setAdding({ area: area.id });
+                }}
+              >
+                <PlusIcon />
+              </Button>
               <Projects
                 space={space}
                 area={area.id}
@@ -153,7 +171,26 @@ export function Sidebar({ space }: { readonly space: string }) {
         >
           <SettingsIcon />
         </Link>
+        <Button
+          className={styles.gear}
+          aria-label={t("project.new")}
+          data-tip={t("project.new")}
+          onPress={() => {
+            setAdding({ area: here.area });
+          }}
+        >
+          <PlusIcon />
+        </Button>
       </div>
+      {adding === undefined ? null : (
+        <AddProject
+          space={space}
+          area={adding.area}
+          onClose={() => {
+            setAdding(undefined);
+          }}
+        />
+      )}
     </div>
   );
 }
