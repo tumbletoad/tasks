@@ -10,7 +10,7 @@
 // count the open tasks their view lists, quietly, and a folded area keeps its count. A name the
 // sidebar cuts shows whole in a tip.
 import { Link, useParams } from "@tanstack/react-router";
-import { useMemo, type FocusEvent, type PointerEvent } from "react";
+import { useId, useMemo, type FocusEvent, type PointerEvent } from "react";
 import { useIntl } from "react-intl";
 import { slotOf } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
@@ -129,6 +129,8 @@ export function Sidebar({ space }: { readonly space: string }) {
   const areas = useMemo(() => [...state.areas.values()].sort(byPosition), [state.areas]);
   const projects = useMemo(() => [...state.projects.values()].sort(byPosition), [state.projects]);
   const { folded, toggle } = useFolds(space);
+  // The side menu and the drawer can both be in the page: each names its own lists.
+  const menu = useId();
   // A folded area holding the project on screen is marked as the way to it.
   const params = useParams({ strict: false });
   const shownProject = "project" in params ? params.project : undefined;
@@ -172,7 +174,7 @@ export function Sidebar({ space }: { readonly space: string }) {
             const own = projects.filter((project) => project.area_id === area.id);
             const isFolded = folded.has(area.id);
             const n = counts === undefined ? undefined : (counts.get(area.id) ?? 0);
-            const list = `sidebar-projects-${area.id}`;
+            const list = `${menu}-projects-${area.id}`;
             return (
               <li key={area.id} data-area={area.id} data-folded={isFolded || undefined}>
                 {/* The area's colour is its fold button's, or its dot's when it has no projects. */}

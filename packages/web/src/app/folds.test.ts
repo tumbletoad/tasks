@@ -4,7 +4,7 @@
 // what is read back is checked, so anything else stored there unfolds nothing and breaks nothing.
 import { PRODUCT_ID } from "@tasks/brand";
 import { beforeEach, describe, expect, test } from "vitest";
-import { keepFolds, readFolds } from "./folds.ts";
+import { keepFolds, readFolds, shownFolds, toggleFold } from "./folds.ts";
 
 beforeEach(() => {
   localStorage.clear();
@@ -31,5 +31,17 @@ describe("[A5.3.3.web.folds] folded areas are kept per space for the browser, an
       JSON.stringify(["ar_lumen", 7, "<img src=x>", "x".repeat(200)]),
     );
     expect([...readFolds("sp_1")]).toEqual(["ar_lumen"]);
+  });
+
+  test("a click keeps its own change only: another tab's fold since stays kept and does not move this tab", () => {
+    expect(shownFolds("sp_tabs").size).toBe(0);
+    // Another tab folds Home after this one loaded.
+    keepFolds("sp_tabs", new Set(["ar_home"]));
+    toggleFold("sp_tabs", "ar_work");
+    expect([...shownFolds("sp_tabs")]).toEqual(["ar_work"]);
+    expect([...readFolds("sp_tabs")].sort()).toEqual(["ar_home", "ar_work"]);
+    toggleFold("sp_tabs", "ar_work");
+    expect(shownFolds("sp_tabs").size).toBe(0);
+    expect([...readFolds("sp_tabs")]).toEqual(["ar_home"]);
   });
 });

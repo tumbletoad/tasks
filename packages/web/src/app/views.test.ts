@@ -43,16 +43,17 @@ const TASKS: TaskRow[] = [
 describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
   test("the status views and the Inbox are disjoint, and their counts add up", () => {
     const counts = viewCounts(TASKS);
-    expect(counts).toEqual({ inbox: 2, open: 2, waiting: 1, review: 1, backlog: 1 });
+    // A status of the space's own without a view ("someday") is in Open.
+    expect(counts).toEqual({ inbox: 2, open: 3, waiting: 1, review: 1, backlog: 1 });
     // A task in the Inbox appears in no status view until triaged (A5 3.5).
     for (const t of TASKS) {
       const holders = COUNTED.filter((view) => viewFilter(view)?.(t) === true);
       expect(holders.length, t.ref).toBeLessThanOrEqual(1);
       expect(holders[0]).toBe(countedViewOf(t));
     }
-    // A status no view shows is in no count.
+    // Every open task is in exactly one view.
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    expect(total).toBe(TASKS.length - 1);
+    expect(total).toBe(TASKS.length);
   });
 
   test("Today has sections, not a filter; Completed and Agents read what the live rows do not hold", () => {
@@ -101,7 +102,7 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
     expect(Object.fromEntries(entries)).toEqual({
       today: { empty: false },
       inbox: { count: 2, empty: false },
-      open: { count: 2, empty: false },
+      open: { count: 3, empty: false },
       waiting: { count: 1, empty: false },
       review: { count: 0, empty: true },
       backlog: { count: 1, empty: false },

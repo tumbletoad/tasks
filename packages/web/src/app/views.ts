@@ -3,7 +3,8 @@
 // view's grouping is `VIEW_LIST`.
 //
 // - Status views are disjoint (U5): Inbox holds the tasks with the inbox flag, and Open, Waiting,
-//   Review and Backlog hold the other active tasks by status. So the counts add up.
+//   Review and Backlog hold the other active tasks by status (Open also a status with no view of
+//   its own). So the counts add up, and every open task is in one view.
 // - Counts appear on Inbox, Open, Waiting, Review and Backlog only (U2), and only in the sidebar.
 // - Every view is always in the sidebar, in its fixed place, whatever it holds.
 // - Completed and Agents read data the live store does not hold (completed tasks are never
@@ -49,10 +50,13 @@ export const isView = (value: string): value is View =>
 export const isCounted = (view: View): view is CountedView =>
   (COUNTED as readonly string[]).includes(view);
 
-/** The counted view a task belongs to: Inbox by its flag, else its status; none for another. */
-export function countedViewOf(task: TaskRow): CountedView | undefined {
+/**
+ * The counted view a task belongs to: Inbox by its flag, else its status. A status of the space's
+ * own that has no view of its own is listed and counted in Open, so no open task is in no view.
+ */
+export function countedViewOf(task: TaskRow): CountedView {
   if (task.inbox) return "inbox";
-  return STATUS_VIEWS.find((view) => view === task.status);
+  return STATUS_VIEWS.find((view) => view === task.status) ?? "open";
 }
 
 /** The views of the default statuses (A1 `tasks.statuses`: open, waiting, review, backlog). */
@@ -68,8 +72,7 @@ export function viewCounts(tasks: Iterable<TaskRow>): Readonly<Record<CountedVie
     backlog: 0,
   };
   for (const task of tasks) {
-    const view = countedViewOf(task);
-    if (view !== undefined) counts[view] += 1;
+    counts[countedViewOf(task)] += 1;
   }
   return counts;
 }
