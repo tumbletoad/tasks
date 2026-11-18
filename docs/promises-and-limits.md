@@ -139,10 +139,16 @@ the behaviour it describes, and keep each one to a sentence or two.
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
   ends what Tasks could find of it: a process the agent detached from it may live on.
 - What a run's agent changes through Tasks' own tools is recorded as that run's.
+- A Claude Code run gets Tasks' tools in a file in the run's folder. The file holds the run's
+  ticket, which opens your space only while the run runs.
+- A Claude Code run asks no one: what Claude Code would ask you to approve is declined and
+  counted in the run's record, and a question for you ends the run with the question. A narrower
+  `run_permission` uses Claude Code's own modes, so a tool you approved in your Claude Code
+  settings, such as another MCP server's, stays approved in it.
 - A run's folder on this machine keeps the agent's raw output and its answer, which are task
   text. It is removed after 14 days or past the newest 200 runs, once the answer is in the run's
-  record. The agent's own history, such as Codex's sessions, keeps the run's conversation as it
-  keeps any session of yours, and Tasks leaves it there.
+  record. The agent's own history, such as Codex's or Claude Code's sessions, keeps the run's
+  conversation as it keeps any session of yours, and Tasks leaves it there.
 
 ## The page
 

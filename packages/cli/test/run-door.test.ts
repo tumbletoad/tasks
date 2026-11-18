@@ -19,14 +19,17 @@ import {
   waitFor,
 } from "@tasks/service/test/harness";
 import { classSession } from "@tasks/service/test/ops-helpers";
+import { FINAL_RUN_STATES, type RunRecord } from "@tasks/contracts/runs";
+import { RunMachine, type RunEnd } from "@tasks/runs";
 import { newId, type Id } from "@tasks/storage";
 import { seedMira } from "@tasks/testkit";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { callTools, type ToolCall } from "../../runs/test/codex-server.ts";
 import { BIN, runMain } from "./cli-harness.ts";
 
 const windows = process.platform === "win32";
 const SERVER = fileURLToPath(new URL("../../runs/test/codex-server.ts", import.meta.url));
+const FINAL: ReadonlySet<string> = new Set(FINAL_RUN_STATES);
 const REQUEST_MARK = "Look at MARKREQ7Q2 first.";
 const ANSWER_MARK = "Found MARKANS9X4 in the export.";
 const LOG_MARK = "Progress MARKLOG3K8 noted.";
@@ -259,6 +262,61 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
       expect(text.includes("MARKREQ7Q2"), file).toBe(false);
       expect(text.includes("MARKANS9X4"), file).toBe(false);
     }
+  });
+
+  test("a run's right to use its space ends when the run does, not once its record is read again", async () => {
+    // Each time the store says a run is final, its end recorded or read, that run's calls may no
+    // longer use the space. The run may end before its ID is back from the command line.
+    const looks: { run: string; may: boolean }[] = [];
+    const look = (record: RunRecord | undefined): void => {
+      if (record !== undefined && FINAL.has(record.state)) {
+        looks.push({
+          run: record.id,
+          may: service?.ops.homes?.may("codex", spaceId, record.id) ?? false,
+        });
+      }
+    };
+    const read = Reflect.get<RunMachine, "read">(RunMachine.prototype, "read");
+    const settle = Reflect.get<RunMachine, "settle">(RunMachine.prototype, "settle");
+    const reads = vi.spyOn(RunMachine.prototype, "read").mockImplementation(async function (
+      this: RunMachine,
+      run: string,
+    ) {
+      const record = await read.call(this, run);
+      look(record);
+      return record;
+    });
+    const settles = vi.spyOn(RunMachine.prototype, "settle").mockImplementation(async function (
+      this: RunMachine,
+      run: string,
+      end: RunEnd,
+    ) {
+      const record = await settle.call(this, run, end);
+      look(record);
+      return record;
+    });
+    let id = "";
+    try {
+      const started = await user(["run", task, "--json", "Once."]);
+      id = (JSON.parse(started.stdout) as { id: string }).id;
+      expect(id).toMatch(/^ru_/);
+      // A queued run's record is final only once it started and ended: wait for that, however long.
+      const done = await waitFor(
+        async () => {
+          const run = await service?.runs.read(spaceId, id);
+          return run !== undefined && FINAL.has(run.state) ? run : undefined;
+        },
+        120_000,
+        "the run final",
+      );
+      expect(done.state).toBe("succeeded");
+    } finally {
+      reads.mockRestore();
+      settles.mockRestore();
+    }
+    const after = looks.filter((l) => l.run === id).map((l) => l.may);
+    expect(after).not.toContain(true);
+    expect(after.length).toBeGreaterThan(0);
   });
 
   test("a retry with the same request ID starts nothing twice", async () => {

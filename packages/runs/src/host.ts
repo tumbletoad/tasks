@@ -110,6 +110,8 @@ interface Flow {
   startPending: boolean;
   /** The end it settles with once its container is confirmed empty, while it is `unknown`. */
   pending: RunEnd | undefined;
+  /** Its end is being recorded: from here on the run no longer runs. */
+  settling: boolean;
   readonly abort: AbortController;
   done: Promise<RunRecord | undefined>;
 }
@@ -294,9 +296,22 @@ export class RunHost {
 
   /** Resolves with the run's record once this host's work on it is over. */
   async ended(id: string): Promise<RunRecord | undefined> {
-    const flow = this.#flows.get(id);
-    if (flow !== undefined) await flow.done;
+    await this.hosting(id);
     return this.#machine.read(id);
+  }
+
+  /** Resolves as soon as this host's work on the run is over: its end recorded, or the host closed. */
+  async hosting(id: string): Promise<void> {
+    await this.#flows.get(id)?.done;
+  }
+
+  /**
+   * Whether the run runs here now: started by this host, and its end not yet being recorded. It
+   * is false before anyone can read the run's end from the store.
+   */
+  running(id: string): boolean {
+    const flow = this.#flows.get(id);
+    return flow !== undefined && !flow.settling && !this.#isClosed();
   }
 
   /**
@@ -404,6 +419,7 @@ export class RunHost {
       },
       startPending: false,
       pending: undefined,
+      settling: false,
       abort,
       done: Promise.resolve(undefined),
     };
@@ -806,6 +822,9 @@ export class RunHost {
    * `retryMs` for as long as the host is open: the run's end is known, and only this flow holds it.
    */
   async #settle(id: string, end: RunEnd): Promise<RunRecord | undefined> {
+    // Before the end can be read from the store, the run no longer runs here.
+    const flow = this.#flows.get(id);
+    if (flow !== undefined) flow.settling = true;
     // A closed host's runs end with its service: the next start records why.
     if (this.#isClosed()) return undefined;
     for (;;) {

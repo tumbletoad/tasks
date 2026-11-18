@@ -159,6 +159,26 @@ const asksPerson = (item: Json): boolean =>
   Array.isArray(item["questions"]) &&
   (item["questions"] as unknown[]).length > 0;
 
+/** The protocol's answer when no one answers a request: declined, or nothing given. */
+function unanswered(method: string): Json {
+  switch (method) {
+    case "item/commandExecution/requestApproval":
+    case "item/fileChange/requestApproval":
+      return { decision: "decline" };
+    case "execCommandApproval":
+    case "applyPatchApproval":
+      return { decision: { denied: { rejection: "The run has ended." } } };
+    case "item/permissions/requestApproval":
+      return { permissions: {}, scope: "turn" };
+    case "item/tool/requestUserInput":
+      return { answers: {} };
+    case "mcpServer/elicitation/request":
+      return { action: "decline" };
+    default:
+      throw new RpcError(RPC_ERRORS.methodNotFound, `Method not found: ${method}`);
+  }
+}
+
 /** Words of an error that say the agent is not signed in. */
 const SIGNED_OUT = /\b(?:401|unauthori[sz]ed|not logged in|log ?in|sign ?in|authenticat)/iu;
 
@@ -331,6 +351,9 @@ export function codexDriver(session: CodexSession): OpenDriver {
     };
 
     rpc.onRequest((method, raw) => {
+      // Settled work is saved as it is: a request that comes while the server closes hears that no
+      // one answered, and changes nothing.
+      if (done) return unanswered(method);
       state.heard = true;
       const params = record(raw) ?? {};
       // An agent the run's agent started asks its own questions: no person will answer them, and
@@ -361,9 +384,8 @@ export function codexDriver(session: CodexSession): OpenDriver {
             ? { permissions: params["permissions"] ?? {}, scope: "turn" }
             : { permissions: {}, scope: "turn" };
         case "item/tool/requestUserInput":
-          return helper ? { answers: {} } : needsPerson(questionText(params));
         case "mcpServer/elicitation/request":
-          return helper ? { action: "decline" } : needsPerson(questionText(params));
+          return helper ? unanswered(method) : needsPerson(questionText(params));
         default:
           throw new RpcError(RPC_ERRORS.methodNotFound, `Method not found: ${method}`);
       }

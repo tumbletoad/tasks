@@ -1,5 +1,6 @@
 // The parser for `claude -p --output-format stream-json --verbose` (A4 3.11.3, 3.11.4), shaped on
-// the Claude Code 2.1.322 recordings of lab run N (fixtures/streams/claude-print/).
+// the Claude Code 2.1.322 recordings of lab run N (fixtures/streams/claude-print/) and the 2.1.325
+// ones of the run driver (fixtures/claude-stream/).
 //
 // | Event                          | Use                                                        |
 // |--------------------------------|------------------------------------------------------------|
@@ -23,8 +24,18 @@ import {
 } from "./parser.ts";
 import { addCounts, amount, array, count, nativeId, record, string, type Json } from "./values.ts";
 
-/** Known event types that carry nothing the run needs. */
-const IGNORED = new Set(["user", "rate_limit_event", "stream_event"]);
+/** Known event types that carry nothing the run needs. The driver answers the control lines. */
+const IGNORED = new Set([
+  "user",
+  "rate_limit_event",
+  "stream_event",
+  "control_request",
+  "control_response",
+  "control_cancel_request",
+]);
+
+/** The program's own diagnostics in a result's `errors`: not words for the person. */
+const DIAGNOSTIC = /^\[[a-z_]+\]/;
 
 const TASKS_TOOL_PREFIX = `mcp__${MCP_SERVER_KEY}__`;
 
@@ -124,8 +135,12 @@ class ClaudeReader implements CliReader {
       if (block === undefined) continue;
       if (block["type"] === "tool_use") {
         const id = string(block["id"]);
-        if (id === undefined || this.toolUses.add(id))
-          ctx.progress(claudeToolLabel(string(block["name"])));
+        const label = claudeToolLabel(string(block["name"]));
+        if (id === undefined || this.toolUses.add(id)) ctx.progress(label);
+        // Tasks' tools may still be starting when the session starts: a call says they connected.
+        if (label === "tasks" && ctx.session !== null && ctx.session.appTools !== "connected") {
+          ctx.sessionSeen(ctx.session.cwd, "connected");
+        }
       } else if (block["type"] === "text") {
         const text = string(block["text"]);
         if (text === undefined) ctx.counts.malformed += 1;
@@ -146,7 +161,7 @@ class ClaudeReader implements CliReader {
     // On a failure, `result` holds the error text, not an answer.
     if (!failed && text !== undefined) ctx.answer(text, true);
     const errors = array(event["errors"]);
-    const firstError = errors?.find((e) => typeof e === "string");
+    const firstError = errors?.find((e) => typeof e === "string" && !DIAGNOSTIC.test(e));
     if (typeof firstError === "string") ctx.error(firstError);
     else if (failed && text !== undefined) ctx.error(text);
 
