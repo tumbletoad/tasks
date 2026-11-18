@@ -31,6 +31,8 @@ export interface RowItem {
   readonly area: AreaRow | undefined;
   readonly slot: number | undefined;
   readonly project: ProjectRow | undefined;
+  /** Drawn as Completed draws its rows (`Group.finished`). */
+  readonly finished: boolean;
 }
 
 export type Item = GroupItem | SectionItem | RowItem;
@@ -77,6 +79,7 @@ export function itemsOf(
           area: task.area_id === undefined ? undefined : areas.get(task.area_id),
           slot: task.area_id === undefined ? undefined : slots.get(task.area_id),
           project: task.project_id === undefined ? undefined : projects.get(task.project_id),
+          finished: group.finished === true,
         });
         rows += 1;
       });

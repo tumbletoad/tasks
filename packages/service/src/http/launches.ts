@@ -8,7 +8,7 @@
 // the page refetches when the change feed names a launch.
 //
 // No text of a task, brief or composer travels here: a receipt holds IDs, states, instants and
-// fixed codes only, as the launch record does, and what only this computer knows: whether the
+// fixed codes only, as the launch record does, and what only this machine knows: whether the
 // launch's agent read the person's request yet, and whether its session runs now.
 import { AppError } from "@tasks/contracts";
 import {

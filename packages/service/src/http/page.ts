@@ -159,7 +159,7 @@ export class UiFolderInvalid extends Error {}
 export const BUILD_PLACEHOLDER = "__TASKS_BUILD__";
 
 /**
- * Where a built `index.html` takes this computer's theme, so the first paint is already in it,
+ * Where a built `index.html` takes this machine's theme, so the first paint is already in it,
  * in a fresh browser too. Replaced per response: the person may change it at any time.
  */
 export const THEME_PLACEHOLDER = "__TASKS_THEME__";

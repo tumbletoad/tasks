@@ -6,16 +6,18 @@ import { newId, type Id } from "../src/ids.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
 import { RUN_EDGES, RUN_REASONS, RUN_SQL, RUN_STATES, type RunState } from "../src/write/runs.ts";
 import { TEST_MACHINE, tempFolders } from "./space-helpers.ts";
-import { checkHistory, expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
+import { checkHistory, expectStatus, type Fixture, fixtureCopies } from "./write-helpers.ts";
 
 const temp = tempFolders("runs");
+/** The fixture space, made once and copied for each test. */
+const fixture = fixtureCopies(temp.make);
 afterAll(temp.cleanup);
 
 let fx: Fixture;
 let ui: Credential;
 let time: number;
 beforeEach(async () => {
-  fx = await writeFixture(temp.make());
+  fx = await fixture();
   time = Date.UTC(2026, 10, 13, 9, 0, 0);
   fx.reopen({ now: () => time });
   ui = { ...fx.human, scope_id: "ui:fixture", origin: "ui" };

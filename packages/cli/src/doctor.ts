@@ -703,7 +703,7 @@ export async function doctor(
   // stateDir names a layout that cannot be resolved; past it, the layout is this install's.
   const state = stateDir(io);
   const layout = resolveLayout(hostFacts(io.env, io.platform));
-  // The OS's account list can take seconds on a slow computer: it is read while the other rows run.
+  // The OS's account list can take seconds on a slow machine: it is read while the other rows run.
   const accounts =
     connect.accounts === undefined
       ? readAccounts(io.platform, io.env, io.cwd).catch(() => undefined)

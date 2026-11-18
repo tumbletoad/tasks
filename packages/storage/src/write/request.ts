@@ -352,9 +352,8 @@ export interface Placement {
  *   task finished within the window, else the task is created.
  * - `new`: a new task whatever the keys match (A3's `create_new`). A key an active task holds is
  *   linked to the new task without the key, so it keeps its one active holder.
- * - `none`: no lookup: the task is created.
  */
-export const DEDUPE_MODES = ["source_key", "new", "none"] as const;
+export const DEDUPE_MODES = ["source_key", "new"] as const;
 export type DedupeMode = (typeof DEDUPE_MODES)[number];
 
 /** Days a finished task still matches a draft's key: `tasks.dedupe_window_days`'s default. */

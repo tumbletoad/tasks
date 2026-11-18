@@ -516,7 +516,8 @@ describe("[A4.5.shim.attach] attachment, reports, recovery and the PID check", (
     expect(
       await host.report(b, SHIM_METHODS.failed, { reason: "verify", folder: "folder_changed" }),
     ).toMatchObject({ kind: "applied", ended: true, folder: "folder_changed" });
-    expect(await read(bad.id)).toMatchObject({ state: "failed", reason: "verify_failed" });
+    // The launch records the folder's own reason, so the task says why.
+    expect(await read(bad.id)).toMatchObject({ state: "failed", reason: "folder_changed" });
     // A Windows NTSTATUS exit code is no count: the exit is recorded without it.
     const ntstatus = await dispatched();
     const c = attachmentOf((await claim(ntstatus.ticket)).outcome);
@@ -542,9 +543,12 @@ describe("[A4.5.shim.attach] attachment, reports, recovery and the PID check", (
     const gone = await dispatched();
     live.set(SHIM_PID + 2, SHIM_START);
     attachmentOf((await claim(gone.ticket, { pid: SHIM_PID + 2 })).outcome);
+    const unfit = await dispatched();
+    live.set(SHIM_PID + 3, SHIM_START);
+    attachmentOf((await claim(unfit.ticket, { pid: SHIM_PID + 3 })).outcome);
 
     // The service stops. One shim's agent ends meanwhile and its shim writes exit.json; another
-    // shim dies without a word.
+    // shim dies without a word; a third finds its folder gone and starts no agent.
     (records as MemoryRecords).exits.set(withExit.id, {
       format: 1,
       launch: withExit.id,
@@ -554,8 +558,20 @@ describe("[A4.5.shim.attach] attachment, reports, recovery and the PID check", (
       signal: null,
       ran_ms: 90_000,
     });
+    (records as MemoryRecords).exits.set(unfit.id, {
+      format: 1,
+      launch: unfit.id,
+      spawned: false,
+      settled: false,
+      code: null,
+      signal: null,
+      ran_ms: 0,
+      failed: "verify",
+      folder: "path_missing",
+    });
     live.delete(SHIM_PID);
     live.delete(SHIM_PID + 2);
+    live.delete(SHIM_PID + 3);
     pass(BRIDGE_WINDOW_MS + CLAIM_WINDOW_MS);
     boot();
     await machine.recover();
@@ -565,6 +581,8 @@ describe("[A4.5.shim.attach] attachment, reports, recovery and the PID check", (
     });
     expect(await read(alive.id)).toMatchObject({ state: "dispatched" });
     expect(await read(gone.id)).toMatchObject({ state: "unknown", reason: "lost" });
+    // The folder's own reason, not only that the shim's check failed.
+    expect(await read(unfit.id)).toMatchObject({ state: "failed", reason: "path_missing" });
     await host.check();
     expect(records.get(withExit.id)).toBeUndefined();
     expect(records.get(gone.id)).toBeUndefined();

@@ -83,7 +83,7 @@ export interface World {
   /** The `tasks open` URL of a fresh code, landing on `to`. */
   signInUrl(to: string): Promise<string>;
   /**
-   * Sets one of this computer's settings (`ui.theme`, `ui.single_keys`) as the page does, or resets
+   * Sets one of this machine's settings (`ui.theme`, `ui.single_keys`) as the page does, or resets
    * it with null. The tests of a worker share its service: a test that changes one puts it back.
    */
   machine(key: string, value: unknown): Promise<void>;

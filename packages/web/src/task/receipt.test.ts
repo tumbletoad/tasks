@@ -60,13 +60,13 @@ describe("[A4.5.terminal.receipt] the receipt names the terminal and its source"
 describe("[A4.5.receipt.folder-reason] a launch its folder stopped says why in the toast's words", () => {
   test("the folder's reason in words, any other reason as its code reads", () => {
     const failed = (reason: string) => receiptText(receipt({ state: "failed", reason }), "Cx", t);
-    expect(failed("path_missing")).toBe("Did not open: the folder was not found on this computer");
+    expect(failed("path_missing")).toBe("Did not open: the folder was not found on this machine");
     expect(failed("not_a_directory")).toBe(
-      "Did not open: the task's folder is a file on this computer",
+      "Did not open: the task's folder is a file on this machine",
     );
     expect(failed("not_answering")).toBe("Did not open: the task's folder did not answer in time");
     expect(failed("unsafe_folder")).toBe(
-      "Did not open: the task's folder cannot be used on this computer",
+      "Did not open: the task's folder cannot be used on this machine",
     );
     expect(failed("agent_exited")).toBe("Did not open: the agent ended right after it started");
     expect(failed("expired")).toBe("Did not open: expired");

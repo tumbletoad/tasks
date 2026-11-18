@@ -251,6 +251,11 @@ test.describe("[A7.3.12.m5-10.e2e.search] Search results are a list like any oth
       page.locator(`main li[data-task="${id ?? ""}"] [data-part="ending"] > [dir]`);
     await expect(ending(done)).toHaveText("Sown in the cold frame.");
     await expect(ending(dropped)).toHaveText("Too damp to dry this year.");
+    // Their date column says when and how each ended, as in Completed.
+    const endedOn = (id: string | undefined) =>
+      page.locator(`main li[data-task="${id ?? ""}"] [data-part="row-due"]`);
+    await expect(endedOn(done)).toHaveAttribute("data-tip", /^Completed /u);
+    await expect(endedOn(dropped)).toHaveAttribute("data-tip", /^Dropped /u);
     // Their summaries do not show beside it.
     await expect(page.locator(`main li[data-task="${done ?? ""}"]`)).not.toContainText("In trays");
     await expect(page.locator(`main li[data-task="${dropped ?? ""}"]`)).not.toContainText("rack");

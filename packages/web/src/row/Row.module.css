@@ -50,7 +50,7 @@
   background: var(--k-raised);
 }
 
-/* Marker: at most one, the changed dot or the needs-input ring (A5 3.6). */
+/* Marker: at most one, the changed dot, the needs-input ring or the draft's pencil (A5 3.6). */
 .marker {
   display: grid;
   place-items: center;
@@ -69,6 +69,21 @@
 
 .marker[data-kind="needs_input"] > span {
   border: 1.5px solid var(--k-review);
+}
+
+/* The person's own unsent words: a small muted pencil in the same place, so nothing moves. */
+.marker[data-kind="draft"] > span {
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 0;
+  color: var(--k-muted);
+}
+
+.marker[data-kind="draft"] svg {
+  width: 12px;
+  height: 12px;
 }
 
 /* Check: a 16 px circle with a 1.5 px control line, in a 24 px target. */

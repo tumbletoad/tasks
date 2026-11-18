@@ -28,11 +28,11 @@ const WAYS: Partial<Record<SpaceReason, string>> = {
     `the service: ${CLI_NAME} service restart. ` +
     `If it fails again, restore its newest backup into a new folder: ${LATEST}.`,
   other_space:
-    "This folder holds another space than the one this computer opened there, so it is not " +
+    "This folder holds another space than the one this machine opened there, so it is not " +
     "opened. Put the original folder back, or change the space's entry in machine.toml.",
-  not_authority: "Another computer owns this space, so it is read-only here. Change it there.",
+  not_authority: "Another machine owns this space, so it is read-only here. Change it there.",
   read_only_copy:
-    "This is a restored copy, read-only until you make it this computer's. Close its original " +
+    "This is a restored copy, read-only until you make it this machine's. Close its original " +
     `first if it is open here, then run: ${CLI_NAME} space claim <folder>.`,
 };
 

@@ -13,16 +13,18 @@ import {
   type WriteResult,
 } from "../src/write/request.ts";
 import { TEST_MACHINE, tempFolders } from "./space-helpers.ts";
-import { checkHistory, expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
+import { checkHistory, expectStatus, type Fixture, fixtureCopies } from "./write-helpers.ts";
 
 const temp = tempFolders("launches");
+/** The fixture space, made once and copied for each test. */
+const fixture = fixtureCopies(temp.make);
 afterAll(temp.cleanup);
 
 let fx: Fixture;
 let ui: Credential;
 let time: number;
 beforeEach(async () => {
-  fx = await writeFixture(temp.make());
+  fx = await fixture();
   time = Date.UTC(2026, 10, 13, 9, 0, 0);
   fx.reopen({ now: () => time });
   ui = { ...fx.human, scope_id: "ui:fixture", origin: "ui" };

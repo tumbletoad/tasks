@@ -73,23 +73,59 @@ describe("[A3.5.search.parser] the query language", () => {
     expect(refusal(() => parseQuery("p=9")).hint).toBe("Use p:1 or p<=2.");
   });
 
-  test("an unknown key fails with a suggestion and never quotes the query", () => {
-    const error = refusal(() => parseQuery("prio:1 secret-word"));
+  test("a misspelt key fails with a suggestion and never quotes the query", () => {
+    const error = refusal(() => parseQuery("stauts:open secret-word"));
     expect(error.code).toBe("invalid_input");
-    expect(error.hint).toBe("Did you mean p?");
-    expect(error.data["suggestions"]).toEqual(["p"]);
-    expect(JSON.stringify(error.toBody())).not.toMatch(/prio|secret-word/);
-    expect(refusal(() => parseQuery("stauts:open")).hint).toBe("Did you mean status?");
+    expect(error.hint).toBe("Did you mean status?");
+    expect(error.data["suggestions"]).toEqual(["status"]);
+    expect(JSON.stringify(error.toBody())).not.toMatch(/stauts|secret-word/);
+    expect(refusal(() => parseQuery("aera:home")).hint).toBe("Did you mean area?");
+    expect(refusal(() => parseQuery("-projects:portal")).hint).toBe("Did you mean project?");
+    expect(refusal(() => parseQuery("stat:open")).hint).toBe("Did you mean status?");
     expect(refusal(() => parseQuery("is:inbx")).hint).toBe("Did you mean inbox?");
+  });
+
+  test("ordinary text that looks like a filter is words, and an alias is its key", () => {
+    const words = (q: string): unknown[] =>
+      parseQuery(q)
+        .groups.flat()
+        .map((t) => (t.type === "text" ? t.text : `${t.key}${t.op}${t.value}`));
+    expect(words("Read https://example.org/guide")).toEqual(["Read", "https://example.org/guide"]);
+    expect(words("file:///tmp/x ftp://example.org")).toEqual([
+      "file:///tmp/x",
+      "ftp://example.org",
+    ]);
+    expect(words("call at 10:30 re: budget")).toEqual(["call", "at", "10:30", "re:", "budget"]);
+    expect(words("Note: mailto:ana@example.com TODO:later")).toEqual([
+      "Note:",
+      "mailto:ana@example.com",
+      "TODO:later",
+    ]);
+    expect(words("C:\\Users\\mira\\code\\portal c:/work port:8080 bug:123")).toEqual([
+      "C:\\Users\\mira\\code\\portal",
+      "c:/work",
+      "port:8080",
+      "bug:123",
+    ]);
+    // A drive's letter that is also a key is still a drive.
+    expect(words("P:\\repo p:/work")).toEqual(["P:\\repo", "p:/work"]);
+    // An alias with nothing behind it is a word too: `Priority: high` is prose.
+    expect(words("Priority: high")).toEqual(["Priority:", "high"]);
     // Only the language's own words: never a property every object inherits.
-    for (const inherited of ["constructor", "toString", "hasOwnProperty"]) {
-      const odd = refusal(() => parseQuery(`${inherited}:x`));
-      expect(odd.code).toBe("invalid_input");
-      expect(odd.hint ?? "").not.toMatch(/function|native/);
-      for (const s of (odd.data["suggestions"] as unknown[] | undefined) ?? []) {
-        expect(typeof s).toBe("string");
-      }
-    }
+    expect(words("constructor:x toString:x hasOwnProperty:x")).toEqual([
+      "constructor:x",
+      "toString:x",
+      "hasOwnProperty:x",
+    ]);
+    expect(printQuery(parseQuery("prio:1 order:-effort -state:open Done>-7d"))).toBe(
+      "p:1 sort:-effort -status:open completed>-7d",
+    );
+    expect(printQuery(parseQuery("priority=2"))).toBe("p:2");
+    // A known key keeps a path for its value.
+    expect(words("folder:/home/mira/work/portal")).toEqual(["folder:/home/mira/work/portal"]);
+    expect(parseQuery("folder://server/share/portal").groups.flat()).toEqual([
+      { type: "filter", key: "folder", op: ":", value: "//server/share/portal", negated: false },
+    ]);
   });
 
   test("an accepted query's parsed form is itself within the limits", () => {

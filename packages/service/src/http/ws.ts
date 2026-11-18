@@ -10,7 +10,7 @@
 //                    {type:"snapshot", …} and {type:"batch", …}  feed.ts's forms; a snapshot
 //                                                                also names the instances
 //                                                                (launches.ts) for the tiles
-//                    {type:"machine", preferences}               this computer's settings of the
+//                    {type:"machine", preferences}               this machine's settings of the
 //                                                                page (the theme, the keys): after
 //                                                                hello, and again on each change
 //                    {type:"installed", version?}                another version was installed
@@ -81,7 +81,7 @@ export interface FeedOptions {
   readonly live: (grant: string) => boolean;
   /** The instances a snapshot names for the page's launch tiles (A5 3.15 step 1). Default none. */
   readonly instances?: () => readonly UiInstance[];
-  /** This computer's settings of the page, which every tab follows (hub/machine-settings.ts). */
+  /** This machine's settings of the page, which every tab follows (hub/machine-settings.ts). */
   readonly machine?: () => readonly PreferenceRead[];
   /**
    * The version the install's `current` names when it is not this service's own: the page says
@@ -172,7 +172,7 @@ class FeedSocket {
     this.machine();
   }
 
-  /** Sends this computer's settings of the page, when the service has them. */
+  /** Sends this machine's settings of the page, when the service has them. */
   machine(): void {
     const preferences = this.#hub.options.machine?.();
     if (preferences === undefined || this.#closed) return;
@@ -651,7 +651,7 @@ export class FeedHub {
     }
   }
 
-  /** This computer's settings changed: every open tab follows. */
+  /** This machine's settings changed: every open tab follows. */
   machineChanged(): void {
     for (const socket of this.#sockets) socket.machine();
   }
