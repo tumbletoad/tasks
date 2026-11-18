@@ -133,6 +133,7 @@ export {
 } from "./search/documents.ts";
 export {
   decodeRowsByIds,
+  FINISHED_AT_SQL,
   ROWS_BY_IDS_SQL,
   type FrozenEntry,
   type FrozenKind,

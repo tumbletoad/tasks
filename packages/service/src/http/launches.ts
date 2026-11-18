@@ -10,7 +10,7 @@
 // one, on the service's runs (runs/service.ts), the same ones `tasks run` uses.
 //
 // A receipt holds IDs, states, instants and fixed codes only, as the launch record does, and
-// whether the launch's agent read the person's request yet, which only this computer knows. A run
+// whether the launch's agent read the person's request yet, which only this machine knows. A run
 // as the page reads it holds the person's request and the agent's answer, task text that travels
 // in a request's or a response's body only.
 import { AppError, RequestId } from "@tasks/contracts";

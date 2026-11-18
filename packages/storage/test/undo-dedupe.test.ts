@@ -39,15 +39,11 @@ import type {
   WriteResult,
 } from "../src/write/request.ts";
 import { checkedDriver, TEST_MACHINE, tempFolders } from "./space-helpers.ts";
-import {
-  checkHistory,
-  expectStatus,
-  fixtureCopies,
-  writeFixture,
-  type Fixture,
-} from "./write-helpers.ts";
+import { checkHistory, expectStatus, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("undo-dedupe");
+/** The fixture space, made once and copied for each test. */
+const fixture = fixtureCopies(temp.make);
 afterAll(temp.cleanup);
 
 const DAY = 86_400_000;
@@ -142,7 +138,7 @@ describe("[A1.5.history.dedupe] undo and redo meet dedupe by source key", () => 
   const clock = { now: 0 };
 
   beforeEach(async () => {
-    fx = await writeFixture(temp.make());
+    fx = await fixture();
     partner = await secondHuman(fx);
     // After the fixture's own commits, so every commit instant comes from this clock.
     clock.now = Date.UTC(2026, 10, 13, 8);

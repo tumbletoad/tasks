@@ -276,7 +276,7 @@ test.describe("[M6.page.e2e.refused] A run that cannot start says why and keeps 
       await runButton(page, ref).click();
       await expect(
         toast(page).filter({
-          hasText: `Folder not found on this computer: ${set.folder}. Nothing was started.`,
+          hasText: `Folder not found on this machine: ${set.folder}. Nothing was started.`,
         }),
       ).toBeVisible({ timeout: SLOW_MS });
       await expect(rowOf(page, ref).locator('[data-part="place"]')).toHaveAttribute(

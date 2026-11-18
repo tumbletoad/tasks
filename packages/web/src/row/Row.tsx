@@ -18,6 +18,7 @@ import { useT, type Translate } from "../i18n/intl.tsx";
 import { is } from "../keys/keymap.ts";
 import { useIntl } from "react-intl";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
+import { useHasDraft } from "../task/composer.ts";
 import { Expanded } from "../task/Expanded.tsx";
 import { runMarker } from "../task/runs.ts";
 import { placeFact, sourceFacts } from "../task/sources.ts";
@@ -31,6 +32,7 @@ import {
   ClockIcon,
   CopyIcon,
   FolderElsewhereIcon,
+  PencilIcon,
   FolderIcon,
   PersonIcon,
   SourceIcon,
@@ -415,6 +417,8 @@ function RowView({
   const intl = useIntl();
   const place = placeFact(task.place);
   const marker = runMarker(task.run, instances);
+  const { live } = useContext(Session);
+  const draft = useHasDraft(live.spaceId ?? "", task.id);
   const model = renderRow(
     {
       task,
@@ -427,6 +431,7 @@ function RowView({
       ...(task.sources_more === undefined ? {} : { sourcesMore: task.sources_more }),
       ...(place === undefined ? {} : { place }),
       ...(task.waiting_since === undefined ? {} : { waitingSince: task.waiting_since }),
+      ...(draft ? { draft } : {}),
     },
     ctx,
   );
@@ -491,7 +496,9 @@ function RowView({
               role="img"
               aria-label={sayMsg(t, model.marker.tip)}
               data-tip={sayMsg(t, model.marker.tip)}
-            />
+            >
+              {model.marker.kind === "draft" ? <PencilIcon /> : null}
+            </span>
           )}
         </span>
         <span className={styles.check} data-tip={completedTip}>

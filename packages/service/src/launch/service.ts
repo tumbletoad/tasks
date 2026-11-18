@@ -1015,8 +1015,13 @@ export class LaunchService {
       }
     }
     const given = request.composer?.trim() ?? "";
-    // An Open route's words are the launch's request, held since the first call, or gone.
-    const held = this.#requests.state(intent.id) !== undefined;
+    // An Open route's words are the launch's request, held since the first call, or gone. A click
+    // given an earlier click's launch held nothing of its own: words it sent that differ from the
+    // held ones are not its, so a retry of it never reports them held.
+    const stored = this.#requests.text(space, intent.id);
+    const held =
+      this.#requests.state(intent.id) !== undefined &&
+      (stored === undefined || stored === sanitiseComposer(request.composer ?? "").text);
     const bare: OpenTaskResult = {
       intent,
       copy: undefined,

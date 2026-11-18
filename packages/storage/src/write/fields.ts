@@ -90,36 +90,18 @@ export const CHILD_FIELDS = {
   },
   // A folder's path on its machine, and its tombstone. Its owner and machine never change.
   folders: { path: ["path"], deleted: ["deleted_at"] },
-  // An alias's target. An alias row has no versions: its last change row is its version and its
-  // provenance.
-  aliases: { entity: ["entity_kind", "entity_id"] },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
 
 /**
  * The tables whose rows hold an `ext` map: each key of it is one logical field `ext.<key>` (A1
- * 3.4), whose value lives in the `ext` column, and whose versions sit in `fv` and `fp` like any
- * field's.
+ * 3.4), whose versions sit in `fv` and `fp` like any field's. Only the prototype import wrote one,
+ * so no operation writes them now, but a row it imported still holds their versions.
  */
 export const EXT_TABLES: ReadonlySet<string> = new Set(["tasks", "areas", "projects", "sources"]);
 
 /** Whether `field` is a logical field `ext.<key>` of an `ext` map. */
 export const isExtField = (field: string): boolean =>
   field.startsWith("ext.") && /^ext\.[a-z][a-z0-9_]{0,39}$/.test(field);
-
-/** The value of `ext.<key>` in a row: the key's value in its `ext` map, or null without it. */
-export function extValue(row: Readonly<Record<string, unknown>>, field: string): unknown {
-  const text = row["ext"];
-  if (typeof text !== "string") return null;
-  let map: unknown;
-  try {
-    map = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  if (typeof map !== "object" || map === null || Array.isArray(map)) return null;
-  const key = field.slice("ext.".length);
-  return Object.hasOwn(map, key) ? (map as Record<string, unknown>)[key] : null;
-}
 
 export type ChildEntity = keyof typeof CHILD_FIELDS;
 

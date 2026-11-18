@@ -1,7 +1,7 @@
 // The brief: a pointer that sends an agent to its task. It holds the task's reference, the launch
 // reference and fixed instructions, never the task's title, summary, context, notes, sources or
 // log: an Open route puts the brief on a command line or in a link, where other accounts of the
-// computer, shell histories and app logs can read it, so it carries no task text. The agent reads
+// machine, shell histories and app logs can read it, so it carries no task text. The agent reads
 // the task through the tools, which label what came from outside.
 //
 // The person's words go two ways. An Open route never carries them: the brief's last line says
@@ -127,7 +127,7 @@ export function folderLine(folder: BriefFolder): string {
     case "folder":
       return folder.found
         ? `Folder: ${sanitisePath(folder.path)}`
-        : `Folder: ${sanitisePath(folder.path)} (not found on this computer)`;
+        : `Folder: ${sanitisePath(folder.path)} (not found on this machine)`;
     case "work_folder":
       return folder.absolute === undefined
         ? `Folder: ${PRODUCT_NAME} work folder`

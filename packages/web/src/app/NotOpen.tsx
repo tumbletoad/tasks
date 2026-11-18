@@ -1,5 +1,5 @@
-// The spaces a person cannot open now, each with what happened and what to run. A computer whose
-// only space needs recovery must never read as a computer without a space.
+// The spaces a person cannot open now, each with what happened and what to run. A machine whose
+// only space needs recovery must never read as a machine without a space.
 import { useT } from "../i18n/intl.tsx";
 import type { NotOpen } from "./spaces.ts";
 

@@ -6,14 +6,16 @@ import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest"
 import { newId, type Id } from "../src/ids.ts";
 import type { Operation, WriteResult } from "../src/write/request.ts";
 import { tempFolders } from "./space-helpers.ts";
-import { checkHistory, expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
+import { checkHistory, expectStatus, type Fixture, fixtureCopies } from "./write-helpers.ts";
 
 const temp = tempFolders("clear-append");
+/** The fixture space, made once and copied for each test. */
+const fixture = fixtureCopies(temp.make);
 afterAll(temp.cleanup);
 
 let fx: Fixture;
 beforeEach(async () => {
-  fx = await writeFixture(temp.make());
+  fx = await fixture();
 });
 afterEach(() => {
   checkHistory(fx.reader);

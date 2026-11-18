@@ -7,14 +7,16 @@ import type { Id } from "../src/ids.ts";
 import { PROJECTION_ALL } from "../src/write/outbox.ts";
 import type { Operation, WriteResult } from "../src/write/request.ts";
 import { tempFolders } from "./space-helpers.ts";
-import { expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
+import { expectStatus, type Fixture, fixtureCopies } from "./write-helpers.ts";
 
 const temp = tempFolders("outbox");
+/** The fixture space, made once and copied for each test. */
+const fixture = fixtureCopies(temp.make);
 afterAll(temp.cleanup);
 
 let fx: Fixture;
 beforeEach(async () => {
-  fx = await writeFixture(temp.make());
+  fx = await fixture();
 });
 afterEach(() => {
   fx.close();

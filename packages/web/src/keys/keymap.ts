@@ -241,7 +241,7 @@ export function ariaKeys(bindings: readonly Binding[], mac: boolean): string | u
   return parts.length === 0 ? undefined : parts.join(" ");
 }
 
-/** Whether this computer is a Mac: Cmd stands where Ctrl does. */
+/** Whether this machine is a Mac: Cmd stands where Ctrl does. */
 export function isMac(): boolean {
   if (typeof navigator === "undefined") return false;
   const platform =

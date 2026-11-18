@@ -230,6 +230,7 @@ export function TaskList({
   const ownClock = useClock(timed && viewClock === undefined);
   const clock = viewClock ?? ownClock;
   const ctx = useMemo(() => contextFor(view, grouping, clock), [view, grouping, clock]);
+  const finishedCtx = useMemo(() => contextFor("completed", grouping, clock), [grouping, clock]);
 
   const loadReceipts = useCallback(
     (task: string) => {
@@ -750,7 +751,7 @@ export function TaskList({
       instances={state.instances}
       receipts={receipts.get(item.key) ?? NO_RECEIPTS}
       runs={withStops(runs.get(item.key) ?? NO_RUNS, stops)}
-      ctx={ctx}
+      ctx={item.finished && item.task.lifecycle !== "active" ? finishedCtx : ctx}
       expanded={expanded === item.key}
       current={place.current}
       fresh={fresh.has(item.key)}

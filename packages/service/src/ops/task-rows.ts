@@ -7,6 +7,7 @@
 import { isOpenRun, OPEN_RUN_STATES, type RunState } from "@tasks/contracts/runs";
 import {
   decideLaunchFolder,
+  FINISHED_AT_SQL,
   type FolderView,
   type Id,
   type Row,
@@ -60,15 +61,6 @@ export interface FeedHere {
 /** At most this many sources ride on a task's row: the row shows three, then "+2" (A5 3.6). */
 export const ROW_SOURCES = 3;
 
-/**
- * When a finished task was finished: its completion, or for a dropped task, which keeps no
- * completion time, the commit whose write its lifecycle holds (its provenance, else its create),
- * so an undo that brings a drop back keeps the drop's own time.
- */
-const FINISHED_AT =
-  "COALESCE(t.completed_at, (SELECT c.at FROM commits c WHERE c.seq = " +
-  "COALESCE(json_extract(t.fp, '$.lifecycle'), t.created_seq)), t.created_at)";
-
 /** An owner's live folders as JSON, newest first, with their machine's name. */
 const foldersOf = (kind: "task" | "project", owner: string): string =>
   "(SELECT json_group_array(json_object('id', x.id, 'machine', x.machine_id, 'name', x.name, " +
@@ -98,7 +90,7 @@ export function taskColumns(folders: boolean): string {
     "t.due_date, t.due_at, t.due_tz, t.planned_for, t.focus_on, t.owner, t.waiting_on, t.area_id, " +
     "t.project_id, t.parent_id, t.position, t.wrap_state, t.completed_at, t.deleted_at, " +
     "t.created_at, t.version, t.touched, " +
-    `CASE WHEN t.lifecycle <> 'active' THEN ${FINISHED_AT} END AS finished_at, ` +
+    `CASE WHEN t.lifecycle <> 'active' THEN ${FINISHED_AT_SQL} END AS finished_at, ` +
     // When a waiting task's wait began (the Waiting view's age): the commit whose write its status
     // holds (its provenance, which an undo sets back), or its creation. Not the last write (`fv`):
     // an undo that brings a wait back would restart its age. A new person waited on is the same
@@ -370,7 +362,7 @@ function finishedSql(request: FinishedRequest, folders: boolean): string {
   const from = request.after === undefined ? "" : "WHERE k.at < $at OR (k.at = $at AND k.id < $id)";
   return (
     `SELECT ${taskColumns(folders)}, ${ENDING_COLUMNS} FROM (SELECT k.id, k.at FROM (SELECT ` +
-    `t.id AS id, ${FINISHED_AT} AS at FROM tasks t WHERE ${where.join(" AND ")}) k ${from} ORDER BY k.at DESC, k.id DESC ` +
+    `t.id AS id, ${FINISHED_AT_SQL} AS at FROM tasks t WHERE ${where.join(" AND ")}) k ${from} ORDER BY k.at DESC, k.id DESC ` +
     "LIMIT $limit) p JOIN tasks t ON t.id = p.id ORDER BY p.at DESC, p.id DESC"
   );
 }

@@ -11,14 +11,22 @@ import {
 } from "../src/search/documents.ts";
 import type { Operation, WriteResult } from "../src/write/request.ts";
 import { tempFolders } from "./space-helpers.ts";
-import { checkHistory, expectStatus, writeFixture, type Fixture } from "./write-helpers.ts";
+import {
+  checkHistory,
+  expectStatus,
+  writeFixture,
+  type Fixture,
+  fixtureCopies,
+} from "./write-helpers.ts";
 
 const temp = tempFolders("lifecycle");
+/** The fixture space, made once and copied for each test. */
+const fixture = fixtureCopies(temp.make);
 afterAll(temp.cleanup);
 
 let fx: Fixture;
 beforeEach(async () => {
-  fx = await writeFixture(temp.make());
+  fx = await fixture();
 });
 afterEach(() => {
   checkHistory(fx.reader);

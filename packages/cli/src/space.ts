@@ -50,7 +50,7 @@ export const SPACE_HELP = `Usage: tasks space <command> [arguments] [--json]
   backup [<space>]                         Take a backup now
   backups [list] [<space>]                 The backups of a space
   export [<space>] [--mode backup|fork]    Write an export bundle into the space's exports folder,
-         [--with-jsonl]                    the copy to keep off this computer; --with-jsonl adds
+         [--with-jsonl]                    the copy to keep off this machine; --with-jsonl adds
                                            every table as JSON lines
   restore <backup> [<space>] --to <folder> Restore a backup or a bundle into a new folder: a
                                            read-only copy. A <backup> given by its name is one of

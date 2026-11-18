@@ -33,7 +33,7 @@ export interface RunView {
 const msg = (id: MessageId, values?: Msg["values"]): Msg =>
   values === undefined ? { id } : { id, values };
 
-/** The instance's label, or its key when this computer no longer has it. */
+/** The instance's label, or its key when this machine no longer has it. */
 export function runLabel(run: { readonly instance: string }, instances: readonly Instance[]) {
   return instances.find((i) => i.key === run.instance)?.label ?? run.instance;
 }
