@@ -26,11 +26,12 @@ import {
   expectStatus,
   fixtureCopies,
   MACHINE,
-  writeFixture,
   type Fixture,
 } from "./write-helpers.ts";
 
 const temp = tempFolders("dedupe");
+/** The fixture space, made once and copied for each test. */
+const fixture = fixtureCopies(temp.make);
 afterAll(temp.cleanup);
 
 const DAY = 86_400_000;
@@ -226,7 +227,7 @@ async function rawSet(
 
 describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sources", () => {
   beforeEach(async () => {
-    fx = await writeFixture(temp.make());
+    fx = await fixture();
     // After the fixture's own commits, so every commit instant comes from this clock.
     clock.now = Date.UTC(2026, 10, 13, 8);
     fx.reopen({ now: tick });
@@ -476,7 +477,7 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     expect(submit(draft(["jira:FIX-1"]).ops).results[0]?.status).toBe("created");
   });
 
-  test("dedupe new always creates: beside an active holder its key stays that task's, beside finished ones the new task holds it; none never matches", () => {
+  test("dedupe new always creates: beside an active holder its key stays that task's, beside finished ones the new task holds it", () => {
     const first = draft(["jira:FIX-1"]);
     submit(first.ops);
     // Beside an active holder: a new task with the ticket linked without its key, and with its
@@ -510,12 +511,6 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
       id: anew.id,
       lifecycle: "active",
     });
-    // none: a task whatever holds the key, and the source the key names is linked, never written
-    // twice.
-    const legacy = draft(["jira:FIX-1"], { dedupe: "none" });
-    expect(submit(legacy.ops).results[0]).toMatchObject({ status: "created", id: legacy.id });
-    expect(holders(fx.reader, "jira:FIX-1")).toEqual([first.id, anew.id, legacy.id].sort());
-    expect(one("SELECT count(*) FROM sources WHERE source_key = 'jira:FIX-1'")).toBe(1);
   });
 
   test("a removed link and a deleted task never match", async () => {
@@ -639,10 +634,10 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     }
     expect(one("SELECT count(*) FROM receipts")).toBe(receipts);
     expect(one("SELECT count(*) FROM tasks")).toBe(1);
-    // A draft that never matches takes them: dedupe new or none, or no keyed source.
+    // A draft that never matches takes them: dedupe new, or no keyed source.
     for (const [keys, dedupe] of [
       [["jira:FIX-7"], "new"],
-      [["jira:FIX-1"], "none"],
+      [["jira:FIX-1"], "new"],
       [[], undefined],
     ] as const) {
       const fresh = draft(keys, dedupe === undefined ? {} : { dedupe });
@@ -685,18 +680,19 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
     // Commit instants never go back (A1 3.9): after the clock does, two completions share one.
     const a = draft(["jira:FIX-1"]);
     submit(a.ops);
-    const b = draft(["jira:FIX-1"], { dedupe: "none" });
+    complete(a.id);
+    clock.now -= 10 * DAY;
+    // Beside a finished holder, a new task holds the key too.
+    const b = draft(["jira:FIX-1"], { dedupe: "new" });
     submit(b.ops);
     complete(b.id);
-    clock.now -= 10 * DAY;
-    complete(a.id);
     const at = (id: string): unknown =>
       one("SELECT completed_at FROM tasks WHERE id = $id", { id });
     expect(at(a.id)).toBe(at(b.id));
     expect(submit(draft(["jira:FIX-1"]).ops).results[0]).toMatchObject({
       status: "existing",
-      id: a.id,
-      ref: "M-1",
+      id: b.id,
+      ref: "M-2",
       lifecycle: "completed",
     });
   });
@@ -708,12 +704,10 @@ describe("[A1.5.write.dedupe] task.create upserts by the keys of its draft's sou
       const result = fx.writer.submit({ ...fx.request(fx.codex, []), ops });
       return [result.error?.code, result.error?.field];
     };
-    expect(error({ dedupe: "title" })).toEqual(["VALIDATION_FAILED", "ops[0].dedupe"]);
+    for (const mode of ["title", "none"]) {
+      expect(error({ dedupe: mode })).toEqual(["VALIDATION_FAILED", "ops[0].dedupe"]);
+    }
     expect(error({ link_sources: "yes" })).toEqual(["VALIDATION_FAILED", "ops[0].link_sources"]);
-    expect(error({ dedupe: "none", link_sources: true })).toEqual([
-      "VALIDATION_FAILED",
-      "ops[0].link_sources",
-    ]);
     expect(error({ dedupe: "new", link_sources: true })).toEqual([
       "VALIDATION_FAILED",
       "ops[0].link_sources",
@@ -1220,7 +1214,7 @@ describe("[A1.5.write.dedupe-sessions] overlapping keys from several sessions", 
 
 describe("[A1.5.write.dedupe-lifecycle] dedupe sees the request's archive, wrap-up, delete and restore", () => {
   beforeEach(async () => {
-    fx = await writeFixture(temp.make());
+    fx = await fixture();
     clock.now = Date.UTC(2026, 10, 13, 8);
     fx.reopen({ now: tick });
   });
@@ -1255,7 +1249,7 @@ describe("[A1.5.write.dedupe-lifecycle] dedupe sees the request's archive, wrap-
       lifecycle: "archived",
     });
     // Of an archived and a completed task, the one finished last.
-    const second = draft(["jira:FIX-1"], { dedupe: "none" });
+    const second = draft(["jira:FIX-1"], { dedupe: "new" });
     submit(second.ops);
     complete(second.id);
     expect(submit(draft(["jira:FIX-1"]).ops).results[0]).toMatchObject({

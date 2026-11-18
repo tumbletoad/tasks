@@ -34,6 +34,8 @@ export interface Group {
   readonly labelValues?: Readonly<Record<string, string>>;
   /** The area's colour slot, 1 to 8. */
   readonly slot?: number;
+  /** Its rows are drawn as Completed draws them, whatever the list's view: a search's Completed. */
+  readonly finished?: boolean;
   readonly sections: readonly Section[];
 }
 

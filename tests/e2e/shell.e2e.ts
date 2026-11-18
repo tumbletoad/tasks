@@ -147,7 +147,7 @@ test.describe("[A7.3.12.m5-01.e2e.strict-csp] The shell under the strict CSP", (
     await expect(page.locator("html")).toHaveAttribute("data-theme", "system");
     await choose(page, "Sumi");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "sumi");
-    // This computer keeps the choice: the browser keeps none of its own.
+    // This machine keeps the choice: the browser keeps none of its own.
     expect(await page.evaluate((key) => localStorage.getItem(key), THEME_KEY)).toBeNull();
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "sumi");
@@ -213,7 +213,7 @@ test.describe("[A5.3.19.e2e.screens] The shell in Sumi, Washi and System, wide a
     await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${world.task.ref}`));
     const row = page.locator(`li[data-task="${world.task.ref}"]`);
     await expect(row).toHaveAttribute("data-expanded", "true");
-    // System is shown with the computer in light mode, so it differs from Sumi.
+    // System is shown with the machine in light mode, so it differs from Sumi.
     const themes = [
       { theme: "sumi", scheme: "dark" },
       { theme: "washi", scheme: "dark" },
@@ -393,7 +393,7 @@ test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens th
 });
 
 test.describe("[A5.3.3.e2e.not-open] A space that is not open says why and what to run", () => {
-  test("a computer whose only space needs recovery names the command, never space create", async ({
+  test("a machine whose only space needs recovery names the command, never space create", async ({
     page,
     world,
   }) => {

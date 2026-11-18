@@ -78,7 +78,7 @@ export type RunFolder =
 
 /**
  * The task's folder on this machine as Open uses it (its own, else its project's, else the
- * space's work folder), or why the run cannot start: its folder is on another computer, or not
+ * space's work folder), or why the run cannot start: its folder is on another machine, or not
  * found here.
  */
 export async function runFolder(

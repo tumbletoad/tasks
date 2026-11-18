@@ -1,7 +1,10 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { A1_ERRORS } from "@tasks/contracts";
 import { describe, expect, test } from "vitest";
-import { spaceUnavailable } from "../ops/errors.ts";
+import { readOnly, spaceUnavailable } from "../ops/errors.ts";
 import { storageFailureBody } from "./space-errors.ts";
+import { viewNotKept } from "./space-verbs.ts";
 
 const asksToRetry = (text: string | undefined): boolean => /try again/i.test(text ?? "");
 
@@ -25,5 +28,47 @@ describe("[A3.3.5.error-retry-words] an error's retry flag says what its sentenc
         ).toBe(retryable);
       }
     }
+    for (const body of [readOnly(undefined).toBody(), viewNotKept("closed").toBody()]) {
+      expect(asksToRetry(`${body.message} ${body.hint ?? ""}`)).toBe(false);
+      expect(body.data).toMatchObject({ retryable: false });
+    }
+  });
+
+  test("every error the service writes out asks for a retry only with retryable true", () => {
+    // Each `new AppError({...})` of the service's own code, read as its source text: one that asks
+    // to try again sets retryable true, and one that sets it false never asks.
+    const src = join(import.meta.dirname, "..");
+    const files = readdirSync(src, { recursive: true, encoding: "utf8" }).filter(
+      (name) => name.endsWith(".ts") && !name.endsWith(".test.ts"),
+    );
+    const wrong: string[] = [];
+    let seen = 0;
+    for (const name of files) {
+      const text = readFileSync(join(src, name), "utf8");
+      for (
+        let at = text.indexOf("new AppError(");
+        at >= 0;
+        at = text.indexOf("new AppError(", at + 1)
+      ) {
+        let depth = 0;
+        let end = at + "new AppError".length;
+        for (; end < text.length; end += 1) {
+          if (text[end] === "(") depth += 1;
+          else if (text[end] === ")" && (depth -= 1) === 0) break;
+        }
+        const body = text.slice(at, end);
+        const flag = /retryable:\s*(true|false)\b/u.exec(body)?.[1];
+        // A flag computed at run time is the builder's own test's to check.
+        if (flag === undefined && /\bretryable\b/u.test(body)) continue;
+        seen += 1;
+        if (asksToRetry(body) && flag !== "true") {
+          wrong.push(
+            `${relative(src, join(src, name))}:${String(text.slice(0, at).split("\n").length)}`,
+          );
+        }
+      }
+    }
+    expect(seen).toBeGreaterThan(50);
+    expect(wrong).toEqual([]);
   });
 });

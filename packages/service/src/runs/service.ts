@@ -314,7 +314,7 @@ export class RunService {
   /**
    * `tasks run`: queues a run of a task, to start once its limits allow, built from its record
    * then. Refused at once with the person's words when it could not start here: no such task, a
-   * task that is done, no instance that runs tasks, or a folder on another computer or not found.
+   * task that is done, no instance that runs tasks, or a folder on another machine or not found.
    * A repeat of the same request ID gives the run it queued, and starts nothing twice.
    */
   async queueTask(space: string, asked: RunRequest): Promise<RunRecord> {
@@ -346,10 +346,10 @@ export class RunService {
       throw refusal(
         "instance",
         asked.instance !== undefined
-          ? "No instance with this ID on this computer can run a task."
+          ? "No instance with this ID on this machine can run a task."
           : able.length === 0
-            ? "No instance on this computer can run a task: runs use a Codex or Claude Code instance."
-            : "Several instances on this computer can run a task.",
+            ? "No instance on this machine can run a task: runs use a Codex or Claude Code instance."
+            : "Several instances on this machine can run a task.",
         able.length === 0
           ? `Set one up with: ${CLI_NAME} setup instances`
           : `Name one with --instance: ${ids}`,
@@ -360,9 +360,9 @@ export class RunService {
       throw folder.reason === "other_machine"
         ? refusal(
             "other_machine",
-            `This task's folder is on another computer (${folder.machine}): it runs there.`,
+            `This task's folder is on another machine (${folder.machine}): it runs there.`,
           )
-        : refusal("folder_missing", "This task's folder is not found on this computer.");
+        : refusal("folder_missing", "This task's folder is not found on this machine.");
     }
     const settings = this.#settings();
     const queued = await hosted.machine.queue(

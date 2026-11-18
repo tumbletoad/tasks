@@ -339,7 +339,7 @@ export function render(entry: string, result: Result, space: string): string {
       if (typeof folder?.["path"] === "string") {
         const notes = [
           folder["of"] === "project" ? "its project's" : undefined,
-          folder["missing"] === true ? "not found on this computer" : undefined,
+          folder["missing"] === true ? "not found on this machine" : undefined,
         ].filter((note) => note !== undefined);
         lines.push(
           `  folder: ${folder["path"]}${notes.length === 0 ? "" : ` (${notes.join(", ")})`}`,

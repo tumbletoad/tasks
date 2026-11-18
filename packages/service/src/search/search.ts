@@ -444,13 +444,14 @@ function rowOf(
     : str(row["summary"]) === "" || ended !== undefined
       ? {}
       : { snippet: cut(str(row["summary"]), ROW_CUTS.snippet) };
-  const completedAt = row["completed_at"];
+  // The day it was finished, completed or dropped, as the Completed view shows it.
+  const finishedAt = row["finished_at"];
   return {
     ...base,
     kind: "task",
     title: cut(str(row["title"]), ROW_CUTS.title),
-    ...(row["lifecycle"] === "completed" && typeof completedAt === "number"
-      ? { completed: dateIn(completedAt, timeZone) }
+    ...(row["lifecycle"] !== "active" && typeof finishedAt === "number"
+      ? { completed: dateIn(finishedAt, timeZone) }
       : {}),
     ...shown,
     ...ending,

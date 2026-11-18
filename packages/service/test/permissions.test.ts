@@ -287,7 +287,7 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
         P,
       ),
     ).toBe(
-      "The folder (/srv/k) belongs to another user; The file (/srv/k/f) can be changed by every user on this computer. Why. To fix it, run: sudo chown -h ada /srv/k && chmod o-w /srv/k/f",
+      "The folder (/srv/k) belongs to another user; The file (/srv/k/f) can be changed by every user on this machine. Why. To fix it, run: sudo chown -h ada /srv/k && chmod o-w /srv/k/f",
     );
     // Every user's write goes, and a private group's stays: one change for each.
     expect(
@@ -347,7 +347,7 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
         { what: "file", path: file, problem: "world_writable" },
       ]);
       const line = unsafeConfigMessage(both.unsafe ?? [{} as UnsafePart]);
-      expect(line).toContain("can be changed by every user on this computer");
+      expect(line).toContain("can be changed by every user on this machine");
       expect(commandIn(line)).toBe(`chmod o-w ${shellPath(dir)} ${shellPath(file)}`);
       paste(commandIn(line) ?? "false", dir);
       expect(loadMachineConfig(dir, "linux").problems).toEqual([]);
@@ -373,7 +373,7 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
       expect(exit?.code).toBe(64);
       expect(exit?.refusal).toBe("unsafe_permissions");
       expect(lines).toHaveLength(1);
-      expect(lines[0]).toContain("can be changed by every user on this computer");
+      expect(lines[0]).toContain("can be changed by every user on this machine");
       expect(commandIn(lines[0])).toBe(`chmod o-w ${shellPath(file)}`);
       const log = readFileSync(join(stateOf(h), "logs", "service.log"), "utf8");
       expect(log).toMatch(/"ev":"service.refused".*"reason":"unsafe_permissions"/);
@@ -519,7 +519,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       const lines: string[] = [];
       expect(await startOnce(h, lines)).toMatchObject({ code: 64, refusal: "unsafe_permissions" });
       expect(lines[0]).toContain(
-        `TT Tasks's launch folder (${shellPath(launch)}) can be changed by every user on this computer.`,
+        `TT Tasks's launch folder (${shellPath(launch)}) can be changed by every user on this machine.`,
       );
       expect(lines[0]).toContain("could choose what TT Tasks starts as you");
       expect(readFileSync(join(stateOf(h), "logs", "service.log"), "utf8")).not.toContain(launch);

@@ -789,7 +789,7 @@
     },
     {
       "id": "A1.3.15.folders.marker",
-      "title": "The marker in a project's or a task's folder: the owners' IDs and an ignore file, no task text; a launch's look finds its own marker, another owner's or another space's, a marker gone after it was written, a marker that cannot be read; an old folder without one is marked quietly; what was marked outlives a restart; a folder that takes no marker opens as before; a clear takes the owner off and the last one the marker; a folder moved with another keeps its marker; a checkout's git status stays clean",
+      "title": "The marker in a project's or a task's folder: the owners' IDs and an ignore file, no task text; a launch's look finds its own marker, another owner's or another space's, a marker gone after it was written from a folder made again at the path, a marker that cannot be read; an old folder without one is marked quietly, and so is the folder that was marked when only its marker went (git clean -x); what was marked outlives a restart; a folder that takes no marker opens as before; a clear takes the owner off and the last one the marker; a folder moved with another keeps its marker; a checkout's git status stays clean",
       "source": "A1 3.15",
       "owner": "M4",
       "kind": "ci",
@@ -821,7 +821,7 @@
     },
     {
       "id": "A3.3.4.folders.agent",
-      "title": "The agent's folder fields through the request path: a task added with folder cwd from a project's subfolder lands in the deepest project whose folder holds it with its own folder, from the project's folder itself takes the project's, from outside every project has no project and its folder, from an archived project's folder has no project, its folder and a warning; a draft that names its group keeps it; a follow-up with folder cwd; a retry replays after the folder went; organize creates a project with its folder, sets it to cwd, lists and clears it, and answers exists with the project that has a folder; cwd without a working folder, a missing folder and the old place field are refused with their reason and the field to use; has:folder and folder: in search; a group an earlier draft makes known by its slug; a refusal's op counting the call's own operations; update_task's folder from cwd",
+      "title": "The agent's folder fields through the request path: a task added with folder cwd from a project's subfolder lands in the deepest project whose folder holds it with its own folder, from the project's folder itself takes the project's, from outside every project has no project and its folder, from an archived project's folder has no project, its folder and a warning; a draft that names its group keeps it; a follow-up with folder cwd; a retry replays after the folder went; organize creates a project with its folder, sets it to cwd, lists and clears it, answers exists with the project that has a folder, and makes a project named after the folder when given an area and a folder; cwd without a working folder, a missing folder and the old place field are refused with their reason and the field to use; has:folder and folder: in search; a group an earlier draft makes known by its slug; a refusal's op counting the call's own operations; update_task's folder from cwd",
       "source": "A1 3.15, A3 3.4.3, A3 3.4.5, A3 3.4.6, A3 3.4.10",
       "owner": "M4",
       "kind": "ci",
@@ -1101,7 +1101,7 @@
     },
     {
       "id": "A3.3.5.error-retry-words",
-      "title": "An error that asks a person to try again is retryable, and one that is not retryable never asks it: the storage failures' sentences and a space the service does not serve now",
+      "title": "An error that asks a person to try again is retryable, and one that is not retryable never asks it: the storage failures' sentences, a space the service does not serve now, a read-only space and a view rebuild of a space not open, and every error the service's own code writes out",
       "source": "A3 3.5",
       "owner": "M1",
       "kind": "ci",
@@ -1947,7 +1947,7 @@
     },
     {
       "id": "A4.5.routes.service",
-      "title": "Open and Copy through the service with a real shim and a fake Claude Code and Codex: the golden argv reaches the fake agent as arrays and byte for byte through the OS's real process creation, hostile titles, folders and composer text included, in the resolved folder; Codex's env_vars override and reference match; the assisted open's brief to copy; the claude-cli:// link's one URL element, an opener that does not answer is Unknown; Copy's pointer brief, a repeat that replays, words past Copy's budget saved once as a note while Open holds them instead; refusals that record nothing",
+      "title": "Open and Copy through the service with a real shim and a fake Claude Code and Codex: the golden argv reaches the fake agent as arrays and byte for byte through the OS's real process creation, hostile titles, folders and composer text included, in the resolved folder; Codex's env_vars override and reference match; the assisted open's brief to copy; the claude-cli:// link's one URL element, and clicks straight after given the same launch whose words go only while it holds none; an opener that does not answer is Unknown; Copy's pointer brief, a repeat that replays, words past Copy's budget saved once as a note while Open holds them instead; refusals that record nothing",
       "source": "A4 3.4.2, A4 3.4.3, A4 3.4.6, A4 3.6.5, A4 3.15, A7 3.9 M2.10",
       "owner": "M2",
       "kind": "ci",
@@ -2382,7 +2382,7 @@
     },
     {
       "id": "A3.5.search.parser",
-      "title": "The query language: A3 3.9.2's examples parse into words, phrases, OR groups and filters; quotes, doubled quotes and letter-only keys; an unknown key or value fails with a suggestion and never quotes the query; OR, negation, limits and values are checked; is:new and is:changed are refused naming their step; a query that names a lifecycle widens the default scope; and random strings parse or are refused as invalid_input, with parsed reading back as the same query",
+      "title": "The query language: A3 3.9.2's examples parse into words, phrases, OR groups and filters; quotes, doubled quotes and letter-only keys; ordinary text that looks like a filter (a link, a time, re:, a Windows path) is words and an alias is read as its key; a misspelt key or an unknown value fails with a suggestion and never quotes the query; OR, negation, limits and values are checked; is:new and is:changed are refused naming their step; a query that names a lifecycle widens the default scope; and random strings parse or are refused as invalid_input, with parsed reading back as the same query",
       "source": "A3 3.9.2, A3 3.5, A3 5, A7 3.10 M3.05",
       "owner": "M3",
       "kind": "ci",
@@ -2710,7 +2710,7 @@
     },
     {
       "id": "A5.3.3.e2e.not-open",
-      "title": "In Chromium and Firefox: a computer whose only space needs recovery shows the space with tasks space recover on the landing page, never the advice to create a space",
+      "title": "In Chromium and Firefox: a machine whose only space needs recovery shows the space with tasks space recover on the landing page, never the advice to create a space",
       "source": "A5 3.3, A2 3.1",
       "owner": "M5",
       "kind": "ci",
@@ -2749,7 +2749,7 @@
     },
     {
       "id": "A2.3.10.cli.space-words",
-      "title": "tasks space says what is so and the ways it names work: claim of another computer's space names export, close, restore --to and claim, which then work and print A6's claim warning; a backup restores into a new folder by the name space backups prints; --space takes a relative folder for any command; a create where a space is names tasks space open <folder>; tasks recover is tasks space recover; a record machine.toml cannot take is one line on stderr",
+      "title": "tasks space says what is so and the ways it names work: claim of another machine's space names export, close, restore --to and claim, which then work and print A6's claim warning; a backup restores into a new folder by the name space backups prints; --space takes a relative folder for any command; a create where a space is names tasks space open <folder>; tasks recover is tasks space recover; a record machine.toml cannot take is one line on stderr",
       "source": "A2 3.10.1, A2 3.10.5, A6 3.5, A1 3.18",
       "owner": "M3",
       "kind": "installed",
@@ -3641,8 +3641,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.e2e.open-marker-screens",
+      "title": "Playwright against the real service process: Open on a task whose folder was replaced at its path asks in one sentence that names the folder, starts nothing, in Sumi and Washi at 1,440 and 390 px",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.6.e2e.draft-mark",
+      "title": "Playwright against the real service process: a row whose composer holds unsent words shows its mark once collapsed without moving its title, and the mark goes once the words are saved as a note, in Sumi and Washi at 1,440 and 390 px",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.e2e.open-marker",
-      "title": "Playwright against the real service process: the expanded task's folder line names the Git repository in it; Open after the checkout was replaced at its path sends nothing to the fake terminal and says its marker is missing, and the toast's Use this folder opens it there and marks it",
+      "title": "Playwright against the real service process: the expanded task's folder line names the Git repository in it; Open after the checkout was replaced at its path sends nothing to the fake terminal and says its marker is missing while the composer keeps its words, and the toast's Use this folder opens it there with them, marks it and clears the field",
       "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4105,7 +4119,7 @@
     },
     {
       "id": "A7.3.12.m5-11.machine-page",
-      "title": "The page's copy of this computer's settings: a change shows at once, stays once the service kept it even before the feed says so, and goes back when the service refuses it",
+      "title": "The page's copy of this machine's settings: a change shows at once, stays once the service kept it even before the feed says so, and goes back when the service refuses it",
       "source": "A7 3.12 M5.11",
       "owner": "M5",
       "kind": "ci",
@@ -4129,7 +4143,7 @@
     },
     {
       "id": "A7.3.12.m5-11.e2e.theme",
-      "title": "In Chromium and Firefox against the real service: a theme chosen in Settings shows at once, a second tab follows live, a fresh browser profile is served in it from the first paint with nothing in its storage, and a theme an older build kept in a browser is handed to this computer once",
+      "title": "In Chromium and Firefox against the real service: a theme chosen in Settings shows at once, a second tab follows live, a fresh browser profile is served in it from the first paint with nothing in its storage, and a theme an older build kept in a browser is handed to this machine once",
       "source": "A7 3.12 M5.11",
       "owner": "M5",
       "kind": "ci",
@@ -4137,7 +4151,7 @@
     },
     {
       "id": "A7.3.12.m5-11.e2e.terminal",
-      "title": "In Chromium and Firefox against the real service: Settings says which terminal Open uses and why, lists the terminals found, keeps another one across a reload and goes back to this computer's default",
+      "title": "In Chromium and Firefox against the real service: Settings says which terminal Open uses and why, lists the terminals found, keeps another one across a reload and goes back to this machine's default",
       "source": "A7 3.12 M5.11",
       "owner": "M5",
       "kind": "ci",
@@ -4358,6 +4372,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.6.web.draft-mark",
+      "title": "A row whose composer holds unsent words shows a quiet mark in the marker column; it comes and goes with the draft, blank lines are no draft, and another tab's draft or send moves it too",
+      "source": "A5 3.6, A5 3.8",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.26.web.markdown",
       "title": "Task Markdown (context, notes, log, outcome, learnings) renders as React elements of an allow-list (paragraphs and line breaks, strong lines, lists, quotes, fenced and inline code, emphasis, links): raw HTML and the XSS payloads show as text, and only https, http and mailto links open, in a new tab with no opener and no referrer",
       "source": "A5 3.26, A5 3.7, A7 3.12 M5.06",
@@ -4505,6 +4527,14 @@
       "id": "A5.3.13.web.search",
       "title": "Search results: every open match read at once and finished ones a page at a time by the service's cursor, an expired cursor starting the search again with one page more, two groups that keep their rows (the live row when the store holds it), the expanded task kept at its place, the filters alone for a space without the word index, To do split into one group per effort for a search sorted by effort, and the fields that make a change offer a refresh",
       "source": "A5 3.13, A3 3.9.5, A7 3.12 M5.10",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.13.web.search-finished",
+      "title": "A search's Completed group draws its rows as Completed does: when each task was completed or dropped, and no priority, effort or age; its To do rows keep theirs",
+      "source": "A5 3.13, A5 3.5",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4799,7 +4829,7 @@
     },
     {
       "id": "A1.5.write.dedupe",
-      "title": "task.create upserts by the keys of its draft's sources: an active match returns existing with matched_by and takes only the draft's entries, link_sources links its sources, several active matches are ambiguous, a task finished within tasks.dedupe_window_days returns existing with its lifecycle and an older one does not, dedupe new always creates and leaves a key an active task holds with that task, none never matches, a removed link or a deleted task never matches, the request's own links and lifecycle changes count, a change to a matched draft's fields is left out, and a request that returned existing, retried after the window, replays existing",
+      "title": "task.create upserts by the keys of its draft's sources: an active match returns existing with matched_by and takes only the draft's entries, link_sources links its sources, several active matches are ambiguous, a task finished within tasks.dedupe_window_days returns existing with its lifecycle and an older one does not, dedupe new always creates and leaves a key an active task holds with that task, a removed link or a deleted task never matches, the request's own links and lifecycle changes count, a change to a matched draft's fields is left out, and a request that returned existing, retried after the window, replays existing",
       "source": "A1 3.6, A1 3.8, A1 5, A3 3.4.5, A3 3.11.1, A7 3.10 M3.06",
       "owner": "M3",
       "kind": "ci",
