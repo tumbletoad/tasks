@@ -406,12 +406,12 @@ a + .muted,
   background: var(--k-slot);
 }
 
-/* A segmented control (A5 3.7): equal cells in a grid of `--k-cols` columns, the chosen one on
-   hover's surface with a control line. With `--k-span` under its columns it takes that share of
-   the width, so priority's and effort's cells sit under each other. */
+/* A segmented control (A5 3.7): equal cells, the chosen one on hover's surface with a control
+   line. Controls that share `--k-cols` columns have cells of one width: one that uses `--k-span`
+   of them takes that share of the width, so priority's and effort's cells sit under each other. */
 .seg {
   display: grid;
-  grid-template-columns: repeat(var(--k-cols, 3), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--k-span, 3), minmax(0, 1fr));
   gap: 2px;
   width: calc(100% * var(--k-span, 1) / var(--k-cols, 1));
   padding: 2px;
@@ -697,7 +697,7 @@ a + .muted,
   }
 
   .seg {
-    grid-template-columns: repeat(var(--k-cols, 3), auto);
+    grid-template-columns: repeat(var(--k-span, 3), auto);
     width: auto;
   }
 
