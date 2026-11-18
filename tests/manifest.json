@@ -3592,6 +3592,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.5.e2e.open-marker-screens",
+      "title": "Playwright against the real service process: Open on a task whose folder was replaced at its path asks in one sentence that names the folder, starts nothing, in Sumi and Washi at 1,440 and 390 px",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.6.e2e.draft-mark",
+      "title": "Playwright against the real service process: a row whose composer holds unsent words shows its mark once collapsed without moving its title, and the mark goes once the words are saved as a note, in Sumi and Washi at 1,440 and 390 px",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.e2e.open-marker",
       "title": "Playwright against the real service process: the expanded task's folder line names the Git repository in it; Open after the checkout was replaced at its path sends nothing to the fake terminal and says its marker is missing while the composer keeps its words, and the toast's Use this folder opens it there with them, marks it and clears the field",
       "owner": "M4",
