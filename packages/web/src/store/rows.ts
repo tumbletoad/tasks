@@ -200,6 +200,48 @@ export interface SnapshotMessage {
   readonly areas: readonly AreaRow[];
   readonly projects: readonly ProjectRow[];
   readonly instances: readonly Instance[];
+  /** The space's statuses and effort scale; the defaults when the snapshot carries none. */
+  readonly scales?: Scales;
+}
+
+/** The status keys a task may take, and its effort keys, in the space's order. */
+export interface Scales {
+  readonly statuses: readonly string[];
+  readonly efforts: readonly string[];
+}
+
+/** A space's scales until its preferences say otherwise (`tasks.statuses`, `tasks.effort_scale`). */
+export const DEFAULT_SCALES: Scales = {
+  statuses: ["open", "waiting", "review", "backlog"],
+  efforts: ["S", "M", "L"],
+};
+
+const SCALE_KEY = /^[A-Za-z0-9_-]{1,40}$/;
+
+/** A list of keys read from a preference's value: undefined unless every item is one. */
+function keysOf(value: unknown, item: (v: unknown) => unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 20) return undefined;
+  const keys = value.map(item);
+  return keys.every((k): k is string => typeof k === "string" && SCALE_KEY.test(k))
+    ? [...new Set(keys)]
+    : undefined;
+}
+
+/** The scales the snapshot's preferences set; each one that does not read is its default. */
+export function scalesOf(list: unknown): Scales {
+  const valueOf = (key: string): unknown => {
+    if (!Array.isArray(list)) return undefined;
+    const found: unknown = list.find((p: unknown) => isRecord(p) && p["key"] === key);
+    return isRecord(found) ? found["value"] : undefined;
+  };
+  const statuses = keysOf(valueOf("tasks.statuses"), (v) => v);
+  const efforts = keysOf(valueOf("tasks.effort_scale"), (v) =>
+    isRecord(v) ? v["key"] : undefined,
+  );
+  return {
+    statuses: statuses ?? DEFAULT_SCALES.statuses,
+    efforts: efforts ?? DEFAULT_SCALES.efforts,
+  };
 }
 
 export interface BatchMessage {
@@ -493,6 +535,7 @@ export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" 
         areas: rowsOf(value["areas"], areaRow),
         projects: rowsOf(value["projects"], projectRow),
         instances: instancesOf(value["instances"]),
+        scales: scalesOf(value["preferences"]),
       };
     }
     case "batch": {

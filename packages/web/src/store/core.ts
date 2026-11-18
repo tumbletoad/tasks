@@ -2,8 +2,8 @@
 // rule that moves it forward. Plain code with no clock, socket or React, so every interleaving of
 // the feed's messages can be tested against a model of the service.
 //
-// - A snapshot replaces everything: rows, instances and the applied-through cursor
-//   `(epoch, incarnation, seq)`.
+// - A snapshot replaces everything: rows, instances, the space's scales and the applied-through
+//   cursor `(epoch, incarnation, seq)`.
 // - A batch covers `(from, through]`. It applies when it reaches past the cursor without a gap:
 //   `from <= cursor.seq < through` in the same epoch and incarnation. Its events at or below the
 //   cursor are skipped (A1 3.7: they were applied before), the rest apply, and the cursor moves to
@@ -11,8 +11,8 @@
 //   never by consecutive `seq` values, because a filtered feed leaves out commits.
 // - A batch wholly at or behind the cursor is a repeat: nothing happens.
 // - A gap (`from` beyond the cursor), another epoch or incarnation, a withheld row (`row: null`
-//   for a task, area or project: A5 3.15) or a batch the page cannot read asks for a fresh
-//   snapshot. Until it arrives, every batch waits for it and is dropped; the rows stay on screen.
+//   for a task, area or project: A5 3.15), a changed preference (its value comes with a snapshot)
+//   or a batch the page cannot read asks for a fresh snapshot. Until it arrives, every batch waits for it and is dropped; the rows stay on screen.
 // - Each batch applies whole or not at all: it is checked first, then applied.
 // - The one value the core works out itself is a task's `touched` when a child row of it (a note,
 //   a log entry, a source) changed: A1 3.5 makes it the commit's seq, and the feed carries the
@@ -22,6 +22,7 @@
 // that changed since the last call, so a frame that applies many batches copies each map once.
 import type { Instance } from "../api.ts";
 import {
+  DEFAULT_SCALES,
   inWorkingSet,
   isRowType,
   ROW_OF,
@@ -31,6 +32,7 @@ import {
   type Cursor,
   type ProjectRow,
   type RowType,
+  type Scales,
   type SnapshotMessage,
   type SpaceHead,
   type TaskRow,
@@ -53,7 +55,7 @@ export interface Change {
   readonly request_id: string;
 }
 
-export type ResnapshotReason = "gap" | "authority" | "withheld" | "unreadable";
+export type ResnapshotReason = "gap" | "authority" | "withheld" | "unreadable" | "preference";
 
 export type Outcome =
   /** A snapshot replaced the working set. */
@@ -81,6 +83,7 @@ export interface Held {
   readonly areas: ReadonlyMap<string, AreaRow>;
   readonly projects: ReadonlyMap<string, ProjectRow>;
   readonly instances: readonly Instance[];
+  readonly scales: Scales;
 }
 
 interface Maps {
@@ -101,6 +104,7 @@ export class LiveCore {
   #head: SpaceHead | undefined;
   #cursor: Cursor | undefined;
   #instances: readonly Instance[] = [];
+  #scales: Scales = DEFAULT_SCALES;
   #maps: Maps | undefined;
   /** A fresh snapshot was asked for: batches wait for it. */
   #awaiting = false;
@@ -159,6 +163,7 @@ export class LiveCore {
     this.#head = message.space;
     this.#cursor = message.cursor;
     this.#instances = message.instances;
+    this.#scales = message.scales ?? DEFAULT_SCALES;
     this.#maps = {
       task: mapOf("task", message.tasks),
       area: mapOf("area", message.areas),
@@ -191,6 +196,8 @@ export class LiveCore {
       last = event.seq;
       if (event.seq <= cursor.seq) continue;
       for (const entity of event.entities) {
+        // A preference comes without its value: a snapshot carries it.
+        if (entity.type === "preference") return this.#ask("preference");
         if (!isRowType(entity.type)) continue;
         if (entity.row === null) return this.#ask("withheld");
         const row = ROW_OF[entity.type](entity.row);
@@ -272,6 +279,7 @@ export class LiveCore {
       areas: copy<AreaRow>("area", before?.areas),
       projects: copy<ProjectRow>("project", before?.projects),
       instances: this.#instances,
+      scales: this.#scales,
     };
     this.#dirty.clear();
     this.#published = held;
