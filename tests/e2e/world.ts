@@ -24,7 +24,14 @@ import { REDEEM_PER_MINUTE } from "../../packages/service/src/http/auth.ts";
 import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { checkedDriver, seedMira } from "../../packages/testkit/src/index.ts";
-import { addBulkTasks, addFinishedTasks, addLargeSpace, type FinishedCounts } from "./bulk.ts";
+import {
+  addBulkTasks,
+  addFinishedTasks,
+  addLargeSpace,
+  setScales,
+  type FinishedCounts,
+  type Scales,
+} from "./bulk.ts";
 import { fakeInstanceToml, type TerminalCall } from "./fake-terminal.ts";
 
 const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
@@ -106,6 +113,8 @@ export interface WorldOptions {
   readonly finished?: FinishedCounts;
   /** Mira's space grown to the size of one in real use (bulk.ts addLargeSpace). */
   readonly large?: boolean;
+  /** Mira's own statuses and effort keys. */
+  readonly scales?: Scales;
 }
 
 export async function startWorld(ui: string, options: WorldOptions = {}): Promise<World> {
@@ -156,6 +165,9 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     }
     if (options.large === true) {
       await addLargeSpace(seeded.folder, { id: machine, name: "mira-desktop", os: OS });
+    }
+    if (options.scales !== undefined) {
+      await setScales(seeded.folder, { id: machine, name: "mira-desktop", os: OS }, options.scales);
     }
     if (options.finished !== undefined) {
       await addFinishedTasks(

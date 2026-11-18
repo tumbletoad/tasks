@@ -7,7 +7,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { showsSpace } from "./page.ts";
-import { SLOW_MS, type World } from "./world.ts";
+import { SLOW_MS, startWorld, type World } from "./world.ts";
 
 const WIDTHS = [1280, 1440, 1920, 390] as const;
 
@@ -27,11 +27,6 @@ async function open(page: Page, world: World, path: string): Promise<void> {
     await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
   } else await showsSpace(page, world.mira.name);
 }
-
-/** The space's `as_of` now, for a write's base. */
-const asOf = async (world: World): Promise<string> =>
-  ((await world.op(world.mira.id, "task.get", { task: world.task.ref })) as { as_of: string })
-    .as_of;
 
 /** How far the page scrolls sideways: none is wanted. */
 const sideways = (page: Page) =>
@@ -121,9 +116,12 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
 
   test("the facts hold their block with two, four and six statuses and effort keys", async ({
     page,
-    large,
   }) => {
+    test.setTimeout(600_000);
+    const ui = process.env["E2E_UI_BUILD"];
+    if (ui === undefined) throw new Error("global-setup.ts did not build the page");
     await page.setViewportSize({ width: 1440, height: 1000 });
+    // No tool sets a space's statuses yet: each scale is a space of its own, set before it opens.
     const scales = [
       { statuses: ["open", "backlog"], efforts: ["S", "L"] },
       { statuses: ["open", "waiting", "review", "backlog"], efforts: ["S", "M", "L", "XL"] },
@@ -132,17 +130,11 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
         efforts: ["XS", "S", "M", "L", "XL", "XXL"],
       },
     ];
-    try {
-      for (const scale of scales) {
-        await large.op(large.mira.id, "prefs.manage", {
-          action: "set",
-          set: [
-            { key: "tasks.statuses", value: scale.statuses },
-            { key: "tasks.effort_scale", value: scale.efforts },
-          ],
-          base: await asOf(large),
-        });
-        await open(page, large, "open");
+    for (const scale of scales) {
+      const world = await startWorld(ui, { scales: scale });
+      try {
+        await page.goto(await world.signInUrl(`/s/${world.mira.id}/open`));
+        await showsSpace(page, world.mira.name);
         const first = page.locator("main li[data-key]").first();
         await first.locator('[data-part="title"]').click();
         const facts = first.locator("dl");
@@ -158,8 +150,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
         // Priority's options sit over effort's.
         const p = await edges(priority);
         const e = await edges(effort);
-        const span = Math.min(p.length, e.length);
-        for (let i = 0; i < span; i += 1) {
+        for (let i = 0; i < Math.min(p.length, e.length); i += 1) {
           expect(
             Math.abs((p[i] ?? 0) - (e[i] ?? 0)),
             `option ${String(i + 1)}`,
@@ -168,16 +159,9 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
         await facts.screenshot({
           path: test.info().outputPath(`owner-facts-${String(scale.statuses.length)}.png`),
         });
+      } finally {
+        await world.close();
       }
-    } finally {
-      await large.op(large.mira.id, "prefs.manage", {
-        action: "set",
-        set: [
-          { key: "tasks.statuses", value: null },
-          { key: "tasks.effort_scale", value: null },
-        ],
-        base: await asOf(large),
-      });
     }
   });
 });

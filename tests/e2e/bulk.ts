@@ -215,6 +215,31 @@ export async function addLargeSpace(folder: string, machine: Machine): Promise<v
   );
 }
 
+/** A space's own statuses and effort keys (`tasks.statuses`, `tasks.effort_scale`). */
+export interface Scales {
+  readonly statuses: readonly string[];
+  readonly efforts: readonly string[];
+}
+
+/** Sets the space's statuses and effort scale, as its owner. */
+export async function setScales(folder: string, machine: Machine, scales: Scales): Promise<void> {
+  await writeRequests(
+    folder,
+    machine,
+    [
+      [
+        { kind: "pref.set", key: "tasks.statuses", value: [...scales.statuses] },
+        {
+          kind: "pref.set",
+          key: "tasks.effort_scale",
+          value: scales.efforts.map((key) => ({ key })),
+        },
+      ],
+    ],
+    () => Date.now(),
+  );
+}
+
 /** Finished fixture tasks: completed and wrapped up, checked off (wrap-up waiting), dropped. */
 export interface FinishedCounts {
   readonly done: number;
