@@ -408,6 +408,21 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         life = await boot();
         // The page's sign-in for `machine` was the stopped service's port's.
         token = undefined;
+        // Ready before its spaces are: Mira's answers once it is open again.
+        const until = Date.now() + SLOW_MS;
+        for (;;) {
+          try {
+            await life.user.call(
+              "op/call",
+              { space: opened.space.spaceId, op: "space.status", input: {} },
+              { timeoutMs: SLOW_MS },
+            );
+            break;
+          } catch (error) {
+            if (Date.now() > until) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+        }
       },
       close: async () => {
         // Every held agent ends with the world.

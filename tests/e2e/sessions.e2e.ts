@@ -247,9 +247,11 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
 
     for (const theme of ["sumi", "washi"] as const) {
       await world.machine("ui.theme", theme);
+      // Signed in where the sidebar names the space, then narrowed.
+      await page.setViewportSize({ width: 1440, height: 900 });
+      p = await expanded(page, world, ref);
       for (const width of [1440, 390]) {
         await page.setViewportSize({ width, height: 900 });
-        p = await expanded(page, world, ref);
         for (const state of ["failed", "opened", "ended", "running"]) {
           await expect(p.entries(state)).toHaveCount(1, { timeout: SLOW_MS });
         }

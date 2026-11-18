@@ -154,6 +154,11 @@ const taskRowsSql = (folders: boolean) =>
     ? " OR t.project_id IN (SELECT owner_id FROM folders WHERE owner_kind = 'project' AND id IN " +
       `(${touched("folders")}))`
     : "");
+/**
+ * The tasks of the launches the batch touched. A launch's changes name no task (it is no child of
+ * its task), but a tab that shows the task's tile follows it by the task.
+ */
+const LAUNCH_TASKS = `SELECT id, task_id FROM launches WHERE id IN (${touched("launches")})`;
 const AREA_ROWS = `SELECT ${AREA_COLUMNS} FROM areas a WHERE a.id IN (${touched("areas")})`;
 const PROJECT_ROWS = `SELECT ${PROJECT_COLUMNS} FROM projects p WHERE p.id IN (${touched("projects")})`;
 
@@ -242,7 +247,7 @@ export async function readBatch(
   const visible = options.visible ?? ALL_VISIBLE;
   const params = { after, upto: after + limit };
   const folders = await hasFolderTable(reader);
-  const [space, commits, changes, actors, tasks, areas, projects, later, projectFolders] =
+  const [space, commits, changes, actors, tasks, areas, projects, launches, later, projectFolders] =
     await reader.transaction("deferred", [
       { sql: SPACE_SQL, mode: "get" },
       { sql: COMMITS, mode: "all", params },
@@ -251,6 +256,7 @@ export async function readBatch(
       { sql: taskRowsSql(folders), mode: "all", params },
       { sql: AREA_ROWS, mode: "all", params },
       { sql: PROJECT_ROWS, mode: "all", params },
+      { sql: LAUNCH_TASKS, mode: "all", params },
       { sql: LATER, mode: "all", params: { upto: params.upto } },
       ...(folders
         ? [{ sql: PROJECT_FOLDERS_CHANGED, mode: "all" as const, params: { after } }]
@@ -259,6 +265,7 @@ export async function readBatch(
   const head = headOf(space);
   const through = Math.max(after, Math.min(head.cursor.seq, after + limit));
   const actorOf = new Map((actors as Row[]).map((a) => [String(a["id"]), a]));
+  const launchTask = new Map((launches as Row[]).map((l) => [String(l["id"]), l["task_id"]]));
   const rows = new Map<string, CompactRow>();
   for (const row of await taskRows(tasks as Row[], head.ref_prefix, options.here)) {
     const id = row["id"];
@@ -324,7 +331,7 @@ export async function readBatch(
     }
     let found = entities.get(key);
     if (found === undefined) {
-      const task = change["task_id"];
+      const task = table === "launches" ? launchTask.get(id) : change["task_id"];
       const changed: string[] = [];
       found = {
         changed,
