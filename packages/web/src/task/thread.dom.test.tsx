@@ -130,12 +130,47 @@ describe("[A5.3.9.web.thread-request] a launch's request shows in the thread as 
     expect(again).toHaveLength(1);
     expect(again[0]?.closest("[data-entry]")?.getAttribute("data-entry-key")).toBe("r:la_2");
     expect(again[0]?.getAttribute("aria-label")).toBe(
-      "Open Claude Code · work again with this request",
+      "Open again with this request in Claude Code · work",
     );
     act(() => {
       again[0]?.click();
     });
     expect(opened).toEqual([["n2", "claude"]]);
+  });
+
+  test("a long request folds with More, so the launch's state and Open again stay in reach", () => {
+    // happy-dom lays nothing out: a box with a long text is taller than it shows.
+    const tall = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.textContent.length > 1_000 ? 2_000 : 0;
+      },
+    });
+    try {
+      const pasted = Array.from({ length: 200 }, (_, i) => `line ${String(i)}`).join("\n");
+      render([note("n2", pasted, ["L7KQ21"])], [receipt("la_1", "L7KQ21", "failed", AT)], () => {
+        /* opened */
+      });
+      const entry = entries()[0];
+      const box = entry?.querySelector<HTMLElement>("[data-part='asked']");
+      expect(box?.dataset["clamped"]).toBe("true");
+      const more = entry?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+      expect(more?.getAttribute("aria-expanded")).toBe("false");
+      expect(entry?.querySelector("[data-part='open-again']")).not.toBeNull();
+      act(() => {
+        more?.click();
+      });
+      expect(box?.dataset["clamped"]).toBe("false");
+
+      // A short one has nothing to fold.
+      render([note("n3", "Book the van", ["L7KQ22"])], [receipt("la_2", "L7KQ22", "failed", AT)]);
+      expect(entries()[0]?.querySelector("button[aria-expanded]")).toBeNull();
+    } finally {
+      if (tall === undefined)
+        delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+      else Object.defineProperty(HTMLElement.prototype, "scrollHeight", tall);
+    }
   });
 
   test("a request whose session is not listed shows on its own, as asked of its agent", () => {

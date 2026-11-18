@@ -138,6 +138,8 @@ export function TaskList({
   const [stops, setStops] = useState<ReadonlyMap<string, number>>(new Map());
   /** Per task, the Run that got no answer: what it asked and its request ID. */
   const unanswered = useRef(new Map<string, { readonly asked: string; readonly id: string }>());
+  /** Per task, the Open that got no answer, the same way. */
+  const unopened = useRef(new Map<string, { readonly asked: string; readonly id: string }>());
   const runReads = useRef(new Latest());
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [announcement, setAnnouncement] = useState("");
@@ -239,7 +241,11 @@ export function TaskList({
         .receipts(task)
         .then((list) => {
           // An older read that answers late never replaces a newer list.
-          if (newest()) setReceipts((known) => new Map(known).set(task, list));
+          if (newest()) {
+            // The service answered since an Open got none: that launch shows here if it was made.
+            unopened.current.delete(task);
+            setReceipts((known) => new Map(known).set(task, list));
+          }
         })
         .catch((error: unknown) => {
           live.failed(error);
@@ -567,28 +573,40 @@ export function TaskList({
       // A folder whose marker says it may be another one opens only when the person says so: the
       // toast asks, and its action opens it there and marks it. The composer's words stay in its
       // field until then. Once the service saved them on the task the field clears, as for Note.
+      // An Open that got no answer may have saved them and opened: as with Run, the same Open
+      // carries the same request ID until the service answers again, so it neither saves the words
+      // twice nor opens a second window.
       open: (task: TaskRow, instance: Instance, text?: string, request?: string) => {
         const launch = (markFolder: boolean): Promise<Receipt | undefined> => {
           watched.current.add(task.id);
+          const asked = `${instance.key}\n${String(markFolder)}\n${request ?? ""}\n${text ?? ""}`;
+          const before = unopened.current.get(task.id);
+          const id = before?.asked === asked ? before.id : requestId();
           return api
-            .openLaunch(task.id, instance.key, requestId(), {
+            .openLaunch(task.id, instance.key, id, {
               markFolder,
               ...(text === undefined ? {} : { text }),
               ...(request === undefined ? {} : { request }),
             })
             .then(async (opened) => {
               const { receipt, copy } = opened;
+              unopened.current.delete(task.id);
               refuse(task.id, undefined);
               shown(task, receipt);
               const space = live.spaceId;
               if (text !== undefined && space !== undefined && opened.note !== undefined) {
                 savedWords(space, task.id, text);
               }
+              // A second click while the first was opening got that launch: its words are a note.
+              if (opened.text === "note") say(t("row.openedEarlier", { label: instance.label }));
               // The app takes the brief by paste: without it on the clipboard nothing opens.
               if (copy !== undefined && !(await toClipboard(copy))) return undefined;
               return receipt;
             })
             .catch((error: unknown) => {
+              if (error instanceof Refused && error.code !== "internal") {
+                unopened.current.delete(task.id);
+              } else unopened.current.set(task.id, { asked, id });
               if (live.failed(error)) return undefined;
               const refused = folderRefusal(error);
               // The folder line says what the refusal found, unless the folder is there and

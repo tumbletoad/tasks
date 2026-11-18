@@ -288,7 +288,7 @@ test.describe("[A7.3.12.request.e2e.thread] What a person types before Open is o
     const opened = calls(page, "launch.open");
     const before = world.terminal().length;
     await failed
-      .getByRole("button", { name: `Open ${FAKE_INSTANCE.label} again with this request` })
+      .getByRole("button", { name: `Open again with this request in ${FAKE_INSTANCE.label}` })
       .click();
     await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
     expect(opened[0]?.postDataJSON()).toMatchObject({ instance: FAKE_INSTANCE.key });

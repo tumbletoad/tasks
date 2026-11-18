@@ -107,6 +107,9 @@ function finished(lifecycle: unknown): string | undefined {
   return undefined;
 }
 
+/** A line break as the tools' text answers split a request on (mcp/render.ts). */
+const LINE_BREAK = /\r\n|[\n\r\p{Zl}\p{Zp}]/u;
+
 /** One task: its one state (the status while it is active), its priority, due date and inbox. */
 function taskLine(task: Result): string {
   const parts = [finished(task["lifecycle"]) ?? str(task["status"]), `p${str(task["priority"])}`];
@@ -332,7 +335,7 @@ export function render(entry: string, result: Result, space: string): string {
       const request = result["request"] as Result | undefined;
       if (typeof request?.["text"] === "string") {
         lines.push("Request from the user for this launch:");
-        for (const line of request["text"].split("\n")) lines.push(`  ${line}`);
+        for (const line of request["text"].split(LINE_BREAK)) lines.push(`  ${line}`);
         if (typeof request["cut"] === "number") {
           lines.push(
             `  ... (+${String(request["cut"])} chars) The rest is note ${String(request["note"])}: --section notes.`,

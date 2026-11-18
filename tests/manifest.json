@@ -4622,8 +4622,16 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.8.web.open-once",
+      "title": "An Open that got no answer, pressed again with the same words, carries the same request ID until the service answers again, so the words are saved once; a refusal forgets it; a second click that got the first click's launch keeps its words as a note and says so",
+      "source": "A5 3.8, A1 3.8",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.9.web.thread-request",
-      "title": "A launch's request shows in the thread as what the person asked its agent: in its session's entry from the click on (Prepared too) and not again as a note, gone with its note after an undo; a launch that did not open offers Open again with it on its newest launch only; a request whose session is not listed shows on its own as asked of its agent",
+      "title": "A launch's request shows in the thread as what the person asked its agent: in its session's entry from the click on (Prepared too) and not again as a note, gone with its note after an undo; a launch that did not open offers Open again with it on its newest launch only; a long request folds with More so the state and Open again stay in reach; a request whose session is not listed shows on its own as asked of its agent",
       "source": "A5 3.8, A5 3.9",
       "owner": "M5",
       "kind": "ci",

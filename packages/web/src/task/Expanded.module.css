@@ -374,6 +374,11 @@ a + .muted,
   white-space: pre-wrap;
 }
 
+.askedBox > [data-clamped="true"] {
+  max-height: calc(10 * 1.125rem + 1px);
+  overflow: hidden;
+}
+
 /* A launch that did not open: open it again with what was asked. */
 .again {
   margin-top: 6px;

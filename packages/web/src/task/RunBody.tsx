@@ -3,7 +3,7 @@
 // answer and the question are the agent's text: Markdown that is never HTML, links made safe
 // (markdown.tsx), a long one folded at ten lines until More. The state line is announced politely
 // as it changes, so Stop's outcome is heard where Stop was pressed.
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useT } from "../i18n/intl.tsx";
@@ -14,6 +14,7 @@ import { runView } from "./runs.ts";
 
 const styles = classes(css, [
   "asked",
+  "askedBox",
   "runState",
   "stop",
   "said",
@@ -30,8 +31,18 @@ export interface RunBodyProps {
   readonly onStop?: (run: Run) => void;
 }
 
-/** Text clamped at ten lines, with More when it is longer. */
-function Folded({ text, className }: { readonly text: string; readonly className: string }) {
+/** `text`, drawn by `children`, clamped at ten lines with More when it is longer. */
+function Folded({
+  text,
+  className,
+  part,
+  children,
+}: {
+  readonly text: string;
+  readonly className: string;
+  readonly part: string;
+  readonly children: ReactNode;
+}) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -43,8 +54,8 @@ function Folded({ text, className }: { readonly text: string; readonly className
   }, [text, open]);
   return (
     <div className={className}>
-      <div ref={box} data-clamped={!open} data-part="run-said">
-        <Markdown text={text} className={styles.text} />
+      <div ref={box} data-clamped={!open} data-part={part}>
+        {children}
       </div>
       {long || open ? (
         <button
@@ -64,14 +75,17 @@ function Folded({ text, className }: { readonly text: string; readonly className
 
 /**
  * What the person asked an agent: a run's words, or a launch's request (the note it names), drawn
- * the same in both entries of the thread. Null: the run works on the task.
+ * the same in both entries of the thread. Null: the run works on the task. A long request folds,
+ * so the state and its actions below it stay in reach.
  */
 export function Asked({ words, part }: { readonly words: string | null; readonly part: string }) {
   const t = useT();
   return (
-    <p className={styles.asked} data-part={part} dir="auto">
-      {words === null ? t("run.askedTask") : t("run.asked", { words })}
-    </p>
+    <Folded text={words ?? ""} className={styles.askedBox} part={part}>
+      <p className={styles.asked} dir="auto">
+        {words === null ? t("run.askedTask") : t("run.asked", { words })}
+      </p>
+    </Folded>
   );
 }
 
@@ -115,7 +129,10 @@ export function RunBody({ run, label, onStop }: RunBodyProps) {
           <Folded
             text={said.text}
             className={said.kind === "question" ? styles.question : styles.said}
-          />
+            part="run-said"
+          >
+            <Markdown text={said.text} className={styles.text} />
+          </Folded>
           {said.cut ? <p className={styles.asked}>{t("run.cut")}</p> : null}
         </>
       )}
