@@ -1,5 +1,5 @@
 // Opening a URL through the OS (A4 3.6.5): the link routes (`claude-cli://`), and T3's thread link.
-// The URL is one argv element of a program started without a shell, never a command string, and
+// The same openers show a task's folder in the file manager. The URL is one argv element of a program started without a shell, never a command string, and
 // never through `cmd /c start`, which mangles `&`. The only text that reaches the URL is the one A4
 // specifies for the route, each value percent-encoded once (routes/argv.ts expandUrl), so it holds
 // no space or quote that a command line could re-split.
@@ -14,6 +14,7 @@
 // A fallback opener is tried only when the one before it never started (its program is missing),
 // so one launch never opens the URL twice.
 import { win32 } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { SpawnRequest, Spawner } from "./terminals/accept.ts";
 
 export type OpenResult = "opened" | "no_handler" | "no_session" | "not_started" | "unknown";
@@ -64,17 +65,30 @@ const xdgExit = (code: number | null): OpenResult =>
  */
 const gioExit = (code: number | null): OpenResult => (code === 0 ? "opened" : "unknown");
 
-/** The openers of this OS, in A4 3.6.5's order. */
-function candidates(url: string, options: OpenerOptions): Candidate[] | "no_session" {
+/**
+ * The openers of this OS, in A4 3.6.5's order. `url` is what the opener gets; on Windows a folder
+ * goes to rundll32 as its file URL (`folder`), which keeps a comma in its name whole, where
+ * explorer.exe would split the path there.
+ */
+function candidates(
+  url: string,
+  options: OpenerOptions,
+  folder?: string,
+): Candidate[] | "no_session" {
   switch (options.platform) {
     case "win32": {
       const root = systemRootOf(options.env);
       if (root === undefined) return [];
+      const target = folder === undefined ? url : pathToFileURL(folder, { windows: true }).href;
       // Both go through ShellExecute, which activates MSIX handlers. Neither gives a useful code.
       return [
         {
           name: "rundll32",
-          argv: [win32.join(root, "System32", "rundll32.exe"), "url.dll,FileProtocolHandler", url],
+          argv: [
+            win32.join(root, "System32", "rundll32.exe"),
+            "url.dll,FileProtocolHandler",
+            target,
+          ],
         },
         { name: "explorer", argv: [win32.join(root, "explorer.exe"), url] },
       ];
@@ -110,11 +124,28 @@ function systemRootOf(env: Readonly<Record<string, string>>): string | undefined
 }
 
 /** Opens `url` with the OS's opener (A4 3.6.5). Never throws. */
-export async function openUrl(
+export function openUrl(
   url: string,
   options: OpenerOptions,
 ): Promise<{ readonly result: OpenResult; readonly opener: OpenerName }> {
-  const list = candidates(url, options);
+  return run(candidates(url, options), options);
+}
+
+/**
+ * Shows the absolute folder `folder` in the computer's file manager: Explorer, what the desktop
+ * opens a folder with on Linux, Finder. The caller has checked that it is a folder. Never throws.
+ */
+export function openFolder(
+  folder: string,
+  options: OpenerOptions,
+): Promise<{ readonly result: OpenResult; readonly opener: OpenerName }> {
+  return run(candidates(folder, options, folder), options);
+}
+
+async function run(
+  list: Candidate[] | "no_session",
+  options: OpenerOptions,
+): Promise<{ readonly result: OpenResult; readonly opener: OpenerName }> {
   if (list === "no_session") return { result: "no_session", opener: "none" };
   for (const candidate of list) {
     const request: SpawnRequest = {

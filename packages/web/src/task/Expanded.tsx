@@ -25,6 +25,7 @@ import {
   CopyIcon,
   FolderElsewhereIcon,
   FolderIcon,
+  FolderOpenIcon,
   OutcomeIcon,
   SourceIcon,
 } from "../row/icons.tsx";
@@ -174,11 +175,14 @@ function PlaceLine({
   task,
   detail,
   refused,
+  onShow,
 }: {
   readonly task: TaskRow;
   readonly detail: Detail | undefined;
   /** An Open refused on the folder since the detail was read: what it found is the newer word. */
   readonly refused: FolderRefusal | undefined;
+  /** Shows the folder in the file manager. */
+  readonly onShow: (task: TaskRow) => void;
 }) {
   const t = useT();
   const say = useToast();
@@ -193,6 +197,20 @@ function PlaceLine({
       },
     );
   };
+  const show = (
+    <button
+      type="button"
+      className={styles.act}
+      data-part="show-folder"
+      aria-label={t("place.show")}
+      data-tip={t("place.show")}
+      onClick={() => {
+        onShow(task);
+      }}
+    >
+      <FolderOpenIcon />
+    </button>
+  );
   const shown =
     refused?.folder !== undefined
       ? { path: refused.folder, words: t("place.refused", { reason: refused.reason }) }
@@ -223,6 +241,7 @@ function PlaceLine({
           {missing ? <span className={styles.muted}> {shown.words}</span> : null}
         </span>
         <span className={styles.acts}>
+          {show}
           <button
             type="button"
             className={styles.act}
@@ -266,6 +285,7 @@ function PlaceLine({
       <span className={styles.muted} data-fact="" data-tip={t("place.workFolderTip")}>
         {t("place.workFolder")}
       </span>
+      <span className={styles.acts}>{show}</span>
     </li>
   );
 }
@@ -385,7 +405,12 @@ export function Expanded({ task, receipts, instances, actions, refused }: Expand
               onAsk={askOn(ask, task, "sources")}
             />
           ))}
-          <PlaceLine task={task} detail={detail} refused={fresh ? refused : undefined} />
+          <PlaceLine
+            task={task}
+            detail={detail}
+            refused={fresh ? refused : undefined}
+            onShow={actions.folder}
+          />
           {learnings.map((learning, i) => (
             <li
               key={`learning:${String(i)}`}

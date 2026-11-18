@@ -24,6 +24,8 @@ export interface RowActions {
    * composer's `text`. True once it is on the clipboard.
    */
   readonly copy: (task: TaskRow, pack?: boolean, text?: string) => Promise<boolean>;
+  /** Shows the task's folder in the file manager of the computer the service runs on. */
+  readonly folder: (task: TaskRow) => void;
   readonly star: (task: TaskRow, on: boolean) => void;
   /** The view's visible move out of it (A5 3.5): "Move to Open" or "Back to open". */
   readonly move: (task: TaskRow, kind: RowMove) => void;

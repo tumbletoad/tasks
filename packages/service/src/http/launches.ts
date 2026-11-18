@@ -4,8 +4,9 @@
 // (`POST /api/v1/op/launch.open`), on the hub's one launch machine per space: the page's click,
 // the shim's claim, recovery after a restart and the sweep all act on the same machine (A4
 // 3.9.1's section rule holds across them). This module keeps what the page needs besides: the
-// instances it draws a tile for, from the hub's launch service, and a task's last receipts, which
-// the page refetches when the change feed names a launch.
+// instances it draws a tile for, from the hub's launch service, a task's last receipts, which
+// the page refetches when the change feed names a launch, and a task's folder shown in the file
+// manager. The page's sign-in is the person: no agent reaches these routes.
 //
 // No text of a task, brief or composer travels here: a receipt holds IDs, states, instants and
 // fixed codes only, as the launch record does, and whether the launch's agent read the person's
@@ -18,10 +19,13 @@ import {
   TERMINAL_APPS,
   TERMINAL_SOURCES,
   type IntentState,
+  type OpenResult,
   type Route,
 } from "@tasks/launch";
 import { findSpace, isAmbiguity } from "../ops/copies.ts";
+import { launchError } from "../ops/handlers.ts";
 import type { OpsHost, ServedSpace } from "../ops/index.ts";
+import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
 import type { HttpLog } from "./events.ts";
 
 /** An instance as the page draws its tile (A5 3.6): a key, a label, a monogram and a ring slot. */
@@ -46,6 +50,15 @@ export interface UiLaunchPort {
   onChange?(listener: (space: string) => void): () => void;
   /** Where a launch's request is: waiting, read, gone unread, or undefined when none is known. */
   requestState?(launch: string): "waiting" | "read" | "unread" | undefined;
+  /** Shows the folder a task opens in here in the file manager (LaunchService.showFolder). */
+  showFolder?(space: string, folder: TaskFolder): Promise<OpenResult>;
+}
+
+/** What a folder's file manager answered: it opened, or it ran and said nothing either way. */
+export interface FolderShown {
+  readonly result: "opened" | "unknown";
+  /** This computer's name: the folder opens here, also for a page looked at from elsewhere. */
+  readonly machine: string | undefined;
 }
 
 /** A launch receipt as the page shows it (A5 3.9). IDs, states, instants and codes only. */
@@ -204,6 +217,45 @@ export class UiLaunches {
       });
     }
     return space;
+  }
+
+  /**
+   * Shows a task's folder in this computer's file manager: the folder the task itself names here,
+   * never a path the page sends. A folder that is gone, on another computer, or a file, and a
+   * computer where no file manager answers, are refused with the reason.
+   */
+  async showFolder(
+    spaceRef: string | undefined,
+    input: Record<string, unknown>,
+  ): Promise<FolderShown> {
+    const { task } = input;
+    if (typeof task !== "string" || !TASK_ID.test(task)) {
+      throw invalid("Expected a task ID.", "task");
+    }
+    const space = this.#space(spaceRef);
+    const show = this.#options.port?.showFolder?.bind(this.#options.port);
+    if (show === undefined || space.reader === undefined || space.id === undefined) {
+      throw new AppError({
+        code: "space_unavailable",
+        message: "This space cannot open folders on this machine now.",
+      });
+    }
+    const { machine } = this.#options.host;
+    const read = await readLaunchTask(space.reader, task, machine.id);
+    let result: OpenResult;
+    try {
+      result = await show(space.id, read.folder);
+    } catch (error) {
+      throw launchError(error);
+    }
+    if (result !== "opened" && result !== "unknown") {
+      throw new AppError({
+        code: "invalid_input",
+        message: "No file manager answered on this computer.",
+        data: { field: "task", reason: "no_file_manager" },
+      });
+    }
+    return { result, machine: machine.name };
   }
 
   /** A task's launch receipts, newest last (at most ten). */

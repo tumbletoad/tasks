@@ -164,7 +164,9 @@
   "row.folderOpen": "Open folder",
   "row.folderMissing": "Folder not found on this machine",
   "row.folderElsewhere": "On {machine}",
-  "row.workFolder": "{product} work folder",
+  "row.workFolder": "Open the {product} work folder",
+  "row.folderShown": "Opened in the file manager on {machine}",
+  "row.folderNotShown": "{reason, select, path_missing {Folder not found on this computer} not_a_directory {The task's folder is a file on this computer} not_answering {The task's folder did not answer in time} no_file_manager {No file manager answered on this computer} other {The folder cannot be opened on this computer}}. Nothing was opened.",
   "row.markerChanged": "Changed by {by} · {time}",
   "row.markerChangedWhat": "{what} · {time}",
   "row.markerNeedsInput": "{by} needs your input",
@@ -208,6 +210,7 @@
   "place.repo": " [{repo}]",
   "place.repoTip": "The Git repository in this folder",
   "place.copy": "Copy path",
+  "place.show": "Open in the file manager",
   "place.copied": "Path copied",
 
   "fact.label": "Facts",

@@ -3613,6 +3613,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.7.e2e.show-folder",
+      "title": "Playwright against the real service process: the row's folder button and the expanded folder line ask the service to show the task's own folder, which it resolves from the task, and the page says on which computer it opened; after the folder went the page says it was not found and nothing is shown",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.e2e.open-marker",
       "title": "Playwright against the real service process: the expanded task's folder line names the Git repository in it; Open after the checkout was replaced at its path sends nothing to the fake terminal and says its marker is missing, and the toast's Use this folder opens it there and marks it",
       "owner": "M4",

@@ -175,11 +175,16 @@ function Slots({
           <button
             type="button"
             className={styles.icon}
+            data-part="folder"
             data-state={folder.state}
             aria-label={folder.tip === undefined ? undefined : say(folder.tip)}
-            aria-disabled={folder.state === "missing" || folder.state === "elsewhere"}
+            // A folder not found is looked for again: a drive may have come back since.
+            aria-disabled={folder.state === "elsewhere"}
             data-tip={folder.tip === undefined ? undefined : say(folder.tip)}
             tabIndex={tab}
+            onClick={() => {
+              if (folder.state !== "elsewhere") actions.folder(task);
+            }}
           >
             {folder.state === "elsewhere" ? <FolderElsewhereIcon /> : <FolderIcon />}
           </button>

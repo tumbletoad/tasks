@@ -75,6 +75,8 @@ export interface World {
   machine(key: string, value: unknown): Promise<void>;
   /** The fake terminal's command lines so far. */
   terminal(): TerminalCall[];
+  /** The folders the file manager was asked to show so far, as the service resolved them. */
+  folders(): string[];
   /** The fake agent reads no request on this task, as an agent without the tools or a shell. */
   leaveUnread(ref: string): void;
   /** An agent logs on a task, through the service's request path as an agent does. */
@@ -178,7 +180,12 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
 
     const record = join(temp.root, "terminal.jsonl");
     writeFileSync(record, "");
-    const proc = services.start(home, { script: ENTRY, env: { E2E_UI: ui, E2E_TERMINAL: record } });
+    const shown = join(temp.root, "folders.txt");
+    writeFileSync(shown, "");
+    const proc = services.start(home, {
+      script: ENTRY,
+      env: { E2E_UI: ui, E2E_TERMINAL: record, E2E_FOLDERS: shown },
+    });
     json = await waitReady(home, proc.pid);
     const endpoint = json.endpoint?.path;
     const http = json["http"] as { port?: number } | null;
@@ -299,6 +306,10 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           .split("\n")
           .filter((line) => line !== "")
           .map((line) => JSON.parse(line) as TerminalCall),
+      folders: () =>
+        readFileSync(shown, "utf8")
+          .split("\n")
+          .filter((line) => line !== ""),
       leaveUnread: (ref) => {
         appendFileSync(unread, `${ref}\n`);
       },

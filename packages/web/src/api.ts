@@ -64,12 +64,15 @@ export class Refused extends Error {
   readonly code: string;
   /** The service's own sentence for the person, when it gave one. */
   readonly said: string | undefined;
+  /** The error's data, such as the field and the reason a folder was refused. */
+  readonly data: unknown;
 
-  constructor(status: number, code: string, said?: string) {
+  constructor(status: number, code: string, said?: string, data?: unknown) {
     super(code);
     this.status = status;
     this.code = code;
     this.said = said;
+    this.data = data;
   }
 }
 
@@ -152,7 +155,7 @@ export class Api {
     const reply = await this.post(path, JSON.stringify(input));
     const parsed = JSON.parse(reply.body) as {
       result?: T;
-      error?: { code?: unknown; message?: unknown };
+      error?: { code?: unknown; message?: unknown; data?: unknown };
     };
     if (reply.status !== 200 || parsed.result === undefined) {
       const code = parsed.error?.code;
@@ -161,6 +164,7 @@ export class Api {
         reply.status,
         typeof code === "string" ? code : "unknown",
         typeof message === "string" && message.length <= 500 ? message : undefined,
+        parsed.error?.data,
       );
     }
     return parsed.result;
@@ -280,6 +284,15 @@ export class Api {
       app === undefined ? {} : { app },
     );
     return reply.terminal;
+  }
+
+  /**
+   * Shows the task's folder in the file manager of the computer the service runs on, which the
+   * answer names. The service reads the folder from the task.
+   */
+  async showFolder(task: string): Promise<{ readonly machine: string | undefined }> {
+    const reply = await this.#result<{ machine?: unknown }>("/api/v1/launch/folder", { task });
+    return { machine: typeof reply.machine === "string" ? reply.machine : undefined };
   }
 
   async receipts(task: string): Promise<Receipt[]> {

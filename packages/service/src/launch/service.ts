@@ -39,6 +39,7 @@ import {
   MATCH_POLL_MS,
   MATCH_WINDOW_MS,
   needsDefault,
+  openFolder,
   openUrl,
   osProbe,
   osSpawner,
@@ -84,6 +85,8 @@ import {
   type LaunchIntent,
   type NewIntent,
   type Observation,
+  type OpenerOptions,
+  type OpenResult,
   type ProcessProbe,
   type RecordStore,
   type ReportMethod,
@@ -225,6 +228,8 @@ export interface LaunchOptions {
   readonly environment?: EnvironmentSource;
   /** The machine state. Default: the install's launch folders. */
   readonly records?: RecordStore;
+  /** Shows a resolved folder in the file manager. Default: the OS's (openFolder). */
+  readonly showFolder?: (folder: string) => Promise<OpenResult>;
 }
 
 export interface LaunchServiceOptions extends LaunchOptions {
@@ -865,6 +870,42 @@ export class LaunchService {
   }
 
   /**
+   * Shows the folder a task opens in here in this computer's file manager: its own folder, its
+   * project's, or the space's work folder, resolved now as Open resolves it. Nothing but the file
+   * manager starts. Throws LaunchUnavailable (`other_machine`) or LaunchFolderUnavailable.
+   */
+  async showFolder(space: string, folder: TaskFolder): Promise<OpenResult> {
+    const planned = this.#planFolder(folder);
+    const where = await this.resolveFolder(space, planned);
+    if (where.status === "failed") {
+      throw new LaunchFolderUnavailable(where.reason, planned?.stored);
+    }
+    const show = this.#options.showFolder;
+    if (show !== undefined) return show(where.folder);
+    const shown = await openFolder(where.folder, await this.#openerOptions());
+    this.#options.log.log("launch.opener", { opener: shown.opener, result: shown.result });
+    return shown.result;
+  }
+
+  /** The OS opener's options: the person's desktop session, and the programs on their PATH. */
+  async #openerOptions(): Promise<OpenerOptions> {
+    const { platform } = this.#options;
+    const session = await this.environment.session().catch(() => ({}));
+    const env = terminalEnvironment(this.#options.env, session, platform);
+    const path = [
+      ...pathEntries(this.#personEnv, platform),
+      ...pathEntries(this.#options.env, platform),
+    ].join(":");
+    return {
+      platform,
+      env,
+      spawn: this.#options.terminals?.spawn ?? osSpawner,
+      which: (name) => findOnPosixPath(name, path),
+      cwd: this.#options.home ?? this.#options.stateDir,
+    };
+  }
+
+  /**
    * The look at the folder's marker just before an agent starts (marker.ts): a folder whose
    * marker names other owners only, or whose marker this machine wrote and is gone, throws
    * LaunchFolderUnmarked. With `mark`, the person chose to use it: it is marked and opens.
@@ -1491,20 +1532,7 @@ export class LaunchService {
       return { kind: "refused", reason: "cancelled" };
     }
     const url = expandUrl(pending.url, { cwd: where.folder, brief: pending.brief });
-    const { platform } = this.#options;
-    const session = await this.environment.session().catch(() => ({}));
-    const env = terminalEnvironment(this.#options.env, session, platform);
-    const path = [
-      ...pathEntries(this.#personEnv, platform),
-      ...pathEntries(this.#options.env, platform),
-    ].join(":");
-    const opened = await openUrl(url, {
-      platform,
-      env,
-      spawn: this.#options.terminals?.spawn ?? osSpawner,
-      which: (name) => findOnPosixPath(name, path),
-      cwd: this.#options.home ?? this.#options.stateDir,
-    });
+    const opened = await openUrl(url, await this.#openerOptions());
     this.#options.log.log("launch.opener", { opener: opened.opener, result: opened.result });
     switch (opened.result) {
       case "opened":

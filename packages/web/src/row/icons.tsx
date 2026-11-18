@@ -24,6 +24,14 @@ export const FolderElsewhereIcon = () => (
   </Icon>
 );
 
+/** An arrow out of a box: shows the folder in the file manager. */
+export const FolderOpenIcon = () => (
+  <Icon>
+    <path d="M13.5 4.5h6v6M19.5 4.5l-8 8" />
+    <path d="M17.5 13.5v4a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h4" />
+  </Icon>
+);
+
 /** The waiting chip's person. */
 export const PersonIcon = () => (
   <Icon>

@@ -78,6 +78,7 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
       env: {
         E2E_UI: ui,
         E2E_TERMINAL: record,
+        E2E_FOLDERS: join(temp.root, "folders.txt"),
         E2E_AGENT_HOME: agentHome,
         E2E_AGENT_ENV: JSON.stringify(fakes.env),
       },

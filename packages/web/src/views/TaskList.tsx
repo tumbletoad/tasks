@@ -572,6 +572,20 @@ export function TaskList({
             return false;
           });
       },
+      // The folder opens on the computer the service runs on: the page is served there only, and
+      // the toast names that computer for a page looked at through a forwarded port.
+      folder: (task) => {
+        api.showFolder(task.id).then(
+          ({ machine }) => {
+            say(t("row.folderShown", { machine: machine ?? "" }));
+          },
+          (error: unknown) => {
+            if (live.failed(error)) return;
+            const refused = folderRefusal(error);
+            say(t("row.folderNotShown", { reason: refused?.reason ?? "other" }));
+          },
+        );
+      },
       // The star is a person's edit like any other (A5 3.11): shown at once, with a base, undoable.
       star: (task, on) => {
         edits.edit(task, starChange(on, latest.current.today));

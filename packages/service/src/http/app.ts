@@ -14,6 +14,7 @@
 //   POST /api/v1/op/<entry>     one registry entry with a UI face, on the request path of the CLI
 //                               (Open and Copy are `launch.open`, A4 3.4, 3.15)
 //   POST /api/v1/launch/list    a task's launch receipts (launches.ts)
+//   POST /api/v1/launch/folder  a task's folder shown in this computer's file manager
 //   POST /api/v1/space/list     this machine's spaces and its default space (the space switcher)
 //   POST /api/v1/space/default  Make default: machine.toml's `[service] default_space`
 //   POST /api/v1/machine/pref    Settings: set or reset a machine preference of the page's
@@ -745,11 +746,14 @@ export class HttpApp {
     }
   }
 
-  /** `POST /api/v1/launch/list`: a task's receipts (checks.ts admits no other action). */
+  /**
+   * `POST /api/v1/launch/list`: a task's receipts; `POST /api/v1/launch/folder`: its folder in the
+   * file manager (checks.ts admits no other action).
+   */
   async #launch(
     res: ServerResponse,
     port: number,
-    _action: string,
+    action: string,
     input: Record<string, unknown>,
     space: string | undefined,
   ): Promise<void> {
@@ -758,7 +762,10 @@ export class HttpApp {
       return;
     }
     try {
-      const result = { receipts: await this.launches.list(space, input) };
+      const result =
+        action === "folder"
+          ? await this.launches.showFolder(space, input)
+          : { receipts: await this.launches.list(space, input) };
       this.#json(res, port, 200, { result });
     } catch (error) {
       const body: ErrorBody =

@@ -190,7 +190,7 @@ export interface ServedSpace {
 /** What the request path needs from its host. */
 export interface OpsHost {
   /** This machine's ID: the writer scopes name it, and places belong to it. */
-  readonly machine: { readonly id: string };
+  readonly machine: { readonly id: string; readonly name?: string };
   spaces(): readonly ServedSpace[];
   /** The OS whose path rules a folder follows. Default: this process's. */
   readonly platform?: NodeJS.Platform;
@@ -3496,7 +3496,7 @@ async function unmarkedError(call: Call, error: LaunchFolderUnmarked): Promise<A
   });
 }
 
-function launchError(error: unknown): unknown {
+export function launchError(error: unknown): unknown {
   if (error instanceof LaunchUnavailable) {
     return new AppError({
       code: "invalid_input",
