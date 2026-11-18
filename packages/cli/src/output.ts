@@ -328,6 +328,11 @@ export function render(entry: string, result: Result, space: string): string {
     case "task.get": {
       const task = (result["task"] ?? {}) as Result;
       lines.push(taskLine(task));
+      // The user's request for the launch named: whole, each line as typed after an indent.
+      if (typeof result["request"] === "string") {
+        lines.push("Request from the user for this launch:");
+        for (const line of result["request"].split("\n")) lines.push(`  ${line}`);
+      }
       if (typeof task["summary"] === "string" && task["summary"] !== "")
         lines.push(`  ${task["summary"]}`);
       const folder = task["folder"] as Result | undefined;

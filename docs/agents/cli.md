@@ -81,7 +81,7 @@ Usage: `tasks brief <task> [flags]`
 |---|---|---|---|
 | `<task>` | `task` | string | Task ref (M-14) or ID |
 | `--instance` | `instance` | string | The instance to open in, from this machine's; leave out to Copy |
-| `--text` | `text` | string | Your words for the agent: they replace the brief's last line |
+| `--text` | `text` | string | Your words for the agent: it reads them with the task |
 | `--pack` | `pack` | boolean | Copy the context pack: the task's text, for an app without the tools |
 | `--mark-folder` | `mark_folder` | boolean | Open although the folder's marker is gone or another's, and mark it |
 
