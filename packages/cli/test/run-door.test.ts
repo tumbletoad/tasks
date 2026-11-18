@@ -283,8 +283,16 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
       const started = await user(["run", task, "--json", "Once."]);
       id = (JSON.parse(started.stdout) as { id: string }).id;
       expect(id).toMatch(/^ru_/);
-      const done = await service?.runs.ended(spaceId, id);
-      expect(done?.state).toBe("succeeded");
+      // A queued run's record is final only once it started and ended: wait for that, however long.
+      const done = await waitFor(
+        async () => {
+          const run = await service?.runs.read(spaceId, id);
+          return run !== undefined && FINAL.has(run.state) ? run : undefined;
+        },
+        120_000,
+        "the run final",
+      );
+      expect(done.state).toBe("succeeded");
     } finally {
       spy.mockRestore();
     }
