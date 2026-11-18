@@ -161,7 +161,7 @@ test.describe("[A7.3.12.m5-14.e2e.add-project] New project from a folder, and it
     await expect(page).toHaveURL(/\/project\/p_/u, { timeout: SLOW_MS });
     const line = page.locator('[data-part="project-folder"]');
     await expect(line).toHaveAttribute("data-state", "none");
-    await expect(line).toContainText("No folder on this computer");
+    await expect(line).toContainText("No folder on this machine");
     expect(await violations(page)).toEqual([]);
   });
 });
@@ -301,7 +301,7 @@ test.describe("[A7.3.12.m5-14.e2e.open-refused] Open refused on its folder offer
       const row = page.locator(`li[data-task="${first}"]`);
       const before = world.terminal().length;
       await row.locator('[data-part="tile"]').click();
-      await expect(toast(page)).toContainText("Folder not found on this computer");
+      await expect(toast(page)).toContainText("Folder not found on this machine");
       expect(world.terminal()).toHaveLength(before);
       await expect(toastAction(page)).toHaveText("Choose another folder");
       await toastAction(page).click();

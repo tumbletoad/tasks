@@ -88,7 +88,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   removes it.
 - Tasks never makes a folder for an agent. At the command line, `--create` makes it when you ask,
   and in the page's folder chooser "Make the folder" does; an undo leaves it on disk.
-- The page's folder chooser lists the names of folders on this computer to you alone, never to an
+- The page's folder chooser lists the names of folders on this machine to you alone, never to an
   agent's tools. It reads no file, apart from a Git checkout's settings for its repository's name. A
   folder that answers slowly is listed as far as it read in two seconds, and a very large one up to
   its first 20,000 entries.

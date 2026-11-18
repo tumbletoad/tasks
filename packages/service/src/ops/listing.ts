@@ -1,4 +1,4 @@
-// The folder chooser's look at this computer's disk: the folders in one folder, by name, for the
+// The folder chooser's look at this machine's disk: the folders in one folder, by name, for the
 // person's page. It reads names and whether each is a folder, never a file's content, and lists no
 // file. A link to a folder is listed as a link: opening it lists the folder it points to, which the
 // page says. Each look is bounded: a share that stops answering gives what was read so far, or

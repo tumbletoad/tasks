@@ -144,7 +144,7 @@ export function AreaPage({
     />
   );
   if (project === undefined) return list;
-  // A project's view begins with its folder on this computer.
+  // A project's view begins with its folder on this machine.
   return (
     <>
       <ProjectFolder key={project} project={project} />

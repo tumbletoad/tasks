@@ -1,4 +1,4 @@
-// The page's folder chooser and a project's folder line: the folders in a folder on this computer,
+// The page's folder chooser and a project's folder line: the folders in a folder on this machine,
 // a new folder, and where a project's folders are. Only the person reaches these: the page's
 // sign-in, or a person at a terminal. An agent's tools and a script get no way to list a person's
 // disk through Tasks. The paths travel in request bodies only, never in a URL or a log line.
@@ -20,7 +20,7 @@ import { readProjectFolderAll, readProjectFolders } from "../ops/read.ts";
 
 export interface PageFoldersHost {
   readonly ops: Pick<OpsHost, "machine" | "spaces" | "platform" | "home">;
-  /** The disk as the chooser reads it. Default: this computer's. */
+  /** The disk as the chooser reads it. Default: this machine's. */
   readonly fs?: ListFs;
   /** How long one look may take. */
   readonly ms?: number;
@@ -44,7 +44,7 @@ function personOnly(cls: ConnectionClass): void {
   if (!isUserClass(cls)) {
     throw new AppError({
       code: "forbidden",
-      message: "Only the user can look through this computer's folders.",
+      message: "Only the user can look through this machine's folders.",
       hint: "Ask the user to choose the folder.",
       data: { rule: "user_only" },
     });
@@ -129,7 +129,7 @@ export function pageFolderVerbs(host: PageFoldersHost): {
       if (reader === undefined) {
         throw new AppError({
           code: "space_unavailable",
-          message: "This space is not open on this computer now.",
+          message: "This space is not open on this machine now.",
         });
       }
       const rows = await readProjectFolderAll(reader, project);

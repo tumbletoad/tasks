@@ -137,7 +137,7 @@ export type FolderListing =
       readonly at?: string;
     };
 
-/** A project's folder line: its folder here, and the computers where it has one. */
+/** A project's folder line: its folder here, and the machines where it has one. */
 export interface ProjectFolderView {
   readonly here?: {
     readonly folder: string;
@@ -274,7 +274,7 @@ export class Api {
     return this.#result("/api/v1/machine/folder_make", { path });
   }
 
-  /** A project's folder here, with its repository, and the computers where it has one. */
+  /** A project's folder here, with its repository, and the machines where it has one. */
   async projectFolder(project: string): Promise<ProjectFolderView> {
     return this.#result("/api/v1/machine/project_folder", { project });
   }

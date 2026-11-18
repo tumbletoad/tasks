@@ -1,4 +1,4 @@
-// A project's folder on this computer, at the top of its view: the path with the repository a
+// A project's folder on this machine, at the top of its view: the path with the repository a
 // checkout holds, or where else it has one, or none, and the ways to set, change or clear it. The
 // line keeps its height while it is read, so the list below never moves.
 import { useCallback, useContext, useEffect, useRef, useState } from "react";

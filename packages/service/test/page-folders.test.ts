@@ -1,4 +1,4 @@
-// The page's folder chooser: the folders in a folder on this computer, for the person only, read
+// The page's folder chooser: the folders in a folder on this machine, for the person only, read
 // by name and bounded in time and size. A fake disk covers what no test machine has (a share that
 // stops answering, Windows drives and shares on any OS); a scratch folder covers links, files and
 // permissions on the real disk. Scratch folders only.
@@ -79,7 +79,7 @@ const linux = (fs: ListFs, more: Partial<ListFacts> = {}): ListFacts => ({
 const names = (listing: Listing): string[] =>
   listing.kind === "list" ? listing.folders.map((f) => f.name) : [];
 
-describe("[A7.3.12.m5-14.folders-gate] Only the person looks through this computer's folders", () => {
+describe("[A7.3.12.m5-14.folders-gate] Only the person looks through this machine's folders", () => {
   it("refuses an agent's connection, a script, the bridge and a shim before it reads anything", async () => {
     // Nothing of the host is read before the refusal: an empty one would fail if it were.
     const verbs = pageFolderVerbs({ ops: {} as never, fs: {} as ListFs });
@@ -350,7 +350,7 @@ describe("[A7.3.12.m5-14.folders-list] The chooser lists folders by name, bounde
   });
 });
 
-describe("[A7.3.12.m5-14.folders-disk] On this computer's disk: links said so, files never listed", () => {
+describe("[A7.3.12.m5-14.folders-disk] On this machine's disk: links said so, files never listed", () => {
   let temp: { root: string; cleanup: () => void };
   beforeAll(() => {
     temp = tempRoot("folders-disk");
