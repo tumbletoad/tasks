@@ -140,6 +140,81 @@ export async function addBulkTasks(folder: string, machine: Machine, count: numb
   );
 }
 
+/**
+ * The areas and projects a space grows into after some months of real use: with the sample's own
+ * two areas and three projects, five areas and thirty-two projects, some with long names.
+ */
+const LARGE: readonly { readonly area: string; readonly projects: readonly string[] }[] = [
+  {
+    area: "Client work",
+    projects: [
+      "Brightside Bikes",
+      "Harbor Dental",
+      "Northwind Library (archive migration)",
+      "Orchard Cafe",
+      "Pinecrest School",
+      "Riverside Clinic",
+      "Sunset Studios",
+      "Tidewater Museum",
+    ],
+  },
+  {
+    area: "lumen",
+    projects: [
+      "Developer portal (staging and docs)",
+      "Release tooling",
+      "Billing export",
+      "Design system",
+      "Performance profiling (power and memory)",
+      "Support rotation",
+    ],
+  },
+  {
+    area: "Learning",
+    projects: ["Rust book", "Spanish", "Photography basics", "Talks to watch", "Statistics"],
+  },
+  {
+    area: "Errands and admin",
+    projects: ["Car", "Taxes 2026", "Insurance renewal", "Moving house", "Recurring chores"],
+  },
+  { area: "home", projects: ["Kitchen renovation", "Bike repairs"] },
+];
+
+/**
+ * Grows the space at `folder` to the size of a space in real use: five areas, thirty-two projects
+ * and, with the sample's own, about a hundred open tasks spread over them in every status.
+ */
+export async function addLargeSpace(folder: string, machine: Machine): Promise<void> {
+  const groups: Operation[] = [];
+  const projects: string[] = [];
+  for (const { area, projects: titles } of LARGE) {
+    let areaRef = area;
+    if (area !== "lumen" && area !== "home") {
+      const id = newId("a");
+      groups.push({ kind: "area.create", id, title: area });
+      areaRef = id;
+    }
+    for (const title of titles) {
+      const id = newId("p");
+      groups.push({ kind: "project.create", id, title, area: areaRef });
+      projects.push(id);
+    }
+  }
+  const tasks: Operation[] = [];
+  for (let n = 0; n < 84; n += 1) {
+    const inbox = n % 12 === 5;
+    const project = inbox ? undefined : projects[(n * 7) % projects.length];
+    // The sample's project, if any, gives way to one of the grown space's.
+    const made = { ...bulkTask(n), inbox } as Operation & { project?: string };
+    delete made.project;
+    tasks.push({ ...made, ...(project === undefined ? {} : { project }) });
+  }
+  const start = Date.now() - 10 * 86_400_000;
+  await writeRequests(folder, machine, [groups, tasks.slice(0, 42), tasks.slice(42)], (request) =>
+    Math.floor(start + request * 86_400_000),
+  );
+}
+
 /** Finished fixture tasks: completed and wrapped up, checked off (wrap-up waiting), dropped. */
 export interface FinishedCounts {
   readonly done: number;

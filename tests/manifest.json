@@ -3971,6 +3971,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.3.e2e.owner-screens",
+      "title": "Playwright against the real service with a space the size of one in use (five areas, thirty-two projects, about a hundred open tasks): the side menu, Today, Open, an area, a project and an expanded task at 1,280, 1,440, 1,920 and 390 px in Sumi and Washi with nothing scrolling sideways, the drawer at 390 px; the expanded task's facts with two, four and six statuses and effort keys: statuses in one row up to four and in two even rows past it, priority's options over effort's",
+      "source": "A5 3.3, A5 3.7",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.7.web.scales",
+      "title": "The space's statuses and effort scale reach the page from the snapshot's preferences, anything that does not read as a list of keys keeps the defaults, and a batch that changes a preference asks for a fresh snapshot, whose value the core then holds",
+      "source": "A5 3.7, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.3.web.landing",
       "title": "What a new tab opens: the machine's default space when it is served, never another space in its place; without a default the one served space, else the person's choice; a space that is not open is named with why",
       "source": "A2 3.1, A5 3.3, A7 3.12 M5.01",
