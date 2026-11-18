@@ -36,6 +36,8 @@ export interface Receipt {
   readonly at: Readonly<Partial<Record<ReceiptState, number>>>;
   /** A terminal launch: the terminal Dispatched and why it was chosen, as fixed words. */
   readonly terminal?: { readonly app: string; readonly source: string };
+  /** The note on the task that holds what the person asked the launch's agent, such as `n2`. */
+  readonly request?: string;
 }
 
 /** What an Open or a Copy did with the person's words. */
@@ -273,6 +275,7 @@ export class Api {
         state: launch.state,
         reason: launch.reason ?? null,
         at,
+        ...(result.text === "request" && result.note !== undefined ? { request: result.note } : {}),
       },
       copy: result.copy,
       text: result.text,

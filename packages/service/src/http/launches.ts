@@ -9,7 +9,7 @@
 //
 // No text of a task, brief or composer travels here: a receipt holds IDs, states, instants and
 // fixed codes only, as the launch record does. The person's request for a launch is a note on the
-// task, which the page reads with the task's other notes.
+// task, which the page reads with the task's other notes: a receipt names it by its reference.
 import { AppError } from "@tasks/contracts";
 import {
   INSTANCE_KEY,
@@ -62,7 +62,12 @@ export interface UiReceipt {
    * launch recorded by a build that did not record them.
    */
   readonly terminal?: { readonly app: string; readonly source: string };
+  /** The note on the task that holds what the person asked the launch's agent, such as `n2`. */
+  readonly request?: string;
 }
+
+/** A note's entry reference, as a launch's evidence names its request. */
+const NOTE_REF = /^n[1-9][0-9]{0,5}$/u;
 
 const MONOGRAM = /^[A-Za-z0-9]{1,2}$/;
 
@@ -112,6 +117,7 @@ const LIST_SQL =
 export function receiptOf(row: Record<string, unknown>): UiReceipt | undefined {
   const at: Partial<Record<IntentState, number>> = {};
   let terminal: UiReceipt["terminal"];
+  let request: string | undefined;
   try {
     const detail = JSON.parse(String(row["detail"])) as {
       at?: Record<string, unknown>;
@@ -132,6 +138,8 @@ export function receiptOf(row: Record<string, unknown>): UiReceipt | undefined {
     ) {
       terminal = { app, source };
     }
+    const asked = detail.evidence?.["request"];
+    if (typeof asked === "string" && NOTE_REF.test(asked)) request = asked;
   } catch {
     return undefined;
   }
@@ -145,6 +153,7 @@ export function receiptOf(row: Record<string, unknown>): UiReceipt | undefined {
     reason: typeof reason === "string" ? reason : null,
     at,
     ...(terminal === undefined ? {} : { terminal }),
+    ...(request === undefined ? {} : { request }),
   };
 }
 

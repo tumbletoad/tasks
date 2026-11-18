@@ -106,6 +106,12 @@ describe("[A5.3.9.web.thread-request] a launch's request shows in the thread as 
     expect(entries()[0]?.textContent).toContain("Open in Claude Code · work");
     expect(host.querySelector("[data-part='open-again']")).toBeNull();
 
+    // The note was read before the launch was recorded: the receipt names it all the same.
+    const early = note("n3", "Then fix the offset", []);
+    render([early], [{ ...receipt("la_1", "L7KQ21", "dispatching", AT), request: "n3" }]);
+    expect(entries().map((e) => e.dataset["entry"])).toEqual(["session"]);
+    expect(askedIn(entries()[0])).toBe("You asked:Then fix the offset");
+
     // An undo took the note back: the session stays, without words.
     render([], [receipt("la_1", "L7KQ21", "confirmed", AT)]);
     expect(entries()).toHaveLength(1);

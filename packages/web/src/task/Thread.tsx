@@ -159,15 +159,20 @@ export function Thread({ notes, log, receipts, instances, partial, onOpenAgain }
 
   const items: Item[] = [];
   // A request shows in its sessions' entries; one whose sessions are not listed shows on its own.
-  const askedBy = new Map<string, DetailNote>();
+  // A receipt names its note from the click on; a note names its launches once it is read again.
+  const byRef = new Map(notes.map((note) => [note.ref, note]));
+  const byLaunch = new Map<string, DetailNote>();
   for (const note of notes) {
-    for (const launch of note.requestFor ?? []) askedBy.set(launch.launch, note);
+    for (const launch of note.requestFor ?? []) byLaunch.set(launch.launch, note);
   }
-  const listed = new Set(receipts.map((r) => r.reference));
+  const askedOf = (receipt: Receipt): DetailNote | undefined =>
+    (receipt.request === undefined ? undefined : byRef.get(receipt.request)) ??
+    byLaunch.get(receipt.reference);
+  const inSessions = new Set(receipts.flatMap((receipt) => askedOf(receipt)?.ref ?? []));
   const labelOf = (key: string) => instances.find((i) => i.key === key)?.label ?? key;
   for (const note of notes) {
     const launches = note.requestFor ?? [];
-    if (launches.some((l) => listed.has(l.launch))) continue;
+    if (inSessions.has(note.ref)) continue;
     const { who, mark } = actorOf(note.author, t);
     const last = launches.at(-1);
     items.push({
@@ -188,7 +193,7 @@ export function Thread({ notes, log, receipts, instances, partial, onOpenAgain }
   // Open again is offered on the newest launch of a request, when it did not open.
   const newest = new Map<string, Receipt>();
   for (const receipt of receipts) {
-    const note = askedBy.get(receipt.reference);
+    const note = askedOf(receipt);
     const known = note === undefined ? undefined : newest.get(note.ref);
     if (
       note !== undefined &&
@@ -216,7 +221,7 @@ export function Thread({ notes, log, receipts, instances, partial, onOpenAgain }
     const label =
       instance?.label ?? (receipt.route === "clipboard" ? t("row.copy") : receipt.instance);
     const text = receiptText(receipt, label, t);
-    const asked = askedBy.get(receipt.reference);
+    const asked = askedOf(receipt);
     if (text === undefined && asked === undefined) continue;
     const again =
       asked !== undefined &&
