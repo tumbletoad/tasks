@@ -1,6 +1,6 @@
-// Settings: how Tasks behaves for the person on this computer, one short page. Every control
+// Settings: how Tasks behaves for the person on this machine, one short page. Every control
 // changes something at once and can go back to its default; the page says once that all of it is
-// kept for this computer, the same in every space and browser here. Only what works is here. The
+// kept for this machine, the same in every space and browser here. Only what works is here. The
 // agent apps are the one exception: switches that change other apps' settings wait for Apply.
 import { useParams } from "@tanstack/react-router";
 import { useCallback, useContext, useEffect, useState } from "react";

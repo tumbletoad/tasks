@@ -196,7 +196,7 @@ const Bound = z.boolean().describe("This call bound the session");
 
 /**
  * What the user typed for this launch's agent when they opened the task: their instruction, held
- * on their computer for the launch and given whole to a call with its reference.
+ * on their machine for the launch and given whole to a call with its reference.
  */
 const Request = z
   .string()

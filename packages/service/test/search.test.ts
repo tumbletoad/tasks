@@ -428,7 +428,8 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     const big = ids(await search({ q: "sizeword sort:-Effort" }));
     expect(big).toEqual([large, medium, small, none]);
     expect((await search({ q: "sizeword sort:-Effort" })).parsed).toBe("sizeword sort:-Effort");
-    expect((await refusal(search({ q: "order:effort" }))).data["suggestions"]).toEqual(["sort"]);
+    // An alias is read as its key.
+    expect(ids(await search({ q: "sizeword order:-effort" }))).toEqual(big);
     // An order filters nothing, so it stands alone.
     for (const q of ["sizeword -sort:effort", "sort:effort OR p:1", "sort:effort sort:-effort"]) {
       expect((await refusal(search({ q }))).code, q).toBe("invalid_input");
@@ -569,6 +570,10 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(row(plain)).not.toHaveProperty("ending");
     expect(row(open)).toMatchObject({ snippet: "Open summary." });
     expect(row(open)).not.toHaveProperty("ending");
+    // The day each finished, completed or dropped, as the Completed view shows it.
+    const days = [shipped, dropped, plain].map((id) => row(id)?.["completed"]);
+    expect(days).toEqual([expect.any(String), expect.any(String), expect.any(String)]);
+    expect(row(open)).not.toHaveProperty("completed");
     const hit = (await search({ q: "endnoteword", scope: "finished" })).rows[0];
     expect(hit).toMatchObject({
       id: noted,

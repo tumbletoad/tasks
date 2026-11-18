@@ -42,6 +42,7 @@ function refused(reason: EditRefusal): AppError {
         code: "conflict",
         message: "machine.toml changed while the default space was being set.",
         hint: "Try again.",
+        data: { retryable: true },
       });
     case "invalid_file":
       return new AppError({

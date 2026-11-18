@@ -461,7 +461,7 @@ describe("[A2.3.12.4.install.root] the install root: named, absolute, at most 16
       if (windows) expect(ran.stderr).toMatch(/Another account can change/);
       else {
         expect(ran.stderr).toContain(
-          `Every user on this computer can change ${shared}, the install root, so nothing was installed. To fix it, run: chmod o-w ${pasted(shared)}`,
+          `Every user on this machine can change ${shared}, the install root, so nothing was installed. To fix it, run: chmod o-w ${pasted(shared)}`,
         );
       }
       expect(listing(homes)).toEqual(before);
@@ -472,7 +472,7 @@ describe("[A2.3.12.4.install.root] the install root: named, absolute, at most 16
         const inside = install({ root: join(open, "root") });
         expect(inside.status).not.toBe(0);
         expect(inside.stderr).toMatch(
-          /Every user on this computer can change .*open, a folder above the install root, so nothing was installed\. To fix it, run: chmod g?o-w /,
+          /Every user on this machine can change .*open, a folder above the install root, so nothing was installed\. To fix it, run: chmod g?o-w /,
         );
         expect(present(join(open, "root"))).toBe(false);
         chmodSync(open, 0o700);

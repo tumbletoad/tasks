@@ -2,7 +2,7 @@
 // 3.8), feeding the live store (store.ts). All task data comes this way; there is no polling
 // beside it and no second path for data.
 //
-// - `machine`: this computer's settings of the page, handed to the page as they come.
+// - `machine`: this machine's settings of the page, handed to the page as they come.
 // - `hello`, then `subscribe {space, cursor?}`: with the cursor the store resumes from, so a
 //   reconnect continues where the tab was; without one for the first snapshot or a fresh one.
 // - Every snapshot, batch and error goes to the store's frame queue in arrival order.
@@ -36,7 +36,7 @@ export interface LiveOptions {
   readonly onSpace: (space: string) => void;
   /** The token is no longer good: the page forgets it. */
   readonly onSignedOut: () => void;
-  /** This computer's settings of the page, as the feed carries them (the theme, the keys). */
+  /** This machine's settings of the page, as the feed carries them (the theme, the keys). */
   readonly onMachine?: (preferences: readonly MachinePreference[]) => void;
   /** The frame clock (tests pass their own). */
   readonly frames?: FrameClock;

@@ -28,6 +28,7 @@ import {
   type PlanFolder,
   type SpawnPlan,
   type TerminalHost,
+  RESOLVE_REASONS,
 } from "@tasks/launch";
 import {
   FAKE_SYSTEMD_RUN,
@@ -628,8 +629,11 @@ describe("[A4.5.terminal.hostile] hostile titles and folders reach the fake agen
         // already be Failed `agent_exited` (an agent that ran for under 3 s) when this looks: that
         // agent did start, and its report is checked below like any other.
         if (settled.state === "failed" && settled.reason !== "agent_exited") {
-          // Refused before an agent started: nothing ran anywhere.
-          expect(["verify_failed", "refused", "cancelled"]).toContain(settled.reason);
+          // Refused before an agent started, with the folder's own reason when the folder was
+          // why: nothing ran anywhere.
+          expect(["verify_failed", "refused", "cancelled", ...RESOLVE_REASONS]).toContain(
+            settled.reason,
+          );
           expect(() => statSync(report)).toThrow();
           outcomes.push(`${String(i)}:failed-${settled.reason ?? ""}`);
           continue;
@@ -648,7 +652,12 @@ describe("[A4.5.terminal.hostile] hostile titles and folders reach the fake agen
         Array.from({ length: to - from }, (_, k) => `${String(from + k)}:exact`);
       if (WINDOWS) {
         expect(outcomes.slice(0, 8)).toEqual(exact(0, 8));
-        expect(["8:exact", "8:failed-refused", "8:failed-verify_failed"]).toContain(outcomes[8]);
+        expect([
+          "8:exact",
+          "8:failed-refused",
+          "8:failed-verify_failed",
+          ...RESOLVE_REASONS.map((reason) => `8:failed-${reason}`),
+        ]).toContain(outcomes[8]);
       } else {
         expect(outcomes).toEqual([...exact(0, 8), "8:refused-plan", "9:exact", "10:exact"]);
       }

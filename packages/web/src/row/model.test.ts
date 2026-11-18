@@ -549,6 +549,18 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
     );
     expect(input.marker?.kind).toBe("needs_input");
     expect(say(input.description.at(-1))).toBe("needs your input");
+    // The person's own unsent words show when no agent asks for attention.
+    const draft = renderRow(row(t, { draft: true }), ctx("open", "area"));
+    expect([draft.marker?.kind, say(draft.description.at(-1))]).toEqual([
+      "draft",
+      "unsent words in its composer",
+    ]);
+    expect(
+      renderRow(
+        row(t, { draft: true, marker: { kind: "needs_input", by: "Codex" } }),
+        ctx("open", "area"),
+      ).marker?.kind,
+    ).toBe("needs_input");
   });
 
   test("the row is a pure function of its own task and the view", () => {

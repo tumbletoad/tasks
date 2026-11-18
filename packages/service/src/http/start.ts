@@ -89,11 +89,11 @@ export interface HttpOptions extends HttpStart {
   readonly log: HttpLog;
   /** The machine's default space, which the page's Make default changes. */
   readonly defaults?: UiDefaultSpace;
-  /** This computer's settings, which the page's Settings reads and changes. */
+  /** This machine's settings, which the page's Settings reads and changes. */
   readonly machine?: UiMachine;
   /** New space and Open folder in the page. */
   readonly spaces?: UiSpaces;
-  /** This computer's agent apps in the page. */
+  /** This machine's agent apps in the page. */
   readonly apps?: UiApps;
   /** The page's folder chooser. */
   readonly folders?: UiFolders;

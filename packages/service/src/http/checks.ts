@@ -48,7 +48,7 @@ export const LAUNCH_ACTIONS: readonly string[] = ["list"];
 export const SPACE_PREFIX = "/api/v1/space/";
 export const SPACE_ACTIONS: readonly string[] = ["list", "default", "propose", "create", "open"];
 /**
- * This computer: the preferences the page sets, Open's terminal, the agent apps, and the folder
+ * This machine: the preferences the page sets, Open's terminal, the agent apps, and the folder
  * chooser (the folders in a folder, a new folder, a project's folders).
  */
 export const MACHINE_PREFIX = "/api/v1/machine/";

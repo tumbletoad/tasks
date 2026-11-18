@@ -1,4 +1,4 @@
-// This computer's agent apps: what was found, and per app and home two switches, "Open tasks in
+// This machine's agent apps: what was found, and per app and home two switches, "Open tasks in
 // this app" and "Give this app the Tasks tools". What turning them over changes is listed in plain
 // words, with exactly what is written one click away, and nothing changes before Apply. The first
 // start shows it with the usual choice made (every switch that can be on is on) and a way to skip;

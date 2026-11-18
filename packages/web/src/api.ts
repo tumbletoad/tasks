@@ -249,12 +249,12 @@ export class Api {
     );
   }
 
-  /** Open folder: a space folder on this computer, served from now on. */
+  /** Open folder: a space folder on this machine, served from now on. */
   async openSpace(folder: string): Promise<MadeSpace> {
     return madeSpace(await this.#result("/api/v1/space/open", { folder }));
   }
 
-  /** This computer's agent apps, for `space`: what a new entry names. */
+  /** This machine's agent apps, for `space`: what a new entry names. */
   async agentApps(space: string): Promise<unknown> {
     return this.#result("/api/v1/machine/apps", { space });
   }
@@ -336,7 +336,7 @@ export class Api {
     };
   }
 
-  /** Sets one of this computer's settings of the page, or resets it with null. */
+  /** Sets one of this machine's settings of the page, or resets it with null. */
   async setMachinePreference(
     key: string,
     value: unknown,
