@@ -5,12 +5,21 @@
 // the shim's claim, recovery after a restart and the sweep all act on the same machine (A4
 // 3.9.1's section rule holds across them). This module keeps what the page needs besides: the
 // instances it draws a tile for, from the hub's launch service, and a task's last receipts, which
-// the page refetches when the change feed names a launch.
+// the page refetches when the change feed names a launch. And Run: the page's click starts a
+// background run of a task, reads a task's runs (refetched when the feed names a run) and stops
+// one, on the service's runs (runs/service.ts), the same ones `tasks run` uses.
 //
-// No text of a task, brief or composer travels here: a receipt holds IDs, states, instants and
-// fixed codes only, as the launch record does, and what only this machine knows: whether the
-// launch's agent read the person's request yet, and whether its session runs now.
-import { AppError } from "@tasks/contracts";
+// A receipt holds IDs, states, instants and fixed codes only, as the launch record does, and what
+// only this machine knows: whether the launch's agent read the person's request yet, and whether
+// its session runs now. A run as the page reads it holds the person's request and the agent's
+// answer, task text that travels in a request's or a response's body only.
+import { AppError, RequestId } from "@tasks/contracts";
+import {
+  isOpenRun,
+  RUN_REQUEST_MAX_BYTES,
+  type RunRecord,
+  type RunState,
+} from "@tasks/contracts/runs";
 import {
   INSTANCE_KEY,
   isRoute,
@@ -22,6 +31,7 @@ import {
 } from "@tasks/launch";
 import { findSpace, isAmbiguity } from "../ops/copies.ts";
 import type { OpsHost, ServedSpace } from "../ops/index.ts";
+import { WORK_ON_IT } from "../runs/agent.ts";
 import type { HttpLog } from "./events.ts";
 
 /** An instance as the page draws its tile (A5 3.6): a key, a label, a monogram and a ring slot. */
@@ -35,6 +45,8 @@ export interface UiInstance {
   /** One of the eight ring slots of A5 3.19. */
   readonly ring: number;
   readonly route: Route;
+  /** It can work on a task in the background (Run). Absent: it cannot. */
+  readonly runs?: true;
 }
 
 /**
@@ -48,6 +60,84 @@ export interface UiLaunchPort {
   requestState?(launch: string): "waiting" | "read" | "unread" | undefined;
   /** Whether the launch's session runs now, as this service follows it. */
   running?(launch: string): boolean;
+}
+
+/**
+ * The service's background runs, as the page starts, reads and stops a task's runs
+ * (runs/service.ts), and which instances can run.
+ */
+export interface UiRunPort {
+  /** Whether the instance with this key can work on a task in the background. */
+  runnable(instance: string): boolean;
+  queueTask(
+    space: string,
+    asked: {
+      readonly task: string;
+      readonly instance?: string;
+      readonly request: string | null;
+      readonly requestId: string;
+    },
+  ): Promise<RunRecord>;
+  list(space: string, task?: string): Promise<readonly { readonly run: RunRecord }[]>;
+  stop(space: string, run: string): Promise<RunRecord | undefined>;
+  /** Why a queued run waits, as the queue last saw it. */
+  waiting(run: string): string | undefined;
+}
+
+/**
+ * A run as the page shows it in its task's thread. The person's words (`asked`, null when they
+ * gave none), the agent's answer or question and its error are task text: they reach the page in
+ * a response body only, never a URL or a log.
+ */
+export interface UiRun {
+  readonly id: string;
+  readonly instance: string;
+  readonly state: RunState;
+  readonly reason: string | null;
+  /** Why a queued run waits. */
+  readonly waiting?: string;
+  readonly queued_at: number;
+  readonly started_at: number | null;
+  readonly ended_at: number | null;
+  readonly asked: string | null;
+  readonly outcome?: string;
+  readonly cleanup?: string;
+  /** The agent's answer, or its question when it needs the person; null while it has none. */
+  readonly answer: string | null;
+  /** The agent finished its turn with `answer`: otherwise it is the last thing it said. */
+  readonly answer_final: boolean;
+  readonly answer_cut: boolean;
+  readonly error?: string;
+  /** Grows with every change of the run. */
+  readonly version: number;
+}
+
+/** The page's view of a run record. */
+export function uiRun(run: RunRecord, waiting?: string): UiRun {
+  const result = run.result;
+  const asked = run.request === null || run.request === WORK_ON_IT ? null : run.request;
+  return {
+    id: run.id,
+    instance: run.instance,
+    state: run.state,
+    reason: run.reason,
+    ...(waiting === undefined || run.state !== "queued" ? {} : { waiting }),
+    queued_at: run.queuedAt,
+    started_at: run.startedAt,
+    ended_at: run.endedAt,
+    asked,
+    ...(result === null
+      ? {}
+      : {
+          outcome: result.outcome,
+          ...(result.cleanup === undefined ? {} : { cleanup: result.cleanup }),
+          ...(result.error === null ? {} : { error: result.error }),
+        }),
+    answer: result?.text ?? null,
+    answer_final: result?.textFinal === true,
+    answer_cut: result?.textCut === true,
+    version: run.version,
+  };
 }
 
 /** A launch receipt as the page shows it (A5 3.9). IDs, states, instants and codes only. */
@@ -110,6 +200,7 @@ export function checkInstances(list: readonly UiInstance[]): UiInstance[] {
       glyph: item.glyph,
       ring: item.ring,
       route: item.route,
+      ...(item.runs === true ? { runs: true } : {}),
     });
   }
   return out;
@@ -186,12 +277,14 @@ export function receiptOf(
 export interface UiLaunchesOptions {
   readonly host: OpsHost;
   readonly port: UiLaunchPort | undefined;
+  /** The service's runs. None: no instance runs and Run is refused. */
+  readonly runs?: UiRunPort | undefined;
   readonly log: HttpLog;
   /** A launch record changed: the feed's subscribers of that space catch up. */
   readonly changed: (space: string) => void;
 }
 
-/** The page's tiles and receipts, over the hub's launch service. */
+/** The page's tiles, receipts and runs, over the hub's launch service and runs. */
 export class UiLaunches {
   readonly #options: UiLaunchesOptions;
   readonly #unlisten: (() => void) | undefined;
@@ -203,10 +296,21 @@ export class UiLaunches {
     });
   }
 
-  /** The instances the page draws a tile for. None without a launch service: Copy only. */
+  /**
+   * The instances the page draws a tile for, each marked when it can run. None without a launch
+   * service: Copy only.
+   */
   instances(): UiInstance[] {
     const port = this.#options.port;
-    return port === undefined ? [] : checkInstances(port.instances());
+    const runs = this.#options.runs;
+    if (port === undefined) return [];
+    return checkInstances(
+      port
+        .instances()
+        .map((tile) =>
+          runs?.runnable(tile.key) === true ? { ...tile, runs: true as const } : tile,
+        ),
+    );
   }
 
   close(): void {
@@ -251,4 +355,87 @@ export class UiLaunches {
       })
       .reverse();
   }
+
+  /**
+   * Run: the person's click starts a background run of a task, with their words as its request
+   * or none. A repeat of the same request ID gives the run it queued and starts nothing twice. A
+   * run that cannot start here is refused with its reason, and nothing is queued.
+   */
+  async run(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiRun> {
+    const runs = this.#runs();
+    const { task, instance, text, request_id: requestId } = input;
+    if (typeof task !== "string" || !TASK_ID.test(task))
+      throw invalid("Expected a task ID.", "task");
+    if (instance !== undefined && (typeof instance !== "string" || !INSTANCE_KEY.test(instance))) {
+      throw invalid("Expected an instance's key.", "instance");
+    }
+    if (typeof requestId !== "string" || !RequestId.safeParse(requestId).success) {
+      throw invalid("Expected a request ID.", "request_id");
+    }
+    if (text !== undefined && typeof text !== "string") throw invalid("Expected a text.", "text");
+    const words = text === undefined || text.trim() === "" ? null : text;
+    if (words !== null && Buffer.byteLength(words, "utf8") > RUN_REQUEST_MAX_BYTES) {
+      throw new AppError({
+        code: "too_large",
+        message: "The request is longer than a note may be.",
+        data: { field: "text" },
+      });
+    }
+    const space = this.#space(spaceRef).id ?? "";
+    const queued = await runs.queueTask(space, {
+      task,
+      ...(instance === undefined ? {} : { instance }),
+      request: words,
+      requestId,
+    });
+    this.#options.changed(space);
+    return uiRun(queued, runs.waiting(queued.id));
+  }
+
+  /** A task's newest runs, and every older one that may still work, oldest first. */
+  async runs(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiRun[]> {
+    const runs = this.#runs();
+    const { task } = input;
+    if (typeof task !== "string" || !TASK_ID.test(task))
+      throw invalid("Expected a task ID.", "task");
+    const listed = await runs.list(this.#space(spaceRef).id ?? "", task);
+    return listed
+      .filter(({ run }, at) => at < RUNS_SHOWN || isOpenRun(run))
+      .map(({ run }) => uiRun(run, runs.waiting(run.id)))
+      .reverse();
+  }
+
+  /**
+   * Stop: a queued run never starts, a working one is asked to stop and its processes are ended
+   * after a grace time. Answers at once with the run as it is then.
+   */
+  async stop(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiRun> {
+    const runs = this.#runs();
+    const { run } = input;
+    if (typeof run !== "string" || !RUN_ID.test(run)) throw invalid("Expected a run ID.", "run");
+    const space = this.#space(spaceRef).id ?? "";
+    const after = await runs.stop(space, run);
+    if (after === undefined) {
+      throw new AppError({ code: "not_found", message: "No run has this ID in this space." });
+    }
+    this.#options.changed(space);
+    return uiRun(after);
+  }
+
+  #runs(): UiRunPort {
+    const runs = this.#options.runs;
+    if (runs === undefined) {
+      throw new AppError({
+        code: "service_unavailable",
+        message: "This service runs no agent in the background.",
+        data: { reason: "runs_unavailable", retryable: false },
+      });
+    }
+    return runs;
+  }
 }
+
+/** A task's runs the thread shows: the newest ones. */
+const RUNS_SHOWN = 10;
+
+const RUN_ID = /^ru_[0-7][0-9a-hjkmnp-tv-z]{25}$/;

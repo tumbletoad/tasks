@@ -1,18 +1,22 @@
-// The expanded task's thread (A5 3.7 item 5, 3.9): notes, log entries and sessions, oldest first,
-// so it reads like a conversation that ends at the composer. Notes and log entries come from the
-// detail (detail.ts); sessions are the task's launch receipts, which the feed's launch events
-// refresh. The last six entries show, and "Earlier" reveals the rest. Each entry: the actor's mark
-// (the person's initial, an agent's initials, an instance's monogram), the actor, the mode, the
-// time, then the text, as Markdown that is never HTML (markdown.tsx). Copy on a log entry shows on
-// hover and on focus. Runs join with M6, and grouped field changes and their Revert with M5.09.
+// The expanded task's thread (A5 3.7 item 5, 3.9): notes, log entries, sessions and background
+// runs, oldest first, so it reads like a conversation that ends at the composer. Notes and log
+// entries come from the detail (detail.ts); sessions are the task's launch receipts and runs are
+// its run records, which the feed's launch and run events refresh. The last six entries show, and
+// "Earlier" reveals the rest. Each entry: the actor's mark (the person's initial, an agent's
+// initials, an instance's monogram), the actor, the mode, the time, then the text, as Markdown
+// that is never HTML (markdown.tsx). A run shows what was asked, its state in plain words with
+// Stop while it may still work, and the agent's answer or question (RunBody). Copy on a log entry
+// shows on hover and on focus. Grouped field changes and their Revert join with M5.09.
 import { useState } from "react";
-import type { Instance, Receipt } from "../api.ts";
+import type { Instance, Receipt, Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import type { DetailLog, DetailNote } from "./detail.ts";
 import css from "./Expanded.module.css";
 import { Markdown } from "./markdown.tsx";
+import { RunBody } from "./RunBody.tsx";
+import { runLabel } from "./runs.ts";
 
 const styles = classes(css, [
   "line",
@@ -135,8 +139,10 @@ interface Item {
   readonly text: string;
   /** Plain text (a receipt's words), or the Markdown of a note or a log entry. */
   readonly markdown: boolean;
-  readonly kind: "note" | "log" | "session";
+  readonly kind: "note" | "log" | "session" | "run";
   readonly state?: string;
+  /** A run's entry: its record, drawn by RunBody in place of the text. */
+  readonly run?: Run;
 }
 
 const clock = new Intl.DateTimeFormat(undefined, {
@@ -155,12 +161,24 @@ export interface ThreadProps {
   readonly notes: readonly DetailNote[];
   readonly log: readonly DetailLog[];
   readonly receipts: readonly Receipt[];
+  /** The task's background runs, oldest first. */
+  readonly runs?: readonly Run[];
   readonly instances: readonly Instance[];
   /** The pages ran out before the oldest entries. */
   readonly partial: boolean;
+  /** The person's Stop of a run. */
+  readonly onStop?: (run: Run) => void;
 }
 
-export function Thread({ notes, log, receipts, instances, partial }: ThreadProps) {
+export function Thread({
+  notes,
+  log,
+  receipts,
+  runs = [],
+  instances,
+  partial,
+  onStop,
+}: ThreadProps) {
   const t = useT();
   const say = useToast();
   const [all, setAll] = useState(false);
@@ -212,6 +230,23 @@ export function Thread({ notes, log, receipts, instances, partial }: ThreadProps
       markdown: false,
       kind: "session",
       state: entryState(receipt),
+    });
+  }
+  for (const run of runs) {
+    const instance = instances.find((i) => i.key === run.instance);
+    const label = runLabel(run, instances);
+    items.push({
+      key: `u:${run.id}`,
+      at: run.queued_at,
+      who: label,
+      mark: instance?.glyph ?? label.slice(0, 2),
+      ...(instance === undefined ? {} : { ring: instance.ring }),
+      mode: t("thread.run"),
+      text: "",
+      markdown: false,
+      kind: "run",
+      state: run.state,
+      run,
     });
   }
   // An instant the page cannot read sorts first rather than vanish.
@@ -285,7 +320,13 @@ export function Thread({ notes, log, receipts, instances, partial }: ThreadProps
                   </time>
                 ) : null}
               </div>
-              {item.markdown ? (
+              {item.run !== undefined ? (
+                <RunBody
+                  run={item.run}
+                  label={item.who}
+                  {...(onStop === undefined ? {} : { onStop })}
+                />
+              ) : item.markdown ? (
                 <div data-part="entry-text">
                   <Markdown text={item.text} className={styles.text} />
                 </div>

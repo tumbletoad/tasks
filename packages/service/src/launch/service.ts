@@ -127,6 +127,17 @@ export interface LaunchInstance {
   readonly route: Route;
 }
 
+/**
+ * The folder a background run of a task works in here, or why it has none: not found, or a
+ * marker that says it may be another folder. `folder` is the folder as the space stores it.
+ */
+export type RunFolderFound =
+  | { readonly path: string }
+  | {
+      readonly refused: "folder_missing" | "marker_missing" | "marker_other";
+      readonly folder?: string;
+    };
+
 /** Open's terminal as Settings shows it (LaunchService.terminalView): fixed words only. */
 export interface TerminalView {
   /** machine.toml's `[terminal] app`: `auto` follows the operating system's default. */
@@ -847,26 +858,33 @@ export class LaunchService {
    * a background run works, so it works where a launch would, never in another machine's stead or
    * in a folder that may be another. Undefined when a launch could not use it.
    */
-  async runFolder(space: string, folder: TaskFolder): Promise<string | undefined> {
+  async runFolder(space: string, folder: TaskFolder): Promise<RunFolderFound> {
+    const stored = folder.kind === "task" || folder.kind === "project" ? folder.path : undefined;
+    const missing: RunFolderFound = {
+      refused: "folder_missing",
+      ...(stored === undefined ? {} : { folder: stored }),
+    };
     let planned: PlanFolder | null;
     try {
       planned = this.#planFolder(folder);
     } catch {
-      return undefined;
+      return missing;
     }
     const found = await this.resolveFolder(space, planned);
-    if (found.status !== "ok") return undefined;
+    if (found.status !== "ok") return missing;
     try {
       await this.#checkMarker(space, folder, false);
-    } catch {
-      return undefined;
+    } catch (error) {
+      return error instanceof LaunchFolderUnmarked
+        ? { refused: error.reason, folder: error.folder }
+        : missing;
     }
-    return found.folder;
+    return { path: found.folder };
   }
 
   /** Whether the folder a task opens in here resolves now and is the one set (`runFolder`). */
   async folderUsable(space: string, folder: TaskFolder): Promise<boolean> {
-    return (await this.runFolder(space, folder)) !== undefined;
+    return "path" in (await this.runFolder(space, folder));
   }
 
   /**

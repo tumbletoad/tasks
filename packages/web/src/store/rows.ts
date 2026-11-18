@@ -58,6 +58,15 @@ export interface TaskRow {
   readonly sources_more?: number;
   /** Its place's state on this machine. Absent: it has no place (A5 3.6). */
   readonly place?: RowPlace;
+  /** Its newest background run, while it works or needs the person. */
+  readonly run?: RowRun;
+}
+
+/** A task's newest run as its row shows it, and the instance it runs with. */
+export interface RowRun {
+  /** `working` or `needs_you`; another state is one this page does not know. */
+  readonly state: string;
+  readonly instance: string;
 }
 
 /** A source as the row shows it: its kind and its own text, never a label. */
@@ -110,6 +119,7 @@ const TASK_COLUMNS: ReadonlySet<string> = new Set([
   "sources",
   "sources_more",
   "place",
+  "run",
   "waiting_since",
   "finished_at",
 ]);
@@ -279,6 +289,10 @@ const isPlace = (v: unknown): boolean =>
     v["state"] === "missing" ||
     (v["state"] === "elsewhere" && isString(v["machine"])));
 
+/** A state the page does not know yet is shown as no run, never an unreadable row. */
+const isRun = (v: unknown): boolean =>
+  isRecord(v) && isString(v["state"]) && isString(v["instance"]);
+
 /**
  * A task's compact row, when it has the fields the page relies on with their types. Its other
  * fields are the service's and are taken as they come: a column the page does not read yet must
@@ -306,7 +320,8 @@ export function taskRow(value: unknown): TaskRow | undefined {
     !optional(v["ending"], isString) ||
     !optional(v["sources"], isSources) ||
     !optional(v["sources_more"], isNumber) ||
-    !optional(v["place"], isPlace)
+    !optional(v["place"], isPlace) ||
+    !optional(v["run"], isRun)
   ) {
     return undefined;
   }

@@ -37,7 +37,7 @@ const styles = classes(css, [
   "segButton",
   "move",
   "reopen",
-  "waitingOn",
+  "waitingField",
   "plain",
 ]);
 
@@ -249,7 +249,7 @@ function WaitingOn({
     <>
       <input
         ref={field}
-        className={styles.waitingOn}
+        className={styles.waitingField}
         data-part="waiting-on"
         aria-label={t("fact.waitingOn")}
         placeholder={t("fact.waitingPlaceholder")}
