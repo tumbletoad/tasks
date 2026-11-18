@@ -4571,7 +4571,7 @@
     },
     {
       "id": "A7.3.12.m5-07.e2e.strip",
-      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line and clears once the agent read it; Open without text sends the brief alone; an agent that has the task open is not opened again, with or without text, and says where the words can go; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
+      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line and clears once the agent read it; Open without text sends the brief alone; while a session runs the strip says so and opens a second one, with the words as its request, only when asked; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
       "source": "A5 3.8, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",
