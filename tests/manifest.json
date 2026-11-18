@@ -4915,6 +4915,34 @@
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.folders-gate",
+      "title": "The folder chooser's calls refuse an agent's connection, a script, the bridge and a shim before they read anything, and answer the page and a person at a terminal",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.folders-list",
+      "title": "The folder chooser lists the folders in a typed folder and completes the name typed after it, marks a project's folder, reads a huge folder up to its cap, says when a folder does not answer in time or gives what it read, names folders it may not read or cannot find, begins at the home and the folders that hold the projects, lists Windows drives and shares with ~ as the home, and makes a folder",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.folders-disk",
+      "title": "On the real disk the chooser lists folders and links to folders, marks the links, leaves out files and broken links, names a checkout's repository, says a folder without read permission is unreadable, and makes a folder",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.m5-14.folders-http",
+      "title": "Over HTTP as the page calls them: a folder listed with the project that has one marked, a project's folder here and on other machines, and a new folder",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }

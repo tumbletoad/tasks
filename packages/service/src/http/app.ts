@@ -18,6 +18,9 @@
 //   POST /api/v1/space/default  Make default: machine.toml's `[service] default_space`
 //   POST /api/v1/machine/pref    Settings: set or reset a machine preference of the page's
 //   POST /api/v1/machine/terminal  Settings: Open's terminal, and with `app` the choice of one
+//   POST /api/v1/machine/folders   the folder chooser: the folders in a folder here, by name
+//   POST /api/v1/machine/folder_make  the folder chooser's new folder
+//   POST /api/v1/machine/project_folder  a project's folder here, and the machines with one
 //
 // A connection counts as unauthenticated until a request on it presents a live token (or its
 // upgrade a live ticket); then it counts against that token, and a revocation of the token closes
@@ -106,6 +109,15 @@ export interface AppOptions {
   readonly spaces?: UiSpaces;
   /** This computer's agent apps (hub/agent-apps.ts). None: the page shows none. */
   readonly apps?: UiApps;
+  /** The folder chooser (hub/page-folders.ts). None: the page types folders only. */
+  readonly folders?: UiFolders;
+}
+
+/** The folder chooser's calls; `space` is the tab's, when it names one. */
+export interface UiFolders {
+  readonly list: (input: Record<string, unknown>, space?: string) => Promise<unknown>;
+  readonly make: (input: Record<string, unknown>) => Promise<unknown>;
+  readonly project: (input: Record<string, unknown>, space?: string) => Promise<unknown>;
 }
 
 /** A page's call into one of the hub's verbs: the UI's sign-in is the person. */
@@ -689,7 +701,12 @@ export class HttpApp {
           }
           if (route === "machine") {
             const input = await this.#readBody(req, res);
-            await this.#machine(res, port, path.slice(MACHINE_PREFIX.length), input);
+            const space = headerText(req.headers[SPACE_HEADER]);
+            if (space !== undefined && (space.length > 200 || hasControl(space))) {
+              this.#refuse(res, port, "machine", 400, "bad_json");
+              return;
+            }
+            await this.#machine(res, port, path.slice(MACHINE_PREFIX.length), input, space);
             return;
           }
           const name = path.slice(OP_PREFIX.length);
@@ -856,8 +873,27 @@ export class HttpApp {
     port: number,
     action: string,
     input: Record<string, unknown>,
+    space: string | undefined,
   ): Promise<void> {
     try {
+      if (action === "folders" || action === "folder_make" || action === "project_folder") {
+        const folders = this.options.folders;
+        if (folders === undefined) {
+          throw new AppError({
+            code: "service_unavailable",
+            message: "This service cannot look at folders for the page.",
+            data: { reason: "ui_unavailable", retryable: false },
+          });
+        }
+        const result =
+          action === "folders"
+            ? await folders.list(input, space)
+            : action === "folder_make"
+              ? await folders.make(input)
+              : await folders.project(input, space);
+        this.#json(res, port, 200, { result });
+        return;
+      }
       if (action === "apps" || action === "apps_apply") {
         const apps = this.options.apps;
         if (apps === undefined) {
