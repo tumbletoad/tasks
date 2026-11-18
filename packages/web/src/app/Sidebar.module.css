@@ -73,11 +73,80 @@
   color: var(--k-muted);
 }
 
-.dot {
+/* An area's line: its fold button (or its dot) where a view has its icon, then its link, so area
+   names start where view names do. The line as a whole shows hover and the current page. */
+.area {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding-inline-start: 5px;
+  border-radius: 8px;
+  transition: background-color var(--k-fast) var(--k-ease);
+}
+
+.area .item {
+  flex: 1;
+  min-width: 0;
+  padding-inline-start: 5px;
+  background: transparent;
+}
+
+.area:hover {
+  background: var(--k-hover);
+}
+
+.area:has(> .item[aria-current="page"]) {
+  background: var(--k-raised);
+}
+
+/* Folded, the area holds the project on screen: the way back to it. */
+.area:has(> .item[data-within="true"]) {
+  background: var(--k-hover);
+}
+
+.area .item[data-within="true"] {
+  color: var(--k-text);
+}
+
+.fold {
+  display: inline-grid;
   flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--k-slot, var(--k-muted));
+}
+
+button.fold {
+  cursor: pointer;
+}
+
+button.fold:hover {
+  background: var(--k-raised);
+}
+
+.fold svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.2;
+  transition: transform var(--k-fast) var(--k-ease);
+}
+
+[data-folded="true"] .fold svg {
+  transform: rotate(-90deg);
+}
+
+[dir="rtl"] [data-folded="true"] .fold svg {
+  transform: rotate(90deg);
+}
+
+.dot {
   width: 7px;
   height: 7px;
-  margin-inline: 4px 3px;
   border-radius: 50%;
   background: var(--k-slot, var(--k-muted));
 }
@@ -85,7 +154,7 @@
 .projects {
   margin: 2px 0 4px;
   padding: 0;
-  padding-inline-start: 24px;
+  padding-inline-start: 26px;
   list-style: none;
 }
 
@@ -120,5 +189,9 @@
 @media (forced-colors: active) {
   .item[aria-current="page"] {
     outline: 1px solid CanvasText;
+  }
+
+  .fold {
+    color: ButtonText;
   }
 }

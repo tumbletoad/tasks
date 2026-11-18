@@ -3955,6 +3955,22 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.3.web.folds",
+      "title": "The sidebar's folded areas are kept per space for the browser and come back after a reload, removed once none is folded; anything else stored there folds nothing",
+      "source": "A5 3.3",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.e2e.sidebar-folds",
+      "title": "Playwright against the real service process: an area of the side menu folds and unfolds by a click and by Enter and Space, stays folded after a reload and keeps its count folded; an area's and a project's counts follow a task that is added and one that is finished; opening an area, a project or a view moves no entry; a folded area holding the project on screen shows the way to it; a cut name shows whole in its tip",
+      "source": "A5 3.3",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.3.web.landing",
       "title": "What a new tab opens: the machine's default space when it is served, never another space in its place; without a default the one served space, else the person's choice; a space that is not open is named with why",
       "source": "A2 3.1, A5 3.3, A7 3.12 M5.01",

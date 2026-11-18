@@ -5,6 +5,7 @@ import {
   areaFilter,
   COUNTED,
   countedViewOf,
+  groupCounts,
   sidebarEntries,
   viewCounts,
   viewFilter,
@@ -80,6 +81,14 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
       "open",
       "backlog",
     ]);
+  });
+
+  test("an area counts what its view lists, its projects' tasks included; a project its own", () => {
+    const counts = groupCounts(TASKS);
+    expect(counts.get("ar_a")).toBe(TASKS.filter(areaFilter("ar_a")).length);
+    expect(counts.get("pj_1")).toBe(TASKS.filter(areaFilter("ar_a", "pj_1")).length);
+    expect(counts.get("ar_b")).toBe(1);
+    expect(counts.get("ar_none")).toBeUndefined();
   });
 
   test("every view has its entry in every state; an empty one is quiet, an unknown one claims nothing", () => {

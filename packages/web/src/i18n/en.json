@@ -24,6 +24,8 @@
   "nav.search": "Search",
   "nav.task": "Task",
   "nav.counted": "{view}, {count, plural, =0 {no tasks} one {# task} other {# tasks}}",
+  "nav.fold": "Fold {area}",
+  "nav.unfold": "Unfold {area}",
 
   "space.switch": "Space {name}. Switch space",
   "space.switchBackup": "Space {name}. Its backups need attention. Switch space",

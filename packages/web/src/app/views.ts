@@ -84,6 +84,22 @@ export function viewFilter(view: View): ((task: TaskRow) => boolean) | undefined
   return undefined;
 }
 
+/**
+ * The open tasks of each area and each project, by ID: what their views list (`areaFilter`). An
+ * area's count holds its projects' tasks.
+ */
+export function groupCounts(tasks: Iterable<TaskRow>): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  const add = (id: string | undefined) => {
+    if (id !== undefined) counts.set(id, (counts.get(id) ?? 0) + 1);
+  };
+  for (const task of tasks) {
+    add(task.area_id);
+    add(task.project_id);
+  }
+  return counts;
+}
+
 /** What a view's sidebar entry shows besides its name and icon. */
 export interface SidebarEntry {
   /** Counted views only, and only once the rows are known. */
