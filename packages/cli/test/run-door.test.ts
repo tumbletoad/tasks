@@ -265,13 +265,15 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
   });
 
   test("a run's right to use its space ends when the run does, not once its record is read again", async () => {
-    // Each time the store says the run is final, its end recorded or read, the run's calls may
-    // no longer use the space.
-    const after: boolean[] = [];
-    let id = "";
+    // Each time the store says a run is final, its end recorded or read, that run's calls may no
+    // longer use the space. The run may end before its ID is back from the command line.
+    const looks: { run: string; may: boolean }[] = [];
     const look = (record: RunRecord | undefined): void => {
-      if (record?.id === id && FINAL.has(record.state)) {
-        after.push(service?.ops.homes?.may("codex", spaceId, id) ?? false);
+      if (record !== undefined && FINAL.has(record.state)) {
+        looks.push({
+          run: record.id,
+          may: service?.ops.homes?.may("codex", spaceId, record.id) ?? false,
+        });
       }
     };
     const read = Reflect.get<RunMachine, "read">(RunMachine.prototype, "read");
@@ -293,6 +295,7 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
       look(record);
       return record;
     });
+    let id = "";
     try {
       const started = await user(["run", task, "--json", "Once."]);
       id = (JSON.parse(started.stdout) as { id: string }).id;
@@ -311,6 +314,8 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
       reads.mockRestore();
       settles.mockRestore();
     }
+    // Its end as the store recorded it, and at least one read of it after.
+    const after = looks.filter((l) => l.run === id).map((l) => l.may);
     expect(after).not.toContain(true);
     expect(after.length).toBeGreaterThan(1);
   });
