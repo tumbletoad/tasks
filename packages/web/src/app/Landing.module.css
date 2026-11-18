@@ -35,3 +35,16 @@
 .space:hover {
   background: var(--k-hover);
 }
+
+/* The first start: one form at a time, with room for the agent apps' list. */
+.start {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 560px;
+  padding: 32px var(--k-gutter) 48px;
+}
+
+.start .line {
+  margin: 0;
+}

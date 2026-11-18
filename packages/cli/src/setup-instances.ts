@@ -28,7 +28,6 @@
 // start the agent in. They meet at the instance ID: an instance written here is the ID setup agents
 // gives that home's entry, and a home setup agents registered first keeps its ID here.
 import { createHash } from "node:crypto";
-import { posix, win32 } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
 import { AppError } from "@tasks/contracts";
 import {
@@ -39,23 +38,20 @@ import {
   shellLine,
   targetDef,
   type Detection,
-  type InstanceValue,
   type Proposal,
 } from "@tasks/launch";
-import {
-  keyText,
-  loadMachineConfig,
-  prepareEdit,
-  valueText,
-  type EditValue,
-} from "@tasks/service/config";
+import { loadMachineConfig, prepareEdit } from "@tasks/service/config";
 import { homeFolder, hostFacts, resolveLayout } from "@tasks/service/paths";
 import {
+  blockOf,
+  distinctLabels,
   readRecords,
   samePath,
   t3Proposals,
   t3SettingsOf,
+  wireOf,
   type HomeRecord,
+  type Offer,
 } from "@tasks/service/setup";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
@@ -121,15 +117,6 @@ const forbidden = (): AppError =>
     hint: `Ask the user to run: ${CLI_NAME} setup instances`,
     data: { rule: "user_only" },
   });
-
-/** One proposal the preview offers: the entry it writes, keys in their order. */
-export interface Offer {
-  readonly id: string;
-  readonly label: string;
-  readonly entry: ReadonlyMap<string, InstanceValue>;
-  /** A T3 instance: where its model came from (Proposal `t3.modelFrom`). */
-  readonly modelFrom?: "t3" | "catalogue";
-}
 
 /** A proposal it does not offer, and what is missing for the person to write by hand. */
 interface Left {
@@ -261,43 +248,11 @@ async function surveyOf(
   };
 }
 
-/**
- * Offers a person can tell apart: two of one app (two Codex homes) are each labelled with their
- * home's folder name, such as `Codex (.codex-second)`, in the preview and in the entry, whose
- * label names the instance's tile.
- */
-export function distinctLabels(
-  offers: readonly Offer[],
-  homes: ReadonlyMap<string, string>,
-  platform: NodeJS.Platform,
-): Offer[] {
-  const name = (path: string) => (platform === "win32" ? win32 : posix).basename(path);
-  return offers.map((offer) => {
-    const home = homes.get(offer.id);
-    const shared = offers.filter((other) => other.label === offer.label).length > 1;
-    if (!shared || home === undefined) return offer;
-    const label = `${offer.label} (${name(home)})`;
-    const entry = new Map(offer.entry);
-    if (entry.get("label") === offer.label) entry.set("label", label);
-    return { ...offer, label, entry };
-  });
-}
-
 /** The plan's token: the entries the preview showed, in order, key for key. */
 function planToken(offers: readonly Offer[]): string {
   const doc = offers.map((o) => [...o.entry]);
   return createHash("sha256").update(JSON.stringify(doc)).digest("hex").slice(0, 16);
 }
-
-/** The block machine.toml gets for an entry, as its editor writes it. */
-const blockOf = (entry: ReadonlyMap<string, InstanceValue>): string[] => [
-  "[[instance]]",
-  ...[...entry].map(([k, v]) => `${keyText(k)} = ${valueText(v as EditValue)}`),
-];
-
-/** An entry as the service's `instances/add` takes it. */
-const wireOf = (entry: ReadonlyMap<string, InstanceValue>): Record<string, unknown> =>
-  Object.fromEntries([...entry].map(([k, v]) => [k, Array.isArray(v) ? [...(v as string[])] : v]));
 
 export async function instancesCommand(
   io: Io,

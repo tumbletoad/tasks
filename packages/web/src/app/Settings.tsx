@@ -1,7 +1,9 @@
 // Settings: how Tasks behaves for the person on this computer, one short page. Every control
 // changes something at once and can go back to its default; the page says once that all of it is
-// kept for this computer, the same in every space and browser here. Only what works is here.
-import { useCallback, useEffect, useState } from "react";
+// kept for this computer, the same in every space and browser here. Only what works is here. The
+// agent apps are the one exception: switches that change other apps' settings wait for Apply.
+import { useParams } from "@tanstack/react-router";
+import { useCallback, useContext, useEffect, useState } from "react";
 import {
   Button,
   Heading,
@@ -14,10 +16,12 @@ import {
   Text,
 } from "react-aria-components";
 import { Refused, type TerminalView } from "../api.ts";
+import { Session } from "../context.ts";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import { useSheet } from "../keys/Sheet.tsx";
 import { useKeyLabel } from "../keys/labels.ts";
 import { isThemeChoice, THEME_CHOICES, type ThemeChoice } from "../theme/preference.ts";
+import { AgentApps } from "./AgentApps.tsx";
 import { useTitle, useToast } from "./frame.ts";
 import { useMachine } from "./machine.ts";
 import css from "./Settings.module.css";
@@ -70,7 +74,27 @@ export function SettingsPage() {
       <Appearance />
       <Keyboard />
       <Terminal />
+      <Apps />
     </div>
+  );
+}
+
+/**
+ * The agent apps, for the tab's space: what a new entry names. When what Open offers changed, the
+ * tab takes a fresh snapshot, so the tiles show it.
+ */
+function Apps() {
+  const { space } = useParams({ strict: false });
+  const { live } = useContext(Session);
+  if (space === undefined) return null;
+  return (
+    <AgentApps
+      space={space}
+      onOpenChanged={() => {
+        live.refresh();
+      }}
+      headingClass={styles.heading}
+    />
   );
 }
 
