@@ -267,14 +267,17 @@ export function atomicWrite(
 // The same writes for a person's own folders, which may be on a volume that stops answering (a
 // network share): they never hold the process while it waits, so a caller can stop waiting.
 
-/** As makeDir with `recursive: false`: only `dir`, in a folder that exists; EEXIST when taken. */
+/**
+ * As makeDir with `recursive: false`: only `dir`, in a folder that exists; EEXIST when taken. With
+ * `"umask"` it gets what a plain mkdir gives it: a person's own folder, not one of the product's.
+ */
 export async function makeDirAsync(
   dir: string,
-  mode: number,
+  mode: number | "umask",
   platform: NodeJS.Platform = process.platform,
 ): Promise<void> {
-  await mkdirAsync(dir, { mode });
-  if (platform === "win32") return;
+  await mkdirAsync(dir, { mode: mode === "umask" ? 0o777 : mode });
+  if (platform === "win32" || mode === "umask") return;
   const handle = await openAsync(
     dir,
     constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,

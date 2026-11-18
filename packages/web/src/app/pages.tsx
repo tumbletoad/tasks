@@ -28,6 +28,7 @@ import {
   type View,
 } from "./views.ts";
 import { areaGroups, projectGroups } from "../groups.ts";
+import { ProjectFolder } from "../folder/ProjectFolder.tsx";
 import { AgentsPage } from "../views/Agents.tsx";
 import { CompletedPage } from "../views/Completed.tsx";
 import { TaskList } from "../views/TaskList.tsx";
@@ -109,7 +110,7 @@ export function AreaPage({
   useTitle(named ?? "");
   const filter = useMemo(() => areaFilter(area, project), [area, project]);
   if (row === undefined) return <p className={styles.line}>{t("view.noArea")}</p>;
-  return (
+  const list = (
     <TaskList
       key={`${area}/${project ?? ""}`}
       view="area"
@@ -120,6 +121,14 @@ export function AreaPage({
       expand={task}
       onExpand={onExpand}
     />
+  );
+  if (project === undefined) return list;
+  // A project's view begins with its folder on this machine.
+  return (
+    <>
+      <ProjectFolder key={project} project={project} />
+      {list}
+    </>
   );
 }
 

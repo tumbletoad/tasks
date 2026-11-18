@@ -8,13 +8,16 @@
 // person folded it: projects that opened and closed with their area's view would move every entry
 // below them, so only the person's own click on an area's fold button does. Areas and projects
 // count the open tasks their view lists, quietly, and a folded area keeps its count. A name the
-// sidebar cuts shows whole in a tip.
+// sidebar cuts shows whole in a tip. New project sits in the foot beside Settings, and on each area
+// while the pointer or focus is on it, over the area's row so nothing beside it moves.
 import { Link, useParams } from "@tanstack/react-router";
-import { useId, useMemo, type FocusEvent, type PointerEvent } from "react";
+import { useId, useMemo, useState, type FocusEvent, type PointerEvent } from "react";
+import { Button } from "react-aria-components";
 import { useIntl } from "react-intl";
+import { AddProject } from "../folder/AddProject.tsx";
 import { slotOf } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
-import { ChevronIcon, SettingsIcon, ViewIcon } from "./Icons.tsx";
+import { ChevronIcon, PlusIcon, SettingsIcon, ViewIcon } from "./Icons.tsx";
 import { useLive } from "../store/hooks.ts";
 import css from "./Sidebar.module.css";
 import { SpaceSwitcher } from "./SpaceSwitcher.tsx";
@@ -23,6 +26,7 @@ import { groupCounts, sidebarEntries, VIEW_LABEL, viewCounts } from "./views.ts"
 import { classes } from "./css.ts";
 
 const styles = classes(css, [
+  "add",
   "area",
   "count",
   "dot",
@@ -131,10 +135,12 @@ export function Sidebar({ space }: { readonly space: string }) {
   const { folded, toggle } = useFolds(space);
   // The side menu and the drawer can both be in the page: each names its own lists.
   const menu = useId();
+  // New project: open, and the area it goes in unless the person chooses another.
+  const [adding, setAdding] = useState<{ area: string | undefined }>();
+  const here = useParams({ strict: false });
   // A folded area holding the project on screen is marked as the way to it.
-  const params = useParams({ strict: false });
-  const shownProject = "project" in params ? params.project : undefined;
-  const shownArea = "area" in params ? params.area : undefined;
+  const shownProject = "project" in here ? here.project : undefined;
+  const shownArea = "area" in here ? here.area : undefined;
 
   return (
     <div className={styles.sidebar}>
@@ -220,6 +226,16 @@ export function Sidebar({ space }: { readonly space: string }) {
                     </span>
                     <Count n={n} />
                   </Link>
+                  <Button
+                    className={styles.add}
+                    aria-label={t("project.newIn", { area: area.title })}
+                    data-tip={t("project.newIn", { area: area.title })}
+                    onPress={() => {
+                      setAdding({ area: area.id });
+                    }}
+                  >
+                    <PlusIcon />
+                  </Button>
                 </div>
                 {isFolded ? null : (
                   <Projects id={list} space={space} area={area.id} projects={own} counts={counts} />
@@ -240,7 +256,26 @@ export function Sidebar({ space }: { readonly space: string }) {
         >
           <SettingsIcon />
         </Link>
+        <Button
+          className={styles.gear}
+          aria-label={t("project.new")}
+          data-tip={t("project.new")}
+          onPress={() => {
+            setAdding({ area: here.area });
+          }}
+        >
+          <PlusIcon />
+        </Button>
       </div>
+      {adding === undefined ? null : (
+        <AddProject
+          space={space}
+          area={adding.area}
+          onClose={() => {
+            setAdding(undefined);
+          }}
+        />
+      )}
     </div>
   );
 }
