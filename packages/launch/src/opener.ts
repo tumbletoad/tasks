@@ -108,7 +108,9 @@ function candidates(
       return [
         {
           name: "open",
-          argv: ["/usr/bin/open", url],
+          // A folder is revealed: opened, an application bundle or a document package would
+          // start its application.
+          argv: folder === undefined ? ["/usr/bin/open", url] : ["/usr/bin/open", "-R", folder],
           exit: (code) => (code === 0 ? "opened" : "unknown"),
         },
       ];
@@ -132,8 +134,8 @@ export function openUrl(
 }
 
 /**
- * Shows the absolute folder `folder` in the computer's file manager: Explorer, what the desktop
- * opens a folder with on Linux, Finder. The caller has checked that it is a folder. Never throws.
+ * Shows the absolute folder `folder` in the machine's file manager: Explorer, what the desktop
+ * opens a folder with on Linux, Finder with the folder selected. The caller has checked that it is a folder. Never throws.
  */
 export function openFolder(
   folder: string,

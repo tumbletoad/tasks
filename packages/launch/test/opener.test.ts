@@ -155,6 +155,20 @@ describe("[A4.5.routes.opener] the OS's URL opener: one element, defined outcome
     );
   });
 
+  test("macOS: a folder is shown in Finder, never opened, so an application bundle is not started", async () => {
+    for (const folder of ["/Users/mira/work/portal", "/Users/mira/work/build/Lumen.app"]) {
+      const r = recorder({ "/usr/bin/open": 0 });
+      const options: OpenerOptions = {
+        platform: "darwin",
+        env: {},
+        spawn: r.spawn,
+        cwd: "/Users/mira",
+      };
+      expect(await openFolder(folder, options)).toEqual({ result: "opened", opener: "open" });
+      expect(r.calls.map((c) => c.argv)).toEqual([["/usr/bin/open", "-R", folder]]);
+    }
+  });
+
   test("an opener that does not end in time is stopped, and its answer is unknown", async () => {
     const hung = linux({ "/usr/bin/gio": "hang" });
     expect(await openUrl(URL_, hung.options)).toEqual({ result: "unknown", opener: "gio" });
