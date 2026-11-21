@@ -115,17 +115,14 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     expect(claudeArgs("auto-edit")).toEqual(
       expect.arrayContaining(["acceptEdits", "--allowedTools", "mcp__tasks"]),
     );
-    // Read-only keeps the question tool, and a mode that brings its prompts to the driver.
+    // Read-only is a mode that brings every prompt of the person's own setup to the driver.
     const narrow = claudeArgs("read-only");
-    expect(narrow).toEqual(
-      expect.arrayContaining([
-        "--permission-mode",
-        "default",
-        "--tools",
-        "Read,Glob,Grep,AskUserQuestion",
-      ]),
-    );
+    expect(narrow).toEqual(expect.arrayContaining(["--permission-mode", "default"]));
     expect(narrow).not.toContain("--mcp-config");
+    // No mode narrows the person's own tools.
+    for (const mode of ["full-access", "auto-edit", "read-only"] as const) {
+      expect(claudeArgs(mode)).not.toContain("--tools");
+    }
     const file = JSON.parse(
       claudeToolsFile({
         command: "/opt/tasks/bin/tasks",
@@ -154,16 +151,27 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     expect(tool.events).toContainEqual({ kind: "progress", label: "tasks" });
   });
 
-  test("a permission prompt is declined, since nobody is there to answer it, and the program counts it", async () => {
-    const { driver, fake } = bench({ fixture: "windows-denied" });
-    expect(await driver.settled).toEqual(done({ ok: true, permissionDenials: 1 }));
+  test("a permission prompt of the person's own setup is not answered for them: the run needs the person, with what Claude Code asked to do", async () => {
+    const { driver, fake, events } = bench({ fixture: "windows-denied" });
+    expect(await driver.settled).toEqual(
+      done({
+        ok: false,
+        outcome: "needs_input",
+        text: "Claude Code asks to use Bash: Fixture text.",
+        textFinal: false,
+      }),
+    );
     const [answer] = ofType(fake, "control_response");
     expect(answer?.["response"]).toMatchObject({
       subtype: "success",
-      response: { behavior: "deny" },
+      response: { behavior: "deny", interrupt: true },
     });
-    // A decline never carries a permission of its own: the program would write it into settings.
+    // Turning a prompt down never carries a permission: the program would write it into settings.
     expect(JSON.stringify(answer)).not.toContain("updatedPermissions");
+    expect(events.filter((e) => e.kind === "answer").at(-1)).toMatchObject({
+      text: "Claude Code asks to use Bash: Fixture text.",
+    });
+    await fake.inputEnded;
   });
 
   test("a question for the person ends the run as needing the person, with the question as its text, never an answer made up", async () => {
@@ -193,28 +201,43 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     });
   });
 
-  test("a request the driver does not know gets the protocol's error, a second question changes nothing, and the run goes on", async () => {
+  test("a request the driver does not know gets the protocol's error, and the run goes on", async () => {
     const requests = [
       { subtype: "elicitation", mcp_server_name: "docs", message: "Fill in the export's name." },
-      {
-        subtype: "can_use_tool",
-        tool_name: "Bash",
-        input: { command: "echo hi" },
-        tool_use_id: "toolu_x1",
-      },
     ];
     const { driver, fake } = bench({ fixture: "windows-plain", requests });
     expect(await driver.settled).toEqual(done({ ok: true, outcome: "success" }));
     const answers = ofType(fake, "control_response").map((m) => m["response"]);
     expect(answers[0]).toMatchObject({ subtype: "error", request_id: "fake-request-0" });
-    expect(answers[1]).toMatchObject({
-      subtype: "success",
-      request_id: "fake-request-1",
-      response: { behavior: "deny" },
-    });
   });
 
-  test("a later question after the first one is declined and the first stays the run's text", async () => {
+  test("a question settles the work when it comes, from a program that then says nothing more", async () => {
+    const init = readClaudeFixture("windows-plain").find((l) => l.msg["subtype"] === "init")?.msg;
+    const question = {
+      type: "control_request",
+      request_id: "q1",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "AskUserQuestion",
+        requires_user_interaction: true,
+        input: { questions: [{ question: "Which export?", options: [{ label: "CSV" }] }] },
+        tool_use_id: "toolu_x4",
+      },
+    };
+    const toProgram = new PassThrough();
+    const fromProgram = new PassThrough();
+    const driver = claudeDriver({ request: "Look." })(
+      { stdin: toProgram, stdout: fromProgram },
+      () => undefined,
+    );
+    fromProgram.write(`${JSON.stringify(init)}\n${JSON.stringify(question)}\n`);
+    expect(await settledNow(driver)).toEqual(
+      done({ ok: false, outcome: "needs_input", text: "Which export? (CSV)" }),
+    );
+    driver.close();
+  });
+
+  test("a second question after the first changes nothing: the first is the run's text", async () => {
     const later = {
       subtype: "can_use_tool",
       tool_name: "AskUserQuestion",
@@ -245,14 +268,108 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     await fake.inputEnded;
   });
 
-  test("a command left in the background does not hold the work: it settles with the turn's answer, before the input closes", async () => {
-    for (const fixture of ["windows-background", "windows-stop-background"]) {
-      const { driver, events, openAtSettle } = bench({ fixture, pace: 0.05 });
-      expect(await driver.settled).toEqual(done({ ok: true, outcome: "success" }));
-      expect(events.filter((e) => e.kind === "answer" && e.final)).toHaveLength(1);
-      // Closing the input after the work is saved is what ends the command.
-      expect(await openAtSettle).toBe(true);
+  test("a finite command left in the background holds the work: the program's own turn about its end is the answer", async () => {
+    const { driver, fake, events, openAtSettle } = bench({
+      fixture: "windows-background",
+      pace: 0.05,
+    });
+    await until("the first turn ended", () => events.some((e) => e.kind === "answer" && e.final));
+    // The command still runs: the work is not settled, and its input stays open for the report.
+    expect(await settledNow(driver)).toBeUndefined();
+    expect(await driver.settled).toEqual(done({ ok: true, outcome: "success", textFinal: true }));
+    expect(events.filter((e) => e.kind === "answer" && e.final)).toHaveLength(2);
+    expect(await openAtSettle).toBe(true);
+    await fake.inputEnded;
+  });
+
+  test("a server left running in the background holds the run until Stop, which ends it and keeps the last turn's answer", async () => {
+    const { driver, fake, events } = bench({
+      fixture: "windows-stop-background",
+      pace: 0.05,
+      answer: "The server listens.",
+    });
+    await until("the turn ended", () => events.some((e) => e.kind === "answer" && e.final));
+    expect(await settledNow(driver)).toBeUndefined();
+    expect(driver.interrupt()).toBe(true);
+    // Between turns the Stop waits for nothing: the end of the input is what ends the server.
+    expect(await settledNow(driver)).toEqual(
+      done({ ok: false, outcome: "interrupted", text: "The server listens.", textFinal: true }),
+    );
+    await fake.inputEnded;
+    // Nothing but the interrupt reached the input after the request.
+    expect(fake.received.map((m) => m["type"])).toEqual(["user", "control_request"]);
+  });
+
+  test("a turn that begins after a result makes that result provisional: its newer words are kept, and without its own result the work did not finish", async () => {
+    const recorded = readClaudeFixture("windows-plain").filter((l) => l.dir === "recv");
+    const init = recorded.find((l) => l.msg["subtype"] === "init")?.msg ?? {};
+    const result = recorded.find((l) => l.msg["type"] === "result")?.msg ?? {};
+    const said = (text: string) => ({
+      type: "assistant",
+      parent_tool_use_id: null,
+      message: { content: [{ type: "text", text }] },
+    });
+    for (const [code, withInit] of [
+      [0, true],
+      [1, true],
+      [0, false],
+    ] as const) {
+      const toProgram = new PassThrough();
+      const fromProgram = new PassThrough();
+      const events: RunEvent[] = [];
+      const driver = claudeDriver({ request: "Look." })(
+        { stdin: toProgram, stdout: fromProgram },
+        (event) => events.push(event),
+      );
+      const stream = [
+        init,
+        { ...result, result: "First.", queued_turn_count: 1 },
+        ...(withInit ? [init] : []),
+        said("Halfway through the second."),
+      ];
+      fromProgram.write(stream.map((m) => `${JSON.stringify(m)}\n`).join(""));
+      expect(await settledNow(driver)).toBeUndefined();
+      // What a restart would recover is the newer words, not the first turn's answer.
+      expect(events.filter((e) => e.kind === "answer").at(-1)).toMatchObject({
+        text: "Halfway through the second.",
+        final: false,
+      });
+      driver.ended({ code, signal: null });
+      expect(await driver.settled).toEqual(
+        done({
+          ok: false,
+          outcome: "no_result",
+          text: "Halfway through the second.",
+          textFinal: false,
+        }),
+      );
     }
+  });
+
+  test("a helper agent's words are not the run's answer", async () => {
+    const recorded = readClaudeFixture("windows-plain").filter((l) => l.dir === "recv");
+    const init = recorded.find((l) => l.msg["subtype"] === "init")?.msg ?? {};
+    const result = recorded.find((l) => l.msg["type"] === "result")?.msg ?? {};
+    const toProgram = new PassThrough();
+    const fromProgram = new PassThrough();
+    const driver = claudeDriver({ request: "Look." })(
+      { stdin: toProgram, stdout: fromProgram },
+      () => undefined,
+    );
+    const lines = [
+      init,
+      { type: "system", subtype: "background_tasks_changed", tasks: [{ task_type: "local_agent" }] },
+      { ...result, result: "A helper looks." },
+      {
+        type: "assistant",
+        parent_tool_use_id: "toolu_h1",
+        message: { content: [{ type: "text", text: "Helper's notes." }] },
+      },
+    ];
+    fromProgram.write(lines.map((m) => `${JSON.stringify(m)}\n`).join(""));
+    expect(await settledNow(driver)).toBeUndefined();
+    driver.interrupt();
+    expect(await driver.settled).toEqual(done({ text: "A helper looks.", textFinal: true }));
   });
 
   test("a question in the program's own turn about a finished helper reaches the driver and ends the run as needing the person", async () => {

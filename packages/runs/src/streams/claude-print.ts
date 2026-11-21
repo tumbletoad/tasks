@@ -10,9 +10,12 @@
 // | `result`                       | the final state, result text, usage, permission denials    |
 // | `user`, `rate_limit_event`, other `system` subtypes, `stream_event` | known, nothing to use |
 //
-// The run is judged by the last `result` event's `is_error`, not by the exit code: Claude exits 0
-// after Ctrl+C with `is_error: true`, and 1 after an invalid model with `subtype: success` and
-// `is_error: true` (A4 3.11.3).
+// The run is judged by the last turn's `result` event's `is_error`, not by the exit code: Claude
+// exits 0 after Ctrl+C with `is_error: true`, and 1 after an invalid model with `subtype: success`
+// and `is_error: true` (A4 3.11.3). A program kept open for more input starts turns of its own (a
+// queued message, a finished background job): a turn that begins after a result makes that
+// result's answer provisional, and a run whose last turn has no result has none.
+// A helper agent's lines (`parent_tool_use_id`) report progress only: its words are not the run's.
 import { MCP_SERVER_KEY } from "@tasks/brand";
 import type { AppToolsState, OutcomeReason, ProcessExit, ProgressLabel, Usage } from "./events.ts";
 import {
@@ -68,6 +71,15 @@ export function claudeToolLabel(name: string | undefined): ProgressLabel {
   return Object.hasOwn(LABELS, name) ? (LABELS[name] ?? "tool") : "tool";
 }
 
+/** A line that belongs to a turn of the run's own agent: its start, or one of its messages. */
+export function startsTurn(event: Json): boolean {
+  if (event["type"] === "system") return event["subtype"] === "init";
+  return event["type"] === "assistant" && !fromHelper(event);
+}
+
+/** A line of a helper agent the run's agent started. */
+const fromHelper = (event: Json): boolean => typeof event["parent_tool_use_id"] === "string";
+
 interface FinalResult {
   /** The last result's verdict: its is_error, or its subtype when is_error is missing. */
   failed: boolean;
@@ -76,10 +88,15 @@ interface FinalResult {
 }
 
 class ClaudeReader implements CliReader {
+  /** The result of the last turn; null while a turn goes on that has none yet. */
   private final: FinalResult | null = null;
   private readonly toolUses = new RecentKeys();
 
   read(event: Json, ctx: ReadContext): boolean {
+    if (this.final !== null && startsTurn(event)) {
+      this.final = null;
+      ctx.answerReopened();
+    }
     switch (event["type"]) {
       case "system":
         if (event["subtype"] === "init") this.init(event, ctx);
@@ -141,7 +158,7 @@ class ClaudeReader implements CliReader {
         if (label === "tasks" && ctx.session !== null && ctx.session.appTools !== "connected") {
           ctx.sessionSeen(ctx.session.cwd, "connected");
         }
-      } else if (block["type"] === "text") {
+      } else if (block["type"] === "text" && !fromHelper(event)) {
         const text = string(block["text"]);
         if (text === undefined) ctx.counts.malformed += 1;
         else if (apiError) ctx.error(text);
@@ -165,8 +182,11 @@ class ClaudeReader implements CliReader {
     if (typeof firstError === "string") ctx.error(firstError);
     else if (failed && text !== undefined) ctx.error(text);
 
-    const denials = array(event["permission_denials"]);
-    ctx.counts.permissionDenials = denials?.length ?? 0;
+    // A question the driver turned down to hand it to the person is not a refusal.
+    const denials = (array(event["permission_denials"]) ?? []).filter(
+      (d) => record(d)?.["tool_name"] !== "AskUserQuestion",
+    );
+    ctx.counts.permissionDenials = denials.length;
 
     const usage = this.usage(event);
     if (usage !== undefined) ctx.usageSeen(usage);
