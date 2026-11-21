@@ -47,9 +47,20 @@ export const LAUNCH_ACTIONS: readonly string[] = ["list", "run", "runs", "stop"]
  */
 export const SPACE_PREFIX = "/api/v1/space/";
 export const SPACE_ACTIONS: readonly string[] = ["list", "default", "propose", "create", "open"];
-/** Settings: this machine's preferences the page sets, Open's terminal, and the agent apps. */
+/**
+ * This machine: the preferences the page sets, Open's terminal, the agent apps, and the folder
+ * chooser (the folders in a folder, a new folder, a project's folders).
+ */
 export const MACHINE_PREFIX = "/api/v1/machine/";
-export const MACHINE_ACTIONS: readonly string[] = ["pref", "terminal", "apps", "apps_apply"];
+export const MACHINE_ACTIONS: readonly string[] = [
+  "pref",
+  "terminal",
+  "apps",
+  "apps_apply",
+  "folders",
+  "folder_make",
+  "project_folder",
+];
 export const HEALTHZ_PATH = "/healthz";
 export const WELL_KNOWN_PATH = "/.well-known/tasks";
 export const ASSET_PREFIX = "/assets/";
