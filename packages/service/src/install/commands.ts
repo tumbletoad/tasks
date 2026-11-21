@@ -227,7 +227,7 @@ const valueText = (value: RegValue | undefined): string =>
 /**
  * The drop-ins systemd would apply to `unit` from the user's unit folder (systemd.unit(5)): the
  * `.conf` files in `<unit>.d/` and, for a name with dashes, in each prefix folder such as
- * `tasks-.service.d/`, each with its exact bytes. Empty when there are none. The type-wide
+ * `ttasks-.service.d/`, each with its exact bytes. Empty when there are none. The type-wide
  * `service.d/` is the person's setting for every service and is left out; so are drop-ins in
  * system folders.
  */
