@@ -8,7 +8,7 @@
 // The world keeps its own truth of what the processes did, which the host never sees, and checks
 // the store against it.
 import { PassThrough } from "node:stream";
-import type { RunRecord, RunState } from "@tasks/contracts/runs";
+import type { RunLimits, RunRecord, RunState } from "@tasks/contracts/runs";
 import { FINAL_RUN_STATES } from "@tasks/contracts/runs";
 import type { RunStore } from "@tasks/launch/execution-store";
 import {
@@ -121,6 +121,8 @@ export class World {
   readonly input = new Map<string, string>();
   /** The driver every run gets; without one, the print-mode parser's. */
   open: OpenDriver | undefined;
+  /** The limits every run is queued with. */
+  limits: RunLimits = MODEL_LIMITS;
 
   constructor(backend: WorldBackend) {
     this.#backend = backend;
@@ -404,7 +406,7 @@ export class World {
               request: "Fix the export.",
               briefHash: "0a1b2c3d".repeat(8),
               permission: "auto-edit",
-              limits: MODEL_LIMITS,
+              limits: this.limits,
             },
             `host-model-${String(this.#requests).padStart(8, "0")}`,
           );

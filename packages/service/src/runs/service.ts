@@ -118,6 +118,19 @@ export interface RunRequest {
 /** How often spaces that opened since are recovered, and the queue looked at. */
 const ROUND_MS = 30_000;
 
+/** What a run's record cannot say, from this service: see RunService.live. */
+export interface RunLive {
+  readonly waiting?: WaitReason;
+  /** Wall clock milliseconds since when a running run wrote nothing. */
+  readonly quietSince?: number;
+}
+
+/** The time limits `[runs]` sets, and only those: a run without one has none. */
+const timeLimits = (settings: RunSettings): Pick<RunLimits, "wallMs" | "idleMs"> => ({
+  ...(settings.wallMs === undefined ? {} : { wallMs: settings.wallMs }),
+  ...(settings.idleMs === undefined ? {} : { idleMs: settings.idleMs }),
+});
+
 interface Hosted {
   readonly writer: unknown;
   readonly made: Promise<{ host: RunHost; machine: RunMachine }>;
@@ -297,8 +310,7 @@ export class RunService {
     const settings = this.#settings();
     const limits = input.limits ?? {
       ...RUN_LIMITS[input.routine === null ? "task" : "routine"],
-      wallMs: settings.wallMs,
-      idleMs: settings.idleMs,
+      ...timeLimits(settings),
     };
     // No round may take the run before its command is known.
     const hold = this.#supervisor.hold();
@@ -390,7 +402,7 @@ export class RunService {
         request: asked.request ?? WORK_ON_IT,
         briefHash: runBriefHash(task.ref, task.title),
         permission: runPermission(instance),
-        limits: { ...RUN_LIMITS.task, wallMs: settings.wallMs, idleMs: settings.idleMs },
+        limits: { ...RUN_LIMITS.task, ...timeLimits(settings) },
       },
       asked.requestId,
     );
@@ -522,9 +534,18 @@ export class RunService {
     return this.#supervisor.ended({ space, host, machine }, run);
   }
 
-  /** Why a queued run waits, as the last round saw it. */
-  waiting(run: string): WaitReason | undefined {
-    return this.#supervisor.waiting(run);
+  /**
+   * What a run's record cannot say: why a queued run waits, as the last round saw it, and since
+   * when one that runs here has written nothing.
+   */
+  live(run: string): RunLive {
+    const waiting = this.#supervisor.waiting(run);
+    let quietSince: number | undefined;
+    for (const lane of this.#lanes.values()) quietSince ??= lane.host.quietSince(run);
+    return {
+      ...(waiting === undefined ? {} : { waiting }),
+      ...(quietSince === undefined ? {} : { quietSince }),
+    };
   }
 
   /** An update's hold: no run starts until it is released. */

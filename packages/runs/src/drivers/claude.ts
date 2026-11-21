@@ -30,7 +30,6 @@ import {
   LINE_CAP_BYTES,
   TEXT_CAP_BYTES,
   type ProcessExit,
-  type RunEvent,
   type RunPermission,
 } from "@tasks/contracts/runs";
 import { MCP_SERVER_KEY, PRODUCT_ID } from "@tasks/brand";

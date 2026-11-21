@@ -1079,7 +1079,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           queueTask: (space, asked) => runs.queueTask(space, asked),
           list: (space, task) => runs.list(space, task),
           stop: (space, run) => runs.stop(space, run),
-          waiting: (run) => runs.waiting(run),
+          live: (run) => runs.live(run),
           runnable: (key) => {
             const instance = instances.find((i) => i.id === key);
             return instance !== undefined && runsWith(instance);

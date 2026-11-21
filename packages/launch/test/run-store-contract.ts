@@ -386,6 +386,11 @@ export function runStoreContract(
       });
       expect(run.at).toEqual({ queued: run.queuedAt });
       expect(await store.readRun(run.id)).toEqual(run);
+      // Time limits are kept when a person set them, and absent otherwise.
+      expect(run.limits).not.toHaveProperty("wallMs");
+      const limits = { maxTurns: 50, wallMs: 600_000, idleMs: 60_000 };
+      const timed = await store.createRun(await runInput({ limits }), requestId());
+      expect((await store.readRun(timed.id))?.limits).toEqual(limits);
       expect(await store.createRun(input, id)).toEqual(run);
       const reused = await refusal(store.createRun({ ...input, request: "Something else" }, id));
       expect(reused.code).toBe("request_id_reused");

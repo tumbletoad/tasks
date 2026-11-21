@@ -501,7 +501,7 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
     const second = await service.runs.start(spaceId, unlimited, "runs-hold-run-000002", command);
     expect(second.limits).toMatchObject({ wallMs: 7 * 60_000, idleMs: 3 * 60_000 });
     await waitFor(
-      () => (service.runs.waiting(second.id) === "update" ? true : undefined),
+      () => (service.runs.live(second.id).waiting === "update" ? true : undefined),
       15_000,
       "the reason it waits",
     );

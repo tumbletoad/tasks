@@ -47,6 +47,11 @@ const NO_RUNS: readonly Run[] = [];
 const FRESH_MS = 1_200;
 /** Agents' changes are announced once the burst has been quiet this long (A5 3.15 item 10). */
 const QUIET_MS = 2_000;
+/**
+ * What a working run says changes nothing in its record, so the runs of a task with one are read
+ * again this often: how long it has said nothing stays true.
+ */
+const WORKING_REREAD_MS = 60_000;
 
 /** The expanded task as the list last showed it: its group and its place in that group's list. */
 export interface HeldRow {
@@ -266,6 +271,19 @@ export function TaskList({
     },
     [api, live],
   );
+
+  useEffect(() => {
+    const working = [...runs]
+      .filter(([, list]) => list.some((run) => run.state === "running"))
+      .map(([task]) => task);
+    if (working.length === 0) return;
+    const timer = setInterval(() => {
+      for (const task of working) loadRuns(task);
+    }, WORKING_REREAD_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [runs, loadRuns]);
 
   // A launch event refreshes the receipts of its task, which the tab follows from then on, so a
   // tile mirrors a launch made in another tab or at the terminal. A run event refreshes the runs

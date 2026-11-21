@@ -7,7 +7,7 @@ import { AppError, RequestId } from "@tasks/contracts";
 import { RUN_REQUEST_MAX_BYTES, type RunRecord } from "@tasks/contracts/runs";
 import type { ConnectionClass } from "../local/index.ts";
 import type { ServedSpace } from "../ops/index.ts";
-import type { RunService } from "./service.ts";
+import type { RunLive, RunService } from "./service.ts";
 
 export interface RunVerbsHost {
   readonly runs: RunService;
@@ -15,16 +15,21 @@ export interface RunVerbsHost {
   space(named: string | undefined): ServedSpace;
 }
 
-/** A run as `tasks run` shows it: codes and the person's own task text, never a folder. */
-export function runView(run: RunRecord, task: string | null, waiting?: string): JsonObject {
+/**
+ * A run as `tasks run` shows it: codes and the person's own task text, never a folder. A running
+ * run says since when it has been quiet; an ended one how many of its agent's requests were refused.
+ */
+export function runView(run: RunRecord, task: string | null, live: RunLive = {}): JsonObject {
   const result = run.result;
+  const refused = result === null ? 0 : result.declined + result.permissionDenials;
   return {
     id: run.id,
     task,
     instance: run.instance,
     state: run.state,
     reason: run.reason,
-    ...(waiting === undefined ? {} : { waiting }),
+    ...(live.waiting === undefined ? {} : { waiting: live.waiting }),
+    ...(live.quietSince === undefined ? {} : { quiet_since: live.quietSince }),
     queued_at: run.queuedAt,
     started_at: run.startedAt,
     ended_at: run.endedAt,
@@ -36,6 +41,7 @@ export function runView(run: RunRecord, task: string | null, waiting?: string): 
           ...(result.cleanup === undefined ? {} : { cleanup: result.cleanup }),
           ...(result.error === null ? {} : { error: result.error }),
           ...(result.nativeId === null ? {} : { native_id: result.nativeId }),
+          ...(refused === 0 ? {} : { refused }),
         }),
   };
 }
@@ -93,13 +99,13 @@ export function runVerbs(
         requestId,
       });
       const shown = await host.runs.show(served.id ?? "", run.id);
-      return runView(shown?.run ?? run, shown?.task ?? null, host.runs.waiting(run.id));
+      return runView(shown?.run ?? run, shown?.task ?? null, host.runs.live(run.id));
     },
     "runs/list": async (params) => {
       const served = host.space(text(params, "space"));
       const listed = await host.runs.list(served.id ?? "", text(params, "task"));
       return {
-        runs: listed.map(({ run, task }) => runView(run, task, host.runs.waiting(run.id))),
+        runs: listed.map(({ run, task }) => runView(run, task, host.runs.live(run.id))),
       };
     },
     "runs/show": async (params) => {
@@ -107,7 +113,7 @@ export function runVerbs(
       const shown = await host.runs.show(served.id ?? "", runId(params));
       if (shown === undefined) throw noRun();
       return {
-        ...runView(shown.run, shown.task, host.runs.waiting(shown.run.id)),
+        ...runView(shown.run, shown.task, host.runs.live(shown.run.id)),
         answer: shown.answer,
         answer_final: shown.run.result?.textFinal === true,
       };

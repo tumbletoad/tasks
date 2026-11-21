@@ -43,13 +43,21 @@ const FINAL = new Set(["succeeded", "failed", "timed_out", "cancelled", "unknown
 
 type Shown = Record<string, unknown>;
 
+/** How long a running run has been quiet, from a minute on: then the person may want to stop it. */
+function quiet(run: Shown, now: number): string {
+  const since = run["quiet_since"];
+  if (typeof since !== "number") return "";
+  const minutes = Math.floor((now - since) / 60_000);
+  return minutes < 1 ? "" : ` (quiet for ${String(minutes)} min)`;
+}
+
 /** One line for a run: its ID, task, state and why. */
 function line(run: Shown): string {
   const state = String(run["state"]);
   const reason = typeof run["reason"] === "string" ? ` (${run["reason"]})` : "";
   const waiting = typeof run["waiting"] === "string" ? ` (waits: ${run["waiting"]})` : "";
   const task = typeof run["task"] === "string" ? run["task"] : "-";
-  return `${String(run["id"])}  ${task}  ${String(run["instance"])}  ${state}${reason}${waiting}`;
+  return `${String(run["id"])}  ${task}  ${String(run["instance"])}  ${state}${reason}${waiting}${quiet(run, Date.now())}`;
 }
 
 const CLEANUP: Readonly<Record<string, string>> = {
@@ -69,6 +77,12 @@ function described(run: Shown): string {
     );
   }
   if (typeof run["error"] === "string") out.push(`The agent said: ${run["error"]}`);
+  const refused = run["refused"];
+  if (typeof refused === "number" && refused > 0) {
+    out.push(
+      `Its permission refused ${String(refused)} of the agent's requests: it worked without them.`,
+    );
+  }
   const answer = run["answer"];
   if (typeof answer === "string" && answer !== "") {
     const what =

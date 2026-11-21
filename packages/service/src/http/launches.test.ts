@@ -63,7 +63,7 @@ const record = (patch: Partial<RunRecord> = {}): RunRecord => ({
 
 describe("[M6.page.run-view] the page's view of a run", () => {
   test("a run without the person's words says so, its answer and how it ended come along", () => {
-    expect(uiRun(record(), "task_limit")).toMatchObject({
+    expect(uiRun(record(), { waiting: "task_limit" })).toMatchObject({
       asked: null,
       waiting: "task_limit",
       answer: null,
@@ -90,7 +90,7 @@ describe("[M6.page.run-view] the page's view of a run", () => {
           cleanup: "confirmed",
         },
       }),
-      "task_limit",
+      { waiting: "task_limit" },
     );
     expect(ended).toMatchObject({
       asked: "Check the export",
@@ -103,6 +103,38 @@ describe("[M6.page.run-view] the page's view of a run", () => {
     });
     // Only a queued run waits.
     expect(ended).not.toHaveProperty("waiting");
+    expect(ended).not.toHaveProperty("refused");
+  });
+
+  test("a running run says since when it is quiet, and an ended one how many requests were refused", () => {
+    const since = Date.UTC(2026, 10, 21, 9, 30);
+    expect(uiRun(record({ state: "running" }), { quietSince: since })).toMatchObject({
+      quiet_since: since,
+    });
+    expect(uiRun(record({ state: "queued" }), { quietSince: since })).not.toHaveProperty(
+      "quiet_since",
+    );
+    const refused = uiRun(
+      record({
+        state: "succeeded",
+        result: {
+          ok: true,
+          outcome: "success",
+          exitCode: 0,
+          signal: null,
+          nativeId: null,
+          text: "Done.",
+          textFinal: true,
+          error: null,
+          usage: null,
+          appTools: null,
+          declined: 0,
+          permissionDenials: 2,
+          durationMs: 10,
+        },
+      }),
+    );
+    expect(refused.refused).toBe(2);
   });
 
   test("Run checks what the page sent before anything is queued", async () => {
@@ -115,7 +147,7 @@ describe("[M6.page.run-view] the page's view of a run", () => {
       },
       list: () => Promise.resolve([]),
       stop: () => Promise.resolve(undefined),
-      waiting: () => undefined,
+      live: () => ({}),
     };
     const launches = new UiLaunches({
       host: {
@@ -191,7 +223,7 @@ describe("[M6.page.run-view] the page's view of a run", () => {
         queueTask: () => Promise.reject(new Error("not here")),
         list: () => Promise.resolve(listed.map((run) => ({ run }))),
         stop: () => Promise.resolve(undefined),
-        waiting: () => undefined,
+        live: () => ({}),
       },
       log: () => undefined,
       changed: () => undefined,

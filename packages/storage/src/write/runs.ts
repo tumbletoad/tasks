@@ -133,8 +133,10 @@ export type RunEvidence = Record<string, string | number | boolean>;
 /** A run's limits as the record stores them, in its `spec`. */
 export interface RunLimitsRow {
   max_turns: number;
-  wall_ms: number;
-  idle_ms: number;
+  /** Absent: no wall time. */
+  wall_ms?: number;
+  /** Absent: no idle time. */
+  idle_ms?: number;
   budget_usd?: number;
 }
 

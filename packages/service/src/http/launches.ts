@@ -78,8 +78,8 @@ export interface UiRunPort {
   ): Promise<RunRecord>;
   list(space: string, task?: string): Promise<readonly { readonly run: RunRecord }[]>;
   stop(space: string, run: string): Promise<RunRecord | undefined>;
-  /** Why a queued run waits, as the queue last saw it. */
-  waiting(run: string): string | undefined;
+  /** Why a queued run waits, as the queue last saw it, and since when a running one is quiet. */
+  live(run: string): { readonly waiting?: string; readonly quietSince?: number };
 }
 
 /**
@@ -94,6 +94,8 @@ export interface UiRun {
   readonly reason: string | null;
   /** Why a queued run waits. */
   readonly waiting?: string;
+  /** Since when a running run has written nothing, milliseconds since 1970. */
+  readonly quiet_since?: number;
   readonly queued_at: number;
   readonly started_at: number | null;
   readonly ended_at: number | null;
@@ -106,13 +108,20 @@ export interface UiRun {
   readonly answer_final: boolean;
   readonly answer_cut: boolean;
   readonly error?: string;
+  /** How many of the agent's requests its permission refused, when any were. */
+  readonly refused?: number;
   /** Grows with every change of the run. */
   readonly version: number;
 }
 
-/** The page's view of a run record. */
-export function uiRun(run: RunRecord, waiting?: string): UiRun {
+/** The page's view of a run record, with what only the service knows of it now. */
+export function uiRun(
+  run: RunRecord,
+  live: { readonly waiting?: string; readonly quietSince?: number } = {},
+): UiRun {
   const result = run.result;
+  const { waiting, quietSince } = live;
+  const refused = result === null ? 0 : result.declined + result.permissionDenials;
   const asked = run.request === null || run.request === WORK_ON_IT ? null : run.request;
   return {
     id: run.id,
@@ -120,6 +129,7 @@ export function uiRun(run: RunRecord, waiting?: string): UiRun {
     state: run.state,
     reason: run.reason,
     ...(waiting === undefined || run.state !== "queued" ? {} : { waiting }),
+    ...(quietSince === undefined || run.state !== "running" ? {} : { quiet_since: quietSince }),
     queued_at: run.queuedAt,
     started_at: run.startedAt,
     ended_at: run.endedAt,
@@ -134,6 +144,7 @@ export function uiRun(run: RunRecord, waiting?: string): UiRun {
     answer: result?.text ?? null,
     answer_final: result?.textFinal === true,
     answer_cut: result?.textCut === true,
+    ...(refused === 0 ? {} : { refused }),
     version: run.version,
   };
 }
@@ -361,7 +372,7 @@ export class UiLaunches {
       requestId,
     });
     this.#options.changed(space);
-    return uiRun(queued, runs.waiting(queued.id));
+    return uiRun(queued, runs.live(queued.id));
   }
 
   /** A task's newest runs, and every older one that may still work, oldest first. */
@@ -373,7 +384,7 @@ export class UiLaunches {
     const listed = await runs.list(this.#space(spaceRef).id ?? "", task);
     return listed
       .filter(({ run }, at) => at < RUNS_SHOWN || isOpenRun(run))
-      .map(({ run }) => uiRun(run, runs.waiting(run.id)))
+      .map(({ run }) => uiRun(run, runs.live(run.id)))
       .reverse();
   }
 

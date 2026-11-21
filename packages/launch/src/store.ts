@@ -423,7 +423,7 @@ const within = (value: unknown, bounds: { min: number; max: number }): value is 
   value >= bounds.min &&
   value <= bounds.max;
 
-/** The limits, checked against their bounds, without unknown keys. */
+/** The limits, checked against their bounds, without unknown keys. A time limit may be absent. */
 function checkLimits(value: unknown): RunLimits {
   if (typeof value !== "object" || value === null) return refuseRun("limits", "Expected limits");
   const { maxTurns, wallMs, idleMs, budgetUsd, ...more } = value as Record<string, unknown>;
@@ -432,8 +432,12 @@ function checkLimits(value: unknown): RunLimits {
   }
   const b = RUN_LIMIT_BOUNDS;
   if (!within(maxTurns, b.maxTurns)) return refuseRun("limits.maxTurns", "Expected a turn limit");
-  if (!within(wallMs, b.wallMs)) return refuseRun("limits.wallMs", "Expected a wall time");
-  if (!within(idleMs, b.idleMs)) return refuseRun("limits.idleMs", "Expected an idle time");
+  if (wallMs !== undefined && !within(wallMs, b.wallMs)) {
+    return refuseRun("limits.wallMs", "Expected a wall time");
+  }
+  if (idleMs !== undefined && !within(idleMs, b.idleMs)) {
+    return refuseRun("limits.idleMs", "Expected an idle time");
+  }
   if (
     budgetUsd !== undefined &&
     (typeof budgetUsd !== "number" ||
@@ -443,7 +447,12 @@ function checkLimits(value: unknown): RunLimits {
   ) {
     return refuseRun("limits.budgetUsd", "Expected a budget in dollars");
   }
-  return { maxTurns, wallMs, idleMs, ...(budgetUsd === undefined ? {} : { budgetUsd }) };
+  return {
+    maxTurns,
+    ...(wallMs === undefined ? {} : { wallMs }),
+    ...(idleMs === undefined ? {} : { idleMs }),
+    ...(budgetUsd === undefined ? {} : { budgetUsd }),
+  };
 }
 
 /**

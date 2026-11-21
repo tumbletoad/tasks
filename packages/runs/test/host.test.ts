@@ -3,7 +3,7 @@
 // a container that refuses to empty and End by force, and the next start after a crash.
 import { spawn, type ChildProcess } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { RunRecord } from "@tasks/contracts/runs";
+import type { RunLimits, RunRecord } from "@tasks/contracts/runs";
 import type { RunStore } from "@tasks/launch/execution-store";
 import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
 import { describe, expect, test } from "vitest";
@@ -143,7 +143,7 @@ const refusing: Containers = {
 const never = (): Promise<AgentCommand> => new Promise<AgentCommand>(() => undefined);
 
 /** A world with one queued run, and a way to read it. */
-async function oneRun(): Promise<{
+async function oneRun(limits: RunLimits = MODEL_LIMITS): Promise<{
   world: World;
   run: (...events: Event[]) => Promise<void>;
   read: () => Promise<RunRecord>;
@@ -157,6 +157,7 @@ async function oneRun(): Promise<{
     tasks: ["t_0000000000000000000000000a"],
   });
   clock.world = world;
+  world.limits = limits;
   const run = async (...events: Event[]) => {
     for (const e of events) {
       await world.run(e);
@@ -309,6 +310,15 @@ describe("[A4.5.run.host] the run host's rules", () => {
     for (let i = 0; i < 4; i += 1) await wall.run(tick(40_000), say());
     await wall.run(tick(11_000));
     expect(await wall.read()).toMatchObject({ state: "timed_out", reason: "wall" });
+  });
+
+  test("a run without time limits is never ended for its time, however long or quiet it is", async () => {
+    const { run, read } = await oneRun({ maxTurns: 50 });
+    await run(start("ok", true), say());
+    for (let i = 0; i < 30; i += 1) await run(tick(60 * 60_000));
+    expect((await read()).state).toBe("running");
+    await run(say(true), { kind: "exit", pick: 0, code: 0 }, tick(10_000));
+    expect((await read()).state).toBe("succeeded");
   });
 
   test("a clean run keeps both results: the work's answer, and nothing left behind", async () => {

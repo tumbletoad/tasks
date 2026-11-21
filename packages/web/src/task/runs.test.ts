@@ -46,6 +46,25 @@ describe("[M6.page.run-words] a run's entry says what is the case and what the p
     });
   });
 
+  test("a working run says how long it has said nothing, from a minute on, and keeps Stop", () => {
+    const since = 1_000_000;
+    expect(ids(runView(run({ quiet_since: since }), "Codex", since + 59_000))).toEqual([
+      "run.working",
+    ]);
+    const quiet = runView(run({ quiet_since: since }), "Codex", since + 25 * 60_000 + 5_000);
+    expect(quiet).toMatchObject({ tone: "working", stoppable: true });
+    expect(quiet.status[1]).toEqual({ id: "run.quiet", values: { minutes: 25 } });
+  });
+
+  test("a run whose permission refused some of the agent's requests says how many", () => {
+    const done = runView(run({ state: "succeeded", refused: 2 }), "Claude Code");
+    expect(done.status).toContainEqual({
+      id: "run.refused",
+      values: { count: 2, label: "Claude Code" },
+    });
+    expect(ids(runView(run({ state: "succeeded" }), "Claude Code"))).toEqual(["run.done"]);
+  });
+
   test("done shows the answer, and what it left only when something had to be ended; a stop always says what was ended", () => {
     const done = runView(
       run({
