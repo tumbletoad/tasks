@@ -1,9 +1,10 @@
 // The views of the sidebar as pure functions of the live rows, so membership and
-// the counts are unit tests. Today's sections and week strip are `todayOf`; each status
+// the counts are unit tests. Today's numbers are `dayNumbersOf`, its sections `todayOf`; each status
 // view's grouping is `VIEW_LIST`.
 //
 // - Status views are disjoint (U5): Inbox holds the tasks with the inbox flag, and Open, Waiting,
-//   Review and Backlog hold the other active tasks by status. So the counts add up.
+//   Review and Backlog hold the other active tasks by status (Open also a status with no view of
+//   its own). So the counts add up, and every open task is in one view.
 // - Counts appear on Inbox, Open, Waiting, Review and Backlog only (U2), and only in the sidebar.
 // - Every view is always in the sidebar, in its fixed place, whatever it holds.
 // - Completed and Agents read data the live store does not hold (completed tasks are never
@@ -49,10 +50,13 @@ export const isView = (value: string): value is View =>
 export const isCounted = (view: View): view is CountedView =>
   (COUNTED as readonly string[]).includes(view);
 
-/** The counted view a task belongs to: Inbox by its flag, else its status; none for another. */
-export function countedViewOf(task: TaskRow): CountedView | undefined {
+/**
+ * The counted view a task belongs to: Inbox by its flag, else its status. A status of the space's
+ * own that has no view of its own is listed and counted in Open, so no open task is in no view.
+ */
+export function countedViewOf(task: TaskRow): CountedView {
   if (task.inbox) return "inbox";
-  return STATUS_VIEWS.find((view) => view === task.status);
+  return STATUS_VIEWS.find((view) => view === task.status) ?? "open";
 }
 
 /** The views of the default statuses (A1 `tasks.statuses`: open, waiting, review, backlog). */
@@ -68,8 +72,7 @@ export function viewCounts(tasks: Iterable<TaskRow>): Readonly<Record<CountedVie
     backlog: 0,
   };
   for (const task of tasks) {
-    const view = countedViewOf(task);
-    if (view !== undefined) counts[view] += 1;
+    counts[countedViewOf(task)] += 1;
   }
   return counts;
 }
@@ -82,6 +85,22 @@ export function viewCounts(tasks: Iterable<TaskRow>): Readonly<Record<CountedVie
 export function viewFilter(view: View): ((task: TaskRow) => boolean) | undefined {
   if (isCounted(view)) return (task) => countedViewOf(task) === view;
   return undefined;
+}
+
+/**
+ * The open tasks of each area and each project, by ID: what their views list (`areaFilter`). An
+ * area's count holds its projects' tasks.
+ */
+export function groupCounts(tasks: Iterable<TaskRow>): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  const add = (id: string | undefined) => {
+    if (id !== undefined) counts.set(id, (counts.get(id) ?? 0) + 1);
+  };
+  for (const task of tasks) {
+    add(task.area_id);
+    add(task.project_id);
+  }
+  return counts;
 }
 
 /** What a view's sidebar entry shows besides its name and icon. */
@@ -136,7 +155,7 @@ export function areaFilter(area: string, project?: string): (task: TaskRow) => b
 }
 
 // ---------------------------------------------------------------------------------------------
-// Today: the week strip, then Focus, This week, Next and Changes. A task appears in the
+// Today: a few numbers about the day, then Focus, This week, Next and Changes. A task appears in the
 // first section that selects it and in no other, so the sections are disjoint by construction:
 // each section takes only what the sections before it left. Computed from the task rows in the
 // client, never by a model: Today reads what the space holds (a star is `focus_on`, a plan is
@@ -161,8 +180,6 @@ export const NEXT_LIMIT = 3;
 export const CHANGES_LIMIT = 5;
 /** A change older than this drops off Changes. */
 export const CHANGES_DAYS = 7;
-/** The strip draws this many marks under a day, then a plus. */
-export const STRIP_MARKS = 4;
 
 const DAY_MS = 86_400_000;
 
@@ -183,30 +200,8 @@ export interface TaskChange {
 export interface TodayOptions {
   /** Next's length (`today.next_limit`). */
   readonly nextLimit?: number;
-  /** The strip's chosen day: Focus and This week show only that day's tasks. */
-  readonly day?: string | undefined;
   /** Agents' changes, newest first: Changes lists the tasks no section above holds. */
   readonly changes?: readonly TaskChange[];
-  /** Each area's colour slot, for the strip's marks. */
-  readonly slots?: ReadonlyMap<string, number>;
-}
-
-/** One mark under a day of the strip: a task due or planned that day. */
-export interface StripMark {
-  readonly task: string;
-  readonly title: string;
-  /** The task's area slot; none for a task without an area (a muted mark). */
-  readonly slot?: number;
-  /** A hollow ring: a waiting task's follow-up day (its `planned_for`). */
-  readonly ring: boolean;
-}
-
-export interface StripDay {
-  /** `YYYY-MM-DD`. */
-  readonly date: string;
-  readonly today: boolean;
-  /** Every task due or planned that day, in section order; the strip draws the first four. */
-  readonly marks: readonly StripMark[];
 }
 
 export interface TodaySectionRows {
@@ -215,8 +210,6 @@ export interface TodaySectionRows {
 }
 
 export interface Today {
-  /** Seven days, today first. */
-  readonly strip: readonly StripDay[];
   /** The sections that have rows, in order. */
   readonly sections: readonly TodaySectionRows[];
 }
@@ -376,16 +369,6 @@ const nextOrder =
     a.created_at - b.created_at ||
     byText(a.id, b.id);
 
-/** Whether a day is a task's due or planned day. */
-export const onDay = (task: TaskRow, day: string, clock: Clock): boolean =>
-  dueDayOf(task, clock) === day || plannedOf(task) === day;
-
-/** The strip's days: today and the six after it. */
-export function stripDays(clock: Clock): string[] {
-  const today = dayNumber(clock.today) ?? 0;
-  return Array.from({ length: 7 }, (_, i) => dateOf(today + i));
-}
-
 /**
  * The first `n` of a list in an order, in that order: one pass that keeps the best `n`, so Next
  * costs a scan of the open tasks, not a sort of them.
@@ -408,10 +391,40 @@ function first(list: readonly TaskRow[], n: number, order: Order): TaskRow[] {
   return best;
 }
 
+/** Today's numbers that the open tasks give: each counts what the page it links to lists. */
+export interface DayNumbers {
+  /** Due before today: what `is:overdue` finds. */
+  readonly late: number;
+  /** Due today, at any time of it: what `due:today` finds open. */
+  readonly dueToday: number;
+  /** What the Waiting view lists. */
+  readonly waiting: number;
+}
+
+export function dayNumbersOf(tasks: Iterable<TaskRow>, clock: Clock): DayNumbers {
+  let late = 0;
+  let dueToday = 0;
+  let waiting = 0;
+  for (const task of tasks) {
+    if (task.lifecycle !== "active") continue;
+    const due = dueDayOf(task, clock);
+    if (due !== undefined && due < clock.today) late += 1;
+    else if (due === clock.today) dueToday += 1;
+    if (countedViewOf(task) === "waiting") waiting += 1;
+  }
+  return { late, dueToday, waiting };
+}
+
+/** The first day of the week `today` is in: Monday. */
+export function weekStartOf(today: string): string {
+  const day = dayNumber(today) ?? 0;
+  // Day 0 (1970-01-01) was a Thursday: Monday is 3 days after it in the cycle.
+  return dateOf(day - ((day + 3) % 7));
+}
+
 /**
- * Today from the open tasks. Focus and This week are what the strip marks; the strip's chosen day
- * narrows what they show to that day. Next takes the first `nextLimit` open tasks left. Changes
- * lists the tasks agents changed that no section above holds, newest first.
+ * Today from the open tasks: Focus, This week, then the first `nextLimit` open tasks left as Next,
+ * and Changes, the tasks agents changed that no section above holds, newest first.
  */
 export function todayOf(tasks: Iterable<TaskRow>, clock: Clock, options: TodayOptions = {}): Today {
   const nextLimit = options.nextLimit ?? NEXT_LIMIT;
@@ -438,36 +451,8 @@ export function todayOf(tasks: Iterable<TaskRow>, clock: Clock, options: TodayOp
   focus.sort(focusOrder(k));
   week.sort(weekOrder(k));
 
-  // The strip marks the days of the tasks Focus and This week hold, before the day filter.
-  const days = stripDays(clock);
-  const marks = new Map<string, StripMark[]>(days.map((d) => [d, []]));
-  for (const task of [...focus, ...week]) {
-    const due = dueDayOf(task, clock);
-    const planned = plannedOf(task);
-    const slot = task.area_id === undefined ? undefined : options.slots?.get(task.area_id);
-    const mark = (ring: boolean): StripMark => ({
-      task: task.id,
-      title: task.title,
-      ...(slot === undefined ? {} : { slot }),
-      ring,
-    });
-    if (due !== undefined) marks.get(due)?.push(mark(false));
-    if (planned !== undefined && planned !== due) {
-      marks.get(planned)?.push(mark(task.status === "waiting"));
-    }
-  }
-  const strip = days.map((date) => ({
-    date,
-    today: date === clock.today,
-    marks: marks.get(date) ?? [],
-  }));
-
-  const day = options.day;
-  const shownFocus = day === undefined ? focus : focus.filter((t) => onDay(t, day, clock));
-  const shownWeek = day === undefined ? week : week.filter((t) => onDay(t, day, clock));
-  // Next and Changes never take a task Focus or This week selected, shown or filtered out: a task
-  // keeps its one section, and the day filter only narrows what that section shows. Next's
-  // candidates are the open tasks outside the Inbox that neither section above selected.
+  // A task keeps its one section: Next's candidates are the open tasks outside the Inbox that
+  // neither section above selected, and Changes takes none of the sections above.
   const next = first(open, nextLimit, nextOrder(clock));
   const above = new Set([...focus, ...week, ...next].map((t) => t.id));
   const since = clock.now - CHANGES_DAYS * DAY_MS;
@@ -485,11 +470,11 @@ export function todayOf(tasks: Iterable<TaskRow>, clock: Clock, options: TodayOp
   const add = (key: TodaySection, rows: readonly TaskRow[]) => {
     if (rows.length > 0) sections.push({ key, tasks: rows });
   };
-  add("focus", shownFocus);
-  add("week", shownWeek);
+  add("focus", focus);
+  add("week", week);
   add("next", next);
   add("changes", changed);
-  return { strip, sections };
+  return { sections };
 }
 
 // ---------------------------------------------------------------------------------------------

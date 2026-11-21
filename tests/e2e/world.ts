@@ -25,7 +25,14 @@ import { REDEEM_PER_MINUTE } from "../../packages/service/src/http/auth.ts";
 import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { checkedDriver, seedMira } from "../../packages/testkit/src/index.ts";
-import { addBulkTasks, addFinishedTasks, type FinishedCounts } from "./bulk.ts";
+import {
+  addBulkTasks,
+  addFinishedTasks,
+  addLargeSpace,
+  setScales,
+  type FinishedCounts,
+  type Scales,
+} from "./bulk.ts";
 import type { FakeCodexCase } from "./codex-cases.ts";
 import { fakeInstanceToml, type TerminalCall } from "./fake-terminal.ts";
 
@@ -77,6 +84,8 @@ export interface World {
   machine(key: string, value: unknown): Promise<void>;
   /** The fake terminal's command lines so far. */
   terminal(): TerminalCall[];
+  /** The folders the file manager was asked to show so far, as the service resolved them. */
+  folders(): string[];
   /** The cases the next runs of the task `ref` play, in order (a world with runs). */
   codex(ref: string, cases: readonly FakeCodexCase[]): void;
   /**
@@ -111,6 +120,10 @@ export interface WorldOptions {
   readonly bulk?: number;
   /** Finished fixture tasks to add to Mira's space before the service opens it (bulk.ts). */
   readonly finished?: FinishedCounts;
+  /** Mira's space grown to the size of one in real use (bulk.ts addLargeSpace). */
+  readonly large?: boolean;
+  /** Mira's own statuses and effort keys. */
+  readonly scales?: Scales;
   /**
    * A second instance, after the fake agent: the fake Codex (fake-codex.ts), which can work on a
    * task in the background. `World.codex` picks the cases its runs play.
@@ -171,6 +184,12 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         options.bulk,
       );
     }
+    if (options.large === true) {
+      await addLargeSpace(seeded.folder, { id: machine, name: "mira-desktop", os: OS });
+    }
+    if (options.scales !== undefined) {
+      await setScales(seeded.folder, { id: machine, name: "mira-desktop", os: OS }, options.scales);
+    }
     if (options.finished !== undefined) {
       await addFinishedTasks(
         seeded.folder,
@@ -218,7 +237,12 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
 
     const record = join(temp.root, "terminal.jsonl");
     writeFileSync(record, "");
-    const proc = services.start(home, { script: ENTRY, env: { E2E_UI: ui, E2E_TERMINAL: record } });
+    const shown = join(temp.root, "folders.txt");
+    writeFileSync(shown, "");
+    const proc = services.start(home, {
+      script: ENTRY,
+      env: { E2E_UI: ui, E2E_TERMINAL: record, E2E_FOLDERS: shown },
+    });
     json = await waitReady(home, proc.pid);
     const endpoint = json.endpoint?.path;
     const http = json["http"] as { port?: number } | null;
@@ -346,6 +370,10 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           .split("\n")
           .filter((line) => line !== "")
           .map((line) => JSON.parse(line) as TerminalCall),
+      folders: () =>
+        readFileSync(shown, "utf8")
+          .split("\n")
+          .filter((line) => line !== ""),
       leaveUnread: (ref) => {
         appendFileSync(unread, `${ref}\n`);
       },
