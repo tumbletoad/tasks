@@ -259,6 +259,27 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     expect(work.error).toBe("Fixture text. Sign in with: claude auth login");
   });
 
+  test("an error that only mentions a login, such as a plugin's, gets no hint to sign in to Claude Code", async () => {
+    const recorded = readClaudeFixture("windows-plain").filter((l) => l.dir === "recv");
+    const init = recorded.find((l) => l.msg["subtype"] === "init")?.msg ?? {};
+    const result = recorded.find((l) => l.msg["type"] === "result")?.msg ?? {};
+    const failed = {
+      ...result,
+      is_error: true,
+      subtype: "error_during_execution",
+      result: "The docs plugin's login server timed out.",
+    };
+    const toProgram = new PassThrough();
+    const fromProgram = new PassThrough();
+    const driver = claudeDriver({ request: "Look." })(
+      { stdin: toProgram, stdout: fromProgram },
+      () => undefined,
+    );
+    fromProgram.write(`${JSON.stringify(init)}\n${JSON.stringify(failed)}\n`);
+    expect((await driver.settled).error).toBe("The docs plugin's login server timed out.");
+    driver.close();
+  });
+
   test("a helper agent working in the background holds the work: the program's own turn about it is the answer", async () => {
     const { driver, fake, events } = bench({ fixture: "windows-background-agent", pace: 0.05 });
     const work = await driver.settled;
