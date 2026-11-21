@@ -67,7 +67,7 @@ export function deleteKey(key: ThrowawayKey): void {
   rmSync(`${key.privateKey}.pub`, { force: true });
 }
 
-const ARCHIVE_NAME = /^tasks-(.+)-(linux-x64\.tar\.gz|win-x64\.zip)$/;
+const ARCHIVE_NAME = /^ttasks-(.+)-(linux-x64\.tar\.gz|win-x64\.zip)$/;
 
 export interface DistArchive {
   file: string;

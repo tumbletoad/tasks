@@ -382,7 +382,7 @@ export function removeRuntimeDir(
   const path = service?.endpoint?.path;
   if (path === undefined || service?.endpoint?.kind !== "unix") return;
   const dir = path.slice(0, path.lastIndexOf("/"));
-  if (/^\/run\/user\/\d+\/tasks-[0-9a-z]{10}$/.test(dir)) {
+  if (/^\/run\/user\/\d+\/ttasks-[0-9a-z]{10}$/.test(dir)) {
     rmSync(dir, { recursive: true, force: true });
   }
 }
