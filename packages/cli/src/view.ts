@@ -1,7 +1,7 @@
 // `ttasks view` (A1 3.13, M3.10): the space's generated view, `view/`. The service carries it out
 // through its `view/rebuild` method (hub/space-verbs.ts); the CLI opens no space database.
 //
-//   tasks view rebuild [<space>]
+//   ttasks view rebuild [<space>]
 //
 // A rebuild looks at every file the projection placed and queues every task to render again. It
 // removes nothing the projection cannot prove it wrote: a file a person changed or added stays, or

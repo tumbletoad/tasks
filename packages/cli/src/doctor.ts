@@ -525,7 +525,7 @@ function updateCheck(state: string, installFile: string): Check {
       id: "update",
       status: "warn",
       detail:
-        "An update is running, or one was cut off: the service finishes it, or tasks update --repair does.",
+        "An update is running, or one was cut off: the service finishes it, or ttasks update --repair does.",
     };
   }
   let last: Record<string, unknown> | undefined;

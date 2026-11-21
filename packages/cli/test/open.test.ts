@@ -30,7 +30,7 @@ async function world(...args: Parameters<typeof httpWorld>): Promise<HttpWorld> 
 
 const URL_SHAPE = /^http:\/\/127\.0\.0\.1:(\d+)\/#k=([A-Za-z0-9_-]{43})(?:&to=([^&\s]+))?$/;
 
-describe("[A2.3.9.cli.open] tasks open", () => {
+describe("[A2.3.9.cli.open] ttasks open", () => {
   test(
     "--print-url: a one-time code in the fragment, after the listener proved itself; a browser redeems it once",
     SLOW,
@@ -256,7 +256,7 @@ describe("[A2.3.9.cli.open] tasks open", () => {
   );
 });
 
-describe("[A2.3.9.cli.open-start] tasks open starts a stopped service first", () => {
+describe("[A2.3.9.cli.open-start] ttasks open starts a stopped service first", () => {
   test(
     "a stopped service is started as ttasks service start does, with one line, then the page opens",
     SLOW,

@@ -384,7 +384,7 @@ describe("[A3.5.search.find] ttasks find prints a search page", () => {
   });
 });
 
-describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and ttasks prefs print for a person", () => {
+describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] ttasks area and ttasks prefs print for a person", () => {
   test("areas with their projects and counts, and keys with their values or shapes", () => {
     const groups = render(
       "group.manage",

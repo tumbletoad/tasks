@@ -21,7 +21,7 @@ afterAll(async () => {
 const tasks = (args: readonly string[], terminal = true, stdin?: string): Promise<Ran> =>
   runMain(args, { home: w.home, tty: terminal, ...(stdin === undefined ? {} : { stdin }) });
 
-describe("[A3.3.4.finish.already-wrapped] tasks done on a finished task", () => {
+describe("[A3.3.4.finish.already-wrapped] ttasks done on a finished task", () => {
   test(
     "no outcome: already completed, exit 0; another outcome: a conflict that says so, never a stale base",
     async () => {

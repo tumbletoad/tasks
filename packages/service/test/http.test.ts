@@ -169,7 +169,7 @@ describe("[A2.3.8.http.hub] the listener in the service", () => {
       const user = await w.user();
       await user.call("space/open", { path: join(w.root, "s", "mira") }, { timeoutMs: 120_000 });
       expect(await user.call("op/call", { op: "space.status", input: {} })).toHaveProperty("as_of");
-      // tasks open is refused with A2's message.
+      // ttasks open is refused with A2's message.
       const refused = await user.call("ui/mint_code", {}).then(
         () => undefined,
         (e: unknown) => errorOf(e),

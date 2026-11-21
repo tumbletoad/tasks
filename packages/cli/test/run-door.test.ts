@@ -182,7 +182,7 @@ function commandLines(): string {
     .join("\n");
 }
 
-describe("[A4.3.11.run.door] tasks run: a person starts a background run of a task, and reads its answer", () => {
+describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a task, and reads its answer", () => {
   test("the request reaches the agent over its protocol only, the answer is in the run's record, and the agent's tool call is recorded as the run's", async () => {
     const running = user(["run", task, "--wait", "-"], REQUEST_MARK);
     // While the run runs, no process carries the request on its command line.

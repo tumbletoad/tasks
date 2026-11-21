@@ -254,7 +254,7 @@ describe("[A2.3.12.6.update.kill] a kill at each journal step, of the updater or
   );
 });
 
-describe("[A2.3.12.6.update.installed] tasks update through the installed stable command", () => {
+describe("[A2.3.12.6.update.installed] ttasks update through the installed stable command", () => {
   test(
     "--from, a second update that waits, --rollback and --repair, with the data folders byte-identical",
     async () => {

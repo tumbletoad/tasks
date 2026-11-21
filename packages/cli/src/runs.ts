@@ -1,10 +1,10 @@
 // `ttasks run` (runs/*): a background run of a task, with the agent working in the task's folder
 // on its own, and what a person needs beside it at the command line.
 //
-//   tasks run <task> [--instance <id>] [--wait] [<request> | -]
-//   tasks run list [<task>]
-//   tasks run show <run>
-//   tasks run stop <run>
+//   ttasks run <task> [--instance <id>] [--wait] [<request> | -]
+//   ttasks run list [<task>]
+//   ttasks run show <run>
+//   ttasks run stop <run>
 //
 // The request is the person's own words for the agent: typed on their own command line (like
 // `ttasks add`), or read from stdin with `-`. Without one, the agent works on the task. It reaches

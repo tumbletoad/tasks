@@ -516,7 +516,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
       await new Promise((resolve) => server.close(resolve));
     }
 
-    // tasks open's HTTP probe against a listener that accepts and never answers.
+    // ttasks open's HTTP probe against a listener that accepts and never answers.
     const silentHttp = net.createServer((conn) => conn.on("error", () => undefined));
     await new Promise<void>((resolve) => silentHttp.listen(0, "127.0.0.1", resolve));
     const silentPort = (silentHttp.address() as net.AddressInfo).port;
@@ -740,7 +740,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
     const code = minted["code"] as string;
     const origin = `http://127.0.0.1:${String(port)}`;
 
-    // tasks open verifies the listener before it trusts the port (A2 3.8.4 step 2).
+    // ttasks open verifies the listener before it trusts the port (A2 3.8.4 step 2).
     const np = nonce();
     const probe = await fetch(`${origin}/api/v1/auth/probe`, {
       method: "POST",

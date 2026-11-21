@@ -21,7 +21,7 @@ const user = (argv: string[]) => runMain(argv, { home: world.home, cwd: world.ro
 const script = (argv: string[]) => runMain(argv, { home: world.home, cwd: world.root });
 const parsed = (stdout: string) => JSON.parse(stdout) as Record<string, unknown>;
 
-describe("[A1.5.projection.cli] tasks view rebuild from the CLI", () => {
+describe("[A1.5.projection.cli] ttasks view rebuild from the CLI", () => {
   test("the user rebuilds the view and a deleted file comes back; a script is refused; help names it", async () => {
     const refused = await script(["view", "rebuild", "--json"]);
     expect(refused.code).toBe(5);

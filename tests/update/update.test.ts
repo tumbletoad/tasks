@@ -813,7 +813,7 @@ describe("[A2.3.12.6.update.repair] a repair finishes or rolls back whatever an 
     writeCurrent(w.root, currentFor("0.2.0", os), os);
     writeJournal(w.state, journal);
     w.control.version = undefined;
-    // tasks update --repair, cut off once the install is reconciled, before the service is back...
+    // ttasks update --repair, cut off once the install is reconciled, before the service is back...
     const cut = new Error("cut");
     await expect(
       repairUpdate({
@@ -941,7 +941,7 @@ describe("[A2.3.12.6.update.repair] a repair finishes or rolls back whatever an 
     expect(existsSync(join(w.state, UPDATE_JOURNAL))).toBe(false);
   });
 
-  test("an unreadable journal keeps current's complete version; tasks update --repair and an install's finish repair first", async () => {
+  test("an unreadable journal keeps current's complete version; ttasks update --repair and an install's finish repair first", async () => {
     const w = await world("invalid");
     writeFileSync(join(w.state, UPDATE_JOURNAL), "{ not json");
     const repaired = await repairUpdate(w.options);
