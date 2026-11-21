@@ -183,9 +183,11 @@ export function Composer({ task, receipts, busy, instances, actions }: ComposerP
     if (opening.has(instance.key)) return;
     setOpening((known) => new Set(known).add(instance.key));
     const request = words;
+    // The button said "Open another": the person chose a second session.
+    const another = tileState(busy, instance.key) === "running";
     // The launch carries the words from the open action (carry), so the field clears once its
     // agent read them.
-    void actions.open(task, instance, request === "" ? undefined : request).then(() => {
+    void actions.open(task, instance, request === "" ? undefined : request, another).then(() => {
       setOpening((known) => {
         const next = new Set(known);
         next.delete(instance.key);
@@ -259,6 +261,8 @@ export function Composer({ task, receipts, busy, instances, actions }: ComposerP
             addNote();
           } else if (action === "open-first") {
             event.preventDefault();
+            // A held key repeats: one press is one Open.
+            if (event.repeat) return;
             if (first === undefined) say(t("composer.noAgent"));
             else {
               const why = held(first);
@@ -320,8 +324,14 @@ export function Composer({ task, receipts, busy, instances, actions }: ComposerP
               aria-keyshortcuts={i === 0 ? ariaKeys(openKeys, mac) : undefined}
               aria-description={tip}
               data-tip={tip}
-              onClick={() => {
+              onClick={(event) => {
+                // A double click is one Open, even when the first one's answer came in between.
+                if (event.detail > 1) return;
                 if (why === undefined) open(instance);
+              }}
+              onKeyDown={(event) => {
+                // A held Enter repeats the button's click: one press is one Open.
+                if (event.key === "Enter" && event.repeat) event.preventDefault();
               }}
             >
               <span className={styles.glyph} aria-hidden="true">

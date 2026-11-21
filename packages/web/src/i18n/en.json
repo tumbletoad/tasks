@@ -132,6 +132,7 @@
   "row.copyFailed": "The browser did not allow copying.",
   "row.openIn": "Open in {label}",
   "row.openFailed": "The launch was not recorded. Try again.",
+  "row.openUnanswered": "{product} did not answer. Try again: the task still opens only once.",
   "row.openMarker": "{why, select, missing {The folder {folder} has no {product} marker} other {The {product} marker in {folder} names {owners}} unread {The {product} marker in {folder} cannot be read}}, so it may not be the folder set for {of, select, project {the task's project} other {this task}}. Nothing was started.",
   "row.openAnyway": "Use this folder",
   "row.openFolder": "{reason, select, path_missing {The folder {folder} was not found on this machine} not_a_directory {The task's folder {folder} is a file, not a folder} not_answering {The folder {folder} did not answer in time} other {The folder {folder} cannot be used on this machine}}. Nothing was started.",

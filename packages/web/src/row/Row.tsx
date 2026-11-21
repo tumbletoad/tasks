@@ -258,6 +258,8 @@ function Slots({
             data-tip={tileTip}
             tabIndex={tab}
             onClick={(event) => {
+              // A double click is one click, even when the first one's answer came in between.
+              if (event.detail > 1) return;
               const action = tileClick(launch.state);
               if (action === "open" && launch.instance !== undefined)
                 void actions.open(task, launch.instance);

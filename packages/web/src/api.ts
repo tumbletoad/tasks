@@ -362,7 +362,13 @@ export class Api {
       pack = false,
       text,
       markFolder = false,
-    }: { readonly pack?: boolean; readonly text?: string; readonly markFolder?: boolean } = {},
+      another = false,
+    }: {
+      readonly pack?: boolean;
+      readonly text?: string;
+      readonly markFolder?: boolean;
+      readonly another?: boolean;
+    } = {},
   ): Promise<{ receipt: Receipt; copy: string | undefined }> {
     const result = await this.client.launch.open({
       task,
@@ -372,6 +378,8 @@ export class Api {
       ...(text === undefined || text.trim() === "" ? {} : { text }),
       // The person chose to open the task in a folder whose marker is gone or another's.
       ...(markFolder ? { mark_folder: true } : {}),
+      // "Open another": a second session, although the app runs the task here.
+      ...(another ? { another: true } : {}),
       request_id: id,
     });
     const { launch } = result;
