@@ -3,7 +3,7 @@
 // when the opener before it never started, so one launch never opens a URL twice. No real opener
 // runs and no real link is opened. Fixture data only.
 import { describe, expect, test } from "vitest";
-import { openUrl, type OpenerOptions } from "../src/opener.ts";
+import { openFolder, openUrl, type OpenerOptions } from "../src/opener.ts";
 import type { SpawnRequest, SpawnedProcess } from "../src/terminals/accept.ts";
 
 const URL_ = "claude-cli://open?cwd=%2Fhome%2Fmira%2Fwork&q=TTasks%20task%20M-14";
@@ -115,6 +115,58 @@ describe("[A4.5.routes.opener] the OS's URL opener: one element, defined outcome
     expect(none.r.calls).toEqual([]);
     const wayland = linux({ "/usr/bin/gio": 0 }, { WAYLAND_DISPLAY: "wayland-0" });
     expect((await openUrl(URL_, wayland.options)).result).toBe("opened");
+  });
+
+  test("a folder goes to the file manager: on Windows as its file URL, so a comma or a space stays in its name", async () => {
+    const r = recorder({ "C:\\Windows\\System32\\rundll32.exe": 1 });
+    const options: OpenerOptions = {
+      platform: "win32",
+      env: { SystemRoot: "C:\\Windows" },
+      spawn: r.spawn,
+      cwd: "C:\\Users\\mira",
+    };
+    const folder = "C:\\work\\lumen\\portal, old #2";
+    expect(await openFolder(folder, options)).toEqual({ result: "opened", opener: "rundll32" });
+    expect(r.calls.map((c) => c.argv)).toEqual([
+      [
+        "C:\\Windows\\System32\\rundll32.exe",
+        "url.dll,FileProtocolHandler",
+        "file:///C:/work/lumen/portal,%20old%20%232",
+      ],
+    ]);
+    const explorer = recorder({ "C:\\Windows\\explorer.exe": 1 });
+    expect(await openFolder(folder, { ...options, spawn: explorer.spawn })).toEqual({
+      result: "opened",
+      opener: "explorer",
+    });
+    expect(explorer.calls.at(-1)?.argv).toEqual(["C:\\Windows\\explorer.exe", folder]);
+
+    const posix = linux({ "/usr/bin/gio": 0 });
+    expect(await openFolder("/home/mira/work/portal", posix.options)).toEqual({
+      result: "opened",
+      opener: "gio",
+    });
+    expect(posix.r.calls.map((c) => c.argv)).toEqual([
+      ["/usr/bin/gio", "open", "/home/mira/work/portal"],
+    ]);
+    const headless = linux({ "/usr/bin/gio": 0 }, {});
+    expect((await openFolder("/home/mira/work/portal", headless.options)).result).toBe(
+      "no_session",
+    );
+  });
+
+  test("macOS: a folder is shown in Finder, never opened, so an application bundle is not started", async () => {
+    for (const folder of ["/Users/mira/work/portal", "/Users/mira/work/build/Lumen.app"]) {
+      const r = recorder({ "/usr/bin/open": 0 });
+      const options: OpenerOptions = {
+        platform: "darwin",
+        env: {},
+        spawn: r.spawn,
+        cwd: "/Users/mira",
+      };
+      expect(await openFolder(folder, options)).toEqual({ result: "opened", opener: "open" });
+      expect(r.calls.map((c) => c.argv)).toEqual([["/usr/bin/open", "-R", folder]]);
+    }
   });
 
   test("an opener that does not end in time is stopped, and its answer is unknown", async () => {

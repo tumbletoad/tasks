@@ -208,14 +208,15 @@ function hereWhere(here: HereSets, ctx: PlanContext, b: Binder): string {
   );
 }
 
-/** A task's due day: its date, or the UTC day of a timed due (M8's reminders bring zones). */
+/** A task's due day for sorting and `due:none`: its date, or the UTC day of a timed due. */
 const DUE = "coalesce(t.due_date, date(t.due_at / 1000, 'unixepoch'))";
 /** When a task last changed: the instant of the commit that last touched it. */
 const UPDATED = "(SELECT k.at FROM commits k WHERE k.seq = t.touched)";
 const SQL_OP: Readonly<Record<string, string>> = { "<": "<", "<=": "<=", ">": ">", ">=": ">=" };
 
 const HOUR = 3_600_000;
-const UNIT_MS: Readonly<Record<string, number>> = { h: HOUR, d: 24 * HOUR, w: 7 * 24 * HOUR };
+const DAY = 24 * HOUR;
+const UNIT_MS: Readonly<Record<string, number>> = { h: HOUR, d: DAY, w: 7 * DAY };
 
 /** The UTC offset of `timeZone` at instant `ms`, in milliseconds. */
 function offsetMs(ms: number, timeZone: string): number {
@@ -241,12 +242,19 @@ function offsetMs(ms: number, timeZone: string): number {
   return local - Math.floor(ms / 1000) * 1000;
 }
 
-/** The first instant of `date` in `timeZone`. */
+/**
+ * The first instant of `date` in `timeZone`: its midnight, or where the clocks resume when a
+ * change skips midnight. It is midnight at the offset of the day before or of the day after,
+ * whichever is the earliest that falls on `date`.
+ */
 export function startOfDay(date: string, timeZone: string): number {
   const [y, m, d] = date.split("-").map(Number);
   const midnight = Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1);
-  const first = midnight - offsetMs(midnight, timeZone);
-  return midnight - offsetMs(first, timeZone);
+  const onDate = (ms: number) => ms + offsetMs(ms, timeZone) >= midnight;
+  const starts = [-DAY, DAY]
+    .map((side) => midnight - offsetMs(midnight + side, timeZone))
+    .filter(onDate);
+  return Math.min(...starts);
 }
 
 function lowerOf(value: string): string {
@@ -320,18 +328,42 @@ function instantCondition(column: string, term: FilterTerm, ctx: PlanContext, b:
   }
 }
 
+/**
+ * A task's due compared with a day: a dated due by its date, a timed one by whether its instant
+ * falls before, in or after that day in the time zone, as the page shows it.
+ */
+function dueAgainst(op: FilterTerm["op"], date: string, ctx: PlanContext, b: Binder): string {
+  // Bound only where used: the statement names every parameter it is given.
+  const start = () => b.bind(startOfDay(date, ctx.timeZone));
+  const next = () => b.bind(startOfDay(addDays(date, 1), ctx.timeZone));
+  const either = (dated: string, timed: () => string) =>
+    `(t.due_date ${dated} ${b.bind(date)} OR (t.due_date IS NULL AND ${timed()}))`;
+  switch (op) {
+    case ":":
+      return either("=", () => `t.due_at >= ${start()} AND t.due_at < ${next()}`);
+    case "<":
+      return either("<", () => `t.due_at < ${start()}`);
+    case "<=":
+      return either("<=", () => `t.due_at < ${next()}`);
+    case ">":
+      return either(">", () => `t.due_at >= ${next()}`);
+    case ">=":
+      return either(">=", () => `t.due_at >= ${start()}`);
+  }
+}
+
 function dueCondition(term: FilterTerm, ctx: PlanContext, b: Binder): string {
   const value = lowerOf(term.value);
   if (value === "none") return `${DUE} IS NULL`;
-  if (value === "overdue") return `t.lifecycle = 'active' AND ${DUE} < ${b.bind(ctx.today)}`;
+  if (value === "overdue")
+    return `t.lifecycle = 'active' AND ${dueAgainst("<", ctx.today, ctx, b)}`;
   const relative = RELATIVE_DAYS.exec(value);
   let date: string;
   if (relative !== null) {
     const n = Number(relative[2]) * (relative[3] === "w" ? 7 : 1);
     date = addDays(ctx.today, relative[1] === "-" ? -n : n);
   } else date = value === "today" ? ctx.today : value;
-  if (term.op === ":") return `${DUE} = ${b.bind(date)}`;
-  return `${DUE} IS NOT NULL AND ${DUE} ${SQL_OP[term.op] ?? "="} ${b.bind(date)}`;
+  return dueAgainst(term.op, date, ctx, b);
 }
 
 const LIVE_NOTE = "n.deleted_at IS NULL";
@@ -408,7 +440,7 @@ function filterCondition(term: FilterTerm, ctx: PlanContext, b: Binder): string 
           // Starred for today or a day before, as the Focus view shows it (A5 3.4).
           return `t.focus_on IS NOT NULL AND t.focus_on <= ${b.bind(ctx.today)}`;
         case "overdue":
-          return `t.lifecycle = 'active' AND ${DUE} < ${b.bind(ctx.today)}`;
+          return `t.lifecycle = 'active' AND ${dueAgainst("<", ctx.today, ctx, b)}`;
         case "completed":
           return "t.lifecycle = 'completed'";
         case "archived":

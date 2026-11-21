@@ -60,40 +60,19 @@ function useExpandInUrl(): (task: TaskRow | undefined, gone?: boolean) => void {
   );
 }
 
-/** Writes Today's chosen day into the URL (`?day=`), or takes it out: a step Back undoes. */
-function useDayInUrl(): (day: string | undefined) => void {
-  const navigate = useNavigate();
-  return useCallback(
-    (day: string | undefined) => {
-      void navigate({
-        to: ".",
-        search: (prev: Record<string, unknown>) => {
-          const rest = Object.fromEntries(Object.entries(prev).filter(([key]) => key !== "day"));
-          return day === undefined ? rest : { ...rest, day };
-        },
-      });
-    },
-    [navigate],
-  );
-}
-
 export function ViewPage({
   view,
   task,
-  day,
 }: {
   readonly view: View;
   readonly task?: string | undefined;
-  /** Today's chosen day in the strip (`?day=`). */
-  readonly day?: string | undefined;
 }) {
   const t = useT();
   useTitle(t(VIEW_LABEL[view]));
   const onExpand = useExpandInUrl();
-  const onDay = useDayInUrl();
   const filter = useMemo(() => viewFilter(view), [view]);
   if (view === "today") {
-    return <TodayPage task={task} day={day} onExpand={onExpand} onDay={onDay} />;
+    return <TodayPage task={task} onExpand={onExpand} />;
   }
   if (view === "completed") return <CompletedPage task={task} onExpand={onExpand} />;
   if (view === "agents") return <AgentsPage task={task} onExpand={onExpand} />;

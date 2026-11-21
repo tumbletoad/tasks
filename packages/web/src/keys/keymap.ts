@@ -10,11 +10,11 @@
 import type { MessageId } from "../i18n/intl.tsx";
 
 /**
- * Where an action is reached: `page` anywhere in the page, `list` on a task's row, `strip` on a day
- * of Today's week, `field` in the top field, `composer` in a task's composer. Focus is in one of
- * the last four at a time; `page` is reached alongside each.
+ * Where an action is reached: `page` anywhere in the page, `list` on a task's row, `field` in the
+ * top field, `composer` in a task's composer. Focus is in one of the last three at a time; `page`
+ * is reached alongside each.
  */
-export type KeyScope = "page" | "list" | "strip" | "field" | "composer";
+export type KeyScope = "page" | "list" | "field" | "composer";
 
 export interface Binding {
   /** `event.key`: one character, or a named key such as `ArrowDown`, `Escape` or `F2`. */
@@ -71,19 +71,6 @@ export const KEYMAP = [
   // The title is a button: the browser opens and closes the task on Enter and Space.
   { id: "expand", scope: "list", keys: [{ key: "Enter" }, { key: " " }], label: "keys.expand" },
   { id: "rename", scope: "list", keys: [{ key: "F2" }], label: "keys.rename" },
-
-  {
-    id: "day",
-    scope: "strip",
-    keys: [{ key: "ArrowLeft" }, { key: "ArrowRight" }],
-    label: "keys.days",
-  },
-  {
-    id: "day-ends",
-    scope: "strip",
-    keys: [{ key: "Home" }, { key: "End" }],
-    label: "keys.dayEnds",
-  },
 
   { id: "add", scope: "field", keys: [{ key: "Enter" }], label: "keys.add", inFields: true },
   {

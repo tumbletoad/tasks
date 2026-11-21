@@ -409,6 +409,42 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect((await search({ q: "status:open" })).rows[0]).not.toHaveProperty("snippet_from");
   });
 
+  test("a timed due counts on its day in the time zone: late, today and later agree with the page", async () => {
+    const zone = { timeZone: "Europe/Amsterdam" };
+    const [late, early, dated, tomorrow] = created(
+      submit(fx, [
+        // 23:30 yesterday in Amsterdam.
+        {
+          kind: "task.create",
+          title: "Dueword late",
+          due: { at: Date.UTC(2026, 10, 11, 22, 30), tz: "Europe/Amsterdam" },
+        },
+        // 00:30 today in Amsterdam, still yesterday in UTC.
+        {
+          kind: "task.create",
+          title: "Dueword early",
+          due: { at: Date.UTC(2026, 10, 11, 23, 30), tz: "Europe/Amsterdam" },
+        },
+        { kind: "task.create", title: "Dueword dated", due: { date: "2026-11-12" } },
+        // 00:10 tomorrow in Amsterdam, still today in UTC.
+        {
+          kind: "task.create",
+          title: "Dueword tomorrow",
+          due: { at: Date.UTC(2026, 10, 12, 23, 10), tz: "Europe/Amsterdam" },
+        },
+      ]),
+    ) as [string, string, string, string];
+    const found = async (q: string) => new Set(ids(await search({ q, limit: 50 }, zone)));
+    expect(await found("dueword due:today")).toEqual(new Set([early, dated]));
+    expect(await found("dueword is:overdue")).toEqual(new Set([late]));
+    expect(await found("dueword due:overdue")).toEqual(new Set([late]));
+    expect(await found("dueword due<today")).toEqual(new Set([late]));
+    expect(await found("dueword due<=today")).toEqual(new Set([late, early, dated]));
+    expect(await found("dueword due>today")).toEqual(new Set([tomorrow]));
+    expect(await found("dueword due>=today")).toEqual(new Set([early, dated, tomorrow]));
+    expect(await found("dueword -due:today")).toEqual(new Set([late, tomorrow]));
+  });
+
   test("sort:effort lists quick work first by the space's scale, sort:-effort big work first, none last", async () => {
     const [large, none, small, medium] = created(
       submit(fx, [

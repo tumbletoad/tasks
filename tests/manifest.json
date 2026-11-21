@@ -2446,6 +2446,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.5.search.day-start",
+      "title": "A local date starts at its midnight, also on a night the clocks change, and where the clocks resume when a change skips midnight, so search's days agree with the page's",
+      "source": "A3 3.9.2",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.5.search.query",
       "title": "Random query strings, scopes, audiences and a cwd against a real index never raise an SQLite or FTS5 error: every query gives rows that match the contract or invalid_input, and many find rows; a space without the search tables answers filters and refuses words with space_unavailable not_indexed",
       "source": "A3 3.9.2, A3 5, A1 3.12, A7 3.10 M3.05",
@@ -3698,6 +3706,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.7.e2e.show-folder",
+      "title": "Playwright against the real service process: the row's folder button and the expanded folder line ask the service to show the task's own folder, which it resolves from the task, and the page says on which computer it opened; after the folder went the page says it was not found and nothing is shown",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.5.e2e.open-marker-screens",
       "title": "Playwright against the real service process: Open on a task whose folder was replaced at its path asks in one sentence that names the folder, starts nothing, in Sumi and Washi at 1,440 and 390 px",
       "owner": "M4",
@@ -4042,6 +4057,38 @@
       "id": "A5.3.3.web.views",
       "title": "The sidebar's views: Inbox and the status views are disjoint and their counts add up, Today has sections rather than a filter, Completed and Agents read what the live rows do not hold, an area or project view holds every status of its area or project, and every view keeps its sidebar entry in its place in every state: an empty one quieter without a count, and before the rows are known none claims a count or emptiness",
       "source": "A5 3.3, A5 3.5, A7 3.12 M5.01",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.web.folds",
+      "title": "The sidebar's folded areas are kept per space for the browser and come back after a reload, removed once none is folded; anything else stored there folds nothing",
+      "source": "A5 3.3",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.e2e.sidebar-folds",
+      "title": "Playwright against the real service process: an area of the side menu folds and unfolds by a click and by Enter and Space, stays folded after a reload and keeps its count folded; an area's and a project's counts follow a task that is added and one that is finished; opening an area, a project or a view moves no entry; a folded area holding the project on screen shows the way to it; a cut name shows whole in its tip",
+      "source": "A5 3.3",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.3.e2e.owner-screens",
+      "title": "Playwright against the real service with a space the size of one in use (five areas, thirty-two projects, about a hundred open tasks): the side menu, Today, Open, an area, a project and an expanded task at 1,280, 1,440, 1,920 and 390 px in Sumi and Washi with nothing scrolling sideways, the drawer at 390 px; the expanded task's facts with two, four and six statuses and effort keys: statuses in one row up to four and in two even rows past it, priority's options over effort's",
+      "source": "A5 3.3, A5 3.7",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.7.web.scales",
+      "title": "The space's statuses and effort scale reach the page from the snapshot's preferences, anything that does not read as a list of keys keeps the defaults, and a batch that changes a preference asks for a fresh snapshot, whose value the core then holds",
+      "source": "A5 3.7, A5 3.15",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4854,7 +4901,7 @@
     },
     {
       "id": "A5.3.4.web.today",
-      "title": "Today's sections and strip as data: A5 3.4's fixture example, Focus's order (late by oldest due, due today, then priority, due date and age), This week by the day that selects it with a waiting task's follow-up day, Next's rule, order and limit, the strip's day narrowing Focus and This week only, Changes (agents' changes off the sections above, newest first, five at most, seven days), and the expanded task held at its place in its section",
+      "title": "Today's sections and numbers as data: A5 3.4's fixture example, Focus's order (late by oldest due, due today, then priority, due date and age), This week by the day that selects it with a waiting task's follow-up day, Next's rule, order and limit, the day's numbers (late and due today by the due day, waiting as the Waiting view lists it) and the week's Monday, Changes (agents' changes off the sections above, newest first, five at most, seven days), and the expanded task held at its place in its section",
       "source": "A5 3.4, A5 3.14, A5 3.15, A7 3.12 M5.04",
       "owner": "M5",
       "kind": "ci",
@@ -4862,7 +4909,7 @@
     },
     {
       "id": "A5.3.4.web.today-disjoint",
-      "title": "Property test over generated clocks (time zones, instants around midnights and daylight-saving changes), tasks of every lifecycle, changes, days, Next limits and held tasks: no task is in two sections, each task is where an oracle written from the specification puts it (narrowed by the chosen day), Next is full whenever it has candidates, the strip's marks are exactly the Focus and This week tasks' due and planned days, and holding the expanded task keeps the sections disjoint and the task at its place",
+      "title": "Property test over generated clocks (time zones, instants around midnights and daylight-saving changes), tasks of every lifecycle, changes, days, Next limits and held tasks: no task is in two sections, each task is where an oracle written from the specification puts it, Next is full whenever it has candidates, the day's numbers count exactly the open tasks late, due today and waiting, and holding the expanded task keeps the sections disjoint and the task at its place",
       "source": "A5 3.4, A5 5, A7 3.12 M5.04",
       "owner": "M5",
       "kind": "ci",
@@ -4870,7 +4917,7 @@
     },
     {
       "id": "A5.3.4.web.today-page",
-      "title": "Today in a DOM with the real live store: the strip shows today's date once with one cell in the tab order, a tab shown again on a later day moves on to it, the sections are section elements under their headings with no view heading, the chosen day narrows Focus and This week and Escape clears it, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
+      "title": "Today in a DOM with the real live store: today's date shows once with the day's numbers, each a link to the search or view it counts, done this week from the service's finished tasks (a dash until it answers, read again when a task is finished and only then, dropped tasks left out), a tab shown again on a later day moves on to it, the sections are section elements under their headings with no view heading, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
       "source": "A5 3.4, A5 3.15, A5 3.22, A7 3.12 M5.04",
       "owner": "M5",
       "kind": "ci",
@@ -4878,7 +4925,7 @@
     },
     {
       "id": "A7.3.12.m5-04.e2e.today",
-      "title": "In Chromium and Firefox against the real service on a fixed Thursday: the strip and Focus, This week and Next with no task twice, today's date once on the screen, a day chosen in the strip by keyboard narrows Focus and This week and Escape clears it, an expanded task an agent moves stays in its section with ?task= kept until it is collapsed, Changes shows an agent's change off Today, axe-core finds no violation in either theme, nothing scrolls horizontally at 390 px, screenshots in Sumi and Washi at 1,440 and 390 px, and no CSP report",
+      "title": "In Chromium and Firefox against the real service: Focus, This week and Next with no task twice, today's date once on the screen, the day's numbers in their places, Done this week following a task finished while the page is open without moving a number, Late leading to the search of what is overdue with as many results and Waiting to its view, an expanded task an agent moves stays in its section with ?task= kept until it is collapsed, Changes shows an agent's change off Today, axe-core finds no violation in either theme, nothing scrolls horizontally at 390 px, screenshots in Sumi and Washi at 1,440 and 390 px, and no CSP report",
       "source": "A5 3.4, A5 3.3, A5 3.15, A5 3.19, A5 3.22, A7 3.12 M5.04",
       "owner": "M5",
       "kind": "ci",

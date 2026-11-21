@@ -236,7 +236,7 @@ describe("[A5.3.5.web.counts-add-up] property: the counts add up across disjoint
         }
         // The counts add up: every task some view holds, and none twice.
         expect(total).toBe(listed.size);
-        expect(total).toBe(tasks.filter((t) => countedViewOf(t) !== undefined).length);
+        expect(total).toBe(tasks.length);
       }),
     );
   });

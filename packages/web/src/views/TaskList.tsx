@@ -659,6 +659,20 @@ export function TaskList({
             return false;
           });
       },
+      // The folder opens on the computer the service runs on: the page is served there only, and
+      // the toast names that computer for a page looked at through a forwarded port.
+      folder: (task) => {
+        api.showFolder(task.id).then(
+          ({ opened, machine }) => {
+            say(t("row.folderShown", { machine: machine ?? "", opened: opened ? "yes" : "no" }));
+          },
+          (error: unknown) => {
+            if (live.failed(error)) return;
+            const refused = folderRefusal(error);
+            say(t("row.folderNotShown", { reason: refused?.reason ?? "other" }));
+          },
+        );
+      },
       // Run: the service queues the run and answers at once; the thread shows it from then on,
       // and the feed brings each of its steps. A refusal starts nothing and says why where the
       // person clicked; the folder line says it too when the folder is the reason. Without an
