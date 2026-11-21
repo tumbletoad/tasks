@@ -126,7 +126,7 @@ switch (command) {
             .map((name) => [name, process.env[name]]),
         ),
         extraCertificates: getCACertificates("extra").length,
-        prefixedNames: names.filter((name) => /^tasks_/i.test(name)).sort(),
+        prefixedNames: names.filter((name) => /^ttasks_/i.test(name)).sort(),
         launcher: launcherVariables(),
       })}\n`,
     );

@@ -1,16 +1,12 @@
-// The product's names, in one place (PLAN.md Q). Every name that users, agents or the
-// operating system see derives from these constants, so a rename touches this file (A2 3.2.1,
-// A3 3.2.4, A7 3.2). Package names (`@ttasks/*`) live in package.json files.
+// The product's names, in one place. Every name that people, agents or the operating system see
+// derives from these constants, so a rename touches this file. Package names (`@ttasks/*`) live
+// in package.json files.
 
 /**
- * The product's name, what people read outside the app and what agents are told: messages of the
- * CLI and the service, the Run value and service entries, `ttasks version`, briefs ("Every Brief
- * contains the product's name", A3) and the MCP server's instructions.
+ * The product's name, inside the app and out: the page, messages of the CLI and the service, the
+ * Run value and service entries, `ttasks version`, briefs and the MCP server's instructions.
  */
 export const PRODUCT_NAME = "TTasks";
-
-/** The name inside the app: the UI's title and its own words. */
-export const APP_NAME = "TTasks";
 
 /** The publisher, shown as "by TumbleToad" beside the product's name. */
 export const PUBLISHER = "TumbleToad";
@@ -21,20 +17,23 @@ export const PUBLISHER = "TumbleToad";
  */
 export const PRODUCT_ID = "ttasks";
 
-/** The CLI command (A2 3.10). */
+/** The CLI command. */
 export const CLI_NAME = PRODUCT_ID;
 
-/**
- * The MCP server key in every agent configuration (A3 3.2.4). Clients namespace tools with it. Its
- * own value, so it alone can change (to `tt-tasks`) if `tasks` confuses agents (A3 3.2.4).
- */
+/** The MCP server key in every agent configuration. Clients namespace tools with it. */
 export const MCP_SERVER_KEY = "ttasks";
 
 /**
  * The folder in the user's home that holds the person's data and configuration: `~/.ttasks/`
- * (`%USERPROFILE%\.ttasks\`), with `config/`, `state/`, `cache/` and `spaces/` (A2 3.2.1).
+ * (`%USERPROFILE%\.ttasks\`), with `config/`, `state/`, `cache/` and `spaces/`.
  */
 export const DATA_FOLDER = `.${PRODUCT_ID}`;
+
+/**
+ * The data folder of builds made before the product was renamed. Install names it when it finds
+ * one, so its spaces do not look lost.
+ */
+export const EARLIER_DATA_FOLDER = ".tasks";
 
 /**
  * The marker TTasks leaves in a project's or a task's folder, naming whose folder it is:
@@ -56,8 +55,8 @@ export function envVar<const N extends string>(name: N): `${typeof ENV_PREFIX}${
 
 /**
  * The name of one of the product's HTTP headers, for example `httpHeader("build")`: `ttasks-build`.
- * Header names derive from the identifier, never from a display name: "TTasks" holds a space,
- * which no header name may, and fetch refuses a request that carries one.
+ * Header names derive from the identifier, never from the display name, which may hold a space
+ * or a capital: fetch refuses a header name with a space.
  */
 export function httpHeader<const N extends string>(name: N): `${typeof PRODUCT_ID}-${N}` {
   if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`invalid header name suffix`);

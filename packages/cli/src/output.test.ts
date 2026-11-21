@@ -285,7 +285,7 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
   });
 });
 
-describe("[A3.5.search.find] tasks find prints a search page", () => {
+describe("[A3.5.search.find] ttasks find prints a search page", () => {
   test("a header, task and learning rows, placeholders, the changed marker and the next page", () => {
     const text = render(
       "task.search",
@@ -513,40 +513,40 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and ttasks prefs
 
 describe("[A3.3.5.error-text] a message and its hint, each said once", () => {
   test("a full stop between them, Run: before a bare command, a hint the message says left out", () => {
-    expect(messageWithHint("A field changed after the base: read again", "Read it.", "tasks")).toBe(
-      "A field changed after the base: read again. Read it.",
-    );
-    expect(messageWithHint("The service is not running.", "ttasks service start", "tasks")).toBe(
+    expect(
+      messageWithHint("A field changed after the base: read again", "Read it.", "ttasks"),
+    ).toBe("A field changed after the base: read again. Read it.");
+    expect(messageWithHint("The service is not running.", "ttasks service start", "ttasks")).toBe(
       "The service is not running. Run: ttasks service start",
     );
     expect(
       messageWithHint(
         "The service is not running. Start it with: ttasks service start",
         "ttasks service start",
-        "tasks",
+        "ttasks",
       ),
     ).toBe("The service is not running. Start it with: ttasks service start.");
-    expect(messageWithHint("Something went wrong!", undefined, "tasks")).toBe(
+    expect(messageWithHint("Something went wrong!", undefined, "ttasks")).toBe(
       "Something went wrong!",
     );
-    expect(messageWithHint("Gone", "  ", "tasks")).toBe("Gone.");
+    expect(messageWithHint("Gone", "  ", "ttasks")).toBe("Gone.");
     // A message that ends with a colon is finished by its hint, else by a full stop.
-    expect(messageWithHint("Could not start:", "ttasks doctor", "tasks")).toBe(
+    expect(messageWithHint("Could not start:", "ttasks doctor", "ttasks")).toBe(
       "Could not start: ttasks doctor",
     );
-    expect(messageWithHint("Could not start:", undefined, "tasks")).toBe("Could not start.");
+    expect(messageWithHint("Could not start:", undefined, "ttasks")).toBe("Could not start.");
     // An empty message is its hint alone, with no space before it.
-    expect(messageWithHint("", "ttasks doctor", "tasks")).toBe("Run: ttasks doctor");
-    expect(messageWithHint(" ", "Read it again.", "tasks")).toBe("Read it again.");
+    expect(messageWithHint("", "ttasks doctor", "ttasks")).toBe("Run: ttasks doctor");
+    expect(messageWithHint(" ", "Read it again.", "ttasks")).toBe("Read it again.");
     // Only a message that ends with the hint says it already: one that names the command for
     // another reason keeps the hint.
-    expect(messageWithHint("ttasks doctor failed", "ttasks doctor", "tasks")).toBe(
+    expect(messageWithHint("ttasks doctor failed", "ttasks doctor", "ttasks")).toBe(
       "ttasks doctor failed. Run: ttasks doctor",
     );
-    expect(messageWithHint("Run: xtasks doctor", "ttasks doctor", "tasks")).toBe(
-      "Run: xtasks doctor. Run: ttasks doctor",
+    expect(messageWithHint("Run: xttasks doctor", "ttasks doctor", "ttasks")).toBe(
+      "Run: xttasks doctor. Run: ttasks doctor",
     );
-    expect(messageWithHint("Read it again. Then wait", "Read it again.", "tasks")).toBe(
+    expect(messageWithHint("Read it again. Then wait", "Read it again.", "ttasks")).toBe(
       "Read it again. Then wait. Read it again.",
     );
   });

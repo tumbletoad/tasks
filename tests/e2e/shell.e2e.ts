@@ -5,7 +5,7 @@
 // tab on its space, and a new tab opens the default space. (The contrast and the lint are unit
 // tests: packages/web/src/theme/contrast.test.ts, scripts/lint-rules.test.ts.)
 import { expect, type Page, type WebSocketRoute } from "@playwright/test";
-import { APP_NAME, CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
+import { CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, spaceSwitcher, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
@@ -497,7 +497,7 @@ test.describe("[A5.3.3.e2e.installed] A newer installed version, and the restart
     const row = page.locator(`li[data-task="${world.task.ref}"]`);
     await expect(row).toBeVisible();
     const installed = page.locator('[data-part="installed"]');
-    await expect(installed).toContainText(`${APP_NAME} 99.0.0 is installed.`);
+    await expect(installed).toContainText(`${PRODUCT_NAME} 99.0.0 is installed.`);
     await expect(installed).toContainText(`${CLI_NAME} service restart`);
     await page.screenshot({ path: test.info().outputPath("installed-newer.png") });
 
@@ -517,9 +517,9 @@ test.describe("[A5.3.3.e2e.installed] A newer installed version, and the restart
       }),
     );
     await sockets.at(-1)?.close({ code: 1001 });
-    await expect(page.getByText(`${APP_NAME} was updated.`)).toBeVisible({ timeout: SLOW_MS });
+    await expect(page.getByText(`${PRODUCT_NAME} was updated.`)).toBeVisible({ timeout: SLOW_MS });
     await expect(page.getByRole("button", { name: "Reload" })).toBeVisible();
-    await expect(page.getByText(`${APP_NAME}'s service is not running`)).toHaveCount(0);
+    await expect(page.getByText(`${PRODUCT_NAME}'s service is not running`)).toHaveCount(0);
     await expect(installed).toHaveCount(0);
     // The rows it had stay on screen until the person reloads.
     await expect(row).toBeVisible();

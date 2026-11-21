@@ -476,7 +476,7 @@ function codexItems(r: CodexRun): JsonObject[] {
         const error = i["error"] as JsonObject | null | undefined;
         return {
           type: "mcp_tool_call",
-          server: oneOf(i["server"], ["ttasks-probe", "tasks"]),
+          server: oneOf(i["server"], ["ttasks-probe", "ttasks"]),
           tool: oneOf(i["tool"], PROBE_TOOLS),
           status: oneOf(i["status"], ITEM_STATUSES),
           error: error === null || error === undefined ? null : errorClass(JSON.stringify(error)),
@@ -876,7 +876,9 @@ async function a09(): Promise<void> {
   const prompt =
     "Call the tool mcp__tasks-probe__probe_marked once and the tool mcp__tasks-probe__probe_plain once, then reply with the single word OK.";
   const first =
-    process.env["TTASKS_M0_A09_SKIP_CALLS"] === "1" ? [] : (["default", "tool-search-off"] as const);
+    process.env["TTASKS_M0_A09_SKIP_CALLS"] === "1"
+      ? []
+      : (["default", "tool-search-off"] as const);
   for (const variant of first) {
     const label = `a09-${variant}`;
     const r = await claudeSession({
@@ -985,11 +987,11 @@ function realKeys(): Promise<void> {
   console.log(
     JSON.stringify({
       claude_user_mcp_servers: keys.claude_user_mcp_servers?.length ?? null,
-      claude_user_has_tasks: keys.claude_user_mcp_servers?.includes("tasks") ?? null,
+      claude_user_has_tasks: keys.claude_user_mcp_servers?.includes("ttasks") ?? null,
       claude_project_count: keys.claude_project_count,
       claude_project_entry_for_work: keys.claude_project_entry_for_work,
       codex_mcp_servers: keys.codex_mcp_servers?.length ?? null,
-      codex_has_tasks: keys.codex_mcp_servers?.includes("tasks") ?? null,
+      codex_has_tasks: keys.codex_mcp_servers?.includes("ttasks") ?? null,
     }),
   );
   return Promise.resolve();

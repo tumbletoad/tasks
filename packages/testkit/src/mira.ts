@@ -393,7 +393,8 @@ export async function seedMira(
   if (!Number.isSafeInteger(taskCount) || taskCount < 1 || taskCount > MAX_TASKS) {
     throw new RangeError(`tasks is an integer from 1 to ${String(MAX_TASKS)}`);
   }
-  const rng = new Rng(`ttasks-mira:${seed}`);
+  // Fixed text, not the product's identifier: the samples earlier builds made pin its digests.
+  const rng = new Rng(`tasks-mira:${seed}`);
   const random = (bytes: Uint8Array): void => {
     rng.fill(bytes);
   };

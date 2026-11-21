@@ -4,7 +4,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>local.ttasks.service.287e9rz8p1</string>
+  <string>local.ttasks.service.sgph75g0sh</string>
   <key>ProgramArguments</key>
   <array>
     <string>/Users/mira/ttasks-test/current/bin/ttasks-launchd</string>

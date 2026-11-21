@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { expect, test as base, type Page } from "@playwright/test";
-import { APP_NAME } from "../../packages/brand/src/index.ts";
+import { PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { startFresh, SLOW_MS, type FreshWorld } from "./first-run.ts";
 import { showsSpace, spaceSwitcher, violations, watchViolations } from "./page.ts";
 
@@ -36,7 +36,7 @@ const appsHeading = (page: Page) => page.getByRole("heading", { name: "Agent app
 const toggle = (page: Page, name: string) => page.getByRole("switch", { name });
 const changes = (page: Page) => page.locator('[data-part="changes"]');
 const openIn = (app: string) => `Open tasks in ${app}`;
-const toolsFor = (app: string) => `Give ${app} the ${APP_NAME} tools`;
+const toolsFor = (app: string) => `Give ${app} the ${PRODUCT_NAME} tools`;
 
 /** Turns a switch over the way a person does: a press on its label. */
 async function flip(page: Page, name: string, on: boolean): Promise<void> {
@@ -98,7 +98,7 @@ test.describe("[A7.3.12.m5-12.e2e.first-start] The first start: a space, two app
     await flip(page, openIn("Codex"), false);
     await expect(changes(page).locator("li")).toHaveCount(3);
     await expect(changes(page)).toContainText("Open offers Claude Code");
-    await expect(changes(page)).toContainText(`Codex gets the ${APP_NAME} tools`);
+    await expect(changes(page)).toContainText(`Codex gets the ${PRODUCT_NAME} tools`);
     await expect(changes(page)).not.toContainText("Open offers Codex");
     await page.getByRole("button", { name: "Show exactly what is written" }).click();
     const detail = changes(page).locator("pre");
@@ -148,7 +148,7 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
 
     // Removing: one switch, then Apply.
     await flip(page, toolsFor("Codex"), false);
-    await expect(changes(page)).toContainText(`Codex no longer has the ${APP_NAME} tools`);
+    await expect(changes(page)).toContainText(`Codex no longer has the ${PRODUCT_NAME} tools`);
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
     expect(fresh.codexConfig()).not.toContain("[mcp_servers.ttasks]");

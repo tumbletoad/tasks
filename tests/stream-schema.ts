@@ -33,8 +33,8 @@ export type Os = "windows" | "linux";
 // ---------------------------------------------------------------------------------------------
 // Vocabularies.
 export const VOCAB = {
-  server: ["tasks"],
-  "server-label": ["tasks", "ttasks-probe"],
+  server: ["ttasks"],
+  "server-label": ["ttasks", "ttasks-probe"],
   tool: [
     "ToolSearch",
     "mcp__ttasks__probe_echo",
@@ -884,7 +884,7 @@ function check(spec: Spec, v: unknown, path: string, os: Os, out: string[]): voi
     }
     for (const x of v) {
       check(spec.arr, x, `${path}[]`, os, out);
-      if (spec.probeOnly === true && !(isObject(x) && x["name"] === "tasks")) {
+      if (spec.probeOnly === true && !(isObject(x) && x["name"] === "ttasks")) {
         out.push(`${path}[]: only the probe server may be listed`);
       }
     }

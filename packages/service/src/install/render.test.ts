@@ -76,15 +76,15 @@ function install(platform: ServicePlatform, separate: boolean) {
 describe("[A2.3.3.service-install.golden] the OS entries per install ID, against golden files", () => {
   test("Linux: the systemd user unit of A2 3.3.3, plain for the daily install, ttasks-<id> for a test install", () => {
     const daily = install("linux", false);
-    expect(daily.id).toBe("98d3jrngrq");
+    expect(daily.id).toBe("7yj6swwdz7");
     expect(daily.names.unit).toBe("ttasks.service");
     expect(renderUnit({ program: daily.program })).toBe(golden("ttasks.service"));
 
     const test = install("linux", true);
-    expect(test.id).toBe("4zxtv3adxy");
-    expect(test.names.unit).toBe("ttasks-4zxtv3adxy.service");
+    expect(test.id).toBe("0rsmfcnh8j");
+    expect(test.names.unit).toBe("ttasks-0rsmfcnh8j.service");
     expect(renderUnit({ program: test.program, tasksHome: test.layout.home })).toBe(
-      golden("ttasks-4zxtv3adxy.service"),
+      golden("ttasks-0rsmfcnh8j.service"),
     );
   });
 
@@ -116,8 +116,8 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
     ).toBe(golden("local.ttasks.service.plist"));
 
     const test = install("darwin", true);
-    expect(test.id).toBe("287e9rz8p1");
-    expect(test.names.label).toBe("local.ttasks.service.287e9rz8p1");
+    expect(test.id).toBe("sgph75g0sh");
+    expect(test.names.label).toBe("local.ttasks.service.sgph75g0sh");
     expect(
       renderPlist({
         label: test.names.label,
@@ -125,7 +125,7 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
         home: HOMES.darwin,
         logs: test.layout.logs,
       }),
-    ).toBe(golden("local.ttasks.service.287e9rz8p1.plist"));
+    ).toBe(golden("local.ttasks.service.sgph75g0sh.plist"));
   });
 
   test("two test installs whose folders end in the same name get different unit, Run value and label names (SL-03)", () => {
@@ -307,7 +307,10 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
     // The comment does not make a plist ours: its label and program must be.
     expect(isOwnPlist(plist, "local.ttasks.service.other")).toBe(false);
     expect(
-      isOwnPlist(plist.replace("/current/bin/ttasks-launchd", "/bin/other"), "local.ttasks.service"),
+      isOwnPlist(
+        plist.replace("/current/bin/ttasks-launchd", "/bin/other"),
+        "local.ttasks.service",
+      ),
     ).toBe(false);
     // launchd runs Program instead of ProgramArguments' first string.
     expect(

@@ -34,7 +34,7 @@ export function readToken(store: TokenStore | undefined): string | null {
     return null;
   }
   if (value === null) return null;
-  if (typeof value === "string" && value.length === 51 && TOKEN_SHAPE.test(value)) return value;
+  if (typeof value === "string" && TOKEN_SHAPE.test(value)) return value;
   // Not ours: remove it, so it is never read again as anything.
   keepToken(store, null);
   return null;

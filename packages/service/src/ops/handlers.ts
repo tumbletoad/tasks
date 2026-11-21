@@ -11,7 +11,7 @@
 //
 // A write's result is built from the writer's result and the caller's input only, so a replay of
 // the same request ID gives the same result (A3 3.4.1), marked `replayed`.
-import { APP_NAME, CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import {
   findEntry,
   AppError,
@@ -3490,10 +3490,10 @@ async function unmarkedError(call: Call, error: LaunchFolderUnmarked): Promise<A
   }
   const why =
     error.reason === "marker_missing"
-      ? `The folder has no ${APP_NAME} marker`
+      ? `The folder has no ${PRODUCT_NAME} marker`
       : names.length === 0
-        ? `The folder's ${APP_NAME} marker cannot be read`
-        : `The folder's ${APP_NAME} marker names ${[...new Set(names)].join(", ")}`;
+        ? `The folder's ${PRODUCT_NAME} marker cannot be read`
+        : `The folder's ${PRODUCT_NAME} marker names ${[...new Set(names)].join(", ")}`;
   return new AppError({
     code: "invalid_input",
     message: `${why}, so it may not be the folder set for ${whose}. Nothing was started.`,

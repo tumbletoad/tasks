@@ -35,6 +35,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { MCP_SERVER_KEY } from "@ttasks/brand";
 import { registry } from "@ttasks/contracts";
 import { makeDir } from "@ttasks/files";
 import {
@@ -141,7 +142,8 @@ describe("[A3.3.12.setup.block] the instruction block on scratch homes", () => {
     expect(/^[\x20-\x7e\n]*$/u.test(text)).toBe(true);
     const named = [...text.matchAll(/`([a-z_]+)`/gu)].map((m) => m[1] ?? "");
     expect(named.length).toBeGreaterThanOrEqual(5);
-    for (const word of named.filter((w) => w !== "tasks")) expect(tools.has(word), word).toBe(true);
+    for (const word of named.filter((w) => w !== MCP_SERVER_KEY))
+      expect(tools.has(word), word).toBe(true);
     expect(text).toMatch(/^<!-- ttasks:begin v1 \(added by ttasks setup; remove with: /u);
     expect(text.endsWith("<!-- ttasks:end -->")).toBe(true);
     // The printed block: the same body, a begin marker that says it was added by hand.
@@ -388,7 +390,8 @@ describe("[A3.3.12.setup.block] the instruction block on scratch homes", () => {
     const input = w.input();
     const home = w.home("claude-code", ".claude");
     const file = join(home.home, "CLAUDE.md");
-    const older = "<!-- ttasks:begin v0 (added by ttasks setup) -->\r\n## Old\r\n<!-- ttasks:end -->";
+    const older =
+      "<!-- ttasks:begin v0 (added by ttasks setup) -->\r\n## Old\r\n<!-- ttasks:end -->";
     const text = `top\r\n\r\n${older}\r\nafter, by the person\r\n`;
     writeFileSync(file, text);
     // The record of the older apply, as that build wrote it.

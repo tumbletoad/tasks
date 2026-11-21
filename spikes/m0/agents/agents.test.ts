@@ -352,7 +352,7 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
     writeFileSync(
       join(dir, ".claude.json"),
       JSON.stringify({
-        mcpServers: { tasks: {} },
+        mcpServers: { ttasks: {} },
         projects: { "/w": {}, "/x": {} },
         oauthAccount: { secret: 1 },
       }),
@@ -361,10 +361,10 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
     expect(
       realHomeKeys(join(dir, ".claude.json"), join(dir, ".codex", "config.toml"), "/w"),
     ).toEqual({
-      claude_user_mcp_servers: ["tasks"],
+      claude_user_mcp_servers: ["ttasks"],
       claude_project_count: 2,
       claude_project_entry_for_work: true,
-      codex_mcp_servers: ["a.b", "tasks"],
+      codex_mcp_servers: ["a.b", "ttasks"],
     });
   });
 
@@ -381,7 +381,7 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
     const before = recordHome(home, named);
     expect(Object.keys(before.config).sort()).toEqual(named.slice().sort());
     // The reviewer's case: only Claude Desktop's file changes.
-    writeFileSync(desktop, JSON.stringify({ mcpServers: { other: { command: "x" }, tasks: {} } }));
+    writeFileSync(desktop, JSON.stringify({ mcpServers: { other: { command: "x" }, ttasks: {} } }));
     const changed = compareRecords(before, recordHome(home, named));
     expect(changed.restored).toBe(false);
     expect(changed.bytes_equal["claude_desktop_config.json"]).toBe(false);
@@ -433,7 +433,7 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
     writeFileSync(
       file,
       JSON.stringify({
-        mcpServers: { other: { env: { TOKEN: secret } }, tasks: { command: "k" } },
+        mcpServers: { other: { env: { TOKEN: secret } }, ttasks: { command: "k" } },
         theme: "dark",
       }),
     );

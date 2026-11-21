@@ -12,7 +12,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
-import { APP_NAME, CLI_NAME, httpHeader, PRODUCT_ID } from "@ttasks/brand";
+import { CLI_NAME, httpHeader, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { metaContent, startTags } from "./tags.ts";
 
 /** Where a built `index.html` takes the per-response style nonce. */
@@ -85,8 +85,8 @@ async function start() {
   if (!token) { signedOut(); return; }
   const ticketReply = await post("/api/v1/ws-ticket", {}, token);
   if (ticketReply.status === 401) { signedOut(); return; }
-  if (ticketReply.status === 409) { say("${APP_NAME} was updated. Reload this page."); return; }
-  if (!ticketReply.ok) { say("${APP_NAME}'s service did not answer."); return; }
+  if (ticketReply.status === 409) { say("${PRODUCT_NAME} was updated. Reload this page."); return; }
+  if (!ticketReply.ok) { say("${PRODUCT_NAME}'s service did not answer."); return; }
   const { ticket } = await ticketReply.json();
   const space = SPACE.exec(to)?.[1];
   const ws = new WebSocket("ws://" + location.host + "/api/v1/ws?ticket=" + encodeURIComponent(ticket));
@@ -108,12 +108,12 @@ async function start() {
       document.documentElement.dataset.seq = String(cursor.seq);
       detail.textContent = "As of " + cursor.seq;
     } else if (message.type === "error") {
-      say("${APP_NAME} cannot show this space: " + String(message.code) + ".");
+      say("${PRODUCT_NAME} cannot show this space: " + String(message.code) + ".");
     }
   };
-  ws.onclose = (event) => { if (event.code === 4401) signedOut(); else if (document.documentElement.dataset.state !== "signed-out") say("${APP_NAME}'s service is not running."); };
+  ws.onclose = (event) => { if (event.code === 4401) signedOut(); else if (document.documentElement.dataset.state !== "signed-out") say("${PRODUCT_NAME}'s service is not running."); };
 }
-start().catch(() => say("${APP_NAME}'s service did not answer."));
+start().catch(() => say("${PRODUCT_NAME}'s service did not answer."));
 `;
 
 const STYLE =
@@ -133,12 +133,12 @@ export function builtinUi(build: { version: string; build: string }): UiBundle {
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<meta name="csp-nonce" content="${NONCE_PLACEHOLDER}">`,
     `<meta name="ttasks-build" content="${escapeAttr(build.build)}">`,
-    `<title>${APP_NAME}</title>`,
+    `<title>${PRODUCT_NAME}</title>`,
     `<style nonce="${NONCE_PLACEHOLDER}">${STYLE}</style>`,
     `<script src="${bootPath}" integrity="${integrity(boot)}" defer></script>`,
     "</head>",
     "<body>",
-    `<main><h1>${APP_NAME}</h1><p id="status">Starting.</p><p id="detail"></p></main>`,
+    `<main><h1>${PRODUCT_NAME}</h1><p id="status">Starting.</p><p id="detail"></p></main>`,
     "</body>",
     "</html>",
     "",

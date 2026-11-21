@@ -130,9 +130,9 @@ describe("[A2.3.2.hub.paths] state folders per OS", () => {
       expect(layout.logs).toBe(`${home}${sep}state${sep}logs`);
       expect(layout.spaces).toBe(`${home}${sep}spaces`);
     }
-    expect(() => resolveLayout(facts("linux", { TTASKS_HOME: "ttasks-test" }, "/home/mira"))).toThrow(
-      LayoutError,
-    );
+    expect(() =>
+      resolveLayout(facts("linux", { TTASKS_HOME: "ttasks-test" }, "/home/mira")),
+    ).toThrow(LayoutError);
     // Empty means unset.
     expect(resolveLayout(facts("linux", { TTASKS_HOME: "" }, "/home/mira")).home).toBeUndefined();
     expect(() => resolveLayout(facts("linux", {}, undefined))).toThrow(LayoutError);
@@ -155,7 +155,7 @@ describe("[A2.3.2.hub.install-id] the install ID", () => {
     expect(isInstallId(id)).toBe(true);
     // Golden: M1.12 names units, Run values and labels with it, so it never drifts. The first
     // 50 bits of SHA-256("ttasks-install\n/home/mira/.ttasks/state"), 5 bits per character.
-    expect(id).toBe("98d3jrngrq");
+    expect(id).toBe("7yj6swwdz7");
   });
 
   test("spellings of one path give one ID: trailing separators and Windows case", () => {
@@ -165,7 +165,7 @@ describe("[A2.3.2.hub.install-id] the install ID", () => {
     // Linux paths keep their case: another case is another folder.
     expect(installId(canonicalStatePath("/home/Mira/.ttasks/state", "linux"))).not.toBe(linux);
     const win = installId(canonicalStatePath("C:\\Users\\Mira\\.ttasks\\state", "win32"));
-    expect(installId(canonicalStatePath("c:\\users\\mira\\.TASKS\\STATE\\", "win32"))).toBe(win);
+    expect(installId(canonicalStatePath("c:\\users\\mira\\.TTASKS\\STATE\\", "win32"))).toBe(win);
     expect(installId(canonicalStatePath("C:/Users/Mira/.ttasks/state", "win32"))).toBe(win);
   });
 

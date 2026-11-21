@@ -1,5 +1,5 @@
 // No message sends a person to a command that does not exist. Every string in the code a person
-// reads that names `tasks <word>` (or `${CLI_NAME} <word>`) in a command's place names a command of
+// reads that names `ttasks <word>` in a command's place names a command of
 // the verb table, and, for a command that takes a subcommand, one it takes. A string is read from
 // the code's syntax tree, so comments, which may name a command a later step builds, are not read.
 // Only a command's place is read, so ordinary English about tasks ("the user's tasks live in …")
@@ -9,6 +9,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, test } from "vitest";
+import { CLI_NAME } from "@ttasks/brand";
 import { CLI_SPEC } from "../src/args.ts";
 import { LOCAL_COMMANDS } from "../src/help.ts";
 
@@ -25,7 +26,7 @@ const SOURCES = [
 ];
 
 /**
- * Where a message tells the person to run a command, the text just before `tasks`: after "run",
+ * Where a message tells the person to run a command, the text just before the command: after "run",
  * "with:", a backtick or a quote. Every word there is checked.
  */
 const RUN_PLACE = /(?:\brun:?\s+|\bwith:\s+|[`"'])$/i;
@@ -52,7 +53,7 @@ function files(dir: string): string[] {
   });
 }
 
-/** The text of every string in a file, a template's substitutions as `tasks` when they name it. */
+/** The text of every string in a file, a template's substitutions as the command when they name it. */
 function strings(path: string): string[] {
   const source = ts.createSourceFile(
     path,
@@ -63,7 +64,7 @@ function strings(path: string): string[] {
   );
   const found: string[] = [];
   const cli = (expression: ts.Expression): string =>
-    /^(CLI_NAME|cli|CLI)$/.test(expression.getText(source)) ? "tasks" : "\u0000";
+    /^(CLI_NAME|cli|CLI)$/.test(expression.getText(source)) ? CLI_NAME : "\u0000";
   const visit = (node: ts.Node): void => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) found.push(node.text);
     else if (ts.isJsxText(node)) found.push(node.text);
@@ -81,17 +82,18 @@ function strings(path: string): string[] {
 
 /**
  * The commands a text names in a command's place that the verb table does not have, as
- * `tasks <word> [<word>]`. Elsewhere `tasks` is English or SQL's table, and not read.
+ * `ttasks <word> [<word>]`. Elsewhere the word is English, and not read.
  */
 export function unknownCommands(text: string): string[] {
   const verbs = new Set(CLI_SPEC.verbs.map((v) => v.verb));
   const wrong: string[] = [];
-  for (const m of text.matchAll(/\btasks ([a-z][a-z0-9-]*)(?: ([a-z][a-z0-9-]*))?/g)) {
+  const commandAt = new RegExp(`\\b${CLI_NAME} ([a-z][a-z0-9-]*)(?: ([a-z][a-z0-9-]*))?`, "g");
+  for (const m of text.matchAll(commandAt)) {
     const [, word = "", next] = m;
     const before = text.slice(0, m.index);
     const strict = RUN_PLACE.test(before);
     const local = LOCAL_COMMANDS.find((c) => c.name === word);
-    // A command that takes a subcommand is no English word after "tasks": its subcommand is
+    // A command that takes a subcommand is no English word after the command: its subcommand is
     // checked wherever it stands ("add it with ttasks roots add").
     const named = local?.subcommands !== undefined && next !== undefined;
     if (!strict && !named && !NAME_PLACE.test(before)) continue;
@@ -122,15 +124,15 @@ describe("[A2.3.10.cli.hints] every command a message names exists", () => {
     expect(unknownCommands("Run: ttasks service restart")).toEqual([]);
     expect(unknownCommands("Several tasks in Mira have its source key")).toEqual([]);
     expect(unknownCommands("ttasks space has no command like that")).toEqual([]);
-    expect(unknownCommands("tasks has no command like that")).toEqual([]);
+    expect(unknownCommands("ttasks has no command like that")).toEqual([]);
     // Where a message tells the person to run something, every word is checked.
     expect(unknownCommands("Run: ttasks get M-1")).toEqual(["ttasks get"]);
-    expect(unknownCommands("Try `tasks match M-1`.")).toEqual(["tasks match"]);
+    expect(unknownCommands("Try `ttasks match M-1`.")).toEqual(["ttasks match"]);
     expect(unknownCommands("Run: ttasks service is")).toEqual(["ttasks service is"]);
     // Where it names a command, a missing one is found too.
-    expect(unknownCommands("tasks spaces list")).toEqual(["tasks spaces"]);
+    expect(unknownCommands("ttasks spaces list")).toEqual(["ttasks spaces"]);
     expect(unknownCommands("Usage:\n  ttasks space mend <folder>")).toEqual(["ttasks space mend"]);
-    expect(unknownCommands("Fix it first. tasks mend does the rest.")).toEqual(["ttasks mend"]);
+    expect(unknownCommands("Fix it first. ttasks mend does the rest.")).toEqual(["ttasks mend"]);
     expect(unknownCommands("Recover it with: ttasks space mend <folder>.")).toEqual([
       "ttasks space mend",
     ]);
@@ -139,7 +141,7 @@ describe("[A2.3.10.cli.hints] every command a message names exists", () => {
       "ttasks service reload",
     ]);
     // A command that takes a subcommand is checked mid-sentence too.
-    expect(unknownCommands("Fix it with tasks view mend <folder>.")).toEqual(["ttasks view mend"]);
+    expect(unknownCommands("Fix it with ttasks view mend <folder>.")).toEqual(["ttasks view mend"]);
     expect(unknownCommands("Add it with ttasks space open <folder>.")).toEqual([]);
     // English about tasks and SQL's table are not in a command's place, whatever their words.
     expect(unknownCommands("those tasks get no owner")).toEqual([]);

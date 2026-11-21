@@ -23,7 +23,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, type Plugin, type Rolldown } from "vite";
-import { APP_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import { SUMI, shippedThemeCss } from "./src/theme/themes.ts";
 
 export const WEB_DIR = dirname(fileURLToPath(import.meta.url));
@@ -59,7 +59,7 @@ const brandTitle: Plugin = {
   name: "brand-title",
   transformIndexHtml: {
     order: "pre",
-    handler: (html) => html.replaceAll("%APP_NAME%", APP_NAME),
+    handler: (html) => html.replaceAll("%PRODUCT_NAME%", PRODUCT_NAME),
   },
 };
 

@@ -122,7 +122,7 @@ export const VOCAB: ReadonlySet<string> = new Set([
   "cancel",
   "omnimod",
   // The probe server and its tool, as the recorder named them.
-  "tasks",
+  "ttasks",
   "probe_echo",
 ]);
 
