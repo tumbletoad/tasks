@@ -16,7 +16,7 @@ export interface RunOptions extends Pick<MainOptions, "versionFolder"> {
   readonly uiFolder?: string;
 }
 
-/** Runs `tasks` in this process and resolves with its exit code. */
+/** Runs `ttasks` in this process and resolves with its exit code. */
 export async function run(options: RunOptions = {}): Promise<number> {
   const io = processIo();
   process.on("SIGINT", () => {

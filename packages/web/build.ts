@@ -54,7 +54,7 @@ export function addIntegrity(out: string): string[] {
   return covered;
 }
 
-/** The name inside the app in the page's title, from packages/brand (PLAN.md Q). */
+/** The product's name in the page's title, from packages/brand. */
 const brandTitle: Plugin = {
   name: "brand-title",
   transformIndexHtml: {

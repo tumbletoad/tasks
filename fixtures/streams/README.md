@@ -7,7 +7,7 @@ Recorded on 2026-11-12 in lab run N (step M0.11, rows N01, N02, N03, N05) with C
 - `windows-*`: Windows 11. `claude -p` and `codex exec --json` with full access, both CLIs.
 - `linux-*`: Ubuntu 24.04 without sudo rights. `codex exec --json` only, in the default sandbox with the probe's tools on `default_tools_approval_mode = "approve"` (no full access and no Claude Code sessions there in this step).
 
-Every run used fixture prompts only ("Call the tool probe_echo with the text hello. Then reply with the single word done."), an empty working folder, and the lab's probe MCP server registered for that run only under the name `tasks`.
+Every run used fixture prompts only ("Call the tool probe_echo with the text hello. Then reply with the single word done."), an empty working folder, and the lab's probe MCP server registered for that run only under the name `ttasks`.
 
 ## Files
 
@@ -58,7 +58,7 @@ No run in lab run N ended inside a line: both CLIs wrote whole lines, also when 
 | number | token counts, request counts, durations, costs, limits, ratios | anything | one fixture number per kind (`100` tokens, `1000` ms, `0.001` USD, …): the type stays, the measurement goes |
 | list | `tools`, `matches`, `capabilities`, `skills`, `agents`, `plugins`, slash commands, `additional_directories` | a list | rebuilt from a fixture vocabulary: a few invented entries plus the probe's own tools the input named; never the observed list (an empty list stays empty) |
 
-Containers: an object keeps only its allowed fields; a map whose keys are data (`modelUsage`, `memory_paths`, `unifiedWindows`, `wire_tool_inputs`, `by_type`) gets synthetic keys; `mcp_servers` keeps the probe server `tasks` only; a content block or item of an unknown type keeps only `{"type":"unknown-value"}`; an event type the schema does not know becomes `{"type":"unknown-event"}`.
+Containers: an object keeps only its allowed fields; a map whose keys are data (`modelUsage`, `memory_paths`, `unifiedWindows`, `wire_tool_inputs`, `by_type`) gets synthetic keys; `mcp_servers` keeps the probe server `ttasks` only; a content block or item of an unknown type keeps only `{"type":"unknown-value"}`; an event type the schema does not know becomes `{"type":"unknown-event"}`.
 
 The inventory (`fields-<os>.json`) records, per event key and field path, the JSON types seen and what was really done (`kept`, `placeholder`, `fixture-value`, `synthetic-id`, `rebuilt-list`, `dropped`, …). A field name that is not on the allow-list is never written: it shows as `<unknown-<n>>` with its JSON type, and map keys show as `<map-key>`. In these recordings nothing was dropped.
 

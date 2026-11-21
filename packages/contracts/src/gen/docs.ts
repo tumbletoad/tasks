@@ -17,9 +17,9 @@ import { definitionTokens, mcpTool, toJsonSchema, type JsonSchema } from "../jso
 import { verbSpec } from "./artefacts.ts";
 
 export interface DocNames {
-  /** The CLI command, such as `tasks`. */
+  /** The CLI command, such as `ttasks`. */
   readonly cli: string;
-  /** The MCP server key agents see, such as `tasks`. */
+  /** The MCP server key agents see, such as `ttasks`. */
   readonly mcpServerKey: string;
 }
 

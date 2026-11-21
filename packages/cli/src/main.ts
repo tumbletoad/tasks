@@ -1,8 +1,8 @@
-// `tasks` (A2 3.10): one command. The generated operation verbs come from the registry's
+// `ttasks` (A2 3.10): one command. The generated operation verbs come from the registry's
 // `cli-spec.json` (A3 3.2.2); the local commands are routed here.
 //
 // Every operation verb, `ttasks space`, `ttasks roots` and `ttasks view` go through the service: the CLI opens no space database
-// itself. These work without a service, by design: `tasks` alone and `ttasks help` (they print the
+// itself. These work without a service, by design: `ttasks` alone and `ttasks help` (they print the
 // service's state from service.json), `ttasks version`, `ttasks doctor` (a stopped or untrusted
 // service is what it diagnoses) and `ttasks serve` (it is the service).
 //

@@ -24,7 +24,7 @@ const SHELLS: (readonly string[])[] = [
 ];
 
 /**
- * The stub `tasks`: its n-th start follows line n of `plan`. A number exits with it; `term:<code>`
+ * The stub `ttasks`: its n-th start follows line n of `plan`. A number exits with it; `term:<code>`
  * writes `ready.<n>`, waits for SIGTERM, notes it and exits with <code>. Each start is a line in
  * `starts`, with its PID.
  */

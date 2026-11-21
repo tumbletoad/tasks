@@ -84,7 +84,7 @@ export const METHOD = {
 export const HELLO_ID = 0;
 export const BIND_ID = 1;
 
-/** JSON-RPC error codes the protocol uses. TTasks errors travel as `tasks` with A3's body in `data`. */
+/** JSON-RPC error codes the protocol uses. TTasks errors travel as `app` with A3's body in `data`. */
 export const RPC_ERROR = {
   parse: -32700,
   invalidRequest: -32600,

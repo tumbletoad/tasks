@@ -1756,7 +1756,7 @@ function defaultEnvironment(options: LaunchServiceOptions): EnvironmentSource {
 /**
  * The product's command a terminal runs (A4 3.6.1 `{shim}`), so the shim is the service's own
  * build: for a service run from source (`pnpm ttasks serve`), the Node that runs it with its entry
- * script; otherwise the install's stable launcher in its command folder (`tasks`, `ttasks.exe`),
+ * script; otherwise the install's stable launcher in its command folder (`ttasks`, `ttasks.exe`),
  * which follows the current version. Undefined when neither is there: a terminal launch is then
  * refused before anything starts.
  */

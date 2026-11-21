@@ -50,7 +50,7 @@
     },
     {
       "id": "A7.3.2.brand.names",
-      "title": "Product names live in one place: TTasks, TTasks inside the app, by TumbleToad; the CLI name and the environment prefix derive from the identifier, the MCP key is a plain identifier of its own",
+      "title": "Product names live in one place: TTasks, by TumbleToad; the CLI name and the environment prefix derive from the identifier, the MCP key is a plain identifier of its own",
       "source": "A7 3.2, A2 3.2.1, A3 3.2.4",
       "owner": "M0",
       "kind": "ci",

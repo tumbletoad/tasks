@@ -1,6 +1,6 @@
 # TTasks: plan
 
-TTasks, by TumbleToad, is an open-source, agent-first task app between a plain task list and T3 Code: a calm task list that agents keep up to date, and a launch pad that sends each task to the right agent app, in the right folder, with the right account. Inside the app it is called TTasks. Its identifier is `tasks` everywhere. The site is `tumbletoad.com/tasks`.
+TTasks, by TumbleToad, is an open-source, agent-first task app between a plain task list and T3 Code: a calm task list that agents keep up to date, and a launch pad that sends each task to the right agent app, in the right folder, with the right account. Its identifier is `ttasks` everywhere. The site is `tumbletoad.com/tasks`.
 
 This file holds the decisions, the architecture in overview, the milestone order and pointers. The specifications A1 to A7 in `appendix/` hold the detail and win on specifics. `AGENTS.md` sets how the work runs. `VISION.md` describes the intended experience.
 
@@ -36,8 +36,8 @@ These carry the most weight. The plan as a whole is a guide, not a contract (D21
 | D21 | Direction | The plan is **a guide, not a contract**. When something blocks, another solution faithful to the vision is found and written into the specification. A decision changes the specification it belongs to, in the same pull request as the code. Work goes on improving after the milestones. The core stays lean, and code is rewritten when a better solution appears. |
 | D22 | Order, not dates | No calendar estimates. Milestones are ordered by dependencies. |
 | D23 | Tool definitions | **No forced size limit on MCP tool definitions.** They stay lean, with every exception that is needed or makes sense. Their size is measured and reported. Limits on what a tool returns stay. |
-| D24 | Name | **TTasks**, **by TumbleToad**, called **Tasks** inside the app, at `tumbletoad.com/tasks`. |
-| D25 | Identifier and folders | The identifier is **`tasks`** everywhere. All of a person's data and configuration live in `~/.ttasks` (`%USERPROFILE%\.ttasks`). The program is installed elsewhere, and removing it never removes data. |
+| D24 | Name | **TTasks**, **by TumbleToad**, at `tumbletoad.com/tasks`. |
+| D25 | Identifier and folders | The identifier is **`ttasks`** everywhere. All of a person's data and configuration live in `~/.ttasks` (`%USERPROFILE%\.ttasks`). The program is installed elsewhere, and removing it never removes data. |
 | D26 | Limits | **Limits are guidelines until real use.** The targets for performance, latency, memory and token counts were chosen by feel. Implementers aim for them and reviewers flag a breach, but no feature is cut or reworked for a limit unless the result is clearly bad or damaging, and a feature that is better or more complete while over a limit stays. **Functionality, usability, stability, flexibility and maintainability come before performance.** The limits are re-evaluated when the product is close to maturity and can be tested for its final look and feel. |
 | D27 | What quality work protects | **A person's work comes first.** Reviews, tests and hardening cover what a person does, in ordinary use and in unusual but plausible use, that could lose or damage their work or frustrate them: an edit at the wrong moment, a crash, a restore, two windows, a full disk, a sync tool, a wrong clock. Hostile code on the same machine is kept in mind and the cheap protections are taken, but not every such hole is closed: the specification says what is not covered. A small visual flaw or a minor bug ranks below all of that. |
 | D28 | Folders | **Folders belong to projects and tasks.** Adding a project means choosing an existing folder or creating one, from the page or by an agent. A folder is an absolute path stored in the space with the machine it is on, and it travels with sync, backups and export bundles: a local path is not a secret. A task may have its own absolute folder, also inside a project, and needs no project and no folder. There are no roots and no relative paths. **TTasks sets no limit on where agents work**: only the person's own setup of an agent app does. Where a rule costs a person a concept, a step or a refusal and buys little, it goes. |
@@ -134,7 +134,7 @@ Core rules: IDs are a type prefix plus 128 random bits in Crockford base32, with
 
 ## G. The agent interface (A3)
 
-One MCP server named `tasks`, registered once per agent home. Its name is a separate constant in `packages/brand`: if agents confuse it with an agent app's own task tools, only that name changes, to `tt-tasks`. Every connection sees the same 11 tools, online or offline: `status`, `search`, `get_task`, `add_tasks`, `update_task`, `add_entry`, `complete_task`, `reopen_task`, `organize`, `preferences` and `run_report` (accepted only from runs and routines). Permissions are checked per call.
+One MCP server named `ttasks`, registered once per agent home. Its name is a separate constant in `packages/brand`: if agents confuse it with an agent app's own task tools, only that name changes, to `tt-tasks`. Every connection sees the same 11 tools, online or offline: `status`, `search`, `get_task`, `add_tasks`, `update_task`, `add_entry`, `complete_task`, `reopen_task`, `organize`, `preferences` and `run_report` (accepted only from runs and routines). Permissions are checked per call.
 
 - Every write needs a `request_id`, and a retry returns the stored result.
 - Task content, source text and every editable name reach agents framed as data. Only notes the user addressed to agents are instructions.
@@ -274,8 +274,7 @@ Every name people, agents and the operating system see comes from `packages/bran
 | Term | Meaning |
 |---|---|
 | **TTasks** | The product's name, by TumbleToad: briefs, `ttasks --version`, the sign-in start entry's label, a desktop entry. |
-| **Tasks** | The name inside the app. |
-| **`tasks`** | The identifier: the command, `TTASKS_` variables, `~/.ttasks`, the MCP server name, pipe, socket, unit and label names, `tasks_space`, `tasks_backup`, `ttasks-local/1`, the install-ID prefix `ttasks-install`, package names. |
+| **`ttasks`** | The identifier: the command, `TTASKS_` variables, `~/.ttasks`, the MCP server name, pipe, socket, unit and label names, `tasks_space`, `tasks_backup`, `ttasks-local/1`, the install-ID prefix `ttasks-install`, package names. |
 | **Space** | One user's planning data in a folder, by default under `~/.ttasks/spaces/`. |
 | **Area**, **project** | The two grouping levels (renamable per space): lasting responsibilities, and bodies of work inside them. |
 | **Task**, **summary**, **context** | The unit of work; the one line under its title (the next step when there is one); the agent-maintained understanding of it. |

@@ -261,7 +261,7 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
     expect(unitNotOurs("[Service]\nExecStart=-/x/ttasks serve\n")).toBe("not_ours");
     expect(unitNotOurs("[Service]\nExecStart=/x/ttasks serve --other\n")).toBe("not_ours");
     // A continued line is one directive.
-    expect(unitNotOurs("[Service]\nExecStart=/x/tasks \\\n  serve\n")).toBeUndefined();
+    expect(unitNotOurs("[Service]\nExecStart=/x/ttasks \\\n  serve\n")).toBeUndefined();
     // A continuation still open at the end of the file is read, as systemd reads it.
     expect(unitNotOurs(`${ours.trimEnd()}\nAlso=backup.service\\`)).toBe("names_other_units");
     // Words end at ASCII whitespace only: a no-break space is part of the program's name.
@@ -298,7 +298,7 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
       ),
     ).toBe("names_other_units");
     expect(isOwnRunData('"C:\\Users\\mira\\.local\\bin\\ttasksw.exe"')).toBe(true);
-    expect(isOwnRunData('"D:\\Other\\TASKSW.EXE"')).toBe(true);
+    expect(isOwnRunData('"D:\\Other\\TTASKSW.EXE"')).toBe(true);
     expect(isOwnRunData('"C:\\Program Files\\Other\\other.exe" --tasks')).toBe(false);
     expect(isOwnRunData("C:\\Users\\mira\\.local\\bin\\ttasksw.exe")).toBe(false);
     expect(isOwnRunData('"C:\\x\\ttasksw.exe" --flag')).toBe(false);

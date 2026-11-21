@@ -1,6 +1,6 @@
 // The lab release's `lib/ttasks.mjs` (M0.07). `make-release.ts` puts it, `supervisor.mjs` and the
 // built kit (`lib/kit/*.mjs`) into a copy of the packaging spike's version folder, so the installed
-// launchers run the kit the way the product's launchers will run `tasks`:
+// launchers run the kit the way the product's launchers will run `ttasks`:
 //   ttasks service|call|open|ticket|run-shim|accounts|tree ...   the kit's command line
 //   ttasks mcp --state <dir> [--reconnect]                         the spike bridge (forwarder)
 //   ttasks shim --state <dir> <ticket>                             the stand-in interactive shim

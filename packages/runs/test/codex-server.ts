@@ -55,7 +55,7 @@ export interface FakeScenario {
   readonly leave?: "detached" | "in-group";
   /**
    * At the recorded tool call, these tools of the server the thread's configuration names under
-   * `tasks` are called for real, in order, on one connection: its command, arguments and
+   * `ttasks` are called for real, in order, on one connection: its command, arguments and
    * environment, with `home` as the install's home. Each answer goes to the log as
    * `{"tool": …, "tool_result": …}`.
    */

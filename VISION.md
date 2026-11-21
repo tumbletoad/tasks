@@ -1,6 +1,6 @@
 # Product vision
 
-This is the experience TTasks (called TTasks inside the app) is building toward, not a claim that every part exists today.
+This is the experience TTasks is building toward, not a claim that every part exists today.
 
 ## The promise
 

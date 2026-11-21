@@ -61,7 +61,7 @@ export interface Layout {
   readonly platform: NodeJS.Platform;
   /** `<root>`: the program's install root, with `versions/` and `current` (A2 3.12.2). */
   readonly root: string;
-  /** The folder of the command: `tasks` (a link) on Linux and macOS, the stable launchers on Windows. */
+  /** The folder of the command: `ttasks` (a link) on Linux and macOS, the stable launchers on Windows. */
   readonly bin: string;
   /** The person's data and configuration. No command removes anything in it unasked. */
   readonly data: string;

@@ -372,7 +372,7 @@ function claudeFacts(r: Recording, sessionId: string | undefined): JsonObject {
             mcp_servers: servers.map((s) => {
               const o = (typeof s === "object" && s !== null ? s : {}) as JsonObject;
               return {
-                name: o["name"] === "ttasks" ? "tasks" : "[other]",
+                name: o["name"] === "ttasks" ? "ttasks" : "[other]",
                 status: oneOf(o["status"], VOCAB["mcp-status"]),
               };
             }),
@@ -504,7 +504,7 @@ function codexFacts(r: Recording, lastMessage: string): JsonObject {
         const error = i["error"];
         items.push({
           type,
-          server: i["server"] === "ttasks" ? "tasks" : "[other]",
+          server: i["server"] === "ttasks" ? "ttasks" : "[other]",
           tool: oneOf(i["tool"], VOCAB["probe-tool"]),
           status,
           error: error === null || error === undefined ? null : errorClass(JSON.stringify(error)),
@@ -698,7 +698,7 @@ async function n01(): Promise<void> {
     row: "N01",
     machine,
     route:
-      'claude.exe -p in the signed-in home: --session-id, --output-format stream-json --verbose, --permission-mode bypassPermissions --permission-prompts none, --max-turns, --model haiku, --mcp-config <scratch file with the probe as "tasks"> --strict-mcp-config --setting-sources project, brief on stdin; empty working folder',
+      'claude.exe -p in the signed-in home: --session-id, --output-format stream-json --verbose, --permission-mode bypassPermissions --permission-prompts none, --max-turns, --model haiku, --mcp-config <scratch file with the probe as "ttasks"> --strict-mcp-config --setting-sources project, brief on stdin; empty working folder',
     runs,
   });
 }
@@ -1241,11 +1241,11 @@ function keys(): Promise<void> {
   console.log(
     JSON.stringify({
       claude_user_mcp_servers: k.claude_user_mcp_servers?.length ?? null,
-      claude_user_has_tasks: k.claude_user_mcp_servers?.includes("tasks") ?? null,
+      claude_user_has_tasks: k.claude_user_mcp_servers?.includes("ttasks") ?? null,
       claude_project_count: k.claude_project_count,
       claude_project_entry_for_work: k.claude_project_entry_for_work,
       codex_mcp_servers: k.codex_mcp_servers?.length ?? null,
-      codex_has_tasks: k.codex_mcp_servers?.includes("tasks") ?? null,
+      codex_has_tasks: k.codex_mcp_servers?.includes("ttasks") ?? null,
     }),
   );
   return Promise.resolve();

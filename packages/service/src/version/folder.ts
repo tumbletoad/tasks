@@ -31,7 +31,7 @@ export const MANIFEST_FORMAT = 1;
 
 export interface VersionManifest {
   readonly format: typeof MANIFEST_FORMAT;
-  /** The product (`tasks`). */
+  /** The product (`ttasks`). */
   readonly name: string;
   readonly version: string;
   readonly build: string;

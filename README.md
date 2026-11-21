@@ -1,6 +1,6 @@
 # TTasks
 
-TTasks, by TumbleToad, is an agent-first task app. It is a calm task list that agents keep up to date, and a launch pad that sends each task to the right agent app, in the right folder, with the right account. Inside the app it is called TTasks.
+TTasks, by TumbleToad, is an agent-first task app. It is a calm task list that agents keep up to date, and a launch pad that sends each task to the right agent app, in the right folder, with the right account.
 
 You see what matters, open a task with the agent you choose, and come back to a clear account of what changed, what needs you and what comes next. The aim is less time maintaining a system and more attention for the work itself. [The product vision](VISION.md) describes the experience we are building toward.
 
