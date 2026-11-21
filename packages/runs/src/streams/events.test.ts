@@ -16,7 +16,7 @@ const jsonl = (...events: object[]): string => events.map((e) => JSON.stringify(
 const ofKind = <K extends RunEvent["kind"]>(events: RunEvent[], kind: K) =>
   events.filter((e): e is Extract<RunEvent, { kind: K }> => e.kind === kind);
 
-const init = (servers: object[] = [{ name: "tasks", status: "connected" }]) => ({
+const init = (servers: object[] = [{ name: "ttasks", status: "connected" }]) => ({
   type: "system",
   subtype: "init",
   session_id: ID,
@@ -47,7 +47,7 @@ describe("[A4.5.parsers.events] claude-print events", () => {
     expect(claudeToolLabel("WebFetch")).toBe("web");
     expect(claudeToolLabel("TodoWrite")).toBe("plan");
     expect(claudeToolLabel("Task")).toBe("agent");
-    expect(claudeToolLabel("mcp__tasks__get_task")).toBe("tasks");
+    expect(claudeToolLabel("mcp__ttasks__get_task")).toBe("tasks");
     expect(claudeToolLabel("mcp__other__get_task")).toBe("tool");
     expect(claudeToolLabel("SomethingNew")).toBe("tool");
     expect(claudeToolLabel("__proto__")).toBe("tool");
@@ -62,7 +62,7 @@ describe("[A4.5.parsers.events] claude-print events", () => {
         init(),
         toolUse("t1", "Bash"),
         toolUse("t1", "Bash"), // the same call repeated
-        toolUse("t2", "mcp__tasks__probe"),
+        toolUse("t2", "mcp__ttasks__probe"),
         text("first"),
         text("second"),
         result({ result: "final" }),
@@ -99,10 +99,10 @@ describe("[A4.5.parsers.events] claude-print events", () => {
     expect(outcome.reason).toBe("success");
   });
 
-  test("a Tasks server that did not connect, and no Tasks server, are told apart", () => {
+  test("a TTasks server that did not connect, and no TTasks server, are told apart", () => {
     const failed = parseStream(
       "claude-print",
-      jsonl(init([{ name: "tasks", status: "failed" }])),
+      jsonl(init([{ name: "ttasks", status: "failed" }])),
       exit0,
     );
     expect(failed.outcome.session?.appTools).toBe("not-connected");
@@ -130,9 +130,9 @@ describe("[A4.5.parsers.events] claude-print events", () => {
       "claude-print",
       jsonl(
         init(),
-        { ...init([{ name: "tasks", status: "failed" }]), session_id: ID2, cwd: "/other" },
+        { ...init([{ name: "ttasks", status: "failed" }]), session_id: ID2, cwd: "/other" },
         { ...init([]), session_id: "not an id!", cwd: "/third" },
-        { ...init([{ name: "tasks", status: "connected" }]), cwd: "/w2" }, // the same session
+        { ...init([{ name: "ttasks", status: "connected" }]), cwd: "/w2" }, // the same session
       ),
       exit0,
     );

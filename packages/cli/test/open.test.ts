@@ -1,4 +1,4 @@
-// `tasks open` with the fragment code (A2 3.8.4, 3.9) and `tasks service port` (A2 3.8.2 step 5),
+// `ttasks open` with the fragment code (A2 3.8.4, 3.9) and `ttasks service port` (A2 3.8.2 step 5),
 // against a real service: the code is minted over the socket, the listener is proved by its HMAC
 // before the port is trusted, the URL carries the code in its fragment only, and a browser (a
 // Node client sending what a browser sends) redeems it once. A blocked UI prints A2's message, a
@@ -7,9 +7,9 @@
 import { createServer as createHttpServer } from "node:http";
 import { createServer, type Server, type Socket } from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
-import { blockedMessage, movedMessage } from "@tasks/service/http/shared";
-import { post, send } from "@tasks/service/test/http-client";
-import { httpWorld, persistPort, type HttpWorld } from "@tasks/service/test/http-world";
+import { blockedMessage, movedMessage } from "@ttasks/service/http/shared";
+import { post, send } from "@ttasks/service/test/http-client";
+import { httpWorld, persistPort, type HttpWorld } from "@ttasks/service/test/http-world";
 import { selfTest } from "../src/doctor-http.ts";
 import { probeListener, StartFailed } from "../src/open.ts";
 import { runMain } from "./cli-harness.ts";
@@ -68,7 +68,7 @@ describe("[A2.3.9.cli.open] tasks open", () => {
       main: { openUrl },
     });
     expect(ran.code).toBe(0);
-    expect(ran.stdout).toBe("Opened TT Tasks in the browser.\n");
+    expect(ran.stdout).toBe("Opened TTasks in the browser.\n");
     // The code is never printed when the browser is opened.
     expect(ran.stdout + ran.stderr).not.toMatch(/#k=/);
     const match = URL_SHAPE.exec(opened[0] ?? "");
@@ -92,12 +92,12 @@ describe("[A2.3.9.cli.open] tasks open", () => {
       env: { CLAUDECODE: "1" },
     });
     expect(ran.code).toBe(5);
-    expect(ran.stderr).toContain("Ask the user to open TT Tasks.");
+    expect(ran.stderr).toContain("Ask the user to open TTasks.");
     expect(ran.stdout).toBe("");
   });
 
   test(
-    "another user holds the UI's port: A2's message, no code, exit 6; tasks service port resolves it",
+    "another user holds the UI's port: A2's message, no code, exit 6; ttasks service port resolves it",
     SLOW,
     async () => {
       const w = await world("od");
@@ -166,7 +166,7 @@ describe("[A2.3.9.cli.open] tasks open", () => {
     SLOW,
     async () => {
       const w = await world("of", {}, { space: false });
-      const { keyOf } = await import("@tasks/service/test/harness");
+      const { keyOf } = await import("@ttasks/service/test/harness");
       const key = keyOf(w.home);
       const instance = w.service.instance;
       expect(await probeListener(w.port(), key, instance)).toBe(true);
@@ -258,7 +258,7 @@ describe("[A2.3.9.cli.open] tasks open", () => {
 
 describe("[A2.3.9.cli.open-start] tasks open starts a stopped service first", () => {
   test(
-    "a stopped service is started as tasks service start does, with one line, then the page opens",
+    "a stopped service is started as ttasks service start does, with one line, then the page opens",
     SLOW,
     async () => {
       const w = await world("og", {}, { space: false });
@@ -276,7 +276,7 @@ describe("[A2.3.9.cli.open-start] tasks open starts a stopped service first", ()
       });
       expect(ran.code).toBe(0);
       expect(starts).toBe(1);
-      expect(ran.stderr).toContain("Started TT Tasks's service.\n");
+      expect(ran.stderr).toContain("Started TTasks's service.\n");
       expect(URL_SHAPE.exec(ran.stdout.trim())?.[1]).toBe(String(w.port()));
       // A running service is not started again.
       const again = await runMain(["open", "--print-url"], {
@@ -316,7 +316,7 @@ describe("[A2.3.9.cli.open-start] tasks open starts a stopped service first", ()
       });
       expect(byHand.code).toBe(0);
       expect(byHand.stderr).toContain(
-        "Started TT Tasks's service.\nIt does not start by itself when you sign in. To have it start by itself, run: tasks service install\n",
+        "Started TTasks's service.\nIt does not start by itself when you sign in. To have it start by itself, run: ttasks service install\n",
       );
     },
   );
@@ -334,8 +334,8 @@ describe("[A2.3.9.cli.open-start] tasks open starts a stopped service first", ()
           startService: () =>
             Promise.reject(
               new StartFailed(
-                "TT Tasks's service did not become ready within 20 s.",
-                "tasks service status",
+                "TTasks's service did not become ready within 20 s.",
+                "ttasks service status",
               ),
             ),
           openUrl: () => Promise.reject(new Error("no browser may open")),
@@ -343,7 +343,7 @@ describe("[A2.3.9.cli.open-start] tasks open starts a stopped service first", ()
       });
       expect(failed.code).toBe(6);
       expect(failed.stderr).toBe(
-        "error service_unavailable: TT Tasks's service is not running, and it could not be started: TT Tasks's service did not become ready within 20 s. Run: tasks service status\n",
+        "error service_unavailable: TTasks's service is not running, and it could not be started: TTasks's service did not become ready within 20 s. Run: ttasks service status\n",
       );
       expect(failed.stdout).toBe("");
       let starts = 0;
@@ -358,7 +358,7 @@ describe("[A2.3.9.cli.open-start] tasks open starts a stopped service first", ()
         },
       });
       expect(agent.code).toBe(5);
-      expect(agent.stderr).toContain("Ask the user to open TT Tasks.");
+      expect(agent.stderr).toContain("Ask the user to open TTasks.");
       expect(agent.stdout).toBe("");
       expect(starts).toBe(0);
     },

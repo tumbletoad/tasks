@@ -1,6 +1,6 @@
 // `pnpm e2e [--project chromium|firefox]`: Playwright against the real service process, with
 // Playwright's own browsers (`pnpm exec playwright install chromium firefox`). Each worker starts its
-// own service in a temporary TASKS_HOME with fixture data (world.ts); the page is built once per run
+// own service in a temporary TTASKS_HOME with fixture data (world.ts); the page is built once per run
 // (global-setup.ts). Screenshots the tests take go to tests/e2e/results/ (git-ignored).
 //
 // In CI a failure keeps its trace and screenshot, and the HTML report in tests/e2e/report/ shows

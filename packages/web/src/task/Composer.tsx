@@ -1,6 +1,6 @@
 // The composer: what the person types about a task, and the one strip under it where that text
 // goes. Note saves it as a note on the task. Open starts an agent instance on the task with the
-// text as its request, which Tasks holds for the agent and never puts on a command line or in a
+// text as its request, which TTasks holds for the agent and never puts on a command line or in a
 // link (without text it opens as the tile does). Copy puts the brief on the clipboard with the
 // text, Shift+Copy the context pack. Each clears the field once its text has gone somewhere: the
 // note was saved, the agent read the request, the brief is on the clipboard. Text typed meanwhile

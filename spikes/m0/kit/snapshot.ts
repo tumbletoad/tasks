@@ -3,7 +3,7 @@
 //
 // Linux and macOS: layer 1 is the session (`systemctl --user show-environment`, a fixed list of
 // names), layer 2 the login-shell snapshot (`$SHELL -lic` printing `env -0` between two random
-// markers, detached, stdin ignored, home as cwd, TERM=dumb, TASKS_RESOLVING_ENVIRONMENT=1, 10 s hard
+// markers, detached, stdin ignored, home as cwd, TERM=dumb, TTASKS_RESOLVING_ENVIRONMENT=1, 10 s hard
 // timeout). Session variables win, except that SSH_AUTH_SOCK from the snapshot wins when the
 // session has none and its socket exists. PATH comes from the snapshot.
 // Windows: the user and system environment re-read from the registry (`reg query`, REG_EXPAND_SZ
@@ -197,7 +197,7 @@ function loginShell(
   return new Promise((resolve) => {
     const child = spawn(shell, ["-lic", script], {
       cwd: homedir(),
-      env: { ...process.env, TERM: "dumb", TASKS_RESOLVING_ENVIRONMENT: "1" },
+      env: { ...process.env, TERM: "dumb", TTASKS_RESOLVING_ENVIRONMENT: "1" },
       stdio: ["ignore", "pipe", "ignore"],
       detached: true,
       shell: false,

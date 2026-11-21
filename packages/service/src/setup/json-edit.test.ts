@@ -3,7 +3,7 @@
 import { describe, expect, test } from "vitest";
 import { addEntry, removeEntry } from "./json-edit.ts";
 
-const ENTRY = { command: "/opt/tasks/bin/tasks", args: ["mcp", "--space", "sp_x", "--app", "a b"] };
+const ENTRY = { command: "/opt/tasks/bin/ttasks", args: ["mcp", "--space", "sp_x", "--app", "a b"] };
 
 /** Adds the entry, checks the document, then removes it and expects the original bytes back. */
 function roundTrip(text: string, created: boolean): string {
@@ -22,7 +22,7 @@ describe("[A3.3.13.setup.json-edit] one entry spliced in and out of a JSON file,
     const twoSpaces =
       '{\n  "numStartups": 3,\n  "mcpServers": {\n    "other": {\n      "command": "x"\n    }\n  }\n}\n';
     const added = roundTrip(twoSpaces, false);
-    expect(added).toContain('    },\n    "tasks": {\n      "command": "/opt/tasks/bin/tasks",\n');
+    expect(added).toContain('    },\n    "tasks": {\n      "command": "/opt/tasks/bin/ttasks",\n');
     roundTrip(twoSpaces.replaceAll("  ", "    "), false);
     roundTrip(twoSpaces.replaceAll("  ", "\t"), false);
     const crlf = twoSpaces.replaceAll("\n", "\r\n");

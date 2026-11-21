@@ -12,7 +12,7 @@ const WINDOWS = process.platform === "win32";
 
 let work: string;
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-web-paths-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-web-paths-"));
 });
 afterAll(() => {
   rmSync(work, { recursive: true, force: true });

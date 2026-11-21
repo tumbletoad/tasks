@@ -1,4 +1,4 @@
-// `tasks setup agents` for the remaining apps (A3 3.13.3, 3.13.5, 3.13.6; A7 3.11 M4.05): Claude
+// `ttasks setup agents` for the remaining apps (A3 3.13.3, 3.13.5, 3.13.6; A7 3.11 M4.05): Claude
 // Desktop's entry spliced in and out, the Codex app as a host of the default Codex home, and T3
 // Code's provider instances' homes, with T3's settings only read. Apply and remove on scratch homes
 // leave every file key-identical (byte-identical here).
@@ -23,9 +23,9 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { MCP_SERVER_KEY } from "@tasks/brand";
-import { detect, nodeDetectHost } from "@tasks/launch";
-import { installFakeAgents, type FakeAgents } from "@tasks/testkit/fake-agents";
+import { MCP_SERVER_KEY } from "@ttasks/brand";
+import { detect, nodeDetectHost } from "@ttasks/launch";
+import { installFakeAgents, type FakeAgents } from "@ttasks/testkit/fake-agents";
 import {
   applyHome,
   claudeDesktopFolders,
@@ -55,7 +55,7 @@ let base: string;
 /** The git on this test's PATH, which rule 3 of A3 3.12 asks (the fakes' PATH has none). */
 let gitCommand: readonly string[];
 beforeAll(() => {
-  base = mkdtempSync(join(tmpdir(), "tasks-setup-apps-"));
+  base = mkdtempSync(join(tmpdir(), "ttasks-setup-apps-"));
   const found = gitOnPath(process.platform, process.env);
   if (found === undefined) throw new Error("these tests need git on the PATH");
   gitCommand = found;
@@ -84,7 +84,7 @@ function world(label: string): World {
     root,
     home,
     state: join(root, "state"),
-    tasks: join(root, "install", "bin", windows ? "tasks.exe" : "tasks"),
+    tasks: join(root, "install", "bin", windows ? "ttasks.exe" : "ttasks"),
     fakes: installFakeAgents(join(root, "tools"), home),
   };
 }
@@ -370,7 +370,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       mkdirSync(t3, { recursive: true, mode: 0o700 });
       const settings = join(t3, "settings.json");
       // T3's own shape (A3 3.13.6): a renamed default, added instances with config.homePath, one
-      // turned off, and an agent that is not Tasks's.
+      // turned off, and an agent that is not TTasks's.
       writeFileSync(
         settings,
         JSON.stringify(

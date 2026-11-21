@@ -8,8 +8,8 @@ import {
   type PreferenceRead,
   type PreferenceSpec,
   type PrefValue,
-} from "@tasks/contracts";
-import type { Row, WorkerConnection } from "@tasks/storage";
+} from "@ttasks/contracts";
+import type { Row, WorkerConnection } from "@ttasks/storage";
 import { readMachinePreferences } from "../config/preferences.ts";
 import type { MachineConfig } from "../config/machine-toml.ts";
 import { PREFERENCE_ROWS, spacePreferencesOf } from "./read.ts";

@@ -7,8 +7,8 @@
 // A row keeps the group it was found in. A task checked off from the results stays under To do,
 // checked, until the person refreshes: results do not move under the pointer. A search that sorts
 // by effort (`sort:effort`) splits To do into one group per effort, in the service's order.
-import type { Client } from "@tasks/contracts/generated/client.ts";
-import { filterOf } from "@tasks/contracts/query-terms";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
+import { filterOf } from "@ttasks/contracts/query-terms";
 import type { Group } from "../groups.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { Page, PageSource } from "../store/queries.ts";

@@ -77,15 +77,15 @@ export interface CliFace {
   readonly verb: string;
   /** Scalar fields taken as positional arguments, in order. */
   readonly positional?: readonly string[];
-  /** An object field whose keys are given as `key=value` arguments (`tasks set M-14 due=fri`). */
+  /** An object field whose keys are given as `key=value` arguments (`ttasks set M-14 due=fri`). */
   readonly keyValue?: string;
-  /** An array-of-objects field whose single element the verb's arguments fill (`tasks add`). */
+  /** An array-of-objects field whose single element the verb's arguments fill (`ttasks add`). */
   readonly item?: string;
   /** Flag names that differ from the field name in kebab case, such as `{ learnings: "learning" }`. */
   readonly flags?: Readonly<Record<string, string>>;
   /** One-letter flags, such as `{ priority: "p" }` for `-p`. */
   readonly short?: Readonly<Record<string, string>>;
-  /** Field values the verb sets itself, such as `{ kind: "note" }` for `tasks note`. */
+  /** Field values the verb sets itself, such as `{ kind: "note" }` for `ttasks note`. */
   readonly fixed?: Readonly<Record<string, unknown>>;
   /** Fields the verb does not offer as arguments. `--input` still reaches them. */
   readonly exclude?: readonly string[];

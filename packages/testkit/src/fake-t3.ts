@@ -54,7 +54,7 @@ export interface FakeT3CliFault {
 export interface FakeT3Project {
   readonly id: string;
   title: string;
-  /** Writable: T3 can change a project's root after Tasks bound it (a test sets it). */
+  /** Writable: T3 can change a project's root after TTasks bound it (a test sets it). */
   workspaceRoot: string;
   archivedAt: string | null;
 }
@@ -356,7 +356,7 @@ export class FakeT3 {
     if (address === null || typeof address === "string") throw new Error("no port");
     this.#server = server;
     this.#origin = `http://127.0.0.1:${String(address.port)}`;
-    // User-only, whatever the umask of the run (002 on an Ubuntu desktop): Tasks trusts T3's
+    // User-only, whatever the umask of the run (002 on an Ubuntu desktop): TTasks trusts T3's
     // runtime file only when no one else can change it or its folder (t3-client.ts). What T3 itself
     // gives them is not observed yet (L05); A4's open item 6.14 records the question.
     mkdirSync(join(this.home, "userdata"), { recursive: true, mode: 0o700 });

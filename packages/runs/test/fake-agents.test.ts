@@ -24,7 +24,7 @@ const BRIEF = "Fixture brief: call the probe, then reply.\n";
 // must not leave a folder behind.
 let tempRoot = "";
 beforeAll(() => {
-  tempRoot = mkdtempSync(join(tmpdir(), "tasks-m6-05-fake-agents-"));
+  tempRoot = mkdtempSync(join(tmpdir(), "ttasks-m6-05-fake-agents-"));
 });
 afterAll(() => {
   rmSync(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });

@@ -1,5 +1,5 @@
 // `/`, what a new tab opens (A2 3.1, A5 3.3): the machine's default space, at its landing view, or
-// at the task `tasks open <task>` named. A machine without a default opens its one space; when it
+// at the task `ttasks open <task>` named. A machine without a default opens its one space; when it
 // has several, or its default is not open, the person chooses, and nothing is chosen for them. A
 // machine with no space open asks for a name and makes one, then shows the agent apps it found,
 // which can be skipped: a space is all a person needs to start.

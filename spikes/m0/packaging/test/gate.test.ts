@@ -28,7 +28,7 @@ function gate(
     process.execPath,
     [
       ...nodeArgs,
-      join(appDir, "tasks.mjs"),
+      join(appDir, "ttasks.mjs"),
       "gate",
       "--scratch",
       scratch,

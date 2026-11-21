@@ -10,10 +10,10 @@
 // An agent app's own sandbox accounts are not people and are not counted: the Codex CLI's Windows
 // sandbox makes accounts in a group it manages, `CodexSandboxUsers`. Only the counts leave this
 // module: no account name or SID is printed or logged. The OS's own tools run as helpers of the
-// runner (@tasks/launch helpers.ts), like every program doctor starts.
+// runner (@ttasks/launch helpers.ts), like every program doctor starts.
 import { readFileSync } from "node:fs";
 import { win32 } from "node:path";
-import { helperOutput } from "@tasks/launch/helpers";
+import { helperOutput } from "@ttasks/launch/helpers";
 
 /** Groups that agent apps manage for their own sandbox accounts. */
 export const SANDBOX_GROUPS = ["CodexSandboxUsers"] as const;

@@ -1,12 +1,12 @@
 // machine.toml (A2 3.2.4): one machine-local file, `<config>/machine.toml`, never synced or exported.
-// It is the person's file. Tasks reads it strictly into typed values and content-free problems
+// It is the person's file. TTasks reads it strictly into typed values and content-free problems
 // (the key and a fixed code, never the value), never rewrites it on its own, and changes it only
 // through edit.ts, which keeps every other byte.
 //
 // Sections have owners. This appendix (A2) owns `[service]`, `[http]`, `[ui]`, `[updates]`, `[log]`
 // and `[[spaces]]`, checked here. A4 owns `[terminal]`, `[[instance]]` and `[approvals]`:
-// @tasks/launch checks those. `[runs]`, background runs' guidelines, is checked here. A1 owns
-// `[preferences]` (3.16), checked here with the preferences registry of @tasks/contracts.
+// @ttasks/launch checks those. `[runs]`, background runs' guidelines, is checked here. A1 owns
+// `[preferences]` (3.16), checked here with the preferences registry of @ttasks/contracts.
 // `[[custom_target]]`, `[override.*]` (A4) and `[remote]`,
 // `[security]` (A6) are reserved: the steps that use them check them, and until then they are
 // passed by without a problem. `[roots]` is retired: a project's folder took its place, and its
@@ -34,10 +34,10 @@ import {
   type Instance,
   type TerminalSettings,
   type Verdict,
-} from "@tasks/launch";
-import { fitsShape, preferenceSpec, type PrefValue } from "@tasks/contracts";
-import { QUEUE_LIMITS, RUN_LIMITS, type QueueLimits } from "@tasks/contracts/runs";
-import { isId, type Id } from "@tasks/storage";
+} from "@ttasks/launch";
+import { fitsShape, preferenceSpec, type PrefValue } from "@ttasks/contracts";
+import { QUEUE_LIMITS, RUN_LIMITS, type QueueLimits } from "@ttasks/contracts/runs";
+import { isId, type Id } from "@ttasks/storage";
 import {
   currentPerson,
   factsFrom,
@@ -160,7 +160,7 @@ export const DEFAULT_CONFIG: MachineConfig = {
 
 /**
  * `[preferences]` (A1 3.16): each key is a machine preference's whole name, quoted
- * (`"projection.dir" = "/srv/tasks-view"`), checked by the registry as the writer checks a space
+ * (`"projection.dir" = "/srv/ttasks-view"`), checked by the registry as the writer checks a space
  * preference, and by this platform's rule for a path. A bad entry drops itself; a name the
  * registry does not know is a warning, as a newer build may know it.
  */
@@ -425,9 +425,9 @@ const sameObject = (a: Stats, b: Stats) =>
  * Linux and macOS (A2 3.2.2 rule 5, permissions.ts): the config folder and the file must each be a
  * real folder and a real file (configuration is never read through a link), belong to this user,
  * and be writable by no one else (the person's own private group counts as no one else). The file
- * names commands Tasks runs as this user, so a file that
+ * names commands TTasks runs as this user, so a file that
  * fails is not used. The folder is judged first and on every path, the missing file's included:
- * the answer is the same before machine.toml exists and after Tasks has written one into it. Within
+ * the answer is the same before machine.toml exists and after TTasks has written one into it. Within
  * a folder that fails nothing is read; the file's own facts are still judged when they can be seen,
  * so that one command fixes both. Windows: a link in either place is not followed either, and is
  * named as a link with its target; the profile's ACL is doctor's to check.

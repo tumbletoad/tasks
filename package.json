@@ -1,5 +1,5 @@
 {
-  "name": "@tasks/workspace",
+  "name": "@ttasks/workspace",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
     "verify": "node scripts/verify.ts",
     "gen": "node scripts/gen.ts",
     "seed": "node scripts/seed.ts",
-    "tasks": "node packages/cli/src/bin.ts",
+    "ttasks": "node packages/cli/src/bin.ts",
     "accept": "node scripts/accept.ts",
     "build": "node scripts/build.ts",
     "build:web": "node packages/web/build.ts",

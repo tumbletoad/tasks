@@ -1,4 +1,4 @@
-// `tasks doctor [--json] [--self-test]` (A2 3.13), the service-side checks this build can make.
+// `ttasks doctor [--json] [--self-test]` (A2 3.13), the service-side checks this build can make.
 // It works without a running service: that is one of the things it reports. It opens no space
 // database: the service reports each space's state.
 //
@@ -30,31 +30,31 @@
 //              bridge answering tools/list, each in a folder of its own below <state>/tmp/
 //
 // Every check is non-interactive. `--self-test` (A2 3.13: the subset for CI, install and updates)
-// adds the candidate's checks, which write temporary files; `tasks install --finish` runs integrity,
+// adds the candidate's checks, which write temporary files; `ttasks install --finish` runs integrity,
 // runtime and those before it switches current. The other rows of A2 3.13 arrive with their steps:
-// autostart with `tasks service install` (M1.12), the Windows ACL check of the state folder, and the agent-side checks of A3 3.14. They are listed as
+// autostart with `ttasks service install` (M1.12), the Windows ACL check of the state folder, and the agent-side checks of A3 3.14. They are listed as
 // skipped. Run from source there is no version folder, so integrity, runtime and the candidate's
 // checks are skipped too: the build runs them in every version folder it makes.
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
-import { PROTOCOL } from "@tasks/bridge/protocol";
+import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
+import { PROTOCOL } from "@ttasks/bridge/protocol";
 import {
   configRefusal,
   fatalProblems,
   loadMachineConfig,
   unsafeConfigMessage,
-} from "@tasks/service/config";
+} from "@ttasks/service/config";
 import {
   canonicalStatePath,
   hostFacts,
   installId,
   resolveLayout,
   type Layout,
-} from "@tasks/service/paths";
-import { judgePath, unsafeMessage, type UnsafeThing } from "@tasks/service/permissions";
-import type { GateFacts } from "@tasks/service/runtime-gate";
-import type { VersionManifest } from "@tasks/service/version-folder";
+} from "@ttasks/service/paths";
+import { judgePath, unsafeMessage, type UnsafeThing } from "@ttasks/service/permissions";
+import type { GateFacts } from "@ttasks/service/runtime-gate";
+import type { VersionManifest } from "@ttasks/service/version-folder";
 import { CLI_SPEC, type Globals } from "./args.ts";
 import {
   CLI_BUILD,
@@ -82,7 +82,7 @@ export interface Check {
 
 const DAY = 86_400_000;
 
-/** tasksw.exe's record that it gave up restarting the service (A2 3.3.2), in `<state>/crash`. */
+/** ttasksw.exe's record that it gave up restarting the service (A2 3.3.2), in `<state>/crash`. */
 const SUPERVISOR_RECORD = "supervisor-gave-up.json";
 
 /**
@@ -113,7 +113,7 @@ function supervisorCheck(state: string, crash: string): Check {
   return {
     id: "supervisor",
     status: "warn",
-    detail: "The supervisor gave up restarting the service. Start it with: tasks service start",
+    detail: "The supervisor gave up restarting the service. Start it with: ttasks service start",
   };
 }
 
@@ -186,7 +186,7 @@ export function configCheck(io: Pick<Io, "env" | "platform">): Check {
 function localChecks(io: Io, layout: Layout, now: number): Check[] {
   const checks: Check[] = [];
   const state = layout.state;
-  // The data folder is hidden (`~/.tasks`), so the row says where it is (A2 3.13).
+  // The data folder is hidden (`~/.ttasks`), so the row says where it is (A2 3.13).
   const where = `Data and configuration are in ${layout.data}.`;
   if (!existsSync(state)) {
     checks.push({
@@ -255,7 +255,7 @@ function localChecks(io: Io, layout: Layout, now: number): Check[] {
         : {
             id: "install",
             status: "fail",
-            detail: "install.json names another install ID: run tasks service install again.",
+            detail: "install.json names another install ID: run ttasks service install again.",
           },
     );
     checks.push(updateCheck(state, installFile));
@@ -400,7 +400,7 @@ async function serviceChecks(
   const record = readServiceRecord(state);
   if (record === undefined) {
     return [
-      { id: "service", status: "fail", detail: "Not running. Start it with: tasks service start" },
+      { id: "service", status: "fail", detail: "Not running. Start it with: ttasks service start" },
       { id: "endpoint", status: "skip", detail: "No service to reach." },
       { id: "spaces", status: "skip", detail: "No service to ask." },
       { id: "requests", status: "skip", detail: "No service to ask." },
@@ -432,13 +432,13 @@ async function serviceChecks(
         (s.state !== "open" && s.state !== "read_only" && s.state !== "closed") ||
         s.backup !== undefined,
     );
-    // A space's way out names `<folder>`, which tasks space list shows: this row holds no path.
+    // A space's way out names `<folder>`, which ttasks space list shows: this row holds no path.
     const folders = spaces.some(
       (s) =>
         s.message?.includes("<folder>") === true ||
         s.backup?.message?.includes("<folder>") === true,
     )
-      ? " Run tasks space list to see each space's folder."
+      ? " Run ttasks space list to see each space's folder."
       : "";
     // What this run of the service migrated: an update shows here until the next restart.
     const started = Date.now() - (status.uptime_ms ?? 0);
@@ -495,7 +495,7 @@ async function serviceChecks(
 /**
  * Whether background runs get a process group here, as the service found at its start. Runs start
  * either way; where a person can give them one (an earlier unit without Delegate=yes, a missing
- * tasks-run.exe), a warning with what to do; on a platform without process groups, only a note.
+ * ttasks-run.exe), a warning with what to do; on a platform without process groups, only a note.
  */
 function runsCheck(runs: Status["runs"]): Check {
   if (runs === undefined || runs.available === null) {
@@ -516,7 +516,7 @@ const VERSION_WORD = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
 
 /**
  * The update row (A2 3.12.6, 3.13): an update journal means an update runs now or was cut off,
- * which the service or `tasks update --repair` finishes; else the last update's outcome from
+ * which the service or `ttasks update --repair` finishes; else the last update's outcome from
  * install.json, a rolled-back one with its reason.
  */
 function updateCheck(state: string, installFile: string): Check {
@@ -591,7 +591,7 @@ export async function versionChecks(
       },
     ];
   }
-  const folder = await import("@tasks/service/version-folder");
+  const folder = await import("@ttasks/service/version-folder");
   let manifest: VersionManifest;
   try {
     manifest = folder.readVersionManifest(versionFolder);
@@ -614,7 +614,7 @@ export async function versionChecks(
           detail: `Every file of ${manifest.version} (${manifest.build}, ${manifest.platform}) matches manifest.json.`,
         }
       : { id: "integrity", status: "fail", detail: `${named(problems)}.` };
-  const { runtimeGate } = await import("@tasks/service/runtime-gate");
+  const { runtimeGate } = await import("@ttasks/service/runtime-gate");
   const gate = await runtimeGate({ node: manifest.node, sqlite: manifest.sqlite }, gateFacts);
   const failed = gate.filter((check) => !check.ok);
   const runtime: Check =
@@ -628,7 +628,7 @@ export async function versionChecks(
  * The candidate's checks of A2 3.12.6, handed to M1.14: a temporary space, a
  * temporary endpoint with a handshake, and this version's own bridge answering tools/list, each in
  * a folder of its own below `<state>/tmp/`. They run with `--self-test` from a version folder:
- * `tasks install --finish` runs them before it switches current, and the build's gate runs them in
+ * `ttasks install --finish` runs them before it switches current, and the build's gate runs them in
  * every folder it makes. From source there is no version to check.
  */
 export async function candidateRows(
@@ -642,7 +642,7 @@ export async function candidateRows(
       {
         id: "candidate",
         status: "skip",
-        detail: "tasks doctor --self-test runs the candidate checks.",
+        detail: "ttasks doctor --self-test runs the candidate checks.",
       },
     ];
   }
@@ -655,14 +655,14 @@ export async function candidateRows(
       },
     ];
   }
-  const folder = await import("@tasks/service/version-folder");
+  const folder = await import("@ttasks/service/version-folder");
   let manifest: VersionManifest;
   try {
     manifest = folder.readVersionManifest(versionFolder);
   } catch {
     return [{ id: "candidate", status: "fail", detail: "No manifest.json names this version." }];
   }
-  const { candidateChecks } = await import("@tasks/service/candidate");
+  const { candidateChecks } = await import("@ttasks/service/candidate");
   return candidateChecks({
     state,
     build: { version: manifest.version, build: manifest.build },
@@ -679,7 +679,7 @@ export async function candidateRows(
 }
 
 const SKIPPED: readonly Check[] = [
-  { id: "autostart", status: "skip", detail: "Arrives with tasks service install." },
+  { id: "autostart", status: "skip", detail: "Arrives with ttasks service install." },
 ];
 
 export interface DoctorOptions extends ConnectOptions {
@@ -698,7 +698,7 @@ export async function doctor(
 ): Promise<number> {
   const unknown = args.filter((a) => a !== "--self-test" && a !== "--live");
   if (unknown.length > 0) {
-    return printUsage(io, globals.json, "tasks doctor takes --self-test, --live and --json only");
+    return printUsage(io, globals.json, "ttasks doctor takes --self-test, --live and --json only");
   }
   // stateDir names a layout that cannot be resolved; past it, the layout is this install's.
   const state = stateDir(io);

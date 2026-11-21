@@ -5,7 +5,7 @@
 // event. Under rule 8 of the step it records only:
 // - the NAMES of the variables in WATCHED that are present (never their values), and how many
 //   variables it got in all;
-// - for TASKS_TICKET, the session and thread IDs and the scratch homes: present or not, equal to
+// - for TTASKS_TICKET, the session and thread IDs and the scratch homes: present or not, equal to
 //   the expected value in `--expect` or not, and an ID's format (length and character class);
 // - the protocol version and client name the host sent (known labels, else `[other:...]`), the
 //   methods that arrived, tool names called, and the key names of each request's `_meta`.
@@ -27,9 +27,9 @@ import { errorLabel } from "./facts.ts";
 
 /** Variables whose presence (name only) the probe records. */
 export const WATCHED = [
-  "TASKS_TICKET",
-  "TASKS_TASK",
-  "TASKS_SPACE",
+  "TTASKS_TICKET",
+  "TTASKS_TASK",
+  "TTASKS_SPACE",
   "CLAUDE_CODE_SESSION_ID",
   "CODEX_THREAD_ID",
   "CODEX_SESSION_ID",
@@ -148,7 +148,7 @@ export function startFacts(env: NodeJS.ProcessEnv, expect: Expect): JsonObject {
         ? { present: false }
         : { present: true, equal: want === undefined ? null : sha256Hex(norm(value)) === want };
   }
-  const ticket = env["TASKS_TICKET"];
+  const ticket = env["TTASKS_TICKET"];
   return {
     env_present: WATCHED.filter(present),
     env_count: Object.keys(env).length,
@@ -239,7 +239,7 @@ function main(): void {
   // `--instructions-file`: A06's random-marker check (the lab writes the text into its scratch).
   const instructionsFile = option(args, "--instructions-file");
   const respond = createMcpResponder({
-    name: "tasks-probe",
+    name: "ttasks-probe",
     instructions:
       instructionsFile !== undefined
         ? readFileSync(instructionsFile, "utf8")

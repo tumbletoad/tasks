@@ -378,7 +378,7 @@ function claudeFacts(r: Recording, sessionId: string | undefined): JsonObject {
             }),
             permission_mode: oneOf(init["permissionMode"], VOCAB["permission-mode"]),
             model: oneOf(init["model"], KNOWN_MODELS),
-            probe_tool_listed: tools.includes("mcp__tasks__probe_echo"),
+            probe_tool_listed: tools.includes("mcp__ttasks__probe_echo"),
             tool_count: tools.length,
           },
     tool_uses: toolUses,
@@ -555,12 +555,12 @@ async function codexCase(c: CodexCase): Promise<{ facts: JsonObject; thread: str
   argv.push("-c", 'model_reasoning_effort="low"');
   if (c.model !== undefined) argv.push("-m", c.model);
   if (c.noProbe !== true) {
-    argv.push("-c", `mcp_servers.tasks.command=${tomlLiteral(NODE)}`);
-    argv.push("-c", `mcp_servers.tasks.args=${tomlArray(probeArgs(c.label, c.delayMs ?? 0))}`);
-    argv.push("-c", "mcp_servers.tasks.startup_timeout_sec=20");
-    argv.push("-c", "mcp_servers.tasks.tool_timeout_sec=120");
+    argv.push("-c", `mcp_servers.ttasks.command=${tomlLiteral(NODE)}`);
+    argv.push("-c", `mcp_servers.ttasks.args=${tomlArray(probeArgs(c.label, c.delayMs ?? 0))}`);
+    argv.push("-c", "mcp_servers.ttasks.startup_timeout_sec=20");
+    argv.push("-c", "mcp_servers.ttasks.tool_timeout_sec=120");
     if (c.approve === true) {
-      argv.push("-c", 'mcp_servers.tasks.default_tools_approval_mode="approve"');
+      argv.push("-c", 'mcp_servers.ttasks.default_tools_approval_mode="approve"');
     }
   }
   argv.push("-o", lastMessage, "-");
@@ -813,7 +813,7 @@ async function n02(): Promise<void> {
     row: "N02",
     machine,
     route:
-      'node codex.js exec --json -C <empty working folder> --dangerously-bypass-approvals-and-sandbox --ignore-user-config, --ephemeral unless resumable, -c model_reasoning_effort="low", the probe as mcp_servers.tasks through -c, -o <scratch file>, - with the brief on stdin; the account in the default home',
+      'node codex.js exec --json -C <empty working folder> --dangerously-bypass-approvals-and-sandbox --ignore-user-config, --ephemeral unless resumable, -c model_reasoning_effort="low", the probe as mcp_servers.ttasks through -c, -o <scratch file>, - with the brief on stdin; the account in the default home',
     approve_mode_needed_with_full_access: approve,
     runs,
   });
@@ -909,7 +909,7 @@ async function n02Linux(): Promise<void> {
     row: "N02 (reduced)",
     machine,
     route:
-      'codex (from the login-shell PATH) exec --json -C <empty working folder> --skip-git-repo-check --ignore-user-config, --ephemeral unless resumable, -c model_reasoning_effort="low", the probe as mcp_servers.tasks through -c with default_tools_approval_mode="approve", the default sandbox (no full access in this row), -o <scratch file>, - with the brief on stdin; the account of the default home; own process group',
+      'codex (from the login-shell PATH) exec --json -C <empty working folder> --skip-git-repo-check --ignore-user-config, --ephemeral unless resumable, -c model_reasoning_effort="low", the probe as mcp_servers.ttasks through -c with default_tools_approval_mode="approve", the default sandbox (no full access in this row), -o <scratch file>, - with the brief on stdin; the account of the default home; own process group',
     full_access_variant: "session work: needs the owner at the machine",
     // The IDs themselves go to the report only, never into a committed file.
     threads_left_in_work_home: ledger.codex_threads.length,

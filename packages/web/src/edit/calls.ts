@@ -20,7 +20,7 @@
 // An outcome is decided once: the first decision. What depends on it runs from that decision and
 // nothing else (`noted` before anything waiting on the call goes on, `decided` for the rest), so an
 // answer or receipt that arrives after it changes nothing.
-import type { Client } from "@tasks/contracts/generated/client.ts";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
 
 /**
  * How long the page waits for an answer before it asks for the outcome, and then for the outcome:

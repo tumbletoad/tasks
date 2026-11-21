@@ -15,7 +15,7 @@ import { existsSync } from "node:fs";
 
 /**
  * Who the rule judges for: this user and, when they have one, their own private group, which alone
- * besides them may write what Tasks trusts.
+ * besides them may write what TTasks trusts.
  */
 export interface Person {
   readonly uid: number;

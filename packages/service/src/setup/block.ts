@@ -5,7 +5,7 @@
 //   Claude Code  <home>/CLAUDE.md (the home is `~/.claude` or the folder CLAUDE_CONFIG_DIR names)
 //   Codex        <home>/AGENTS.override.md when it is there (Codex then reads only it; setup never
 //                makes one), else <home>/AGENTS.md, within the 32 KiB Codex reads of it
-//   others       `tasks setup agents print-block --for claude|agents` prints it; it writes nothing
+//   others       `ttasks setup agents print-block --for claude|agents` prints it; it writes nothing
 //
 // The file is the person's. Setup changes only the text it wrote: the block between its markers and
 // the blank line it put before it. Every other byte stays as it was: the line endings, a byte order
@@ -30,7 +30,7 @@
 import { createHash } from "node:crypto";
 import { lstatSync, rmSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
-import { APP_NAME, CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
+import { APP_NAME, CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { commitEdit } from "../config/edit.ts";
 import { BOM, MAX_CONFIG_BYTES } from "../config/toml.ts";
 import { toolOf } from "../mcp/tools.ts";

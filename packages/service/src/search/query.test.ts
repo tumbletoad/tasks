@@ -4,7 +4,7 @@
 // half (rows or invalid_input against a real index) is packages/service/test/search.test.ts.
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
-import { AppError } from "@tasks/contracts";
+import { AppError } from "@ttasks/contracts";
 import { queryText } from "../../test/search-queries.ts";
 import { namesLifecycle, parseQuery, printQuery, QUERY_LIMITS, type Query } from "./query.ts";
 

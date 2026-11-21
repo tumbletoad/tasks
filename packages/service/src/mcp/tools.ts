@@ -1,8 +1,8 @@
 // The one tool list (A3 3.3, X3): contracts' generated `mcp-tools.json`, served as it is on every
 // connection, bound or not, in both eras, and copied into the offline file from the same import.
 // Nothing about a connection changes it, so no `list_changed` is ever needed.
-import { findEntry, registry, type AnyEntry, type McpTool } from "@tasks/contracts";
-import generated from "@tasks/contracts/generated/mcp-tools.json" with { type: "json" };
+import { findEntry, registry, type AnyEntry, type McpTool } from "@ttasks/contracts";
+import generated from "@ttasks/contracts/generated/mcp-tools.json" with { type: "json" };
 
 /** The tools, in the generated file's order and with its key order. One list for all. */
 export const TOOLS: readonly McpTool[] = Object.freeze(

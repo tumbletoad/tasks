@@ -1,5 +1,5 @@
 {
-  "name": "@tasks/projection",
+  "name": "@ttasks/projection",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,12 +7,12 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@tasks/brand": "workspace:*",
-    "@tasks/files": "workspace:*",
-    "@tasks/storage": "workspace:*"
+    "@ttasks/brand": "workspace:*",
+    "@ttasks/files": "workspace:*",
+    "@ttasks/storage": "workspace:*"
   },
   "devDependencies": {
-    "@tasks/testkit": "workspace:*",
+    "@ttasks/testkit": "workspace:*",
     "fast-check": "4.10.2",
     "vitest": "5.1.0"
   }

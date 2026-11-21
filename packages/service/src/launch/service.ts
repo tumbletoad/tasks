@@ -5,16 +5,16 @@
 //
 // What it gives the steps after it: `open` (a click, with the terminal's spawn plan), `dispatch`
 // (the person confirmed), `read`, and the terminal's start as one seam (`TerminalStart`): M2.09's
-// terminal adapters replace the tests' direct start of `tasks shim <ticket>`.
+// terminal adapters replace the tests' direct start of `ttasks shim <ticket>`.
 //
 // Each connection that claimed or attached holds its attachment (a WeakMap on the connection the
 // library hands every handler), so a report is accepted only on the connection that presented the
 // ticket or the credential, and never names its launch itself.
 import { existsSync } from "node:fs";
 import { isAbsolute, join, win32 } from "node:path";
-import { PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
-import type { JsonObject } from "@tasks/bridge/protocol";
-import { AppError } from "@tasks/contracts";
+import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import { AppError } from "@ttasks/contracts";
 import {
   checkPlan,
   CLAIM_WINDOW_MS,
@@ -90,7 +90,7 @@ import {
   type RequestState,
   type Route,
   type SpawnPlan,
-} from "@tasks/launch";
+} from "@ttasks/launch";
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
 import type { ConnectionInfo, RpcContext, RpcHandlers } from "../local/index.ts";
@@ -175,7 +175,7 @@ const FRESH_MAX = 32;
 type Env = Readonly<Record<string, string | undefined>>;
 
 /**
- * Starts the terminal that runs `tasks shim <ticket>` for a terminal launch, after Dispatching is
+ * Starts the terminal that runs `ttasks shim <ticket>` for a terminal launch, after Dispatching is
  * durable, the folder resolved, the environment's snapshot brought up to date and the ticket
  * issued. The default is the terminal adapters (M2.09, `TerminalLauncher`); tests of the shim pass
  * a direct start. The terminal starts with `folder` as its working directory, and the shim enters
@@ -255,14 +255,14 @@ export interface LaunchServiceOptions extends LaunchOptions {
   readonly install?: string;
   /**
    * The install's command folder (A2 3.2.1, the layout's `bin`: `~/.local/bin`, or `<root>/bin` of
-   * a TASKS_HOME install): its stable launcher is the shim's program.
+   * a TTASKS_HOME install): its stable launcher is the shim's program.
    */
   readonly commandFolder?: string;
   /** The account's home folder. */
   readonly home?: string;
   /**
    * machine.toml's `[[instance]]` (A4 3.2): what Open can open a task in. Default: none. A function
-   * is asked at each use, so instances `tasks setup instances` writes are used at once.
+   * is asked at each use, so instances `ttasks setup instances` writes are used at once.
    */
   readonly instances?: readonly Instance[] | (() => readonly Instance[]);
   /** The markers in projects' and tasks' folders (marker.ts). None: a launch checks no marker. */
@@ -523,7 +523,7 @@ export class LaunchService {
 
   /**
    * The terminal a launch now would try first: its adapter, why, whether its program
-   * was found, a default the person set that Tasks cannot open, and whether the operating
+   * was found, a default the person set that TTasks cannot open, and whether the operating
    * system's setting could not be read. Words only, never a path.
    */
   async #terminalFacts(session: Readonly<Record<string, string>>): Promise<JsonObject | null> {
@@ -1755,8 +1755,8 @@ function defaultEnvironment(options: LaunchServiceOptions): EnvironmentSource {
 
 /**
  * The product's command a terminal runs (A4 3.6.1 `{shim}`), so the shim is the service's own
- * build: for a service run from source (`pnpm tasks serve`), the Node that runs it with its entry
- * script; otherwise the install's stable launcher in its command folder (`tasks`, `tasks.exe`),
+ * build: for a service run from source (`pnpm ttasks serve`), the Node that runs it with its entry
+ * script; otherwise the install's stable launcher in its command folder (`tasks`, `ttasks.exe`),
  * which follows the current version. Undefined when neither is there: a terminal launch is then
  * refused before anything starts.
  */
@@ -1799,10 +1799,10 @@ function helperEnv(env: Env): Record<string, string> {
 
 /**
  * Windows: the folder where Windows keeps the account's app execution aliases (Windows Terminal's
- * `wt.exe`, A4 3.6.2 detection). Read only; Tasks never writes there.
+ * `wt.exe`, A4 3.6.2 detection). Read only; TTasks never writes there.
  */
 function windowsAppsOf(env: Env): string | undefined {
-  // eslint-disable-next-line no-restricted-syntax -- where Windows keeps app aliases, never a path Tasks writes
+  // eslint-disable-next-line no-restricted-syntax -- where Windows keeps app aliases, never a path TTasks writes
   const name = "LOCALAPPDATA";
   const local = Object.entries(env).find(([key]) => key.toUpperCase() === name)?.[1];
   return local === undefined || !win32.isAbsolute(local)

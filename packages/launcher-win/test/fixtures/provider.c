@@ -1,6 +1,6 @@
 /*
  * Test fixture: a stand-in OpenSSL provider DLL. Loading it writes "loaded" to the file that
- * TASKS_FIXTURE_MARKER names, so a test sees whether any process loaded it. It offers no
+ * TTASKS_FIXTURE_MARKER names, so a test sees whether any process loaded it. It offers no
  * algorithms, so a process that loads it carries on normally.
  */
 #define WIN32_LEAN_AND_MEAN
@@ -11,7 +11,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
     (void)reserved;
     if (reason == DLL_PROCESS_ATTACH) {
         wchar_t path[1024];
-        DWORD n = GetEnvironmentVariableW(L"TASKS_FIXTURE_MARKER", path, ARRAYSIZE(path));
+        DWORD n = GetEnvironmentVariableW(L"TTASKS_FIXTURE_MARKER", path, ARRAYSIZE(path));
         if (n > 0 && n < ARRAYSIZE(path)) {
             HANDLE h = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
                                    FILE_ATTRIBUTE_NORMAL, NULL);

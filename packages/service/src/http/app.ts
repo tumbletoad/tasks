@@ -6,8 +6,8 @@
 //   GET  /, /index.html, /s/…  the shell, with a fresh style nonce in its CSP and meta tag
 //   GET  /assets/<file>         the shell's hashed files (immutable)
 //   GET  /healthz               `ok`
-//   GET  /.well-known/tasks     `{"app":"tasks","protocol":1}`
-//   POST /api/v1/auth/probe     the listener's HMAC proof for `tasks open` (60 per minute)
+//   GET  /.well-known/ttasks     `{"app":"ttasks","protocol":1}`
+//   POST /api/v1/auth/probe     the listener's HMAC proof for `ttasks open` (60 per minute)
 //   POST /api/v1/auth/redeem    a fragment code for a token (10 per minute)
 //   POST /api/v1/ws-ticket      a 30 s single-use ticket for the feed
 //   GET  /api/v1/ws?ticket=…    the change feed (ws.ts)
@@ -28,8 +28,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
-import { httpHeader, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
-import { httpRoutes } from "@tasks/contracts/generated/http-routes.ts";
+import { httpHeader, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
+import { httpRoutes } from "@ttasks/contracts/generated/http-routes.ts";
 import {
   ERROR_CODES,
   AppError,
@@ -37,8 +37,8 @@ import {
   type ErrorBody,
   type ErrorCode,
   type PreferenceRead,
-} from "@tasks/contracts";
-import { hasControl } from "@tasks/launch";
+} from "@ttasks/contracts";
+import { hasControl } from "@ttasks/launch";
 import { WebSocketServer } from "ws";
 import { copyOf, isAmbiguity } from "../ops/copies.ts";
 import { opCall, type OpsHost } from "../ops/index.ts";
@@ -73,7 +73,7 @@ import { shellFor, type UiBundle } from "./page.ts";
 import type { StartHttpTimer } from "./timers.ts";
 import { FeedHub, WS_CLOSE } from "./ws.ts";
 
-/** The protocol `/.well-known/tasks` names (A2 3.8.5). */
+/** The protocol `/.well-known/ttasks` names (A2 3.8.5). */
 export const WELL_KNOWN = { app: PRODUCT_ID, protocol: 1 } as const;
 
 /** The header that names the tab's space on an API call (A5: every call names its space). */
@@ -368,7 +368,7 @@ export class HttpApp {
     return this.#sockets.size;
   }
 
-  /** `tasks open` (A2 3.8.4 step 1): a new single-use code. */
+  /** `ttasks open` (A2 3.8.4 step 1): a new single-use code. */
   mintCode(): string {
     if (this.#blocked) throw new Error("The UI is blocked");
     return this.#codes.mint(true, this.options.now());

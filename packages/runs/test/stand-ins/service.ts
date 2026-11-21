@@ -1,11 +1,11 @@
 // Starts the stand-in service (harness.ts) where a real container can be made, and talks to it.
 //
-// Windows: a plain child of the test, with tasks-run.exe built from packages/launcher-win.
+// Windows: a plain child of the test, with ttasks-run.exe built from packages/launcher-win.
 // Linux: the main process of a transient systemd user unit with Delegate=yes, as the real
 // service runs. Such a unit is made only where the machine's user manager is disposable: CI says
-// so with TASKS_TEST_USER_UNITS=1 after it started one. A person's own session never gets a test
-// unit. Every unit is named `tasks-test-container-<token>.service`: a test run stops its own by
-// full name, and `systemctl --user stop 'tasks-test-container-*'` removes any a killed run left.
+// so with TTASKS_TEST_USER_UNITS=1 after it started one. A person's own session never gets a test
+// unit. Every unit is named `ttasks-test-container-<token>.service`: a test run stops its own by
+// full name, and `systemctl --user stop 'ttasks-test-container-*'` removes any a killed run left.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -15,8 +15,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 const HARNESS = join(import.meta.dirname, "harness.ts");
 
 /** The opt-in that says this machine's systemd user manager is CI's own. */
-export const USER_UNITS_VARIABLE = "TASKS_TEST_USER_UNITS";
-export const UNIT_PREFIX = "tasks-test-container-";
+export const USER_UNITS_VARIABLE = "TTASKS_TEST_USER_UNITS";
+export const UNIT_PREFIX = "ttasks-test-container-";
 
 /** Where a real container can be made, or why not. */
 export type Where = { readonly ok: true } | { readonly ok: false; readonly reason: string };

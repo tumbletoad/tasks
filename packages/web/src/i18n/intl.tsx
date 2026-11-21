@@ -5,10 +5,10 @@
 //
 // Every product name comes from packages/brand: a message says `{product}` or `{cli}`, and `t`
 // supplies both, so the rename touches no message. Inside its own page the app is called by the
-// name inside the app, Tasks, not by the product's full name (PLAN.md Q).
+// name inside the app, TTasks, not by the product's full name (PLAN.md Q).
 import { useCallback, type ReactNode } from "react";
 import { IntlProvider, useIntl } from "react-intl";
-import { APP_NAME, CLI_NAME } from "@tasks/brand";
+import { APP_NAME, CLI_NAME } from "@ttasks/brand";
 import en from "./en.json" with { type: "json" };
 
 /** The catalogue's message IDs. */

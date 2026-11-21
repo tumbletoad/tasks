@@ -1,4 +1,4 @@
-// `tasks mcp` through the CLI's own entry (packages/cli/src/bin.ts, the build's lib/tasks.mjs): the
+// `ttasks mcp` through the CLI's own entry (packages/cli/src/bin.ts, the build's lib/ttasks.mjs): the
 // entry hands over to the bridge before it loads anything of the CLI, so the bridge starts as fast
 // as on its own, nothing the CLI prints can reach stdout, and the bridge's arguments are its own
 // (A2 3.7.1, 3.12.2). A load recorder preloaded into the real process lists every
@@ -56,7 +56,7 @@ function tasks(where: Home, args: readonly string[], log: string): Bridge {
   const proc = procs.spawn(
     process.execPath,
     ["--import", RECORDER, CLI_BIN, ...args],
-    cleanEnv({ TASKS_HOME: where.root, KF_LOAD_LOG: log }),
+    cleanEnv({ TTASKS_HOME: where.root, KF_LOAD_LOG: log }),
   );
   return new Bridge(proc);
 }
@@ -84,7 +84,7 @@ function loaded(log: string): { builtins: string[]; files: string[]; other: stri
   return { builtins: builtins.sort(), files: files.sort(), other };
 }
 
-describe("[A2.3.7.bridge.cli-entry] tasks mcp through the CLI's entry", () => {
+describe("[A2.3.7.bridge.cli-entry] ttasks mcp through the CLI's entry", () => {
   test(
     "answers initialize and tools/list offline with nothing but MCP frames, and loads only the bridge",
     { timeout: 120_000 },
@@ -149,7 +149,7 @@ describe("[A2.3.7.bridge.cli-entry] tasks mcp through the CLI's entry", () => {
       bridge.end();
       expect(await bridge.proc.exit).toEqual({ code: 2, signal: null });
       expect(bridge.lines).toEqual([]);
-      expect(bridge.proc.stderr()).toContain("tasks mcp");
+      expect(bridge.proc.stderr()).toContain("ttasks mcp");
       expect(loaded(log).files).not.toContain("packages/bridge/src/mcp/forwarder.ts");
     },
   );

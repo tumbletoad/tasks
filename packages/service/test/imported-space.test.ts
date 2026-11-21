@@ -7,8 +7,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
-import { exportBundle, provenBackup } from "@tasks/storage";
-import { checkedDriver } from "@tasks/testkit";
+import { exportBundle, provenBackup } from "@ttasks/storage";
+import { checkedDriver } from "@ttasks/testkit";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";

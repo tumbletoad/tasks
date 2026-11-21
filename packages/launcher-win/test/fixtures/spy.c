@@ -1,10 +1,10 @@
 /*
  * Test fixture: a stand-in node.exe that reports which handles it received. It writes one JSON
- * object to the file TASKS_FIXTURE_REPORT names:
+ * object to the file TTASKS_FIXTURE_REPORT names:
  *   stdin, stdout, stderr  "none" (no handle), "bad" (a value that is no usable handle), or the
  *                          handle's type: "disk", "pipe", "char", "unknown"
  *   stray                  how many of its handles refer to the file whose name ends with
- *                          TASKS_FIXTURE_STRAY. It writes "LEAK" through each one it finds.
+ *                          TTASKS_FIXTURE_STRAY. It writes "LEAK" through each one it finds.
  *   input                  up to 63 bytes read from stdin when stdin is a file
  * It writes "out\n" to stdout and "err\n" to stderr where it has them, and exits 0.
  */
@@ -75,7 +75,7 @@ int wmain(void) {
     int stray = 0;
     HANDLE report;
 
-    n = GetEnvironmentVariableW(L"TASKS_FIXTURE_STRAY", stray_name, ARRAYSIZE(stray_name));
+    n = GetEnvironmentVariableW(L"TTASKS_FIXTURE_STRAY", stray_name, ARRAYSIZE(stray_name));
     if (n > 0 && n < ARRAYSIZE(stray_name)) stray = find_stray(stray_name);
     if (strcmp(in_kind, "disk") == 0 && ReadFile(in, input, sizeof input - 1, &got, NULL)) {
         input[got] = '\0';
@@ -86,7 +86,7 @@ int wmain(void) {
     _snprintf_s(json, sizeof json, _TRUNCATE,
                 "{\"stdin\":\"%s\",\"stdout\":\"%s\",\"stderr\":\"%s\",\"stray\":%d,\"input\":\"%s\"}",
                 in_kind, out_kind, err_kind, stray, input);
-    n = GetEnvironmentVariableW(L"TASKS_FIXTURE_REPORT", report_path, ARRAYSIZE(report_path));
+    n = GetEnvironmentVariableW(L"TTASKS_FIXTURE_REPORT", report_path, ARRAYSIZE(report_path));
     if (n == 0 || n >= ARRAYSIZE(report_path)) return 2;
     report = CreateFileW(report_path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
                          NULL);

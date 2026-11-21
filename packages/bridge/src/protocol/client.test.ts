@@ -43,7 +43,7 @@ const sentinelContext: JsonObject = {
   instance: "codex-work",
   app: "codex",
   cwd: "/home/mira/SENTINEL-CWD",
-  env: { TASKS_TICKET: "SENTINEL-TICKET", CODEX_THREAD_ID: "SENTINEL-THREAD", CLAUDECODE: "1" },
+  env: { TTASKS_TICKET: "SENTINEL-TICKET", CODEX_THREAD_ID: "SENTINEL-THREAD", CLAUDECODE: "1" },
   parent: { pid: 4802 },
   mcp_init: { jsonrpc: "2.0", id: 0, method: "initialize", params: { note: "SENTINEL-INIT" } },
   resume: { handle: "bh_SENTINEL-HANDLE" },
@@ -313,7 +313,7 @@ describe("[A2.3.6.local.pre-auth-bytes] a client against a fake endpoint", () =>
         fc.asyncProperty(reply, context, fc.constantFrom(...MODES), async (r, ctx, mode) => {
           const { error, bytes } = await against(challengeThen(r), {
             mode,
-            context: { ...ctx, env: { TASKS_TICKET: "SENTINEL-TICKET" } },
+            context: { ...ctx, env: { TTASKS_TICKET: "SENTINEL-TICKET" } },
           });
           expectUntrusted(error);
           expectOnlyHello(bytes, mode);

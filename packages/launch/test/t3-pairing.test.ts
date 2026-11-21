@@ -16,8 +16,8 @@ import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { currentPerson } from "@tasks/files/person";
-import { FakeT3 } from "@tasks/testkit/fake-t3";
+import { currentPerson } from "@ttasks/files/person";
+import { FakeT3 } from "@ttasks/testkit/fake-t3";
 import { readT3Origin, T3Error, T3Mcp } from "../src/t3-client.ts";
 import { beginPairing, PairingError, type PairingAttempt } from "../src/t3-oauth.ts";
 
@@ -27,7 +27,7 @@ let fake: FakeT3;
 const attempts: PairingAttempt[] = [];
 
 beforeEach(async () => {
-  base = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-t3-pair-")));
+  base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-t3-pair-")));
   fake = await FakeT3.start(join(base, "t3home"));
 });
 
@@ -192,7 +192,7 @@ describe("[A4.3.4.1.t3.pairing] pairing with T3 by OAuth and PKCE", () => {
     async () => {
       expect(await readT3Origin(fake.home)).toEqual({ status: "ok", origin: fake.origin });
       const other = join(base, "other-home");
-      // User-only whatever the umask (002 on an Ubuntu desktop), as Tasks needs T3's files.
+      // User-only whatever the umask (002 on an Ubuntu desktop), as TTasks needs T3's files.
       mkdirSync(join(other, "userdata"), { recursive: true, mode: 0o700 });
       const runtime = join(other, "userdata", "server-runtime.json");
       for (const origin of ["http://t3.example.invalid:4000", "file:///x", 42]) {
@@ -205,7 +205,7 @@ describe("[A4.3.4.1.t3.pairing] pairing with T3 by OAuth and PKCE", () => {
         chmodSync(runtime, 0o666);
         expect(await readT3Origin(other)).toEqual({ status: "unsafe" });
         // As T3 makes them under umask 002 (0775, 0664): its group may write them only when that
-        // group is the person's own private group, as for Tasks's own files (A2 3.2.2 rule 5).
+        // group is the person's own private group, as for TTasks's own files (A2 3.2.2 rule 5).
         const userdata = join(other, "userdata");
         chmodSync(runtime, 0o664);
         chmodSync(userdata, 0o775);

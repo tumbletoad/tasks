@@ -18,8 +18,8 @@ import {
   SpaceLockedElsewhere,
   StorageWorker,
   type Id,
-} from "@tasks/storage";
-import { checkedDriver } from "@tasks/testkit";
+} from "@ttasks/storage";
+import { checkedDriver } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { EXIT } from "../src/hub/exit.ts";
 import { canonicalStatePath } from "../src/hub/paths.ts";

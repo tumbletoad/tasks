@@ -5,7 +5,7 @@
 // what was found: tests pass a fake host. When `[terminal]` names the terminal and its fallbacks,
 // no default is looked up.
 //
-// `auto`, Linux: the first of these that names an installed terminal Tasks has an adapter for.
+// `auto`, Linux: the first of these that names an installed terminal TTasks has an adapter for.
 //   1. `$TERMINAL`.
 //   2. The desktop's default: on KDE Plasma its own setting (kdeglobals' TerminalService, then
 //      TerminalApplication), which KDE's own apps use; then the xdg-terminals lists in the order of
@@ -14,7 +14,7 @@
 //   4. Only then the first installed of Ghostty, kitty, WezTerm, GNOME Terminal, Konsole.
 // `auto`, Windows: the person's "Default terminal application" setting. Windows Terminal, or "Let
 // Windows decide" (which means Windows Terminal when it is installed): Windows Terminal through its
-// app execution alias, else a console. Windows Console Host: a console. Another terminal: Tasks has
+// app execution alias, else a console. Windows Console Host: a console. Another terminal: TTasks has
 // no adapter for it, so Windows Terminal when installed, else a console, and doctor says so.
 // `auto`, macOS: no adapter exists yet, so the chain is empty.
 //
@@ -45,7 +45,7 @@ export const TERMINAL_SOURCES = [
   "distribution",
   /** Windows: the "Default terminal application" setting. */
   "windows",
-  /** No default named a terminal Tasks can open: the first installed one. */
+  /** No default named a terminal TTasks can open: the first installed one. */
   "installed",
 ] as const;
 export type TerminalSource = (typeof TERMINAL_SOURCES)[number];
@@ -59,18 +59,18 @@ export interface ChainEntry {
   readonly source: TerminalSource;
 }
 
-/** The chain, and the operating system's default when Tasks has no adapter for it. */
+/** The chain, and the operating system's default when TTasks has no adapter for it. */
 export interface TerminalChoice {
   readonly chain: ChainEntry[];
   /**
-   * The default the person set that Tasks cannot open, when one came before the choice: a desktop
+   * The default the person set that TTasks cannot open, when one came before the choice: a desktop
    * entry ID or a program's name (checked: letters, digits and `._+-` only), or `other` for a
-   * Windows terminal Tasks does not know.
+   * Windows terminal TTasks does not know.
    */
   readonly unsupported?: string;
   /**
    * The operating system's setting could not be read (Windows' registry did not answer, the
-   * desktop's files not in time), so the chain is Tasks' own order.
+   * desktop's files not in time), so the chain is TTasks' own order.
    */
   readonly unread?: "windows" | "desktop";
 }
@@ -132,7 +132,7 @@ const DESKTOP_IDS: Readonly<Record<string, AdapterApp>> = {
   "konsole.desktop": "konsole",
 };
 
-/** The fixed order of step 4, when no default named a terminal Tasks can open. */
+/** The fixed order of step 4, when no default named a terminal TTasks can open. */
 const LINUX_ORDER: readonly AdapterApp[] = [
   "ghostty",
   "kitty",
@@ -143,7 +143,7 @@ const LINUX_ORDER: readonly AdapterApp[] = [
 
 /** A desktop entry ID (Desktop Entry Specification): no folder, no space, ends in `.desktop`. */
 const DESKTOP_ID = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,200}\.desktop$/;
-/** A name doctor may show for a default Tasks cannot open. */
+/** A name doctor may show for a default TTasks cannot open. */
 const SHOWN_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$/;
 /** A desktop's name in `XDG_CURRENT_DESKTOP`, lowercased: it becomes part of a file name. */
 const DESKTOP_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -321,7 +321,7 @@ function kdeDefault(host: TerminalHost): { id?: string; command?: string } | und
   return undefined;
 }
 
-/** A Linux candidate default: a terminal Tasks can open, or the name of one it cannot. */
+/** A Linux candidate default: a terminal TTasks can open, or the name of one it cannot. */
 type Candidate = { readonly app: AdapterApp } | { readonly unsupported: string };
 
 /** The defaults of steps 1 to 3 on Linux, in order (head of this file). */
@@ -371,7 +371,7 @@ function linuxDefaults(host: TerminalHost): { source: TerminalSource; candidate:
 export function autoChoice(host: TerminalHost): TerminalChoice {
   if (host.platform === "win32") {
     const wt = windowsTerminalAlias(host);
-    // Unread, the order is what "Let Windows decide" would give, but it is Tasks' choice.
+    // Unread, the order is what "Let Windows decide" would give, but it is TTasks' choice.
     const unread = host.delegation === undefined;
     const decided = delegationChoice(host.delegation);
     const source: TerminalSource = decided === "other" || unread ? "installed" : "windows";
@@ -389,7 +389,7 @@ export function autoChoice(host: TerminalHost): TerminalChoice {
   }
   if (host.platform !== "linux") return { chain: [] };
   const found: ChainEntry[] = [];
-  /** The first default Tasks cannot open, when it came before every one it can. */
+  /** The first default TTasks cannot open, when it came before every one it can. */
   let unsupported: string | undefined;
   for (const { source, candidate } of linuxDefaults(host)) {
     if (!("app" in candidate)) {
@@ -481,7 +481,7 @@ export function terminalChoice(settings: TerminalSettings, host: TerminalHost): 
   const chain = dedupe([...chosen, ...rest]);
   if (host.platform === "win32" && !chain.some((e) => e.app === "console"))
     chain.push({ app: "console", program: host.powershell, source: "fallback" });
-  // A default Tasks cannot open or read matters only when `auto` decided.
+  // A default TTasks cannot open or read matters only when `auto` decided.
   if (settings.app !== "auto") return { chain };
   return {
     chain,
@@ -509,7 +509,7 @@ export const DESKTOP_READ_MS = 1_000;
  * service: a home folder on a stalled network share must not hold up an Open. It runs the choice
  * against what was read so far, reads the files it asked for, and repeats until it asks for no new
  * one (the lists name the desktop entries to read next). When the deadline passes first, nothing
- * read is used, so the choice is Tasks' own order and says so.
+ * read is used, so the choice is TTasks' own order and says so.
  */
 export async function readDesktopTexts(
   settings: TerminalSettings,

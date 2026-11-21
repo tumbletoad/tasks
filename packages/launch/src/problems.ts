@@ -11,7 +11,7 @@ export const PROBLEM_CODES = [
   "unreadable",
   /**
    * Linux and macOS: the file or its folder belongs to another user or others can write it. The
-   * file names commands Tasks runs, so it is not used.
+   * file names commands TTasks runs, so it is not used.
    */
   "unsafe_permissions",
   /**

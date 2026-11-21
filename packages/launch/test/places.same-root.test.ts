@@ -30,7 +30,7 @@ const { placeOf, rootNaming, resolvePlace } = await import("../src/places.ts");
 
 let base = "";
 beforeAll(() => {
-  base = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-places-same-")));
+  base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-places-same-")));
 });
 afterAll(() => {
   keep.spelling = undefined;
@@ -48,7 +48,7 @@ describe("[A1.3.15.places.inverse] two roots that are one folder, whatever their
     keep.spelling = mount;
     const first = { id: "work", path: work };
     const roots = [first, { id: "mount", path: mount }];
-    // `tasks roots add` compares identities and finds the folder named.
+    // `ttasks roots add` compares identities and finds the folder named.
     expect(await rootNaming(mount, [first])).toEqual({ status: "named", root: "work" });
     // Each root resolves its own places.
     expect(await resolvePlace({ root: "mount", path: "portal" }, roots)).toMatchObject({

@@ -2,15 +2,15 @@
 // the actor in history and the writer scope. The client never names a principal. A session binding
 // (M2.04, binding.ts) gives a bound connection its session's principal and scope, and keeps the
 // earlier scope of a connection that wrote unbound; a run's (M6) will do the same.
-import { PRODUCT_NAME } from "@tasks/brand";
-import type { AnyEntry } from "@tasks/contracts";
-import { AppError, findEntry } from "@tasks/contracts";
+import { PRODUCT_NAME } from "@ttasks/brand";
+import type { AnyEntry } from "@ttasks/contracts";
+import { AppError, findEntry } from "@ttasks/contracts";
 import type { ConnectionClass } from "../local/index.ts";
 import { runOf, type BoundSession, type Slot } from "./binding.ts";
 
 export interface Caller {
   readonly class: ConnectionClass;
-  /** The bind context's environment: the agent markers and TASKS_SPACE (A2 3.6.4). */
+  /** The bind context's environment: the agent markers and TTASKS_SPACE (A2 3.6.4). */
   readonly env: Readonly<Record<string, string>>;
   /**
    * The UI's grant row (A2 3.2.5), for the `ui` class: its writer scope is the grant's (A3
@@ -62,7 +62,7 @@ export interface Principal {
   /** The bound session (`se_` ID): A1's credential carries it into every commit and log entry. */
   readonly session?: string;
   /**
-   * The background run (`ru_` ID) the session acts for, when Tasks started its agent: the
+   * The background run (`ru_` ID) the session acts for, when TTasks started its agent: the
    * credential carries it too, so what the agent changes is recorded as the run's.
    */
   readonly run?: string;

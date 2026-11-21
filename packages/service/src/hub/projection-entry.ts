@@ -5,14 +5,14 @@
 // text.
 import { join } from "node:path";
 import { parentPort, workerData } from "node:worker_threads";
-import { codeOf, ProjectionError, Projector, runProjection } from "@tasks/projection";
+import { codeOf, ProjectionError, Projector, runProjection } from "@ttasks/projection";
 import {
   CheckedDriver,
   DEFAULT_DRIVER,
   loadDriver,
   openSpace,
   type ProjectedBatch,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 import type { ProjectionCommand, ProjectionJob, ProjectionMessage } from "./projection.ts";
 
 const port = parentPort;

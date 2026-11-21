@@ -31,7 +31,7 @@
 // Child roles: idle (waits), daemonize (starts a detached idle child, exits once it runs).
 //
 // Every process of a stand-in tree carries the token in its arguments, and on Windows also
-// listens on the named pipe `tasks-test-standin-<token>-<pid>`, so the tests can count what is
+// listens on the named pipe `ttasks-test-standin-<token>-<pid>`, so the tests can count what is
 // alive without trusting the container. None outlives --max-ms (default 60 s), so a broken
 // container cannot leave a stand-in running for long.
 import { spawn, type StdioOptions } from "node:child_process";
@@ -78,7 +78,7 @@ function say(text: string): void {
 
 if (process.platform === "win32") {
   createServer()
-    .listen(`\\\\.\\pipe\\tasks-test-standin-${token}-${String(process.pid)}`)
+    .listen(`\\\\.\\pipe\\ttasks-test-standin-${token}-${String(process.pid)}`)
     .unref()
     .on("error", () => undefined);
 }

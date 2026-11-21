@@ -301,11 +301,11 @@ jobs:
 
       - name: Install fresh and verify with the installed product
         if: needs.plan.outputs.previous_version == ''
-        run: pnpm release check-install --dist "${{ runner.temp }}/signed/current" --work "$HOME/tasks-release-check"
+        run: pnpm release check-install --dist "${{ runner.temp }}/signed/current" --work "$HOME/ttasks-release-check"
 
       - name: Install fresh, upgrade the previous build, and verify with the installed product
         if: needs.plan.outputs.previous_version != ''
-        run: pnpm release check-install --dist "${{ runner.temp }}/signed/current" --from "${{ runner.temp }}/signed/previous" --work "$HOME/tasks-release-check"
+        run: pnpm release check-install --dist "${{ runner.temp }}/signed/current" --from "${{ runner.temp }}/signed/previous" --work "$HOME/ttasks-release-check"
 
   # GitHub's build provenance for every file of the release, signed through Sigstore's public
   # instance. Not for a rehearsal: its files must never carry this repository's attestation.

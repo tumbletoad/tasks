@@ -31,7 +31,7 @@ import {
 
 let work: string;
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-version-folder-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-version-folder-"));
 });
 afterAll(() => {
   rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
@@ -46,7 +46,7 @@ describe("[A2.3.12.2.build.version-folder] the version folder, its checks and it
       "NOTICE",
       "THIRD_PARTY.txt",
       "lib/bridge.mjs",
-      "lib/tasks.mjs",
+      "lib/ttasks.mjs",
       "lib/mcp-offline.json",
       "lib/shim.mjs",
       "licenses/node.txt",
@@ -57,24 +57,24 @@ describe("[A2.3.12.2.build.version-folder] the version folder, its checks and it
       "ui/manifest.webmanifest",
     ];
     const plan = (p: (typeof PLATFORMS)[number]) => plannedFiles(p);
-    expect(plan("linux-x64")).toEqual([...common, "bin/tasks", "runtime/node"].sort());
+    expect(plan("linux-x64")).toEqual([...common, "bin/ttasks", "runtime/node"].sort());
     expect(plan("linux-arm64")).toEqual(plan("linux-x64"));
     expect(plan("win-x64")).toEqual(
       [
         ...common,
-        "bin/tasks-run.exe",
-        "bin/tasks.exe",
-        "bin/tasksw.exe",
+        "bin/ttasks-run.exe",
+        "bin/ttasks.exe",
+        "bin/ttasksw.exe",
         "runtime/node.exe",
       ].sort(),
     );
     // The launchd wrapper (M1.12's text) is macOS's only.
     expect(plan("darwin-arm64")).toEqual(
-      [...common, "bin/tasks", "bin/tasks-launchd", "runtime/node"].sort(),
+      [...common, "bin/ttasks", "bin/ttasks-launchd", "runtime/node"].sort(),
     );
     expect([...executables("linux-x64")].sort()).toEqual([
-      "bin/tasks",
-      "bin/tasks-launchd",
+      "bin/ttasks",
+      "bin/ttasks-launchd",
       "runtime/node",
     ]);
     expect(executables("win-x64").size).toBe(0);
@@ -83,7 +83,7 @@ describe("[A2.3.12.2.build.version-folder] the version folder, its checks and it
   test("a macOS folder carries the launchd wrapper with the exec bit, a Linux one does not", () => {
     // Stand-in runtime and bundle files: this test checks placement and modes, not that they run.
     const bundleOut = join(work, "fake-bundle");
-    const libFiles = ["lib/bridge.mjs", "lib/tasks.mjs", "lib/mcp-offline.json", "lib/shim.mjs"];
+    const libFiles = ["lib/bridge.mjs", "lib/ttasks.mjs", "lib/mcp-offline.json", "lib/shim.mjs"];
     for (const file of libFiles) {
       mkdirSync(join(bundleOut, "lib"), { recursive: true });
       writeFileSync(join(bundleOut, ...file.split("/")), `// ${file}\n`);
@@ -115,15 +115,15 @@ describe("[A2.3.12.2.build.version-folder] the version folder, its checks and it
       return folderEntries(folder, platform);
     };
     const mac = assemble("darwin-arm64");
-    const wrapper = mac.find((e) => e.path === "bin/tasks-launchd");
+    const wrapper = mac.find((e) => e.path === "bin/ttasks-launchd");
     expect(wrapper?.data.toString()).toBe(LAUNCHD_WRAPPER);
     expect(wrapper?.mode).toBe(0o755);
-    expect(mac.find((e) => e.path === "bin/tasks")?.mode).toBe(0o755);
-    expect(mac.find((e) => e.path === "lib/tasks.mjs")?.mode).toBe(0o644);
+    expect(mac.find((e) => e.path === "bin/ttasks")?.mode).toBe(0o755);
+    expect(mac.find((e) => e.path === "lib/ttasks.mjs")?.mode).toBe(0o644);
     // The page sits in ui/, beside lib/, as plain files.
     expect(mac.find((e) => e.path === "ui/assets/index-abc123.js")?.mode).toBe(0o644);
     expect(mac.map((e) => e.path)).toContain("ui/index.html");
-    expect(assemble("linux-arm64").map((e) => e.path)).not.toContain("bin/tasks-launchd");
+    expect(assemble("linux-arm64").map((e) => e.path)).not.toContain("bin/ttasks-launchd");
   });
 
   test("a version and a build label must fit current, the app version and the log", () => {
@@ -190,19 +190,19 @@ describe("[A2.3.12.2.build.version-folder] the version folder, its checks and it
 
   test("a build leaves dist/ with archives of its own version only", () => {
     const names = [
-      "tasks-0.1.0-dev.7-linux-x64.tar.gz",
-      "tasks-0.1.0-dev.7-win-x64.zip",
-      "tasks-0.1.0-dev.8-darwin-arm64.tar.gz",
-      "tasks-0.1.0-dev.8-linux-x64.tar.gz",
+      "ttasks-0.1.0-dev.7-linux-x64.tar.gz",
+      "ttasks-0.1.0-dev.7-win-x64.zip",
+      "ttasks-0.1.0-dev.8-darwin-arm64.tar.gz",
+      "ttasks-0.1.0-dev.8-linux-x64.tar.gz",
       "SHA256SUMS",
       "notes.txt",
     ];
     // Building 0.1.0-dev.8 for linux-x64: this platform's archive goes (it is made again), and so
     // does every archive of another version, which this build's SHA256SUMS would not list.
     expect(staleArchives(names, "0.1.0-dev.8", "linux-x64")).toEqual([
-      "tasks-0.1.0-dev.7-linux-x64.tar.gz",
-      "tasks-0.1.0-dev.7-win-x64.zip",
-      "tasks-0.1.0-dev.8-linux-x64.tar.gz",
+      "ttasks-0.1.0-dev.7-linux-x64.tar.gz",
+      "ttasks-0.1.0-dev.7-win-x64.zip",
+      "ttasks-0.1.0-dev.8-linux-x64.tar.gz",
     ]);
   });
 

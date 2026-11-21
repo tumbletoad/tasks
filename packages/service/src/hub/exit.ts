@@ -1,5 +1,5 @@
-// The exit codes of `tasks serve` (A2 3.3.1). The service managers act on them: systemd's unit, the
-// Windows supervisor in tasksw.exe (A2 3.3.2) and the macOS wrapper map each one, so they are
+// The exit codes of `ttasks serve` (A2 3.3.1). The service managers act on them: systemd's unit, the
+// Windows supervisor in ttasksw.exe (A2 3.3.2) and the macOS wrapper map each one, so they are
 // exactly these numbers and nothing else.
 
 export const EXIT = {

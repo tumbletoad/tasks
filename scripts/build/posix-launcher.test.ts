@@ -1,7 +1,7 @@
-// The POSIX launcher `bin/tasks` (A2 3.12.3), on Linux and macOS:
+// The POSIX launcher `bin/ttasks` (A2 3.12.3), on Linux and macOS:
 // hostile arguments reach Node unchanged, the caller's NODE_ variables (but NODE_EXTRA_CA_CERTS)
-// and OpenSSL's loader settings never do, TASKS_HOME comes from the location only, and exit codes
-// pass through, called by its own path in a version folder and through bin/tasks -> current. The
+// and OpenSSL's loader settings never do, TTASKS_HOME comes from the location only, and exit codes
+// pass through, called by its own path in a version folder and through bin/ttasks -> current. The
 // runtime is a link to the Node that runs the tests; the entry is a stub that reports what it got.
 import { spawnSync } from "node:child_process";
 import {
@@ -23,7 +23,7 @@ const VERSION = "0.1.0-dev.9";
 
 const STUB = `const [command, ...rest] = process.argv.slice(2);
 if (command === "exit") process.exit(Number(rest[0]));
-const shown = /^(NODE_|node_|OPENSSL_|TASKS_|SSL_CERT_|HTTPS?_PROXY$|MULTI)/;
+const shown = /^(NODE_|node_|OPENSSL_|TTASKS_|SSL_CERT_|HTTPS?_PROXY$|MULTI)/;
 const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => shown.test(name)));
 process.stdout.write(JSON.stringify({ args: rest, execArgv: process.execArgv, env }));
 `;
@@ -34,21 +34,21 @@ let versionLauncher: string;
 let stableLauncher: string;
 
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-posix-launcher-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-posix-launcher-"));
   root = join(work, "root");
   if (!posix) return;
   const folder = join(root, "versions", VERSION);
   for (const dir of ["bin", "runtime", "lib"]) mkdirSync(join(folder, dir), { recursive: true });
-  versionLauncher = join(folder, "bin", "tasks");
+  versionLauncher = join(folder, "bin", "ttasks");
   writeFileSync(versionLauncher, POSIX_LAUNCHER);
   chmodSync(versionLauncher, 0o755);
   symlinkSync(process.execPath, join(folder, "runtime", "node"));
-  writeFileSync(join(folder, "lib", "tasks.mjs"), STUB);
+  writeFileSync(join(folder, "lib", "ttasks.mjs"), STUB);
   writeFileSync(join(root, "home.marker"), "");
   symlinkSync(`versions/${VERSION}`, join(root, "current"));
   mkdirSync(join(root, "bin"));
-  stableLauncher = join(root, "bin", "tasks");
-  symlinkSync("../current/bin/tasks", stableLauncher);
+  stableLauncher = join(root, "bin", "ttasks");
+  symlinkSync("../current/bin/ttasks", stableLauncher);
 });
 afterAll(() => {
   rmSync(work, { recursive: true, force: true });
@@ -107,7 +107,7 @@ const HOSTILE = [
   "line\r\nend",
 ];
 
-describe.runIf(posix)("[A2.3.12.3.build.posix-launcher] the POSIX launcher bin/tasks", () => {
+describe.runIf(posix)("[A2.3.12.3.build.posix-launcher] the POSIX launcher bin/ttasks", () => {
   test("hostile arguments reach Node unchanged, by its own path and through current", () => {
     for (const launcher of [versionLauncher, stableLauncher]) {
       const seen = launch(launcher, HOSTILE);
@@ -118,7 +118,7 @@ describe.runIf(posix)("[A2.3.12.3.build.posix-launcher] the POSIX launcher bin/t
 
   test("no NODE_ variable but NODE_EXTRA_CA_CERTS and no OpenSSL loader setting reaches Node", () => {
     const seen = launch(stableLauncher, [], {
-      NODE_OPTIONS: "--require /nonexistent/tasks-test-preload.js",
+      NODE_OPTIONS: "--require /nonexistent/ttasks-test-preload.js",
       NODE_DEBUG: "child_process",
       NODE_COMPILE_CACHE: join(work, "should-not-exist"),
       NODE_TLS_REJECT_UNAUTHORIZED: "0",
@@ -145,26 +145,26 @@ describe.runIf(posix)("[A2.3.12.3.build.posix-launcher] the POSIX launcher bin/t
       SSL_CERT_FILE: "/fixture/certs.pem",
       HTTPS_PROXY: "http://proxy.example:3128",
       MULTI: "first\nexport NODE_PATH='/evil'\nexport HTTPS_PROXY=fake\nNODE_X Y=z\n",
-      TASKS_HOME: root,
+      TTASKS_HOME: root,
     });
   });
 
-  test("TASKS_HOME comes from the location only, and the Windows launchers' variables are removed", () => {
+  test("TTASKS_HOME comes from the location only, and the Windows launchers' variables are removed", () => {
     const caller = {
-      TASKS_HOME: "/elsewhere",
-      TASKS_ROOT: "/elsewhere",
-      TASKS_LAUNCHER: "x",
-      TASKS_LAUNCH_MODE: "stable",
-      TASKS_PACKAGE: "Fake.Package_1.0_x64__abc",
-      TASKS_SERVICE_MANAGER: "systemd",
+      TTASKS_HOME: "/elsewhere",
+      TTASKS_ROOT: "/elsewhere",
+      TTASKS_LAUNCHER: "x",
+      TTASKS_LAUNCH_MODE: "stable",
+      TTASKS_PACKAGE: "Fake.Package_1.0_x64__abc",
+      TTASKS_SERVICE_MANAGER: "systemd",
     };
     expect(launch(versionLauncher, [], caller).env).toEqual({
-      TASKS_HOME: root,
-      TASKS_SERVICE_MANAGER: "systemd",
+      TTASKS_HOME: root,
+      TTASKS_SERVICE_MANAGER: "systemd",
     });
     rmSync(join(root, "home.marker"));
     try {
-      expect(launch(stableLauncher, [], caller).env).toEqual({ TASKS_SERVICE_MANAGER: "systemd" });
+      expect(launch(stableLauncher, [], caller).env).toEqual({ TTASKS_SERVICE_MANAGER: "systemd" });
     } finally {
       writeFileSync(join(root, "home.marker"), "");
     }
@@ -193,7 +193,7 @@ describe.runIf(posix)("[A2.3.12.3.build.posix-launcher] the POSIX launcher bin/t
           SHELLOPTS: "xtrace:verbose",
           FIXTURE_TOKEN: secret,
           NODE_OPTIONS: `--title=${secret}`,
-          "BASH_FUNC_readlink%%": "() { echo /nonexistent/bin/tasks; }",
+          "BASH_FUNC_readlink%%": "() { echo /nonexistent/bin/ttasks; }",
         },
         encoding: "utf8",
         timeout: 30_000,
@@ -203,7 +203,7 @@ describe.runIf(posix)("[A2.3.12.3.build.posix-launcher] the POSIX launcher bin/t
       expect(result.stderr, String(shell)).not.toContain(argument);
       const seen = JSON.parse(result.stdout) as Seen;
       expect(seen.args, String(shell)).toEqual([argument]);
-      expect(seen.env, String(shell)).toEqual({ TASKS_HOME: root });
+      expect(seen.env, String(shell)).toEqual({ TTASKS_HOME: root });
     }
   });
 

@@ -1,11 +1,11 @@
-// The contract suite (@tasks/service/test/contract) through the CLI's --json (A3 5 "Parity", A7 3.9
+// The contract suite (@ttasks/service/test/contract) through the CLI's --json (A3 5 "Parity", A7 3.9
 // M2.03): every example goes in as `tasks <verb> --input - --json`, the CLI's own path from the
 // arguments to `op/call` and back, run in this process against a service in this process. The
 // user's calls come from a terminal (`cli-interactive`), the agent's from a script (`cli-script`).
 // The grant gate's refusal (A3 3.7.8) goes the same way, from an agent's shell whose ticket maps
 // the call to a session of a home whose row was revoked (`cli-agent`).
 import { expect } from "vitest";
-import { EXIT_CODES, type ErrorBody } from "@tasks/contracts";
+import { EXIT_CODES, type ErrorBody } from "@ttasks/contracts";
 import {
   ContractError,
   contractSuite,
@@ -13,8 +13,8 @@ import {
   grantSuite,
   revokedSession,
   type ContractTransport,
-} from "@tasks/service/test/contract";
-import { classSession, errorOf } from "@tasks/service/test/ops-helpers";
+} from "@ttasks/service/test/contract";
+import { classSession, errorOf } from "@ttasks/service/test/ops-helpers";
 import { CLI_SPEC } from "../src/args.ts";
 import { runMain } from "./cli-harness.ts";
 
@@ -43,7 +43,7 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --
   const transport: ContractTransport = {
     portal: w.portal,
     folder: (task) => w.folder(task),
-    // The CLI holds no binding: `tasks show --launch` resolves the reference for that call.
+    // The CLI holds no binding: `ttasks show --launch` resolves the reference for that call.
     binds: false,
     // An entry with no command is the UI's alone.
     carries: onCli,
@@ -92,7 +92,7 @@ grantSuite(
       refused: async (entry, input) => {
         const ran = await runMain([verbOf(entry, input), "--input", "-", "--json"], {
           home: w.home,
-          env: { TASKS_TICKET: ticket },
+          env: { TTASKS_TICKET: ticket },
           stdin: JSON.stringify(input),
         });
         if (ran.code === 0) return undefined;

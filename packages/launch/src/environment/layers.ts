@@ -7,7 +7,7 @@
 // included, which the unit's own environment missed); the Windows registry layers took 36 to
 // 47 ms and found what a fresh `pwsh` found.
 import { randomBytes } from "node:crypto";
-import { envVar } from "@tasks/brand";
+import { envVar } from "@ttasks/brand";
 import { TERMINAL_ENV } from "../shim/wire.ts";
 import { base64Text, REGISTRY_READS } from "../windows-reads.ts";
 
@@ -248,10 +248,10 @@ export const CORE_SYSTEM_NAMES = [
 
 /** The account's profile and the program folders: after the system's values, before the user's. */
 export const CORE_USER_NAMES = [
-  // eslint-disable-next-line no-restricted-syntax -- a variable Windows sets for the account, not a path Tasks writes
+  // eslint-disable-next-line no-restricted-syntax -- a variable Windows sets for the account, not a path TTasks writes
   "APPDATA",
   "COMPUTERNAME",
-  // eslint-disable-next-line no-restricted-syntax -- a variable Windows sets for the account, not a path Tasks writes
+  // eslint-disable-next-line no-restricted-syntax -- a variable Windows sets for the account, not a path TTasks writes
   "LOCALAPPDATA",
   "ProgramFiles",
   "ProgramFiles(x86)",

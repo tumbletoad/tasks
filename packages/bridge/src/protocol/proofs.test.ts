@@ -44,23 +44,23 @@ describe("[A2.3.6.local.proofs] proofs", () => {
     const h = ids();
     const { instance: i, serverNonce: ns, clientNonce: nc } = h;
     expect(clientProof(key, h)).toEqual(
-      hmac(key, `tasks-local/1 client\n${i}\n1\nrpc\n${ns}\n${nc}`),
+      hmac(key, `ttasks-local/1 client\n${i}\n1\nrpc\n${ns}\n${nc}`),
     );
     expect(serverProof(key, h)).toEqual(
-      hmac(key, `tasks-local/1 server\n${i}\n1\nrpc\n${nc}\n${ns}`),
+      hmac(key, `ttasks-local/1 server\n${i}\n1\nrpc\n${nc}\n${ns}`),
     );
-    const ks = hmac(key, `tasks-local/1 session\n${i}\n${ns}\n${nc}`);
+    const ks = hmac(key, `ttasks-local/1 session\n${i}\n${ns}\n${nc}`);
     expect(sessionKey(key, h)).toEqual(ks);
     const body = { protocol: 1, mode: "rpc" as const, client: { b: 1, a: [2] }, context: {} };
     const t = hex(
-      `tasks-local/1 transcript\n${i}\n${ns}\n${nc}\n[1]\n` +
+      `ttasks-local/1 transcript\n${i}\n${ns}\n${nc}\n[1]\n` +
         '{"client":{"a":[2],"b":1},"context":{},"mode":"rpc","protocol":1}',
     );
     expect(transcriptHash(h, [1], body)).toBe(t);
-    expect(bindProof(ks, t)).toEqual(hmac(ks, `tasks-local/1 bind\n${t}`));
+    expect(bindProof(ks, t)).toEqual(hmac(ks, `ttasks-local/1 bind\n${t}`));
     const result = { protocol: 1, spaces: [] };
     expect(boundProof(ks, t, result)).toEqual(
-      hmac(ks, `tasks-local/1 bound\n${t}\n${hex('{"protocol":1,"spaces":[]}')}`),
+      hmac(ks, `ttasks-local/1 bound\n${t}\n${hex('{"protocol":1,"spaces":[]}')}`),
     );
   });
 

@@ -1,19 +1,19 @@
-// What `tasks service install` writes (A2 3.3.2 to 3.3.4): the systemd user unit, the HKCU Run
+// What `ttasks service install` writes (A2 3.3.2 to 3.3.4): the systemd user unit, the HKCU Run
 // value and the LaunchAgent, each named with the install ID (A2 3.2.2 rule 3), and the
-// `tasks-launchd` wrapper that the build places beside the macOS launcher. Pure functions of their
+// `ttasks-launchd` wrapper that the build places beside the macOS launcher. Pure functions of their
 // inputs, so the golden files of every OS are checked on every OS.
 //
-// Names. The daily install (no TASKS_HOME) keeps the plain names `tasks.service`, `Tasks` and
-// `local.tasks.service`: its paths are the fixed per-user defaults, so no other install can have
+// Names. The daily install (no TTASKS_HOME) keeps the plain names `ttasks.service`, `TTasks` and
+// `local.ttasks.service`: its paths are the fixed per-user defaults, so no other install can have
 // them, and a renamed home folder (a new install ID) still finds its own entry. A separate install
-// carries its install ID: `tasks-<id>.service`, `Tasks (<id>)`, `local.tasks.service.<id>`. A folder
+// carries its install ID: `ttasks-<id>.service`, `TTasks (<id>)`, `local.ttasks.service.<id>`. A folder
 // name is never used, because two different paths can end in the same name.
 import { posix, win32 } from "node:path";
-import { envVar, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
+import { envVar, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { isInstallId, type Layout } from "../hub/paths.ts";
 
-/** The variable that tells `tasks serve` which manager started it (hub/service.ts reads it). */
-const TASKS_SERVICE_MANAGER = envVar("SERVICE_MANAGER");
+/** The variable that tells `ttasks serve` which manager started it (hub/service.ts reads it). */
+const TTASKS_SERVICE_MANAGER = envVar("SERVICE_MANAGER");
 
 export type ServicePlatform = "linux" | "win32" | "darwin";
 
@@ -52,10 +52,10 @@ export function serviceNames(installId: string, separate: boolean): ServiceNames
 /**
  * The program an install's OS entry starts, by A2's layout (3.12.2): the version-following
  * launcher, never a version folder, so an update needs no new entry.
- * - Linux: `<root>/current/bin/tasks`, run as `tasks serve`.
- * - Windows: `tasksw.exe` in the command folder (`%USERPROFILE%\.local\bin`, or `<root>\bin` of a
- *   TASKS_HOME install), the stable supervisor, with no arguments.
- * - macOS: `<root>/current/bin/tasks-launchd`, the wrapper, with no arguments.
+ * - Linux: `<root>/current/bin/ttasks`, run as `ttasks serve`.
+ * - Windows: `ttasksw.exe` in the command folder (`%USERPROFILE%\.local\bin`, or `<root>\bin` of a
+ *   TTASKS_HOME install), the stable supervisor, with no arguments.
+ * - macOS: `<root>/current/bin/ttasks-launchd`, the wrapper, with no arguments.
  * The build (M1.13) and the installer (M1.14) may pass another path.
  */
 export function defaultProgram(
@@ -111,9 +111,9 @@ export function execPath(path: string): string {
 const unitValue = (text: string): string => text.replaceAll("%", "%%");
 
 export interface UnitInput {
-  /** `<root>/current/bin/tasks`: the launcher, run as `tasks serve`. */
+  /** `<root>/current/bin/ttasks`: the launcher, run as `ttasks serve`. */
   readonly program: string;
-  /** TASKS_HOME of a separate install, named in the description (A2 3.2.2 rule 3). */
+  /** TTASKS_HOME of a separate install, named in the description (A2 3.2.2 rule 3). */
   readonly tasksHome?: string | undefined;
 }
 
@@ -167,11 +167,11 @@ export function renderUnit(input: UnitInput): string {
       "The launcher's path holds a quote, an apostrophe or a backslash, which systemd does not accept in a program path",
     );
   }
-  if (input.tasksHome !== undefined) checkPath(input.tasksHome, "linux", "TASKS_HOME");
+  if (input.tasksHome !== undefined) checkPath(input.tasksHome, "linux", "TTASKS_HOME");
   const description =
     input.tasksHome === undefined
       ? `${PRODUCT_NAME} service`
-      : `${PRODUCT_NAME} service (TASKS_HOME=${unitValue(input.tasksHome)})`;
+      : `${PRODUCT_NAME} service (TTASKS_HOME=${unitValue(input.tasksHome)})`;
   return [
     `# ${WRITTEN_BY}`,
     "[Unit]",
@@ -183,7 +183,7 @@ export function renderUnit(input: UnitInput): string {
     "Type=exec",
     `ExecStart=${execPath(input.program)} serve`,
     "WorkingDirectory=%h",
-    `Environment=${TASKS_SERVICE_MANAGER}=systemd`,
+    `Environment=${TTASKS_SERVICE_MANAGER}=systemd`,
     "Restart=on-failure",
     "RestartSec=2",
     "RestartPreventExitStatus=64 73",
@@ -206,7 +206,7 @@ export function renderUnit(input: UnitInput): string {
  *   control character other than the line feed (NUL, which systemd reads as a line end, CR, tab,
  *   C1), a byte order mark anywhere but at the start of a unit, text that is not UTF-8, or more
  *   than ENTRY_MAX_BYTES;
- * - `not_ours`: it does not start a Tasks launcher in the form install writes;
+ * - `not_ours`: it does not start a TTasks launcher in the form install writes;
  * - `names_other_units`: a unit whose `[Install]` section has `Also=`, so `systemctl --user
  *   disable` (and enable) would change those units too;
  * - `other_settings`: a setting install does not write (another command such as `ExecStartPre=`,
@@ -400,7 +400,7 @@ function plainExec(value: string): boolean {
  * Whether a unit file is this install's (see NotOurs): it holds only text install writes
  * (unusualText); read as systemd reads it, its `[Service]` section starts exactly one command,
  * `<absolute path ending in /tasks> serve`, with no prefix, escape or specifier; its only variable
- * is `TASKS_SERVICE_MANAGER=systemd`; its `[Install]` section names no other unit; and it has no
+ * is `TTASKS_SERVICE_MANAGER=systemd`; its `[Install]` section names no other unit; and it has no
  * setting, section (not even an empty one) or line install does not write. Drop-ins are checked by
  * the caller.
  */
@@ -427,7 +427,7 @@ export function unitNotOurs(text: string): NotOurs | undefined {
   if (directives.some((d) => d.section === "Install" && d.key === "Also" && d.value !== "")) {
     return "names_other_units";
   }
-  const own = `${TASKS_SERVICE_MANAGER}=systemd`;
+  const own = `${TTASKS_SERVICE_MANAGER}=systemd`;
   const allowed = (section: string): readonly string[] | undefined =>
     Object.hasOwn(UNIT_SETTINGS, section) ? UNIT_SETTINGS[section] : undefined;
   const foreign = lines.some((line) => {
@@ -459,11 +459,11 @@ export const runKeys = (root: string) =>
 export interface RunValue {
   readonly name: string;
   readonly type: "REG_SZ";
-  /** The quoted absolute path of `tasksw.exe`, with no arguments. */
+  /** The quoted absolute path of `ttasksw.exe`, with no arguments. */
   readonly data: string;
 }
 
-/** The Run value of A2 3.3.2: `"<root>\bin\tasksw.exe"`, quoted, absolute, no arguments. */
+/** The Run value of A2 3.3.2: `"<root>\bin\ttasksw.exe"`, quoted, absolute, no arguments. */
 export function renderRunValue(name: string, program: string): RunValue {
   checkPath(program, "win32", "supervisor");
   return { name, type: "REG_SZ", data: `"${program}"` };
@@ -471,7 +471,7 @@ export function renderRunValue(name: string, program: string): RunValue {
 
 /**
  * Why a REG_SZ Run value's data is not this install's (see NotOurs), or undefined when it starts a
- * Tasks supervisor as install writes it: exactly one quoted absolute path to `tasksw.exe`, with
+ * TTasks supervisor as install writes it: exactly one quoted absolute path to `ttasksw.exe`, with
  * nothing around it and no control character (Explorer would stop reading at a NUL).
  */
 export function runDataNotOurs(data: string): NotOurs | undefined {
@@ -484,7 +484,7 @@ export function runDataNotOurs(data: string): NotOurs | undefined {
     : "not_ours";
 }
 
-/** Whether a Run value's data starts a Tasks supervisor: one quoted path to `tasksw.exe`. */
+/** Whether a Run value's data starts a TTasks supervisor: one quoted path to `ttasksw.exe`. */
 export const isOwnRunData = (data: string): boolean => runDataNotOurs(data) === undefined;
 
 /**
@@ -505,7 +505,7 @@ const xml = (text: string): string =>
 
 export interface PlistInput {
   readonly label: string;
-  /** `<root>/current/bin/tasks-launchd`. */
+  /** `<root>/current/bin/ttasks-launchd`. */
   readonly program: string;
   /** The user's home folder: the working directory. */
   readonly home: string;
@@ -537,7 +537,7 @@ export function renderPlist(input: PlistInput): string {
     "  </array>",
     "  <key>EnvironmentVariables</key>",
     "  <dict>",
-    `    <key>${TASKS_SERVICE_MANAGER}</key>`,
+    `    <key>${TTASKS_SERVICE_MANAGER}</key>`,
     "    <string>launchd</string>",
     "  </dict>",
     string("WorkingDirectory", input.home),
@@ -688,7 +688,7 @@ const PLIST_KEYS: readonly string[] = [
  * (unusualText, no byte order mark); read as a plist in install's plain spelling (readPlist), its
  * top-level dictionary has each key once, `Label` is `label`, there is no `Program` (launchd would
  * run it instead of ProgramArguments), `ProgramArguments` holds only `<absolute path ending in
- * /tasks-launchd>`, the only variable is `TASKS_SERVICE_MANAGER=launchd`, and there is no key
+ * /ttasks-launchd>`, the only variable is `TTASKS_SERVICE_MANAGER=launchd`, and there is no key
  * install does not write.
  */
 export function plistNotOurs(text: string, label: string): NotOurs | undefined {
@@ -720,7 +720,7 @@ export function plistNotOurs(text: string, label: string): NotOurs | undefined {
     env === undefined ||
     (env.kind === "dict" &&
       env.entries.length === 1 &&
-      env.entries[0]?.[0] === TASKS_SERVICE_MANAGER &&
+      env.entries[0]?.[0] === TTASKS_SERVICE_MANAGER &&
       env.entries[0][1].kind === "text" &&
       env.entries[0][1].element === "string" &&
       env.entries[0][1].text === "launchd");
@@ -731,7 +731,7 @@ export const isOwnPlist = (text: string, label: string): boolean =>
   plistNotOurs(text, label) === undefined;
 
 /**
- * `bin/tasks-launchd` (A2 3.3.4): runs `tasks serve` as its child and turns the exit codes into
+ * `bin/ttasks-launchd` (A2 3.3.4): runs `ttasks serve` as its child and turns the exit codes into
  * what launchd's `KeepAlive.SuccessfulExit = false` understands. 0, 64 and 73 exit 0, so launchd
  * does not restart a clean stop or a permanent refusal. 75 starts the service again at once. Any
  * other code is passed on, and launchd restarts after `ThrottleInterval`. A TERM or INT is
@@ -740,12 +740,12 @@ export const isOwnPlist = (text: string, label: string): boolean =>
  * Three additions to A2's text: a stop that arrives before the child's PID is known is still
  * forwarded; `child` is cleared once the child is reaped, so a late signal never reaches a reused
  * PID; and more than 5 restarts on 75 within 10 minutes exit 75 instead, so launchd's throttle
- * bounds a service that always asks for a restart, as tasksw.exe and systemd bound it (A2
- * 3.3.1). The build (M1.13) writes this text to `versions/<v>/bin/tasks-launchd`, mode 0755.
+ * bounds a service that always asks for a restart, as ttasksw.exe and systemd bound it (A2
+ * 3.3.1). The build (M1.13) writes this text to `versions/<v>/bin/ttasks-launchd`, mode 0755.
  */
 export const LAUNCHD_WRAPPER = `#!/bin/sh
-# tasks-launchd: runs \`tasks serve\` for launchd. Generated at build time. Do not edit.
-tasks=\${0%/*}/tasks                    # <root>/current/bin/tasks, so a restart re-reads current
+# ttasks-launchd: runs \`ttasks serve\` for launchd. Generated at build time. Do not edit.
+tasks=\${0%/*}/tasks                    # <root>/current/bin/ttasks, so a restart re-reads current
 child= stop= quick=0 since=$(date +%s)
 trap 'stop=1; [ -n "$child" ] && kill -TERM "$child" 2>/dev/null' TERM INT
 while [ -z "$stop" ]; do

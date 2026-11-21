@@ -1,5 +1,5 @@
 // A test service for the forwarder conformance suite (A2 3.7.6), run as a real child process:
-// `node tests/forwarder/peer.ts <config JSON>`. It is tasks-local/1's own `serve` with an mcp hook
+// `node tests/forwarder/peer.ts <config JSON>`. It is ttasks-local/1's own `serve` with an mcp hook
 // that plays a scripted MCP server, standing in for the service's MCP endpoint until M2.02. Like
 // the hub, it writes `<state>/service.json` with its endpoint and reads `<state>/ipc.key`. It keeps
 // the bindings it hands out in a file, so a restarted peer restores them from `resume.handle` as

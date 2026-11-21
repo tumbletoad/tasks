@@ -359,7 +359,7 @@ test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens th
         json: { ...body, result: { ...body.result, default: null } },
       });
     });
-    // The link `tasks open <task>` makes without a space.
+    // The link `ttasks open <task>` makes without a space.
     await page.goto(await world.signInUrl(`/task/${world.task.ref}`));
     await page.getByRole("link", { name: world.mira.name }).click();
     // The task route lands on the task's host view, the task in its URL (A5 3.3).

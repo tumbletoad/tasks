@@ -10,7 +10,7 @@ import { mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { FakeT3 } from "@tasks/testkit/fake-t3";
+import { FakeT3 } from "@ttasks/testkit/fake-t3";
 import { LaunchMachine } from "../src/machine.ts";
 import { resolvePlace } from "../src/places.ts";
 import { bindFolder, identityAt, worktreeAt, type T3Project } from "../src/t3-binding.ts";
@@ -24,7 +24,7 @@ const SLOW = 60_000;
 // through Vitest's collection, which runs a file's top level but none of its hooks, so a folder made
 // at module level would be left behind on every verify.
 const TMP = realpathSync.native(tmpdir());
-const base = join(TMP, `tasks-t3-bind-${randomBytes(6).toString("hex")}`);
+const base = join(TMP, `ttasks-t3-bind-${randomBytes(6).toString("hex")}`);
 const work = join(base, "work");
 
 afterAll(() => {

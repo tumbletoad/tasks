@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 import { parse, TomlError } from "smol-toml";
-import type { ConfigProblem } from "@tasks/launch";
+import type { ConfigProblem } from "@ttasks/launch";
 
 /** A configuration file larger than this is refused unread (`too_large`). */
 export const MAX_CONFIG_BYTES = 1024 * 1024;

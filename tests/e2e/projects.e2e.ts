@@ -20,7 +20,7 @@ const folderField = (scope: Page | Locator) => scope.getByRole("combobox", { nam
 
 /** A scratch folder of this test, removed by its full name at the end. */
 function scratch(): { root: string; done: () => void } {
-  const root = mkdtempSync(join(tmpdir(), "tasks-e2e-projects-"));
+  const root = mkdtempSync(join(tmpdir(), "ttasks-e2e-projects-"));
   return {
     root,
     // A fake agent may still work in a folder for a moment, and Windows keeps a folder in use.

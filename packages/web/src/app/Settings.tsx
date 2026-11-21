@@ -1,4 +1,4 @@
-// Settings: how Tasks behaves for the person on this machine, one short page. Every control
+// Settings: how TTasks behaves for the person on this machine, one short page. Every control
 // changes something at once and can go back to its default; the page says once that all of it is
 // kept for this machine, the same in every space and browser here. Only what works is here. The
 // agent apps are the one exception: switches that change other apps' settings wait for Apply.

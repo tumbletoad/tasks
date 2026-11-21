@@ -133,7 +133,7 @@ class Session {
 
   async initialize(): Promise<void> {
     await this.request("initialize", {
-      clientInfo: { name: "tasks_lab", title: "Tasks lab", version: "0.0.0" },
+      clientInfo: { name: "ttasks_lab", title: "TTasks lab", version: "0.0.0" },
       capabilities: { experimentalApi: true },
     });
     this.send({ method: "initialized" });
@@ -239,7 +239,7 @@ const CASES: Record<string, Case> = {
     console.log(`  exit ${String(await s.close())}`);
   },
 
-  /** A tool of an MCP server the thread's configuration names, as Tasks' tools are given. */
+  /** A tool of an MCP server the thread's configuration names, as TTasks' tools are given. */
   async tool(scratch, work) {
     const s = new Session(raw(scratch, "tool"), work);
     await s.initialize();
@@ -247,10 +247,10 @@ const CASES: Record<string, Case> = {
     const thread = await startThread(s, work, {
       ...FULL,
       config: {
-        "mcp_servers.tasks": {
+        "mcp_servers.ttasks": {
           command: process.execPath,
           args: [stub],
-          env: { TASKS_TICKET: "LABTICKET0000000000000000" },
+          env: { TTASKS_TICKET: "LABTICKET0000000000000000" },
         },
       },
     });

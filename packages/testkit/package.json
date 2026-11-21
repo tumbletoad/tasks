@@ -1,5 +1,5 @@
 {
-  "name": "@tasks/testkit",
+  "name": "@ttasks/testkit",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "./fake-t3": "./src/fake-t3.ts"
   },
   "dependencies": {
-    "@tasks/storage": "workspace:*"
+    "@ttasks/storage": "workspace:*"
   },
   "devDependencies": {
     "vitest": "5.1.0"

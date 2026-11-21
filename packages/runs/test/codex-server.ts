@@ -8,7 +8,7 @@
 //
 //   node codex-server.ts            the scenario as JSON in FAKE_CODEX_SCENARIO
 //
-// As a program it listens on the named pipe `tasks-test-standin-<token>-<pid>` on Windows and
+// As a program it listens on the named pipe `ttasks-test-standin-<token>-<pid>` on Windows and
 // carries `--token=<token>` in its arguments elsewhere, so the stand-in census counts it.
 import { spawn } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
@@ -126,7 +126,7 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
     output.write(`${JSON.stringify(message)}\n`);
   };
   const ids = new Map<unknown, unknown>();
-  /** Tasks' own server as the client's thread/start named it. */
+  /** TTasks' own server as the client's thread/start named it. */
   let tasksServer: Json | undefined;
   const finalItems = new Set<unknown>();
   let thread: unknown;
@@ -187,7 +187,7 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
         ids.set(expected["id"], message["id"]);
         if (method === "thread/start") {
           const config = isObject(message["params"]) ? message["params"]["config"] : undefined;
-          const entry = isObject(config) ? config["mcp_servers.tasks"] : undefined;
+          const entry = isObject(config) ? config["mcp_servers.ttasks"] : undefined;
           tasksServer = isObject(entry) ? entry : undefined;
         }
         if (method === scenario.stallAt) stalled = true;
@@ -382,7 +382,7 @@ export async function callTools(
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
   const own = isObject(server["env"]) ? server["env"] : {};
   for (const [key, value] of Object.entries(own)) if (typeof value === "string") env[key] = value;
-  env["TASKS_HOME"] = call.home;
+  env["TTASKS_HOME"] = call.home;
   const args = Array.isArray(server["args"]) ? server["args"].map(String) : [];
   const child = spawn(String(server["command"]), args, { env, stdio: ["pipe", "pipe", "ignore"] });
   const answers = new Map<number, (value: Json) => void>();
@@ -434,7 +434,7 @@ async function main(): Promise<void> {
   const scenario = JSON.parse(process.env["FAKE_CODEX_SCENARIO"] ?? "{}") as FakeScenario;
   if (scenario.token !== undefined && process.platform === "win32") {
     createServer()
-      .listen(`\\\\.\\pipe\\tasks-test-standin-${scenario.token}-${String(process.pid)}`)
+      .listen(`\\\\.\\pipe\\ttasks-test-standin-${scenario.token}-${String(process.pid)}`)
       .unref()
       .on("error", () => undefined);
   }

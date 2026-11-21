@@ -197,7 +197,7 @@ const READ_SDDL =
   "$ErrorActionPreference='Stop'; " +
   "[Console]::Out.WriteLine([Security.Principal.WindowsIdentity]::GetCurrent().User.Value); " +
   "$s=[Security.AccessControl.AccessControlSections]'Owner,Access'; " +
-  "if ($env:TASKS_M0_ACL_PATHS) { foreach ($p in $env:TASKS_M0_ACL_PATHS.Split([char]10)) { try { " +
+  "if ($env:TTASKS_M0_ACL_PATHS) { foreach ($p in $env:TTASKS_M0_ACL_PATHS.Split([char]10)) { try { " +
   "if ([IO.Directory]::Exists($p)) { $a=[IO.Directory]::GetAccessControl($p,$s) } " +
   "else { $a=[IO.File]::GetAccessControl($p,$s) }; " +
   "[Console]::Out.WriteLine('ok' + [char]9 + $a.GetSecurityDescriptorSddlForm($s)) " +
@@ -208,7 +208,7 @@ const READ_SDDL =
  * from the parent shell (PSModulePath, profiles, PowerShell 7's variables) reaches it.
  */
 function inspectorEnv(paths: string[]): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { TASKS_M0_ACL_PATHS: paths.join("\n") };
+  const env: NodeJS.ProcessEnv = { TTASKS_M0_ACL_PATHS: paths.join("\n") };
   for (const name of ["SystemRoot", "windir", "SystemDrive", "TEMP", "TMP"]) {
     const value = process.env[name];
     if (value !== undefined) env[name] = value;

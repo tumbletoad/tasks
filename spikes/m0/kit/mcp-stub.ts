@@ -236,9 +236,9 @@ export const STUB_INSTRUCTIONS =
 
 export const OFFLINE_TEXTS = {
   service_unavailable:
-    "Tasks's service is not running on this machine. Nothing was saved. Ask the user to run `tasks service start`, then retry.",
+    "TTasks's service is not running on this machine. Nothing was saved. Ask the user to run `ttasks service start`, then retry.",
   untrusted_endpoint:
-    "Something other than Tasks is listening at Tasks's address. Nothing was sent to it. Ask the user to run `tasks doctor`.",
+    "Something other than TTasks is listening at TTasks's address. Nothing was sent to it. Ask the user to run `ttasks doctor`.",
   connection_lost:
-    "Tasks restarted during this call. It may or may not have been applied. Retry with the same request ID.",
+    "TTasks restarted during this call. It may or may not have been applied. Retry with the same request ID.",
 } as const;

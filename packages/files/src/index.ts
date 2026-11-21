@@ -135,7 +135,7 @@ export function appendPrivate(path: string, text: string, mode = 0o600): void {
  * following a link (O_NOFOLLOW) and only as a folder (O_DIRECTORY), and its descriptor must show a
  * folder of this user before the mode is set on that descriptor. What remains is the moment
  * between the mkdir and the open, in which a process of this same user could put another folder
- * of its own there (A2 3.2.2 rule 5): another user cannot, since every folder Tasks creates in sits
+ * of its own there (A2 3.2.2 rule 5): another user cannot, since every folder TTasks creates in sits
  * in a parent others cannot write.
  */
 function setNewFolderMode(folder: string, mode: number): void {

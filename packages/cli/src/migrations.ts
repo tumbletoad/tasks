@@ -1,8 +1,8 @@
 // What a migration did to a space, in the words a person reads after an update: from which schema
 // to which, when, and the backup taken just before it. The service records the newest migration of
-// each space (space-settings.ts `last_migration`); `tasks space list` shows it, doctor shows the
-// ones of the service's current run, and `tasks update` the ones its restart ran.
-import { CLI_NAME } from "@tasks/brand";
+// each space (space-settings.ts `last_migration`); `ttasks space list` shows it, doctor shows the
+// ones of the service's current run, and `ttasks update` the ones its restart ran.
+import { CLI_NAME } from "@ttasks/brand";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
 
@@ -42,7 +42,7 @@ export function migratedLine(migrated: Migrated): string {
 export const migratedSince = (migrated: Migrated | undefined, sinceMs: number): boolean =>
   migrated !== undefined && Date.parse(migrated.at) >= sinceMs;
 
-/** How long `tasks update` waits for the spaces its restart opens: a migration can take a while. */
+/** How long `ttasks update` waits for the spaces its restart opens: a migration can take a while. */
 export const SETTLE_MS = 120_000;
 const POLL_MS = 500;
 

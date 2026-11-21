@@ -49,11 +49,11 @@ describe("[A2.3.3.hub.refusals] who the service runs as", () => {
     expect(integrityLevel(row("S-1-16-12288", "Group", "S-1-5-21-1-2-3-1001"))).toBeUndefined();
   });
 
-  test("package identity is the launcher's TASKS_PACKAGE, any non-empty value", () => {
+  test("package identity is the launcher's TTASKS_PACKAGE, any non-empty value", () => {
     expect(packageIdentity({})).toBeNull();
-    expect(packageIdentity({ TASKS_PACKAGE: "" })).toBeNull();
-    expect(packageIdentity({ TASKS_PACKAGE: "  " })).toBeNull();
-    expect(packageIdentity({ TASKS_PACKAGE: "Claude_1.0.0.0_x64__pzs8sxrjxfjjc" })).toBe(
+    expect(packageIdentity({ TTASKS_PACKAGE: "" })).toBeNull();
+    expect(packageIdentity({ TTASKS_PACKAGE: "  " })).toBeNull();
+    expect(packageIdentity({ TTASKS_PACKAGE: "Claude_1.0.0.0_x64__pzs8sxrjxfjjc" })).toBe(
       "Claude_1.0.0.0_x64__pzs8sxrjxfjjc",
     );
   });

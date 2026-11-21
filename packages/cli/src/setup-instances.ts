@@ -1,35 +1,35 @@
-// `tasks setup instances` (A4 3.2 "Detection proposes, the user confirms"; A5 3.17 step 3's CLI
+// `ttasks setup instances` (A4 3.2 "Detection proposes, the user confirms"; A5 3.17 step 3's CLI
 // counterpart): the agent apps Open can open a task in on this machine, as machine.toml's
 // `[[instance]]` entries. Loaded only for this command (setup.ts).
 //
-//   tasks setup instances [--preview]   what detection found (each agent command with its version,
+//   ttasks setup instances [--preview]   what detection found (each agent command with its version,
 //                                       each agent home) and the exact entries it would add, with
 //                                       the apply command and the plan's token. Writes nothing
-//   tasks setup instances --apply --plan <token>
+//   ttasks setup instances --apply --plan <token>
 //                                       adds exactly those entries, or changes nothing when the
 //                                       proposal is not the same any more (run again after it
 //                                       worked, it says the entries are there and exits 0)
-//   tasks setup instances --remove      takes out every entry this command added that is still
+//   ttasks setup instances --remove      takes out every entry this command added that is still
 //                                       exactly as it was written
 //   [--instance <id>] [--json]
 //
-// Detection (@tasks/launch detect.ts) runs here, in the person's session and environment, so it
+// Detection (@ttasks/launch detect.ts) runs here, in the person's session and environment, so it
 // finds the commands on the person's PATH: it reads folders' and files' presence and runs only each
 // command's `--version`, never a wrapper, and opens no file in an agent home. The service writes
 // the entries (hub/instances.ts), through machine.toml's own editor, and Open uses them at once.
 // Claude Code and Codex homes with a command found are proposed: a wrapper without a home of its
 // own and a home without a command are named with what is missing, for the person to write by
 // hand. T3 Code gets one complete instance per enabled Codex or Claude provider instance its
-// settings name (read-only, through setup's reader: @tasks/service/setup `t3SettingsOf`), labelled
+// settings name (read-only, through setup's reader: @ttasks/service/setup `t3SettingsOf`), labelled
 // with T3's display name, with T3's default model for it or the catalogue's for its driver.
 //
-// This changes nothing in any agent app. `tasks setup agents` registers Tasks's tools in each agent
+// This changes nothing in any agent app. `ttasks setup agents` registers TTasks's tools in each agent
 // home, which the agent needs to read and update tasks; this command makes a home a place Open can
 // start the agent in. They meet at the instance ID: an instance written here is the ID setup agents
 // gives that home's entry, and a home setup agents registered first keeps its ID here.
 import { createHash } from "node:crypto";
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
-import { AppError } from "@tasks/contracts";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { AppError } from "@ttasks/contracts";
 import {
   detect,
   instanceEntry,
@@ -39,9 +39,9 @@ import {
   targetDef,
   type Detection,
   type Proposal,
-} from "@tasks/launch";
-import { loadMachineConfig, prepareEdit } from "@tasks/service/config";
-import { homeFolder, hostFacts, resolveLayout } from "@tasks/service/paths";
+} from "@ttasks/launch";
+import { loadMachineConfig, prepareEdit } from "@ttasks/service/config";
+import { homeFolder, hostFacts, resolveLayout } from "@ttasks/service/paths";
 import {
   blockOf,
   distinctLabels,
@@ -52,7 +52,7 @@ import {
   wireOf,
   type HomeRecord,
   type Offer,
-} from "@tasks/service/setup";
+} from "@ttasks/service/setup";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import { personAtTerminal, type Io } from "./io.ts";

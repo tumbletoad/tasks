@@ -11,8 +11,8 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { join } from "node:path";
-import { PRODUCT_ID } from "@tasks/brand";
-import { currentPerson, groupMayWrite } from "@tasks/files/person";
+import { PRODUCT_ID } from "@ttasks/brand";
+import { currentPerson, groupMayWrite } from "@ttasks/files/person";
 
 /** How long one HTTP request to T3 may take, answer included. */
 export const T3_REQUEST_MS = 10_000;
@@ -122,7 +122,7 @@ const unsafe = (info: {
  * fresh each time, because T3 may start on another port. On Linux and macOS the file and its
  * folder must belong to this user and not be writable by others: the token goes where it says. The
  * file is opened without following a link (O_NOFOLLOW) and judged by its open descriptor, so what is
- * read is what was judged, as Tasks reads its own configuration (A2 3.2.2 rule 5).
+ * read is what was judged, as TTasks reads its own configuration (A2 3.2.2 rule 5).
  */
 export async function readT3Origin(
   home: string,

@@ -45,7 +45,7 @@ export interface TerminalLauncherOptions {
   /** The install ID, for scope unit names (A4 3.7). */
   readonly install: string;
   /**
-   * The product's own command, absolute program first: the stable launcher (`<root>/bin/tasks`),
+   * The product's own command, absolute program first: the stable launcher (`<root>/bin/ttasks`),
    * or `node <entry>` for a service run from source. `shim <ticket>` follows it.
    */
   readonly shimCommand: readonly string[] | undefined;

@@ -1,4 +1,4 @@
-// The space's Tasks work folder (A4 3.3): `<state>/workdirs/space-<id>/`, where a
+// The space's TTasks work folder (A4 3.3): `<state>/workdirs/space-<id>/`, where a
 // task without a place works. Before anything is made or entered, `workdirs` and the space's folder
 // must each be a real folder (no link, junction or other reparse point), this user's, user-only on
 // POSIX, and inside its parent by identity; only then is the work folder resolved like a place.
@@ -52,7 +52,7 @@ afterEach(() => {
 
 /** A state folder (0700) and a folder outside it, in a temporary folder of the test's own. */
 function world(): { state: string; outside: string; workdirs: string; space: string } {
-  const base = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-work-folder-")));
+  const base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-work-folder-")));
   temps.push(base);
   const state = join(base, "state");
   const outside = join(base, "outside");

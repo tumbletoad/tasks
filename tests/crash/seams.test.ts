@@ -29,7 +29,7 @@ describe(
   { timeout: 60_000 },
   () => {
     test("before-commit sees nothing committed, after-commit sees the commit and its receipt; a throw before COMMIT leaves nothing", async () => {
-      const dir = mkdtempSync(join(tmpdir(), "tasks-crash-seams-"));
+      const dir = mkdtempSync(join(tmpdir(), "ttasks-crash-seams-"));
       made.push(dir);
       const checked = await checkedDriver();
       const created = createSpace(checked, join(dir, "space"), {

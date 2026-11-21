@@ -1,8 +1,8 @@
-// The process's umask at a start (A2 3.2.2 rule 5). Tasks gives every file
+// The process's umask at a start (A2 3.2.2 rule 5). TTasks gives every file
 // and folder it creates an exact mode, but a new folder is made first and opened again to set its
 // mode: a umask that takes away one of the person's own bits (0400, 0200, 0100) breaks that half-way
 // and leaves a folder the person cannot use. That is no configuration worth supporting, so the
-// service and `tasks service install` refuse such a umask with what to do instead.
+// service and `ttasks service install` refuse such a umask with what to do instead.
 //
 // The umask is only ever read, never set: the service starts agents, and they must inherit the
 // person's own. Node's process.umask() without an argument reads it by setting it to 0 and back,
@@ -12,7 +12,7 @@
 // inherits the mask says it (`umask` in /bin/sh), within a deadline.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { PRODUCT_NAME } from "@tasks/brand";
+import { PRODUCT_NAME } from "@ttasks/brand";
 
 /** How long the child that says the umask may take. */
 export const UMASK_CHILD_MS = 5_000;
@@ -78,7 +78,7 @@ export const umaskText = (mask: number): string => mask.toString(8).padStart(4, 
 
 /**
  * The line a person reads when the umask takes away one of their own bits, or cannot be read; or
- * undefined when it leaves them all (and on Windows). `what` starts the sentence: "Tasks's service
+ * undefined when it leaves them all (and on Windows). `what` starts the sentence: "TTasks's service
  * does not start".
  */
 export function umaskRefusal(read: UmaskRead, what: string): string | undefined {

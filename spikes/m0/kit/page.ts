@@ -12,7 +12,7 @@ export function indexHtml(styleNonce: string): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="csp-nonce" content="${styleNonce}">
-<title>Tasks M0 spike page</title>
+<title>TTasks M0 spike page</title>
 <style nonce="${styleNonce}">
 body { font: 15px/1.5 system-ui, sans-serif; margin: 24px; max-width: 720px; }
 li { margin: 4px 0; }
@@ -22,7 +22,7 @@ li { margin: 4px 0; }
 <script src="/app.js" defer></script>
 </head>
 <body>
-<h1>Tasks M0 spike page</h1>
+<h1>TTasks M0 spike page</h1>
 <p>Stand-in service for the lab. Fixture space Mira. Press <kbd>/</kbd>, <kbd>Ctrl+K</kbd>,
 <kbd>Ctrl+Enter</kbd> or <kbd>Ctrl+Shift+Enter</kbd> to check the shortcuts.</p>
 <p><button id="copy" type="button">Copy fixture text</button>

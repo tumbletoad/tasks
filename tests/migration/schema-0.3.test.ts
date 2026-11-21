@@ -42,7 +42,7 @@ import { faultingDriver, StatementFault } from "./faults.ts";
 
 const made: string[] = [];
 const temp = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), "tasks-schema-03-"));
+  const dir = mkdtempSync(join(tmpdir(), "ttasks-schema-03-"));
   made.push(dir);
   return dir;
 };

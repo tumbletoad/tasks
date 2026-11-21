@@ -60,7 +60,7 @@ jobs:
             [ -S "/run/user/$(id -u)/systemd/private" ] && break
             sleep 0.1
           done
-          echo "TASKS_TEST_USER_UNITS=1" >> "$GITHUB_ENV"
+          echo "TTASKS_TEST_USER_UNITS=1" >> "$GITHUB_ENV"
 
       # Linux runs verify under umask 002, the default of a desktop with user private groups
       # (Ubuntu, Fedora), where every file a person or a test makes is group-writable. The runners'

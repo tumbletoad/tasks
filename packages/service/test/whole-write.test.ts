@@ -1,4 +1,4 @@
-// Whole writes (A2 3.2.2 rule 5): a write of durable state through @tasks/files writes every byte
+// Whole writes (A2 3.2.2 rule 5): a write of durable state through @ttasks/files writes every byte
 // or throws. One write call may take fewer bytes than it was given (a full volume, a signal, a
 // network file system); the helpers follow the count it returns, and a write that takes none
 // throws instead of leaving a cut file in place of a whole one, or spinning.

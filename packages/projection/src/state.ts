@@ -20,7 +20,7 @@
 // file) is `unreadable`, never `none`: nobody knows what it would have said, so the start rebuilds
 // every task (projector.ts). Each is one JSON object, so one cut short does not parse. Every path
 // in them is checked against the tree's grammar before it is used. Both are written atomically,
-// whole (writeAll) and flushed, with mode 0600, through @tasks/files.
+// whole (writeAll) and flushed, with mode 0600, through @ttasks/files.
 //
 // **Not a file there** (a folder, a link: a mistaken restore, a slip) is never the projection's,
 // which writes only files there, and may be a person's: it is never removed, written through or
@@ -30,7 +30,7 @@
 // the writer before either (projector.ts); a running projector holds its state in memory.
 import { lstatSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import { atomicWrite, makeDir, removeStaleTemps } from "@tasks/files";
+import { atomicWrite, makeDir, removeStaleTemps } from "@ttasks/files";
 import {
   FORMAT,
   LIFECYCLES,

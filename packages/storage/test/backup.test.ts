@@ -802,7 +802,7 @@ describe("[A1.5.backup.list] listing a space's backups", () => {
     for (const name of theirs) writeFileSync(join(dir, name), "another program's file");
     // A folder with a temporary-looking name, and one named like a backup's own temporary file.
     mkdirSync(join(dir, ".user.tmp-notes"));
-    writeFileSync(join(dir, ".user.tmp-notes", "important.txt"), "not made by Tasks");
+    writeFileSync(join(dir, ".user.tmp-notes", "important.txt"), "not made by TTasks");
     mkdirSync(join(dir, `${BACKUP_TEMP_PREFIX}fedcba9876543210.db`));
     const listing = listBackups(dir);
     expect(listing.leftovers).toEqual([...ours].sort());

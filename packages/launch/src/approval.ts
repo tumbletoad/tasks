@@ -19,7 +19,7 @@
 // Approving is a user-only operation (A4 3.2 step 4): the UI session or an interactive CLI writes
 // the verdict through the service's machine.toml editor. Nothing here writes.
 import { createHash } from "node:crypto";
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { APPROVAL_KEY, type Verdict } from "./sections.ts";
 
 export const APPROVAL_KINDS = ["custom_target", "routine"] as const;

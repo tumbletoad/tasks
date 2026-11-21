@@ -1,4 +1,4 @@
-// What the service answers for `tasks doctor`'s launch rows and sessions row (A3 3.14; A4 3.4.1,
+// What the service answers for `ttasks doctor`'s launch rows and sessions row (A3 3.14; A4 3.4.1,
 // 3.7, 3.8; A7 3.11 M4.05b): `doctor/launch` asks the very scope probe a terminal launch uses, once
 // per start, and the environment's own check; `t3/status` says when the token runs out and whether
 // the pairing renews it; `doctor/sessions` counts open and shared connections and dropped records.
@@ -18,7 +18,7 @@ import {
   type SpawnRequest,
   type Spawner,
   type TerminalSettings,
-} from "@tasks/launch";
+} from "@ttasks/launch";
 import { sessionFacts } from "../src/binding/index.ts";
 import type { Logger } from "../src/hub/log.ts";
 import { t3Host, t3Verbs } from "../src/hub/t3.ts";
@@ -28,7 +28,7 @@ import { Slot } from "../src/ops/index.ts";
 let base = "";
 
 beforeAll(() => {
-  base = mkdtempSync(join(tmpdir(), "tasks-doctor-facts-"));
+  base = mkdtempSync(join(tmpdir(), "ttasks-doctor-facts-"));
 });
 
 afterAll(() => {
@@ -80,7 +80,7 @@ function launches(
     spaces: () => [],
     log,
     environment: env,
-    shimCommand: ["/opt/tasks/bin/tasks"],
+    shimCommand: ["/opt/tasks/bin/ttasks"],
     terminals: {
       spawn,
       systemdRun: "/usr/bin/systemd-run",
@@ -187,7 +187,7 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
         spaces: () => [],
         log,
         environment: environment(),
-        shimCommand: ["C:\\tasks\\tasks.exe"],
+        shimCommand: ["C:\\tasks\\ttasks.exe"],
         terminalSettings,
         terminals: {
           // reg.exe did not answer.

@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { PRODUCT_NAME } from "@tasks/brand";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import { launchRefCheck } from "../src/intents.ts";
 import {
   dayFolders,
@@ -55,7 +55,7 @@ const brief = (ref: string): string => `${PRODUCT_NAME} task M-14 (launch ${ref}
 
 let home = "";
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "tasks-codex-match-"));
+  home = mkdtempSync(join(tmpdir(), "ttasks-codex-match-"));
 });
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });

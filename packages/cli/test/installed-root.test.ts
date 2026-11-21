@@ -8,8 +8,8 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
-import { canonicalStatePath, installId } from "@tasks/service/paths";
+import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
+import { canonicalStatePath, installId } from "@ttasks/service/paths";
 import {
   openSession,
   readServiceJson,
@@ -18,11 +18,11 @@ import {
   waitFor,
   within,
   READY_MS,
-} from "@tasks/service/test/harness";
+} from "@ttasks/service/test/harness";
 import { cliEnv, INSTALLED } from "./cli-harness.ts";
 
 /** The install root `pnpm accept --installed <root>` names (scripts/accept.ts). */
-const ROOT = process.env["TASKS_ACCEPT_INSTALL_ROOT"];
+const ROOT = process.env["TTASKS_ACCEPT_INSTALL_ROOT"];
 
 const command = (root: string): string =>
   join(root, "bin", process.platform === "win32" ? `${PRODUCT_ID}.exe` : PRODUCT_ID);
@@ -76,7 +76,7 @@ describe("[A2.3.12.4.install.installed-root] the install an install script made,
       expect(record.versions).toContain(manifest.version);
       expect(record.created).toEqual(expect.arrayContaining(["current", "home.marker", "bin"]));
 
-      // A manual manager: the stable command's `tasks serve`, stopped by service/shutdown.
+      // A manual manager: the stable command's `ttasks serve`, stopped by service/shutdown.
       const services = new Services();
       try {
         const proc = services.start(ROOT, { command: [command(ROOT), "serve"] });

@@ -1,4 +1,4 @@
-// `tasks setup agents` through the CLI and a real service (A3 3.13.1, A2 3.2.5; A7 3.9 M2.14): the
+// `ttasks setup agents` through the CLI and a real service (A3 3.13.1, A2 3.2.5; A7 3.9 M2.14): the
 // preview names the served space and writes nothing, only the user applies and removes, the
 // service keeps one agent-home row per home in its grants table and revokes it with the entry, and
 // the homes come back key for key. A real service in this process, the CLI in this process, fake
@@ -6,17 +6,17 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { CLI_NAME, MCP_SERVER_KEY } from "@tasks/brand";
-import { startService, type RunningService } from "@tasks/service/hub";
+import { CLI_NAME, MCP_SERVER_KEY } from "@ttasks/brand";
+import { startService, type RunningService } from "@ttasks/service/hub";
 import {
   configOf,
   removeRuntimeDir,
   serviceEnv,
   stateOf,
   tempRoot,
-} from "@tasks/service/test/harness";
-import { classSession } from "@tasks/service/test/ops-helpers";
-import { installFakeAgents, type FakeAgents } from "@tasks/testkit/fake-agents";
+} from "@ttasks/service/test/harness";
+import { classSession } from "@ttasks/service/test/ops-helpers";
+import { installFakeAgents, type FakeAgents } from "@ttasks/testkit/fake-agents";
 import { runMain } from "./cli-harness.ts";
 
 const SLOW = 180_000;
@@ -60,7 +60,7 @@ beforeAll(async () => {
   }
   // The install's stable command, which every entry runs.
   mkdirSync(join(home, "bin"), { recursive: true });
-  writeFileSync(join(home, "bin", windows ? "tasks.exe" : "tasks"), "");
+  writeFileSync(join(home, "bin", windows ? "ttasks.exe" : "ttasks"), "");
   // A Claude Code home with another server, and a Codex home.
   mkdirSync(join(user, ".claude"));
   writeFileSync(
@@ -109,7 +109,7 @@ async function rows(): Promise<
   }
 }
 
-describe("[A3.3.13.setup.cli] tasks setup agents through the CLI and the service", () => {
+describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the service", () => {
   test(
     "preview writes nothing; only the user applies; one row per home; remove takes entries and rows back",
     async () => {
@@ -146,7 +146,7 @@ describe("[A3.3.13.setup.cli] tasks setup agents through the CLI and the service
       ]);
       for (const h of planned.homes) {
         expect(h.sha256).toMatch(/^[0-9a-f]{64}$/u);
-        expect(h.change.args).toContain(join(home, "bin", windows ? "tasks.exe" : "tasks"));
+        expect(h.change.args).toContain(join(home, "bin", windows ? "ttasks.exe" : "ttasks"));
         expect(h.change.args).toContain(space);
       }
       const text = await run(["setup", "agents"], false);

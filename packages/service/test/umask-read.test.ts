@@ -111,7 +111,7 @@ describe("[A2.3.2.2.permissions.umask] the umask is read without setting it", ()
 
   test("a mask that cannot be read is never guessed: the line says what could not be read", () => {
     expect(umaskRefusal({ unreadable: "timeout" }, "it stops")).toBe(
-      `Your umask could not be read (/bin/sh did not say it within ${String(UMASK_CHILD_MS / 1000)} s), so it stops: TT Tasks does not guess which of your own bits it takes away from new files and folders. Try again; if it keeps failing, check that /bin/sh runs.`,
+      `Your umask could not be read (/bin/sh did not say it within ${String(UMASK_CHILD_MS / 1000)} s), so it stops: TTasks does not guess which of your own bits it takes away from new files and folders. Try again; if it keeps failing, check that /bin/sh runs.`,
     );
     expect(umaskRefusal({ unreadable: "failed" }, "it stops")).toContain(
       "Your umask could not be read (/bin/sh could not say it), so it stops",

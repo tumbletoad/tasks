@@ -2,9 +2,9 @@
 // produce (A4 3.11.1, 3.11.4), and the run record's vocabulary: its states and their edges
 // (3.11.2), its reason codes, its evidence keys, and the shapes every backend of the execution
 // store reads and writes (3.16.1). Plain TypeScript without Zod, so the parsers, the run shim, the
-// execution store and the page load it cheaply (`@tasks/contracts/runs`).
+// execution store and the page load it cheaply (`@ttasks/contracts/runs`).
 //
-// Nothing here is free text of Tasks' own making: every label, state and reason is a value from a
+// Nothing here is free text of TTasks' own making: every label, state and reason is a value from a
 // fixed vocabulary. The agent-written strings are `message.text`, the answer, the outcome's
 // `error`, `native-id.id` and `session.cwd`, each capped (ANSWER_CAP_BYTES, TEXT_CAP_BYTES). A run
 // record holds the person's request text and the agent's answer and error, which are task text:
@@ -48,7 +48,7 @@ export const RUN_REQUEST_MAX_BYTES = 64 * 1024;
  * reaches it (A4 3.11.1). "Reading the task", "Running a command", "Editing files".
  */
 export const PROGRESS_LABELS = [
-  "tasks", // a Tasks tool call
+  "tasks", // a TTasks tool call
   "command", // a shell command
   "edit", // a file edit
   "read", // reading or searching files
@@ -59,7 +59,7 @@ export const PROGRESS_LABELS = [
 ] as const;
 export type ProgressLabel = (typeof PROGRESS_LABELS)[number];
 
-/** Whether the run's Tasks MCP server was connected, from Claude's `system/init` (A4 3.11.4). */
+/** Whether the run's TTasks MCP server was connected, from Claude's `system/init` (A4 3.11.4). */
 export const APP_TOOLS_STATES = ["connected", "not-connected", "absent"] as const;
 export type AppToolsState = (typeof APP_TOOLS_STATES)[number];
 
@@ -100,7 +100,7 @@ export interface Usage {
 /**
  * A normalised run event (A4 3.11.1). `progress` carries a label key, never text. `session`
  * reports Claude's `system/init` facts that A4 3.11.4 uses: the working folder, which M6.06
- * compares with the run's folder and which never leaves machine state, and whether the Tasks tools
+ * compares with the run's folder and which never leaves machine state, and whether the TTasks tools
  * connected. There is no `needs-input`: neither v1 adapter can wait for input (A4 3.11.2).
  */
 export type RunEvent =
@@ -285,8 +285,8 @@ export const RUN_REASONS = {
     /** The container gave no agent within its start time. Nothing of it is left. */
     "start_timed_out",
     /**
-     * Tasks restarted, crashed or was updated while the run was open: its processes ended with the
-     * service ("Interrupted because Tasks restarted"). The record keeps the last saved answer.
+     * TTasks restarted, crashed or was updated while the run was open: its processes ended with the
+     * service ("Interrupted because TTasks restarted"). The record keeps the last saved answer.
      */
     "service_ended",
     // The outcome's reasons other than `success` (OUTCOME_REASONS).
@@ -437,7 +437,7 @@ export const RUN_LIMIT_BOUNDS = {
  * - `confirmed`: nothing was left when the agent ended, as the operating system counts it.
  * - `ended_leftovers`: processes the agent started, or the agent itself, had to be ended; the
  *   operating system then confirmed none is left.
- * - `ended_found`: no process group could hold the run, so Tasks ended the agent's processes it
+ * - `ended_found`: no process group could hold the run, so TTasks ended the agent's processes it
  *   could find, and nothing confirms that none is left.
  */
 export const RUN_CLEANUPS = ["confirmed", "ended_leftovers", "ended_found"] as const;
@@ -482,7 +482,7 @@ export interface NewRun {
   /** The instance's key in this machine's `machine.toml`. */
   instance: string;
   adapter: RunAdapterId;
-  /** The place the folder resolved from (`pl_` ID), or null for a Tasks work folder (A4 3.3). */
+  /** The place the folder resolved from (`pl_` ID), or null for a TTasks work folder (A4 3.3). */
   place: string | null;
   /** The session it continues (`se_` ID), when there is one. */
   session?: string;
@@ -509,7 +509,7 @@ export interface RunRecord {
   instance: string;
   adapter: RunAdapterId;
   place: string | null;
-  /** `place` when the folder came from a place, else a Tasks work folder. */
+  /** `place` when the folder came from a place, else a TTasks work folder. */
   folderKind: "place" | "work_folder";
   request: string | null;
   briefHash: string;

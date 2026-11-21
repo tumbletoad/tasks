@@ -430,7 +430,7 @@ export class FakeTools {
           : ok('"explorer.exe","8104","Console","1","215,400 K"\r\n');
       }
       case "explorer.exe":
-        service.start("tasksw");
+        service.start("ttasksw");
         return fail(1); // explorer.exe exits 1 after it hands the start to the shell
       default:
         return fail(127);
@@ -459,21 +459,21 @@ function dataFolders(data: string) {
   };
 }
 
-/** A test install's layout (TASKS_HOME): program, command and data under `root`. */
+/** A test install's layout (TTASKS_HOME): program, command and data under `root`. */
 export function testLayout(platform: NodeJS.Platform, root: string): Layout {
   return { platform, root, bin: join(root, "bin"), ...dataFolders(root), home: root };
 }
 
 /**
  * The daily install's layout for the home folder `home` (A2 3.2.1): the program in
- * `.local/share/tasks`, the command in `.local/bin`, the data in `.tasks`.
+ * `.local/share/ttasks`, the command in `.local/bin`, the data in `.ttasks`.
  */
 export function dailyLayout(platform: NodeJS.Platform, home: string): Layout {
   return {
     platform,
-    root: join(home, ".local", "share", "tasks"),
+    root: join(home, ".local", "share", "ttasks"),
     bin: join(home, ".local", "bin"),
-    ...dataFolders(join(home, ".tasks")),
+    ...dataFolders(join(home, ".ttasks")),
     home: undefined,
   };
 }
@@ -504,7 +504,7 @@ export const TEST_INSTALL_ID = "gz2r16ezc2";
 
 /**
  * A context whose every place and tool is a stand-in under `dir`: home `dir/home`, the test
- * install `dir/tasks-test` (or with `daily`, the daily install's folders under the home) with its
+ * install `dir/ttasks-test` (or with `daily`, the daily install's folders under the home) with its
  * program file, the unit and LaunchAgents folders under the home, the registry in memory unless
  * given.
  */
@@ -514,11 +514,11 @@ export function fakeContext(options: FakeContextOptions): FakeContext {
   const daily = options.daily ?? false;
   const layout = daily
     ? dailyLayout(platform, home)
-    : testLayout(platform, join(dir, "tasks-test"));
+    : testLayout(platform, join(dir, "ttasks-test"));
   const program =
     platform === "win32"
-      ? join(layout.bin, "tasksw.exe")
-      : join(layout.root, "current", "bin", platform === "darwin" ? "tasks-launchd" : "tasks");
+      ? join(layout.bin, "ttasksw.exe")
+      : join(layout.root, "current", "bin", platform === "darwin" ? "ttasks-launchd" : "ttasks");
   mkdirSync(join(program, ".."), { recursive: true });
   writeFileSync(program, "stand-in launcher\n");
   mkdirSync(home, { recursive: true });
@@ -539,7 +539,7 @@ export function fakeContext(options: FakeContextOptions): FakeContext {
     roots: {
       unitDir,
       launchAgentsDir: join(home, "Library", "LaunchAgents"),
-      registryRoot: options.registryRoot ?? "HKCU\\Software\\tasks-test-memory",
+      registryRoot: options.registryRoot ?? "HKCU\\Software\\ttasks-test-memory",
     },
     run: tools.run,
     startDetached: (file, args) => {

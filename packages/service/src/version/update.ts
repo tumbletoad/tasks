@@ -1,4 +1,4 @@
-// `tasks update --from <archive>`, `--rollback` and `--repair`: from a local archive, no hosted
+// `ttasks update --from <archive>`, `--rollback` and `--repair`: from a local archive, no hosted
 // channel. The installed version replaces itself, in this order:
 //   1. update.lock for the whole update. A second update waits for it; then any journal it finds
 //      is an interrupted update, which is finished or rolled back first (repair.ts).
@@ -14,13 +14,13 @@
 //      manifest.json, and the folder is renamed to `versions/<v>`, or a folder already there must
 //      equal it.
 //   5. The candidate's self-test runs through its own version-local launcher
-//      (`versions/<v>/bin/tasks doctor --self-test --json`): integrity, the runtime gate and the
+//      (`versions/<v>/bin/ttasks doctor --self-test --json`): integrity, the runtime gate and the
 //      candidate's checks. Authenticity was settled in step 2; this is the functional half.
 //   6. The journal records each stable launcher the switch changes, with its old and new SHA-256
 //      (phase `staged`), and on Windows each one is staged as `bin\<name>.new` (checked, flushed)
 //      before `current` changes. Then `current` is switched atomically
 //      (`switched`), then each changed launcher is swapped for its staged copy, one at a time,
-//      `tasks.exe` first: by one rename where Windows allows it, else by renaming the running one
+//      `ttasks.exe` first: by one rename where Windows allows it, else by renaming the running one
 //      aside and the new one in (switch.ts placeLauncher; `launchers_done`), and install.json
 //      records the version.
 //   7. The service is restarted through the OS: a supervised service is asked for
@@ -48,7 +48,7 @@ import {
   writeSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
+import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { createFile, ensurePrivateDir, judgePath, makeDir } from "../hub/files.ts";
 import { acquireLock, LockBusy, type HeldLock } from "../hub/lock.ts";
 import { unsafeMessage } from "../hub/permissions.ts";
@@ -175,7 +175,7 @@ export interface ServiceControl {
   /**
    * Brings the service back on what current names now: a supervised one by a restart request (its
    * manager starts it again), else by a stop and a start. One that is not running is started.
-   * `supervisorChanged`: the supervisor itself changed (Windows' tasksw.exe), so it is stopped and
+   * `supervisorChanged`: the supervisor itself changed (Windows' ttasksw.exe), so it is stopped and
    * started too, and the new supervisor runs.
    */
   restart(options: { readonly supervisorChanged: boolean }): Promise<void>;
@@ -199,10 +199,10 @@ const pause = (ms: number) =>
     setTimeout(resolve, ms);
   });
 
-/** The service control of the service install's context: systemd, tasksw.exe, launchd or none. */
+/** The service control of the service install's context: systemd, ttasksw.exe, launchd or none. */
 export function osServiceControl(ctx: ServiceContext, env: Env): ServiceControl {
   // A service started by hand on Linux, where no unit of this install is installed, is started
-  // by hand again: `tasks service start` does that itself (A2 3.3.3).
+  // by hand again: `ttasks service start` does that itself (A2 3.3.3).
   const start = async (): Promise<void> => {
     await startService(ctx);
   };
@@ -261,7 +261,7 @@ export const versionLauncher = (folder: string, platform: NodeJS.Platform): stri
 /**
  * The self-test through the candidate's own version-local launcher: `doctor --self-test --json`,
  * so the candidate's runtime and bundle check themselves, with `current` still naming the old
- * version (A2 3.12.3, 3.12.6 step 6). The launcher sets TASKS_HOME from its own location.
+ * version (A2 3.12.3, 3.12.6 step 6). The launcher sets TTASKS_HOME from its own location.
  */
 export function launcherSelfTest(env: Env, platform: NodeJS.Platform): SelfTest {
   return (folder) =>
@@ -453,7 +453,7 @@ function sayRepair(options: UpdateOptions, repair: RepairOutcome): void {
   }
 }
 
-/** Whether a journal records a change of tasksw.exe, the Windows supervisor (A2 3.12.6 step 11). */
+/** Whether a journal records a change of ttasksw.exe, the Windows supervisor (A2 3.12.6 step 11). */
 const supervisorIn = (journal: Journal): boolean =>
   journal.launchers.some((l) => l.name === WINDOWS_LAUNCHERS[1]);
 
@@ -491,7 +491,7 @@ async function bringBack(
  * Finishes or rolls back an interrupted update (repair.ts), with update.lock held, and brings the
  * service back on what current names when that update had found it running (its journal's
  * `service`) and it does not run that version now, or when the repair may have replaced the
- * supervisor (tasksw.exe, repair.ts supervisorReplaced), which an old supervisor may have outlived
+ * supervisor (ttasksw.exe, repair.ts supervisorReplaced), which an old supervisor may have outlived
  * even when the service it restarted names current; with `always`, also a service that runs
  * another version than current without any journal. The journal goes only after that, so a kill
  * before it leaves the next run what it needs to bring the service back. A `stuck` outcome
@@ -617,7 +617,7 @@ function othersCanChange(folder: string): boolean {
 
 /**
  * Unpacks checked entries into the new folder `dir`, creating every folder and file exclusively
- * with exactly its mode, whatever the umask (@tasks/files, A2 3.2.2 rule 5).
+ * with exactly its mode, whatever the umask (@ttasks/files, A2 3.2.2 rule 5).
  */
 function unpack(entries: readonly ReadEntry[], dir: string, platform: NodeJS.Platform): void {
   makeDir(dir, 0o755, { recursive: false, platform });
@@ -857,7 +857,7 @@ async function switchTo(run: Switch): Promise<UpdateResult> {
     await at(options, "current");
     write({ ...run.journal, phase: "switched" });
     await at(options, "switched");
-    // One at a time, tasks.exe first: at every instant at least one stable launcher exists
+    // One at a time, ttasks.exe first: at every instant at least one stable launcher exists
     // (A2 3.12.6 step 10), and where Windows allows it (a launcher that is not running) its path
     // never goes missing. The old one can be found again in its version folder, so a rollback
     // needs no aside copy of it. Linux and macOS: the stable link names current and never
@@ -971,7 +971,7 @@ async function rollBack(run: Switch, error: unknown, restarted: boolean): Promis
   try {
     if (restarted && options.control !== undefined) {
       try {
-        // When the update changed tasksw.exe, the one that runs now is the new one: it goes too.
+        // When the update changed ttasksw.exe, the one that runs now is the new one: it goes too.
         await options.control.restart({ supervisorChanged: supervisorIn(run.journal) });
         service = (await options.control.waitFor(now, options.restartWaitMs ?? RESTART_WAIT_MS))
           ? ` The service runs ${now} again.`
@@ -998,7 +998,7 @@ async function rollBack(run: Switch, error: unknown, restarted: boolean): Promis
 // ---------------------------------------------------------------------------------------------
 // The commands
 
-/** `tasks update --from <archive>`. */
+/** `ttasks update --from <archive>`. */
 export async function updateFromArchive(
   archive: string,
   options: UpdateOptions,
@@ -1111,7 +1111,7 @@ export async function updateFromArchive(
   }
 }
 
-/** `tasks update --rollback`: current back to the version it named before the last switch. */
+/** `ttasks update --rollback`: current back to the version it named before the last switch. */
 export async function rollbackUpdate(options: UpdateOptions): Promise<UpdateResult> {
   const install = openInstall(options.facts);
   const lock = await lockForUpdate(install, options);
@@ -1168,7 +1168,7 @@ export async function rollbackUpdate(options: UpdateOptions): Promise<UpdateResu
 }
 
 /**
- * `tasks update --repair`: finishes or rolls back an interrupted update, then brings the service
+ * `ttasks update --repair`: finishes or rolls back an interrupted update, then brings the service
  * back on what current names when it runs another version, or ran when the update began.
  */
 export async function repairUpdate(options: UpdateOptions): Promise<UpdateResult> {

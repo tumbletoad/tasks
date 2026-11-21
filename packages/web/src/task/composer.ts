@@ -83,7 +83,7 @@ export function keepNote(space: string, task: string, note: NoteRequest | undefi
 }
 
 /**
- * Where a launch's words are, now that Tasks holds them for its agent: `reached` once the agent
+ * Where a launch's words are, now that TTasks holds them for its agent: `reached` once the agent
  * read them, `unread` when they went with a launch whose agent never read them, `kept` when the
  * launch failed or nothing is known of them any more (the service restarted since), undefined
  * while they wait. Only `reached` clears the field, and only `unread` says so.

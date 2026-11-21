@@ -56,7 +56,7 @@ describe.runIf(windows)(
     });
 
     /**
-     * A TASKS_HOME install (home.marker, so its state folder is <root>\state) with OLD (release
+     * A TTASKS_HOME install (home.marker, so its state folder is <root>\state) with OLD (release
      * launchers) and NEW (the other set) in versions\, `current` naming `version`, the release
      * launchers in bin\, and an update's journal in state\: an update of it was cut off (only the
      * journal's existence counts for the launcher).
@@ -81,26 +81,26 @@ describe.runIf(windows)(
       join(root, "versions", version, "bin", name);
     const bytes = (path: string) => readFileSync(path);
 
-    test("tasks.exe puts back a missing tasksw.exe, a copy of the one of the version current names, and runs as before", () => {
+    test("ttasks.exe puts back a missing ttasksw.exe, a copy of the one of the version current names, and runs as before", () => {
       const root = install(NEW);
-      rmSync(bin(root, "tasksw.exe"));
+      rmSync(bin(root, "ttasksw.exe"));
       // Files only the journal could vouch for are never what it places.
-      writeFileSync(bin(root, "tasksw.exe.new"), "planted new");
-      writeFileSync(bin(root, "tasksw.exe.old-7"), "planted old");
+      writeFileSync(bin(root, "ttasksw.exe.new"), "planted new");
+      writeFileSync(bin(root, "ttasksw.exe.old-7"), "planted old");
       const ran = run(stable(root), ["version"]);
       expect(ran.status, ran.stderr).toBe(0);
       expect(JSON.parse(ran.stdout)).toMatchObject({ version: NEW });
-      expect(ran.stderr).toMatch(/put .*tasksw\.exe back from versions\\0\.2\.0/);
-      expect(bytes(bin(root, "tasksw.exe"))).toEqual(bytes(own(root, NEW, "tasksw.exe")));
-      expect(bytes(bin(root, "tasksw.exe"))).not.toEqual(bytes(own(root, OLD, "tasksw.exe")));
-      expect(readFileSync(bin(root, "tasksw.exe.new"), "utf8")).toBe("planted new");
-      expect(readFileSync(bin(root, "tasksw.exe.old-7"), "utf8")).toBe("planted old");
+      expect(ran.stderr).toMatch(/put .*ttasksw\.exe back from versions\\0\.2\.0/);
+      expect(bytes(bin(root, "ttasksw.exe"))).toEqual(bytes(own(root, NEW, "ttasksw.exe")));
+      expect(bytes(bin(root, "ttasksw.exe"))).not.toEqual(bytes(own(root, OLD, "ttasksw.exe")));
+      expect(readFileSync(bin(root, "ttasksw.exe.new"), "utf8")).toBe("planted new");
+      expect(readFileSync(bin(root, "ttasksw.exe.old-7"), "utf8")).toBe("planted old");
       // Nothing else in bin: no temporary file is left.
       expect(readdirSync(join(root, "bin")).sort()).toEqual([
-        "tasks.exe",
-        "tasksw.exe",
-        "tasksw.exe.new",
-        "tasksw.exe.old-7",
+        "ttasks.exe",
+        "ttasksw.exe",
+        "ttasksw.exe.new",
+        "ttasksw.exe.old-7",
       ]);
       // A second start finds it there and says nothing.
       const again = run(stable(root), ["version"]);
@@ -108,30 +108,30 @@ describe.runIf(windows)(
       expect(again.stderr).toBe("");
     });
 
-    test("tasksw.exe puts back a missing tasks.exe, with arguments and as the supervisor", () => {
+    test("ttasksw.exe puts back a missing ttasks.exe, with arguments and as the supervisor", () => {
       const root = install(OLD);
-      rmSync(bin(root, "tasks.exe"));
+      rmSync(bin(root, "ttasks.exe"));
       expect(launchVersion(stable(root, true)).version).toBe(OLD);
-      expect(bytes(bin(root, "tasks.exe"))).toEqual(bytes(own(root, OLD, "tasks.exe")));
+      expect(bytes(bin(root, "ttasks.exe"))).toEqual(bytes(own(root, OLD, "ttasks.exe")));
 
       // The supervisor (no arguments) repairs before it starts the service: the stub exits 0.
-      rmSync(bin(root, "tasks.exe"));
+      rmSync(bin(root, "ttasks.exe"));
       mkdirSync(join(root, "stub"));
       writeFileSync(join(root, "stub", "plan.json"), JSON.stringify([{ exit: 0 }]));
       const supervised = run(stable(root, true), [], {
-        env: { TASKS_STUB_DIR: join(root, "stub") },
+        env: { TTASKS_STUB_DIR: join(root, "stub") },
       });
       expect(supervised.status).toBe(0);
-      expect(bytes(bin(root, "tasks.exe"))).toEqual(bytes(own(root, OLD, "tasks.exe")));
-      expect(readdirSync(join(root, "bin")).sort()).toEqual(["tasks.exe", "tasksw.exe"]);
+      expect(bytes(bin(root, "ttasks.exe"))).toEqual(bytes(own(root, OLD, "ttasks.exe")));
+      expect(readdirSync(join(root, "bin")).sort()).toEqual(["ttasks.exe", "ttasksw.exe"]);
     });
 
     test("with nothing it may copy, it places nothing and the launcher goes on as it would have", () => {
       const cases: [label: string, setUp: (root: string) => void, status: number][] = [
         [
-          "the version current names has no tasksw.exe",
+          "the version current names has no ttasksw.exe",
           (root) => {
-            rmSync(own(root, NEW, "tasksw.exe"));
+            rmSync(own(root, NEW, "ttasksw.exe"));
           },
           0,
         ],
@@ -140,7 +140,7 @@ describe.runIf(windows)(
           (root) => {
             const elsewhere = join(work, `elsewhere-${String(count)}`);
             mkdirSync(elsewhere);
-            copyFileSync(release.tasksw, join(elsewhere, "tasksw.exe"));
+            copyFileSync(release.ttasksw, join(elsewhere, "ttasksw.exe"));
             rmSync(join(root, "versions", NEW, "bin"), { recursive: true });
             symlinkSync(elsewhere, join(root, "versions", NEW, "bin"), "junction");
           },
@@ -156,14 +156,14 @@ describe.runIf(windows)(
       ];
       for (const [label, setUp, status] of cases) {
         const root = install(NEW);
-        rmSync(bin(root, "tasksw.exe"));
+        rmSync(bin(root, "ttasksw.exe"));
         setUp(root);
         const ran = run(stable(root), ["version"]);
         expect(ran.status, `${label}: ${ran.stderr}`).toBe(status);
-        expect(existsSync(bin(root, "tasksw.exe")), label).toBe(false);
-        expect(readdirSync(join(root, "bin")), label).toEqual(["tasks.exe"]);
+        expect(existsSync(bin(root, "ttasksw.exe")), label).toBe(false);
+        expect(readdirSync(join(root, "bin")), label).toEqual(["ttasks.exe"]);
         if (status === 0) {
-          expect(ran.stderr, label).toMatch(/tasksw\.exe is missing and could not be put back/);
+          expect(ran.stderr, label).toMatch(/ttasksw\.exe is missing and could not be put back/);
         } else {
           // Only resolve's own message: the repair says nothing about a bad current.
           expect(ran.stderr.trim().split("\n"), label).toHaveLength(1);
@@ -199,13 +199,13 @@ describe.runIf(windows)(
       ];
       for (const [label, setUp] of cases) {
         const root = install(NEW);
-        rmSync(bin(root, "tasksw.exe"));
+        rmSync(bin(root, "ttasksw.exe"));
         setUp(root);
         const ran = run(stable(root), ["version"]);
         expect(ran.status, `${label}: ${ran.stderr}`).toBe(0);
         expect(JSON.parse(ran.stdout), label).toMatchObject({ version: NEW });
         expect(ran.stderr, label).toBe("");
-        expect(readdirSync(join(root, "bin")), label).toEqual(["tasks.exe"]);
+        expect(readdirSync(join(root, "bin")), label).toEqual(["ttasks.exe"]);
       }
     });
 
@@ -213,38 +213,38 @@ describe.runIf(windows)(
       // A sibling of another version (an update cut off after the first launcher was swapped)
       // still runs: Node's repair brings it to the journal's side, not the launcher.
       const mismatched = install(NEW);
-      const before = bytes(bin(mismatched, "tasksw.exe"));
+      const before = bytes(bin(mismatched, "ttasksw.exe"));
       expect(run(stable(mismatched), ["version"]).status).toBe(0);
-      expect(bytes(bin(mismatched, "tasksw.exe"))).toEqual(before);
+      expect(bytes(bin(mismatched, "ttasksw.exe"))).toEqual(before);
 
       const folder = install(NEW);
-      rmSync(bin(folder, "tasksw.exe"));
-      mkdirSync(bin(folder, "tasksw.exe"));
+      rmSync(bin(folder, "ttasksw.exe"));
+      mkdirSync(bin(folder, "ttasksw.exe"));
       expect(run(stable(folder), ["version"]).status).toBe(0);
-      expect(readdirSync(bin(folder, "tasksw.exe"))).toEqual([]);
+      expect(readdirSync(bin(folder, "ttasksw.exe"))).toEqual([]);
 
       const local = install(NEW);
-      rmSync(own(local, NEW, "tasksw.exe"));
+      rmSync(own(local, NEW, "ttasksw.exe"));
       expect(run(versionLocal(local, NEW), ["version"]).status).toBe(0);
-      expect(existsSync(own(local, NEW, "tasksw.exe"))).toBe(false);
+      expect(existsSync(own(local, NEW, "ttasksw.exe"))).toBe(false);
 
       // Stable dispatch from a folder that is not the root's bin: the root is its parent, but it
       // is no stable bin folder, so nothing is made beside it.
       const outside = install(NEW);
       mkdirSync(join(outside, "tools"));
-      copyFileSync(release.tasks, join(outside, "tools", "tasks.exe"));
-      const ran = spawnSync(join(outside, "tools", "tasks.exe"), ["version"], {
+      copyFileSync(release.ttasks, join(outside, "tools", "ttasks.exe"));
+      const ran = spawnSync(join(outside, "tools", "ttasks.exe"), ["version"], {
         encoding: "utf8",
         windowsHide: true,
         timeout: 60_000,
       });
       expect(ran.status, ran.stderr).toBe(0);
-      expect(readdirSync(join(outside, "tools"))).toEqual(["tasks.exe"]);
+      expect(readdirSync(join(outside, "tools"))).toEqual(["ttasks.exe"]);
     });
 
     /**
-     * The daily layout: <base>\share\tasks with the stable launchers in <base>\bin, and a stand-in
-     * profile folder, never the real one: its .tasks\state holds the journal. With `junction`,
+     * The daily layout: <base>\share\ttasks with the stable launchers in <base>\bin, and a stand-in
+     * profile folder, never the real one: its .ttasks\state holds the journal. With `junction`,
      * share is a junction to <base>\share-real from the start, so no folder a launcher has run
      * from is ever renamed (Windows refuses that while a scanner still reads a file in it).
      */
@@ -256,48 +256,48 @@ describe.runIf(windows)(
         mkdirSync(join(base, "share-real"));
         symlinkSync(join(base, "share-real"), join(base, "share"), "junction");
       }
-      const root = join(base, "share", "tasks");
+      const root = join(base, "share", "ttasks");
       const profile = join(base, "profile");
       mkdirSync(root, { recursive: true });
       addVersion(root, OLD, release);
       addVersion(root, NEW, other);
       makeStable(root, NEW, release);
       const command = join(base, "bin");
-      expect(stable(root)).toBe(join(command, "tasks.exe"));
+      expect(stable(root)).toBe(join(command, "ttasks.exe"));
       const start = () => run(stable(root), ["version"], { env: { USERPROFILE: profile } });
       return { root, profile, command, start };
     }
 
     const dailyJournal = (profile: string) => {
-      mkdirSync(join(profile, ".tasks", "state"), { recursive: true });
-      writeFileSync(join(profile, ".tasks", "state", "update.json"), "{}");
+      mkdirSync(join(profile, ".ttasks", "state"), { recursive: true });
+      writeFileSync(join(profile, ".ttasks", "state", "update.json"), "{}");
     };
 
     test("from the daily install's command folder the journal is the data folder's, and share must be a plain folder", () => {
       const { root, profile, command, start } = daily();
 
       // A journal in <root>\state is not the daily install's: nothing is put back.
-      rmSync(join(command, "tasksw.exe"));
+      rmSync(join(command, "ttasksw.exe"));
       mkdirSync(join(root, "state"));
       writeFileSync(join(root, "state", "update.json"), "{}");
       let ran = start();
       expect([ran.status, ran.stderr]).toEqual([0, ""]);
-      expect(readdirSync(command)).toEqual(["tasks.exe"]);
+      expect(readdirSync(command)).toEqual(["ttasks.exe"]);
 
-      // The journal in %USERPROFILE%\.tasks\state: the sibling of the version current names.
+      // The journal in %USERPROFILE%\.ttasks\state: the sibling of the version current names.
       dailyJournal(profile);
       ran = start();
       expect(ran.status, ran.stderr).toBe(0);
-      expect(ran.stderr).toMatch(/put .*tasksw\.exe back from versions\\0\.2\.0/);
-      expect(bytes(join(command, "tasksw.exe"))).toEqual(bytes(own(root, NEW, "tasksw.exe")));
+      expect(ran.stderr).toMatch(/put .*ttasksw\.exe back from versions\\0\.2\.0/);
+      expect(bytes(join(command, "ttasksw.exe"))).toEqual(bytes(own(root, NEW, "ttasksw.exe")));
 
       // A junction at share: the launcher refuses to run, and the repair reads nothing through it.
       const behind = daily(true);
       dailyJournal(behind.profile);
-      rmSync(join(behind.command, "tasksw.exe"));
+      rmSync(join(behind.command, "ttasksw.exe"));
       ran = behind.start();
       expect(ran.status).toBe(70);
-      expect(readdirSync(behind.command)).toEqual(["tasks.exe"]);
+      expect(readdirSync(behind.command)).toEqual(["ttasks.exe"]);
     });
   },
 );

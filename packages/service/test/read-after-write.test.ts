@@ -9,7 +9,7 @@ import {
   TaskFinishResult,
   TaskReopenResult,
   TaskUpdateResult,
-} from "@tasks/contracts";
+} from "@ttasks/contracts";
 import { opCall, type Caller, type OpsHost } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 

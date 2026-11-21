@@ -1,15 +1,15 @@
-// Folders through the request path of a running service, over real tasks-local/1 sessions: a
+// Folders through the request path of a running service, over real ttasks-local/1 sessions: a
 // project made for a folder in one change, the folder moved on disk with everything inside it
 // following, a folder given another while it is still there, the undo and redo of a move, the
 // repository's name in a project's list, an agent's project created by name, and the checks at
-// bind: a folder inside Tasks' own data, a folder that is not there, and a folder another project
+// bind: a folder inside TTasks' own data, a folder that is not there, and a folder another project
 // has; and a retry that replays after a rename. The folders are temporary ones of this test.
 // Fixture text only.
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { FolderManageResult, HistoryUndoResult, TaskAddResult } from "@tasks/contracts";
-import type { RpcSession } from "@tasks/bridge/protocol";
+import { FolderManageResult, HistoryUndoResult, TaskAddResult } from "@ttasks/contracts";
+import type { RpcSession } from "@ttasks/bridge/protocol";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { readFolders, readLaunchFolder } from "../src/ops/read.ts";
 import { classSession, errorOf, type CliClass } from "./ops-helpers.ts";
@@ -136,7 +136,7 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
     );
     expect(inner).toMatchObject({ result: "created", owner: { name: "api" } });
 
-    // The person moves the folder, then tells Tasks: everything inside it moves along.
+    // The person moves the folder, then tells TTasks: everything inside it moves along.
     renameSync(portal, moved);
     const changed = FolderManageResult.parse(
       await call(user, "folder.manage", {
@@ -281,7 +281,7 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
     expect(projects.find((p) => p.name === "Checked out")).toMatchObject({ repo: "portal-web" });
   });
 
-  test("a folder inside Tasks' own data, one that is not there, and a file are refused, and nothing is written", async () => {
+  test("a folder inside TTasks' own data, one that is not there, and a file are refused, and nothing is written", async () => {
     const user = await session("cli-interactive");
     const before = await asOf(user);
     const at = (path: string) =>
@@ -293,7 +293,7 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
           request_id: rid(),
         }),
       );
-    // The Tasks home of this service, a folder inside it, and the space's own folder.
+    // The TTasks home of this service, a folder inside it, and the space's own folder.
     expect(await at(home)).toMatchObject({
       code: "invalid_input",
       data: { reason: "folder_reserved" },
@@ -349,7 +349,7 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
   });
 
   test("an agent files a task into a project it names first, which is created with it", async () => {
-    const agent = await session("cli-agent", { TASKS_SPACE: space });
+    const agent = await session("cli-agent", { TTASKS_SPACE: space });
     const added = TaskAddResult.parse(
       await call(agent, "task.add", {
         tasks: [{ title: "Draft the release notes", area: "Releases", project: "Spring release" }],
@@ -367,7 +367,7 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
   });
 
   test("a new project named by several drafts, or by calls at once, is made once", async () => {
-    const agent = await session("cli-agent", { TASKS_SPACE: space });
+    const agent = await session("cli-agent", { TTASKS_SPACE: space });
     await call(agent, "task.add", {
       tasks: [
         { title: "Plan the launch", area: "Launches", project: "Autumn launch" },

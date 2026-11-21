@@ -1,9 +1,9 @@
-// `tasks shim <ticket>` (A4 3.6.3): the launch shim. A terminal runs it and nothing else; it claims
+// `ttasks shim <ticket>` (A4 3.6.3): the launch shim. A terminal runs it and nothing else; it claims
 // its launch once with the ticket, verifies what the claim's reply says, starts the agent as its
 // child, reports the agent's start, settle and exit, and stays attached across service restarts.
 //
 // Steps (A4 3.6.3's numbering):
-// 1. Start. The ticket's pattern is checked; the process title becomes `tasks shim`, which on Linux
+// 1. Start. The ticket's pattern is checked; the process title becomes `ttasks shim`, which on Linux
 //    overwrites the argv area, so from here the ticket no longer shows in /proc/<pid>/cmdline.
 //    Until the claim, a hang-up ends the shim without claiming.
 // 2. Connect, retrying for 30 s while the service is down or starting.
@@ -28,14 +28,14 @@ import { statSync } from "node:fs";
 import { constants } from "node:os";
 import { isAbsolute, posix, win32 } from "node:path";
 import { isatty } from "node:tty";
-import { CLI_NAME, ENV_PREFIX, PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, ENV_PREFIX, PRODUCT_NAME } from "@ttasks/brand";
 import {
   checkWorkingFolder,
   type FolderCheck,
   type ResolveReason,
   type WorkingFolderCheck,
-} from "@tasks/launch/places";
-import { ownStartTime, powershellPath } from "@tasks/launch/process";
+} from "@ttasks/launch/places";
+import { ownStartTime, powershellPath } from "@ttasks/launch/process";
 import {
   AFTER_EXIT_MODES,
   checkFolderCheck,
@@ -56,8 +56,8 @@ import {
   TICKET,
   type ClaimReply,
   type ExitFile,
-} from "@tasks/launch/shim-wire";
-import type { RpcSession } from "@tasks/bridge/protocol";
+} from "@ttasks/launch/shim-wire";
+import type { RpcSession } from "@ttasks/bridge/protocol";
 import { startAgent as startDirect, type AgentExit, type StartAgent } from "./agent.ts";
 import { writeExitFile } from "./exit-file.ts";
 import {

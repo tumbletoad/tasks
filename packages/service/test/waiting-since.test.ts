@@ -4,8 +4,8 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { newId, type Id, type Operation } from "@tasks/storage";
-import { writeFixture, type Fixture } from "@tasks/storage/write-helpers";
+import { newId, type Id, type Operation } from "@ttasks/storage";
+import { writeFixture, type Fixture } from "@ttasks/storage/write-helpers";
 import { readSnapshot } from "../src/http/feed.ts";
 import { readerOf, tempRoot } from "./harness.ts";
 

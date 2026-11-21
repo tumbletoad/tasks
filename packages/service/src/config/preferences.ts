@@ -10,8 +10,8 @@ import {
   preferenceSpec,
   type PreferenceRead,
   type PrefValue,
-} from "@tasks/contracts";
-import { isAbsoluteFor } from "@tasks/launch";
+} from "@ttasks/contracts";
+import { isAbsoluteFor } from "@ttasks/launch";
 import { commitEdit, prepareEdit, type EditResult, type EditValue } from "./edit.ts";
 import type { MachineConfig } from "./machine-toml.ts";
 

@@ -1,5 +1,5 @@
-// tasksw.exe's supervisor loop (A2 3.3.1, 3.3.2),
-// with the stub service of test/stub/tasks.mjs. The test build (TASKS_TEST_HOOKS) shortens the
+// ttasksw.exe's supervisor loop (A2 3.3.1, 3.3.2),
+// with the stub service of test/stub/ttasks.mjs. The test build (TTASKS_TEST_HOOKS) shortens the
 // time unit and traces each decision, so the sequence is checked exactly and the waits are
 // checked against the stub's own clock. Windows only: elsewhere every test is collected and skipped.
 import { spawn } from "node:child_process";
@@ -84,7 +84,7 @@ interface GiveUp {
 }
 
 describe.runIf(windows)(
-  "[A2.3.3.2.launcher-win.supervisor] tasksw.exe supervises tasks serve",
+  "[A2.3.3.2.launcher-win.supervisor] ttasksw.exe supervises ttasks serve",
   () => {
     let work: string;
     let hooks: Launchers;
@@ -103,7 +103,7 @@ describe.runIf(windows)(
     });
 
     /**
-     * A fresh TASKS_HOME install (home.marker, so its state folder is <root>\state) with OLD current
+     * A fresh TTASKS_HOME install (home.marker, so its state folder is <root>\state) with OLD current
      * and NEW beside it, launchers in bin\ and a stub folder.
      */
     function install(launchers: Launchers = hooks): string {
@@ -121,7 +121,7 @@ describe.runIf(windows)(
     const giveUpFile = (root: string) => join(root, "state", "crash", "supervisor-gave-up.json");
 
     /**
-     * Runs <root>\bin\tasksw.exe with no arguments until it stops, with the stub following plan.
+     * Runs <root>\bin\ttasksw.exe with no arguments until it stops, with the stub following plan.
      * prepare runs after the state folder is cleared and before the supervisor starts. With
      * readRecord false, whatever stands at the record's name is left unread.
      */
@@ -140,11 +140,11 @@ describe.runIf(windows)(
       prepare();
       const result = run(exe, [], {
         env: {
-          TASKS_STUB_DIR: stub,
-          TASKS_TEST_TIME_UNIT_MS: String(unitMs),
-          TASKS_TEST_TRACE: join(stub, "trace.txt"),
+          TTASKS_STUB_DIR: stub,
+          TTASKS_TEST_TIME_UNIT_MS: String(unitMs),
+          TTASKS_TEST_TRACE: join(stub, "trace.txt"),
           // A caller's value never reaches the service: the supervisor sets its own.
-          tasks_service_manager: "systemd",
+          ttasks_service_manager: "systemd",
         },
         timeout: 120_000,
       });
@@ -203,7 +203,7 @@ describe.runIf(windows)(
         expect(start.args).toEqual(["serve"]);
         expect(start.mode).toBe("stable");
         // The service learns who supervises it, whatever the caller had set (M1.12).
-        expect(start.manager).toBe("tasksw");
+        expect(start.manager).toBe("ttasksw");
         expect(start.version).toBe(OLD);
         expect(samePath(start.execPath, join(root, "versions", OLD, "runtime", "node.exe"))).toBe(
           true,
@@ -219,12 +219,12 @@ describe.runIf(windows)(
       expect(Date.parse(record?.t ?? "")).toBeGreaterThan(Date.now() - 60_000);
     });
 
-    test("the daily install's supervisor writes its record to %USERPROFILE%\\.tasks, the service's state", () => {
-      // The daily layout: <base>\share\tasks with the stable launchers in <base>\bin, and a
+    test("the daily install's supervisor writes its record to %USERPROFILE%\\.ttasks, the service's state", () => {
+      // The daily layout: <base>\share\ttasks with the stable launchers in <base>\bin, and a
       // stand-in profile folder, never the real one.
       count += 1;
       const base = join(work, `daily-${String(count)}`);
-      const root = join(base, "share", "tasks");
+      const root = join(base, "share", "ttasks");
       const profile = join(base, "profile");
       mkdirSync(root, { recursive: true });
       mkdirSync(profile);
@@ -233,31 +233,31 @@ describe.runIf(windows)(
       const stub = join(base, "stub");
       mkdirSync(stub);
       writeFileSync(join(stub, "plan.json"), JSON.stringify(FAILING));
-      const exe = join(base, "bin", "tasksw.exe");
+      const exe = join(base, "bin", "ttasksw.exe");
       expect(samePath(stable(root, true), exe)).toBe(true);
       const supervised = (userProfile: string) => {
         // The stub counts its starts in log.jsonl: each run follows the plan from its start.
         rmSync(join(stub, "log.jsonl"), { force: true });
         return run(exe, [], {
-          env: { TASKS_STUB_DIR: stub, TASKS_TEST_TIME_UNIT_MS: "10", USERPROFILE: userProfile },
+          env: { TTASKS_STUB_DIR: stub, TTASKS_TEST_TIME_UNIT_MS: "10", USERPROFILE: userProfile },
           timeout: 120_000,
         });
       };
       const ran = supervised(profile);
       expect([ran.status, ran.stderr]).toEqual([70, ""]);
-      const record = join(profile, ".tasks", "state", "crash", "supervisor-gave-up.json");
+      const record = join(profile, ".ttasks", "state", "crash", "supervisor-gave-up.json");
       const parsed = JSON.parse(readFileSync(record, "utf8")) as GiveUp;
       expect(parsed.failures.map((f) => f.exit)).toEqual([70, 70, 70, 70, 70]);
       // Nothing in the program's folder.
       expect(existsSync(join(root, "state"))).toBe(false);
       // A USERPROFILE that names no folder: no record anywhere, and the supervisor says so.
-      rmSync(join(profile, ".tasks"), { recursive: true });
+      rmSync(join(profile, ".ttasks"), { recursive: true });
       for (const odd of ["relative\\profile", "\\\\?\\C:\\x"]) {
         const refused = supervised(odd);
         expect(refused.status).toBe(70);
         expect(refused.stderr).toMatch(/USERPROFILE names no folder/);
       }
-      expect(existsSync(join(profile, ".tasks"))).toBe(false);
+      expect(existsSync(join(profile, ".ttasks"))).toBe(false);
       expect(existsSync(join(root, "state"))).toBe(false);
     });
 
@@ -483,7 +483,7 @@ describe.runIf(windows)(
       }
     });
 
-    test("tasksw.exe in a version folder does not supervise", () => {
+    test("ttasksw.exe in a version folder does not supervise", () => {
       const root = install();
       const s = supervise(root, [{ exit: 0 }], 10, versionLocal(root, NEW, true));
       expect(s.status).toBe(64);
@@ -495,7 +495,7 @@ describe.runIf(windows)(
       const stub = join(root, "stub");
       writeFileSync(join(stub, "plan.json"), JSON.stringify([{ exit: 0, ms: 30_000 }]));
       const child = spawn(stable(root, true), [], {
-        env: { ...process.env, TASKS_STUB_DIR: stub },
+        env: { ...process.env, TTASKS_STUB_DIR: stub },
         windowsHide: true,
       });
       let pid: number | undefined;
@@ -509,20 +509,20 @@ describe.runIf(windows)(
         expect(alive(pid ?? 0)).toBe(true);
         child.kill();
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        expect(alive(pid ?? 0), "the service died with tasksw.exe").toBe(true);
+        expect(alive(pid ?? 0), "the service died with ttasksw.exe").toBe(true);
       } finally {
         child.kill();
         killQuietly(pid);
       }
     });
 
-    test("[A2.3.3.2.launcher-win.handover] a supervisor whose bin\\tasksw.exe was replaced while it ran hands the service over to the new one; one that cannot start leaves it supervising", async () => {
+    test("[A2.3.3.2.launcher-win.handover] a supervisor whose bin\\ttasksw.exe was replaced while it ran hands the service over to the new one; one that cannot start leaves it supervising", async () => {
       const root = install();
       const stub = join(root, "stub");
       const trace = join(stub, "trace.txt");
       const log = join(stub, "log.jsonl");
-      // Another file with the same build: only the file at bin\tasksw.exe is another one.
-      copyFileSync(hooks.tasksw, join(stub, "tasksw-next.exe"));
+      // Another file with the same build: only the file at bin\ttasksw.exe is another one.
+      copyFileSync(hooks.ttasksw, join(stub, "ttasksw-next.exe"));
       // The service renames the running supervisor's file aside, puts the new one there (as an
       // update does) and asks for a restart.
       const s = supervise(root, [{ exit: 75, replaceSupervisor: true }, { exit: 0 }], 20);
@@ -544,17 +544,17 @@ describe.runIf(windows)(
       expect(starts).toHaveLength(2);
       const [first, second] = starts;
       expect(second?.ppid, "the second start comes from another supervisor").not.toBe(first?.ppid);
-      expect(second?.manager).toBe("tasksw");
+      expect(second?.manager).toBe("ttasksw");
       expect(await waitUntil(() => !alive(second?.ppid ?? 0), 20_000)).toBe(true);
       expect(readdirSync(join(root, "bin")).sort()).toEqual([
-        "tasks.exe",
-        "tasksw.exe",
-        "tasksw.exe.old-1",
+        "ttasks.exe",
+        "ttasksw.exe",
+        "ttasksw.exe.old-1",
       ]);
 
       // A new file that cannot run: the supervisor says so and goes on supervising itself.
       const broken = install();
-      writeFileSync(join(broken, "stub", "tasksw-next.exe"), "not a program");
+      writeFileSync(join(broken, "stub", "ttasksw-next.exe"), "not a program");
       const kept = supervise(broken, [{ exit: 75, replaceSupervisor: true }, { exit: 0 }], 20);
       expect(kept.status).toBe(0);
       expect(kept.trace).toEqual(["exit 75", "hand-over-failed", "restart", "exit 0", "stop 0"]);
@@ -562,11 +562,11 @@ describe.runIf(windows)(
       expect(kept.stderr).toMatch(/cannot start the new supervisor/);
     });
 
-    test("[A2.3.3.2.launcher-win.handover] a replaced supervisor hands over before any restart of its service, also after a failure: a service that dies after its repair replaced tasksw.exe, before its exit 75, is not left to the old one", async () => {
+    test("[A2.3.3.2.launcher-win.handover] a replaced supervisor hands over before any restart of its service, also after a failure: a service that dies after its repair replaced ttasksw.exe, before its exit 75, is not left to the old one", async () => {
       const root = install();
       const stub = join(root, "stub");
       const trace = join(stub, "trace.txt");
-      copyFileSync(hooks.tasksw, join(stub, "tasksw-next.exe"));
+      copyFileSync(hooks.ttasksw, join(stub, "ttasksw-next.exe"));
       // The service replaces the supervisor's file, then dies (no exit 75): the old supervisor
       // waits its first back-off unit and, instead of starting the service itself again, starts
       // the new one, which starts it.

@@ -1,4 +1,4 @@
-// The service side of `tasks-local/1` (A2 3.6). `serve` listens on the socket or pipe the hub
+// The service side of `ttasks-local/1` (A2 3.6). `serve` listens on the socket or pipe the hub
 // chose, sends each new connection a challenge and nothing else, verifies the hello, and only
 // then sends its proof. It verifies the bind frame's proof over the transcript before it reads the
 // context, classifies the connection (A2 3.6.5), and answers the bind with a result whose proof
@@ -12,7 +12,7 @@
 // byte gets nothing but the challenge, never crashes the server and never keeps a socket open past
 // its timer. Events are content-free: no nonce, proof, key, context or message.
 import net from "node:net";
-import { AppError } from "@tasks/contracts";
+import { AppError } from "@ttasks/contracts";
 import {
   BIND_MAX_BYTES,
   FRAME_TOO_LARGE,
@@ -55,7 +55,7 @@ import {
   type HandshakeIds,
   type JsonObject,
   type Mode,
-} from "@tasks/bridge/protocol";
+} from "@ttasks/bridge/protocol";
 import {
   classify,
   isRpcMethod,
@@ -363,7 +363,7 @@ interface Shared {
 }
 
 /**
- * Listens on `options.path` and serves `tasks-local/1`. Rejects when the path is in use (a live
+ * Listens on `options.path` and serves `ttasks-local/1`. Rejects when the path is in use (a live
  * socket or pipe of that name): the hub then picks a new name (A2 3.4).
  */
 export async function serve(options: ServeOptions): Promise<LocalServer> {

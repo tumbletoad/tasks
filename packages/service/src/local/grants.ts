@@ -8,7 +8,7 @@
 // presented token and compares it with every row in constant time. Revoking a row tells every
 // listener, and the local server closes each live connection that used it.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { encodeIdBody } from "@tasks/storage";
+import { encodeIdBody } from "@ttasks/storage";
 
 export const GRANT_KINDS = ["ui", "agent_home", "device"] as const;
 export type GrantKind = (typeof GRANT_KINDS)[number];

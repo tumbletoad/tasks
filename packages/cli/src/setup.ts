@@ -1,11 +1,11 @@
-// `tasks setup` (A2 3.10, A3 3.13, A4 3.4.1): connecting this machine's agent apps. M2.11 brought
-// `tasks setup t3`, the pairing with T3 Code; M2.14 `tasks setup agents` (setup-agents.ts, loaded
-// only for that command), Tasks's MCP server entry in each Claude Code and Codex home; `tasks setup
+// `ttasks setup` (A2 3.10, A3 3.13, A4 3.4.1): connecting this machine's agent apps. M2.11 brought
+// `ttasks setup t3`, the pairing with T3 Code; M2.14 `ttasks setup agents` (setup-agents.ts, loaded
+// only for that command), TTasks's MCP server entry in each Claude Code and Codex home; `ttasks setup
 // instances` (setup-instances.ts) the [[instance]] entries Open starts an agent with.
 //
-//   tasks setup agents [--preview|--apply --plan <token>|--remove|--status]   the agent homes' MCP entries
-//   tasks setup t3 [--no-browser]   pair with T3 Code: approve on T3's page in the browser
-//   tasks setup t3 --status         whether T3 can be used: paired, running, Reconnect T3
+//   ttasks setup agents [--preview|--apply --plan <token>|--remove|--status]   the agent homes' MCP entries
+//   ttasks setup t3 [--no-browser]   pair with T3 Code: approve on T3's page in the browser
+//   ttasks setup t3 --status         whether T3 can be used: paired, running, Reconnect T3
 //
 // The service runs the pairing (hub/t3.ts) and keeps the token in its machine state; the CLI only
 // hands T3's approval page to the person's browser, because the CLI runs in their desktop session
@@ -16,7 +16,7 @@
 // service. Only the user pairs, from an interactive terminal; the status works everywhere.
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { CLI_NAME } from "@tasks/brand";
+import { CLI_NAME } from "@ttasks/brand";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
@@ -24,7 +24,7 @@ import { bodyOf, printError, printUsage } from "./output.ts";
 import type { AgentsSetupOptions } from "./setup-agents.ts";
 import { asAppError } from "./verbs.ts";
 
-/** `tasks setup --help` and `tasks help setup`. */
+/** `ttasks setup --help` and `ttasks help setup`. */
 export const SETUP_HELP = `Usage: ${CLI_NAME} setup <app> [options] [--json]
 
   agents [--preview]  What registering ${CLI_NAME} in each agent home would change (Claude Code,
@@ -71,7 +71,7 @@ const WAIT_MARGIN_MS = 30_000;
 export interface SetupOptions extends ConnectOptions {
   /** Opens an http(s) URL in the person's browser. The default is the OS's opener (A4 3.6.5). */
   readonly openUrl?: (url: string, io: Io) => Promise<boolean>;
-  /** Tests only: the agent environment and home `tasks setup agents` works in. */
+  /** Tests only: the agent environment and home `ttasks setup agents` works in. */
   readonly agents?: AgentsSetupOptions;
 }
 

@@ -41,7 +41,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { isId, type Id, type MigrationAttempt } from "@tasks/storage";
+import { isId, type Id, type MigrationAttempt } from "@ttasks/storage";
 import { atomicWrite, makeDir } from "./files.ts";
 
 export const SPACES_FOLDER = "spaces";

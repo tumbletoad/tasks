@@ -1,8 +1,8 @@
 // The grants table (A2 3.2.5, A6 3.3, A2 5 "grants table: one row per kind, revocation closes
 // live connections, no raw secret stored"), in its in-memory form.
 import { createHash, timingSafeEqual } from "node:crypto";
-import { connect, openLines, openRpc } from "@tasks/bridge/protocol";
-import { clientInfo, endpointRoot, until } from "@tasks/bridge/test/endpoint";
+import { connect, openLines, openRpc } from "@ttasks/bridge/protocol";
+import { clientInfo, endpointRoot, until } from "@ttasks/bridge/test/endpoint";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { startServer } from "../../test/local.ts";
 import { GRANT_KINDS, MemoryGrants, UI_IDLE_MS, UI_MAX_MS, coversSpace, isLive } from "./index.ts";

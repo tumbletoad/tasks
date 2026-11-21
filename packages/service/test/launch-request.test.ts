@@ -1,7 +1,7 @@
 // What a person types before Open (`launch.open`'s text) never travels on a command line, in a
 // link, in a log line or in a file other than the launch's own request: per route and catalogue
-// entry that takes it, through the service, a real `tasks shim`, and testkit's fake Claude Code and
-// Codex, which read the request as their brief says when the tools are missing (`tasks show
+// entry that takes it, through the service, a real `ttasks shim`, and testkit's fake Claude Code and
+// Codex, which read the request as their brief says when the tools are missing (`ttasks show
 // --launch`). The link apps' opener is a recording spawner, and an agent's MCP connection stands
 // for the app. The words arrive exactly, a 20,000-character request with line breaks, quotes and
 // other scripts; the file goes with its launch and after a restart. No real agent, app or agent
@@ -11,8 +11,8 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { MCP_SERVER_KEY } from "@tasks/brand";
-import type { JsonObject, RpcSession } from "@tasks/bridge/protocol";
+import { MCP_SERVER_KEY } from "@ttasks/brand";
+import type { JsonObject, RpcSession } from "@ttasks/bridge/protocol";
 import {
   briefReference,
   powershellPath,
@@ -20,8 +20,8 @@ import {
   REQUEST_LINE,
   type SpawnRequest,
   type SpawnedProcess,
-} from "@tasks/launch";
-import { FAKE_CLI_AGENT, type CliAgentReport } from "@tasks/testkit";
+} from "@ttasks/launch";
+import { FAKE_CLI_AGENT, type CliAgentReport } from "@ttasks/testkit";
 import { bridgePrincipal, clientOf, renderResult } from "../src/mcp/index.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { instanceToml, tempRoot, waitFor } from "./harness.ts";
@@ -226,16 +226,16 @@ async function mcpAgent(r: Rig, cwd: string) {
 
 /**
  * The command a brief says to run without the tools, with `--json`, as an agent's shell in an app
- * that Tasks did not start runs it: an agent marker and no TASKS_SPACE. A process of its own,
+ * that TTasks did not start runs it: an agent marker and no TTASKS_SPACE. A process of its own,
  * waited for without blocking this one, where the service runs.
  */
 async function cliShow(r: Rig, brief: string): Promise<{ request?: string }> {
   const command = /run `\S+ ([^`]+)`\.$/mu.exec(brief)?.[1];
   if (command === undefined) throw new Error("The brief names no command");
   const outside = { ...process.env };
-  delete outside["TASKS_SPACE"];
+  delete outside["TTASKS_SPACE"];
   const child = spawn(process.execPath, [CLI_BIN, ...command.split(" "), "--json"], {
-    env: { ...outside, TASKS_HOME: r.lab.home, CLAUDECODE: "1" },
+    env: { ...outside, TTASKS_HOME: r.lab.home, CLAUDECODE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -381,7 +381,7 @@ async function expectOnlyHeld(r: Rig, marker: string, launch: string): Promise<v
   ]);
 }
 
-describe("[A4.5.routes.request] what a person types before Open reaches the agent through Tasks, never a command line, a link, a log or another file", () => {
+describe("[A4.5.routes.request] what a person types before Open reaches the agent through TTasks, never a command line, a link, a log or another file", () => {
   for (const instance of ["claude", "codex"] as const) {
     test(
       `${instance}'s terminal route: the brief points at the request, the fake agent reads it exactly with show --launch, and the file goes with the launch`,

@@ -293,7 +293,7 @@ const readIf = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") 
 /** A pipe or socket path for a fake endpoint. */
 const fakePath = (name: string) =>
   process.platform === "win32"
-    ? `\\\\.\\pipe\\tasks-kit-${name}-${nonce().slice(0, 12)}`
+    ? `\\\\.\\pipe\\ttasks-kit-${name}-${nonce().slice(0, 12)}`
     : join(work, `${name}.sock`);
 
 /** Mints a UI code, redeems it and returns the origin and a bearer token. */
@@ -346,7 +346,7 @@ function upgradeStatus(
 }
 
 beforeAll(async () => {
-  work = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-kit-")));
+  work = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-kit-")));
   js = buildKit(join(work, "kit-js"));
   tree = buildTree(join(work, "tree"));
   state = join(work, "state");
@@ -438,7 +438,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
       handshake(conn, new LineReader(conn), service.key, {
         mode: "mcp",
         client: clientInfo("forwarder"),
-        context: { env: { TASKS_TICKET: FIXTURE_TICKET } },
+        context: { env: { TTASKS_TICKET: FIXTURE_TICKET } },
       }),
     ).rejects.toBeInstanceOf(KitError);
     conn.destroy();
@@ -769,7 +769,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
     const redeemed = await redeem({ origin });
     expect(redeemed.status).toBe(200);
     const { token } = (await redeemed.json()) as { token: string };
-    expect(token).toMatch(/^tasks_u_[A-Za-z0-9_-]{43}$/);
+    expect(token).toMatch(/^ttasks_u_[A-Za-z0-9_-]{43}$/);
     expect((await redeem({ origin })).status).toBe(401);
 
     const auth = { authorization: `Bearer ${token}`, origin, "content-type": "application/json" };
@@ -903,8 +903,8 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
     const logDir = join(work, "probe-logs-normal");
     const homes = join(work, "probe-homes");
     const env = fixtureEnv({
-      TASKS_TICKET: FIXTURE_TICKET,
-      TASKS_TASK: "M-14",
+      TTASKS_TICKET: FIXTURE_TICKET,
+      TTASKS_TASK: "M-14",
       CLAUDE_CODE_SESSION_ID: "fixture-session-0001",
       T3CODE_THREAD_ID: "fixture-thread-0001",
       CODEX_HOME: tree.nested,
@@ -945,11 +945,11 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
       .map((l) => JSON.parse(l) as JsonObject);
     const start = records.find((r) => r["kind"] === "start");
     expect(start?.["env_names"]).toEqual(
-      expect.arrayContaining(["MIRA_PRIVATE_SETTING", "TASKS_TICKET", "CODEX_HOME"]),
+      expect.arrayContaining(["MIRA_PRIVATE_SETTING", "TTASKS_TICKET", "CODEX_HOME"]),
     );
     expect(start?.["env"]).toEqual({
-      TASKS_TICKET: `sha256:${hash12(FIXTURE_TICKET)}`,
-      TASKS_TASK: "M-14",
+      TTASKS_TICKET: `sha256:${hash12(FIXTURE_TICKET)}`,
+      TTASKS_TASK: "M-14",
       CLAUDE_CODE_SESSION_ID: "fixture-session-0001",
       T3CODE_THREAD_ID: "fixture-thread-0001",
     });
@@ -981,7 +981,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
     expect(records.find((r) => r["kind"] === "markers")).toMatchObject({
       written: ["APPDATA", "LOCALAPPDATA", "USERPROFILE", "TEMP"],
     });
-    expect(existsSync(join(homes, "profile", ".tasks-m0"))).toBe(true);
+    expect(existsSync(join(homes, "profile", ".ttasks-m0"))).toBe(true);
     if (process.platform === "win32") {
       const pkg = records.find((r) => r["kind"] === "package");
       expect(pkg).toMatchObject({ ok: true, package_full_name: null });
@@ -1029,7 +1029,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
     ].flat();
     expect(new Set(all).size).toBe(all.length);
 
-    const planted: NodeJS.ProcessEnv = { TASKS_TICKET: FIXTURE_TICKET };
+    const planted: NodeJS.ProcessEnv = { TTASKS_TICKET: FIXTURE_TICKET };
     lengths.forEach((n, i) => {
       planted[`MIRA_PLAIN_${String(n)}`] = plain[i];
       const dir = join(work, `probe-dir-${pathValued[i] ?? ""}`);
@@ -1042,8 +1042,8 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
       planted[`MIRA_COPY_${String(n)}`] = equal[i];
     });
     // Each equal value is also the value of an allow-listed identifier.
-    planted["TASKS_TASK"] = equal[0];
-    planted["TASKS_SPACE"] = equal[1];
+    planted["TTASKS_TASK"] = equal[0];
+    planted["TTASKS_SPACE"] = equal[1];
     planted["CODEX_THREAD_ID"] = equal[2];
     // The cwd: inside the scratch root but not one of its folders, its name full of secrets.
     const cwd = join(tree.container, `probe-cwd-${cwdName.join("-")}`);
@@ -1112,8 +1112,8 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
     ]);
     // The allow-listed identifiers that equal a planted value were the only thing to redact.
     expect(start?.["env"]).toMatchObject({
-      TASKS_TASK: "[redacted]",
-      TASKS_SPACE: "[redacted]",
+      TTASKS_TASK: "[redacted]",
+      TTASKS_SPACE: "[redacted]",
       CODEX_THREAD_ID: "[redacted]",
     });
     expect(records.at(-1)?.["redactions"]).toBeGreaterThan(0);
@@ -1128,7 +1128,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
       MIRA_SHORT: "Wq7",
       MIRA_DIR: work,
       MIRA_LIST: [join(work, "a"), join(work, "b")].join(delimiter),
-      TASKS_TASK: "tk-Vx9Q",
+      TTASKS_TASK: "tk-Vx9Q",
       MIRA_COPY: "tk-Vx9Q",
       USERNAME: "mira",
     };
@@ -1303,7 +1303,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
     () => {
       // The reviewer's reproduction on a real file: Windows accepts this descriptor, and the old
       // reader then judged the key private.
-      const dir = mkdtempSync(join(tmpdir(), "tasks-kit-acl-"));
+      const dir = mkdtempSync(join(tmpdir(), "ttasks-kit-acl-"));
       try {
         const key = join(dir, "ipc.key");
         writeFileSync(key, "fixture");
@@ -1323,9 +1323,9 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
             "-NonInteractive",
             "-Command",
             "$a=New-Object Security.AccessControl.FileSecurity; " +
-              "$a.SetSecurityDescriptorSddlForm($env:TASKS_T_SDDL," +
+              "$a.SetSecurityDescriptorSddlForm($env:TTASKS_T_SDDL," +
               "[Security.AccessControl.AccessControlSections]::Access); " +
-              "[IO.File]::SetAccessControl($env:TASKS_T_KEY,$a)",
+              "[IO.File]::SetAccessControl($env:TTASKS_T_KEY,$a)",
           ],
           {
             // The same minimal environment the permission reader gives Windows PowerShell.
@@ -1336,8 +1336,8 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
               SystemDrive: process.env["SystemDrive"],
               TEMP: process.env["TEMP"],
               TMP: process.env["TMP"],
-              TASKS_T_KEY: key,
-              TASKS_T_SDDL: sddl,
+              TTASKS_T_KEY: key,
+              TTASKS_T_SDDL: sddl,
             },
             windowsHide: true,
             // A loaded windows-2025 runner once needed more than 60 s to start it.
@@ -1434,12 +1434,12 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
     const usable = (dir: string) => dir === join(base, "1000");
     const pick = (choice: "auto" | "run-user" | "state", uid: number | undefined) =>
       selectSocketDir({ choice, state: "st", install: "abc", uid, runUserBase: base, usable });
-    expect(pick("auto", 1000)).toEqual({ dir: join(base, "1000", "tasks-abc"), kind: "run-user" });
+    expect(pick("auto", 1000)).toEqual({ dir: join(base, "1000", "ttasks-abc"), kind: "run-user" });
     expect(pick("auto", 1001)).toEqual({ dir: join("st", "run"), kind: "state" });
     expect(pick("auto", undefined)).toEqual({ dir: join("st", "run"), kind: "state" });
     expect(pick("state", 1000)).toEqual({ dir: join("st", "run"), kind: "state" });
     expect(pick("run-user", 1000)).toEqual({
-      dir: join(base, "1000", "tasks-abc"),
+      dir: join(base, "1000", "ttasks-abc"),
       kind: "run-user",
     });
     expect(() => pick("run-user", 1001)).toThrow(KitError);

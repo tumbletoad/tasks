@@ -2,8 +2,8 @@
 // product names and folder rules it needs to find the service. This checks them against the
 // product's names (packages/brand) and the hub's own layout, so a rename or a layout change that
 // misses the bridge fails here.
-import { envVar, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
-import { AGENT_MARKERS, MCP_CONTEXT_ENV } from "@tasks/bridge/protocol";
+import { envVar, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
+import { AGENT_MARKERS, MCP_CONTEXT_ENV } from "@ttasks/bridge/protocol";
 import {
   BRIDGE_BUILD,
   HOME_VAR,
@@ -13,11 +13,11 @@ import {
   PRODUCT_NAME as BRIDGE_PRODUCT_NAME,
   SERVICE_FILE,
   installFolders,
-} from "@tasks/bridge/mcp";
+} from "@ttasks/bridge/mcp";
 import { describe, expect, test } from "vitest";
-import { TASKS_PACKAGE } from "../src/hub/identity.ts";
+import { TTASKS_PACKAGE } from "../src/hub/identity.ts";
 import { KEY_FILE as HUB_KEY_FILE } from "../src/hub/key.ts";
-import { TASKS_HOME, resolveLayout, type HostFacts } from "../src/hub/paths.ts";
+import { TTASKS_HOME, resolveLayout, type HostFacts } from "../src/hub/paths.ts";
 import { BUILD, SERVICE_FILE as HUB_SERVICE_FILE } from "../src/hub/service.ts";
 
 const cases: HostFacts[] = [
@@ -25,7 +25,7 @@ const cases: HostFacts[] = [
   { platform: "linux", env: { HOME: "/home/mira" }, accountHome: undefined, uid: 1000 },
   {
     platform: "linux",
-    env: { TASKS_HOME: "/tmp/tasks-test" },
+    env: { TTASKS_HOME: "/tmp/ttasks-test" },
     accountHome: "/home/mira",
     uid: 1000,
   },
@@ -39,7 +39,7 @@ const cases: HostFacts[] = [
   { platform: "win32", env: {}, accountHome: "C:\\Users\\mira", uid: undefined },
   {
     platform: "win32",
-    env: { TASKS_HOME: "D:\\tasks-test\\" },
+    env: { TTASKS_HOME: "D:\\ttasks-test\\" },
     accountHome: undefined,
     uid: undefined,
   },
@@ -50,12 +50,12 @@ describe("[A2.3.7.bridge.discovery] the bridge's names and folders are the produ
     expect(INSTALL_NAME).toBe(PRODUCT_ID);
     expect(BRIDGE_PRODUCT_NAME).toBe(PRODUCT_NAME);
     expect(HOME_VAR).toBe(envVar("HOME"));
-    expect(HOME_VAR).toBe(TASKS_HOME);
-    expect(PACKAGE_VAR).toBe(TASKS_PACKAGE);
+    expect(HOME_VAR).toBe(TTASKS_HOME);
+    expect(PACKAGE_VAR).toBe(TTASKS_PACKAGE);
     expect(SERVICE_FILE).toBe(HUB_SERVICE_FILE);
     expect(KEY_FILE).toBe(HUB_KEY_FILE);
     expect(BRIDGE_BUILD).toEqual(BUILD);
-    // Every name the bridge copies is one of A3's markers or TASKS_SPACE, under the product prefix.
+    // Every name the bridge copies is one of A3's markers or TTASKS_SPACE, under the product prefix.
     for (const name of MCP_CONTEXT_ENV) {
       expect([...AGENT_MARKERS, envVar("SPACE")]).toContain(name);
     }
@@ -68,7 +68,7 @@ describe("[A2.3.7.bridge.discovery] the bridge's names and folders are the produ
 
   test("a layout the hub refuses, the bridge refuses too", () => {
     for (const facts of [
-      { platform: "linux", env: { TASKS_HOME: "relative" }, accountHome: "/home/mira", uid: 1 },
+      { platform: "linux", env: { TTASKS_HOME: "relative" }, accountHome: "/home/mira", uid: 1 },
       { platform: "linux", env: {}, accountHome: undefined, uid: 1 },
     ] satisfies HostFacts[]) {
       expect(() => resolveLayout(facts)).toThrow();

@@ -323,8 +323,8 @@ describe.runIf(windows)(
         })),
       };
       for (const side of ["0.2.0", "0.1.0"]) {
-        // A kill between the two renames of tasks.exe: renamed aside, its staged copy not yet in;
-        // tasksw.exe still the old one, with its staged copy beside it.
+        // A kill between the two renames of ttasks.exe: renamed aside, its staged copy not yet in;
+        // ttasksw.exe still the old one, with its staged copy beside it.
         for (const name of readdirSync(w.bin)) rmSync(join(w.bin, name));
         copyFileSync(own("0.1.0", CONSOLE), join(w.bin, `${CONSOLE}.old-1`));
         copyFileSync(own("0.2.0", CONSOLE), stagedPath(join(w.bin, CONSOLE)));
@@ -341,17 +341,17 @@ describe.runIf(windows)(
           expect(existsSync(stagedPath(join(w.bin, name))), `${side} ${name}.new`).toBe(false);
         }
         expect(existsSync(join(w.state, UPDATE_JOURNAL)), side).toBe(false);
-        // Going back renamed the old tasks.exe in from its aside copy: none is left of it.
+        // Going back renamed the old ttasks.exe in from its aside copy: none is left of it.
         if (side === "0.1.0") expect(existsSync(join(w.bin, `${CONSOLE}.old-1`))).toBe(false);
         cleanLaunchers(w.root);
         expect(readdirSync(w.bin).sort(), side).toEqual([CONSOLE, GUI]);
       }
     });
 
-    test("a repair says when it may have replaced the supervisor: a journal that names tasksw.exe, or any unreadable journal", async () => {
+    test("a repair says when it may have replaced the supervisor: a journal that names ttasksw.exe, or any unreadable journal", async () => {
       const w = await world("supervisor");
       const own = (name: string) => join(w.root, "versions", "0.1.0", "bin", name);
-      // An unreadable journal, and a bin\tasksw.exe that is not current's: the repair keeps current
+      // An unreadable journal, and a bin\ttasksw.exe that is not current's: the repair keeps current
       // and brings the launchers to it, so a supervisor that ran from the old file is outdated.
       writeFileSync(join(w.bin, GUI), "another supervisor");
       writeFileSync(join(w.state, UPDATE_JOURNAL), "not a journal");
@@ -360,13 +360,13 @@ describe.runIf(windows)(
       expect(readFileSync(join(w.bin, GUI))).toEqual(readFileSync(own(GUI)));
       expect(supervisorReplaced(kept)).toBe(true);
       // The same with both launchers already current's: the journal cannot say whether its update
-      // replaced tasksw.exe (and a sibling repair put the new one back) while a supervisor ran from
+      // replaced ttasksw.exe (and a sibling repair put the new one back) while a supervisor ran from
       // the old file, so it counts as replaced too: one restart more at most, once.
       writeFileSync(join(w.state, UPDATE_JOURNAL), "not a journal");
       const again = repairLocked({ root: w.root, state: w.state, platform: os });
       expect(again.kind).toBe("kept");
       expect(supervisorReplaced(again)).toBe(true);
-      // A finished or rolled-back update: whenever its journal names tasksw.exe, whichever file
+      // A finished or rolled-back update: whenever its journal names ttasksw.exe, whichever file
       // the supervisor runs from now.
       const journal: Journal = {
         format: 1,

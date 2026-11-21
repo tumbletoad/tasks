@@ -16,9 +16,9 @@ import {
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PRODUCT_ID } from "@tasks/brand";
-import { openRpc, parseKey, type RpcSession } from "@tasks/bridge/protocol";
-import type { TerminalHost } from "@tasks/launch";
+import { PRODUCT_ID } from "@ttasks/brand";
+import { openRpc, parseKey, type RpcSession } from "@ttasks/bridge/protocol";
+import type { TerminalHost } from "@ttasks/launch";
 import {
   newId,
   readManifest,
@@ -28,7 +28,7 @@ import {
   type QueryResult,
   type Row,
   type WorkerConnection,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 import { applyEdits, type Edit } from "../src/config/edit.ts";
 import { canonicalStatePath, installId, RUN_USER_BASE } from "../src/hub/paths.ts";
 
@@ -74,16 +74,16 @@ export interface Proc {
 }
 
 /**
- * The environment of a service under test: this process's, without any Tasks variable or agent
- * marker that would change the service, and with TASKS_HOME set.
+ * The environment of a service under test: this process's, without any TTasks variable or agent
+ * marker that would change the service, and with TTASKS_HOME set.
  */
 export function serviceEnv(home: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(process.env)) {
-    if (name.toUpperCase().startsWith("TASKS_")) continue;
+    if (name.toUpperCase().startsWith("TTASKS_")) continue;
     env[name] = value;
   }
-  return { ...env, TASKS_HOME: home, ...extra };
+  return { ...env, TTASKS_HOME: home, ...extra };
 }
 
 /** Starts and stops services, and stops every one it started that still runs. */
@@ -263,7 +263,7 @@ export function instanceToml(
 
 /**
  * A Linux desktop where Ghostty and kitty are installed and no default names a terminal, the same
- * on every OS the tests run on: `auto` opens Ghostty, the first of Tasks' own order. Detection
+ * on every OS the tests run on: `auto` opens Ghostty, the first of TTasks' own order. Detection
  * only: nothing it names is ever started.
  */
 export function twoTerminalsHost(): TerminalHost {
@@ -329,7 +329,7 @@ export const keyOf = (home: string): Buffer =>
   parseKey(readFileSync(join(stateOf(home), "ipc.key"), "utf8"));
 
 /**
- * A CLI's rpc session with the service of `home` at `path`: a full tasks-local/1 handshake with
+ * A CLI's rpc session with the service of `home` at `path`: a full ttasks-local/1 handshake with
  * the key from ipc.key (M1.09's client). Not a TTY and no agent marker: the `cli-script` class.
  */
 export function openSession(home: string, path: string, ms = 10_000): Promise<RpcSession> {
@@ -372,7 +372,7 @@ export async function endpointInstance(home: string, path: string): Promise<stri
 }
 
 /**
- * Linux: the per-user runtime folder a service of this install made, `/run/user/<uid>/tasks-<id>`,
+ * Linux: the per-user runtime folder a service of this install made, `/run/user/<uid>/ttasks-<id>`,
  * removed by its full name. Under the fallback (`<state>/run/`) there is none outside the home.
  */
 export function removeRuntimeDir(
@@ -389,7 +389,7 @@ export function removeRuntimeDir(
 
 /**
  * Linux: the per-user runtime folder of the install whose home is `home`, under `base` (A2 3.2.1:
- * `<base>/<uid>/tasks-<install ID>`), by its full name, whether or not a service of it ran or still
+ * `<base>/<uid>/ttasks-<install ID>`), by its full name, whether or not a service of it ran or still
  * has its service.json. Undefined on other systems and for a home without a state folder.
  */
 export function runtimeDirOf(home: string, base: string = RUN_USER_BASE): string | undefined {

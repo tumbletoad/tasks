@@ -229,7 +229,7 @@ async function serviceWorker(): Promise<void> {
   const tt = (window as unknown as { trustedTypes?: TrustedFactory }).trustedTypes;
   if (tt === undefined) return;
   try {
-    const policy = tt.createPolicy("tasks-sw-probe", { createScriptURL: (url: string) => url });
+    const policy = tt.createPolicy("ttasks-sw-probe", { createScriptURL: (url: string) => url });
     await navigator.serviceWorker.register(policy.createScriptURL("/sw-probe.js") as string, {
       scope: "/",
     });

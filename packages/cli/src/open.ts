@@ -1,9 +1,9 @@
-// `tasks open [--space <id or name>] [--task <ref>] [--tab] [--print-url]` (A2 3.9, 3.8.4), and
-// `tasks service port <n> [--reuse [--yes]]` (A2 3.8.2 step 5).
+// `ttasks open [--space <id or name>] [--task <ref>] [--tab] [--print-url]` (A2 3.9, 3.8.4), and
+// `ttasks service port <n> [--reuse [--yes]]` (A2 3.8.2 step 5).
 //
-// `tasks open`:
+// `ttasks open`:
 //   1. connects over the socket and asks for a one-time code (`ui/mint_code`). An agent's shell
-//      (`cli-agent`) may not: "Ask the user to open Tasks". When another user holds or held the
+//      (`cli-agent`) may not: "Ask the user to open TTasks". When another user holds or held the
 //      UI's port, the service refuses with A2's message and no code exists;
 //   2. proves the listener before trusting its port: `POST /api/v1/auth/probe` must answer the
 //      HMAC of ipc.key over this instance, the port and a fresh nonce. A process squatting on the
@@ -13,7 +13,7 @@
 //      instead, with a warning that it holds a one-time sign-in code.
 //
 // A service that is not running is started first (A2 3.3.6, 3.9 step 1), the same way `tasks
-// service start` starts it (`startService` of @tasks/service/install: through the OS, and only a
+// service start` starts it (`startService` of @ttasks/service/install: through the OS, and only a
 // ready service counts), with one line on stderr that says so, and a second when Linux started it
 // by hand because its unit is not installed (A2 3.3.3). Only `not_running` starts it: a
 // service that is starting, stopping, unreachable or untrusted is reported as every command
@@ -27,10 +27,10 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join, win32 } from "node:path";
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
-import { isAgentMarker, parseKey, rpcContextEnv } from "@tasks/bridge/protocol";
-import { IPC_KEY } from "@tasks/service/paths";
-import { movedMessage, PROBE_PATH, verifyProbe } from "@tasks/service/http/shared";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { isAgentMarker, parseKey, rpcContextEnv } from "@ttasks/bridge/protocol";
+import { IPC_KEY } from "@ttasks/service/paths";
+import { movedMessage, PROBE_PATH, verifyProbe } from "@ttasks/service/http/shared";
 import type { Globals } from "./args.ts";
 import { connectService, stateDir, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
@@ -61,16 +61,16 @@ export class StartFailed extends Error {
 }
 
 /**
- * Starts this install's service as `tasks service start` does, and resolves once it is ready:
+ * Starts this install's service as `ttasks service start` does, and resolves once it is ready:
  * `started`, `started_by_hand` when it was started without the Linux unit a user manager could
  * start it through (A2 3.3.3), or `already_running` when another start got there first. Throws
  * StartFailed.
  */
 export type StartService = (io: Io) => Promise<"started" | "started_by_hand" | "already_running">;
 
-/** `tasks service start`'s own start, loaded only when the service is not running. */
+/** `ttasks service start`'s own start, loaded only when the service is not running. */
 const startAsServiceStart: StartService = async (io) => {
-  const install = await import("@tasks/service/install");
+  const install = await import("@ttasks/service/install");
   try {
     const outcome = await install.startService(install.defaultServiceContext({ env: io.env }));
     if (outcome.outcome !== "started") return "already_running";
@@ -98,10 +98,10 @@ const askTheUser = () => ({
 export interface OpenOptions extends ConnectOptions {
   /** Tests record the URL instead of opening a browser. */
   readonly openUrl?: OpenUrl;
-  /** Tests start their own service. The default is `tasks service start`'s (startAsServiceStart). */
+  /** Tests start their own service. The default is `ttasks service start`'s (startAsServiceStart). */
   readonly startService?: StartService;
   /**
-   * Asks the person a yes-or-no question (`tasks service port --reuse`). The default asks in the
+   * Asks the person a yes-or-no question (`ttasks service port --reuse`). The default asks in the
    * terminal when stdin and stdout are one; tests answer it.
    */
   readonly ask?: (question: string) => Promise<boolean>;
@@ -191,7 +191,7 @@ export const openInBrowser: OpenUrl = async (url, io) => {
   const candidates: [string, string[]][] = [];
   if (io.platform === "win32") {
     const system = io.env["SystemRoot"] ?? "C:\\Windows";
-    const packaged = (io.env["TASKS_PACKAGE"] ?? "") !== "";
+    const packaged = (io.env["TTASKS_PACKAGE"] ?? "") !== "";
     candidates.push(
       packaged
         ? [win32.join(system, "explorer.exe"), [url]]
@@ -252,7 +252,7 @@ function mintedOf(value: unknown): Minted | undefined {
   };
 }
 
-/** `tasks open`. */
+/** `ttasks open`. */
 export async function openCommand(
   io: Io,
   globals: Globals,
@@ -269,19 +269,19 @@ export async function openCommand(
       task = args[i + 1];
       i += 1;
       if (task === undefined || !/^[A-Za-z0-9_-]{1,64}$/.test(task)) {
-        return printUsage(io, globals.json, "tasks open --task takes a task reference");
+        return printUsage(io, globals.json, "ttasks open --task takes a task reference");
       }
     } else {
       return printUsage(
         io,
         globals.json,
-        "tasks open takes --space, --task, --tab and --print-url",
+        "ttasks open takes --space, --task, --tab and --print-url",
       );
     }
   }
   const space = globals.space;
   if (space !== undefined && (space.length > 200 || space.includes("/") || hasControl(space))) {
-    return printUsage(io, globals.json, "tasks open --space takes a space ID or name");
+    return printUsage(io, globals.json, "ttasks open --space takes a space ID or name");
   }
   let session: Session;
   try {
@@ -291,13 +291,13 @@ export async function openCommand(
     if (body.code !== "service_unavailable" || body.data?.["reason"] !== "not_running") {
       return printError(io, globals.json, body);
     }
-    // Not running: started as `tasks service start` starts it, never from an agent's shell.
+    // Not running: started as `ttasks service start` starts it, never from an agent's shell.
     if (agentShell(io)) return printError(io, globals.json, askTheUser());
     try {
       const outcome = await (options.startService ?? startAsServiceStart)(io);
       if (outcome !== "already_running") io.stderr(`Started ${PRODUCT_NAME}'s service.\n`);
       if (outcome === "started_by_hand") {
-        io.stderr(`${(await import("@tasks/service/install")).NO_UNIT_LINE}\n`);
+        io.stderr(`${(await import("@ttasks/service/install")).NO_UNIT_LINE}\n`);
       }
     } catch (failure) {
       const why = failure instanceof StartFailed ? failure : undefined;
@@ -336,7 +336,7 @@ export async function openCommand(
       return printError(io, globals.json, {
         code: "service_unavailable",
         message: `${PRODUCT_NAME}'s key cannot be read.`,
-        hint: "Run: tasks doctor",
+        hint: "Run: ttasks doctor",
         data: { reason: "unreachable", retryable: false },
       });
     }
@@ -344,7 +344,7 @@ export async function openCommand(
       return printError(io, globals.json, {
         code: "service_unavailable",
         message: `Something other than ${PRODUCT_NAME}'s service answers on port ${String(minted.port)}. No sign-in code was sent to it.`,
-        hint: "Run: tasks doctor",
+        hint: "Run: ttasks doctor",
         data: { reason: "untrusted_endpoint", retryable: false },
       });
     }
@@ -381,7 +381,7 @@ export async function openCommand(
 }
 
 /**
- * `tasks service port <n> [--reuse [--yes]]`: a new persisted port, the sightings cleared, a
+ * `ttasks service port <n> [--reuse [--yes]]`: a new persisted port, the sightings cleared, a
  * restart. `--reuse` (the blocked port again) asks the person to confirm that every tab and app
  * window is closed (A2 3.8.2 step 5); `--yes` confirms without asking, where no terminal can ask.
  */
@@ -403,12 +403,12 @@ export async function servicePortCommand(
     return printUsage(
       io,
       globals.json,
-      "tasks service port takes a port number, and --reuse with --yes to confirm without asking",
+      "ttasks service port takes a port number, and --reuse with --yes to confirm without asking",
     );
   }
   const port = Number(value);
   if (reuse && !yes) {
-    // Like `tasks service install`: no question with --json, or where no terminal can answer it.
+    // Like `ttasks service install`: no question with --json, or where no terminal can answer it.
     const ask = globals.json
       ? undefined
       : (options.ask ?? (io.tty.stdin && io.tty.stdout ? terminalAsk : undefined));
@@ -416,7 +416,7 @@ export async function servicePortCommand(
       return printUsage(
         io,
         globals.json,
-        "tasks service port --reuse asks for a yes in a terminal; add --yes once every tab and app window is closed",
+        "ttasks service port --reuse asks for a yes in a terminal; add --yes once every tab and app window is closed",
       );
     }
     const closed = await ask(

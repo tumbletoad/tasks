@@ -1,23 +1,23 @@
-// `tasks space` (A2 3.10.1, A1 3.18): local commands that the service carries out
+// `ttasks space` (A2 3.10.1, A1 3.18): local commands that the service carries out
 // through its `space/*` methods. The CLI opens no space database itself. Paths are resolved here,
 // against the CLI's working folder, and sent absolute.
 //
-//   tasks space list
-//   tasks space create <name> [--path <folder>] [--prefix <P>]
-//   tasks space open <folder> [--excluded] [--retry-migration]
-//   tasks space close [<space>]
-//   tasks space forget <space>                       a closed space off the list; its folder stays
-//   tasks space backup [<space>]
-//   tasks space backups [list] [<space>]
-//   tasks space export [<space>] [--mode backup|fork] [--with-jsonl]
-//   tasks space restore <backup> --to <folder>       a read-only copy until it is claimed
-//   tasks space restore <backup> --in-place [<space>]
+//   ttasks space list
+//   ttasks space create <name> [--path <folder>] [--prefix <P>]
+//   ttasks space open <folder> [--excluded] [--retry-migration]
+//   ttasks space close [<space>]
+//   ttasks space forget <space>                       a closed space off the list; its folder stays
+//   ttasks space backup [<space>]
+//   ttasks space backups [list] [<space>]
+//   ttasks space export [<space>] [--mode backup|fork] [--with-jsonl]
+//   ttasks space restore <backup> --to <folder>       a read-only copy until it is claimed
+//   ttasks space restore <backup> --in-place [<space>]
 //                                                    <backup> is a backup or an export bundle
-//   tasks space restore latest [<space>] --to <folder>
-//   tasks space rescue [<space>]                     the readable rows into exchange/rescued
-//   tasks space claim [<space>]
-//   tasks space recover [<space>]                    also as `tasks recover [<space>]`
-//   tasks space use <space>                          the machine's default space
+//   ttasks space restore latest [<space>] --to <folder>
+//   ttasks space rescue [<space>]                     the readable rows into exchange/rescued
+//   ttasks space claim [<space>]
+//   ttasks space recover [<space>]                    also as `ttasks recover [<space>]`
+//   ttasks space use <space>                          the machine's default space
 //
 // <space> is an ID, a name or a folder; without one, --space, else the one space the service has.
 // Which copy of a space an ID or a name means is the service's one rule (A2 3.10.5): the writable
@@ -26,9 +26,9 @@
 // The service records what create, open, close, restore and claim do in machine.toml, so it holds
 // after a restart. When it cannot, the answer's `not_remembered` line says why, on stderr.
 import { isAbsolute, resolve } from "node:path";
-import { CLI_NAME } from "@tasks/brand";
-import { isAmbiguity, onlySpace } from "@tasks/service/copies";
-import { defaultSpaceFolder, hostFacts, resolveLayout } from "@tasks/service/paths";
+import { CLI_NAME } from "@ttasks/brand";
+import { isAmbiguity, onlySpace } from "@ttasks/service/copies";
+import { defaultSpaceFolder, hostFacts, resolveLayout } from "@ttasks/service/paths";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
@@ -36,8 +36,8 @@ import { migratedLine, type Migrated } from "./migrations.ts";
 import { bodyOf, printError, printUsage, str } from "./output.ts";
 import { asAppError } from "./verbs.ts";
 
-/** `tasks space --help` and `tasks help space`. */
-export const SPACE_HELP = `Usage: tasks space <command> [arguments] [--json]
+/** `ttasks space --help` and `ttasks help space`. */
+export const SPACE_HELP = `Usage: ttasks space <command> [arguments] [--json]
 
   list                                     The spaces of the service, with their state and folder
   create <name> [--path <folder>] [--prefix <P>]
@@ -62,14 +62,14 @@ export const SPACE_HELP = `Usage: tasks space <command> [arguments] [--json]
   rescue [<space>]                         Write the rows that can still be read into the space's
                                            exchange/rescued folder
   claim [<space>]                          Make a restored copy this machine's
-  recover [<space>]                        Play back a space's rollback journal (also: tasks recover)
+  recover [<space>]                        Play back a space's rollback journal (also: ttasks recover)
   use <space>                              Make it the default: what a new tab and a command
                                            without --space open
 
-<space> is an ID, a name or a folder. Without one: --space, TASKS_SPACE, the default space
-(tasks space use), else the one space the service serves; recover takes the space that needs it
+<space> is an ID, a name or a folder. Without one: --space, TTASKS_SPACE, the default space
+(ttasks space use), else the one space the service serves; recover takes the space that needs it
 and claim the restored copy. An ID or a name means the copy that takes writes; name a restored
-copy beside it by its folder. <backup> is a file, or a name tasks space backups prints. A space
+copy beside it by its folder. <backup> is a file, or a name ttasks space backups prints. A space
 stays open or closed as you left it, also after a restart: the service records it in machine.toml.
 Only the user can run these, from a terminal; list and backups work everywhere.
 `;
@@ -116,7 +116,7 @@ function options(
       }
       if (!valued.includes(name))
         throw new UsageError(
-          `tasks space has no option ${/^--[a-z-]{1,30}$/.test(name) ? name : "like that"}`,
+          `ttasks space has no option ${/^--[a-z-]{1,30}$/.test(name) ? name : "like that"}`,
         );
       const value = eq > 0 ? token.slice(eq + 1) : args[(i += 1)];
       if (value === undefined) throw new UsageError(`${name} needs a value`);
@@ -207,10 +207,10 @@ export interface Unnamed {
 }
 
 /**
- * The space a command names, in the order op/call takes it: its argument, --space, TASKS_SPACE,
- * the machine's default space (`tasks space use`), else the one space the service has. A copy is
+ * The space a command names, in the order op/call takes it: its argument, --space, TTASKS_SPACE,
+ * the machine's default space (`ttasks space use`), else the one space the service has. A copy is
  * picked by the one rule for copies (the writable one) and sent by its folder, never its ID, so the
- * service acts on the copy that was chosen here. `tasks view` names its space the same way.
+ * service acts on the copy that was chosen here. `ttasks view` names its space the same way.
  */
 export async function whichSpace(
   io: Io,
@@ -219,7 +219,7 @@ export async function whichSpace(
   call: (method: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>,
   unnamed: Unnamed = {},
 ): Promise<string> {
-  const fromEnv = io.env["TASKS_SPACE"];
+  const fromEnv = io.env["TTASKS_SPACE"];
   const named = given ?? globals.space ?? (fromEnv === "" ? undefined : fromEnv);
   if (named !== undefined)
     return isAbsolute(named) || named.includes("/") || named.includes("\\")
@@ -245,7 +245,7 @@ export async function whichSpace(
   throw new UsageError(
     unnamed.useDefault === false
       ? "Name the space: an ID, a name or a folder. This command does not take the default space, since it replaces the space's contents"
-      : "Name the space: an ID, a name or a folder, or make one the default: tasks space use <space>",
+      : "Name the space: an ID, a name or a folder, or make one the default: ttasks space use <space>",
   );
 }
 
@@ -280,7 +280,7 @@ export async function spaceCommand(
         out(result, () => {
           const spaces = result["spaces"] as SpaceRow[];
           if (spaces.length === 0)
-            io.stdout("No spaces. Create one with: tasks space create <name>\n");
+            io.stdout("No spaces. Create one with: ttasks space create <name>\n");
           for (const row of spaces) {
             printSpace(io, row, "", row.id !== undefined && row.id === result["default"]);
             for (const left of row.leftovers ?? []) io.stdout(`  leftover ${left}\n`);
@@ -292,7 +292,7 @@ export async function spaceCommand(
         const o = options(rest, ["--path", "--prefix"], []);
         const name = o.positional[0];
         if (name === undefined || o.positional.length > 1)
-          throw new UsageError("tasks space create takes one <name>");
+          throw new UsageError("ttasks space create takes one <name>");
         const path = o.values.get("--path");
         const result = await call("space/create", {
           name,
@@ -309,7 +309,7 @@ export async function spaceCommand(
         const o = options(rest, [], ["--excluded", "--retry-migration"]);
         const folder = o.positional[0];
         if (folder === undefined || o.positional.length > 1)
-          throw new UsageError("tasks space open takes one <folder>");
+          throw new UsageError("ttasks space open takes one <folder>");
         const result = await call("space/open", {
           path: absolute(io, folder),
           ...(o.set.has("--excluded") ? { excluded: true } : {}),
@@ -326,7 +326,7 @@ export async function spaceCommand(
       case "claim":
       case "recover": {
         const o = options(rest, [], []);
-        if (o.positional.length > 1) throw new UsageError(`tasks space ${sub} takes one <space>`);
+        if (o.positional.length > 1) throw new UsageError(`ttasks space ${sub} takes one <space>`);
         // Unnamed, `recover` takes the one space that needs a recovery and `claim` the one restored
         // copy, before the default.
         const prefer: Unnamed["prefer"] =
@@ -372,7 +372,7 @@ export async function spaceCommand(
       }
       case "backups": {
         const o = options(rest[0] === "list" ? rest.slice(1) : rest, [], []);
-        if (o.positional.length > 1) throw new UsageError("tasks space backups takes one <space>");
+        if (o.positional.length > 1) throw new UsageError("ttasks space backups takes one <space>");
         const result = await call("space/backups", { space: await which(o.positional[0]) });
         out(result, () => {
           const backups = result["backups"] as Record<string, unknown>[];
@@ -388,7 +388,7 @@ export async function spaceCommand(
       }
       case "export": {
         const o = options(rest, ["--mode", "--to"], ["--with-jsonl"]);
-        if (o.positional.length > 1) throw new UsageError("tasks space export takes one <space>");
+        if (o.positional.length > 1) throw new UsageError("ttasks space export takes one <space>");
         const result = await call("space/export", {
           space: await which(o.positional[0]),
           ...(o.values.has("--mode") ? { mode: o.values.get("--mode") } : {}),
@@ -418,11 +418,11 @@ export async function spaceCommand(
         const o = options(rest, ["--to", "--in-place"], ["--in-place"]);
         const backup = o.positional[0];
         if (backup === undefined || o.positional.length > 2)
-          throw new UsageError("tasks space restore takes one <backup>");
+          throw new UsageError("ttasks space restore takes one <backup>");
         const to = o.values.get("--to");
         const inPlace = o.set.has("--in-place") || o.values.has("--in-place");
         if ((to === undefined) === !inPlace)
-          throw new UsageError("tasks space restore takes --to <folder> or --in-place");
+          throw new UsageError("ttasks space restore takes --to <folder> or --in-place");
         // A path is a file. A bare name is a backup's or a bundle's as `space backups` prints it,
         // in the folders of the space named after it; with --to, a bare file name with its
         // extension stays a file in the working folder.
@@ -465,7 +465,7 @@ export async function spaceCommand(
       }
       case "rescue": {
         const o = options(rest, [], []);
-        if (o.positional.length > 1) throw new UsageError("tasks space rescue takes one <space>");
+        if (o.positional.length > 1) throw new UsageError("ttasks space rescue takes one <space>");
         const result = await call("space/rescue", { space: await which(o.positional[0]) });
         out(result, () => {
           const rescue = result["rescue"] as Record<string, unknown>;

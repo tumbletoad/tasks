@@ -13,8 +13,8 @@
 // binds keeps it as its earlier scope (A3 3.7.9), so a retry on either side of a change
 // replays. The space is the entry's `--space`, never the environment's hint (A3 3.7.2, 3.7.8);
 // without one, the request path's default applies.
-import type { JsonObject } from "@tasks/bridge/protocol";
-import { INSTANCE_ID, MANUAL_INSTANCE } from "@tasks/launch";
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import { INSTANCE_ID, MANUAL_INSTANCE } from "@ttasks/launch";
 import type { Principal } from "../ops/index.ts";
 
 /**

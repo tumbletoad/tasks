@@ -3,7 +3,7 @@
 // without a folder) as the person, in turn with the page's other edits, and each is undone by its
 // toast's Undo or by Ctrl+Z.
 import { useContext, useMemo } from "react";
-import type { Client } from "@tasks/contracts/generated/client.ts";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { Session } from "../context.ts";
 import type { Edits, WriteReceipt } from "../edit/edits.ts";
 import { useEdits } from "../edit/useEdits.ts";

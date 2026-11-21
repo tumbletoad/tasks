@@ -1,10 +1,10 @@
-// Builds tasks.exe and tasksw.exe from launcher.c, and tasks-run.exe from run.c, with MSVC.
+// Builds ttasks.exe and ttasksw.exe from launcher.c, and ttasks-run.exe from run.c, with MSVC.
 // Windows only.
 //
 //   node packages/launcher-win/src/build.ts [--out <dir>] [--test-hooks]
 //
 // A release build is the default and writes into packages/launcher-win/dist/. --test-hooks
-// defines TASKS_TEST_HOOKS for this package's tests (README.md, "Test builds"): never ship it.
+// defines TTASKS_TEST_HOOKS for this package's tests (README.md, "Test builds"): never ship it.
 //
 // cl.exe is found through vswhere, the Windows SDK by its default folder. INCLUDE, LIB and PATH
 // are passed to cl.exe directly, so no vcvars batch file and no shell runs, and every tool gets
@@ -20,7 +20,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 /** The one C source of both launchers. */
 export const launcherSource = join(here, "launcher.c");
-/** The source of tasks-run.exe, which holds a background run's job object. */
+/** The source of ttasks-run.exe, which holds a background run's job object. */
 export const runHelperSource = join(here, "run.c");
 /** Where a build writes by default (git-ignored). */
 export const defaultOut = resolve(here, "..", "dist");
@@ -31,12 +31,12 @@ export interface Msvc {
 }
 
 export interface Launchers {
-  tasks: string;
-  tasksw: string;
+  ttasks: string;
+  ttasksw: string;
 }
 
 export interface BuildOptions {
-  /** Defines TASKS_TEST_HOOKS. Only this package's tests set it. */
+  /** Defines TTASKS_TEST_HOOKS. Only this package's tests set it. */
   testHooks?: boolean;
   msvc?: Msvc;
 }
@@ -58,7 +58,7 @@ function compareVersions(a: string, b: string): number {
 /**
  * The variables cl.exe and link.exe read as options or search paths (Microsoft Learn, "CL
  * environment variables" and "LINK environment variables"; EXTERNAL_INCLUDE only with
- * /external:env, which this build never passes). CL=/DTASKS_TEST_HOOKS would put the test hooks
+ * /external:env, which this build never passes). CL=/DTTASKS_TEST_HOOKS would put the test hooks
  * into a release build. None of them comes from the caller: INCLUDE and LIB are set below.
  */
 const TOOL_VARIABLES = new Set([
@@ -138,7 +138,7 @@ export function findMsvc(): Msvc {
 }
 
 interface Program {
-  name: "tasks" | "tasksw" | "tasks-run";
+  name: "ttasks" | "ttasksw" | "ttasks-run";
   source: string;
   gui: boolean;
   testHooks: boolean;
@@ -168,8 +168,8 @@ function compile(outDir: string, { name, source, gui, testHooks }: Program, msvc
       "/Brepro",
       "/DUNICODE",
       "/D_UNICODE",
-      ...(gui ? ["/DTASKS_GUI"] : []),
-      ...(testHooks ? ["/DTASKS_TEST_HOOKS"] : []),
+      ...(gui ? ["/DTTASKS_GUI"] : []),
+      ...(testHooks ? ["/DTTASKS_TEST_HOOKS"] : []),
       `/Fo${objDir}\\`,
       `/Fe${exe}`,
       source,
@@ -196,7 +196,7 @@ function compile(outDir: string, { name, source, gui, testHooks }: Program, msvc
 }
 
 /** Every test hook's name starts with this (README.md, "Test builds"). */
-const HOOK_PREFIX = "TASKS_TEST_";
+const HOOK_PREFIX = "TTASKS_TEST_";
 
 /**
  * Throws unless exe is a release launcher: no test hook name, as UTF-16 (how launcher.c writes
@@ -213,7 +213,7 @@ export function assertReleaseBinary(exe: string): void {
 }
 
 /**
- * Builds tasks.exe (console) and tasksw.exe (GUI) into outDir and returns their paths. A release
+ * Builds ttasks.exe (console) and ttasksw.exe (GUI) into outDir and returns their paths. A release
  * build that contains a test hook is deleted and the build fails.
  */
 export function buildLaunchers(outDir: string = defaultOut, options: BuildOptions = {}): Launchers {
@@ -221,16 +221,16 @@ export function buildLaunchers(outDir: string = defaultOut, options: BuildOption
   const testHooks = options.testHooks ?? false;
   mkdirSync(outDir, { recursive: true });
   const built: Launchers = {
-    tasks: compile(outDir, { name: "tasks", source: launcherSource, gui: false, testHooks }, msvc),
-    tasksw: compile(outDir, { name: "tasksw", source: launcherSource, gui: true, testHooks }, msvc),
+    ttasks: compile(outDir, { name: "ttasks", source: launcherSource, gui: false, testHooks }, msvc),
+    ttasksw: compile(outDir, { name: "ttasksw", source: launcherSource, gui: true, testHooks }, msvc),
   };
   if (!testHooks) {
     try {
-      assertReleaseBinary(built.tasks);
-      assertReleaseBinary(built.tasksw);
+      assertReleaseBinary(built.ttasks);
+      assertReleaseBinary(built.ttasksw);
     } catch (error) {
-      rmSync(built.tasks, { force: true });
-      rmSync(built.tasksw, { force: true });
+      rmSync(built.ttasks, { force: true });
+      rmSync(built.ttasksw, { force: true });
       throw error;
     }
   }
@@ -238,14 +238,14 @@ export function buildLaunchers(outDir: string = defaultOut, options: BuildOption
 }
 
 /**
- * Builds `tasks-run.exe`, the holder of a background run's job object (src/run.c), into outDir and
+ * Builds `ttasks-run.exe`, the holder of a background run's job object (src/run.c), into outDir and
  * returns its path. It has no test hooks: a test build and a release build are the same.
  */
 export function buildRunHelper(outDir: string = defaultOut, msvc: Msvc = findMsvc()): string {
   mkdirSync(outDir, { recursive: true });
   const exe = compile(
     outDir,
-    { name: "tasks-run", source: runHelperSource, gui: false, testHooks: false },
+    { name: "ttasks-run", source: runHelperSource, gui: false, testHooks: false },
     msvc,
   );
   assertReleaseBinary(exe);
@@ -261,7 +261,7 @@ if (import.meta.main) {
   });
   const out = resolve(values.out ?? defaultOut);
   const built = buildLaunchers(out, { testHooks: values["test-hooks"] });
-  console.log(built.tasks);
-  console.log(built.tasksw);
+  console.log(built.ttasks);
+  console.log(built.ttasksw);
   console.log(buildRunHelper(out));
 }

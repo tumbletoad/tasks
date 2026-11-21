@@ -82,7 +82,7 @@ export const VERIFIERS: readonly string[] = windows
 
 export function hostPlatformOrThrow(): Platform {
   const platform = hostPlatform();
-  if (platform === undefined) throw new Error("Tasks builds no version for this machine");
+  if (platform === undefined) throw new Error("TTasks builds no version for this machine");
   return platform;
 }
 
@@ -316,7 +316,7 @@ export function checkInstalled(root: string, release: Release, ran: Ran): void {
     fail("current does not name the version");
   }
   if (!existsSync(stableCommand(root))) fail("no stable command");
-  // The install's state folder by the layout: `<root>/state` of a TASKS_HOME root.
+  // The install's state folder by the layout: `<root>/state` of a TTASKS_HOME root.
   const state = resolveLayout(hostFacts({ [HOME_VAR]: root })).state;
   const record = JSON.parse(readFileSync(join(state, "install.json"), "utf8")) as {
     install_id?: string;
@@ -396,7 +396,7 @@ export function grantUsers(path: string, rights: string): void {
 }
 
 /**
- * Where test installs go on Windows: `%USERPROFILE%\.tasks-test`, made when needed and removed
+ * Where test installs go on Windows: `%USERPROFILE%\.ttasks-test`, made when needed and removed
  * when its last test folder goes. The install script refuses a root below a folder that another
  * account may rename (A2 3.2.2 rule 5), and the OS temporary folder can be one: on Windows,
  * Codex's sandbox accounts may change `%TEMP%` and everything in `%LOCALAPPDATA%`. The profile
@@ -480,7 +480,7 @@ const isInside = (child: string, parent: string): boolean => {
 
 /**
  * The environment of an install script and of the programs it installed: this process's without
- * any Tasks variable or agent marker (a test run inside an agent app must not make every call an
+ * any TTasks variable or agent marker (a test run inside an agent app must not make every call an
  * agent's), then `extra` (an undefined value removes a name; names compare without case on
  * Windows).
  */
@@ -505,7 +505,7 @@ export function installEnv(extra: Record<string, string | undefined> = {}): Node
 export interface RunOptions {
   /** The root, passed as --root/-Root. */
   readonly root?: string;
-  /** Extra environment, for example TASKS_HOME. */
+  /** Extra environment, for example TTASKS_HOME. */
   readonly env?: Record<string, string | undefined>;
   readonly verifier?: string;
   /** The folder of release files. Default: the release's dist. */
@@ -634,7 +634,7 @@ export async function holdInstallLock(root: string): Promise<{ release: () => Pr
 export const stableCommand = (root: string): string =>
   join(root, "bin", windows ? `${PRODUCT_ID}.exe` : PRODUCT_ID);
 
-/** Runs a program of an install with a clean environment (no Tasks variable). */
+/** Runs a program of an install with a clean environment (no TTasks variable). */
 export function runProgram(
   file: string,
   args: readonly string[],
@@ -650,7 +650,7 @@ export function runProgram(
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
-/** What an MCP exchange with `tasks mcp` gave: its exit code and the reply to each request. */
+/** What an MCP exchange with `ttasks mcp` gave: its exit code and the reply to each request. */
 export interface McpRun {
   readonly code: number | null;
   readonly initialize: Record<string, unknown> | undefined;

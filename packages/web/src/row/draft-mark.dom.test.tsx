@@ -3,7 +3,7 @@
 // A row whose composer holds unsent words carries a quiet mark, so a draft left for days is found
 // without expanding every task. It comes and goes with the draft, also when another tab of the
 // browser writes or sends it.
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";

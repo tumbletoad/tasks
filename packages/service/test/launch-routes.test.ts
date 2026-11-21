@@ -1,6 +1,6 @@
 // Open and Copy through the service (A4 3.4.2, 3.4.3, 3.4.6, 3.15; A7 3.9 M2.10's Verify line): a
 // person's `launch.open` over the socket, the hub's one launch machine per space, a real
-// `tasks shim` started in the resolved folder, and testkit's fake Claude Code and Codex in place
+// `ttasks shim` started in the resolved folder, and testkit's fake Claude Code and Codex in place
 // of the real CLIs (machine.toml instances whose `exec` is Node and whose `args_prefix` is the
 // fake). The fake reports its argv exactly as it got it, so these tests compare the golden argv
 // as arrays and each argument byte for byte, through the OS's real process creation: on Windows
@@ -18,8 +18,8 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { envVar, FOLDER_MARKER, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
-import type { RpcSession } from "@tasks/bridge/protocol";
+import { envVar, FOLDER_MARKER, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
+import type { RpcSession } from "@ttasks/bridge/protocol";
 import {
   NOTE_LINE,
   presetSession,
@@ -28,8 +28,8 @@ import {
   type LaunchIntent,
   type SpawnRequest,
   type SpawnedProcess,
-} from "@tasks/launch";
-import { FAKE_CLI_AGENT, type CliAgentReport } from "@tasks/testkit";
+} from "@ttasks/launch";
+import { FAKE_CLI_AGENT, type CliAgentReport } from "@ttasks/testkit";
 import { briefNames, chooseRoute, codexEntryOf, LaunchUnavailable } from "../src/launch/open.ts";
 import { instanceToml, readLog, stateOf, tempRoot, waitFor } from "./harness.ts";
 import { errorOf, classSession } from "./ops-helpers.ts";
@@ -95,7 +95,7 @@ interface Rig {
 /**
  * A lab whose machine.toml has the fake Claude Code and Codex as instances: Claude Code with full
  * access (`claude`), Claude Code with the prefill route (`claude-link`), Codex with the brief sent
- * (`codex`) and assisted (`codex-assisted`), with a Codex home of the lab's own whose Tasks entry
+ * (`codex`) and assisted (`codex-assisted`), with a Codex home of the lab's own whose TTasks entry
  * lacks `env_vars`.
  */
 async function rig(label: string, opener: number | "hang" = 0): Promise<Rig> {
@@ -161,7 +161,7 @@ async function rig(label: string, opener: number | "hang" = 0): Promise<Rig> {
       : { serviceEnv: { DISPLAY: ":0", PATH: `${bin.root}:${process.env["PATH"] ?? ""}` } }),
   });
   labs.push(lab);
-  // A Codex home whose Tasks entry exists without `env_vars` (setup skipped it).
+  // A Codex home whose TTasks entry exists without `env_vars` (setup skipped it).
   mkdirSync(codexHome, { recursive: true });
   writeFileSync(
     join(codexHome, "config.toml"),
@@ -659,7 +659,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
     expect(
       chooseRoute(claude, { terminal: false, home: "/home/mira", platform: "linux" }).route,
     ).toBe("link");
-    // The Codex home's entry: its own names are kept, a list Tasks cannot repeat exactly is left.
+    // The Codex home's entry: its own names are kept, a list TTasks cannot repeat exactly is left.
     const entry = (toml: string) => {
       writeFileSync(join(home.root, "config.toml"), toml);
       return codexEntryOf(home.root);

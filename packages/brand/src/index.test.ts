@@ -13,7 +13,7 @@ import {
 describe("[A7.3.2.brand.names] product names derive from one constant", () => {
   test("the identifier is a safe lowercase name; the product's name ends in the app's name", () => {
     expect(PRODUCT_ID).toMatch(/^[a-z][a-z0-9-]*$/);
-    // TT Tasks, called Tasks inside the app, by TumbleToad (PLAN.md Q).
+    // TTasks, called TTasks inside the app, by TumbleToad (PLAN.md Q).
     expect(PRODUCT_NAME.endsWith(` ${APP_NAME}`)).toBe(true);
     expect(APP_NAME.toLowerCase()).toBe(PRODUCT_ID);
     expect(PUBLISHER).toMatch(/^\S+$/);

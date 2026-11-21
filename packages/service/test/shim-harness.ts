@@ -1,5 +1,5 @@
 // Test helpers for the launch shim (A4 3.6.3): a service in this process with one space, one task
-// and one root, a terminal that starts `tasks shim <ticket>` directly as a real child process in
+// and one root, a terminal that starts `ttasks shim <ticket>` directly as a real child process in
 // the folder the service resolved (the seam M2.09's terminal adapters replace), a fake agent's
 // spawn plan, and every process a test started, shims and agents, recorded by PID and stopped by
 // that test. On Linux the service's per-user runtime folder is under a runtime base of the lab's
@@ -10,16 +10,16 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openRpc, type RpcSession } from "@tasks/bridge/protocol";
+import { openRpc, type RpcSession } from "@ttasks/bridge/protocol";
 import {
   FixedEnvironment,
   startTimes,
   type LaunchIntent,
   type PlanFolder,
   type SpawnPlan,
-} from "@tasks/launch";
-import { fakeAgentCommand } from "@tasks/runs/fake-agents";
-import { layoutTestInstall, type TestInstall } from "@tasks/testkit";
+} from "@ttasks/launch";
+import { fakeAgentCommand } from "@ttasks/runs/fake-agents";
+import { layoutTestInstall, type TestInstall } from "@ttasks/testkit";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
 import type { LaunchOptions, TerminalSeams } from "../src/launch/index.ts";
 import {
@@ -35,7 +35,7 @@ import {
 } from "./harness.ts";
 import { classSession } from "./ops-helpers.ts";
 
-/** The CLI's entry: `tasks shim <ticket>` from the source tree, as `pnpm tasks` runs it. */
+/** The CLI's entry: `ttasks shim <ticket>` from the source tree, as `pnpm ttasks` runs it. */
 export const CLI_BIN = fileURLToPath(new URL("../../cli/src/bin.ts", import.meta.url));
 
 /** Generous bounds: a loaded runner must not fail a test that is only slow. */
@@ -99,17 +99,17 @@ export function stopPid(pid: number): void {
   }
 }
 
-/** The environment of a shim under test: this process's without Tasks or agent variables. */
+/** The environment of a shim under test: this process's without TTasks or agent variables. */
 export function shimEnv(home: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  const marker = /^(TASKS_|CLAUDE|CODEX_|T3CODE_)/i;
+  const marker = /^(TTASKS_|CLAUDE|CODEX_|T3CODE_)/i;
   for (const [name, value] of Object.entries(process.env)) {
     if (!marker.test(name)) env[name] = value;
   }
-  return { ...env, TASKS_HOME: home, ...extra };
+  return { ...env, TTASKS_HOME: home, ...extra };
 }
 
-/** A shim's rpc session with the service: the `shim` class, as `tasks shim` connects. */
+/** A shim's rpc session with the service: the `shim` class, as `ttasks shim` connects. */
 export function shimSession(home: string, path: string): Promise<RpcSession> {
   return within(
     openRpc({
@@ -259,7 +259,7 @@ export class ShimLab {
     return this.install === undefined ? [process.execPath, CLI_BIN] : [this.install.launcher];
   }
 
-  /** `tasks shim <ticket>` as a terminal would run it: the source entry, or the build's launcher. */
+  /** `ttasks shim <ticket>` as a terminal would run it: the source entry, or the build's launcher. */
   #shimCommand(ticket: string): [string, string[]] {
     const [file, ...rest] = this.product;
     return [file ?? "", [...rest, "shim", ticket]];

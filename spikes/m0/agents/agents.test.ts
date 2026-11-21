@@ -66,7 +66,7 @@ const alive = (pid: number | undefined): boolean => {
 /** Runs lab.ts as a program, as the lab runs it, with extra variables for the test. */
 const labRun = (argv: string[], extra: Record<string, string> = {}) =>
   run(process.execPath, [LAB, ...argv], {
-    env: { ...cleanEnv(process.env), TASKS_M0_LINUX_CLAUDE: "1", ...extra },
+    env: { ...cleanEnv(process.env), TTASKS_M0_LINUX_CLAUDE: "1", ...extra },
     cwd: tmp,
     timeoutMs: 120_000,
   });
@@ -165,14 +165,14 @@ if (verb === "add") {
 
 describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
   test("the clean environment holds the allow-list and the extras only", () => {
-    const env = cleanEnv(POLLUTED, { TASKS_TICKET: TICKET }, { path: "/bin" });
+    const env = cleanEnv(POLLUTED, { TTASKS_TICKET: TICKET }, { path: "/bin" });
     expect(forbiddenNames(env)).toEqual([]);
-    expect(env["TASKS_TICKET"]).toBe(TICKET);
+    expect(env["TTASKS_TICKET"]).toBe(TICKET);
     expect(env["PATH"]).toBe("/bin");
     expect(env["SOMETHING_ELSE"]).toBeUndefined();
     expect(() => cleanEnv(POLLUTED, { CLAUDECODE: "1" } as never)).toThrow(/not an allowed/);
     expect(
-      forbiddenNames({ CLAUDE_CODE_X: "1", TASKS_TICKET: "t", CLAUDE_CONFIG_DIR: "d" }),
+      forbiddenNames({ CLAUDE_CODE_X: "1", TTASKS_TICKET: "t", CLAUDE_CONFIG_DIR: "d" }),
     ).toEqual(["CLAUDE_CODE_X"]);
     // Windows: one variable whatever its case.
     const win = cleanEnv({ Path: "a", SystemRoot: "r" }, {}, { win: true, path: "b" });
@@ -186,7 +186,7 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
     const script =
       "console.log(JSON.stringify(Object.keys(process.env).filter(n=>/^(CLAUDECODE|CLAUDE_CODE_|ANTHROPIC_|CODEX_|T3CODE_|MCP_|OPENAI_)/i.test(n))))";
     const r = await run(process.execPath, ["-e", script], {
-      env: cleanEnv(POLLUTED, { TASKS_TICKET: TICKET }),
+      env: cleanEnv(POLLUTED, { TTASKS_TICKET: TICKET }),
       cwd: tmp,
     });
     expect(r.code).toBe(0);
@@ -209,7 +209,7 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
       {
         env: {
           ...cleanEnv(process.env),
-          TASKS_TICKET: TICKET,
+          TTASKS_TICKET: TICKET,
           CLAUDE_CODE_SESSION_ID: SESSION,
           CODEX_THREAD_ID: "019a-thread-abcdef",
         },
@@ -286,14 +286,14 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
     const cli = join(tmp, "fake-cli.mjs");
     writeFileSync(cli, FAKE_CLI);
     const out = join(tmp, "probe-fake");
-    const env = cleanEnv(POLLUTED, { CLAUDE_CONFIG_DIR: home, TASKS_TICKET: TICKET });
+    const env = cleanEnv(POLLUTED, { CLAUDE_CONFIG_DIR: home, TTASKS_TICKET: TICKET });
     const fake = (...argv: string[]) => run(process.execPath, [cli, ...argv], { env, cwd: tmp });
     await fake("mcp", "list");
     const base = recordHome(home);
     await fake(
       "mcp",
       "add",
-      "tasks-probe",
+      "ttasks-probe",
       "--",
       process.execPath,
       PROBE,
@@ -304,27 +304,27 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
     );
     const added = recordHome(home);
     expect(compareRecords(base, added).keys_added[".claude.json"]).toContain(
-      "mcpServers.tasks-probe.command",
+      "mcpServers.ttasks-probe.command",
     );
     const listed = await fake("mcp", "list");
-    expect(listed.stdout).toContain("tasks-probe: connected");
+    expect(listed.stdout).toContain("ttasks-probe: connected");
     await new Promise((r) => setTimeout(r, 500));
     const probe = readdirSync(out).filter((f) => f.startsWith("probe-fake-"));
     const record = JSON.parse(readFileSync(join(out, probe[0] ?? ""), "utf8")) as Record<
       string,
       unknown
     >;
-    expect(record["env_present"]).toContain("TASKS_TICKET");
+    expect(record["env_present"]).toContain("TTASKS_TICKET");
     expect(record["env_present"]).not.toContain("CLAUDECODE");
     expect(record["env_present"]).toContain("CLAUDE_CODE_SESSION_ID");
-    await fake("mcp", "remove", "tasks-probe");
+    await fake("mcp", "remove", "ttasks-probe");
     const removed = recordHome(home);
     const first = compareRecords(base, removed);
     // Like Claude Code, the fake CLI leaves an empty mcpServers object behind.
     expect(first.restored).toBe(false);
     expect(first.keys_added[".claude.json"]).toEqual(["mcpServers"]);
-    await fake("mcp", "add", "tasks-probe", "--", process.execPath, PROBE);
-    await fake("mcp", "remove", "tasks-probe");
+    await fake("mcp", "add", "ttasks-probe", "--", process.execPath, PROBE);
+    await fake("mcp", "remove", "ttasks-probe");
     expect(compareRecords(removed, recordHome(home)).restored).toBe(true);
     // A changed value shows by key name only.
     writeFileSync(join(home, ".claude.json"), JSON.stringify({ firstStart: 2, mcpServers: {} }));
@@ -335,13 +335,13 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
 
   test("TOML and JSON key lists, and the real-home key reader", () => {
     const toml =
-      '# c\nmodel = "x"\n[mcp_servers.tasks]\ncommand = \'C:\\k\\tasks.exe\'\nargs = ["mcp"]\nenv_vars = ["TASKS_TICKET"]\n[mcp_servers."a.b".env]\nK = "v"\ns = """\nmulti = 1\n"""\n';
+      '# c\nmodel = "x"\n[mcp_servers.ttasks]\ncommand = \'C:\\k\\ttasks.exe\'\nargs = ["mcp"]\nenv_vars = ["TTASKS_TICKET"]\n[mcp_servers."a.b".env]\nK = "v"\ns = """\nmulti = 1\n"""\n';
     expect(tomlKeys(toml)).toEqual([
       "model",
-      "mcp_servers.tasks",
-      "mcp_servers.tasks.command",
-      "mcp_servers.tasks.args",
-      "mcp_servers.tasks.env_vars",
+      "mcp_servers.ttasks",
+      "mcp_servers.ttasks.command",
+      "mcp_servers.ttasks.args",
+      "mcp_servers.ttasks.env_vars",
       'mcp_servers."a.b".env',
       'mcp_servers."a.b".env.K',
       'mcp_servers."a.b".env.s',
@@ -386,7 +386,7 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
     expect(changed.restored).toBe(false);
     expect(changed.bytes_equal["claude_desktop_config.json"]).toBe(false);
     expect(changed.bytes_equal["config.toml"]).toBe(true);
-    expect(changed.keys_added["claude_desktop_config.json"]).toContain("mcpServers.tasks");
+    expect(changed.keys_added["claude_desktop_config.json"]).toContain("mcpServers.ttasks");
     // Without naming it, the whole-home hashes still catch it.
     const plainBefore = recordHome(home);
     writeFileSync(desktop, JSON.stringify({ mcpServers: { other: { command: "x" } } }));
@@ -417,7 +417,7 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
     expect(realAfter.missing).toEqual(["absent.json"]);
   });
 
-  test("the entry record keeps Tasks's key paths only, with file hashes for the concurrency check", () => {
+  test("the entry record keeps TTasks's key paths only, with file hashes for the concurrency check", () => {
     const file = join(tmp, "entry", "claude_desktop_config.json");
     mkdirSync(dirname(file), { recursive: true });
     const secret = "other-servers-secret-value";
@@ -425,8 +425,8 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
       file,
       JSON.stringify({ mcpServers: { other: { env: { TOKEN: secret } } }, theme: "dark" }),
     );
-    const record = entryRecord(file, ["mcpServers.tasks"]);
-    expect(record.entries).toEqual({ "mcpServers.tasks": { present: false } });
+    const record = entryRecord(file, ["mcpServers.ttasks"]);
+    expect(record.entries).toEqual({ "mcpServers.ttasks": { present: false } });
     expect(record.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(record)).not.toContain(secret);
     expect(JSON.stringify(record)).not.toContain("dark");
@@ -437,19 +437,19 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
         theme: "dark",
       }),
     );
-    const after = entryRecord(file, ["mcpServers.tasks"]);
-    expect(after.entries["mcpServers.tasks"]).toEqual({ present: true, value: { command: "k" } });
+    const after = entryRecord(file, ["mcpServers.ttasks"]);
+    expect(after.entries["mcpServers.ttasks"]).toEqual({ present: true, value: { command: "k" } });
     expect(after.sha256).not.toBe(record.sha256);
     expect(JSON.stringify(after)).not.toContain(secret);
     const toml = join(tmp, "entry", "config.toml");
     writeFileSync(
       toml,
-      '[mcp_servers.other]\nenv = { K = "v" }\n[mcp_servers.tasks]\ncommand = "k"\n',
+      '[mcp_servers.other]\nenv = { K = "v" }\n[mcp_servers.ttasks]\ncommand = "k"\n',
     );
-    const t = entryRecord(toml, ["mcp_servers.tasks.command", "mcp_servers.tasks.env_vars"]);
+    const t = entryRecord(toml, ["mcp_servers.ttasks.command", "mcp_servers.ttasks.env_vars"]);
     expect(t.entries).toEqual({
-      "mcp_servers.tasks.command": { present: true, value: '"k"' },
-      "mcp_servers.tasks.env_vars": { present: false },
+      "mcp_servers.ttasks.command": { present: true, value: '"k"' },
+      "mcp_servers.ttasks.env_vars": { present: false },
     });
     expect(entryRecord(join(tmp, "entry", "none.json"), ["a"])).toEqual({
       sha256: null,
@@ -563,7 +563,7 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
     const scratchDir = join(base, "s", "m0-09");
     mkdirSync(join(base, "canary"), { recursive: true });
     writeFileSync(join(base, "canary", "keep.txt"), "keep");
-    const r = await labRun(["e02", "--scratch", scratchDir], { TASKS_M0_E02_MODES: "x/../../.." });
+    const r = await labRun(["e02", "--scratch", scratchDir], { TTASKS_M0_E02_MODES: "x/../../.." });
     expect(r.code).not.toBe(0);
     expect(`${r.stdout}${r.stderr}`).toContain("error: unknown E02 mode");
     expect(`${r.stdout}${r.stderr}`).not.toContain(base);
@@ -588,10 +588,10 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
       "a09",
     ]) {
       const r = await labRun([command, "--scratch", scratchDir], {
-        TASKS_M0_TEST_CLIS: fakes,
-        TASKS_M0_A09_VARIANTS: "describe-default",
-        TASKS_M0_A06_LENGTHS: "200,400",
-        TASKS_M0_A06_REPEATS: "1",
+        TTASKS_M0_TEST_CLIS: fakes,
+        TTASKS_M0_A09_VARIANTS: "describe-default",
+        TTASKS_M0_A06_LENGTHS: "200,400",
+        TTASKS_M0_A06_REPEATS: "1",
       });
       printed += r.stdout + r.stderr;
       expect(r.code, command).toBe(0);
@@ -647,7 +647,7 @@ describe("[A7.3.7.m0-agents.self-test] the M0.09 lab code", () => {
     writeFileSync(join(fakes, "codex.mjs"), FAKE_CODEX);
     // The fake codex writes no config.toml, so the lab's read fails with a path in its message.
     const scratchDir = join(tmp, "sentinel-user-q7x", "m0-09");
-    const r = await labRun(["a02-config", "--scratch", scratchDir], { TASKS_M0_TEST_CLIS: fakes });
+    const r = await labRun(["a02-config", "--scratch", scratchDir], { TTASKS_M0_TEST_CLIS: fakes });
     expect(r.code).toBe(1);
     expect(`${r.stdout}${r.stderr}`).toMatch(/error: Error ENOENT/);
     expect(`${r.stdout}${r.stderr}`).not.toMatch(/sentinel/i);

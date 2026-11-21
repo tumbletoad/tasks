@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 function root(): string {
-  const dir = mkdtempSync(join(tmpdir(), "tasks-crash-slice-"));
+  const dir = mkdtempSync(join(tmpdir(), "ttasks-crash-slice-"));
   roots.push(dir);
   return dir;
 }

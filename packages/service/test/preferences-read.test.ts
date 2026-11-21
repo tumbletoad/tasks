@@ -3,10 +3,10 @@
 // its writer in this thread, and its reader behind the service's reader interface.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { PREFERENCES } from "@tasks/contracts";
+import { PREFERENCES } from "@ttasks/contracts";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import type { Operation, WriteResult } from "@tasks/storage";
-import { writeFixture, type Fixture } from "@tasks/storage/write-helpers";
+import type { Operation, WriteResult } from "@ttasks/storage";
+import { writeFixture, type Fixture } from "@ttasks/storage/write-helpers";
 import { parseMachineConfig } from "../src/config/machine-toml.ts";
 import { readBatch, readHead, readSnapshot } from "../src/http/feed.ts";
 import { readPreferences } from "../src/ops/preferences.ts";
@@ -105,14 +105,14 @@ describe("[A1.3.16.prefs.read] the service reads preferences through the registr
 
   test("readPreferences gives each declared key with its declaration, this machine's from machine.toml", async () => {
     const { config } = parseMachineConfig(
-      '[preferences]\n"projection.dir" = "/srv/tasks-view"\n',
+      '[preferences]\n"projection.dir" = "/srv/ttasks-view"\n',
       "linux",
     );
     submit([{ kind: "pref.set", key: "features.search_trigram", value: true }]);
     const all = await readPreferences(readerOf(fx.reader), config);
     expect(all.find((p) => p.key === "projection.dir")).toEqual({
       key: "projection.dir",
-      value: "/srv/tasks-view",
+      value: "/srv/ttasks-view",
       state: "set",
       scope: "machine",
       policy: false,

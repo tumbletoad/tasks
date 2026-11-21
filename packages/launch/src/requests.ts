@@ -1,6 +1,6 @@
 // The words a person typed for an agent when they pressed Open, held for that launch on this
 // machine: never on a command line, in a link or in the space. The agent reads them through
-// Tasks' tools with its launch reference (`get_task`, or `tasks show --launch` without the tools).
+// TTasks' tools with its launch reference (`get_task`, or `ttasks show --launch` without the tools).
 //
 // Each one is `request.json` (0600) in the launch's own folder under the install's launch root
 // (0700, records.ts), beside a terminal launch's `launch.json`: Linux keeps that root on the
@@ -10,7 +10,7 @@
 // field only once the words reached the agent.
 import { readdirSync, readFileSync, rmdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWrite, makeDir, removeStaleTemps } from "@tasks/files";
+import { atomicWrite, makeDir, removeStaleTemps } from "@ttasks/files";
 import { LAUNCH_FILE_MODE, LAUNCH_FOLDER_MODE, SPACE_ID } from "./shim/records.ts";
 import { LAUNCH_ID } from "./store.ts";
 

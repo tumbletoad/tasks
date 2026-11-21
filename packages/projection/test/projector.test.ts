@@ -20,7 +20,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Id } from "@tasks/storage";
+import type { Id } from "@ttasks/storage";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { RETRY_FIRST_MS, RETRY_MAX_MS } from "../src/index.ts";
 import {

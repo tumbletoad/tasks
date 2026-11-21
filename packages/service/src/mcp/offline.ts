@@ -9,9 +9,9 @@
 // bridge's `lib/` (scripts/bridge-offline.ts), the build copies it into each version folder
 // (M1.13), and the service rewrites `<cache>/mcp-offline.json` at every start.
 import { join } from "node:path";
-import { CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 // The bridge's names only: the bridge itself is its own bundle (lib/bridge.mjs), never the service's.
-import { OFFLINE_FILE } from "@tasks/bridge/mcp/names";
+import { OFFLINE_FILE } from "@ttasks/bridge/mcp/names";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { BUILD } from "../hub/build.ts";
 import { atomicWrite, ensurePrivateDir, removeStaleTemps } from "../hub/files.ts";

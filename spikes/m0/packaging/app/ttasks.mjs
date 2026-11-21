@@ -1,4 +1,4 @@
-// Stand-in for lib/tasks.mjs in the M0.03 packaging spike (A2 3.12.2). It routes a subcommand and
+// Stand-in for lib/ttasks.mjs in the M0.03 packaging spike (A2 3.12.2). It routes a subcommand and
 // loads the module that serves it only when needed, like the real entry. Commands:
 //   argv <args…>        print what reached Node, as JSON, for the hostile-argv tests (A2 3.12.3)
 //   exit <code>         exit with that code, for the exit-code pass-through tests
@@ -19,11 +19,11 @@ function launchEnvironment() {
   return {
     NODE_OPTIONS: env.NODE_OPTIONS !== undefined,
     NODE_PATH: env.NODE_PATH !== undefined,
-    TASKS_HOME: env.TASKS_HOME ?? null,
-    TASKS_ROOT: env.TASKS_ROOT ?? null,
-    TASKS_LAUNCHER: env.TASKS_LAUNCHER ?? null,
-    TASKS_LAUNCH_MODE: env.TASKS_LAUNCH_MODE ?? null,
-    TASKS_PACKAGE: env.TASKS_PACKAGE ?? null,
+    TTASKS_HOME: env.TTASKS_HOME ?? null,
+    TTASKS_ROOT: env.TTASKS_ROOT ?? null,
+    TTASKS_LAUNCHER: env.TTASKS_LAUNCHER ?? null,
+    TTASKS_LAUNCH_MODE: env.TTASKS_LAUNCH_MODE ?? null,
+    TTASKS_PACKAGE: env.TTASKS_PACKAGE ?? null,
   };
 }
 
@@ -58,7 +58,7 @@ switch (command) {
   }
   default:
     process.stderr.write(
-      "usage: tasks argv|exit|version|wait|gate|install --finish (packaging spike stand-in)\n",
+      "usage: ttasks argv|exit|version|wait|gate|install --finish (packaging spike stand-in)\n",
     );
     process.exitCode = 64;
 }

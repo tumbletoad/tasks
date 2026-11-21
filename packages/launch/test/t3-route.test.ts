@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { FakeT3 } from "@tasks/testkit/fake-t3";
+import { FakeT3 } from "@ttasks/testkit/fake-t3";
 import { LaunchMachine, type RecoverySteps } from "../src/machine.ts";
 import { resolvePlace, type RootFolder } from "../src/places.ts";
 import type { LaunchIntent } from "../src/store.ts";
@@ -34,7 +34,7 @@ const INSTANCE = {
   openPermission: "full-access",
   t3: { environment: "local", providerInstance: "codex", model: "fixture-model" },
 } as const;
-const BRIEF = "M-14 Fixture task. Read the task with Tasks's tools (launch L7KQ2M).";
+const BRIEF = "M-14 Fixture task. Read the task with TTasks's tools (launch L7KQ2M).";
 
 function newRoute(): T3Route {
   return new T3Route({
@@ -50,7 +50,7 @@ function newRoute(): T3Route {
   });
 }
 
-/** Plays `tasks setup t3`: a pairing attempt approved on the fake's page. */
+/** Plays `ttasks setup t3`: a pairing attempt approved on the fake's page. */
 async function pair(through: T3Route = route): Promise<void> {
   const attempt = await through.beginPairing();
   expect(await fake.approveInBrowser(attempt.url)).toBe(200);
@@ -130,7 +130,7 @@ async function launch(
 }
 
 beforeEach(async () => {
-  base = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-t3-")));
+  base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-t3-")));
   fake = await FakeT3.start(join(base, "t3home"));
   files = new MemoryT3Files();
   durable = new MemoryDurable();
@@ -396,7 +396,7 @@ describe("[A4.5.t3.fake-server] the T3 primary route against a fake T3 server", 
     "after an OAuth reauthorization the intent is Unknown and no thread is created",
     async () => {
       fake.addProject(folder("lumen"));
-      // T3 never got the call, and Tasks pairs again before the repeat: the same key under the
+      // T3 never got the call, and TTasks pairs again before the repeat: the same key under the
       // new grant would make a thread, so none is sent.
       fake.dropNext("t3_thread_launch", "before", () => pair());
       const { intent, dispatched } = await launch(machine(), "lumen");

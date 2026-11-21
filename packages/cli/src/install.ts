@@ -1,4 +1,4 @@
-// `tasks install --finish [--created <path>]...` (A2 3.12.4 step 4 on Linux, step 5 on Windows):
+// `ttasks install --finish [--created <path>]...` (A2 3.12.4 step 4 on Linux, step 5 on Windows):
 // the install scripts' hand-over to the version they have verified and renamed into
 // `<root>/versions/<v>/`, run through that version's own version-local launcher. Authenticity was
 // settled by the script before anything from the archive ran (review SL-13); this is the
@@ -9,23 +9,23 @@
 //      printed as doctor prints them. Any failure stops here, and current stays as it was,
 //   3. only then the switch (service's finishInstall): update.lock, current, the stable command,
 //      install.json with what the installer created,
-//   4. the stable command, and the offer of `tasks service install` (A2 3.12.4), which this
+//   4. the stable command, and the offer of `ttasks service install` (A2 3.12.4), which this
 //      never runs itself,
 //   5. when this install's service runs another version, the last lines say so and name the
 //      restart. A person at a terminal is asked once whether to restart it now: a restart ends
 //      background runs, so it never happens unasked.
 // It loads the service's install code, and with it storage, only for this command.
 import { existsSync, readdirSync, rmdirSync } from "node:fs";
-import { PRODUCT_NAME } from "@tasks/brand";
-import { shellLine } from "@tasks/launch";
-import { hostFacts, type Layout } from "@tasks/service/paths";
+import { PRODUCT_NAME } from "@ttasks/brand";
+import { shellLine } from "@ttasks/launch";
+import { hostFacts, type Layout } from "@ttasks/service/paths";
 import type { Globals } from "./args.ts";
 import { candidateRows, versionChecks, type Check } from "./doctor.ts";
 import type { Io } from "./io.ts";
 import { printUsage } from "./output.ts";
 
 export const INSTALL_USAGE =
-  "tasks install --finish [--created <path>]...: the install scripts run it, through the new version's own launcher.";
+  "ttasks install --finish [--created <path>]...: the install scripts run it, through the new version's own launcher.";
 
 function parse(args: readonly string[]): { created: string[] } | undefined {
   const created: string[] = [];
@@ -65,10 +65,10 @@ export async function installCommand(
     return printUsage(
       io,
       globals.json,
-      "tasks install --finish runs in a version folder, through its own launcher. From source there is nothing to install.",
+      "ttasks install --finish runs in a version folder, through its own launcher. From source there is nothing to install.",
     );
   }
-  const install = await import("@tasks/service/version-install");
+  const install = await import("@ttasks/service/version-install");
   const facts = hostFacts(io.env, io.platform);
   let target: ReturnType<typeof install.installTarget>;
   try {
@@ -168,12 +168,12 @@ export interface InstalledService {
   readonly running: () => Promise<string | null | undefined>;
   /** An agent's shell may not restart the service: it is not asked. */
   readonly agentShell: boolean;
-  /** `tasks service restart`, printing what it prints; its exit code. */
+  /** `ttasks service restart`, printing what it prints; its exit code. */
   readonly restart: () => Promise<number>;
 }
 
 async function installedService(io: Io): Promise<InstalledService | undefined> {
-  const install = await import("@tasks/service/install");
+  const install = await import("@ttasks/service/install");
   let ctx: ReturnType<typeof install.defaultServiceContext>;
   try {
     ctx = install.defaultServiceContext({ env: io.env });

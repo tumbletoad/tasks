@@ -1,10 +1,10 @@
-// `tasks run` (runs/*): a person starts a background run of a task, sees the runs and their state,
+// `ttasks run` (runs/*): a person starts a background run of a task, sees the runs and their state,
 // reads an answer and stops a run. Starting is a person's own (the connection classes allow it for
 // an interactive command only): a run may change anything the person's agent setup allows, without
 // asking.
-import { RPC_ERROR, RpcError, type JsonObject } from "@tasks/bridge/protocol";
-import { AppError, RequestId } from "@tasks/contracts";
-import { RUN_REQUEST_MAX_BYTES, type RunRecord } from "@tasks/contracts/runs";
+import { RPC_ERROR, RpcError, type JsonObject } from "@ttasks/bridge/protocol";
+import { AppError, RequestId } from "@ttasks/contracts";
+import { RUN_REQUEST_MAX_BYTES, type RunRecord } from "@ttasks/contracts/runs";
 import type { ConnectionClass } from "../local/index.ts";
 import type { ServedSpace } from "../ops/index.ts";
 import type { RunService } from "./service.ts";
@@ -15,7 +15,7 @@ export interface RunVerbsHost {
   space(named: string | undefined): ServedSpace;
 }
 
-/** A run as `tasks run` shows it: codes and the person's own task text, never a folder. */
+/** A run as `ttasks run` shows it: codes and the person's own task text, never a folder. */
 export function runView(run: RunRecord, task: string | null, waiting?: string): JsonObject {
   const result = run.result;
   return {

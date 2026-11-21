@@ -1,5 +1,5 @@
 // What the projection writes, as pure functions (A1 3.13, A3 3.9.8). Fixture text only.
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { describe, expect, test } from "vitest";
 import {
   catalogText,

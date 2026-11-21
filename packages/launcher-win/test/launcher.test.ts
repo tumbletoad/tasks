@@ -1,4 +1,4 @@
-// tasks.exe and tasksw.exe (A2 3.12.3, A7 3.8 M1.11): the build, hostile argv, the job object and
+// ttasks.exe and ttasksw.exe (A2 3.12.3, A7 3.8 M1.11): the build, hostile argv, the job object and
 // the two modes. Windows only: on other platforms every test is collected and skipped.
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -69,11 +69,11 @@ describe.runIf(windows)("Windows launchers", () => {
 
   /**
    * A fresh install root with one version, made current, and its stable launchers: by default the
-   * daily install's layout, `<label>\share\tasks` with the launchers in `<label>\bin`; with
-   * `separate`, a TASKS_HOME root `<label>` with home.marker and the launchers in its bin\.
+   * daily install's layout, `<label>\share\ttasks` with the launchers in `<label>\bin`; with
+   * `separate`, a TTASKS_HOME root `<label>` with home.marker and the launchers in its bin\.
    */
   function stableInstall(label: string, launchers: Launchers = release, separate = false): string {
-    const root = separate ? join(work, label) : join(work, label, "share", "tasks");
+    const root = separate ? join(work, label) : join(work, label, "share", "ttasks");
     mkdirSync(root, { recursive: true });
     if (separate) writeFileSync(join(root, "home.marker"), "");
     addVersion(root, OLD, launchers);
@@ -84,14 +84,14 @@ describe.runIf(windows)("Windows launchers", () => {
   /** Both launchers in both modes: the stable ones in bin\ and those of versions\<version>\bin\. */
   function everyLauncher(root: string, version = OLD): [exe: string, label: string][] {
     return [
-      [stable(root), "stable tasks.exe"],
-      [stable(root, true), "stable tasksw.exe"],
-      [versionLocal(root, version), "version-local tasks.exe"],
-      [versionLocal(root, version, true), "version-local tasksw.exe"],
+      [stable(root), "stable ttasks.exe"],
+      [stable(root, true), "stable ttasksw.exe"],
+      [versionLocal(root, version), "version-local ttasks.exe"],
+      [versionLocal(root, version, true), "version-local ttasksw.exe"],
     ];
   }
 
-  describe("[A2.3.12.3.launcher-win.build] the build makes a console tasks.exe and a GUI tasksw.exe, hardened, and release builds carry no test hooks", () => {
+  describe("[A2.3.12.3.launcher-win.build] the build makes a console ttasks.exe and a GUI ttasksw.exe, hardened, and release builds carry no test hooks", () => {
     /** Reads the PE optional header: subsystem and DLL characteristics. */
     function peHeader(exe: string): { subsystem: number; dllCharacteristics: number } {
       const image = readFileSync(exe);
@@ -108,27 +108,27 @@ describe.runIf(windows)("Windows launchers", () => {
     const has = (exe: string, text: string) =>
       readFileSync(exe).includes(Buffer.from(text, "utf16le"));
 
-    test("tasks.exe is a console program and tasksw.exe a GUI program, with ASLR, DEP and CFG", () => {
+    test("ttasks.exe is a console program and ttasksw.exe a GUI program, with ASLR, DEP and CFG", () => {
       const CONSOLE = 3;
       const GUI = 2;
       const HARDENED = 0x0020 | 0x0040 | 0x0100 | 0x4000; // high-entropy ASLR, ASLR, DEP, CFG
       for (const built of [release, hooks]) {
-        const tasks = peHeader(built.tasks);
-        const tasksw = peHeader(built.tasksw);
+        const tasks = peHeader(built.ttasks);
+        const ttasksw = peHeader(built.ttasksw);
         expect(tasks.subsystem).toBe(CONSOLE);
-        expect(tasksw.subsystem).toBe(GUI);
+        expect(ttasksw.subsystem).toBe(GUI);
         expect(tasks.dllCharacteristics & HARDENED).toBe(HARDENED);
-        expect(tasksw.dllCharacteristics & HARDENED).toBe(HARDENED);
+        expect(ttasksw.dllCharacteristics & HARDENED).toBe(HARDENED);
       }
     });
 
     test("release builds contain no test hook, test builds do", () => {
-      for (const exe of [release.tasks, release.tasksw]) {
-        expect(has(exe, "TASKS_TEST_"), exe).toBe(false);
+      for (const exe of [release.ttasks, release.ttasksw]) {
+        expect(has(exe, "TTASKS_TEST_"), exe).toBe(false);
       }
-      expect(has(hooks.tasks, "TASKS_TEST_JOB_FAIL")).toBe(true);
-      expect(has(hooks.tasksw, "TASKS_TEST_TIME_UNIT_MS")).toBe(true);
-      expect(has(hooks.tasksw, "TASKS_TEST_TRACE")).toBe(true);
+      expect(has(hooks.ttasks, "TTASKS_TEST_JOB_FAIL")).toBe(true);
+      expect(has(hooks.ttasksw, "TTASKS_TEST_TIME_UNIT_MS")).toBe(true);
+      expect(has(hooks.ttasksw, "TTASKS_TEST_TRACE")).toBe(true);
     });
 
     test(
@@ -138,11 +138,11 @@ describe.runIf(windows)("Windows launchers", () => {
         // environment variables"). Names match without case on Windows.
         for (const name of ["CL", "_CL_", "cl"]) {
           const saved = process.env[name];
-          process.env[name] = "/DTASKS_TEST_HOOKS";
+          process.env[name] = "/DTTASKS_TEST_HOOKS";
           try {
             const built = buildLaunchers(join(work, `release-env-${name}`));
-            for (const exe of [built.tasks, built.tasksw]) {
-              expect(has(exe, "TASKS_TEST_"), `${name}: ${exe}`).toBe(false);
+            for (const exe of [built.ttasks, built.ttasksw]) {
+              expect(has(exe, "TTASKS_TEST_"), `${name}: ${exe}`).toBe(false);
             }
           } finally {
             if (saved === undefined) Reflect.deleteProperty(process.env, name);
@@ -154,12 +154,12 @@ describe.runIf(windows)("Windows launchers", () => {
     );
 
     test("the release check refuses a binary with test hooks and passes a release build", () => {
-      for (const exe of [hooks.tasks, hooks.tasksw]) {
+      for (const exe of [hooks.ttasks, hooks.ttasksw]) {
         expect(() => {
           assertReleaseBinary(exe);
         }, exe).toThrow(/contains test hooks/);
       }
-      for (const exe of [release.tasks, release.tasksw]) {
+      for (const exe of [release.ttasks, release.ttasksw]) {
         expect(() => {
           assertReleaseBinary(exe);
         }, exe).not.toThrow();
@@ -196,7 +196,7 @@ describe.runIf(windows)("Windows launchers", () => {
             expect(all.execArgv).toEqual(["--report-exclude-env"]);
             expect(all.env["NODE_OPTIONS"], "NODE_OPTIONS reached Node").toBe(false);
             expect(all.env["NODE_PATH"], "NODE_PATH reached Node").toBe(false);
-            expect(all.env["TASKS_LAUNCH_MODE"]).toBe(mode);
+            expect(all.env["TTASKS_LAUNCH_MODE"]).toBe(mode);
           }
           for (const arg of HOSTILE_ARGS) {
             expect(launchArgv(exe, [arg]).args, `${exe} ${JSON.stringify(arg)}`).toEqual([arg]);
@@ -212,7 +212,7 @@ describe.runIf(windows)("Windows launchers", () => {
       // quotes, empty quoted strings, percent signs and cmd.exe metacharacters.
       const tail = String.raw`argv a"b c"d \"x\" "y\\" z\\\" "" "" %PATH% ^& "un terminated`;
       const node = join(root, "versions", OLD, "runtime", "node.exe");
-      const entry = join(root, "versions", OLD, "lib", "tasks.mjs");
+      const entry = join(root, "versions", OLD, "lib", "ttasks.mjs");
       const raw = (exe: string, argv0: string, rest: string) =>
         spawnSync(exe, [rest], {
           argv0,
@@ -227,7 +227,7 @@ describe.runIf(windows)("Windows launchers", () => {
       for (const [exe] of launchers) {
         // argv[0] with a quote in the middle and a space inside it: the launcher must still find
         // where the tail starts, by the C runtime's rule for argv[0].
-        for (const argv0 of [`"${exe}"`, `C:\\fake"dir with space"\\tasks.exe`, exe]) {
+        for (const argv0 of [`"${exe}"`, `C:\\fake"dir with space"\\ttasks.exe`, exe]) {
           const result = raw(exe, argv0, tail);
           expect(result.status, result.stderr).toBe(0);
           expect((JSON.parse(result.stdout) as { args: string[] }).args, `${exe} ${argv0}`).toEqual(
@@ -258,27 +258,27 @@ describe.runIf(windows)("Windows launchers", () => {
     test("the launcher's own variables come from its location, whatever the caller set", () => {
       const decoy = join(work, "decoy-root");
       const spoofed = {
-        TASKS_ROOT: decoy,
-        TASKS_LAUNCHER: join(decoy, "tasks.exe"),
-        TASKS_LAUNCH_MODE: "spoofed",
-        TASKS_PACKAGE: "Spoofed.Package_1.0.0.0_x64__8wekyb3d8bbwe",
-        tasks_home: decoy,
+        TTASKS_ROOT: decoy,
+        TTASKS_LAUNCHER: join(decoy, "ttasks.exe"),
+        TTASKS_LAUNCH_MODE: "spoofed",
+        TTASKS_PACKAGE: "Spoofed.Package_1.0.0.0_x64__8wekyb3d8bbwe",
+        ttasks_home: decoy,
       };
       for (const [exe, mode] of launchers) {
         const { env } = launchArgv(exe, [], spoofed);
-        expect(samePath(env["TASKS_ROOT"], root), `${exe}: TASKS_ROOT`).toBe(true);
-        expect(samePath(env["TASKS_LAUNCHER"], exe), `${exe}: TASKS_LAUNCHER`).toBe(true);
-        expect(env["TASKS_LAUNCH_MODE"]).toBe(mode);
-        expect(env["TASKS_PACKAGE"]).toBeNull();
-        expect(samePath(env["TASKS_HOME"], root), `${exe}: TASKS_HOME`).toBe(true);
+        expect(samePath(env["TTASKS_ROOT"], root), `${exe}: TTASKS_ROOT`).toBe(true);
+        expect(samePath(env["TTASKS_LAUNCHER"], exe), `${exe}: TTASKS_LAUNCHER`).toBe(true);
+        expect(env["TTASKS_LAUNCH_MODE"]).toBe(mode);
+        expect(env["TTASKS_PACKAGE"]).toBeNull();
+        expect(samePath(env["TTASKS_HOME"], root), `${exe}: TTASKS_HOME`).toBe(true);
       }
-      // Without home.marker the install is the daily one: TASKS_HOME from the caller is removed,
-      // and the stable launchers in the command folder name share\tasks beside it as the root.
+      // Without home.marker the install is the daily one: TTASKS_HOME from the caller is removed,
+      // and the stable launchers in the command folder name share\ttasks beside it as the root.
       const daily = stableInstall("argv-daily");
       for (const exe of [stable(daily), stable(daily, true), versionLocal(daily, OLD, true)]) {
         const { env } = launchArgv(exe, [], spoofed);
-        expect(env["TASKS_HOME"], exe).toBeNull();
-        expect(samePath(env["TASKS_ROOT"], daily), `${exe}: TASKS_ROOT`).toBe(true);
+        expect(env["TTASKS_HOME"], exe).toBeNull();
+        expect(samePath(env["TTASKS_ROOT"], daily), `${exe}: TTASKS_ROOT`).toBe(true);
       }
     });
   });
@@ -302,7 +302,7 @@ describe.runIf(windows)("Windows launchers", () => {
     const direct = (args: readonly string[], env: Env) =>
       spawnSync(
         join(root, "versions", OLD, "runtime", "node.exe"),
-        [join(root, "versions", OLD, "lib", "tasks.mjs"), ...args],
+        [join(root, "versions", OLD, "lib", "ttasks.mjs"), ...args],
         { env: childEnv(env), encoding: "utf8", windowsHide: true },
       );
 
@@ -329,14 +329,14 @@ describe.runIf(windows)("Windows launchers", () => {
           ].join("\n"),
         );
         const seen = fresh("marker");
-        const control = direct(["argv"], { OPENSSL_CONF: conf, TASKS_FIXTURE_MARKER: seen });
+        const control = direct(["argv"], { OPENSSL_CONF: conf, TTASKS_FIXTURE_MARKER: seen });
         expect(control.status, control.stderr).toBe(0);
         expect(existsSync(seen), "the control did not load the provider DLL").toBe(true);
         for (const [exe, label] of everyLauncher(root)) {
           for (const name of ["OPENSSL_CONF", "openssl_conf"]) {
             const marker = fresh("marker");
             const result = run(exe, ["argv"], {
-              env: { [name]: conf, TASKS_FIXTURE_MARKER: marker },
+              env: { [name]: conf, TTASKS_FIXTURE_MARKER: marker },
             });
             expect(existsSync(marker), `${label} ${name}: the provider DLL was loaded`).toBe(false);
             expect([result.status, result.stderr], label).toEqual([0, ""]);
@@ -437,12 +437,12 @@ describe.runIf(windows)("Windows launchers", () => {
           return name.replace(/[A-Z]/g, (c) => ((i >> letter++) & 1 ? c.toLowerCase() : c));
         };
         const owned = [
-          "TASKS_ROOT",
-          "TASKS_LAUNCHER",
-          "TASKS_LAUNCH_MODE",
-          "TASKS_PACKAGE",
-          "TASKS_HOME",
-          "TASKS_SERVICE_MANAGER",
+          "TTASKS_ROOT",
+          "TTASKS_LAUNCHER",
+          "TTASKS_LAUNCH_MODE",
+          "TTASKS_PACKAGE",
+          "TTASKS_HOME",
+          "TTASKS_SERVICE_MANAGER",
         ];
         const entries = owned.flatMap((name) =>
           Array.from({ length: COPIES }, (_, i) => `${spelled(name, i)}=decoy-${String(i)}`),
@@ -455,7 +455,7 @@ describe.runIf(windows)("Windows launchers", () => {
         }
         // The control: Node started directly sees every copy, so the report would show any left.
         const node = join(root, "versions", OLD, "runtime", "node.exe");
-        const entry = join(root, "versions", OLD, "lib", "tasks.mjs");
+        const entry = join(root, "versions", OLD, "lib", "ttasks.mjs");
         const control = run(
           fixture.starter,
           [
@@ -477,15 +477,15 @@ describe.runIf(windows)("Windows launchers", () => {
           );
           expect([result.status, result.stderr], label).toEqual([0, ""]);
           const report = JSON.parse(result.stdout) as Report;
-          // No home.marker and no package: TASKS_HOME and TASKS_PACKAGE are absent.
+          // No home.marker and no package: TTASKS_HOME and TTASKS_PACKAGE are absent.
           expect(report.prefixedNames, label).toEqual([
-            "TASKS_LAUNCHER",
-            "TASKS_LAUNCH_MODE",
-            "TASKS_ROOT",
+            "TTASKS_LAUNCHER",
+            "TTASKS_LAUNCH_MODE",
+            "TTASKS_ROOT",
           ]);
-          expect(samePath(report.launcher["TASKS_ROOT"], root), label).toBe(true);
-          expect(samePath(report.launcher["TASKS_LAUNCHER"], exe), label).toBe(true);
-          expect(report.launcher["TASKS_LAUNCH_MODE"], label).toBe(
+          expect(samePath(report.launcher["TTASKS_ROOT"], root), label).toBe(true);
+          expect(samePath(report.launcher["TTASKS_LAUNCHER"], exe), label).toBe(true);
+          expect(report.launcher["TTASKS_LAUNCH_MODE"], label).toBe(
             label.startsWith("stable") ? "stable" : "version",
           );
         }
@@ -531,7 +531,7 @@ describe.runIf(windows)("Windows launchers", () => {
         spec === "file" ? `file:${file(names[i] ?? "")}` : spec,
       );
       const result = run(fixture.starter, [...handles, file("stray.txt"), exe, "--", "argv"], {
-        env: { TASKS_FIXTURE_REPORT: file("report.json"), TASKS_FIXTURE_STRAY: "\\stray.txt" },
+        env: { TTASKS_FIXTURE_REPORT: file("report.json"), TTASKS_FIXTURE_STRAY: "\\stray.txt" },
       });
       return {
         status: result.status,
@@ -629,7 +629,7 @@ describe.runIf(windows)("Windows launchers", () => {
     );
   });
 
-  describe("[A2.3.12.3.launcher-win.job] Node runs only inside tasks.exe's job, so killing tasks.exe kills Node", () => {
+  describe("[A2.3.12.3.launcher-win.job] Node runs only inside ttasks.exe's job, so killing ttasks.exe kills Node", () => {
     let root: string;
 
     beforeAll(() => {
@@ -654,7 +654,7 @@ describe.runIf(windows)("Windows launchers", () => {
       return { child, line };
     }
 
-    test("killing tasks.exe kills Node, in both modes", async () => {
+    test("killing ttasks.exe kills Node, in both modes", async () => {
       for (const exe of [stable(root), versionLocal(root, OLD)]) {
         const { child, line } = firstLine(exe, ["wait"]);
         let pid: number | undefined;
@@ -663,7 +663,7 @@ describe.runIf(windows)("Windows launchers", () => {
           expect(alive(pid)).toBe(true);
           // Node's stdin stays open (the test holds it), so only the job can end Node.
           child.kill();
-          expect(await waitUntil(() => !alive(pid ?? 0), 10_000), "Node outlived tasks.exe").toBe(
+          expect(await waitUntil(() => !alive(pid ?? 0), 10_000), "Node outlived ttasks.exe").toBe(
             true,
           );
           // Gone: Windows may already have given its PID to another test's process.
@@ -675,7 +675,7 @@ describe.runIf(windows)("Windows launchers", () => {
       }
     });
 
-    test("a detached child of Node is outside the job and survives tasks.exe", async () => {
+    test("a detached child of Node is outside the job and survives ttasks.exe", async () => {
       const { child, line } = firstLine(stable(root), ["detach"]);
       let pids: number[] = [];
       try {
@@ -683,7 +683,7 @@ describe.runIf(windows)("Windows launchers", () => {
         const [node, detached] = pids;
         expect(alive(node ?? 0) && alive(detached ?? 0)).toBe(true);
         child.kill();
-        expect(await waitUntil(() => !alive(node ?? 0), 10_000), "Node outlived tasks.exe").toBe(
+        expect(await waitUntil(() => !alive(node ?? 0), 10_000), "Node outlived ttasks.exe").toBe(
           true,
         );
         // Node is gone: Windows may already have given its PID to another test's process.
@@ -698,18 +698,18 @@ describe.runIf(windows)("Windows launchers", () => {
     test(
       "a refused job step stops Node before it runs (exit 70), and a release build ignores the hook",
       () => {
-        const exe = join(stable(root), "..", "tasks-hooks.exe");
-        copyFileSync(hooks.tasks, exe);
+        const exe = join(stable(root), "..", "ttasks-hooks.exe");
+        copyFileSync(hooks.ttasks, exe);
         const normal = run(exe, ["argv", "x"]);
         expect([normal.status, normal.stderr]).toEqual([0, ""]);
         for (const step of ["create", "limits", "assign", "resume"]) {
-          const refused = run(exe, ["argv", "x"], { env: { TASKS_TEST_JOB_FAIL: step } });
+          const refused = run(exe, ["argv", "x"], { env: { TTASKS_TEST_JOB_FAIL: step } });
           // Exit 70 and no output from Node: it never ran.
           expect([refused.status, refused.stdout], step).toEqual([70, ""]);
           expect(refused.stderr, step).toMatch(/job object .*error 5\)/);
         }
         const ignored = run(stable(root), ["argv", "x"], {
-          env: { TASKS_TEST_JOB_FAIL: "assign" },
+          env: { TTASKS_TEST_JOB_FAIL: "assign" },
         });
         expect([ignored.status, ignored.stderr], "the release build must ignore it").toEqual([
           0,
@@ -733,8 +733,8 @@ describe.runIf(windows)("Windows launchers", () => {
         expect(ran.version).toBe(NEW);
         expect(samePath(ran.execPath, node(root, NEW)), ran.execPath).toBe(true);
         const { env } = launchArgv(exe, []);
-        expect(env["TASKS_LAUNCH_MODE"]).toBe("version");
-        expect(samePath(env["TASKS_ROOT"], root)).toBe(true);
+        expect(env["TTASKS_LAUNCH_MODE"]).toBe("version");
+        expect(samePath(env["TTASKS_ROOT"], root)).toBe(true);
       }
       const info = run(versionLocal(root, NEW), ["--package-info"]);
       expect([info.status, info.stdout]).toEqual([0, "none\n"]);
@@ -825,27 +825,27 @@ describe.runIf(windows)("Windows launchers", () => {
 
     test("a missing runtime or entry exits 70 naming it", () => {
       const root = stableInstall("missing");
-      rmSync(join(root, "versions", OLD, "lib", "tasks.mjs"));
+      rmSync(join(root, "versions", OLD, "lib", "ttasks.mjs"));
       const noEntry = run(stable(root), ["version"]);
       expect(noEntry.status).toBe(70);
-      expect(noEntry.stderr).toMatch(/missing .*lib\\tasks\.mjs/);
+      expect(noEntry.stderr).toMatch(/missing .*lib\\ttasks\.mjs/);
       rmSync(node(root, OLD));
       for (const exe of [stable(root), versionLocal(root, OLD)]) {
         const noRuntime = run(exe, ["version"]);
         expect(noRuntime.status).toBe(70);
         expect(noRuntime.stderr).toMatch(/missing .*runtime\\node\.exe/);
       }
-      // A command folder with no share\tasks beside it: the daily stable launcher names what is
+      // A command folder with no share\ttasks beside it: the daily stable launcher names what is
       // missing and runs nothing.
       const lone = join(work, "lone", "bin");
       mkdirSync(lone, { recursive: true });
-      copyFileSync(release.tasks, join(lone, "tasks.exe"));
-      const noShare = run(join(lone, "tasks.exe"), ["version"]);
+      copyFileSync(release.ttasks, join(lone, "ttasks.exe"));
+      const noShare = run(join(lone, "ttasks.exe"), ["version"]);
       expect([noShare.status, noShare.stdout]).toEqual([70, ""]);
       expect(noShare.stderr).toMatch(/missing .*\\lone\\share$/m);
       mkdirSync(join(work, "lone", "share"));
-      expect(run(join(lone, "tasks.exe"), ["version"]).stderr).toMatch(
-        /missing .*\\share\\tasks$/m,
+      expect(run(join(lone, "ttasks.exe"), ["version"]).stderr).toMatch(
+        /missing .*\\share\\ttasks$/m,
       );
     });
 
@@ -903,8 +903,8 @@ describe.runIf(windows)("Windows launchers", () => {
           expect(result.stderr, `${label}, ${mode}`).toMatch(/is a link or junction/);
         }
       }
-      // The daily install's command folder reaches the program through share\tasks beside it:
-      // a junction at share or at share\tasks would point it at another install.
+      // The daily install's command folder reaches the program through share\ttasks beside it:
+      // a junction at share or at share\ttasks would point it at another install.
       const other = stableInstall("link-other");
       for (const level of ["share", "program"] as const) {
         const root = stableInstall(`link-${level}`);
@@ -931,9 +931,9 @@ describe.runIf(windows)("Windows launchers", () => {
       cpSync(join(decoy, "versions", "6.6.6", "lib"), join(decoy, "lib"), { recursive: true });
       const env = {
         PATH: `${decoy};${join(decoy, "bin")};${process.env["PATH"] ?? ""}`,
-        TASKS_ROOT: decoy,
-        TASKS_HOME: decoy,
-        TASKS_LAUNCH_MODE: "version",
+        TTASKS_ROOT: decoy,
+        TTASKS_HOME: decoy,
+        TTASKS_LAUNCH_MODE: "version",
       };
       for (const exe of [stable(root), stable(root, true), versionLocal(root, OLD)]) {
         const ran = launchVersion(exe, { cwd: decoy, env });
@@ -951,8 +951,8 @@ describe.runIf(windows)("Windows launchers", () => {
       addVersion(folder, OLD, release);
       expect(launchVersion(versionLocal(root, NEW)).version).toBe(NEW);
       // Without manifest.json the folder is no version folder, so the launcher is a stable one: a
-      // daily one whose program would be in share\tasks there, never this folder's runtime. With
-      // home.marker it is a TASKS_HOME one with the folder as its root, which reads its current.
+      // daily one whose program would be in share\ttasks there, never this folder's runtime. With
+      // home.marker it is a TTASKS_HOME one with the folder as its root, which reads its current.
       rmSync(join(folder, "manifest.json"));
       rmSync(join(folder, "current"));
       const result = run(versionLocal(root, NEW), ["version"]);
@@ -965,7 +965,7 @@ describe.runIf(windows)("Windows launchers", () => {
     });
 
     test("an install root inside a folder named versions is still a stable install", () => {
-      // A TASKS_HOME root whose parent folder happens to be named versions (A2 3.12.3 step 1).
+      // A TTASKS_HOME root whose parent folder happens to be named versions (A2 3.12.3 step 1).
       const root = join(work, "parent", "versions", "home");
       mkdirSync(root, { recursive: true });
       writeFileSync(join(root, "home.marker"), "");
@@ -973,14 +973,14 @@ describe.runIf(windows)("Windows launchers", () => {
       makeStable(root, OLD, release);
       const ran = launchVersion(stable(root));
       expect(ran.version).toBe(OLD);
-      expect(launchArgv(stable(root), []).env["TASKS_LAUNCH_MODE"]).toBe("stable");
+      expect(launchArgv(stable(root), []).env["TTASKS_LAUNCH_MODE"]).toBe("stable");
     });
 
     test("--package-info answers before anything is read, even where no install is", () => {
       const bare = join(work, "bare", "bin");
       mkdirSync(bare, { recursive: true });
-      for (const exe of [release.tasks, release.tasksw]) {
-        const copy = join(bare, exe.endsWith("tasksw.exe") ? "tasksw.exe" : "tasks.exe");
+      for (const exe of [release.ttasks, release.ttasksw]) {
+        const copy = join(bare, exe.endsWith("ttasksw.exe") ? "ttasksw.exe" : "ttasks.exe");
         copyFileSync(exe, copy);
         const info = run(copy, ["--package-info"]);
         expect([info.status, info.stdout, info.stderr]).toEqual([0, "none\n", ""]);

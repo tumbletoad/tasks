@@ -1,5 +1,5 @@
 // The process the update crash tests kill (A7 3.13 M6.12 and M6.13, the crash harness's pattern of
-// A1 5): it runs the updater (or `tasks update --repair`) from source against a real test install,
+// A1 5): it runs the updater (or `ttasks update --repair`) from source against a real test install,
 // with seams armed at one named step. It reads its task from stdin as one JSON line, then reports
 // each step it reaches as a JSON line on stdout with a synchronous write. At the armed step it
 // says so and blocks its thread until the parent kills it, or, when the parent killed the service
@@ -37,7 +37,7 @@ export interface ChildTask {
   readonly go: string;
   /** The stable command, which the stand-in start runs as `serve`. */
   readonly stable: string;
-  /** The environment of the programs it starts: no Tasks variable, no agent marker. */
+  /** The environment of the programs it starts: no TTasks variable, no agent marker. */
   readonly env: Record<string, string>;
   /**
    * The candidate's self-test: `real` (the default) through its own launcher, or `pass`, a stand-in
@@ -74,7 +74,7 @@ const at = (point: string): void => {
   line({ resumed: point });
 };
 
-const env = { ...task.env, TASKS_HOME: task.root };
+const env = { ...task.env, TTASKS_HOME: task.root };
 const real = defaultServiceContext({ env, program: task.stable });
 const tools = new FakeTools(new FakeService(), join(task.root, "no-units"), {
   userManager: false,
@@ -105,7 +105,7 @@ const options: UpdateOptions = {
     task.selfTest === "pass"
       ? () => Promise.resolve({ ok: true, failed: [] })
       : launcherSelfTest(task.env, process.platform),
-  // A launcher's steps are armed by `<point>:<name>`, for example `aside:tasks.exe`.
+  // A launcher's steps are armed by `<point>:<name>`, for example `aside:ttasks.exe`.
   seams: {
     update: at,
     at,

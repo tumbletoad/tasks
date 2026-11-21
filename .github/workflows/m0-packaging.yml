@@ -46,17 +46,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Build the version folder and archive
-        run: pnpm exec node spikes/m0/packaging/scripts/build.ts --platform ${{ matrix.platform }} --build ${{ github.sha }} --work "${{ runner.temp }}/tasks-build"
+        run: pnpm exec node spikes/m0/packaging/scripts/build.ts --platform ${{ matrix.platform }} --build ${{ github.sha }} --work "${{ runner.temp }}/ttasks-build"
 
       - name: Sign SHA256SUMS with a throwaway key
-        run: pnpm exec node spikes/m0/packaging/scripts/sign.ts --throwaway "${{ runner.temp }}/tasks-throwaway-key"
+        run: pnpm exec node spikes/m0/packaging/scripts/sign.ts --throwaway "${{ runner.temp }}/ttasks-throwaway-key"
 
       - name: Install, runtime gate, hostile argv and tamper checks in the packaged runtime
-        run: pnpm exec node spikes/m0/packaging/scripts/smoke.ts --work "${{ runner.temp }}/tasks-smoke"
+        run: pnpm exec node spikes/m0/packaging/scripts/smoke.ts --work "${{ runner.temp }}/ttasks-smoke"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: tasks-spike-${{ matrix.platform }}
+          name: ttasks-spike-${{ matrix.platform }}
           path: |
             spikes/m0/packaging/dist/tasks-*-${{ matrix.platform }}.*
             spikes/m0/packaging/dist/SHA256SUMS

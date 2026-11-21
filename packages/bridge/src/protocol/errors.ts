@@ -61,7 +61,7 @@ export class LocalError extends Error {
   }
 }
 
-/** A JSON-RPC error reply to an rpc mode call. `data` holds A3's error body for Tasks errors. */
+/** A JSON-RPC error reply to an rpc mode call. `data` holds A3's error body for TTasks errors. */
 export class RpcError extends Error {
   readonly code: number;
   readonly data: unknown;

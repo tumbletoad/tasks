@@ -1,4 +1,4 @@
-// @tasks/contracts: the one place where shapes live (AGENTS.md). Registry entries with Zod 4
+// @ttasks/contracts: the one place where shapes live (AGENTS.md). Registry entries with Zod 4
 // schemas, their metadata, error codes and the generated faces (A3 3.2, A6 3.3).
 export * from "./a1-errors.ts";
 export * from "./define.ts";

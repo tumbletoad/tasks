@@ -1,4 +1,4 @@
-// The switch of `tasks install --finish` (A2 3.12.4 step 4 on Linux, step 5 on Windows): an
+// The switch of `ttasks install --finish` (A2 3.12.4 step 4 on Linux, step 5 on Windows): an
 // install script has verified a version and renamed it into `<root>/versions/<v>/`, and runs this
 // through that version's own launcher. The CLI's `install` command first runs the self-test
 // (doctor's integrity, runtime and candidate rows); only when every row passed does it call
@@ -8,23 +8,23 @@
 //   2. finishes or rolls back an update that was interrupted (repair.ts), so an install never
 //      switches under a journal that would later undo it,
 //   3. points `current` at the version (switch.ts),
-//   4. puts the stable command in place: `<root>/bin/tasks` (Linux, macOS), or copies of the
-//      version's `tasks.exe` and `tasksw.exe` in `<root>\bin\` (Windows),
+//   4. puts the stable command in place: `<root>/bin/ttasks` (Linux, macOS), or copies of the
+//      version's `ttasks.exe` and `ttasksw.exe` in `<root>\bin\` (Windows),
 //   5. writes `<state>/install.json` (A2 3.2.3): the method, the root, the install ID, the versions
 //      installed, the version current named before, and what the installer created, so an
 //      uninstall can remove exactly that.
-// M1.14 makes separate installs only (A2 3.2.2 rule 3): the launcher's TASKS_HOME must be this
+// M1.14 makes separate installs only (A2 3.2.2 rule 3): the launcher's TTASKS_HOME must be this
 // version's install root, which holds home.marker. Nothing is written outside the root.
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
+import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { ensurePrivateDir, judgePath } from "../hub/files.ts";
 import { acquireLock, LockBusy } from "../hub/lock.ts";
 import { unsafeMessage, type UnsafeThing } from "../hub/permissions.ts";
 import { readUmask, umaskRefusal, type UmaskRead } from "../hub/umask.ts";
 import {
   canonicalStatePath,
-  TASKS_HOME,
+  TTASKS_HOME,
   resolveLayout,
   type HostFacts,
   type Layout,
@@ -81,7 +81,7 @@ const sameFolder = (a: string, b: string, platform: NodeJS.Platform): boolean =>
 
 /**
  * The install a version folder belongs to, checked: it sits in `<root>/versions/` under its own
- * version's name, and the launcher that started this process set TASKS_HOME to that root, which
+ * version's name, and the launcher that started this process set TTASKS_HOME to that root, which
  * holds home.marker. Throws InstallError otherwise.
  */
 export function installTarget(versionFolder: string, facts: HostFacts): InstallTarget {
@@ -104,10 +104,10 @@ export function installTarget(versionFolder: string, facts: HostFacts): InstallT
   }
   const layout = resolveLayout(facts);
   if (layout.home === undefined || !existsSync(join(root, HOME_MARKER))) {
-    throw refuse(`this build installs separate installs only (${TASKS_HOME}, home.marker).`);
+    throw refuse(`this build installs separate installs only (${TTASKS_HOME}, home.marker).`);
   }
   if (!sameFolder(layout.home, root, facts.platform)) {
-    throw refuse(`${TASKS_HOME} is not this version's install root.`);
+    throw refuse(`${TTASKS_HOME} is not this version's install root.`);
   }
   return { root: layout.home, version: manifest.version, manifest, layout };
 }
@@ -188,7 +188,7 @@ export interface Finished {
   readonly version: string;
   readonly build: string;
   readonly installId: string;
-  /** The stable command: `<root>/bin/tasks`, or `<root>\bin\tasks.exe`. */
+  /** The stable command: `<root>/bin/ttasks`, or `<root>\bin\ttasks.exe`. */
   readonly command: string;
   readonly record: InstallRecord;
 }

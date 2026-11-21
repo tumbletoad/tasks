@@ -1,7 +1,7 @@
 // The upgrade a person makes with the install script while the service runs (A2 3.12.4), with
 // real builds, a real install and real processes (installed.ts): the older version installed and
 // its service running, the newer one installed over it by its own install script. The script's
-// last lines name the pending restart, `tasks service status` says it, and `tasks service restart`
+// last lines name the pending restart, `ttasks service status` says it, and `ttasks service restart`
 // brings up the new version and says so. The script runs without a terminal here, so it asks
 // nothing; packages/cli/test/install-restart.test.ts covers the question.
 //
@@ -56,7 +56,7 @@ describe("[A2.3.12.4.install.restart] an install over a running service names th
       const status = runProgram(w.stable, ["service", "status"]);
       expect(status.status, status.stderr).toBe(0);
       expect(status.stdout).toContain(
-        `  Installed: ${second}, not yet running. To run it: tasks service restart\n`,
+        `  Installed: ${second}, not yet running. To run it: ttasks service restart\n`,
       );
       // An agent's shell may not restart it.
       const agent = runProgram(w.stable, ["service", "restart"], { CODEX_THREAD_ID: "fixture" });

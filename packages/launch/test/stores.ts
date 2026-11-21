@@ -9,7 +9,7 @@ import {
   openLaunchSpaceInWorker,
   type LaunchSpace,
   type WorkerLaunchSpace,
-} from "@tasks/testkit";
+} from "@ttasks/testkit";
 import { SpaceExecutionStore } from "../src/space-store.ts";
 import type { ExecutionStore } from "../src/store.ts";
 import type { ContractBackend } from "./execution-store-contract.ts";
@@ -19,7 +19,7 @@ export const MACHINE = "m_3q7k9d2xw8f4r6t1c5v0b2n8a7";
 
 /** A temporary folder of its own, and its removal by that full name. */
 export function tempFolder(): { path: string; remove: () => void } {
-  const path = mkdtempSync(join(tmpdir(), "tasks-launch-"));
+  const path = mkdtempSync(join(tmpdir(), "ttasks-launch-"));
   return {
     path,
     remove: () => {

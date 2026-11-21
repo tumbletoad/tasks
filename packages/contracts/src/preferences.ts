@@ -4,7 +4,7 @@
 // it, and every reader takes a stored value through `preferenceValue`, so no reader keeps a rule of
 // its own.
 //
-// This module imports nothing, not even Zod: storage's writer imports it (`@tasks/contracts/
+// This module imports nothing, not even Zod: storage's writer imports it (`@ttasks/contracts/
 // preferences`), and the storage worker should load no more than it needs.
 //
 // Rules a declaration keeps (checkPreferences, tested):

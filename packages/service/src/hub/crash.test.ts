@@ -28,7 +28,7 @@ function hostileError(): Error {
   );
   error.stack = [
     `Error: ${error.message}`,
-    "    at SpaceManager.open (file:///C:/Users/mira/.local/share/tasks/versions/0.3.0/lib/spaces.ts:120:5)",
+    "    at SpaceManager.open (file:///C:/Users/mira/.local/share/ttasks/versions/0.3.0/lib/spaces.ts:120:5)",
     "    at async Promise.all (index 0)",
     `    at readManifest (${PATH_WIN.replace("space.json", "manifest.ts")}:44:11)`,
     "    at node:internal/process/task_queues:105:5",

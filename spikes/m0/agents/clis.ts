@@ -29,7 +29,7 @@ function onPath(name: string, path: string): string | undefined {
 
 export function findClis(): Clis {
   // Self-test only: fake CLIs (`claude.mjs`, `codex.mjs` in that folder) run with this Node.
-  const fakes = process.env["TASKS_M0_TEST_CLIS"];
+  const fakes = process.env["TTASKS_M0_TEST_CLIS"];
   if (fakes !== undefined && fakes !== "") {
     return {
       claude: { file: process.execPath, prefix: [join(fakes, "claude.mjs")] },
@@ -48,7 +48,7 @@ export function findClis(): Clis {
     }
     return { claude: { file: claude, prefix: [] }, codex: { file: node, prefix: [entry] }, path };
   }
-  const marker = "__TASKS_M0_09__";
+  const marker = "__TTASKS_M0_09__";
   const script = `printf '%s\\n' "${marker}" "$(command -v claude)" "$(command -v codex)" "$PATH"`;
   const r = spawnSync("bash", ["-lic", script], { encoding: "utf8", timeout: 30_000 });
   const lines = r.stdout.split("\n");

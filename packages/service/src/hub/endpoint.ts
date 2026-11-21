@@ -1,4 +1,4 @@
-// The local endpoint: the hub's adapter over `tasks-local/1` (M1.09, `@tasks/service/local`).
+// The local endpoint: the hub's adapter over `ttasks-local/1` (M1.09, `@ttasks/service/local`).
 //
 // The hub owns the endpoint's name and its protection (A2 3.2.1, 3.4): it picks the socket path in
 // a user-only folder or the pipe name with this start's instance ID, removes a stale socket file,
@@ -9,14 +9,14 @@
 // owns two itself (A2 3.6.4): `service/status` and `service/shutdown`, which is how a stop reaches
 // the service on Windows (A2 3.3.5). M1.10 registers `op/call` and `op/list` (the request path for
 // operations, ops/) and the `space/*` verbs (space-verbs.ts, with M3.10's `view/rebuild`),
-// M2.11 the `t3/*` verbs of `tasks setup t3` (t3.ts), M2.14 the `setup/*` verbs of `tasks setup
-// agents` (agent-homes.ts), `tasks setup instances` its `instances/*` (instances.ts); later steps
+// M2.11 the `t3/*` verbs of `ttasks setup t3` (t3.ts), M2.14 the `setup/*` verbs of `ttasks setup
+// agents` (agent-homes.ts), `ttasks setup instances` its `instances/*` (instances.ts); later steps
 // add theirs the same way.
 //
 // The library's events go into the hub's log catalogue (`local.*` in log.ts), every word of them
 // from a closed list, so the log stays content-free by construction.
-import { PROTOCOL, RPC_ERROR, RpcError, type JsonObject } from "@tasks/bridge/protocol";
-import { AppError } from "@tasks/contracts";
+import { PROTOCOL, RPC_ERROR, RpcError, type JsonObject } from "@ttasks/bridge/protocol";
+import { AppError } from "@ttasks/contracts";
 import { sessionFacts, type Bindings } from "../binding/index.ts";
 import type { HttpEvent, HttpStatus } from "../http/index.ts";
 import {
@@ -42,7 +42,7 @@ import { runVerbs, type RunVerbsHost } from "../runs/verbs.ts";
 /** The protocols this build speaks (A2 3.6.6): the library's, listed in service.json too. */
 export const PROTOCOLS = { min: PROTOCOL, max: PROTOCOL } as const;
 
-/** What a running service reports (`service/status`, `tasks service status --json`). */
+/** What a running service reports (`service/status`, `ttasks service status --json`). */
 export interface ServiceStatus {
   readonly state: "starting" | "ready" | "draining";
   readonly pid: number;
@@ -112,11 +112,11 @@ export interface EndpointHub {
   readonly log: Logger;
   /** The request path for operations (`op/call`): the spaces it serves and this machine. */
   readonly ops?: OpsHost;
-  /** `tasks space` (`space/*`). */
+  /** `ttasks space` (`space/*`). */
   readonly spaces?: SpaceVerbsHost;
   /** The UI's HTTP listener (M2.12), once it runs. */
   ui?: EndpointUi | undefined;
-  /** The machine's default space: `tasks space use` (`space/use`). */
+  /** The machine's default space: `ttasks space use` (`space/use`). */
   readonly defaults?: Pick<DefaultSpace, "make">;
   /**
    * The launch shim's methods (A4 3.6.3, `launch.*`, shim class only): launch/ (M2.08). `doctor`
@@ -126,20 +126,20 @@ export interface EndpointHub {
     handlers(): RpcHandlers;
     doctor?(take: boolean): Promise<JsonObject | undefined>;
   };
-  /** `tasks setup t3` (`t3/*`). */
+  /** `ttasks setup t3` (`t3/*`). */
   readonly t3?: T3Host;
   /**
    * Session binding (A3 3.7, M2.04): an mcp mode connection's binding from its bind frame, and a
    * `cli-agent` call's session from its ticket.
    */
   readonly bindings?: Bindings;
-  /** `tasks setup agents` (`setup/*`): the agent-home rows of the grants table. */
+  /** `ttasks setup agents` (`setup/*`): the agent-home rows of the grants table. */
   readonly agentHomes?: AgentHomesHost;
-  /** `tasks setup instances` (`instances/*`): machine.toml's [[instance]] entries. */
+  /** `ttasks setup instances` (`instances/*`): machine.toml's [[instance]] entries. */
   readonly instances?: InstancesHost;
   /** Background runs, for an update's hold. */
   readonly runs?: EndpointRuns;
-  /** `tasks run` (`runs/*`): a person's runs of tasks. */
+  /** `ttasks run` (`runs/*`): a person's runs of tasks. */
   readonly runVerbs?: RunVerbsHost;
 }
 
@@ -223,7 +223,7 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
     ),
     // A4 3.6.3: the shim's claim, attach and reports. Each checks its own credential.
     ...hub.launches?.handlers(),
-    // `tasks doctor` (A3 3.14): the launch rows' facts (`take`: `--live` takes the login shell's
+    // `ttasks doctor` (A3 3.14): the launch rows' facts (`take`: `--live` takes the login shell's
     // snapshot now), and the sessions row's.
     "doctor/launch": async (params) =>
       (await hub.launches?.doctor?.(params["take"] === true)) ?? {
@@ -233,13 +233,13 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
       },
     "doctor/sessions": () => (hub.bindings === undefined ? null : sessionFacts(hub.bindings)),
     "service/status": () => hub.status(),
-    // A2 3.8.4 step 1: a one-time code for `tasks open`, and the port to use it on.
+    // A2 3.8.4 step 1: a one-time code for `ttasks open`, and the port to use it on.
     "ui/mint_code": () => {
       if (hub.ui === undefined) {
         throw new AppError({
           code: "service_unavailable",
           message: "This service runs no UI listener.",
-          hint: "Run: tasks doctor",
+          hint: "Run: ttasks doctor",
           data: { reason: "ui_unavailable", retryable: false },
         });
       }
@@ -264,7 +264,7 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
       });
       return { port, state: "draining", restart: true };
     },
-    // `tasks update`: no run starts while this request is open. The hold ends when the updater
+    // `ttasks update`: no run starts while this request is open. The hold ends when the updater
     // cancels it, when its connection closes (an updater that died included) or when the service
     // stops. Meanwhile `runs/blocking` says which runs the update would cut short, at once and
     // whenever that changes.
@@ -321,7 +321,7 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
   };
 }
 
-/** The local command groups' methods: `tasks space`, `tasks setup` and `tasks run`. */
+/** The local command groups' methods: `ttasks space`, `ttasks setup` and `ttasks run`. */
 const VERB_METHODS = [
   "space/list",
   "space/create",
@@ -386,7 +386,7 @@ const bindSpace = (space: SpaceSummary): SpaceSummary => ({
   ...(space.reason === undefined ? {} : { reason: space.reason }),
 });
 
-/** The endpoint: tasks-local/1's `serve` with the hub's handlers, log, bind hook and grants. */
+/** The endpoint: ttasks-local/1's `serve` with the hub's handlers, log, bind hook and grants. */
 export const listenEndpoint: ListenEndpoint = async (options) => {
   const { hub } = options;
   const ops = hub.ops;

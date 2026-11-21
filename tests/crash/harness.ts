@@ -256,7 +256,7 @@ export async function runCrash(options: CrashOptions): Promise<CrashReport> {
   const deadline = options.minutes === undefined ? Infinity : started + options.minutes * 60_000;
   const maxRounds = options.rounds ?? Infinity;
   const [minRounds, maxPerSpace] = options.roundsPerSpace ?? [8, 24];
-  const run = mkdtempSync(join(options.root ?? tmpdir(), "tasks-crash-"));
+  const run = mkdtempSync(join(options.root ?? tmpdir(), "ttasks-crash-"));
   const children = new Set<ChildProcess>();
   // The last resort when the harness's own process ends without its cleanup: kill what it
   // started, by the handles it holds, and remove its folder.

@@ -15,10 +15,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { RpcSession } from "@tasks/bridge/protocol";
-import { backupsFolder, listBackups, StorageWorker, type Id } from "@tasks/storage";
-import { createSpaceAt, STEPS_0_1, STEPS_0_3, STEPS_LATEST } from "@tasks/storage/revisions";
-import { checkedDriver, digestSpace } from "@tasks/testkit";
+import type { RpcSession } from "@ttasks/bridge/protocol";
+import { backupsFolder, listBackups, StorageWorker, type Id } from "@ttasks/storage";
+import { createSpaceAt, STEPS_0_1, STEPS_0_3, STEPS_LATEST } from "@ttasks/storage/revisions";
+import { checkedDriver, digestSpace } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { writeCommits } from "../../storage/test/backup-helpers.ts";
 import { FIXTURE_MACHINE } from "../../storage/test/fixture-requests.ts";
@@ -745,7 +745,7 @@ describe("[A2.3.1.hub.search-after-migration] word search on a migrated space, a
           "This space could not be updated from schema 0.3, so it has no word index yet and " +
           "words cannot be searched.",
         hint:
-          "Filters such as status:open work now. tasks space list shows why the update failed " +
+          "Filters such as status:open work now. ttasks space list shows why the update failed " +
           "and how to try it again.",
         data: { reason: "not_indexed", retryable: false },
       });

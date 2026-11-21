@@ -56,7 +56,7 @@ export interface FoundCommand {
   readonly target: DetectableTarget;
   /** How it was found: on PATH, as an npm install run by Node, or in the app's own folder. */
   readonly source: "path" | "npm" | "app-folder";
-  /** The executable and the arguments before Tasks's (`[node, entry]` for npm). Empty: unusable. */
+  /** The executable and the arguments before TTasks's (`[node, entry]` for npm). Empty: unusable. */
   readonly exec: readonly string[];
   /**
    * Why it cannot be run directly: a Windows `.cmd` shim with no npm entry beside it (A4 3.2:
@@ -131,7 +131,7 @@ export interface Detection {
 
 const pathOf = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
 
-/** A suffix Tasks turns into an instance ID: `.codex-<suffix>`, `codex-<suffix>`. */
+/** A suffix TTasks turns into an instance ID: `.codex-<suffix>`, `codex-<suffix>`. */
 const SUFFIX = /^[a-z0-9][a-z0-9-]{0,31}$/u;
 
 /** The value of an environment variable, case-insensitively on Windows. */
@@ -150,7 +150,7 @@ export function envValue(env: Env, name: string, platform: NodeJS.Platform): str
 /**
  * The config home an instance's agent runs with (A4 3.2): the one rule that launch
  * (the `claude-cli://` link's default home, Codex's `env_vars` check and reference match) and
- * setup (`tasks setup agents`) share.
+ * setup (`ttasks setup agents`) share.
  * 1. The home variable in the instance's own `env` (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`; in any
  *    case on Windows, whose names are case-insensitive): the agent's environment applies exactly
  *    that (shim/environment.ts removes the base's and applies the instance's).
@@ -227,7 +227,7 @@ function nodeFor(host: DetectHost, beside: string | undefined): string | undefin
   return found !== undefined && !isShim(found) ? found : undefined;
 }
 
-/** The command of one target: native, npm through Node, or a shim Tasks cannot run. */
+/** The command of one target: native, npm through Node, or a shim TTasks cannot run. */
 function findCommand(
   host: DetectHost,
   def: TargetDef,
@@ -521,7 +521,7 @@ export async function detect(
   const p = pathOf(host.platform);
   const t3Def = targetDef("t3");
   // T3 keeps its folder where T3CODE_HOME names it, else in the home folder: the rule setup reads
-  // T3's settings by (@tasks/service/setup `t3Folder`).
+  // T3's settings by (@ttasks/service/setup `t3Folder`).
   const t3Named =
     t3Def.detect.appFolderEnv === undefined
       ? undefined
@@ -535,7 +535,7 @@ export async function detect(
     )?.kind === "dir";
   const t3 = commands.find((c) => c.target === "t3");
   if (t3 !== undefined || t3Folder) {
-    // T3's provider instances live in its settings, which Tasks reads only through T3's own
+    // T3's provider instances live in its settings, which TTasks reads only through T3's own
     // API once paired (A4 3.4.1, M2.09): the person picks one. On Windows the command is T3's
     // `.cmd` shim, which the CLI route reads and never runs (t3-cli.ts).
     const exec =

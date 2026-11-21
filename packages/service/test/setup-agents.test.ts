@@ -1,4 +1,4 @@
-// `tasks setup agents` (A3 3.13.1, 3.13.2, 3.13.4; A7 3.9 M2.14): on scratch homes, apply then
+// `ttasks setup agents` (A3 3.13.1, 3.13.2, 3.13.4; A7 3.9 M2.14): on scratch homes, apply then
 // remove leaves every file key-identical, and the preview shows the exact command and diff.
 //
 // Every home here is a folder this test made under the OS's temporary folder, and the apps'
@@ -18,9 +18,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { envVar, MCP_SERVER_KEY } from "@tasks/brand";
-import { detect, nodeDetectHost, type Instance } from "@tasks/launch";
-import { installFakeAgents, type FakeAgents } from "@tasks/testkit/fake-agents";
+import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
+import { detect, nodeDetectHost, type Instance } from "@ttasks/launch";
+import { installFakeAgents, type FakeAgents } from "@ttasks/testkit/fake-agents";
 import { parseToml } from "../src/config/toml.ts";
 import {
   applyHome,
@@ -88,7 +88,7 @@ interface World {
 }
 
 function world(label: string): World {
-  const root = mkdtempSync(join(tmpdir(), `tasks-setup-${label}-`));
+  const root = mkdtempSync(join(tmpdir(), `ttasks-setup-${label}-`));
   temps.push(root);
   const home = join(root, "home");
   mkdirSync(home);
@@ -96,7 +96,7 @@ function world(label: string): World {
     root,
     home,
     state: join(root, "state"),
-    tasks: join(root, "install", "bin", windows ? "tasks.exe" : "tasks"),
+    tasks: join(root, "install", "bin", windows ? "ttasks.exe" : "ttasks"),
     fakes: installFakeAgents(join(root, "tools"), home),
   };
 }
@@ -284,7 +284,7 @@ describe("[A3.3.13.setup.exact] apply then remove leaves every file key-identica
         env: {},
       });
       expect(claudeJson.mcpServers["other"]).toEqual(OTHER);
-      // Codex: the command's table plus Tasks's two keys, in the file's own CRLF, the rest kept.
+      // Codex: the command's table plus TTasks's two keys, in the file's own CRLF, the rest kept.
       const codexText = readFileSync(codexFile, "utf8");
       expect(codexText.startsWith(CODEX_TOML)).toBe(true);
       expect(codexText.replace(/\r\n/gu, "")).not.toContain("\n");
@@ -307,7 +307,7 @@ describe("[A3.3.13.setup.exact] apply then remove leaves every file key-identica
         expect(statSync(join(setupDir(w.state), SETUP_FILE)).mode & 0o777).toBe(0o600);
         expect(statSync(setupDir(w.state)).mode & 0o777).toBe(0o700);
       }
-      // The record holds Tasks's own entries, never another server's secret or a file's copy.
+      // The record holds TTasks's own entries, never another server's secret or a file's copy.
       const recordText = readFileSync(join(setupDir(w.state), SETUP_FILE), "utf8");
       expect(recordText).not.toContain(SENTINEL);
       expect(recordText).not.toContain("fixture-model");
@@ -606,7 +606,7 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
       const removes = () =>
         w.fakes.calls().filter((c) => c.args[0] === "mcp" && c.args[1] === "remove").length;
 
-      // Another entry of Tasks's name appears after apply's check and before the command: the app
+      // Another entry of TTasks's name appears after apply's check and before the command: the app
       // refuses to overwrite it, and setup must not take it back.
       mkdirSync(join(w.home, ".codex"));
       const codexFile = join(w.home, ".codex", "config.toml");

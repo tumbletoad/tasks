@@ -2,10 +2,10 @@
 // Linux and macOS only: on Windows the profile's ACL is
 // doctor's to check.
 //
-// The rule: a file or folder Tasks trusts must belong to this user and may not be writable by every
+// The rule: a file or folder TTasks trusts must belong to this user and may not be writable by every
 // user. Its group may write it only when that group is the person's own private group: the object's
 // group ID is their account's primary group ID, and that group's name is their user name (the user
-// private groups of distributions whose umask is 002; @tasks/files/person reads it). Any other
+// private groups of distributions whose umask is 002; @ttasks/files/person reads it). Any other
 // group's write is refused, because whether a group has members besides the person cannot be known
 // for certain (a directory service adds accounts no local file lists), and this rule lists no
 // members. Its limits: whoever can add a member to a person's private group administers the
@@ -14,14 +14,14 @@
 // group write stays refused there. The install script (scripts/install/install.sh) applies the same
 // rule to the install root and the folders above it, launch applies it to T3's files
 // (t3-client.ts), and the script and this file run one table of cases (test/fixtures/
-// group-rule.json). Tasks gives everything it creates an exact mode (files.ts), so only a file or
+// group-rule.json). TTasks gives everything it creates an exact mode (files.ts), so only a file or
 // folder a person made or changed by hand can fail the rule.
 //
 // This is the one place that turns the facts of a path into what is wrong with it and the command
 // that fixes it. factsOf reads them; problemOf judges them by the whole rule for that kind of object
-// (a folder Tasks writes in, the socket folder, machine.toml); repairOf builds the command from the
+// (a folder TTasks writes in, the socket folder, machine.toml); repairOf builds the command from the
 // same rule, so the one line a person pastes makes the next start pass. It also gives the owner back
-// the access Tasks needs (u+rwx on a folder, u+rw on the file, never recursive): a folder or file
+// the access TTasks needs (u+rwx on a folder, u+rw on the file, never recursive): a folder or file
 // that belonged to another user often lacks it.
 //
 // A command that changes an owner runs as root, so it must change exactly the file it names. It is
@@ -31,14 +31,14 @@
 import { lstatSync, readlinkSync, statSync, type Stats } from "node:fs";
 import { userInfo } from "node:os";
 import { dirname, resolve } from "node:path";
-import { PRODUCT_NAME } from "@tasks/brand";
-import { currentPerson, groupMayWrite, type Person } from "@tasks/files/person";
-import { MAX_LINE_BYTES, shellWord } from "@tasks/launch/shell-line";
+import { PRODUCT_NAME } from "@ttasks/brand";
+import { currentPerson, groupMayWrite, type Person } from "@ttasks/files/person";
+import { MAX_LINE_BYTES, shellWord } from "@ttasks/launch/shell-line";
 
-export { currentPerson, isOwnGroup, type Person } from "@tasks/files/person";
+export { currentPerson, isOwnGroup, type Person } from "@ttasks/files/person";
 
 /**
- * What Tasks needs of a file or folder it trusts. `folder`: the state, log, crash and cache folders
+ * What TTasks needs of a file or folder it trusts. `folder`: the state, log, crash and cache folders
  * and the configuration folder, which it reads and writes in. `private_folder`: the socket folder,
  * which keeps every other user from the socket, so its group and others have no access at all.
  * `file`: machine.toml, which it reads.
@@ -56,7 +56,7 @@ export type Unsafe =
   | "group_writable"
   /** The socket folder: its group or others have any access. */
   | "open_to_others"
-  /** The owner lacks what Tasks needs: rwx on a folder, read on the file. */
+  /** The owner lacks what TTasks needs: rwx on a folder, read on the file. */
   | "no_access";
 
 /** What the rule looks at for one path. */
@@ -78,7 +78,7 @@ export interface PathFacts {
   readonly linkAbove?: { readonly at: string; readonly to: string };
 }
 
-/** The bits the owner must have for Tasks to use it. */
+/** The bits the owner must have for TTasks to use it. */
 const NEEDED: Readonly<Record<Need, number>> = {
   folder: 0o700,
   private_folder: 0o700,
@@ -305,12 +305,12 @@ function userName(): string {
 
 /** One file or folder that failed the rule, as a person reads it. */
 export interface UnsafeThing {
-  /** What it is, for example "Tasks's state folder". */
+  /** What it is, for example "TTasks's state folder". */
   readonly name: string;
   readonly facts: PathFacts;
   readonly problem: Unsafe;
   /**
-   * A folder this user cannot look inside: what in it could not be judged, for example "Tasks's
+   * A folder this user cannot look inside: what in it could not be judged, for example "TTasks's
    * machine.toml". The message says that it is checked on the next start.
    */
   readonly hides?: string;
@@ -435,7 +435,7 @@ function noteOf(thing: UnsafeThing, person: Person): string | undefined {
 
 /**
  * The whole line a person reads: what is wrong with which file or folder, in plain words first,
- * then why that stops Tasks (`why`, a sentence), then what the command cannot reach or see, then
+ * then why that stops TTasks (`why`, a sentence), then what the command cannot reach or see, then
  * the one command that fixes the rest. `person`: whose rule judged the things, this process's by
  * default.
  */

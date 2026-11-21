@@ -1,12 +1,12 @@
-// The folder arguments of the verbs that give a project or a task its folder: `tasks add`,
-// `tasks set` and `tasks area`. `--folder` comes from the contract and is made absolute here, as
+// The folder arguments of the verbs that give a project or a task its folder: `ttasks add`,
+// `ttasks set` and `ttasks area`. `--folder` comes from the contract and is made absolute here, as
 // the service never reads a relative path against its own working folder. `--here` is the working
 // folder. `--create` makes a folder that is not there yet, before the call: the person asks for it,
 // while the service never makes a folder for anyone. When the call is refused, the folders it made
 // are removed again while they are still empty.
 import { rmdirSync } from "node:fs";
-import { makeDir } from "@tasks/files";
-import { homeFolder, hostFacts } from "@tasks/service/paths";
+import { makeDir } from "@ttasks/files";
+import { homeFolder, hostFacts } from "@ttasks/service/paths";
 import { UsageError, type Globals, type VerbSpec } from "./args.ts";
 import type { ConnectOptions } from "./connect.ts";
 import type { Io } from "./io.ts";
@@ -30,7 +30,7 @@ function holderOf(entry: string, input: Record<string, unknown>): Record<string,
   return input;
 }
 
-/** `tasks add`, `tasks set` and `tasks area` with `--here` and `--create` taken out first. */
+/** `ttasks add`, `ttasks set` and `ttasks area` with `--here` and `--create` taken out first. */
 export async function folderVerb(
   io: Io,
   globals: Globals,

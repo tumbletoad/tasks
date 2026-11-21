@@ -9,7 +9,7 @@
 // read-only with the reason `read_only_copy` until it is claimed (A6 3.5). It writes no commit: the
 // space row has no history (A1 3.4), and the copy's history stays the backup's.
 //
-// THE TRIAL CLAIM. A copy is of use only once it is claimed (`tasks space claim`, or the restore in
+// THE TRIAL CLAIM. A copy is of use only once it is claimed (`ttasks space claim`, or the restore in
 // place's own claim), and a claim writes more than the mark: a commit by the space's system actor,
 // the next seq, the lineage. So the mark's transaction first runs the claim's own writes
 // (claim.ts claimInTransaction) under a savepoint and rolls them back: a copy that refuses a claim
@@ -31,7 +31,7 @@ export const READ_ONLY_COPY = "restored_copy";
 /**
  * Drops, inside the caller's write transaction, every object of a copied database that the
  * exact-schema rule leaves out (backup/snapshot.ts isDropped): each trigger, which would run on the
- * restore's own writes and could clear the read-only mark or undo a claim (Tasks' schema has none,
+ * restore's own writes and could clear the read-only mark or undo a claim (TTasks' schema has none,
  * A1 3.4), and SQLite's statistics tables. A restore runs it before its first write, an export on
  * its private snapshot. Names are only quoted here, never shown.
  */

@@ -1,11 +1,11 @@
 /*
  * Canary stand-in for the packaging spike's tamper tests (src/checks.ts). Never shipped, never in
- * a release archive. The tests put this program in place of bin\tasks.exe, bin\tasksw.exe and
+ * a release archive. The tests put this program in place of bin\ttasks.exe, bin\ttasksw.exe and
  * runtime\node.exe in a look-alike archive or a tampered version folder. Run in any way, with any
- * arguments and any environment, it writes a file named after itself into TASKS_CANARY_DIR and
+ * arguments and any environment, it writes a file named after itself into TTASKS_CANARY_DIR and
  * exits 0 without printing anything. The tests then require that folder to stay empty.
  *
- * TASKS_CANARY_DIR is fixed at compile time by a generated wrapper (checks.ts, prepareCanary), so
+ * TTASKS_CANARY_DIR is fixed at compile time by a generated wrapper (checks.ts, prepareCanary), so
  * the canary fires even when the program runs with a cleaned environment.
  */
 #define WIN32_LEAN_AND_MEAN
@@ -19,8 +19,8 @@
 #include <stdio.h>
 #include <wchar.h>
 
-#ifndef TASKS_CANARY_DIR
-#error "compile through the wrapper that defines TASKS_CANARY_DIR"
+#ifndef TTASKS_CANARY_DIR
+#error "compile through the wrapper that defines TTASKS_CANARY_DIR"
 #endif
 
 #define CAP 32768
@@ -38,8 +38,8 @@ int wmain(void) {
     if (length == 0 || length >= CAP) return 0;
     name = wcsrchr(self, L'\\');
     name = name == NULL ? self : name + 1;
-    CreateDirectoryW(TASKS_CANARY_DIR, NULL);
-    if (_snwprintf_s(path, CAP, _TRUNCATE, L"%s\\%s-%lu", TASKS_CANARY_DIR, name,
+    CreateDirectoryW(TTASKS_CANARY_DIR, NULL);
+    if (_snwprintf_s(path, CAP, _TRUNCATE, L"%s\\%s-%lu", TTASKS_CANARY_DIR, name,
                      GetCurrentProcessId()) < 0) {
         return 0;
     }

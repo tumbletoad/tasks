@@ -2,18 +2,18 @@
 // 0600 in a 0700 folder, replaced atomically. Per home: the app, the home and its file, the
 // instance, account and space the entry names, the app's command and its undo (arguments only: the
 // app's executable is found again when it runs), the variables they ran with, whether the file and
-// its servers' table existed, the file's hash before and after, the entry as written, Tasks's
+// its servers' table existed, the file's hash before and after, the entry as written, TTasks's
 // single-key patches with their before and after values, and the agent-home grant.
 //
 // No copy of a file and no other key's value: these files hold other servers' secrets, and A3 3.13.1
-// step 5 forbids whole-file backups. What the record holds is Tasks's own entry, which `--remove`
-// compares with the file to take back only what is still exactly Tasks's.
+// step 5 forbids whole-file backups. What the record holds is TTasks's own entry, which `--remove`
+// compares with the file to take back only what is still exactly TTasks's.
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, ensurePrivateDir } from "../hub/files.ts";
 
 /**
- * The apps setup registers Tasks in, by the name the bridge's `--app` carries (A3 3.13.2-3.13.4).
+ * The apps setup registers TTasks in, by the name the bridge's `--app` carries (A3 3.13.2-3.13.4).
  * The Codex app and T3 Code read these apps' homes, so they have no entry of their own.
  */
 export const AGENT_APPS = ["claude-code", "codex", "claude-desktop"] as const;
@@ -47,7 +47,7 @@ export interface HomeRecord {
   /** The app's command (`mcp add …`) and its undo (`mcp remove …`), after the executable. */
   readonly args: readonly string[];
   readonly undo: readonly string[];
-  /** The argv the entry runs: Tasks's command and the bridge's arguments. */
+  /** The argv the entry runs: TTasks's command and the bridge's arguments. */
   readonly entry_argv: readonly string[];
   /** The variables set for both commands (the home's own variable). */
   readonly env: Readonly<Record<string, string>>;

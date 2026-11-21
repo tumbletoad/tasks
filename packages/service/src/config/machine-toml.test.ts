@@ -53,7 +53,7 @@ afterEach(() => {
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 const tempDir = () => {
-  const dir = mkdtempSync(join(tmpdir(), "tasks-config-"));
+  const dir = mkdtempSync(join(tmpdir(), "ttasks-config-"));
   temps.push(dir);
   return dir;
 };
@@ -294,7 +294,7 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
   );
 
   test.skipIf(process.platform === "win32")(
-    "Linux and macOS: a file or folder others can write is not used, since it names commands Tasks runs",
+    "Linux and macOS: a file or folder others can write is not used, since it names commands TTasks runs",
     () => {
       const dir = tempDir();
       const file = join(dir, MACHINE_TOML);

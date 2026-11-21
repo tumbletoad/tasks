@@ -66,7 +66,7 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
       "scripts/eslint/no-shell-exec.js",
       "docs/vision.md",
       "docs/laboratory.md",
-      "docs/protocol/tasks-local-1.md",
+      "docs/protocol/ttasks-local-1.md",
       "planning/STATUS.md",
       "tests/manifest.json",
       "README.md",
@@ -76,20 +76,20 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
     }
   });
 
-  test("--lab and TASKS_VERIFY_LAB=1 run the lab tests without looking at git", () => {
+  test("--lab and TTASKS_VERIFY_LAB=1 run the lab tests without looking at git", () => {
     expect(decideLab({ lab: true }, {}, noGit)).toEqual({
       run: true,
       reason: "lab tests run: --lab was given",
     });
-    expect(decideLab({ lab: false }, { TASKS_VERIFY_LAB: "1" }, noGit)).toEqual({
+    expect(decideLab({ lab: false }, { TTASKS_VERIFY_LAB: "1" }, noGit)).toEqual({
       run: true,
-      reason: "lab tests run: TASKS_VERIFY_LAB=1 is set",
+      reason: "lab tests run: TTASKS_VERIFY_LAB=1 is set",
     });
   });
 
-  test("only TASKS_VERIFY_LAB=1 forces them, other values leave the rule to the changes", () => {
+  test("only TTASKS_VERIFY_LAB=1 forces them, other values leave the rule to the changes", () => {
     for (const value of ["0", "", "true", "yes"]) {
-      expect(decideLab({ lab: false }, { TASKS_VERIFY_LAB: value }, base([])).run, value).toBe(
+      expect(decideLab({ lab: false }, { TTASKS_VERIFY_LAB: value }, base([])).run, value).toBe(
         false,
       );
     }
@@ -151,19 +151,19 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
     expect(findBaseCommit({}, fakeGit({}))).toEqual({ why: "there is no origin/main" });
   });
 
-  test("TASKS_VERIFY_BASE names the base, and a bad one is an unknown base", () => {
+  test("TTASKS_VERIFY_BASE names the base, and a bad one is an unknown base", () => {
     const git = fakeGit({ "rev-parse --verify --quiet HEAD~1^{commit}": `${C}\n` });
-    expect(findBaseCommit({ TASKS_VERIFY_BASE: "HEAD~1" }, git)).toEqual({
+    expect(findBaseCommit({ TTASKS_VERIFY_BASE: "HEAD~1" }, git)).toEqual({
       sha: C,
-      label: `HEAD~1 (${C.slice(0, 12)}, from TASKS_VERIFY_BASE)`,
+      label: `HEAD~1 (${C.slice(0, 12)}, from TTASKS_VERIFY_BASE)`,
     });
-    expect(findBaseCommit({ TASKS_VERIFY_BASE: "nope" }, git)).toEqual({
-      why: "TASKS_VERIFY_BASE=nope names no commit here",
+    expect(findBaseCommit({ TTASKS_VERIFY_BASE: "nope" }, git)).toEqual({
+      why: "TTASKS_VERIFY_BASE=nope names no commit here",
     });
     // In CI the override is refused, so a stray or inherited value can never skip the lab tests.
     for (const ci of [{ GITHUB_ACTIONS: "true" }, { CI: "true" }, { CI: "1" }]) {
-      const base = findBaseCommit({ ...ci, TASKS_VERIFY_BASE: "HEAD~1" }, git);
-      expect(base).toEqual({ why: "TASKS_VERIFY_BASE is set, and CI does not honour it" });
+      const base = findBaseCommit({ ...ci, TTASKS_VERIFY_BASE: "HEAD~1" }, git);
+      expect(base).toEqual({ why: "TTASKS_VERIFY_BASE is set, and CI does not honour it" });
       const why = "why" in base ? base.why : "";
       expect(decideLab({ lab: false }, {}, () => ({ found: false, why })).run).toBe(true);
     }
@@ -234,14 +234,14 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
     });
     expect(changedSince(git, A)).toEqual(["packages/brand/a.ts", "spikes/x.ts", "docs/new.md"]);
     expect(changedSince(fakeGit({}), A)).toBeNull();
-    const env = { TASKS_VERIFY_BASE: "x" };
+    const env = { TTASKS_VERIFY_BASE: "x" };
     expect(
       findBase(env, (args) =>
         args[0] === "rev-parse" ? `${A}\n` : args[0] === "diff" ? null : "",
       ),
     ).toEqual({
       found: false,
-      why: `git diff against x (${A.slice(0, 12)}, from TASKS_VERIFY_BASE) failed`,
+      why: `git diff against x (${A.slice(0, 12)}, from TTASKS_VERIFY_BASE) failed`,
     });
   });
 

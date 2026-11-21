@@ -5,8 +5,8 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { CLI_NAME } from "@tasks/brand";
-import { AppError, type ErrorBody } from "@tasks/contracts";
+import { CLI_NAME } from "@ttasks/brand";
+import { AppError, type ErrorBody } from "@ttasks/contracts";
 import { toolCaller } from "../src/mcp/index.ts";
 import { dateIn, localTimeZone } from "../src/ops/dates.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";

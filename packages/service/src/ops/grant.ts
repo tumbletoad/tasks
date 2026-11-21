@@ -22,13 +22,13 @@
 // space, which the gate checked before anything was read; a ticket binds only into a granted
 // space), and its next call fails once setup revokes the row. The bridge sends no home folder, so
 // the instance is the home as the service knows it: whoever can edit the agent app's
-// configuration, or start `tasks mcp` from a shell, can name another instance. That is A3 3.7.4's
+// configuration, or start `ttasks mcp` from a shell, can name another instance. That is A3 3.7.4's
 // honesty rule: the gate is policy against mistakes and against a prompt-injected agent that stays
 // inside its app, not a defence against local code that rewrites the app's configuration. An
 // agent's CLI without a session (`agent:unknown`) is no home's and is not gated (A3 3.7.9).
-import { CLI_NAME } from "@tasks/brand";
-import { AppError } from "@tasks/contracts";
-import { MANUAL_INSTANCE } from "@tasks/launch";
+import { CLI_NAME } from "@ttasks/brand";
+import { AppError } from "@ttasks/contracts";
+import { MANUAL_INSTANCE } from "@ttasks/launch";
 import { runOf } from "./binding.ts";
 import type { Caller } from "./caller.ts";
 
@@ -43,7 +43,7 @@ export { MANUAL_INSTANCE };
 export interface HomeGate {
   /**
    * Whether a call of the agent home `instance` may use the space `space` (an `sp_` ID). `run` is
-   * the background run (`ru_` ID) the call's session or ticket acts for: Tasks gave that run's
+   * the background run (`ru_` ID) the call's session or ticket acts for: TTasks gave that run's
    * agent its tools, so the run's own calls may use the run's space without a row.
    */
   may(instance: string, space: string, run?: string): boolean;

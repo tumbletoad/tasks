@@ -37,7 +37,7 @@ export function windowsPowerShell(): string {
 /**
  * Runs a fixed PowerShell script that ends by writing one JSON value, and returns it parsed.
  * The script's output is sent as base64 of UTF-8, so the console code page cannot change it.
- * Inputs go through `TASKS_LAB_*` environment variables, never into the script text.
+ * Inputs go through `TTASKS_LAB_*` environment variables, never into the script text.
  */
 export function powershellJson(script: string, inputs: Record<string, string> = {}): unknown {
   const wrapped = `$ErrorActionPreference = 'Stop'

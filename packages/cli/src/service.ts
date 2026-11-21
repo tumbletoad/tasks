@@ -1,9 +1,9 @@
-// `tasks service install|uninstall|start|stop|restart|status` (A2 3.3.5): the service install's entries
-// (M1.12, `@tasks/service/install`), a local command (A2 3.10.1). The CLI parses its global flags
+// `ttasks service install|uninstall|start|stop|restart|status` (A2 3.3.5): the service install's entries
+// (M1.12, `@ttasks/service/install`), a local command (A2 3.10.1). The CLI parses its global flags
 // (`--json`); the entry takes the verb and `--yes` and `--dry-run`, prints its preview, asks in a
 // terminal and returns A2 3.10.3's exit code. It is loaded only for this command: the service
 // install reaches parts of the hub that the other verbs never load.
-import { CLI_NAME } from "@tasks/brand";
+import { CLI_NAME } from "@ttasks/brand";
 import type { Globals } from "./args.ts";
 import type { Io } from "./io.ts";
 import { printUsage } from "./output.ts";
@@ -23,20 +23,20 @@ script), --dry-run only shows it. A restart ends background runs, whose answers 
 Agent sessions keep running and reconnect, and open pages offer a reload.
 `;
 
-/** Runs `tasks service <verb> [--yes] [--dry-run]` and returns its exit code. */
+/** Runs `ttasks service <verb> [--yes] [--dry-run]` and returns its exit code. */
 export async function serviceCommand(
   io: Io,
   globals: Globals,
   args: readonly string[],
 ): Promise<number> {
-  const install = await import("@tasks/service/install");
+  const install = await import("@ttasks/service/install");
   const parsed = install.parseServiceArgs(args);
   if (parsed === undefined) {
     // Like every usage error, it names what is accepted and quotes nothing that was typed.
     return printUsage(
       io,
       globals.json,
-      "tasks service takes one of install, uninstall, start, stop, restart, status, and the flags --yes and --dry-run",
+      "ttasks service takes one of install, uninstall, start, stop, restart, status, and the flags --yes and --dry-run",
     );
   }
   // A question only in a terminal: the entry reads the answer from it.

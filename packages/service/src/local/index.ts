@@ -1,5 +1,5 @@
-// The service's side of `tasks-local/1` (A2 3.6): the server, connection classes and the grants
-// table. The wire format, proofs and the client are `@tasks/bridge/protocol`.
+// The service's side of `ttasks-local/1` (A2 3.6): the server, connection classes and the grants
+// table. The wire format, proofs and the client are `@ttasks/bridge/protocol`.
 export {
   BIND_REFUSALS,
   DEFAULT_LIMITS,

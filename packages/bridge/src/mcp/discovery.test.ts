@@ -37,26 +37,26 @@ function failure(read: () => unknown): { reason: string; detail: string } {
 }
 
 describe("[A2.3.7.bridge.discovery] finding the service", () => {
-  test("the folders of ~/.tasks on every OS, from the account or USERPROFILE, never from XDG_*", () => {
+  test("the folders of ~/.ttasks on every OS, from the account or USERPROFILE, never from XDG_*", () => {
     const xdg = { XDG_STATE_HOME: "/elsewhere", XDG_CACHE_HOME: "/elsewhere" };
     expect(installFolders(facts("linux", { HOME: "/snap/x", ...xdg }, "/home/mira"))).toEqual({
-      state: "/home/mira/.tasks/state",
-      cache: "/home/mira/.tasks/cache",
+      state: "/home/mira/.ttasks/state",
+      cache: "/home/mira/.ttasks/cache",
     });
     expect(installFolders(facts("darwin", {}, "/Users/mira"))).toEqual({
-      state: "/Users/mira/.tasks/state",
-      cache: "/Users/mira/.tasks/cache",
+      state: "/Users/mira/.ttasks/state",
+      cache: "/Users/mira/.ttasks/cache",
     });
     expect(installFolders(facts("win32", { USERPROFILE: "C:\\Users\\mira" }))).toEqual({
-      state: "C:\\Users\\mira\\.tasks\\state",
-      cache: "C:\\Users\\mira\\.tasks\\cache",
+      state: "C:\\Users\\mira\\.ttasks\\state",
+      cache: "C:\\Users\\mira\\.ttasks\\cache",
     });
-    expect(installFolders(facts("linux", { TASKS_HOME: "/tmp/test-home" }, "/home/mira"))).toEqual({
+    expect(installFolders(facts("linux", { TTASKS_HOME: "/tmp/test-home" }, "/home/mira"))).toEqual({
       state: "/tmp/test-home/state",
       cache: "/tmp/test-home/cache",
     });
     expect(() =>
-      installFolders(facts("linux", { TASKS_HOME: "relative" }, "/home/mira")),
+      installFolders(facts("linux", { TTASKS_HOME: "relative" }, "/home/mira")),
     ).toThrow();
     expect(() => installFolders(facts("linux", {}))).toThrow();
   });
@@ -84,8 +84,8 @@ describe("[A2.3.7.bridge.discovery] finding the service", () => {
     });
     const path =
       platform === "win32"
-        ? "\\\\.\\pipe\\tasks-q7mw2c4k9x-abc"
-        : "/run/user/1000/tasks-q7mw2c4k9x/tasks.sock";
+        ? "\\\\.\\pipe\\ttasks-q7mw2c4k9x-abc"
+        : "/run/user/1000/ttasks-q7mw2c4k9x/tasks.sock";
     write({ state: "ready", endpoint: { kind: platform === "win32" ? "pipe" : "unix", path } });
     expect(readEndpoint(state, platform)).toBe(path);
     write("x".repeat(70_000));

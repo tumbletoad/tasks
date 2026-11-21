@@ -3,7 +3,7 @@
 // with the values "Restore mine" needs in a conflict, and a partial undo's unresolved fields. A
 // service in this process, fixture text and temporary folders only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { AppError, type ErrorBody } from "@tasks/contracts";
+import { AppError, type ErrorBody } from "@ttasks/contracts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 

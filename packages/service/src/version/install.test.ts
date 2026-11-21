@@ -1,4 +1,4 @@
-// The switch of `tasks install --finish` (A2 3.12.4, 3.12.6; A7 3.8 M1.14) on fixture version
+// The switch of `ttasks install --finish` (A2 3.12.4, 3.12.6; A7 3.8 M1.14) on fixture version
 // folders in temporary install roots: it belongs to a separate install the launcher named, takes
 // update.lock, points current at the version, puts the stable command in place and writes
 // install.json with what the installer created. Refusals change nothing.
@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { canonicalStatePath, installId, type HostFacts } from "../hub/paths.ts";
 import { writeVersionManifest } from "./folder.ts";
 import { finishInstall, InstallError, installTarget, type InstallRecord } from "./install.ts";
@@ -32,7 +32,7 @@ const RACER = fileURLToPath(new URL("../../test/lock-racer.ts", import.meta.url)
 
 let work: string;
 beforeAll(() => {
-  work = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-finish-")));
+  work = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-finish-")));
 });
 afterAll(() => {
   rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
@@ -48,7 +48,7 @@ function install(version = "0.1.0", launcher = "launcher one"): { root: string; 
   return { root, folder };
 }
 
-/** A fixture version folder. With `program`, its tasks.exe is a copy of that real program. */
+/** A fixture version folder. With `program`, its ttasks.exe is a copy of that real program. */
 function addVersion(
   root: string,
   version: string,
@@ -82,7 +82,7 @@ function addVersion(
 
 const facts = (home: string | undefined): HostFacts => ({
   platform: process.platform,
-  env: home === undefined ? {} : { TASKS_HOME: home },
+  env: home === undefined ? {} : { TTASKS_HOME: home },
   accountHome: work,
   uid: process.getuid?.(),
 });
@@ -103,7 +103,7 @@ const refusal = async (promise: Promise<unknown>): Promise<InstallError> => {
   throw new Error("expected a refusal");
 };
 
-describe("[A2.3.12.6.install.finish] tasks install --finish switches current only for its own separate install", () => {
+describe("[A2.3.12.6.install.finish] ttasks install --finish switches current only for its own separate install", () => {
   test("a fresh install: update.lock, current, the stable command and install.json with what was created", async () => {
     const { root, folder } = install();
     const done = await finishInstall({
@@ -260,7 +260,7 @@ describe("[A2.3.12.6.install.finish] tasks install --finish switches current onl
     async () => {
       const { root, folder } = install();
       await finishInstall({ versionFolder: folder, facts: facts(root), created: ["."] });
-      // The new version's tasks.exe is a real program, so it can run from bin, where Windows
+      // The new version's ttasks.exe is a real program, so it can run from bin, where Windows
       // lets it be renamed but not deleted.
       const next = addVersion(root, "0.2.0", "launcher two", process.execPath);
       rmSync(join(root, "state", "install.json"));
@@ -321,7 +321,7 @@ describe("[A2.3.12.6.install.finish] tasks install --finish switches current onl
         }
       };
 
-      // A fresh install: tasksw.exe appears from the repair while tasks.exe is in place.
+      // A fresh install: ttasksw.exe appears from the repair while ttasks.exe is in place.
       const fresh = install();
       await finishInstall({
         versionFolder: fresh.folder,

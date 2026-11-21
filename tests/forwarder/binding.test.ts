@@ -1,6 +1,6 @@
 // Binding through a real bridge process (A3 3.7.2, 3.7.3, 3.7.6 path A; A2 3.7.5; A7 3.9 M2.04): a
 // terminal launch whose real shim starts a fake agent, and the bridge an agent app would start for
-// it, `tasks mcp`, with the launch's ticket in its environment and nothing else of the launch. The
+// it, `ttasks mcp`, with the launch's ticket in its environment and nothing else of the launch. The
 // bridge reads the ticket from its environment into its bind frame, and the service binds the
 // connection before any tool call. Then the service restarts: the bridge reconnects with its
 // binding handle, and the binding is the same. Fixture text and temporary folders only.
@@ -28,7 +28,7 @@ describe("[A3.3.7.binding.bridge-process] a launched agent's bridge binds by the
       labs.push(lab);
       // The entry's agent home, registered for the space as setup does. The lab's service runs
       // without its UI listener, so its grants table is this start's own: it is registered again
-      // after the restart below (a `tasks serve` keeps it in service.sqlite).
+      // after the restart below (a `ttasks serve` keeps it in service.sqlite).
       const register = async () => {
         await grantHome(lab.home, lab.service?.endpoint.path ?? "", {
           instance: "fixture-agent",
@@ -55,7 +55,7 @@ describe("[A3.3.7.binding.bridge-process] a launched agent's bridge binds by the
         procs.spawn(
           command.file,
           command.args,
-          cleanEnv({ TASKS_HOME: lab.home, TASKS_TICKET: ticket }),
+          cleanEnv({ TTASKS_HOME: lab.home, TTASKS_TICKET: ticket }),
         ),
       );
       await bridge.initialize();

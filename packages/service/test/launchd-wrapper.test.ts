@@ -1,4 +1,4 @@
-// The tasks-launchd wrapper (A2 3.3.4) with a stub service, under the POSIX shells at hand: /bin/sh
+// The ttasks-launchd wrapper (A2 3.3.4) with a stub service, under the POSIX shells at hand: /bin/sh
 // (dash on Ubuntu) and bash in POSIX mode, which is what macOS's /bin/sh is. launchd itself is not
 // here: it waits for a Mac (A2 6 item 5). Linux and macOS hosts only.
 import { spawn } from "node:child_process";
@@ -29,7 +29,7 @@ const SHELLS: (readonly string[])[] = [
  * `starts`, with its PID.
  */
 const STUB = `#!/bin/sh
-dir=\${0%/bin/tasks}
+dir=\${0%/bin/ttasks}
 n=$(grep -c . "$dir/starts")
 echo "start $$ $*" >> "$dir/starts"
 step=$(sed -n "$((n + 1))p" "$dir/plan")
@@ -44,12 +44,12 @@ esac
 
 let dir = "";
 beforeEach(() => {
-  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-launchd-")));
+  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-launchd-")));
   mkdirSync(join(dir, "bin"));
-  writeFileSync(join(dir, "bin", "tasks-launchd"), LAUNCHD_WRAPPER);
-  writeFileSync(join(dir, "bin", "tasks"), STUB);
-  chmodSync(join(dir, "bin", "tasks-launchd"), 0o755);
-  chmodSync(join(dir, "bin", "tasks"), 0o755);
+  writeFileSync(join(dir, "bin", "ttasks-launchd"), LAUNCHD_WRAPPER);
+  writeFileSync(join(dir, "bin", "ttasks"), STUB);
+  chmodSync(join(dir, "bin", "ttasks-launchd"), 0o755);
+  chmodSync(join(dir, "bin", "ttasks"), 0o755);
   writeFileSync(join(dir, "starts"), "");
 });
 
@@ -76,7 +76,7 @@ interface Wrapper {
 function wrapper(shell: readonly string[], plan: readonly string[]): Wrapper {
   writeFileSync(join(dir, "plan"), `${plan.join("\n")}\n`);
   const [file = "/bin/sh", ...flags] = shell;
-  const child = spawn(file, [...flags, join(dir, "bin", "tasks-launchd")], { stdio: "ignore" });
+  const child = spawn(file, [...flags, join(dir, "bin", "ttasks-launchd")], { stdio: "ignore" });
   if (child.pid === undefined) throw new Error("the wrapper did not start");
   return {
     pid: child.pid,
@@ -102,7 +102,7 @@ async function until(check: () => boolean, ms = 20_000): Promise<void> {
 }
 
 describe.skipIf(!posix)(
-  "[A2.3.3.4.service-install.launchd-wrapper] tasks-launchd with a stub service",
+  "[A2.3.3.4.service-install.launchd-wrapper] ttasks-launchd with a stub service",
   () => {
     for (const shell of SHELLS) {
       const name = shell.join(" ");

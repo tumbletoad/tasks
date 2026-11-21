@@ -1,9 +1,9 @@
 // The hub as a process (A2 3.3, 3.4; A7 3.8 M1.08's Verify line). Every service here is a real
-// child process on a temporary TASKS_HOME. Each test records the PIDs it starts and stops exactly
+// child process on a temporary TTASKS_HOME. Each test records the PIDs it starts and stops exactly
 // those, and removes its folders by their full names.
 import { existsSync, lstatSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
-import { openRpc } from "@tasks/bridge/protocol";
+import { openRpc } from "@ttasks/bridge/protocol";
 import { afterEach, describe, expect, test } from "vitest";
 import { EXIT } from "../src/hub/exit.ts";
 import {
@@ -154,7 +154,7 @@ describe("[A2.3.4.hub.lock-deleted] the service watches service.lock", () => {
 
 describe("[A2.3.4.hub.two-installs] two state paths, two installs", () => {
   test(
-    "two TASKS_HOME folders with the same name give two install IDs and two endpoints, side by side",
+    "two TTASKS_HOME folders with the same name give two install IDs and two endpoints, side by side",
     async () => {
       const a = home("two");
       const b = home("two");
@@ -255,7 +255,7 @@ describe("[A2.3.3.hub.exit-codes] exit codes and refusals as a process", () => {
   );
 
   test(
-    "a stop from outside over tasks-local/1, on every OS: service/shutdown exits 0, with restart 75, and an agent's connection may not ask",
+    "a stop from outside over ttasks-local/1, on every OS: service/shutdown exits 0, with restart 75, and an agent's connection may not ask",
     async () => {
       for (const restart of [false, true]) {
         const h = home("rpcstop");
@@ -312,7 +312,7 @@ describe("[A2.3.3.hub.exit-codes] exit codes and refusals as a process", () => {
     "package identity is refused with 64 before the lock, and the reason is in the log and the crash folder",
     async () => {
       const h = home("pkg");
-      const proc = services.start(h, { env: { TASKS_PACKAGE: "Fixture.App_1.0.0.0_x64__abc" } });
+      const proc = services.start(h, { env: { TTASKS_PACKAGE: "Fixture.App_1.0.0.0_x64__abc" } });
       const exit = await within(proc.exit, EXIT_MS, "refusal");
       expect(exit.code).toBe(EXIT.refused);
       expect(proc.stderr()).toMatch(/package/);

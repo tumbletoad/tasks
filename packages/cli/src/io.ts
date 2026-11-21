@@ -1,6 +1,6 @@
 // What the CLI touches of its process, as one value: the real process in bin.ts, a recording in
 // tests. Output for people goes to stdout, diagnostics to stderr.
-import { isAgentMarker } from "@tasks/bridge/protocol";
+import { isAgentMarker } from "@ttasks/bridge/protocol";
 
 /**
  * Whether a person runs this command, as the service will class the connection: no agent marker in

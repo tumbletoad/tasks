@@ -48,7 +48,7 @@ function options(extra: Partial<CandidateOptions> = {}): CandidateOptions {
   return {
     state,
     build: { version: "0.1.0-dev.1", build: "candidate0test" },
-    facts: hostFacts({ ...process.env, TASKS_HOME: home }),
+    facts: hostFacts({ ...process.env, TTASKS_HOME: home }),
     env: process.env,
     ...extra,
   };

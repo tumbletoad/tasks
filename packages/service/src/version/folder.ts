@@ -20,7 +20,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { createFile } from "../hub/files.ts";
 import { HOME_MARKER } from "../hub/paths.ts";
 
@@ -40,7 +40,7 @@ export interface VersionManifest {
   /** The Node and SQLite versions the runtime gate expects (A2 3.12.1). */
   readonly node: string;
   readonly sqlite: string;
-  /** tasks-local/1's protocol range of this build's service (A2 3.6.6). */
+  /** ttasks-local/1's protocol range of this build's service (A2 3.6.6). */
   readonly protocol: { readonly min: number; readonly max: number };
   /** Every other file of the folder: relative path to lowercase hex SHA-256. */
   readonly files: Readonly<Record<string, string>>;
@@ -263,7 +263,7 @@ export function isVersionName(value: string): boolean {
   return !/^(?:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\.|$)/i.test(value);
 }
 
-/** Whether `root` is `<base>/share/tasks`, the daily install's root (any letter case, as on Windows). */
+/** Whether `root` is `<base>/share/ttasks`, the daily install's root (any letter case, as on Windows). */
 const isDailyRoot = (root: string): boolean =>
   basename(root).toLowerCase() === PRODUCT_ID && basename(dirname(root)).toLowerCase() === "share";
 
@@ -271,8 +271,8 @@ const isDailyRoot = (root: string): boolean =>
  * The install around a version folder, checked as doctor's integrity row asks (A2 3.13): when the
  * folder sits in `<root>/versions/`, `current` (if there is one) must name an installed version,
  * and on Windows, once the command folder exists, both stable launchers must be in it: `<root>\bin`
- * of a TASKS_HOME install (it holds home.marker), else `~\.local\bin` beside `share` when the root
- * is `share\tasks`. An update journal is doctor's `update` row (M6.12): during an update the
+ * of a TTASKS_HOME install (it holds home.marker), else `~\.local\bin` beside `share` when the root
+ * is `share\ttasks`. An update journal is doctor's `update` row (M6.12): during an update the
  * candidate's own self-test runs beside it. Returns one message per problem.
  */
 export function checkInstallAround(versionFolder: string, platform: NodeJS.Platform): string[] {
@@ -302,8 +302,8 @@ export function checkInstallAround(versionFolder: string, platform: NodeJS.Platf
       problems.push("current cannot be read");
     }
   }
-  // The command folder, by the Windows launchers' rule: <root>\bin of a TASKS_HOME install, else
-  // the bin beside share when the root is share\tasks (~\.local\bin for ~\.local\share\tasks). Any
+  // The command folder, by the Windows launchers' rule: <root>\bin of a TTASKS_HOME install, else
+  // the bin beside share when the root is share\ttasks (~\.local\bin for ~\.local\share\ttasks). Any
   // other root has none: no stable launcher dispatches into it.
   const bin = existsSync(join(root, HOME_MARKER))
     ? join(root, "bin")

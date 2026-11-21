@@ -35,7 +35,7 @@ const RUN_PLACE = /(?:\brun:?\s+|\bwith:\s+|[`"'])$/i;
  * word of ABOUT may follow the command's name.
  */
 const NAME_PLACE = /(?:(?:^|\n)\s*|[:;.]\s+|\bthen\s+|\()$/i;
-/** Words that follow a command's name in a sentence about it: "tasks open takes --space". */
+/** Words that follow a command's name in a sentence about it: "ttasks open takes --space". */
 const ABOUT = new Set(
   "answered asks cannot does has is needs prints runs says shows starts takes works writes".split(
     " ",
@@ -92,7 +92,7 @@ export function unknownCommands(text: string): string[] {
     const strict = RUN_PLACE.test(before);
     const local = LOCAL_COMMANDS.find((c) => c.name === word);
     // A command that takes a subcommand is no English word after "tasks": its subcommand is
-    // checked wherever it stands ("add it with tasks roots add").
+    // checked wherever it stands ("add it with ttasks roots add").
     const named = local?.subcommands !== undefined && next !== undefined;
     if (!strict && !named && !NAME_PLACE.test(before)) continue;
     if (local === undefined) {
@@ -116,37 +116,37 @@ export function unknownCommands(text: string): string[] {
 
 describe("[A2.3.10.cli.hints] every command a message names exists", () => {
   test("the check finds a command that does not exist", () => {
-    expect(unknownCommands("Run: tasks service reload")).toEqual(["tasks service reload"]);
-    expect(unknownCommands("Restart it with `tasks restart`.")).toEqual(["tasks restart"]);
-    expect(unknownCommands("Run: tasks service stop, then tasks service start")).toEqual([]);
-    expect(unknownCommands("Run: tasks service restart")).toEqual([]);
+    expect(unknownCommands("Run: ttasks service reload")).toEqual(["ttasks service reload"]);
+    expect(unknownCommands("Restart it with `ttasks restart`.")).toEqual(["ttasks restart"]);
+    expect(unknownCommands("Run: ttasks service stop, then ttasks service start")).toEqual([]);
+    expect(unknownCommands("Run: ttasks service restart")).toEqual([]);
     expect(unknownCommands("Several tasks in Mira have its source key")).toEqual([]);
-    expect(unknownCommands("tasks space has no command like that")).toEqual([]);
+    expect(unknownCommands("ttasks space has no command like that")).toEqual([]);
     expect(unknownCommands("tasks has no command like that")).toEqual([]);
     // Where a message tells the person to run something, every word is checked.
-    expect(unknownCommands("Run: tasks get M-1")).toEqual(["tasks get"]);
+    expect(unknownCommands("Run: ttasks get M-1")).toEqual(["ttasks get"]);
     expect(unknownCommands("Try `tasks match M-1`.")).toEqual(["tasks match"]);
-    expect(unknownCommands("Run: tasks service is")).toEqual(["tasks service is"]);
+    expect(unknownCommands("Run: ttasks service is")).toEqual(["ttasks service is"]);
     // Where it names a command, a missing one is found too.
     expect(unknownCommands("tasks spaces list")).toEqual(["tasks spaces"]);
-    expect(unknownCommands("Usage:\n  tasks space mend <folder>")).toEqual(["tasks space mend"]);
-    expect(unknownCommands("Fix it first. tasks mend does the rest.")).toEqual(["tasks mend"]);
-    expect(unknownCommands("Recover it with: tasks space mend <folder>.")).toEqual([
-      "tasks space mend",
+    expect(unknownCommands("Usage:\n  ttasks space mend <folder>")).toEqual(["ttasks space mend"]);
+    expect(unknownCommands("Fix it first. tasks mend does the rest.")).toEqual(["ttasks mend"]);
+    expect(unknownCommands("Recover it with: ttasks space mend <folder>.")).toEqual([
+      "ttasks space mend",
     ]);
-    expect(unknownCommands("It ran (tasks repair --all).")).toEqual(["tasks repair"]);
-    expect(unknownCommands("Stop it, then tasks service reload.")).toEqual([
-      "tasks service reload",
+    expect(unknownCommands("It ran (ttasks repair --all).")).toEqual(["ttasks repair"]);
+    expect(unknownCommands("Stop it, then ttasks service reload.")).toEqual([
+      "ttasks service reload",
     ]);
     // A command that takes a subcommand is checked mid-sentence too.
-    expect(unknownCommands("Fix it with tasks view mend <folder>.")).toEqual(["tasks view mend"]);
-    expect(unknownCommands("Add it with tasks space open <folder>.")).toEqual([]);
+    expect(unknownCommands("Fix it with tasks view mend <folder>.")).toEqual(["ttasks view mend"]);
+    expect(unknownCommands("Add it with ttasks space open <folder>.")).toEqual([]);
     // English about tasks and SQL's table are not in a command's place, whatever their words.
     expect(unknownCommands("those tasks get no owner")).toEqual([]);
     expect(unknownCommands("- The user's tasks live in the space.")).toEqual([]);
     expect(unknownCommands("Two tasks match this folder.")).toEqual([]);
     expect(unknownCommands("SELECT id FROM tasks t")).toEqual([]);
-    expect(unknownCommands("SELECT failed. Run: tasks get M-1")).toEqual(["tasks get"]);
+    expect(unknownCommands("SELECT failed. Run: ttasks get M-1")).toEqual(["ttasks get"]);
   });
 
   test("no string in the code names a command the verb table does not have", () => {

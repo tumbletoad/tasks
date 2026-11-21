@@ -2,7 +2,7 @@
 // failure with the name of the step that failed.
 //
 // The product tests always run. The M0 lab self-tests (spikes/) run serially, and only when lab
-// code or a file they depend on changed, or when asked: pnpm verify --lab, or TASKS_VERIFY_LAB=1.
+// code or a file they depend on changed, or when asked: pnpm verify --lab, or TTASKS_VERIFY_LAB=1.
 // The rule is in lab-tests.ts (A7 3.3).
 //
 // safe-exit comes first: this script loads the product's generators and ends through

@@ -2,7 +2,7 @@
 // M2.10). It stands where the terminal adapters do (the service's `terminal` seam, after
 // Dispatching is durable, the folder resolved and the ticket issued): it records the command line
 // a terminal would get, as one JSON line per launch in a file the test reads, and then runs that
-// command itself, a real `tasks shim <ticket>` in the resolved folder, with no window. The shim
+// command itself, a real `ttasks shim <ticket>` in the resolved folder, with no window. The shim
 // claims, verifies the folder and starts the instance's agent: testkit's fake Claude Code, which
 // takes the brief as any CLI does, reads the person's request through the product's command and
 // runs for a few seconds, so the launch settles as Confirmed.
@@ -17,7 +17,7 @@ import type { TerminalStart } from "../../packages/service/src/launch/index.ts";
 import { instanceToml } from "../../packages/service/test/harness.ts";
 import { FAKE_CLI_AGENT } from "../../packages/testkit/src/index.ts";
 
-/** The CLI's entry from the source tree, as `pnpm tasks` runs it. */
+/** The CLI's entry from the source tree, as `pnpm ttasks` runs it. */
 const CLI_BIN = fileURLToPath(new URL("../../packages/cli/src/bin.ts", import.meta.url));
 
 /** The one instance the page offers: the fake agent, as machine.toml's `[[instance]]` has it. */
@@ -31,7 +31,7 @@ export const FAKE_INSTANCE = {
 
 /**
  * The instance's table in machine.toml: Claude Code's target, run as the fake, which reads the
- * person's request as its brief says without the tools (`tasks show --launch`) from the install of
+ * person's request as its brief says without the tools (`ttasks show --launch`) from the install of
  * `home`, except on the tasks the file `unread` lists.
  */
 export function fakeInstanceToml(home: string, unread: string): string {
@@ -56,7 +56,7 @@ export interface TerminalCall {
   readonly argv: readonly string[];
 }
 
-/** The service's terminal seam: records `tasks shim <ticket>` and runs it in the folder. */
+/** The service's terminal seam: records `ttasks shim <ticket>` and runs it in the folder. */
 export function fakeTerminal(record: string): TerminalStart {
   return ({ intent, ticket, folder }) => {
     const call: TerminalCall = { launch: intent.id, argv: [CLI_NAME, "shim", ticket] };

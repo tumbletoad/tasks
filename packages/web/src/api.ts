@@ -6,8 +6,8 @@
 // Registry entries go through contracts' generated client (`/api/v1/op/<entry>`): Open and Copy
 // are A4's `launch.open`. A task's receipts, and Run, a task's runs and Stop, have routes of their
 // own (`/api/v1/launch/…`).
-import { httpHeader } from "@tasks/brand";
-import { createClient, type Client } from "@tasks/contracts/generated/client.ts";
+import { httpHeader } from "@ttasks/brand";
+import { createClient, type Client } from "@ttasks/contracts/generated/client.ts";
 import { TOKEN_SHAPE } from "./stored.ts";
 
 /** The headers the service reads (its http/app.ts): names from the identifier, never a display name. */
@@ -67,7 +67,7 @@ export interface Receipt {
   /** A terminal launch: the terminal Dispatched and why it was chosen, as fixed words. */
   readonly terminal?: { readonly app: string; readonly source: string };
   /**
-   * The words the person typed, which Tasks holds for the launch's agent: `waiting` until the
+   * The words the person typed, which TTasks holds for the launch's agent: `waiting` until the
    * agent read them, `read` once it did, `unread` when they went with a launch whose agent never
    * read them. Absent when none are known (none were held, or the service restarted since).
    */

@@ -1,6 +1,6 @@
-// `tasks mcp` (A2 3.7): the entry as a function. The CLI's entry hands its `mcp` verb here
+// `ttasks mcp` (A2 3.7): the entry as a function. The CLI's entry hands its `mcp` verb here
 // (packages/cli/src/mcp.ts), and main.ts is the direct script entry. The build (M1.13) bundles
-// `@tasks/bridge/mcp` as its own `lib/bridge.mjs`.
+// `@ttasks/bridge/mcp` as its own `lib/bridge.mjs`.
 import { join } from "node:path";
 import type { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";

@@ -495,7 +495,7 @@ describe("[A4.5.launch.machine] the launch state machine's rules", () => {
       evidence: { grant: "grant-1" },
     });
     const restarted = machine();
-    // The first recovery asks for the grant and waits for the answer; Tasks then re-pairs.
+    // The first recovery asks for the grant and waits for the answer; TTasks then re-pairs.
     const held = gate();
     grantGate = held.wait;
     const first = restarted.recover();

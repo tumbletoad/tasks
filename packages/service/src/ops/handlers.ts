@@ -11,7 +11,7 @@
 //
 // A write's result is built from the writer's result and the caller's input only, so a replay of
 // the same request ID gives the same result (A3 3.4.1), marked `replayed`.
-import { APP_NAME, CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { APP_NAME, CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import {
   findEntry,
   AppError,
@@ -31,7 +31,7 @@ import {
   type PreferenceRead,
   type PreferenceSpec,
   type PrefValue,
-} from "@tasks/contracts";
+} from "@ttasks/contracts";
 import {
   folderKey,
   freeSlug,
@@ -48,7 +48,7 @@ import {
   type WorkerConnection,
   type WriteRequest,
   type WriteResult,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 import {
   checkExposure,
   checkHiddenFields,
@@ -59,7 +59,7 @@ import {
 } from "./caller.ts";
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
-import { apart, ExecutionRefused, isLaunchRef, PACK_LOG, type LaunchIntent } from "@tasks/launch";
+import { apart, ExecutionRefused, isLaunchRef, PACK_LOG, type LaunchIntent } from "@ttasks/launch";
 import {
   ambiguousError,
   copyOf,
@@ -199,7 +199,7 @@ export interface OpsHost {
    * and a folder under `~` is not found here.
    */
   readonly home?: string;
-  /** Tasks' own data folder (the Tasks home): no folder is bound inside it. */
+  /** TTasks' own data folder (the TTasks home): no folder is bound inside it. */
   readonly dataFolder?: string;
   /** The markers in projects' and tasks' folders (marker.ts). None: no folder is marked. */
   readonly markers?: FolderMarkers;
@@ -467,7 +467,7 @@ async function callWith(
 // The space (A2 3.10.5, A3 3.7.8)
 
 /**
- * The space a call uses: `space` (a folder, an ID or a name), else TASKS_SPACE from the connection,
+ * The space a call uses: `space` (a folder, an ID or a name), else TTASKS_SPACE from the connection,
  * else the machine's default (`service.default_space`, M5.01), else the one space this service
  * serves. A default that is set but not served is `space_unavailable`, never another space in its
  * place. An agent's CLI gets no default (A2 3.10.5: A3 may forbid step 4 for agent classes, so an
@@ -575,8 +575,8 @@ export function personSpace(host: OpsHost, named: string | undefined): ServedSpa
 
 function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): ServedSpace {
   const live = host.spaces().filter((s) => s.state !== "closed");
-  // A bridge's environment is not passed (A3 3.7.2: TASKS_SPACE never chooses its space).
-  const fromEnv = caller.binding === undefined ? caller.env["TASKS_SPACE"] : undefined;
+  // A bridge's environment is not passed (A3 3.7.2: TTASKS_SPACE never chooses its space).
+  const fromEnv = caller.binding === undefined ? caller.env["TTASKS_SPACE"] : undefined;
   const wanted = named ?? (fromEnv === "" ? undefined : fromEnv);
   if (wanted !== undefined) {
     const found = findSpace(live, wanted);
@@ -585,7 +585,7 @@ function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): S
     return found;
   }
   if (caller.class === "cli-agent") {
-    throw invalid("space", "Name the space", "Pass --space, or set TASKS_SPACE.");
+    throw invalid("space", "Name the space", "Pass --space, or set TTASKS_SPACE.");
   }
   const fallback = defaultOf(live, host.defaultSpace?.());
   if (fallback === "not_served") throw spaceUnavailable("not_served", false);
@@ -597,7 +597,7 @@ function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): S
     throw invalid(
       "space",
       "Name the space",
-      "Pass --space with an ID, a name or a folder from tasks space list.",
+      "Pass --space with an ID, a name or a folder from ttasks space list.",
     );
   }
   if (isAmbiguity(only)) throw ambiguousError(only);
@@ -1192,7 +1192,7 @@ function folderOf(
 }
 
 /**
- * The folder a task's field names, in its stored form and checked at bind (folders.ts). Tasks may
+ * The folder a task's field names, in its stored form and checked at bind (folders.ts). TTasks may
  * share a folder, so no project's folder is in the way.
  */
 async function taskFolder(
@@ -1242,7 +1242,7 @@ const NO_MOVE: FolderMove = { carry: false, inside: [], missing: new Set() };
 /**
  * What changing an owner's folder here to `folder` does to the folders inside its old one
  * (`moveOf`). The folders that move along are checked as a bind checks one: none may land in
- * Tasks' own data.
+ * TTasks' own data.
  */
 async function folderMove(
   call: Call,
@@ -1752,7 +1752,7 @@ const LINK_URL = /^[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"\p{Cc}\p{Cf}]+$/u;
  * An entry's text with its links (A3 3.4.7) as a list below it, one `- title: <url>` line each.
  * Schema 0.1 stores no link rows for notes and log entries, so the links are part of the entry's
  * Markdown, where every face and the projection show them. A URL that would break the line is
- * refused; Tasks never fetches one (A3 3.10).
+ * refused; TTasks never fetches one (A3 3.10).
  */
 function withLinks(text: string, links: unknown): string {
   const list = Array.isArray(links) ? (links as Record<string, unknown>[]) : [];
@@ -2025,7 +2025,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw new AppError({
         code: "wrong_tool",
         message: "A task is finished, not given a status.",
-        hint: "Use complete_task with an outcome (tasks done).",
+        hint: "Use complete_task with an outcome (ttasks done).",
         data: { issues: [{ path: "set.status", message: "Finish the task instead" }] },
       });
     }

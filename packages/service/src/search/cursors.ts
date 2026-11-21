@@ -10,8 +10,8 @@
 // most 32; the least recently used goes first. The page read checks the space's epoch and
 // incarnation against the list's (search.ts), so a claim, transfer or restore expires it too.
 import { randomBytes } from "node:crypto";
-import { AppError } from "@tasks/contracts";
-import type { FrozenKind } from "@tasks/storage";
+import { AppError } from "@ttasks/contracts";
+import type { FrozenKind } from "@ttasks/storage";
 import type { Scope } from "./plan.ts";
 
 export const CURSOR_LIMITS = {

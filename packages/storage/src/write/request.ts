@@ -16,7 +16,7 @@ import {
   preferenceSpec,
   readPreference,
   type PrefValue,
-} from "@tasks/contracts/preferences";
+} from "@ttasks/contracts/preferences";
 import { isId, type Id } from "../ids.ts";
 import { inRange, RANGES } from "../rows.ts";
 import { OPEN_SETS } from "../schema.ts";
@@ -651,7 +651,7 @@ export interface LaunchCreate {
   /** The instance's key in the machine's `machine.toml`. */
   instance: string;
   route: string;
-  /** The place the folder resolved from, or null for the space's Tasks work folder. */
+  /** The place the folder resolved from, or null for the space's TTasks work folder. */
   place: Id<"pl"> | null;
   task_version: number;
   /** SHA-256 of the brief, lower-case hex. */
@@ -690,7 +690,7 @@ export interface RunCreate {
   /** The instance's key in the machine's `machine.toml`. */
   instance: string;
   adapter: string;
-  /** The place the folder resolved from, or null for a Tasks work folder. */
+  /** The place the folder resolved from, or null for a TTasks work folder. */
   place: Id<"pl"> | null;
   session?: Id<"se">;
   request?: string;

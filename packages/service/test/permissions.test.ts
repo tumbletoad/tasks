@@ -26,7 +26,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { MAX_LINE_BYTES } from "@tasks/launch/shell-line";
+import { MAX_LINE_BYTES } from "@ttasks/launch/shell-line";
 import { editMachineToml } from "../src/config/edit.ts";
 import { loadMachineConfig, type UnsafePart } from "../src/config/machine-toml.ts";
 import { unsafeConfigMessage } from "../src/config/messages.ts";
@@ -204,8 +204,8 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
   });
 
   test("a path is written as a person types it: ~/ for home, quoted when needed", () => {
-    expect(shellPath("/home/ada/.config/tasks/machine.toml", "/home/ada")).toBe(
-      "~/.config/tasks/machine.toml",
+    expect(shellPath("/home/ada/.config/ttasks/machine.toml", "/home/ada")).toBe(
+      "~/.config/ttasks/machine.toml",
     );
     expect(shellPath("/srv/a b/it's", "/home/ada")).toBe(`'/srv/a b/it'\\''s'`);
     expect(shellPath("/home/ada x/f", "/home/ada")).toBe(`'/home/ada x/f'`);
@@ -251,15 +251,15 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
     expect(
       unsafeMessage(
         [
-          { name: "TT Tasks's configuration folder", facts: folder, problem: "group_writable" },
-          { name: "TT Tasks's machine.toml", facts: file, problem: "group_writable" },
+          { name: "TTasks's configuration folder", facts: folder, problem: "group_writable" },
+          { name: "TTasks's machine.toml", facts: file, problem: "group_writable" },
         ],
         "So the service does not start",
         "ada",
         P,
       ),
     ).toBe(
-      "TT Tasks's configuration folder (/srv/k) and TT Tasks's machine.toml (/srv/k/machine.toml) can be changed by the members of their group staff, not only by you. So the service does not start. To fix it, run: chmod g-w /srv/k /srv/k/machine.toml",
+      "TTasks's configuration folder (/srv/k) and TTasks's machine.toml (/srv/k/machine.toml) can be changed by the members of their group staff, not only by you. So the service does not start. To fix it, run: chmod g-w /srv/k /srv/k/machine.toml",
     );
     // A group whose name cannot be read is named by its ID.
     expect(
@@ -399,7 +399,7 @@ describe("[A2.3.2.2.permissions.rule] who else can write a file or folder", () =
 
 describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the words and the command", () => {
   test.skipIf(!posix)(
-    "an existing config folder is judged before machine.toml exists: the same answer before and after Tasks writes one",
+    "an existing config folder is judged before machine.toml exists: the same answer before and after TTasks writes one",
     async () => {
       const h = join(temp("cf"), "h");
       const dir = configOf(h);
@@ -493,9 +493,9 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       chmodSync(t3, 0o707);
       const lines: string[] = [];
       expect(await startOnce(h, lines)).toMatchObject({ code: 64, refusal: "unsafe_permissions" });
-      expect(lines[0]).toContain(`TT Tasks's temporary folder (${shellPath(tmp)})`);
-      expect(lines[0]).toContain(`TT Tasks's folder of space settings (${shellPath(settings)})`);
-      expect(lines[0]).toContain(`TT Tasks's T3 folder (${shellPath(t3)})`);
+      expect(lines[0]).toContain(`TTasks's temporary folder (${shellPath(tmp)})`);
+      expect(lines[0]).toContain(`TTasks's folder of space settings (${shellPath(settings)})`);
+      expect(lines[0]).toContain(`TTasks's T3 folder (${shellPath(t3)})`);
       // Nothing was read from them or written: no log, no service.json.
       expect(existsSync(join(state, "service.json"))).toBe(false);
       expect(commandIn(lines[0])).toBe(
@@ -519,9 +519,9 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       const lines: string[] = [];
       expect(await startOnce(h, lines)).toMatchObject({ code: 64, refusal: "unsafe_permissions" });
       expect(lines[0]).toContain(
-        `TT Tasks's launch folder (${shellPath(launch)}) can be changed by every user on this machine.`,
+        `TTasks's launch folder (${shellPath(launch)}) can be changed by every user on this machine.`,
       );
-      expect(lines[0]).toContain("could choose what TT Tasks starts as you");
+      expect(lines[0]).toContain("could choose what TTasks starts as you");
       expect(readFileSync(join(stateOf(h), "logs", "service.log"), "utf8")).not.toContain(launch);
       expect(commandIn(lines[0])).toBe(`chmod o-w ${shellPath(launch)}`);
       paste(commandIn(lines[0]) ?? "false", h);
@@ -549,7 +549,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       expect(readdirSync(t3)).toEqual([]);
       const line = (thrown as T3StateUnsafe).line;
       expect(line).toContain(
-        `TT Tasks's T3 folder (${shellPath(t3)}) can be changed by every user`,
+        `TTasks's T3 folder (${shellPath(t3)}) can be changed by every user`,
       );
       expect(line).toContain("so no token was kept");
       expect(commandIn(line)).toBe(`chmod o-w ${shellPath(t3)}`);
@@ -579,8 +579,8 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       };
       const first = refusal();
       expect(first?.exitCode).toBe(5);
-      expect(first?.message).toContain(`TT Tasks's state folder (${shellPath(state)})`);
-      expect(first?.message).toContain(`TT Tasks's temporary folder (${shellPath(tmp)})`);
+      expect(first?.message).toContain(`TTasks's state folder (${shellPath(state)})`);
+      expect(first?.message).toContain(`TTasks's temporary folder (${shellPath(tmp)})`);
       expect(first?.message).toContain("so the install does not finish");
       expect(commandIn(first?.message)).toBe(`chmod o-w ${shellPath(state)} ${shellPath(tmp)}`);
       expect(readdirSync(tmp)).toEqual([]);
@@ -743,7 +743,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
         // A link: no command, and the line says what it is and why nothing is given.
         const line = unsafeMessage([thing], "Why", "ada");
         expect(line).toContain(`(${shellPath(path)}) is a link to ${shellPath(before.link ?? "")}`);
-        expect(line).toContain("TT Tasks does not follow links for its configuration");
+        expect(line).toContain("TTasks does not follow links for its configuration");
         expect(line).not.toContain("run:");
         return;
       }
@@ -751,7 +751,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       const after = factsOf(path, row.need, { followLink: row.follow });
       if (typeof after !== "object") throw new Error(`no facts for ${path} after ${command}`);
       expect(problemOf(after, person), command).toBeUndefined();
-      // What Tasks needs of it works: a folder takes a new file, the file reads.
+      // What TTasks needs of it works: a folder takes a new file, the file reads.
       if (row.need === "file") expect(readFileSync(path, "utf8")).toContain("[log]");
       else writeFileSync(join(path, "probe"), "");
       // A name full of shell syntax ran nothing.
@@ -890,7 +890,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
 
   test("needs root: the exact lines for another owner, a link and a folder this user cannot look into", () => {
     const why =
-      "TT Tasks uses machine.toml only when no one else can change it, because it names commands TT Tasks runs as you, so the service does not start.";
+      "TTasks uses machine.toml only when no one else can change it, because it names commands TTasks runs as you, so the service does not start.";
     const folder = facts("/srv/k", "folder", 0o700, ROOT);
     const file = facts("/srv/k/machine.toml", "file", 0o000, ROOT);
     const part = (
@@ -907,11 +907,11 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
     });
     // A root-owned 0700 folder: machine.toml inside it cannot be seen, and is checked next time.
     expect(unsafeConfigMessage([part("folder", folder, "other_owner", true)], "ada", P)).toBe(
-      `TT Tasks's configuration folder (/srv/k) belongs to another user. ${why} TT Tasks cannot look inside /srv/k until that is fixed, so what is inside it (TT Tasks's machine.toml) is checked on the next start. To fix it, run: sudo chown -h ada /srv/k`,
+      `TTasks's configuration folder (/srv/k) belongs to another user. ${why} TTasks cannot look inside /srv/k until that is fixed, so what is inside it (TTasks's machine.toml) is checked on the next start. To fix it, run: sudo chown -h ada /srv/k`,
     );
     // A root-owned 000 machine.toml: it becomes this user's and readable in one go.
     expect(unsafeConfigMessage([part("file", file, "other_owner")], "ada", P)).toBe(
-      `TT Tasks's machine.toml (/srv/k/machine.toml) belongs to another user. ${why} To fix it, run: sudo chown -h ada /srv/k/machine.toml && chmod u+rw /srv/k/machine.toml`,
+      `TTasks's machine.toml (/srv/k/machine.toml) belongs to another user. ${why} To fix it, run: sudo chown -h ada /srv/k/machine.toml && chmod u+rw /srv/k/machine.toml`,
     );
     // Both, as root's mkdir and editor make them: one sudo, then what each needs.
     expect(
@@ -924,12 +924,12 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
         P,
       ),
     ).toBe(
-      `TT Tasks's configuration folder (/srv/k) and TT Tasks's machine.toml (/srv/k/machine.toml) belong to another user. ${why} To fix it, run: sudo chown -h ada /srv/k /srv/k/machine.toml && chmod g-w /srv/k`,
+      `TTasks's configuration folder (/srv/k) and TTasks's machine.toml (/srv/k/machine.toml) belong to another user. ${why} To fix it, run: sudo chown -h ada /srv/k /srv/k/machine.toml && chmod g-w /srv/k`,
     );
     // A link: never a chown, which would change what it points to.
     const link = facts("/srv/k/machine.toml", "file", 0o777, ME, { link: "/etc/shadow" });
     expect(unsafeConfigMessage([part("file", link, "link")], "ada", P)).toBe(
-      `TT Tasks's machine.toml (/srv/k/machine.toml) is a link to /etc/shadow. ${why} TT Tasks does not follow links for its configuration: put a real file in place of the link.`,
+      `TTasks's machine.toml (/srv/k/machine.toml) is a link to /etc/shadow. ${why} TTasks does not follow links for its configuration: put a real file in place of the link.`,
     );
     // A folder that fails beside a link: the command fixes the folder, and the link is named.
     expect(
@@ -942,14 +942,14 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
         P,
       ),
     ).toBe(
-      `TT Tasks's configuration folder (/srv/k) can be changed by the members of its group staff, not only by you; TT Tasks's machine.toml (/srv/k/machine.toml) is a link to /etc/shadow. ${why} TT Tasks does not follow links for its configuration: put a real file in place of the link. For the others, run: chmod g-w /srv/k`,
+      `TTasks's configuration folder (/srv/k) can be changed by the members of its group staff, not only by you; TTasks's machine.toml (/srv/k/machine.toml) is a link to /etc/shadow. ${why} TTasks does not follow links for its configuration: put a real file in place of the link. For the others, run: chmod g-w /srv/k`,
     );
     // Another owner through a link: no command, and the line says why.
     expect(
       unsafeMessage(
         [
           {
-            name: "TT Tasks's state folder",
+            name: "TTasks's state folder",
             facts: facts("/srv/s", "folder", 0o755, ROOT, { link: "/mnt/d/s", followsLink: true }),
             problem: "other_owner",
           },
@@ -959,13 +959,13 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
         P,
       ),
     ).toBe(
-      "TT Tasks's state folder (/srv/s) belongs to another user. Why. /srv/s is a link to /mnt/d/s, and TT Tasks gives no command that changes an owner through a link.",
+      "TTasks's state folder (/srv/s) belongs to another user. Why. /srv/s is a link to /mnt/d/s, and TTasks gives no command that changes an owner through a link.",
     );
     expect(
       unsafeMessage(
         [
           {
-            name: "TT Tasks's state folder",
+            name: "TTasks's state folder",
             facts: facts("/srv/k", "folder", 0o755, ROOT, {
               linkAbove: { at: "/srv", to: "/data/srv" },
             }),
@@ -977,7 +977,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
         P,
       ),
     ).toBe(
-      "TT Tasks's state folder (/srv/k) belongs to another user. Why. /srv, on the way to /srv/k, is a link to /data/srv, and TT Tasks gives no command that changes an owner through a link.",
+      "TTasks's state folder (/srv/k) belongs to another user. Why. /srv, on the way to /srv/k, is a link to /data/srv, and TTasks gives no command that changes an owner through a link.",
     );
   });
 
@@ -995,7 +995,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       ]);
       const line = unsafeConfigMessage(loaded.unsafe ?? [{} as UnsafePart]);
       expect(line).toContain(
-        `TT Tasks cannot look inside ${shellPath(dir)} until that is fixed, so what is inside it (TT Tasks's machine.toml) is checked on the next start.`,
+        `TTasks cannot look inside ${shellPath(dir)} until that is fixed, so what is inside it (TTasks's machine.toml) is checked on the next start.`,
       );
       expect(commandIn(line)).toBe(`chmod u+rwx ${shellPath(dir)}`);
       paste(commandIn(line) ?? "false", dirname(dir));
@@ -1005,7 +1005,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       const unread = unsafeConfigMessage(
         loadMachineConfig(dir, "linux").unsafe ?? [{} as UnsafePart],
       );
-      expect(unread).toContain("TT Tasks's machine.toml");
+      expect(unread).toContain("TTasks's machine.toml");
       expect(unread).toContain("cannot be read by you");
       paste(commandIn(unread) ?? "false", dir);
       expect(loadMachineConfig(dir, "linux").config.log.level).toBe("warn");
@@ -1059,7 +1059,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       ]);
       const line = unsafeConfigMessage(loaded.unsafe ?? [{} as UnsafePart], "ada");
       expect(line).toContain(`is a link to ${rootFile ?? ""}`);
-      expect(line).toContain("TT Tasks does not follow links for its configuration");
+      expect(line).toContain("TTasks does not follow links for its configuration");
       expect(line).not.toContain("chown");
       expect(line).not.toContain("run:");
     },

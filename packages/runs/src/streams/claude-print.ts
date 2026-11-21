@@ -3,7 +3,7 @@
 //
 // | Event                          | Use                                                        |
 // |--------------------------------|------------------------------------------------------------|
-// | `system` / `init`              | native ID (`session_id`), `session` (cwd, Tasks tools)     |
+// | `system` / `init`              | native ID (`session_id`), `session` (cwd, TTasks tools)     |
 // | `assistant`, `tool_use` blocks | a progress label per tool call                             |
 // | `assistant`, `text` blocks     | a message; the last one is the result if `result` has none |
 // | `result`                       | the final state, result text, usage, permission denials    |
@@ -12,7 +12,7 @@
 // The run is judged by the last `result` event's `is_error`, not by the exit code: Claude exits 0
 // after Ctrl+C with `is_error: true`, and 1 after an invalid model with `subtype: success` and
 // `is_error: true` (A4 3.11.3).
-import { MCP_SERVER_KEY } from "@tasks/brand";
+import { MCP_SERVER_KEY } from "@ttasks/brand";
 import type { AppToolsState, OutcomeReason, ProcessExit, ProgressLabel, Usage } from "./events.ts";
 import {
   createParser,
@@ -26,7 +26,7 @@ import { addCounts, amount, array, count, nativeId, record, string, type Json } 
 /** Known event types that carry nothing the run needs. */
 const IGNORED = new Set(["user", "rate_limit_event", "stream_event"]);
 
-const TASKS_TOOL_PREFIX = `mcp__${MCP_SERVER_KEY}__`;
+const TTASKS_TOOL_PREFIX = `mcp__${MCP_SERVER_KEY}__`;
 
 const LABELS: Readonly<Record<string, ProgressLabel>> = {
   Bash: "command",
@@ -53,7 +53,7 @@ const LABELS: Readonly<Record<string, ProgressLabel>> = {
 /** The progress label for a tool name. Unknown tools are "tool": the name is never passed on. */
 export function claudeToolLabel(name: string | undefined): ProgressLabel {
   if (name === undefined) return "tool";
-  if (name.startsWith(TASKS_TOOL_PREFIX)) return "tasks";
+  if (name.startsWith(TTASKS_TOOL_PREFIX)) return "tasks";
   return Object.hasOwn(LABELS, name) ? (LABELS[name] ?? "tool") : "tool";
 }
 

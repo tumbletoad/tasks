@@ -1,13 +1,13 @@
-// `tasks doctor --self-test` with the service checks (A2 3.13, A7 3.8 M1.10): it works without a
+// `ttasks doctor --self-test` with the service checks (A2 3.13, A7 3.8 M1.10): it works without a
 // service, it tells an untrusted endpoint from a stopped service, and with a running service it
 // reports its version, protocol and spaces, and recent crash files. Fixture text only.
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { RpcError } from "@tasks/bridge/protocol";
-import { endpointRoot, listen } from "@tasks/bridge/test/endpoint";
-import { tempRoot } from "@tasks/service/test/harness";
+import { RpcError } from "@ttasks/bridge/protocol";
+import { endpointRoot, listen } from "@ttasks/bridge/test/endpoint";
+import { tempRoot } from "@ttasks/service/test/harness";
 import { CLI_SPEC } from "../src/args.ts";
 import type { Session } from "../src/connect.ts";
 import { requestCheck } from "../src/doctor.ts";
@@ -54,7 +54,7 @@ afterAll(async () => {
   }
 }, 120_000);
 
-describe("[A2.3.13.cli.doctor] tasks doctor --self-test", () => {
+describe("[A2.3.13.cli.doctor] ttasks doctor --self-test", () => {
   test("without a service: a failed service check, and the command still answers", async () => {
     const temp = tempRoot("dn");
     try {
@@ -194,7 +194,7 @@ describe("[A2.3.13.cli.doctor] tasks doctor --self-test", () => {
     });
     const row = (JSON.parse(behind.stdout) as Report).checks.find((c) => c.id === "service");
     expect(row?.status).toBe("warn");
-    expect(row?.detail).toContain("Restart the service: tasks service restart.");
+    expect(row?.detail).toContain("Restart the service: ttasks service restart.");
 
     writeFileSync(
       join(world.home, "state", "crash", "20261112T080000Z-1.json"),
@@ -248,7 +248,7 @@ describe("[A2.3.13.cli.doctor] tasks doctor --self-test", () => {
   });
 
   test.skipIf(process.platform !== "win32")(
-    "tasksw's give-up record is reported only when it is newer than the service's start",
+    "ttasksw's give-up record is reported only when it is newer than the service's start",
     async () => {
       const record = join(world.home, "state", "crash", "supervisor-gave-up.json");
       writeFileSync(record, JSON.stringify({ t: "2000-01-01T00:00:00.000Z" }));

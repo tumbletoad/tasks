@@ -44,7 +44,7 @@ function nodeAs(path: string): void {
 
 describe("[A4.3.2.detect.real] detection on the real file system with fake commands", () => {
   test("versions from --version, npm entries run by Node, wrappers never run, homes by name only", async () => {
-    const home = mkdtempSync(join(tmpdir(), "tasks-detect-"));
+    const home = mkdtempSync(join(tmpdir(), "ttasks-detect-"));
     temps.push(home);
     const bin = join(home, windows ? "bin" : join(".local", "bin"));
     const npm = join(home, "npm-global");
@@ -107,7 +107,7 @@ describe("[A4.3.2.detect.real] detection on the real file system with fake comma
   }, 120_000);
 
   test("a command that hangs is killed at its bound and gives no version", async () => {
-    const home = mkdtempSync(join(tmpdir(), "tasks-detect-hang-"));
+    const home = mkdtempSync(join(tmpdir(), "ttasks-detect-hang-"));
     temps.push(home);
     const host = nodeDetectHost({ env: { PATH: "" }, home, timeoutMs: 500 });
     const t0 = Date.now();
@@ -119,7 +119,7 @@ describe("[A4.3.2.detect.real] detection on the real file system with fake comma
   });
 
   test("a command that hangs with a descendant is killed with its whole tree at the bound, on every OS", async () => {
-    const home = mkdtempSync(join(tmpdir(), "tasks-detect-hangtree-"));
+    const home = mkdtempSync(join(tmpdir(), "ttasks-detect-hangtree-"));
     temps.push(home);
     const pidFile = join(home, "descendant.pid");
     // Starts a descendant and hangs with it. On Windows the descendant leaves Node's kill-on-close
@@ -156,7 +156,7 @@ describe("[A4.3.2.detect.real] detection on the real file system with fake comma
   });
 
   test("a command that leaves a descendant holding its output still ends within the bound; on Linux and macOS the descendant is killed", async () => {
-    const home = mkdtempSync(join(tmpdir(), "tasks-detect-tree-"));
+    const home = mkdtempSync(join(tmpdir(), "ttasks-detect-tree-"));
     temps.push(home);
     const pidFile = join(home, "descendant.pid");
     // Prints a version, starts a descendant that inherits stdout and lives on, and exits.

@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 import { openUrl, type OpenerOptions } from "../src/opener.ts";
 import type { SpawnRequest, SpawnedProcess } from "../src/terminals/accept.ts";
 
-const URL_ = "claude-cli://open?cwd=%2Fhome%2Fmira%2Fwork&q=Tasks%20task%20M-14";
+const URL_ = "claude-cli://open?cwd=%2Fhome%2Fmira%2Fwork&q=TTasks%20task%20M-14";
 
 /** A spawner that records each request and answers as `answers` says, by program. */
 function recorder(answers: Record<string, number | "missing" | "hang">): {

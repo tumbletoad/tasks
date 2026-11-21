@@ -5,12 +5,12 @@ import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { RpcError, type JsonObject, type RpcSession } from "@tasks/bridge/protocol";
-import { REFUSED, SHIM_PROTOCOL } from "@tasks/launch/shim-wire";
+import { RpcError, type JsonObject, type RpcSession } from "@ttasks/bridge/protocol";
+import { REFUSED, SHIM_PROTOCOL } from "@ttasks/launch/shim-wire";
 import { Link } from "../src/shim/link.ts";
 import { runShim, shellAfterExit, TEXT, type ShimIo } from "../src/shim/run.ts";
 
-/** A Tasks error as the service sends it: A3's body in `data`. */
+/** A TTasks error as the service sends it: A3's body in `data`. */
 const appError = (code: string, data: JsonObject): RpcError =>
   new RpcError(-32000, "fixture", { code, message: "fixture", data });
 
@@ -121,7 +121,7 @@ describe("[A4.5.shim.client] the shim's link", () => {
   });
 
   test("a claim the service could not take yet is presented again within the 30 s; a refusal is final", async () => {
-    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-shim-link-")));
+    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-shim-link-")));
     temps.push(folder);
     const reply = {
       protocol: SHIM_PROTOCOL,
@@ -189,7 +189,7 @@ describe("[A4.5.shim.client] the shim's link", () => {
 
 describe("[A4.5.shim.folder] the shim checks its folder before anything else", () => {
   test("a failed check starts nothing, reports the launch as failed with the reason, and says it in one line; a reply without a check is no reply", async () => {
-    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-shim-link-")));
+    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-shim-link-")));
     temps.push(folder);
     const reply = {
       protocol: SHIM_PROTOCOL,
@@ -296,7 +296,7 @@ describe("[A4.5.shim.reply] the shim reads the claim's reply strictly, and repor
   });
 
   test("a valid envelope with a check or any other field that is not exactly one is a failed claim: reported as launch.failed {verify}, nothing checked or started, one line", async () => {
-    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-shim-reply-")));
+    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-shim-reply-")));
     temps.push(folder);
     const reply = valid(folder);
     const broken: [string, unknown][] = [
@@ -342,7 +342,7 @@ describe("[A4.5.shim.reply] the shim reads the claim's reply strictly, and repor
   });
 
   test("another protocol is reported with the version line; a reply that is no object at all is reported too", async () => {
-    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-shim-reply-")));
+    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-shim-reply-")));
     temps.push(folder);
     const other = await run({ ...valid(folder), protocol: SHIM_PROTOCOL + 1, extra: true });
     expect(other.code).toBe(1);
@@ -358,7 +358,7 @@ describe("[A4.5.shim.reply] the shim reads the claim's reply strictly, and repor
   });
 
   test("a report the service did not take goes to exit.json when the envelope names one; without a credential the link never attaches again; never a crash", async () => {
-    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-shim-reply-")));
+    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-shim-reply-")));
     temps.push(folder);
     const reply = valid(folder);
     const lost = () => Promise.reject(new Error("connection lost"));
@@ -413,7 +413,7 @@ describe("[A4.5.shim.reply] the shim reads the claim's reply strictly, and repor
 
 describe("[A4.5.shim.client] how long the agent ran", () => {
   test("is measured on the monotonic clock: a wall clock step never settles an agent that ended at once", async () => {
-    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-shim-link-")));
+    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-shim-link-")));
     temps.push(folder);
     const reply = {
       protocol: SHIM_PROTOCOL,
@@ -469,7 +469,7 @@ describe("[A4.5.shim.folder] the shim enters the folder itself, then checks it",
   });
 
   test("the reply's folder is entered before the check, and a folder that cannot be entered starts nothing", async () => {
-    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-shim-link-")));
+    const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-shim-link-")));
     temps.push(folder);
     const order: string[] = [];
     const run = async (sent: unknown, enter: (folder: string) => void) => {
@@ -590,7 +590,7 @@ describe("[A4.5.shim.client] via_login_shell and the shell after exit", () => {
               argv: [process.execPath],
               folder,
               check: CHECK,
-              env: { SHELL: "/usr/bin/fish", PATH: "/usr/bin", TASKS_TICKET: "T".repeat(24) },
+              env: { SHELL: "/usr/bin/fish", PATH: "/usr/bin", TTASKS_TICKET: "T".repeat(24) },
               title: "Fixture launch",
               after_exit: "shell",
               credential: `${"c".repeat(21)}A`,

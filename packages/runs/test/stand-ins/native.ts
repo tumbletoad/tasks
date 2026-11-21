@@ -1,9 +1,9 @@
-// Windows programs for the container tests: tasks-run.exe as the product builds it, and the
+// Windows programs for the container tests: ttasks-run.exe as the product builds it, and the
 // jobhold.c fixture, compiled with the same MSVC.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { buildRunHelper, findMsvc } from "@tasks/launcher-win/build";
+import { buildRunHelper, findMsvc } from "@ttasks/launcher-win/build";
 
 export interface Natives {
   readonly helper: string;

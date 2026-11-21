@@ -9,9 +9,9 @@ import fc from "fast-check";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SpaceExecutionStore } from "@tasks/launch";
-import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
-import { openLaunchSpace } from "@tasks/testkit";
+import { SpaceExecutionStore } from "@ttasks/launch";
+import { MemoryDurable, MemoryExecutionStore } from "@ttasks/launch/memory-store";
+import { openLaunchSpace } from "@ttasks/testkit";
 import { describe, expect, test } from "vitest";
 import { World, type Event } from "./host-world.ts";
 
@@ -150,7 +150,7 @@ describe("[A4.5.run.lifecycle-model] the run host under Stop at every moment, li
   test("on the space database: the same property", async () => {
     await fc.assert(
       fc.asyncProperty(scenario, async (events) => {
-        const parent = mkdtempSync(join(tmpdir(), "tasks-host-model-"));
+        const parent = mkdtempSync(join(tmpdir(), "ttasks-host-model-"));
         const clock: { world?: World } = {};
         try {
           const space = await openLaunchSpace(parent, {

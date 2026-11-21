@@ -12,7 +12,7 @@ import { Unavailable } from "./unavailable.ts";
 /** What the folders depend on. Read once from the process by `hostFacts()`. */
 export interface HostFacts {
   readonly platform: NodeJS.Platform;
-  /** Only USERPROFILE (Windows), HOME (a last resort) and TASKS_HOME are read. */
+  /** Only USERPROFILE (Windows), HOME (a last resort) and TTASKS_HOME are read. */
   readonly env: Readonly<Record<string, string | undefined>>;
   /** The account's home folder from the OS user database, when it has one. */
   readonly accountHome: string | undefined;
@@ -43,16 +43,16 @@ const text = (facts: HostFacts, name: string): string | undefined => {
 
 /**
  * The state and cache folders (A2 3.2.1): `state` and `cache` of the data folder,
- * which is TASKS_HOME for a separate install and `~/.tasks` otherwise, on every OS. The home
+ * which is TTASKS_HOME for a separate install and `~/.ttasks` otherwise, on every OS. The home
  * folder comes from the account (Linux, macOS) or USERPROFILE (Windows), never from XDG_*
- * variables. Throws when there is no home folder or TASKS_HOME is not absolute.
+ * variables. Throws when there is no home folder or TTASKS_HOME is not absolute.
  */
 export function installFolders(facts: HostFacts): Folders {
   const path = facts.platform === "win32" ? win32 : posix;
   const separate = text(facts, HOME_VAR);
   let data: string;
   if (separate !== undefined) {
-    if (!path.isAbsolute(separate)) throw new Error("TASKS_HOME is not absolute");
+    if (!path.isAbsolute(separate)) throw new Error("TTASKS_HOME is not absolute");
     data = path.resolve(separate);
   } else {
     const candidates =

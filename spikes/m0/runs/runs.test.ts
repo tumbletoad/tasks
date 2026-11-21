@@ -51,7 +51,7 @@ let scratch = "";
 let helper: string | undefined;
 
 beforeAll(() => {
-  scratch = mkdtempSync(join(tmpdir(), "tasks-m0-runs-"));
+  scratch = mkdtempSync(join(tmpdir(), "ttasks-m0-runs-"));
   if (WIN && findCsc() !== undefined) helper = buildHelper(join(scratch, "bin"));
 });
 
@@ -262,10 +262,10 @@ describe("[A7.3.7.m0-runs.self-test] lab run N: recorder, cancel helpers, saniti
         subtype: "init",
         cwd: "C:\\Users\\someone\\work",
         session_id: "0b8a4c38-7f2e-4f43-9b1e-2d5a6c7e8f90",
-        tools: ["AcmeInternalTool", "mcp__tasks__probe_echo"],
+        tools: ["AcmeInternalTool", "mcp__ttasks__probe_echo"],
         capabilities: ["mcp__private__inbox"],
         mcp_servers: [
-          { name: "tasks", status: "connected", source: "dynamic" },
+          { name: "ttasks", status: "connected", source: "dynamic" },
           { name: "acme-mail", status: "failed" },
         ],
         model: "gpt-acme-tenant42",
@@ -303,10 +303,10 @@ describe("[A7.3.7.m0-runs.self-test] lab run N: recorder, cancel helpers, saniti
     ]);
     const { stream: out, inventory } = sanitiseStream("claude-print", "windows", raw);
     const [init, assistant, result, unknown, rate] = lines(out);
-    expect(get(init, "tools")).toEqual(["FixtureToolA", "FixtureToolB", "mcp__tasks__probe_echo"]);
+    expect(get(init, "tools")).toEqual(["FixtureToolA", "FixtureToolB", "mcp__ttasks__probe_echo"]);
     expect(get(init, "capabilities")).toEqual(["fixture_capability_v1"]);
     expect(get(init, "mcp_servers")).toEqual([
-      { name: "tasks", status: "connected", source: "dynamic" },
+      { name: "ttasks", status: "connected", source: "dynamic" },
     ]);
     expect(get(init, "model")).toBe("fixture-model");
     expect(get(init, "permissionMode")).toBe("unknown-value");
@@ -614,8 +614,8 @@ describe("[A7.3.7.m0-runs.self-test] lab run N: recorder, cancel helpers, saniti
         if (input.trim() === "") process.exit(1);
         const sid = argv[argv.indexOf("--session-id") + 1] ?? "x";
         emit({ type: "system", subtype: "init", cwd: S.winHome, session_id: sid, model: "zq-model",
-          tools: ["mcp__" + S.server + "__inbox", "mcp__tasks__probe_echo"],
-          mcp_servers: [{ name: S.server, status: "connected" }, { name: "tasks", status: S.user }],
+          tools: ["mcp__" + S.server + "__inbox", "mcp__ttasks__probe_echo"],
+          mcp_servers: [{ name: S.server, status: "connected" }, { name: "ttasks", status: S.user }],
           permissionMode: S.user, [S.email]: S.token, skills: [S.user] });
         emit({ type: "zq_private_event", payload: all });
         emit({ type: "assistant", message: { model: "zq-model", content: [
@@ -647,7 +647,7 @@ describe("[A7.3.7.m0-runs.self-test] lab run N: recorder, cancel helpers, saniti
     const lab = (...a: string[]) =>
       spawnSync(process.execPath, [LAB, ...a], {
         encoding: "utf8",
-        env: { ...process.env, TASKS_M0_TEST_CLIS: fakes },
+        env: { ...process.env, TTASKS_M0_TEST_CLIS: fakes },
         timeout: 300_000,
       });
     const sc = ["--scratch", join(root, "scratch"), "--results", results];

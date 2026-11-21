@@ -1,6 +1,6 @@
 // Terminals end to end (A7 3.9 M2.09, A4 3.6.2, 3.7; SL-09): a real service in this process with
 // its own terminal adapters, testkit's fake terminals and fake systemd-run in place of the real
-// programs (a recording spawner stands in for the service's), a real `tasks shim` inside them, and
+// programs (a recording spawner stands in for the service's), a real `ttasks shim` inside them, and
 // testkit's fake interactive agent. Nothing starts a real terminal, agent or systemd-run. Fixture
 // data and temporary folders only.
 import {
@@ -15,8 +15,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { PRODUCT_ID } from "@tasks/brand";
-import { RpcError } from "@tasks/bridge/protocol";
+import { PRODUCT_ID } from "@ttasks/brand";
+import { RpcError } from "@ttasks/bridge/protocol";
 import { defaultShimCommand, LaunchFolderUnavailable } from "../src/launch/service.ts";
 import {
   REFUSED,
@@ -29,7 +29,7 @@ import {
   type SpawnPlan,
   type TerminalHost,
   RESOLVE_REASONS,
-} from "@tasks/launch";
+} from "@ttasks/launch";
 import {
   FAKE_SYSTEMD_RUN,
   FAKE_TERMINAL,
@@ -37,7 +37,7 @@ import {
   interactiveAgentArgv,
   readJsonLines,
   type InteractiveAgentReport,
-} from "@tasks/testkit";
+} from "@ttasks/testkit";
 import { readLog, waitFor } from "./harness.ts";
 import { LONG_MS, ShimLab, shimSession, type LabOptions } from "./shim-harness.ts";
 
@@ -214,7 +214,7 @@ function identityOf(path: string): string {
 
 describe("[A4.5.terminal.service] the service's terminal adapters, with fake terminals and a real shim", () => {
   test(
-    "the fake terminal receives only tasks shim <ticket>; a client that exits 0 at once and whose shim claims after 5 s gives one window and Confirmed",
+    "the fake terminal receives only ttasks shim <ticket>; a client that exits 0 at once and whose shim claims after 5 s gives one window and Confirmed",
     { timeout: 300_000 },
     async () => {
       const r = await rig(
@@ -285,7 +285,7 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
           ];
       expect(record.argv).toEqual([...own, ...lab.product, "shim", ticket]);
       expect(record.cwd).toBe(lab.folder);
-      // The fake terminal received only `tasks shim <ticket>` after its own fixed flag.
+      // The fake terminal received only `ttasks shim <ticket>` after its own fixed flag.
       const log = readJsonLines(r.terminalLog) as {
         role: string;
         event: string;
@@ -301,16 +301,16 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
         );
       }
       // The terminal's environment: the service's, scrubbed, with the install's home.
-      expect(record.envNames).toContain("TASKS_HOME");
+      expect(record.envNames).toContain("TTASKS_HOME");
       for (const name of ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "NODE_OPTIONS"]) {
         expect(record.envNames.map((n) => n.toUpperCase())).not.toContain(name);
       }
       // Neither does the agent get them.
       const seen = await reportOf(report);
-      for (const name of ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "NODE_OPTIONS", "TASKS_HOME"]) {
+      for (const name of ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "NODE_OPTIONS", "TTASKS_HOME"]) {
         expect(seen.envNames.map((n) => n.toUpperCase())).not.toContain(name);
       }
-      expect(seen.envNames).toContain("TASKS_TICKET");
+      expect(seen.envNames).toContain("TTASKS_TICKET");
       expect(seen.cwdId).toBe(identityOf(lab.folder));
 
       // The agent ends: the exit is reported, the launch stays Confirmed.
@@ -772,7 +772,7 @@ describe("[A4.5.environment.login-shell] via_login_shell: a fresh snapshot in th
 
 describe("[A4.5.terminal.service] the product's command a terminal runs", () => {
   test("the service's own build: its source entry when run from source, else the install's stable launcher, else none", () => {
-    const root = mkdtempSync(join(tmpdir(), "tasks-shim-command-"));
+    const root = mkdtempSync(join(tmpdir(), "ttasks-shim-command-"));
     try {
       const platform = process.platform;
       const entry = join(root, "bin.ts");

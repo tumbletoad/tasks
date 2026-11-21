@@ -3,8 +3,8 @@
 // reach. The CLI in this process against a service in this process; fixture text and temporary
 // folders only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { EXIT_CODES } from "@tasks/contracts";
-import { contractWorld, type ContractWorld } from "@tasks/service/test/contract";
+import { EXIT_CODES } from "@ttasks/contracts";
+import { contractWorld, type ContractWorld } from "@ttasks/service/test/contract";
 import { runMain, type Ran } from "./cli-harness.ts";
 
 let w: ContractWorld & { root: string };
@@ -44,7 +44,7 @@ describe("[A3.3.4.finish.already-wrapped] tasks done on a finished task", () => 
       // The way out in the commands a person types, never an agent's tools, and no request ID:
       // a retry would not help.
       expect(other.stderr).toMatch(
-        /^error conflict: The task is already wrapped up with another outcome or other learnings, so nothing was changed\. To add to it, log an entry: tasks log M-1 <text>\. To finish it again, reopen it first: tasks reopen M-1 --reason <why>\.\n {2}M-1 wrap: user at \S+\n$/,
+        /^error conflict: The task is already wrapped up with another outcome or other learnings, so nothing was changed\. To add to it, log an entry: ttasks log M-1 <text>\. To finish it again, reopen it first: ttasks reopen M-1 --reason <why>\.\n {2}M-1 wrap: user at \S+\n$/,
       );
       expect(other.stderr).not.toContain("base");
     },
@@ -78,7 +78,7 @@ describe("[A3.3.5.error-text] a required flag left out", () => {
   );
 });
 
-describe("[A3.3.7.actors.script-undo-note] tasks undo after a script's change", () => {
+describe("[A3.3.7.actors.script-undo-note] ttasks undo after a script's change", () => {
   test(
     "undo asks before it takes back an older change of the person's, and names the script's newer one",
     async () => {

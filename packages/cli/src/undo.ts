@@ -1,11 +1,11 @@
-// `tasks undo`: the generic verb, with one check of its own. A change made by a script (a command
+// `ttasks undo`: the generic verb, with one check of its own. A change made by a script (a command
 // with no terminal, such as one over ssh without -t) is on no undo stack. When one is newer than
 // the person's own newest change, an undo would take back that older change, often of another task,
-// which is rarely what someone who just ran `tasks undo` means. So the CLI asks the service to undo
+// which is rarely what someone who just ran `ttasks undo` means. So the CLI asks the service to undo
 // nothing then (`check_script`), says which change it would take back and which change by a script
 // is newer, and asks on the terminal. `--yes` undoes without asking; a command with no one to ask
 // gets the conflict and its words.
-import type { ErrorBody } from "@tasks/contracts";
+import type { ErrorBody } from "@ttasks/contracts";
 import type { Globals, VerbSpec } from "./args.ts";
 import type { ConnectOptions } from "./connect.ts";
 import type { Io } from "./io.ts";

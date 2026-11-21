@@ -3,14 +3,14 @@
 // on every OS, so golden tests compare them as arrays per target, route and OS.
 //
 // What an agent's argv may carry: the instance's own executable and arguments, the mapped
-// permission flags, fixed flags, the session ID Tasks presets, the task's reference (`-n`), the
+// permission flags, fixed flags, the session ID TTasks presets, the task's reference (`-n`), the
 // folder, and the rendered brief (a pointer, no task text) as one element after `--`, so it is
 // never read as an option. Every element is one argument of an array that the shim spawns without
 // a shell (A4 3.6.3 step 6); nothing is ever joined into a command string here. The folder is not
 // known at the click (it is resolved right before the launch, A4 3.3), so its element stays
 // empty and its index travels with the plan: the claim's reply puts the resolved folder there.
 import { createHash } from "node:crypto";
-import { envVar, MCP_SERVER_KEY } from "@tasks/brand";
+import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
 import {
   checkArgvTemplate,
   checkUrlTemplate,
@@ -26,7 +26,7 @@ import type { Instance } from "../sections.ts";
 import { encodeUrlValue } from "../t3-route.ts";
 import { TASK_REF } from "../brief/render.ts";
 
-/** A session ID Tasks presets (A4 3.4.2): a UUID in its canonical lower-case form. */
+/** A session ID TTasks presets (A4 3.4.2): a UUID in its canonical lower-case form. */
 export const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /**
@@ -45,7 +45,7 @@ export function presetSession(space: string, requestId: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-/** A variable name Codex's `env_vars` may list and Tasks writes back exactly as it is. */
+/** A variable name Codex's `env_vars` may list and TTasks writes back exactly as it is. */
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 /** At most this many names in the override. */
 export const TOOL_ENV_MAX_NAMES = 64;
@@ -56,9 +56,9 @@ export const isToolEnvList = (names: readonly unknown[]): names is readonly stri
   names.every((name) => typeof name === "string" && ENV_NAME.test(name));
 
 /**
- * Codex's declaration that Tasks's MCP entry takes the ticket from the agent's environment (A4
+ * Codex's declaration that TTasks's MCP entry takes the ticket from the agent's environment (A4
  * 3.4.3): Codex clears a stdio server's environment and passes only the names its entry lists, so
- * without it the bridge never sees `TASKS_TICKET`. Added only when the home's entry exists and
+ * without it the bridge never sees `TTASKS_TICKET`. Added only when the home's entry exists and
  * lacks it: an override on a home without the entry would make a server table without a command.
  * A `-c` override replaces the entry's whole list, so it repeats the names the entry already
  * lists (`existing`, plain variable names only) and adds the ticket's. The value is names, never
@@ -79,7 +79,7 @@ export interface ArgvValues {
   readonly exec: readonly string[];
   /** `{permission}`: the mapped flags of the instance's open permission (A4 3.11.6). */
   readonly permission: readonly string[];
-  /** `{extra_args}`: the instance's own, after Tasks's (A4 3.2). */
+  /** `{extra_args}`: the instance's own, after TTasks's (A4 3.2). */
   readonly extraArgs: readonly string[];
   /** `{tool_env}`: Codex's `-c` when the home's entry lacks it, else none. */
   readonly toolEnv: readonly string[];

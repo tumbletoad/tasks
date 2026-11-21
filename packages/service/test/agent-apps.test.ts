@@ -5,9 +5,9 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CLI_NAME } from "@tasks/brand";
-import { installFakeAgents } from "@tasks/testkit/fake-agents";
-import { FixedEnvironment } from "@tasks/launch";
+import { CLI_NAME } from "@ttasks/brand";
+import { installFakeAgents } from "@ttasks/testkit/fake-agents";
+import { FixedEnvironment } from "@ttasks/launch";
 import {
   agentAppVerbs,
   personEnv,
@@ -93,7 +93,7 @@ async function call<T = Record<string, unknown>>(
   return { status: reply.status, result: (JSON.parse(reply.body) as { result: T }).result };
 }
 
-/** Tasks's entry in the scratch Claude Code home, or undefined. */
+/** TTasks's entry in the scratch Claude Code home, or undefined. */
 const claudeEntry = (user: string): { args?: unknown } | undefined =>
   (
     JSON.parse(readFileSync(join(user, ".claude.json"), "utf8")) as {
@@ -260,7 +260,7 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
       });
       expect(again.result.applied).toBe(true);
       expect(readFileSync(join(w.user, ".codex", "config.toml"), "utf8")).toContain(
-        "[mcp_servers.tasks]",
+        "[mcp_servers.ttasks]",
       );
     },
     SLOW,

@@ -1,8 +1,8 @@
 // The CLI's arguments (A2 3.10.2, A3 3.2.2): the global flags, then a generated verb's arguments
 // from `cli-spec.json`. Argv can hold task text, so a usage error names the option or the verb,
 // never a value it was given.
-import { RequestId } from "@tasks/contracts";
-import spec from "@tasks/contracts/generated/cli-spec.json" with { type: "json" };
+import { RequestId } from "@ttasks/contracts";
+import spec from "@ttasks/contracts/generated/cli-spec.json" with { type: "json" };
 
 /** A usage error (exit 2). Its message names options and verbs only. */
 export class UsageError extends Error {
@@ -363,7 +363,7 @@ export async function parseVerb(
     tokens.push(token);
   }
   // Positionals in order. With fewer arguments than positionals, an optional one before a
-  // required one is left out first: `tasks log "text"` gives the text, and the
+  // required one is left out first: `ttasks log "text"` gives the text, and the
   // task comes from the binding.
   const specs = verb.positionals;
   if (tokens.length > specs.length) {

@@ -18,7 +18,7 @@ import { I18n } from "./i18n/intl.tsx";
 import { pagePath, readFragment } from "./route.ts";
 import { browserStore, keepToken, readToken } from "./stored.ts";
 
-/** The build of the service that served this page (its `__TASKS_BUILD__`), or "" from a dev build. */
+/** The build of the service that served this page (its `__TTASKS_BUILD__`), or "" from a dev build. */
 function servedBuild(): string {
   const value = document.querySelector('meta[name="app-build"]')?.getAttribute("content") ?? "";
   return /^[A-Za-z0-9._-]{1,64}$/.test(value) && !value.startsWith("__") ? value : "";

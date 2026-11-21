@@ -315,7 +315,7 @@ const bump = (tally: Tally | undefined, k: string): void => {
  */
 function property(resolve: Resolver, tally?: Tally) {
   return fc.asyncProperty(worldAndPaths, async ([specs, paths]) => {
-    const base = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-places-prop-")));
+    const base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-places-prop-")));
     try {
       const world = new World(base);
       for (const s of specs) world.add(s);

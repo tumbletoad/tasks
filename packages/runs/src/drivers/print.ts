@@ -1,7 +1,7 @@
 // The driver of an agent's print mode: it takes its input on stdin, prints its events as JSON
 // lines, and settles by exiting. Its work is what the stream parser (streams/) judges from those
 // lines and the exit. It has no protocol to stop it: a Stop interrupts the process.
-import type { RunOutcome } from "@tasks/contracts/runs";
+import type { RunOutcome } from "@ttasks/contracts/runs";
 import { createStreamParser, type StreamKind } from "../streams/index.ts";
 import type { OpenDriver, Work } from "./types.ts";
 

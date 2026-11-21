@@ -1,6 +1,6 @@
-// A2 3.2.1: the person's data and configuration live in ~/.tasks, the program elsewhere, and
-// removing or updating the program never removes anything in ~/.tasks. On this tree the commands
-// that remove anything outside a space are `tasks service uninstall` and its clean-up of what
+// A2 3.2.1: the person's data and configuration live in ~/.ttasks, the program elsewhere, and
+// removing or updating the program never removes anything in ~/.ttasks. On this tree the commands
+// that remove anything outside a space are `ttasks service uninstall` and its clean-up of what
 // install made; the program's own install, update and uninstall (M1.14, M6.12) extend this test
 // when they arrive. Each case fills a daily install's data folder under a stand-in home, runs
 // service install and uninstall through the entries the CLI uses, and compares the folder file by
@@ -15,7 +15,7 @@ import { captureIO, fakeContext, snapshot, type FakeContext } from "./install-fa
 
 let dir = "";
 beforeEach(() => {
-  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-data-folder-")));
+  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-data-folder-")));
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
@@ -56,12 +56,12 @@ const platforms = [
 
 describe("[A2.3.2.data-folder.kept] no command removes anything in the data folder unasked", () => {
   test.each(platforms)(
-    "%s: service install, then uninstall, leaves ~/.tasks exactly as it was",
+    "%s: service install, then uninstall, leaves ~/.ttasks exactly as it was",
     async (platform) => {
       const fake = fakeContext({ platform, dir, daily: true });
       const { data, root, bin } = fake.ctx.layout;
-      // The daily layout: the data folder is ~/.tasks, the program and the command are elsewhere.
-      expect(data).toBe(join(dir, "home", ".tasks"));
+      // The daily layout: the data folder is ~/.ttasks, the program and the command are elsewhere.
+      expect(data).toBe(join(dir, "home", ".ttasks"));
       for (const program of [root, bin]) expect(program.startsWith(data)).toBe(false);
       fill(data, true);
       const before = snapshot(data);

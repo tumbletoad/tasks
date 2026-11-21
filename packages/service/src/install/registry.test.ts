@@ -24,8 +24,8 @@ import {
 const EXPORT = [
   "\uFEFFWindows Registry Editor Version 5.00",
   "",
-  "[HKEY_CURRENT_USER\\Software\\tasks-test-abc\\Run]",
-  '"Tasks (abc)"="\\"C:\\\\Users\\\\Mïra 日本\\\\.local\\\\bin\\\\tasksw.exe\\""',
+  "[HKEY_CURRENT_USER\\Software\\ttasks-test-abc\\Run]",
+  '"TTasks (abc)"="\\"C:\\\\Users\\\\Mïra 日本\\\\.local\\\\bin\\\\ttasksw.exe\\""',
   '"Empty"=""',
   '@="default"',
   '"Quote \\"in\\" name"="a\\\\b"',
@@ -36,8 +36,8 @@ const EXPORT = [
   '"Line"="first',
   'second"',
   "",
-  "[HKEY_CURRENT_USER\\Software\\tasks-test-abc\\Explorer\\StartupApproved\\Run]",
-  '"Tasks (abc)"=hex:03,00,00,00,11,22,33,44,55,66,77,88',
+  "[HKEY_CURRENT_USER\\Software\\ttasks-test-abc\\Explorer\\StartupApproved\\Run]",
+  '"TTasks (abc)"=hex:03,00,00,00,11,22,33,44,55,66,77,88',
   "",
   "",
 ].join("\r\n");
@@ -45,11 +45,11 @@ const EXPORT = [
 describe("[A2.3.3.2.service-install.reg-export] reading reg.exe export files", () => {
   test("every value type, escaped names and data, the default value and continued hex lines", () => {
     const tree = parseRegExport(EXPORT);
-    const run = tree.get("hkcu\\software\\tasks-test-abc\\run");
+    const run = tree.get("hkcu\\software\\ttasks-test-abc\\run");
     expect(run?.get("tasks (abc)")).toEqual({
-      name: "Tasks (abc)",
+      name: "TTasks (abc)",
       kind: "REG_SZ",
-      data: '"C:\\Users\\Mïra 日本\\.local\\bin\\tasksw.exe"',
+      data: '"C:\\Users\\Mïra 日本\\.local\\bin\\ttasksw.exe"',
     });
     expect(run?.get("empty")).toEqual({ name: "Empty", kind: "REG_SZ", data: "" });
     expect(run?.get("")).toEqual({ name: "", kind: "REG_SZ", data: "default" });
@@ -64,7 +64,7 @@ describe("[A2.3.3.2.service-install.reg-export] reading reg.exe export files", (
       Array.from({ length: 28 }, (_, n) => n.toString(16).padStart(2, "0")).join(""),
     );
     expect(run?.get("line")?.data).toBe("first\r\nsecond");
-    const approved = tree.get("hkcu\\software\\tasks-test-abc\\explorer\\startupapproved\\run");
+    const approved = tree.get("hkcu\\software\\ttasks-test-abc\\explorer\\startupapproved\\run");
     const record = approved?.get("tasks (abc)");
     expect(record?.kind).toBe("REG_BINARY");
     expect(record === undefined ? undefined : [...regBytes(record)]).toEqual([
@@ -93,9 +93,9 @@ describe("[A2.3.3.2.service-install.reg-export] reading reg.exe export files", (
   });
 
   test("a key is absent only when its parent's listing says so: every other failure throws, and a read leaves no folder", async () => {
-    const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-reg-")));
+    const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-reg-")));
     try {
-      const KEY = "HKCU\\Software\\tasks-test-abc\\Explorer\\StartupApproved\\Run";
+      const KEY = "HKCU\\Software\\ttasks-test-abc\\Explorer\\StartupApproved\\Run";
       /** reg.exe played: `export` per `exportCode`, `query <key>` by `listings`. */
       const reg = (exportCode: number | null, listings: Record<string, string | null>) => {
         const calls: string[] = [];
@@ -119,7 +119,7 @@ describe("[A2.3.3.2.service-install.reg-export] reading reg.exe export files", (
         });
         return { registry, calls, scratch };
       };
-      const parent = "HKCU\\Software\\tasks-test-abc\\Explorer\\StartupApproved";
+      const parent = "HKCU\\Software\\ttasks-test-abc\\Explorer\\StartupApproved";
       const listing = (...subkeys: string[]) =>
         [
           `\r\nHKEY_CURRENT_USER${parent.slice(4)}`,
@@ -136,7 +136,7 @@ describe("[A2.3.3.2.service-install.reg-export] reading reg.exe export files", (
         reg(1, { [parent]: listing(`${parent}\\RUN`) }).registry.tree(KEY),
       ).rejects.toThrow(RegistryError);
       // The parent cannot be listed: its parent decides about it.
-      const grand = "HKCU\\Software\\tasks-test-abc\\Explorer";
+      const grand = "HKCU\\Software\\ttasks-test-abc\\Explorer";
       const gone = reg(1, { [grand]: `\r\nHKEY_CURRENT_USER${grand.slice(4)}\r\n` });
       expect(await gone.registry.tree(KEY)).toBeUndefined();
       const there = reg(1, {

@@ -3,8 +3,8 @@
 // names a container, records the name, and asks this module to start, stop and confirm it.
 //
 // Linux: a child cgroup of the service's own systemd user unit (linux.ts). Windows: a named job
-// object held by tasks-run.exe (windows.ts). Where neither can be made, the agent's process tree
-// as Tasks can find it (ungrouped.ts), which can never be confirmed empty.
+// object held by ttasks-run.exe (windows.ts). Where neither can be made, the agent's process tree
+// as TTasks can find it (ungrouped.ts), which can never be confirmed empty.
 import type { Readable, Writable } from "node:stream";
 
 /** What to start inside a new container. */
@@ -54,7 +54,7 @@ export interface Contained {
  * Whether a container is empty, as the operating system counts it. `empty` also means the
  * container is gone or released: a cgroup removed, a job's holder let go. `occupied`: processes
  * remain. `unknown`: the count could not be read, so the run must not be called ended.
- * `unconfirmable`: no process group holds the run, so nothing counts what is left; Tasks ended
+ * `unconfirmable`: no process group holds the run, so nothing counts what is left; TTasks ended
  * what it could find.
  */
 export type Confirmation =
@@ -78,7 +78,7 @@ export type UnavailableReason =
 export type ProbeResult =
   | {
       readonly available: true;
-      /** `tree`: no process group; the agent's process tree as Tasks can find it. */
+      /** `tree`: no process group; the agent's process tree as TTasks can find it. */
       readonly kind: "cgroup" | "job" | "tree";
     }
   | {

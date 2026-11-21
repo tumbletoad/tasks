@@ -1,4 +1,4 @@
-// The service's side of `tasks setup instances` (A4 3.2, A2 3.2.4): only the user's class writes,
+// The service's side of `ttasks setup instances` (A4 3.2, A2 3.2.4): only the user's class writes,
 // an entry machine.toml's reader would drop is refused before anything is written, an ID the
 // machine has is refused, the record comes first and goes with the entry, and after every call,
 // one that failed on a full disk included, the live instances are the file's. Against a temporary
@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import type { Instance } from "@tasks/launch";
+import type { Instance } from "@ttasks/launch";
 import { makeDir } from "./files.ts";
 
 /**
@@ -35,7 +35,7 @@ import { INSTANCES_RECORD, instanceVerbs, type InstancesHost } from "./instances
 
 let root: string;
 beforeAll(() => {
-  root = mkdtempSync(join(tmpdir(), "tasks-instances-"));
+  root = mkdtempSync(join(tmpdir(), "ttasks-instances-"));
 });
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });

@@ -3,8 +3,8 @@
 // highest counter of the copies the service knows. Fixture spaces only.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { backupSpace, createSpace, restoreBackup } from "@tasks/storage";
-import { checkedDriver } from "@tasks/testkit";
+import { backupSpace, createSpace, restoreBackup } from "@ttasks/storage";
+import { checkedDriver } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { rawWriter, readFacts, writeCommits } from "../../storage/test/backup-helpers.ts";
 import { TEST_MACHINE } from "../../storage/test/space-helpers.ts";
@@ -62,7 +62,7 @@ describe("[A1.5.refs.copies] a claimed copy and a restore in place go on from ev
     });
     running.push(service);
     await service.spacesSettled;
-    // Served beside its original, as `tasks space restore --to` serves a copy.
+    // Served beside its original, as `ttasks space restore --to` serves a copy.
     expect(await service.spaceManager.open(copy)).toBe(1);
     expect(service.spaces().map((s) => s.state)).toEqual(["open", "read_only"]);
 

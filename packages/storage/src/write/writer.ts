@@ -26,7 +26,7 @@
 // that reach SQL text are the column names of fields.ts, so no request can run SQL of its own
 // (A1 3.7). The writer runs where its connection lives: in a storage worker in
 // the service, or in-thread in tests and the sample generator. It is synchronous.
-import { mayWrite, preferenceSpec } from "@tasks/contracts/preferences";
+import { mayWrite, preferenceSpec } from "@ttasks/contracts/preferences";
 import type { Connection, Row, SqlValue } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
 import { isId, newId, osRandom, type Id, type RandomSource } from "../ids.ts";
@@ -688,7 +688,7 @@ function commitInstant(conn: Connection, now: number): number {
 }
 
 /**
- * A commit Tasks makes on its own, as the space's system actor in the system scope: an operation
+ * A commit TTasks makes on its own, as the space's system actor in the system scope: an operation
  * such as `machine.register` (A1 3.6) or `space.claim` (A1 3.18), of kind `ops` and origin
  * `system`, or a schema step (A1 3.17), of kind `migration` and origin `migration`.
  */

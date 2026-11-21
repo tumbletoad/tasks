@@ -187,7 +187,7 @@ function linuxMemory(pid: number): ProcessMemory {
  * text). One line per ID: "<pid> <private bytes> <working set> <private working set or -1>".
  */
 const WINDOWS_MEMORY =
-  "foreach ($id in $env:TASKS_M0_PIDS.Split(',')) { try { " +
+  "foreach ($id in $env:TTASKS_M0_PIDS.Split(',')) { try { " +
   "$p=[Diagnostics.Process]::GetProcessById([int]$id); $pws=-1; " +
   "try { $c=New-Object Diagnostics.PerformanceCounter('Process V2','Working Set - Private'," +
   "('{0}:{1}' -f $p.ProcessName,$p.Id),$true); $pws=[int64]$c.RawValue } catch {}; " +
@@ -195,7 +195,7 @@ const WINDOWS_MEMORY =
   "} catch { [Console]::Out.WriteLine(('{0} gone' -f $id)) } }";
 
 function windowsMemory(pids: number[]): Map<number, ProcessMemory> {
-  const env: NodeJS.ProcessEnv = { TASKS_M0_PIDS: pids.join(",") };
+  const env: NodeJS.ProcessEnv = { TTASKS_M0_PIDS: pids.join(",") };
   for (const name of ["SystemRoot", "windir", "SystemDrive", "TEMP", "TMP"]) {
     const value = process.env[name];
     if (value !== undefined) env[name] = value;
@@ -323,8 +323,8 @@ class McpPeer {
     });
     this.notify("notifications/initialized");
     const info = asObject(asObject(msg["result"])?.["serverInfo"]);
-    // The live stub is "tasks-stand-in"; the forwarder's offline responder is "tasks".
-    return info?.["name"] === "tasks-stand-in";
+    // The live stub is "ttasks-stand-in"; the forwarder's offline responder is "tasks".
+    return info?.["name"] === "ttasks-stand-in";
   }
 
   /** One read call: the stub's `status` tool. */
@@ -455,7 +455,7 @@ function runUserDir(state: string): string | undefined {
     .update(realpathSync.native(state), "utf8")
     .digest("hex")
     .slice(0, 16);
-  return join("/run/user", String(uid), `tasks-${install}`);
+  return join("/run/user", String(uid), `ttasks-${install}`);
 }
 
 /**

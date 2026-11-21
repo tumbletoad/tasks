@@ -35,7 +35,7 @@ import {
 
 const temps: string[] = [];
 const temp = () => {
-  const dir = mkdtempSync(join(tmpdir(), "tasks-m0-10-"));
+  const dir = mkdtempSync(join(tmpdir(), "ttasks-m0-10-"));
   temps.push(dir);
   return dir;
 };
@@ -169,7 +169,7 @@ describe("[A7.3.7.m0-launch.trust-patch] the M0.10 trust-entry patch and its exa
     }
   }
 
-  test("the undo record holds only Tasks's own text and the key's previous value, never other content", () => {
+  test("the undo record holds only TTasks's own text and the key's previous value, never other content", () => {
     for (const k of [CLAUDE, CODEX]) {
       const key = KEYS[k.name][0];
       for (const c of cases(k, key)) {
@@ -225,7 +225,7 @@ describe("[A7.3.7.m0-launch.trust-patch] the M0.10 trust-entry patch and its exa
     expect(r.undo.change).toBe("value");
     expect(r.text).toBe(`[projects.'c:\\scratch\\work']\ntrust_level = "trusted"\n`);
     expect(undoTrust(r.text, r.undo, true).text).toBe(text);
-    // Without fold a second table is added: the case Tasks must avoid on Windows.
+    // Without fold a second table is added: the case TTasks must avoid on Windows.
     expect(patchCodexToml(text, key).undo.change).toBe("entry");
   });
 
@@ -388,7 +388,7 @@ describe("[A7.3.7.m0-launch.trust-patch] the M0.10 trust-entry patch and its exa
         process.execPath,
         [fileURLToPath(new URL("./lab.ts", import.meta.url)), "l10", "--scratch", spelled],
         {
-          env: { ...cleanEnv(process.env), TASKS_M0_TEST_CLIS: fakes },
+          env: { ...cleanEnv(process.env), TTASKS_M0_TEST_CLIS: fakes },
           cwd: base,
           timeoutMs: 60_000,
         },
@@ -410,7 +410,7 @@ describe("[A7.3.7.m0-launch.trust-patch] the M0.10 trust-entry patch and its exa
     expect(tomlQuote("/a/it's")).toBe(`"/a/it's"`);
   });
 
-  describe("the file changed after the patch: only Tasks's key reverts, the app's changes stay", () => {
+  describe("the file changed after the patch: only TTasks's key reverts, the app's changes stay", () => {
     test("Claude: the app changed another key", () => {
       const key = KEYS.claude[0];
       for (const c of claudeCases(key, `${key}-other`)) {
@@ -444,7 +444,7 @@ describe("[A7.3.7.m0-launch.trust-patch] the M0.10 trust-entry patch and its exa
       expect(JSON.parse(u.text ?? "")).toEqual({ numStartups: 1 });
     });
 
-    test("Codex: the user added a table after Tasks's", () => {
+    test("Codex: the user added a table after TTasks's", () => {
       for (const key of KEYS.codex) {
         for (const c of codexCases(key, `${key}-other`, tomlQuote)) {
           if (c.text === null || c.expect === "none" || c.expect === "refused") continue;
@@ -453,7 +453,7 @@ describe("[A7.3.7.m0-launch.trust-patch] the M0.10 trust-entry patch and its exa
           const extra = `${nl}[features]${nl}web_search = true${nl}`;
           const u = undoTrust(p.text + extra, p.undo);
           expect(u.path).toBe("key-level");
-          // Tasks's own table goes with the blank line that separated it; a changed or added
+          // TTasks's own table goes with the blank line that separated it; a changed or added
           // trust_level line inside an existing table goes alone.
           const want =
             p.undo.change === "entry"
@@ -464,13 +464,13 @@ describe("[A7.3.7.m0-launch.trust-patch] the M0.10 trust-entry patch and its exa
       }
     });
 
-    test("Codex: a comment the user put on Tasks's table header keeps the header", () => {
+    test("Codex: a comment the user put on TTasks's table header keeps the header", () => {
       const p = patchCodexToml('model = "a"\n', "/x");
       const commented = p.text.replace("[projects.'/x']", "[projects.'/x'] # Keep this note");
       const u = undoTrust(commented, p.undo);
       expect(u.path).toBe("key-level");
       expect(u.text).toBe(`model = "a"\n\n[projects.'/x'] # Keep this note\n`);
-      // A comment on Tasks's key line stays as a comment line, and the table with it.
+      // A comment on TTasks's key line stays as a comment line, and the table with it.
       const onKey = p.text.replace(
         'trust_level = "trusted"',
         'trust_level = "trusted" # Keep this too',
@@ -482,7 +482,7 @@ describe("[A7.3.7.m0-launch.trust-patch] the M0.10 trust-entry patch and its exa
 
     test("a trust key whose value changed since the patch is left alone and reported", () => {
       const key = "/x";
-      // Claude Code: Tasks's entry, then the value set to false by someone else.
+      // Claude Code: TTasks's entry, then the value set to false by someone else.
       const c = patchClaudeJson('{\n  "projects": {}\n}\n', key);
       const cFalse = c.text.replace(
         '"hasTrustDialogAccepted": true',
@@ -497,11 +497,11 @@ describe("[A7.3.7.m0-launch.trust-patch] the M0.10 trust-entry patch and its exa
       );
       expect(vNull).not.toBe(v.text);
       expect(undoTrust(vNull, v.undo)).toEqual({ text: vNull, path: "key changed" });
-      // Codex: Tasks's table, then the user chose "untrusted".
+      // Codex: TTasks's table, then the user chose "untrusted".
       const t = patchCodexToml('model = "a"\n', key);
       const tUntrusted = t.text.replace('"trusted"', '"untrusted"');
       expect(undoTrust(tUntrusted, t.undo)).toEqual({ text: tUntrusted, path: "key changed" });
-      // Codex: the same value in the other string kind is still Tasks's value.
+      // Codex: the same value in the other string kind is still TTasks's value.
       const tLiteral = `${t.text.replace('"trusted"', "'trusted'")}# app note\n`;
       expect(undoTrust(tLiteral, t.undo).path).toBe("key-level");
     });

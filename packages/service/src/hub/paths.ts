@@ -1,9 +1,9 @@
 // Machine-local locations (A2 3.2.1, 3.2.2) and the install ID that namespaces them (A2 S30).
 //
 // Two places per machine, the same on every OS (A2 3.2.1):
-// - the person's data and configuration in `~/.tasks/` (`%USERPROFILE%\.tasks\`): `config/`,
+// - the person's data and configuration in `~/.ttasks/` (`%USERPROFILE%\.ttasks\`): `config/`,
 //   `state/`, `cache/` and `spaces/`. Removing or updating the program never touches it.
-// - the program in `~/.local/share/tasks/` (`versions/` and `current`), with the command in
+// - the program in `~/.local/share/ttasks/` (`versions/` and `current`), with the command in
 //   `~/.local/bin/` (on Windows the same two under %USERPROFILE%).
 //
 // The rules that matter:
@@ -12,7 +12,7 @@
 //   Windows uses %USERPROFILE%, which packaged processes see unchanged. AppData is never used.
 // - XDG_CONFIG_HOME, XDG_STATE_HOME, XDG_CACHE_HOME and XDG_RUNTIME_DIR are never read. The
 //   runtime folder comes from the UID.
-// - TASKS_HOME puts the whole install, program and data, under one folder (a test install, D18).
+// - TTASKS_HOME puts the whole install, program and data, under one folder (a test install, D18).
 // - Every name derives from the product constants (packages/brand).
 //
 // The functions here are pure over HostFacts, so every OS's layout is testable on every OS: they
@@ -20,8 +20,8 @@
 import { createHash } from "node:crypto";
 import { userInfo } from "node:os";
 import { posix, win32 } from "node:path";
-import { MAX_SOCKET_PATH_BYTES } from "@tasks/bridge/protocol";
-import { DATA_FOLDER, envVar, PRODUCT_ID, SPACES_FOLDER } from "@tasks/brand";
+import { MAX_SOCKET_PATH_BYTES } from "@ttasks/bridge/protocol";
+import { DATA_FOLDER, envVar, PRODUCT_ID, SPACES_FOLDER } from "@ttasks/brand";
 /**
  * A1's ID alphabet (Crockford's base32, lower case): storage's ID_ALPHABET, which paths.test.ts
  * holds this equal to. Kept here so the CLI finds the service without loading storage.
@@ -35,7 +35,7 @@ export const IPC_KEY = "ipc.key";
 /** What the layout depends on. Read once from the process by hostFacts(). */
 export interface HostFacts {
   readonly platform: NodeJS.Platform;
-  /** The environment. Only USERPROFILE (Windows), HOME (a last resort) and TASKS_HOME are read. */
+  /** The environment. Only USERPROFILE (Windows), HOME (a last resort) and TTASKS_HOME are read. */
   readonly env: Readonly<Record<string, string | undefined>>;
   /** The account's home folder from the OS user database (os.userInfo()), when it has one. */
   readonly accountHome: string | undefined;
@@ -71,23 +71,23 @@ export interface Layout {
   readonly logs: string;
   readonly crash: string;
   readonly tmp: string;
-  /** A4's Tasks-owned work folders. */
+  /** A4's TTasks-owned work folders. */
   readonly workdirs: string;
   /** The folder a new space goes into by default: `<data>/spaces/<slug>`. */
   readonly spaces: string;
-  /** TASKS_HOME when this is a separate install, else undefined. */
+  /** TTASKS_HOME when this is a separate install, else undefined. */
   readonly home: string | undefined;
 }
 
-/** The file in a TASKS_HOME install's root that makes the launchers set TASKS_HOME (A2 3.12.3). */
+/** The file in a TTASKS_HOME install's root that makes the launchers set TTASKS_HOME (A2 3.12.3). */
 export const HOME_MARKER = "home.marker";
 
-/** A layout that cannot be resolved: no home folder, or a TASKS_HOME that is not absolute. */
+/** A layout that cannot be resolved: no home folder, or a TTASKS_HOME that is not absolute. */
 export class LayoutError extends Error {
   override readonly name = "LayoutError";
 }
 
-export const TASKS_HOME = envVar("HOME");
+export const TTASKS_HOME = envVar("HOME");
 
 const pathFor = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
 
@@ -111,15 +111,15 @@ export function homeFolder(facts: HostFacts): string {
 
 /**
  * The folders of this install (A2 3.2.1, 3.2.2 rule 3): the program in
- * `~/.local/share/tasks`, the command in `~/.local/bin`, the data in `~/.tasks`, on every OS. A
- * TASKS_HOME install keeps all three in its one root: `<root>/bin` and the data folders beside
+ * `~/.local/share/ttasks`, the command in `~/.local/bin`, the data in `~/.ttasks`, on every OS. A
+ * TTASKS_HOME install keeps all three in its one root: `<root>/bin` and the data folders beside
  * `versions/` and `current`.
  */
 export function resolveLayout(facts: HostFacts): Layout {
   const path = pathFor(facts.platform);
-  const separate = envText(facts, TASKS_HOME);
+  const separate = envText(facts, TTASKS_HOME);
   if (separate !== undefined && !path.isAbsolute(separate)) {
-    throw new LayoutError(`${TASKS_HOME} must be an absolute path`);
+    throw new LayoutError(`${TTASKS_HOME} must be an absolute path`);
   }
   let root: string;
   let bin: string;
@@ -193,8 +193,8 @@ export function canonicalStatePath(resolved: string, platform: NodeJS.Platform):
 
 /**
  * The install ID: the first 10 characters of the lowercase, unpadded base32 of SHA-256 over
- * "tasks-install\n" and the canonical state path. The alphabet is A1's ID alphabet (Crockford's,
- * lowercase), which A2's example `q7mw2c4k9x` uses, so an install ID reads like Tasks's other IDs.
+ * "ttasks-install\n" and the canonical state path. The alphabet is A1's ID alphabet (Crockford's,
+ * lowercase), which A2's example `q7mw2c4k9x` uses, so an install ID reads like TTasks's other IDs.
  */
 export function installId(canonicalState: string): string {
   const digest = createHash("sha256").update(`${PRODUCT_ID}-install\n${canonicalState}`).digest();
@@ -212,7 +212,7 @@ export function installId(canonicalState: string): string {
 // ---------------------------------------------------------------------------------------------
 // Names the install ID gives: the runtime folder, the socket or pipe, the launch folders
 
-/** The longest Unix socket path in bytes: tasks-local/1's bound, which its serve refuses past. */
+/** The longest Unix socket path in bytes: ttasks-local/1's bound, which its serve refuses past. */
 export { MAX_SOCKET_PATH_BYTES };
 
 export const SOCKET_FILE = `${PRODUCT_ID}.sock`;
@@ -228,7 +228,7 @@ export type UnixEndpointPlan = {
 
 export type PipeEndpointPlan = {
   readonly kind: "pipe";
-  /** `\\.\pipe\tasks-<install-id>-`: the instance ID, new at every start, completes the name. */
+  /** `\\.\pipe\ttasks-<install-id>-`: the instance ID, new at every start, completes the name. */
   readonly prefix: string;
 };
 
@@ -236,7 +236,7 @@ export interface RuntimeNames {
   readonly endpoint: UnixEndpointPlan | PipeEndpointPlan;
   /** A4's launch folders. */
   readonly launch: string;
-  /** Linux: `/run/user/<uid>/tasks-<install-id>/` when the per-user runtime folder is usable. */
+  /** Linux: `/run/user/<uid>/ttasks-<install-id>/` when the per-user runtime folder is usable. */
   readonly runtimeDir: string | undefined;
 }
 

@@ -1,15 +1,15 @@
-// Stand-in for lib/tasks.mjs in the launcher tests (A2 3.12.2). Commands:
+// Stand-in for lib/ttasks.mjs in the launcher tests (A2 3.12.2). Commands:
 //   argv <args…>   print what reached Node as JSON: arguments, execArgv, the runtime and the
 //                  launcher's variables (only whether NODE_OPTIONS and NODE_PATH are set)
 //   env            print as JSON the names of the NODE_ and OPENSSL_ variables that reached Node,
 //                  the proxy and SSL_CERT_ variables with their values, how many extra CA
-//                  certificates Node loaded from NODE_EXTRA_CA_CERTS, every TASKS_ name in the
+//                  certificates Node loaded from NODE_EXTRA_CA_CERTS, every TTASKS_ name in the
 //                  block (each copy) and the launcher's variables as argv prints them
 //   exit <code>    exit with that code
 //   version        print this version folder's version and runtime as JSON
 //   wait           print Node's process ID, then stay alive for 60 s whatever happens to stdin
 //   detach         start a detached child Node, print both process IDs, then wait as above
-//   serve          the stub service: follows plan.json in TASKS_STUB_DIR (see serve below)
+//   serve          the stub service: follows plan.json in TTASKS_STUB_DIR (see serve below)
 import { spawn } from "node:child_process";
 import {
   appendFileSync,
@@ -37,11 +37,11 @@ function launcherVariables() {
   return {
     NODE_OPTIONS: env.NODE_OPTIONS !== undefined,
     NODE_PATH: env.NODE_PATH !== undefined,
-    TASKS_HOME: env.TASKS_HOME ?? null,
-    TASKS_ROOT: env.TASKS_ROOT ?? null,
-    TASKS_LAUNCHER: env.TASKS_LAUNCHER ?? null,
-    TASKS_LAUNCH_MODE: env.TASKS_LAUNCH_MODE ?? null,
-    TASKS_PACKAGE: env.TASKS_PACKAGE ?? null,
+    TTASKS_HOME: env.TTASKS_HOME ?? null,
+    TTASKS_ROOT: env.TTASKS_ROOT ?? null,
+    TTASKS_LAUNCHER: env.TTASKS_LAUNCHER ?? null,
+    TTASKS_LAUNCH_MODE: env.TTASKS_LAUNCH_MODE ?? null,
+    TTASKS_PACKAGE: env.TTASKS_PACKAGE ?? null,
   };
 }
 
@@ -56,15 +56,15 @@ function stayAlive() {
 /**
  * The stub service. plan.json is a list of steps, one per start: {exit, ms?, switchTo?,
  * replaceSupervisor?}. The n-th start follows step n (after the list: exit 0). It logs a start
- * line (with its parent, the supervisor), writes switchTo into <TASKS_ROOT>\current if given (an
- * update switching current), with replaceSupervisor renames <TASKS_ROOT>\bin\tasksw.exe aside
- * (as an update does while it runs) and copies tasksw-next.exe from its folder there, waits ms,
+ * line (with its parent, the supervisor), writes switchTo into <TTASKS_ROOT>\current if given (an
+ * update switching current), with replaceSupervisor renames <TTASKS_ROOT>\bin\ttasksw.exe aside
+ * (as an update does while it runs) and copies ttasksw-next.exe from its folder there, waits ms,
  * logs an end line and exits with the step's code. log.jsonl in the same folder holds the lines.
  */
 function serve() {
-  const dir = process.env.TASKS_STUB_DIR;
+  const dir = process.env.TTASKS_STUB_DIR;
   if (dir === undefined) {
-    process.stderr.write("TASKS_STUB_DIR is not set\n");
+    process.stderr.write("TTASKS_STUB_DIR is not set\n");
     process.exit(2);
   }
   const log = join(dir, "log.jsonl");
@@ -87,16 +87,16 @@ function serve() {
     version: version(),
     execPath: process.execPath,
     args: process.argv.slice(2),
-    mode: process.env.TASKS_LAUNCH_MODE ?? null,
-    manager: process.env.TASKS_SERVICE_MANAGER ?? null,
+    mode: process.env.TTASKS_LAUNCH_MODE ?? null,
+    manager: process.env.TTASKS_SERVICE_MANAGER ?? null,
   });
   if (typeof step.switchTo === "string") {
-    writeFileSync(join(process.env.TASKS_ROOT ?? "", "current"), step.switchTo);
+    writeFileSync(join(process.env.TTASKS_ROOT ?? "", "current"), step.switchTo);
   }
   if (step.replaceSupervisor === true) {
-    const bin = join(process.env.TASKS_ROOT ?? "", "bin");
-    renameSync(join(bin, "tasksw.exe"), join(bin, "tasksw.exe.old-1"));
-    copyFileSync(join(dir, "tasksw-next.exe"), join(bin, "tasksw.exe"));
+    const bin = join(process.env.TTASKS_ROOT ?? "", "bin");
+    renameSync(join(bin, "ttasksw.exe"), join(bin, "ttasksw.exe.old-1"));
+    copyFileSync(join(dir, "ttasksw-next.exe"), join(bin, "ttasksw.exe"));
   }
   setTimeout(() => {
     line({ ev: "end", n: starts, t: Date.now(), exit: step.exit });
@@ -158,7 +158,7 @@ switch (command) {
     break;
   default:
     process.stderr.write(
-      "usage: tasks argv|env|exit|version|wait|detach|serve (launcher test stub)\n",
+      "usage: ttasks argv|env|exit|version|wait|detach|serve (launcher test stub)\n",
     );
     process.exitCode = 64;
 }

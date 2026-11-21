@@ -1,6 +1,6 @@
-# TT Tasks
+# TTasks
 
-TT Tasks, by TumbleToad, is an agent-first task app. It is a calm task list that agents keep up to date, and a launch pad that sends each task to the right agent app, in the right folder, with the right account. Inside the app it is called Tasks.
+TTasks, by TumbleToad, is an agent-first task app. It is a calm task list that agents keep up to date, and a launch pad that sends each task to the right agent app, in the right folder, with the right account. Inside the app it is called TTasks.
 
 You see what matters, open a task with the agent you choose, and come back to a clear account of what changed, what needs you and what comes next. The aim is less time maintaining a system and more attention for the work itself. [The product vision](VISION.md) describes the experience we are building toward.
 
@@ -8,9 +8,9 @@ Website: [tumbletoad.com/tasks](https://tumbletoad.com/tasks)
 
 ## Status
 
-In development, not yet usable. There is no release yet. In place: storage with its migrations and verified backups, the service, the local protocol, the CLI, the MCP endpoint with session binding, `tasks setup agents` for Claude Code and Codex, the launch routes for Claude Code, Codex and T3 Code, the build, test installs and `tasks update --from <archive>`. The browser UI has its shell, live updates and the task list. The views, the expanded task, undo, search and background runs are being built. Step states are in [`planning/STATUS.md`](planning/STATUS.md).
+In development, not yet usable. There is no release yet. In place: storage with its migrations and verified backups, the service, the local protocol, the CLI, the MCP endpoint with session binding, `ttasks setup agents` for Claude Code and Codex, the launch routes for Claude Code, Codex and T3 Code, the build, test installs and `ttasks update --from <archive>`. The browser UI has its shell, live updates and the task list. The views, the expanded task, undo, search and background runs are being built. Step states are in [`planning/STATUS.md`](planning/STATUS.md).
 
-TT Tasks is developed and checked on Windows 11 and on Ubuntu 24.04 without sudo rights. CI runs on Ubuntu and Windows. macOS is build-only until someone verifies it on a Mac.
+TTasks is developed and checked on Windows 11 and on Ubuntu 24.04 without sudo rights. CI runs on Ubuntu and Windows. macOS is build-only until someone verifies it on a Mac.
 
 ## Build and check
 
@@ -28,7 +28,7 @@ pnpm verify
 | `pnpm verify` | The one check: generated-file freshness, typecheck, lint, dependency rules, the test manifest and the tests |
 | `pnpm e2e` | The browser tests against a real service, in Chromium and Firefox (`--project` picks one). Needs `pnpm exec playwright install chromium firefox` once. Not part of `pnpm verify` |
 | `pnpm gen` | Regenerates `packages/contracts/generated/` and the generated docs |
-| `pnpm tasks <args>` | Runs the CLI from source. `pnpm tasks serve` serves the page from `packages/web/dist` once `pnpm build:web` has built it |
+| `pnpm ttasks <args>` | Runs the CLI from source. `pnpm ttasks serve` serves the page from `packages/web/dist` once `pnpm build:web` has built it |
 | `pnpm seed --out <folder>` | Builds the sample space from fixture data |
 | `pnpm crash --minutes <n>` | Crash-injection harness |
 | `pnpm build:web` | Builds the browser page into `packages/web/dist` |

@@ -5,8 +5,8 @@
 // injected facts; no account is made or named.
 import { createServer } from "node:http";
 import { afterEach, describe, expect, test } from "vitest";
-import { blockedMessage, movedMessage } from "@tasks/service/http/shared";
-import { httpWorld, persistPort, type HttpWorld } from "@tasks/service/test/http-world";
+import { blockedMessage, movedMessage } from "@ttasks/service/http/shared";
+import { httpWorld, persistPort, type HttpWorld } from "@ttasks/service/test/http-world";
 import {
   countAccounts,
   linuxAccounts,

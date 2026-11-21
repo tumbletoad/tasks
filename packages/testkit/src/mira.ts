@@ -36,8 +36,8 @@ import {
   type SchemaStep,
   type SqlValue,
   type WriteResult,
-} from "@tasks/storage";
-import { createSpaceAt, openSpaceAt } from "@tasks/storage/revisions";
+} from "@ttasks/storage";
+import { createSpaceAt, openSpaceAt } from "@ttasks/storage/revisions";
 import { Rng } from "./rng.ts";
 
 export const MIRA = {
@@ -61,7 +61,7 @@ export interface MiraOptions {
   appVersion?: string;
   /**
    * The chain of schema steps to build with: this build's by default. A released revision's chain
-   * (@tasks/storage/revisions: STEPS_0_1) builds the space as that release built it, through the
+   * (@ttasks/storage/revisions: STEPS_0_1) builds the space as that release built it, through the
    * same write path, so the sample is the fixture of that revision (A1 5's migration tests).
    */
   steps?: readonly SchemaStep[];
@@ -393,7 +393,7 @@ export async function seedMira(
   if (!Number.isSafeInteger(taskCount) || taskCount < 1 || taskCount > MAX_TASKS) {
     throw new RangeError(`tasks is an integer from 1 to ${String(MAX_TASKS)}`);
   }
-  const rng = new Rng(`tasks-mira:${seed}`);
+  const rng = new Rng(`ttasks-mira:${seed}`);
   const random = (bytes: Uint8Array): void => {
     rng.fill(bytes);
   };

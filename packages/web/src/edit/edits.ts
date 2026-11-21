@@ -27,7 +27,7 @@
 // The queue waits for outcomes, never for ever: a request that gets no answer is asked about by
 // its own ID, and what waits behind a request whose outcome cannot be learned stays with the
 // person as not saved, never sent out of order (calls.ts, A5 3.11 "No request holds the queue").
-import type { Client } from "@tasks/contracts/generated/client.ts";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { Msg } from "../row/model.ts";
 import type { Change as FeedChange } from "../store/core.ts";
 import type { Overlay } from "../store/pending.ts";

@@ -2,8 +2,8 @@
 // store and are checked when read back, one binding per launch when two connections redeem it at
 // once, and a store that cannot write. A fake launch side and a clock; no service, no files.
 import { describe, expect, test } from "vitest";
-import type { LaunchIntent } from "@tasks/launch";
-import { newId } from "@tasks/storage";
+import type { LaunchIntent } from "@ttasks/launch";
+import { newId } from "@ttasks/storage";
 import {
   sessionPrincipal,
   type FoundLaunch,
@@ -245,7 +245,7 @@ describe("[A3.3.7.binding.records] session records and handles", () => {
     };
     const { bindings: b, events } = bindings({ store: failing, launches });
     // The ticket's role is spent only once its session is on disk: here it never is.
-    const connection = context({ env: { TASKS_TICKET: "fixture-ticket" } });
+    const connection = context({ env: { TTASKS_TICKET: "fixture-ticket" } });
     expect(await b.bridge(connection)).toMatchObject({ state: "unbound" });
     expect(spent).toBe(0);
     const slot = b.attach(connection);
@@ -315,7 +315,7 @@ describe("[A3.3.7.binding.records] session records and handles", () => {
     };
     const { bindings: b } = bindings({ store: flaky, launches });
     const NATIVE = "11111111-2222-4333-8444-555555555555";
-    const env = { TASKS_TICKET: "fixture-ticket", CLAUDE_CODE_SESSION_ID: NATIVE };
+    const env = { TTASKS_TICKET: "fixture-ticket", CLAUDE_CODE_SESSION_ID: NATIVE };
     const connection = context({ env });
     expect(await b.bridge(connection)).toMatchObject({ state: "bound" });
     const firstSlot = b.attach(connection);

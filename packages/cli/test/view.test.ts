@@ -1,10 +1,10 @@
-// `tasks view rebuild` through the service (A1 3.13, M3.10): the user rebuilds a space's view from
+// `ttasks view rebuild` through the service (A1 3.13, M3.10): the user rebuilds a space's view from
 // an interactive terminal and a deleted generated file comes back; a script is refused; help names
 // the command. A real service child, fixture text only.
 import { chmodSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { readLog, waitFor } from "@tasks/service/test/harness";
+import { readLog, waitFor } from "@ttasks/service/test/harness";
 import { runMain, startWorld, type CliWorld } from "./cli-harness.ts";
 
 let world: CliWorld;

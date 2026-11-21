@@ -15,7 +15,7 @@ import {
   type SpaceWriterHandle,
   type WriteRequest,
   type WriteResult,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 import { checkedDriver } from "./mira.ts";
 
 /** The machine of the launch fixture space: its authority. */

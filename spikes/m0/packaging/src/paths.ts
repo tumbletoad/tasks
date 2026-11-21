@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 export const spikeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const repoRoot = resolve(spikeRoot, "..", "..", "..");
 
-/** The stand-in app: lib/tasks.mjs and the modules it loads. */
+/** The stand-in app: lib/ttasks.mjs and the modules it loads. */
 export const appDir = join(spikeRoot, "app");
-export const posixLauncher = join(spikeRoot, "launcher", "tasks.sh");
-export const launcherSource = join(spikeRoot, "launcher", "tasks-launcher.c");
+export const posixLauncher = join(spikeRoot, "launcher", "ttasks.sh");
+export const launcherSource = join(spikeRoot, "launcher", "ttasks-launcher.c");
 /** The tamper tests' Windows stand-in executable (never shipped). */
 export const canarySource = join(spikeRoot, "launcher", "canary-stand-in.c");
 export const installTemplates = {

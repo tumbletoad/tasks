@@ -1,6 +1,6 @@
-// `tasks service start` through Explorer for real (A2 3.3.5, 3.5 rule 5):
+// `ttasks service start` through Explorer for real (A2 3.3.5, 3.5 rule 5):
 // a test install in a temporary folder, with the release launchers built from this checkout, Node
-// as its runtime and the product's own `tasks serve` as its entry. The start goes through the
+// as its runtime and the product's own `ttasks serve` as its entry. The start goes through the
 // shell's Explorer, as the Run value does at sign-in: the supervisor's parent is Explorer, it is
 // outside this process's tree, and no job it is in kills it when the job closes. No registry value
 // is written: the context's registry root is a key that does not exist. Windows only, signed in
@@ -22,8 +22,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { isAgentMarker } from "@tasks/bridge/protocol";
-import { buildLaunchers, findMsvc, type Msvc } from "@tasks/launcher-win/build";
+import { isAgentMarker } from "@ttasks/bridge/protocol";
+import { buildLaunchers, findMsvc, type Msvc } from "@ttasks/launcher-win/build";
 import { afterAll, describe, expect, test } from "vitest";
 import { detectIdentity, system32 } from "../src/hub/identity.ts";
 import { explorerInSession, startService, stopService } from "../src/install/commands.ts";
@@ -81,7 +81,7 @@ ConvertTo-Json -Compress -InputObject $out
 
 /**
  * The processes whose program lies in this test's folder: what it started through Explorer
- * (tasksw.exe, the service's node.exe, jobinfo.exe), supervisors first.
+ * (ttasksw.exe, the service's node.exe, jobinfo.exe), supervisors first.
  */
 function startedHere(folder: string): Proc[] {
   const prefix = `${folder.toLowerCase()}\\`;
@@ -90,7 +90,7 @@ function startedHere(folder: string): Proc[] {
       "ConvertTo-Json -Compress -InputObject @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath } | ForEach-Object { [pscustomobject]@{ pid = [int]$_.ProcessId; ppid = [int]$_.ParentProcessId; name = $_.Name; path = $_.ExecutablePath } })",
     ),
   ) as Proc[];
-  const supervisor = (p: Proc) => Number(p.name.toLowerCase() === "tasksw.exe");
+  const supervisor = (p: Proc) => Number(p.name.toLowerCase() === "ttasksw.exe");
   return listed
     .filter((p) => p.path?.toLowerCase().startsWith(prefix) === true)
     .sort((a, b) => supervisor(b) - supervisor(a));
@@ -171,11 +171,11 @@ function compileJobInfo(msvc: Msvc, outDir: string): string {
 
 /**
  * A test install: the release launchers, Node as the runtime, and an entry that runs the product's
- * `tasks serve` after starting jobinfo.exe detached, which writes the service's job into job.json.
+ * `ttasks serve` after starting jobinfo.exe detached, which writes the service's job into job.json.
  */
 function testInstall(msvc: Msvc): { root: string; ctx: ServiceContext } {
   // A comma, which Explorer's command line treats as a separator unless it is quoted.
-  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-svc,explorer-")));
+  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-svc,explorer-")));
   const root = join(dir, "kh");
   const build = join(dir, "build");
   const launchers = buildLaunchers(build, { msvc });
@@ -183,8 +183,8 @@ function testInstall(msvc: Msvc): { root: string; ctx: ServiceContext } {
   for (const sub of ["bin", "runtime", "lib"]) mkdirSync(join(version, sub), { recursive: true });
   mkdirSync(join(root, "bin"));
   for (const bin of [join(root, "bin"), join(version, "bin")]) {
-    copyFileSync(launchers.tasks, join(bin, "tasks.exe"));
-    copyFileSync(launchers.tasksw, join(bin, "tasksw.exe"));
+    copyFileSync(launchers.ttasks, join(bin, "ttasks.exe"));
+    copyFileSync(launchers.ttasksw, join(bin, "ttasksw.exe"));
   }
   copyFileSync(compileJobInfo(msvc, build), join(version, "bin", "jobinfo.exe"));
   try {
@@ -193,14 +193,14 @@ function testInstall(msvc: Msvc): { root: string; ctx: ServiceContext } {
     copyFileSync(realpathSync.native(process.execPath), join(version, "runtime", "node.exe"));
   }
   writeFileSync(
-    join(version, "lib", "tasks.mjs"),
+    join(version, "lib", "ttasks.mjs"),
     [
       "// Test entry: `serve` runs the product's service from the checkout, after jobinfo.exe.",
       'import { spawn } from "node:child_process";',
       'import { fileURLToPath } from "node:url";',
       'if (process.argv[2] !== "serve") process.exit(2);',
       'const bin = fileURLToPath(new URL("../bin/", import.meta.url));',
-      'spawn(`${bin}jobinfo.exe`, [`${process.env.TASKS_ROOT}\\\\job.json`], { detached: true, stdio: "ignore", windowsHide: true }).unref();',
+      'spawn(`${bin}jobinfo.exe`, [`${process.env.TTASKS_ROOT}\\\\job.json`], { detached: true, stdio: "ignore", windowsHide: true }).unref();',
       `await import(${JSON.stringify(pathToFileURL(MAIN).href)});`,
       "",
     ].join("\n"),
@@ -209,17 +209,17 @@ function testInstall(msvc: Msvc): { root: string; ctx: ServiceContext } {
   writeFileSync(join(root, "current"), VERSION);
   writeFileSync(join(root, "home.marker"), "");
   // A person's terminal: no agent marker, so the stop is the operator's (A2 3.6.5).
-  const env: Record<string, string | undefined> = { TASKS_HOME: root };
+  const env: Record<string, string | undefined> = { TTASKS_HOME: root };
   for (const [name, value] of Object.entries(process.env)) {
-    if (!isAgentMarker(name) && !name.toUpperCase().startsWith("TASKS_")) env[name] = value;
+    if (!isAgentMarker(name) && !name.toUpperCase().startsWith("TTASKS_")) env[name] = value;
   }
-  const real = defaultServiceContext({ env: { ...env, TASKS_HOME: root } });
+  const real = defaultServiceContext({ env: { ...env, TTASKS_HOME: root } });
   const ctx: ServiceContext = {
     ...real,
     // A key that does not exist: nothing reads or writes the real Run key.
     roots: {
       ...real.roots,
-      registryRoot: `HKCU\\Software\\tasks-test-absent-${randomBytes(6).toString("hex")}`,
+      registryRoot: `HKCU\\Software\\ttasks-test-absent-${randomBytes(6).toString("hex")}`,
     },
   };
   return { root, ctx };
@@ -236,7 +236,7 @@ function buildTools(): Msvc | undefined {
 describe.skipIf(!windows)(
   "[A2.3.3.5.service-install.commands] start through Explorer, for real, on a signed-in desktop",
   () => {
-    test("Explorer starts tasksw.exe outside this process's tree, in no job that kills it on close; stop ends service and supervisor", async (context) => {
+    test("Explorer starts ttasksw.exe outside this process's tree, in no job that kills it on close; stop ends service and supervisor", async (context) => {
       const msvc = buildTools();
       if (detectIdentity().elevated !== false || msvc === undefined) context.skip();
       const { root, ctx } = testInstall(msvc as Msvc);
@@ -247,19 +247,19 @@ describe.skipIf(!windows)(
       started = ctx;
       const start = await startService(ctx);
       expect(start).toMatchObject({ outcome: "started", via: "explorer" });
-      expect(start.status.manager).toBe("tasksw");
+      expect(start.status.manager).toBe("ttasksw");
       expect(start.status.install_id).toBe(ctx.installId);
 
-      const [node, tasksw, shell] = lineage(start.status.pid);
+      const [node, ttasksw, shell] = lineage(start.status.pid);
       expect(node?.name.toLowerCase()).toBe("node.exe");
-      expect(tasksw?.name.toLowerCase()).toBe("tasksw.exe");
-      expect(tasksw?.path?.toLowerCase()).toBe(join(root, "bin", "tasksw.exe").toLowerCase());
+      expect(ttasksw?.name.toLowerCase()).toBe("ttasksw.exe");
+      expect(ttasksw?.path?.toLowerCase()).toBe(join(root, "bin", "ttasksw.exe").toLowerCase());
       // The shell's Explorer is the parent, as at sign-in: not this test, and not the
       // explorer.exe this start ran (it handed the start to the shell and exited).
       expect(shell?.name.toLowerCase()).toBe("explorer.exe");
       expect(shell?.pid).not.toBe(process.pid);
       // Explorer puts what it starts in a job of its own. That job must not end the service or
-      // its supervisor when it closes. The service shares the supervisor's job: tasksw.exe makes
+      // its supervisor when it closes. The service shares the supervisor's job: ttasksw.exe makes
       // none (A2 3.3.2), and jobinfo.exe shares the service's.
       const jobFile = join(root, "job.json");
       await until(() => existsSync(jobFile), 30_000);
@@ -289,8 +289,8 @@ describe.skipIf(!windows)(
       // stop returns once the service's process has ended, not only its endpoint.
       expect(alive(start.status.pid)).toBe(false);
       // The service exited 0, so the supervisor stops too (A2 3.3.1).
-      await until(() => tasksw === undefined || !alive(tasksw.pid), 15_000);
-      expect(tasksw !== undefined && alive(tasksw.pid)).toBe(false);
+      await until(() => ttasksw === undefined || !alive(ttasksw.pid), 15_000);
+      expect(ttasksw !== undefined && alive(ttasksw.pid)).toBe(false);
       started = undefined;
     }, 180_000);
   },

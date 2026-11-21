@@ -6,7 +6,7 @@
 // audience other than `all` are never written"), live child rows, and the area and project slugs.
 // A task that is deleted, or that no row names any more (redaction, M3.14), reads as gone, and its
 // files go with it.
-import { decodeSpaceRow, type Connection, type Row } from "@tasks/storage";
+import { decodeSpaceRow, type Connection, type Row } from "@ttasks/storage";
 import {
   LIFECYCLES,
   type Groups,

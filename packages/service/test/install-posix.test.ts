@@ -28,12 +28,12 @@ import {
 } from "./install-fakes.ts";
 
 const posix = process.platform !== "win32";
-const UNIT = `tasks-${TEST_INSTALL_ID}.service`;
-const LABEL = `local.tasks.service.${TEST_INSTALL_ID}`;
+const UNIT = `ttasks-${TEST_INSTALL_ID}.service`;
+const LABEL = `local.ttasks.service.${TEST_INSTALL_ID}`;
 
 let dir = "";
 beforeEach(() => {
-  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-svc-posix-")));
+  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-svc-posix-")));
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
@@ -72,7 +72,7 @@ describe.skipIf(!posix)(
       const text = renderUnit({ program: fake.ctx.program, tasksHome: fake.ctx.layout.root });
       expect(preview.io.text()).toBe(
         [
-          `tasks service install, for the test install at ${fake.ctx.layout.root} (install ID ${TEST_INSTALL_ID}).`,
+          `ttasks service install, for the test install at ${fake.ctx.layout.root} (install ID ${TEST_INSTALL_ID}).`,
           "This will:",
           `  1. Create the folder ${fake.ctx.roots.unitDir}.`,
           `  2. Write ${unitPath}:`,
@@ -85,9 +85,9 @@ describe.skipIf(!posix)(
           `       It creates the folder ${join(fake.ctx.roots.unitDir, "default.target.wants")}.`,
           "  5. If the service runs without its unit (started by hand), stop it and wait until it has stopped, so that the unit starts it in the next step.",
           `  6. Start the service: systemctl --user start ${UNIT}, and wait until it is ready.`,
-          "Linger is off: the service starts when you sign in and stops when you sign out. TT Tasks does not change that. To start it at boot, you can run: loginctl enable-linger",
-          `The folders and keys this creates are noted in ${note}, so tasks service uninstall removes them again when they are empty.`,
-          "Nothing else changes. To undo it: tasks service uninstall",
+          "Linger is off: the service starts when you sign in and stops when you sign out. TTasks does not change that. To start it at boot, you can run: loginctl enable-linger",
+          `The folders and keys this creates are noted in ${note}, so ttasks service uninstall removes them again when they are empty.`,
+          "Nothing else changes. To undo it: ttasks service uninstall",
           "",
         ].join("\n"),
       );
@@ -175,7 +175,7 @@ describe.skipIf(!posix)(
         for (const verb of ["uninstall", "install"] as const) {
           const result = await run(fake, verb);
           expect(result.code).toBe(4);
-          expect(result.io.errors()).toMatch(/never writes|settings that tasks service install/);
+          expect(result.io.errors()).toMatch(/never writes|settings that ttasks service install/);
         }
         expect(readFileSync(unitPath).equals(changed)).toBe(true);
         expect(
@@ -212,7 +212,7 @@ describe.skipIf(!posix)(
       // and the read after it stops the uninstall before the next step.
       writeFileSync(unitPath, ours);
       fake.tools.onCall = (line) => {
-        if (line === "systemctl --user disable tasks-gz2r16ezc2.service") {
+        if (line === "systemctl --user disable ttasks-gz2r16ezc2.service") {
           writeFileSync(unitPath, foreign);
         }
       };
@@ -220,7 +220,7 @@ describe.skipIf(!posix)(
       fake.tools.onCall = undefined;
       expect(reloaded.code).toBe(4);
       expect(reloaded.io.errors()).toContain(
-        "after step 2 it is not what that step left there. tasks service uninstall stopped and did not go on. Steps 1 to 2 were carried out.",
+        "after step 2 it is not what that step left there. ttasks service uninstall stopped and did not go on. Steps 1 to 2 were carried out.",
       );
       expect(readFileSync(unitPath, "utf8")).toBe(foreign);
     });
@@ -433,8 +433,8 @@ describe.skipIf(!posix)(
       expect(started.code).toBe(0);
       expect(started.io.text()).toBe(
         [
-          "TT Tasks's service runs: ready, PID 4121, version 0.0.0-test (test), started by manual.",
-          "It does not start by itself when you sign in. To have it start by itself, run: tasks service install",
+          "TTasks's service runs: ready, PID 4121, version 0.0.0-test (test), started by manual.",
+          "It does not start by itself when you sign in. To have it start by itself, run: ttasks service install",
           "",
         ].join("\n"),
       );
@@ -453,7 +453,7 @@ describe.skipIf(!posix)(
       expect(status.io.text()).toContain("  Entry:    ");
       expect(status.io.text()).toContain(": not installed\n");
       expect(status.io.text()).toContain(
-        "  systemd:  no unit of this install, so nothing starts the service at sign-in or boot. To have it start by itself: tasks service install\n",
+        "  systemd:  no unit of this install, so nothing starts the service at sign-in or boot. To have it start by itself: ttasks service install\n",
       );
       expect(status.io.text()).toContain("  Linger:   on\n");
       expect(status.io.text()).not.toContain("starts at boot");
@@ -608,7 +608,7 @@ describe.skipIf(!posix)(
         `file Library/LaunchAgents/${LABEL}.plist ${text}`,
       ]);
       expect(changes(fake)).toEqual([`launchctl bootstrap gui/501 ${plistPath}`]);
-      expect(installed.io.text()).toContain("TT Tasks's service runs: ready");
+      expect(installed.io.text()).toContain("TTasks's service runs: ready");
 
       const stopped = await run(fake, "stop", { json: true });
       expect(JSON.parse(stopped.io.text())).toEqual({ outcome: "stopped", via: "launchd" });

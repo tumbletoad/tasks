@@ -13,14 +13,14 @@ afterEach(() => {
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 const tempDir = () => {
-  const dir = mkdtempSync(join(tmpdir(), "tasks-prefs-"));
+  const dir = mkdtempSync(join(tmpdir(), "ttasks-prefs-"));
   temps.push(dir);
   return dir;
 };
 
 /** The platform's own absolute path, and the other platform's. */
-const here = process.platform === "win32" ? "C:\\tasks-view" : "/srv/tasks-view";
-const there = process.platform === "win32" ? "/srv/tasks-view" : "C:\\tasks-view";
+const here = process.platform === "win32" ? "C:\\ttasks-view" : "/srv/ttasks-view";
+const there = process.platform === "win32" ? "/srv/ttasks-view" : "C:\\ttasks-view";
 
 describe("[A1.3.16.prefs.machine] machine preferences live in machine.toml with the registry's validation", () => {
   test("a valid value is read; a key not set reads its default", () => {
@@ -33,7 +33,7 @@ describe("[A1.3.16.prefs.machine] machine preferences live in machine.toml with 
     const { config, problems } = parseMachineConfig(
       [
         "[preferences]",
-        '"projection.dir" = "/srv/tasks-view"',
+        '"projection.dir" = "/srv/ttasks-view"',
         '"ui.theme" = "washi"',
         '"ui.single_keys" = false',
         "",
@@ -44,7 +44,7 @@ describe("[A1.3.16.prefs.machine] machine preferences live in machine.toml with 
     expect(readMachinePreferences(config)).toEqual([
       { key: "ui.theme", value: "washi", state: "set" },
       { key: "ui.single_keys", value: false, state: "set" },
-      { key: "projection.dir", value: "/srv/tasks-view", state: "set" },
+      { key: "projection.dir", value: "/srv/ttasks-view", state: "set" },
     ]);
   });
 

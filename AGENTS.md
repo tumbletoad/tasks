@@ -1,6 +1,6 @@
-# TT Tasks
+# TTasks
 
-Agent-first task app by TumbleToad, called Tasks inside the app: Node 26 and TypeScript in a pnpm
+Agent-first task app by TumbleToad, called TTasks inside the app: Node 26 and TypeScript in a pnpm
 monorepo. These notes are for people and coding agents alike.
 
 If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checkout's own setup.

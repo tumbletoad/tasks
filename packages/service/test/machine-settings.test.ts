@@ -31,8 +31,8 @@ const own = (text: string): string => text.split("\n[[spaces]]")[0] ?? "";
 /** A shell with the placeholders a built page carries. */
 const UI = {
   index:
-    '<!doctype html><html lang="en" data-theme="__TASKS_THEME__"><head>' +
-    '<meta name="csp-nonce" content="__TASKS_NONCE__"></head><body></body></html>',
+    '<!doctype html><html lang="en" data-theme="__TTASKS_THEME__"><head>' +
+    '<meta name="csp-nonce" content="__TTASKS_NONCE__"></head><body></body></html>',
   files: new Map(),
 };
 

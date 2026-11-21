@@ -1,7 +1,7 @@
 // The server instructions (A3 3.6, 3.2.5; M0 row A06; M4.04): their size, their alphabet, the
 // start rule in the first 240 characters, and the tools and fields they name, checked against the
 // registry itself.
-import { registry, type AnyEntry } from "@tasks/contracts";
+import { registry, type AnyEntry } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import { GUIDE_STEPS, GUIDES } from "../ops/guides.ts";
 import {

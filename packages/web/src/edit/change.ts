@@ -5,7 +5,7 @@
 // Fields are A1's logical fields as the feed names them (`due` covers the three due columns,
 // `grouping` the area and project, `focus` the star), so a conflict and a remote change name the
 // same field the edit does.
-import type { Client } from "@tasks/contracts/generated/client.ts";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { Msg } from "../row/model.ts";
 import type { TaskField } from "../store/pending.ts";
 import type { TaskRow } from "../store/rows.ts";

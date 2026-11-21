@@ -82,7 +82,7 @@ describe("[A1.5.driver.contract] the SQLite URI a driver opens a path through", 
 
 describe("[A1.5.writer.file-names] the one literal path every file name reaches SQLite as", () => {
   test("is the path resolved against the working folder: a URI, file:, ? and # are characters of a path", () => {
-    const folder = resolve("tasks-literal-path-probe");
+    const folder = resolve("ttasks-literal-path-probe");
     const uri = pathToFileURL(join(folder, "uri.db")).href;
     const spellings = [
       join(folder, "native.db"),

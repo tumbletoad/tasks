@@ -3,7 +3,7 @@
 //
 //   open   "Open tasks in this app": the home's [[instance]] in machine.toml (instances.ts), which
 //          Open's tiles start the agent with
-//   tools  "Give this app the Tasks tools": the app's own entry for Tasks in that home
+//   tools  "Give this app the TTasks tools": the app's own entry for TTasks in that home
 //          (setup/agents.ts), with its agent-home row (agent-homes.ts)
 //
 //   view   every row and switch as it stands, each switch with what turning it over writes or
@@ -11,7 +11,7 @@
 //   apply  the switches the person turned over, each with the token its view showed
 //
 // The engine is the command line's own: the same detection, the same homes, the same refusals and
-// the same setup lock, so a page and `tasks setup agents` never change a home at once. It runs here,
+// the same setup lock, so a page and `ttasks setup agents` never change a home at once. It runs here,
 // in the service, with the person's environment as Open's agents get it, so it finds the commands
 // the person's own shell finds.
 //
@@ -22,9 +22,9 @@
 import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { posix, win32 } from "node:path";
-import { MCP_SERVER_KEY } from "@tasks/brand";
-import type { JsonObject } from "@tasks/bridge/protocol";
-import { AppError } from "@tasks/contracts";
+import { MCP_SERVER_KEY } from "@ttasks/brand";
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import { AppError } from "@ttasks/contracts";
 import {
   detect,
   instanceEntry,
@@ -35,8 +35,8 @@ import {
   type EnvironmentSource,
   type Instance,
   type Proposal,
-} from "@tasks/launch";
-import { isId } from "@tasks/storage";
+} from "@ttasks/launch";
+import { isId } from "@ttasks/storage";
 import { loadMachineConfig, MACHINE_TOML } from "../config/machine-toml.ts";
 import type { ConnectionClass, Grant } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
@@ -89,7 +89,7 @@ export interface AgentAppsHost {
 /**
  * Why a switch cannot be turned over here, or what to know about it, as a fixed word: open's
  * `by_hand` (machine.toml names it, written by hand), `no_command`, `needs_home`, `id_taken`; tools'
- * `not_installed` (Tasks's command is not where the entry would run it), `edited`, `missing`,
+ * `not_installed` (TTasks's command is not where the entry would run it), `edited`, `missing`,
  * `interrupted`, `other_space`, `several` (one of several Claude Desktop files: the person picks), or
  * one of setup's refusals.
  */
@@ -538,7 +538,7 @@ function setupError(error: unknown): unknown {
     return new AppError({
       code: "invalid_input",
       message: `${error.message}, so nothing was changed.`,
-      hint: "Run: tasks doctor",
+      hint: "Run: ttasks doctor",
     });
   }
   return error;

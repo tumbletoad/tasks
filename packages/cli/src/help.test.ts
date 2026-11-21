@@ -1,11 +1,11 @@
 // The CLI's help (A2 3.10.1): every command of the verb table and every generated verb has its own
-// help, printed the same by `tasks help <command>` and `tasks <command> --help`, with its forms
+// help, printed the same by `ttasks help <command>` and `tasks <command> --help`, with its forms
 // and flags; a flag the contract requires is marked so; the columns of each help line up. No
 // service is needed: help runs nothing.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { SERVICE_VERBS } from "@tasks/service/install";
+import { SERVICE_VERBS } from "@ttasks/service/install";
 import { CLI_SPEC } from "./args.ts";
 import { LOCAL_COMMANDS, shortHelp, verbHelp } from "./help.ts";
 import { main, type Io } from "./main.ts";
@@ -48,9 +48,9 @@ describe("[A2.3.10.cli.help] help for every command", () => {
     for (const command of COMMANDS) {
       const help = await helpOf(["help", command]);
       expect(help, command).not.toBe(list);
-      expect(help, command).toMatch(new RegExp(`^Usage: tasks ${command}\\b`));
-      // `tasks mcp …` is the bridge's own command line (A2 3.7.1): its help is `tasks help mcp`
-      // and `tasks --help mcp`.
+      expect(help, command).toMatch(new RegExp(`^Usage: ttasks ${command}\\b`));
+      // `ttasks mcp …` is the bridge's own command line (A2 3.7.1): its help is `ttasks help mcp`
+      // and `ttasks --help mcp`.
       const flagged = command === "mcp" ? ["--help", command] : [command, "--help"];
       expect(await helpOf(flagged), command).toBe(help);
     }
@@ -99,17 +99,17 @@ describe("[A2.3.10.cli.help] help for every command", () => {
     expect(checked).toBeGreaterThan(0);
     // No flag of today's contract is required, so a verb whose flag is shows how one reads.
     const reopen = CLI_SPEC.verbs.find((verb) => verb.verb === "reopen");
-    if (reopen === undefined) throw new Error("tasks reopen is a verb");
+    if (reopen === undefined) throw new Error("ttasks reopen is a verb");
     const strict = {
       ...reopen,
       flags: reopen.flags.map((f) => (f.flag === "--reason" ? { ...f, required: true } : f)),
     };
     const lines = verbHelp(strict).split("\n");
-    expect(lines[0]).toBe("Usage: tasks reopen <task> --reason <reason> [options]");
+    expect(lines[0]).toBe("Usage: ttasks reopen <task> --reason <reason> [options]");
     expect(lines.find((line) => line.startsWith("  --reason"))).toMatch(/ \(required\)$/);
   });
 
-  test("tasks --version prints the version, as tasks version does", async () => {
+  test("ttasks --version prints the version, as ttasks version does", async () => {
     const version = await helpOf(["version"]);
     expect(version).toMatch(/\d+\.\d+\.\d+/);
     expect(await helpOf(["--version"])).toBe(version);

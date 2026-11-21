@@ -1,11 +1,11 @@
 // A space switch in a UI tab changes nothing for a bound session or for another tab (A7 3.9 M2.04's
 // Verify line; A2 3.10.5 step 4, A3 3.7.8, A5's per-tab space). Through the real service in this
 // process: its UI listener with two signed-in tabs, each with its feed, and an agent's real
-// tasks-local/1 mcp mode connection bound to a task. Fixture text and temporary folders only.
+// ttasks-local/1 mcp mode connection bound to a task. Fixture text and temporary folders only.
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import type { RpcSession } from "@tasks/bridge/protocol";
-import { routePath, type ErrorBody } from "@tasks/contracts";
+import type { RpcSession } from "@ttasks/bridge/protocol";
+import { routePath, type ErrorBody } from "@ttasks/contracts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { post } from "./http-client.ts";
 import { openFeed, signIn, type FeedClient } from "./http-world.ts";
@@ -73,7 +73,7 @@ async function tab(port: number): Promise<Tab> {
     call: async (entry, input) => {
       const reply = await post(port, routePath(entry), input, {
         token,
-        headers: { "tasks-build": "source", "tasks-space": self.space },
+        headers: { "ttasks-build": "source", "ttasks-space": self.space },
       });
       return { status: reply.status, body: JSON.parse(reply.body) as Json };
     },

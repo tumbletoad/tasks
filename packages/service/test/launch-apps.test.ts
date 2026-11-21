@@ -7,14 +7,14 @@
 import { mkdirSync, realpathSync, statSync, writeFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import type { JsonObject, RpcSession } from "@tasks/bridge/protocol";
+import type { JsonObject, RpcSession } from "@ttasks/bridge/protocol";
 import {
   briefReference,
   PACK_CEILING,
   renderBrief,
   type SpawnRequest,
   type SpawnedProcess,
-} from "@tasks/launch";
+} from "@ttasks/launch";
 import { bridgePrincipal, clientOf } from "../src/mcp/index.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { briefNames } from "../src/launch/open.ts";
@@ -350,7 +350,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
       const pack = result.copy ?? "";
       expect(
         pack.startsWith(
-          `TT Tasks context pack for task ${task.ref} (launch ${result.launch.reference})`,
+          `TTasks context pack for task ${task.ref} (launch ${result.launch.reference})`,
         ),
       ).toBe(true);
       expect(pack).toContain("From the user, for agents:");

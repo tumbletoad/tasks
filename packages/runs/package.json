@@ -1,5 +1,5 @@
 {
-  "name": "@tasks/runs",
+  "name": "@ttasks/runs",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,15 +8,15 @@
     "./fake-agents": "./test/fake-agents.ts"
   },
   "dependencies": {
-    "@tasks/brand": "workspace:*",
-    "@tasks/contracts": "workspace:*",
-    "@tasks/files": "workspace:*",
-    "@tasks/launch": "workspace:*"
+    "@ttasks/brand": "workspace:*",
+    "@ttasks/contracts": "workspace:*",
+    "@ttasks/files": "workspace:*",
+    "@ttasks/launch": "workspace:*"
   },
   "devDependencies": {
-    "@tasks/bridge": "workspace:*",
-    "@tasks/launcher-win": "workspace:*",
-    "@tasks/testkit": "workspace:*",
+    "@ttasks/bridge": "workspace:*",
+    "@ttasks/launcher-win": "workspace:*",
+    "@ttasks/testkit": "workspace:*",
     "fast-check": "4.10.2",
     "vitest": "5.1.0"
   }

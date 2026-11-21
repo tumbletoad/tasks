@@ -1,7 +1,7 @@
 // The texts of the tools M4.01 lists (A3 3.4.3, 3.4.5, 3.4.9 to 3.4.12, 3.9.4, 3.10): A3's example
 // results read as A3 shows them, every name a user or an agent can edit stays inside the data
 // block, and the longest results stay within their budgets and say what was cut.
-import { findEntry, resultTokens, TaskAddResult, type AnyEntry } from "@tasks/contracts";
+import { findEntry, resultTokens, TaskAddResult, type AnyEntry } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import { renderError, renderResult } from "./render.ts";
 import { DATA_WORD, closeMarker, openMarker } from "./text.ts";

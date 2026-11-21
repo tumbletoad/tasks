@@ -21,7 +21,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { FOLDER_MARKER } from "@tasks/brand";
+import { FOLDER_MARKER } from "@ttasks/brand";
 import {
   FolderMarkers,
   identityFrom,
@@ -32,7 +32,7 @@ import {
 
 let base = "";
 beforeAll(() => {
-  base = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-marker-")));
+  base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-marker-")));
 });
 afterAll(() => {
   if (base !== "") {
@@ -103,7 +103,7 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
     // The unrelated one became another space's project's folder.
     await new FolderMarkers({ file: join(base, "marks-elsewhere.json") }).mark(elsewhere, folder);
     expect(await markers.check(project, folder)).toEqual({ kind: "other", owners: [elsewhere] });
-    // A marker that is not one Tasks writes is not this owner's either.
+    // A marker that is not one TTasks writes is not this owner's either.
     writeFileSync(join(folder, FOLDER_MARKER, MARKER_OWNERS), "not json");
     expect(await markers.check(project, folder)).toEqual({ kind: "other", owners: [] });
     // The person chose to use it: marked over the broken one, it opens from then on.
@@ -188,7 +188,7 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
 
   test("a folder that takes no marker opens as before, without the protection", async () => {
     const { folder, markers } = fresh();
-    // Something that is not Tasks' marker has its name: nothing is written over it.
+    // Something that is not TTasks' marker has its name: nothing is written over it.
     writeFileSync(join(folder, FOLDER_MARKER), "a file of the person's");
     expect(await markers.mark(project, folder)).toBe(false);
     expect(await markers.check(project, folder)).toEqual({ kind: "ok" });

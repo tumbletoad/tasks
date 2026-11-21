@@ -1,14 +1,14 @@
 // The supervisor on real containers: a stand-in service (stand-ins/run-service.ts) queues runs of
-// stand-in agents over a fixture space, in a delegated user unit on Linux and with tasks-run.exe on
+// stand-in agents over a fixture space, in a delegated user unit on Linux and with ttasks-run.exe on
 // Windows, and the tests count what is alive from the operating system, never from the container.
 // Where no real container can be made, the tests say so and skip.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { createLaunchSpace, type LaunchSpaceFolder } from "@tasks/testkit";
+import { createLaunchSpace, type LaunchSpaceFolder } from "@ttasks/testkit";
 import { afterAll, beforeAll, describe, expect, test, type TestContext } from "vitest";
-import type { RunRecord } from "@tasks/contracts/runs";
+import type { RunRecord } from "@ttasks/contracts/runs";
 import { RunFiles, RUNS_FOLDER, type QueueLimits } from "../src/index.ts";
 import { buildNatives, type Natives } from "./stand-ins/native.ts";
 import { Service, stopTestUnits, UNIT_PREFIX, userUnits, type Where } from "./stand-ins/service.ts";
@@ -26,7 +26,7 @@ const folders = new Map<Service, RunFiles>();
 const units: string[] = [];
 
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-run-supervisor-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-run-supervisor-"));
   if (windows) {
     natives = buildNatives(join(work, "bin"));
     place = { ok: true };

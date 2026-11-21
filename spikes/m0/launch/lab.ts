@@ -136,7 +136,7 @@ const write = (file: string, text: string | null) => {
 // ---------------------------------------------------------------------------------------------
 // The scratch working folders, each with the two marker servers.
 
-const MARKER = "tasks-trust-marker";
+const MARKER = "ttasks-trust-marker";
 
 /** Puts the marker servers into `folder` (the project's own files, never a home). */
 function markFolder(folder: string, codex = true): void {

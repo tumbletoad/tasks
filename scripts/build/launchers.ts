@@ -1,5 +1,5 @@
-// The launchers of a version folder (A2 3.12.3): the POSIX script `bin/tasks` for Linux and macOS,
-// written here, and `tasks.exe` and `tasksw.exe` for Windows, compiled by @tasks/launcher-win's
+// The launchers of a version folder (A2 3.12.3): the POSIX script `bin/ttasks` for Linux and macOS,
+// written here, and `ttasks.exe` and `ttasksw.exe` for Windows, compiled by @ttasks/launcher-win's
 // release build and checked again for test hooks before they ship (A2 3.12.8).
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ import {
 } from "../../packages/launcher-win/src/build.ts";
 
 /**
- * `versions/<v>/bin/tasks`: A2 3.12.3's script with its rules for what reaches Node (step 3).
+ * `versions/<v>/bin/ttasks`: A2 3.12.3's script with its rules for what reaches Node (step 3).
  *
  * - The shell first turns off what it may have taken from the environment before the first line:
  *   bash, which is /bin/sh on Fedora and macOS, reads SHELLOPTS and exported functions from it. With
@@ -22,10 +22,10 @@ import {
  *   and `unset -f readlink` leaves the one command the script looks up on PATH to PATH. The
  *   special built-ins it uses (set, unset, export, exec) come before functions in a POSIX shell.
  *   `set +e +u` keeps errexit and nounset from SHELLOPTS out of the script's own logic.
- * - `readlink -f` resolves `~/.local/bin/tasks` and `current`, so one process runs one version.
- * - TASKS_HOME comes from the location only: the install root when it holds home.marker, else it
+ * - `readlink -f` resolves `~/.local/bin/ttasks` and `current`, so one process runs one version.
+ * - TTASKS_HOME comes from the location only: the install root when it holds home.marker, else it
  *   is removed, whatever the caller set (point 8). The variables only the Windows launchers set
- *   (TASKS_ROOT, TASKS_LAUNCHER, TASKS_LAUNCH_MODE, TASKS_PACKAGE) mean nothing here and are
+ *   (TTASKS_ROOT, TTASKS_LAUNCHER, TTASKS_LAUNCH_MODE, TTASKS_PACKAGE) mean nothing here and are
  *   removed, so a caller cannot make the service believe it runs in a package.
  * - Node reads its NODE_ variables and OpenSSL its loader settings while Node starts, before the
  *   entry runs (point 12). So every exported NODE_ variable but NODE_EXTRA_CA_CERTS is removed
@@ -44,8 +44,8 @@ unset -f readlink
 self=$(readlink -f -- "$0") || exit 70
 root=\${self%/bin/${PRODUCT_ID}}
 home=\${root%/versions/*}
-[ -f "$home/home.marker" ] && export TASKS_HOME="$home" || unset TASKS_HOME
-unset TASKS_ROOT TASKS_LAUNCHER TASKS_LAUNCH_MODE TASKS_PACKAGE
+[ -f "$home/home.marker" ] && export TTASKS_HOME="$home" || unset TTASKS_HOME
+unset TTASKS_ROOT TTASKS_LAUNCHER TTASKS_LAUNCH_MODE TTASKS_PACKAGE
 unset OPENSSL_CONF OPENSSL_CONF_INCLUDE OPENSSL_MODULES OPENSSL_ENGINES
 set -f
 IFS='
@@ -63,7 +63,7 @@ exec "$root/runtime/node" --report-exclude-env "$root/lib/${PRODUCT_ID}.mjs" "$@
 `;
 
 /**
- * The launchd wrapper `bin/tasks-launchd` (A2 3.3.4) of a macOS build, mode 0755. Its text is
+ * The launchd wrapper `bin/ttasks-launchd` (A2 3.3.4) of a macOS build, mode 0755. Its text is
  * M1.12's (A2 3.3.4), so the service install and the build agree on it.
  */
 export { LAUNCHD_WRAPPER } from "../../packages/service/src/install/render.ts";
@@ -74,7 +74,7 @@ export interface WindowsLaunchers extends Launchers {
 }
 
 /**
- * Compiles the Windows release launchers and tasks-run.exe into `dir` (never with test hooks) and
+ * Compiles the Windows release launchers and ttasks-run.exe into `dir` (never with test hooks) and
  * checks each for test hooks again, as A2 3.12.8 asks of the binaries the build ships.
  */
 export function windowsLaunchers(dir: string): WindowsLaunchers {
@@ -84,7 +84,7 @@ export function windowsLaunchers(dir: string): WindowsLaunchers {
   mkdirSync(dir, { recursive: true });
   const built = buildLaunchers(join(dir, "launchers"));
   const run = buildRunHelper(join(dir, "launchers"));
-  for (const exe of [built.tasks, built.tasksw, run]) assertReleaseBinary(exe);
+  for (const exe of [built.ttasks, built.ttasksw, run]) assertReleaseBinary(exe);
   return { ...built, run };
 }
 

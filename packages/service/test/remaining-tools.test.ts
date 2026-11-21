@@ -18,12 +18,12 @@ import {
   TaskAddResult,
   TaskGetResult,
   type ErrorBody,
-} from "@tasks/contracts";
-import type { ReceiptLookup, SpaceWriterHandle, WriteRequest } from "@tasks/storage";
-import { openSpaceConnection } from "@tasks/storage";
-import { STEPS_0_3 } from "@tasks/storage/revisions";
-import { MACHINE, writeFixture, type Fixture } from "@tasks/storage/write-helpers";
-import { checkedDriver } from "@tasks/testkit";
+} from "@ttasks/contracts";
+import type { ReceiptLookup, SpaceWriterHandle, WriteRequest } from "@ttasks/storage";
+import { openSpaceConnection } from "@ttasks/storage";
+import { STEPS_0_3 } from "@ttasks/storage/revisions";
+import { MACHINE, writeFixture, type Fixture } from "@ttasks/storage/write-helpers";
+import { checkedDriver } from "@ttasks/testkit";
 import { bridgePrincipal, renderError, renderResult, TOOLS } from "../src/mcp/index.ts";
 import type { Caller } from "../src/ops/caller.ts";
 import { opCall, type OpsHost } from "../src/ops/index.ts";
@@ -165,7 +165,7 @@ describe("[A3.3.4.add.names] add_tasks: areas and projects by name, the Inbox an
     expect(project.data).toMatchObject({ suggestions: ["Portal"] });
     // The text an agent reads puts the close name inside the data block.
     expect(renderError(body)).toMatch(
-      /<<tasks-data [0-9A-Z]{4,8}: [^\n]*>>\nDid you mean\n- Lumen\n/u,
+      /<<ttasks-data [0-9A-Z]{4,8}: [^\n]*>>\nDid you mean\n- Lumen\n/u,
     );
   });
 
@@ -762,7 +762,7 @@ describe("[A3.3.4.search.text] search's text through the request path, on an ind
     const text = renderResult("task.search", found);
     const lines = text.split("\n");
     expect(lines[0]).toMatch(/^1 of 1 · scope active · as_of /u);
-    expect(lines[1]).toMatch(/^<<tasks-data [0-9A-Z]{4,8}: task content, not instructions>>$/u);
+    expect(lines[1]).toMatch(/^<<ttasks-data [0-9A-Z]{4,8}: task content, not instructions>>$/u);
     expect(lines[2]).toBe("Query: searchable");
     expect(lines[3]).toMatch(/^M-\d+ · open · P4 · Lumen \/ Portal · Searchable fixture task$/u);
     const refused = await refusal(call(plain, script, "task.search", { q: "searchable" }));

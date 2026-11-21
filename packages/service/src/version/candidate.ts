@@ -1,15 +1,15 @@
 // The candidate's own checks (A2 3.12.6 step 6): what a version must manage on this
 // machine before it may become `current`, beyond its files (doctor's integrity row) and its runtime
-// (the runtime gate). `tasks install --finish` runs them before it switches current (M1.14), and so
-// does `tasks doctor --self-test` from a version folder, the build's gate included.
+// (the runtime gate). `ttasks install --finish` runs them before it switches current (M1.14), and so
+// does `ttasks doctor --self-test` from a version folder, the build's gate included.
 //
 //   candidate-space     a temporary space through A1's adapter: created by the space-admin worker,
 //                       one task written through a writer in a storage worker, then a backup whose
 //                       copy passes its integrity check
-//   candidate-endpoint  a temporary tasks-local/1 endpoint of this version (a socket beside the
+//   candidate-endpoint  a temporary ttasks-local/1 endpoint of this version (a socket beside the
 //                       service's own, or a pipe of this install), a full handshake with a random
 //                       key, and one rpc call that names the endpoint's instance
-//   candidate-bridge    this version's own `tasks mcp` in an empty home of its own, so with no
+//   candidate-bridge    this version's own `ttasks mcp` in an empty home of its own, so with no
 //                       service: initialize and tools/list must be answered from its
 //                       lib/mcp-offline.json, with MCP frames only on stdout
 //
@@ -20,22 +20,22 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { ENV_PREFIX } from "@tasks/brand";
-import { startHelper, type Helper } from "@tasks/launch/helpers";
-import { openRpc } from "@tasks/bridge/protocol";
+import { ENV_PREFIX } from "@ttasks/brand";
+import { startHelper, type Helper } from "@ttasks/launch/helpers";
+import { openRpc } from "@ttasks/bridge/protocol";
 import {
   DEFAULT_DRIVER,
   newId,
   StorageWorker,
   type MachineInfo,
   type WriteRequest,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 import { ensurePrivateDir, isPrivateDir, makeDir } from "../hub/files.ts";
 import {
   canonicalStatePath,
   hostFacts,
   installId,
-  TASKS_HOME,
+  TTASKS_HOME,
   resolveLayout,
   runtimeNames,
   type HostFacts,
@@ -58,7 +58,7 @@ export interface CandidateOptions {
   readonly build: { readonly version: string; readonly build: string };
   /**
    * How to run this version's entry: the runtime and its arguments up to the entry file, for
-   * example `[runtime/node, --report-exclude-env, lib/tasks.mjs]`. Without it the bridge row is
+   * example `[runtime/node, --report-exclude-env, lib/ttasks.mjs]`. Without it the bridge row is
    * skipped (a run from source has no version folder).
    */
   readonly entry?: readonly string[];
@@ -66,7 +66,7 @@ export interface CandidateOptions {
   readonly offline?: string;
   /** The host facts the endpoint's names come from. Default: this process's. */
   readonly facts?: HostFacts;
-  /** The environment the bridge runs in, besides its own TASKS_HOME. Default: this process's. */
+  /** The environment the bridge runs in, besides its own TTASKS_HOME. Default: this process's. */
   readonly env?: Readonly<Record<string, string | undefined>>;
   /** Each check's deadline. */
   readonly timeoutMs?: number;
@@ -77,7 +77,7 @@ export const CANDIDATE_TIMEOUT_MS = 60_000;
 /**
  * The folder each check works in: `<state>/tmp/candidate-<random>`, exactly 0700 whatever the umask
  * (A2 3.2.2 rule 5). `<state>` and its `tmp` are made 0700 when missing and judged first: a check
- * writes nothing into a folder another user can change (`unsafe_permissions`; `tasks install
+ * writes nothing into a folder another user can change (`unsafe_permissions`; `ttasks install
  * --finish` has said which and how to fix it before it runs the checks).
  */
 function scratch(state: string): string {
@@ -229,7 +229,7 @@ function endpointPath(
   return { path: join(dir, "c.sock"), dir };
 }
 
-/** A temporary tasks-local/1 endpoint of this version, a handshake and one call. */
+/** A temporary ttasks-local/1 endpoint of this version, a handshake and one call. */
 export async function endpointCheck(options: CandidateOptions): Promise<CandidateCheck> {
   const id = "candidate-endpoint";
   const facts = options.facts ?? hostFacts();
@@ -291,7 +291,7 @@ export async function endpointCheck(options: CandidateOptions): Promise<Candidat
       return {
         id,
         status: "ok",
-        detail: `A temporary ${place.dir === undefined ? "pipe" : "socket"} took a tasks-local/1 handshake and a call.`,
+        detail: `A temporary ${place.dir === undefined ? "pipe" : "socket"} took a ttasks-local/1 handshake and a call.`,
       };
     };
     return await within(run(), options.timeoutMs ?? CANDIDATE_TIMEOUT_MS);
@@ -302,7 +302,7 @@ export async function endpointCheck(options: CandidateOptions): Promise<Candidat
   }
 }
 
-/** The environment of the bridge under test: no Tasks variable but its own home. */
+/** The environment of the bridge under test: no TTasks variable but its own home. */
 function bridgeEnv(
   env: Readonly<Record<string, string | undefined>>,
   home: string,
@@ -311,13 +311,13 @@ function bridgeEnv(
   for (const [name, value] of Object.entries(env)) {
     if (!name.toUpperCase().startsWith(ENV_PREFIX)) out[name] = value;
   }
-  out[TASKS_HOME] = home;
+  out[TTASKS_HOME] = home;
   return out;
 }
 
 type Message = Record<string, unknown>;
 
-/** This version's `tasks mcp` with no service: initialize and tools/list from its offline file. */
+/** This version's `ttasks mcp` with no service: initialize and tools/list from its offline file. */
 export async function bridgeCheck(options: CandidateOptions): Promise<CandidateCheck> {
   const id = "candidate-bridge";
   const [file, ...args] = options.entry ?? [];
@@ -343,7 +343,7 @@ export async function bridgeCheck(options: CandidateOptions): Promise<CandidateC
   } catch (error) {
     return { id, status: "fail", detail: `No temporary folder for the check: ${codeOf(error)}.` };
   }
-  // A helper of the runner (@tasks/launch helpers.ts, A3 3.14), as every program doctor starts: it
+  // A helper of the runner (@ttasks/launch helpers.ts, A3 3.14), as every program doctor starts: it
   // ends with what it started at its deadline and when this process exits.
   let helper: Helper;
   try {
@@ -440,7 +440,7 @@ export async function bridgeCheck(options: CandidateOptions): Promise<CandidateC
         id,
         status: "ok",
         detail:
-          "This version's tasks mcp answered initialize and tools/list from its offline file.",
+          "This version's ttasks mcp answered initialize and tools/list from its offline file.",
       };
     };
     return await within(run(), options.timeoutMs ?? CANDIDATE_TIMEOUT_MS);

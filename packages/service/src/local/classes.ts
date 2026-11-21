@@ -4,8 +4,8 @@
 //
 // This is a guard for well-behaved agents, not a security boundary: same-user code can fake a
 // TTY or drop the markers (A2 3.6.5, A6 3.15).
-import { CLI_NAME } from "@tasks/brand";
-import { isAgentMarker, isObject, type ClientInfo, type Mode } from "@tasks/bridge/protocol";
+import { CLI_NAME } from "@ttasks/brand";
+import { isAgentMarker, isObject, type ClientInfo, type Mode } from "@ttasks/bridge/protocol";
 
 /** A2 3.6.5's classes. `ui` comes from the HTTP transport, never from the socket or pipe. */
 export const CONNECTION_CLASSES = [
@@ -33,7 +33,7 @@ export function hasAgentMarker(context: unknown): boolean {
  * - rpc mode from the CLI: `cli-agent` with any agent marker, else `cli-interactive` when any of
  *   its standard streams is a terminal, else `cli-script`.
  *
- * A person who pipes or redirects a command's output (`tasks space list | less`, `x=$(tasks …)`)
+ * A person who pipes or redirects a command's output (`ttasks space list | less`, `x=$(tasks …)`)
  * still has a terminal on its input or its errors. What has none at all is a script run by cron,
  * a command over ssh without a terminal, or an agent's shell, which also carries a marker.
  */
@@ -68,20 +68,20 @@ export const RPC_METHODS = {
   "feed/subscribe": CLI,
   "service/status": CLI,
   "service/shutdown": OPERATOR,
-  // `tasks update`: hold new runs back while the update waits for the running ones, and stop them
+  // `ttasks update`: hold new runs back while the update waits for the running ones, and stop them
   // when the person says so. Not an agent's: the update restarts the service.
   "runs/hold": OPERATOR,
   "runs/stop_held": OPERATOR,
-  // `tasks run`: starting a run is the person's own, since a run may change whatever their agent
+  // `ttasks run`: starting a run is the person's own, since a run may change whatever their agent
   // setup allows, without asking; reading runs and stopping one is any command of theirs.
   "runs/start": USER,
   "runs/list": OPERATOR,
   "runs/show": OPERATOR,
   "runs/stop": OPERATOR,
   "ui/mint_code": OPERATOR,
-  // `tasks service port <n> [--reuse]` (A2 3.8.2 step 5): the person resolves a foreign holder.
+  // `ttasks service port <n> [--reuse]` (A2 3.8.2 step 5): the person resolves a foreign holder.
   "service/port": USER,
-  // `tasks space`: what only reads (the list, a space's backups) for every CLI, the rest for the
+  // `ttasks space`: what only reads (the list, a space's backups) for every CLI, the rest for the
   // user only.
   "space/list": CLI,
   "space/create": USER,
@@ -90,31 +90,31 @@ export const RPC_METHODS = {
   "space/forget": USER,
   "space/backup": USER,
   "space/backups": CLI,
-  // `tasks space export` (A1 3.18, M3.07): a bundle of the space, for the user only.
+  // `ttasks space export` (A1 3.18, M3.07): a bundle of the space, for the user only.
   "space/export": USER,
   "space/restore": USER,
-  // `tasks space rescue` (A1 3.2, M3.07): the readable rows of a space, for the user only.
+  // `ttasks space rescue` (A1 3.2, M3.07): the readable rows of a space, for the user only.
   "space/rescue": USER,
   "space/claim": USER,
   "space/recover": USER,
-  // `tasks space use` (A2 3.1, M5.01): the machine's default space, for the user only.
+  // `ttasks space use` (A2 3.1, M5.01): the machine's default space, for the user only.
   "space/use": USER,
-  // `tasks view rebuild` (A1 3.13, M3.10): a space's projection checked and rendered again.
+  // `ttasks view rebuild` (A1 3.13, M3.10): a space's projection checked and rendered again.
   "view/rebuild": USER,
-  // `tasks setup instances` (A4 3.2): writing and taking back [[instance]] entries, for the user.
+  // `ttasks setup instances` (A4 3.2): writing and taking back [[instance]] entries, for the user.
   "instances/add": USER,
   "instances/remove": USER,
-  // `tasks setup t3` (A4 3.4.1, M2.11): the status for every CLI, pairing for the user only.
+  // `ttasks setup t3` (A4 3.4.1, M2.11): the status for every CLI, pairing for the user only.
   "t3/status": CLI,
   "t3/pair": USER,
   "t3/pair_wait": USER,
-  // `tasks setup agents` (A3 3.13, M2.14): the rows for every CLI, granting and revoking for the user.
+  // `ttasks setup agents` (A3 3.13, M2.14): the rows for every CLI, granting and revoking for the user.
   "setup/homes": CLI,
   "setup/home_grant": USER,
   "setup/home_revoke": USER,
-  // `tasks doctor --live` (A3 3.14, M4.05): which instances' tool calls this start saw.
+  // `ttasks doctor --live` (A3 3.14, M4.05): which instances' tool calls this start saw.
   "setup/seen": CLI,
-  // `tasks doctor` (A3 3.14, M4.05b): the launch rows' facts (with --live a login-shell snapshot
+  // `ttasks doctor` (A3 3.14, M4.05b): the launch rows' facts (with --live a login-shell snapshot
   // taken now, as a launch takes it) and the sessions row's counts.
   "doctor/launch": CLI,
   "doctor/sessions": CLI,

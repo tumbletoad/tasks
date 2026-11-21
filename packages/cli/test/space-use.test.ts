@@ -1,4 +1,4 @@
-// `tasks space use <space>` (A2 3.1, 3.10.5; M5.01): the person makes a space the machine's
+// `ttasks space use <space>` (A2 3.1, 3.10.5; M5.01): the person makes a space the machine's
 // default, which an unbound command of the person then uses; scripts and agents cannot change it.
 // Fixture text only.
 import { join } from "node:path";
@@ -18,7 +18,7 @@ afterAll(async () => {
 const user = (argv: string[]) => runMain(argv, { home: world.home, cwd: world.root, tty: true });
 const parsed = (stdout: string) => JSON.parse(stdout) as Record<string, unknown>;
 
-describe("[A2.3.10.cli.space-use] tasks space use: the machine's default space", () => {
+describe("[A2.3.10.cli.space-use] ttasks space use: the machine's default space", () => {
   test("the person sets the default by name or folder; an unbound command then uses it", async () => {
     const life = await user(["space", "create", "Life", "--path", join("s", "life"), "--json"]);
     expect(life.code, life.stdout + life.stderr).toBe(0);

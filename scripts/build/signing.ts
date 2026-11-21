@@ -1,7 +1,7 @@
 // SHA256SUMS and its two signatures (A2 3.12.4, 3.12.5): `SHA256SUMS.sig`, the raw 64-byte Ed25519
 // signature over the file's exact bytes (for `openssl pkeyutl -verify -rawin` and node:crypto), and
 // `SHA256SUMS.sshsig`, the same key's signature in OpenSSH's format (PROTOCOL.sshsig, namespace
-// `tasks-release`, for `ssh-keygen -Y verify`). Both come from one Ed25519 key in node:crypto, so
+// `ttasks-release`, for `ssh-keygen -Y verify`). Both come from one Ed25519 key in node:crypto, so
 // one code path signs a release (scripts/release/, the maintainer's key) and a CI or test build (a throwaway
 // key made in memory for the run and never written anywhere).
 //
@@ -196,7 +196,7 @@ export function systemSshKeygen(env: NodeJS.ProcessEnv = process.env): string {
 
 /**
  * Verifies SHA256SUMS.sshsig with `ssh-keygen -Y verify`, as the install scripts do: an
- * allowed_signers file that names only `key`, identity and namespace `tasks-release`. `work` is
+ * allowed_signers file that names only `key`, identity and namespace `ttasks-release`. `work` is
  * an empty folder for that file. Returns undefined when there is no ssh-keygen to ask.
  */
 export function verifyWithSshKeygen(

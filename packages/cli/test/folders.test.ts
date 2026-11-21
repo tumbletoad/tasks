@@ -1,5 +1,5 @@
-// Folders at the command line: `tasks add` and `tasks set` give a task its folder with --folder,
-// a folder relative to the working one, --here and folder=, and clear it; `tasks area` makes a
+// Folders at the command line: `ttasks add` and `ttasks set` give a task its folder with --folder,
+// a folder relative to the working one, --here and folder=, and clear it; `ttasks area` makes a
 // project with its folder, and with --create makes the folder first, as the person's mkdir would,
 // removed after a refusal and kept after a lost reply; one undo takes the whole act back; `tasks
 // area list` shows the folders; the old --place and place= name --folder. The CLI in this process
@@ -7,8 +7,8 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { LocalError } from "@tasks/bridge/protocol";
-import { contractWorld, type ContractWorld } from "@tasks/service/test/contract";
+import { LocalError } from "@ttasks/bridge/protocol";
+import { contractWorld, type ContractWorld } from "@ttasks/service/test/contract";
 import { runMain, type Ran } from "./cli-harness.ts";
 
 let w: ContractWorld & { root: string };
@@ -67,7 +67,7 @@ describe("[A3.3.4.folders.cli] folders at the command line", () => {
     expect(both.code).toBe(2);
   });
 
-  test("tasks area create --folder --create makes the folder and binds it, and one undo takes it back", async () => {
+  test("ttasks area create --folder --create makes the folder and binds it, and one undo takes it back", async () => {
     const empty = folder("empty-start");
     const made = join(empty, "fresh");
     const created = await tasks(
@@ -142,7 +142,7 @@ describe("[A3.3.4.folders.cli] folders at the command line", () => {
     expect(listed.stdout).toMatch(/\n {2}Fixture lost \(0\) {2}.*fresh\n/u);
   });
 
-  test("tasks area set_folder --here and clear_folder change a project's folder", async () => {
+  test("ttasks area set_folder --here and clear_folder change a project's folder", async () => {
     const at = folder("ledger");
     const created = await tasks(["area", "create", "Fixture area/Fixture ledger"], w.root);
     expect(created.code, created.stderr).toBe(0);
@@ -164,7 +164,7 @@ describe("[A3.3.4.folders.cli] folders at the command line", () => {
 
   test("a refused call removes the folder --create made for it", async () => {
     const parent = folder("refused");
-    // A folder inside Tasks' own data is refused after the CLI made it.
+    // A folder inside TTasks' own data is refused after the CLI made it.
     const inside = join(w.home, "fixture-made");
     const refused = await tasks(
       ["area", "create", "Fixture area/Fixture refused", "--folder", inside, "--create", "--json"],

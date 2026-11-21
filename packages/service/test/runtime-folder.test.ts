@@ -1,4 +1,4 @@
-// The per-user runtime folder on Linux (A2 3.2.1: `/run/user/<uid>/tasks-<install>/`, which holds
+// The per-user runtime folder on Linux (A2 3.2.1: `/run/user/<uid>/ttasks-<install>/`, which holds
 // the socket and A4's launch folders), with a runtime base of the test's own standing in for
 // `/run/user`, so the run-user path is exercised in WSL and on CI too. What the product leaves
 // there at a clean stop, and what a service test's cleanup leaves there. Fixture data and temporary
@@ -80,7 +80,7 @@ describe("[A2.3.2.1.hub.runtime-folder] the runtime folder: nothing left after a
   test("only empty folders go: a launch folder, or anything else, keeps the runtime folder whole", () => {
     const temp = tempRoot("rt-idle");
     try {
-      const dir = join(temp.root, "tasks-fixture");
+      const dir = join(temp.root, "ttasks-fixture");
       const launch = join(dir, "launch");
       // A launch folder: everything stays.
       mkdirSync(join(launch, "la_fixture"), { recursive: true });
@@ -197,9 +197,9 @@ describe("[A2.3.2.1.hub.runtime-folder] the runtime folder: nothing left after a
       // Something under the base that the lab did not cause fails its cleanup.
       const guarded = await lab("rt-guard");
       const uid = String(process.getuid?.() ?? 0);
-      mkdirSync(join(guarded.runtime.base, uid, "tasks-0000000000"));
+      mkdirSync(join(guarded.runtime.base, uid, "ttasks-0000000000"));
       await expect(guarded.cleanup()).rejects.toThrow(
-        "a service test left tasks-0000000000 under its runtime base",
+        "a service test left ttasks-0000000000 under its runtime base",
       );
       expect(existsSync(guarded.runtime.base)).toBe(false);
     },

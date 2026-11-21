@@ -65,7 +65,7 @@ interface Built {
  * decided twice-in-one, a note, a log entry, a conflict and a rejection.
  */
 async function build(): Promise<Built> {
-  const dir = mkdtempSync(join(tmpdir(), "tasks-crash-checker-"));
+  const dir = mkdtempSync(join(tmpdir(), "ttasks-crash-checker-"));
   made.push(dir);
   mkdirSync(join(dir, "s1"));
   const checked = await checkedDriver();

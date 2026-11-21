@@ -111,7 +111,7 @@ test.describe("[A7.3.12.m5-12.e2e.first-start] The first start: a space, two app
     expect(fresh.claudeEntry()).toMatchObject({
       args: expect.arrayContaining(["--space", space, "--app", "claude-code"]),
     });
-    expect(fresh.codexConfig()).toContain("[mcp_servers.tasks]");
+    expect(fresh.codexConfig()).toContain("[mcp_servers.ttasks]");
     expect(fresh.machineToml()).toContain('id = "claude"');
     expect(fresh.machineToml()).not.toContain('id = "codex"');
 
@@ -151,7 +151,7 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await expect(changes(page)).toContainText(`Codex no longer has the ${APP_NAME} tools`);
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
-    expect(fresh.codexConfig()).not.toContain("[mcp_servers.tasks]");
+    expect(fresh.codexConfig()).not.toContain("[mcp_servers.ttasks]");
 
     // Codex's file changes between the view and the click: nothing is written, the new view shows.
     await flip(page, toolsFor("Codex"), true);
@@ -159,12 +159,12 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("alert")).toContainText("Something changed on this machine");
     await page.screenshot({ path: test.info().outputPath("settings-apps-changed-1440.png") });
-    expect(fresh.codexConfig()).not.toContain("[mcp_servers.tasks]");
+    expect(fresh.codexConfig()).not.toContain("[mcp_servers.ttasks]");
     // The choice stays, against the new view: one more press applies it.
     await expect(toggle(page, toolsFor("Codex"))).toBeChecked();
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
-    expect(fresh.codexConfig()).toContain("[mcp_servers.tasks]");
+    expect(fresh.codexConfig()).toContain("[mcp_servers.ttasks]");
 
     // Everything out again, from the same place.
     await flip(page, openIn("Claude Code"), false);
@@ -173,7 +173,7 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
     expect(fresh.claudeEntry()).toBeUndefined();
-    expect(fresh.codexConfig()).not.toContain("[mcp_servers.tasks]");
+    expect(fresh.codexConfig()).not.toContain("[mcp_servers.ttasks]");
     expect(fresh.machineToml()).not.toContain('id = "claude"');
     // Open no longer offers it in this tab: the apply took a fresh snapshot.
     await page

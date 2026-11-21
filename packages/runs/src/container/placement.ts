@@ -1,6 +1,6 @@
 // Where the service runs in the cgroup tree, read from /proc/self/cgroup. Pure, so every answer
 // can be tested on any machine.
-import { CLI_NAME, PRODUCT_ID } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_ID } from "@ttasks/brand";
 import type { UnavailableReason } from "./types.ts";
 
 /** The file name of the Windows helper that holds a run's job object. */
@@ -12,7 +12,7 @@ export const MAIN_CGROUP = "main";
 export type Placement =
   | {
       readonly ok: true;
-      /** The unit's name, for example `tasks.service`. */
+      /** The unit's name, for example `ttasks.service`. */
       readonly unit: string;
       /** The unit's cgroup, relative to the cgroup2 mount, starting with `/`. */
       readonly root: string;

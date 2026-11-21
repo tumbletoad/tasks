@@ -10,8 +10,8 @@
 // 2. The home variables (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`) are removed (A4 3.8), so only an
 //    instance's own `env` selects a home.
 // 3. The instance's `env` applies.
-// 4. A4 3.8's scrub, after merging (SCRUB_NAMES, SCRUB_PREFIXES, every `TASKS_*` among them), then
-//    A4's additions: `TASKS_TICKET` for the bridge's role, `TASKS_TASK` and `TASKS_SPACE` as hints.
+// 4. A4 3.8's scrub, after merging (SCRUB_NAMES, SCRUB_PREFIXES, every `TTASKS_*` among them), then
+//    A4's additions: `TTASKS_TICKET` for the bridge's role, `TTASKS_TASK` and `TTASKS_SPACE` as hints.
 // 5. Linux and macOS: PATH gets the executable's own folder in front (nvm keeps `node` beside it).
 //
 // Windows names are case-insensitive: a later layer replaces an earlier name whatever its case, and
@@ -20,7 +20,7 @@
 // win/process.c), so every one of them is on the Windows list, and one the base does not have is
 // set empty (6.): the agent gets the base's value or none, never the shim's.
 import { posix } from "node:path";
-import { ENV_PREFIX, envVar } from "@tasks/brand";
+import { ENV_PREFIX, envVar } from "@ttasks/brand";
 import { HOME_VARIABLES } from "../catalogue.ts";
 import { AGENT_ENV_NAME, isBoundedText, REPLY_BOUNDS } from "./wire.ts";
 
@@ -100,7 +100,7 @@ const POSIX_PREFIXES = ["LC_", "XDG_"] as const;
 
 /**
  * Windows: what a program started from the desktop has. The user's profile folders are named by
- * these variables; Tasks stores nothing in them (A2 3.2.2 rule 4 is about Tasks's own files).
+ * these variables; TTasks stores nothing in them (A2 3.2.2 rule 4 is about TTasks's own files).
  */
 const WIN32 = [
   "PATHEXT",
@@ -118,9 +118,9 @@ const WIN32 = [
   "USERDOMAIN_ROAMINGPROFILE",
   "LOGONSERVER",
   "COMPUTERNAME",
-  // eslint-disable-next-line no-restricted-syntax -- a variable the agent's tools read, not a path Tasks writes
+  // eslint-disable-next-line no-restricted-syntax -- a variable the agent's tools read, not a path TTasks writes
   "APPDATA",
-  // eslint-disable-next-line no-restricted-syntax -- a variable the agent's tools read, not a path Tasks writes
+  // eslint-disable-next-line no-restricted-syntax -- a variable the agent's tools read, not a path TTasks writes
   "LOCALAPPDATA",
   "ProgramData",
   "ProgramFiles",
@@ -217,7 +217,7 @@ export function agentEnvironment(input: EnvironmentInput): Record<string, string
   for (const [name, value] of Object.entries(input.instance)) {
     if (!value.includes("\0") && isEnvName(name)) set(name, value);
   }
-  // 4. A4 3.8's scrub after merging, every TASKS_* with it, then A4's additions.
+  // 4. A4 3.8's scrub after merging, every TTASKS_* with it, then A4's additions.
   drop((name) => scrubbed(name, input.platform));
   for (const [name, value] of Object.entries(input.additions)) {
     if (value !== "" && !value.includes("\0")) set(name, value);

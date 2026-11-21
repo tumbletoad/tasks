@@ -2,7 +2,7 @@
 // receipt, keyed by its writer scope and request ID, in the request's own transaction. A retry
 // with the same intent returns the stored result, whatever the state is now. Fixture text only.
 import { join } from "node:path";
-import { ReceiptGetResult, receiptResult } from "@tasks/contracts";
+import { ReceiptGetResult, receiptResult } from "@ttasks/contracts";
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { StorageError } from "../src/errors.ts";
 import { newId, type Id } from "../src/ids.ts";

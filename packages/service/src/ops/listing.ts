@@ -8,8 +8,8 @@
 // root) lists that folder; any other lists its parent, with the last name as a prefix to complete.
 import { opendir, stat } from "node:fs/promises";
 import { posix, win32 } from "node:path";
-import { makeDirAsync } from "@tasks/files";
-import { folderKey, type FolderOs } from "@tasks/storage";
+import { makeDirAsync } from "@ttasks/files";
+import { folderKey, type FolderOs } from "@ttasks/storage";
 import {
   bounded,
   folderName,

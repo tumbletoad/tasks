@@ -6,7 +6,7 @@ import { readTarGz, readZip, writeTar, writeTarGz, writeZip, type FileEntry } fr
 
 const entries: FileEntry[] = [
   { path: "runtime/node", data: Buffer.from("fixture runtime\n"), mode: 0o755 },
-  { path: "bin/tasks", data: Buffer.from("#!/bin/sh\n"), mode: 0o755 },
+  { path: "bin/ttasks", data: Buffer.from("#!/bin/sh\n"), mode: 0o755 },
   { path: "lib/chunks/cli.mjs", data: Buffer.alloc(70_000, 7), mode: 0o644 },
   { path: "manifest.json", data: Buffer.from("{}\n"), mode: 0o644 },
 ];
@@ -20,7 +20,7 @@ describe("[A2.3.12.4.build.archives] the tar.gz and zip writers", () => {
       "directory:lib:755",
       "directory:lib/chunks:755",
       "directory:runtime:755",
-      "file:bin/tasks:755",
+      "file:bin/ttasks:755",
       "file:lib/chunks/cli.mjs:644",
       "file:manifest.json:644",
       "file:runtime/node:755",

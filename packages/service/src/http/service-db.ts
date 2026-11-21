@@ -9,7 +9,7 @@
 // change is written through the worker (grants.ts).
 import { closeSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_DRIVER, StorageWorker, type Row, type WorkerConnection } from "@tasks/storage";
+import { DEFAULT_DRIVER, StorageWorker, type Row, type WorkerConnection } from "@ttasks/storage";
 import { createFile } from "../hub/files.ts";
 import { GRANT_KINDS, type Grant, type GrantKind } from "../local/index.ts";
 
@@ -235,7 +235,7 @@ export class ServiceDb {
     );
   }
 
-  /** `tasks service port`: the user resolved the observations (A2 3.8.2 step 5). */
+  /** `ttasks service port`: the user resolved the observations (A2 3.8.2 step 5). */
   async clearObservations(): Promise<void> {
     await this.#conn.run("DELETE FROM port_holders");
   }

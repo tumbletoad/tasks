@@ -1,10 +1,10 @@
-// tasks-local/1 end to end over a real socket (Linux, macOS) or named pipe (Windows): the
+// ttasks-local/1 end to end over a real socket (Linux, macOS) or named pipe (Windows): the
 // handshake of A2 3.6.3 and the version negotiation of A2 3.6.6, with A2 5's handshake tests and
 // M1.09's Verify line: a client with a wrong key receives no byte after its hello, and a tampered
 // bind fails its proof.
 import { timingSafeEqual } from "node:crypto";
-import { LocalError, connect, openLines, openRpc, type JsonObject } from "@tasks/bridge/protocol";
-import { clientInfo, endpointRoot, firstLines, testKey, until } from "@tasks/bridge/test/endpoint";
+import { LocalError, connect, openLines, openRpc, type JsonObject } from "@ttasks/bridge/protocol";
+import { clientInfo, endpointRoot, firstLines, testKey, until } from "@ttasks/bridge/test/endpoint";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { testClock } from "../../test/clock.ts";
 import { editJson, relay, startServer, type Started } from "../../test/local.ts";
@@ -30,7 +30,7 @@ afterAll(() => {
 const SENTINEL_CONTEXT: JsonObject = {
   space: "sp_SENTINEL-SPACE",
   cwd: "/home/mira/SENTINEL-CWD",
-  env: { TASKS_TICKET: "SENTINEL-TICKET" },
+  env: { TTASKS_TICKET: "SENTINEL-TICKET" },
   resume: { handle: "bh_SENTINEL-HANDLE" },
 };
 
@@ -213,7 +213,7 @@ describe("[A2.3.6.local.handshake] handshake over a socket or pipe", () => {
     [
       "context",
       (p: Record<string, unknown>) =>
-        ((p["context"] as JsonObject)["env"] = { TASKS_TICKET: "other" }),
+        ((p["context"] as JsonObject)["env"] = { TTASKS_TICKET: "other" }),
     ],
     ["client", (p: Record<string, unknown>) => ((p["client"] as JsonObject)["kind"] = "shim")],
   ])("a bind with a tampered %s fails its proof", SLOW, async (_name, change) => {
@@ -230,7 +230,7 @@ describe("[A2.3.6.local.handshake] handshake over a socket or pipe", () => {
         key: hub.key,
         mode: "rpc",
         client: clientInfo(),
-        context: { env: { TASKS_TICKET: "SENTINEL-TICKET" } },
+        context: { env: { TTASKS_TICKET: "SENTINEL-TICKET" } },
       }).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(LocalError);
       // The service's proof verified, so the bind went to the real service, which refused it.

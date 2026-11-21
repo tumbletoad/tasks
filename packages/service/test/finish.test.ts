@@ -3,8 +3,8 @@
 // wrap-up, and replays, with the learnings read back in get_task's outcome section. A service in
 // this process, fixture text and temporary folders only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { AppError, TaskFinishResult, TaskGetResult, type ErrorBody } from "@tasks/contracts";
-import type { WriteResult } from "@tasks/storage";
+import { AppError, TaskFinishResult, TaskGetResult, type ErrorBody } from "@ttasks/contracts";
+import type { WriteResult } from "@ttasks/storage";
 import { renderResult } from "../src/mcp/render.ts";
 import { resultFailure } from "../src/ops/errors.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
@@ -187,7 +187,7 @@ describe("[A3.3.4.finish.lifecycle] complete_task: done, dropped, learnings and 
           "The task is already wrapped up with another outcome or other learnings, so nothing was changed.",
         );
         // In the words of the caller's face: this one calls through the command line.
-        expect(held.hint).toContain("reopen it first: tasks reopen");
+        expect(held.hint).toContain("reopen it first: ttasks reopen");
       }
       // An agent's tools name the tools; the UI names no command.
       const writerHeld = {

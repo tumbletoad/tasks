@@ -1,15 +1,15 @@
 // The grant gate (A3 3.7.4, 3.7.8, 3.7.9) on a service in this process with two spaces, Mira and
-// Life. Agent homes are registered and revoked as `tasks setup agents` does, through the user's
+// Life. Agent homes are registered and revoked as `ttasks setup agents` does, through the user's
 // `setup/home_grant` and `setup/home_revoke`. Each agent
 // connection is bound as the local endpoint binds an mcp mode connection, and its calls carry what
-// the endpoint's caller carries (the entry's instance as the home); a few go over real tasks-local/1
+// the endpoint's caller carries (the entry's instance as the home); a few go over real ttasks-local/1
 // connections. The negative cases are proved as carefully as the positive ones: a refused call
 // must not touch the other space's reader or writer at all. Fixture text and temporary folders only.
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { CLI_NAME } from "@tasks/brand";
-import type { JsonObject } from "@tasks/bridge/protocol";
-import { AppError, type ErrorBody } from "@tasks/contracts";
+import { CLI_NAME } from "@ttasks/brand";
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import { AppError, type ErrorBody } from "@ttasks/contracts";
 import { bridgePrincipal, clientOf, instanceOf, renderError } from "../src/mcp/index.ts";
 import { homeGate } from "../src/hub/home-gate.ts";
 import type { Grant } from "../src/local/index.ts";
@@ -274,14 +274,14 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       const ticketed = await w.launch("M-3");
       const loose = await connect({
         instance: "home-life",
-        env: { TASKS_TICKET: ticketed.ticket },
+        env: { TTASKS_TICKET: ticketed.ticket },
       });
       expect(loose.binding["state"]).toBe("unbound");
       expect(loose.slot.session).toBeUndefined();
       const named = await connect({
         instance: "home-life",
         space: w.space,
-        env: { TASKS_TICKET: ticketed.ticket },
+        env: { TTASKS_TICKET: ticketed.ticket },
       });
       expect(named.binding["state"]).toBe("unbound");
       expect(
@@ -309,7 +309,7 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       const rightTicket = await connect({
         instance: "home-mira",
         space: w.space,
-        env: { TASKS_TICKET: ticketed.ticket },
+        env: { TTASKS_TICKET: ticketed.ticket },
       });
       expect(rightTicket.binding["state"]).toBe("bound");
       for (const agent of [own, pinned, loose, named, right, rightTicket]) agent.close();
@@ -334,10 +334,10 @@ describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every conne
       const ticketed = await connect({
         instance,
         space: w.space,
-        env: { TASKS_TICKET: launch.ticket },
+        env: { TTASKS_TICKET: launch.ticket },
       });
       expect(ticketed.binding["state"]).toBe("bound");
-      const cli = await classSession(w.home, w.path, "cli-agent", { TASKS_TICKET: launch.ticket });
+      const cli = await classSession(w.home, w.path, "cli-agent", { TTASKS_TICKET: launch.ticket });
       const wire = new RawMcp(
         await openMcp(w.home, w.path, bridgeContext({ space: w.space, instance })),
       );
@@ -423,10 +423,10 @@ describe("[A3.3.7.grant.precedence] grant and binding: which refusal wins", () =
       const bridge = await connect({
         instance,
         space: w.space,
-        env: { TASKS_TICKET: launch.ticket },
+        env: { TTASKS_TICKET: launch.ticket },
       });
       expect(bridge.binding["state"]).toBe("bound");
-      const cli = await classSession(w.home, w.path, "cli-agent", { TASKS_TICKET: launch.ticket });
+      const cli = await classSession(w.home, w.path, "cli-agent", { TTASKS_TICKET: launch.ticket });
       const call = (space?: string) =>
         cli
           .call(
@@ -509,7 +509,7 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
       const stranger = await connect({
         instance: "never-registered",
         space: w.space,
-        env: { TASKS_TICKET: launch.ticket },
+        env: { TTASKS_TICKET: launch.ticket },
       });
       expect(stranger.binding["state"]).toBe("unbound");
       const refusal = await stranger.refusal("task.get", { launch: launch.reference });
@@ -566,7 +566,7 @@ describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every conne
       const own = await connect({
         instance: "home-session-x",
         space: w.space,
-        env: { TASKS_TICKET: launch.ticket },
+        env: { TTASKS_TICKET: launch.ticket },
       });
       expect(own.binding["state"]).toBe("bound");
       own.close();
@@ -575,7 +575,7 @@ describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every conne
       const other = await connect({
         instance: "home-session-y",
         space: w.space,
-        env: { TASKS_TICKET: launch.ticket },
+        env: { TTASKS_TICKET: launch.ticket },
       });
       expect(other.binding["state"]).toBe("unbound");
       expect(other.slot.session).toBeUndefined();
@@ -590,7 +590,7 @@ describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every conne
       const again = await connect({
         instance: "home-session-x",
         space: w.space,
-        env: { TASKS_TICKET: launch.ticket },
+        env: { TTASKS_TICKET: launch.ticket },
       });
       expect(again.binding["state"]).toBe("bound");
       const session = again.slot.session;

@@ -1,6 +1,6 @@
 // Lets a process end through `process.exit` without hanging in it (A2 3.12.1). Every script that
 // ends through `process.exit` and runs the product's code imports this module before any other:
-// the CLI's entries (bin.ts, the build's lib/tasks.mjs), the bridge's and the service's script
+// the CLI's entries (bin.ts, the build's lib/ttasks.mjs), the bridge's and the service's script
 // entries, and the test scripts that run the product's code. tests/runtime/safe-exit-entries.test.ts
 // finds them and checks the order.
 //

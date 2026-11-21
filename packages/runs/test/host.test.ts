@@ -3,9 +3,9 @@
 // a container that refuses to empty and End by force, and the next start after a crash.
 import { spawn, type ChildProcess } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { RunRecord } from "@tasks/contracts/runs";
-import type { RunStore } from "@tasks/launch/execution-store";
-import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
+import type { RunRecord } from "@ttasks/contracts/runs";
+import type { RunStore } from "@ttasks/launch/execution-store";
+import { MemoryDurable, MemoryExecutionStore } from "@ttasks/launch/memory-store";
 import { describe, expect, test } from "vitest";
 import {
   RunHost,

@@ -29,7 +29,7 @@ let base = "";
 /** See below: set once git's own reading of a blank is known. */
 let verbatimBlanks = false;
 beforeAll(() => {
-  base = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-git-config-")));
+  base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-git-config-")));
   writeFileSync(join(base, "global.cfg"), "");
   verbatimBlanks = HAS_GIT && gitReads("[a]\n\tk = x\ty\n", 0)?.[0]?.value === "x\ty";
 });

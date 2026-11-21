@@ -4,7 +4,7 @@
 // list from contracts' generated file and the server instructions, the same for every connection.
 // Tools only (A3 3.3 "Methods"): no resources, prompts, sampling, elicitation, roots or
 // `list_changed`. A tool call goes to `call`, which the endpoint wires to the request path.
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import {
   ProtocolError,
   ProtocolErrorCode,

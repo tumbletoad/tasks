@@ -1,9 +1,9 @@
 // The request path's errors (A3 3.5): every failure becomes the contract's error body. A1's codes
 // map through contracts' table (A3 3.5). Bodies never quote a value the caller sent: issues
 // name a path and a fixed sentence, and storage's messages are fixed sentences.
-import { CLI_NAME } from "@tasks/brand";
-import { a1ErrorBody, AppError, cliFaces, findEntry, type ErrorBody } from "@tasks/contracts";
-import { StorageError, type WriteResult } from "@tasks/storage";
+import { CLI_NAME } from "@ttasks/brand";
+import { a1ErrorBody, AppError, cliFaces, findEntry, type ErrorBody } from "@ttasks/contracts";
+import { StorageError, type WriteResult } from "@ttasks/storage";
 
 /** A feature of an entry that a later step builds. Never a silent drop of what the caller sent. */
 export function unsupported(path: string, owner: string): AppError {
@@ -320,7 +320,7 @@ function withReplay(body: ErrorBody): ErrorBody {
 
 /**
  * A space the service does not serve, or not now. `wayOut`: what the space's state tells a person
- * to run, which `tasks space list` shows with the space's folder.
+ * to run, which `ttasks space list` shows with the space's folder.
  */
 export function spaceUnavailable(
   reason: string,
@@ -337,8 +337,8 @@ export function spaceUnavailable(
     hint: retryable
       ? "Try again in a moment."
       : wayOut === undefined
-        ? "Run tasks space list."
-        : `${wayOut} Run tasks space list for its folder.`,
+        ? "Run ttasks space list."
+        : `${wayOut} Run ttasks space list for its folder.`,
     data: { reason, retryable, ...(state === undefined ? {} : { state }) },
   });
 }

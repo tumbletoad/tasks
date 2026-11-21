@@ -1,4 +1,4 @@
-// `tasks mcp` in the router (A2 3.10.1): the arguments after `mcp` go to the bridge as
+// `ttasks mcp` in the router (A2 3.10.1): the arguments after `mcp` go to the bridge as
 // they are, its exit code is the command's, and the CLI writes nothing around it. bin.ts hands
 // over before it loads the router; this is the same verb for callers of main().
 import { describe, expect, test } from "vitest";
@@ -66,7 +66,7 @@ describe("[A2.3.7.bridge.cli-entry] the router's mcp verb", () => {
       });
       expect(result, argv.join(" ")).toBe(2);
       expect(started).toBe(false);
-      expect(`${io.out}${io.err}`).toContain("tasks mcp");
+      expect(`${io.out}${io.err}`).toContain("ttasks mcp");
     }
   });
 

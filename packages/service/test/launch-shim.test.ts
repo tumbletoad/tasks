@@ -1,5 +1,5 @@
 // The launch shim end to end (A7 3.9 M2.08, A4 3.6.3, 3.9.3, A4 5.1 "Shim re-attachment"): a real
-// service in this process, `tasks shim <ticket>` as a real child process started the way a
+// service in this process, `ttasks shim <ticket>` as a real child process started the way a
 // terminal would, and a fake agent as the shim's child. Fixture data and temporary folders only.
 import { spawn } from "node:child_process";
 import {
@@ -13,15 +13,15 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { RpcError } from "@tasks/bridge/protocol";
+import { RpcError } from "@ttasks/bridge/protocol";
 import {
   BRIDGE_WINDOW_MS,
   CLAIM_WINDOW_MS,
   REFUSED,
   startTimes,
   type PlanFolder,
-} from "@tasks/launch";
-import type { FakeAgentReport } from "@tasks/runs/fake-agents";
+} from "@ttasks/launch";
+import type { FakeAgentReport } from "@ttasks/runs/fake-agents";
 import { readLog, stateOf, waitFor } from "./harness.ts";
 import {
   CLI_BIN,
@@ -206,7 +206,7 @@ describe("[A4.5.shim.environment] the agent sees exactly the expected environmen
         ...Object.fromEntries(needed.flatMap(real)),
         CODEX_HOME: "/inherited/codex",
         CLAUDE_CONFIG_DIR: "/inherited/claude",
-        TASKS_HOME: "/inherited/tasks",
+        TTASKS_HOME: "/inherited/tasks",
         FIXTURE_NOT_LISTED: "1",
         NODE_OPTIONS: "--no-warnings",
       };
@@ -234,9 +234,9 @@ describe("[A4.5.shim.environment] the agent sees exactly the expected environmen
           ...(process.platform === "win32" ? LIBUV_REQUIRED : []),
           "CODEX_HOME",
           "FIXTURE_INSTANCE",
-          "TASKS_TICKET",
-          "TASKS_TASK",
-          "TASKS_SPACE",
+          "TTASKS_TICKET",
+          "TTASKS_TASK",
+          "TTASKS_SPACE",
           "TERM",
         ].map(fold),
       );
@@ -549,7 +549,7 @@ describe("[A4.5.shim.client] the shim's own steps", () => {
         );
         l.shims.push(bad);
         expect((await l.shimExit(bad)).code, args.join(" ")).toBe(2);
-        expect(bad.stderr()).toMatch(/usage: tasks shim <ticket>/);
+        expect(bad.stderr()).toMatch(/usage: ttasks shim <ticket>/);
         expect(bad.stderr()).not.toContain("not-a-ticket");
         expect(bad.stdout()).toBe("");
       }

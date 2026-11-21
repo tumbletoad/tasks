@@ -1,7 +1,7 @@
 // A storage code from a space verb as A3's error body (A3 3.5's table). The worker threads
 // hand over only the code, so the sentence is a fixed one per kind of failure.
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
-import { a1ErrorBody, type ErrorBody } from "@tasks/contracts";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { a1ErrorBody, type ErrorBody } from "@ttasks/contracts";
 
 const MESSAGES: Readonly<Record<string, string>> = {
   SPACE_EXISTS: "A folder is already there.",

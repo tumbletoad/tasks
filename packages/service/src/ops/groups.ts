@@ -8,7 +8,7 @@
 // creates (`area.create`, `project.create`) in the same request. Where a name only looks a group
 // up (organize's list), an unknown one is `not_found`. Where the caller asks to create the group by
 // that name, a close one is new too: "Release 2" beside "Release 1" is meant.
-import { AppError } from "@tasks/contracts";
+import { AppError } from "@ttasks/contracts";
 import { way, type Face } from "./errors.ts";
 import type { GroupName, GroupNames } from "./read.ts";
 

@@ -242,7 +242,7 @@ test.describe("[M6.page.e2e.refused] A run that cannot start says why and keeps 
     page,
     runs: world,
   }) => {
-    const temp = mkdtempSync(join(tmpdir(), "tasks-e2e-run-"));
+    const temp = mkdtempSync(join(tmpdir(), "ttasks-e2e-run-"));
     try {
       const folder = join(temp, "portal");
       mkdirSync(folder);
@@ -265,7 +265,7 @@ test.describe("[M6.page.e2e.refused] A run that cannot start says why and keeps 
       await runButton(page, ref).click();
       await expect(
         toast(page).filter({
-          hasText: `This may not be the folder set for this task: its Tasks marker is missing. ${set.folder}.`,
+          hasText: `This may not be the folder set for this task: its TTasks marker is missing. ${set.folder}.`,
         }),
       ).toBeVisible({ timeout: SLOW_MS });
       await expect(composer).toHaveValue("Tag it as 2.4");

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { A1_ERRORS } from "@tasks/contracts";
+import { A1_ERRORS } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import { readOnly, spaceUnavailable } from "../ops/errors.ts";
 import { storageFailureBody } from "./space-errors.ts";

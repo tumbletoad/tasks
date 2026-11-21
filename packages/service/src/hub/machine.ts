@@ -9,8 +9,8 @@
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import { PRODUCT_ID } from "@tasks/brand";
-import { isId, newId, type Id, type MachineInfo, type MachineOs } from "@tasks/storage";
+import { PRODUCT_ID } from "@ttasks/brand";
+import { isId, newId, type Id, type MachineInfo, type MachineOs } from "@ttasks/storage";
 import { atomicWrite } from "./files.ts";
 
 export const MACHINE_FILE = "machine.json";

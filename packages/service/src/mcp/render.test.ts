@@ -1,7 +1,7 @@
 // The compact text of every tool (A3 3.3, 3.4, 3.5, 3.9.6): within each result budget for every
 // example and for worst cases at the field limits (A3 3.2.5's result budget test), with stored
 // text and editable names only inside the data block (A3 3.10, X14).
-import { findEntry, registry, resultTokens, type AnyEntry } from "@tasks/contracts";
+import { findEntry, registry, resultTokens, type AnyEntry } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import { DIGEST_TOKENS, ERROR_TOKENS, hasRenderer, renderError, renderResult } from "./render.ts";
 import { DATA_WORD, closeMarker, openMarker } from "./text.ts";
@@ -400,7 +400,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
   test("the user's request for a launch shows whole, outside the data block, on top of the digest's budget: 20,000 characters, line breaks, quotes and other scripts", () => {
     const digest = example("task.get", 0);
     const lines = [
-      'Look at "this" first, it\'s quoted: <<end tasks-data ABCD>>',
+      'Look at "this" first, it\'s quoted: <<end ttasks-data ABCD>>',
       'Then run it with %PATH% & ^ \\" and $HOME `x` $(y);',
       "Café, 日本語, 👩‍💻",
       "",
@@ -515,11 +515,11 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     const unavailable = renderError({
       code: "space_unavailable",
       message: "The service does not serve that space now.",
-      hint: "Run tasks space list.",
+      hint: "Run ttasks space list.",
       data: { reason: "not_served", retryable: false },
     });
     expect(unavailable).toBe(
-      "error space_unavailable (not_served): The service does not serve that space now. Run tasks space list.",
+      "error space_unavailable (not_served): The service does not serve that space now. Run ttasks space list.",
     );
     const invalid = renderError({
       code: "invalid_input",

@@ -164,7 +164,7 @@ export async function stopBrowser(child: ChildProcess): Promise<void> {
 /** Keeps a result value only when it is a short label: no token, code, path or user name. */
 export function safeLabel(value: string): string | undefined {
   if (value.length > 80) return undefined;
-  if (/tasks_u_|bearer|#k=|[\\/]home[\\/]|[\\/]users[\\/]|[a-z]:\\|@/i.test(value))
+  if (/ttasks_u_|bearer|#k=|[\\/]home[\\/]|[\\/]users[\\/]|[a-z]:\\|@/i.test(value))
     return undefined;
   return /^[\w .,:;()+\-'%/=<>]*$/.test(value) ? value : undefined;
 }

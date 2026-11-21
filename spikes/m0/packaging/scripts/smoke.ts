@@ -1,6 +1,6 @@
 // Smoke run of a built and signed release for this host's platform (A2 3.12.8 "smoke", spike
 // level), with the real archive and the official Node inside it:
-//   1. install with the real install script into <work>/home (TASKS_HOME),
+//   1. install with the real install script into <work>/home (TTASKS_HOME),
 //   2. the runtime gate through the stable and the version-local launcher (lab row R01),
 //   3. hostile argv and exit codes through every launcher (R09),
 //   4. a tampered archive, a tampered SHA256SUMS, a foreign signature and a missing signature,
@@ -55,9 +55,9 @@ const step = (text: string) => {
   console.log(`\n== ${text}`);
 };
 
-step(`install ${archive.file} into a temporary TASKS_HOME`);
+step(`install ${archive.file} into a temporary TTASKS_HOME`);
 const root = join(work, "home");
-const run = runInstaller(platform, installer, values.dist, undefined, { TASKS_HOME: root });
+const run = runInstaller(platform, installer, values.dist, undefined, { TTASKS_HOME: root });
 console.log(run.stdout.trim());
 assertInstalled(root, version, platform, run);
 

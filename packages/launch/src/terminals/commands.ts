@@ -28,7 +28,7 @@
 //   script in two variables, never in the script's text. Judged like a direct terminal: the
 //   starter exits 0 at once, a non-zero exit means the start failed and nothing started.
 import { basename, win32 } from "node:path";
-import { envVar, PRODUCT_ID } from "@tasks/brand";
+import { envVar, PRODUCT_ID } from "@ttasks/brand";
 import type { TerminalApp } from "../sections.ts";
 
 /** A terminal adapter's app: machine.toml's names without `auto`. */

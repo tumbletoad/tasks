@@ -1,6 +1,6 @@
 // What setup runs and how it keeps one change at a time: the app's own command, and the lock.
 import { join } from "node:path";
-import { startHelper, type Env } from "@tasks/launch";
+import { startHelper, type Env } from "@ttasks/launch";
 import { ensurePrivateDir } from "../hub/files.ts";
 import { acquireLock } from "../hub/lock.ts";
 import { SETUP_LOCK, SetupStateUnsafe, setupDir } from "./state.ts";
@@ -11,7 +11,7 @@ export { LockBusy } from "../hub/lock.ts";
 export const COMMAND_MS = 60_000;
 
 /**
- * Runs an app's own command as a helper of the runner (@tasks/launch helpers.ts, A3 3.14): an argv
+ * Runs an app's own command as a helper of the runner (@ttasks/launch helpers.ts, A3 3.14): an argv
  * array, no shell, no stdin, only `env`, in `cwd`, ended with what it started at its bound or when
  * this process exits. A `.cmd` shim is never run. True when it exits 0. Its output is not read: an
  * app's own words can hold paths and accounts.

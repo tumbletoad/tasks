@@ -1,5 +1,5 @@
 // The request path for operations (A2 3.6.4 op/call and op/list; A3 3.4, 3.5, 3.7.9; M1.10)
-// through a real service in this process and real tasks-local/1 sessions of each CLI class.
+// through a real service in this process and real ttasks-local/1 sessions of each CLI class.
 // Fixture text only.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -17,9 +17,9 @@ import {
   TaskReopenResult,
   TaskUpdateResult,
   type AnyEntry,
-} from "@tasks/contracts";
-import type { SpaceWriterHandle, WriteRequest } from "@tasks/storage";
-import { RpcError, type RpcSession } from "@tasks/bridge/protocol";
+} from "@ttasks/contracts";
+import type { SpaceWriterHandle, WriteRequest } from "@ttasks/storage";
+import { RpcError, type RpcSession } from "@ttasks/bridge/protocol";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import type { ConnectionClass } from "../src/local/index.ts";
 import { checkExposure } from "../src/ops/caller.ts";
@@ -31,7 +31,7 @@ let service: RunningService;
 let home: string;
 let cleanup: () => void;
 let spaceFolder: string;
-/** A folder of the person's work, outside the space's and the Tasks home. */
+/** A folder of the person's work, outside the space's and the TTasks home. */
 let workFolder: string;
 const sessions: RpcSession[] = [];
 
@@ -253,7 +253,7 @@ describe("[A2.3.6.ops.request-path] op/call and op/list", () => {
     const agent = await session("cli-agent", { CODEX_THREAD_ID: "fixture" });
     const noSpace = errorOf(await call(agent, "space.status", {}).catch((e: unknown) => e));
     expect(noSpace.code).toBe("invalid_input");
-    const viaEnv = await session("cli-agent", { CODEX_THREAD_ID: "fixture", TASKS_SPACE: "Mira" });
+    const viaEnv = await session("cli-agent", { CODEX_THREAD_ID: "fixture", TTASKS_SPACE: "Mira" });
     SpaceStatusResult.parse(await call(viaEnv, "space.status", {}));
     const notServed = errorOf(
       await call(s, "space.status", {}, { space: "Nowhere" }).catch((e: unknown) => e),

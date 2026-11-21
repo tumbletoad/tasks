@@ -6,8 +6,8 @@
 // Task content never leaves through a side door: a tool's arguments and results reach only the
 // request path and the tool's own result. Events carry a connection number, a tool name from the
 // generated list and fixed words.
-import type { JsonObject } from "@tasks/bridge/protocol";
-import { AppError } from "@tasks/contracts";
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import { AppError } from "@ttasks/contracts";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import type { McpChannel } from "../local/index.ts";
 import type { Bindings } from "../binding/index.ts";
@@ -68,7 +68,7 @@ export interface McpEndpointOptions {
   readonly log?: (event: McpEvent) => void;
   /**
    * A tool call went through the request path from this instance and app (the entry's `--instance`
-   * and `--app`), in the bridge's working folder (the bind context's `cwd`): `tasks doctor --live`
+   * and `--app`), in the bridge's working folder (the bind context's `cwd`): `ttasks doctor --live`
    * asks for it (hub/agent-homes.ts `setup/seen`). Only a call the service carried out counts.
    */
   readonly seen?: (
@@ -89,7 +89,7 @@ const text = (value: string, isError: boolean): ToolResult =>
 const INTERNAL = new AppError({
   code: "internal",
   message: "Something went wrong in the service.",
-  hint: "Retry once. If it fails again, ask the user to run tasks doctor.",
+  hint: "Retry once. If it fails again, ask the user to run ttasks doctor.",
 });
 
 /**
@@ -131,7 +131,7 @@ export function toolCaller(options: {
     try {
       const result = await opCall(
         options.ops,
-        // No environment: TASKS_SPACE is a hint for diagnostics, never a binding (A3 3.7.2).
+        // No environment: TTASKS_SPACE is a hint for diagnostics, never a binding (A3 3.7.2).
         {
           class: "bridge",
           env: {},

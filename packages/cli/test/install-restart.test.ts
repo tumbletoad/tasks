@@ -1,8 +1,8 @@
-// The end of an install whose service still runs another version (`tasks install --finish`): a
+// The end of an install whose service still runs another version (`ttasks install --finish`): a
 // person at a terminal is asked once, anyone else reads the restart as the last lines. The service
 // here is a stand-in; tests/update/restart.test.ts runs the real one through an install script.
 import { describe, expect, test } from "vitest";
-import { PRODUCT_NAME } from "@tasks/brand";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import { offerRestart, type InstalledService } from "../src/install.ts";
 import type { Io } from "../src/io.ts";
 
@@ -54,7 +54,7 @@ function service(
   return { stand, calls };
 }
 
-const installed = { version: "0.2.0", command: "/home/fixture/tasks test/bin/tasks" };
+const installed = { version: "0.2.0", command: "/home/fixture/tasks test/bin/ttasks" };
 const lastLines = (text: string) => text.trimEnd().split("\n").slice(-2);
 
 describe("[A2.3.12.4.install.restart-notice] the end of an install names the restart of a service that runs another version", () => {
@@ -65,18 +65,18 @@ describe("[A2.3.12.4.install.restart-notice] the end of an install names the res
     expect(calls.restart).toBe(0);
     expect(lastLines(io.out)).toEqual([
       `${PRODUCT_NAME}'s service still runs 0.1.0. To run 0.2.0, restart it:`,
-      "  '/home/fixture/tasks test/bin/tasks' service restart",
+      "  '/home/fixture/tasks test/bin/ttasks' service restart",
     ]);
     const windows = recorder(undefined, "win32");
     await offerRestart(
       windows,
-      { version: "0.2.0", command: "C:\\Fixture Home\\tt\\bin\\tasks.exe" },
+      { version: "0.2.0", command: "C:\\Fixture Home\\tt\\bin\\ttasks.exe" },
       null,
       stand,
     );
     expect(lastLines(windows.out)).toEqual([
       `${PRODUCT_NAME}'s service still runs another version. To run 0.2.0, restart it:`,
-      "  & 'C:\\Fixture Home\\tt\\bin\\tasks.exe' service restart",
+      "  & 'C:\\Fixture Home\\tt\\bin\\ttasks.exe' service restart",
     ]);
   });
 
@@ -105,7 +105,7 @@ describe("[A2.3.12.4.install.restart-notice] the end of an install names the res
     expect(broken.calls.restart).toBe(1);
     expect(lastLines(failed.out)).toEqual([
       `${PRODUCT_NAME}'s service still runs 0.1.0. To run 0.2.0, restart it:`,
-      "  '/home/fixture/tasks test/bin/tasks' service restart",
+      "  '/home/fixture/tasks test/bin/ttasks' service restart",
     ]);
 
     // The restart stopped the old service and the start failed: the lines say that none runs.
@@ -118,7 +118,7 @@ describe("[A2.3.12.4.install.restart-notice] the end of an install names the res
     );
     expect(lastLines(stopped.out)).toEqual([
       `${PRODUCT_NAME}'s service is not running. To run 0.2.0, start it:`,
-      "  '/home/fixture/tasks test/bin/tasks' service start",
+      "  '/home/fixture/tasks test/bin/ttasks' service start",
     ]);
 
     // The start only took longer than the restart waited: the new version runs, nothing to add.

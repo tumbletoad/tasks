@@ -1,7 +1,7 @@
 // The page's receipt from a `launches` row: the terminal and its source reach
 // the page only as the fixed words a launch records. Fixture rows only.
 import { describe, expect, test } from "vitest";
-import { RUN_LIMITS, type RunRecord } from "@tasks/contracts/runs";
+import { RUN_LIMITS, type RunRecord } from "@ttasks/contracts/runs";
 import { WORK_ON_IT } from "../runs/agent.ts";
 import { receiptOf, UiLaunches, uiRun, type UiRunPort } from "./launches.ts";
 

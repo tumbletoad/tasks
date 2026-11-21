@@ -1,5 +1,5 @@
 // The built-in target catalogue (A4 3.2, L1): reviewed code, shipped in the binary. A target is
-// what Tasks can open a task in; an instance (instances.ts) binds a target to one account or
+// what TTasks can open a task in; an instance (instances.ts) binds a target to one account or
 // config home on this machine. Space data never carries a command: a target defined by a space is
 // a `custom:` definition that stays disabled until approved on each machine (approval.ts).
 //
@@ -40,7 +40,7 @@ export interface RouteDef {
   readonly nativeId: "preset" | "returned" | "bridge" | "reference-match" | "none";
   /** The app's hard limit in characters; null when there is none (A4 3.15.3). */
   readonly maxPrompt: number | null;
-  /** Tasks's cap for the brief; for Copy, the brief with the person's words. */
+  /** TTasks's cap for the brief; for Copy, the brief with the person's words. */
   readonly budget: number;
   readonly trust: "once-per-root" | "every-launch" | "project" | "none" | "unknown";
   readonly needsGui: boolean;
@@ -91,7 +91,7 @@ export interface TargetDef {
   readonly testedVersions: string;
   /**
    * T3 only: the model a proposed T3 instance opens with, per T3 driver, when T3's own default
-   * selection does not name its provider instance (A4 3.2 `tasks setup instances`). These are T3's
+   * selection does not name its provider instance (A4 3.2 `ttasks setup instances`). These are T3's
    * own defaults per driver at the T3 commit A4 names.
    */
   readonly t3Models?: Readonly<Record<string, string>>;
@@ -101,7 +101,7 @@ export interface TargetDef {
   readonly run?: "claude-print" | "codex";
 }
 
-/** No flags for any mode: targets whose permission Tasks cannot set. */
+/** No flags for any mode: targets whose permission TTasks cannot set. */
 const NO_ARGS = {
   inherit: { open: [], run: null },
   "full-access": { open: [], run: null },
@@ -388,7 +388,7 @@ export const HOME_VARIABLES: readonly string[] = [
 
 /**
  * Placeholders that stand for whole argv elements (zero or more of them). `{tool_env}` is Codex's
- * declaration that Tasks's MCP entry takes the ticket from the environment (A4 3.4.3), given only
+ * declaration that TTasks's MCP entry takes the ticket from the environment (A4 3.4.3), given only
  * when the home's own entry lacks it.
  */
 export const WHOLE_ELEMENT_PLACEHOLDERS = ["exec", "permission", "extra_args", "tool_env"] as const;

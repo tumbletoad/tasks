@@ -17,7 +17,7 @@
 //   copies opening at once are not: either one answers that the space is still opening.
 // - A name that two different spaces have is `ambiguous` too: the ID names one of them.
 import { isAbsolute, resolve } from "node:path";
-import { AppError } from "@tasks/contracts";
+import { AppError } from "@ttasks/contracts";
 
 /** What the rule reads of a space. */
 export interface Copy {
@@ -137,7 +137,7 @@ export function ambiguousError<S extends Copy>(found: Ambiguity<S>, hint?: strin
     return new AppError({
       code: "ambiguous",
       message: "Several spaces have this name.",
-      hint: hint ?? "Name the space by its ID: tasks space list.",
+      hint: hint ?? "Name the space by its ID: ttasks space list.",
     });
   }
   const folders = found.candidates.flatMap((copy) =>

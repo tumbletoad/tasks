@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { loadDriver, type SqliteDriver } from "@tasks/storage";
+import { loadDriver, type SqliteDriver } from "@ttasks/storage";
 import { GATE_CHECKS, runtimeGate, type GateFacts } from "./runtime-gate.ts";
 
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));

@@ -16,11 +16,11 @@ import { runKeys } from "../src/install/render.ts";
 import { captureIO, fakeContext, TEST_INSTALL_ID } from "./install-fakes.ts";
 
 const windows = process.platform === "win32";
-const SCRATCH = `HKCU\\Software\\tasks-test-${randomBytes(6).toString("hex")}`;
+const SCRATCH = `HKCU\\Software\\ttasks-test-${randomBytes(6).toString("hex")}`;
 const keys = runKeys(SCRATCH);
 /** A second scratch key that this test never creates itself: install does, uninstall removes it. */
-const FRESH = `HKCU\\Software\\tasks-test-${randomBytes(6).toString("hex")}`;
-const RUN_NAME = `TT Tasks (${TEST_INSTALL_ID})`;
+const FRESH = `HKCU\\Software\\ttasks-test-${randomBytes(6).toString("hex")}`;
+const RUN_NAME = `TTasks (${TEST_INSTALL_ID})`;
 
 let regExe = "reg.exe";
 let dir = "";
@@ -45,7 +45,7 @@ beforeAll(async () => {
   if (folder === undefined) throw new Error("System32 not found");
   regExe = join(folder, "reg.exe");
   // A name with letters outside ASCII: reg query would return it altered, reg export exactly.
-  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-svc-Mïra 日本-")));
+  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-svc-Mïra 日本-")));
   // Another program's value and Task Manager's off record of it, and the daily install's value.
   await reg(
     "add",
@@ -62,11 +62,11 @@ beforeAll(async () => {
     "add",
     keys.run,
     "/v",
-    "TT Tasks",
+    "TTasks",
     "/t",
     "REG_SZ",
     "/d",
-    '"C:\\Users\\m\\.local\\bin\\tasksw.exe"',
+    '"C:\\Users\\m\\.local\\bin\\ttasksw.exe"',
     "/f",
   );
   await reg(

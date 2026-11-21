@@ -45,11 +45,11 @@ const noTmpdir = [
 ];
 
 // No AppData paths in product code (A2 3.2.2 rule 4): MSIX virtualises new files there, so
-// nothing another Tasks process must see may live in %APPDATA% or %LOCALAPPDATA%. Machine-local
-// files live under %USERPROFILE%\.tasks and the program under %USERPROFILE%\.local. Lab code
+// nothing another TTasks process must see may live in %APPDATA% or %LOCALAPPDATA%. Machine-local
+// files live under %USERPROFILE%\.ttasks and the program under %USERPROFILE%\.local. Lab code
 // (spikes/) probes AppData on purpose.
 const APPDATA_MESSAGE =
-  "Do not use AppData paths (A2 3.2.2). Data lives under %USERPROFILE%\\.tasks, the program under %USERPROFILE%\\.local.";
+  "Do not use AppData paths (A2 3.2.2). Data lives under %USERPROFILE%\\.ttasks, the program under %USERPROFILE%\\.local.";
 const noAppData = [
   { selector: "Literal[value=/appdata/i]", message: APPDATA_MESSAGE },
   { selector: "TemplateElement[value.raw=/appdata/i]", message: APPDATA_MESSAGE },

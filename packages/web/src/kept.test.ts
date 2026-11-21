@@ -3,7 +3,7 @@
 // What a person typed, kept in the browser (kept.ts): back after a reload, kept for the tab when
 // storage is blocked or full, listed per prefix, kept for the browser or for the tab alone, and
 // another tab's change is heard.
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { browserKept, onKept, tabKept } from "./kept.ts";
 

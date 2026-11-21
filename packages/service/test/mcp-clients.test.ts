@@ -1,9 +1,9 @@
-// Official MCP clients of both eras against the real service through `tasks mcp` (A3 3.3, A3 5's
+// Official MCP clients of both eras against the real service through `ttasks mcp` (A3 3.3, A3 5's
 // M0 item 7, A7 3.9 M2.02's Verify line). Every client is the SDK's own, as the lab ran them (M0
 // row A07): SDK 1.x (2025-11-25), and SDK 2.x in its legacy mode, its auto mode (which probes
 // with server/discover) and pinned to 2026-07-28. Each starts the bridge as a real process the way
 // an agent app does, through the CLI's entry and through the bridge's direct entry, against a real
-// service process in a temporary TASKS_HOME whose space comes from machine.toml. No agent app is
+// service process in a temporary TTASKS_HOME whose space comes from machine.toml. No agent app is
 // started and no agent home is read or written.
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,13 +29,13 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) cleanup();
 });
 
-/** The client's environment: this process's, without Tasks's variables or agent markers. */
+/** The client's environment: this process's, without TTasks's variables or agent markers. */
 function clientEnv(home: string): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) {
-    if (value !== undefined && !/^(TASKS_|CLAUDE|CODEX_|T3CODE_)/i.test(name)) env[name] = value;
+    if (value !== undefined && !/^(TTASKS_|CLAUDE|CODEX_|T3CODE_)/i.test(name)) env[name] = value;
   }
-  return { ...env, TASKS_HOME: home };
+  return { ...env, TTASKS_HOME: home };
 }
 
 type Kind = "v1-legacy" | "v2-legacy" | "v2-auto" | "v2-pin-2026-07-28";
@@ -70,7 +70,7 @@ async function useClient(
     return typeof first?.text === "string" ? first.text : "";
   };
   if (kind === "v1-legacy") {
-    const client = new ClientV1({ name: "tasks-test", version: "1.0.0" });
+    const client = new ClientV1({ name: "ttasks-test", version: "1.0.0" });
     await client.connect(new StdioV1(params), timeout);
     try {
       const tools = (await client.listTools(undefined, timeout)).tools;
@@ -94,7 +94,7 @@ async function useClient(
   const mode =
     kind === "v2-legacy" ? "legacy" : kind === "v2-auto" ? "auto" : { pin: "2026-07-28" };
   const client = new ClientV2(
-    { name: "tasks-test", version: "2.0.0" },
+    { name: "ttasks-test", version: "2.0.0" },
     { versionNegotiation: { mode } },
   );
   await client.connect(new StdioV2(params), timeout);
@@ -118,7 +118,7 @@ async function useClient(
   }
 }
 
-describe("[A3.3.3.mcp.clients] official clients of both eras through tasks mcp", () => {
+describe("[A3.3.3.mcp.clients] official clients of both eras through ttasks mcp", () => {
   test(
     "each lists the eleven tools, reads the instructions and calls status, through the CLI's entry and the bridge's",
     { timeout: 300_000 },
@@ -138,7 +138,7 @@ describe("[A3.3.3.mcp.clients] official clients of both eras through tasks mcp",
       });
       const args = ["--space", space.id, "--instance", "test-agent", "--app", "test"];
       const entries = {
-        "tasks mcp (the CLI's entry)": [CLI_BIN, "mcp", ...args],
+        "ttasks mcp (the CLI's entry)": [CLI_BIN, "mcp", ...args],
         "the bridge's direct entry": [BRIDGE_MAIN, ...args],
       };
       for (const [entry, entryArgs] of Object.entries(entries)) {
@@ -162,7 +162,7 @@ describe("[A3.3.3.mcp.clients] official clients of both eras through tasks mcp",
           expect(seen.instructions, label).toBe(INSTRUCTIONS);
           expect(seen.isError, label).toBe(false);
           expect(seen.text, label).toContain("Space: Mira (M)");
-          expect(seen.text, label).toMatch(/^TT Tasks · .* · as_of \d+\.\d+\.[0-9a-z]{8}\n/);
+          expect(seen.text, label).toMatch(/^TTasks · .* · as_of \d+\.\d+\.[0-9a-z]{8}\n/);
           if (kind === "v2-legacy") {
             expect([seen.era, seen.version], label).toEqual(["legacy", "2025-11-25"]);
           } else if (kind !== "v1-legacy") {

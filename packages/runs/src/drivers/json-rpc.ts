@@ -7,7 +7,7 @@
 // and so is anything that is not a JSON object. A request with a method no handler takes gets the
 // protocol's "method not found" error, never silence.
 import type { Readable, Writable } from "node:stream";
-import { LINE_CAP_BYTES } from "@tasks/contracts/runs";
+import { LINE_CAP_BYTES } from "@ttasks/contracts/runs";
 import { LineSplitter } from "../streams/lines.ts";
 
 /** JSON-RPC's own error codes. */

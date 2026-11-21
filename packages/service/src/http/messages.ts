@@ -1,6 +1,6 @@
-// The lines a person reads about the UI's port (A2 3.8.2), the same in `tasks open`, `tasks
-// service status` and doctor. Storage-free, so the CLI imports them (`@tasks/service/http/shared`).
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+// The lines a person reads about the UI's port (A2 3.8.2), the same in `ttasks open`, `tasks
+// service status` and doctor. Storage-free, so the CLI imports them (`@ttasks/service/http/shared`).
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 
 /** A2 3.8.2 step 4's message. */
 export function blockedMessage(port: number | null): string {
@@ -12,7 +12,7 @@ export function blockedMessage(port: number | null): string {
   );
 }
 
-/** A2 3.8.2 step 6's line for `tasks open`. */
+/** A2 3.8.2 step 6's line for `ttasks open`. */
 export function movedMessage(persisted: number, port: number): string {
   return `Port ${String(persisted)} is busy, using ${String(port)} this time. The installed web app needs port ${String(persisted)}.`;
 }

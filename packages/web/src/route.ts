@@ -1,10 +1,10 @@
 // The tab's route (A5 3.3): the space lives in the URL, so each tab keeps its own space, and a
-// reload, Back and Forward or a link from `tasks open` land on it. The router (app/router.tsx)
+// reload, Back and Forward or a link from `ttasks open` land on it. The router (app/router.tsx)
 // owns the routes; this module reads what arrives from outside, by its shape only: the path a
 // link names and the sign-in fragment. Both come from whoever wrote the link.
 //
 //   /                              the machine's default space (A2 3.1), resolved by the page
-//   /?task=<ref>                   a task in the default space (`tasks open <task>` without a space)
+//   /?task=<ref>                   a task in the default space (`ttasks open <task>` without a space)
 //   /s/<space ID>/<view…>          a view of the space, at most four plain segments
 //   /s/<space ID>/task/<ref>       a task of the space, expanded
 //
@@ -43,7 +43,7 @@ export interface PageRoute {
 export interface Fragment {
   /** A one-time sign-in code, when the fragment held one of the right shape. */
   readonly code?: string;
-  /** Where `tasks open` asked the tab to go: a page path. */
+  /** Where `ttasks open` asked the tab to go: a page path. */
   readonly to?: string;
 }
 

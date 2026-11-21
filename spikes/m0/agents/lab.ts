@@ -96,7 +96,7 @@ const saveLedger = () => {
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
 const ID_FORMAT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Claude Code sessions on Linux only in a lab session with the maintainer (lab session 2, A7 3.7).
-const LINUX_CLAUDE = !WIN && process.env["TASKS_M0_LINUX_CLAUDE"] === "1";
+const LINUX_CLAUDE = !WIN && process.env["TTASKS_M0_LINUX_CLAUDE"] === "1";
 // Windows: the first run's 40 Claude sessions plus the A08 repeat's 60; Codex 25 plus A06's 12.
 const LIMITS = WIN ? { claude: 100, codex: 40 } : { claude: LINUX_CLAUDE ? 10 : 0, codex: 10 };
 
@@ -242,7 +242,7 @@ async function claudeSession(o: {
   if (o.probe !== null && o.probe !== undefined) {
     const config = {
       mcpServers: {
-        "tasks-probe": {
+        "ttasks-probe": {
           type: "stdio",
           command: NODE,
           args: probeArgv(o.probe.out, o.label, o.probe.expect, o.probe.tools),
@@ -361,10 +361,10 @@ async function codexSession(o: {
   more?: string[];
 }): Promise<CodexRun> {
   if (ledger.codex_sessions >= LIMITS.codex) throw new LabError("Codex session limit reached");
-  const name = o.probe?.name ?? "tasks-probe";
+  const name = o.probe?.name ?? "ttasks-probe";
   const argv = ["exec", "--json", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config"];
   argv.push("-s", o.sandbox ?? "read-only", "-C", o.cwd ?? work);
-  argv.push("-c", `model_reasoning_effort="${process.env["TASKS_M0_EFFORT"] ?? "low"}"`);
+  argv.push("-c", `model_reasoning_effort="${process.env["TTASKS_M0_EFFORT"] ?? "low"}"`);
   if (o.probe !== null && o.probe !== undefined) {
     argv.push("-c", `mcp_servers.${name}.command=${tomlLiteral(NODE)}`);
     argv.push(
@@ -372,7 +372,7 @@ async function codexSession(o: {
       `mcp_servers.${name}.args=${tomlArray(probeArgv(o.probe.out, o.label, o.probe.expect, undefined, o.probe.args))}`,
     );
     argv.push("-c", `mcp_servers.${name}.startup_timeout_sec=20`);
-    if (o.envVars === true) argv.push("-c", `mcp_servers.${name}.env_vars=["TASKS_TICKET"]`);
+    if (o.envVars === true) argv.push("-c", `mcp_servers.${name}.env_vars=["TTASKS_TICKET"]`);
     if (o.approval !== undefined && o.approval !== null) {
       argv.push("-c", `mcp_servers.${name}.default_tools_approval_mode="${o.approval}"`);
     }
@@ -476,7 +476,7 @@ function codexItems(r: CodexRun): JsonObject[] {
         const error = i["error"] as JsonObject | null | undefined;
         return {
           type: "mcp_tool_call",
-          server: oneOf(i["server"], ["tasks-probe", "tasks"]),
+          server: oneOf(i["server"], ["ttasks-probe", "tasks"]),
           tool: oneOf(i["tool"], PROBE_TOOLS),
           status: oneOf(i["status"], ITEM_STATUSES),
           error: error === null || error === undefined ? null : errorClass(JSON.stringify(error)),
@@ -512,12 +512,12 @@ function codexFacts(r: CodexRun): JsonObject {
 async function spawnerCheck(): Promise<void> {
   const script =
     "const bad=Object.keys(process.env).filter(n=>/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_AGENT_|ANTHROPIC_|CODEX_|T3CODE_|MCP_|OPENAI_)/i.test(n));" +
-    "console.log(JSON.stringify({bad,count:Object.keys(process.env).length,ticket:'TASKS_TICKET' in process.env}))";
+    "console.log(JSON.stringify({bad,count:Object.keys(process.env).length,ticket:'TTASKS_TICKET' in process.env}))";
   const parentForbidden = Object.keys(process.env).filter((n) =>
     /^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_AGENT_|ANTHROPIC_|CODEX_|T3CODE_|MCP_|OPENAI_)/i.test(n),
   ).length;
   const r = await run(NODE, ["-e", script], {
-    env: cleanEnv(process.env, { TASKS_TICKET: TICKET }, { path: clis().path }),
+    env: cleanEnv(process.env, { TTASKS_TICKET: TICKET }, { path: clis().path }),
     cwd: work,
   });
   const child = JSON.parse(r.stdout) as { bad: string[]; count: number; ticket: boolean };
@@ -558,7 +558,7 @@ async function a01Config(): Promise<void> {
       "add",
       "--scope",
       "user",
-      "tasks-probe",
+      "ttasks-probe",
       "--",
       NODE,
       ...probeArgv(out, "a01-cfg", expect),
@@ -568,7 +568,7 @@ async function a01Config(): Promise<void> {
   steps["add"] = outcome(add);
   const added = recordHome(home, named);
   const getStep = await withProbes(out, "a01-cfg", () =>
-    cli(clis().claude, ["mcp", "get", "tasks-probe"], { ...env, TASKS_TICKET: TICKET }),
+    cli(clis().claude, ["mcp", "get", "ttasks-probe"], { ...env, TTASKS_TICKET: TICKET }),
   );
   const get = getStep.value;
   steps["get_with_ticket"] = {
@@ -579,10 +579,10 @@ async function a01Config(): Promise<void> {
   };
   const variants: [string, Partial<Record<ExtraName, string>>][] = [
     ["list", {}],
-    ["list_with_ticket", { TASKS_TICKET: TICKET }],
+    ["list_with_ticket", { TTASKS_TICKET: TICKET }],
     [
       "list_with_ticket_allowlist_env",
-      { TASKS_TICKET: TICKET, CLAUDE_CODE_MCP_ALLOWLIST_ENV: "1" },
+      { TTASKS_TICKET: TICKET, CLAUDE_CODE_MCP_ALLOWLIST_ENV: "1" },
     ],
   ];
   for (const [name, extra] of variants) {
@@ -591,13 +591,13 @@ async function a01Config(): Promise<void> {
     );
     steps[name] = {
       ...outcome(step.value),
-      lists_probe: mentions(step.value.stdout, /tasks-probe/),
-      says_connected: mentions(step.value.stdout, /tasks-probe.*connected/i),
+      lists_probe: mentions(step.value.stdout, /ttasks-probe/),
+      says_connected: mentions(step.value.stdout, /ttasks-probe.*connected/i),
       probe_starts: step.probes,
     };
   }
   steps["remove"] = outcome(
-    await cli(clis().claude, ["mcp", "remove", "tasks-probe", "--scope", "user"], env),
+    await cli(clis().claude, ["mcp", "remove", "ttasks-probe", "--scope", "user"], env),
   );
   const removed = recordHome(home, named);
   // Round 2: the home now has an (empty) mcpServers object, as a real home with servers does.
@@ -609,7 +609,7 @@ async function a01Config(): Promise<void> {
         "add",
         "--scope",
         "user",
-        "tasks-probe",
+        "ttasks-probe",
         "--",
         NODE,
         ...probeArgv(out, "a01-cfg2", expect),
@@ -618,7 +618,7 @@ async function a01Config(): Promise<void> {
     ),
   );
   steps["remove_again"] = outcome(
-    await cli(clis().claude, ["mcp", "remove", "tasks-probe", "--scope", "user"], env),
+    await cli(clis().claude, ["mcp", "remove", "ttasks-probe", "--scope", "user"], env),
   );
   const removedAgain = recordHome(home, named);
   save("a01-config", {
@@ -639,7 +639,7 @@ async function a01Sessions(): Promise<void> {
   const runs: JsonObject[] = [];
   for (const allow of [false, true]) {
     const id = randomUUID();
-    const extra: Partial<Record<ExtraName, string>> = { TASKS_TICKET: TICKET };
+    const extra: Partial<Record<ExtraName, string>> = { TTASKS_TICKET: TICKET };
     if (allow) extra.CLAUDE_CODE_MCP_ALLOWLIST_ENV = "1";
     const expect: Expect = {
       ticket_sha256: sha256Hex(TICKET),
@@ -680,7 +680,7 @@ async function a01Sessions(): Promise<void> {
     row: "A01",
     machine,
     route:
-      "signed-in home, --mcp-config <scratch file> --strict-mcp-config --setting-sources project, haiku, one user prompt per session (num_turns per run: the model's turns, tool calls included); TASKS_TICKET set in the CLI's environment (inherited)",
+      "signed-in home, --mcp-config <scratch file> --strict-mcp-config --setting-sources project, haiku, one user prompt per session (num_turns per run: the model's turns, tool calls included); TTASKS_TICKET set in the CLI's environment (inherited)",
     runs,
   });
 }
@@ -690,7 +690,7 @@ function patchEnvVars(toml: string, name: string): string {
   const lines = toml.split(/\r?\n/);
   const at = lines.findIndex((l) => l.trim() === header);
   if (at < 0) throw new LabError("the table codex mcp add wrote was not found");
-  lines.splice(at + 1, 0, 'env_vars = ["TASKS_TICKET"]');
+  lines.splice(at + 1, 0, 'env_vars = ["TTASKS_TICKET"]');
   return lines.join("\n");
 }
 
@@ -712,12 +712,12 @@ async function a02Config(): Promise<void> {
   steps["add"] = outcome(
     await cli(
       clis().codex,
-      ["mcp", "add", "tasks-probe", "--", NODE, ...probeArgv(out, "a02-cfg", expect)],
+      ["mcp", "add", "ttasks-probe", "--", NODE, ...probeArgv(out, "a02-cfg", expect)],
       env,
     ),
   );
   const added = recordHome(home, named);
-  const get = await cli(clis().codex, ["mcp", "get", "tasks-probe", "--json"], env);
+  const get = await cli(clis().codex, ["mcp", "get", "ttasks-probe", "--json"], env);
   let getKeys: string[];
   let transportType: Json = null;
   try {
@@ -739,16 +739,16 @@ async function a02Config(): Promise<void> {
   steps["get_json"] = { ...outcome(get), keys: getKeys, transport_type: transportType };
   // The single-key patch of A3 3.13.4, in the scratch home only.
   const tomlPath = join(home, "config.toml");
-  writeFileSync(tomlPath, patchEnvVars(readFileSync(tomlPath, "utf8"), "tasks-probe"));
+  writeFileSync(tomlPath, patchEnvVars(readFileSync(tomlPath, "utf8"), "ttasks-probe"));
   const patched = recordHome(home, named);
-  const get2 = await cli(clis().codex, ["mcp", "get", "tasks-probe", "--json"], env);
+  const get2 = await cli(clis().codex, ["mcp", "get", "ttasks-probe", "--json"], env);
   let envVars: Json;
   try {
     const parsed = JSON.parse(get2.stdout) as JsonObject;
     const value =
       (parsed["transport"] as JsonObject | undefined)?.["env_vars"] ?? parsed["env_vars"] ?? null;
     envVars = Array.isArray(value)
-      ? value.map((v) => (v === "TASKS_TICKET" ? v : "[other]"))
+      ? value.map((v) => (v === "TTASKS_TICKET" ? v : "[other]"))
       : value === null
         ? null
         : "[other]";
@@ -756,23 +756,23 @@ async function a02Config(): Promise<void> {
     envVars = "[not JSON]";
   }
   steps["get_json_after_env_vars_patch"] = { ...outcome(get2), env_vars: envVars };
-  const list = await cli(clis().codex, ["mcp", "list"], { ...env, TASKS_TICKET: TICKET });
+  const list = await cli(clis().codex, ["mcp", "list"], { ...env, TTASKS_TICKET: TICKET });
   steps["list"] = {
     ...outcome(list),
-    lists_probe: mentions(list.stdout, /tasks-probe/),
+    lists_probe: mentions(list.stdout, /ttasks-probe/),
     probe_starts: probeFiles(out, "a02-cfg").length,
   };
-  steps["remove"] = outcome(await cli(clis().codex, ["mcp", "remove", "tasks-probe"], env));
+  steps["remove"] = outcome(await cli(clis().codex, ["mcp", "remove", "ttasks-probe"], env));
   const removed = recordHome(home, named);
   // Round 2: config.toml now exists, as in a real home.
   steps["add_again"] = outcome(
     await cli(
       clis().codex,
-      ["mcp", "add", "tasks-probe", "--", NODE, ...probeArgv(out, "a02-cfg2", expect)],
+      ["mcp", "add", "ttasks-probe", "--", NODE, ...probeArgv(out, "a02-cfg2", expect)],
       env,
     ),
   );
-  steps["remove_again"] = outcome(await cli(clis().codex, ["mcp", "remove", "tasks-probe"], env));
+  steps["remove_again"] = outcome(await cli(clis().codex, ["mcp", "remove", "ttasks-probe"], env));
   const removedAgain = recordHome(home, named);
   save("a02-config", {
     row: "A02",
@@ -794,7 +794,7 @@ async function a02Sessions(): Promise<void> {
   const out = join(scratch, "probe", "a02-sessions");
   const expect: Expect = { ticket_sha256: sha256Hex(TICKET) };
   const prompt =
-    "Call the MCP tool probe_echo of the server tasks-probe once with the text Mira, then reply with the single word OK.";
+    "Call the MCP tool probe_echo of the server ttasks-probe once with the text Mira, then reply with the single word OK.";
   const variants: { tag: string; envVars: boolean; approval: string | null }[] = [
     { tag: "no-env-vars", envVars: false, approval: null },
     { tag: "env-vars-approve", envVars: true, approval: "approve" },
@@ -807,7 +807,7 @@ async function a02Sessions(): Promise<void> {
       prompt,
       envVars: v.envVars,
       approval: v.approval,
-      extra: { TASKS_TICKET: TICKET },
+      extra: { TTASKS_TICKET: TICKET },
       probe: { out, expect },
     });
     const learnt: Record<string, string> = r.thread === null ? {} : { thread_id: r.thread };
@@ -822,7 +822,7 @@ async function a02Sessions(): Promise<void> {
   save("a02-sessions", {
     row: "A02",
     machine,
-    route: `the account in the default home, codex exec --ephemeral --ignore-user-config, probe through -c overrides, TASKS_TICKET in the CLI's environment, one user prompt per session`,
+    route: `the account in the default home, codex exec --ephemeral --ignore-user-config, probe through -c overrides, TTASKS_TICKET in the CLI's environment, one user prompt per session`,
     runs,
   });
 }
@@ -835,7 +835,7 @@ function judgeRule(text: string): JsonObject {
 }
 
 const A06_PROMPT =
-  "What do the server instructions of the MCP server tasks-probe say about request_id? Answer in one or two sentences from those instructions, without calling any tool.";
+  "What do the server instructions of the MCP server ttasks-probe say about request_id? Answer in one or two sentences from those instructions, without calling any tool.";
 
 async function a06(): Promise<void> {
   const out = join(scratch, "probe", "a06");
@@ -876,7 +876,7 @@ async function a09(): Promise<void> {
   const prompt =
     "Call the tool mcp__tasks-probe__probe_marked once and the tool mcp__tasks-probe__probe_plain once, then reply with the single word OK.";
   const first =
-    process.env["TASKS_M0_A09_SKIP_CALLS"] === "1" ? [] : (["default", "tool-search-off"] as const);
+    process.env["TTASKS_M0_A09_SKIP_CALLS"] === "1" ? [] : (["default", "tool-search-off"] as const);
   for (const variant of first) {
     const label = `a09-${variant}`;
     const r = await claudeSession({
@@ -921,7 +921,7 @@ async function a09(): Promise<void> {
   const describe =
     "Without calling or searching for any tool: according to the descriptions you can see right now, which word does the tool probe_marked return, and which word does probe_plain return? If you can see only a tool's name and not its description, answer unknown for it. Reply as two lines: marked=<word> and plain=<word>.";
   const variants = (
-    process.env["TASKS_M0_A09_VARIANTS"] ??
+    process.env["TTASKS_M0_A09_VARIANTS"] ??
     "describe-default,describe-tool-search-off,describe-unmarked"
   ).split(",");
   for (const variant of variants) {
@@ -1006,7 +1006,7 @@ async function a06Length(): Promise<void> {
   const r = await codexSession({
     label,
     prompt:
-      "The server instructions of the MCP server tasks-probe consist of marker words M001, M002 and so on. Without calling any tool, which is the highest-numbered marker you can see in them? Reply with that marker only, and add the word cut if the instructions look truncated.",
+      "The server instructions of the MCP server ttasks-probe consist of marker words M001, M002 and so on. Without calling any tool, which is the highest-numbered marker you can see in them? Reply with that marker only, and add the word cut if the instructions look truncated.",
     probe: { out, expect: {}, args: ["--instructions", "markers"] },
   });
   const m = /M(\d{3})/.exec(r.text);
@@ -1062,10 +1062,10 @@ function markerInstructions(
 async function a06Markers(): Promise<void> {
   const out = join(scratch, "probe", "a06-markers");
   const inst = sc.mkdir(join(scratch, "a06-instructions"));
-  const lengths = (process.env["TASKS_M0_A06_LENGTHS"] ?? "200,400,1000,4000")
+  const lengths = (process.env["TTASKS_M0_A06_LENGTHS"] ?? "200,400,1000,4000")
     .split(",")
     .map(Number);
-  const repeats = Number(process.env["TASKS_M0_A06_REPEATS"] ?? "2");
+  const repeats = Number(process.env["TTASKS_M0_A06_REPEATS"] ?? "2");
   if (lengths.some((n) => !Number.isInteger(n) || n < 60 || n > 8000)) {
     throw new LabError("bad A06 length");
   }
@@ -1082,7 +1082,7 @@ async function a06Markers(): Promise<void> {
       const r = await codexSession({
         label,
         prompt:
-          "List every marker you can see in the server instructions of the MCP server tasks-probe. Do not call any tool.",
+          "List every marker you can see in the server instructions of the MCP server ttasks-probe. Do not call any tool.",
         probe: { out, expect: {}, args: ["--instructions-file", file] },
       });
       const seen = new Set(r.text.match(MARKER_RE) ?? []);
@@ -1111,7 +1111,7 @@ async function a06Markers(): Promise<void> {
     row: "A06 (headless part, random-marker repeat)",
     machine,
     route:
-      "Codex CLI (its default model, --ephemeral --ignore-user-config, model_reasoning_effort low), probe with --instructions-file: a 38-character head ('Markers are codes in square brackets.') then a random 6-character [XXXXXX] marker every 50 characters at recorded offsets, filler words between; prompt: 'List every marker you can see in the server instructions of the MCP server tasks-probe. Do not call any tool.' The model is not told the markers, their number or the length. Only markers it repeats correctly count.",
+      "Codex CLI (its default model, --ephemeral --ignore-user-config, model_reasoning_effort low), probe with --instructions-file: a 38-character head ('Markers are codes in square brackets.') then a random 6-character [XXXXXX] marker every 50 characters at recorded offsets, filler words between; prompt: 'List every marker you can see in the server instructions of the MCP server ttasks-probe. Do not call any tool.' The model is not told the markers, their number or the length. Only markers it repeats correctly count.",
     runs,
   });
 }
@@ -1204,7 +1204,7 @@ function serviceEvents(state: string, since: number): JsonObject {
 
 async function e02(): Promise<void> {
   // Only the named modes: the mode becomes part of a folder name that is removed below.
-  const modes = parseE02Modes(process.env["TASKS_M0_E02_MODES"], WIN);
+  const modes = parseE02Modes(process.env["TTASKS_M0_E02_MODES"], WIN);
   const base = join(work, "e02");
   const kitJs = join(base, "kit-js");
   if (!existsSync(join(kitJs, "kit.mjs")))
@@ -1248,7 +1248,7 @@ async function e02(): Promise<void> {
           ...(WIN
             ? [
                 "-c",
-                `windows.sandbox="${process.env["TASKS_M0_WIN_SANDBOX"] === "elevated" ? "elevated" : "unelevated"}"`,
+                `windows.sandbox="${process.env["TTASKS_M0_WIN_SANDBOX"] === "elevated" ? "elevated" : "unelevated"}"`,
               ]
             : []),
         ],
@@ -1259,7 +1259,7 @@ async function e02(): Promise<void> {
         session: codexFacts(r),
         service: serviceEvents(state, t1),
       });
-      if ((WIN || LINUX_CLAUDE) && process.env["TASKS_M0_E02_CLAUDE"] !== "0") {
+      if ((WIN || LINUX_CLAUDE) && process.env["TTASKS_M0_E02_CLAUDE"] !== "0") {
         const t2 = Date.now();
         const c = await claudeSession({
           label: `e02-claude-${mode}`,

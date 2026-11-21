@@ -1,5 +1,5 @@
 // Explicit edits to machine.toml (A2 3.2.4: "one module that keeps comments and unknown keys").
-// The file is the person's: Tasks never rewrites it whole. Each edit is one splice in the file's
+// The file is the person's: TTasks never rewrites it whole. Each edit is one splice in the file's
 // own style (its line breaks, a byte order mark kept), placed by scan.ts, and is accepted only when
 // the edited text parses to exactly the document before it plus the intended change. Anything
 // else, such as a table written as an inline table or through dotted keys, is refused with a typed
@@ -13,7 +13,7 @@
 import { lstatSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { hasControl, isTable } from "@tasks/launch";
+import { hasControl, isTable } from "@ttasks/launch";
 import { atomicWrite, makeDir } from "../hub/files.ts";
 import { loadMachineConfig, MACHINE_TOML } from "./machine-toml.ts";
 import { scanToml, ScanError, type ScannedHeader, type ScannedLine } from "./scan.ts";
@@ -102,7 +102,7 @@ export type EditRefusal =
   | "too_large"
   /**
    * The config folder or machine.toml fails the permission rule (another user could change it, it
-   * is a link, its owner lacks access): nothing is written into it. `tasks doctor` names the fix.
+   * is a link, its owner lacks access): nothing is written into it. `ttasks doctor` names the fix.
    */
   | "unsafe";
 
@@ -715,7 +715,7 @@ export interface CommitOptions {
  * Writes a prepared edit. The new file is written and flushed beside the old one, then the file is
  * read again just before the rename, and a file that changed since the edit was prepared is left
  * alone (`changed_meanwhile`). What remains is the rename itself: a save in that instant is not
- * seen. Tasks's own edits are synchronous, so two in one process never interleave. The write keeps
+ * seen. TTasks's own edits are synchronous, so two in one process never interleave. The write keeps
  * the file's mode exactly, whatever the umask (it is the person's choice); a missing file is
  * created 0600, and missing folders 0700. The folder and the file are judged again first, as the
  * service judges them: machine.toml is never written into a folder that fails the rule, and never

@@ -26,8 +26,8 @@ import {
   type RunRecord,
   type RunResult,
   type RunState,
-} from "@tasks/contracts/runs";
-import { openLaunchSpace } from "@tasks/testkit";
+} from "@ttasks/contracts/runs";
+import { openLaunchSpace } from "@ttasks/testkit";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -605,7 +605,7 @@ export function runStoreContract(
       // it (the texts cut, A4 3.11.2; the keys in the column's snake case), in a run.transition
       // submitted to its writer directly. A result goes in entering any final state; this one
       // takes a queued run to cancelled, one write per verdict.
-      const parent = mkdtempSync(join(tmpdir(), "tasks-run-judge-"));
+      const parent = mkdtempSync(join(tmpdir(), "ttasks-run-judge-"));
       try {
         const judge = await openLaunchSpace(parent);
         try {

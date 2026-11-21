@@ -37,7 +37,7 @@ describe("[A4.3.11.codex-app-server.fixture-content] the app-server recordings",
         msg: {
           id: 1,
           result: {
-            userAgent: "tasks_lab/0.169.0 (Windows NT 99.0.1; x86_64) unknown",
+            userAgent: "ttasks_lab/0.169.0 (Windows NT 99.0.1; x86_64) unknown",
             codexHome: "C:\\Users\\someone\\.codex",
             platformOs: "windows",
           },
@@ -82,10 +82,10 @@ describe("[A4.3.11.codex-app-server.fixture-content] the app-server recordings",
           method: "thread/start",
           params: {
             config: {
-              "mcp_servers.tasks": {
+              "mcp_servers.ttasks": {
                 command: "C:\\Users\\someone\\node.exe",
                 args: ["C:\\Users\\someone\\stub.ts"],
-                env: { TASKS_TICKET: "REALTICKET" },
+                env: { TTASKS_TICKET: "REALTICKET" },
               },
             },
           },
@@ -109,7 +109,7 @@ describe("[A4.3.11.codex-app-server.fixture-content] the app-server recordings",
       .split("\n")
       .map((l) => JSON.parse(l) as { msg: Record<string, unknown> });
     expect(lines[0]?.msg["result"]).toMatchObject({
-      userAgent: "tasks_lab/0.169.0 (fixture)",
+      userAgent: "ttasks_lab/0.169.0 (fixture)",
       platformOs: "windows",
     });
     const item = (lines[3]?.msg["params"] as { item: Record<string, unknown> }).item;

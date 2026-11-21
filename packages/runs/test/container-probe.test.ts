@@ -14,19 +14,19 @@ import {
   type UnavailableReason,
 } from "../src/container/index.ts";
 
-const UNIT = "/user.slice/user-1000.slice/user@1000.service/app.slice/tasks.service";
+const UNIT = "/user.slice/user-1000.slice/user@1000.service/app.slice/ttasks.service";
 
 describe("[A4.3.11.8.container.probe] the probe says why runs cannot be contained, and start refuses there", () => {
   test("placement reads the service's own unit from /proc/self/cgroup", () => {
     expect(placement(`0::${UNIT}\n`, 1000)).toEqual({
       ok: true,
-      unit: "tasks.service",
+      unit: "ttasks.service",
       root: UNIT,
       inMain: false,
     });
     expect(placement(`0::${UNIT}/main\n`, 1000)).toEqual({
       ok: true,
-      unit: "tasks.service",
+      unit: "ttasks.service",
       root: UNIT,
       inMain: true,
     });
@@ -38,7 +38,7 @@ describe("[A4.3.11.8.container.probe] the probe says why runs cannot be containe
     expect(no("12:pids:/user.slice\n0::/user.slice\n")).toBe("no_cgroup_v2");
     expect(no("4:memory:/user.slice\n")).toBe("no_cgroup_v2");
     // A system service, a login session, another user's manager, WSL without systemd.
-    expect(no("0::/system.slice/tasks.service\n")).toBe("no_user_manager");
+    expect(no("0::/system.slice/ttasks.service\n")).toBe("no_user_manager");
     expect(no("0::/user.slice/user-1000.slice/session-3.scope\n")).toBe("no_user_manager");
     expect(no(`0::${UNIT}\n`, 1001)).toBe("no_user_manager");
     expect(no("0::/\n")).toBe("no_user_manager");
@@ -52,7 +52,7 @@ describe("[A4.3.11.8.container.probe] the probe says why runs cannot be containe
   describe("Linux probe outside a delegated unit", () => {
     let dir = "";
     beforeAll(() => {
-      dir = mkdtempSync(join(tmpdir(), "tasks-probe-"));
+      dir = mkdtempSync(join(tmpdir(), "ttasks-probe-"));
     });
     afterAll(() => {
       rmSync(dir, { recursive: true, force: true });
@@ -116,7 +116,7 @@ describe("[A4.3.11.8.container.probe] the probe says why runs cannot be containe
     });
   });
 
-  test("Windows without tasks-run.exe, and other platforms", async () => {
+  test("Windows without ttasks-run.exe, and other platforms", async () => {
     const missing = new WindowsContainers({ helper: join(tmpdir(), "no-such-dir", "x.exe") });
     expect(await missing.probe()).toMatchObject({ available: false, reason: "helper_missing" });
     await expect(

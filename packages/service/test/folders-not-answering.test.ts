@@ -6,8 +6,8 @@
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { GroupManageResult } from "@tasks/contracts";
-import type { RpcSession } from "@tasks/bridge/protocol";
+import { GroupManageResult } from "@ttasks/contracts";
+import type { RpcSession } from "@ttasks/bridge/protocol";
 
 const gate = vi.hoisted(() => ({
   /** The folder whose stat waits, once. */

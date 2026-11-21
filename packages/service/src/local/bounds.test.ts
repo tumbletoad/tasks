@@ -4,7 +4,7 @@
 // refused so the hub can pick another (A2 3.4).
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { openLines, openRpc } from "@tasks/bridge/protocol";
+import { openLines, openRpc } from "@ttasks/bridge/protocol";
 import {
   clientInfo,
   endpointRoot,
@@ -12,7 +12,7 @@ import {
   rawConnect,
   sleep,
   until,
-} from "@tasks/bridge/test/endpoint";
+} from "@ttasks/bridge/test/endpoint";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { testClock, type TestClock } from "../../test/clock.ts";
 import { startServer, type Started } from "../../test/local.ts";

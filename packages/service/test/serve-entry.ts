@@ -1,6 +1,6 @@
-// A test's `tasks serve`: the real runServe() in a child process, with the identity set by the
+// A test's `ttasks serve`: the real runServe() in a child process, with the identity set by the
 // test: CI's Windows runners are elevated, and the real check would refuse there (exit 64). The
-// package identity still comes from the real TASKS_PACKAGE. main.ts, with the real check, has its
+// package identity still comes from the real TTASKS_PACKAGE. main.ts, with the real check, has its
 // own test. The registered spaces come from the install's machine.toml, as in the product
 // (harness.ts registerSpaces).
 //
@@ -8,7 +8,7 @@
 // Windows has no signal), `crash <text>` throws an uncaught error with that message, `reject
 // <text>` leaves a rejected promise unhandled. Tests only.
 // First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
-import "@tasks/bridge/safe-exit";
+import "@ttasks/bridge/safe-exit";
 import { createInterface } from "node:readline";
 import { packageIdentity } from "../src/hub/identity.ts";
 import { runServe } from "../src/hub/serve.ts";

@@ -21,7 +21,7 @@ import { spawn } from "node:child_process";
 import { lstat, open, readdir, realpath, stat, statfs } from "node:fs/promises";
 import os from "node:os";
 import { win32 } from "node:path";
-import { base64Text, isBase64, REGISTRY_READS, scriptOutput } from "@tasks/launch";
+import { base64Text, isBase64, REGISTRY_READS, scriptOutput } from "@ttasks/launch";
 import { system32 } from "./identity.ts";
 import {
   CHECK_TIMEOUT_MS,
@@ -67,7 +67,7 @@ export const DRIVE_FACTS =
 
 /**
  * The script's sections, one statement each, each reading one kind of fact through the reads of
- * @tasks/launch's windows-reads.ts: a key or a value that is not there is no fact, but a read that
+ * @ttasks/launch's windows-reads.ts: a key or a value that is not there is no fact, but a read that
  * fails throws, and so does a value of another kind than the section knows. Each .NET property is
  * read through its accessor method, since PowerShell 5.1 turns a getter's exception into $null.
  */

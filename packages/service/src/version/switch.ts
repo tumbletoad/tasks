@@ -1,10 +1,10 @@
 // What makes a version the install's one (A2 3.12.2, 3.12.4, 3.12.6), shared by the install
-// scripts' hand-over (install.ts, `tasks install --finish`), the updater (update.ts) and the
+// scripts' hand-over (install.ts, `ttasks install --finish`), the updater (update.ts) and the
 // repair of an interrupted update (repair.ts), so all three switch the same way:
 //   - `current`: a symbolic link to `versions/<v>` renamed over the old one (Linux, macOS), a text
 //     file holding `<v>` replaced by rename (Windows);
-//   - the stable command: `<root>/bin/tasks`, a link to `../current/bin/tasks` (Linux, macOS), or
-//     copies of the version's `tasks.exe` and `tasksw.exe` in `<root>\bin\` (Windows). A changed
+//   - the stable command: `<root>/bin/ttasks`, a link to `../current/bin/ttasks` (Linux, macOS), or
+//     copies of the version's `ttasks.exe` and `ttasksw.exe` in `<root>\bin\` (Windows). A changed
 //     one is replaced by one rename where Windows allows it (the launcher is not running, and the
 //     one it replaces can be found again in a version folder), so the stable path never goes
 //     missing; a running one is renamed aside to `.old-<n>` first, which Windows allows, and the
@@ -31,12 +31,12 @@ import {
   writeSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { atomicWrite, createFile, makeDir, removeStaleTemps } from "../hub/files.ts";
 import { canonicalStatePath, HOME_MARKER, installId } from "../hub/paths.ts";
 import { isVersionName, MANIFEST_FILE, sha256File } from "./folder.ts";
 
-/** The file in a TASKS_HOME install's root: one constant, the layout's (hub/paths.ts). */
+/** The file in a TTASKS_HOME install's root: one constant, the layout's (hub/paths.ts). */
 export { HOME_MARKER };
 
 export const INSTALL_FILE = "install.json";
@@ -159,7 +159,7 @@ export interface StableStep {
   readonly copyOf?: string;
 }
 
-/** The stable launchers' names on Windows: `tasks.exe` first, then `tasksw.exe` (A2 3.12.6). */
+/** The stable launchers' names on Windows: `ttasks.exe` first, then `ttasksw.exe` (A2 3.12.6). */
 export const WINDOWS_LAUNCHERS = [`${PRODUCT_ID}.exe`, `${PRODUCT_ID}w.exe`] as const;
 
 /** The stable command's files and what each must be (A2 3.12.2). */
@@ -616,7 +616,7 @@ export interface InstallRecord {
    * that an uninstall removes only when empty. Never something that was there before.
    */
   readonly created: readonly string[];
-  /** The version `current` named before the last switch: `tasks update --rollback`'s target. */
+  /** The version `current` named before the last switch: `ttasks update --rollback`'s target. */
   readonly previous?: string;
   readonly last_update?: LastUpdate;
 }

@@ -11,7 +11,7 @@
 //
 // The claim's evidence is a fresh random ID (A4 3.6.3), never derived from either secret.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { TICKET_ALPHABET } from "./wire.ts";
 
 const LOWER = TICKET_ALPHABET.toLowerCase();

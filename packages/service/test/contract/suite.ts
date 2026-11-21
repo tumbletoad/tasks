@@ -1,7 +1,7 @@
 // The contract suite of the request path (A3 3.2.1: every entry's examples are "used by tests and
 // docs"; A7 3.8 M1.10, 3.9 M2.03). It is written against a transport, so every face runs the same
-// suite: the request path in-process, tasks-local/1's op/call, the CLI's --json, MCP in both eras
-// and HTTP (M2.12). Import it from `@tasks/service/test/contract` and pass a transport over a
+// suite: the request path in-process, ttasks-local/1's op/call, the CLI's --json, MCP in both eras
+// and HTTP (M2.12). Import it from `@ttasks/service/test/contract` and pass a transport over a
 // `contractWorld`.
 //
 // It builds the examples' world through the transport itself (only registry operations), as far
@@ -20,9 +20,9 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { CLI_NAME } from "@tasks/brand";
-import { registry, type ErrorBody } from "@tasks/contracts";
-import { SHIM_METHODS, type Attachment, type SpawnPlan } from "@tasks/launch";
+import { CLI_NAME } from "@ttasks/brand";
+import { registry, type ErrorBody } from "@ttasks/contracts";
+import { SHIM_METHODS, type Attachment, type SpawnPlan } from "@ttasks/launch";
 import type { HttpStart } from "../../src/http/index.ts";
 import { startService, type RunningService, type StartOptions } from "../../src/hub/service.ts";
 import { renderError } from "../../src/mcp/index.ts";
@@ -631,7 +631,7 @@ export function grantSuite(name: string, open: () => Promise<GrantTransport>): v
 /**
  * A launched agent's session in the world's space whose agent home's row was revoked (A3 3.7.8):
  * the home registered as setup does, the agent's bridge bound by its ticket, then the row revoked
- * as `tasks setup agents --remove` does. A CLI call carrying the ticket acts as that session, so
+ * as `ttasks setup agents --remove` does. A CLI call carrying the ticket acts as that session, so
  * every one of them is refused with rule grant. The world gets a task M-1 if it has none.
  */
 export async function revokedSession(world: ContractWorld): Promise<{ readonly ticket: string }> {
@@ -654,7 +654,7 @@ export async function revokedSession(world: ContractWorld): Promise<{ readonly t
       instance,
       app: "test",
       cwd: null,
-      env: { TASKS_TICKET: launch.ticket },
+      env: { TTASKS_TICKET: launch.ticket },
       parent: { pid: process.pid },
     },
   };

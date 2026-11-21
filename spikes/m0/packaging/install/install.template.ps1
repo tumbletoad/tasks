@@ -4,8 +4,8 @@
 #
 # Usage: powershell -NoProfile -File install-@@VERSION@@.ps1 -Source <folder> [-Root <folder>]
 #   -Source  folder with tasks-@@VERSION@@-win-x64.zip, SHA256SUMS and SHA256SUMS.sshsig
-#   -Root    install root. Defaults to $env:TASKS_HOME. The spike installs only into a folder that
-#            is named this way, never into %USERPROFILE%\.tasks, and never changes the user Path.
+#   -Root    install root. Defaults to $env:TTASKS_HOME. The spike installs only into a folder that
+#            is named this way, never into %USERPROFILE%\.ttasks, and never changes the user Path.
 #
 # Order of trust: the Ed25519 signature of SHA256SUMS must verify with the ssh-keygen.exe that is
 # part of Windows (System32\OpenSSH) against a key pinned below, and the zip's SHA-256 must match
@@ -15,14 +15,14 @@
 # release: its manifest.json equal to the unpacked one and every file matching it.
 param(
   [Parameter(Mandatory = $true)][string]$Source,
-  [string]$Root = $env:TASKS_HOME
+  [string]$Root = $env:TTASKS_HOME
 )
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
 $Version = '@@VERSION@@'
-$Archive = "tasks-$Version-win-x64.zip"
-$Namespace = 'tasks-release'
+$Archive = "ttasks-$Version-win-x64.zip"
+$Namespace = 'ttasks-release'
 # Pinned release keys: the current key and, during a rotation, the next one.
 $ReleaseKeys = @(
 @@RELEASE_KEYS@@
@@ -139,7 +139,7 @@ $staging = $null
 $code = 0
 try {
   if ([string]::IsNullOrEmpty($Root)) {
-    throw 'Set TASKS_HOME or pass -Root: the spike installs only into a folder you name.'
+    throw 'Set TTASKS_HOME or pass -Root: the spike installs only into a folder you name.'
   }
   if (-not [Environment]::Is64BitOperatingSystem) { throw 'This installer is for 64-bit Windows.' }
   $Root = [System.IO.Path]::GetFullPath($Root).TrimEnd('\')
@@ -189,11 +189,11 @@ try {
   $target = Join-Path $versions $Version
   if (Test-Path -LiteralPath $target) {
     # The same version is already there. It runs only if it is exactly this signed release.
-    # Otherwise stop and leave it as it is: it may be the version a running Tasks uses.
+    # Otherwise stop and leave it as it is: it may be the version a running TTasks uses.
     $problem = Test-ExistingVersion $target $stagedManifest
     if ($problem) {
       throw ("versions\$Version already exists but is not this signed release: $problem. " +
-        'It was left as it is and nothing in it ran. Stop Tasks if it runs from that folder, ' +
+        'It was left as it is and nothing in it ran. Stop TTasks if it runs from that folder, ' +
         "move the folder out of $versions, and run the installer again.")
     }
     Remove-Item -LiteralPath $staging -Recurse -Force
@@ -204,11 +204,11 @@ try {
   Remove-Item -LiteralPath $work -Recurse -Force
   $work = $null
 
-  # 5. A separate install (TASKS_HOME) is marked, so the launcher sets TASKS_HOME (A2 3.12.3).
+  # 5. A separate install (TTASKS_HOME) is marked, so the launcher sets TTASKS_HOME (A2 3.12.3).
   [System.IO.File]::WriteAllBytes((Join-Path $Root 'home.marker'), [byte[]]@())
 
   # 6. The verified version's own launcher: package identity first, then the hand-over.
-  $launcher = Join-Path $target 'bin\tasks.exe'
+  $launcher = Join-Path $target 'bin\ttasks.exe'
   $identity = @(& $launcher --package-info)
   if ($LASTEXITCODE -ne 0) { throw 'The new version cannot report its package identity.' }
   if ($identity.Count -ne 1 -or $identity[0] -cne 'none') {
@@ -216,9 +216,9 @@ try {
   }
   & $launcher install --finish
   if ($LASTEXITCODE -ne 0) { throw 'The new version failed its self-test.' }
-  Write-Output "The stable command is $Root\bin\tasks.exe"
+  Write-Output "The stable command is $Root\bin\ttasks.exe"
 } catch {
-  [Console]::Error.WriteLine('tasks install: ' + $_.Exception.Message)
+  [Console]::Error.WriteLine('ttasks install: ' + $_.Exception.Message)
   $code = 1
 } finally {
   if ($work -and (Test-Path -LiteralPath $work)) { Remove-Item -LiteralPath $work -Recurse -Force }

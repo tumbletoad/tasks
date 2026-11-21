@@ -7,19 +7,19 @@
 // instances it draws a tile for, from the hub's launch service, and a task's last receipts, which
 // the page refetches when the change feed names a launch. And Run: the page's click starts a
 // background run of a task, reads a task's runs (refetched when the feed names a run) and stops
-// one, on the service's runs (runs/service.ts), the same ones `tasks run` uses.
+// one, on the service's runs (runs/service.ts), the same ones `ttasks run` uses.
 //
 // A receipt holds IDs, states, instants and fixed codes only, as the launch record does, and
 // whether the launch's agent read the person's request yet, which only this machine knows. A run
 // as the page reads it holds the person's request and the agent's answer, task text that travels
 // in a request's or a response's body only.
-import { AppError, RequestId } from "@tasks/contracts";
+import { AppError, RequestId } from "@ttasks/contracts";
 import {
   isOpenRun,
   RUN_REQUEST_MAX_BYTES,
   type RunRecord,
   type RunState,
-} from "@tasks/contracts/runs";
+} from "@ttasks/contracts/runs";
 import {
   INSTANCE_KEY,
   isRoute,
@@ -28,7 +28,7 @@ import {
   TERMINAL_SOURCES,
   type IntentState,
   type Route,
-} from "@tasks/launch";
+} from "@ttasks/launch";
 import { findSpace, isAmbiguity } from "../ops/copies.ts";
 import type { OpsHost, ServedSpace } from "../ops/index.ts";
 import { WORK_ON_IT } from "../runs/agent.ts";
@@ -291,7 +291,7 @@ export class UiLaunches {
   }
 
   /**
-   * The served space a request names (its `Tasks-Space`): an ID or a name, the copy of it that
+   * The served space a request names (its `TTasks-Space`): an ID or a name, the copy of it that
    * copies.ts's rule picks among the served copies (A2 3.10.5).
    */
   #space(ref: string | undefined): ServedSpace {

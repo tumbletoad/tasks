@@ -1,4 +1,4 @@
-// `tasks doctor`'s launch rows and sessions row (A3 3.14; A4 3.4.1, 3.7, 3.8; A7 3.11 M4.05b):
+// `ttasks doctor`'s launch rows and sessions row (A3 3.14; A4 3.4.1, 3.7, 3.8; A7 3.11 M4.05b):
 // each row passes and fails against fake answers of the service, and says nothing but words,
 // counts, dates and instance IDs. The rows' wiring through a real service is in doctor.test.ts.
 import { describe, expect, test } from "vitest";
@@ -24,7 +24,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     const none = scopesCheck(false);
     expect(none.status).toBe("warn");
     expect(none.detail).toContain("may end the agent sessions");
-    expect(none.detail).toContain("tasks service restart");
+    expect(none.detail).toContain("ttasks service restart");
     expect(scopesCheck(null).status).toBe("skip");
   });
 
@@ -58,7 +58,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     expect(
       row({ app: "kitty", source: "installed", found: true, unsupported: "/home/x/../y" }).detail,
     ).not.toContain("/home");
-    // A setting that could not be read: the terminal is Tasks' fallback, not the default.
+    // A setting that could not be read: the terminal is TTasks' fallback, not the default.
     const unreadWindows = row({ app: "wt", source: "installed", found: true, unread: "windows" });
     expect(unreadWindows.status).toBe("warn");
     expect(unreadWindows.detail).toContain(

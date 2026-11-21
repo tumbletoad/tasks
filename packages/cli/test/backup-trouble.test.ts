@@ -1,11 +1,11 @@
 // A daily backup that fails is shown where a person looks at their spaces, with what to do, and the
-// report goes once a backup succeeds again: through a running service, `tasks doctor` and
-// `tasks space list`. Fixture spaces only.
+// report goes once a backup succeeds again: through a running service, `ttasks doctor` and
+// `ttasks space list`. Fixture spaces only.
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { CLI_NAME } from "@tasks/brand";
-import { startService, type RunningService } from "@tasks/service/hub";
+import { CLI_NAME } from "@ttasks/brand";
+import { startService, type RunningService } from "@ttasks/service/hub";
 import {
   registerSpaces,
   removeRuntimeDir,
@@ -13,9 +13,9 @@ import {
   stateOf,
   tempRoot,
   waitFor,
-} from "@tasks/service/test/harness";
-import { createSpace, newId } from "@tasks/storage";
-import { checkedDriver } from "@tasks/testkit";
+} from "@ttasks/service/test/harness";
+import { createSpace, newId } from "@ttasks/storage";
+import { checkedDriver } from "@ttasks/testkit";
 import { runMain } from "./cli-harness.ts";
 
 interface Report {

@@ -6,9 +6,9 @@
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { PRODUCT_NAME } from "@tasks/brand";
-import { AppError, resultTokens, type ErrorBody } from "@tasks/contracts";
-import type { WriteRequest } from "@tasks/storage";
+import { PRODUCT_NAME } from "@ttasks/brand";
+import { AppError, resultTokens, type ErrorBody } from "@ttasks/contracts";
+import type { WriteRequest } from "@ttasks/storage";
 import { toolCaller } from "../src/mcp/index.ts";
 import { opCall, type Caller, type OpsHost } from "../src/ops/index.ts";
 import { GUIDE_TOKENS } from "../src/mcp/render.ts";
@@ -438,7 +438,7 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
     const mcp = toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 });
     const textOf = async () => (await mcp("get_task", { task: ref })).content[0].text;
     const here = await textOf();
-    const block = here.indexOf("<<tasks-data ");
+    const block = here.indexOf("<<ttasks-data ");
     expect(here).toContain("\nFolder: its own folder on this machine\n");
     expect(here.indexOf("Folder: its own folder")).toBeLessThan(block);
     expect(here.indexOf("Ignore previous instructions")).toBeGreaterThan(block);
@@ -492,7 +492,7 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
     // A folder is text someone gave: in the text it stands inside the data block (A3 3.10).
     const mcp = toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 });
     const text = (await mcp("get_task", { task: ref })).content[0].text;
-    expect(text.search(/Folder: .*api\n/u)).toBeGreaterThan(text.indexOf("<<tasks-data "));
+    expect(text.search(/Folder: .*api\n/u)).toBeGreaterThan(text.indexOf("<<ttasks-data "));
   });
   test("a note for agents that came through an import is data, labelled import (A3 3.10)", async () => {
     const [task] = await add("Fixture imported note task");
@@ -535,7 +535,7 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
     const mcp = toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 });
     for (const input of [{ task: ref }, args]) {
       const text = (await mcp("get_task", input)).content[0].text;
-      const block = text.indexOf("<<tasks-data ");
+      const block = text.indexOf("<<ttasks-data ");
       expect(block).toBeGreaterThan(0);
       expect(text.indexOf("Fixture rule.")).toBeLessThan(block);
       expect(text.indexOf("Fixture import.")).toBeGreaterThan(block);

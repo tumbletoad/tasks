@@ -19,16 +19,16 @@
 //      `none`: 403.
 //   5. Origin, on every request that is not a GET and on every WebSocket upgrade: exactly
 //      `http://127.0.0.1:<port>` or `http://localhost:<port>`. Missing or different: 403. One
-//      exception: `auth/probe` may come without one (`tasks open` calls it from Node). A present
+//      exception: `auth/probe` may come without one (`ttasks open` calls it from Node). A present
 //      Origin that is wrong is refused everywhere, GET included.
 //   6. The method the route takes: GET for the shell (also at the page's own routes, `/s/…`),
-//      its files, `/healthz`, `/.well-known/tasks` and the WebSocket; POST for the API. Else 405.
+//      its files, `/healthz`, `/.well-known/ttasks` and the WebSocket; POST for the API. Else 405.
 //   7. Authentication: every `/api/*` route but `auth/redeem` and `auth/probe` needs
 //      `Authorization: Bearer <token>`, and the WebSocket a ticket; 401 otherwise. Whether the
 //      token is live is the server's next step, with the same 401.
 //   8. A route that does not exist: 404 (an API path only after authentication, so an
 //      unauthenticated caller learns nothing about routes).
-import { httpHeader } from "@tasks/brand";
+import { httpHeader } from "@ttasks/brand";
 import type { Refusal, Route } from "./events.ts";
 
 /** The API's own prefix. Every path under it is checked as an API path. */
@@ -62,7 +62,7 @@ export const MACHINE_ACTIONS: readonly string[] = [
   "project_folder",
 ];
 export const HEALTHZ_PATH = "/healthz";
-export const WELL_KNOWN_PATH = "/.well-known/tasks";
+export const WELL_KNOWN_PATH = "/.well-known/ttasks";
 export const ASSET_PREFIX = "/assets/";
 /**
  * The page's own routes (A5 3.3: `/s/:space/…`), which a reload or a link asks for: the shell. At
@@ -166,7 +166,7 @@ const isApi = (route: Route): boolean =>
   route === "machine" ||
   route === "api_other";
 
-/** The origins this listener belongs to. `tasks open` always uses the first. */
+/** The origins this listener belongs to. `ttasks open` always uses the first. */
 export function originsOf(port: number): readonly string[] {
   return [`http://127.0.0.1:${String(port)}`, `http://localhost:${String(port)}`];
 }

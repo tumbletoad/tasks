@@ -1,5 +1,5 @@
 // A space's preferences as readers take them (A1 3.16): every stored row through the registry of
-// @tasks/contracts, so a value that does not fit its declared shape, a reset one and a newer
+// @ttasks/contracts, so a value that does not fit its declared shape, a reset one and a newer
 // build's all read as the default, and no reader keeps a parsing rule of its own. A stored key this
 // build does not declare is kept in the table and never read (an older build never drops a newer
 // build's settings). Call these inside a read or write transaction.
@@ -9,7 +9,7 @@ import {
   preferenceValue,
   type PreferenceRead,
   type StoredPreference,
-} from "@tasks/contracts/preferences";
+} from "@ttasks/contracts/preferences";
 import type { Connection, Row } from "./driver.ts";
 import { misuse } from "./errors.ts";
 

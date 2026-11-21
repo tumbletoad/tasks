@@ -2,12 +2,12 @@
 // restart of the service as it would have before: the instance machine.toml names now, the task's
 // folder as Open would use it, the person's environment, the program resolved before it starts,
 // and the brief with the person's request, which goes over the agent's protocol and never on a
-// command line. Tasks' own tools are the bridge, given to the agent's thread with the run's ticket
+// command line. TTasks' own tools are the bridge, given to the agent's thread with the run's ticket
 // in their environment, so what the agent changes through them is recorded as the run's.
 import { createHash } from "node:crypto";
-import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
-import { findEntry, cliFaces } from "@tasks/contracts";
-import type { RunPermission, RunRecord } from "@tasks/contracts/runs";
+import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
+import { findEntry, cliFaces } from "@ttasks/contracts";
+import type { RunPermission, RunRecord } from "@ttasks/contracts/runs";
 import {
   ADDED,
   agentEnvironment,
@@ -17,14 +17,14 @@ import {
   sanitiseTitle,
   type AgentBase,
   type Instance,
-} from "@tasks/launch";
+} from "@ttasks/launch";
 import {
   CODEX_ARGS,
   codexDriver,
   sameFolder,
   type AgentCommand,
   type StartRefusal,
-} from "@tasks/runs";
+} from "@ttasks/runs";
 import type { RunFolderFound } from "../launch/index.ts";
 import type { ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
@@ -46,7 +46,7 @@ export interface RunAgents {
   folder(space: string, folder: TaskFolder): Promise<RunFolderFound>;
   /** Where the agent's environment starts: the person's own, as Open's agents get it. */
   base(): Promise<AgentBase | undefined>;
-  /** Tasks' own command, program first: the bridge runs as `<it> mcp …`. */
+  /** TTasks' own command, program first: the bridge runs as `<it> mcp …`. */
   command(): readonly string[] | undefined;
 }
 
@@ -95,7 +95,7 @@ export async function runFolder(
   };
 }
 
-/** The CLI verb that reads a task, for the brief: `tasks show`. */
+/** The CLI verb that reads a task, for the brief: `ttasks show`. */
 function readCommand(): string {
   const entry = findEntry("task.get");
   const verb = entry === undefined ? undefined : cliFaces(entry)[0]?.verb;
@@ -132,7 +132,7 @@ export function runBriefHash(ref: string, title: string): string {
 
 /**
  * What a run starts, from its record, or why it cannot start now. `ticket` is the run's: the
- * bridge presents it, and the agent's own shell has it for Tasks' command line.
+ * bridge presents it, and the agent's own shell has it for TTasks' command line.
  */
 export async function buildRun(
   agents: RunAgents,

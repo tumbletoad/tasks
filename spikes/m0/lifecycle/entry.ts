@@ -1,12 +1,12 @@
-// The lab release's `lib/tasks.mjs` (M0.07). `make-release.ts` puts it, `supervisor.mjs` and the
+// The lab release's `lib/ttasks.mjs` (M0.07). `make-release.ts` puts it, `supervisor.mjs` and the
 // built kit (`lib/kit/*.mjs`) into a copy of the packaging spike's version folder, so the installed
 // launchers run the kit the way the product's launchers will run `tasks`:
-//   tasks service|call|open|ticket|run-shim|accounts|tree ...   the kit's command line
-//   tasks mcp --state <dir> [--reconnect]                         the spike bridge (forwarder)
-//   tasks shim --state <dir> <ticket>                             the stand-in interactive shim
-//   tasks supervise [--state <dir>]                               the tasksw.exe loop stand-in
-//   tasksw.exe with no arguments                                  the same, as the Run value starts it
-//   tasks version | wait | gate | install --finish                as in the packaging spike
+//   ttasks service|call|open|ticket|run-shim|accounts|tree ...   the kit's command line
+//   ttasks mcp --state <dir> [--reconnect]                         the spike bridge (forwarder)
+//   ttasks shim --state <dir> <ticket>                             the stand-in interactive shim
+//   tasks supervise [--state <dir>]                               the ttasksw.exe loop stand-in
+//   ttasksw.exe with no arguments                                  the same, as the Run value starts it
+//   ttasks version | wait | gate | install --finish                as in the packaging spike
 // The kit modules are loaded only for the command that needs them, like the product entry.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,14 +24,14 @@ function option(name: string): string | undefined {
 
 /** The install root and the default service state folder, from the launcher's variables. */
 function defaults(): { root: string; state: string } | undefined {
-  const root = process.env["TASKS_ROOT"];
+  const root = process.env["TTASKS_ROOT"];
   if (root === undefined || root === "") return undefined;
   return { root, state: option("--state") ?? join(root, "state", "service") };
 }
 
-const launcher = (process.env["TASKS_LAUNCHER"] ?? "").toLowerCase();
+const launcher = (process.env["TTASKS_LAUNCHER"] ?? "").toLowerCase();
 const stableTasksw =
-  launcher.endsWith("tasksw.exe") && process.env["TASKS_LAUNCH_MODE"] === "stable";
+  launcher.endsWith("ttasksw.exe") && process.env["TTASKS_LAUNCH_MODE"] === "stable";
 
 switch (command) {
   case "service":
@@ -51,7 +51,7 @@ switch (command) {
     break;
   case "":
   case "supervise": {
-    // A2 3.3.2: tasksw.exe with no arguments supervises, and only from the stable bin folder.
+    // A2 3.3.2: ttasksw.exe with no arguments supervises, and only from the stable bin folder.
     const found = defaults();
     if ((command === "" && !stableTasksw) || found === undefined) {
       process.stderr.write("usage: tasks <command> (lab release, M0.07)\n");

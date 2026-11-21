@@ -1,5 +1,5 @@
 // The folder fields of the agent's tools through the request path of a running service, over real
-// tasks-local/1 sessions: an agent's connection that names its working folder adds tasks with
+// ttasks-local/1 sessions: an agent's connection that names its working folder adds tasks with
 // folder "cwd" and they land in the project whose folder holds it; organize makes a project with
 // its folder, sets and clears one, and answers with the project that has a folder already; the
 // digest names a task's folder; search finds tasks by folder; and the refusals of a folder the
@@ -15,8 +15,8 @@ import {
   TaskGetResult,
   TaskSearchResult,
   TaskUpdateResult,
-} from "@tasks/contracts";
-import type { RpcSession } from "@tasks/bridge/protocol";
+} from "@ttasks/contracts";
+import type { RpcSession } from "@ttasks/bridge/protocol";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { classSession, errorOf, type CliClass } from "./ops-helpers.ts";
 import { removeRuntimeDir, serviceEnv, tempRoot } from "./harness.ts";

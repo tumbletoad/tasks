@@ -50,7 +50,7 @@
 //    with the recorded code and a message that says so, and nothing is opened for writing,
 //    backed up or written. The migration is tried again, each time behind its own new barrier
 //    backup, when something changed that could change the outcome: another build, another state of
-//    the database (a restore, another writer), or the person asking (`tasks space open
+//    the database (a restore, another writer), or the person asking (`ttasks space open
 //    --retry-migration`, open() with `retryMigration`). A successful migration and a restore in
 //    place forget the failures. So barrier backups are bounded by acts: one per build that tries,
 //    per state of the database, and per retry the person asks for.
@@ -58,7 +58,7 @@
 //    own backups folder, the daily backup when due, retention. Then a check every hour whether the
 //    next daily backup is due. And the projection (projection.ts, A1 3.13) in a worker of its own,
 //    into the space's `view/`, until the space closes: a close stops it first, before the writer
-//    it asks for its bookkeeping. `tasks view rebuild` reaches it through rebuildView.
+//    it asks for its bookkeeping. `ttasks view rebuild` reaches it through rebuildView.
 // The highest epoch this machine has seen for a space is recorded when its writer opens as the
 // authority (space-settings.ts), and a claim or a restore in place goes above it.
 //
@@ -73,7 +73,7 @@
 // guards, so a worker that hangs keeps both until the process exits.
 import { realpathSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { CLI_NAME } from "@tasks/brand";
+import { CLI_NAME } from "@ttasks/brand";
 import {
   DATABASE_FILE,
   DEFAULT_DRIVER,
@@ -96,14 +96,14 @@ import {
   type SpaceWriterHandle,
   type WorkerConnection,
   type WriterHolder,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 import {
   watchOwnership,
   type OwnershipCheck,
   type OwnershipLoss,
   type OwnershipWatch,
 } from "./lock.ts";
-import type { Reconciled } from "@tasks/projection";
+import type { Reconciled } from "@ttasks/projection";
 import type { Logger, SpaceReason } from "./log.ts";
 import { BackupWatch, type BackupTroubleView } from "./backup-health.ts";
 import { MaintenanceFailed, type Maintenance } from "./maintenance.ts";
@@ -139,8 +139,8 @@ import { realSyncHost } from "./sync-host.ts";
 import { readOnly, type ServedSpace } from "../ops/index.ts";
 import { bounded, Timeout, within } from "./wait.ts";
 
-export { WRITER_HOLDER_FILE as WRITER_FILE, WRITER_LOCK_FILE as WRITER_LOCK } from "@tasks/storage";
-export { readWriterHolder as readHolder, type WriterHolder } from "@tasks/storage";
+export { WRITER_HOLDER_FILE as WRITER_FILE, WRITER_LOCK_FILE as WRITER_LOCK } from "@ttasks/storage";
+export { readWriterHolder as readHolder, type WriterHolder } from "@ttasks/storage";
 
 /** A space's open, its writer and a migration included, gets this long. */
 export const SPACE_OPEN_TIMEOUT_MS = 30_000;
@@ -179,7 +179,7 @@ export interface SpaceView {
   readonly name?: string;
   readonly ref_prefix?: string;
   readonly state: SpaceState;
-  /** `tasks space forget` took it off the list: kept only so other entries keep their index. */
+  /** `ttasks space forget` took it off the list: kept only so other entries keep their index. */
   readonly forgotten?: true;
   readonly reason?: SpaceReason;
   /** The storage code behind a read-only or unavailable state, when there is one. */
@@ -419,7 +419,7 @@ class Hosted {
   /** writer.lock was found deleted or replaced, and reported. */
   lost = false;
   /**
-   * `tasks space forget`: the entry stays in the list so the other entries keep their index, but no
+   * `ttasks space forget`: the entry stays in the list so the other entries keep their index, but no
    * one sees or names it until its folder is opened again.
    */
   forgotten = false;
@@ -597,7 +597,7 @@ export class SpaceManager {
 
   /**
    * list() with the ID each entry names and each served space's name and prefix, for people
-   * (status, `tasks space`).
+   * (status, `ttasks space`).
    */
   described(): SpaceView[] {
     const now = (this.#options.now?.() ?? new Date()).getTime();
@@ -653,7 +653,7 @@ export class SpaceManager {
   }
 
   /**
-   * Serves the space at `path` (`tasks space open`, `create`, `restore --to`): a folder already
+   * Serves the space at `path` (`ttasks space open`, `create`, `restore --to`): a folder already
    * registered opens again when it is closed or unavailable, a new one is added. Resolves with its
    * entry once the open has settled. Like a `[[spaces]]` entry, the entry opens only as one space
    * (A2 3.2.4): `id` when the caller made the space and knows it, else the space the folder holds
@@ -763,7 +763,7 @@ export class SpaceManager {
   }
 
   /**
-   * Recovers a space refused with a rollback journal (`tasks space recover`, A1 3.18): the
+   * Recovers a space refused with a rollback journal (`ttasks space recover`, A1 3.18): the
    * space closes, storage plays the journal back on a copy and swaps it in under the space's
    * writer.lock, and the space opens again, also when the recovery failed.
    */
@@ -836,7 +836,7 @@ export class SpaceManager {
   }
 
   /**
-   * Takes a closed or unavailable space off the list (`tasks space forget`): nothing of its folder
+   * Takes a closed or unavailable space off the list (`ttasks space forget`): nothing of its folder
    * is touched, and `open` of the folder brings it back.
    */
   forget(entry: number): void {
@@ -889,7 +889,7 @@ export class SpaceManager {
     this.#watches.clear();
   }
 
-  /** Closes one space, within its bound (`tasks space close`, and before a restore in place). */
+  /** Closes one space, within its bound (`ttasks space close`, and before a restore in place). */
   async close(entry: number): Promise<void> {
     const space = this.#space(entry);
     space.closes += 1;
@@ -897,7 +897,7 @@ export class SpaceManager {
   }
 
   /**
-   * `tasks view rebuild` (A1 3.13 rule 5): the space's projection looks at every file it placed
+   * `ttasks view rebuild` (A1 3.13 rule 5): the space's projection looks at every file it placed
    * and queues every task again, removing nothing it cannot prove it wrote. Resolves with what the
    * reconciliation found, or undefined while the space has no projection running (it is not open
    * as this machine's).
@@ -1507,7 +1507,7 @@ export class SpaceManager {
     }
     // A read-only copy of a space this service serves has the original's space ID, which the
     // original's writer holds in this process (SPACE_WRITER_TAKEN): it is served read-only too, and
-    // claimed once the original is closed (M1.10's `tasks space restore --to`).
+    // claimed once the original is closed (M1.10's `ttasks space restore --to`).
     const taken = error instanceof StorageError && error.code === "SPACE_WRITER_TAKEN";
     const readOnly = taken
       ? "read_only_copy"

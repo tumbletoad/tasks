@@ -3,7 +3,7 @@
 // tests format them with the page's own catalogue, so they read the words a person sees.
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
-import { APP_NAME, CLI_NAME } from "@tasks/brand";
+import { APP_NAME, CLI_NAME } from "@ttasks/brand";
 import type { Instance, Receipt } from "../api.ts";
 import en from "../i18n/en.json" with { type: "json" };
 import type { MessageId, Values } from "../i18n/intl.tsx";

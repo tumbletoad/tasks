@@ -4,7 +4,7 @@
 // are each OS's instances as A4 3.2 shapes them: a native binary or a wrapper on
 // Linux, `node <entry>` for an npm install on Windows. Fixture data only.
 import { describe, expect, test } from "vitest";
-import { envVar, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
+import { envVar, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
 import {
   cliArgv,
   codexToolEnv,
@@ -232,7 +232,7 @@ describe("[A4.5.routes.golden-argv] golden argv per target, route and OS, compar
       "-c",
       `mcp_servers.${MCP_SERVER_KEY}.env_vars=["HTTPS_PROXY","SSL_CERT_FILE","${ticket}"]`,
     ]);
-    // A name Tasks could not write back exactly is never written at all.
+    // A name TTasks could not write back exactly is never written at all.
     expect(() => codexToolEnv(['A"]', "B"])).toThrow(RouteUnavailable);
     expect(() => codexToolEnv(["PATH\n"])).toThrow(RouteUnavailable);
   });

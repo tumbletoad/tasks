@@ -1,6 +1,6 @@
-// A test's tasks command that names the protocol after this build's: "a CLI newer than the running
+// A test's ttasks command that names the protocol after this build's: "a CLI newer than the running
 // service" (A2 3.6.6, A7 3.8 M1.10). The real CLI, with the protocol it names raised by one.
-import { PROTOCOL } from "@tasks/bridge/protocol";
+import { PROTOCOL } from "@ttasks/bridge/protocol";
 import { main } from "../src/main.ts";
 import { processIo } from "../src/process-io.ts";
 

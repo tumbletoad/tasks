@@ -9,7 +9,7 @@
 //   backup-api            node:sqlite backup() copies a database that passes integrity_check
 //   report-exclude-env    --report-exclude-env reached Node and keeps the environment out of reports
 //
-// Usage: tasks gate --scratch <folder> [--expect-node <v>] [--expect-sqlite <v>] [--json]
+// Usage: ttasks gate --scratch <folder> [--expect-node <v>] [--expect-sqlite <v>] [--json]
 // The expected versions default to the ones this version folder's manifest.json pins.
 // The scratch folder holds two small databases while the gate runs. They are deleted after.
 import { randomBytes } from "node:crypto";

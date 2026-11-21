@@ -1,14 +1,14 @@
-// `tasks run` from a person's command line to a settled run, on a service in this process with
+// `ttasks run` from a person's command line to a settled run, on a service in this process with
 // the fake app server (packages/runs/test/codex-server.ts) as the instance's Codex: the request
 // reaches the agent over its protocol and no command line, the answer is in the run's record, the
-// agent's own call of Tasks' tools is recorded as the run's, a retry starts nothing twice, a
+// agent's own call of TTasks' tools is recorded as the run's, a retry starts nothing twice, a
 // queued run starts after a restart, only the person starts one, and a folder that is not here
 // refuses it. Fixture spaces only.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startService, type RunningService } from "@tasks/service/hub";
+import { startService, type RunningService } from "@ttasks/service/hub";
 import {
   instanceToml,
   registerSpaces,
@@ -17,10 +17,10 @@ import {
   stateOf,
   tempRoot,
   waitFor,
-} from "@tasks/service/test/harness";
-import { classSession } from "@tasks/service/test/ops-helpers";
-import { newId, type Id } from "@tasks/storage";
-import { seedMira } from "@tasks/testkit";
+} from "@ttasks/service/test/harness";
+import { classSession } from "@ttasks/service/test/ops-helpers";
+import { newId, type Id } from "@ttasks/storage";
+import { seedMira } from "@ttasks/testkit";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { callTools, type ToolCall } from "../../runs/test/codex-server.ts";
 import { BIN, runMain } from "./cli-harness.ts";
@@ -40,7 +40,7 @@ let log = "";
 let service: RunningService | undefined;
 
 /**
- * What the run's agent calls through Tasks' tools, bound by its ticket: a write, its own task bound
+ * What the run's agent calls through TTasks' tools, bound by its ticket: a write, its own task bound
  * once more, reads, and another task of the space bound explicitly.
  */
 const RUN_CALLS: readonly ToolCall[] = [
@@ -65,7 +65,7 @@ async function start(): Promise<RunningService> {
     identity: () => ({ root: false, elevated: false, package: null }),
     say: () => undefined,
     launch: { shimCommand: [process.execPath, BIN], baseEnv: () => process.env },
-    // No tasks-run.exe here: the runs get no process group, which changes only their cleanup.
+    // No ttasks-run.exe here: the runs get no process group, which changes only their cleanup.
     runs: { times: { stopGraceMs: 2_000, closeMs: 5_000 } },
   });
   await started.spacesSettled;
@@ -215,7 +215,7 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
     const shown = await user(["run", "show", id, "--json"]);
     expect(JSON.parse(shown.stdout)).toMatchObject({ answer: ANSWER_MARK, answer_final: true });
 
-    // The agent's calls of Tasks' own tools bound to the run's session: it wrote as the run, bound
+    // The agent's calls of TTasks' own tools bound to the run's session: it wrote as the run, bound
     // its own task again, read, and was told its session is bound when it named another task.
     const said = readFileSync(log, "utf8")
       .split("\n")
@@ -247,7 +247,7 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
       .map(
         (l) => JSON.parse(l) as { params: { config: Record<string, Record<string, unknown>> } },
       )[0];
-    const entry = thread?.params.config["mcp_servers.tasks"] ?? {};
+    const entry = thread?.params.config["mcp_servers.ttasks"] ?? {};
     const late = await callTools(entry, { calls: [{ name: "status", arguments: {} }], home });
     expect(codeOf(late[0])).toBe("forbidden");
     expect(JSON.stringify(late[0])).toContain("not registered");
@@ -345,7 +345,7 @@ describe("[A4.3.11.run.door] tasks run: a person starts a background run of a ta
     expect(missing.code).not.toBe(0);
     expect(JSON.parse(missing.stdout)).toMatchObject({ error: { code: "not_found" } });
     const help = await user(["help", "run"]);
-    expect(help.stdout).toContain("tasks run <task>");
+    expect(help.stdout).toContain("ttasks run <task>");
   });
 
   test("a task whose folder is not found here is refused with that reason, and nothing is queued", async () => {

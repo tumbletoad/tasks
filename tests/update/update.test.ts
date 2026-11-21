@@ -161,7 +161,7 @@ describe("[A2.3.12.6.update.verify] the installed version verifies the release w
     // Not a release archive's name, or another platform's.
     const renamed = join(w.dir, "good", "something.zip");
     cpSync(good.archive, renamed);
-    cases.push({ name: "name", archive: renamed, reason: /is not a tasks release archive/ });
+    cases.push({ name: "name", archive: renamed, reason: /is not a ttasks release archive/ });
     const foreign = join(
       w.dir,
       "good",
@@ -275,7 +275,7 @@ describe("[A2.3.12.6.update.switch] the switch: self-test first, the journal bef
       "done:none:0.2.0",
     ]);
     expect(w.selfTest.folders).toEqual([join(w.root, "versions", "0.2.0")]);
-    // On Windows tasksw.exe changed too: the supervisor itself is stopped and started.
+    // On Windows ttasksw.exe changed too: the supervisor itself is stopped and started.
     expect(w.control.calls).toEqual([windows ? "restart supervisor" : "restart", "wait 0.2.0"]);
     expect(w.control.version).toBe("0.2.0");
     expect(readdirSync(join(w.root, "versions")).sort()).toEqual(["0.1.0", "0.2.0"]);
@@ -858,7 +858,7 @@ describe("[A2.3.12.6.update.repair] a repair finishes or rolls back whatever an 
   });
 
   test.runIf(windows)(
-    "when an update changed tasksw.exe, a rollback and a repair start the supervisor again too, not only the service under it",
+    "when an update changed ttasksw.exe, a rollback and a repair start the supervisor again too, not only the service under it",
     async () => {
       // The restart after the switch fails: the rollback brings back the old supervisor as well.
       const w = await world("supervisor");
@@ -1045,7 +1045,7 @@ function sha(path: string): string {
 
 /**
  * Windows: a bin folder halfway through a launcher swap, as a kill between the two renames of
- * tasks.exe leaves it: tasks.exe renamed aside, the other launcher still `side`'s.
+ * ttasks.exe leaves it: ttasks.exe renamed aside, the other launcher still `side`'s.
  */
 function halfSwap(root: string, side: string): void {
   const bin = join(root, "bin");

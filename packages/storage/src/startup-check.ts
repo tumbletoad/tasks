@@ -48,7 +48,7 @@ export interface Capabilities {
   backup: boolean;
 }
 
-/** What `tasks doctor` prints about the driver (A1 3.19). */
+/** What `ttasks doctor` prints about the driver (A1 3.19). */
 export interface DriverReport {
   driver: DriverName;
   sqliteVersion: string;

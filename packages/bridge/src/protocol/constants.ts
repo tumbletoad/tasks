@@ -1,4 +1,4 @@
-// The fixed values of `tasks-local/1` (A2 3.6, docs/protocol/tasks-local-1.md). They are wire
+// The fixed values of `ttasks-local/1` (A2 3.6, docs/protocol/ttasks-local-1.md). They are wire
 // constants: a native forwarder hard-codes the same values, so a product rename does not change
 // them. Every bound the protocol applies is named here.
 
@@ -84,7 +84,7 @@ export const METHOD = {
 export const HELLO_ID = 0;
 export const BIND_ID = 1;
 
-/** JSON-RPC error codes the protocol uses. Tasks errors travel as `tasks` with A3's body in `data`. */
+/** JSON-RPC error codes the protocol uses. TTasks errors travel as `tasks` with A3's body in `data`. */
 export const RPC_ERROR = {
   parse: -32700,
   invalidRequest: -32600,
@@ -107,8 +107,8 @@ export const AGENT_MARKERS = [
   "CLAUDE_CODE_SESSION_ID",
   "CODEX_THREAD_ID",
   "T3CODE_THREAD_ID",
-  "TASKS_TICKET",
-  "TASKS_TASK",
+  "TTASKS_TICKET",
+  "TTASKS_TASK",
 ] as const;
 export const AGENT_MARKER_PREFIX = "CODEX_SANDBOX";
 
@@ -121,7 +121,7 @@ export function isAgentMarker(name: string): boolean {
 
 /** The environment names an rpc client copies into its bind context: the markers and the space. */
 export function isContextEnvName(name: string): boolean {
-  return isAgentMarker(name) || name === "TASKS_SPACE";
+  return isAgentMarker(name) || name === "TTASKS_SPACE";
 }
 
 /**
@@ -132,7 +132,7 @@ export const MCP_CONTEXT_ENV = [
   "CLAUDE_CODE_SESSION_ID",
   "CODEX_THREAD_ID",
   "T3CODE_THREAD_ID",
-  "TASKS_TICKET",
-  "TASKS_TASK",
-  "TASKS_SPACE",
+  "TTASKS_TICKET",
+  "TTASKS_TASK",
+  "TTASKS_SPACE",
 ] as const;

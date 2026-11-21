@@ -1,8 +1,8 @@
-// `tasks service start`, `status` and `stop` against the product's real service on Linux and macOS,
+// `ttasks service start`, `status` and `stop` against the product's real service on Linux and macOS,
 // on the routes that start it by hand (A2 3.3.3): without a user manager, and on Linux with one but
 // no unit of this install. Start runs the launcher detached, then waits for a service that
-// completes the tasks-local/1 handshake, and stop asks it over the socket. The launcher is a
-// stand-in script that runs `tasks serve` from this checkout. systemctl and loginctl are played by
+// completes the ttasks-local/1 handshake, and stop asks it over the socket. The launcher is a
+// stand-in script that runs `ttasks serve` from this checkout. systemctl and loginctl are played by
 // the recorder, so nothing reaches the real user session and no unit is made. Linux and macOS
 // hosts only.
 import { spawn } from "node:child_process";
@@ -19,7 +19,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isAgentMarker } from "@tasks/bridge/protocol";
+import { isAgentMarker } from "@ttasks/bridge/protocol";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   restartService,
@@ -40,7 +40,7 @@ import {
 import { FakeService, FakeTools } from "./install-fakes.ts";
 
 const posix = process.platform !== "win32";
-/** A terminal that runs `tasks service start` and then waits, as a shell does. */
+/** A terminal that runs `ttasks service start` and then waits, as a shell does. */
 const START_ENTRY = fileURLToPath(new URL("./start-entry.ts", import.meta.url));
 
 let dir = "";
@@ -76,19 +76,19 @@ afterEach(() => {
 function context(userManager = false): ServiceContext {
   dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ks-man-")));
   root = join(dir, "kh");
-  const program = join(root, "current", "bin", "tasks");
+  const program = join(root, "current", "bin", "ttasks");
   mkdirSync(join(program, ".."), { recursive: true });
-  // The stand-in launcher: the real one finds TASKS_HOME from home.marker (A2 3.12.3).
+  // The stand-in launcher: the real one finds TTASKS_HOME from home.marker (A2 3.12.3).
   writeFileSync(
     program,
-    `#!/bin/sh\nexport TASKS_HOME='${root}'\nexec '${process.execPath}' '${MAIN}' "$@"\n`,
+    `#!/bin/sh\nexport TTASKS_HOME='${root}'\nexec '${process.execPath}' '${MAIN}' "$@"\n`,
   );
   chmodSync(program, 0o755);
   const env: Record<string, string | undefined> = {};
   for (const [name, value] of Object.entries(process.env)) {
-    if (!isAgentMarker(name) && !name.toUpperCase().startsWith("TASKS_")) env[name] = value;
+    if (!isAgentMarker(name) && !name.toUpperCase().startsWith("TTASKS_")) env[name] = value;
   }
-  const real = defaultServiceContext({ env: { ...env, TASKS_HOME: root }, program });
+  const real = defaultServiceContext({ env: { ...env, TTASKS_HOME: root }, program });
   const tools = new FakeTools(new FakeService(), join(dir, "units"), { userManager });
   // A home folder of the test's own: a service started by hand runs in it.
   const home = join(dir, "home");
@@ -129,7 +129,7 @@ describe.skipIf(!posix)(
       const status = await serviceStatus(ctx);
       expect(status).toMatchObject({
         install_id: ctx.installId,
-        tasks_home: root,
+        ttasks_home: root,
         entry: { kind: "systemd-unit", state: "absent" },
         autostart: { kind: "systemd", user_manager: false, enabled: null, active: null },
         service: { answers: true, state: "ready", pid: start.status.pid, endpoint: "unix" },

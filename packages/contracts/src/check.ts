@@ -47,7 +47,7 @@ export const LIMITS = {
 export interface CheckOptions {
   /**
    * The MCP server key (A3 3.2.4), from the brand package. The client puts it before every tool
-   * name (`mcp__tasks__search`), so no tool name starts with it as its first word.
+   * name (`mcp__ttasks__search`), so no tool name starts with it as its first word.
    */
   readonly serverKey?: string;
 }
@@ -876,7 +876,7 @@ function checkFaces(
       options.serverKey !== undefined &&
       (tool === options.serverKey || tool.startsWith(`${options.serverKey}_`))
     ) {
-      // The client namespaces every tool by the server key (mcp__tasks__search), so a name that
+      // The client namespaces every tool by the server key (mcp__ttasks__search), so a name that
       // starts with it says it twice. A later word may be the key's word: add_tasks (A3 3.2.4).
       say(`a tool name does not start with the MCP server key ("${options.serverKey}")`);
     }

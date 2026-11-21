@@ -1,8 +1,8 @@
-// Test helpers for the service side of tasks-local/1: a server on a temporary endpoint with
+// Test helpers for the service side of ttasks-local/1: a server on a temporary endpoint with
 // content-free event capture, and a line relay that can change one line on the way, to play a
 // tampering peer between a client and the service. Tests only.
 import net from "node:net";
-import { testKey, type endpointRoot } from "@tasks/bridge/test/endpoint";
+import { testKey, type endpointRoot } from "@ttasks/bridge/test/endpoint";
 import { serve, type LocalEvent, type LocalServer, type ServeOptions } from "../src/local/index.ts";
 
 export interface Started {

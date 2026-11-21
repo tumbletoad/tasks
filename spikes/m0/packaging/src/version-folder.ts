@@ -1,11 +1,11 @@
 // The version folder and its archive (A2 3.12.2, 3.12.4). Spike layout:
 //
-//   bin/tasks                       POSIX launcher (linux-x64)
-//   bin/tasks.exe, bin/tasksw.exe   C launchers (win-x64)
+//   bin/ttasks                       POSIX launcher (linux-x64)
+//   bin/ttasks.exe, bin/ttasksw.exe   C launchers (win-x64)
 //   runtime/node | runtime/node.exe the official Node binary, unmodified
-//   lib/tasks.mjs, gate.mjs, install.mjs   the stand-in app
+//   lib/ttasks.mjs, gate.mjs, install.mjs   the stand-in app
 //   licenses/node.txt               Node's licence
-//   LICENSE, NOTICE                 Tasks's
+//   LICENSE, NOTICE                 TTasks's
 //   manifest.json                   version, build, platform, node and sqlite versions,
 //                                   and the SHA-256 of every other file
 //
@@ -45,12 +45,12 @@ export function hostPlatform(): Platform | undefined {
 export const VERSION_PATTERN = /^(?!\.+$)[0-9A-Za-z.+-]{1,64}$/;
 
 export function archiveName(version: string, platform: Platform): string {
-  return `tasks-${version}-${platform}.${platform === "win-x64" ? "zip" : "tar.gz"}`;
+  return `ttasks-${version}-${platform}.${platform === "win-x64" ? "zip" : "tar.gz"}`;
 }
 
 export interface Manifest {
   format: 1;
-  name: "tasks";
+  name: "ttasks";
   version: string;
   build: string;
   platform: Platform;
@@ -60,7 +60,7 @@ export interface Manifest {
 }
 
 /** Files that carry the exec bit in the tar. */
-const EXECUTABLES = new Set(["bin/tasks", "runtime/node"]);
+const EXECUTABLES = new Set(["bin/ttasks", "runtime/node"]);
 
 /** Paths the manifest may list: the same characters the POSIX install script accepts. */
 const MANIFEST_PATH = /^[A-Za-z0-9._/-]+$/;
@@ -71,7 +71,7 @@ export interface VersionFolderInput {
   platform: Platform;
   node: { version: string; sqlite: string; binary: string; license: string };
   /** The compiled launchers, required for win-x64. */
-  launchers?: { tasks: string; tasksw: string };
+  launchers?: { ttasks: string; ttasksw: string };
   /** Replaces app files by name, for the tamper tests' look-alike archives. */
   appOverrides?: Record<string, string>;
 }
@@ -115,14 +115,14 @@ export function assembleVersionFolder(out: string, input: VersionFolderInput): M
 
   if (input.platform === "win-x64") {
     if (input.launchers === undefined) throw new Error("win-x64 needs the compiled launchers");
-    place("bin/tasks.exe", input.launchers.tasks);
-    place("bin/tasksw.exe", input.launchers.tasksw);
+    place("bin/ttasks.exe", input.launchers.ttasks);
+    place("bin/ttasksw.exe", input.launchers.ttasksw);
     place("runtime/node.exe", input.node.binary);
   } else {
-    place("bin/tasks", posixLauncher);
+    place("bin/ttasks", posixLauncher);
     place("runtime/node", input.node.binary);
   }
-  for (const name of ["tasks.mjs", "gate.mjs", "install.mjs"]) {
+  for (const name of ["ttasks.mjs", "gate.mjs", "install.mjs"]) {
     const override = input.appOverrides?.[name];
     place(`lib/${name}`, override === undefined ? join(appDir, name) : Buffer.from(override));
   }
@@ -137,7 +137,7 @@ export function assembleVersionFolder(out: string, input: VersionFolderInput): M
   }
   const manifest: Manifest = {
     format: 1,
-    name: "tasks",
+    name: "ttasks",
     version: input.version,
     build: input.build,
     platform: input.platform,

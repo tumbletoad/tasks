@@ -1,7 +1,7 @@
 // The canonical JSON of an intent (A1 3.8: "SHA-256 over the RFC 8785 form"). RFC 8785, the JSON
 // Canonicalization Scheme, serialises plain JSON data in one way: object members sorted by their
 // names as UTF-16 code units, no whitespace, and numbers and strings as ECMAScript's JSON.stringify
-// writes them. Tasks's intents are plain data (strings, finite numbers, booleans, null, arrays and
+// writes them. TTasks's intents are plain data (strings, finite numbers, booleans, null, arrays and
 // plain objects), so JSON.stringify's own rules serve for every leaf, and only the member order
 // needs this module.
 

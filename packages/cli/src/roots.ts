@@ -1,7 +1,7 @@
-// `tasks roots`: retired. A task opens in its own folder or its project's folder on this machine,
+// `ttasks roots`: retired. A task opens in its own folder or its project's folder on this machine,
 // so a root names nothing any more. The command stays as a pointer for people and scripts that
 // still call it, and changes nothing: machine.toml's `[roots]` lines are left as they are.
-import { CLI_NAME } from "@tasks/brand";
+import { CLI_NAME } from "@ttasks/brand";
 import type { Globals } from "./args.ts";
 import type { Io } from "./io.ts";
 import { printUsage } from "./output.ts";
@@ -10,7 +10,7 @@ const POINTER =
   "Roots are retired. A task opens in its own folder or its project's folder on this machine, " +
   `and the [roots] lines in machine.toml do nothing. ${CLI_NAME} area lists and makes projects.`;
 
-/** `tasks roots --help` and `tasks help roots`. */
+/** `ttasks roots --help` and `ttasks help roots`. */
 export const ROOTS_HELP = `Usage: ${CLI_NAME} roots
 
 ${POINTER}

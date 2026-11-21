@@ -1,5 +1,5 @@
 // Two installs on one machine (A7 3.8 M1.14's Verify line, gate G2's install predicate S06, A2
-// 3.2.1, review SL-03): installed by the install script into two temporary TASKS_HOMEs, each has
+// 3.2.1, review SL-03): installed by the install script into two temporary TTASKS_HOMEs, each has
 // its own install ID, state and endpoint, and a test install started and stopped beside another
 // leaves the other's CLI and bridge calls working, before, during and after. Real processes, a
 // release built offline, fixture text only; every PID is stopped by this test.
@@ -74,7 +74,7 @@ async function start(root: string): Promise<{ proc: Proc; json: ServiceJson }> {
   void proc.exit.then((exit) => {
     ended = exit;
   });
-  // On Windows tasks.exe starts Node as its child, so service.json names Node's PID.
+  // On Windows ttasks.exe starts Node as its child, so service.json names Node's PID.
   const json = await waitFor(
     () => {
       if (ended !== undefined) {
@@ -90,7 +90,7 @@ async function start(root: string): Promise<{ proc: Proc; json: ServiceJson }> {
   return { proc, json };
 }
 
-/** Stops it as `tasks service stop` does on every OS: service/shutdown over its endpoint. */
+/** Stops it as `ttasks service stop` does on every OS: service/shutdown over its endpoint. */
 async function stop(root: string, running: { proc: Proc; json: ServiceJson }): Promise<void> {
   const session = await openSession(root, running.json.endpoint?.path ?? "");
   await session.call("service/shutdown", {}, { timeoutMs: 10_000 }).catch(() => undefined);

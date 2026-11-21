@@ -1,7 +1,7 @@
 // Repair after a killed updater or supervisor (A2 3.12.6): an update journal found by a process
 // that holds update.lock belongs to an update whose updater is gone (the updater holds the lock
 // for the whole update, and the OS lets go of a lock on any exit). The first to find it finishes
-// it or rolls it back: any `tasks update` (also `--repair`), `tasks install --finish`, and the
+// it or rolls it back: any `ttasks update` (also `--repair`), `ttasks install --finish`, and the
 // service at its start and every 10 s while it runs.
 //
 // It decides from what is on disk, not from how far the journal says the update came:
@@ -148,7 +148,7 @@ function launchersOf(root: string, version: string, platform: NodeJS.Platform): 
 
 /**
  * Whether a repair may have left the Windows supervisor running from an old file: whether the
- * update it reconciled may have replaced `bin\tasksw.exe` while a supervisor ran from the file it
+ * update it reconciled may have replaced `bin\ttasksw.exe` while a supervisor ran from the file it
  * replaced (renamed aside). That is so when the journal names it, whoever swapped it (the update,
  * the repair or a launcher's sibling repair), and always after an unreadable journal, which cannot
  * say which launchers its update changed. A service that runs under the supervisor then exits 75

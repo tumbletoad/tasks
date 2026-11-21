@@ -1,4 +1,4 @@
-// Stand-in for `tasks shim <ticket>` (A4 3.6.3), at spike level, for rows B07, L01, S01 and S04:
+// Stand-in for `ttasks shim <ticket>` (A4 3.6.3), at spike level, for rows B07, L01, S01 and S04:
 //   node shim.mjs --state <state> <ticket>
 // It connects, verifies the service's proof before it sends anything that identifies the launch,
 // makes its one spawn claim, verifies the folder and executable, announces the launch, runs the
@@ -49,7 +49,7 @@ async function main(args: string[]): Promise<number> {
     say("Usage: shim --state <state> <ticket>");
     return 64;
   }
-  process.title = "tasks shim";
+  process.title = "ttasks shim";
   process.on("SIGINT", () => undefined); // the agent handles Ctrl+C (A4 3.6.3 step 8)
   if (process.platform !== "win32") process.on("SIGQUIT", () => undefined);
 
@@ -62,7 +62,7 @@ async function main(args: string[]): Promise<number> {
     return 69;
   }
   if (connection === undefined) {
-    say("The Tasks service is not running. Start it, then press Open again.");
+    say("The TTasks service is not running. Start it, then press Open again.");
     await waitForEnter();
     return 69;
   }
@@ -117,7 +117,7 @@ async function main(args: string[]): Promise<number> {
 
   const childEnv: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(process.env)) {
-    if (!name.toUpperCase().startsWith("TASKS_")) childEnv[name] = value;
+    if (!name.toUpperCase().startsWith("TTASKS_")) childEnv[name] = value;
   }
   for (const [name, value] of Object.entries(env)) childEnv[name] = textOf(value);
 

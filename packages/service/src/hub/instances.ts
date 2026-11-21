@@ -1,4 +1,4 @@
-// `tasks setup instances` (A4 3.2 "Detection proposes, the user confirms"): the service's side, as
+// `ttasks setup instances` (A4 3.2 "Detection proposes, the user confirms"): the service's side, as
 // rpc methods registered in the handler table (endpoint.ts), like `roots/*`.
 //
 //   instances/add     [[instance]] entries the person confirmed, live at once     (the user only)
@@ -23,13 +23,13 @@
 // machine.toml holds then, read as at start (`follow`; reloading the rest of machine.toml is not
 // built, A2 3.2.4): what Open offers is always what the file holds, also after a write whose
 // bookkeeping failed, and a retry ends consistent. Open offers them at the page's next snapshot.
-// Nothing in any agent app changes here: registering Tasks's tools in an agent home is `tasks setup
+// Nothing in any agent app changes here: registering TTasks's tools in an agent home is `ttasks setup
 // agents`.
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
-import type { JsonObject } from "@tasks/bridge/protocol";
-import { AppError } from "@tasks/contracts";
-import { INSTANCE_ID, isTable, MANUAL_INSTANCE, type Instance } from "@tasks/launch";
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import { AppError } from "@ttasks/contracts";
+import { INSTANCE_ID, isTable, MANUAL_INSTANCE, type Instance } from "@ttasks/launch";
 import { commitEdit, prepareEdit, type EditRefusal, type EditValue } from "../config/edit.ts";
 import { loadMachineConfig, parseMachineConfig } from "../config/machine-toml.ts";
 import { BOM, parseToml } from "../config/toml.ts";
@@ -101,7 +101,7 @@ function userOnly(cls: ConnectionClass): void {
     throw new AppError({
       code: "forbidden",
       message: "Only the user can do this.",
-      hint: "Ask the user to run: tasks setup instances",
+      hint: "Ask the user to run: ttasks setup instances",
       data: { rule: "user_only" },
     });
   }
@@ -120,14 +120,14 @@ function editRefused(reason: EditRefusal): AppError {
       return new AppError({
         code: "invalid_input",
         message: "machine.toml cannot be read as it is, so nothing was changed.",
-        hint: "Run tasks doctor, then fix machine.toml.",
+        hint: "Run ttasks doctor, then fix machine.toml.",
       });
     case "unsafe":
       return new AppError({
         code: "invalid_input",
         message:
           "machine.toml or its folder fails the permission rule (another user could change it, or it is a link), so nothing was changed.",
-        hint: "Run tasks doctor: it names the fix.",
+        hint: "Run ttasks doctor: it names the fix.",
       });
     case "unsupported_layout":
       return new AppError({
@@ -186,7 +186,7 @@ function entryOf(value: unknown, at: number): Map<string, EditValue> {
       args_prefix.length > 8 ||
       !args_prefix.every((a) => isText(a))
     ) {
-      throw invalid(`${path}.args_prefix`, "Expected the arguments before Tasks's");
+      throw invalid(`${path}.args_prefix`, "Expected the arguments before TTasks's");
     }
     entry.set("args_prefix", args_prefix);
   }
@@ -384,7 +384,7 @@ function addInstances(host: InstancesHost, params: JsonObject): unknown {
     throw invalid(
       "entries",
       "This machine has an instance with this ID already",
-      "Run tasks setup instances again.",
+      "Run ttasks setup instances again.",
     );
   }
   // The file as it will be: each entry must come back as an instance, or nothing is written.
@@ -395,7 +395,7 @@ function addInstances(host: InstancesHost, params: JsonObject): unknown {
       code: "invalid_input",
       message:
         "machine.toml's reader would not take an entry back as an instance, so nothing was written.",
-      hint: "Run tasks doctor: its config row names the key and the problem.",
+      hint: "Run ttasks doctor: its config row names the key and the problem.",
       data: {
         issues: dropped.map((id) => ({ path: `instance.${id}`, message: "Would be dropped" })),
       },

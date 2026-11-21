@@ -153,7 +153,7 @@ export interface Instance {
   readonly spaces: readonly string[];
   /** The executable: a user wrapper, the native binary, or Node for an npm CLI. */
   readonly exec: string | undefined;
-  /** Arguments before Tasks's: the npm entry when `exec` is Node (A4 3.6.4 `{exec}`). */
+  /** Arguments before TTasks's: the npm entry when `exec` is Node (A4 3.6.4 `{exec}`). */
   readonly argsPrefix: readonly string[];
   /** For display, trust and session lookup. A wrapper sets the home itself. */
   readonly configHome: string | undefined;
@@ -226,12 +226,12 @@ export function readInstances(
 
 /**
  * What an instance's `env` may hold beyond its names' form, so that the agent's environment and
- * every part of Tasks that reads the agent's home (instanceHome: setup, the link's default home,
+ * every part of TTasks that reads the agent's home (instanceHome: setup, the link's default home,
  * Codex's `env_vars` check and reference match) agree on it:
  * - on Windows no two names that differ only in case: the agent's environment holds each name
  *   once, folded (shim/environment.ts), so which value it got would depend on their order;
  * - a home variable (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`) names an absolute folder: a relative or
- *   empty one would resolve against the task's folder in the agent and elsewhere in Tasks.
+ *   empty one would resolve against the task's folder in the agent and elsewhere in TTasks.
  */
 function checkInstanceEnv(
   r: TableReader,

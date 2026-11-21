@@ -1,4 +1,4 @@
-// @tasks/testkit: fixture generators and the sample space (A7 3.2). Private, and imported only by
+// @ttasks/testkit: fixture generators and the sample space (A7 3.2). Private, and imported only by
 // tests and scripts (the dependency rules). Fixture text only.
 export { digestDatabase, digestSchema, digestSpace } from "./digest.ts";
 export { FIXED_SAMPLE, FIXED_SAMPLE_0_1, RELEASED_SCHEMAS } from "./known.ts";
@@ -56,7 +56,7 @@ export {
   OPEN_LAUNCH_STATES as STORAGE_OPEN_LAUNCH_STATES,
   OPEN_SETS as STORAGE_OPEN_SETS,
   REFERENCE_WINDOW_MS as STORAGE_REFERENCE_WINDOW_MS,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 /** Storage's copies of A4's run rules, which the launch package's tests compare with contracts'. */
 export {
   normaliseStored as storageNormaliseText,
@@ -74,4 +74,4 @@ export {
   RUN_STATES as STORAGE_RUN_STATES,
   RUN_RESULT_TEXT_MAX_BYTES as STORAGE_RUN_RESULT_TEXT_MAX_BYTES,
   RUN_TEXT_MAX_BYTES as STORAGE_RUN_TEXT_MAX_BYTES,
-} from "@tasks/storage";
+} from "@ttasks/storage";

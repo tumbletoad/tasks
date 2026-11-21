@@ -1,5 +1,5 @@
 // The shared bundle limits of A1 3.18 (DA-17). One BundlePolicy is used by every side that writes
-// or reads an archive: the backup writer, the exporter, the restorer and the importer, so Tasks
+// or reads an archive: the backup writer, the exporter, the restorer and the importer, so TTasks
 // never writes an archive it would refuse to read. Limits bound what extraction actually produces,
 // counted while streaming, never what a header or a sidecar claims.
 //

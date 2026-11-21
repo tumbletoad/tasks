@@ -1,6 +1,6 @@
 // A Windows command line from an argument list, quoted so the C runtime's parser (and Node's,
 // which follows it) gives back exactly these arguments. It is libuv's quoting, the same Node
-// applies to every program it starts, so an agent started through tasks-run.exe sees the same
+// applies to every program it starts, so an agent started through ttasks-run.exe sees the same
 // arguments as one Node started directly.
 
 /** One argument, quoted when it needs to be. */

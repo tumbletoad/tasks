@@ -1,16 +1,16 @@
 // What a task's compact row carries of its children (A5 3.6, A7 3.12 M5.06): its first three
 // sources with their own text and URL, how many more it has, and where it opens on this machine,
 // in the snapshot and in every batch that changes a source, a link or a folder of it or of its
-// project. A real service in this process, real tasks-local/1 sessions, fixture text and
+// project. A real service in this process, real ttasks-local/1 sessions, fixture text and
 // temporary folders.
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { TaskAddResult, TaskGetResult } from "@tasks/contracts";
-import { RUN_LIMITS } from "@tasks/contracts/runs";
-import { SpaceExecutionStore } from "@tasks/launch";
-import type { RpcSession } from "@tasks/bridge/protocol";
-import type { WorkerConnection } from "@tasks/storage";
+import { TaskAddResult, TaskGetResult } from "@ttasks/contracts";
+import { RUN_LIMITS } from "@ttasks/contracts/runs";
+import { SpaceExecutionStore } from "@ttasks/launch";
+import type { RpcSession } from "@ttasks/bridge/protocol";
+import type { WorkerConnection } from "@ttasks/storage";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { readBatch, readHead, readSnapshot, type FeedHere } from "../src/http/feed.ts";
 import { classSession } from "./ops-helpers.ts";

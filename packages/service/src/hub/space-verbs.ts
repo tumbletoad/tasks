@@ -1,4 +1,4 @@
-// The service's side of `tasks space` (A2 3.10.1, A1 3.18): rpc
+// The service's side of `ttasks space` (A2 3.10.1, A1 3.18): rpc
 // methods `space/*`, registered in the handler table (endpoint.ts). Every one but those that only
 // read (`space/list`, `space/backups`) is a user-only operation: the method table lets only
 // `cli-interactive` call them, and each checks the class again, so another transport that reaches
@@ -39,9 +39,9 @@
 // when a restored copy is served beside its original, is the one rule of ops/copies.ts (A2 3.10.5).
 import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
-import { AppError } from "@tasks/contracts";
-import { shellLine } from "@tasks/launch";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { AppError } from "@ttasks/contracts";
+import { shellLine } from "@ttasks/launch";
 import {
   backupsFolder,
   exportsFolder,
@@ -50,8 +50,8 @@ import {
   StorageError,
   type Id,
   type MachineInfo,
-} from "@tasks/storage";
-import type { JsonObject } from "@tasks/bridge/protocol";
+} from "@ttasks/storage";
+import type { JsonObject } from "@ttasks/bridge/protocol";
 import type { ConnectionClass } from "../local/index.ts";
 import { ambiguousError, findSpace, isAmbiguity } from "../ops/copies.ts";
 import { unsupported } from "../ops/errors.ts";
@@ -535,7 +535,7 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
           throw new AppError({
             code: "invalid_input",
             message: `${because(done.why)}, so the space was not forgotten.`,
-            hint: "Take its [[spaces]] entry out of machine.toml by hand, or run tasks doctor.",
+            hint: "Take its [[spaces]] entry out of machine.toml by hand, or run ttasks doctor.",
             data: { issues: [{ path: "space", message: "machine.toml not changed" }] },
           });
         }

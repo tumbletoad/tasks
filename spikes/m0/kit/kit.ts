@@ -64,9 +64,9 @@ async function main(args: string[]): Promise<number> {
   switch (command) {
     case "service": {
       // A2 3.5 rule 3: the service refuses to run with package identity.
-      if ((process.env["TASKS_PACKAGE"] ?? "") !== "") {
+      if ((process.env["TTASKS_PACKAGE"] ?? "") !== "") {
         process.stderr.write(
-          "Tasks's service cannot run inside another app's package. Start it from the Start menu or a normal terminal.\n",
+          "TTasks's service cannot run inside another app's package. Start it from the Start menu or a normal terminal.\n",
         );
         return 64;
       }
@@ -135,7 +135,7 @@ async function main(args: string[]): Promise<number> {
       rpc.close();
       const port = Number(minted?.["port"]);
       if (!(await verifyListener(port, readKey(state), instanceOf(rpc.bind)))) {
-        process.stderr.write(`Something other than Tasks answers on port ${String(port)}.\n`);
+        process.stderr.write(`Something other than TTasks answers on port ${String(port)}.\n`);
         return 69;
       }
       process.stdout.write(`http://127.0.0.1:${String(port)}/#k=${textOf(minted?.["code"])}\n`);

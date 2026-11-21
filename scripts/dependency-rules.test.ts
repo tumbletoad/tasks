@@ -129,7 +129,7 @@ describe("[A7.3.2.dependency-rules] the dependency rules fire on violations", ()
   let result: ICruiseResult;
 
   beforeAll(async () => {
-    root = await mkdtemp(join(tmpdir(), "tasks-deps-"));
+    root = await mkdtemp(join(tmpdir(), "ttasks-deps-"));
     for (const [path, content] of Object.entries(files)) {
       await mkdir(dirname(join(root, path)), { recursive: true });
       await writeFile(join(root, path), content);

@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
-import { APP_NAME, CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { APP_NAME, CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import en from "../src/i18n/en.json" with { type: "json" };
 
 // As intl.tsx gives them to every message (the page's module is JSX, outside this project): inside

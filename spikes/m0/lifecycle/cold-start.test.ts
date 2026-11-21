@@ -42,7 +42,7 @@ const POWERSHELL = join(
 let work: string;
 
 beforeAll(() => {
-  work = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-cold-start-")));
+  work = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-cold-start-")));
 });
 
 afterAll(() => {
@@ -140,12 +140,12 @@ function makeInstall(root: string, lab: { kit: string; lifecycle: string }): voi
   mkdirSync(join(root, "bin"));
   if (WIN) {
     writeFileSync(join(root, "current"), LAB_VERSION);
-    for (const name of ["tasks.exe", "tasksw.exe"]) {
+    for (const name of ["ttasks.exe", "ttasksw.exe"]) {
       copyFileSync(join(version, "bin", name), join(root, "bin", name));
     }
   } else {
     symlinkSync(`versions/${LAB_VERSION}`, join(root, "current"));
-    symlinkSync("../current/bin/tasks", join(root, "bin", "tasks"));
+    symlinkSync("../current/bin/ttasks", join(root, "bin", "ttasks"));
   }
   writeFileSync(join(root, "home.marker"), "");
 }
@@ -174,15 +174,15 @@ function makeScriptedInstall(root: string, lab: string): void {
   for (const dir of ["runtime", "lib", "bin"]) mkdirSync(join(version, dir), { recursive: true });
   mkdirSync(join(root, "bin"));
   placeNode(join(version, "runtime", WIN ? "node.exe" : "node"));
-  writeFileSync(join(version, "lib", "tasks.mjs"), SCRIPTED_ENTRY);
+  writeFileSync(join(version, "lib", "ttasks.mjs"), SCRIPTED_ENTRY);
   if (WIN) {
     writeFileSync(join(root, "current"), LAB_VERSION);
-    copyFileSync(join(lab, "bin", "tasks.exe"), join(root, "bin", "tasks.exe"));
+    copyFileSync(join(lab, "bin", "ttasks.exe"), join(root, "bin", "ttasks.exe"));
   } else {
-    copyFileSync(join(lab, "versions", LAB_VERSION, "bin", "tasks"), join(version, "bin", "tasks"));
-    chmodSync(join(version, "bin", "tasks"), 0o755);
+    copyFileSync(join(lab, "versions", LAB_VERSION, "bin", "ttasks"), join(version, "bin", "ttasks"));
+    chmodSync(join(version, "bin", "ttasks"), 0o755);
     symlinkSync(`versions/${LAB_VERSION}`, join(root, "current"));
-    symlinkSync("../current/bin/tasks", join(root, "bin", "tasks"));
+    symlinkSync("../current/bin/ttasks", join(root, "bin", "ttasks"));
   }
 }
 
@@ -219,12 +219,12 @@ function staleState(endpoint: string, pid = process.pid): string {
 /** An endpoint path nothing listens on. */
 const noEndpoint = () =>
   WIN
-    ? `\\\\.\\pipe\\tasks-cold-start-none-${randomBytes(6).toString("hex")}`
+    ? `\\\\.\\pipe\\ttasks-cold-start-none-${randomBytes(6).toString("hex")}`
     : join(work, `none-${randomBytes(4).toString("hex")}.sock`);
 
 // The real offline answer of the forwarder, and a valid initialize reply.
 const INIT_OK =
-  '{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"tasks","version":"0.0.7"}}}';
+  '{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"ttasks","version":"0.0.7"}}}';
 const STATUS_OFFLINE =
   '{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"Tasks\'s service is not running on this machine. Nothing was saved."}],"isError":true}}';
 
@@ -244,7 +244,7 @@ describe("[A7.3.7.m0-session3.cold-start] the cold-start timers and E01 against 
     if (process.platform === "linux" && process.getuid !== undefined) {
       const state = join(root, "state", "service");
       if (existsSync(state)) {
-        const dir = `/run/user/${String(process.getuid())}/tasks-${sha256Hex(realpathSync.native(state)).slice(0, 16)}`;
+        const dir = `/run/user/${String(process.getuid())}/ttasks-${sha256Hex(realpathSync.native(state)).slice(0, 16)}`;
         rmSync(dir, { recursive: true, force: true });
       }
     }
@@ -253,7 +253,7 @@ describe("[A7.3.7.m0-session3.cold-start] the cold-start timers and E01 against 
   /** A listener that accepts connections and never answers, so a bridge's handshake hangs. */
   async function silentEndpoint(onConnection: () => void = () => undefined): Promise<string> {
     const path = WIN
-      ? `\\\\.\\pipe\\tasks-cold-start-silent-${randomBytes(6).toString("hex")}`
+      ? `\\\\.\\pipe\\ttasks-cold-start-silent-${randomBytes(6).toString("hex")}`
       : join(scratch("silent"), "s.sock");
     const server = net.createServer((socket) => {
       socket.on("error", () => undefined);
@@ -444,15 +444,15 @@ describe("[A7.3.7.m0-session3.cold-start] the cold-start timers and E01 against 
     test.each([
       [
         "a malformed (cut off) initialize reply",
-        '{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-11-25","serverInfo":{"name":"tasks"',
+        '{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-11-25","serverInfo":{"name":"ttasks"',
       ],
       [
         "the right fragments in the wrong structure",
-        '{"jsonrpc":"2.0","id":5,"result":{"inner":{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-11-25","serverInfo":{"name":"tasks"}}}}}',
+        '{"jsonrpc":"2.0","id":5,"result":{"inner":{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-11-25","serverInfo":{"name":"ttasks"}}}}}',
       ],
       [
         "a string id",
-        '{"jsonrpc":"2.0","id":"0","result":{"protocolVersion":"2025-11-25","serverInfo":{"name":"tasks"}}}',
+        '{"jsonrpc":"2.0","id":"0","result":{"protocolVersion":"2025-11-25","serverInfo":{"name":"ttasks"}}}',
       ],
     ])(
       "%s is not counted",
@@ -548,7 +548,7 @@ describe("[A7.3.7.m0-session3.cold-start] the cold-start timers and E01 against 
   );
 
   test.skipIf(!WIN)(
-    "E01 that fails after the service started through tasksw.exe stops the supervisor and the service",
+    "E01 that fails after the service started through ttasksw.exe stops the supervisor and the service",
     () => {
       const out = join(scratch("e01"), "e01.json");
       // A service.json left by an earlier test's killed service would be read as this service's.

@@ -164,4 +164,4 @@ export const STEP_SETS = {
 export type StepSet = keyof typeof STEP_SETS;
 
 /** The environment variable that names a test worker's step list. */
-export const STEP_SET_VARIABLE = "TASKS_TEST_STEP_SET";
+export const STEP_SET_VARIABLE = "TTASKS_TEST_STEP_SET";

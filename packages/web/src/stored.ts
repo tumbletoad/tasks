@@ -5,12 +5,12 @@
 // is used only when it has the exact shape of a token, and anything else is removed and treated as
 // signed out. Every access is wrapped: storage can be missing, blocked or full, and losing the
 // token only signs the browser out.
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 
 export const TOKEN_KEY = `${PRODUCT_ID}.token`;
 
-/** A UI token: `tasks_u_` and 43 base64url characters (A2 3.8.4). Nothing else is sent. */
-export const TOKEN_SHAPE = /^tasks_u_[A-Za-z0-9_-]{43}$/;
+/** A UI token: `ttasks_u_` and 43 base64url characters (A2 3.8.4). Nothing else is sent. */
+export const TOKEN_SHAPE = /^ttasks_u_[A-Za-z0-9_-]{43}$/;
 
 /** The part of `Storage` the page uses, so tests can pass a hostile one. */
 export type TokenStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;

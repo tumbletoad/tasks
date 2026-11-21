@@ -8,7 +8,7 @@
 // programs on the machine.
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, win32 } from "node:path";
-import { PRODUCT_NAME } from "@tasks/brand";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import {
   isAgentMarker,
   isObject,
@@ -20,7 +20,7 @@ import {
   rpcContextEnv,
   type ClientInfo,
   type RpcSession,
-} from "@tasks/bridge/protocol";
+} from "@ttasks/bridge/protocol";
 import type { ServiceStatus } from "../hub/endpoint.ts";
 import { detectIdentity, packageIdentity, system32, type Identity } from "../hub/identity.ts";
 import { KEY_FILE } from "../hub/key.ts";
@@ -92,7 +92,7 @@ export type ProbeReason =
   | "restart_session"
   | "service_too_old";
 
-/** Whether this install's service answers on its endpoint (tasks-local/1, `service/status`). */
+/** Whether this install's service answers on its endpoint (ttasks-local/1, `service/status`). */
 export type Probe =
   | { readonly answers: true; readonly status: ServiceStatus }
   | { readonly answers: false; readonly reason: ProbeReason };
@@ -200,7 +200,7 @@ export function resolvedPath(path: string): string {
   }
 }
 
-/** The install this process belongs to: TASKS_HOME's, else the user's daily one. */
+/** The install this process belongs to: TTASKS_HOME's, else the user's daily one. */
 export function describeInstall(facts: HostFacts, program?: string): InstallFacts {
   const { platform } = facts;
   if (!isServicePlatform(platform)) {
@@ -443,7 +443,7 @@ export type RestartResult = "restarting" | "not_running" | "forbidden" | "failed
 
 /**
  * `service/shutdown {restart: true}` (A2 3.12.6 step 11): the service drains and exits 75, and
- * its manager (tasksw.exe, systemd, the launchd wrapper) starts it again at once, from what
+ * its manager (ttasksw.exe, systemd, the launchd wrapper) starts it again at once, from what
  * `current` names then. A service nobody supervises just ends.
  */
 export async function requestRestart(

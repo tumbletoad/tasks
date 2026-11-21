@@ -1,11 +1,11 @@
-// `tasks setup agents` (A3 3.13; M2.14, M4.05): Tasks's MCP server entry in each agent home of this
+// `ttasks setup agents` (A3 3.13; M2.14, M4.05): TTasks's MCP server entry in each agent home of this
 // machine, put there with the app's own command or, for an app without one, as one entry spliced
 // into its file, and taken back exactly.
 //
 // The agent-home table (APPS below) has one row per app: its catalogue target, its file's format,
 // the servers' table, the file's bound, and how the entry is written:
 // - Claude Code (A3 3.13.2): `claude mcp add --scope user <key> -- <tasks> mcp …`, and `claude mcp
-//   remove` to undo. `.claude.json` is never edited by Tasks: Claude Code rewrites it while it runs.
+//   remove` to undo. `.claude.json` is never edited by TTasks: Claude Code rewrites it while it runs.
 // - Codex (A3 3.13.4): `codex mcp add <key> -- <tasks> mcp …`, then two single-key patches in the
 //   entry's own table (`env_vars`, `startup_timeout_sec`) through the format-keeping editor of
 //   machine.toml (config/edit.ts), and `codex mcp remove` to undo, which drops the table.
@@ -41,9 +41,9 @@ import { createHash } from "node:crypto";
 import { lstatSync, rmSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { envVar, MCP_SERVER_KEY } from "@tasks/brand";
+import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
 // The bridge's own parser by its own path: the bridge's index would bring its runner into bundles.
-import { parseArgs } from "@tasks/bridge/mcp/args";
+import { parseArgs } from "@ttasks/bridge/mcp/args";
 import {
   HOME_VARIABLES,
   INSTANCE_ID,
@@ -57,7 +57,7 @@ import {
   type Detection,
   type Env,
   type Instance,
-} from "@tasks/launch";
+} from "@ttasks/launch";
 import { applyEdits, commitEdit, keyText, valueText, type EditValue } from "../config/edit.ts";
 import { scanToml, ScanError } from "../config/scan.ts";
 import { BOM, MAX_CONFIG_BYTES, parseToml, readConfigFile } from "../config/toml.ts";
@@ -200,7 +200,7 @@ export type Refusal =
   | "ambiguous";
 
 export type HomeState =
-  /** No entry of Tasks's name, and setup can add one. */
+  /** No entry of TTasks's name, and setup can add one. */
   | "not_registered"
   /** The entry is exactly the one setup wrote. */
   | "registered"
@@ -221,7 +221,7 @@ export interface HomeView {
   readonly sha256: string | null;
   /** Whether the servers' table (`mcpServers`, `mcp_servers`) exists. */
   readonly parent: boolean;
-  /** Tasks's entry as found, when there is one. Tasks's own data: never another key's value. */
+  /** TTasks's entry as found, when there is one. TTasks's own data: never another key's value. */
   readonly entry?: unknown;
   readonly record?: HomeRecord;
 }
@@ -236,12 +236,12 @@ export interface Change {
   readonly args: readonly string[];
   /** The undo's arguments: `mcp remove …`. */
   readonly undo: readonly string[];
-  /** The entry's own argv: Tasks's command and its arguments. */
+  /** The entry's own argv: TTasks's command and its arguments. */
   readonly entry: readonly string[];
   /** Variables set for the command, and home variables taken out of the person's environment. */
   readonly set: Readonly<Record<string, string>>;
   readonly unset: readonly string[];
-  /** Codex: Tasks's single-key patches in the entry's table, in order. */
+  /** Codex: TTasks's single-key patches in the entry's table, in order. */
   readonly patches: readonly { readonly key: string; readonly value: EditValue }[];
   /** The key-level diff, one line per key, as `+ key = value`. */
   readonly diff: readonly string[];
@@ -280,7 +280,7 @@ export interface SetupInput {
   readonly env: Env;
   /** `<state>`: setup's record lives in `<state>/setup/`. */
   readonly stateDir: string;
-  /** Tasks's stable command, which every entry runs (A2 3.12; never a moving version). */
+  /** TTasks's stable command, which every entry runs (A2 3.12; never a moving version). */
   readonly tasks: string;
   readonly detection: Detection;
   /** machine.toml's instances: a home they name gets their ID (A4 3.2). */
@@ -324,7 +324,7 @@ const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes)
 
 /**
  * The home an instance runs, and whether it is the app's default: launch's rule (A4 3.2,
- * `instanceHome` in @tasks/launch), so setup registers the entry in the home the agent uses.
+ * `instanceHome` in @ttasks/launch), so setup registers the entry in the home the agent uses.
  */
 function homeOf(
   instance: Instance,
@@ -692,7 +692,7 @@ function readToml(text: string): { parent: boolean; entry: unknown } | Refusal {
   }
   // Each server must be a table of its own, `[mcp_servers.<name>]`: a server written inline or
   // with dotted keys from above its table is a layout the single-key patch cannot keep, and the
-  // app's own command might write Tasks's entry the same way.
+  // app's own command might write TTasks's entry the same way.
   const servers = APPS.codex.servers;
   let table: readonly string[] = [];
   for (const line of lines) {
@@ -722,7 +722,7 @@ function readHomeFile(home: AgentHome): FileRead {
 
 /**
  * T3's settings, read-only through the same reader (A3 3.13.6 step 1): the provider instances of
- * a driver Tasks knows, with their homes, or undefined when T3 is not on this machine. A file that
+ * a driver TTasks knows, with their homes, or undefined when T3 is not on this machine. A file that
  * is not there, or that setup does not accept, leaves T3's default instances (`file` says which).
  *
  * A Codex instance whose home is itself a shadow home (hosts.ts `codexSharedHome`) reads the shared
@@ -793,7 +793,7 @@ export function runs(entry: unknown, argv: readonly string[]): boolean {
   return command === argv[0] && isDeepStrictEqual(jsonCopy(args), argv.slice(1));
 }
 
-/** The entry with Tasks's patches applied: what apply leaves once its patches are written. */
+/** The entry with TTasks's patches applied: what apply leaves once its patches are written. */
 function patched(entry: unknown, patches: HomeRecord["patches"]): unknown {
   if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return entry;
   return { ...entry, ...Object.fromEntries(patches.map((p) => [p.key, p.after])) };
@@ -802,7 +802,7 @@ function patched(entry: unknown, patches: HomeRecord["patches"]): unknown {
 /**
  * Whether an entry is exactly what setup asked for, when no entry was recorded yet (the app's command
  * was running): the asked command and arguments, and besides them only the keys the app adds by
- * itself and Tasks's own patches, each with its fixed value. Any other key or value is the person's.
+ * itself and TTasks's own patches, each with its fixed value. Any other key or value is the person's.
  */
 function asAsked(entry: unknown, app: AgentApp, argv: readonly string[]): boolean {
   const copy = jsonCopy(entry);
@@ -823,7 +823,7 @@ function asAsked(entry: unknown, app: AgentApp, argv: readonly string[]): boolea
  * The one rule before every take-back (the app's own `mcp remove`, or setup's splice for an app it
  * edits itself): the entry as read just now is provably setup's own. Applied: exactly the recorded
  * entry. An apply that did not finish: the entry the command wrote (recorded as soon as it was
- * checked, or before the write when setup writes it), the same with Tasks's patches, or, when the
+ * checked, or before the write when setup writes it), the same with TTasks's patches, or, when the
  * command was still running, exactly what setup asked for. An entry the person changed is never.
  */
 export function ownEntry(entry: unknown, record: HomeRecord): boolean {
@@ -977,7 +977,7 @@ export function entryInstance(entry: unknown): string | null | undefined {
 }
 
 /**
- * The app's own command that takes an entry of Tasks's name out of a home, as a person runs it: the
+ * The app's own command that takes an entry of TTasks's name out of a home, as a person runs it: the
  * app's word on the PATH, its `mcp remove`, and the home's variable for a home that is not the
  * default (A3 3.7.8: how to take out an entry added by hand). Claude Desktop has no command: its
  * entry is a member of its file.
@@ -1025,7 +1025,7 @@ export function commandEnv(
   return { env: { ...env, ...set }, set, unset: unset.sort() };
 }
 
-/** The entry's argv: Tasks's command with the bridge's arguments (A3 3.13.2-3.13.4). */
+/** The entry's argv: TTasks's command with the bridge's arguments (A3 3.13.2-3.13.4). */
 export function entryArgv(tasks: string, home: AgentHome, space: string): string[] {
   return [tasks, "mcp", "--space", space, "--instance", home.instance, "--app", home.app];
 }
@@ -1049,7 +1049,7 @@ function removeArgs(app: AgentApp): string[] {
   return [];
 }
 
-/** Codex: the keys Tasks patches into its own table (A3 3.13.4, 3.7.2). */
+/** Codex: the keys TTasks patches into its own table (A3 3.13.4, 3.7.2). */
 function codexPatches(): { key: string; value: EditValue }[] {
   return [
     // Codex passes the agent only an allow-list of variables: the ticket must be named (3.7.2).
@@ -1145,10 +1145,10 @@ export function planOf(input: SetupInput, views: readonly HomeView[], space: str
  * homes, which the preview prints and `--apply --plan` checks again under the lock, so apply does
  * exactly what the preview showed or refuses. It covers the space, each home with its file,
  * instance, account, hosts and state (everything the home's row names) and, for a change, the
- * exact command, its environment and the diff, and the hash of a file Tasks writes into (a Codex
- * file, which Tasks's patches are spliced into, and Claude Desktop's). Claude Code's `.claude.json`
+ * exact command, its environment and the diff, and the hash of a file TTasks writes into (a Codex
+ * file, which TTasks's patches are spliced into, and Claude Desktop's). Claude Code's `.claude.json`
  * is covered by its state and diff but not its hash: Claude Code rewrites it while it runs, and
- * Tasks never edits it (the app's own command does). `blocks` is the instruction block's part of
+ * TTasks never edits it (the app's own command does). `blocks` is the instruction block's part of
  * the plan (block.ts `blockCanonical`), when the plan holds that part.
  */
 export function planToken(space: string, items: readonly PlanItem[], blocks?: unknown): string {
@@ -1249,7 +1249,7 @@ async function takeBack(
 }
 
 /**
- * Registers Tasks in one home that has no entry yet. The record is written before anything is
+ * Registers TTasks in one home that has no entry yet. The record is written before anything is
  * written to the home; a failure after it takes the entry back when it is provably setup's, so
  * nothing is left half done. `grant` is the agent-home row the service keeps for this home (A2
  * 3.2.5). `planned` is the change the plan holds for it (planOf), when the caller has one.
@@ -1313,9 +1313,9 @@ export async function applyHome(
 
   /**
    * Takes the change back as far as it went, then reports the failure. The take-back removes
-   * whatever entry of Tasks's name is there, so it runs only after a fresh read shows a file setup
+   * whatever entry of TTasks's name is there, so it runs only after a fresh read shows a file setup
    * accepts and an entry that is setup's (ownEntry: before the checkpoint one exactly as asked,
-   * after it the checkpoint's entry, with or without Tasks's patches). Otherwise nothing runs and
+   * after it the checkpoint's entry, with or without TTasks's patches). Otherwise nothing runs and
    * the `applying` record stays for `--remove`, with one exception: when the command failed, an
    * entry that is not exactly as asked is not the command's (another one appeared meanwhile and the
    * app refused to overwrite it), so it is left and the record goes.
@@ -1409,7 +1409,7 @@ export async function applyHome(
     if (reread.kind !== "read") return fail("unexpected_entry");
     final = reread;
   }
-  // What is there now is exactly the command's entry with Tasks's patches, or the apply is undone.
+  // What is there now is exactly the command's entry with TTasks's patches, or the apply is undone.
   const entry = jsonCopy(final.entry);
   if (entry === undefined || !isDeepStrictEqual(entry, patched(written, patches))) {
     return fail("unexpected_entry");
@@ -1424,7 +1424,7 @@ export async function applyHome(
 }
 
 /**
- * Takes Tasks's entry out of one home, when the entry is still exactly the one setup wrote
+ * Takes TTasks's entry out of one home, when the entry is still exactly the one setup wrote
  * (ownEntry): with the app's own command, or for an app setup edits itself with the splice that
  * undoes its own. An entry the person changed since is left alone and reported. The home is read
  * again right before: the view may be older than the entry.
@@ -1467,7 +1467,7 @@ export async function removeHome(input: SetupInput, view: HomeView): Promise<Out
     after.parent
   ) {
     // `claude mcp remove` keeps the `mcpServers` object it made, empty (lab run A, row A01), and
-    // `.claude.json` is never edited by Tasks.
+    // `.claude.json` is never edited by TTasks.
     notes.push("empty_parent_kept");
   }
   dropRecord(input.stateDir, input.platform, home);

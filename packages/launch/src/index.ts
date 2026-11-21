@@ -1,4 +1,4 @@
-// @tasks/launch: target catalogue, instances, routes, terminals, the shim's server side, the launch
+// @ttasks/launch: target catalogue, instances, routes, terminals, the shim's server side, the launch
 // state machine, the environment builder, the URL opener and the T3 client (A7 3.2, A4 3.2–3.10).
 // M2.05 brought the launch records: the execution store interface and its v1 backend on the space
 // database, and A4's state machine with its external steps injected. M2.06 brought the target

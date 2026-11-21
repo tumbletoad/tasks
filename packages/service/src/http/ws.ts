@@ -28,7 +28,7 @@
 // A socket's subscription and its output belong to it only while it is open: closing it ends any
 // read in progress (the generation moves on), and every continuation after an await checks that
 // before it acts.
-import type { PreferenceRead } from "@tasks/contracts";
+import type { PreferenceRead } from "@ttasks/contracts";
 import type { RawData, WebSocket } from "ws";
 import type { ServerTimer } from "../local/index.ts";
 import { copyOf, findSpace, isAmbiguity, onlySpace } from "../ops/copies.ts";

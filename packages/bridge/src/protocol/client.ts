@@ -1,4 +1,4 @@
-// The client side of `tasks-local/1` (A2 3.6): connect to the socket or pipe, verify the
+// The client side of `ttasks-local/1` (A2 3.6): connect to the socket or pipe, verify the
 // challenge, send only the hello, verify the service's proof, and only then send the bind frame
 // with the context and verify the bind result. The CLI (M1.10), the shim and the bridge (M2.01)
 // build on it. It imports only Node built-ins, so the bridge bundle stays small (A2 3.7.1).
@@ -78,7 +78,7 @@ export interface Bound {
 /** Placeholder of a mac's length, to size the bind frame before connecting. */
 const MAC_PLACEHOLDER = "A".repeat(43);
 
-/** The environment values an rpc client sends in `context.env`: the agent markers and TASKS_SPACE. */
+/** The environment values an rpc client sends in `context.env`: the agent markers and TTASKS_SPACE. */
 export function rpcContextEnv(
   env: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> {

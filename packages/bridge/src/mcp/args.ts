@@ -1,4 +1,4 @@
-// `tasks mcp --space <space-id> [--instance <id>] [--app <name>]` (A2 3.7.1, A3 3.7.2). Setup
+// `ttasks mcp --space <space-id> [--instance <id>] [--app <name>]` (A2 3.7.1, A3 3.7.2). Setup
 // writes these arguments. None of them is a secret, and each is optional: without `--space` the
 // service pins the machine default space at bind time.
 

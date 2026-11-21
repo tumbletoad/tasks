@@ -13,7 +13,7 @@ import {
   loadDriver,
   planRetention,
   removeBackupLeftovers,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 import type { MaintenanceJob, MaintenanceReply } from "./maintenance.ts";
 
 const reply = (message: MaintenanceReply): void => {

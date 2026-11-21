@@ -7,8 +7,8 @@ import {
   rpcContextEnv,
   type ClientInfo,
   type JsonObject,
-} from "@tasks/bridge/protocol";
-import { clientInfo, endpointRoot } from "@tasks/bridge/test/endpoint";
+} from "@ttasks/bridge/protocol";
+import { clientInfo, endpointRoot } from "@ttasks/bridge/test/endpoint";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { startServer } from "../../test/local.ts";
 import {
@@ -53,9 +53,9 @@ const A4_METHODS: RpcMethod[] = [
 describe("[A2.3.6.local.classes] classification", () => {
   test("the CLI is a person's with a terminal on any stream and no marker", () => {
     expect(classify("rpc", cli(true, true), {})).toBe("cli-interactive");
-    // `tasks space list | less`, `x=$(tasks space backups)`, `tasks space list > file`.
+    // `ttasks space list | less`, `x=$(ttasks space backups)`, `ttasks space list > file`.
     expect(classify("rpc", cli(true, false, true), {})).toBe("cli-interactive");
-    // `echo y | tasks undo`, and output redirected too with errors on the terminal.
+    // `echo y | ttasks undo`, and output redirected too with errors on the terminal.
     expect(classify("rpc", cli(false, true, true), {})).toBe("cli-interactive");
     expect(classify("rpc", cli(false, false, true), {})).toBe("cli-interactive");
     // A client that does not say what stderr is.
@@ -63,7 +63,7 @@ describe("[A2.3.6.local.classes] classification", () => {
     // No terminal at all: cron, ssh without -t, an agent's shell.
     expect(classify("rpc", cli(false, false, false), {})).toBe("cli-script");
     expect(classify("rpc", cli(false, false), {})).toBe("cli-script");
-    expect(classify("rpc", cli(true, true), withEnv({ TASKS_SPACE: "sp_x" }))).toBe(
+    expect(classify("rpc", cli(true, true), withEnv({ TTASKS_SPACE: "sp_x" }))).toBe(
       "cli-interactive",
     );
   });
@@ -93,24 +93,24 @@ describe("[A2.3.6.local.classes] classification", () => {
     expect(classify("rpc", clientInfo("forwarder"), {})).toBeUndefined();
   });
 
-  test("rpcContextEnv copies only the markers and TASKS_SPACE", () => {
+  test("rpcContextEnv copies only the markers and TTASKS_SPACE", () => {
     expect(
       rpcContextEnv({
         PATH: "/usr/bin",
         HOME: "/home/mira",
         CLAUDECODE: "1",
         CODEX_SANDBOX: "seatbelt",
-        TASKS_TICKET: "t",
-        TASKS_SPACE: "sp_x",
-        TASKS_HOME: "/tmp/k",
+        TTASKS_TICKET: "t",
+        TTASKS_SPACE: "sp_x",
+        TTASKS_HOME: "/tmp/k",
         OPENAI_API_KEY: "sk-SENTINEL",
         UNSET: undefined,
       }),
     ).toEqual({
       CLAUDECODE: "1",
       CODEX_SANDBOX: "seatbelt",
-      TASKS_TICKET: "t",
-      TASKS_SPACE: "sp_x",
+      TTASKS_TICKET: "t",
+      TTASKS_SPACE: "sp_x",
     });
   });
 
@@ -191,7 +191,7 @@ describe("[A2.3.6.local.classes] over a connection", () => {
       expect(await outcome(person.call("ui/mint_code"))).toBe("ok");
       expect(await outcome(person.call("run.event"))).toBe(forbidden);
 
-      const shim = await open(clientInfo("shim"), withEnv({ TASKS_TICKET: "t" }));
+      const shim = await open(clientInfo("shim"), withEnv({ TTASKS_TICKET: "t" }));
       expect(await outcome(shim.call("launch.claim"))).toBe("ok");
       expect(await outcome(shim.call("op/call"))).toBe(forbidden);
       expect(await outcome(shim.call("service/status"))).toBe(forbidden);

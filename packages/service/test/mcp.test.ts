@@ -1,12 +1,12 @@
-// The MCP endpoint of a running service, over real tasks-local/1 mcp mode connections in this
+// The MCP endpoint of a running service, over real ttasks-local/1 mcp mode connections in this
 // process (A3 3.3, A7 3.9 M2.02): one tool list on every connection and offline, both protocol
 // eras' envelopes, tool calls on the request path as the connection's principal, the offline
 // cache, and the contract suite and the grant gate's refusal over MCP for both eras.
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { offlineReply, parseOffline } from "@tasks/bridge/mcp";
-import { LocalError, PROTOCOL } from "@tasks/bridge/protocol";
-import { findEntry, AppError, readsOnly } from "@tasks/contracts";
+import { offlineReply, parseOffline } from "@ttasks/bridge/mcp";
+import { LocalError, PROTOCOL } from "@ttasks/bridge/protocol";
+import { findEntry, AppError, readsOnly } from "@ttasks/contracts";
 import { Client } from "@modelcontextprotocol/client";
 import { afterEach, describe, expect, test } from "vitest";
 import {
@@ -72,10 +72,10 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
         bridgeContext(),
         bridgeContext({
           env: {
-            TASKS_TICKET: "TICKETFIXTURE",
+            TTASKS_TICKET: "TICKETFIXTURE",
             CLAUDE_CODE_SESSION_ID: "6d1c2f9a-0000-4000-8000-000000000001",
-            TASKS_TASK: "M-14",
-            TASKS_SPACE: "sp_00000000000000000000000000",
+            TTASKS_TASK: "M-14",
+            TTASKS_SPACE: "sp_00000000000000000000000000",
           },
         }),
         bridgeContext({ resume: { handle: "bh_fixturehandle" } }),
@@ -272,7 +272,7 @@ describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding"
       for (const cls of ["cli-interactive", "cli-agent"] as const) {
         const session = await classSession(w.home, w.path, cls, {
           ...(cls === "cli-agent" ? { CODEX_THREAD_ID: "fixture-thread" } : {}),
-          TASKS_SPACE: w.space,
+          TTASKS_SPACE: w.space,
         });
         try {
           const error = await session
@@ -333,7 +333,7 @@ describe("[A3.3.3.mcp.eras] the envelopes of both eras", () => {
       const a = await raw(w);
       expect(JSON.parse((await a.initialize("2025-06-18")).result ?? "{}")).toMatchObject({
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "tasks" },
+        serverInfo: { name: "ttasks" },
         capabilities: { tools: { listChanged: false } },
       });
       const b = await raw(w);
@@ -452,7 +452,7 @@ describe("[A3.3.3.mcp.eras] the envelopes of both eras", () => {
 
 describe("[A3.3.3.mcp.calls] a tool call on the request path, as the connection's principal", () => {
   test(
-    "unbound: agent:<instance> in history, a machine-qualified writer scope, the entry's space and never TASKS_SPACE",
+    "unbound: agent:<instance> in history, a machine-qualified writer scope, the entry's space and never TTASKS_SPACE",
     async () => {
       const w = await opened("ca");
       const user = await classSession(w.home, w.path, "cli-interactive");
@@ -467,10 +467,10 @@ describe("[A3.3.3.mcp.calls] a tool call on the request path, as the connection'
       for (const instance of ["codex-work", "test-agent"]) {
         await grantHome(w.home, w.path, { instance, space: w.space });
       }
-      // TASKS_SPACE names a space the service does not serve: ignored, the one space is used.
+      // TTASKS_SPACE names a space the service does not serve: ignored, the one space is used.
       const context = bridgeContext({
         instance: "codex-work",
-        env: { TASKS_SPACE: "sp_00000000000000000000000000" },
+        env: { TTASKS_SPACE: "sp_00000000000000000000000000" },
       });
       const a = await raw(w, context);
       await a.initialize();
@@ -555,7 +555,7 @@ describe("[A3.3.3.mcp.calls] a tool call on the request path, as the connection'
       ) as Json;
       expect(forAgents["isError"]).toBe(true);
       expect(textOf(forAgents)).toBe(
-        "error forbidden: Only the user can do this. Ask the user to do this in TT Tasks.",
+        "error forbidden: Only the user can do this. Ask the user to do this in TTasks.",
       );
 
       // Nothing a call carried reached the log or a crash file.

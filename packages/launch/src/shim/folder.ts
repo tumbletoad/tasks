@@ -3,13 +3,13 @@
 //
 // A plan names a folder (the task's or its project's on this machine) or none. A folder resolves
 // as the absolute path it is, and never falls back to anything else: a folder that is missing or
-// is a file fails the launch with its reason. A plan with no folder works in the space's Tasks work
+// is a file fails the launch with its reason. A plan with no folder works in the space's TTasks work
 // folder on this machine, `<machine state>/workdirs/space-<space ID>/`, created on first use, empty
 // and user-only, and resolved as a place under the machine state folder. So every launch has a
 // folder check, and the shim runs the same check for both. Telling `none` from `other_machine` is
 // the caller's: a task whose folder is only on another machine never reaches a plan here.
 //
-// The work folder is Tasks's own, so it is held to more than a person's folder: before anything is
+// The work folder is TTasks's own, so it is held to more than a person's folder: before anything is
 // made in it or below it,
 // `workdirs` and then the space's folder must each be a real folder (not a link, a junction or any
 // other reparse point: on Windows a directory entry reports every reparse point as a link), this
@@ -31,7 +31,7 @@
 import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import type { BigIntStats } from "node:fs";
 import { join, posix, win32 } from "node:path";
-import { makeDir } from "@tasks/files";
+import { makeDir } from "@ttasks/files";
 import {
   identityOf,
   resolveFolder,
@@ -161,7 +161,7 @@ export function ensureWorkFolder(stateDir: string, space: string): WorkFolderChe
     if (found.status === "missing") {
       // Made only in `parent`, which has just passed (or is the state folder itself), and never
       // above it: exactly 0700, set on the folder this mkdir made through a descriptor that
-      // follows no link (@tasks/files), never by its path.
+      // follows no link (@ttasks/files), never by its path.
       const path = join(parent, name);
       try {
         makeDir(path, 0o700, { recursive: false });
@@ -181,7 +181,7 @@ export function ensureWorkFolder(stateDir: string, space: string): WorkFolderChe
 
 /**
  * The folder a launch of `space` works in, resolved now: the plan's folder, or for none the space's
- * work folder (made on first use, and checked as Tasks's own) under the machine state folder. On
+ * work folder (made on first use, and checked as TTasks's own) under the machine state folder. On
  * `ok`, `folder` is where the shim's terminal starts and `check` is what the shim checks there.
  */
 export async function resolveLaunchFolder(

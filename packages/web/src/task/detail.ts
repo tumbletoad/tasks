@@ -5,7 +5,7 @@
 // learnings. A sections read comes in pages sized for an agent's budget (A3 3.4.4), so this reads
 // page after page, up to `MAX_PAGES`, and joins a text a page boundary split. Plain code: the hook
 // (useDetail.ts) refetches it when the feed touches the task.
-import type { Client } from "@tasks/contracts/generated/client.ts";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 
 type GetResult = Awaited<ReturnType<Client["task"]["get"]>>;

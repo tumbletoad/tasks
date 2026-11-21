@@ -1,4 +1,4 @@
-// @tasks/projection: the generated, read-only Markdown tree `view/` and `catalog.jsonl` (A1 3.13,
+// @ttasks/projection: the generated, read-only Markdown tree `view/` and `catalog.jsonl` (A1 3.13,
 // A3 3.9.8), for people and file-only agents. Never a source of truth, never imported.
 //
 // The projection reads the space through a reader connection and writes the outbox only through

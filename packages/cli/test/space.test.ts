@@ -1,4 +1,4 @@
-// `tasks space` through the service (A2 3.10.1, A1 3.18): a person at a terminal
+// `ttasks space` through the service (A2 3.10.1, A1 3.18): a person at a terminal
 // (in this process, with a TTY as the class says) creates, backs up, restores, claims and closes
 // spaces; the script and agent classes are refused the user-only verbs; a space read-only for its
 // synced or network folder names the ways out (A1 3.2). Fixture text only.
@@ -13,10 +13,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { CLI_NAME } from "@tasks/brand";
-import { configOf } from "@tasks/service/test/harness";
-import { createSpace, newId } from "@tasks/storage";
-import { checkedDriver } from "@tasks/testkit";
+import { CLI_NAME } from "@ttasks/brand";
+import { configOf } from "@ttasks/service/test/harness";
+import { createSpace, newId } from "@ttasks/storage";
+import { checkedDriver } from "@ttasks/testkit";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { wayOut } from "../src/space.ts";
 import { runMain, startWorld, type CliWorld } from "./cli-harness.ts";
@@ -43,7 +43,7 @@ interface Row {
 const user = (argv: string[]) => runMain(argv, { home: world.home, cwd: world.root, tty: true });
 const parsed = (stdout: string) => JSON.parse(stdout) as Record<string, unknown>;
 
-describe("[A2.3.10.cli.space] tasks space through the service", () => {
+describe("[A2.3.10.cli.space] ttasks space through the service", () => {
   test("the user-only verbs refuse the script and agent classes", async () => {
     for (const env of [{}, { CLAUDECODE: "1" }]) {
       for (const args of [
@@ -72,7 +72,7 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
   }, 180_000);
 
   test("a person who pipes or redirects the output is still the person at the terminal", async () => {
-    // `tasks space backup | cat`, `x=$(tasks space backup)`: the input and errors are a terminal.
+    // `ttasks space backup | cat`, `x=$(ttasks space backup)`: the input and errors are a terminal.
     const piped = await runMain(["space", "backup", "Mira", "--json"], {
       home: world.home,
       cwd: world.root,
@@ -97,7 +97,7 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
     ]) {
       const ran = await user(args);
       expect(ran.code, args.join(" ")).toBe(0);
-      expect(ran.stdout).toMatch(/^Usage: tasks space/);
+      expect(ran.stdout).toMatch(/^Usage: ttasks space/);
     }
     const spaces = parsed((await user(["space", "list", "--json"])).stdout)["spaces"] as Row[];
     expect(spaces.map((s) => [s.name, s.state])).toEqual([["Mira", "open"]]);
@@ -231,7 +231,7 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
     expect(ran.stdout).toBe("Life needs no recovery.\n");
   }, 180_000);
 
-  test("a folder is never a name, and the space verbs take TASKS_SPACE", async () => {
+  test("a folder is never a name, and the space verbs take TTASKS_SPACE", async () => {
     // A space whose name is another space's folder: that folder still names the space in it.
     const lifeFolder = join(world.root, "s", "life");
     const oddFolder = join(world.root, "s", "odd");
@@ -241,14 +241,14 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
     expect(closed.code, closed.stdout).toBe(0);
     expect(parsed(closed.stdout)["space"]).toMatchObject({ name: "Life", state: "closed" });
 
-    // TASKS_SPACE comes after an argument and --space, before the one open space (A2 3.10.5):
+    // TTASKS_SPACE comes after an argument and --space, before the one open space (A2 3.10.5):
     // naming the closed Life refuses, never backs up another space.
     const env = (value: string) =>
       runMain(["space", "backup", "--json"], {
         home: world.home,
         cwd: world.root,
         tty: true,
-        env: { TASKS_SPACE: value },
+        env: { TTASKS_SPACE: value },
       });
     const toClosed = await env("Life");
     expect(toClosed.code, toClosed.stdout).toBe(8);
@@ -307,7 +307,7 @@ describe("[A2.3.10.cli.space] tasks space through the service", () => {
   }, 180_000);
 });
 
-describe("[A2.3.10.cli.space-export] tasks space export writes a bundle that restores", () => {
+describe("[A2.3.10.cli.space-export] ttasks space export writes a bundle that restores", () => {
   test("backup and fork mode, the bundle restored into a new folder, a transfer and a script refused", async () => {
     const folder = join(world.root, "s", "exported");
     const made = await user(["space", "create", "Exported", "--path", folder, "--json"]);
@@ -447,7 +447,7 @@ describe("[A2.3.10.cli.space-export] tasks space export writes a bundle that res
   }, 180_000);
 });
 
-/** What `tasks space` prints under a space read-only for its synced or network folder. */
+/** What `ttasks space` prints under a space read-only for its synced or network folder. */
 const BACKUP_WAY = [
   "To move the space, restore a backup into a new local folder and claim the copy:",
   `  ${CLI_NAME} space backup <folder>`,
@@ -527,7 +527,7 @@ describe("[A1.5.sync.way-out] a space read-only for its synced or network folder
 });
 
 describe("[A2.3.10.cli.space-needs-recovery] a space that needs recovery says what to run", () => {
-  test("space list and doctor name tasks space recover, which then opens it", async () => {
+  test("space list and doctor name ttasks space recover, which then opens it", async () => {
     const folder = join(world.root, "s", "journal");
     const made = await user(["space", "create", "Journal", "--path", folder, "--json"]);
     expect(made.code, made.stdout + made.stderr).toBe(0);
@@ -590,7 +590,7 @@ describe("[A2.3.10.cli.space-needs-recovery] a space that needs recovery says wh
   }, 300_000);
 });
 
-describe("[A2.3.10.cli.space-words] what tasks space says, and the ways it names work", () => {
+describe("[A2.3.10.cli.space-words] what ttasks space says, and the ways it names work", () => {
   test("another machine's space: claim names the way that works, the way works, and the claim prints A6's warning", async () => {
     const theirs = join(world.root, "s", "theirs");
     createSpace(await checkedDriver(), theirs, {
@@ -694,13 +694,13 @@ describe("[A2.3.10.cli.space-words] what tasks space says, and the ways it names
     }
   }, 240_000);
 
-  test("a create where a space is names tasks space open; tasks recover is tasks space recover; a record machine.toml cannot take is said on stderr", async () => {
+  test("a create where a space is names ttasks space open; ttasks recover is ttasks space recover; a record machine.toml cannot take is said on stderr", async () => {
     const there = await user(["space", "create", "Mira", "--path", world.spaceFolder]);
     expect(there.code).toBe(2);
     expect(there.stderr).toContain("A space is already in that folder. Open it with: ");
     expect(there.stderr).toContain(`${CLI_NAME} space open `);
 
-    // `tasks recover` is the same command: a space that needs none is said so, and is no error.
+    // `ttasks recover` is the same command: a space that needs none is said so, and is no error.
     for (const argv of [
       ["recover", world.spaceFolder],
       ["space", "recover", world.spaceFolder],
