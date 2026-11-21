@@ -4,6 +4,7 @@
 // stores copies, so no caller can change a record except through a call.
 import {
   evidenceConflicts,
+  isOpening,
   REF_ALPHABET,
   REFERENCE_WINDOW_MS,
   launchRefCheck,
@@ -286,9 +287,7 @@ export class MemoryExecutionStore implements ExecutionStore {
           i.task === input.task &&
           i.instance === input.instance &&
           i.machine === input.machine &&
-          (i.state === "prepared" ||
-            i.state === "dispatching" ||
-            (i.state === "dispatched" && i.route === "terminal")),
+          isOpening(i),
       )
       .sort((a, b) => b.createdAt - a.createdAt)[0];
     if (focus !== undefined) {

@@ -92,7 +92,7 @@ function dueOf(
   clock: Clock,
   t: Translate,
 ): { text: string; tip: string } | undefined {
-  const model = renderRow({ task, instances: [], receipts: [] }, contextFor("open", "flat", clock));
+  const model = renderRow({ task, instances: [] }, contextFor("open", "flat", clock));
   const relative = model.due === undefined ? "" : sayMsg(t, model.due.text);
   if (task.due_at !== undefined) {
     const date = shortDate(localDate(task.due_at, clock.timeZone), clock, t);
@@ -111,7 +111,7 @@ function dueOf(
 
 /** The created fact: "9 Nov · 3d", the only place a task's age shows while it is expanded. */
 function createdOf(task: TaskRow, clock: Clock, t: Translate): string {
-  const model = renderRow({ task, instances: [], receipts: [] }, contextFor("open", "flat", clock));
+  const model = renderRow({ task, instances: [] }, contextFor("open", "flat", clock));
   const date = localDate(task.created_at, clock.timeZone);
   // Created today: "today" alone, so today's date stays the strip's (A5 U1).
   const age = model.age === undefined ? "" : sayMsg(t, model.age.text);

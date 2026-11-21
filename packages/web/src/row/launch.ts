@@ -1,17 +1,22 @@
 // The launch tile (A5 3.6, 3.9): which state it shows for the effective instance, and what a click
 // on it does. Pure, so every state is a unit test.
-import type { Instance, Receipt, ReceiptState } from "../api.ts";
+import type { Busy, Instance } from "../api.ts";
 
 /**
- * The tile's states that follow the receipts: an Open on its way, a session the service follows as
- * running, or ready to open. A session that ended, or one the service cannot follow, blocks
- * nothing.
+ * What busies each agent app with one task on this machine, by instance key, as the service says
+ * (`Busy`): an Open on its way, or a session that runs. An app it does not name is ready.
  */
-export type ReceiptTileState = "ready" | "opening" | "running";
+export type BusyOf = Readonly<Record<string, Busy["state"]>>;
+
+/**
+ * The tile's states that follow the service: an Open on its way, a session that runs, or ready to
+ * open. A session that ended, or a launch of another machine, blocks nothing.
+ */
+export type BusyTileState = "ready" | Busy["state"];
 
 /** Every state the tile slot shows (A5 3.6's table). */
 export type TileState =
-  | ReceiptTileState
+  | BusyTileState
   /** The place does not resolve, or the instance is not set up on this machine. */
   | "unavailable"
   /** The effective instance has no launch route here: the slot copies the brief. */
@@ -21,29 +26,34 @@ export type TileState =
   /** The area is set to "no agents": an empty slot of the same width. */
   | "none";
 
-const OPENING: readonly ReceiptState[] = ["prepared", "dispatching"];
-
 /**
- * Whether a launch is still on its way. A terminal launch is until its shim settles it. A link
- * launch has gone once its app was asked: nothing follows it after that.
+ * The service's list by task. A task whose apps are busy as before keeps its object, so its row
+ * does not render again.
  */
-const opening = (receipt: Receipt): boolean =>
-  OPENING.includes(receipt.state) || (receipt.state === "dispatched" && receipt.route !== "link");
-
-/**
- * The tile's state for its instance on this task: Opening while its latest launch is on its way,
- * Running while any of its sessions runs, else Ready.
- */
-export function tileState(receipts: readonly Receipt[], instance: string): ReceiptTileState {
-  const mine = receipts.filter((r) => r.instance === instance);
-  const latest = mine.at(-1);
-  if (latest !== undefined && opening(latest)) return "opening";
-  return mine.some(isRunning) ? "running" : "ready";
+export function busyByTask(
+  list: readonly Busy[],
+  before: ReadonlyMap<string, BusyOf>,
+): ReadonlyMap<string, BusyOf> {
+  const byTask = new Map<string, Record<string, Busy["state"]>>();
+  for (const { task, instance, state } of list) {
+    const of = byTask.get(task) ?? {};
+    of[instance] = state;
+    byTask.set(task, of);
+  }
+  const same = (a: BusyOf, b: BusyOf): boolean =>
+    Object.keys(a).length === Object.keys(b).length &&
+    Object.entries(a).every(([instance, state]) => b[instance] === state);
+  return new Map(
+    [...byTask].map(([task, of]) => {
+      const was = before.get(task);
+      return [task, was !== undefined && same(was, of) ? was : of];
+    }),
+  );
 }
 
-/** Whether the service follows this launch's session as running now. */
-export const isRunning = (receipt: Receipt): boolean =>
-  receipt.state === "confirmed" && receipt.session === "running";
+/** The tile's state for its instance on this task. */
+export const tileState = (busy: BusyOf | undefined, instance: string): BusyTileState =>
+  busy?.[instance] ?? "ready";
 
 export type TileAction = "open" | "expand" | "copy" | "none";
 
@@ -145,12 +155,12 @@ export function markerWords(refused: FolderRefusal): {
 
 /**
  * The tile of a task: the effective instance (A4: the area's default, then the space's; the page
- * gets the pinned instances in order and takes the first), its state from the task's receipts,
+ * gets the pinned instances in order and takes the first), its state from what busies it here,
  * unless the place or the area blocks it.
  */
 export function launchOf(
   instances: readonly Instance[],
-  receipts: readonly Receipt[],
+  busy: BusyOf | undefined,
   block?: LaunchBlock,
 ): LaunchModel {
   if (block?.kind === "none") return { state: "none" };
@@ -159,5 +169,5 @@ export function launchOf(
   if (block?.kind === "unavailable")
     return { state: "unavailable", instance, reason: block.reason };
   if (block?.kind === "elsewhere") return { state: "elsewhere", instance, machine: block.machine };
-  return { state: tileState(receipts, instance.key), instance };
+  return { state: tileState(busy, instance.key), instance };
 }

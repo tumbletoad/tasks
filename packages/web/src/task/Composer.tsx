@@ -27,7 +27,7 @@ import type { AskField, RowActions } from "../row/actions.ts";
 import { ChevronIcon as ChevronDownIcon } from "../app/Icons.tsx";
 import { CopyIcon, RunIcon } from "../row/icons.tsx";
 import { runners } from "./runs.ts";
-import { tileState } from "../row/launch.ts";
+import { tileState, type BusyOf } from "../row/launch.ts";
 import type { TaskRow } from "../store/rows.ts";
 import { typingIn } from "../kept.ts";
 import {
@@ -67,11 +67,13 @@ const STUBS: Readonly<Record<AskField, MessageId>> = {
 export interface ComposerProps {
   readonly task: TaskRow;
   readonly receipts: readonly Receipt[];
+  /** What busies each agent app with the task on this machine. */
+  readonly busy: BusyOf | undefined;
   readonly instances: readonly Instance[];
   readonly actions: RowActions;
 }
 
-export function Composer({ task, receipts, instances, actions }: ComposerProps) {
+export function Composer({ task, receipts, busy, instances, actions }: ComposerProps) {
   const t = useT();
   const say = useToast();
   const { api, live } = useContext(Session);
@@ -219,7 +221,7 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
    * button says it opens another.
    */
   const held = (instance: Instance): string | undefined =>
-    opening.has(instance.key) || tileState(receipts, instance.key) === "opening"
+    opening.has(instance.key) || tileState(busy, instance.key) === "opening"
       ? t("composer.opening", { label: instance.label })
       : undefined;
 
@@ -293,7 +295,7 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
 
         {instances.map((instance, i) => {
           const why = held(instance);
-          const state = tileState(receipts, instance.key);
+          const state = tileState(busy, instance.key);
           const another = state === "running";
           const tip =
             why ??

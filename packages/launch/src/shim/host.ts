@@ -611,6 +611,14 @@ export class ShimHost {
     return this.#probe.mayRun?.(held.pid, held.startTime) ?? true;
   }
 
+  /** The launches of a space whose session runs now (`running`). */
+  runningIn(space: string): string[] {
+    return this.#records
+      .list()
+      .filter((record) => record.space === space && this.running(record.launch))
+      .map((record) => record.launch);
+  }
+
   /**
    * Recovery's look at a claimed terminal launch after a restart (A4 3.9.3, RecoverySteps.observe):
    * `exit.json` finalizes; a shim that is alive with its start time is pending until it re-attaches

@@ -4,8 +4,9 @@
 // (`POST /api/v1/op/launch.open`), on the hub's one launch machine per space: the page's click,
 // the shim's claim, recovery after a restart and the sweep all act on the same machine (A4
 // 3.9.1's section rule holds across them). This module keeps what the page needs besides: the
-// instances it draws a tile for, from the hub's launch service, and a task's last receipts, which
-// the page refetches when the change feed names a launch. And Run: the page's click starts a
+// instances it draws a tile for, from the hub's launch service, which agent apps are busy with a
+// task on this machine, and a task's last receipts, its history, which the page refetches when the
+// change feed names a launch. And Run: the page's click starts a
 // background run of a task, reads a task's runs (refetched when the feed names a run) and stops
 // one, on the service's runs (runs/service.ts), the same ones `tasks run` uses.
 //
@@ -23,6 +24,7 @@ import {
 import {
   INSTANCE_KEY,
   isRoute,
+  sessionRecord,
   TASK_ID,
   TERMINAL_APPS,
   TERMINAL_SOURCES,
@@ -60,6 +62,18 @@ export interface UiLaunchPort {
   requestState?(launch: string): "waiting" | "read" | "unread" | undefined;
   /** Whether the launch's session runs now, as this service follows it. */
   running?(launch: string): boolean;
+  /** The task and agent pairs of a space busy on this machine. */
+  busy?(space: string): Promise<readonly UiBusy[]>;
+}
+
+/**
+ * An agent app busy with a task on this machine, as the page holds its Open: `opening` while an
+ * Open of it is on its way, `running` while a session of it runs.
+ */
+export interface UiBusy {
+  readonly task: string;
+  readonly instance: string;
+  readonly state: "opening" | "running";
 }
 
 /**
@@ -255,11 +269,9 @@ export function receiptOf(
   const reason = row["reason"];
   const ran = evidence["ran_ms"];
   const ranMs = typeof ran === "number" && Number.isSafeInteger(ran) && ran >= 0 ? ran : undefined;
-  // An earlier build recorded an agent's end by its exit code alone.
-  const ended = ranMs !== undefined || evidence["exit_code"] !== undefined;
-  const lost = evidence["lost_at"] !== undefined;
+  const record = state === "confirmed" ? sessionRecord(evidence) : undefined;
   const session =
-    state !== "confirmed" ? undefined : ended ? "ended" : !lost && runs(id) ? "running" : undefined;
+    record === "ended" ? "ended" : record === "open" && runs(id) ? "running" : undefined;
   return {
     id,
     reference: String(row["reference"]),
@@ -335,6 +347,15 @@ export class UiLaunches {
       });
     }
     return space;
+  }
+
+  /**
+   * The agent apps busy with a task on this machine, for every task of the space: what the
+   * page's tiles and Open buttons hold to, whatever receipts a tab has read.
+   */
+  async busy(spaceRef: string | undefined): Promise<readonly UiBusy[]> {
+    const space = this.#space(spaceRef).id ?? "";
+    return (await this.#options.port?.busy?.(space)) ?? [];
   }
 
   /** A task's launch receipts, newest last (at most ten). */

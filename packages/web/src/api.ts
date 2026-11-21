@@ -4,8 +4,8 @@
 // WebSocket gets a single-use ticket instead (live.ts).
 //
 // Registry entries go through contracts' generated client (`/api/v1/op/<entry>`): Open and Copy
-// are A4's `launch.open`. A task's receipts, and Run, a task's runs and Stop, have routes of their
-// own (`/api/v1/launch/…`).
+// are A4's `launch.open`. The agent apps busy here, a task's receipts, and Run, a task's runs and
+// Stop, have routes of their own (`/api/v1/launch/…`).
 import { httpHeader } from "@tasks/brand";
 import { createClient, type Client } from "@tasks/contracts/generated/client.ts";
 import { TOKEN_SHAPE } from "./stored.ts";
@@ -54,6 +54,16 @@ export interface Run {
 
 export type ReceiptState =
   "prepared" | "dispatching" | "dispatched" | "confirmed" | "failed" | "unknown";
+
+/**
+ * An agent app busy with a task on this machine (the service's UiBusy): an Open of it is on its
+ * way, or a session of it runs.
+ */
+export interface Busy {
+  readonly task: string;
+  readonly instance: string;
+  readonly state: "opening" | "running";
+}
 
 /** A launch receipt (the service's UiReceipt): IDs, states, instants and codes only. */
 export interface Receipt {
@@ -400,6 +410,12 @@ export class Api {
       app === undefined ? {} : { app },
     );
     return reply.terminal;
+  }
+
+  /** The agent apps busy with a task on this machine, for every task of the space. */
+  async busy(): Promise<Busy[]> {
+    const reply = await this.#result<{ busy: Busy[] }>("/api/v1/launch/busy", {});
+    return reply.busy;
   }
 
   async receipts(task: string): Promise<Receipt[]> {

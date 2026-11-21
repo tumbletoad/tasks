@@ -32,6 +32,7 @@ import {
   FolderRecords,
   identityKey,
   isBuiltInTarget,
+  isOpening,
   isUncPath,
   customReady,
   LaunchMachine,
@@ -58,6 +59,7 @@ import {
   routeOf,
   sanitiseComposer,
   sanitiseTitle,
+  sessionRecord,
   SHIM_METHODS,
   ShimHost,
   SpaceExecutionStore,
@@ -115,6 +117,16 @@ import {
 } from "./open.ts";
 
 /** An instance as the page draws its tile (A5 3.6): a key, a label, a monogram and a ring slot. */
+/**
+ * An agent app that is busy with a task on this machine: an Open of it is on its way, or a session
+ * of it runs. The page holds Open while one is opening and offers another while one runs.
+ */
+export interface BusyLaunch {
+  readonly task: string;
+  readonly instance: string;
+  readonly state: "opening" | "running";
+}
+
 export interface LaunchInstance {
   /** The instance's key in machine.toml's `[[instance]]`. */
   readonly key: string;
@@ -815,6 +827,34 @@ export class LaunchService {
   /** Whether the launch's session runs now: its shim is here, attached, and its agent started. */
   running(launch: string): boolean {
     return this.host.running(launch);
+  }
+
+  /**
+   * The task and agent pairs of a space that are busy on this machine, one entry each: opening
+   * when one of its launches is still on its way, else running when a session of it runs. Only
+   * this machine's launches count, so a launch another machine left open blocks nothing here.
+   */
+  async busy(space: string): Promise<BusyLaunch[]> {
+    const hosted = await this.#space(space).catch(() => undefined);
+    if (hosted === undefined) return [];
+    const { intents } = await hosted.store.openWork(this.#options.machine);
+    const runs = await Promise.all(
+      this.host.runningIn(space).map((launch) => hosted.store.readIntent(launch)),
+    );
+    const out = new Map<string, BusyLaunch>();
+    const add = ({ task, instance }: LaunchIntent, state: BusyLaunch["state"]): void => {
+      if (task === null) return;
+      const key = `${task}
+${instance}`;
+      if (out.get(key)?.state !== "opening") out.set(key, { task, instance, state });
+    };
+    for (const intent of intents) if (isOpening(intent)) add(intent, "opening");
+    for (const intent of runs) {
+      if (intent?.state === "confirmed" && sessionRecord(intent.evidence) === "open") {
+        add(intent, "running");
+      }
+    }
+    return [...out.values()];
   }
 
   /**

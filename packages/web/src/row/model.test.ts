@@ -4,7 +4,7 @@
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
 import { APP_NAME, CLI_NAME } from "@tasks/brand";
-import type { Instance, Receipt } from "../api.ts";
+import type { Instance } from "../api.ts";
 import en from "../i18n/en.json" with { type: "json" };
 import type { MessageId, Values } from "../i18n/intl.tsx";
 import { sayMsg } from "./say.ts";
@@ -72,7 +72,7 @@ const BRIGHTSIDE = { area: { title: "Brightside Bikes", slot: 2 } };
 const LUMEN = { area: { title: "Lumen", slot: 1 }, project: { title: "Lumen Health" } };
 
 function row(t: TaskRow, extra: Partial<RowInput> = {}): RowInput {
-  return { task: t, instances: [CX, CC], receipts: [], ...extra };
+  return { task: t, instances: [CX, CC], ...extra };
 }
 
 const ctx = (view: RowView, grouping: Grouping) => contextFor(view, grouping, CLOCK);
@@ -453,25 +453,15 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
     expect(model({ effort: "L", lifecycle: "completed" }, "completed").effort).toBeUndefined();
   });
 
-  test("the launch tile: the first pinned instance, its receipts, Copy only and the blocks", () => {
+  test("the launch tile: the first pinned instance, what busies it here, Copy only and the blocks", () => {
     const t = task({ title: "t" });
-    const receipt = (state: Receipt["state"], instance = "cx"): Receipt => ({
-      id: `ln_${state}`,
-      reference: t.ref,
-      instance,
-      route: "terminal",
-      state,
-      reason: null,
-      at: { prepared: 1 },
-    });
     const tile = (extra: Partial<RowInput>) => renderRow(row(t, extra), ctx("open", "area")).launch;
     expect(tile({}).state).toBe("ready");
     expect(say(tile({}).tip)).toBe("Open in Codex · work");
-    const running = { ...receipt("confirmed"), session: "running" as const };
-    expect(tile({ receipts: [running] }).state).toBe("running");
-    expect(tile({ receipts: [receipt("confirmed")] }).state).toBe("ready");
-    // Another instance's receipt says nothing about the effective instance's tile.
-    expect(tile({ receipts: [{ ...running, instance: "cc" }] }).state).toBe("ready");
+    expect(tile({ busy: { cx: "running" } }).state).toBe("running");
+    expect(tile({ busy: { cx: "opening" } }).state).toBe("opening");
+    // Another instance's session says nothing about the effective instance's tile.
+    expect(tile({ busy: { cc: "running" } }).state).toBe("ready");
     expect(tile({ instances: [] }).state).toBe("copy_only");
     expect(tile({ launchBlock: { kind: "none" } }).state).toBe("none");
     expect(
@@ -482,7 +472,7 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
     );
     expect(tileClick(tile({ instances: [] }).state)).toBe("copy");
     // A launch state that is not Ready is the last part of the description.
-    const runs = renderRow(row(t, { receipts: [running] }), ctx("open", "area"));
+    const runs = renderRow(row(t, { busy: { cx: "running" } }), ctx("open", "area"));
     expect(say(runs.description.at(-1))).toBe("Codex · work · running");
   });
 

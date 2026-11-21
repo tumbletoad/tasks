@@ -113,6 +113,30 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     await other.close();
   });
 
+  test("a tab opened while a session runs shows it running at once, and its tile starts no second one", async ({
+    page,
+    world,
+  }) => {
+    const ref = await newTask(world, "Plan the reminder rollout");
+    world.hold(ref);
+    const p = await expanded(page, world, ref);
+    await openRunning(world, p);
+    // A new tab, its row collapsed: it never read this task's receipts.
+    const other = await page.context().newPage();
+    await other.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+    await showsSpace(other, world.mira.name);
+    const q = parts(other.locator(`li[data-task="${ref}"]`));
+    await expect(q.tile).toHaveAttribute("data-state", "running", { timeout: SLOW_MS });
+    const before = world.terminal().length;
+    await q.tile.click();
+    await expect(q.another).toHaveAttribute("data-state", "running");
+    await other.waitForTimeout(1_000);
+    expect(world.terminal()).toHaveLength(before);
+    world.release(ref);
+    await expect(q.tile).toHaveAttribute("data-state", "ready", { timeout: SLOW_MS });
+    await other.close();
+  });
+
   test("a double click on Open starts one session", async ({ page, world }) => {
     const ref = await newTask(world, "Check the reminder texts");
     world.hold(ref);

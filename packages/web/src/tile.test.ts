@@ -1,53 +1,42 @@
 import { describe, expect, test } from "vitest";
-import type { Receipt, ReceiptState } from "./api.ts";
 import { Latest } from "./latest.ts";
-import { tileClick, tileState } from "./row/launch.ts";
-
-const receipt = (
-  state: ReceiptState,
-  route = "terminal",
-  instance = "cx",
-  session?: Receipt["session"],
-): Receipt => ({
-  id: `ln_${state}_${session ?? ""}`,
-  reference: "M-1",
-  instance,
-  route,
-  state,
-  reason: null,
-  at: { prepared: 1 },
-  ...(session === undefined ? {} : { session }),
-});
+import { busyByTask, tileClick, tileState } from "./row/launch.ts";
 
 describe("[A5.3.6.web.tile] the launch tile's states and clicks", () => {
-  test("Opening while the latest launch is on its way, Running while a session runs, else Ready", () => {
-    expect(tileState([], "cx")).toBe("ready");
-    expect(tileState([receipt("prepared")], "cx")).toBe("opening");
-    expect(tileState([receipt("dispatching")], "cx")).toBe("opening");
-    expect(tileState([receipt("dispatched")], "cx")).toBe("opening");
-    // A link has gone once the app was asked: nothing follows it, so nothing waits for it.
-    expect(tileState([receipt("dispatched", "link")], "cx")).toBe("ready");
-    expect(tileState([receipt("confirmed", "terminal", "cx", "running")], "cx")).toBe("running");
-    expect(tileState([receipt("failed")], "cx")).toBe("ready");
-    expect(tileState([receipt("unknown")], "cx")).toBe("ready");
-    // Another instance's receipt says nothing about this tile.
-    expect(tileState([receipt("confirmed", "terminal", "cc", "running")], "cx")).toBe("ready");
-    // An older session that still runs keeps the tile Running after a newer one failed.
-    expect(
-      tileState([receipt("confirmed", "terminal", "cx", "running"), receipt("failed")], "cx"),
-    ).toBe("running");
+  test("the tile shows what busies its agent app with the task here, as the service says, else Ready", () => {
+    const busy = busyByTask(
+      [
+        { task: "t1", instance: "cx", state: "running" },
+        { task: "t1", instance: "cc", state: "opening" },
+        { task: "t2", instance: "cx", state: "opening" },
+      ],
+      new Map(),
+    );
+    expect(tileState(busy.get("t1"), "cx")).toBe("running");
+    expect(tileState(busy.get("t1"), "cc")).toBe("opening");
+    expect(tileState(busy.get("t2"), "cx")).toBe("opening");
+    expect(tileState(busy.get("t2"), "cc")).toBe("ready");
+    expect(tileState(busy.get("t3"), "cx")).toBe("ready");
   });
 
-  test("a session that ended, or one the service cannot follow, blocks nothing", () => {
-    // Confirmed launches whose agents are gone, recorded with an end or, by an earlier build,
-    // without one.
-    expect(tileState([receipt("confirmed", "terminal", "cx", "ended")], "cx")).toBe("ready");
-    expect(tileState([receipt("confirmed")], "cx")).toBe("ready");
-    expect(tileState([receipt("confirmed", "t3-mcp")], "cx")).toBe("ready");
-    expect(
-      tileState([receipt("confirmed"), receipt("confirmed"), receipt("confirmed")], "cx"),
-    ).toBe("ready");
-    expect(tileClick(tileState([receipt("confirmed")], "cx"))).toBe("open");
+  test("a task whose apps are busy as before keeps its object, so its row does not render again", () => {
+    const before = busyByTask(
+      [
+        { task: "t1", instance: "cx", state: "running" },
+        { task: "t2", instance: "cx", state: "opening" },
+      ],
+      new Map(),
+    );
+    const after = busyByTask(
+      [
+        { task: "t1", instance: "cx", state: "running" },
+        { task: "t2", instance: "cx", state: "running" },
+      ],
+      before,
+    );
+    expect(after.get("t1")).toBe(before.get("t1"));
+    expect(after.get("t2")).toEqual({ cx: "running" });
+    expect(busyByTask([], after).size).toBe(0);
   });
 
   test("Ready opens; Running expands to the thread and the strip, where another opens", () => {

@@ -27,7 +27,14 @@ import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
 import { itemsOf, type RowItem } from "../list/items.ts";
 import { List, type Place } from "../list/List.tsx";
-import { folderRefusal, MARKER_REASONS, markerWords, type FolderRefusal } from "../row/launch.ts";
+import {
+  busyByTask,
+  folderRefusal,
+  MARKER_REASONS,
+  markerWords,
+  type BusyOf,
+  type FolderRefusal,
+} from "../row/launch.ts";
 import { contextFor, type Grouping, type RowView } from "../row/model.ts";
 import type { RowActions } from "../row/actions.ts";
 import type { Clock } from "../row/dates.ts";
@@ -132,6 +139,9 @@ export function TaskList({
     return merged ?? state.tasks;
   }, [state.tasks, holding, expanded]);
   const [receipts, setReceipts] = useState<ReadonlyMap<string, readonly Receipt[]>>(new Map());
+  /** What busies each task's agent apps on this machine, as the service last said. */
+  const [busy, setBusy] = useState<ReadonlyMap<string, BusyOf>>(new Map());
+  const busyReads = useRef(new Latest());
   /** The runs of the tasks the tab follows, oldest first, as the service last said. */
   const [runs, setRuns] = useState<ReadonlyMap<string, readonly Run[]>>(new Map());
   /** The runs whose Stop is on its way, each with its version when Stop was pressed. */
@@ -250,6 +260,24 @@ export function TaskList({
     [api, live],
   );
 
+  const loadBusy = useCallback(() => {
+    const newest = busyReads.current.begin("busy");
+    api
+      .busy()
+      .then((list) => {
+        if (newest()) setBusy((known) => busyByTask(list, known));
+      })
+      .catch((error: unknown) => {
+        live.failed(error);
+      });
+  }, [api, live]);
+
+  // A list that mounts on a live tab reads what busies the agent apps at once; one that mounts
+  // before the snapshot reads it with the snapshot.
+  useEffect(() => {
+    if (live.getState().phase === "live") loadBusy();
+  }, [live, loadBusy]);
+
   const loadRuns = useCallback(
     (task: string) => {
       const newest = runReads.current.begin(task);
@@ -269,13 +297,14 @@ export function TaskList({
     [api, live],
   );
 
-  // A launch event refreshes the receipts of its task, which the tab follows from then on, so a
-  // tile mirrors a launch made in another tab or at the terminal. A run event refreshes the runs
-  // of a task the tab follows: every tab, and a reload, shows a run as the service has it. A fresh
-  // snapshot refreshes all.
+  // A launch event refreshes what busies the agent apps, for every row, and the receipts of its
+  // task, which the tab follows from then on: a tile mirrors a launch made in another tab or at the
+  // terminal. A run event refreshes the runs of a task the tab follows: every tab, and a reload,
+  // shows a run as the service has it. A fresh snapshot refreshes all.
   useEffect(
     () =>
       live.onChanges(({ changes, reset }) => {
+        if (reset || changes.some((change) => change.type === "launch")) loadBusy();
         const named = new Set<string>(reset ? watched.current : []);
         const ran = new Set<string>(reset ? watched.current : []);
         for (const change of changes) {
@@ -294,7 +323,7 @@ export function TaskList({
         }
         for (const task of ran) loadRuns(task);
       }),
-    [live, loadReceipts, loadRuns],
+    [live, loadBusy, loadReceipts, loadRuns],
   );
 
   // An update that takes the expanded task out of the live rows (completed, archived) carries its
@@ -789,6 +818,7 @@ ${instance.key}`;
       project={item.project}
       instances={state.instances}
       receipts={receipts.get(item.key) ?? NO_RECEIPTS}
+      busy={busy.get(item.key)}
       runs={withStops(runs.get(item.key) ?? NO_RUNS, stops)}
       ctx={item.finished && item.task.lifecycle !== "active" ? finishedCtx : ctx}
       expanded={expanded === item.key}

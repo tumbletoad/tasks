@@ -26,6 +26,29 @@ export const ROUTES = ["terminal", "link", "t3-mcp", "t3-cli", "clipboard"] as c
 export type Route = (typeof ROUTES)[number];
 
 /**
+ * Whether a launch is still opening: Prepared, Dispatching, or a terminal launch its shim has not
+ * settled yet, which its claim window ends. A link or T3 launch that was Dispatched only asked its
+ * app, and nothing settles it. A second click gets a launch that is opening, and the page holds
+ * Open while one is. The writer's `focus` statement holds the same rule.
+ */
+export const isOpening = (launch: { readonly state: string; readonly route: string }): boolean =>
+  launch.state === "prepared" ||
+  launch.state === "dispatching" ||
+  (launch.state === "dispatched" && launch.route === "terminal");
+
+/**
+ * How a Confirmed launch's record says its session stands: `ended` once its agent's end was
+ * reported (an earlier build recorded the exit code alone), `lost` once its shim went without a
+ * word, else `open`, which the shim host decides.
+ */
+export function sessionRecord(
+  evidence: Readonly<Record<string, unknown>>,
+): "ended" | "lost" | "open" {
+  if (evidence["ran_ms"] !== undefined || evidence["exit_code"] !== undefined) return "ended";
+  return evidence["lost_at"] === undefined ? "open" : "lost";
+}
+
+/**
  * The legal transitions (A4 3.9.1). A self edge records evidence and changes no state: T3's repeat
  * on Dispatching, before it is sent; a terminal shim's claim and its agent's PID on Dispatched; the
  * bridge's binding on Confirmed. Dispatching → Confirmed is a confirmation that arrives before the

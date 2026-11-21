@@ -40,7 +40,7 @@ export const WS_PATH = "/api/v1/ws";
 export const OP_PREFIX = "/api/v1/op/";
 /** The page's launch receipts and runs (launches.ts). Open is the registry's `launch.open`. */
 export const LAUNCH_PREFIX = "/api/v1/launch/";
-export const LAUNCH_ACTIONS: readonly string[] = ["list", "run", "runs", "stop"];
+export const LAUNCH_ACTIONS: readonly string[] = ["busy", "list", "run", "runs", "stop"];
 /**
  * The page's space switcher: this machine's spaces, Make default, and New space (a name's
  * proposal, then the space) and Open folder.

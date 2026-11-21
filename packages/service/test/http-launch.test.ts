@@ -144,6 +144,24 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       // No text of the task travels with a receipt.
       expect(JSON.stringify(receipts)).not.toContain("appointment");
 
+      // The tab learns which agent apps are busy here for every task, without a task's receipts:
+      // this one is opening until its shim settles it.
+      const busy = await post(port, "/api/v1/launch/busy", {}, { token, headers });
+      expect(JSON.parse(busy.body)).toEqual({
+        result: { busy: [{ task: task.id, instance: "fake-agent", state: "opening" }] },
+      });
+      // A distinct click while it is opening gets the same launch and starts nothing.
+      const second = await post(
+        port,
+        OPEN,
+        { ...click, request_id: "click-0000000000000002" },
+        { token, headers },
+      );
+      expect(
+        (JSON.parse(second.body) as { result: { launch: { id: string } } }).result.launch.id,
+      ).toBe(launch["id"]);
+      expect(terminal.started).toHaveLength(1);
+
       // The feed tells the page a launch changed, and of which task: a tab follows the receipts
       // of the tasks it shows by their task.
       await feed.next(
