@@ -867,10 +867,7 @@ ${instance}`;
   }
 
   /** The launches of a space whose agent runs here now, as the shims say and no end is recorded. */
-  async #sessions(
-    space: string,
-    hosted: { store: SpaceExecutionStore },
-  ): Promise<LaunchIntent[]> {
+  async #sessions(space: string, hosted: { store: SpaceExecutionStore }): Promise<LaunchIntent[]> {
     const read = await Promise.all(
       this.host.runningIn(space).map((launch) => hosted.store.readIntent(launch)),
     );
