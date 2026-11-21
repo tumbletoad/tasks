@@ -162,7 +162,7 @@ describe("[A2.3.10.cli.accept] the M1 acceptance of the CLI", () => {
     }
   }, 180_000);
 
-  test("two parallel tasks add give distinct IDs and references", async () => {
+  test("two parallel ttasks add give distinct IDs and references", async () => {
     const [a, b] = await Promise.all([
       world.tasks(["add", "Fixture task A", "--json"]),
       world.tasks(["add", "Fixture task B", "-p", "2", "--json"]),

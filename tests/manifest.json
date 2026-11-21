@@ -57,6 +57,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.2.brand.old-names",
+      "title": "No file in the repository uses the product's earlier names in a form that can only mean the product, while the domain's plural, the stored format markers and the earlier data folder's one declaration pass",
+      "source": "A7 3.2",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.7.m0-kit.self-test",
       "title": "The M0 spike kit self-test: handshake and its deadlines, MCP envelopes of both eras, forwarder, page, token, WebSocket and Reveal, shim and run shim, probe redaction, owner-only permissions, socket folder, scratch tree, bench",
       "source": "A7 3.7 (M0.02), A2 3.6-3.8, A4 3.6.3",
@@ -785,7 +793,7 @@
     },
     {
       "id": "A3.3.4.folders.cli",
-      "title": "Folders at the command line: ttasks add and tasks set give a task its folder with --folder, a folder relative to the working one, folder= and --here, and --clear folder takes it away; --here beside --folder is a usage error; ttasks area create --folder --create makes a folder that is not there and binds it, one undo takes the project, its new area and its folder back and leaves the folder on disk; --folder . --create binds an existing folder; a refused call removes the folder --create made; ttasks area list and tasks show print the folders; the old --place and place= name --folder",
+      "title": "Folders at the command line: ttasks add and ttasks set give a task its folder with --folder, a folder relative to the working one, folder= and --here, and --clear folder takes it away; --here beside --folder is a usage error; ttasks area create --folder --create makes a folder that is not there and binds it, one undo takes the project, its new area and its folder back and leaves the folder on disk; --folder . --create binds an existing folder; a refused call removes the folder --create made; ttasks area list and ttasks show print the folders; the old --place and place= name --folder",
       "source": "A2 3.10, A3 3.4.13",
       "owner": "M4",
       "kind": "ci",
@@ -817,7 +825,7 @@
     },
     {
       "id": "A1.5.migration.drill",
-      "title": "The installed-build migration failure and restore drill with the real 0.2, 0.3 and 0.4: a populated 0.1 fixture space, a fault planted in its migration's last step, the space left at 0.1 and served read-only with A1's message and refusing word search with why while filters answer, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space, whose new task tasks find finds by a word",
+      "title": "The installed-build migration failure and restore drill with the real 0.2, 0.3 and 0.4: a populated 0.1 fixture space, a fault planted in its migration's last step, the space left at 0.1 and served read-only with A1's message and refusing word search with why while filters answer, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space, whose new task ttasks find finds by a word",
       "source": "A1 5, A7 3.10 M3.01, A7 3.8 M1.15, MIL-02",
       "owner": "M3",
       "kind": "installed",
@@ -2455,7 +2463,7 @@
     },
     {
       "id": "A3.5.search.find",
-      "title": "task.search through the request path for the user and a script: the entry's schema and limits, a default page of 15, the next page by its cursor alone, another binding's cursor refused and a restart dropping every cursor; and tasks find printing a page's header, task and learning rows, placeholders, the changed marker and the next page",
+      "title": "task.search through the request path for the user and a script: the entry's schema and limits, a default page of 15, the next page by its cursor alone, another binding's cursor refused and a restart dropping every cursor; and ttasks find printing a page's header, task and learning rows, placeholders, the changed marker and the next page",
       "source": "A3 3.4.3, A3 3.4.13, A3 3.9.4, A3 3.9.5, A7 3.10 M3.05",
       "owner": "M3",
       "kind": "ci",
@@ -2782,7 +2790,7 @@
     },
     {
       "id": "A2.3.10.cli.accept",
-      "title": "pnpm accept m1 --part cli against a real service child in a temporary TTASKS_HOME: two parallel tasks add give distinct IDs and references, a stale base exits 4, a lost reply retried with --request-id in a new process after another write replays, a CLI newer than the service exits 7 with service_too_old, ttasks show --json matches its schema",
+      "title": "pnpm accept m1 --part cli against a real service child in a temporary TTASKS_HOME: two parallel ttasks add give distinct IDs and references, a stale base exits 4, a lost reply retried with --request-id in a new process after another write replays, a CLI newer than the service exits 7 with service_too_old, ttasks show --json matches its schema",
       "source": "A2 3.10, A3 3.4.1, A7 3.8 M1.10",
       "owner": "M1",
       "kind": "installed",

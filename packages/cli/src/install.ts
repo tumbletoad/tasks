@@ -16,7 +16,8 @@
 //      background runs, so it never happens unasked.
 // It loads the service's install code, and with it storage, only for this command.
 import { existsSync, readdirSync, rmdirSync } from "node:fs";
-import { PRODUCT_NAME } from "@ttasks/brand";
+import { dirname, join } from "node:path";
+import { CLI_NAME, EARLIER_DATA_FOLDER, PRODUCT_NAME } from "@ttasks/brand";
 import { shellLine } from "@ttasks/launch";
 import { hostFacts, type Layout } from "@ttasks/service/paths";
 import type { Globals } from "./args.ts";
@@ -51,6 +52,13 @@ function removeIfMade(layout: Pick<Layout, "state" | "tmp">): void {
       // Something else is in it now: it stays.
     }
   }
+}
+
+/** The daily install's data folder from before the rename, when one is beside the new one. */
+function earlierDataFolder(layout: Pick<Layout, "data" | "home">): string | undefined {
+  if (layout.home !== undefined) return undefined;
+  const folder = join(dirname(layout.data), EARLIER_DATA_FOLDER);
+  return existsSync(folder) ? folder : undefined;
 }
 
 export async function installCommand(
@@ -148,6 +156,12 @@ export async function installCommand(
       "",
     ].join("\n"),
   );
+  const earlier = earlierDataFolder(target.layout);
+  if (earlier !== undefined) {
+    io.stdout(
+      `${earlier} holds the data of a build from before the product was called ${PRODUCT_NAME}, which this version does not read. To use a space from it, run: ${CLI_NAME} space open <its folder in ${join(earlier, "spaces")}>\n`,
+    );
+  }
   if (pending && service !== undefined) {
     await offerRestart(
       io,
