@@ -3,9 +3,7 @@
 // state (a restart). Each call is atomic because it runs synchronously between two awaits, and it
 // stores copies, so no caller can change a record except through a call.
 import {
-  apart,
   evidenceConflicts,
-  FOCUS_MS,
   REF_ALPHABET,
   REFERENCE_WINDOW_MS,
   launchRefCheck,
@@ -288,7 +286,9 @@ export class MemoryExecutionStore implements ExecutionStore {
           i.task === input.task &&
           i.instance === input.instance &&
           i.machine === input.machine &&
-          (i.state === "dispatching" || !apart(now, i.createdAt, FOCUS_MS)),
+          (i.state === "prepared" ||
+            i.state === "dispatching" ||
+            (i.state === "dispatched" && i.route === "terminal")),
       )
       .sort((a, b) => b.createdAt - a.createdAt)[0];
     if (focus !== undefined) {

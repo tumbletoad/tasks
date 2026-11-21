@@ -36,7 +36,6 @@ import {
   STORAGE_RUN_STATES,
   STORAGE_RUN_TEXT_MAX_BYTES,
   STORAGE_RUN_RESULT_TEXT_MAX_BYTES,
-  STORAGE_FOCUS_MS,
   STORAGE_LAUNCH_EDGES,
   STORAGE_LAUNCH_EVIDENCE_FIELDS,
   STORAGE_LAUNCH_EVIDENCE_ID,
@@ -57,7 +56,6 @@ import {
   EVIDENCE_FIELDS,
   EVIDENCE_ID,
   FAIL_REASONS,
-  FOCUS_MS,
   INTENT_STATES,
   UNKNOWN_REASONS,
   isLaunchRef,
@@ -200,12 +198,11 @@ describe("[A4.5.execution-store.contract] a launch row read back from the space"
 });
 
 describe("[A4.5.execution-store.contract] the writer's copy of A4's launch rules", () => {
-  test("the states, edges, open states, routes, focus, reference window, evidence and reasons are A4's", () => {
+  test("the states, edges, open states, routes, reference window, evidence and reasons are A4's", () => {
     expect([...STORAGE_LAUNCH_STATES]).toEqual([...INTENT_STATES]);
     expect(STORAGE_LAUNCH_EDGES).toEqual(EDGES);
     expect([...STORAGE_OPEN_LAUNCH_STATES]).toEqual([...OPEN_STATES]);
     expect([...STORAGE_OPEN_SETS["launches.route"]]).toEqual([...ROUTES]);
-    expect(STORAGE_FOCUS_MS).toBe(FOCUS_MS);
     expect(STORAGE_REFERENCE_WINDOW_MS).toBe(REFERENCE_WINDOW_MS);
     expect(STORAGE_LAUNCH_EVIDENCE_FIELDS).toEqual(EVIDENCE_FIELDS);
     expect([...STORAGE_LAUNCH_FAIL_REASONS]).toEqual([...FAIL_REASONS]);

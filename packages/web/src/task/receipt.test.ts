@@ -91,9 +91,12 @@ describe("[A5.3.9.web.session-entry] a launch's entry is a record: opened, then 
     expect(receiptText(receipt({ state: "confirmed", route: "t3-mcp" }), "T3 Code", t)).toBe(
       "Opened in T3 Code",
     );
-    // A link only asked the app: it says so until the agent connects.
+    // A link or T3 only asked the app: it says so until the agent connects.
     expect(receiptText(receipt({ state: "dispatched", route: "link" }), "Claude", t)).toBe(
       "Asked Claude to open",
+    );
+    expect(receiptText(receipt({ state: "dispatched", route: "t3-mcp" }), "T3 Code", t)).toBe(
+      "Asked T3 Code to open",
     );
     expect(receiptText(receipt({ state: "confirmed", route: "link" }), "Claude", t)).toBe(
       "Opened in Claude",

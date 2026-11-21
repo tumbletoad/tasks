@@ -37,7 +37,7 @@
 import {
   apart,
   CLAIM_WINDOW_MS,
-  FOCUS_MS,
+  CLICK_SLACK_MS,
   PREPARED_TTL_MS,
   STEP_DEADLINE_MS,
   STORE_DEADLINE_MS,
@@ -244,7 +244,7 @@ export class LaunchMachine {
       // few milliseconds old. One the wall clock cannot place (recorded in its future, after a
       // step back) or older than the limit gets no mark: the wall clock rule then closes it.
       const age = this.#now() - clickedAt(intent);
-      if (age > -FOCUS_MS && age < PREPARED_TTL_MS) {
+      if (age > -CLICK_SLACK_MS && age < PREPARED_TTL_MS) {
         this.#mark(intent.id, { opened: this.#elapsed() - Math.max(0, age) });
       }
     }

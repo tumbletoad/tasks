@@ -3,7 +3,6 @@
 // is killed, the service restarts while it runs or while it ends), and what the thread, the strip
 // and the row's tile show after it. The fake agent runs until the test releases it.
 import { expect, type Locator, type Page } from "@playwright/test";
-import { FOCUS_MS } from "../../packages/launch/src/intents.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import { showsSpace } from "./page.ts";
@@ -90,7 +89,6 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     const q = parts(other.locator(`li[data-task="${ref}"]`));
     await expect(q.tile).toHaveAttribute("data-state", "ready");
 
-    const clicked = Date.now();
     await openRunning(world, p);
     await expect(p.words("running")).toHaveText(`Opened in ${FAKE_INSTANCE.label} · running`);
     await expect(p.another).toHaveAttribute("data-state", "running");
@@ -107,9 +105,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     await expect(p.open).toHaveAttribute("data-state", "ready");
     await expect(p.open).toHaveAttribute("aria-disabled", "false");
 
-    // Open works again, from the second tab's tile (a click within FOCUS_MS of the first would be
-    // the same launch: a double click).
-    await other.waitForTimeout(Math.max(0, clicked + FOCUS_MS + 500 - Date.now()));
+    // Open works again at once, from the second tab's tile.
     const before = world.terminal().length;
     await q.tile.click();
     await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
@@ -124,7 +120,6 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     const before = world.terminal().length;
     await p.open.dblclick();
     await expect(p.entries("running")).toHaveCount(1, { timeout: SLOW_MS });
-    await page.waitForTimeout(FOCUS_MS);
     expect(world.terminal()).toHaveLength(before + 1);
     await expect(p.row.locator('[data-entry="session"]')).toHaveCount(1);
     world.release(ref);
@@ -223,7 +218,6 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     // An agent that cannot start: it ends at once.
     world.hold(ref, 1);
     let p = await expanded(page, world, ref);
-    let clicked = Date.now();
     await p.open.click();
     await expect(p.entries("failed")).toHaveCount(1, { timeout: SLOW_MS });
     await expect(p.words("failed")).toHaveText(
@@ -231,18 +225,13 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     );
     // One whose shim is killed: opened, its state unknown.
     world.hold(ref);
-    await page.waitForTimeout(Math.max(0, clicked + FOCUS_MS + 500 - Date.now()));
-    clicked = Date.now();
     kill(await openRunning(world, p));
     await expect(p.entries("opened")).toHaveCount(1, { timeout: SLOW_MS });
     // One that ended, and one that runs.
-    await page.waitForTimeout(Math.max(0, clicked + FOCUS_MS + 500 - Date.now()));
-    clicked = Date.now();
     await openRunning(world, p);
     world.release(ref);
     await expect(p.entries("ended")).toHaveCount(1, { timeout: SLOW_MS });
     world.hold(ref);
-    await page.waitForTimeout(Math.max(0, clicked + FOCUS_MS + 500 - Date.now()));
     await openRunning(world, p);
 
     for (const theme of ["sumi", "washi"] as const) {

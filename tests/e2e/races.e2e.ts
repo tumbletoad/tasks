@@ -2,7 +2,6 @@
 // Firefox against the real service process. Each held answer is the service's real answer, given to
 // the page only later, the way a slow connection would.
 import { expect, type Route } from "@playwright/test";
-import { FOCUS_MS } from "../../packages/launch/src/intents.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import { SLOW_MS } from "./world.ts";
@@ -61,7 +60,6 @@ test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () =>
     const strip = row
       .getByRole("toolbar")
       .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` });
-    const clicked = Date.now();
     await strip.click();
     // The held answer was read before the fake shim confirmed: it shows this launch in an earlier
     // state. The seeded space may hold older receipts of the task, Confirmed ones included, from
@@ -98,8 +96,6 @@ test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () =>
     await expect(another).toHaveAttribute("data-state", "running");
     await expect(another).toHaveAttribute("aria-disabled", "false");
     await expect(another).toHaveAccessibleDescription(/is running on this task/u);
-    // A click within FOCUS_MS of the first is the same launch: a double click starts one session.
-    await page.waitForTimeout(Math.max(0, clicked + FOCUS_MS + 500 - Date.now()));
     await another.click();
     await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 2);
     await expect(row.locator('[data-entry][data-state="running"]')).toHaveCount(2, {

@@ -270,7 +270,7 @@
   "receipt.dispatching": "Opening in {label}…",
   "receipt.dispatchedTerminal": "Opening…",
   "receipt.dispatchedIn": "Opening in {where}…",
-  "receipt.askedLink": "Asked {label} to open",
+  "receipt.asked": "Asked {label} to open",
   "receipt.opened": "Opened in {where}",
   "receipt.running": "{opened} · running",
   "receipt.ended": "{opened} · ended",

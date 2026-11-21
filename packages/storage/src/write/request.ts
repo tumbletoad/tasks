@@ -644,7 +644,7 @@ export const LAUNCH_UNKNOWN_REASONS = ["no_answer", "lost", "regranted"] as cons
 /**
  * `launch.create` (A4 3.9.1 Prepared): a click, as IDs and codes. The machine is the request's.
  * The writer gives it its `la_` ID and launch reference. A second click on the same task and
- * instance while an intent is in Dispatching or younger than 5 s returns that intent instead.
+ * instance while an intent of it is still opening on that machine returns that intent instead.
  */
 export interface LaunchCreate {
   kind: "launch.create";

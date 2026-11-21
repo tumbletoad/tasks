@@ -146,6 +146,8 @@ export function TaskList({
   /** The tasks whose receipts the tab follows: the expanded one, and every one it launched. */
   const watched = useRef(new Set<string>());
   const receiptReads = useRef(new Latest());
+  /** This tab's Opens still waiting for their answer, by task and instance. */
+  const clicks = useRef(new Map<string, Promise<Receipt | undefined>>());
   const changed = useRef(onExpand);
   changed.current = onExpand;
   /** The expanded task's row as last seen: it stays while expanded, whatever the update did. */
@@ -639,7 +641,15 @@ export function TaskList({
               return undefined;
             });
         };
-        return launch(false);
+        // A click while this tab's Open of the same task and agent waits for its answer is that
+        // same Open: a double click sends one request.
+        const key = `${task.id}
+${instance.key}`;
+        const waiting = clicks.current.get(key);
+        if (waiting !== undefined) return waiting;
+        const first = launch(false).finally(() => clicks.current.delete(key));
+        clicks.current.set(key, first);
+        return first;
       },
       // Copy (A4 3.4.6): the pointer brief, as a launch of its own whose reference an agent redeems.
       // Shift+Copy: the context pack, for an app without the tools (A4 3.15.5).

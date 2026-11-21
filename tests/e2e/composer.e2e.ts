@@ -8,7 +8,6 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Page, type Request } from "@playwright/test";
 import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
-import { FOCUS_MS } from "../../packages/launch/src/intents.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
@@ -195,7 +194,6 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     await composer.fill("");
     const opened = calls(page, "launch.open");
     const before = world.terminal().length;
-    const clicked = Date.now();
     await open.click();
     await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
     expect(opened[0]?.postDataJSON()).not.toHaveProperty("text");
@@ -210,8 +208,6 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     await expect(another).toHaveAttribute("aria-disabled", "false");
     await expect(another).toHaveAccessibleDescription(/is running on this task/u);
     await composer.fill(`Now the ceiling too (${tag})`);
-    // A click within FOCUS_MS of the first would be the same launch: a double click.
-    await page.waitForTimeout(Math.max(0, clicked + FOCUS_MS + 500 - Date.now()));
     await composer.focus();
     await page.keyboard.press("ControlOrMeta+Enter");
     await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 2);

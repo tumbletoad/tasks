@@ -294,10 +294,10 @@ export const PREPARED_TTL_MS = 10 * 60_000;
 export const CLAIM_WINDOW_MS = 120_000;
 
 /**
- * A second, distinct click on the same task and instance while an intent is in Dispatching or
- * younger than this returns that intent instead of creating another (A4 3.9.1).
+ * How far in this clock's future a click may be recorded and still be placed on the monotonic
+ * clock: a wall clock that stepped back a little.
  */
-export const FOCUS_MS = 5_000;
+export const CLICK_SLACK_MS = 5_000;
 
 /** References are unique among the space's launches of the last 90 days (A4 3.1). */
 export const REFERENCE_WINDOW_MS = 90 * 24 * 60 * 60_000;
@@ -317,9 +317,9 @@ export const STEP_DEADLINE_MS = 30_000;
 
 /**
  * Whether two instants lie at least `limit` apart, in either direction: how a window is judged
- * from the wall clock alone, for a record this service has no monotonic mark of (machine.ts), and
- * for the 5 s focus. A wall clock that stepped back then ends a window instead of stretching it:
- * the safe side, because ending a window starts nothing, and no agent starts without a claim.
+ * from the wall clock alone, for a record this service has no monotonic mark of (machine.ts). A
+ * wall clock that stepped back then ends a window instead of stretching it: the safe side,
+ * because ending a window starts nothing, and no agent starts without a claim.
  */
 export const apart = (now: number, since: number, limit: number): boolean =>
   Math.abs(now - since) >= limit;

@@ -99,8 +99,9 @@ export function receiptText(receipt: Receipt, label: string, t: Translate): stri
       if (receipt.route === "terminal" && where !== undefined) {
         return t("receipt.dispatchedIn", { where });
       }
-      if (receipt.route === "link") return t("receipt.askedLink", { label });
-      return t(receipt.route === "clipboard" ? "receipt.copied" : "receipt.dispatchedTerminal");
+      if (receipt.route === "terminal") return t("receipt.dispatchedTerminal");
+      // A link or T3 only asked the app: it says so until the agent connects.
+      return t(receipt.route === "clipboard" ? "receipt.copied" : "receipt.asked", { label });
     case "confirmed":
       if (receipt.session === "running") return t("receipt.running", { opened });
       if (receipt.session === "ended") {
