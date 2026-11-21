@@ -861,7 +861,14 @@ export class LaunchService {
 ${instance}`;
       if (out.get(key)?.state !== "opening") out.set(key, { task, instance, state });
     };
-    for (const intent of intents) if (isOpening(intent)) add(intent, "opening");
+    // A Prepared launch is on its way only while a call of this service holds it: one a crash
+    // left between its click and its dispatch is opened by the next click, which joins it.
+    const owned = new Set(hosted.machine.owned());
+    for (const intent of intents) {
+      if (isOpening(intent) && (intent.state !== "prepared" || owned.has(intent.id))) {
+        add(intent, "opening");
+      }
+    }
     for (const intent of runs) if (intent.state === "confirmed") add(intent, "running");
     return [...out.values()];
   }

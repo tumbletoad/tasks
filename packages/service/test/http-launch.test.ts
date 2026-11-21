@@ -177,6 +177,53 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
     },
   );
 
+  test(
+    "a Prepared launch that no call of the service holds, as a crash leaves one, holds no Open: the next click opens it",
+    SLOW,
+    async () => {
+      const terminal = recordingTerminal();
+      const w = await world(terminal.start);
+      const task = await addTask(w, "Plan the garden beds");
+      const { token } = await signIn(w);
+      const port = w.port();
+      const headers = { "tasks-space": "Mira", "tasks-build": "source" };
+      const feed = await openFeed(port, token);
+      await feed.next((m) => m["type"] === "hello");
+      feed.send({ type: "subscribe", space: "Mira" });
+      const snapshot = await feed.next((m) => m["type"] === "snapshot");
+      feed.ws.close();
+      const space = (snapshot["space"] as { id: string }).id;
+      // Recorded, and never dispatched: the service that made it stopped in between.
+      const left = await w.service.launches.open(
+        space,
+        {
+          task: task.id,
+          instance: "fake-agent",
+          route: "terminal",
+          place: null,
+          taskVersion: 1,
+          briefHash: "c".repeat(64),
+        },
+        "crash-left-000000000001",
+        { argv: [process.execPath], folder: null, env: {}, title: "Left", afterExit: "close" },
+      );
+      expect(left.state).toBe("prepared");
+      const busy = await post(port, "/api/v1/launch/busy", {}, { token, headers });
+      expect(JSON.parse(busy.body)).toEqual({ result: { busy: [] } });
+      const opened = await post(
+        port,
+        OPEN,
+        { task: task.id, instance: "fake-agent", request_id: "click-0000000000000011" },
+        { token, headers },
+      );
+      expect(
+        (JSON.parse(opened.body) as { result: { launch: { id: string } } }).result.launch.id,
+      ).toBe(left.id);
+      await until(() => Promise.resolve(terminal.started.length === 1), "the terminal");
+      expect(terminal.started[0]?.id).toBe(left.id);
+    },
+  );
+
   test("Copy gives the pointer brief and a launch that is Dispatched at once", SLOW, async () => {
     const w = await world(recordingTerminal().start);
     const task = await addTask(w, "Sign the lease");
