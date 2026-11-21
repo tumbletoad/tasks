@@ -1464,7 +1464,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
       runUserBase: base,
       socketDir: "state",
     });
-    expect(forced.info.endpoint.path).toBe(join(work, "e02-state", "run", "tasks.sock"));
+    expect(forced.info.endpoint.path).toBe(join(work, "e02-state", "run", "ttasks.sock"));
     await forced.close();
     chmodSync(join(base, uid), 0o770); // group-writable: auto falls back
     const fallback = await startService({ state: join(work, "e02-fallback"), runUserBase: base });

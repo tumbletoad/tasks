@@ -77,7 +77,7 @@ describe("[A2.3.7.bridge.discovery] finding the service", () => {
     expect(failure(() => readEndpoint(state, platform)).reason).toBe("not_running");
     write({ state: "starting", endpoint: null });
     expect(failure(() => readEndpoint(state, platform)).reason).toBe("starting");
-    write({ state: "ready", endpoint: { kind: "unix", path: "relative/tasks.sock" } });
+    write({ state: "ready", endpoint: { kind: "unix", path: "relative/ttasks.sock" } });
     expect(failure(() => readEndpoint(state, platform))).toEqual({
       reason: "unreachable",
       detail: "bad_endpoint",
@@ -85,7 +85,7 @@ describe("[A2.3.7.bridge.discovery] finding the service", () => {
     const path =
       platform === "win32"
         ? "\\\\.\\pipe\\ttasks-q7mw2c4k9x-abc"
-        : "/run/user/1000/ttasks-q7mw2c4k9x/tasks.sock";
+        : "/run/user/1000/ttasks-q7mw2c4k9x/ttasks.sock";
     write({ state: "ready", endpoint: { kind: platform === "win32" ? "pipe" : "unix", path } });
     expect(readEndpoint(state, platform)).toBe(path);
     write("x".repeat(70_000));

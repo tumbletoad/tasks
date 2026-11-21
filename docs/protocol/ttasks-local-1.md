@@ -4,7 +4,7 @@ The local protocol between the TTasks service and its clients on the same machin
 
 ## Endpoint
 
-- Linux and macOS: a Unix stream socket `tasks.sock` in a folder only its user can enter (0700). On Linux that folder is `/run/user/<uid>/ttasks-<install-id>/` when the per-user runtime folder is a private folder of this user (never taken from `XDG_RUNTIME_DIR`), else `<state>/run/`. A socket path holds at most 100 bytes, and both sides refuse a longer one before they try.
+- Linux and macOS: a Unix stream socket `ttasks.sock` in a folder only its user can enter (0700). On Linux that folder is `/run/user/<uid>/ttasks-<install-id>/` when the per-user runtime folder is a private folder of this user (never taken from `XDG_RUNTIME_DIR`), else `<state>/run/`. A socket path holds at most 100 bytes, and both sides refuse a longer one before they try.
 - Windows: a named pipe in byte mode, `\\.\pipe\ttasks-<install-id>-<instance>`. The instance ID is new at every start.
 - The path is `endpoint.path` in `<state>/service.json`. `ENOENT` or `ECONNREFUSED` means the service is not running.
 - The key is `<state>/ipc.key`: 32 random bytes as base64url (43 characters), optionally followed by one line ending. The HMAC key is the 32 decoded bytes. A client reads it for every connection, so a key rotation needs nothing else.

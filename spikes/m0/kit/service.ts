@@ -389,7 +389,7 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
       runtime = selected.kind;
       mkdirSync(selected.dir, { recursive: true, mode: 0o700 });
       assertPrivate([{ path: selected.dir, kind: "dir", what: "socket folder" }], options.inspect);
-      const path = join(selected.dir, "tasks.sock");
+      const path = join(selected.dir, "ttasks.sock");
       if (Buffer.byteLength(path) > 100) {
         throw new KitError("socket_path_too_long", `Socket path too long: ${path}`);
       }

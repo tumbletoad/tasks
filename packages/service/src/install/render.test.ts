@@ -255,11 +255,11 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
       ),
     ).toBe("not_ours");
     // A comment line, a prefix or a third word is not the form install writes.
-    expect(unitNotOurs("[Service]\n# ExecStart=/x/tasks serve\nExecStart=/usr/bin/x\n")).toBe(
+    expect(unitNotOurs("[Service]\n# ExecStart=/x/ttasks serve\nExecStart=/usr/bin/x\n")).toBe(
       "not_ours",
     );
-    expect(unitNotOurs("[Service]\nExecStart=-/x/tasks serve\n")).toBe("not_ours");
-    expect(unitNotOurs("[Service]\nExecStart=/x/tasks serve --other\n")).toBe("not_ours");
+    expect(unitNotOurs("[Service]\nExecStart=-/x/ttasks serve\n")).toBe("not_ours");
+    expect(unitNotOurs("[Service]\nExecStart=/x/ttasks serve --other\n")).toBe("not_ours");
     // A continued line is one directive.
     expect(unitNotOurs("[Service]\nExecStart=/x/tasks \\\n  serve\n")).toBeUndefined();
     // A continuation still open at the end of the file is read, as systemd reads it.
@@ -411,14 +411,14 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
     // In ExecStart= a backslash, an apostrophe or a specifier other than %% is something install
     // never writes there, and systemd would read a path other than the one these words spell.
     for (const exec of [
-      "/opt/x\\x20/tasks serve",
-      "/opt/%h/tasks serve",
-      "'/opt/x/tasks' serve",
+      "/opt/x\\x20/ttasks serve",
+      "/opt/%h/ttasks serve",
+      "'/opt/x/ttasks' serve",
       "/opt/x/tasks se\\rve",
     ]) {
       expect(unitNotOurs(ours.replace(/^ExecStart=.*$/m, `ExecStart=${exec}`))).toBe("not_ours");
     }
-    expect(unitNotOurs(ours.replace(/^ExecStart=.*$/m, 'ExecStart="/opt/1%%/tasks" serve'))).toBe(
+    expect(unitNotOurs(ours.replace(/^ExecStart=.*$/m, 'ExecStart="/opt/1%%/ttasks" serve'))).toBe(
       undefined,
     );
     // A plist and a Run value the same way.

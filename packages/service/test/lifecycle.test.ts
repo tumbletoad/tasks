@@ -177,7 +177,7 @@ describe("[A2.3.4.hub.two-installs] two state paths, two installs", () => {
       ] as const) {
         const path = json.endpoint?.path ?? "";
         if (path.startsWith(join(stateOf(h), "run")))
-          expect(path).toBe(join(stateOf(h), "run", "tasks.sock"));
+          expect(path).toBe(join(stateOf(h), "run", "ttasks.sock"));
         else expect(path).toContain(json.install_id);
       }
       // Each endpoint is served by its own service.

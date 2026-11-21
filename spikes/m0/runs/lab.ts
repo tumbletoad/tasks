@@ -372,7 +372,7 @@ function claudeFacts(r: Recording, sessionId: string | undefined): JsonObject {
             mcp_servers: servers.map((s) => {
               const o = (typeof s === "object" && s !== null ? s : {}) as JsonObject;
               return {
-                name: o["name"] === "tasks" ? "tasks" : "[other]",
+                name: o["name"] === "ttasks" ? "tasks" : "[other]",
                 status: oneOf(o["status"], VOCAB["mcp-status"]),
               };
             }),
@@ -504,7 +504,7 @@ function codexFacts(r: Recording, lastMessage: string): JsonObject {
         const error = i["error"];
         items.push({
           type,
-          server: i["server"] === "tasks" ? "tasks" : "[other]",
+          server: i["server"] === "ttasks" ? "tasks" : "[other]",
           tool: oneOf(i["tool"], VOCAB["probe-tool"]),
           status,
           error: error === null || error === undefined ? null : errorClass(JSON.stringify(error)),

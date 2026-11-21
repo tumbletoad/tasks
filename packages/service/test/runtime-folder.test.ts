@@ -56,7 +56,7 @@ describe("[A2.3.2.1.hub.runtime-folder] the runtime folder: nothing left after a
       // whole; only the socket went with the server.
       await l.stopService();
       expect(existsSync(join(dir, "launch", intent.id, "launch.json"))).toBe(true);
-      expect(existsSync(join(dir, "tasks.sock"))).toBe(false);
+      expect(existsSync(join(dir, "ttasks.sock"))).toBe(false);
 
       // The next start reads it back; the shim reattaches, its agent ends, its exit is recorded
       // and its launch folder goes.
@@ -89,12 +89,12 @@ describe("[A2.3.2.1.hub.runtime-folder] the runtime folder: nothing left after a
       // No launch folder, but something else (a socket that is not this start's): the empty
       // launch root goes, the runtime folder stays with what it holds.
       rmdirSync(join(launch, "la_fixture"));
-      writeFileSync(join(dir, "tasks.sock"), "");
+      writeFileSync(join(dir, "ttasks.sock"), "");
       removeIdleRuntime({ runtimeDir: dir, launch });
       expect(existsSync(launch)).toBe(false);
-      expect(existsSync(join(dir, "tasks.sock"))).toBe(true);
+      expect(existsSync(join(dir, "ttasks.sock"))).toBe(true);
       // Nothing left: it goes.
-      rmSync(join(dir, "tasks.sock"));
+      rmSync(join(dir, "ttasks.sock"));
       removeIdleRuntime({ runtimeDir: dir, launch });
       expect(existsSync(dir)).toBe(false);
       // Without a per-user runtime folder (Windows, or the fallback under <state>), nothing goes.

@@ -198,7 +198,7 @@ describe("[A2.3.2.hub.install-id] the install ID", () => {
       expect(names.endpoint).toEqual({
         kind: "unix",
         dir: `/run/user/1000/ttasks-${id}`,
-        path: `/run/user/1000/ttasks-${id}/tasks.sock`,
+        path: `/run/user/1000/ttasks-${id}/ttasks.sock`,
         runtime: "run-user",
       });
       expect(names.launch).toBe(`/run/user/1000/ttasks-${id}/launch`);
@@ -212,7 +212,7 @@ describe("[A2.3.2.hub.install-id] the install ID", () => {
       endpoint: {
         kind: "unix",
         dir: "/h/state/run",
-        path: "/h/state/run/tasks.sock",
+        path: "/h/state/run/ttasks.sock",
         runtime: "state",
       },
       launch: "/h/state/launch",
@@ -220,7 +220,7 @@ describe("[A2.3.2.hub.install-id] the install ID", () => {
     });
     // macOS always uses <state>/run/.
     const mac = runtimeNames(layout, id, { platform: "darwin", uid: 501 }, () => true);
-    expect(mac.endpoint).toMatchObject({ path: "/h/state/run/tasks.sock", runtime: "state" });
+    expect(mac.endpoint).toMatchObject({ path: "/h/state/run/ttasks.sock", runtime: "state" });
 
     // Windows: the pipe carries the install ID, then the instance ID of each start.
     const pipes = homes.map((home) => {
