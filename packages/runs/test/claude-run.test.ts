@@ -194,10 +194,28 @@ describe("[A4.3.11.claude.run] a Claude Code run in the run host: the program re
       expect(census(token)).toEqual([]);
     });
 
-    test(`${kind}: Stop during start-up, before the program said anything, ends the run at once`, async () => {
+    test(`${kind}: Stop while the program starts ends the run, and the request never reaches it`, async () => {
+      const token = newToken();
+      const log = join(work, `log-${token}.jsonl`);
+      writeFileSync(log, "");
+      const b = bench(make());
+      const id = await startRun(
+        b,
+        { fixture: "windows-plain", token, pace: 3, log },
+        `u-${token}`,
+      );
+      expect((await b.host.stop(id))?.state).toBe("cancelling");
+      const after = await b.host.ended(id);
+      expect(after?.state).toBe("cancelled");
+      await waitForCensus(token, (pids) => pids.length === 0);
+      expect(readFileSync(log, "utf8")).not.toContain("MARKREQ5C1");
+    });
+
+    test(`${kind}: Stop just after the program started interrupts it over its input`, async () => {
       const token = newToken();
       const b = bench(make());
-      const id = await startRun(b, { fixture: "windows-plain", token, pace: 3 }, `u-${token}`);
+      const id = await startRun(b, { fixture: "windows-plain", token, pace: 3 }, `v-${token}`);
+      await waitForCensus(token, (pids) => pids.length === 1);
       expect((await b.host.stop(id))?.state).toBe("cancelling");
       const after = await b.host.ended(id);
       expect(after).toMatchObject({ state: "cancelled", result: { outcome: "interrupted" } });
