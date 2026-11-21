@@ -745,11 +745,11 @@ export const isOwnPlist = (text: string, label: string): boolean =>
  */
 export const LAUNCHD_WRAPPER = `#!/bin/sh
 # ttasks-launchd: runs \`ttasks serve\` for launchd. Generated at build time. Do not edit.
-tasks=\${0%/*}/tasks                    # <root>/current/bin/ttasks, so a restart re-reads current
+ttasks=\${0%/*}/ttasks                  # <root>/current/bin/ttasks, so a restart re-reads current
 child= stop= quick=0 since=$(date +%s)
 trap 'stop=1; [ -n "$child" ] && kill -TERM "$child" 2>/dev/null' TERM INT
 while [ -z "$stop" ]; do
-  "$tasks" serve & child=$!
+  "$ttasks" serve & child=$!
   [ -n "$stop" ] && kill -TERM "$child" 2>/dev/null   # a stop that came before child was set
   while wait "$child"; code=$?; kill -0 "$child" 2>/dev/null; do :; done   # wait again after a trapped signal
   child=

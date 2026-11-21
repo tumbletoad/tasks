@@ -446,7 +446,7 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
   test("the ttasks-launchd wrapper is A2 3.3.4's script with its three additions", () => {
     const lines = LAUNCHD_WRAPPER.split("\n");
     expect(lines[0]).toBe("#!/bin/sh");
-    expect(LAUNCHD_WRAPPER).toContain("tasks=${0%/*}/tasks");
+    expect(LAUNCHD_WRAPPER).toContain("ttasks=${0%/*}/ttasks");
     expect(LAUNCHD_WRAPPER).toContain("0|64|73) exit 0 ;;");
     expect(LAUNCHD_WRAPPER).toContain('*) exit "$code" ;;');
     expect(LAUNCHD_WRAPPER.endsWith("exit 0\n")).toBe(true);

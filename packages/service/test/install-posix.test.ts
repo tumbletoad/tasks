@@ -350,7 +350,7 @@ describe.skipIf(!posix)(
       const fake = fakeContext({ platform: "linux", dir });
       expect((await run(fake, "install")).code).toBe(0);
       const unitDir = fake.ctx.roots.unitDir;
-      for (const folder of [`${UNIT}.d`, "tasks-.service.d"]) {
+      for (const folder of [`${UNIT}.d`, "ttasks-.service.d"]) {
         mkdirSync(join(unitDir, folder), { recursive: true });
         writeFileSync(
           join(unitDir, folder, "override.conf"),
