@@ -3,7 +3,15 @@
 //
 // Verify line: Open sends the shim to the fake terminal, the session runs, a log entry appears.
 // Two tabs on two spaces stay on their own space.
-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect } from "@playwright/test";
@@ -143,6 +151,61 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
       await expect(row.locator('[data-part="tile"]')).toHaveAttribute("data-state", "ready");
       expect(await violations(page)).toEqual([]);
       await page.screenshot({ path: test.info().outputPath("open-folder-gone.png") });
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  });
+});
+
+test.describe("[A5.3.7.e2e.show-folder] the folder button opens the task's folder in the file manager", () => {
+  test("the row's folder button and the expanded folder line show the task's folder; a folder that went is said and nothing opens", async ({
+    page,
+    world,
+  }) => {
+    await watchViolations(page);
+    const temp = mkdtempSync(join(tmpdir(), "tasks-e2e-show-"));
+    try {
+      const folder = join(temp, "portal");
+      mkdirSync(folder);
+      const project = test.info().project.name;
+      const added = (await world.op(world.mira.id, "task.add", {
+        tasks: [{ title: `Check the portal build (${project})`, inbox: true }],
+      })) as { tasks: readonly { ref: string }[] };
+      const ref = added.tasks[0]?.ref ?? "";
+      const base = ((await world.op(world.mira.id, "task.get", { task: ref })) as { as_of: string })
+        .as_of;
+      await world.op(world.mira.id, "folder.manage", { action: "set", task: ref, folder, base });
+
+      await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+      await showsSpace(page, world.mira.name);
+      const row = page.locator(`li[data-task="${ref}"]`);
+      const button = row.locator('[data-part="folder"]');
+      await expect(button).toHaveAccessibleName("Open folder", { timeout: SLOW_MS });
+      const before = world.folders().length;
+      await button.click();
+      await expect(
+        page.getByRole("status").filter({ hasText: "Opened in the file manager on e2e-desktop" }),
+      ).toBeVisible({ timeout: SLOW_MS });
+      // The service resolved the task's own folder: the page sent no path.
+      expect(world.folders().slice(before)).toEqual([realpathSync.native(folder)]);
+
+      // Expanded, the folder line has the same action beside its copy button.
+      await row.locator('[data-part="title"]').click();
+      const line = row.locator('[data-part="place"]');
+      await expect(line).toHaveAttribute("data-state", "here", { timeout: SLOW_MS });
+      await line.getByRole("button", { name: "Open in the file manager" }).click();
+      await expect.poll(() => world.folders().length, { timeout: SLOW_MS }).toBe(before + 2);
+      expect(await violations(page)).toEqual([]);
+
+      // The folder goes: the click says so, and nothing is asked of the file manager.
+      rmSync(folder, { recursive: true });
+      await line.getByRole("button", { name: "Open in the file manager" }).click();
+      await expect(
+        page.getByRole("status").filter({
+          hasText: "Folder not found on this computer. Nothing was opened.",
+        }),
+      ).toBeVisible({ timeout: SLOW_MS });
+      expect(world.folders()).toHaveLength(before + 2);
     } finally {
       rmSync(temp, { recursive: true, force: true });
     }

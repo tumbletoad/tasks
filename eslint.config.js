@@ -156,6 +156,15 @@ const noUiProse = [
     message: PROSE_MESSAGE,
   },
 ];
+// A button in the page does something: a click, or a submit in its form. One without is a control a
+// person presses in vain. A spread may carry the handler, so it passes.
+const noDeadButton = [
+  {
+    selector:
+      "JSXOpeningElement[name.name='button']:not(:has(JSXAttribute[name.name=/^on(Click|PointerDown|MouseDown)$/])):not(:has(JSXAttribute[name.name='type'][value.value='submit'])):not(:has(JSXSpreadAttribute))",
+    message: 'A button needs an action: onClick, or type="submit" in a form.',
+  },
+];
 const stdoutImports = ["process", "node:process"].map((name) => ({
   name,
   importNames: ["stdout"],
@@ -269,7 +278,14 @@ export default defineConfig([
       "packages/web/src/theme/themes.ts",
     ],
     rules: {
-      "no-restricted-syntax": ["error", ...noShell, ...noTmpdir, ...noAppData, ...noUiProse],
+      "no-restricted-syntax": [
+        "error",
+        ...noShell,
+        ...noTmpdir,
+        ...noAppData,
+        ...noUiProse,
+        ...noDeadButton,
+      ],
     },
   },
   {

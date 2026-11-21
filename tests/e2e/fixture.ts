@@ -17,7 +17,7 @@ function built(): string {
 
 export const test = base.extend<
   object,
-  { world: World; bulk: World; finished: World; runs: World; restartable: World }
+  { world: World; bulk: World; finished: World; runs: World; restartable: World; large: World }
 >({
   // A world of its own for the tests that stop and start its service, so no other test meets it.
   restartable: [
@@ -37,6 +37,19 @@ export const test = base.extend<
     // eslint-disable-next-line no-empty-pattern
     async ({}, use) => {
       const world = await startWorld(built(), { runs: true });
+      try {
+        await use(world);
+      } finally {
+        await world.close();
+      }
+    },
+    { scope: "worker", timeout: 240_000 },
+  ],
+  // A fifth, started only by the tests that use it: Mira grown to the size of a space in use.
+  large: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const world = await startWorld(built(), { large: true });
       try {
         await use(world);
       } finally {

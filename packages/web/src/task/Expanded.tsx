@@ -30,6 +30,7 @@ import {
   CopyIcon,
   FolderElsewhereIcon,
   FolderIcon,
+  FolderOpenIcon,
   OutcomeIcon,
   SourceIcon,
 } from "../row/icons.tsx";
@@ -186,6 +187,7 @@ function PlaceLine({
   detail,
   base,
   refused,
+  onShow,
 }: {
   readonly task: TaskRow;
   readonly detail: Detail | undefined;
@@ -193,6 +195,8 @@ function PlaceLine({
   readonly base: string | undefined;
   /** An Open refused on the folder since the detail was read: what it found is the newer word. */
   readonly refused: FolderRefusal | undefined;
+  /** Shows the folder in the file manager. */
+  readonly onShow: (task: TaskRow) => void;
 }) {
   const t = useT();
   const say = useToast();
@@ -267,6 +271,20 @@ function PlaceLine({
       },
     );
   };
+  const show = (
+    <button
+      type="button"
+      className={styles.act}
+      data-part="show-folder"
+      aria-label={t("place.show")}
+      data-tip={t("place.show")}
+      onClick={() => {
+        onShow(task);
+      }}
+    >
+      <FolderOpenIcon />
+    </button>
+  );
   const shown =
     refused?.folder !== undefined
       ? {
@@ -301,6 +319,7 @@ function PlaceLine({
           {missing ? <span className={styles.muted}> {shown.words}</span> : null}
         </span>
         <span className={styles.acts}>
+          {show}
           <button
             type="button"
             className={styles.act}
@@ -348,7 +367,10 @@ function PlaceLine({
       <span className={styles.muted} data-fact="" data-tip={t("place.workFolderTip")}>
         {t("place.workFolder")}
       </span>
-      <span className={styles.acts}>{ways("folder.choose")}</span>
+      <span className={styles.acts}>
+        {show}
+        {ways("folder.choose")}
+      </span>
       {chooser}
     </li>
   );
@@ -482,6 +504,7 @@ export function Expanded({
             detail={detail}
             base={base}
             refused={fresh ? refused : undefined}
+            onShow={actions.folder}
           />
           {learnings.map((learning, i) => (
             <li

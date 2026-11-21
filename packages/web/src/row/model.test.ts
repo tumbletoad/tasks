@@ -516,7 +516,10 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
       "elsewhere",
       "On mira-desktop",
     ]);
-    expect(folder({ kind: "work_folder" })).toEqual(["work_folder", `${APP_NAME} work folder`]);
+    expect(folder({ kind: "work_folder" })).toEqual([
+      "work_folder",
+      `Open the ${APP_NAME} work folder`,
+    ]);
   });
 
   test("the marker: the needs-input ring wins over the changed dot", () => {

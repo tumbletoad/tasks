@@ -24,6 +24,8 @@ export interface RowActions {
    * composer's `text`. True once it is on the clipboard.
    */
   readonly copy: (task: TaskRow, pack?: boolean, text?: string) => Promise<boolean>;
+  /** Shows the task's folder in the file manager of the computer the service runs on. */
+  readonly folder: (task: TaskRow) => void;
   /**
    * Run: `instance` works on the task in the background, with the composer's `text` as its
    * request. The run the service queued, or undefined when it queued none (it said why).

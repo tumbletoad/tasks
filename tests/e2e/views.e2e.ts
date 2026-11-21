@@ -164,7 +164,9 @@ test.describe("[A7.3.12.m5-05.e2e.views] the status views, the area view, Comple
     await expect(row(page, docs)).toBeVisible();
 
     // The area view: by project under project labels, no heading that names the area.
-    await sidebar(page).getByRole("link", { name: "Lumen", exact: true }).click();
+    await sidebar(page)
+      .getByRole("link", { name: /^Lumen, / })
+      .click();
     await expect(
       page
         .getByRole("group", { name: "Lumen portal", exact: true })
@@ -297,10 +299,12 @@ test.describe("[A7.3.12.e2e.sidebar-fixed] every entry of the side menu keeps it
     world,
   }) => {
     await open(page, world, "today");
-    const portal = sidebar(page).getByRole("link", { name: "Lumen portal", exact: true });
+    const portal = sidebar(page).getByRole("link", { name: /^Lumen portal, / });
     await expect(portal).toBeVisible({ timeout: SLOW_MS });
     const before = await sidebarPlaces(page);
-    await sidebar(page).getByRole("link", { name: "Home", exact: true }).click();
+    await sidebar(page)
+      .getByRole("link", { name: /^Home, / })
+      .click();
     await expect(page).toHaveURL(/\/area\//);
     expect(await sidebarPlaces(page)).toEqual(before);
     await portal.click();

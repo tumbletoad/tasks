@@ -65,7 +65,10 @@ async function tabInto(page: Page, target: Locator, max = 30): Promise<void> {
 async function openArea(page: Page, world: World, name: string): Promise<void> {
   await page.goto(await world.signInUrl(`/s/${world.mira.id}/today`));
   await showsSpace(page, world.mira.name);
-  await page.getByRole("navigation").getByRole("link", { name, exact: true }).click();
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: new RegExp(`^${name}, `) })
+    .click();
   await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/area/[a-z0-9_]+$`));
 }
 

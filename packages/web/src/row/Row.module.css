@@ -495,6 +495,10 @@ a.source:hover {
   cursor: default;
 }
 
+.icon[data-state="missing"] {
+  opacity: 0.5;
+}
+
 .icon[data-on="true"] {
   color: var(--k-star);
 }

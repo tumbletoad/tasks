@@ -73,19 +73,90 @@
   color: var(--k-muted);
 }
 
-.dot {
+/* An area's line: its fold button (or its dot) where a view has its icon, then its link, so area
+   names start where view names do. The line as a whole shows hover and the current page. */
+.area {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding-inline-start: 5px;
+  border-radius: 8px;
+  transition: background-color var(--k-fast) var(--k-ease);
+}
+
+.area .item {
+  flex: 1;
+  min-width: 0;
+  padding-inline-start: 5px;
+  background: transparent;
+}
+
+.area:hover {
+  background: var(--k-hover);
+}
+
+.area:has(> .item[aria-current="page"]) {
+  background: var(--k-raised);
+}
+
+/* Folded, the area holds the project on screen: the way back to it. */
+.area:has(> .item[data-within="true"]) {
+  background: var(--k-hover);
+}
+
+.area .item[data-within="true"] {
+  color: var(--k-text);
+}
+
+.fold {
+  display: inline-grid;
   flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--k-slot, var(--k-muted));
+}
+
+button.fold {
+  cursor: pointer;
+}
+
+button.fold:hover {
+  background: var(--k-raised);
+}
+
+.fold svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.2;
+  transition: transform var(--k-fast) var(--k-ease);
+}
+
+[data-folded="true"] .fold svg {
+  transform: rotate(-90deg);
+}
+
+[dir="rtl"] [data-folded="true"] .fold svg {
+  transform: rotate(90deg);
+}
+
+.dot {
   width: 7px;
   height: 7px;
-  margin-inline: 4px 3px;
   border-radius: 50%;
   background: var(--k-slot, var(--k-muted));
 }
 
+/* A project's name a step in from its area's. */
 .projects {
   margin: 2px 0 4px;
   padding: 0;
-  padding-inline-start: 24px;
+  padding-inline-start: 38px;
   list-style: none;
 }
 
@@ -101,11 +172,9 @@
   padding-block-start: 20px;
 }
 
-/* An area's New project: over the end of its row, shown while the row has the pointer or focus. */
-.area {
-  position: relative;
-}
-
+/* An area's New project: over the end of its line, where its count is, shown while the line has
+   the pointer or focus. The count steps aside meanwhile: a click never lands on a number that
+   turns out to be the button. */
 .add {
   position: absolute;
   inset-block-start: 4px;
@@ -129,10 +198,17 @@
   height: 14px;
 }
 
-.area > .item:hover + .add,
+.area:hover > .add,
 .add[data-hovered],
 .add[data-focus-visible] {
   opacity: 1;
+}
+
+@media (hover: hover) {
+  .area:hover > .item .count,
+  .area:has(> .add[data-focus-visible]) > .item .count {
+    visibility: hidden;
+  }
 }
 
 .add[data-hovered] {
@@ -144,11 +220,19 @@
   outline-offset: 1px;
 }
 
-/* A touch screen has no hover: the way stays in sight. */
+/* A touch screen has no hover: the way stays in sight, in a place of its own after the count, and
+   the projects' counts line up with their area's. */
 @media (hover: none) {
   .add {
+    position: static;
+    flex: none;
+    margin-inline-end: 4px;
     opacity: 1;
     background: transparent;
+  }
+
+  .projects .item {
+    padding-inline-end: 38px;
   }
 }
 
@@ -178,5 +262,9 @@
 @media (forced-colors: active) {
   .item[aria-current="page"] {
     outline: 1px solid CanvasText;
+  }
+
+  .fold {
+    color: ButtonText;
   }
 }
