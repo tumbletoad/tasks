@@ -63,7 +63,6 @@ export function actorOf(author: string, t: Translate): { who: string; mark: stri
  */
 export function entryState(receipt: Receipt): string {
   if (receipt.state === "confirmed") return receipt.session ?? "opened";
-  if (receipt.state === "dispatched" && receipt.route === "link") return "opened";
   return receipt.state;
 }
 
@@ -100,7 +99,7 @@ export function receiptText(receipt: Receipt, label: string, t: Translate): stri
       if (receipt.route === "terminal" && where !== undefined) {
         return t("receipt.dispatchedIn", { where });
       }
-      if (receipt.route === "link") return opened;
+      if (receipt.route === "link") return t("receipt.askedLink", { label });
       return t(receipt.route === "clipboard" ? "receipt.copied" : "receipt.dispatchedTerminal");
     case "confirmed":
       if (receipt.session === "running") return t("receipt.running", { opened });
