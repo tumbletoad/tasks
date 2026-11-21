@@ -2,7 +2,7 @@
 // area folds and unfolds by a click and by the keyboard, stays folded after a reload, counts what
 // its view lists as tasks come and go, and nothing but the person's own fold moves an entry. The
 // world's other tests add tasks of their own, so the counts are read before and after.
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
@@ -129,6 +129,65 @@ test.describe("[A5.3.3.e2e.sidebar-folds] an area folds in the side menu and cou
     await sidebar(page).locator('a[data-view="backlog"]').click();
     await expect(page).toHaveURL(/\/backlog$/);
     expect(await places(page)).toEqual(before);
+  });
+
+  test("an area's count is never under its New project button, with a mouse or on a touch screen", async ({
+    browser,
+    browserName,
+    page,
+    world,
+  }) => {
+    /** The area's count and its New project button, where they are and whether the count shows. */
+    const line = async (menu: Locator) => {
+      const area = menu.locator('li[data-area] > div:has(a[aria-label^="Lumen, "])');
+      const count = area.locator('a span[aria-hidden="true"]').last();
+      const add = area.getByRole("button", { name: "New project in Lumen" });
+      return {
+        area,
+        count: await count.boundingBox(),
+        countShown: await count.evaluate((el) => getComputedStyle(el).visibility === "visible"),
+        add: await add.boundingBox(),
+      };
+    };
+    const overlap = (
+      a: { x: number; width: number } | null,
+      b: { x: number; width: number } | null,
+    ) => a !== null && b !== null && a.x < b.x + b.width && b.x < a.x + a.width;
+
+    // A mouse: the button shows while the line has the pointer, and the count steps aside.
+    await open(page, world, "today");
+    await expect(sidebar(page).getByRole("link", { name: /^Lumen, \d/ })).toBeVisible({
+      timeout: SLOW_MS,
+    });
+    const rest = await line(sidebar(page));
+    expect(rest.countShown).toBe(true);
+    await rest.area.hover();
+    const hovered = await line(sidebar(page));
+    expect(hovered.countShown && overlap(hovered.count, hovered.add)).toBe(false);
+
+    // A touch screen has no hover: both always show, side by side.
+    // Only Chromium emulates a touch screen's media.
+    if (browserName !== "chromium") return;
+    const touch = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+    });
+    try {
+      const phone = await touch.newPage();
+      await phone.goto(await world.signInUrl(`/s/${world.mira.id}/today`));
+      await phone.getByRole("button", { name: "Menu" }).click();
+      const drawer = phone.getByRole("dialog", { name: "Views and areas" });
+      await expect(drawer.getByRole("link", { name: /^Lumen, \d/ })).toBeVisible({
+        timeout: SLOW_MS,
+      });
+      const shown = await line(drawer);
+      expect(shown.countShown).toBe(true);
+      expect(overlap(shown.count, shown.add)).toBe(false);
+      await phone.screenshot({ path: test.info().outputPath("sidebar-touch-390.png") });
+    } finally {
+      await touch.close();
+    }
   });
 
   test("a folded area that holds the project on screen shows the way to it; a cut name shows whole in a tip", async ({

@@ -9,7 +9,8 @@
 // below them, so only the person's own click on an area's fold button does. Areas and projects
 // count the open tasks their view lists, quietly, and a folded area keeps its count. A name the
 // sidebar cuts shows whole in a tip. New project sits in the foot beside Settings, and on each area
-// while the pointer or focus is on it, over the area's row so nothing beside it moves.
+// while the pointer or focus is on it, in place of the area's count so nothing beside it moves; on
+// a touch screen always, after the count.
 import { Link, useParams } from "@tanstack/react-router";
 import { useId, useMemo, useState, type FocusEvent, type PointerEvent } from "react";
 import { Button } from "react-aria-components";

@@ -172,7 +172,9 @@ button.fold:hover {
   padding-block-start: 20px;
 }
 
-/* An area's New project: over the end of its line, shown while the line has the pointer or focus. */
+/* An area's New project: over the end of its line, where its count is, shown while the line has
+   the pointer or focus. The count steps aside meanwhile: a click never lands on a number that
+   turns out to be the button. */
 .add {
   position: absolute;
   inset-block-start: 4px;
@@ -202,6 +204,13 @@ button.fold:hover {
   opacity: 1;
 }
 
+@media (hover: hover) {
+  .area:hover > .item .count,
+  .area:has(> .add[data-focus-visible]) > .item .count {
+    visibility: hidden;
+  }
+}
+
 .add[data-hovered] {
   color: var(--k-text);
 }
@@ -211,11 +220,19 @@ button.fold:hover {
   outline-offset: 1px;
 }
 
-/* A touch screen has no hover: the way stays in sight. */
+/* A touch screen has no hover: the way stays in sight, in a place of its own after the count, and
+   the projects' counts line up with their area's. */
 @media (hover: none) {
   .add {
+    position: static;
+    flex: none;
+    margin-inline-end: 4px;
     opacity: 1;
     background: transparent;
+  }
+
+  .projects .item {
+    padding-inline-end: 38px;
   }
 }
 
