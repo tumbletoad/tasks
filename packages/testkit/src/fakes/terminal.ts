@@ -110,6 +110,7 @@ function handOff(): void {
     cwd: process.cwd(),
     env: { ...env, FAKE_TERMINAL_ROLE: "server" },
     stdio: "ignore",
+    // eslint-disable-next-line no-restricted-syntax -- the server starts its command with a hidden console (run).
     detached: true,
     windowsHide: true,
   });
