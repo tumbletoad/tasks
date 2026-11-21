@@ -99,7 +99,9 @@ const SAMPLE = {
   of: "project",
   owners: "the project Billing",
   repo: "portal-web",
+  sub: "1 today",
   names: "M-14, Billing",
+  opened: "yes",
   limit: "wall",
 };
 

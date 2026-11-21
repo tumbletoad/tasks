@@ -136,7 +136,7 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
     await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/area/[a-z0-9_]+\\?task=${ref}$`), {
       timeout: SLOW_MS,
     });
-    await expect(page.getByRole("link", { name: "Lumen", exact: true })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: /^Lumen, / })).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -313,7 +313,10 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     await page.goto(await world.signInUrl(`/s/${space}/today`));
     await showsSpace(page, world.mira.name);
     // The Home area lists the task (Today lists only what it selects, A5 3.4).
-    await page.getByRole("navigation").getByRole("link", { name: "Home", exact: true }).click();
+    await page
+      .getByRole("navigation")
+      .getByRole("link", { name: /^Home, / })
+      .click();
     await expect(page).toHaveURL(new RegExp(`/s/${space}/area/[a-z0-9_]+$`));
     const view = page.url().replace(world.origin, "");
     const row = page.locator(`li[data-task="${ref}"]`);

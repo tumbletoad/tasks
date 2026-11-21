@@ -1,5 +1,5 @@
-/* The frame (A5 3.3): `216px 1fr`, the view at most 1,000 px wide, left-aligned after the gutter
-   (48 px, 32 px below 1,360 px). No border between the sidebar and the view. */
+/* The frame (A5 3.3): the sidebar (260 px), and the view at most 1,160 px wide, left-aligned after
+   the gutter (48 px, 32 px below 1,360 px). No border between the sidebar and the view. */
 
 .frame {
   display: grid;
@@ -21,7 +21,7 @@
 }
 
 .column > * {
-  max-width: 1000px;
+  max-width: 1160px;
 }
 
 .top {
