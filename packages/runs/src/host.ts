@@ -27,7 +27,7 @@
 // Every limit runs on the monotonic clock: the start time, the run's wall and idle times, the
 // stop's grace, the close, the confirmation and the drain of the output.
 import type { RunCleanup, RunEvent, RunRecord, RunResult } from "@tasks/contracts/runs";
-import { SIGNAL_NAME } from "@tasks/contracts/runs";
+import { SIGNAL_NAME, TEXT_CAP_BYTES } from "@tasks/contracts/runs";
 import type {
   AgentExit,
   Confirmation,
@@ -40,6 +40,7 @@ import type { DriverSession, OpenDriver, Work } from "./drivers/types.ts";
 import { RunMachine, type RunEnd } from "./machine.ts";
 import type { RunFolders, SavedAnswer } from "./run-files.ts";
 import { STREAM_KINDS, type StreamKind } from "./streams/index.ts";
+import { capText } from "./streams/values.ts";
 
 /** The host's time limits, in milliseconds. A run's wall and idle times come from its record. */
 export interface RunTimes {
@@ -600,8 +601,11 @@ export class RunHost {
       flow.quietSince = this.#now();
       logs.stdout(chunk);
     });
+    // The end of what it wrote on stderr: the only explanation of a start that said nothing else.
+    let stderrTail = Buffer.alloc(0);
     contained.stderr.on("data", (chunk: Buffer) => {
       logs.stderr(chunk);
+      stderrTail = Buffer.concat([stderrTail, chunk]).subarray(-TEXT_CAP_BYTES);
     });
     const drained = Promise.all([endOf(contained.stdout), endOf(contained.stderr)]);
     let session: DriverSession;
@@ -657,6 +661,10 @@ export class RunHost {
       await this.#within(flow, agentEnded, this.#times.confirmMs);
       session.ended(agent.exit ?? { code: null, signal: null });
       work = (await settledNow(session)) ?? (await unopened.settled);
+    }
+    if (work.outcome === "no_output" && work.error === null) {
+      const said = stderrTail.toString("utf8").replace(/^�+/u, "").trim();
+      if (said !== "") work = { ...work, error: capText(said).text };
     }
     if (this.#isClosed()) {
       // The service ends, and the run with it: its work did not settle by itself, and the next

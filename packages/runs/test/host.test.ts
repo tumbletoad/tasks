@@ -312,6 +312,18 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(await wall.read()).toMatchObject({ state: "timed_out", reason: "wall" });
   });
 
+  test("an agent that exits having said nothing but on stderr: its words there are the run's error", async () => {
+    const { run, read, world } = await oneRun();
+    await run(start());
+    const id = world.runs[0] ?? "";
+    world.boxes.get(id)?.stderr.write("error: unknown option '--instance'\n");
+    await run({ kind: "exit", pick: 0, code: 1 }, tick(10_000));
+    expect(await read()).toMatchObject({
+      state: "failed",
+      result: { outcome: "no_output", error: "error: unknown option '--instance'" },
+    });
+  });
+
   test("a run without time limits is never ended for its time, however long or quiet it is", async () => {
     const { run, read } = await oneRun({ maxTurns: 50 });
     await run(start("ok", true), say());
