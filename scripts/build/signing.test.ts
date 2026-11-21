@@ -153,10 +153,14 @@ describe("[A2.3.12.4.build.signing] SHA256SUMS signed in raw and OpenSSH formats
       expect(made.status, made.stderr).toBe(0);
       const key = opensshPrivateKey(readFileSync(keyFile, "utf8"));
       const sums = Buffer.from(`${"a".repeat(64)}  ttasks-0.1.0-win-x64.zip\n`);
-      const theirs = spawnSync(keygen, ["-Y", "sign", "-q", "-f", keyFile, "-n", "ttasks-release"], {
-        input: sums,
-        windowsHide: true,
-      });
+      const theirs = spawnSync(
+        keygen,
+        ["-Y", "sign", "-q", "-f", keyFile, "-n", "ttasks-release"],
+        {
+          input: sums,
+          windowsHide: true,
+        },
+      );
       expect(theirs.status, theirs.stderr.toString()).toBe(0);
       const ours = sshSignature(sums, key);
       expect(ours).toBe(theirs.stdout.toString().replaceAll("\r\n", "\n"));
@@ -226,7 +230,9 @@ describe("[A2.3.12.4.build.signing] SHA256SUMS signed in raw and OpenSSH formats
     const signed = testSignSums(dist, join(work, "test-signing"));
     const sums = readFileSync(join(dist, "SHA256SUMS"));
     const publicKey = parseOpensshPublicKey(readFileSync(join(dist, TEST_KEY_FILE), "utf8"));
-    expect(readFileSync(join(dist, TEST_KEY_FILE), "utf8")).toMatch(/ ttasks-throwaway-test-key\n$/);
+    expect(readFileSync(join(dist, TEST_KEY_FILE), "utf8")).toMatch(
+      / ttasks-throwaway-test-key\n$/,
+    );
     expect(signed.fingerprint).toBe(fingerprint(publicKey));
     expect(verifyRawSignature(sums, readFileSync(join(dist, RAW_SIGNATURE)), publicKey)).toBe(true);
     expect(

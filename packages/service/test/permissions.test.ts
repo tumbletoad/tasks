@@ -548,9 +548,7 @@ describe("[A2.3.2.2.permissions.repair] one place turns a path's facts into the 
       expect(thrown).toBeInstanceOf(T3StateUnsafe);
       expect(readdirSync(t3)).toEqual([]);
       const line = (thrown as T3StateUnsafe).line;
-      expect(line).toContain(
-        `TTasks's T3 folder (${shellPath(t3)}) can be changed by every user`,
-      );
+      expect(line).toContain(`TTasks's T3 folder (${shellPath(t3)}) can be changed by every user`);
       expect(line).toContain("so no token was kept");
       expect(commandIn(line)).toBe(`chmod o-w ${shellPath(t3)}`);
       paste(commandIn(line) ?? "false", state);

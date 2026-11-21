@@ -179,7 +179,10 @@ function makeScriptedInstall(root: string, lab: string): void {
     writeFileSync(join(root, "current"), LAB_VERSION);
     copyFileSync(join(lab, "bin", "ttasks.exe"), join(root, "bin", "ttasks.exe"));
   } else {
-    copyFileSync(join(lab, "versions", LAB_VERSION, "bin", "ttasks"), join(version, "bin", "ttasks"));
+    copyFileSync(
+      join(lab, "versions", LAB_VERSION, "bin", "ttasks"),
+      join(version, "bin", "ttasks"),
+    );
     chmodSync(join(version, "bin", "ttasks"), 0o755);
     symlinkSync(`versions/${LAB_VERSION}`, join(root, "current"));
     symlinkSync("../current/bin/ttasks", join(root, "bin", "ttasks"));

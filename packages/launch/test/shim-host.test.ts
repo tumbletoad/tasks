@@ -693,7 +693,11 @@ describe("[A4.5.shim.environment] the agent's environment", () => {
         AWS_SECRET_ACCESS_KEY: "fixture",
         UNSET: undefined,
       },
-      instance: { CODEX_HOME: "/home/mira/.codex-work", FIXTURE_INSTANCE: "1", TTASKS_TASK: "nope" },
+      instance: {
+        CODEX_HOME: "/home/mira/.codex-work",
+        FIXTURE_INSTANCE: "1",
+        TTASKS_TASK: "nope",
+      },
       additions: { TTASKS_TICKET: "T".repeat(24), TTASKS_TASK: "t_x", TTASKS_SPACE: SPACE },
     });
     expect(env).toEqual({

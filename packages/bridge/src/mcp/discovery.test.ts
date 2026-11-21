@@ -51,10 +51,12 @@ describe("[A2.3.7.bridge.discovery] finding the service", () => {
       state: "C:\\Users\\mira\\.ttasks\\state",
       cache: "C:\\Users\\mira\\.ttasks\\cache",
     });
-    expect(installFolders(facts("linux", { TTASKS_HOME: "/tmp/test-home" }, "/home/mira"))).toEqual({
-      state: "/tmp/test-home/state",
-      cache: "/tmp/test-home/cache",
-    });
+    expect(installFolders(facts("linux", { TTASKS_HOME: "/tmp/test-home" }, "/home/mira"))).toEqual(
+      {
+        state: "/tmp/test-home/state",
+        cache: "/tmp/test-home/cache",
+      },
+    );
     expect(() =>
       installFolders(facts("linux", { TTASKS_HOME: "relative" }, "/home/mira")),
     ).toThrow();

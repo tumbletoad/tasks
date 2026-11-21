@@ -221,8 +221,16 @@ export function buildLaunchers(outDir: string = defaultOut, options: BuildOption
   const testHooks = options.testHooks ?? false;
   mkdirSync(outDir, { recursive: true });
   const built: Launchers = {
-    ttasks: compile(outDir, { name: "ttasks", source: launcherSource, gui: false, testHooks }, msvc),
-    ttasksw: compile(outDir, { name: "ttasksw", source: launcherSource, gui: true, testHooks }, msvc),
+    ttasks: compile(
+      outDir,
+      { name: "ttasks", source: launcherSource, gui: false, testHooks },
+      msvc,
+    ),
+    ttasksw: compile(
+      outDir,
+      { name: "ttasksw", source: launcherSource, gui: true, testHooks },
+      msvc,
+    ),
   };
   if (!testHooks) {
     try {

@@ -139,7 +139,10 @@ import { realSyncHost } from "./sync-host.ts";
 import { readOnly, type ServedSpace } from "../ops/index.ts";
 import { bounded, Timeout, within } from "./wait.ts";
 
-export { WRITER_HOLDER_FILE as WRITER_FILE, WRITER_LOCK_FILE as WRITER_LOCK } from "@ttasks/storage";
+export {
+  WRITER_HOLDER_FILE as WRITER_FILE,
+  WRITER_LOCK_FILE as WRITER_LOCK,
+} from "@ttasks/storage";
 export { readWriterHolder as readHolder, type WriterHolder } from "@ttasks/storage";
 
 /** A space's open, its writer and a migration included, gets this long. */

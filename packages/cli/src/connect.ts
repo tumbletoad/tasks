@@ -15,7 +15,13 @@ import {
   type TransportReason,
 } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
-import { hostFacts, IPC_KEY, LayoutError, resolveLayout, SERVICE_JSON } from "@ttasks/service/paths";
+import {
+  hostFacts,
+  IPC_KEY,
+  LayoutError,
+  resolveLayout,
+  SERVICE_JSON,
+} from "@ttasks/service/paths";
 import type { Io } from "./io.ts";
 import { RESTART_HINT } from "./output.ts";
 

@@ -759,7 +759,9 @@ async function s08(args: string[]): Promise<Result> {
   if (readCurrent(root) !== oldV) throw new Error("current must name the old version first");
   result["versions"] = { old: oldV, new: newV };
   result["service_launcher"] = WIN ? "bin\\ttasksw.exe" : "bin/ttasks";
-  result["bridge_launcher"] = WIN ? "bin\\ttasks.exe mcp --reconnect" : "bin/ttasks mcp --reconnect";
+  result["bridge_launcher"] = WIN
+    ? "bin\\ttasks.exe mcp --reconnect"
+    : "bin/ttasks mcp --reconnect";
 
   const steps: Record<string, Json> = {};
   result["steps"] = steps;

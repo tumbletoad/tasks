@@ -95,10 +95,9 @@ describe("[A2.3.12.4.install.render] the install scripts pin the release keys, o
       installerKinds(["ttasks-0.1.0-linux-x64.tar.gz", "ttasks-0.1.0-darwin-arm64.tar.gz"]),
     ).toEqual(["sh"]);
     expect(installerKinds(["ttasks-0.1.0-win-x64.zip"])).toEqual(["ps1"]);
-    expect(installerKinds(["ttasks-0.1.0-linux-arm64.tar.gz", "ttasks-0.1.0-win-x64.zip"])).toEqual([
-      "sh",
-      "ps1",
-    ]);
+    expect(installerKinds(["ttasks-0.1.0-linux-arm64.tar.gz", "ttasks-0.1.0-win-x64.zip"])).toEqual(
+      ["sh", "ps1"],
+    );
   });
 
   test("the templates keep the keys in one marked block, and each rendered script is valid for its shell", () => {

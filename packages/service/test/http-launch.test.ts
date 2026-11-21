@@ -7,8 +7,8 @@
 import { mkdirSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { PRODUCT_NAME } from "@tasks/brand";
-import type { DispatchOutcome, LaunchIntent, OpenResult } from "@tasks/launch";
+import { PRODUCT_NAME } from "@ttasks/brand";
+import type { DispatchOutcome, LaunchIntent, OpenResult } from "@ttasks/launch";
 import type { TerminalStart } from "../src/launch/index.ts";
 import { post } from "./http-client.ts";
 import { httpWorld, openFeed, signIn, type HttpWorld } from "./http-world.ts";
@@ -100,7 +100,7 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       const task = await addTask(w, "Fix appointment time zones");
       const { token } = await signIn(w);
       const port = w.port();
-      const headers = { "tasks-space": "Mira", "tasks-build": "source" };
+      const headers = { "ttasks-space": "Mira", "ttasks-build": "source" };
 
       // The snapshot names the instances the tiles draw: only the one that opens here.
       const feed = await openFeed(port, token);
@@ -161,7 +161,7 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
     const task = await addTask(w, "Sign the lease");
     const { token } = await signIn(w);
     const port = w.port();
-    const headers = { "tasks-space": "Mira", "tasks-build": "source" };
+    const headers = { "ttasks-space": "Mira", "ttasks-build": "source" };
     const copied = await post(
       port,
       OPEN,
@@ -187,7 +187,7 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       const task = await addTask(w, "Sign the lease");
       const { token } = await signIn(w);
       const port = w.port();
-      const headers = { "tasks-space": "Mira", "tasks-build": "source" };
+      const headers = { "ttasks-space": "Mira", "ttasks-build": "source" };
       const open = (
         body: Record<string, unknown>,
         h: Record<string, string> = headers,
@@ -213,7 +213,7 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
         (
           await open(
             { task: task.id, instance: "fake-agent" },
-            { "tasks-space": "Elsewhere", "tasks-build": "source" },
+            { "ttasks-space": "Elsewhere", "ttasks-build": "source" },
           )
         ).status,
       ).toBe(503);
@@ -252,7 +252,7 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       const task = await addTask(w, "Fix appointment time zones");
       const { token } = await signIn(w);
       const port = w.port();
-      const headers = { "tasks-space": "Mira", "tasks-build": "source" };
+      const headers = { "ttasks-space": "Mira", "ttasks-build": "source" };
       const show = (body: Record<string, unknown>, signedIn = true) =>
         post(port, "/api/v1/launch/folder", body, { ...(signedIn ? { token } : {}), headers });
 
@@ -320,7 +320,7 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       feed.send({ type: "subscribe" });
       expect((await feed.next((m) => m["type"] === "snapshot"))["instances"]).toEqual([]);
       feed.ws.close();
-      const headers = { "tasks-space": "Mira", "tasks-build": "source" };
+      const headers = { "ttasks-space": "Mira", "ttasks-build": "source" };
       const opened = await post(
         port,
         OPEN,

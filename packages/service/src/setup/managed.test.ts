@@ -26,7 +26,10 @@ import { listedAsManaged, trackedByAnotherRepository, type GitAsk } from "./mana
 const SLOW = 120_000;
 const windows = process.platform === "win32";
 // Named here, made in beforeAll: a test file's top level runs at collection, its hooks do not.
-const base = join(realpathSync.native(tmpdir()), `ttasks-managed-${randomBytes(6).toString("hex")}`);
+const base = join(
+  realpathSync.native(tmpdir()),
+  `ttasks-managed-${randomBytes(6).toString("hex")}`,
+);
 const GLOBAL = join(base, "global.gitconfig");
 /** The fixtures' git: no system or global configuration of the machine's. */
 const GIT_ENV = {

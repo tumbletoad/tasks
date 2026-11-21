@@ -10,7 +10,12 @@ import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, SEARCH_IDS, SEARCH_SCOPES, TaskSearchResult } from "@ttasks/contracts";
-import { indexChanges, rebuildSearchIndex, type Operation, type WriteResult } from "@ttasks/storage";
+import {
+  indexChanges,
+  rebuildSearchIndex,
+  type Operation,
+  type WriteResult,
+} from "@ttasks/storage";
 import {
   addLearning,
   changeAuthority,
