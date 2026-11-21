@@ -46,7 +46,7 @@ describe("[A2.3.3.2.service-install.reg-export] reading reg.exe export files", (
   test("every value type, escaped names and data, the default value and continued hex lines", () => {
     const tree = parseRegExport(EXPORT);
     const run = tree.get("hkcu\\software\\ttasks-test-abc\\run");
-    expect(run?.get("tasks (abc)")).toEqual({
+    expect(run?.get("ttasks (abc)")).toEqual({
       name: "TTasks (abc)",
       kind: "REG_SZ",
       data: '"C:\\Users\\Mïra 日本\\.local\\bin\\ttasksw.exe"',
