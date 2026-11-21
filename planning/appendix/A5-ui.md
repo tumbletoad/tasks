@@ -132,7 +132,7 @@ Every refetch the feed triggers (a task's receipts, the expanded task's thread) 
 | Dispatched, link route | "Opened · not confirmed", with a hollow ring. It stays like this, because the session may well exist | Copy brief |
 | Confirmed | "Open in Claude Code" with a live dot while the session is bound, then the session's end state ("Claude Code · session · 10:12–11:03") | Focus (where possible), Resume when A4 allows it. Resume appears only with a known native session ID, never from folder and time (A4) |
 | Failed | One persimmon line with the reason ("Ghostty did not start"). A sticky error toast with Details | The next route when A4 offers one, Copy |
-| Unknown | "Tasks lost track of this launch. It may have opened." in ochre | Check, Open again (a new intent), Copy. Nothing happens without a click |
+| Unknown | "TTasks lost track of this launch. It may have opened." in ochre | Check, Open again (a new intent), Copy. Nothing happens without a click |
 
 A Copy is a launch too (route and instance `clipboard`). It is Dispatched at once and never confirmed, and its entry reads "Brief copied · not confirmed". A copy the browser refuses is not reported back.
 

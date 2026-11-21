@@ -80,7 +80,7 @@ Before any route runs:
 
 **Built** (the `t3-mcp` route and pairing): `packages/launch/src/t3-*.ts` (`T3Route` in `t3-route.ts`, `t3-binding.ts`, `t3-oauth.ts`, `t3-client.ts`, `t3-state.ts`), the rpc methods in `packages/service/src/hub/t3.ts`, `ttasks setup t3` in `packages/cli/src/setup.ts`, the fake T3 server in `packages/testkit/src/fake-t3.ts`. Tests: `[A4.3.4.1.t3.*]`, `[A4.3.16.t3.state]`, `[A4.5.t3.*]`. No T3 server has been observed yet (M0-L05, M0-L06): answer shapes, the runtime file's field, the discovery paths and the MCP era are assumed, and the fake follows them. Neither T3 route is connected to Open: a T3 instance is `no_route`, no T3 intent can be made, and recovery treats a T3 intent as unpaired (Unknown). 3.9.1 lists what connects them.
 
-**Exact-folder binding (R11).** Tasks maps a resolved folder `P` to a binding by directory identity and never uses T3's path resolution, which T3 does not normalise.
+**Exact-folder binding (R11).** TTasks maps a resolved folder `P` to a binding by directory identity and never uses T3's path resolution, which T3 does not normalise.
 1. List all projects, all pages, without archived and deleted ones.
 2. **Exact root:** a project whose root has `P`'s identity binds as `root`.
 3. **Existing worktree:** `P` is a linked worktree that a project's repository lists. Git is read from its files, never started. A main checkout with a `.git` file and a bare repository are never bound as an existing worktree, so their cases ask.

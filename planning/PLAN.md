@@ -164,7 +164,7 @@ One MCP server named `ttasks`, registered once per agent home. Its name is a sep
 
 ## I. Search (A1, A3)
 
-One FTS5 table (`unicode61`, prefix indexes) over tasks, notes, log, learnings, projects and areas, updated in every commit. Hits roll up to their task. Tasks indexes what it stores and never fetches URLs or mail bodies. Rows are compact and cursors freeze the result at a snapshot. A trigram index stays off behind a flag. Targets on 10,000 open and 100,000 completed tasks: search p95 under 150 ms on Windows and 300 ms on Linux, `get_task` p95 under 50 ms. Broad queries miss the Windows target with plain bm25 ranking, so M3.16 adds a query design and re-measures on Windows and Linux.
+One FTS5 table (`unicode61`, prefix indexes) over tasks, notes, log, learnings, projects and areas, updated in every commit. Hits roll up to their task. TTasks indexes what it stores and never fetches URLs or mail bodies. Rows are compact and cursors freeze the result at a snapshot. A trigram index stays off behind a flag. Targets on 10,000 open and 100,000 completed tasks: search p95 under 150 ms on Windows and 300 ms on Linux, `get_task` p95 under 50 ms. Broad queries miss the Windows target with plain bm25 ranking, so M3.16 adds a query design and re-measures on Windows and Linux.
 
 ## J. UI (A5)
 
@@ -178,7 +178,7 @@ Later phases, in order: **L1** linked machines (pairing, read-only replicas, sig
 
 ## L. Security and privacy (A6)
 
-Other local users cannot reach the socket or pipe (0700 folder, mutual HMAC, no context before the service proves itself); the browser origin is the exception R18 accepts for v1. Web pages cannot drive the local API (bearer token per origin, no cookies, strict Host, Origin and Sec-Fetch-Site checks, no CORS). Injected text reaches agents inside a delimited data block with provenance. Secrets never enter a space. The bundled Node is the official binary, verified. Updates are Ed25519-signed and self-tested, with rollback. TTasks accepts the user's own full-access agents and says "use at your own risk" once, where it matters. Autonomy is a guard rail, not a sandbox. Logs never contain task text, prompts or tokens. Tasks honours managed-machine policy and never works around IT controls.
+Other local users cannot reach the socket or pipe (0700 folder, mutual HMAC, no context before the service proves itself); the browser origin is the exception R18 accepts for v1. Web pages cannot drive the local API (bearer token per origin, no cookies, strict Host, Origin and Sec-Fetch-Site checks, no CORS). Injected text reaches agents inside a delimited data block with provenance. Secrets never enter a space. The bundled Node is the official binary, verified. Updates are Ed25519-signed and self-tested, with rollback. TTasks accepts the user's own full-access agents and says "use at your own risk" once, where it matters. Autonomy is a guard rail, not a sandbox. Logs never contain task text, prompts or tokens. TTasks honours managed-machine policy and never works around IT controls.
 
 ## M. Technology and packaging (A2, A7 3.3)
 
