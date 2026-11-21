@@ -85,7 +85,7 @@ export async function main(args) {
     }
   } else {
     swapSymlink(`versions/${version}`, join(root, "current"));
-    swapSymlink("../current/bin/ttasks", join(bin, "tasks"));
+    swapSymlink("../current/bin/ttasks", join(bin, "ttasks"));
   }
   replaceFile(
     join(root, "install.json"),
