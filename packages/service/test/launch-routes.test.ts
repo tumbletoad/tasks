@@ -419,13 +419,6 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       const folder = realpathSync.native(join(r.lab.work, HOSTILE_FOLDER));
       const { result } = await open(r, { task: task.ref, instance: "claude-link" });
       expect(result.launch.route).toBe("link");
-      // Clicks straight after, from other tabs, are given the same launch. Words go with it only
-      // while it holds none, so a page clears only the words that went.
-      for (const words of ["Start with the tests", "Other words"]) {
-        const again = await open(r, { task: task.ref, instance: "claude-link", text: words });
-        expect(again.result.launch.id).toBe(result.launch.id);
-        if (words === "Other words") expect(again.result.text).toBe("none");
-      }
       const dispatched = await r.lab.waitIntent(
         result.launch.id,
         (i) => i.state === "dispatched",
@@ -448,6 +441,9 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         briefFor("prefilled", r.lab.spaceId, task, result.launch.reference, { budget: 1000 }),
       );
       expect(url).toMatch(/^[A-Za-z0-9:/?&=%._~-]+$/u);
+      // The link only asked the app: a click after it, from this tab or another, opens it again.
+      const next = await open(r, { task: task.ref, instance: "claude-link" });
+      expect(next.result.launch.id).not.toBe(result.launch.id);
     },
   );
 
@@ -534,18 +530,19 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(again2.result.launch.id).toBe(held.result.launch.id);
       expect(again2.result.text).toBe("held");
       expect(opened).toHaveLength(1);
-      // Another tab's click straight after is given the same launch with its own words: they are
-      // not held, and a retry of that click does not say they are.
+      // The link only asked the app: another tab's click after it is a launch of its own, which
+      // holds that tab's words, and a retry of that click says so too.
       const other = await open(r, { task: task.ref, instance: "claude-link", text: "Other words" });
-      expect(other.result.launch.id).toBe(held.result.launch.id);
-      expect(other.result.text).toBe("none");
+      expect(other.result.launch.id).not.toBe(held.result.launch.id);
+      expect(other.result.text).toBe("held");
       const otherAgain = await open(r, {
         task: task.ref,
         instance: "claude-link",
         text: "Other words",
         request_id: other.requestId,
       });
-      expect(otherAgain.result.text).toBe("none");
+      expect(otherAgain.result.launch.id).toBe(other.result.launch.id);
+      expect(otherAgain.result.text).toBe("held");
     },
   );
 
