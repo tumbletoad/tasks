@@ -379,7 +379,11 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     );
     const lines = [
       init,
-      { type: "system", subtype: "background_tasks_changed", tasks: [{ task_type: "local_agent" }] },
+      {
+        type: "system",
+        subtype: "background_tasks_changed",
+        tasks: [{ task_type: "local_agent" }],
+      },
       { ...result, result: "A helper looks." },
       {
         type: "assistant",

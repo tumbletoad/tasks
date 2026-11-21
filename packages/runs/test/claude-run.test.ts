@@ -199,11 +199,7 @@ describe("[A4.3.11.claude.run] a Claude Code run in the run host: the program re
       const log = join(work, `log-${token}.jsonl`);
       writeFileSync(log, "");
       const b = bench(make());
-      const id = await startRun(
-        b,
-        { fixture: "windows-plain", token, pace: 3, log },
-        `u-${token}`,
-      );
+      const id = await startRun(b, { fixture: "windows-plain", token, pace: 3, log }, `u-${token}`);
       expect((await b.host.stop(id))?.state).toBe("cancelling");
       const after = await b.host.ended(id);
       expect(after?.state).toBe("cancelled");
