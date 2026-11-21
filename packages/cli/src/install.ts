@@ -16,10 +16,10 @@
 //      background runs, so it never happens unasked.
 // It loads the service's install code, and with it storage, only for this command.
 import { existsSync, readdirSync, rmdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { CLI_NAME, EARLIER_DATA_FOLDER, PRODUCT_NAME } from "@ttasks/brand";
 import { shellLine } from "@ttasks/launch";
-import { hostFacts, type Layout } from "@ttasks/service/paths";
+import { homeFolder, hostFacts, type HostFacts, type Layout } from "@ttasks/service/paths";
 import type { Globals } from "./args.ts";
 import { candidateRows, versionChecks, type Check } from "./doctor.ts";
 import type { Io } from "./io.ts";
@@ -54,10 +54,15 @@ function removeIfMade(layout: Pick<Layout, "state" | "tmp">): void {
   }
 }
 
-/** The daily install's data folder from before the rename, when one is beside the new one. */
-function earlierDataFolder(layout: Pick<Layout, "data" | "home">): string | undefined {
-  if (layout.home !== undefined) return undefined;
-  const folder = join(dirname(layout.data), EARLIER_DATA_FOLDER);
+/** The data folder of a build from before the rename, when the person's home holds one. */
+function earlierDataFolder(facts: HostFacts): string | undefined {
+  let home: string;
+  try {
+    home = homeFolder(facts);
+  } catch {
+    return undefined;
+  }
+  const folder = join(home, EARLIER_DATA_FOLDER);
   return existsSync(folder) ? folder : undefined;
 }
 
@@ -156,7 +161,7 @@ export async function installCommand(
       "",
     ].join("\n"),
   );
-  const earlier = earlierDataFolder(target.layout);
+  const earlier = earlierDataFolder(facts);
   if (earlier !== undefined) {
     io.stdout(
       `${earlier} holds the data of a build from before the product was called ${PRODUCT_NAME}, which this version does not read. To use a space from it, run: ${CLI_NAME} space open <its folder in ${join(earlier, "spaces")}>\n`,
