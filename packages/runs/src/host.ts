@@ -13,8 +13,9 @@
 //   what is still there is ended.
 // - Stop works at every moment, start-up and a close included, and waits for nothing: it is
 //   committed first (`cancelling`), the agent is asked to stop over its protocol (or interrupted
-//   when it has none), and after the grace time the container is killed. A container that is not
-//   confirmed empty in time leaves the run `unknown`, with End by force.
+//   when it has none), and after the grace time the container is killed. A Stop before the
+//   agent's process was there means its driver never opens: nothing of the work reaches it. A
+//   container that is not confirmed empty in time leaves the run `unknown`, with End by force.
 // - The answer is kept whole up to 1 MiB, also after megabytes of other output, and each answer
 //   is saved to the run's folder as it comes, so a crash of the service keeps the last one.
 // - When the service ends, its runs' processes end with it (the container's own guarantee). The
@@ -499,7 +500,24 @@ export class RunHost {
     if (started === undefined) return this.#startTimedOut(flow, starting);
     // The container's contract: a refused start leaves nothing running and no container.
     if (!started.ok) return this.#settle(flow.id, { kind: "start_failed", reason: "spawn_failed" });
+    if (flow.stopping) return this.#stoppedAtStart(flow, started.contained);
     return this.#running(flow, run, started.contained, open);
+  }
+
+  /**
+   * A Stop came while the agent's process started: its driver is never opened, so nothing of the
+   * work reaches its input. Its PID is recorded, and what it is is ended.
+   */
+  async #stoppedAtStart(flow: Flow, contained: Contained): Promise<RunRecord | undefined> {
+    contained.stdin.on("error", () => undefined);
+    contained.stdin.end();
+    contained.stdout.resume();
+    contained.stderr.resume();
+    await this.#machine.started(flow.id, contained.pid, this.#now()).catch((error: unknown) => {
+      this.#failed("started", error);
+    });
+    const end: RunEnd = { kind: "start_failed", reason: "spawn_failed" };
+    return this.#confirmed(flow, end, await this.#endContainer(contained.name));
   }
 
   /**

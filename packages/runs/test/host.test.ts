@@ -8,6 +8,7 @@ import type { RunStore } from "@tasks/launch/execution-store";
 import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
 import { describe, expect, test } from "vitest";
 import {
+  claudeDriver,
   RunHost,
   RunMachine,
   type AgentCommand,
@@ -229,6 +230,20 @@ describe("[A4.5.run.host] the run host's rules", () => {
     // The PID came after the Stop: it is recorded, and the run never ran.
     expect(after.evidence.pid).toBeGreaterThan(0);
     expect(history()).not.toContain("running");
+  });
+
+  test("Stop while the agent's process starts: once it is there, nothing reaches its input, and the run is cancelled", async () => {
+    for (const open of [claudeDriver({ request: "Delete the old exports." }), undefined]) {
+      const { run, read, world } = await oneRun();
+      world.open = open;
+      await run(start("hang"), STOP);
+      expect((await read()).state).toBe("cancelling");
+      await run({ kind: "answerStart", pick: 0, ok: true }, tick(11_000));
+      const after = await read();
+      expect(after.state).toBe("cancelled");
+      expect(world.input.get(after.id)).toBe("");
+      expect(world.boxes.get(after.id)?.procs).toBe(0);
+    }
   });
 
   test("Stop after the agent exited, while what it left is ended: the run is cancelled", async () => {

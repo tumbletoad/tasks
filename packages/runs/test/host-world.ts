@@ -20,6 +20,7 @@ import {
   type Contained,
   type Containers,
   type ContainerSpec,
+  type OpenDriver,
   type RunFolders,
   type SavedAnswer,
 } from "../src/index.ts";
@@ -116,6 +117,10 @@ export class World {
   readonly stopped = new Set<string>();
   /** Every state a check found a run in. */
   readonly seen = new Set<string>();
+  /** What reached each run's agent on its input. */
+  readonly input = new Map<string, string>();
+  /** The driver every run gets; without one, the print-mode parser's. */
+  open: OpenDriver | undefined;
 
   constructor(backend: WorldBackend) {
     this.#backend = backend;
@@ -293,11 +298,21 @@ export class World {
     return {
       name,
       pid: this.#pids,
-      stdin: new PassThrough(),
+      stdin: this.#stdin(name),
       stdout: box.stdout,
       stderr: box.stderr,
       exited,
     };
+  }
+
+  /** An agent's input, kept for the test as it arrives. */
+  #stdin(name: string): PassThrough {
+    const stdin = new PassThrough();
+    this.input.set(name, "");
+    stdin.on("data", (chunk: Buffer) => {
+      this.input.set(name, (this.input.get(name) ?? "") + chunk.toString("utf8"));
+    });
+    return stdin;
   }
 
   #agentExit(box: Box, exit: AgentExit): void {
@@ -402,7 +417,15 @@ export class World {
       case "start":
         if (id === undefined) break;
         this.modes.set(id, { mode: event.mode, obeys: event.obeys });
-        quiet(host.start(id, () => ({ command: "agent", args: [], cwd: "/w", env: {} })));
+        quiet(
+          host.start(id, () => ({
+            command: "agent",
+            args: [],
+            cwd: "/w",
+            env: {},
+            ...(this.open === undefined ? {} : { open: this.open }),
+          })),
+        );
         break;
       case "answerStart":
         if (id !== undefined) this.hung.get(id)?.answer(event.ok);
