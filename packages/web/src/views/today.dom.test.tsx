@@ -273,11 +273,7 @@ describe("[A5.3.4.web.today-page] Today's date, numbers and sections in a DOM", 
     expect(shown.textContent.split("12 November")).toHaveLength(2);
     expect(numbers()).toEqual([
       ["late", "Late: 1", `/s/${SPACE.id}/search?q=is%3Aoverdue`],
-      [
-        "due",
-        "Due today: 1",
-        `/s/${SPACE.id}/search?q=due%3Atoday+-is%3Acompleted+-is%3Aarchived`,
-      ],
+      ["due", "Due today: 1", `/s/${SPACE.id}/search?q=due%3Atoday+-is%3Acompleted+-is%3Aarchived`],
       ["waiting", "Waiting on others: 1", `/s/${SPACE.id}/waiting`],
       ["done", "Done this week: 2, 1 today", `/s/${SPACE.id}/completed`],
     ]);
