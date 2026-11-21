@@ -592,6 +592,7 @@ Open a task in an agent app on this machine, or Copy its pointer brief.
 | `text` | string, max 65536 | no | Your words for the agent: it reads them with the task |
 | `pack` | boolean | no | Copy the context pack: the task's text, for an app without the tools |
 | `mark_folder` | boolean | no | Open although the folder's marker is gone or another's, and mark it |
+| `another` | boolean | no | Start a second session although this app already runs the task here |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 
 ### Output

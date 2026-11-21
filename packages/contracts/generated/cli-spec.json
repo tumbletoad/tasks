@@ -388,6 +388,14 @@
           "repeat": false,
           "required": false,
           "type": "boolean"
+        },
+        {
+          "field": "another",
+          "flag": "--another",
+          "help": "Start a second session although this app already runs the task here",
+          "repeat": false,
+          "required": false,
+          "type": "boolean"
         }
       ],
       "inputOnly": [],

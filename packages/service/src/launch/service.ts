@@ -656,6 +656,16 @@ export class LaunchService {
     // into a conflict, and a retry saves, prepares and dispatches nothing.
     const replayed = await hosted.store.replayed(requestId);
     if (replayed !== undefined) return this.#replay(space, replayed, request);
+    // An Open of an app that runs this task here is that session, whatever the page showed when
+    // it was clicked: only "Open another" starts a second agent in the same folder. One still
+    // opening is the writer's to join (launch.create).
+    if (request.instance !== undefined && request.another !== true) {
+      const runs = await this.#sessions(space, hosted);
+      const session = runs.find((i) => i.task === task.id && i.instance === request.instance);
+      if (session !== undefined) {
+        return { intent: session, copy: undefined, composer: "none", removed: false };
+      }
+    }
     const { platform } = this.#options;
     let instance: Instance | undefined;
     let choice: Choice = COPY;
@@ -843,9 +853,7 @@ export class LaunchService {
     const hosted = await this.#space(space).catch(() => undefined);
     if (hosted === undefined) return [];
     const { intents } = await hosted.store.openWork(this.#options.machine);
-    const runs = await Promise.all(
-      this.host.runningIn(space).map((launch) => hosted.store.readIntent(launch)),
-    );
+    const runs = await this.#sessions(space, hosted);
     const out = new Map<string, BusyLaunch>();
     const add = ({ task, instance }: LaunchIntent, state: BusyLaunch["state"]): void => {
       if (task === null) return;
@@ -854,12 +862,22 @@ ${instance}`;
       if (out.get(key)?.state !== "opening") out.set(key, { task, instance, state });
     };
     for (const intent of intents) if (isOpening(intent)) add(intent, "opening");
-    for (const intent of runs) {
-      if (intent?.state === "confirmed" && sessionRecord(intent.evidence) === "open") {
-        add(intent, "running");
-      }
-    }
+    for (const intent of runs) if (intent.state === "confirmed") add(intent, "running");
     return [...out.values()];
+  }
+
+  /** The launches of a space whose agent runs here now, as the shims say and no end is recorded. */
+  async #sessions(
+    space: string,
+    hosted: { store: SpaceExecutionStore },
+  ): Promise<LaunchIntent[]> {
+    const read = await Promise.all(
+      this.host.runningIn(space).map((launch) => hosted.store.readIntent(launch)),
+    );
+    return read.filter(
+      (intent): intent is LaunchIntent =>
+        intent !== undefined && sessionRecord(intent.evidence) === "open",
+    );
   }
 
   /**
