@@ -65,7 +65,7 @@ describe("[A2.3.3.2.service-install.reg-export] reading reg.exe export files", (
     );
     expect(run?.get("line")?.data).toBe("first\r\nsecond");
     const approved = tree.get("hkcu\\software\\ttasks-test-abc\\explorer\\startupapproved\\run");
-    const record = approved?.get("tasks (abc)");
+    const record = approved?.get("ttasks (abc)");
     expect(record?.kind).toBe("REG_BINARY");
     expect(record === undefined ? undefined : [...regBytes(record)]).toEqual([
       3, 0, 0, 0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
