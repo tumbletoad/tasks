@@ -10,7 +10,7 @@ function roundTrip(text: string, created: boolean): string {
   const added = addEntry(text, "mcpServers", "tasks", ENTRY);
   if (!added.ok) throw new Error(`refused: ${added.reason}`);
   const doc = JSON.parse(added.text) as { mcpServers: Record<string, unknown> };
-  expect(doc.mcpServers["tasks"]).toEqual(ENTRY);
+  expect(doc.mcpServers["ttasks"]).toEqual(ENTRY);
   const removed = removeEntry(added.text, "mcpServers", "tasks", created);
   if (!removed.ok) throw new Error(`refused: ${removed.reason}`);
   expect(removed.text).toBe(text);

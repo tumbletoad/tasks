@@ -73,7 +73,7 @@ describe("[A2.3.10.cli.help] help for every command", () => {
     for (const command of LOCAL_COMMANDS) {
       for (const sub of command.subcommands ?? []) {
         expect(command.help, `${command.name} ${sub}`).toMatch(
-          new RegExp(`(^ {2}|tasks ${command.name} )${sub}\\b`, "m"),
+          new RegExp(`(^ {2}|ttasks ${command.name} )${sub}\\b`, "m"),
         );
       }
     }

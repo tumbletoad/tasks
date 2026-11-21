@@ -97,7 +97,7 @@ export function unknownCommands(text: string): string[] {
     if (!strict && !named && !NAME_PLACE.test(before)) continue;
     if (local === undefined) {
       if (!verbs.has(word) && !HIDDEN.has(word) && (strict || !ABOUT.has(word))) {
-        wrong.push(`tasks ${word}`);
+        wrong.push(`ttasks ${word}`);
       }
       continue;
     }
@@ -108,7 +108,7 @@ export function unknownCommands(text: string): string[] {
       !subs.includes(next) &&
       (strict || !ABOUT.has(next))
     ) {
-      wrong.push(`tasks ${word} ${next}`);
+      wrong.push(`ttasks ${word} ${next}`);
     }
   }
   return wrong;

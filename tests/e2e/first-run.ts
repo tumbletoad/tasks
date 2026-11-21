@@ -147,7 +147,7 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
         const text = read(join(agentHome, ".claude.json"));
         if (text === "") return undefined;
         const doc = JSON.parse(text) as { mcpServers?: Record<string, unknown> };
-        return doc.mcpServers?.["tasks"];
+        return doc.mcpServers?.["ttasks"];
       },
       codexConfig: () => read(join(agentHome, ".codex", "config.toml")),
       touchCodex: () => {

@@ -99,7 +99,7 @@ const claudeEntry = (user: string): { args?: unknown } | undefined =>
     JSON.parse(readFileSync(join(user, ".claude.json"), "utf8")) as {
       mcpServers?: Record<string, { args?: unknown }>;
     }
-  ).mcpServers?.["tasks"];
+  ).mcpServers?.["ttasks"];
 
 const row = (view: AppsView, app: string) => {
   const found = view.rows.find((r) => r.app === app);
@@ -305,7 +305,7 @@ describe("[A7.3.12.m5-12.page-desktop] Several Claude Desktop files: the person 
         });
         const has = (file: string) =>
           (JSON.parse(readFileSync(file, "utf8")) as { mcpServers?: Record<string, unknown> })
-            .mcpServers?.["tasks"] !== undefined;
+            .mcpServers?.["ttasks"] !== undefined;
         const made = await call<{ id: string }>(w, "/api/v1/space/create", {
           name: "Mira",
           folder: join(w.home, "mira"),

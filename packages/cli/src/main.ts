@@ -155,7 +155,7 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
         }
         const slot = SLOTS[command];
         if (slot === undefined) {
-          return printUsage(io, globals.json, `tasks ${command} is not in this build yet`);
+          return printUsage(io, globals.json, `ttasks ${command} is not in this build yet`);
         }
         return await slot(io, globals, args, options);
       }

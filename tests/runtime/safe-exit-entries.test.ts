@@ -157,7 +157,7 @@ function resolver(packages: ReturnType<typeof workspacePackages>) {
       const path = resolve(dirname(from), specifier);
       return SOURCE.test(path) && existsSync(path) ? path : undefined;
     }
-    const match = /^(@tasks\/[^/]+)(\/.*)?$/u.exec(specifier);
+    const match = /^(@ttasks\/[^/]+)(\/.*)?$/u.exec(specifier);
     const pkg = match?.[1] === undefined ? undefined : packages.get(match[1]);
     if (pkg === undefined) return undefined;
     const target = pkg.exports[`.${match?.[2] ?? ""}`];

@@ -521,7 +521,7 @@ describe("[A2.3.12.8.build.release-ci-sign] the release workflow signs with the 
     const seen = new Set<string>();
     const outside: string[] = [];
     const workspaceFile = (specifier: string): string | undefined => {
-      const parts = /^@tasks\/([^/]+)(\/.+)?$/.exec(specifier);
+      const parts = /^@ttasks\/([^/]+)(\/.+)?$/.exec(specifier);
       if (parts === null) return undefined;
       const dir = join(repoRoot, "packages", parts[1] ?? "");
       if (!existsSync(join(dir, "package.json"))) return undefined;

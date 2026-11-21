@@ -355,7 +355,7 @@ export async function requestCheck(session: Session, spaces: Status["spaces"]): 
       return {
         id: "requests",
         status: "fail",
-        detail: `The service has no operation for tasks ${missing.join(", ")}. ${RESTART_HINT}`,
+        detail: `The service has no operation for ttasks ${missing.join(", ")}. ${RESTART_HINT}`,
       };
     }
     const served = (spaces ?? []).filter(
