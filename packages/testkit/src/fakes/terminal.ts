@@ -12,9 +12,9 @@
 //   FAKE_TERMINAL_EXIT (default 0), like a client that handed the request on;
 // - `exit`: exits at once with FAKE_TERMINAL_EXIT and runs nothing, like a direct terminal whose
 //   window failed to open;
-// - `console`: Windows PowerShell's console starter (commands.ts): starts the program its
-//   `…_CONSOLE_PROGRAM` variable names with the command line in `…_CONSOLE_ARGUMENTS`, passed on
-//   verbatim as ShellExecute passes it to CreateProcess, then exits with FAKE_TERMINAL_EXIT.
+// - `console`: Windows PowerShell's console starter (commands.ts): hands off as `handoff` does,
+//   and the server starts the program its `…_CONSOLE_PROGRAM` variable names with the command
+//   line in `…_CONSOLE_ARGUMENTS`, passed on verbatim as ShellExecute passes it to CreateProcess.
 // The command's stdout and stderr go to files beside the log, so a test can read the shim's lines.
 // No fake outlives its test: it ends its command and itself after FAKE_TERMINAL_MAX_MS.
 import { spawn } from "node:child_process";
@@ -50,14 +50,25 @@ function runCommand(): void {
     process.exit(64);
   }
   const [file, ...rest] = command;
+  run(file ?? "", rest);
+}
+
+/**
+ * Runs the command as this process's child and lives as long as it. On Windows the child gets a
+ * hidden console of its own, as a terminal gives it a visible one: the shim's agent inherits that
+ * console. A shim started without any console (`detached`) would give its agent a new, visible one.
+ */
+function run(file: string, rest: readonly string[], verbatim = false): void {
   const base = log ?? "fake-terminal";
   const out = openSync(`${base}.${String(process.pid)}.out`, "a");
   const err = openSync(`${base}.${String(process.pid)}.err`, "a");
-  const child = spawn(file ?? "", rest, {
+  const child = spawn(file, rest, {
     cwd: process.cwd(),
     env,
     stdio: ["ignore", out, err],
     windowsHide: true,
+    // The command line exactly as CreateProcess would get it: the program quoted, then the line.
+    ...(verbatim ? { argv0: `"${file}"`, windowsVerbatimArguments: true } : {}),
   });
   closeSync(out);
   closeSync(err);
@@ -79,49 +90,22 @@ function runCommand(): void {
   });
 }
 
-/** The console starter, faked: the program and its command line as the starter's variables say. */
-function startConsole(): void {
+/** The console starter's program and command line, as its variables say. */
+function consoleCommand(): { program: string | undefined; line: string | undefined } {
   const named = (suffix: string): string | undefined =>
     Object.entries(env).find(([name]) => name.endsWith(suffix))?.[1];
-  const program = named("_CONSOLE_PROGRAM");
-  const line = named("_CONSOLE_ARGUMENTS");
-  record({ event: "console", program, arguments: line });
-  if (program === undefined || line === undefined) process.exit(1);
-  const base = log ?? "fake-terminal";
-  const out = openSync(`${base}.${String(process.pid)}.out`, "a");
-  const err = openSync(`${base}.${String(process.pid)}.err`, "a");
-  // The command line exactly as CreateProcess would get it: the program quoted, then the line.
-  const child = spawn(program, [line], {
-    argv0: `"${program}"`,
-    cwd: process.cwd(),
-    env,
-    stdio: ["ignore", out, err],
-    detached: true,
-    windowsHide: true,
-    windowsVerbatimArguments: true,
-  });
-  closeSync(out);
-  closeSync(err);
-  child.once("spawn", () => {
-    record({ event: "command", child: child.pid });
-    child.unref();
-    process.exit(exitCode);
-  });
-  child.once("error", () => {
-    record({ event: "command_failed" });
-    process.exit(1);
-  });
+  return { program: named("_CONSOLE_PROGRAM"), line: named("_CONSOLE_ARGUMENTS") };
 }
 
-record({ event: "start", argv: args, cwd: process.cwd(), envNames: Object.keys(env).sort() });
+/** The console starter, faked: runs the program with its command line passed on verbatim. */
+function runConsole(): void {
+  const { program, line } = consoleCommand();
+  if (program === undefined || line === undefined) process.exit(1);
+  run(program, [line], true);
+}
 
-if (role === "server") {
-  setTimeout(runCommand, delayMs);
-} else if (mode === "exit") {
-  process.exit(exitCode);
-} else if (mode === "console") {
-  startConsole();
-} else if (mode === "handoff") {
+/** Starts a detached copy of this fake as the server, which outlives this client. */
+function handOff(): void {
   const server = spawn(process.execPath, [fileURLToPath(import.meta.url), ...args], {
     cwd: process.cwd(),
     env: { ...env, FAKE_TERMINAL_ROLE: "server" },
@@ -137,6 +121,21 @@ if (role === "server") {
   server.once("error", () => {
     process.exit(70);
   });
+}
+
+record({ event: "start", argv: args, cwd: process.cwd(), envNames: Object.keys(env).sort() });
+
+if (role === "server") {
+  setTimeout(mode === "console" ? runConsole : runCommand, delayMs);
+} else if (mode === "exit") {
+  process.exit(exitCode);
+} else if (mode === "console") {
+  const { program, line } = consoleCommand();
+  record({ event: "console", program, arguments: line });
+  if (program === undefined || line === undefined) process.exit(1);
+  handOff();
+} else if (mode === "handoff") {
+  handOff();
 } else {
   runCommand();
 }
