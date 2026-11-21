@@ -555,6 +555,13 @@ export class LaunchMachine {
         }
         return undefined;
       case "failed":
+        // A session the bridge confirmed before its agent's early end did run: it stays
+        // Confirmed, and the end's evidence is what tells every tab that it ended.
+        if (state === "confirmed") {
+          return observation.evidence === undefined
+            ? undefined
+            : { next: "confirmed", evidence: observation.evidence };
+        }
         return state === "dispatching" || state === "dispatched" || state === "unknown"
           ? {
               next: "failed",

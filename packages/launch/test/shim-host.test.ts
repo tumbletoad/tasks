@@ -1167,6 +1167,26 @@ describe("[A5.3.9.shim.session-end] a session runs while its shim follows it, an
     expect((await read(alive.id))?.evidence).not.toHaveProperty("lost_at");
   });
 
+  test("an agent that ends within 3 s after the bridge confirmed its session records its end", async () => {
+    live.set(SHIM_PID, SHIM_START);
+    const { id, ticket } = await dispatched();
+    const attachment = attachmentOf((await claim(ticket)).outcome);
+    await host.report(attachment, SHIM_METHODS.started, { pid: 5151, started_at: now });
+    await machine.report(id, () => ({ kind: "confirmed", evidence: { bound_at: now } }));
+    expect(host.running(id)).toBe(true);
+    await host.report(attachment, SHIM_METHODS.exited, {
+      code: 0,
+      signal: null,
+      ran_ms: 2_000,
+      settled: false,
+    });
+    expect(await read(id)).toMatchObject({
+      state: "confirmed",
+      evidence: { bound_at: now, exit_code: 0, ran_ms: 2_000 },
+    });
+    expect(host.running(id)).toBe(false);
+  });
+
   test("a launch whose agent has not started is not running", async () => {
     const { id, ticket } = await dispatched();
     attachmentOf((await claim(ticket)).outcome);
