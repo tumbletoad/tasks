@@ -2438,6 +2438,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.5.search.day-start",
+      "title": "A local date starts at its midnight, also on a night the clocks change, and where the clocks resume when a change skips midnight, so search's days agree with the page's",
+      "source": "A3 3.9.2",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.5.search.query",
       "title": "Random query strings, scopes, audiences and a cwd against a real index never raise an SQLite or FTS5 error: every query gives rows that match the contract or invalid_input, and many find rows; a space without the search tables answers filters and refuses words with space_unavailable not_indexed",
       "source": "A3 3.9.2, A3 5, A1 3.12, A7 3.10 M3.05",

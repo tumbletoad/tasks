@@ -215,7 +215,8 @@ const UPDATED = "(SELECT k.at FROM commits k WHERE k.seq = t.touched)";
 const SQL_OP: Readonly<Record<string, string>> = { "<": "<", "<=": "<=", ">": ">", ">=": ">=" };
 
 const HOUR = 3_600_000;
-const UNIT_MS: Readonly<Record<string, number>> = { h: HOUR, d: 24 * HOUR, w: 7 * 24 * HOUR };
+const DAY = 24 * HOUR;
+const UNIT_MS: Readonly<Record<string, number>> = { h: HOUR, d: DAY, w: 7 * DAY };
 
 /** The UTC offset of `timeZone` at instant `ms`, in milliseconds. */
 function offsetMs(ms: number, timeZone: string): number {
@@ -241,12 +242,19 @@ function offsetMs(ms: number, timeZone: string): number {
   return local - Math.floor(ms / 1000) * 1000;
 }
 
-/** The first instant of `date` in `timeZone`. */
+/**
+ * The first instant of `date` in `timeZone`: its midnight, or where the clocks resume when a
+ * change skips midnight. It is midnight at the offset of the day before or of the day after,
+ * whichever is the earliest that falls on `date`.
+ */
 export function startOfDay(date: string, timeZone: string): number {
   const [y, m, d] = date.split("-").map(Number);
   const midnight = Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1);
-  const first = midnight - offsetMs(midnight, timeZone);
-  return midnight - offsetMs(first, timeZone);
+  const onDate = (ms: number) => ms + offsetMs(ms, timeZone) >= midnight;
+  const starts = [-DAY, DAY]
+    .map((side) => midnight - offsetMs(midnight + side, timeZone))
+    .filter(onDate);
+  return Math.min(...starts);
 }
 
 function lowerOf(value: string): string {
