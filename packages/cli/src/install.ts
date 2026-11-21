@@ -54,8 +54,11 @@ function removeIfMade(layout: Pick<Layout, "state" | "tmp">): void {
   }
 }
 
-/** The data folder of a build from before the rename, when the person's home holds one. */
-function earlierDataFolder(facts: HostFacts): string | undefined {
+/**
+ * The line that names the data folder of a build from before the rename, when the person's home
+ * holds one, so its spaces do not look lost.
+ */
+export function earlierDataNotice(facts: HostFacts): string | undefined {
   let home: string;
   try {
     home = homeFolder(facts);
@@ -63,7 +66,8 @@ function earlierDataFolder(facts: HostFacts): string | undefined {
     return undefined;
   }
   const folder = join(home, EARLIER_DATA_FOLDER);
-  return existsSync(folder) ? folder : undefined;
+  if (!existsSync(folder)) return undefined;
+  return `${folder} holds the data of a build from before the product was called ${PRODUCT_NAME}, which this version does not read. To use a space from it, run: ${CLI_NAME} space open <its folder in ${join(folder, "spaces")}>`;
 }
 
 export async function installCommand(
@@ -161,12 +165,8 @@ export async function installCommand(
       "",
     ].join("\n"),
   );
-  const earlier = earlierDataFolder(facts);
-  if (earlier !== undefined) {
-    io.stdout(
-      `${earlier} holds the data of a build from before the product was called ${PRODUCT_NAME}, which this version does not read. To use a space from it, run: ${CLI_NAME} space open <its folder in ${join(earlier, "spaces")}>\n`,
-    );
-  }
+  const earlier = earlierDataNotice(facts);
+  if (earlier !== undefined) io.stdout(`${earlier}\n`);
   if (pending && service !== undefined) {
     await offerRestart(
       io,
