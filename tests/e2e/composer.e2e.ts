@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Page, type Request } from "@playwright/test";
-import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
+import { PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
@@ -179,13 +179,14 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     const open = stripOf(page, ref).getByRole("button", {
       name: `Open in ${FAKE_INSTANCE.label}`,
     });
-    // The service cannot be reached: nothing was started, and the text stays.
+    // The service cannot be reached: the page cannot tell whether it started, and the text stays.
     await page.route("**/api/v1/op/launch.open", (route) => route.abort());
     await composer.fill(`Pick the colour first (${tag})`);
     await open.click();
-    await expect(toast(page)).toHaveText("The launch was not recorded. Try again.", {
-      timeout: SLOW_MS,
-    });
+    await expect(toast(page)).toHaveText(
+      `${PRODUCT_NAME} did not answer. Try again: the task still opens only once.`,
+      { timeout: SLOW_MS },
+    );
     await expect(composer).toHaveValue(`Pick the colour first (${tag})`);
     await page.unroute("**/api/v1/op/launch.open");
 
@@ -211,7 +212,10 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     await composer.focus();
     await page.keyboard.press("ControlOrMeta+Enter");
     await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 2);
-    expect(opened[1]?.postDataJSON()).toMatchObject({ text: `Now the ceiling too (${tag})` });
+    expect(opened[1]?.postDataJSON()).toMatchObject({
+      text: `Now the ceiling too (${tag})`,
+      another: true,
+    });
     world.release(ref);
   });
 });
