@@ -167,7 +167,7 @@ export function compileLaunchers(
   defines: readonly string[] = [],
 ): Launchers {
   return {
-    ttasks: compileExe(launcherSource, outDir, "tasks", { defines }, msvc),
+    ttasks: compileExe(launcherSource, outDir, "ttasks", { defines }, msvc),
     ttasksw: compileExe(launcherSource, outDir, "ttasksw", { gui: true, defines }, msvc),
   };
 }
