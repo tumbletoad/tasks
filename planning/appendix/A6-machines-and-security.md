@@ -178,5 +178,5 @@ The origin device signs the **request** (what the user asked). The authority sig
 4. Every text input passes A3's SafeText at the registry boundary, for every face and for imports. It never rejects input. ZWJ and ZWNJ stay, because emoji and some scripts need them (`packages/contracts/src/safe-text.ts`, `[A3.3.10.safe-text]`).
 5. TTasks never fetches a source URL by itself. Previews show stored data only.
 6. Under Review and Suggest, completions and field changes become proposals. Under Full, every change is reversible through history.
-7. Tasks and its docs never claim to prevent prompt injection.
+7. TTasks and its docs never claim to prevent prompt injection.
 8. **No task text in a terminal or a shell.** A terminal's argv holds its fixed flags, the product's command, `shim` and the launch ticket, nothing else. The shim gets the folder and title over the authenticated socket. Windows Terminal re-splits its argv on `;`, so an element holding `;` or `"` is refused before anything starts. The one URL that carries a brief is Claude Code's `claude-cli://` route, passed to the OS opener as one argv element without a shell (A4 3.6.5). `packages/launch/src/terminals/commands.ts`, `packages/launch/src/opener.ts`, `[A4.5.terminal.command-lines]`, `[A4.5.terminal.hostile]`, `[A4.5.routes.golden-argv]`, `[A4.5.routes.opener]`.

@@ -1,4 +1,4 @@
-// T3 Code's primary route, `t3-mcp` (A4 3.4.1, L6, L14): Tasks as a paired MCP client of the local
+// T3 Code's primary route, `t3-mcp` (A4 3.4.1, L6, L14): TTasks as a paired MCP client of the local
 // T3 server. A launch binds the task's exact folder to a T3 project (t3-binding.ts), creates an
 // idle thread with `t3_thread_launch` and no message, keyed by the launch ID as `clientRequestId`
 // under the grant recorded on the intent, checks the thread's folder, and opens the thread link
