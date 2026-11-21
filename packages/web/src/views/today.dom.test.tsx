@@ -105,6 +105,8 @@ let finished: Record<string, unknown>[];
 let finishedReads: number;
 /** Held: the service's answer to `task.finished` waits until it is released. */
 let finishedGate: Promise<void>;
+/** The service cannot be reached: `task.finished` fails. */
+let finishedFails: boolean;
 
 beforeEach(() => {
   seq = CURSOR.seq;
@@ -128,13 +130,20 @@ beforeEach(() => {
   finished = [];
   finishedReads = 0;
   finishedGate = Promise.resolve();
+  finishedFails = false;
   api = {
     client: {
       task: {
-        finished: async () => {
+        finished: async (input: { limit: number; cursor?: string }) => {
           finishedReads += 1;
           await finishedGate;
-          return { rows: finished };
+          if (finishedFails) throw new Error("offline");
+          const from = Number(input.cursor ?? 0);
+          const through = from + input.limit;
+          return {
+            rows: finished.slice(from, through),
+            ...(through < finished.length ? { cursor: String(through) } : {}),
+          };
         },
         update: () => new Promise(() => undefined),
         get: (input: { sections?: readonly string[] }) =>
@@ -264,7 +273,11 @@ describe("[A5.3.4.web.today-page] Today's date, numbers and sections in a DOM", 
     expect(shown.textContent.split("12 November")).toHaveLength(2);
     expect(numbers()).toEqual([
       ["late", "Late: 1", `/s/${SPACE.id}/search?q=is%3Aoverdue`],
-      ["due", "Due today: 1", `/s/${SPACE.id}/search?q=due%3Atoday`],
+      [
+        "due",
+        "Due today: 1",
+        `/s/${SPACE.id}/search?q=due%3Atoday+-is%3Acompleted+-is%3Aarchived`,
+      ],
       ["waiting", "Waiting on others: 1", `/s/${SPACE.id}/waiting`],
       ["done", "Done this week: 2, 1 today", `/s/${SPACE.id}/completed`],
     ]);
@@ -342,6 +355,45 @@ describe("[A5.3.4.web.today-page] Today's date, numbers and sections in a DOM", 
     await settle();
     expect(finishedReads).toBe(2);
     expect(numbers().at(-1)?.[1]).toBe("Done this week: 2, 2 today");
+  });
+
+  test("a read that fails shows a dash, and the feed being live again reads the count", async () => {
+    // The tab holds its rows, and its connection dropped before Today was opened.
+    apply(snapshot(TASKS));
+    act(() => {
+      live.store.set({ phase: "offline" });
+    });
+    finishedFails = true;
+    await mount(<TodayPage onExpand={() => undefined} />);
+    await settle();
+    expect(numbers().at(-1)?.[1]).toBe("Done this week: –");
+    // Meanwhile a task was finished elsewhere. The feed resumes with nothing to send.
+    finishedFails = false;
+    finished = [done(2, NOW)];
+    act(() => {
+      live.store.set({ phase: "live" });
+    });
+    await settle();
+    expect(numbers().at(-1)?.[1]).toBe("Done this week: 1, 1 today");
+    // A refresh that fails takes the count away rather than leave one nobody vouches for.
+    finishedFails = true;
+    apply(
+      agentUpdate(
+        [{ ...(TASKS[1] as TaskRow), lifecycle: "completed", version: 2 }],
+        ["lifecycle"],
+      ),
+    );
+    await settle();
+    expect(numbers().at(-1)?.[1]).toBe("Done this week: –");
+  });
+
+  test("a day busier than the reads go marks today's share as a floor too", async () => {
+    finished = Array.from({ length: 1_051 }, (_, i) => done(100 + i, NOW - i));
+    await mount(<TodayPage onExpand={() => undefined} />);
+    apply(snapshot(TASKS));
+    await settle();
+    await settle();
+    expect(numbers().at(-1)?.[1]).toBe("Done this week: 1,050+, 1,050+ today");
   });
 
   test("a tab that wakes on a later day moves on to it when it is shown again", async () => {

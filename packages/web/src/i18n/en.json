@@ -96,7 +96,7 @@
   "today.dueToday": "Due today",
   "today.waiting": "Waiting on others",
   "today.doneWeek": "Done this week",
-  "today.doneToday": "{n, number} today",
+  "today.doneToday": "{value} today",
   "today.atLeast": "{n, number}+",
   "today.numberName": "{label}: {value}",
   "today.numberNameSub": "{label}: {value}, {sub}",

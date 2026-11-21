@@ -7,7 +7,8 @@
 //
 // The numbers count what the page each links to lists: late and due today (Search), waiting on
 // others (Waiting), and done this week (Completed). Each keeps its place and width as it changes,
-// and none is guessed: done this week shows a dash until its read answers.
+// and none is guessed: done this week shows a dash until a read answers, and while the last one
+// failed.
 import { Link } from "@tanstack/react-router";
 import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useIntl } from "react-intl";
@@ -113,9 +114,9 @@ export function TodayPage({ task, onExpand }: TodayProps) {
 
 /**
  * The tasks completed today and this week, read again when a task is finished or reopened, after
- * a fresh snapshot, and when the day changes. One read at a time: changes while it runs ask for
- * one more after it, so a burst of completions costs two reads. Until the day's first answer there
- * is none, and a failed read keeps the last answer of the same day.
+ * a fresh snapshot, when the feed is live again, and when the day changes. One read at a time:
+ * changes while it runs ask for one more after it, so a burst of completions costs two reads. A
+ * failed read leaves no answer: an old count could miss what was finished since.
  */
 function useFinished(clock: Clock): FinishedCounts | undefined {
   const { api, live } = useContext(Session);
@@ -138,7 +139,9 @@ function useFinished(clock: Clock): FinishedCounts | undefined {
           (counts) => {
             if (alive && !again) setFound({ day, counts });
           },
-          () => undefined,
+          () => {
+            if (alive && !again) setFound(undefined);
+          },
         )
         .finally(() => {
           reading = false;
@@ -149,9 +152,17 @@ function useFinished(clock: Clock): FinishedCounts | undefined {
     const stop = live.store.onChanges(({ changes, reset }) => {
       if (reset || changes.some((change) => affects(COMPLETED, change))) read();
     });
+    // A feed that resumes sends nothing it missed about finished tasks: being live again reads.
+    let wasLive = live.getState().phase === "live";
+    const unwatch = live.subscribe(() => {
+      const isLive = live.getState().phase === "live";
+      if (isLive && !wasLive) read();
+      wasLive = isLive;
+    });
     return () => {
       alive = false;
       stop();
+      unwatch();
     };
   }, [api, live, today, timeZone, day]);
   return found?.day === day ? found.counts : undefined;
@@ -226,7 +237,7 @@ function Day({
       </p>
       <ul className={styles.numbers} aria-label={t("today.numbers")}>
         {item("late", "today.late", numbers.late, { q: "is:overdue" })}
-        {item("due", "today.dueToday", numbers.dueToday, { q: "due:today" })}
+        {item("due", "today.dueToday", numbers.dueToday, { q: DUE_TODAY })}
         {item("waiting", "today.waiting", numbers.waiting, { view: "waiting" })}
         {item(
           "done",
@@ -237,12 +248,15 @@ function Day({
           // Today's share only once there is one: "0 · 0 today" says nothing twice.
           finished === undefined || finished.today === 0
             ? undefined
-            : t("today.doneToday", { n: finished.today }),
+            : t("today.doneToday", { value: figure(finished.today, finished.todayMore) }),
         )}
       </ul>
     </div>
   );
 }
+
+/** What Due today counts: the open tasks due today, not the finished ones. */
+const DUE_TODAY = "due:today -is:completed -is:archived";
 
 /** What a number shows until it is known. */
 const DASH = "–";

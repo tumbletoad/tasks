@@ -197,6 +197,22 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
     await expect(page).toHaveURL(/\/search\?q=is%3Aoverdue$/);
     await expect(page.locator("main li[data-key]")).toHaveCount(overdue, { timeout: SLOW_MS });
     await page.goBack();
+    // Due today to what is open and due today: a task finished today is not counted, nor listed.
+    const paid = (await world.op(world.mira.id, "task.add", {
+      tasks: [{ title: `Pay the deposit (${tag})`, area: "home", due: today.iso }],
+    })) as Added;
+    const deposit = paid.tasks[0]?.ref ?? "";
+    await world.op(world.mira.id, "task.finish", {
+      task: deposit,
+      base: await asOf(world, deposit),
+    });
+    const due = numbers.getByRole("link", { name: /^Due today: / });
+    const dueToday = await countIn(due);
+    await due.click();
+    await expect(page).toHaveURL(/\/search\?q=due%3Atoday/);
+    await expect(page.locator("main li[data-key]")).toHaveCount(dueToday, { timeout: SLOW_MS });
+    await expect(row(page, deposit)).toHaveCount(0);
+    await page.goBack();
     await numbers.getByRole("link", { name: /^Waiting on others: / }).click();
     await expect(page).toHaveURL(/\/waiting$/);
   });

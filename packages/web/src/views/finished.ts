@@ -10,6 +10,8 @@ export interface FinishedCounts {
   readonly week: number;
   /** More were completed this week than the reads went through: the week's count is a floor. */
   readonly more: boolean;
+  /** The reads stopped inside today: today's count is a floor too. */
+  readonly todayMore: boolean;
 }
 
 /** The reads' sizes: a usual week fits the first, small one. */
@@ -28,6 +30,13 @@ export async function countFinished(
   let onToday = 0;
   let inWeek = 0;
   let cursor: string | undefined;
+  let last: string | undefined;
+  const counts = (more: boolean): FinishedCounts => ({
+    today: onToday,
+    week: inWeek,
+    more,
+    todayMore: more && last === today,
+  });
   for (const limit of PAGES) {
     const found = await read({ limit, ...(cursor === undefined ? {} : { cursor }) });
     for (const item of found.rows) {
@@ -36,13 +45,14 @@ export async function countFinished(
       const day = finishedDayOf(row, timeZone);
       if (day === undefined) continue;
       // Newest first: the first one before the week ends the count.
-      if (day < since) return { today: onToday, week: inWeek, more: false };
+      if (day < since) return counts(false);
+      last = day;
       if (row.lifecycle !== "completed") continue;
       inWeek += 1;
       if (day === today) onToday += 1;
     }
-    if (found.cursor === undefined) return { today: onToday, week: inWeek, more: false };
+    if (found.cursor === undefined) return counts(false);
     cursor = found.cursor;
   }
-  return { today: onToday, week: inWeek, more: true };
+  return counts(true);
 }
