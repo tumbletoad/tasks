@@ -3,7 +3,7 @@
 // tests format them with the page's own catalogue, so they read the words a person sees.
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
-import { APP_NAME, CLI_NAME } from "@ttasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import type { Instance, Receipt } from "../api.ts";
 import en from "../i18n/en.json" with { type: "json" };
 import type { MessageId, Values } from "../i18n/intl.tsx";
@@ -29,7 +29,7 @@ const intl = createIntl({
   },
 });
 const t = (id: MessageId, values?: Values) =>
-  intl.formatMessage({ id }, { product: APP_NAME, cli: CLI_NAME, ...values });
+  intl.formatMessage({ id }, { product: PRODUCT_NAME, cli: CLI_NAME, ...values });
 const say = (m: Msg | undefined): string | undefined =>
   m === undefined ? undefined : sayMsg(t, m);
 
@@ -526,7 +526,7 @@ describe("[A5.3.6.web.row-columns] renderRow's columns", () => {
     ]);
     expect(folder({ kind: "work_folder" })).toEqual([
       "work_folder",
-      `Open the ${APP_NAME} work folder`,
+      `Open the ${PRODUCT_NAME} work folder`,
     ]);
   });
 
