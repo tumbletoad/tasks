@@ -1451,7 +1451,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
     const runUser = await startService({ state: join(work, "e02-run-user"), runUserBase: base });
     try {
       expect(runUser.info.runtime).toBe("run-user");
-      expect(runUser.info.endpoint.path.startsWith(join(base, uid, "tasks-"))).toBe(true);
+      expect(runUser.info.endpoint.path.startsWith(join(base, uid, "ttasks-"))).toBe(true);
       expect(statSync(join(runUser.info.endpoint.path, "..")).mode & 0o777).toBe(0o700);
       const rpc = await cli(join(work, "e02-run-user"));
       expect(((await rpc.call("service/status")) as JsonObject)["runtime"]).toBe("run-user");
