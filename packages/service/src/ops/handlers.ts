@@ -515,7 +515,7 @@ const noSpace = (): AppError =>
   new AppError({
     code: "space_unavailable",
     message: "This connection has no space it can work in.",
-    hint: `Ask the user to restart the agent app. If this stays, set a default space (${CLI_NAME} space use) or name the space in the agent's ${PRODUCT_NAME} entry first.`,
+    hint: `Ask the user to set a default space (${CLI_NAME} space use) or name the space in the agent's ${PRODUCT_NAME} entry, creating one first if there is none (${CLI_NAME} space create), then restart the agent app.`,
     data: { reason: "no_space", retryable: false },
   });
 
