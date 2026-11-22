@@ -510,11 +510,20 @@ function heldSpace(
   const found = copyOf(live, held);
   if (isAmbiguity(found)) throw ambiguousError(found);
   if (found !== undefined) return found;
-  // A space that is still opening has no ID of its own yet, only the one its entry names.
-  if (live.some((s) => s.state === "opening" && s.registered === held)) {
-    throw spaceUnavailable("opening", true);
-  }
-  throw spaceUnavailable("not_served", false);
+  throw unserved(live, held);
+}
+
+/**
+ * Why no copy answers for the space `wanted` means: `opening`, to retry, while a space that may be
+ * it is still opening, else `not_served`. An opening space has no ID of its own yet, only the one
+ * its entry names, and no name until it opens.
+ */
+function unserved(live: readonly ServedSpace[], wanted: string): AppError {
+  const opening = live.filter((s) => s.state === "opening");
+  const may = isId(wanted, "sp")
+    ? opening.some((s) => s.registered === wanted)
+    : !isAbsolute(wanted) && opening.length > 0;
+  return may ? spaceUnavailable("opening", true) : spaceUnavailable("not_served", false);
 }
 
 /**
@@ -566,16 +575,19 @@ function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): S
   if (wanted !== undefined) {
     const found = findSpace(live, wanted);
     if (isAmbiguity(found)) throw ambiguousError(found);
-    if (found === undefined) throw spaceUnavailable("not_served", false);
+    if (found === undefined) throw unserved(live, wanted);
     return found;
   }
   if (caller.class === "cli-agent") {
     throw invalid("space", "Name the space", "Pass --space, or set TTASKS_SPACE.");
   }
-  const fallback = defaultOf(live, host.defaultSpace?.());
-  if (fallback === "not_served") throw spaceUnavailable("not_served", false);
-  if (isAmbiguity(fallback)) throw ambiguousError(fallback);
-  if (fallback !== undefined) return fallback;
+  const defaultId = host.defaultSpace?.();
+  if (defaultId !== undefined) {
+    const fallback = copyOf(live, defaultId);
+    if (isAmbiguity(fallback)) throw ambiguousError(fallback);
+    if (fallback === undefined) throw unserved(live, defaultId);
+    return fallback;
+  }
   const only = onlySpace(live);
   if (only === undefined) throw spaceUnavailable("not_served", false);
   if (only === "several") {

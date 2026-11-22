@@ -2581,7 +2581,7 @@
     },
     {
       "id": "A3.3.7.binding.space",
-      "title": "One bridge process works in one space: a session in its launch's space whatever its entry or a call names (a shell naming another is forbidden with rule binding); a space its process holds wins over a launch's and is kept while denied (the refusal names the space its home may use) or closed (space_unavailable, never another space); a process told it has none keeps none; an older bridge reconnecting with a handle on an entry without a space gets none and is told to restart; a bind after the service is ready and before its spaces are handed over settles the configured space by its registered ID",
+      "title": "One bridge process works in one space: a session in its launch's space whatever its entry or a call names (a shell naming another is forbidden with rule binding); a space its process holds wins over a launch's and is kept while denied (the refusal names the space its home may use) or closed (space_unavailable, never another space); a process told it has none keeps none; an older bridge reconnecting with a handle on an entry without a space gets none and is told to restart; a bind after the service is ready and before its spaces are handed over settles the configured space by its registered ID, and a call then, a person's by the default or an agent's shell naming the space, is told it is opening, to try again",
       "source": "A2 3.7.1, A2 3.10.3, A3 3.7.8, A3 5, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
