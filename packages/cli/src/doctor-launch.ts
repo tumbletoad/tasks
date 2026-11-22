@@ -13,13 +13,13 @@
 //                   runs the person's profile. On Windows a registry read that failed (warn)
 //   launch.t3       the pairing with T3 Code: "Reconnect T3", or a token that cannot renew itself
 //                   and runs out within 5 days or ran out (warn)
-//   sessions        session records the service could not read back at its start, or agent
-//                   connections in shared mode (warn)
+//   sessions        the agent connections open now, and how many are the session of an agent
+//                   TTasks opened or of a background run
 //
 // Rows hold words, counts, dates and instance IDs only: never a path, a variable's name or value,
 // a token or a task. None of them fails the report: each names what launches lose, and the fix.
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
-import { INSTANCE_ID } from "@ttasks/launch";
+
 import type { Session } from "./connect.ts";
 
 export interface Check {
@@ -295,7 +295,10 @@ export function t3PairingCheck(status: unknown, now: number): Check {
   };
 }
 
-/** `sessions` (A3 3.14): `doctor/sessions`'s answer, or null for a service without binding. */
+/**
+ * `sessions` (A3 3.14): `doctor/sessions`'s answer, the agent connections open now and how many
+ * are a task's session, or null for a service without binding. Nothing in it is a fault.
+ */
 export function sessionsCheck(facts: unknown): Check {
   const id = "sessions";
   if (!isObject(facts)) {
@@ -303,46 +306,20 @@ export function sessionsCheck(facts: unknown): Check {
   }
   const isCount = (value: unknown): value is number =>
     typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-  const count = (value: unknown) => (isCount(value) ? value : 0);
   const open = facts["open"];
-  const dropped = facts["dropped"];
-  const listed = facts["shared"];
+  const sessions = isObject(facts["sessions"]) ? facts["sessions"] : {};
+  const launch = sessions["launch"];
+  const run = sessions["run"];
   // Facts missing or in another shape are not a pass: the row cannot say what it would judge.
-  if (!isCount(open) || !isCount(dropped) || !Array.isArray(listed)) {
+  if (!isCount(open) || !isCount(launch) || !isCount(run) || launch + run > open) {
     return { id, status: "skip", detail: "The service did not say how its sessions stand." };
   }
-  // Instance IDs only, as the service names them: anything else never reaches a row.
-  const counted = listed
-    .filter(isObject)
-    .map((s) => ({ instance: s["instance"], count: count(s["count"]) }))
-    .filter((s) => s.count > 0);
-  const shared = counted.filter(
-    (s): s is { instance: string; count: number } =>
-      typeof s.instance === "string" && INSTANCE_ID.test(s.instance),
-  );
-  // Shared connections the row cannot name are still no pass.
-  const unnamed = counted.length - shared.length;
-  const parts: string[] = [];
-  if (dropped > 0) {
-    parts.push(
-      `${String(dropped)} session record${dropped === 1 ? " was" : "s were"} damaged and dropped when the service started: those agents go on unbound and name their task on each call, and a new launch from ${PRODUCT_NAME} binds again.`,
-    );
-  }
-  if (shared.length > 0) {
-    const n = shared.reduce((sum, s) => sum + s.count, 0);
-    parts.push(
-      `${String(n)} agent connection${n === 1 ? "" : "s"} of ${shared.map((s) => s.instance).join(", ")} carr${n === 1 ? "ies" : "y"} more than one conversation (shared mode): a call there binds to no task unless it names one, so ask the agent to name its task on each call.`,
-    );
-  } else if (unnamed > 0) {
-    parts.push(
-      "Agent connections carry more than one conversation (shared mode): a call there binds to no task unless it names one, so ask the agent to name its task on each call.",
-    );
-  }
-  if (parts.length > 0) return { id, status: "warn", detail: parts.join(" ") };
+  if (open === 0) return { id, status: "ok", detail: "No agent connection is open." };
+  const plural = (n: number, one: string, many: string) => `${String(n)} ${n === 1 ? one : many}`;
   return {
     id,
     status: "ok",
-    detail: `${String(open)} agent connection${open === 1 ? "" : "s"} open, none in shared mode; every session record was read back.`,
+    detail: `${plural(open, "agent connection", "agent connections")} open. Task sessions: ${plural(launch, "of an agent", "of agents")} ${PRODUCT_NAME} opened, ${plural(run, "of a background run", "of background runs")}. Any other connection names its task on each call.`,
   };
 }
 
