@@ -63,6 +63,8 @@ If the git-ignored `local/AGENTS.md` exists, read it first: it holds this checko
 
 ## Verify and merge
 - `pnpm verify` passes, on Windows from PowerShell 7. CI runs `pnpm e2e`; UI work runs it on Windows too.
+- While you work, `pnpm check` runs what your change can affect, in about a minute, and lists what
+  it did not run. It is not a verify: push, and CI runs everything.
 - The pull request says what changed for a person and shows the evidence: the check's output with
   the OS, and for UI work screenshots of the states that changed. Say what you did not test.
 - A question for the owner goes in the pull request with the default you chose. Carry on with it.
