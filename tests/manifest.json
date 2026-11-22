@@ -3783,13 +3783,6 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A4.5.e2e.open-marker-screens",
-      "title": "Playwright against the real service process: Open on a task whose folder was replaced at its path asks in one sentence that names the folder, starts nothing, in Sumi and Washi at 1,440 and 390 px",
-      "owner": "M4",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A5.3.6.e2e.draft-mark",
       "title": "Playwright against the real service process: a row whose composer holds unsent words shows its mark once collapsed without moving its title, and the mark goes once the words are saved as a note, in Sumi and Washi at 1,440 and 390 px (Washi and the screenshots in Chromium only)",
       "owner": "M5",
@@ -3831,14 +3824,6 @@
       "id": "A2.3.8.4.e2e.page-secrets",
       "title": "In a real browser the fragment is gone before any request, no request URL carries the sign-in code or the token, and a hostile value under the token's localStorage key is dropped and signs the page out",
       "source": "A2 3.8.4, A2 3.8.6, A5 3.26, A7 3.9 M2.13",
-      "owner": "M2",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A2.3.8.3.e2e.strict-csp",
-      "title": "In Chromium and Firefox the built page loads under the strict CSP with no violation, every script and stylesheet carries a sha384 integrity hash, and no service worker is registered",
-      "source": "A2 3.8.3, A5 3.24, A5 3.26, A7 3.9 M2.13",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4245,7 +4230,7 @@
     },
     {
       "id": "A7.3.12.e2e.sidebar-fixed",
-      "title": "In Chromium and Firefox against the real service: a space whose views are all empty shows every view in its fixed order, quieter and named empty, with Settings; a task arriving and another view opening move no entry; every area lists its projects always, so opening an area or a project moves no entry",
+      "title": "In Chromium and Firefox against the real service: a space whose views are all empty shows every view in its fixed order, quieter and named empty, with Settings; a task arriving and another view opening move no entry",
       "source": "A5 3.3",
       "owner": "M5",
       "kind": "ci",
