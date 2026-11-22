@@ -18,7 +18,7 @@ import { grantHome } from "./ops-helpers.ts";
 type Json = Record<string, unknown>;
 let w: ContractWorld & { root: string };
 /** A bridge of no launch, in the world's one space, as its bind settles it. */
-const inSpace = (): Binding => ({ kind: "none", space: w.space });
+const inSpace = (): Binding => ({ kind: "none", space: w.space, named: false });
 const LONG = 120_000;
 
 beforeAll(async () => {

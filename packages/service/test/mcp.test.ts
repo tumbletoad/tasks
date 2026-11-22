@@ -236,7 +236,7 @@ describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding"
         env: {},
         principal: bridgePrincipal(bridgeContext(), w.service.ops.machine.id),
         home: "test-agent",
-        binding: { kind: "none", space: w.space } as const,
+        binding: { kind: "none", space: w.space, named: false } as const,
       };
       for (const request of ["fixture-request-rr-0002", "fixture-request-rr-0003"]) {
         const receipt = (await opCall(w.service.ops, agent, {
@@ -540,7 +540,7 @@ const ERROR_TEXT = /^error ([a-z_]+)(?: \([a-z_]+\))?: /;
 function noSession(answer: unknown): Binding {
   const space = (answer as { space?: unknown } | null)?.space;
   if ((answer as { state?: unknown } | null)?.state !== "unbound") throw new Error("a session");
-  return { kind: "none", space: typeof space === "string" ? space : undefined };
+  return { kind: "none", space: typeof space === "string" ? space : undefined, named: false };
 }
 
 function mcpContract(era: "legacy" | "modern"): () => Promise<ContractTransport> {

@@ -6,7 +6,7 @@
 // Fixture text and temporary folders only.
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { CLI_NAME } from "@ttasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
 import { renderError } from "../src/mcp/index.ts";
@@ -91,11 +91,16 @@ afterAll(async () => {
 /** A3 3.5's grant refusal as a bridge's agent reads it. */
 const GRANT_TEXT = renderError(GRANT);
 
-/** The grant refusal of a bridge that is no session, when its home may use another space now. */
-const elsewhere = (name: string, space: string): string =>
+/**
+ * The grant refusal of a bridge that is no session, when its home may use another space now: a
+ * restart moves it there, or for a hand-made entry that names a space, taking that out first.
+ */
+const elsewhere = (name: string, space: string, nameInEntry = false): string =>
   renderError({
     ...GRANT,
-    hint: `It may use the space ${name} now: ask the user to restart the agent app to work there.`,
+    hint: nameInEntry
+      ? `It may use the space ${name} now: ask the user to take the space out of the agent's ${PRODUCT_NAME} entry, then to restart the agent app.`
+      : `It may use the space ${name} now: ask the user to restart the agent app to work there.`,
     data: { rule: "grant", space },
   });
 
@@ -484,6 +489,15 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
       // Two spaces and no default yet: neither is the machine's default.
       const manual = await connect({ instance: null, space: w.space });
       expect(await refusedText(manual, "space.status")).toBe(GRANT_TEXT);
+      // The entry setup prints names no space: with no default to take, it is told to set one.
+      const printed = await connect({ instance: null });
+      expect(printed.binding).toEqual({ space: null, state: "unbound" });
+      const none = await printed.refusal("space.status");
+      expect([none.code, none.reason]).toEqual(["space_unavailable", "no_space"]);
+      expect(none.text).toContain(`set a default space (${CLI_NAME} space use`);
+      expect(none.text).toContain("then restart the agent app");
+      expect(none.text).not.toContain("entry");
+      await printed.close();
       await asUser("space/use", { space: w.space });
       expect(await manual.call("space.status")).toContain("Space: Mira (M)");
       expect(
@@ -496,15 +510,24 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
       ).toMatch(/^logged /);
       expect((await logOf("M-4"))[0]?.["author"]).toBe("agent:manual");
       // An instance that is not an instance ID is a hand-made entry as well.
-      // In another space each is refused, naming the default it may use.
+      // In another space each is refused, naming the default it may use. A restart would bind the
+      // space its entry names again, so it is told to take that out.
       const odd = await connect({ instance: "Not An Instance!", space: life });
-      expect(await refusedText(odd, "space.status")).toBe(elsewhere("Mira", w.space));
+      expect(await refusedText(odd, "space.status")).toBe(elsewhere("Mira", w.space, true));
       const manualLife = await connect({ instance: null, space: life });
-      expect(await refusedText(manualLife, "space.status")).toBe(elsewhere("Mira", w.space));
-      // Without --space too: the default space when it binds.
+      expect(await refusedText(manualLife, "space.status")).toBe(
+        elsewhere("Mira", w.space, true),
+      );
+      // Without --space too: the default space when it binds, which is what taking it out gives.
       const plain = await connect({ instance: null });
       expect(await plain.call("space.status")).toContain("Space: Mira (M)");
-      for (const agent of [manual, odd, manualLife, plain]) await agent.close();
+      // When the default moves, a restart is what moves it: the next process takes the new one.
+      await asUser("space/use", { space: life });
+      expect(await refusedText(plain, "space.status")).toBe(elsewhere("Life", life));
+      const restarted = await connect({ instance: null });
+      expect(await restarted.call("space.status")).toContain("Space: Life (L)");
+      await asUser("space/use", { space: w.space });
+      for (const agent of [manual, odd, manualLife, plain, restarted]) await agent.close();
 
       // Nothing a refused call or a bind carried is in the log or a crash file.
       const homes = join(w.home, "agent-homes");
@@ -718,7 +741,9 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       expect(older.binding).toEqual({ space: null, state: "unbound" });
       const restart = await older.refusal("space.status");
       expect([restart.code, restart.reason]).toEqual(["space_unavailable", "no_space"]);
-      expect(restart.text).toContain("restart the agent app");
+      // A default exists: the restart alone settles it.
+      expect(restart.text).toContain("restart the agent app: it then works in the default space");
+      expect(restart.text).not.toContain("space use");
       await older.close();
       const fresh = await connect({ instance: "home-life" });
       expect(fresh.binding).toEqual({ space: life, state: "unbound" });
@@ -736,6 +761,9 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       expect(unknown.binding).toEqual({ space: null, state: "unbound" });
       const none = await unknown.refusal("space.status");
       expect([none.code, none.reason]).toEqual(["space_unavailable", "no_space"]);
+      // A default alone does not settle it: the entry's space is tried first and alone.
+      expect(none.text).toContain(`entry names a space this machine has none of, or two of`);
+      expect(none.text).toContain("take the space out of the entry");
       expect(none.text).toContain("restart the agent app");
       expect(
         (await unknown.refusal("space.status", {}, { host: () => ({ defaultSpace: () => life }) }))
