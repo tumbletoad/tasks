@@ -5,6 +5,8 @@
 //   before the launch with the check the shim runs there, the ticket's hash and the use of its two
 //   roles, and once claimed the attachment credential's hash with the shim's PID and start time;
 // - `exit.json` (written atomically by the shim when the service cannot be reached, A4 3.6.3 step 9).
+// Beside them, `<launch root>/ended/<launch ID>.json` (0600) keeps an ended launch's ticket hash,
+// space, task, session, home and preset for a day from its end; the launch's folder is gone by then.
 // None of this enters a space: a space holds IDs and codes only (A4 3.9.1). The launch root is
 // A2 3.2.1's: Linux `/run/user/<uid>/ttasks-<install>/launch/` (tmpfs, gone at logout, when no shim
 // can be left either), Windows `<state>\launch\`.
@@ -16,7 +18,7 @@ import { join } from "node:path";
 import { atomicWrite, makeDir } from "@ttasks/files";
 import { isLaunchRef } from "../intents.ts";
 import { RESOLVE_REASONS, type FolderCheck, type ResolveReason } from "../places.ts";
-import { LAUNCH_ID, TASK_ID } from "../store.ts";
+import { LAUNCH_ID, SESSION_ID, SESSION_UUID, TASK_ID } from "../store.ts";
 import { isHash } from "./secrets.ts";
 import {
   AFTER_EXIT_MODES,
@@ -101,7 +103,35 @@ export interface LaunchFile {
   readonly attachment?: { readonly hash: string; readonly pid: number; readonly startTime: string };
   /** The agent, as `launch.started` reported it. */
   readonly agent?: { readonly pid: number; readonly startedAt: number };
+  /** The agent's app at the click, by the name its entry's `--app` carries. */
+  readonly app?: string;
+  /** The home folder the agent is started on, as setup names that home. */
+  readonly home?: string;
+  /** The session this launch is (`ShimHost.prepare`). */
+  readonly session?: string;
+  /** The session ID the click preset for the agent (Claude Code's `--session-id`). */
+  readonly preset?: string;
 }
+
+/**
+ * What an ended launch leaves for a day after its end: enough to know a value it handed out, and
+ * none of its plan, folder or credential.
+ */
+export interface EndedLaunch {
+  readonly format: 1;
+  readonly launch: string;
+  readonly endedAt: number;
+  /** The ticket's hash. */
+  readonly ticket: string;
+  readonly space: string;
+  readonly task: string | null;
+  readonly session?: string;
+  readonly home?: string;
+  readonly preset?: string;
+}
+
+/** How long an ended launch's record stays, from its end. */
+export const ENDED_KEEP_MS = 24 * 60 * 60_000;
 
 /** The shim's machine state, as the host reads and writes it. */
 export interface RecordStore {
@@ -115,6 +145,11 @@ export interface RecordStore {
   readExit(launch: string): ExitFile | undefined;
   /** Where the shim writes `exit.json`. */
   exitPath(launch: string): string;
+  /** The ended launches' records, apart from every live one. */
+  listEnded(): readonly EndedLaunch[];
+  /** Durable when it returns. */
+  putEnded(file: EndedLaunch): void;
+  removeEnded(launch: string): void;
 }
 
 /** The largest launch file read back, and so the largest written. */
@@ -270,7 +305,66 @@ export function checkLaunchFile(value: unknown): LaunchFile | undefined {
     }
     out = { ...out, agent: { pid: agent["pid"], startedAt: agent["startedAt"] } };
   }
-  return out;
+  const app = value["app"];
+  if (app !== undefined) {
+    if (typeof app !== "string" || !APP_NAME.test(app)) return undefined;
+    out = { ...out, app };
+  }
+  const given = checkGiven(value);
+  return given === undefined ? undefined : { ...out, ...given };
+}
+
+/** An app's name as an entry's `--app` carries it. */
+const APP_NAME = /^[a-z][a-z0-9-]{0,31}$/;
+
+/** What the click knows of the agent it starts (`ShimHost.prepare`). */
+export interface ClickGiven {
+  readonly app?: string;
+  readonly home?: string;
+  readonly preset?: string;
+}
+
+/** Each of the click's values a launch file's reader takes, so none makes the file unreadable. */
+export function keptGiven(given: ClickGiven): ClickGiven {
+  const { app, home, preset } = given;
+  return {
+    ...(app !== undefined && APP_NAME.test(app) ? { app } : {}),
+    ...(home !== undefined && isFolderText(home) ? { home } : {}),
+    ...(preset !== undefined && SESSION_UUID.test(preset) ? { preset } : {}),
+  };
+}
+
+/** The home, session and preset a launch record and an ended one hold, each when present. */
+function checkGiven(
+  value: Record<string, unknown>,
+): Pick<LaunchFile, "home" | "session" | "preset"> | undefined {
+  const { home, session, preset } = value;
+  if (home !== undefined && !isFolderText(home)) return undefined;
+  if (session !== undefined && (typeof session !== "string" || !SESSION_ID.test(session))) {
+    return undefined;
+  }
+  if (preset !== undefined && (typeof preset !== "string" || !SESSION_UUID.test(preset))) {
+    return undefined;
+  }
+  return {
+    ...(home === undefined ? {} : { home }),
+    ...(session === undefined ? {} : { session }),
+    ...(preset === undefined ? {} : { preset }),
+  };
+}
+
+/** An ended launch's record as read from disk, checked field by field. */
+export function checkEndedFile(value: unknown): EndedLaunch | undefined {
+  if (!isObject(value) || value["format"] !== 1) return undefined;
+  const { launch, endedAt, ticket, space, task } = value;
+  if (typeof launch !== "string" || !LAUNCH_ID.test(launch) || !isInstant(endedAt)) {
+    return undefined;
+  }
+  if (!isHash(ticket) || typeof space !== "string" || !SPACE_ID.test(space)) return undefined;
+  if (task !== null && (typeof task !== "string" || !TASK_ID.test(task))) return undefined;
+  const given = checkGiven(value);
+  if (given === undefined) return undefined;
+  return { format: 1, launch, endedAt, ticket, space, task, ...given };
 }
 
 /** An `exit.json`, checked; undefined when it is not one or names another launch. */
@@ -315,6 +409,8 @@ function readBounded(path: string): unknown {
 
 export const LAUNCH_FILE = "launch.json";
 export const EXIT_FILE = "exit.json";
+/** The folder of ended launches' records in the launch root: not a launch ID, so no live one. */
+export const ENDED_FOLDER = "ended";
 
 /**
  * The launch root and each launch folder, and the files in them (A2 3.2.1, A4 3.6.3): set on each
@@ -328,11 +424,12 @@ export const LAUNCH_FILE_MODE = 0o600;
 export class FolderRecords implements RecordStore {
   readonly root: string;
   readonly #files = new Map<string, LaunchFile>();
+  readonly #ended = new Map<string, EndedLaunch>();
 
   /**
-   * Creates the root (0700, and any missing folder above it) and reads every launch file in it. A
-   * damaged one is left out. The service judges the root before (hub/service.ts): it holds the
-   * commands a launch runs.
+   * Creates the root (0700, and any missing folder above it) and reads every launch file in it,
+   * and every ended launch's record. A damaged one is left out. The service judges the root before
+   * (hub/service.ts): it holds the commands a launch runs.
    */
   constructor(root: string) {
     this.root = root;
@@ -341,6 +438,18 @@ export class FolderRecords implements RecordStore {
       if (!LAUNCH_ID.test(name)) continue;
       const file = checkLaunchFile(readBounded(join(root, name, LAUNCH_FILE)));
       if (file?.launch === name) this.#files.set(name, file);
+    }
+    let ended: string[];
+    try {
+      ended = readdirSync(join(root, ENDED_FOLDER));
+    } catch {
+      ended = []; // None ended yet.
+    }
+    for (const name of ended) {
+      const launch = name.endsWith(".json") ? name.slice(0, -".json".length) : "";
+      if (!LAUNCH_ID.test(launch)) continue;
+      const file = checkEndedFile(readBounded(join(root, ENDED_FOLDER, name)));
+      if (file?.launch === launch) this.#ended.set(launch, file);
     }
   }
 
@@ -377,6 +486,24 @@ export class FolderRecords implements RecordStore {
   exitPath(launch: string): string {
     return join(this.root, launch, EXIT_FILE);
   }
+
+  listEnded(): readonly EndedLaunch[] {
+    return [...this.#ended.values()];
+  }
+
+  putEnded(file: EndedLaunch): void {
+    if (!LAUNCH_ID.test(file.launch)) throw new Error("Not a launch ID");
+    const folder = join(this.root, ENDED_FOLDER);
+    makeDir(folder, LAUNCH_FOLDER_MODE);
+    atomicWrite(join(folder, `${file.launch}.json`), `${JSON.stringify(file)}\n`, LAUNCH_FILE_MODE);
+    this.#ended.set(file.launch, file);
+  }
+
+  removeEnded(launch: string): void {
+    if (!LAUNCH_ID.test(launch)) return;
+    this.#ended.delete(launch);
+    rmSync(join(this.root, ENDED_FOLDER, `${launch}.json`), { force: true, maxRetries: 5 });
+  }
 }
 
 /** The machine state in memory: tests, and the property model, whose restarts keep the object. */
@@ -410,5 +537,19 @@ export class MemoryRecords implements RecordStore {
 
   exitPath(launch: string): string {
     return `memory:${launch}/${EXIT_FILE}`;
+  }
+
+  readonly #ended = new Map<string, EndedLaunch>();
+
+  listEnded(): readonly EndedLaunch[] {
+    return [...this.#ended.values()];
+  }
+
+  putEnded(file: EndedLaunch): void {
+    this.#ended.set(file.launch, structuredClone(file));
+  }
+
+  removeEnded(launch: string): void {
+    this.#ended.delete(launch);
   }
 }

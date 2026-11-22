@@ -185,6 +185,21 @@ export class ShimWorld {
       },
       readExit: (launch) => records.readExit(launch),
       exitPath: (launch) => records.exitPath(launch),
+      listEnded: () => records.listEnded(),
+      putEnded: (file) => {
+        if (life.over) throw new Dead();
+        this.#require(
+          !JSON.stringify(file).includes(
+            this.shims.find((s) => s.launch === file.launch)?.ticket ?? "\u0000",
+          ),
+          "an ended record never holds a ticket",
+        );
+        records.putEnded(file);
+      },
+      removeEnded: (launch) => {
+        if (life.over) throw new Dead();
+        records.removeEnded(launch);
+      },
     };
     const probe: ProcessProbe = {
       // The OS is read at once and answers late, as a slow PowerShell does: the answer may be
