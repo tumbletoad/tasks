@@ -8,6 +8,7 @@
 // what busies its agent apps, its place in the list or its state (expanded, current, fresh) changes. Every prop it takes is a
 // value the list keeps by identity, so a store update that touches one task renders one row.
 import { memo, useContext, useEffect, useRef, useState, type CSSProperties } from "react";
+import { flushSync } from "react-dom";
 import type { Instance, Receipt, Run } from "../api.ts";
 import { Session } from "../context.ts";
 import { titleChange } from "../edit/change.ts";
@@ -335,15 +336,16 @@ function TitleEditor({
     done.current = true;
     const title = (field.current?.value ?? "").trim();
     const line = field.current?.closest("[data-row-line]");
-    onDone();
+    // The title is drawn back before focus goes to it, within this key: a key pressed right after
+    // acts from the title, and nothing moves focus later.
+    if (refocus) flushSync(onDone);
+    else onDone();
     if (keep && title !== "" && title !== before) {
       edits.edit(task, titleChange(title), opened.base === undefined ? {} : { base: opened.base });
     }
-    if (!refocus) return;
-    // After React has put the title back.
-    requestAnimationFrame(() => {
+    if (refocus) {
       line?.querySelector<HTMLElement>('[data-part="title"]')?.focus({ preventScroll: true });
-    });
+    }
   };
   // Someone else changed the title while the person types: the typed text stays (A5 3.15 item 9).
   const remote =
