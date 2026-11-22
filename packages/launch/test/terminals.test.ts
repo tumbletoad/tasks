@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { PRODUCT_ID } from "@ttasks/brand";
 import {
   acceptTerminal,
@@ -1516,9 +1516,21 @@ describe("[A4.5.terminal.acceptance] acceptance per adapter: Dispatched, or the 
           });
         },
       });
-      const t0 = performance.now();
-      expect(await launcher.scopes({})).toBe(false);
-      expect(performance.now() - t0).toBeGreaterThanOrEqual(4_900);
+      // The probe's deadline on a fake clock, at the 5 s the probe promises; the start below runs
+      // on the real one.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        let answer: boolean | undefined;
+        const asked = launcher.scopes({}).then((scopes) => (answer = scopes));
+        await vi.advanceTimersByTimeAsync(4_999);
+        expect(answer).toBeUndefined();
+        expect(stopped).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        await asked;
+        expect(answer).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
       // The probe that did not answer was ended; nothing else ever is.
       expect(stopped).toEqual(["/usr/bin/systemd-run"]);
       const started = await launcher.start({

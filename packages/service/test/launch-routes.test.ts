@@ -22,9 +22,11 @@ import { envVar, FOLDER_MARKER, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/bra
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import {
   NOTE_LINE,
+  OPENER_MS,
   presetSession,
   renderBrief,
   REQUEST_LINE,
+  STEP_DEADLINE_MS,
   type LaunchIntent,
   type SpawnRequest,
   type SpawnedProcess,
@@ -155,7 +157,14 @@ async function rig(label: string, opener: number | "hang" = 0): Promise<Rig> {
         instanceToml({ id: "t3-later", target: "t3", label: "T3 · test" }),
       ].join("");
     },
-    launch: { terminals: { spawn: recordingSpawner(opener) } },
+    launch: {
+      terminals: {
+        spawn: recordingSpawner(opener),
+        // The recording spawner's hang never ends: what is proved is the answer once the
+        // deadline passes, not the deadline's length (opener.test.ts covers that).
+        ...(opener === "hang" ? { openerMs: 200 } : {}),
+      },
+    },
     ...(WINDOWS
       ? {}
       : { serviceEnv: { DISPLAY: ":0", PATH: `${bin.root}:${process.env["PATH"] ?? ""}` } }),
@@ -466,6 +475,8 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(opened).toHaveLength(1);
       const events = readLog(r.lab.home).filter((e) => e["ev"] === "launch.opener");
       expect(events.map((e) => e["result"])).toEqual(["unknown"]);
+      // The real opener's deadline ends before the launch step's, so its answer always comes.
+      expect(OPENER_MS).toBeLessThan(STEP_DEADLINE_MS);
     },
   );
 

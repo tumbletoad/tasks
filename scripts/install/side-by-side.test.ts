@@ -23,13 +23,11 @@ import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import {
   installsFolder,
   mcpExchange,
-  offlineVersionFolder,
-  releaseOf,
   runInstaller,
   runProgram,
   runsElevated,
+  runVersions,
   stableCommand,
-  throwawayKey,
 } from "./test/kit.ts";
 
 const SLOW = 900_000;
@@ -48,11 +46,7 @@ beforeAll(async () => {
   work = folders.root;
   // User-only, whatever the umask: the installer refuses a root below a folder others can change.
   mkdirSync(join(work, "h"), { mode: 0o700 });
-  const folder = await offlineVersionFolder(join(work, "build"), {
-    version: "0.1.0-dev.1",
-    build: "side0by0side",
-  });
-  const release = releaseOf(folder, join(work, "dist"), throwawayKey(), work);
+  const { release } = (await runVersions()).first;
   a = join(work, "h", "a");
   b = join(work, "h", "b");
   for (const root of [a, b]) {

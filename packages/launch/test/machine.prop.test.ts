@@ -186,6 +186,13 @@ async function play(world: World, events: readonly Event[]): Promise<void> {
   await world.finish();
 }
 
+/**
+ * The nightly deep job (.github/workflows/nightly.yml) sets TTASKS_DEEP=1 and runs the property
+ * at its full counts; every check runs it at a fifth (in memory) and a third (on the database),
+ * with a new seed each time. fast-check prints the seed and path of a failure.
+ */
+const DEEP = process.env["TTASKS_DEEP"] === "1";
+
 describe("[A4.5.launch.state-machine] the launch state machine under crashes, slow calls and restarts", () => {
   test("in memory: one agent per intent, Unknown never leads to a dispatch, and every call ends", async () => {
     await fc.assert(
@@ -203,7 +210,7 @@ describe("[A4.5.launch.state-machine] the launch state machine under crashes, sl
         clock.world = new World(backend, seed);
         await play(clock.world, events);
       }),
-      { numRuns: 50_000 },
+      { numRuns: DEEP ? 50_000 : 10_000 },
     );
   }, 600_000);
 
@@ -228,7 +235,7 @@ describe("[A4.5.launch.state-machine] the launch state machine under crashes, sl
           await fixture.close();
         }
       }),
-      { numRuns: 300 },
+      { numRuns: DEEP ? 300 : 100 },
     );
   }, 600_000);
 });

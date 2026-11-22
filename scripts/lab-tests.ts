@@ -16,7 +16,8 @@
 //     own changes only.
 // Uncommitted and untracked files count as changes.
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { repoRoot } from "./run.ts";
 
 /** Folders the lab tests load: lab code, and the stand-ins the shared setup puts on PATH. */
@@ -58,6 +59,37 @@ export function isLabPath(path: string): boolean {
     LAB_SHARED_FILES.includes(p) ||
     LAB_SHARED_PATTERNS.some((pattern) => pattern.test(p))
   );
+}
+
+/**
+ * The folders whose change gets the projection model its random runs: the projection package, and
+ * the workspace packages its package.json names, the code it writes through and its tests' kit.
+ */
+export function projectionFolders(root: string = repoRoot): string[] {
+  const manifest = (dir: string) =>
+    JSON.parse(readFileSync(join(root, dir, "package.json"), "utf8")) as {
+      name?: string;
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+  const own = manifest("packages/projection");
+  const names = Object.entries({ ...own.dependencies, ...own.devDependencies })
+    .filter(([, version]) => version.startsWith("workspace:"))
+    .map(([name]) => name);
+  const folders = readdirSync(join(root, "packages"), { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() && existsSync(join(root, "packages", entry.name, "package.json")),
+    )
+    .filter((entry) => names.includes(manifest(`packages/${entry.name}`).name ?? ""))
+    .map((entry) => `packages/${entry.name}/`);
+  return ["packages/projection/", ...folders.sort()];
+}
+
+/** Whether a changed path lies in one of `folders` (projectionFolders). */
+export function isProjectionPath(path: string, folders: readonly string[]): boolean {
+  const p = path.replaceAll("\\", "/").replace(/^\.\//, "");
+  return folders.some((folder) => p.startsWith(folder));
 }
 
 /** The base verify compares with, or why there is none. */

@@ -12,6 +12,7 @@ import { system32 } from "../src/hub/identity.ts";
 import { readEntry } from "../src/install/commands.ts";
 import { serviceEntry } from "../src/install/entries.ts";
 import { runProcess } from "../src/install/process.ts";
+import type { ServiceContext } from "../src/install/context.ts";
 import { RegExe, type RegTree } from "../src/install/registry.ts";
 import { runKeys } from "../src/install/render.ts";
 import { captureIO, fakeContext, TEST_INSTALL_ID } from "./install-fakes.ts";
@@ -99,6 +100,17 @@ afterAll(async () => {
   }
 });
 
+/**
+ * The fake service answers at once, but reg.exe is a real process inside the start's and the
+ * stop's deadline, and under load it takes more than the fakes' 200 ms. No test here waits for a
+ * deadline to run out, so this one only ends a hang.
+ */
+const roomy = (ctx: ServiceContext): ServiceContext => ({
+  ...ctx,
+  readyTimeoutMs: 60_000,
+  stopTimeoutMs: 60_000,
+});
+
 /** Whether `reg query HKCU\Software` lists `key`. */
 const listed = (listing: string, key: string): boolean =>
   listing
@@ -110,10 +122,8 @@ describe.skipIf(!windows)(
   () => {
     const context = () => {
       const registry = new RegExe({ regExe, scratch: join(dir, "scratch"), run: runProcess });
-      return {
-        registry,
-        ...fakeContext({ platform: "win32", dir, registry, registryRoot: SCRATCH }),
-      };
+      const made = fakeContext({ platform: "win32", dir, registry, registryRoot: SCRATCH });
+      return { registry, ...made, ctx: roomy(made.ctx) };
     };
 
     test("install adds exactly its value, keeps the off choice, and install then uninstall leaves no trace", async () => {
@@ -168,12 +178,14 @@ describe.skipIf(!windows)(
     test("round 3: from a root key that does not exist, install creates it and its Run key, and an uninstall in a later process removes both", async () => {
       const fresh = runKeys(FRESH);
       const ctx = () =>
-        fakeContext({
-          platform: "win32",
-          dir: join(dir, "fresh"),
-          registry: new RegExe({ regExe, scratch: join(dir, "scratch"), run: runProcess }),
-          registryRoot: FRESH,
-        }).ctx;
+        roomy(
+          fakeContext({
+            platform: "win32",
+            dir: join(dir, "fresh"),
+            registry: new RegExe({ regExe, scratch: join(dir, "scratch"), run: runProcess }),
+            registryRoot: FRESH,
+          }).ctx,
+        );
       const first = ctx();
       expect(await first.registry.tree(FRESH)).toBeUndefined();
       expect(await serviceEntry("install", { yes: true }, captureIO().io, () => first)).toBe(0);

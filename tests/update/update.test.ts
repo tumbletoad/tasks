@@ -4,7 +4,7 @@
 // and ends on the complete new version, a failure rolls back to the complete old one, a repair
 // finishes or rolls back whatever a cut-off update left, a second update waits for the first, and
 // a person's data stays byte for byte as it was. The real processes, builds and kills are in
-// installed.test.ts.
+// installed*.test.ts.
 import { fork } from "node:child_process";
 import { createHash } from "node:crypto";
 import {

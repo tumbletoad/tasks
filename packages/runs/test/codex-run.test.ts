@@ -220,7 +220,9 @@ describe("[A4.3.11.codex.run] a Codex run in the run host: the program resolved 
     test(`${kind}: a process the agent left behind is ended, and the cleanup says so beside the work's answer`, async (ctx: TestContext) => {
       if (!grouped) ctx.skip("a detached process is beyond what TTasks can find without a group");
       const token = newToken();
-      const b = bench(make());
+      // The leftover holds the program's output open, so the host waits out its settle and its
+      // drain before the cleanup: their length is not what is proved here.
+      const b = bench(make(), { settleMs: 300, drainMs: 500 });
       const id = await startRun(
         b,
         { fixture: "windows-command", token, leave: "detached", answer: "Left one running." },

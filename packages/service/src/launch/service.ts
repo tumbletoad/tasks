@@ -218,6 +218,8 @@ export interface TerminalSeams {
   /** Windows: reads the "Default terminal application" setting. Default: reg.exe. */
   readonly delegation?: () => Promise<WindowsDelegation | undefined>;
   readonly watchMs?: number;
+  /** How long the OS opener may take before its answer counts as unknown. Default: OPENER_MS. */
+  readonly openerMs?: number;
 }
 
 export { LaunchFolderUnavailable };
@@ -963,6 +965,9 @@ ${instance}`;
       spawn: this.#options.terminals?.spawn ?? osSpawner,
       which: (name) => findOnPosixPath(name, path),
       cwd: this.#options.home ?? this.#options.stateDir,
+      ...(this.#options.terminals?.openerMs === undefined
+        ? {}
+        : { timeoutMs: this.#options.terminals.openerMs }),
     };
   }
 

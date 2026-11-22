@@ -17,9 +17,10 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { buildLaunchers, type Launchers } from "../src/build.ts";
+import type { Launchers } from "../src/build.ts";
 import {
   addVersion,
+  runLaunchers,
   launchVersion,
   makeStable,
   prepareRuntime,
@@ -42,13 +43,13 @@ describe.runIf(windows)(
     let other: Launchers;
     let count = 0;
 
-    beforeAll(() => {
+    beforeAll(async () => {
       work = tempDir("sibling");
       prepareRuntime(work);
-      release = buildLaunchers(join(work, "release"));
+      release = await runLaunchers("release");
       // A second set whose files differ from the release build's, so a test can tell which
       // version's launcher was put back.
-      other = buildLaunchers(join(work, "other"), { testHooks: true });
+      other = await runLaunchers("hooks");
     }, 300_000);
 
     afterAll(() => {

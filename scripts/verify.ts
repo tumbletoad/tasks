@@ -18,6 +18,8 @@ import { join } from "node:path";
 import {
   decideLab,
   findBase,
+  isProjectionPath,
+  projectionFolders,
   parseVerifyArgs,
   type LabDecision,
   type VerifyOptions,
@@ -97,6 +99,23 @@ const lab: LabDecision | null = stages.flat().some(([, part]) => part === "lab")
   ? decideLab(options, process.env, () => findBase(process.env))
   : null;
 if (lab !== null) console.log(lab.reason);
+
+// A change to the projection meets the model's random runs before it merges: they once found a
+// defect that the fixed seeds never reach (packages/projection/test/model-replay.test.ts).
+if (
+  stages.flat().some(([, part]) => part === "product") &&
+  process.env["PROJECTION_MODEL_RUNS"] === undefined
+) {
+  const base = findBase(process.env);
+  const folders = projectionFolders();
+  const changed = !base.found || base.changed.some((p) => isProjectionPath(p, folders));
+  if (changed) {
+    process.env["PROJECTION_MODEL_RUNS"] = "50";
+    console.log(
+      `projection model: 50 random runs, ${base.found ? `the projection or a package it uses changed since ${base.label}` : `the base could not be determined (${base.why})`}`,
+    );
+  }
+}
 
 function labTests(): boolean {
   if (lab === null || !lab.run) {

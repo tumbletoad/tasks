@@ -17,13 +17,15 @@ export const testFiles = {
 export const LAB_DIR = "spikes";
 
 /**
- * At most eight test files at a time. Vitest's default takes every core, and on a development
- * machine several agents may run the suite at once: with all of them at full width, tests that start
- * real processes (the service, the crash harness, fake agents) missed their time limits. Eight
- * leaves room for a few runs side by side and costs a single run little. A small CI runner keeps
- * one core free.
+ * Half the threads, at most sixteen, and never fewer than the older cap of eight (or every core
+ * but one, on a smaller machine). Vitest's default takes every core, and on a development machine
+ * several agents may run the suite at once: at full width, tests that start real processes (the
+ * service, the crash harness, fake agents) missed their time limits. Measured on a 32-thread
+ * desktop: 16 passed alone and with three full runs side by side. A machine of 9 to 17 threads
+ * keeps the eight of before, which nobody ran wider; a 4-core CI runner gets 3.
  */
-const MAX_WORKERS = Math.max(2, Math.min(8, availableParallelism() - 1));
+const threads = availableParallelism();
+const MAX_WORKERS = Math.max(2, Math.min(8, threads - 1), Math.min(16, Math.floor(threads / 2)));
 
 // Tests never fall back to whatever a developer has in their environment. The setup file puts the
 // test stand-ins first on PATH (Linux: systemd-run), so no test reaches the person's user manager.
@@ -67,6 +69,7 @@ export default defineConfig({
           name: "product",
           include: testFiles.include,
           exclude: [...testFiles.exclude, `${LAB_DIR}/**`],
+          globalSetup: ["tests/run-builds-setup.ts"],
           // A time limit only ends a test that hangs: it says nothing about how fast the code is.
           // On a loaded machine, tests that take a second or two alone have taken more than 30 s
           // beside every other file. A test's own explicit timeout still wins: give one only to

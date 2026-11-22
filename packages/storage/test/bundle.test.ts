@@ -1676,19 +1676,28 @@ describe("[A1.5.bundle.secret-scan] the export's secret scan", () => {
   });
 });
 
+/**
+ * The nightly deep job (.github/workflows/nightly.yml) sets TTASKS_DEEP=1: the stress corpus at
+ * its full size, which only a cost that grows with size can fail. The small tests above run the
+ * same export, data.jsonl and restore code on every check.
+ */
+const DEEP = process.env["TTASKS_DEEP"] === "1";
+
 describe("[A1.5.bundle.stress] the largest stress-corpus bundle passes the shared policy", () => {
-  test("10,000 open and 100,000 completed tasks export with data.jsonl and restore", async () => {
-    const checked = await checkedDriver();
-    const { folder } = await createFixtureSpace(folders.make());
-    const conn = await rawWriter(folder);
-    try {
-      const system = String(
-        conn.prepare("SELECT id FROM actors WHERE kind = 'system'").get()?.["id"],
-      );
-      conn.transaction("immediate", () => {
-        conn
-          .prepare(
-            `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 110000)
+  test.runIf(DEEP)(
+    "10,000 open and 100,000 completed tasks export with data.jsonl and restore",
+    async () => {
+      const checked = await checkedDriver();
+      const { folder } = await createFixtureSpace(folders.make());
+      const conn = await rawWriter(folder);
+      try {
+        const system = String(
+          conn.prepare("SELECT id FROM actors WHERE kind = 'system'").get()?.["id"],
+        );
+        conn.transaction("immediate", () => {
+          conn
+            .prepare(
+              `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 110000)
              INSERT INTO tasks (id, ref, title, context, lifecycle, completed_at, position,
                created_at, created_by, created_seq, version, touched)
              SELECT 't_stress' || i, i, 'Stress task ' || i, hex(randomblob(256)),
@@ -1696,36 +1705,48 @@ describe("[A1.5.bundle.stress] the largest stress-corpus bundle passes the share
                CASE WHEN i <= 10000 THEN NULL ELSE 1 END,
                'a0', 0, $actor, 0, 0, 0
              FROM n`,
-          )
-          .run({ actor: system });
-        conn.prepare("UPDATE space SET next_ref = 110001 WHERE one = 1").run();
-      });
-    } finally {
-      conn.close();
-    }
-    const bundle = await exportBundle(checked, folder, { mode: "backup", withJsonl: true });
-    expect(bundle.manifest.counts["tasks"]).toBe(110_000);
-    const restored = await restoreBackup(checked, bundle.file, join(folders.make(), "mira"));
-    const facts = await readFacts(restored.folder);
-    expect(facts.integrity).toBe("ok");
-    expect(facts.counts).toEqual(bundle.manifest.counts);
-  }, 600_000);
+            )
+            .run({ actor: system });
+          conn.prepare("UPDATE space SET next_ref = 110001 WHERE one = 1").run();
+        });
+      } finally {
+        conn.close();
+      }
+      const bundle = await exportBundle(checked, folder, { mode: "backup", withJsonl: true });
+      expect(bundle.manifest.counts["tasks"]).toBe(110_000);
+      const restored = await restoreBackup(checked, bundle.file, join(folders.make(), "mira"));
+      const facts = await readFacts(restored.folder);
+      expect(facts.integrity).toBe("ok");
+      expect(facts.counts).toEqual(bundle.manifest.counts);
+    },
+    600_000,
+  );
 
-  test("a projection-sized archive, a file per task, reads under the policy with ZIP64's count", async () => {
-    const src = folders.make();
-    const zip = join(src, "view.zip");
-    const writer = ZipWriter.create(zip, Date.UTC(2026, 10, 14));
-    const files: Record<string, { size: number; sha256: string }> = {};
-    for (let i = 0; i < 110_001; i += 1) {
-      const entry = writer.addBytes(
-        `view/tasks/M-${String(i)}.md`,
-        Buffer.from(`# M-${String(i)}\n`),
-      );
-      files[entry.name] = { size: entry.size, sha256: entry.sha256 };
-    }
-    writer.addBytes("export.json", exportJson(files));
-    writer.finish();
-    const read = await readBundle(zip, BUNDLE_POLICY);
-    expect(Object.keys(read.manifest.files)).toHaveLength(110_001);
-  }, 600_000);
+  // Each count is the archive's entries, export.json included. 65,535 is the least count the
+  // writer must mark for ZIP64 (zip.ts: from 0xffff on) and the one count where the reader requires
+  // the mark: an off-by-one on either side fails it. At 65,535 the 16-bit field still holds the
+  // true count, so only a count above it shows that the reader takes the ZIP64 record's count and
+  // that the writer puts the true count there. The deep job writes the whole stress corpus.
+  test.each(DEEP ? [0xffff, 0xffff + 2, 110_002] : [0xffff, 0xffff + 2])(
+    "a projection-sized archive, a file per task, reads under the policy with ZIP64's count: %i entries",
+    async (entries) => {
+      const views = entries - 1;
+      const src = folders.make();
+      const zip = join(src, "view.zip");
+      const writer = ZipWriter.create(zip, Date.UTC(2026, 10, 14));
+      const files: Record<string, { size: number; sha256: string }> = {};
+      for (let i = 0; i < views; i += 1) {
+        const entry = writer.addBytes(
+          `view/tasks/M-${String(i)}.md`,
+          Buffer.from(`# M-${String(i)}\n`),
+        );
+        files[entry.name] = { size: entry.size, sha256: entry.sha256 };
+      }
+      writer.addBytes("export.json", exportJson(files));
+      writer.finish();
+      const read = await readBundle(zip, BUNDLE_POLICY);
+      expect(Object.keys(read.manifest.files)).toHaveLength(views);
+    },
+    600_000,
+  );
 });

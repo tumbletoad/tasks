@@ -1,7 +1,7 @@
 // The candidate's own checks (A2 3.12.6; A7 3.8 M1.14), from source: a temporary
 // space through the worker threads, a temporary endpoint with a handshake, and a bridge answering
 // tools/list from its offline file, each in a folder of its own below `<state>/tmp/` that is gone
-// afterwards. The installed version's run of them is in scripts/install/install.test.ts.
+// afterwards. The installed version's run of them is in scripts/install/install-script.test.ts.
 import {
   chmodSync,
   existsSync,

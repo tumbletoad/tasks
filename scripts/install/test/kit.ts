@@ -7,8 +7,15 @@
 // (runInstaller refuses any other), the scripts have no default root, and nothing here writes the
 // real install root, PATH, a shell profile, a start-up entry or the registry.
 import { spawn, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { createHash, createPublicKey, generateKeyPairSync, type KeyObject } from "node:crypto";
 import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  generateKeyPairSync,
+  type KeyObject,
+} from "node:crypto";
+import {
+  appendFileSync,
   copyFileSync,
   cpSync,
   existsSync,
@@ -60,6 +67,7 @@ import {
 } from "../../build/signing.ts";
 import { assembleVersionFolder, folderEntries } from "../../build/version-folder.ts";
 import { repoRoot } from "../../run.ts";
+import { builtOnce } from "../../../tests/run-builds.ts";
 import { installerName, renderTestInstaller, type InstallerKind } from "../render.ts";
 
 export const windows = process.platform === "win32";
@@ -151,6 +159,67 @@ export async function offlineVersionFolder(
   return folder;
 }
 
+/** A version folder built once per test run (tests/run-builds.ts), and its signed release. */
+export interface RunVersion {
+  readonly folder: string;
+  readonly release: Release;
+}
+
+/**
+ * Two versions, 0.1.0-dev.1 and 0.1.0-dev.2, built offline once per test run for every file that
+ * installs or updates: both trust `key`, which signed both releases. On Windows `distinct` is the
+ * second version with launchers that differ from the first's, as two releases' launchers do, so an
+ * update to it swaps both stable launchers; elsewhere it is the second version. Read-only: a test
+ * that changes a folder or a release copies it into a folder of its own first.
+ */
+export async function runVersions(): Promise<{
+  readonly key: KeyObject;
+  readonly first: RunVersion;
+  readonly second: RunVersion;
+  readonly distinct: RunVersion;
+}> {
+  const built = await builtOnce("versions", async (dir) => {
+    const key = throwawayKey();
+    const trustKeys = [opensshPublicKey(createPublicKey(key))];
+    const web = await buildWeb(join(dir, "ui"), repoRoot);
+    const version = async (n: number, at: string): Promise<RunVersion> => {
+      const folder = await offlineVersionFolder(
+        join(dir, `build-${String(n)}`),
+        { version: at, build: `run0test${String(n)}` },
+        { trustKeys, web },
+      );
+      return { folder, release: releaseOf(folder, join(dir, `dist-${String(n)}`), key, dir) };
+    };
+    const first = await version(1, "0.1.0-dev.1");
+    const second = await version(2, "0.1.0-dev.2");
+    let distinct = second;
+    if (windows) {
+      const folder = join(dir, "build-2d", "0.1.0-dev.2");
+      cpSync(second.folder, folder, { recursive: true });
+      for (const exe of [`${PRODUCT_ID}.exe`, `${PRODUCT_ID}w.exe`]) {
+        // A mark after the image, which the loader ignores: the code is the release build's.
+        appendFileSync(join(folder, "bin", exe), `\0launcher 0.1.0-dev.2\0`);
+      }
+      rewriteManifest(folder);
+      distinct = { folder, release: releaseOf(folder, join(dir, "dist-2d"), key, dir) };
+    }
+    return {
+      key: key.export({ type: "pkcs8", format: "pem" }),
+      first,
+      second,
+      distinct,
+    };
+  });
+  const key = createPrivateKey(built.key);
+  const signed = (v: RunVersion): RunVersion => ({ ...v, release: { ...v.release, key } });
+  return {
+    key,
+    first: signed(built.first),
+    second: signed(built.second),
+    distinct: signed(built.distinct),
+  };
+}
+
 /** The manifest's fields of a version folder, as JSON. */
 function manifestOf(folder: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(folder, "manifest.json"), "utf8")) as Record<string, unknown>;
@@ -166,17 +235,28 @@ export function variantFolder(
   change: { readonly version?: string; readonly node?: string },
 ): string {
   cpSync(base, out, { recursive: true });
-  const manifest = manifestOf(base);
-  rmSync(join(out, "manifest.json"));
-  writeVersionManifest(out, {
-    version: change.version ?? String(manifest["version"]),
-    build: String(manifest["build"]),
-    platform: String(manifest["platform"]),
-    node: change.node ?? String(manifest["node"]),
-    sqlite: String(manifest["sqlite"]),
-    protocol: manifest["protocol"] as { min: number; max: number },
-  });
+  rewriteManifest(out, change, manifestOf(base));
   return out;
+}
+
+/**
+ * Writes a version folder's manifest again so it lists the folder exactly as it now is, with the
+ * fields of `from` (by default its own) and `change` over them.
+ */
+export function rewriteManifest(
+  folder: string,
+  change: { readonly version?: string; readonly node?: string } = {},
+  from: Record<string, unknown> = manifestOf(folder),
+): void {
+  rmSync(join(folder, "manifest.json"));
+  writeVersionManifest(folder, {
+    version: change.version ?? String(from["version"]),
+    build: String(from["build"]),
+    platform: String(from["platform"]),
+    node: change.node ?? String(from["node"]),
+    sqlite: String(from["sqlite"]),
+    protocol: from["protocol"] as { min: number; max: number },
+  });
 }
 
 /** The archive of a version folder, as its build writes it (stored, so tests stay quick). */

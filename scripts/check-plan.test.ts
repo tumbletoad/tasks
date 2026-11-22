@@ -208,18 +208,25 @@ describe("[A7.3.3.check.selection] pnpm check selects the tests a change can rea
   });
 
   test("a slow file is selected but left to CI, unless it is the change's own test", () => {
+    const slowFiles = [
+      { test: "tests/update/installed.test.ts", home: "tests/update/" },
+      { test: "packages/projection/test/model.test.ts" },
+    ];
     const changed = ["packages/a/src/core.ts"];
-    const s = select(changed, repo, set, { slow: false });
+    const s = select(changed, repo, set, { slow: false, slowFiles });
     expect(s.deferred).toEqual([
       "packages/projection/test/model.test.ts",
       "tests/update/installed.test.ts",
     ]);
     expect(s.run).not.toContain("tests/update/installed.test.ts");
-    expect(select(changed, repo, set, { slow: true }).deferred).toEqual([]);
+    expect(select(changed, repo, set, { slow: true, slowFiles }).deferred).toEqual([]);
 
-    const own = select(["tests/update/installed.test.ts"], repo, set, { slow: false });
+    const own = select(["tests/update/installed.test.ts"], repo, set, { slow: false, slowFiles });
     expect(own.run).toEqual(["tests/update/installed.test.ts"]);
-    const home = select(["tests/update/fixture.ts", ...changed], repo, set, { slow: false });
+    const home = select(["tests/update/fixture.ts", ...changed], repo, set, {
+      slow: false,
+      slowFiles,
+    });
     expect(home.run).toContain("tests/update/installed.test.ts");
     expect(home.deferred).toEqual(["packages/projection/test/model.test.ts"]);
   });

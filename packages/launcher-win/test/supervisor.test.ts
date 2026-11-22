@@ -20,9 +20,10 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { buildLaunchers, type Launchers } from "../src/build.ts";
+import type { Launchers } from "../src/build.ts";
 import {
   addVersion,
+  runLaunchers,
   alive,
   killQuietly,
   makeStable,
@@ -91,11 +92,11 @@ describe.runIf(windows)(
     let release: Launchers;
     let count = 0;
 
-    beforeAll(() => {
+    beforeAll(async () => {
       work = tempDir("supervisor");
       prepareRuntime(work);
-      hooks = buildLaunchers(join(work, "hooks"), { testHooks: true });
-      release = buildLaunchers(join(work, "release"));
+      hooks = await runLaunchers("hooks");
+      release = await runLaunchers("release");
     }, 300_000);
 
     afterAll(() => {
@@ -368,8 +369,9 @@ describe.runIf(windows)(
     const FAILING: Step[] = Array.from({ length: 5 }, () => ({ exit: 70 }));
 
     test("the give-up record never writes through a hard link: files outside the install keep their contents", () => {
-      // The release build, with its real one-second unit: the run takes 15 s.
-      const root = install(release);
+      // The hooks build writes the record through the same code as the release build, which only
+      // ignores the 10 ms unit; that is proved by 'a release build ignores the test hooks'.
+      const root = install(hooks);
       const crash = join(root, "state", "crash");
       // Victims outside the install, hard-linked at the old temporary name and at the record's name.
       const victims = [
