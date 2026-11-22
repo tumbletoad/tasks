@@ -86,8 +86,6 @@ export interface RowProps {
   readonly busy: BusyOf | undefined;
   /** The task's background runs, oldest first, once the tab follows the task. */
   readonly runs: readonly Run[];
-  /** Whether the task's receipts and runs were read: until then its card holds its controls back. */
-  readonly read?: boolean;
   readonly ctx: RowContext;
   readonly expanded: boolean;
   /** The row in the tab order (the roving tabindex). */
@@ -415,7 +413,6 @@ function RowView({
   receipts,
   busy,
   runs,
-  read = true,
   ctx,
   expanded,
   current,
@@ -659,7 +656,6 @@ function RowView({
             receipts={receipts}
             busy={busy}
             runs={runs}
-            read={read}
             instances={instances}
             actions={actions}
             refused={refused}

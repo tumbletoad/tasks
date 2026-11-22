@@ -275,8 +275,6 @@ export function TaskList({
         })
         .catch((error: unknown) => {
           live.failed(error);
-          // Read, if only as nothing: the card draws its thread and its controls all the same.
-          setReceipts((known) => (known.has(task) ? known : new Map(known).set(task, [])));
         });
     },
     [api, live],
@@ -332,7 +330,6 @@ export function TaskList({
         })
         .catch((error: unknown) => {
           live.failed(error);
-          setRuns((known) => (known.has(task) ? known : new Map(known).set(task, [])));
         });
     },
     [api, live],
@@ -919,7 +916,6 @@ export function TaskList({
       receipts={receipts.get(item.key) ?? NO_RECEIPTS}
       busy={busy.get(item.key)}
       runs={withStops(runs.get(item.key) ?? NO_RUNS, stops)}
-      read={receipts.has(item.key) && runs.has(item.key)}
       ctx={item.finished && item.task.lifecycle !== "active" ? finishedCtx : ctx}
       expanded={expanded === item.key}
       current={place.current}
