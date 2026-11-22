@@ -1385,4 +1385,27 @@ describe("[A4.5.shim.attach] an ended launch leaves nothing", () => {
     expect(existsSync(ended)).toBe(true);
     expect(existsSync(linked)).toBe(true);
   });
+
+  // Only Windows holds a file against its removal; elsewhere the folder's mode decides.
+  test.skipIf(process.platform !== "win32")(
+    "an old record another program holds stays, with its folder, and a later start removes it",
+    () => {
+      const temp = tempFolder();
+      temps.push(temp);
+      const root = join(temp.path, "launch");
+      const ended = join(root, "ended");
+      mkdirSync(ended, { recursive: true });
+      const held = join(ended, `${randomId("la")}.json`);
+      writeFileSync(held, '{"format":1}');
+      const hold = holdFile(held);
+      try {
+        new FolderRecords(root);
+        expect(existsSync(held)).toBe(true);
+      } finally {
+        hold.release();
+      }
+      new FolderRecords(root);
+      expect(existsSync(ended)).toBe(false);
+    },
+  );
 });

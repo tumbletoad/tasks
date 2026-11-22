@@ -12,7 +12,15 @@
 //
 // Folders are named after the launch ID, not its reference: a reference is unique within one space
 // only, and one machine's launch root holds the launches of all its spaces.
-import { lstatSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync } from "node:fs";
+import {
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+} from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, makeDir } from "@ttasks/files";
 import { isLaunchRef } from "../intents.ts";
@@ -439,9 +447,9 @@ function removeEndedRecords(root: string): void {
     if (!name.endsWith(".json") || !LAUNCH_ID.test(name.slice(0, -".json".length))) continue;
     const path = join(folder, name);
     try {
-      if (lstatSync(path).isFile()) rmSync(path, { force: true, maxRetries: 5 });
+      if (lstatSync(path).isFile()) unlinkSync(path);
     } catch {
-      // Not removable now: a later start tries again.
+      // Held by another program, or not removable now: it stays, with no wait, for a later start.
     }
   }
   try {
