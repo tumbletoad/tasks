@@ -134,6 +134,53 @@ test.describe("[A7.3.12.m5-11.e2e.terminal] Open's terminal: which one and why, 
     }
     await expect(terminal(page)).toContainText("Open uses Ghostty: the first one found.");
   });
+
+  test("the page reads the terminal again on focus; that answer, older than kitty's, leaves kitty chosen", async ({
+    page,
+    world,
+  }) => {
+    await open(page, world, "/settings");
+    const group = terminal(page);
+    await expect(group.getByRole("radio", { name: "This machine's default" })).toBeChecked();
+    // The next read reaches the service before the choice, and its answer comes after it.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let read: () => void = () => undefined;
+    const reached = new Promise<void>((resolve) => {
+      read = resolve;
+    });
+    await page.route("**/api/v1/machine/terminal", async (route) => {
+      if (route.request().postData()?.includes('"app"') === true) {
+        await route.continue();
+        return;
+      }
+      const response = await route.fetch();
+      read();
+      await held;
+      await route.fulfill({ response }).catch(() => undefined);
+    });
+    try {
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await reached;
+      await choose(group, "kitty");
+      await expect(group).toContainText("Open uses kitty: chosen here.");
+      const late = page.waitForResponse(
+        (r) =>
+          r.url().endsWith("/api/v1/machine/terminal") &&
+          r.request().postData()?.includes('"app"') !== true,
+      );
+      release();
+      await late;
+      await expect(group.getByRole("radio", { name: "kitty" })).toBeChecked();
+      await expect(group).toContainText("Open uses kitty: chosen here.");
+    } finally {
+      release();
+      await page.unrouteAll({ behavior: "wait" });
+      await choose(terminal(page), "This machine's default");
+    }
+  });
 });
 
 test.describe("[A7.3.12.m5-11.e2e.keys] The keys: each where it works, never where a person types", () => {
