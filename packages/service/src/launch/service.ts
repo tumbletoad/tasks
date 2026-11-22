@@ -1217,12 +1217,15 @@ ${instance}`;
    * gone since the first call succeeded and its answer was lost, and the replay still returns that
    * intent (its dispatch resolves the folder again). The plan's shape is the input's own and is
    * checked before anything; machine state is made only for a Prepared intent that has none.
+   * `given` is what a real click knows of the agent it starts (its app, home and preset), kept
+   * with the plan; the session a click continues is the click's own `session`.
    */
   async open(
     space: string,
     click: Omit<NewIntent, "machine">,
     requestId: string,
     plan?: SpawnPlan,
+    given: ClickGiven = {},
   ): Promise<LaunchIntent> {
     const hosted = await this.#space(space);
     if (hosted === undefined) throw new Error("The space is not open on this machine");
@@ -1232,7 +1235,7 @@ ${instance}`;
       throw new Error("The spawn plan is not one the shim can start");
     }
     await this.#preflight(space, hosted, requestId, plan.folder);
-    return this.#openWith(space, hosted, click, requestId, () => plan);
+    return this.#openWith(space, hosted, click, requestId, () => plan, given);
   }
 
   /**

@@ -33,7 +33,7 @@ import {
   within,
   type Exit,
 } from "./harness.ts";
-import { classSession } from "./ops-helpers.ts";
+import { agentHomeOf, classSession } from "./ops-helpers.ts";
 
 /** The CLI's entry: `ttasks shim <ticket>` from the source tree, as `pnpm ttasks` runs it. */
 export const CLI_BIN = fileURLToPath(new URL("../../cli/src/bin.ts", import.meta.url));
@@ -351,8 +351,10 @@ export class ShimLab {
   }
 
   /**
-   * A click on the lab's task: the Prepared intent. Each instance key is its own launch: a second
-   * click with the same one while the first is still opening returns the first.
+   * A click on the lab's task: the Prepared intent, with the instance's agent home recorded as a
+   * real click records it (`agentHomeOf`: `grantHome` registers the same home). Each instance key
+   * is its own launch: a second click with the same one while the first is still opening returns
+   * the first.
    */
   open(plan: SpawnPlan, instance = "fixture-agent"): Promise<LaunchIntent> {
     return this.running.launches.open(
@@ -367,6 +369,7 @@ export class ShimLab {
       },
       this.#rid(),
       plan,
+      agentHomeOf(this.home, instance),
     );
   }
 

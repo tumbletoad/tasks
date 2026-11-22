@@ -27,7 +27,7 @@ import type { LaunchMachine, Observation } from "../machine.ts";
 import type { FolderCheck, ResolveReason } from "../places.ts";
 import type { ProcessProbe } from "../process.ts";
 import { withFolder } from "../routes/argv.ts";
-import type { LaunchIntent } from "../store.ts";
+import { SESSION_UUID, type LaunchIntent } from "../store.ts";
 import { ADDED, agentEnvironment, type AgentBase } from "./environment.ts";
 import {
   checkPlan,
@@ -122,13 +122,33 @@ export interface BridgeTicket {
   readonly inWindow: boolean;
 }
 
+/** A launch's ID or a background run's: the two things a session is named after. */
+const SESSION_SOURCE = /^(?:la|ru)_([0-9a-z]{26})$/;
+
 /**
- * The session a launch is: the one it continues, or else one named after the launch itself, `se_`
- * and the launch ID's 26 characters. So the session exists from the click, and a launch of a build
- * that recorded none is still named.
+ * The session a launch or a background run is: the one it continues, or else one named after it,
+ * `se_` and the 26 characters of its `la_` or `ru_` ID. So the session exists from the click (or
+ * the run's start), and a launch of a build that recorded none is still named. IDs are random, so
+ * a launch and a run never share a name.
  */
-export const sessionOf = (intent: Pick<LaunchIntent, "id" | "session">): string =>
-  intent.session ?? `se_${intent.id.slice("la_".length)}`;
+export function sessionOf(of: { readonly id: string; readonly session?: string | null }): string {
+  if (of.session !== undefined && of.session !== null) return of.session;
+  const body = SESSION_SOURCE.exec(of.id)?.[1];
+  if (body === undefined) throw new Error("Only a launch or a run is named as a session");
+  return `se_${body}`;
+}
+
+/** A live launch a value names: its session's facts (`ShimHost.liveByTicket`, `liveByPreset`). */
+export interface LiveLaunch {
+  readonly launch: string;
+  readonly space: string;
+  /** Null for a routine's launch. */
+  readonly task: string | null;
+  readonly session: string;
+  /** The agent's app and home folder as the click recorded them; a launch can lack either. */
+  readonly app?: string;
+  readonly home?: string;
+}
 
 /** Sends the claim's reply to the shim. Resolves once it has left the service. */
 export type SendReply = (reply: ClaimReply, attachment: Attachment) => Promise<void>;
@@ -604,6 +624,44 @@ export class ShimHost {
       task: record.task,
       used: record.ticket.bridgeUsed,
       inWindow: !apart(this.#now(), record.agent.startedAt, BRIDGE_WINDOW_MS),
+    };
+  }
+
+  /**
+   * The live launch a ticket (`TTASKS_TICKET`) names: claimed (its attachment stored) and not yet
+   * released. A ticket is its hash bound to its launch's ID, so it names only that launch. Every
+   * record is hashed and compared, each in constant time. Machine state only: no space needs to be
+   * open.
+   */
+  liveByTicket(ticket: string): LiveLaunch | undefined {
+    if (typeof ticket !== "string" || !TICKET.test(ticket)) return undefined;
+    const record = this.#byTicket(ticket);
+    return record === undefined ? undefined : this.#live(record);
+  }
+
+  /**
+   * The live launch the click preset `preset` for (`CLAUDE_CODE_SESSION_ID`): claimed and not yet
+   * released, the newest click when more than one is.
+   */
+  liveByPreset(preset: string): LiveLaunch | undefined {
+    if (typeof preset !== "string" || !SESSION_UUID.test(preset)) return undefined;
+    let found: LaunchFile | undefined;
+    for (const record of this.#records.list()) {
+      if (record.preset !== preset || record.attachment === undefined) continue;
+      if (found === undefined || record.createdAt > found.createdAt) found = record;
+    }
+    return found === undefined ? undefined : this.#live(found);
+  }
+
+  #live(record: LaunchFile): LiveLaunch | undefined {
+    if (record.attachment === undefined) return undefined;
+    return {
+      launch: record.launch,
+      space: record.space,
+      task: record.task,
+      session: sessionOf({ id: record.launch, session: record.session ?? null }),
+      ...(record.app === undefined ? {} : { app: record.app }),
+      ...(record.home === undefined ? {} : { home: record.home }),
     };
   }
 
