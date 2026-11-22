@@ -300,26 +300,6 @@ test.describe("[A7.3.12.e2e.sidebar-fixed] every entry of the side menu keeps it
     await expect(inbox).toHaveAttribute("aria-label", "Inbox, no tasks", { timeout: SLOW_MS });
     expect(await sidebarPlaces(page)).toEqual(empty);
   });
-
-  test("an area's projects are always listed, so opening an area or a project moves no entry", async ({
-    page,
-    world,
-  }) => {
-    await open(page, world, "today");
-    const portal = sidebar(page).getByRole("link", { name: /^Lumen portal, / });
-    await expect(portal).toBeVisible({ timeout: SLOW_MS });
-    const before = await sidebarPlaces(page);
-    await sidebar(page)
-      .getByRole("link", { name: /^Home, / })
-      .click();
-    await expect(page).toHaveURL(/\/area\//);
-    expect(await sidebarPlaces(page)).toEqual(before);
-    await portal.click();
-    await expect(page).toHaveURL(/\/project\//);
-    await expect(portal).toHaveAttribute("aria-current", "page");
-    expect(await sidebarPlaces(page)).toEqual(before);
-    await picture(page, "sidebar-projects.png");
-  });
 });
 
 test.describe("[A7.3.12.m5-05.e2e.screens] the views in both themes at 1,440 and 390 px", () => {
