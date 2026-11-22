@@ -13,7 +13,7 @@
 //
 // Folders are named after the launch ID, not its reference: a reference is unique within one space
 // only, and one machine's launch root holds the launches of all its spaces.
-import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, makeDir } from "@ttasks/files";
 import { isLaunchRef } from "../intents.ts";
@@ -145,11 +145,18 @@ export interface RecordStore {
   readExit(launch: string): ExitFile | undefined;
   /** Where the shim writes `exit.json`. */
   exitPath(launch: string): string;
+  /** When the launch's `exit.json` was written, wall clock milliseconds, when it is there. */
+  exitWrittenAt(launch: string): number | undefined;
   /** The ended launches' records, apart from every live one. */
   listEnded(): readonly EndedLaunch[];
   /** Durable when it returns. */
   putEnded(file: EndedLaunch): void;
-  removeEnded(launch: string): void;
+  /**
+   * Removes every ended record that ended at or before `until`, and anything else among them
+   * written then (a damaged record, a write's leftover). One that cannot be removed now is kept,
+   * for the next call.
+   */
+  forgetEnded(until: number): void;
 }
 
 /** The largest launch file read back, and so the largest written. */
@@ -487,6 +494,15 @@ export class FolderRecords implements RecordStore {
     return join(this.root, launch, EXIT_FILE);
   }
 
+  exitWrittenAt(launch: string): number | undefined {
+    if (!LAUNCH_ID.test(launch)) return undefined;
+    try {
+      return Math.round(statSync(join(this.root, launch, EXIT_FILE)).mtimeMs);
+    } catch {
+      return undefined;
+    }
+  }
+
   listEnded(): readonly EndedLaunch[] {
     return [...this.#ended.values()];
   }
@@ -499,10 +515,35 @@ export class FolderRecords implements RecordStore {
     this.#ended.set(file.launch, file);
   }
 
-  removeEnded(launch: string): void {
-    if (!LAUNCH_ID.test(launch)) return;
-    this.#ended.delete(launch);
-    rmSync(join(this.root, ENDED_FOLDER, `${launch}.json`), { force: true, maxRetries: 5 });
+  forgetEnded(until: number): void {
+    const folder = join(this.root, ENDED_FOLDER);
+    for (const ended of [...this.#ended.values()]) {
+      if (ended.endedAt > until) continue;
+      try {
+        rmSync(join(folder, `${ended.launch}.json`), { force: true, maxRetries: 5 });
+        this.#ended.delete(ended.launch);
+      } catch {
+        // Kept: the next call tries again.
+      }
+    }
+    // The folder is the service's alone: anything else in it is a record it could not read or
+    // a write a crash cut short, which it removes once it is a day old.
+    let names: string[];
+    try {
+      names = readdirSync(folder);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (name.endsWith(".json") && this.#ended.has(name.slice(0, -".json".length))) continue;
+      const path = join(folder, name);
+      try {
+        const facts = lstatSync(path);
+        if (facts.isFile() && facts.mtimeMs <= until) rmSync(path, { force: true, maxRetries: 5 });
+      } catch {
+        // Not removable now: the next call tries again.
+      }
+    }
   }
 }
 
@@ -539,6 +580,13 @@ export class MemoryRecords implements RecordStore {
     return `memory:${launch}/${EXIT_FILE}`;
   }
 
+  /** When each exit in `exits` was written; none known is the host's own fallback. */
+  readonly exitTimes = new Map<string, number>();
+
+  exitWrittenAt(launch: string): number | undefined {
+    return this.exits.has(launch) ? this.exitTimes.get(launch) : undefined;
+  }
+
   readonly #ended = new Map<string, EndedLaunch>();
 
   listEnded(): readonly EndedLaunch[] {
@@ -549,7 +597,9 @@ export class MemoryRecords implements RecordStore {
     this.#ended.set(file.launch, structuredClone(file));
   }
 
-  removeEnded(launch: string): void {
-    this.#ended.delete(launch);
+  forgetEnded(until: number): void {
+    for (const ended of [...this.#ended.values()]) {
+      if (ended.endedAt <= until) this.#ended.delete(ended.launch);
+    }
   }
 }

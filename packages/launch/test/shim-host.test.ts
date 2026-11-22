@@ -3,7 +3,15 @@
 // table. The property test (shim.prop.test.ts) covers their combinations; the service's end-to-end
 // test runs a real shim through a restart.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { CLAIM_WINDOW_MS, isLaunchRef, launchRefCheck, type Route } from "../src/intents.ts";
@@ -1209,33 +1217,6 @@ describe("[A5.3.9.shim.session-end] a session runs while its shim follows it, an
   });
 });
 
-describe("[A3.3.7.binding.ticket] an exit on disk ends the agent's ticket at once", () => {
-  test("with exit.json on disk the ticket binds nothing and the launch is not live, before any PID check", async () => {
-    const { id, ticket } = await dispatched();
-    const attachment = attachmentOf((await claim(ticket)).outcome);
-    await host.report(attachment, SHIM_METHODS.started, { pid: 5151, started_at: now });
-    expect(host.bridgeTicket(ticket)).toMatchObject({ launch: id, used: false });
-    expect(host.agentRuns(id)).toBe(true);
-    expect(host.runningIn(SPACE)).toEqual([id]);
-    // The agent ended while the service could not take the report: the shim wrote its exit and
-    // waits for Enter, still alive.
-    (records as MemoryRecords).exits.set(id, {
-      format: 1,
-      launch: id,
-      spawned: true,
-      settled: true,
-      code: 0,
-      signal: null,
-      ran_ms: 60_000,
-    });
-    expect(host.bridgeTicket(ticket)).toBeUndefined();
-    expect(host.redeemBridge(ticket)).toBeUndefined();
-    expect(host.agentRuns(id)).toBe(false);
-    expect(host.running(id)).toBe(false);
-    expect(host.runningIn(SPACE)).toEqual([]);
-  });
-});
-
 describe("[A4.5.shim.attach] what the click records of the agent it starts", () => {
   const temps: { remove: () => void }[] = [];
   afterEach(() => {
@@ -1388,5 +1369,107 @@ describe("[A4.5.shim.attach] what an ended launch leaves for a day", () => {
     expect(await host.check()).toBe(1);
     expect(records.get(unclaimed.id)).toBeUndefined();
     expect(records.listEnded().map((e) => e.launch)).toEqual([lost.id]);
+  });
+
+  /** An exit the shim wrote to disk `ranMs` after its agent started now. */
+  function exitOnDisk(id: string, ranMs: number): void {
+    const exit = {
+      format: 1,
+      launch: id,
+      spawned: true,
+      settled: true,
+      code: 0,
+      signal: null,
+      ran_ms: ranMs,
+    };
+    writeFileSync(records.exitPath(id), JSON.stringify(exit));
+  }
+
+  /** Sets a file's modification time to `at` on the tests' clock, in whole seconds. */
+  const writtenAt = (path: string, at: number): void => {
+    utimesSync(path, at / 1000, at / 1000);
+  };
+
+  test("the day counts from the agent's exit, also when the service finds it later: none for an exit older than a day", async () => {
+    const temp = tempFolder();
+    temps.push(temp);
+    const root = join(temp.path, "launch");
+    records = new FolderRecords(root);
+    boot();
+    const started = now;
+    const old = await dispatched();
+    const young = await dispatched();
+    const unstarted = await dispatched();
+    for (const launch of [old, young]) {
+      const attachment = attachmentOf((await claim(launch.ticket)).outcome);
+      await host.report(attachment, SHIM_METHODS.started, { pid: 5151, started_at: started });
+    }
+    attachmentOf((await claim(unstarted.ticket)).outcome);
+    // The service is down while the agents end: each shim writes its exit to disk.
+    exitOnDisk(old.id, 60_000);
+    exitOnDisk(young.id, ENDED_KEEP_MS + 60 * 60_000);
+    exitOnDisk(unstarted.id, 0);
+    // No start was reported for this one: its exit file's own time is its end.
+    const unstartedEnd = started + ENDED_KEEP_MS + 30 * 60_000;
+    writtenAt(records.exitPath(unstarted.id), unstartedEnd);
+
+    // Two days later the service starts again and its first check settles all three.
+    pass(2 * ENDED_KEEP_MS);
+    records = new FolderRecords(root);
+    boot();
+    expect(await host.check()).toBe(3);
+    const ends = new Map(records.listEnded().map((e) => [e.launch, e.endedAt]));
+    expect(ends.has(old.id)).toBe(false);
+    expect(ends.get(young.id)).toBe(started + ENDED_KEEP_MS + 60 * 60_000);
+    expect(ends.get(unstarted.id)).toBe(unstartedEnd);
+    // Each goes a day after its own end, not a day after the check that found it.
+    pass(30 * 60_000);
+    await host.check();
+    expect(records.listEnded().map((e) => e.launch)).toEqual([young.id]);
+    pass(30 * 60_000);
+    await host.check();
+    expect(records.listEnded()).toEqual([]);
+  });
+
+  test("a removal that fails is tried again, and a damaged record or a write's leftover in its folder goes a day after it was written", async () => {
+    const temp = tempFolder();
+    temps.push(temp);
+    const root = join(temp.path, "launch");
+    records = new FolderRecords(root);
+    boot();
+    const { id, ticket } = await dispatched();
+    const attachment = attachmentOf((await claim(ticket)).outcome);
+    await host.report(attachment, SHIM_METHODS.exited, {
+      code: 0,
+      signal: null,
+      ran_ms: 60_000,
+      settled: true,
+    });
+    const folder = join(root, "ended");
+    const file = join(folder, `${id}.json`);
+    // What a crash leaves: a record cut short, and an atomic write's temporary file.
+    const damaged = join(folder, `${randomId("la")}.json`);
+    const leftover = join(folder, `.${id}.json.4242.0a1b2c3d.tmp`);
+    writeFileSync(damaged, '{"format":1,"launch":');
+    writeFileSync(leftover, "{");
+    for (const path of [damaged, leftover]) writtenAt(path, now);
+
+    // The record cannot be removed when its day is over (here: a folder stands in its place).
+    rmSync(file);
+    mkdirSync(file);
+    writeFileSync(join(file, "held"), "");
+    pass(ENDED_KEEP_MS - 1_000);
+    await host.check();
+    expect(existsSync(damaged) && existsSync(leftover)).toBe(true);
+    pass(1_000);
+    await host.check();
+    expect(existsSync(damaged) || existsSync(leftover)).toBe(false);
+    expect(records.listEnded().map((e) => e.launch)).toEqual([id]);
+    // Once it can be removed, the next check does.
+    rmSync(file, { recursive: true });
+    writeFileSync(file, "{}");
+    await host.check();
+    expect(existsSync(file)).toBe(false);
+    expect(records.listEnded()).toEqual([]);
   });
 });

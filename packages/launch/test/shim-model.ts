@@ -185,6 +185,7 @@ export class ShimWorld {
       },
       readExit: (launch) => records.readExit(launch),
       exitPath: (launch) => records.exitPath(launch),
+      exitWrittenAt: (launch) => records.exitWrittenAt(launch),
       listEnded: () => records.listEnded(),
       putEnded: (file) => {
         if (life.over) throw new Dead();
@@ -196,9 +197,9 @@ export class ShimWorld {
         );
         records.putEnded(file);
       },
-      removeEnded: (launch) => {
+      forgetEnded: (until) => {
         if (life.over) throw new Dead();
-        records.removeEnded(launch);
+        records.forgetEnded(until);
       },
     };
     const probe: ProcessProbe = {
