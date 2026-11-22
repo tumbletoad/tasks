@@ -186,7 +186,13 @@ describe("[A4.3.11.claude.run] a Claude Code run in the run host: the program re
     test(`${kind}: Stop during a turn interrupts it over the program's input, and the run is cancelled`, async () => {
       const token = newToken();
       const b = bench(make());
-      const id = await startRun(b, { fixture: "windows-interrupt", token, pace: 1 }, `s-${token}`);
+      // The fake waits at the recording's interrupt line for the Stop, so a faster replay only
+      // shortens the output before it.
+      const id = await startRun(
+        b,
+        { fixture: "windows-interrupt", token, pace: 0.2 },
+        `s-${token}`,
+      );
       await waitForCensus(token, (pids) => pids.length === 1);
       expect((await b.host.stop(id))?.state).toBe("cancelling");
       const after = await b.host.ended(id);
@@ -238,7 +244,9 @@ describe("[A4.3.11.claude.run] a Claude Code run in the run host: the program re
     test(`${kind}: a process the agent left behind is ended, and the cleanup says so beside the work's answer`, async (ctx: TestContext) => {
       if (!grouped) ctx.skip("a detached process is beyond what TTasks can find without a group");
       const token = newToken();
-      const b = bench(make());
+      // The leftover holds the program's output open, so the host waits out its settle and its
+      // drain before the cleanup: their length is not what is proved here.
+      const b = bench(make(), { settleMs: 300, drainMs: 500 });
       const id = await startRun(
         b,
         { fixture: "windows-command", token, leave: "detached", answer: "Left one running." },
