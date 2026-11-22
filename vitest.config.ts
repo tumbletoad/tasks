@@ -1,5 +1,8 @@
 import { availableParallelism } from "node:os";
+import { relative } from "node:path";
 import { defineConfig } from "vitest/config";
+import { BaseSequencer, type TestSpecification } from "vitest/node";
+import { SLOW } from "./scripts/check-plan.ts";
 
 /**
  * Every test file in the repository, so none can escape the manifest check. The two projects below
@@ -33,8 +36,27 @@ const shared = {
   setupFiles: SETUP_FILES,
 };
 
+/**
+ * Vitest starts the files that took longest last time first, and a file it has no time for by its
+ * size. A new checkout has no times, and a slow file that starts late ends the run on its own, so
+ * the files known to be slow start first until Vitest has their times.
+ */
+class SlowFirst extends BaseSequencer {
+  override async sort(files: TestSpecification[]): Promise<TestSpecification[]> {
+    const sorted = await super.sort(files);
+    const rank = (spec: TestSpecification) => {
+      if (this.ctx.cache.getTestSpecificationResult(spec) !== undefined) return -1;
+      const path = relative(spec.project.config.root, spec.moduleId).replaceAll("\\", "/");
+      return SLOW.findIndex((s) => s.test === path);
+    };
+    const slow = sorted.filter((spec) => rank(spec) >= 0).sort((a, b) => rank(a) - rank(b));
+    return [...slow, ...sorted.filter((spec) => !slow.includes(spec))];
+  }
+}
+
 export default defineConfig({
   test: {
+    sequence: { sequencer: SlowFirst },
     projects: [
       {
         // Each project states its whole configuration, so nothing depends on how Vitest merges
