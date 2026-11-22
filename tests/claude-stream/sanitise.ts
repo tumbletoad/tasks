@@ -24,7 +24,7 @@ const FIXTURE_NAMES = /^fixture-(?:server|model|tool|key)-\d{1,3}$/;
 const FIXTURE_TIME = /^2026-01-01T\d\d:\d\d:\d\d\.\d{3}Z$/;
 const FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_.]{0,63}$/;
 
-/** Claude Code's built-in tools, and the recorder's stand-in for Tasks' tools. */
+/** Claude Code's built-in tools, and the recorder's stand-in for TTasks's tools. */
 export const TOOLS: ReadonlySet<string> = new Set([
   "Task",
   "Agent",
@@ -45,7 +45,7 @@ export const TOOLS: ReadonlySet<string> = new Set([
   "EnterPlanMode",
   "ExitPlanMode",
   "Skill",
-  "tasks",
+  "ttasks",
   "probe_echo",
   "mcp__ttasks__probe_echo",
 ]);

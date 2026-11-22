@@ -236,7 +236,7 @@ describe("[A4.3.11.claude.run] a Claude Code run in the run host: the program re
     });
 
     test(`${kind}: a process the agent left behind is ended, and the cleanup says so beside the work's answer`, async (ctx: TestContext) => {
-      if (!grouped) ctx.skip("a detached process is beyond what Tasks can find without a group");
+      if (!grouped) ctx.skip("a detached process is beyond what TTasks can find without a group");
       const token = newToken();
       const b = bench(make());
       const id = await startRun(

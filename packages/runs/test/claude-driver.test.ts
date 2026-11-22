@@ -426,7 +426,7 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     });
   });
 
-  test("a run with a command, and a call of Tasks' tools: their progress is reported, and the tools connected", async () => {
+  test("a run with a command, and a call of TTasks's tools: their progress is reported, and the tools connected", async () => {
     const command = bench({ fixture: "windows-command" });
     expect(await command.driver.settled).toEqual(done({ ok: true, outcome: "success" }));
     expect(command.events).toContainEqual({ kind: "progress", label: "command" });

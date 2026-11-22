@@ -23,7 +23,7 @@ type Message = Record<string, unknown>;
 interface Case {
   readonly request: string;
   readonly mode: string;
-  /** Tasks' tools stand-in, under the name `tasks`, given as a file. */
+  /** TTasks's tools stand-in, under the name `ttasks`, given as a file. */
   readonly tools?: boolean;
   /** An empty Claude home of the case's own. */
   readonly signedOut?: boolean;

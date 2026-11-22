@@ -155,7 +155,7 @@ class ClaudeReader implements CliReader {
         const id = string(block["id"]);
         const label = claudeToolLabel(string(block["name"]));
         if (id === undefined || this.toolUses.add(id)) ctx.progress(label);
-        // Tasks' tools may still be starting when the session starts: a call says they connected.
+        // TTasks's tools may still be starting when the session starts: a call says they connected.
         if (label === "tasks" && ctx.session !== null && ctx.session.appTools !== "connected") {
           ctx.sessionSeen(ctx.session.cwd, "connected");
         }

@@ -5,7 +5,7 @@
 //   copies it into the run's record.
 // - `stdout.jsonl` and `stderr.log`: the agent's raw output for diagnosis, up to their caps. It is
 //   task text, like the answer, and goes with the folder.
-// - `tools.json`: Tasks' tools for an agent that takes them from a file (Claude Code), with the
+// - `tools.json`: TTasks's tools for an agent that takes them from a file (Claude Code), with the
 //   run's ticket, which no command line may carry. The ticket is good only while the run runs.
 // Folders are 0700 and files 0600 on Linux and macOS, made through packages/files. On Windows they
 // inherit the access list of the state folder in the person's profile, as every file of TTasks does.

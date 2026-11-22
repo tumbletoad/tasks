@@ -177,7 +177,7 @@ const runsOf = async (): Promise<{ id: string; instance: string; state: string }
   ).runs;
 
 describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the same door, the same record", () => {
-  test("the request is on the program's input only, the tools file is private with the only Tasks entry and a ticket no command line carries, and the agent's calls are recorded as the run's", async () => {
+  test("the request is on the program's input only, the tools file is private with the only TTasks entry and a ticket no command line carries, and the agent's calls are recorded as the run's", async () => {
     const running = user(["run", task, "--instance", "claude", "--wait", "-"], REQUEST_MARK);
     await waitFor(
       () =>
@@ -191,8 +191,8 @@ describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the 
     const tools = JSON.parse(readFileSync(toolsPath, "utf8")) as {
       mcpServers: Record<string, { args: string[]; env: Record<string, string> }>;
     };
-    // One server, Tasks' own, for this run's instance, with the run's ticket.
-    expect(Object.keys(tools.mcpServers)).toEqual(["tasks"]);
+    // One server, TTasks's own, for this run's instance, with the run's ticket.
+    expect(Object.keys(tools.mcpServers)).toEqual(["ttasks"]);
     const entry = tools.mcpServers["ttasks"];
     expect(entry?.args).toEqual(
       expect.arrayContaining(["mcp", "--space", spaceId, "--instance", "claude", "--app"]),

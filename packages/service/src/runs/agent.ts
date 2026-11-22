@@ -2,7 +2,7 @@
 // restart of the service as it would have before: the instance machine.toml names now, the task's
 // folder as Open would use it, the person's environment, the program resolved before it starts,
 // and the brief with the person's request, which goes over the agent's protocol and never on a
-// command line. Tasks' own tools are the bridge with the run's ticket in its environment, given to
+// command line. TTasks's own tools are the bridge with the run's ticket in its environment, given to
 // the agent's thread (Codex) or in a private file in the run's folder (Claude Code), so what the
 // agent changes through them is recorded as the run's.
 import { createHash } from "node:crypto";
@@ -149,7 +149,7 @@ export interface BuiltRun {
 
 /**
  * What a run starts, from its record, or why it cannot start now. `ticket` is the run's: the
- * bridge presents it, and the agent's own shell has it for Tasks' command line. `toolsPath` is
+ * bridge presents it, and the agent's own shell has it for TTasks's command line. `toolsPath` is
  * where the run's tools file will be.
  */
 export async function buildRun(

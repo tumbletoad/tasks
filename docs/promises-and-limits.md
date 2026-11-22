@@ -141,14 +141,14 @@ the behaviour it describes, and keep each one to a sentence or two.
   from a helper the agent started does not reach you: that helper hears that no one answered.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
-  ends what Tasks could find of it: a process the agent detached from it may live on.
-- What a run's agent changes through Tasks' own tools is recorded as that run's.
-- A Claude Code run gets Tasks' tools in a file in the run's folder. The file holds the run's
+  ends what TTasks could find of it: a process the agent detached from it may live on.
+- What a run's agent changes through TTasks's own tools is recorded as that run's.
+- A Claude Code run gets TTasks's tools in a file in the run's folder. The file holds the run's
   ticket, which opens your space only while the run runs.
 - A Claude Code run answers nothing for you: a question, an MCP tool's question, or an approval
   your Claude Code setup asks for under a narrower `run_permission`, ends the run as needing you,
   with what was asked and what it would act on. That permission uses Claude Code's own modes with
-  your own tools and settings, so a tool you approved there stays approved. Tasks' own tools are
+  your own tools and settings, so a tool you approved there stays approved. TTasks's own tools are
   allowed in every mode: the run reads its task and reports through them.
 - A run is done when its work is: work the agent left running in the background holds it until
   the agent reported on it, and a server it left running holds it until you stop it.
