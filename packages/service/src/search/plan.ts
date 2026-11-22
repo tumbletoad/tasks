@@ -21,7 +21,7 @@
 import type { FolderOs, SqlValue } from "@ttasks/storage";
 import { normaliseSourceKey, separatorOf, SOURCE_KINDS } from "@ttasks/storage";
 import { CLI_NAME } from "@ttasks/brand";
-import { AppError, SEARCH_IDS, type SEARCH_SCOPES } from "@ttasks/contracts";
+import { AppError, type SEARCH_SCOPES } from "@ttasks/contracts";
 import { addDays } from "../ops/dates.ts";
 import {
   isCalendarDate,
@@ -75,6 +75,8 @@ export interface PlanContext {
   readonly here?: HereSets;
   /** The space has its folders (schema 0.5 on): without them no task opens on any machine. */
   readonly folders: boolean;
+  /** How many IDs the search keeps (SearchEnv.keep): the plan reads one more, to tell there are more. */
+  readonly keep: number;
   /** Tasks with a live session: `is:bound`. */
   readonly live: readonly string[];
   /**
@@ -615,7 +617,7 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
   const where = ["t.deleted_at IS NULL", ...filterWhere(query, ctx, b)];
   const lifecycles = LIFECYCLES[ctx.scope];
   const order = effortOrder(query, ctx, b);
-  const limit = b.bind(SEARCH_IDS + 1);
+  const limit = b.bind(ctx.keep + 1);
 
   if (ctx.scope === "learnings") {
     where.push("l.deleted_at IS NULL");
