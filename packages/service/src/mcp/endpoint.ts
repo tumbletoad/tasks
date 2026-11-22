@@ -10,7 +10,7 @@ import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import type { McpChannel } from "../local/index.ts";
-import type { Bridges } from "../binding/index.ts";
+import type { Bridges } from "../binding/bridges.ts";
 import { opCall, type Binding, type Caller, type OpsHost } from "../ops/index.ts";
 import { bridgePrincipal, clientOf, instanceOf, spaceOf } from "./principal.ts";
 import { renderError, renderResult, showsWhole } from "./render.ts";

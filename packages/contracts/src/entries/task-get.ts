@@ -338,14 +338,7 @@ export const taskGet = defineEntry({
   budget: { typical: 700, max: 4000 },
   // The thread's read of its sessions' requests: whole notes, past an agent's budget.
   agent: { hidden: ["notes"] },
-  errors: [
-    "invalid_input",
-    "unbound",
-    "not_found",
-    "ambiguous",
-    "launch_unknown",
-    "forbidden",
-  ],
+  errors: ["invalid_input", "unbound", "not_found", "ambiguous", "launch_unknown", "forbidden"],
   examples: [
     {
       title: "Load M-14 by the launch reference from the Brief, with the user's request",

@@ -25,18 +25,15 @@ describe("[A3.3.7.binding.bridge-process] a launched agent's bridge is its sessi
     "its session from the bind frame, its write the session's; after a service restart the same session, and a retry replays",
     { timeout: 300_000 },
     async () => {
-      const lab = await ShimLab.create("bind-bridge");
+      // With its UI listener, so its grants table is service.sqlite's, as an install's is: the
+      // registration is there again the moment the service listens after its restart.
+      const lab = await ShimLab.create("bind-bridge", { http: true });
       labs.push(lab);
-      // The entry's agent home, registered for the space as setup does. The lab's service runs
-      // without its UI listener, so its grants table is this start's own: it is registered again
-      // after the restart below (a `ttasks serve` keeps it in service.sqlite).
-      const register = async () => {
-        await grantHome(lab.home, lab.service?.endpoint.path ?? "", {
-          instance: "fixture-agent",
-          space: lab.spaceId,
-        });
-      };
-      await register();
+      // The entry's agent home, registered for the space as setup does.
+      await grantHome(lab.home, lab.service?.endpoint.path ?? "", {
+        instance: "fixture-agent",
+        space: lab.spaceId,
+      });
       const intent = await lab.launch(lab.plan());
       // The agent runs: its shim reported its start.
       await lab.waitIntent(intent.id, (i) => i.evidence.pid !== undefined, "the agent's start");
@@ -73,7 +70,6 @@ describe("[A3.3.7.binding.bridge-process] a launched agent's bridge is its sessi
       // calls wait for the new service, A2 3.7.5): the same session.
       await lab.stopService();
       await lab.start();
-      await register();
       const after = await reply(bridge, "status");
       expect(after).toContain("Session: bound to M-1");
       // A retry of the first write after the restart replays it: the same session's scope.

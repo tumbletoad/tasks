@@ -110,7 +110,8 @@ const row = { lifecycle: "active", status: "open", inbox: false, area: "Client w
 
 export const spaceStatus = defineEntry({
   name: "space.status",
-  summary: "Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts.",
+  summary:
+    "Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts.",
   kind: "read",
   actors: "agent",
   scope: "space:read",

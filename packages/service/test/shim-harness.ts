@@ -154,6 +154,11 @@ export interface LabOptions {
   readonly serviceEnv?: Record<string, string>;
   /** More of machine.toml: `[[instance]]` tables (harness.ts instanceToml), given the lab's root. */
   readonly toml?: (root: string) => string;
+  /**
+   * The service's UI listener on a free port, so its grants table is service.sqlite's as an
+   * install's is: the agent homes registered before a restart are there at the next start.
+   */
+  readonly http?: boolean;
 }
 
 /**
@@ -305,6 +310,7 @@ export class ShimLab {
           : { terminals: adapters, shimCommand: this.product }),
         ...given,
       },
+      ...(this.#options.http === true ? { http: { ports: [0], persist: false } } : {}),
     };
     const service = await (this.#options.installed?.start ?? startService)(options);
     this.service = service;
