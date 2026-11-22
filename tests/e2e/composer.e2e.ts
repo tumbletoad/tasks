@@ -776,6 +776,79 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     expect(found.rows.filter((row) => row.title === title)).toHaveLength(1);
   });
 
+  test("an add whose answer was lost is made once when it is pressed again after a reload, also when that press meets a busy service or the words now read otherwise", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    await signIn(page, world, `/s/${world.mira.id}/today`);
+    await showsSpace(page, world.mira.name);
+    const field = page.getByRole("textbox", { name: "New task" });
+    const added = calls(page, "task.add");
+    const ADD = "**/api/v1/op/task.add";
+    const count = async (title: string) => {
+      const found = (await world.op(world.mira.id, "task.search", {
+        q: title,
+        scope: "all",
+      })) as { rows: { title: string }[] };
+      return found.rows.filter((row) => row.title === title).length;
+    };
+    /** The add reaches the service only after the page reloaded: its answer is lost. */
+    const lose = async (title: string) => {
+      let release: () => void = () => undefined;
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route(ADD, async (route) => {
+        await released;
+        const response = await route.fetch();
+        await route.fulfill({ response }).catch(() => undefined);
+      });
+      await field.fill(title);
+      await page.keyboard.press("Enter");
+      await page.reload();
+      release();
+      await page.unrouteAll({ behavior: "wait" });
+      await expect.poll(() => count(title), { timeout: SLOW_MS }).toBe(1);
+      await showsSpace(page, world.mira.name);
+      await expect(field).toHaveValue(title);
+    };
+    const ids = () => added.map((r) => (r.postDataJSON() as { request_id: string }).request_id);
+
+    // Pressed again, the service is busy for a moment: the add it made before is found.
+    const busy = `Order the hinge pins (${tag})`;
+    await lose(busy);
+    await page.route(ADD, (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "service_unavailable", message: "Busy" } }),
+      }),
+    );
+    await field.focus();
+    await page.keyboard.press("Enter");
+    await expect(field).toHaveValue("", { timeout: SLOW_MS });
+    await page.unrouteAll({ behavior: "wait" });
+    expect(await count(busy)).toBe(1);
+    expect(new Set(ids()).size).toBe(1);
+
+    // Pressed again the next day, the same words make another add ("tomorrow" is another date):
+    // the service says the ID carried another add, and the one it made is found.
+    const later = `Order the gate latch (${tag})`;
+    await lose(later);
+    await page.route(ADD, async (route) => {
+      const body = route.request().postDataJSON() as { tasks: Record<string, unknown>[] };
+      const tasks = body.tasks.map((task) => ({ ...task, priority: 4 }));
+      await route.continue({ postData: JSON.stringify({ ...body, tasks }) });
+    });
+    await field.focus();
+    await page.keyboard.press("Enter");
+    await expect(field).toHaveValue("", { timeout: SLOW_MS });
+    await page.unrouteAll({ behavior: "wait" });
+    expect(await count(later)).toBe(1);
+    expect(new Set(ids()).size).toBe(2);
+  });
+
   test("an edit still waiting behind another edit of the task when the page reloads is back as not saved, never lost, and Try again never overwrites a change made since", async ({
     page,
     world,

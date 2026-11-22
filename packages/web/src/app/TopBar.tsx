@@ -126,11 +126,26 @@ function requestFor(space: string, text: string, kept: ReadonlySet<string>): str
   return request;
 }
 
-/** The add of `text` was refused: it did nothing, so the next one is a new request. */
+/** The add of `text` did nothing: the next one is a new request. */
 function dropRequest(space: string, text: string): void {
   const before = readTop(space);
   if (before?.text !== text || before.request === undefined) return;
   tabKept.keep(draftName(space), JSON.stringify({ text, kept: [...before.kept] }));
+}
+
+/** A receipt's outcome of an add that made its task. */
+const MADE: ReadonlySet<string> = new Set(["applied", "proposed", "unchanged"]);
+
+/**
+ * Whether an error is the service's decision on the request: it did nothing. A busy or opening
+ * service has not decided, and `internal` cannot say.
+ */
+function decided(error: unknown): boolean {
+  const code = error instanceof Error ? (error as { code?: unknown }).code : undefined;
+  return (
+    typeof code === "string" &&
+    !["internal", "service_unavailable", "space_unavailable"].includes(code)
+  );
 }
 
 /** How long the search waits for typing to pause before it reads. */
@@ -358,7 +373,23 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
     // add, so the new row is on screen when it does. Only the text that was added goes: whatever
     // the person typed meanwhile stays, here and in the space's kept draft.
     const sent = feed.write(
-      (request_id) => api.client.task.add({ tasks: [draft], request_id }),
+      async (request_id) => {
+        try {
+          return await api.client.task.add({ tasks: [draft], request_id });
+        } catch (error) {
+          // The ID may carry an add of these words made before a reload, whose answer was lost: a
+          // busy service, or words that read otherwise now ("tomorrow" after midnight), refuses
+          // this one. Its receipt says what that add did; only an ID that made nothing is let go.
+          const found = await api.client.receipt
+            .get({ request: request_id })
+            .catch(() => undefined);
+          if (found?.found === true && MADE.has(found.status)) return { as_of: found.as_of };
+          if (found !== undefined && (found.found || decided(error))) {
+            dropRequest(space, submitted);
+          }
+          throw error;
+        }
+      },
       undefined,
       requestFor(space, submitted, kept),
     );
@@ -378,9 +409,6 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
       },
       (error: unknown) => {
         sending.current.delete(submitted);
-        // A refusal the service sent did nothing: the same text again is a new add.
-        const code = error instanceof Error ? (error as { code?: unknown }).code : undefined;
-        if (typeof code === "string" && code !== "internal") dropRequest(space, submitted);
         if (!feed.failed(error)) say(t("top.addFailed"));
       },
     );
