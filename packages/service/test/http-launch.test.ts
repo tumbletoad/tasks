@@ -154,13 +154,81 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       // No text of the task travels with a receipt.
       expect(JSON.stringify(receipts)).not.toContain("appointment");
 
-      // The feed tells the page a launch changed (its receipts are read by task).
+      // The tab learns which agent apps are busy here for every task, without a task's receipts:
+      // this one is opening until its shim settles it.
+      const busy = await post(port, "/api/v1/launch/busy", {}, { token, headers });
+      expect(JSON.parse(busy.body)).toEqual({
+        result: { busy: [{ task: task.id, instance: "fake-agent", state: "opening" }] },
+      });
+      // A distinct click while it is opening gets the same launch and starts nothing.
+      const second = await post(
+        port,
+        OPEN,
+        { ...click, request_id: "click-0000000000000002" },
+        { token, headers },
+      );
+      expect(
+        (JSON.parse(second.body) as { result: { launch: { id: string } } }).result.launch.id,
+      ).toBe(launch["id"]);
+      expect(terminal.started).toHaveLength(1);
+
+      // The feed tells the page a launch changed, and of which task: a tab follows the receipts
+      // of the tasks it shows by their task.
       await feed.next(
         (m) =>
           m["type"] === "batch" &&
-          JSON.stringify(m["events"]).includes(`"type":"launch","id":"${String(launch["id"])}"`),
+          JSON.stringify(m["events"]).includes(
+            `"type":"launch","id":"${String(launch["id"])}","task":"${task.id}"`,
+          ),
       );
       feed.ws.close();
+    },
+  );
+
+  test(
+    "a Prepared launch that no call of the service holds, as a crash leaves one, holds no Open: the next click opens it",
+    SLOW,
+    async () => {
+      const terminal = recordingTerminal();
+      const w = await world(terminal.start);
+      const task = await addTask(w, "Plan the garden beds");
+      const { token } = await signIn(w);
+      const port = w.port();
+      const headers = { "tasks-space": "Mira", "tasks-build": "source" };
+      const feed = await openFeed(port, token);
+      await feed.next((m) => m["type"] === "hello");
+      feed.send({ type: "subscribe", space: "Mira" });
+      const snapshot = await feed.next((m) => m["type"] === "snapshot");
+      feed.ws.close();
+      const space = (snapshot["space"] as { id: string }).id;
+      // Recorded, and never dispatched: the service that made it stopped in between.
+      const left = await w.service.launches.open(
+        space,
+        {
+          task: task.id,
+          instance: "fake-agent",
+          route: "terminal",
+          place: null,
+          taskVersion: 1,
+          briefHash: "c".repeat(64),
+        },
+        "crash-left-000000000001",
+        { argv: [process.execPath], folder: null, env: {}, title: "Left", afterExit: "close" },
+      );
+      expect(left.state).toBe("prepared");
+      const busy = await post(port, "/api/v1/launch/busy", {}, { token, headers });
+      expect(JSON.parse(busy.body)).toEqual({ result: { busy: [] } });
+      const opened = await post(
+        port,
+        OPEN,
+        { task: task.id, instance: "fake-agent", request_id: "click-0000000000000011" },
+        { token, headers },
+      );
+      expect(
+        (JSON.parse(opened.body) as { result: { launch: { id: string } } }).result.launch.id,
+      ).toBe(left.id);
+      await until(() => Promise.resolve(terminal.started.length === 1), "the terminal");
+      expect(terminal.started[0]?.id).toBe(left.id);
     },
   );
 

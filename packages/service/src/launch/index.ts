@@ -5,6 +5,7 @@ export {
   CHECK_MS,
   defaultShimCommand,
   LaunchService,
+  type BusyLaunch,
   type LaunchInstance,
   type LaunchOptions,
   type LaunchServiceOptions,

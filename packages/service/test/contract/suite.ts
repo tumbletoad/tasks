@@ -187,8 +187,8 @@ export async function contractWorld(
       space,
       {
         task: read.task.id,
-        // An instance of its own, so a second launch of a task within A4's 5 s focus is a launch
-        // of its own rather than the first one again.
+        // An instance of its own, so a second launch of a task while the first is still opening is
+        // a launch of its own rather than the first one again.
         instance: `contract-agent-${String(launches)}`,
         route: "terminal",
         place: null,

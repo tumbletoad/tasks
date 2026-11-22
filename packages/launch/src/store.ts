@@ -131,7 +131,8 @@ export interface LaunchStore {
    * Records a click as a Prepared intent: the record, its history and the request's receipt in one
    * atomic step. The same request ID with the same input returns the same intent; with another
    * input it is refused (`request_id_reused`). A distinct click on the same task and instance while
-   * an intent is in Dispatching or younger than 5 s returns that intent (A4 3.9.1).
+   * an intent of it is still opening on that machine returns that intent: Prepared, Dispatching,
+   * or a terminal launch in Dispatched.
    */
   createIntent(input: NewIntent, requestId: string): Promise<LaunchIntent>;
   /**

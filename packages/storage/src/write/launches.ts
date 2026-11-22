@@ -30,9 +30,6 @@ export const LAUNCH_EDGES: Readonly<Record<LaunchState, readonly LaunchState[]>>
 /** The states recovery reads (A4 3.16.1 `openWork`): not final. */
 export const OPEN_LAUNCH_STATES = ["prepared", "dispatching", "dispatched"] as const;
 
-/** A distinct click on the same task and instance within this time returns the first (A4 3.9.1). */
-export const FOCUS_MS = 5_000;
-
 /** References are unique among the space's launches of the last 90 days (A4 3.1). */
 export const REFERENCE_WINDOW_MS = 90 * 24 * 60 * 60_000;
 
@@ -45,16 +42,14 @@ const REFERENCE_TRIES = 32;
 export const LAUNCH_SQL = {
   launch: "SELECT * FROM launches WHERE id = $id",
   /**
-   * The intent in flight for a task and instance on a machine, newest first (A4 3.9.1): in
-   * Dispatching, or clicked less than 5 s from now on either side, on the wall clock that
-   * `detail.at.prepared` records. A clock that stepped back neither keeps an old click young
-   * nor makes a new one old.
+   * The intent still opening for a task and instance on a machine, newest first: Prepared,
+   * Dispatching, or a terminal launch its shim has not settled yet. A link or T3 launch that
+   * was Dispatched only asked its app, and nothing settles it, so it holds no click.
    */
   focus:
     "SELECT id FROM launches WHERE task_id = $task AND instance_id = $instance " +
     "AND machine_id = $machine " +
-    "AND (state = 'dispatching' OR (json_extract(detail, '$.at.prepared') > $since " +
-    "AND json_extract(detail, '$.at.prepared') < $until)) " +
+    "AND (state IN ('prepared','dispatching') OR (state = 'dispatched' AND route = 'terminal')) " +
     "ORDER BY created_at DESC, id DESC LIMIT 1",
   referenceTaken:
     "SELECT 1 AS taken FROM launches WHERE reference = $reference AND created_at > $since LIMIT 1",

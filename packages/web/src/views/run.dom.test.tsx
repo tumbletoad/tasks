@@ -143,6 +143,7 @@ beforeEach(async () => {
           ),
       },
     },
+    busy: () => Promise.resolve([]),
     receipts: () => Promise.resolve([]),
     runs: () => {
       reads += 1;
