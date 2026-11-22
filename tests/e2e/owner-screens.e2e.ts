@@ -6,7 +6,7 @@
 // review. Fixture data only.
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace } from "./page.ts";
+import { showsSpace, signIn } from "./page.ts";
 import { SLOW_MS, startWorld, type World } from "./world.ts";
 
 const WIDTHS = [1280, 1440, 1920, 390] as const;
@@ -19,7 +19,7 @@ async function open(page: Page, world: World, path: string): Promise<void> {
   const to = `/s/${world.mira.id}/${path}`;
   if (signedIn.has(page.context())) await page.goto(`${world.origin}${to}`);
   else {
-    await page.goto(await world.signInUrl(to));
+    await signIn(page, world, to);
     signedIn.add(page.context());
   }
   // Narrow, the space's name is in the drawer: the page is there once its Menu is.
@@ -138,7 +138,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
     for (const scale of scales) {
       const world = await startWorld(ui, { scales: scale });
       try {
-        await page.goto(await world.signInUrl(`/s/${world.mira.id}/open`));
+        await signIn(page, world, `/s/${world.mira.id}/open`);
         await showsSpace(page, world.mira.name);
         const first = page.locator("main li[data-key]").first();
         await first.locator('[data-part="title"]').click();

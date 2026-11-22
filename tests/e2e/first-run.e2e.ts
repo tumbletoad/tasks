@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { expect, test as base, type Page } from "@playwright/test";
 import { PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { startFresh, SLOW_MS, type FreshWorld } from "./first-run.ts";
-import { showsSpace, spaceSwitcher, violations, watchViolations } from "./page.ts";
+import { showsSpace, signIn, spaceSwitcher, violations, watchViolations } from "./page.ts";
 
 const test = base.extend<object, { fresh: FreshWorld }>({
   fresh: [
@@ -49,7 +49,7 @@ async function flip(page: Page, name: string, on: boolean): Promise<void> {
 const spaceOf = (page: Page): string => /\/s\/([^/]+)\//u.exec(page.url())?.[1] ?? "";
 
 async function firstStart(page: Page, fresh: FreshWorld): Promise<void> {
-  await page.goto(await fresh.signInUrl("/"));
+  await signIn(page, fresh, "/");
   await expect(page.getByRole("heading", { name: "Make a space" })).toBeVisible({
     timeout: SLOW_MS,
   });
@@ -135,7 +135,7 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     page,
     fresh,
   }) => {
-    await page.goto(await fresh.signInUrl("/"));
+    await signIn(page, fresh, "/");
     await showsSpace(page, "Studio");
     const space = spaceOf(page);
     await page.goto(`${fresh.origin}/s/${space}/settings`);
@@ -191,7 +191,7 @@ test.describe("[A7.3.12.m5-12.e2e.switcher] The space switcher's New space and O
     page,
     fresh,
   }) => {
-    await page.goto(await fresh.signInUrl("/"));
+    await signIn(page, fresh, "/");
     await showsSpace(page, "Studio");
     await spaceSwitcher(page, "Studio").click();
     await page.getByRole("button", { name: "New space" }).click();

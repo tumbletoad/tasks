@@ -8,7 +8,7 @@
 // packages/web/src/store/queries.test.ts against the store, and here once those views exist.
 import { expect } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace } from "./page.ts";
+import { showsSpace, signIn } from "./page.ts";
 import { SLOW_MS } from "./world.ts";
 
 interface Added {
@@ -22,7 +22,7 @@ test.describe("[A7.3.12.m5-02.e2e.live] The live store in the page", () => {
   }) => {
     const space = world.mira.id;
     // The Inbox: the agent's tasks land there.
-    await page.goto(await world.signInUrl(`/s/${space}/inbox`));
+    await signIn(page, world, `/s/${space}/inbox`);
     await showsSpace(page, world.mira.name);
     const project = test.info().project.name;
 
@@ -75,7 +75,7 @@ test.describe("[A7.3.12.m5-02.e2e.live] The live store in the page", () => {
     page,
     world,
   }) => {
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+    await signIn(page, world, `/s/${world.mira.id}/inbox`);
     const field = page.getByRole("textbox", { name: "New task" });
     const title = `Order printer paper (${test.info().project.name})`;
     // The add's answer is held back: the feed's event confirms the add before the answer arrives.

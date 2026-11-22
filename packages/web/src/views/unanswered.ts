@@ -112,6 +112,16 @@ export class Unanswered {
  */
 export const unansweredOpens = new Unanswered(browserKept);
 
+/**
+ * The Runs that got no answer, kept for the browser as the composer's draft is: a reload, or
+ * another tab of the task, presses the same Run again under its request ID, and the service gives
+ * back the run it queued.
+ */
+export const unansweredRuns = new Unanswered(browserKept);
+
+/** A Run's name among them: its task. */
+export const runName = (space: string, task: string): string => `run.${space}.${task}`;
+
 /** An Open's name among them: its task and app. */
 export const openName = (space: string, task: string, instance: string): string =>
   `open.${space}.${task}.${instance}`;

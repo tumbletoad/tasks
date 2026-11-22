@@ -52,7 +52,6 @@ export class DurableGrants implements GrantStore {
   /** Rows changed and not yet handed to the database. */
   readonly #dirty = new Map<string, Grant>();
   #queue: Promise<void> = Promise.resolve();
-  #failed = false;
   readonly #onFailure: () => void;
 
   private constructor(db: ServiceDb, onFailure: () => void) {
@@ -92,16 +91,25 @@ export class DurableGrants implements GrantStore {
       try {
         await this.#db.putGrants(batch);
       } catch {
-        this.#failed = true;
+        // The batch goes with the next write; a row changed again since keeps its newer change.
+        for (const row of batch) {
+          if (!this.#dirty.has(row.grant_id)) this.#dirty.set(row.grant_id, row);
+        }
         this.#onFailure();
       }
     });
   }
 
-  /** Resolves when every change made so far is on disk; rejects when any write failed. */
+  /**
+   * Resolves when every change made so far is on disk; rejects while a change is still not, so a
+   * write that failed once refuses only until a later write carries it.
+   */
   async flush(): Promise<void> {
-    await this.#queue;
-    if (this.#failed) throw new Error("The grants table could not be written");
+    for (let queue = this.#queue; ; queue = this.#queue) {
+      await queue;
+      if (queue === this.#queue) break;
+    }
+    if (this.#dirty.size > 0) throw new Error("The grants table could not be written");
   }
 
   /** Writes every use not yet written, then waits for the disk (the drain). */

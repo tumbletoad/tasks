@@ -87,8 +87,8 @@ export class Live {
    * A write through the store: its overlay shows until the feed confirms it (store.ts). The caller
    * handles the answer's refusal (`failed` first, then its own message).
    */
-  write<T>(send: (request: string) => Promise<T>, overlay?: Overlay): Sent<T> {
-    return this.store.write(send, overlay);
+  write<T>(send: (request: string) => Promise<T>, overlay?: Overlay, request?: string): Sent<T> {
+    return this.store.write(send, overlay, request);
   }
 
   start(): void {

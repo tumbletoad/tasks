@@ -15,6 +15,8 @@ export interface RunView {
   readonly tone: RunTone;
   /** Its state in plain words, with how its processes ended when that is known. */
   readonly status: readonly Msg[];
+  /** How long a working run has said nothing, from a minute on: after Stop, which it never moves. */
+  readonly quiet?: Msg;
   /**
    * What the agent said: its answer (`answer`), the question it stopped on (`question`), or the
    * last thing it said before it ended without finishing (`last`). Untrusted text.
@@ -76,8 +78,8 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
   const quietMs = run.quiet_since === undefined ? 0 : now - run.quiet_since;
   const quiet =
     quietMs < QUIET_SHOWN_MS
-      ? []
-      : [msg("run.quiet", { minutes: Math.floor(quietMs / QUIET_SHOWN_MS) })];
+      ? {}
+      : { quiet: msg("run.quiet", { minutes: Math.floor(quietMs / QUIET_SHOWN_MS) }) };
   switch (run.state) {
     case "queued":
       return {
@@ -92,7 +94,8 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
       // What it said so far stays in view: a server it keeps running is the person's to use.
       return {
         tone: "working",
-        status: [msg("run.working", { label }), ...quiet],
+        status: [msg("run.working", { label })],
+        ...quiet,
         ...said("last"),
         stoppable: true,
       };

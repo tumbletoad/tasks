@@ -15,7 +15,7 @@ import { createRequire } from "node:module";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { FAKE_QUESTION, FAKE_SIGNED_OUT } from "./codex-cases.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { openTask, showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { CODEX_INSTANCE, CODEX_OTHER, SLOW_MS, type World } from "./world.ts";
 
 const OTHER_LABEL = CODEX_OTHER.label;
@@ -48,16 +48,6 @@ const stateOf = (entry: Locator) => entry.locator('[data-part="run-state"]');
 const markerOf = (page: Page, ref: string) =>
   rowOf(page, ref).locator("[data-row-line] > span").first();
 const toast = (page: Page) => page.locator('[data-part="toast-text"]');
-
-async function openTask(page: Page, world: World, ref: string): Promise<void> {
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
-  await showsSpace(page, world.mira.name);
-  await expect(rowOf(page, ref).locator('[data-part="title"]')).toHaveAttribute(
-    "aria-expanded",
-    "true",
-    { timeout: SLOW_MS },
-  );
-}
 
 test.describe("[M6.page.e2e.run] Run from the page, with and without words, and read the answer", () => {
   test("Run without words works on the task; Ctrl+Shift+Enter runs with the words, which clear once queued; the answer is the agent's text, a long one folded", async ({
@@ -124,6 +114,42 @@ test.describe("[M6.page.e2e.run] Run from the page, with and without words, and 
     await expect(fourth).toContainText(OTHER_LABEL);
     await expect(stateOf(fourth)).toContainText("Done.", { timeout: SLOW_MS });
     expect(await violations(page)).toEqual([]);
+  });
+});
+
+test.describe("[M6.page.run-once] A Run pressed again after a reload is the same Run", () => {
+  test("a Run sent just before a reload, and pressed again on the words the reload kept, starts one run", async ({
+    page,
+    runs: world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, "Check the guest wifi");
+    await openTask(page, world, ref);
+    const composer = composerOf(page, ref);
+    // Each Run reaches the service late: the first one is still on its way when the page reloads.
+    const sent: string[] = [];
+    let answered = 0;
+    await page.route("**/api/v1/launch/run", async (route) => {
+      sent.push((route.request().postDataJSON() as { request_id: string }).request_id);
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      const response = await route.fetch();
+      answered += 1;
+      await route.fulfill({ response }).catch(() => undefined);
+    });
+    const words = `Only the guest network (${tag})`;
+    await composer.fill(words);
+    await runButton(page, ref).click();
+    await page.reload();
+    await expect(composer).toHaveValue(words, { timeout: SLOW_MS });
+    await runButton(page, ref).click();
+    await expect(composer).toHaveValue("", { timeout: SLOW_MS });
+    await expect.poll(() => answered, { timeout: SLOW_MS }).toBe(2);
+    await page.unroute("**/api/v1/launch/run");
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toBe(sent[0]);
+    await page.reload();
+    await expect(stateOf(runsOf(page, ref).first())).toContainText("Done.", { timeout: SLOW_MS });
+    await expect(runsOf(page, ref)).toHaveCount(1);
   });
 });
 
@@ -216,7 +242,7 @@ test.describe("[M6.page.e2e.needs] A run that needs the person, and one that fai
     await expect(markerOf(page, ref)).toHaveAttribute("data-kind", "needs_input");
 
     // Agents lists it under Needs you, without opening the task.
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/agents`));
+    await signIn(page, world, `/s/${world.mira.id}/agents`);
     await showsSpace(page, world.mira.name);
     const needs = page.locator("main").getByText("Needs you", { exact: true });
     await expect(needs).toBeVisible({ timeout: SLOW_MS });
@@ -369,6 +395,7 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
         }
         // The other agent that can run is one click away, in the menu beside Run.
         await openTask(shot, world, ended);
+        await expect(runsOf(shot, ended)).toHaveCount(3);
         await stripOf(shot, ended).getByRole("button", { name: "Run with another agent" }).click();
         await expect(
           shot
@@ -379,7 +406,7 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
         await shot.screenshot({ path: test.info().outputPath(`run-menu-${theme}-1440.png`) });
         await shot.keyboard.press("Escape");
 
-        await shot.goto(await world.signInUrl(`/s/${world.mira.id}/agents`));
+        await signIn(shot, world, `/s/${world.mira.id}/agents`);
         await showsSpace(shot, world.mira.name);
         await expect(rowOf(shot, ended)).toBeVisible({ timeout: SLOW_MS });
         await expect(markerOf(shot, ended)).toHaveAttribute("data-kind", "needs_input");

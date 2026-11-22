@@ -235,11 +235,15 @@ export class LiveStore {
   }
 
   /**
-   * Sends a write: `send` makes the call with the request ID it is given. `overlay` shows at once
-   * and stays until the feed confirms the write, or goes when it is refused.
+   * Sends a write: `send` makes the call with the request ID it is given, `request` when the caller
+   * sends the same write again. `overlay` shows at once and stays until the feed confirms the
+   * write, or goes when it is refused.
    */
-  write<T>(send: (request: string) => Promise<T>, overlay: Overlay = EMPTY): Sent<T> {
-    const request = (this.#options.newRequest ?? (() => crypto.randomUUID()))();
+  write<T>(
+    send: (request: string) => Promise<T>,
+    overlay: Overlay = EMPTY,
+    request: string = (this.#options.newRequest ?? (() => crypto.randomUUID()))(),
+  ): Sent<T> {
     let settle!: (settled: Settled) => void;
     const settled = new Promise<Settled>((resolve) => {
       settle = resolve;

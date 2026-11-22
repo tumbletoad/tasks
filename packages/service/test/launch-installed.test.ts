@@ -4,8 +4,9 @@
 // folder's lib/ttasks.mjs and its lib/shim.mjs on the folder's own Node, and the service is the
 // folder's own bundled hub (lib/chunks/hub-<hash>.mjs, the chunk `ttasks serve` loads), started in
 // this process because a launch is opened and dispatched in-process until M2.13 adds the verbs for
-// it. Without --installed the same test runs the source: bin.ts and the source service. Fixture
-// data and temporary folders only.
+// it. Without --installed it is skipped: from source it would be launch-shim.test.ts again (the
+// claim, the folder by identity, the exit through the attachment). Fixture data and temporary
+// folders only.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -38,25 +39,21 @@ async function builtService(versionFolder: string): Promise<typeof startService>
 }
 
 describe("[A4.5.shim.installed] ttasks shim through the build's launcher against the build's service", () => {
-  test(
+  test.runIf(INSTALLED !== undefined)(
     "a ticket is claimed, a fake agent runs as the shim's child in the checked folder, and its exit is reported",
     { timeout: 300_000 },
     async () => {
-      const lab = await ShimLab.create(
-        "installed",
-        INSTALLED === undefined
-          ? {}
-          : { installed: { versionFolder: INSTALLED, start: await builtService(INSTALLED) } },
-      );
+      if (INSTALLED === undefined) throw new Error("runs with pnpm accept --installed only");
+      const lab = await ShimLab.create("installed", {
+        installed: { versionFolder: INSTALLED, start: await builtService(INSTALLED) },
+      });
       labs.push(lab);
-      if (INSTALLED !== undefined) {
-        // The service and the shim are the build under test: both name its build label.
-        const manifest = JSON.parse(readFileSync(join(INSTALLED, "manifest.json"), "utf8")) as {
-          build: string;
-        };
-        expect(lab.running.status().build).toBe(manifest.build);
-        expect(lab.install?.launcher).toBeDefined();
-      }
+      // The service and the shim are the build under test: both name its build label.
+      const manifest = JSON.parse(readFileSync(join(INSTALLED, "manifest.json"), "utf8")) as {
+        build: string;
+      };
+      expect(lab.running.status().build).toBe(manifest.build);
+      expect(lab.install?.launcher).toBeDefined();
       const report = join(lab.work, "agent-report.json");
       const intent = await lab.launch(lab.plan({ report }));
       const shim = lab.shims[0];

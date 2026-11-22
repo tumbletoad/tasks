@@ -17,6 +17,7 @@ import {
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
+import { atomicWrite } from "../../packages/files/src/index.ts";
 import { startTimes } from "../../packages/launch/src/process.ts";
 import { openSpace } from "../../packages/storage/src/index.ts";
 import {
@@ -246,8 +247,9 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     // first: the page's first runner is its default Run.
     const holds = join(temp.root, "holds");
     mkdirSync(holds);
-    const cases = join(temp.root, "codex-cases.json");
-    writeFileSync(cases, "{}");
+    // One file per task: a test and a run of another task never write the same file.
+    const cases = join(temp.root, "codex-cases");
+    mkdirSync(cases);
     const codexes =
       options.runs === true
         ? [CODEX_INSTANCE, CODEX_OTHER]
@@ -385,12 +387,13 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         if (reply.status !== 200) throw new Error(`machine/pref answered ${String(reply.status)}`);
       },
       codex: (task, next) => {
-        const known = JSON.parse(readFileSync(cases, "utf8")) as Record<string, FakeCodexCase[]>;
-        known[task] = [...next];
-        writeFileSync(cases, JSON.stringify(known));
+        // Whole or not at all: the task's run reads its file while the test may write it.
+        atomicWrite(join(cases, `${task}.json`), JSON.stringify(next));
       },
-      codexLeft: (task) =>
-        (JSON.parse(readFileSync(cases, "utf8")) as Record<string, FakeCodexCase[]>)[task] ?? [],
+      codexLeft: (task) => {
+        const file = join(cases, `${task}.json`);
+        return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as FakeCodexCase[]) : [];
+      },
       terminal: () =>
         readFileSync(record, "utf8")
           .split("\n")

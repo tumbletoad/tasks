@@ -458,4 +458,34 @@ describe("[A5.3.22.web.list-keys] the list's keyboard and focus", () => {
     press("j");
     expect(focused()).toBe(tasks[3]?.id);
   });
+
+  test("F2 edits the title in place; Escape and Enter put focus back on it before the next key", () => {
+    const tasks = [task(1), task(2)];
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot(tasks));
+    const second = tasks[1]?.id ?? "";
+    act(() => {
+      titleOf(second)?.focus();
+      titleOf(second)?.click();
+    });
+    expect(titleOf(second)?.getAttribute("aria-expanded")).toBe("true");
+    press("F2");
+    expect(document.activeElement?.getAttribute("data-part")).toBe("title-edit");
+    press("Escape");
+    expect(document.activeElement).toBe(titleOf(second));
+    press("Home");
+    expect(focused()).toBe(tasks[0]?.id);
+
+    act(() => {
+      titleOf(second)?.focus();
+    });
+    press("F2");
+    const field = document.activeElement as HTMLInputElement;
+    field.value = "Task 2, renamed";
+    press("Enter");
+    expect(document.activeElement).toBe(titleOf(second));
+    expect(updates).toEqual([
+      expect.objectContaining({ task: second, set: { title: "Task 2, renamed" } }),
+    ]);
+  });
 });

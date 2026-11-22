@@ -53,7 +53,7 @@ export interface FrozenSearch {
   readonly match: string | null;
   readonly limit: number;
   readonly items: readonly FrozenItem[];
-  readonly total: number | "10000+";
+  readonly total: number | `${number}+`;
 }
 
 interface Held {

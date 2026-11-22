@@ -137,6 +137,9 @@ export function RunBody({ run, label, onStop }: RunBodyProps) {
             {t("run.stop")}
           </button>
         ) : null}
+        {view.quiet === undefined ? null : (
+          <span data-part="run-quiet">{sayMsg(t, view.quiet)}</span>
+        )}
       </p>
       {view.error === undefined ? null : (
         <p className={styles.error} data-part="run-error" dir="auto">

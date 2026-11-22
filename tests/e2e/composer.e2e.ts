@@ -10,7 +10,7 @@ import { expect, type Page, type Request } from "@playwright/test";
 import { PRODUCT_NAME, PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { openTask, showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 interface Added {
@@ -82,16 +82,6 @@ async function catchClipboard(page: Page): Promise<() => Promise<string[]>> {
     };
   });
   return () => page.evaluate(() => (window as unknown as { copied: string[] }).copied);
-}
-
-async function openTask(page: Page, world: World, ref: string): Promise<void> {
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
-  await showsSpace(page, world.mira.name);
-  await expect(rowOf(page, ref).locator('[data-part="title"]')).toHaveAttribute(
-    "aria-expanded",
-    "true",
-    { timeout: SLOW_MS },
-  );
 }
 
 test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Copy, with and without text", () => {
@@ -497,7 +487,7 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
   }) => {
     const tag = test.info().project.name;
     const { origin, mira, studio } = world;
-    await page.goto(await world.signInUrl(`/s/${mira.id}/today`));
+    await signIn(page, world, `/s/${mira.id}/today`);
     await showsSpace(page, mira.name);
     const field = page.getByRole("textbox", { name: "New task" });
     // A paste longer than the field takes is cut: the field says so. Only Chromium lets a page
@@ -630,6 +620,46 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     const ids = added.map((r) => (r.postDataJSON() as { request_id: string }).request_id);
     expect(ids[1]).toBe(ids[0]);
     expect(Object.keys(await kept(page))).toEqual([]);
+  });
+
+  test("an add sent just before a reload, and pressed again on the words the reload kept, adds the task once", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const title = `Order the padlock (${tag})`;
+    await signIn(page, world, `/s/${world.mira.id}/today`);
+    await showsSpace(page, world.mira.name);
+    const field = page.getByRole("textbox", { name: "New task" });
+    // Each add reaches the service late: the first one is still on its way when the page reloads.
+    const added = calls(page, "task.add");
+    let answered = 0;
+    await page.route("**/api/v1/op/task.add", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      const response = await route.fetch();
+      answered += 1;
+      await route.fulfill({ response }).catch(() => undefined);
+    });
+    await field.fill(title);
+    await page.keyboard.press("Enter");
+    await page.reload();
+    await showsSpace(page, world.mira.name);
+    await expect(field).toHaveValue(title);
+    await field.focus();
+    await page.keyboard.press("Enter");
+    await expect(field).toHaveValue("", { timeout: SLOW_MS });
+    await expect.poll(() => answered, { timeout: SLOW_MS }).toBe(2);
+    await page.unroute("**/api/v1/op/task.add");
+    const ids = added.map((r) => (r.postDataJSON() as { request_id: string }).request_id);
+    expect(ids).toHaveLength(2);
+    expect(ids[1]).toBe(ids[0]);
+    const found = (await world.op(world.mira.id, "task.search", {
+      q: "padlock",
+      scope: "all",
+    })) as {
+      rows: { title: string }[];
+    };
+    expect(found.rows.filter((row) => row.title === title)).toHaveLength(1);
   });
 
   test("a field edit that was not saved is back after a reload with its choices: the connection was down, the task changed under it, the task was finished", async ({

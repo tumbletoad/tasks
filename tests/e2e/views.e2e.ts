@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const VIEWS = ["Today", "Inbox", "Open", "Waiting", "Review", "Backlog", "Completed", "Agents"];
@@ -32,7 +32,7 @@ const row = (page: Page, ref: string) => page.locator(`main li[data-task="${ref}
 const sidebar = (page: Page) => page.getByRole("navigation", { name: "Views and areas" });
 
 async function open(page: Page, world: World, path: string, space = world.mira): Promise<void> {
-  await page.goto(await world.signInUrl(`/s/${space.id}/${path}`));
+  await signIn(page, world, `/s/${space.id}/${path}`);
   await showsSpace(page, space.name);
 }
 

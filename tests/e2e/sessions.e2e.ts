@@ -5,7 +5,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { showsSpace } from "./page.ts";
+import { openTask, showsSpace, signIn } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 /** A new task of Mira's in the Inbox, for one test alone. */
@@ -18,9 +18,7 @@ async function newTask(world: World, title: string): Promise<string> {
 
 /** The task expanded through its link, signed in: its row and the parts the tests read. */
 async function expanded(page: Page, world: World, ref: string) {
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
-  await showsSpace(page, world.mira.name);
-  return parts(page.locator(`li[data-task="${ref}"]`));
+  return parts(await openTask(page, world, ref));
 }
 
 function parts(row: Locator) {
@@ -84,7 +82,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     const p = await expanded(page, world, ref);
     // A second tab shows the same task's row, not expanded.
     const other = await page.context().newPage();
-    await other.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+    await signIn(other, world, `/s/${world.mira.id}/inbox`);
     await showsSpace(other, world.mira.name);
     const q = parts(other.locator(`li[data-task="${ref}"]`));
     await expect(q.tile).toHaveAttribute("data-state", "ready");
@@ -123,7 +121,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     await openRunning(world, p);
     // A new tab, its row collapsed: it never read this task's receipts.
     const other = await page.context().newPage();
-    await other.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+    await signIn(other, world, `/s/${world.mira.id}/inbox`);
     await showsSpace(other, world.mira.name);
     const q = parts(other.locator(`li[data-task="${ref}"]`));
     await expect(q.tile).toHaveAttribute("data-state", "running", { timeout: SLOW_MS });

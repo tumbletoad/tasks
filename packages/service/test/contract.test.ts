@@ -1,6 +1,7 @@
-// The contract suite (contract/suite.ts) over the request path's own faces: the functions
-// in-process, ttasks-local/1's `op/call` with real sessions, and HTTP as the UI; and the grant
-// gate's refusal for a shell acting as a session. MCP and the CLI run both in their own tests.
+// The contract suite (contract/suite.ts) over the request path's own faces: ttasks-local/1's
+// `op/call` with real sessions, which reaches the same functions as an in-process call after a JSON
+// round trip, and HTTP as the UI; and the grant gate's refusal for a shell acting as a session. MCP
+// and the CLI run both in their own tests.
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import { expect } from "vitest";
 import { ERROR_CODES, AppError, routePath, type ErrorBody } from "@ttasks/contracts";
@@ -12,37 +13,11 @@ import {
   contractWorld,
   grantSuite,
   revokedSession,
-  type Actor,
   type ContractTransport,
 } from "./contract/suite.ts";
 import { post } from "./http-client.ts";
 import { signIn } from "./http-world.ts";
 import { classSession, errorOf } from "./ops-helpers.ts";
-
-const classOf = (actor: Actor) => (actor === "user" ? "cli-interactive" : "cli-script");
-
-contractSuite("[A3.3.2.ops.contract] the contract suite, in-process", async () => {
-  const w = await contractWorld("ci");
-  const transport: ContractTransport = {
-    portal: w.portal,
-    folder: (task) => w.folder(task),
-    binds: false,
-    launch: async (task) => (await w.launch(task)).reference,
-    call: async (entry, input, actor) => {
-      try {
-        return await opCall(
-          w.service.ops,
-          { class: classOf(actor), env: {} },
-          { op: entry, input },
-        );
-      } catch (error) {
-        throw error instanceof AppError ? new ContractError(error.toBody()) : error;
-      }
-    },
-    close: () => w.close(),
-  };
-  return transport;
-});
 
 contractSuite("[A3.3.2.ops.contract] the contract suite, over HTTP as the UI", async () => {
   // The UI is the user: every example runs as one browser session, the `ui` class with its

@@ -218,21 +218,37 @@ export interface ProjectFolderView {
 /** A fresh request ID (A1 3.8): 128 random bits, new per intended change. */
 export const requestId = (): string => crypto.randomUUID();
 
+/**
+ * Requests go out with `keepalive` while the bodies of those in flight stay within this many bytes
+ * (the browser takes 64 KiB of them together): what the person did is still sent when the tab
+ * reloads or closes right after it. Past it a request is an ordinary one.
+ */
+const KEEPALIVE_BYTES = 48 * 1024;
+let keptAlive = 0;
+
 async function postJson(
   path: string,
   body: string,
   headers: Record<string, string>,
 ): Promise<{ status: number; body: string }> {
-  const reply = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body,
-    credentials: "omit",
-    cache: "no-store",
-    referrerPolicy: "no-referrer",
-    redirect: "error",
-  });
-  return { status: reply.status, body: await reply.text() };
+  const size = new TextEncoder().encode(body).length;
+  const keepalive = keptAlive + size <= KEEPALIVE_BYTES;
+  if (keepalive) keptAlive += size;
+  try {
+    const reply = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body,
+      credentials: "omit",
+      cache: "no-store",
+      referrerPolicy: "no-referrer",
+      redirect: "error",
+      keepalive,
+    });
+    return { status: reply.status, body: await reply.text() };
+  } finally {
+    if (keepalive) keptAlive -= size;
+  }
 }
 
 /** `POST /api/v1/auth/redeem`: a fragment code for a token, or null. */
