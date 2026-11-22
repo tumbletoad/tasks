@@ -753,6 +753,8 @@ describe("[A4.5.routes.folders] a launch opens in the task's folder, else its pr
       const own = await addTask(r, "Fixture own folder", "own-folder", "Portal");
       const inProject = await addTask(r, "Fixture in the project", undefined, "Portal");
       const none = await addTask(r, "Fixture without a folder");
+      // No session of its own: an Open of an app that runs a task here is that session.
+      const far = await addTask(r, "Fixture on another machine");
       const real = (name: string) => realpathSync.native(join(r.lab.work, name));
       const work = () =>
         realpathSync.native(join(stateOf(r.lab.home), "workdirs", `space-${r.lab.spaceId}`));
@@ -799,9 +801,9 @@ describe("[A4.5.routes.folders] a launch opens in the task's folder, else its pr
         service.openTask({
           space: r.lab.spaceId,
           task: {
-            id: none.id,
-            ref: none.ref,
-            title: "Fixture without a folder",
+            id: far.id,
+            ref: far.ref,
+            title: "Fixture on another machine",
             version: 1,
             folder: { kind: "other_machine", machine: "mira-laptop" },
           },
