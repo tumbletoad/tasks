@@ -198,6 +198,8 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
     await expect(page.locator("main li[data-key]")).toHaveCount(overdue, { timeout: SLOW_MS });
     await page.goBack();
     // Due today to what is open and due today: a task finished today is not counted, nor listed.
+    const due = numbers.getByRole("link", { name: /^Due today: / });
+    const dueToday = await countIn(due);
     const paid = (await world.op(world.mira.id, "task.add", {
       tasks: [{ title: `Pay the deposit (${tag})`, area: "home", due: today.iso }],
     })) as Added;
@@ -206,8 +208,14 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
       task: deposit,
       base: await asOf(world, deposit),
     });
-    const due = numbers.getByRole("link", { name: /^Due today: / });
-    const dueToday = await countIn(due);
+    // The page has heard of both once Done this week counts the deposit: the page may hear of
+    // the add before the finish, and Due today then says one more for a moment.
+    await expect(done).toHaveAttribute(
+      "aria-label",
+      new RegExp(`^Done this week: ${String(before + 2)}, \\d+ today$`),
+      { timeout: SLOW_MS },
+    );
+    await expect(due).toHaveAttribute("aria-label", `Due today: ${String(dueToday)}`);
     await due.click();
     await expect(page).toHaveURL(/\/search\?q=due%3Atoday/);
     await expect(page.locator("main li[data-key]")).toHaveCount(dueToday, { timeout: SLOW_MS });
