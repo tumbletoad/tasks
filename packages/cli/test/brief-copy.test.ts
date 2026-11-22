@@ -18,7 +18,7 @@ afterAll(async () => {
   await w.close();
 }, LONG);
 
-/** `tasks <args>` from a terminal, with a clipboard that answers `answer` and records the text. */
+/** `ttasks <args>` from a terminal, with a clipboard that answers `answer` and records the text. */
 async function tasks(
   args: readonly string[],
   answer?: CopyResult,

@@ -42,7 +42,7 @@ const agents = (): AgentsSetupOptions => ({
   systemApplications: join(root, "Applications"),
 });
 
-/** `tasks <argv>` as a person at a terminal (tty), or a script. */
+/** `ttasks <argv>` as a person at a terminal (tty), or a script. */
 const run = (argv: string[], tty = true) =>
   runMain(argv, { home, tty, main: { agents: agents() } });
 

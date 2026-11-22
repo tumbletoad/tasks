@@ -1,5 +1,5 @@
 // The contract suite (@ttasks/service/test/contract) through the CLI's --json (A3 5 "Parity", A7 3.9
-// M2.03): every example goes in as `tasks <verb> --input - --json`, the CLI's own path from the
+// M2.03): every example goes in as `ttasks <verb> --input - --json`, the CLI's own path from the
 // arguments to `op/call` and back, run in this process against a service in this process. The
 // user's calls come from a terminal (`cli-interactive`), the agent's from a script (`cli-script`).
 // The grant gate's refusal (A3 3.7.8) goes the same way, from an agent's shell whose ticket maps

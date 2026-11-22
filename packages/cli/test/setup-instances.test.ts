@@ -59,7 +59,7 @@ afterAll(async () => {
 
 const machineToml = () => join(configOf(w.home), "machine.toml");
 
-/** `tasks <argv>` as a person at a terminal (tty), a script, or an agent's shell. */
+/** `ttasks <argv>` as a person at a terminal (tty), a script, or an agent's shell. */
 const run = (argv: string[], tty = true, env: Record<string, string> = {}) =>
   runMain(argv, { home: w.home, tty, env, main: { agents: options } });
 

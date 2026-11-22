@@ -54,7 +54,7 @@ switch (command) {
     // A2 3.3.2: ttasksw.exe with no arguments supervises, and only from the stable bin folder.
     const found = defaults();
     if ((command === "" && !stableTasksw) || found === undefined) {
-      process.stderr.write("usage: tasks <command> (lab release, M0.07)\n");
+      process.stderr.write("usage: ttasks <command> (lab release, M0.07)\n");
       process.exitCode = 64;
       break;
     }
@@ -82,6 +82,6 @@ switch (command) {
     break;
   }
   default:
-    process.stderr.write("usage: tasks <command> (lab release, M0.07)\n");
+    process.stderr.write("usage: ttasks <command> (lab release, M0.07)\n");
     process.exitCode = 64;
 }

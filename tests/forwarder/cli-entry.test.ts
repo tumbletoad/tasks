@@ -51,7 +51,7 @@ function home(label: string): Home {
   return made;
 }
 
-/** `tasks <args>` through the CLI's entry, with the load recorder writing to `log`. */
+/** `ttasks <args>` through the CLI's entry, with the load recorder writing to `log`. */
 function tasks(where: Home, args: readonly string[], log: string): Bridge {
   const proc = procs.spawn(
     process.execPath,

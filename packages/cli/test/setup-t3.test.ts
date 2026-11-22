@@ -70,7 +70,7 @@ afterAll(async () => {
   cleanup();
 }, SLOW);
 
-/** `tasks <argv>` as a person at a terminal (tty) or a script, with the fake as the browser. */
+/** `ttasks <argv>` as a person at a terminal (tty) or a script, with the fake as the browser. */
 const run = (argv: string[], tty = true) =>
   runMain(argv, {
     home,

@@ -84,7 +84,7 @@ const files = () => [join(user, ".claude.json"), join(user, ".codex", "config.to
 const read = () => files().map((f) => readFileSync(f, "utf8"));
 const recordFile = () => join(stateOf(home), "setup", "agents.json");
 
-/** `tasks <argv>` as a person at a terminal (tty), a script, or an agent's shell. */
+/** `ttasks <argv>` as a person at a terminal (tty), a script, or an agent's shell. */
 const run = (argv: string[], tty = true, env: Record<string, string> = {}) =>
   runMain(argv, {
     home,

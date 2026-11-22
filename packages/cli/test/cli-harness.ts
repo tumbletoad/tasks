@@ -70,7 +70,7 @@ export interface CliWorld {
   readonly json: ServiceJson;
   /** The test install of a build, when the acceptance runs against one. */
   readonly install: TestInstall | undefined;
-  /** Runs `tasks <args>` as a child process. */
+  /** Runs `ttasks <args>` as a child process. */
   tasks(
     args: readonly string[],
     options?: { env?: Record<string, string>; stdin?: string; script?: string },
@@ -267,7 +267,7 @@ async function reportLostService(service: Proc, home: string, saved: ServiceJson
 }
 
 /**
- * Runs `tasks <argv>` in this process with a recorded Io. `tty` makes the connection a person's
+ * Runs `ttasks <argv>` in this process with a recorded Io. `tty` makes the connection a person's
  * (`cli-interactive`), as a terminal would: the class is decided by the service from it. `true`
  * is a terminal on every stream; an object names each stream, as a pipe or a redirect leaves them.
  */

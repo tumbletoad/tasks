@@ -17,7 +17,7 @@ afterAll(async () => {
   await w.close();
 }, LONG);
 
-/** `tasks <args>` from a terminal (the person), or from a script. */
+/** `ttasks <args>` from a terminal (the person), or from a script. */
 const tasks = (args: readonly string[], terminal = true, stdin?: string): Promise<Ran> =>
   runMain(args, { home: w.home, tty: terminal, ...(stdin === undefined ? {} : { stdin }) });
 

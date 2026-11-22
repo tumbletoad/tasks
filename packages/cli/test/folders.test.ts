@@ -21,7 +21,7 @@ afterAll(async () => {
   await w.close();
 }, LONG);
 
-/** `tasks <args>` from a terminal in `cwd`: the person. */
+/** `ttasks <args>` from a terminal in `cwd`: the person. */
 const tasks = (args: readonly string[], cwd: string): Promise<Ran> =>
   runMain(args, { home: w.home, cwd, tty: true });
 const json = (ran: Ran) => JSON.parse(ran.stdout) as Record<string, unknown>;

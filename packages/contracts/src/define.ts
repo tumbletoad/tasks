@@ -73,7 +73,7 @@ export interface McpFace {
 
 /** One CLI verb (A2 3.10, A3 3.4.13). Field names refer to top-level input fields or `item` fields. */
 export interface CliFace {
-  /** The verb: `tasks <verb>`. Lower case, unique. */
+  /** The verb: `ttasks <verb>`. Lower case, unique. */
   readonly verb: string;
   /** Scalar fields taken as positional arguments, in order. */
   readonly positional?: readonly string[];
