@@ -102,13 +102,21 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       const port = w.port();
       const headers = { "tasks-space": "Mira", "tasks-build": "source" };
 
-      // The snapshot names the instances the tiles draw: only the one that opens here.
+      // The snapshot names the instances the tiles draw: only the one that opens here. It is a
+      // Claude Code instance, which can also run a task in the background.
       const feed = await openFeed(port, token);
       await feed.next((m) => m["type"] === "hello");
       feed.send({ type: "subscribe", space: "Mira" });
       const snapshot = await feed.next((m) => m["type"] === "snapshot");
       expect(snapshot["instances"]).toEqual([
-        { key: "fake-agent", label: "Fake agent · test", glyph: "Cc", ring: 1, route: "terminal" },
+        {
+          key: "fake-agent",
+          label: "Fake agent · test",
+          glyph: "Cc",
+          ring: 1,
+          route: "terminal",
+          runs: true,
+        },
       ]);
 
       const click = { task: task.id, instance: "fake-agent", request_id: "click-0000000000000001" };

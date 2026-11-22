@@ -20,6 +20,8 @@ interface Bench {
   readonly toServer: PassThrough;
   /** Says what the server says, beside the replay. */
   readonly say: (method: string, params: Record<string, unknown>) => void;
+  /** Asks what the server asks, beside the replay. */
+  readonly ask: (id: number, method: string, params: Record<string, unknown>) => void;
 }
 
 function bench(scenario: FakeScenario, session: Partial<CodexSession> = {}): Bench {
@@ -36,7 +38,10 @@ function bench(scenario: FakeScenario, session: Partial<CodexSession> = {}): Ben
   const say = (method: string, params: Record<string, unknown>): void => {
     fromServer.write(`${JSON.stringify({ method, params })}\n`);
   };
-  return { driver, fake, events, toServer, say };
+  const ask = (id: number, method: string, params: Record<string, unknown>): void => {
+    fromServer.write(`${JSON.stringify({ id, method, params })}\n`);
+  };
+  return { driver, fake, events, toServer, say, ask };
 }
 
 /** The work, or undefined while it has not settled. */
@@ -457,6 +462,32 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
     expect(events.filter((e) => e.kind === "answer").at(-1)).toMatchObject({
       text: "Keep the old export?",
     });
+    driver.close();
+  });
+
+  test("a question or form that comes after the work settled hears no one answered, and changes nothing the run says", async () => {
+    const { driver, fake, events, ask } = bench({ fixture: "windows-plain" });
+    expect(await driver.settled).toEqual(done({ ok: true, text: "Fixture text." }));
+    const before = events.length;
+    ask(900, "item/tool/requestUserInput", {
+      itemId: "late-1",
+      isBlocking: true,
+      questions: [{ id: "q1", header: "Export", question: "Which one?", options: [] }],
+    });
+    ask(901, "mcpServer/elicitation/request", {
+      serverName: "docs",
+      mode: "form",
+      message: "Fill in the export's name.",
+      requestedSchema: { type: "object", properties: {} },
+    });
+    ask(902, "item/commandExecution/requestApproval", { itemId: "late-2" });
+    await until("the late requests answered", () => answerTo(fake, 902) !== undefined);
+    expect(answerTo(fake, 900)?.["result"]).toEqual({ answers: {} });
+    expect(answerTo(fake, 901)?.["result"]).toEqual({ action: "decline" });
+    expect(answerTo(fake, 902)?.["result"]).toEqual({ decision: "decline" });
+    // What the run's folder keeps is the last answer event: none came after the work settled.
+    expect(events.slice(before)).toEqual([]);
+    expect(sent(fake, "turn/interrupt")).toEqual([]);
     driver.close();
   });
 

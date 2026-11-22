@@ -2,12 +2,14 @@
 // Stop before the agent's PID, while it runs and after it exited, the start time, the run's limits,
 // a container that refuses to empty and End by force, and the next start after a crash.
 import { spawn, type ChildProcess } from "node:child_process";
+import { PassThrough } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { RunRecord } from "@tasks/contracts/runs";
+import type { RunLimits, RunRecord } from "@tasks/contracts/runs";
 import type { RunStore } from "@tasks/launch/execution-store";
 import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
 import { describe, expect, test } from "vitest";
 import {
+  claudeDriver,
   RunHost,
   RunMachine,
   type AgentCommand,
@@ -142,7 +144,7 @@ const refusing: Containers = {
 const never = (): Promise<AgentCommand> => new Promise<AgentCommand>(() => undefined);
 
 /** A world with one queued run, and a way to read it. */
-async function oneRun(): Promise<{
+async function oneRun(limits: RunLimits = MODEL_LIMITS): Promise<{
   world: World;
   run: (...events: Event[]) => Promise<void>;
   read: () => Promise<RunRecord>;
@@ -156,6 +158,7 @@ async function oneRun(): Promise<{
     tasks: ["t_0000000000000000000000000a"],
   });
   clock.world = world;
+  world.limits = limits;
   const run = async (...events: Event[]) => {
     for (const e of events) {
       await world.run(e);
@@ -231,6 +234,20 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(history()).not.toContain("running");
   });
 
+  test("Stop while the agent's process starts: once it is there, nothing reaches its input, and the run is cancelled", async () => {
+    for (const open of [claudeDriver({ request: "Delete the old exports." }), undefined]) {
+      const { run, read, world } = await oneRun();
+      world.open = open;
+      await run(start("hang"), STOP);
+      expect((await read()).state).toBe("cancelling");
+      await run({ kind: "answerStart", pick: 0, ok: true }, tick(11_000));
+      const after = await read();
+      expect(after.state).toBe("cancelled");
+      expect(world.input.get(after.id)).toBe("");
+      expect(world.boxes.get(after.id)?.procs).toBe(0);
+    }
+  });
+
   test("Stop after the agent exited, while what it left is ended: the run is cancelled", async () => {
     const { run, read } = await oneRun();
     await run(start(), say(true), { kind: "fork", pick: 0 }, { kind: "stick", pick: 0 });
@@ -294,6 +311,27 @@ describe("[A4.5.run.host] the run host's rules", () => {
     for (let i = 0; i < 4; i += 1) await wall.run(tick(40_000), say());
     await wall.run(tick(11_000));
     expect(await wall.read()).toMatchObject({ state: "timed_out", reason: "wall" });
+  });
+
+  test("an agent that exits having said nothing but on stderr: its words there are the run's error", async () => {
+    const { run, read, world } = await oneRun();
+    await run(start());
+    const id = world.runs[0] ?? "";
+    world.boxes.get(id)?.stderr.write("error: unknown option '--instance'\n");
+    await run({ kind: "exit", pick: 0, code: 1 }, tick(10_000));
+    expect(await read()).toMatchObject({
+      state: "failed",
+      result: { outcome: "no_output", error: "error: unknown option '--instance'" },
+    });
+  });
+
+  test("a run without time limits is never ended for its time, however long or quiet it is", async () => {
+    const { run, read } = await oneRun({ maxTurns: 50 });
+    await run(start("ok", true), say());
+    for (let i = 0; i < 30; i += 1) await run(tick(60 * 60_000));
+    expect((await read()).state).toBe("running");
+    await run(say(true), { kind: "exit", pick: 0, code: 0 }, tick(10_000));
+    expect((await read()).state).toBe("succeeded");
   });
 
   test("a clean run keeps both results: the work's answer, and nothing left behind", async () => {
@@ -403,6 +441,124 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect((await host.stop(id))?.state).toBe("cancelling");
     expect((await host.ended(id))?.state).toBe("cancelled");
     expect(starts).toBe(0);
+  });
+
+  test("Stop at each stage of a start, however late the store answers: nothing reaches the agent, and a Stop the store takes cancels the run", async () => {
+    // Where the start is when Stop comes, how far it got when the store answered, and whether
+    // the store took the Stop.
+    const cases = [
+      { at: "queued", taken: "after the start was asked", fails: false },
+      { at: "queued", taken: "after the start was asked", fails: true },
+      { at: "preparing", taken: "at once", fails: false },
+      { at: "preparing", taken: "after the command", fails: false },
+      { at: "preparing", taken: "after the container", fails: false },
+      { at: "spawning", taken: "at once", fails: false },
+      { at: "spawning", taken: "after the container", fails: false },
+    ] as const;
+    const turns = async () => {
+      for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve));
+    };
+    for (const { at, taken, fails } of cases) {
+      const label = `${at}, ${taken}${fails ? ", refused" : ""}`;
+      let take: () => void = () => undefined;
+      const held = new Promise<void>((resolve, reject) => {
+        take = fails
+          ? () => {
+              reject(new Error("The disk is full"));
+            }
+          : resolve;
+      });
+      let ready: ((command: AgentCommand) => void) | undefined;
+      let spawn: (() => void) | undefined;
+      let starts = 0;
+      let input = "";
+      let asked = false;
+      const { host, id } = await bareHost({
+        containers: {
+          ...refusing,
+          start: (spec) => {
+            starts += 1;
+            const stdin = new PassThrough();
+            stdin.on("data", (chunk: Buffer) => {
+              input += chunk.toString("utf8");
+            });
+            const stdout = new PassThrough();
+            const stderr = new PassThrough();
+            const exited = new Promise<AgentExit>((resolve) => {
+              stdin.once("finish", () => {
+                stdout.end();
+                stderr.end();
+                resolve({ code: 0, signal: null });
+              });
+            });
+            return new Promise((resolve) => {
+              spawn = () => {
+                resolve({ name: spec.name, pid: 4242, stdin, stdout, stderr, exited });
+              };
+            });
+          },
+        },
+        wrap: (store) => ({
+          createRun: (input, request) => store.createRun(input, request),
+          readRun: (run) => store.readRun(run),
+          openWork: (machine) => store.openWork(machine),
+          transitionRun: async (run, seen, next, patch) => {
+            // The Stop's own write: `cancelling`, or `cancelled` for a run still queued.
+            if (!asked && (next === "cancelling" || next === "cancelled") && taken !== "at once") {
+              asked = true;
+              await held;
+            }
+            return store.transitionRun(run, seen, next, patch);
+          },
+        }),
+      });
+      const begin = () =>
+        host.start(
+          id,
+          () =>
+            new Promise<AgentCommand>((resolve) => {
+              ready = resolve;
+            }),
+        );
+      if (at !== "queued") await begin();
+      await turns();
+      const command: AgentCommand = {
+        command: "claude",
+        args: [],
+        cwd: ".",
+        env: {},
+        open: claudeDriver({ request: "Delete the old exports." }),
+      };
+      if (at === "spawning") {
+        ready?.(command);
+        await turns();
+        expect(starts, at).toBe(1);
+      }
+      const stopped = host.stop(id);
+      stopped.catch(() => undefined);
+      // A queued run's start is asked while the store holds the Stop.
+      const late = at === "queued" ? begin() : undefined;
+      if (taken !== "at once") {
+        // The start goes as far as it goes before the store answers.
+        ready?.(command);
+        await turns();
+        if (taken === "after the container") {
+          spawn?.();
+          await turns();
+        }
+        take();
+      }
+      if (fails) await expect(stopped, label).rejects.toThrow("The disk is full");
+      else await stopped;
+      await late;
+      ready?.(command);
+      await turns();
+      spawn?.();
+      const after = await host.ended(id);
+      expect(after?.state, label).toBe(fails ? "failed" : "cancelled");
+      expect(input, label).toBe("");
+      if (at !== "spawning") expect(starts, label).toBe(0);
+    }
   });
 
   test("a Stop the store does not take still stops the run", async () => {

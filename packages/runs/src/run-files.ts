@@ -5,6 +5,8 @@
 //   copies it into the run's record.
 // - `stdout.jsonl` and `stderr.log`: the agent's raw output for diagnosis, up to their caps. It is
 //   task text, like the answer, and goes with the folder.
+// - `tools.json`: Tasks' tools for an agent that takes them from a file (Claude Code), with the
+//   run's ticket, which no command line may carry. The ticket is good only while the run runs.
 // Folders are 0700 and files 0600 on Linux and macOS, made through packages/files. On Windows they
 // inherit the access list of the state folder in the person's profile, as every file of Tasks does.
 // The supervisor removes old folders (supervisor.ts retain); nothing else removes one.
@@ -24,6 +26,9 @@ export const RUNS_FOLDER = "runs";
 export const ANSWER_FILE = "answer.json";
 export const STDOUT_FILE = "stdout.jsonl";
 export const STDERR_FILE = "stderr.log";
+/** The tools file of an agent that takes its tools from a file: it holds the run's ticket. */
+export const TOOLS_FILE = "tools.json";
+const PRIVATE_FILES = [TOOLS_FILE] as const;
 
 /** How much raw output a run keeps for diagnosis. The parser reads every byte past these. */
 export const STDOUT_CAP_BYTES = 20 * 1024 * 1024;
@@ -159,7 +164,17 @@ export class RunFiles implements RunFolders {
   }
 
   removeTemps(id: string): void {
-    removeStaleTemps(this.folder(id), [ANSWER_FILE]);
+    removeStaleTemps(this.folder(id), [ANSWER_FILE, ...PRIVATE_FILES]);
+  }
+
+  /**
+   * Writes one of the run's private files whole, such as the tools file an agent is given, which
+   * holds the run's ticket. Returns its path.
+   */
+  writePrivate(id: string, name: (typeof PRIVATE_FILES)[number], text: string): string {
+    const path = join(this.folder(id), name);
+    atomicWrite(path, text, 0o600);
+    return path;
   }
 
   /** Whether the run's answer file is there, or could not be told (any error but its absence). */

@@ -300,8 +300,8 @@ export class SpaceExecutionStore implements ExecutionStore {
       permission: input.permission,
       limits: {
         max_turns: limits.maxTurns,
-        wall_ms: limits.wallMs,
-        idle_ms: limits.idleMs,
+        ...(limits.wallMs === undefined ? {} : { wall_ms: limits.wallMs }),
+        ...(limits.idleMs === undefined ? {} : { idle_ms: limits.idleMs }),
         ...(limits.budgetUsd === undefined ? {} : { budget_usd: limits.budgetUsd }),
       },
     });
@@ -492,6 +492,9 @@ const USAGE_KEYS = {
 const isOf = <T extends string>(values: readonly T[], value: unknown): value is T =>
   values.includes(value as T);
 
+const optionalNumber = (value: unknown): boolean =>
+  value === undefined || typeof value === "number";
+
 /** A run row as a RunRecord, checked: a row that is not one is a damaged space. */
 export function decodeRun(row: SpaceRunRow): RunRecord {
   const bad = (column: string): never => {
@@ -511,8 +514,8 @@ export function decodeRun(row: SpaceRunRow): RunRecord {
   if (
     limits === undefined ||
     typeof limits["max_turns"] !== "number" ||
-    typeof limits["wall_ms"] !== "number" ||
-    typeof limits["idle_ms"] !== "number"
+    !optionalNumber(limits["wall_ms"]) ||
+    !optionalNumber(limits["idle_ms"])
   ) {
     return bad("spec");
   }
@@ -549,8 +552,8 @@ export function decodeRun(row: SpaceRunRow): RunRecord {
     permission,
     limits: {
       maxTurns: limits["max_turns"],
-      wallMs: limits["wall_ms"],
-      idleMs: limits["idle_ms"],
+      ...(typeof limits["wall_ms"] === "number" ? { wallMs: limits["wall_ms"] } : {}),
+      ...(typeof limits["idle_ms"] === "number" ? { idleMs: limits["idle_ms"] } : {}),
       ...(typeof budget === "number" ? { budgetUsd: budget } : {}),
     },
     state,

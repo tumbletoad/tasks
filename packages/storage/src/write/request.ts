@@ -1833,14 +1833,17 @@ function runEvidence(f: Fields, key: string): RunEvidence {
   return evidence;
 }
 
-/** A run's limits (A4 3.11.3, 3.11.7): whole numbers within their bounds, a budget in dollars. */
+/**
+ * A run's limits (A4 3.11.3, 3.11.7): whole numbers within their bounds, a budget in dollars. A
+ * time limit that is absent is none.
+ */
 function runLimits(f: Fields): RunLimitsRow {
   const b = RUN_LIMIT_BOUNDS;
   const limits: RunLimitsRow = {
     max_turns: f.int("max_turns", b.maxTurns.min, b.maxTurns.max),
-    wall_ms: f.int("wall_ms", b.wallMs.min, b.wallMs.max),
-    idle_ms: f.int("idle_ms", b.idleMs.min, b.idleMs.max),
   };
+  if (f.has("wall_ms")) limits.wall_ms = f.int("wall_ms", b.wallMs.min, b.wallMs.max);
+  if (f.has("idle_ms")) limits.idle_ms = f.int("idle_ms", b.idleMs.min, b.idleMs.max);
   if (f.has("budget_usd")) {
     const budget = f.raw("budget_usd");
     if (

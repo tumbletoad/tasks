@@ -82,9 +82,7 @@
         "runs": 3,
         "perInstance": 2,
         "perTask": 2
-      },
-      "wallMs": 3600000,
-      "idleMs": 1200000
+      }
     }
   },
   "problems": [

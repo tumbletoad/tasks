@@ -1,8 +1,11 @@
 // What the page shows of a background run (runs.ts): its state in plain words, what the agent said,
 // Stop while it may still work, the row's marker, how a read joins what the page already shows,
 // and the words of a refusal. Fixture runs only.
+import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
+import { APP_NAME, CLI_NAME } from "@tasks/brand";
 import { Refused, type Instance, type Run } from "../api.ts";
+import en from "../i18n/en.json" with { type: "json" };
 import { mergeRuns, runMarker, runRefusal, runners, runView, withStops } from "./runs.ts";
 
 const run = (patch: Partial<Run> = {}): Run => ({
@@ -22,6 +25,20 @@ const run = (patch: Partial<Run> = {}): Run => ({
 });
 
 const ids = (view: ReturnType<typeof runView>) => view.status.map((m) => m.id);
+
+/** A view's state as the page words it, in the source catalogue: formatting errors fail. */
+function words(view: ReturnType<typeof runView>): string[] {
+  const intl = createIntl({
+    locale: "en",
+    messages: en,
+    onError: (error) => {
+      throw error;
+    },
+  });
+  return view.status.map((m) =>
+    intl.formatMessage({ id: m.id }, { product: APP_NAME, cli: CLI_NAME, ...m.values }),
+  );
+}
 
 describe("[M6.page.run-words] a run's entry says what is the case and what the person can do", () => {
   test("waiting, working and stopping offer Stop until it is on its way; nothing ended has it", () => {
@@ -44,6 +61,40 @@ describe("[M6.page.run-words] a run's entry says what is the case and what the p
       tone: "unknown",
       stoppable: true,
     });
+  });
+
+  test("a working run says how long it has said nothing, from a minute on, and keeps Stop", () => {
+    const since = 1_000_000;
+    expect(ids(runView(run({ quiet_since: since }), "Codex", since + 59_000))).toEqual([
+      "run.working",
+    ]);
+    const quiet = runView(run({ quiet_since: since }), "Codex", since + 25 * 60_000 + 5_000);
+    expect(quiet).toMatchObject({ tone: "working", stoppable: true });
+    expect(quiet.status[1]).toEqual({ id: "run.quiet", values: { minutes: 25 } });
+  });
+
+  test("a working run shows what it said so far, so a server it keeps running can be used before Stop", () => {
+    const serving = runView(
+      run({ answer: "The preview is at http://localhost:5173.", answer_final: true }),
+      "Claude Code",
+    );
+    expect(serving).toMatchObject({
+      tone: "working",
+      stoppable: true,
+      said: { kind: "last", text: "The preview is at http://localhost:5173." },
+    });
+    expect(runView(run(), "Claude Code").said).toBeUndefined();
+  });
+
+  test("a run whose permission refused some of the agent's requests says how many", () => {
+    const done = runView(run({ state: "succeeded", refused: 2 }), "Claude Code");
+    expect(words(done)).toContain("Its permission refused 2 requests of Claude Code.");
+    const failed = runView(
+      run({ state: "failed", reason: "agent_error", refused: 1 }),
+      "Claude Code",
+    );
+    expect(words(failed)).toContain("Its permission refused 1 request of Claude Code.");
+    expect(ids(runView(run({ state: "succeeded" }), "Claude Code"))).toEqual(["run.done"]);
   });
 
   test("done shows the answer, and what it left only when something had to be ended; a stop always says what was ended", () => {
