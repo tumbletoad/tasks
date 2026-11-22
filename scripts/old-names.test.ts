@@ -24,6 +24,7 @@ const OLD_NAMES: readonly RegExp[] = [
   /(?<![\w.@-])tasks-(?=[\w<$([*@"'`])/,
   /(?<![\w.@/-])tasks\/(?:challenge|hello|bind|no-)/,
   /(?<=\b(?:bin|share)[\\/])tasks\b(?![.\w-])|(?<=[\\/])tasks(?=[\\/](?:bin|current|versions)\b)/,
+  /(?<=(?:\.local[\\/]state|\.cache|\.config)[\\/])tasks\b/,
   // The command, where a verb only it has follows, or as code with a word after it.
   /(?<![\w.@$/-])tasks (?:has no command|service|space|doctor|setup|mcp|--[a-z]|<[a-z])/,
   /(?<=`)tasks (?:machine|project|session|proposals|security|policy|open|run|add|set|show|find|status|view|undo|redo|reopen|help|version|serve|install)\b/,
@@ -98,6 +99,8 @@ describe("[A7.3.2.brand.old-names] the product's earlier names do not come back"
       "tasks/no-shell-exec",
       "~/.local/share/tasks",
       "<root>/bin/tasks",
+      "<state> ~/.local/state/tasks",
+      "~/.cache/tasks",
       "tasks has no command misspelled",
       "Run: tasks doctor",
       "tasks --version",
