@@ -1,8 +1,8 @@
 // `get_task`'s two views (A3 3.4.4, 3.9.6): the digest v0, bounded by A3's limits per part, and a
 // page of the sections asked for (pages.ts). Both are built by the request path from one snapshot,
 // so every face returns the same result; MCP's text is its rendering (mcp/render.ts).
-import { REQUEST_CHARS } from "@tasks/contracts";
-import type { Row } from "@tasks/storage";
+import { REQUEST_CHARS } from "@ttasks/contracts";
+import type { Row } from "@ttasks/storage";
 import { invalid } from "./errors.ts";
 import {
   buildPage,

@@ -1,7 +1,7 @@
 // What a person types before Open (`launch.open`'s text) becomes a note of theirs on the task at
 // the click, which the launch names as its request: per route and catalogue entry that takes it,
-// through the service, a real `tasks shim`, and testkit's fake Claude Code and Codex, which read the
-// request as their brief says when the tools are missing (`tasks show --launch`). The words never
+// through the service, a real `ttasks shim`, and testkit's fake Claude Code and Codex, which read the
+// request as their brief says when the tools are missing (`ttasks show --launch`). The words never
 // travel on a command line, in a link, in a log line or in a file outside the space. The link apps'
 // opener is a recording spawner, and an agent's MCP connection stands for the app. No real agent,
 // app or agent home is used. Fixture data and temporary folders only.
@@ -18,9 +18,9 @@ import {
 } from "node:fs";
 import { join, relative } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { MCP_SERVER_KEY } from "@tasks/brand";
-import { REQUEST_CHARS } from "@tasks/contracts";
-import type { JsonObject, RpcSession } from "@tasks/bridge/protocol";
+import { MCP_SERVER_KEY } from "@ttasks/brand";
+import { REQUEST_CHARS } from "@ttasks/contracts";
+import type { JsonObject, RpcSession } from "@ttasks/bridge/protocol";
 import {
   briefReference,
   powershellPath,

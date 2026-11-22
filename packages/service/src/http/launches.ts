@@ -16,7 +16,7 @@
 // note on the task, which the page reads with the task's other notes: a receipt names it by its
 // reference. A run as the page reads it holds the person's request and the agent's answer, task
 // text that travels in a request's or a response's body only.
-import { AppError, RequestId } from "@tasks/contracts";
+import { AppError, RequestId } from "@ttasks/contracts";
 import {
   isOpenRun,
   RUN_REQUEST_MAX_BYTES,

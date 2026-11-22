@@ -16,7 +16,7 @@ afterEach(() => {
 describe("[A5.3.9.shim.session-end] the service checks its shims on its own", () => {
   test("a round at the start, then one every 30 s, and none after stop", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-    const base = mkdtempSync(join(tmpdir(), "tasks-launch-check-"));
+    const base = mkdtempSync(join(tmpdir(), "ttasks-launch-check-"));
     const service = new LaunchService({
       machine: "m_7c0hq2m4w9d8k1r6t3v5x0b2nf",
       root: join(base, "launch"),

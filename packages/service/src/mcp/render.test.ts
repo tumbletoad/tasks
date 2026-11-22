@@ -1,7 +1,7 @@
 // The compact text of every tool (A3 3.3, 3.4, 3.5, 3.9.6): within each result budget for every
 // example and for worst cases at the field limits (A3 3.2.5's result budget test), with stored
 // text and editable names only inside the data block (A3 3.10, X14).
-import { findEntry, registry, REQUEST_CHARS, resultTokens, type AnyEntry } from "@tasks/contracts";
+import { findEntry, registry, REQUEST_CHARS, resultTokens, type AnyEntry } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import { DIGEST_TOKENS, ERROR_TOKENS, hasRenderer, renderError, renderResult } from "./render.ts";
 import { DATA_WORD, closeMarker, openMarker } from "./text.ts";

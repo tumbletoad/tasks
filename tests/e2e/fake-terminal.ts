@@ -33,7 +33,7 @@ export const FAKE_INSTANCE = {
 
 /**
  * The instance's table in machine.toml: Claude Code's target, run as the fake, which reads the
- * person's request as its brief says without the tools (`tasks show --launch`) from the install of
+ * person's request as its brief says without the tools (`ttasks show --launch`) from the install of
  * `home`. On a task `holds` has a file for, the fake runs until that file is removed.
  */
 export function fakeInstanceToml(home: string, holds: string): string {
@@ -77,7 +77,7 @@ function refused(record: string, task: string | null): boolean {
   return true;
 }
 
-/** The service's terminal seam: records `tasks shim <ticket>` and runs it in the folder. */
+/** The service's terminal seam: records `ttasks shim <ticket>` and runs it in the folder. */
 export function fakeTerminal(record: string): TerminalStart {
   return async ({ intent, ticket, folder }) => {
     if (refused(record, intent.task)) return { kind: "refused" };
