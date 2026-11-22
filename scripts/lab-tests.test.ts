@@ -48,6 +48,7 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
       "tsconfig.json",
       "tsconfig.base.json",
       "package.json",
+      "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
       ".node-version",
       "LICENSE",
@@ -75,7 +76,6 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
       "tests/manifest.json",
       "README.md",
       "spikes-notes.md",
-      "pnpm-lock.yaml",
       ".github/workflows/e2e.yml",
       ".github/workflows/build.yml",
     ]) {

@@ -26,9 +26,8 @@ const LAB_FOLDERS = ["spikes/", "packages/testkit/stand-ins/"];
  * Files outside spikes/ that the lab tests depend on: the test configuration and the setup file
  * it runs in every worker, the verify scripts, the TypeScript settings, the dependencies and Node
  * pin, the stream helpers the runs spike imports, the files the packaging spike copies into a
- * version folder, and the workflows that run the lab. The lockfile is not on the list: lab code
- * imports nothing from packages/, a Node upgrade changes package.json and .node-version, and the
- * product's own tests check the lockfile's runtime digests on every run.
+ * version folder, and the workflows that run the lab. The lockfile is on the list because an update
+ * that moves only it can change what the lab bundles, and the UI spike tests its bundle's size.
  */
 const LAB_SHARED_FILES = [
   "vitest.config.ts",
@@ -41,6 +40,7 @@ const LAB_SHARED_FILES = [
   "tests/stream-content.ts",
   "tests/stream-schema.ts",
   "package.json",
+  "pnpm-lock.yaml",
   "pnpm-workspace.yaml",
   ".node-version",
   "LICENSE",
