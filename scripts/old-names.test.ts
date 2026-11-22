@@ -18,7 +18,7 @@ const OLD_NAMES: readonly RegExp[] = [
   /\btasksw\b/,
   /\btasks\.(?:service|sock)\b/,
   /\blocal\.tasks\./,
-  /\bmcp__tasks(?:__|-)|\bmcp(?:_s|S)ervers(?:\.tasks\b|\[["']tasks["']\])/,
+  /\bmcp__tasks(?:__|-|\b)|\bmcp(?:_s|S)ervers(?:\.tasks\b|\[["']tasks["']\])/,
   /\bmcp(?:_s|S)ervers["']?:\s*\{.*(?<![\w.-])tasks["']?:/,
   // tasks-build, tasks-local/1, tasks-*-linux-x64.*, tasks-@@VERSION@@, tasks-release.
   /(?<![\w.@-])tasks-(?=[\w<$([*@"'`])/,
@@ -90,6 +90,7 @@ describe("[A7.3.2.brand.old-names] the product's earlier names do not come back"
       "local.tasks.service",
       "mcp__tasks__status",
       "mcp__tasks-probe__probe_echo",
+      "--allowedTools mcp__tasks",
       "mcpServers.tasks",
       'mcpServers["tasks"]',
       "dist/tasks-*-linux-x64.*",
