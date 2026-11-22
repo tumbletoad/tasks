@@ -221,6 +221,11 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
       timeout: SLOW_MS,
     });
 
+    // Collapsed, the row's own button opens the project's folder.
+    await row.locator('[data-part="collapse"]').click();
+    await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "false");
+    await expect(row.locator('[data-part="folder"]')).toHaveAccessibleName("Open folder");
+
     expect(await page.evaluate(() => (window as unknown as { __xss: number }).__xss)).toBe(0);
     expect(await violations(page)).toEqual([]);
   });

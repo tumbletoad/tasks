@@ -52,7 +52,6 @@ import {
   PROBE_PER_MINUTE,
   probeProof,
   RateLimit,
-  REDEEM_PER_MINUTE,
   TICKET_MS,
 } from "./auth.ts";
 import {
@@ -238,7 +237,7 @@ export class HttpApp {
   readonly launches: UiLaunches;
   readonly #codes: OneTimeSecrets<true>;
   readonly #tickets: OneTimeSecrets<string>;
-  readonly #redeemRate = new RateLimit(REDEEM_PER_MINUTE);
+  readonly #redeemRate: RateLimit;
   readonly #probeRate = new RateLimit(PROBE_PER_MINUTE);
   readonly #wss: WebSocketServer;
   readonly #sockets = new Map<Socket, SocketState>();
@@ -252,6 +251,7 @@ export class HttpApp {
     this.options = options;
     this.#codes = new OneTimeSecrets(CODE_MS, options.limits.maxCodes);
     this.#tickets = new OneTimeSecrets(TICKET_MS, options.limits.maxTickets);
+    this.#redeemRate = new RateLimit(options.limits.redeemPerMinute);
     this.#wss = new WebSocketServer({
       noServer: true,
       clientTracking: false,

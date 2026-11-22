@@ -144,6 +144,10 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     // Copy with text: the brief carries it, and the field clears once it is on the clipboard.
     const copied = await catchClipboard(page);
     await composer.fill(`Bring the spare keys (${tag})`);
+    // What Shift-click does is said to assistive technology too, not only in the hover label.
+    await expect(strip.locator('[data-part="copy"]')).toHaveAccessibleDescription(
+      /Shift-click copies the context pack/u,
+    );
     await strip.locator('[data-part="copy"]').click();
     await expect.poll(async () => (await copied()).length, { timeout: SLOW_MS }).toBe(1);
     expect((await copied())[0]).toContain(`Bring the spare keys (${tag})`);
@@ -179,7 +183,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     expect(await violations(page)).toEqual([]);
   });
 
-  test("Open without text opens as the tile does, a launch that is not recorded keeps the text, and while a session runs the strip opens another only when asked", async ({
+  test("Open without text opens as the tile does, a launch that is not recorded keeps the text, and while a session runs the strip opens another only when asked @one-browser", async ({
     page,
     world,
   }) => {
