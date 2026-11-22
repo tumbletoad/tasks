@@ -86,7 +86,7 @@ export interface RowProps {
   readonly busy: BusyOf | undefined;
   /** The task's background runs, oldest first, once the tab follows the task. */
   readonly runs: readonly Run[];
-  /** Whether the task's receipts and runs were read: until then its card holds its controls back. */
+  /** Whether the task's receipts and runs were read: until then its card's thread waits. */
   readonly read?: boolean;
   readonly ctx: RowContext;
   readonly expanded: boolean;

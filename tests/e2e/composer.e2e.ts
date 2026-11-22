@@ -84,6 +84,21 @@ async function catchClipboard(page: Page): Promise<() => Promise<string[]>> {
   return () => page.evaluate(() => (window as unknown as { copied: string[] }).copied);
 }
 
+/** Holds the card's reads (its detail, sessions and runs) until the returned function is called. */
+async function holdReads(page: Page): Promise<() => void> {
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  for (const path of ["/api/v1/op/task.get", "/api/v1/launch/list", "/api/v1/launch/runs"]) {
+    await page.route(`**${path}`, async (route) => {
+      await released;
+      await route.continue().catch(() => undefined);
+    });
+  }
+  return release;
+}
+
 test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Copy, with and without text", () => {
   test("Note saves the text and clears the field; Open passes the text as the request; Copy carries it; without text Note waits and Open and Copy act as before", async ({
     page,
@@ -173,7 +188,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     expect(await violations(page)).toEqual([]);
   });
 
-  test("the strip shows once, where the thread leaves it: a press begun as soon as Copy can be seen is a click on Copy", async ({
+  test("the strip keeps its place while the card's reads come in: a press begun before they arrive is a click, at 1,440 and 390 px, also on a card opened again", async ({
     page,
     world,
   }) => {
@@ -186,23 +201,89 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
         text: `Reading ${String(n)}: ${String(4000 + n)} kWh`,
       });
     }
-    // The card's own read answers late: its thread, four notes high, comes in above the strip.
-    await page.route("**/api/v1/op/task.get", async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
-      await route.continue();
+    const row = rowOf(page, ref);
+    const copy = stripOf(page, ref).locator('[data-part="copy"]');
+    /** Presses Copy while the card's reads are held, lets them answer, then lets go. */
+    const pressWhileReading = async (release: () => void, copied: () => Promise<string[]>) => {
+      await expect(copy).toBeVisible({ timeout: SLOW_MS });
+      const before = await copy.boundingBox();
+      if (before === null) throw new Error("Copy has no box");
+      const count = (await copied()).length;
+      await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+      await page.mouse.down();
+      release();
+      await expect(notes(page, ref).last()).toHaveText("Reading 4: 4004 kWh", {
+        timeout: SLOW_MS,
+      });
+      expect(await copy.boundingBox()).toEqual(before);
+      await page.mouse.up();
+      await expect.poll(async () => (await copied()).length).toBe(count + 1);
+    };
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      const release = await holdReads(page);
+      await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
+      await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true", {
+        timeout: SLOW_MS,
+      });
+      const copied = await catchClipboard(page);
+      await pressWhileReading(release, copied);
+      await page.unrouteAll({ behavior: "wait" });
+      // Opened again: its runs are known, its detail is read again.
+      await row.locator('[data-part="collapse"]').click();
+      await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "false");
+      const again = await holdReads(page);
+      await row.locator('[data-part="title"]').click();
+      await pressWhileReading(again, copied);
+      await page.unrouteAll({ behavior: "wait" });
+    }
+  });
+
+  test("the composer takes keys from the card's first frame: after Ask, after a click into it, by Tab from the title, and with a kept draft, while the card's reads are held", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, {
+      title: `Renew the parking permit (${tag})`,
+      summary: "The permit runs out at the end of the month.",
+      area: "home",
     });
+    const composer = composerOf(page, ref);
+    const row = rowOf(page, ref);
+    let release = await holdReads(page);
     await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
     await showsSpace(page, world.mira.name);
-    const copied = await catchClipboard(page);
-    const copy = stripOf(page, ref).locator('[data-part="copy"]');
-    await expect(copy).toBeVisible({ timeout: SLOW_MS });
-    const box = await copy.boundingBox();
-    if (box === null) throw new Error("Copy has no box");
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await expect(notes(page, ref)).toHaveCount(4, { timeout: SLOW_MS });
-    await page.mouse.up();
-    await expect.poll(async () => (await copied()).length).toBe(1);
+    // Ask from the header's summary, and type on at once.
+    await row.locator('[data-part="summary"]').click();
+    await page.keyboard.type("before Friday");
+    await expect(composer).toHaveValue("Change the summary: before Friday");
+    await expect(composer).toBeFocused();
+    release();
+    await expect(composer).toHaveValue("Change the summary: before Friday");
+    await page.unrouteAll({ behavior: "wait" });
+
+    // A reload with the reads held: the kept draft shows, and a click into it types on.
+    release = await holdReads(page);
+    await page.reload();
+    await expect(composer).toHaveValue("Change the summary: before Friday", { timeout: SLOW_MS });
+    await composer.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" please");
+    await expect(composer).toHaveValue("Change the summary: before Friday please");
+
+    // From the title, Tab reaches the composer.
+    await row.locator('[data-part="title"]').focus();
+    let reached = false;
+    for (let i = 0; i < 40 && !reached; i += 1) {
+      await page.keyboard.press("Tab");
+      reached = await composer.evaluate((element) => element === document.activeElement);
+    }
+    expect(reached).toBe(true);
+    await page.keyboard.press("End");
+    await page.keyboard.type("!");
+    await expect(composer).toHaveValue("Change the summary: before Friday please!");
+    release();
     await page.unrouteAll({ behavior: "wait" });
   });
 
@@ -645,8 +726,6 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
 
     await page.reload();
     await expect(composer).toHaveValue(`Buy a new latch (${tag})`, { timeout: SLOW_MS });
-    // The composer shows, and takes focus, once the card's thread is read.
-    await expect(composer).toBeVisible({ timeout: SLOW_MS });
     await composer.focus();
     await page.keyboard.press("Enter");
     await expect(composer).toHaveValue("", { timeout: SLOW_MS });

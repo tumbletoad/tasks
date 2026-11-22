@@ -8,9 +8,7 @@
 .body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 304px;
-  grid-template-areas:
-    "content facts"
-    "composer composer";
+  grid-template-areas: "content facts";
   column-gap: 36px;
   padding-top: 6px;
 }
@@ -655,14 +653,9 @@ a + .muted,
   color: var(--k-late);
 }
 
-/* The composer, across both columns: its field, then the strip of where its text goes. */
+/* The composer, at the top of the content: its field, then the strip of where its text goes. */
 .composer {
-  grid-area: composer;
-  margin-top: 18px;
-}
-
-.composer[data-waiting] {
-  visibility: hidden;
+  margin-bottom: 18px;
 }
 
 .input {
@@ -917,8 +910,7 @@ a + .muted,
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "facts"
-      "content"
-      "composer";
+      "content";
   }
 
   .facts {

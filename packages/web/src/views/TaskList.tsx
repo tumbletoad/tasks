@@ -275,7 +275,7 @@ export function TaskList({
         })
         .catch((error: unknown) => {
           live.failed(error);
-          // Read, if only as nothing: the card draws its thread and its controls all the same.
+          // Read, if only as nothing: the card draws its thread all the same.
           setReceipts((known) => (known.has(task) ? known : new Map(known).set(task, [])));
         });
     },

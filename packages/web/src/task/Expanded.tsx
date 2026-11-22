@@ -73,7 +73,7 @@ export interface ExpandedProps {
   readonly busy: BusyOf | undefined;
   /** Its background runs, oldest first. */
   readonly runs: readonly Run[];
-  /** Whether its receipts and runs were read. */
+  /** Whether its receipts and runs were read: the thread draws once, with all of them. */
   readonly read: boolean;
   readonly instances: readonly Instance[];
   readonly actions: RowActions;
@@ -452,8 +452,6 @@ export function Expanded({
   const clock = useClock(false);
   const requests = [...new Set(receipts.flatMap((receipt) => receipt.request ?? []))].sort();
   const { detail, base, failed } = useDetail(task.id, requests);
-  /** The thread is drawn, or said to be unreadable: the controls under it are at their place. */
-  const thread = read && (detail !== undefined || failed);
   // A refusal holds until the detail is read again: that read says where the folder stands then.
   const [held, setHeld] = useState<{ refused: FolderRefusal; detail: Detail | undefined }>();
   if (refused !== held?.refused) setHeld(refused === undefined ? undefined : { refused, detail });
@@ -477,6 +475,11 @@ export function Expanded({
       {/* First in the document: below 1,024 px the facts come before the content (A5 3.7). */}
       <Facts task={facts} clock={clock} />
       <div className={styles.content}>
+        {/* First in the content, above all that its reads bring in: the composer and its strip
+            keep their place from the card's first frame, whatever the thread holds. */}
+        <div className={styles.composer}>
+          <Composer task={task} busy={busy} instances={instances} actions={actions} />
+        </div>
         {detail?.outcome === undefined ? null : (
           <div
             className={styles.outcome}
@@ -558,15 +561,6 @@ export function Expanded({
             {t("task.stale")}
           </p>
         ) : null}
-      </div>
-      {/* The thread comes in above the strip: the strip shows once, where the thread leaves it,
-          so a press never lands where a button was. */}
-      <div
-        className={styles.composer}
-        data-waiting={!thread || undefined}
-        inert={!thread || undefined}
-      >
-        <Composer task={task} busy={busy} instances={instances} actions={actions} shown={thread} />
       </div>
     </div>
   );

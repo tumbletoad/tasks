@@ -81,8 +81,8 @@ export async function showsSpace(page: Page, name: string): Promise<void> {
 }
 
 /**
- * Opens a task's card through its link, signed in, and waits for its thread, with which the
- * composer and the strip show. Returns the task's row.
+ * Opens a task's card through its link, signed in, and waits for its thread: its notes, sessions
+ * and runs are drawn. Returns the task's row.
  */
 export async function openTask(page: Page, world: World, ref: string): Promise<Locator> {
   await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
