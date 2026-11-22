@@ -4,8 +4,8 @@
 //   pnpm check                 the change since the merge base with origin/main, uncommitted and
 //                              untracked files included
 //   pnpm check --base <rev>    the change since the merge base with <rev>
-//   pnpm check <path>...       as if exactly these files had changed
-//   pnpm check --slow          also the slow files, and a selection too big for a minute
+//   pnpm check <path>...       as if exactly these files had changed (a folder: the files in it)
+//   pnpm check --slow          also the slow files, and all of a selection too big for a minute
 //   pnpm check --list          say what would run, and run nothing
 //
 // The static steps run beside the tests. The caches it keeps are in node_modules/.cache/check.
@@ -343,6 +343,8 @@ const secondsOf = (file: string) => recorded.get(file) ?? UNKNOWN_FILE_S;
 // Only the spread makes a change CI-sized: a long file that runs is the change's own test.
 const spreadOf = (run: readonly string[]) =>
   run.reduce((sum, file) => sum + secondsOf(file), 0) / workers;
+/** Seconds as the summary shows them: whole above 10, one decimal below. */
+const about = (s: number) => s.toFixed(s < 10 ? 1 : 0);
 const wallOf = (run: readonly string[]) => Math.max(spreadOf(run), ...run.map(secondsOf));
 const unknown = selection.run.filter((file) => recorded.get(file) === undefined).length;
 const ciSized = !options.slow && spreadOf(selection.run) > BUDGET_S;
@@ -357,7 +359,7 @@ console.log(
   `selected ${String(selection.run.length + selection.deferred.length)} of ` +
     `${plural(tests.length, "product test file")}${why}; ` +
     `${String(selection.deferred.length)} slow left to CI; ` +
-    `tests about ${wallOf(selection.run).toFixed(0)} s at ${String(workers)} workers`,
+    `tests about ${about(wallOf(selection.run))} s at ${String(workers)} workers`,
 );
 if (selection.unseen.length > 0) {
   const shown = selection.unseen.slice(0, 10).join(", ");
@@ -376,7 +378,7 @@ if (fit !== null) {
   console.log(
     `this is a CI-sized change: its tests take more than ${String(BUDGET_S)} s here, so the ` +
       `${plural(fit.run.length, "closest test file")} that fit run (about ` +
-      `${wallOf(runFiles).toFixed(0)} s) and CI runs the other ${String(fit.left.length)}`,
+      `${about(wallOf(runFiles))} s) and CI runs the other ${String(fit.left.length)}`,
   );
 }
 const browserFiles = ciSized ? [] : options.slow ? [...browser.run, ...browser.over] : browser.run;
@@ -478,7 +480,7 @@ const selected = selection.run.length + selection.deferred.length;
 if (fit !== null && fit.left.length > 0) {
   notRun.push(
     `${String(fit.left.length)} of ${plural(selection.run.length, "selected product test file")}: ` +
-      `a CI-sized change (about ${wallOf(selection.run).toFixed(0)} s). Push, or run pnpm check --slow`,
+      `a CI-sized change (about ${about(wallOf(selection.run))} s). Push, or run pnpm check --slow`,
   );
 }
 if (tests.length > selected) {
