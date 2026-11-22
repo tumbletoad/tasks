@@ -230,7 +230,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       mkdirSync(root);
       const copy = await seedMira(root, {
         seed: `scaled-${String(i)}`,
-        tasks: 12,
+        tasks: 1,
         os: OS,
         machineId: machine,
       });

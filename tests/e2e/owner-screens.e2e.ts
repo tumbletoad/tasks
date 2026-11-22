@@ -136,13 +136,22 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
       for (const [at, scale] of scales.entries()) {
         const space = world.scaled[at];
         if (space === undefined) throw new Error("the world has no space for this scale");
-        const to = `/s/${space.id}/open`;
+        // A task of the test's own, with no effort: the sample's tasks may hold a key the scale
+        // leaves out, which the facts then show as well.
+        const added = (await world.op(space.id, "task.add", {
+          tasks: [{ title: "Book the hall for the spring fair", inbox: true }],
+        })) as { tasks: { ref: string }[] };
+        const ref = added.tasks[0]?.ref;
+        if (ref === undefined) throw new Error("the task was not added");
+        const to = `/s/${space.id}/task/${ref}`;
         if (at === 0) await signIn(page, world, to);
         else await page.goto(`${world.origin}${to}`);
         await showsSpace(page, space.name);
-        const first = page.locator("main li[data-key]").first();
-        await first.locator('[data-part="title"]').click();
-        const facts = first.locator("dl");
+        const row = page.locator(`main li[data-task="${ref}"]`);
+        await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true", {
+          timeout: SLOW_MS,
+        });
+        const facts = row.locator("dl");
         const statuses = facts.getByRole("radiogroup", { name: "Status" });
         const priority = facts.getByRole("radiogroup", { name: "Priority" });
         const effort = facts.getByRole("radiogroup", { name: "Effort" });
