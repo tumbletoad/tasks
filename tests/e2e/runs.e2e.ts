@@ -117,7 +117,7 @@ test.describe("[M6.page.e2e.run] Run from the page, with and without words, and 
   });
 });
 
-test.describe("[M6.page.e2e.run-once] A Run pressed again after a reload is the same Run", () => {
+test.describe("[M6.page.run-once] A Run pressed again after a reload is the same Run", () => {
   test("a Run sent just before a reload, and pressed again on the words the reload kept, starts one run", async ({
     page,
     runs: world,

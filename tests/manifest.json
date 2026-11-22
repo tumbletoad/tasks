@@ -2425,7 +2425,7 @@
     },
     {
       "id": "M6.page.run-once",
-      "title": "One press of Run is one run: the second click of a double click and a held key start nothing more, and a Run that got no answer, pressed again with the same words, carries the same request ID; a refusal forgets it",
+      "title": "One press of Run is one run: the second click of a double click and a held key start nothing more, and a Run that got no answer, pressed again with the same words, also after a reload, carries the same request ID; a refusal forgets it",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
