@@ -61,6 +61,9 @@ installCleanup(stopServices);
 const AGENTS = dirname(fileURLToPath(import.meta.url));
 const NODE = process.execPath;
 const WIN = process.platform === "win32";
+/** The probe's server key. Agents name its tools `mcp__<key>__<tool>`. */
+const PROBE_SERVER = "ttasks-probe";
+const probeTool = (tool: string): string => `mcp__${PROBE_SERVER}__${tool}`;
 const args = process.argv.slice(2);
 const command = args[0] ?? "help";
 const scratchArg = option(args, "--scratch");
@@ -242,7 +245,7 @@ async function claudeSession(o: {
   if (o.probe !== null && o.probe !== undefined) {
     const config = {
       mcpServers: {
-        "ttasks-probe": {
+        [PROBE_SERVER]: {
           type: "stdio",
           command: NODE,
           args: probeArgv(o.probe.out, o.label, o.probe.expect, o.probe.tools),
@@ -361,7 +364,7 @@ async function codexSession(o: {
   more?: string[];
 }): Promise<CodexRun> {
   if (ledger.codex_sessions >= LIMITS.codex) throw new LabError("Codex session limit reached");
-  const name = o.probe?.name ?? "ttasks-probe";
+  const name = o.probe?.name ?? PROBE_SERVER;
   const argv = ["exec", "--json", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config"];
   argv.push("-s", o.sandbox ?? "read-only", "-C", o.cwd ?? work);
   argv.push("-c", `model_reasoning_effort="${process.env["TTASKS_M0_EFFORT"] ?? "low"}"`);
@@ -476,7 +479,7 @@ function codexItems(r: CodexRun): JsonObject[] {
         const error = i["error"] as JsonObject | null | undefined;
         return {
           type: "mcp_tool_call",
-          server: oneOf(i["server"], ["ttasks-probe", "ttasks"]),
+          server: oneOf(i["server"], [PROBE_SERVER, "ttasks"]),
           tool: oneOf(i["tool"], PROBE_TOOLS),
           status: oneOf(i["status"], ITEM_STATUSES),
           error: error === null || error === undefined ? null : errorClass(JSON.stringify(error)),
@@ -558,7 +561,7 @@ async function a01Config(): Promise<void> {
       "add",
       "--scope",
       "user",
-      "ttasks-probe",
+      PROBE_SERVER,
       "--",
       NODE,
       ...probeArgv(out, "a01-cfg", expect),
@@ -568,7 +571,7 @@ async function a01Config(): Promise<void> {
   steps["add"] = outcome(add);
   const added = recordHome(home, named);
   const getStep = await withProbes(out, "a01-cfg", () =>
-    cli(clis().claude, ["mcp", "get", "ttasks-probe"], { ...env, TTASKS_TICKET: TICKET }),
+    cli(clis().claude, ["mcp", "get", PROBE_SERVER], { ...env, TTASKS_TICKET: TICKET }),
   );
   const get = getStep.value;
   steps["get_with_ticket"] = {
@@ -591,13 +594,13 @@ async function a01Config(): Promise<void> {
     );
     steps[name] = {
       ...outcome(step.value),
-      lists_probe: mentions(step.value.stdout, /ttasks-probe/),
-      says_connected: mentions(step.value.stdout, /ttasks-probe.*connected/i),
+      lists_probe: mentions(step.value.stdout, new RegExp(PROBE_SERVER)),
+      says_connected: mentions(step.value.stdout, new RegExp(`${PROBE_SERVER}.*connected`, "i")),
       probe_starts: step.probes,
     };
   }
   steps["remove"] = outcome(
-    await cli(clis().claude, ["mcp", "remove", "ttasks-probe", "--scope", "user"], env),
+    await cli(clis().claude, ["mcp", "remove", PROBE_SERVER, "--scope", "user"], env),
   );
   const removed = recordHome(home, named);
   // Round 2: the home now has an (empty) mcpServers object, as a real home with servers does.
@@ -609,7 +612,7 @@ async function a01Config(): Promise<void> {
         "add",
         "--scope",
         "user",
-        "ttasks-probe",
+        PROBE_SERVER,
         "--",
         NODE,
         ...probeArgv(out, "a01-cfg2", expect),
@@ -618,7 +621,7 @@ async function a01Config(): Promise<void> {
     ),
   );
   steps["remove_again"] = outcome(
-    await cli(clis().claude, ["mcp", "remove", "ttasks-probe", "--scope", "user"], env),
+    await cli(clis().claude, ["mcp", "remove", PROBE_SERVER, "--scope", "user"], env),
   );
   const removedAgain = recordHome(home, named);
   save("a01-config", {
@@ -654,7 +657,7 @@ async function a01Sessions(): Promise<void> {
       persist: true,
       extra,
       probe: { out, expect },
-      allowedTools: ["mcp__ttasks-probe__probe_echo"],
+      allowedTools: [probeTool("probe_echo")],
     });
     runs.push({
       step: `${tag}: --session-id`,
@@ -712,12 +715,12 @@ async function a02Config(): Promise<void> {
   steps["add"] = outcome(
     await cli(
       clis().codex,
-      ["mcp", "add", "ttasks-probe", "--", NODE, ...probeArgv(out, "a02-cfg", expect)],
+      ["mcp", "add", PROBE_SERVER, "--", NODE, ...probeArgv(out, "a02-cfg", expect)],
       env,
     ),
   );
   const added = recordHome(home, named);
-  const get = await cli(clis().codex, ["mcp", "get", "ttasks-probe", "--json"], env);
+  const get = await cli(clis().codex, ["mcp", "get", PROBE_SERVER, "--json"], env);
   let getKeys: string[];
   let transportType: Json = null;
   try {
@@ -739,9 +742,9 @@ async function a02Config(): Promise<void> {
   steps["get_json"] = { ...outcome(get), keys: getKeys, transport_type: transportType };
   // The single-key patch of A3 3.13.4, in the scratch home only.
   const tomlPath = join(home, "config.toml");
-  writeFileSync(tomlPath, patchEnvVars(readFileSync(tomlPath, "utf8"), "ttasks-probe"));
+  writeFileSync(tomlPath, patchEnvVars(readFileSync(tomlPath, "utf8"), PROBE_SERVER));
   const patched = recordHome(home, named);
-  const get2 = await cli(clis().codex, ["mcp", "get", "ttasks-probe", "--json"], env);
+  const get2 = await cli(clis().codex, ["mcp", "get", PROBE_SERVER, "--json"], env);
   let envVars: Json;
   try {
     const parsed = JSON.parse(get2.stdout) as JsonObject;
@@ -759,20 +762,20 @@ async function a02Config(): Promise<void> {
   const list = await cli(clis().codex, ["mcp", "list"], { ...env, TTASKS_TICKET: TICKET });
   steps["list"] = {
     ...outcome(list),
-    lists_probe: mentions(list.stdout, /ttasks-probe/),
+    lists_probe: mentions(list.stdout, new RegExp(PROBE_SERVER)),
     probe_starts: probeFiles(out, "a02-cfg").length,
   };
-  steps["remove"] = outcome(await cli(clis().codex, ["mcp", "remove", "ttasks-probe"], env));
+  steps["remove"] = outcome(await cli(clis().codex, ["mcp", "remove", PROBE_SERVER], env));
   const removed = recordHome(home, named);
   // Round 2: config.toml now exists, as in a real home.
   steps["add_again"] = outcome(
     await cli(
       clis().codex,
-      ["mcp", "add", "ttasks-probe", "--", NODE, ...probeArgv(out, "a02-cfg2", expect)],
+      ["mcp", "add", PROBE_SERVER, "--", NODE, ...probeArgv(out, "a02-cfg2", expect)],
       env,
     ),
   );
-  steps["remove_again"] = outcome(await cli(clis().codex, ["mcp", "remove", "ttasks-probe"], env));
+  steps["remove_again"] = outcome(await cli(clis().codex, ["mcp", "remove", PROBE_SERVER], env));
   const removedAgain = recordHome(home, named);
   save("a02-config", {
     row: "A02",
@@ -793,8 +796,7 @@ async function a02Config(): Promise<void> {
 async function a02Sessions(): Promise<void> {
   const out = join(scratch, "probe", "a02-sessions");
   const expect: Expect = { ticket_sha256: sha256Hex(TICKET) };
-  const prompt =
-    "Call the MCP tool probe_echo of the server ttasks-probe once with the text Mira, then reply with the single word OK.";
+  const prompt = `Call the MCP tool probe_echo of the server ${PROBE_SERVER} once with the text Mira, then reply with the single word OK.`;
   const variants: { tag: string; envVars: boolean; approval: string | null }[] = [
     { tag: "no-env-vars", envVars: false, approval: null },
     { tag: "env-vars-approve", envVars: true, approval: "approve" },
@@ -834,8 +836,7 @@ function judgeRule(text: string): JsonObject {
   return { states_rule: states, quoted_phrase: quote };
 }
 
-const A06_PROMPT =
-  "What do the server instructions of the MCP server ttasks-probe say about request_id? Answer in one or two sentences from those instructions, without calling any tool.";
+const A06_PROMPT = `What do the server instructions of the MCP server ${PROBE_SERVER} say about request_id? Answer in one or two sentences from those instructions, without calling any tool.`;
 
 async function a06(): Promise<void> {
   const out = join(scratch, "probe", "a06");
@@ -873,8 +874,7 @@ async function a06(): Promise<void> {
 async function a09(): Promise<void> {
   const out = join(scratch, "probe", "a09");
   const runs: JsonObject[] = [];
-  const prompt =
-    "Call the tool mcp__ttasks-probe__probe_marked once and the tool mcp__ttasks-probe__probe_plain once, then reply with the single word OK.";
+  const prompt = `Call the tool ${probeTool("probe_marked")} once and the tool ${probeTool("probe_plain")} once, then reply with the single word OK.`;
   const first =
     process.env["TTASKS_M0_A09_SKIP_CALLS"] === "1"
       ? []
@@ -886,7 +886,7 @@ async function a09(): Promise<void> {
       prompt,
       stream: true,
       probe: { out, expect: {}, tools: "a09" },
-      allowedTools: ["mcp__ttasks-probe__probe_marked", "mcp__ttasks-probe__probe_plain"],
+      allowedTools: [probeTool("probe_marked"), probeTool("probe_plain")],
       ...(variant === "tool-search-off" ? { extra: { ENABLE_TOOL_SEARCH: "false" } } : {}),
     });
     // Tool-use names in order, from the stream (built-in names and the two probe tools only).
@@ -897,7 +897,7 @@ async function a09(): Promise<void> {
         initTools = ((e["tools"] ?? []) as unknown[]).filter(
           (t): t is string =>
             typeof t === "string" &&
-            /^(mcp__ttasks-probe__probe_(marked|plain|echo)|ToolSearch)$/.test(t),
+            new RegExp(`^(${probeTool("")}probe_(marked|plain|echo)|ToolSearch)$`).test(t),
         );
       }
       if (e["type"] !== "assistant") continue;
@@ -906,7 +906,9 @@ async function a09(): Promise<void> {
         if (block["type"] !== "tool_use") continue;
         const name = str(block["name"]);
         uses.push(
-          /^(mcp__ttasks-probe__probe_(marked|plain)|ToolSearch)$/.test(name) ? name : "[other]",
+          new RegExp(`^(${probeTool("")}probe_(marked|plain)|ToolSearch)$`).test(name)
+            ? name
+            : "[other]",
         );
       }
     }
@@ -950,7 +952,9 @@ async function a09(): Promise<void> {
       for (const block of content)
         if (block["type"] === "tool_use")
           uses.push(
-            /^(ToolSearch|mcp__ttasks-probe__probe_(marked|plain))$/.test(str(block["name"]))
+            new RegExp(`^(ToolSearch|${probeTool("")}probe_(marked|plain))$`).test(
+              str(block["name"]),
+            )
               ? str(block["name"])
               : "[other]",
           );
@@ -1007,8 +1011,7 @@ async function a06Length(): Promise<void> {
   const label = "a06-codex-length";
   const r = await codexSession({
     label,
-    prompt:
-      "The server instructions of the MCP server ttasks-probe consist of marker words M001, M002 and so on. Without calling any tool, which is the highest-numbered marker you can see in them? Reply with that marker only, and add the word cut if the instructions look truncated.",
+    prompt: `The server instructions of the MCP server ${PROBE_SERVER} consist of marker words M001, M002 and so on. Without calling any tool, which is the highest-numbered marker you can see in them? Reply with that marker only, and add the word cut if the instructions look truncated.`,
     probe: { out, expect: {}, args: ["--instructions", "markers"] },
   });
   const m = /M(\d{3})/.exec(r.text);
@@ -1083,8 +1086,7 @@ async function a06Markers(): Promise<void> {
       const label = `a06-markers-${String(length)}-${String(rep)}`;
       const r = await codexSession({
         label,
-        prompt:
-          "List every marker you can see in the server instructions of the MCP server ttasks-probe. Do not call any tool.",
+        prompt: `List every marker you can see in the server instructions of the MCP server ${PROBE_SERVER}. Do not call any tool.`,
         probe: { out, expect: {}, args: ["--instructions-file", file] },
       });
       const seen = new Set(r.text.match(MARKER_RE) ?? []);
@@ -1112,8 +1114,7 @@ async function a06Markers(): Promise<void> {
   save("a06-codex-instructions-markers", {
     row: "A06 (headless part, random-marker repeat)",
     machine,
-    route:
-      "Codex CLI (its default model, --ephemeral --ignore-user-config, model_reasoning_effort low), probe with --instructions-file: a 38-character head ('Markers are codes in square brackets.') then a random 6-character [XXXXXX] marker every 50 characters at recorded offsets, filler words between; prompt: 'List every marker you can see in the server instructions of the MCP server ttasks-probe. Do not call any tool.' The model is not told the markers, their number or the length. Only markers it repeats correctly count.",
+    route: `Codex CLI (its default model, --ephemeral --ignore-user-config, model_reasoning_effort low), probe with --instructions-file: a 38-character head ('Markers are codes in square brackets.') then a random 6-character [XXXXXX] marker every 50 characters at recorded offsets, filler words between; prompt: 'List every marker you can see in the server instructions of the MCP server ${PROBE_SERVER}. Do not call any tool.' The model is not told the markers, their number or the length. Only markers it repeats correctly count.`,
     runs,
   });
 }
