@@ -34,7 +34,7 @@ import {
 import { changedSince, isLabPath } from "./lab-tests.ts";
 import { checkIds, collectE2e, E2E_CONFIG, parseManifest, type CollectedTest } from "./manifest.ts";
 import { binPath, repoRoot, runNodeCaptured, type Captured } from "./run.ts";
-import { CRUISE_ROOTS, generated, runtime, TS_PROJECTS } from "./steps.ts";
+import { CRUISE_ROOTS, generated, runtime, typecheck } from "./steps.ts";
 
 /** Above this estimate of the tests' wall time, the change is left to CI unless --slow is given. */
 const BUDGET_S = 60;
@@ -209,23 +209,6 @@ async function quietly(step: () => boolean | Promise<boolean>): Promise<Captured
   }
 }
 
-function typecheck(): Promise<Captured> {
-  return Promise.all(
-    TS_PROJECTS.map((project) =>
-      runNodeCaptured(binPath("typescript", "tsc"), [
-        "-p",
-        project,
-        "--incremental",
-        "--tsBuildInfoFile",
-        `${CACHE}/tsc/${project.replaceAll("/", "-")}.tsbuildinfo`,
-      ]),
-    ),
-  ).then((runs) => ({
-    status: runs.every((r) => r.status === 0) ? 0 : 1,
-    output: runs.map((r) => r.output).join(""),
-  }));
-}
-
 const plural = (n: number, word: string) => `${String(n)} ${word}${n === 1 ? "" : "s"}`;
 const platformName = { win32: "Windows", linux: "Linux", darwin: "macOS" }[
   process.platform as string
@@ -254,7 +237,15 @@ console.log(`pnpm check: ${plural(changed.length, "changed file")} ${change.labe
 const existing = changed.filter((p) => existsSync(join(repoRoot, p)));
 const pending: Promise<Result>[] = [];
 if (!options.list) {
-  pending.push(timed("typecheck", typecheck));
+  pending.push(
+    timed("typecheck", () =>
+      typecheck((project) => [
+        "--incremental",
+        "--tsBuildInfoFile",
+        `${CACHE}/tsc/${project.replaceAll("/", "-")}.tsbuildinfo`,
+      ]),
+    ),
+  );
   const formatAll = changed.some((p) => /^\.prettier(rc|ignore)/.test(p));
   const formatFiles = formatAll ? ["."] : existing;
   if (formatFiles.length > 0) {
@@ -321,7 +312,6 @@ const selection: Selection = select(
   { slow: options.slow },
 );
 const e2eFiles = files.filter((p) => p.startsWith(E2E_DIR) && p.endsWith(".e2e.ts"));
-const browser: BrowserSelection = selectBrowser(changed, selection.reached, e2eFiles);
 
 const vitest = await createVitest(
   { watch: false, project: ["product"], allowOnly: false, includeTaskLocation: true },
@@ -352,6 +342,7 @@ const fit: Fit | null = ciSized
   ? fitBudget(selection, changed, secondsOf, BUDGET_S * workers)
   : null;
 const runFiles = fit === null ? selection.run : fit.run.map((r) => r.file);
+const browser: BrowserSelection = selectBrowser(changed, selection.reached, e2eFiles, ciSized);
 const specs = runFiles.map((file) => project.createSpecification(join(repoRoot, file)));
 
 const why = selection.everything === null ? "" : ` (all: ${selection.everything})`;
@@ -381,11 +372,16 @@ if (fit !== null) {
       `${about(wallOf(runFiles))} s) and CI runs the other ${String(fit.left.length)}`,
   );
 }
-const browserFiles = ciSized ? [] : options.slow ? [...browser.run, ...browser.over] : browser.run;
+const browserFiles = options.slow ? [...browser.run, ...browser.over] : browser.run;
 if (options.list) {
   const time = (file: string) => (recorded.get(file)?.toFixed(1) ?? "?").padStart(6);
   const reason = new Map(
-    fit?.run.map((r) => [r.file, r.why === "edited" ? "edited" : "uses a changed file"]),
+    fit?.run.map((r) => [
+      r.file,
+      { edited: "edited", direct: "uses a changed file", "through others": "through other files" }[
+        r.why
+      ],
+    ]),
   );
   for (const file of runFiles) {
     const because = reason.get(file);
@@ -500,11 +496,12 @@ notRun.push(
 notRun.push("the test manifest's check that every entry has a test (pnpm verify)");
 if (browserSkipped !== "") notRun.push(`browser tests: ${browserSkipped}`);
 const others = e2eFiles.length - browserRan.length;
-const over = browser.over.length > 0 ? `, ${String(browser.over.length)} of them selected` : "";
+const waiting = [...browser.run, ...browser.over].filter((f) => !browserRan.includes(f)).length;
+const over = waiting > 0 ? `, ${String(waiting)} of them selected` : "";
 notRun.push(
   browserRan.length > 0
     ? `browser tests in Firefox, and ${plural(others, "other end-to-end file")}${over} (pnpm e2e)`
-    : `browser tests (pnpm e2e): ${ciSized && browser.run.length > 0 ? "a CI-sized change" : browser.why}`,
+    : `browser tests (pnpm e2e): ${ciSized && browser.over.length > 0 ? "a CI-sized change" : browser.why}`,
 );
 const lab = changed.filter(isLabPath);
 notRun.push(

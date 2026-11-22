@@ -253,28 +253,32 @@ describe("[A7.3.3.check.budget] pnpm check runs the closest tests when a change 
     expect(fit.left).toEqual([]);
   });
 
-  test("what does not fit is left, and a test that only reaches a change through others waits", () => {
+  test("what does not fit is left", () => {
     const fit = fitBudget(selection, changed, seconds, 36);
     expect(fit.run.map((r) => r.file)).toEqual([
       "packages/a/test/use.test.ts",
       "tests/update/installed.test.ts",
     ]);
     expect(fit.left).toEqual(["packages/projection/test/model.test.ts"]);
-    const far = fitBudget(
-      select(["packages/a/src/core.ts"], repo, set, { slow: true }),
-      ["packages/a/src/core.ts"],
-      seconds,
-      1000,
-    );
-    expect(far.run.map((r) => r.file)).not.toContain("packages/a/test/use.test.ts");
-    expect(far.left).toEqual(["packages/a/test/use.test.ts"]);
+  });
+
+  test("the tests that reach a changed file through other files fill what is left of the budget", () => {
+    const core = ["packages/a/src/core.ts"];
+    const far = (budget: number) =>
+      fitBudget(select(core, repo, set, { slow: true }), core, seconds, budget);
+    expect(far(1000).run).toEqual([
+      { file: "tests/update/installed.test.ts", why: "direct" },
+      { file: "packages/projection/test/model.test.ts", why: "direct" },
+      { file: "packages/a/test/use.test.ts", why: "through others" },
+    ]);
+    expect(far(40).left).toEqual(["packages/a/test/use.test.ts"]);
   });
 });
 
 describe("[A7.3.3.check.browser] pnpm check runs a browser test when a change reaches the page", () => {
   const e2e = ["skeleton", "today", "sidebar", "search"].map((n) => `tests/e2e/${n}.e2e.ts`);
-  const browser = (changed: string[]) =>
-    selectBrowser(changed, select(changed, repo, set, { slow: false }).reached, e2e);
+  const browser = (changed: string[], overBudget = false) =>
+    selectBrowser(changed, select(changed, repo, set, { slow: false }).reached, e2e, overBudget);
 
   test("a change that does not reach the page runs none", () => {
     expect(browser(["packages/a/src/core.ts"]).run).toEqual([]);
@@ -299,5 +303,13 @@ describe("[A7.3.3.check.browser] pnpm check runs a browser test when a change re
     const s = browser([...edited, "packages/web/src/views/Today.tsx"]);
     expect(s.run).toEqual(edited.slice(0, E2E_MAX));
     expect([...s.run, ...s.over].sort()).toEqual([...edited, "tests/e2e/today.e2e.ts"].sort());
+  });
+
+  test("a change over the budget still runs the end-to-end file it edits, and only that", () => {
+    const changed = ["tests/e2e/search.e2e.ts", "packages/web/src/views/Today.tsx"];
+    const s = browser(changed, true);
+    expect(s.run).toEqual(["tests/e2e/search.e2e.ts"]);
+    expect(s.over).toEqual(["tests/e2e/today.e2e.ts"]);
+    expect(browser(["packages/web/src/views/Today.tsx"], true).run).toEqual([]);
   });
 });
