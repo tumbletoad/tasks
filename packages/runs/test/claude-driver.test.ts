@@ -397,7 +397,7 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
       "/state/runs/ru_x/tools.json",
     ]);
     expect(claudeArgs("auto-edit")).toEqual(
-      expect.arrayContaining(["acceptEdits", "--allowedTools", "mcp__tasks"]),
+      expect.arrayContaining(["acceptEdits", "--allowedTools", "mcp__ttasks"]),
     );
     // Read-only is a mode that brings every prompt of the person's own setup to the driver.
     const narrow = claudeArgs("read-only");
