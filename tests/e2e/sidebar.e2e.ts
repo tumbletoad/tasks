@@ -4,13 +4,13 @@
 // world's other tests add tasks of their own, so the counts are read before and after.
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const sidebar = (page: Page) => page.getByRole("navigation", { name: "Views and areas" });
 
 async function open(page: Page, world: World, path: string): Promise<void> {
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}/${path}`));
+  await signIn(page, world, `/s/${world.mira.id}/${path}`);
   await showsSpace(page, world.mira.name);
 }
 
@@ -175,7 +175,7 @@ test.describe("[A5.3.3.e2e.sidebar-folds] an area folds in the side menu and cou
     });
     try {
       const phone = await touch.newPage();
-      await phone.goto(await world.signInUrl(`/s/${world.mira.id}/today`));
+      await signIn(phone, world, `/s/${world.mira.id}/today`);
       await phone.getByRole("button", { name: "Menu" }).click();
       const drawer = phone.getByRole("dialog", { name: "Views and areas" });
       await expect(drawer.getByRole("link", { name: /^Lumen, \d/ })).toBeVisible({

@@ -4,6 +4,7 @@
 import { expect, type Route } from "@playwright/test";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
+import { signIn } from "./page.ts";
 import { SLOW_MS } from "./world.ts";
 
 /** Holds the service's answer to the first request a route sees, until `release`. */
@@ -41,7 +42,7 @@ test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () =>
     page,
     world,
   }) => {
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/area/${world.spare.area}`));
+    await signIn(page, world, `/s/${world.mira.id}/area/${world.spare.area}`);
     // Its own task: the open test launches `world.task`, and a worker's tests share the world.
     world.hold(world.spare.ref);
     const row = page.locator(`li[data-task="${world.spare.ref}"]`);

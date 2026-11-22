@@ -13,7 +13,7 @@
 import { expect, type Page } from "@playwright/test";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { BULK_TASKS, test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS } from "./world.ts";
 
 /**
@@ -132,7 +132,7 @@ test.describe("[A7.3.12.m5-03.e2e.scroll-5000] 5,000 rows in the real store", ()
     await watchViolations(page);
     await page.emulateMedia({ reducedMotion: "reduce" });
     // An area view lists every status of its area: about half of the 5,000 are in this one.
-    await page.goto(await bulk.signInUrl(`/s/${bulk.mira.id}/area/${bulk.task.area}`));
+    await signIn(page, bulk, `/s/${bulk.mira.id}/area/${bulk.task.area}`);
     await showsSpace(page, bulk.mira.name);
     const list = page.locator("[data-list]");
     await expect(list).toHaveAttribute("data-virtual", "true", { timeout: SLOW_MS });
@@ -243,7 +243,7 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     // The Inbox, newest first, so every status chip is on the first screens.
-    await page.goto(await bulk.signInUrl(`/s/${bulk.mira.id}/inbox`));
+    await signIn(page, bulk, `/s/${bulk.mira.id}/inbox`);
     await showsSpace(page, bulk.mira.name);
     const rows = page.locator("[data-list] li[data-key]");
     await expect(rows.first()).toBeVisible({ timeout: SLOW_MS });
@@ -386,7 +386,7 @@ test.describe("[A5.3.6.e2e.row-due-effort] A row's due date fits its column at e
     });
     const shown = (refs as { tasks: { ref: string }[] }).tasks.map((task) => task.ref);
     const rowOf = (ref: string) => page.locator(`[data-list] li[data-task="${ref}"]`);
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/open`));
+    await signIn(page, world, `/s/${world.mira.id}/open`);
     await showsSpace(page, world.mira.name);
 
     for (const theme of ["sumi", "washi"] as const) {

@@ -14,6 +14,7 @@
 // Enter saves a note, Ctrl+Enter opens the first instance and Ctrl+Shift+Enter runs the first
 // that can (keymap.ts): never while an input method composes.
 import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { flushSync } from "react-dom";
 import { Button, Dialog, DialogTrigger, Popover, Toolbar } from "react-aria-components";
 import { requestId, type Instance } from "../api.ts";
 import { classes } from "../app/css.ts";
@@ -132,14 +133,16 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
         const joined = before.trim() === "" ? stub : `${before.trimEnd()}\n${stub}`;
         // A field already full keeps what the person wrote: the stub is only a start.
         const next = joined.length > DRAFT_MAX ? before : joined;
-        setText(next);
-        keepDraft(space, task.id, next);
-        requestAnimationFrame(() => {
-          const element = field.current;
-          if (element === null) return;
-          element.focus();
-          element.setSelectionRange(element.value.length, element.value.length);
+        // The stub is drawn before focus goes to its end, within the click: a key pressed right
+        // after lands in the field, and nothing moves focus later.
+        flushSync(() => {
+          setText(next);
         });
+        keepDraft(space, task.id, next);
+        const element = field.current;
+        if (element === null) return;
+        element.focus();
+        element.setSelectionRange(element.value.length, element.value.length);
       }),
     [space, task.id, t],
   );

@@ -27,11 +27,15 @@ function Probe({ api }: { readonly api: Api }) {
 
 /** An api whose writes the test answers by hand. */
 function fakeApi() {
-  const calls: { resolve: (read: MachinePreference) => void; reject: (e: Error) => void }[] = [];
+  const calls: {
+    value: unknown;
+    resolve: (read: MachinePreference) => void;
+    reject: (e: Error) => void;
+  }[] = [];
   const api = {
-    setMachinePreference: () =>
+    setMachinePreference: (_key: string, value: unknown) =>
       new Promise<MachinePreference>((resolve, reject) => {
-        calls.push({ resolve, reject });
+        calls.push({ value, resolve, reject });
       }),
   } as unknown as Api;
   return { api, calls };
@@ -93,5 +97,38 @@ describe("[A7.3.12.m5-11.machine-page] the page's copy of this machine's setting
     });
     expect(control.theme).toBe("sumi");
     expect(document.documentElement.dataset["theme"]).toBe("sumi");
+  });
+
+  test("quick choices go one at a time, and of those that wait only the newest is sent", async () => {
+    const { api, calls } = fakeApi();
+    act(() => {
+      root.render(<Probe api={api} />);
+    });
+    act(() => {
+      control.receive(FEED);
+    });
+    let done: Promise<void>[] = [];
+    act(() => {
+      done = [control.setTheme("washi"), control.setTheme("system"), control.setTheme("sumi")];
+    });
+    expect(control.theme).toBe("sumi");
+    // Washi is on its way; the others wait for its answer, so nothing can overtake it.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(calls.map((c) => c.value)).toEqual(["washi"]);
+    await act(async () => {
+      calls[0]?.resolve({ key: "ui.theme", value: "washi", state: "set" });
+      await done[0];
+      await done[1];
+    });
+    // System was replaced before it was sent: only Sumi follows.
+    expect(calls.map((c) => c.value)).toEqual(["washi", "sumi"]);
+    expect(control.theme).toBe("sumi");
+    await act(async () => {
+      calls[1]?.resolve({ key: "ui.theme", value: "sumi", state: "set" });
+      await done[2];
+    });
+    expect(control.theme).toBe("sumi");
   });
 });

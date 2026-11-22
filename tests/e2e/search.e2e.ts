@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace } from "./page.ts";
+import { showsSpace, signIn } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const adding = (page: Page) => page.getByRole("textbox", { name: "New task" });
@@ -73,7 +73,7 @@ async function taskTitled(world: World, word: string, title: string): Promise<Di
 }
 
 async function open(page: Page, world: World, path: string): Promise<void> {
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}${path}`));
+  await signIn(page, world, `/s/${world.mira.id}${path}`);
   await showsSpace(page, world.mira.name);
 }
 

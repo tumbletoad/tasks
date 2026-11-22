@@ -319,14 +319,18 @@ describe("[M6.page.run-once] one press is one run, and a Run without an answer i
     expect(started[2]?.id).toBe(started[1]?.id);
   });
 
-  test("once the service answered a read, the thread shows what started: the next Run is a new one", async () => {
+  test("a read of the runs since says nothing of which run that request made: pressed again, the same request", async () => {
     startAnswer = (call) => (call === 1 ? lost() : queued());
     click(1);
     await settle();
     click(1);
     await settle();
     expect(started).toHaveLength(2);
-    expect(started[1]?.id).not.toBe(started[0]?.id);
+    expect(started[1]?.id).toBe(started[0]?.id);
+    // Answered: the next Run is a new one.
+    click(1);
+    await settle();
+    expect(started[2]?.id).not.toBe(started[0]?.id);
   });
 
   test("the service's internal failure may follow a queued run: the same request, also after a refusal of it again; a refusal of a first press forgets it", async () => {

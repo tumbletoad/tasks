@@ -1,15 +1,17 @@
 // The Codex the end-to-end tests' runs start: the run driver's fake app server
 // (packages/runs/test/codex-server.ts), which replays a real `codex app-server` recording, with the
 // case each run plays picked by the test (codex-cases.ts). A test names the cases of a task's next
-// runs in a JSON file (`FAKE_CODEX_CASES`: the task's reference to a list), and each run of the
-// task takes the first that is left; a run with none left answers.
+// runs in the task's own JSON file (`<FAKE_CODEX_CASES>/<reference>.json`, a list), and each run of
+// the task takes the first that is left; a run with none left answers.
 //
 // It runs as `node fake-codex.ts app-server` in the task's folder, as the instance's program.
 // Fixture data only. Tests only.
 // First: this script ends through process.exit.
 import "../../packages/bridge/src/safe-exit.ts";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { atomicWrite } from "../../packages/files/src/index.ts";
 import { ADDED } from "../../packages/launch/src/index.ts";
 import {
   readFixture,
@@ -18,18 +20,19 @@ import {
 } from "../../packages/runs/test/codex-server.ts";
 import { fakeAnswer, FAKE_QUESTION, FAKE_SIGNED_OUT, type FakeCodexCase } from "./codex-cases.ts";
 
-/** The case this run plays: the first left for its task, taken from the file. */
-function take(file: string | undefined, task: string | undefined): FakeCodexCase {
-  if (file === undefined || task === undefined) return "answer";
-  let cases: Record<string, FakeCodexCase[]>;
+/** The case this run plays: the first left for its task, taken from the task's file. */
+function take(folder: string | undefined, task: string | undefined): FakeCodexCase {
+  if (folder === undefined || task === undefined) return "answer";
+  const file = join(folder, `${task}.json`);
+  let cases: FakeCodexCase[];
   try {
-    cases = JSON.parse(readFileSync(file, "utf8")) as Record<string, FakeCodexCase[]>;
+    cases = JSON.parse(readFileSync(file, "utf8")) as FakeCodexCase[];
   } catch {
     return "answer";
   }
-  const [next, ...rest] = cases[task] ?? [];
-  cases[task] = rest;
-  writeFileSync(file, JSON.stringify(cases));
+  const [next, ...rest] = cases;
+  // Whole or not at all: the test reads the file while the run takes its case.
+  atomicWrite(file, JSON.stringify(rest));
   return next ?? "answer";
 }
 

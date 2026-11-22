@@ -3,7 +3,7 @@
 // kept for this machine, the same in every space and browser here. Only what works is here. The
 // agent apps are the one exception: switches that change other apps' settings wait for Apply.
 import { useParams } from "@tanstack/react-router";
-import { useCallback, useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
   Button,
   Heading,
@@ -24,6 +24,7 @@ import { isThemeChoice, THEME_CHOICES, type ThemeChoice } from "../theme/prefere
 import { AgentApps } from "./AgentApps.tsx";
 import { useTitle, useToast } from "./frame.ts";
 import { useMachine } from "./machine.ts";
+import { Turns } from "./turns.ts";
 import css from "./Settings.module.css";
 import { classes } from "./css.ts";
 
@@ -194,10 +195,19 @@ function Terminal() {
   const [view, setView] = useState<TerminalView | null | undefined>(undefined);
   /** The choice on its way: shown until the service answers. */
   const [choosing, setChoosing] = useState<string | undefined>(undefined);
+  const [turns] = useState(() => new Turns<TerminalView | null>());
+  /** Moves on with each choice and its answer: a read begun before them would put it back. */
+  const chosen = useRef(0);
 
   const read = useCallback(() => {
     if (api === undefined) return;
-    api.terminal().then(setView, () => undefined);
+    const begun = chosen.current;
+    api.terminal().then(
+      (next) => {
+        if (chosen.current === begun) setView(next);
+      },
+      () => undefined,
+    );
   }, [api]);
   // Machine.toml may change in another tab or by hand: read again when the page comes back.
   useEffect(() => {
@@ -222,10 +232,13 @@ function Terminal() {
         value={choosing ?? view.chosen}
         onChange={(app) => {
           setChoosing(app);
-          api
-            .terminal(app)
+          chosen.current += 1;
+          const turn = turns.take(() => api.terminal(app));
+          turn.answer
             .then(
               (next) => {
+                if (next === undefined) return;
+                chosen.current += 1;
                 setView(next);
               },
               (error: unknown) => {
@@ -235,7 +248,7 @@ function Terminal() {
               },
             )
             .finally(() => {
-              setChoosing(undefined);
+              if (turn.newest()) setChoosing(undefined);
             });
         }}
       >

@@ -145,7 +145,7 @@ describe("[A2.3.8.http.tokens] UI tokens and the grants table in service.sqlite"
     },
   );
 
-  test("a row's use is exact in memory and written at most once a minute; a failed write is reported", async () => {
+  test("a row's use is exact in memory and written at most once a minute; a failed write is reported, and refuses only until a later write carries it", async () => {
     const writes: Grant[][] = [];
     let fail = false;
     let failures = 0;
@@ -183,6 +183,19 @@ describe("[A2.3.8.http.tokens] UI tokens and the grants table in service.sqlite"
     grants.revoke(grant.grant_id, at(DAY));
     await expect(grants.flush()).rejects.toThrow();
     expect(failures).toBe(1);
+    // The next sign-in's write succeeds and carries the failed one: it is not refused for it.
+    fail = false;
+    const next = grants.create({ kind: "ui", principal: "user" }, at(DAY + 1000));
+    await grants.flush();
+    expect(
+      writes
+        .at(-1)
+        ?.map((row) => row.grant_id)
+        .sort(),
+    ).toEqual([grant.grant_id, next.grant.grant_id].sort());
+    expect(writes.at(-1)?.find((row) => row.grant_id === grant.grant_id)?.revoked_at).toBe(
+      at(DAY).toISOString(),
+    );
   });
 
   test("codes and tickets: single use, 60 s and 30 s, kept as hashes, bounded in number", () => {

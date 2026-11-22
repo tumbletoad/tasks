@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const toast = (page: Page) => page.locator('[data-part="toast-text"]');
@@ -41,7 +41,7 @@ function checkout(folder: string, repo: string): void {
 
 async function signedIn(page: Page, world: World, to: string): Promise<void> {
   await watchViolations(page);
-  await page.goto(await world.signInUrl(to));
+  await signIn(page, world, to);
   await showsSpace(page, world.mira.name);
 }
 
