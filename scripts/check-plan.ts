@@ -298,7 +298,7 @@ export function select(
   changed: readonly string[],
   repo: Repo,
   set: TestSet,
-  options: { slow: boolean },
+  options: { slow: boolean; slowFiles?: typeof SLOW },
 ): Selection {
   const tests = new Set(set.tests);
   const reached = new Set<string>();
@@ -345,7 +345,7 @@ export function select(
   const run: string[] = [];
   const deferred: string[] = [];
   for (const test of [...selected].sort()) {
-    const slow = SLOW.find((s) => s.test === test);
+    const slow = (options.slowFiles ?? SLOW).find((s) => s.test === test);
     const now =
       options.slow ||
       slow === undefined ||
