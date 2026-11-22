@@ -21,7 +21,7 @@ const fakes: Record<string, string> = {};
 
 beforeAll(() => {
   work = tempDir("version-folder");
-  for (const name of ["node", "license", "tasks", "ttasksw"]) {
+  for (const name of ["node", "license", "ttasks", "ttasksw"]) {
     fakes[name] = join(work, `fake-${name}`);
     writeFileSync(fakes[name], `fake ${name}\n`);
   }
@@ -43,7 +43,7 @@ function assemble(platform: Platform, label: string): { dir: string; manifest: M
       binary: fakes["node"] ?? "",
       license: fakes["license"] ?? "",
     },
-    launchers: { ttasks: fakes["tasks"] ?? "", ttasksw: fakes["ttasksw"] ?? "" },
+    launchers: { ttasks: fakes["ttasks"] ?? "", ttasksw: fakes["ttasksw"] ?? "" },
   });
   return { dir, manifest };
 }

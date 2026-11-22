@@ -31,7 +31,7 @@ export const READ_ONLY_COPY = "restored_copy";
 /**
  * Drops, inside the caller's write transaction, every object of a copied database that the
  * exact-schema rule leaves out (backup/snapshot.ts isDropped): each trigger, which would run on the
- * restore's own writes and could clear the read-only mark or undo a claim (TTasks' schema has none,
+ * restore's own writes and could clear the read-only mark or undo a claim (TTasks's schema has none,
  * A1 3.4), and SQLite's statistics tables. A restore runs it before its first write, an export on
  * its private snapshot. Names are only quoted here, never shown.
  */

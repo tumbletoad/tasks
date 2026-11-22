@@ -58,7 +58,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
     expect(
       row({ app: "kitty", source: "installed", found: true, unsupported: "/home/x/../y" }).detail,
     ).not.toContain("/home");
-    // A setting that could not be read: the terminal is TTasks' fallback, not the default.
+    // A setting that could not be read: the terminal is TTasks's fallback, not the default.
     const unreadWindows = row({ app: "wt", source: "installed", found: true, unread: "windows" });
     expect(unreadWindows.status).toBe("warn");
     expect(unreadWindows.detail).toContain(

@@ -1,7 +1,7 @@
 // `ttasks run` from a person's command line to a settled run, on a service in this process with
 // the fake app server (packages/runs/test/codex-server.ts) as the instance's Codex: the request
 // reaches the agent over its protocol and no command line, the answer is in the run's record, the
-// agent's own call of TTasks' tools is recorded as the run's, a retry starts nothing twice, a
+// agent's own call of TTasks's tools is recorded as the run's, a retry starts nothing twice, a
 // queued run starts after a restart, only the person starts one, and a folder that is not here
 // refuses it. Fixture spaces only.
 import { spawnSync } from "node:child_process";
@@ -40,7 +40,7 @@ let log = "";
 let service: RunningService | undefined;
 
 /**
- * What the run's agent calls through TTasks' tools, bound by its ticket: a write, its own task bound
+ * What the run's agent calls through TTasks's tools, bound by its ticket: a write, its own task bound
  * once more, reads, and another task of the space bound explicitly.
  */
 const RUN_CALLS: readonly ToolCall[] = [
@@ -215,7 +215,7 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
     const shown = await user(["run", "show", id, "--json"]);
     expect(JSON.parse(shown.stdout)).toMatchObject({ answer: ANSWER_MARK, answer_final: true });
 
-    // The agent's calls of TTasks' own tools bound to the run's session: it wrote as the run, bound
+    // The agent's calls of TTasks's own tools bound to the run's session: it wrote as the run, bound
     // its own task again, read, and was told its session is bound when it named another task.
     const said = readFileSync(log, "utf8")
       .split("\n")

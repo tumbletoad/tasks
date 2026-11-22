@@ -1,6 +1,6 @@
 // The words a person typed for an agent when they pressed Open, held for that launch on this
 // machine: never on a command line, in a link or in the space. The agent reads them through
-// TTasks' tools with its launch reference (`get_task`, or `ttasks show --launch` without the tools).
+// TTasks's tools with its launch reference (`get_task`, or `ttasks show --launch` without the tools).
 //
 // Each one is `request.json` (0600) in the launch's own folder under the install's launch root
 // (0700, records.ts), beside a terminal launch's `launch.json`: Linux keeps that root on the

@@ -2,7 +2,7 @@
 // project made for a folder in one change, the folder moved on disk with everything inside it
 // following, a folder given another while it is still there, the undo and redo of a move, the
 // repository's name in a project's list, an agent's project created by name, and the checks at
-// bind: a folder inside TTasks' own data, a folder that is not there, and a folder another project
+// bind: a folder inside TTasks's own data, a folder that is not there, and a folder another project
 // has; and a retry that replays after a rename. The folders are temporary ones of this test.
 // Fixture text only.
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
@@ -281,7 +281,7 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
     expect(projects.find((p) => p.name === "Checked out")).toMatchObject({ repo: "portal-web" });
   });
 
-  test("a folder inside TTasks' own data, one that is not there, and a file are refused, and nothing is written", async () => {
+  test("a folder inside TTasks's own data, one that is not there, and a file are refused, and nothing is written", async () => {
     const user = await session("cli-interactive");
     const before = await asOf(user);
     const at = (path: string) =>

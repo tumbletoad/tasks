@@ -581,7 +581,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       },
       instances: () => instances,
       // What a run starts, from its record: the folder a launch would work in, the person's
-      // environment as Open's agents get it, and TTasks' own command for the bridge its agent is given.
+      // environment as Open's agents get it, and TTasks's own command for the bridge its agent is given.
       agents: {
         platform,
         home: runHome,
@@ -691,7 +691,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       spaces: () => made.spaces?.served() ?? [],
       defaultSpace: () => defaults.get(),
     });
-    // A run's agent was given TTasks' tools by TTasks itself: while the run runs, the run's own
+    // A run's agent was given TTasks's tools by TTasks itself: while the run runs, the run's own
     // calls may use its space whether or not its home was set up for it. No other connection of
     // that home may.
     const homes: typeof registered = {
@@ -728,7 +728,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       // are measured on one clock.
       ...(options.launch?.now === undefined ? {} : { now: options.launch.now }),
     });
-    // What `~` means in a folder here, and TTasks' own data, where no folder is bound.
+    // What `~` means in a folder here, and TTasks's own data, where no folder is bound.
     let personHome: string | undefined;
     try {
       personHome = homeFolder(facts);

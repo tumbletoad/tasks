@@ -183,7 +183,7 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
     // Relative paths and control characters are refused everywhere, and systemd takes no quote,
     // apostrophe or backslash in a program path, escaped or not.
     for (const bad of [
-      "relative/tasks",
+      "relative/ttasks",
       "/home/mira/new\nline/tasks",
       "/home/x\u0000/tasks",
       '/home/a"b/current/bin/ttasks',
@@ -192,8 +192,8 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
     ]) {
       expect(() => renderUnit({ program: bad })).toThrow(EntryPathError);
     }
-    expect(() => renderRunValue("Tasks", "bin\\ttasksw.exe")).toThrow(EntryPathError);
-    expect(() => renderRunValue("Tasks", "C:\\a\r\nb\\ttasksw.exe")).toThrow(EntryPathError);
+    expect(() => renderRunValue("TTasks", "bin\\ttasksw.exe")).toThrow(EntryPathError);
+    expect(() => renderRunValue("TTasks", "C:\\a\r\nb\\ttasksw.exe")).toThrow(EntryPathError);
     expect(() =>
       renderPlist({ label: "x", program: "ttasks-launchd", home: "/Users/m", logs: "/Users/m" }),
     ).toThrow(EntryPathError);

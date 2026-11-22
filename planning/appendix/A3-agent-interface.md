@@ -63,7 +63,7 @@ The three consistency rules in the header of `bindings.ts` must hold through any
 Still to build:
 
 - **Native ID binding (M4.06).** A native ID equal to an ID that A4 preset (Claude UUID), received (T3 thread ID) or found by launch-reference match (Codex rollout) for exactly one live session of this instance binds (`via: native_id`). Today presented IDs are only recorded on the session at a bind, which is how deep-link and clipboard launches gain a Resume target.
-- **Rebinding (M4.06).** A bound connection never rebinds silently (`already_bound`). The user unbinds or rebinds in the UI or with `tasks session rebind`.
+- **Rebinding (M4.06).** A bound connection never rebinds silently (`already_bound`). The user unbinds or rebinds in the UI or with `ttasks session rebind`.
 - **An explicit `task`** on any call applies to that call only. Once an output schema carries it (M4.06), the result adds "this session is bound to M-14".
 - **Routine sessions** (M6) bind to the space, not a task (A4's binding kind `routine`). Task tools then need an explicit `task`. Every tool works unbound with an explicit `task` or when it needs none, except `run_report`.
 - **A lost binding.** Calls that relied on the bound task return `unbound` with the hint "Your session ended. Pass task, or ask the user." Search cursors of that connection are invalidated (3.9.5).
@@ -216,7 +216,7 @@ For each write call from an agent actor, inside A1's writer transaction (X11), t
 
 - **Creation.** A proposal is a pending operation with the actor, the input, the base field versions, a reason and the state `pending` (A1). The result reads `proposed pr_5k2m… · the user will review it · do not retry`.
 - **No pile-ups.** A new proposal from the same session for the same task and the same fields replaces the pending one. Each space holds at most 200 pending proposals and each session at most 50. Beyond that the call fails with `forbidden` (`proposal_limit`).
-- **Accepting** is user-only, in the Review view (A5) or with `tasks proposals accept <id>`. Each field applies only if its version still equals the base version. A field changed since is shown as stale with its current value, and the user can apply it anyway as their own change or skip it. History records the agent as proposer and the user as approver.
+- **Accepting** is user-only, in the Review view (A5) or with `ttasks proposals accept <id>`. Each field applies only if its version still equals the base version. A field changed since is shown as stale with its current value, and the user can apply it anyway as their own change or skip it. History records the agent as proposer and the user as approver.
 - **Completion under Review.** The task appears in Review with the proposed outcome and learnings. The user's check-off accepts the proposal and completes the task at once (D12).
 - **Rejecting** records an optional reason. The proposing agent sees it through `get_task {sections: ["proposals"]}`, and `status` counts rejections since that session's last call.
 - **Proposals never expire,** and they never block other edits. `search` finds them with `is:proposed`.

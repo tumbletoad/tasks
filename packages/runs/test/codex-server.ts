@@ -126,7 +126,7 @@ export function serveCodex(input: Readable, output: Writable, scenario: FakeScen
     output.write(`${JSON.stringify(message)}\n`);
   };
   const ids = new Map<unknown, unknown>();
-  /** TTasks' own server as the client's thread/start named it. */
+  /** TTasks's own server as the client's thread/start named it. */
   let tasksServer: Json | undefined;
   const finalItems = new Set<unknown>();
   let thread: unknown;

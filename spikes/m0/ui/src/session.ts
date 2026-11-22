@@ -136,7 +136,7 @@ function styleNonce(): void {
   // The served document carries the nonce only in its meta tag and header, never twice.
   record(
     "nonce meta filled",
-    meta.content.length >= 16 && !meta.content.includes("TASKS") ? "ok" : "fail",
+    meta.content.length >= 16 && !meta.content.includes("TTASKS") ? "ok" : "fail",
   );
 }
 

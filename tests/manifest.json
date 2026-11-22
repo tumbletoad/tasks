@@ -1533,7 +1533,7 @@
     },
     {
       "id": "A4.3.11.run.door",
-      "title": "ttasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of TTasks' tools binds to the run's session and is recorded with the run's ID, only the run's own calls may use its space without the home's registration, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, also with the ID a start hands out, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, and a missing task is refused",
+      "title": "ttasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of TTasks's tools binds to the run's session and is recorded with the run's ID, only the run's own calls may use its space without the home's registration, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, also with the ID a start hands out, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, and a missing task is refused",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2703,7 +2703,7 @@
     },
     {
       "id": "A2.3.10.cli.help",
-      "title": "Every command of the verb table and every generated verb has its own help, the same from ttasks help <command> and tasks <command> --help; a command's subcommands are in it; a flag the contract requires is marked required and in the usage line; each help's description column lines up",
+      "title": "Every command of the verb table and every generated verb has its own help, the same from ttasks help <command> and ttasks <command> --help; a command's subcommands are in it; a flag the contract requires is marked required and in the usage line; each help's description column lines up",
       "source": "A2 3.10.1, A3 3.2.2",
       "owner": "M1",
       "kind": "ci",

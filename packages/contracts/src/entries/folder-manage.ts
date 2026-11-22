@@ -3,7 +3,7 @@
 // or a task its folder here, and `clear` takes it away. The person's only for now: an agent's
 // folder fields come with the agent tools' own step. A folder is an absolute path on this machine,
 // or one under `~`; the service stores it with the home written as `~` and checks it at bind: it
-// exists and is a folder, it is not inside TTasks' own data, and no other live project has it here.
+// exists and is a folder, it is not inside TTasks's own data, and no other live project has it here.
 // A folder changed after it was moved takes every folder inside it along.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";

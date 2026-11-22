@@ -2,7 +2,7 @@
 // restart of the service as it would have before: the instance machine.toml names now, the task's
 // folder as Open would use it, the person's environment, the program resolved before it starts,
 // and the brief with the person's request, which goes over the agent's protocol and never on a
-// command line. TTasks' own tools are the bridge, given to the agent's thread with the run's ticket
+// command line. TTasks's own tools are the bridge, given to the agent's thread with the run's ticket
 // in their environment, so what the agent changes through them is recorded as the run's.
 import { createHash } from "node:crypto";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
@@ -46,7 +46,7 @@ export interface RunAgents {
   folder(space: string, folder: TaskFolder): Promise<RunFolderFound>;
   /** Where the agent's environment starts: the person's own, as Open's agents get it. */
   base(): Promise<AgentBase | undefined>;
-  /** TTasks' own command, program first: the bridge runs as `<it> mcp …`. */
+  /** TTasks's own command, program first: the bridge runs as `<it> mcp …`. */
   command(): readonly string[] | undefined;
 }
 
@@ -132,7 +132,7 @@ export function runBriefHash(ref: string, title: string): string {
 
 /**
  * What a run starts, from its record, or why it cannot start now. `ticket` is the run's: the
- * bridge presents it, and the agent's own shell has it for TTasks' command line.
+ * bridge presents it, and the agent's own shell has it for TTasks's command line.
  */
 export async function buildRun(
   agents: RunAgents,

@@ -199,7 +199,7 @@ export interface OpsHost {
    * and a folder under `~` is not found here.
    */
   readonly home?: string;
-  /** TTasks' own data folder (the TTasks home): no folder is bound inside it. */
+  /** TTasks's own data folder (the TTasks home): no folder is bound inside it. */
   readonly dataFolder?: string;
   /** The markers in projects' and tasks' folders (marker.ts). None: no folder is marked. */
   readonly markers?: FolderMarkers;
@@ -1242,7 +1242,7 @@ const NO_MOVE: FolderMove = { carry: false, inside: [], missing: new Set() };
 /**
  * What changing an owner's folder here to `folder` does to the folders inside its old one
  * (`moveOf`). The folders that move along are checked as a bind checks one: none may land in
- * TTasks' own data.
+ * TTasks's own data.
  */
 async function folderMove(
   call: Call,

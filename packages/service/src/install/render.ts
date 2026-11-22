@@ -399,7 +399,7 @@ function plainExec(value: string): boolean {
 /**
  * Whether a unit file is this install's (see NotOurs): it holds only text install writes
  * (unusualText); read as systemd reads it, its `[Service]` section starts exactly one command,
- * `<absolute path ending in /tasks> serve`, with no prefix, escape or specifier; its only variable
+ * `<absolute path ending in /ttasks> serve`, with no prefix, escape or specifier; its only variable
  * is `TTASKS_SERVICE_MANAGER=systemd`; its `[Install]` section names no other unit; and it has no
  * setting, section (not even an empty one) or line install does not write. Drop-ins are checked by
  * the caller.

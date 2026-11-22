@@ -6,7 +6,7 @@
 # Usage: sh install-@@VERSION@@.sh --source <folder> [--root <folder>]
 #   --source  folder with ttasks-@@VERSION@@-linux-x64.tar.gz, SHA256SUMS and SHA256SUMS.sshsig
 #   --root    install root. Defaults to $TTASKS_HOME. The spike installs only into a folder that
-#             is named this way, never into ~/.local/share/tasks.
+#             is named this way, never into ~/.local/share/ttasks.
 #
 # Order of trust: the Ed25519 signature of SHA256SUMS must verify with ssh-keygen against a key
 # pinned below, and the archive's SHA-256 must match SHA256SUMS, before the archive is unpacked.
@@ -155,6 +155,6 @@ work=''
 # 5. A separate install (TTASKS_HOME) is marked, so the launcher exports TTASKS_HOME (A2 3.12.3).
 : > "$root/home.marker"
 
-# 6. Hand over to the verified version through its own launcher: self-test, current, bin/tasks.
+# 6. Hand over to the verified version through its own launcher: self-test, current, bin/ttasks.
 "$target/bin/ttasks" install --finish || fail 'the new version failed its self-test'
 printf 'The stable command is %s/bin/ttasks\n' "$root"

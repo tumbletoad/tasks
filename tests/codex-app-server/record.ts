@@ -239,7 +239,7 @@ const CASES: Record<string, Case> = {
     console.log(`  exit ${String(await s.close())}`);
   },
 
-  /** A tool of an MCP server the thread's configuration names, as TTasks' tools are given. */
+  /** A tool of an MCP server the thread's configuration names, as TTasks's tools are given. */
   async tool(scratch, work) {
     const s = new Session(raw(scratch, "tool"), work);
     await s.initialize();

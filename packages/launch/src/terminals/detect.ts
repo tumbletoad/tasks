@@ -70,7 +70,7 @@ export interface TerminalChoice {
   readonly unsupported?: string;
   /**
    * The operating system's setting could not be read (Windows' registry did not answer, the
-   * desktop's files not in time), so the chain is TTasks' own order.
+   * desktop's files not in time), so the chain is TTasks's own order.
    */
   readonly unread?: "windows" | "desktop";
 }
@@ -371,7 +371,7 @@ function linuxDefaults(host: TerminalHost): { source: TerminalSource; candidate:
 export function autoChoice(host: TerminalHost): TerminalChoice {
   if (host.platform === "win32") {
     const wt = windowsTerminalAlias(host);
-    // Unread, the order is what "Let Windows decide" would give, but it is TTasks' choice.
+    // Unread, the order is what "Let Windows decide" would give, but it is TTasks's choice.
     const unread = host.delegation === undefined;
     const decided = delegationChoice(host.delegation);
     const source: TerminalSource = decided === "other" || unread ? "installed" : "windows";
@@ -509,7 +509,7 @@ export const DESKTOP_READ_MS = 1_000;
  * service: a home folder on a stalled network share must not hold up an Open. It runs the choice
  * against what was read so far, reads the files it asked for, and repeats until it asks for no new
  * one (the lists name the desktop entries to read next). When the deadline passes first, nothing
- * read is used, so the choice is TTasks' own order and says so.
+ * read is used, so the choice is TTasks's own order and says so.
  */
 export async function readDesktopTexts(
   settings: TerminalSettings,

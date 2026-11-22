@@ -164,7 +164,7 @@ describe("[A3.3.4.folders.cli] folders at the command line", () => {
 
   test("a refused call removes the folder --create made for it", async () => {
     const parent = folder("refused");
-    // A folder inside TTasks' own data is refused after the CLI made it.
+    // A folder inside TTasks's own data is refused after the CLI made it.
     const inside = join(w.home, "fixture-made");
     const refused = await tasks(
       ["area", "create", "Fixture area/Fixture refused", "--folder", inside, "--create", "--json"],

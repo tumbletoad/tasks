@@ -11,7 +11,7 @@
 //   (TTASKS_HOME): it reads the task as its brief says when the tools are missing, the brief's
 //   command with `--json` and without the launch's TTASKS_SPACE, and its report holds the request it got, in hex, so a test finds
 //   the words nowhere else on disk. FAKE_CLI_UNREAD names a file of task references, one a line:
-//   on those tasks it reads nothing, as an agent without TTasks' tools or a shell.
+//   on those tasks it reads nothing, as an agent without TTasks's tools or a shell.
 // - FAKE_CLI_HOLD_MS (default 4000), FAKE_CLI_RELEASE (a file whose existence ends it),
 //   FAKE_CLI_MAX_MS (default 120000) and FAKE_CLI_EXIT (default 0).
 // Its stdin is never read. No real agent, account or home is touched. Tests only.

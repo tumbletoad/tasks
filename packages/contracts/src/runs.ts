@@ -4,7 +4,7 @@
 // store reads and writes (3.16.1). Plain TypeScript without Zod, so the parsers, the run shim, the
 // execution store and the page load it cheaply (`@ttasks/contracts/runs`).
 //
-// Nothing here is free text of TTasks' own making: every label, state and reason is a value from a
+// Nothing here is free text of TTasks's own making: every label, state and reason is a value from a
 // fixed vocabulary. The agent-written strings are `message.text`, the answer, the outcome's
 // `error`, `native-id.id` and `session.cwd`, each capped (ANSWER_CAP_BYTES, TEXT_CAP_BYTES). A run
 // record holds the person's request text and the agent's answer and error, which are task text:

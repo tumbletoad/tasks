@@ -257,14 +257,14 @@ The run shim (`ttasks shim --run <ticket>`) checks the folder as in 3.3 step 4 a
 - `-p` skips the trust dialog, so runs start only in allowed folders. With no mode set it starts in Manual, so `--permission-mode` is always passed. `--permission-prompts none` denies anything that would prompt. `--verbose` is required for stream-json.
 - `--max-turns` (50 for task runs, 150 for routines) works although `--help` does not list it. `--max-budget-usd` is optional per instance, an estimate that can overshoot.
 - SIGTERM exits 143 and leaves the turn unfinished. SIGINT, or Ctrl+C through the console helper, ends the turn cleanly: a tool-result error, then `result` with `is_error: true`, exit 0 after about 1 s. On Windows only Ctrl+C gives Claude a final `result`. TerminateProcess (Node's `kill()`) gives none.
-- Claude Code defers MCP tools behind ToolSearch. TTasks' `status` and `get_task` carry `_meta["anthropic/alwaysLoad"] = true` (A3), so they load at start. A call to any other TTasks tool follows a ToolSearch call.
+- Claude Code defers MCP tools behind ToolSearch. TTasks's `status` and `get_task` carry `_meta["anthropic/alwaysLoad"] = true` (A3), so they load at start. A call to any other TTasks tool follows a ToolSearch call.
 
 **`codex-exec`:**
 - `-` reads the prompt from stdin. `exec` never prompts: it rejects approval requests and cancels MCP elicitations. Its default sandbox is read-only, so the permission arguments are always passed.
 - Outside a git repository it exits 1 without `--skip-git-repo-check` (full access skips the check too). TTasks adds it.
 - A required MCP server that fails to start makes `exec` fail. A3's entry is not required, so a missing bridge means "without TTasks tools".
 - Ctrl+C (Windows) or SIGINT to the group (Linux) exits 1 after about 0.3 s with no further event and no `-o` file. So a cancelled run ends from the exit code and the missing `turn.completed`, never from `-o`. SIGTERM ends it at once. Exit 0 is success, 1 failure or interrupt.
-- With full access TTasks' tools run without `default_tools_approval_mode`. In other modes the run passes `-c mcp_servers.ttasks.default_tools_approval_mode="approve"`.
+- With full access TTasks's tools run without `default_tools_approval_mode`. In other modes the run passes `-c mcp_servers.ttasks.default_tools_approval_mode="approve"`.
 - `codex exec resume <id> -` continues non-interactively. It has no `-C` (it runs in the process's folder) and repeats `thread.started` with the same ID. `codex resume <id>` continues in a terminal.
 
 Every cancel leaves the stream ending on a whole line. On Windows no process of the tree is left after exit.
@@ -392,18 +392,18 @@ Recurring tasks use the same RRULE subset and parser (D4).
 
 TTasks never writes another app's trust settings silently. Every change is a user-confirmed step for one folder and one target, with a preview of the exact change and an exact undo. TTasks never trusts `$HOME`, a drive root or the filesystem root. Pre-trust ships after v1 (L23). Until then the user accepts each app's own dialog.
 
-| App | When it asks | Where trust is stored | TTasks' offer |
+| App | When it asks | Where trust is stored | TTasks's offer |
 |---|---|---|---|
 | Claude Code CLI | First interactive start in an untrusted folder. `-p` never asks. `--bg` refuses with "Workspace not trusted" | `projects["<path>"].hasTrustDialogAccepted = true` in the instance's `.claude.json` (the documented pre-trust) | **Trust in Claude Code**, written only while no Claude process of that instance runs, after reading the file again |
 | Codex CLI and app | Onboarding or `/permissions`. `exec` never asks | `[projects.'<path>'] trust_level = "trusted"` in `$CODEX_HOME/config.toml` | **Trust in Codex · work** |
 | T3 Code | Never. Registering a project is the trust step | T3's project list | "Register this folder in T3" (3.4.1) |
 | Claude Desktop | Every link launch | none | Nothing. The hover says it asks each time |
 
-- Runs have no trust rule of TTasks' own: the first Run per instance and machine names its folder and asks once (A5 3.8), and the person's setup of the agent app decides what the agent may do.
+- Runs have no trust rule of TTasks's own: the first Run per instance and machine names its folder and asks once (A5 3.8), and the person's setup of the agent app decides what the agent may do.
 - The offer appears in the Prepared step of the first Open in a folder whose trust reads as missing. Doctor lists the entries TTasks wrote and can remove them. A declined or failed trust check never starts another target.
 - **Key spelling.** Claude Code: the launch working folder with `/` separators and its case kept exactly. Codex: the folder as the OS spells it, matched without case on Windows, so a table in another case is the same folder. In a git repository both key the repository root, and outside one a parent's key does not trust a child. On Linux both look up a symlinked folder's real path and keys are case-sensitive, so TTasks resolves links first. Whether each CLI's own dialog writes the same spelling is open (M0-L02, L04, L18). TTasks can read trust read-only from the same keys.
 - **A text-level patch.** A scanner finds the key's span and one splice writes it in the file's own style (line endings, indentation, spacing). No parse and re-serialise (it loses comments, key order and spacing) and no whole-file backup (it copies unrelated configuration). The whole file is validated with a real parser for its format (JSON for Claude Code, TOML for Codex) before the splice.
 - **The scanner refuses what it cannot account for**, because a misread string or bracket misplaces every later table: a string that does not end on its line, unmatched brackets, anything but a comment after a complete top-level value, a top-level bare value outside TOML 1.0 (booleans, the integer and float forms, `inf`/`nan`, dates and times), a value-less key, a CR not before an LF, and a table or key twice (a table under an array of tables counts per element). It honours escapes in a multi-line basic string. An unsupported layout is refused untouched. It is a locator, not a validator: `[1 2]` passes but cannot move a table or key.
 - **Links.** A trust file or its folder that is a symbolic link (or on Windows a junction) is refused, never followed: a link could make the splice write another file.
 - **Encoding.** Strict UTF-8: invalid bytes are refused, a byte order mark is kept, so the bytes written back are the bytes read. A previous trust value is kept only when plain (`false` or `null` in JSON, a string in TOML). Anything else is refused.
-- **Undo.** The record holds only the splice (TTasks' text and the previous value) and the file hashes, never a copy. While the hash is unchanged the undo restores the exact bytes. Otherwise it reverts only TTasks' key, and when the key no longer holds `true` or `"trusted"` it leaves the file alone and reports `key changed`. A Codex table TTasks created is removed whole only while its header is exactly TTasks', and a comment put after the value stays as a comment line.
+- **Undo.** The record holds only the splice (TTasks's text and the previous value) and the file hashes, never a copy. While the hash is unchanged the undo restores the exact bytes. Otherwise it reverts only TTasks's key, and when the key no longer holds `true` or `"trusted"` it leaves the file alone and reports `key changed`. A Codex table TTasks created is removed whole only while its header is exactly TTasks's, and a comment put after the value stays as a comment line.

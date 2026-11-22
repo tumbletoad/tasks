@@ -90,7 +90,7 @@ At restart a `transfer_pending` space with no bundle at the final path returns t
 - copies that meet are classified as same, descendant or competing, never silently matched,
 - a stale copy opens read-only.
 
-**Other commands:** `ttasks space export --mode fork`, `ttasks space import <bundle>` and `tasks machine show`, which prints the `machine_id` a transfer needs.
+**Other commands:** `ttasks space export --mode fork`, `ttasks space import <bundle>` and `ttasks machine show`, which prints the `machine_id` a transfer needs.
 
 ### 3.7 Read replicas and remote writes (phase L1)
 

@@ -323,7 +323,7 @@ class McpPeer {
     });
     this.notify("notifications/initialized");
     const info = asObject(asObject(msg["result"])?.["serverInfo"]);
-    // The live stub is "ttasks-stand-in"; the forwarder's offline responder is "tasks".
+    // The live stub is "ttasks-stand-in"; the forwarder's offline responder is "ttasks".
     return info?.["name"] === "ttasks-stand-in";
   }
 

@@ -263,7 +263,7 @@ export function instanceToml(
 
 /**
  * A Linux desktop where Ghostty and kitty are installed and no default names a terminal, the same
- * on every OS the tests run on: `auto` opens Ghostty, the first of TTasks' own order. Detection
+ * on every OS the tests run on: `auto` opens Ghostty, the first of TTasks's own order. Detection
  * only: nothing it names is ever started.
  */
 export function twoTerminalsHost(): TerminalHost {

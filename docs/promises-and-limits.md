@@ -92,7 +92,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   agent's tools. It reads no file, apart from a Git checkout's settings for its repository's name. A
   folder that answers slowly is listed as far as it read in two seconds, and a very large one up to
   its first 20,000 entries.
-- No folder inside TTasks' own data is taken: an agent working there would change it.
+- No folder inside TTasks's own data is taken: an agent working there would change it.
 - A folder is a local path, not a secret. It travels with sync, backups and exports, and a message
   or a history entry may name it.
 
@@ -142,7 +142,7 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
   ends what TTasks could find of it: a process the agent detached from it may live on.
-- What a run's agent changes through TTasks' own tools is recorded as that run's.
+- What a run's agent changes through TTasks's own tools is recorded as that run's.
 - A run's folder on this machine keeps the agent's raw output and its answer, which are task
   text. It is removed after 14 days or past the newest 200 runs, once the answer is in the run's
   record. The agent's own history, such as Codex's sessions, keeps the run's conversation as it
@@ -199,13 +199,13 @@ the behaviour it describes, and keep each one to a sentence or two.
   changes.
 - An editor that had the configuration file open while TTasks recorded a space, and saves it
   afterwards, writes its own list of spaces back, and the next start follows that list.
-- On a machine that several people sign in to, another person could serve a page at TTasks'
+- On a machine that several people sign in to, another person could serve a page at TTasks's
   address while TTasks is stopped.
 - An edit that could not be saved is kept in the open page. Reloading the page loses it.
 - Undo, redo and restore compare folders by the text they were given in, not by what is on disk.
   One folder reached by two spellings, such as through a link, can end up on two projects that
   way.
 - A folder on a drive or share that does not answer is refused after a few seconds, but the look
-  at it keeps one of TTasks' file threads busy until the system gives up.
+  at it keeps one of TTasks's file threads busy until the system gives up.
 - A folder TTasks cannot write to, such as a read-only one, gets no marker and opens as before,
   without that check, and so does a folder whose marker cannot be read within two seconds.

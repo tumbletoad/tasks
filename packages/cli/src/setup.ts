@@ -16,7 +16,7 @@
 // service. Only the user pairs, from an interactive terminal; the status works everywhere.
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { CLI_NAME } from "@ttasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
@@ -31,7 +31,7 @@ export const SETUP_HELP = `Usage: ${CLI_NAME} setup <app> [options] [--json]
                       Codex and the Codex app, the homes T3 Code uses, Claude Desktop): the exact
                       command or entry and the diff per home, and the apply command. Writes nothing
   agents --apply --plan <token>
-                      Carry out that preview: register ${CLI_NAME}'s MCP server in each home that
+                      Carry out that preview: register ${PRODUCT_NAME}'s MCP server in each home that
                       has no entry yet, or change nothing when the homes changed since
   agents --remove     Take out every entry setup wrote that is still exactly as it wrote it
   agents --status     Each home: registered or not, and its grant row
@@ -51,15 +51,15 @@ export const SETUP_HELP = `Usage: ${CLI_NAME} setup <app> [options] [--json]
                       Add exactly those entries; Open offers them at once
   instances --remove  Take out every entry it added that is still exactly as it wrote it
     [--instance <id>]
-  t3 [--no-browser]   Pair with T3 Code: approve ${CLI_NAME} on T3's page in your browser
+  t3 [--no-browser]   Pair with T3 Code: approve ${PRODUCT_NAME} on T3's page in your browser
   t3 --status         Whether T3 Code can be used: paired, running, or Reconnect T3
 
-Setup changes only ${CLI_NAME}'s own entry, never trust, approval or other servers' settings:
+Setup changes only ${PRODUCT_NAME}'s own entry, never trust, approval or other servers' settings:
 --parts approve-tools shows the approval change for you to make by hand. T3 Code's own settings are
 only read. --parts block adds the optional instruction block to Claude Code's CLAUDE.md and Codex's
 AGENTS.md, changing nothing else in them; --remove --parts block takes it out again.
 setup instances makes an agent home a place Open starts the agent in; setup agents registers
-${CLI_NAME}'s tools in it, so the agent can read and update tasks. Run both.
+${PRODUCT_NAME}'s tools in it, so the agent can read and update tasks. Run both.
 --apply, --remove and pairing run only from an interactive terminal. --no-browser prints the page
 to open instead of opening it. Pairing again replaces the earlier pairing: a T3 launch still
 waiting on the earlier one is then shown as unknown, never repeated.

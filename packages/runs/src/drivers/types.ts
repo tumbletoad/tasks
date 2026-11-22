@@ -20,7 +20,7 @@ export interface Work {
   /** The agent's own words about what went wrong (≤ TEXT_CAP_BYTES). */
   readonly error: string | null;
   readonly usage: Usage | null;
-  /** Whether TTasks' own tools were connected for the agent. */
+  /** Whether TTasks's own tools were connected for the agent. */
   readonly appTools: AppToolsState | null;
   /** Requests of the agent that its permission declined. */
   readonly declined: number;

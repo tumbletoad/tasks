@@ -1,6 +1,6 @@
 // The CLI's help (A2 3.10.1): the list of commands, and the help of each one. Every command of
 // the table below and every generated verb of `cli-spec.json` has its own help, which says what it
-// does in one line, its forms and its flags. `ttasks help <command>` and `tasks <command> --help`
+// does in one line, its forms and its flags. `ttasks help <command>` and `ttasks <command> --help`
 // print the same text. A test walks both tables (help.test.ts).
 //
 // The table also says which words a command takes first (`subcommands`). A hint that names a

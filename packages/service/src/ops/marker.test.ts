@@ -188,7 +188,7 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
 
   test("a folder that takes no marker opens as before, without the protection", async () => {
     const { folder, markers } = fresh();
-    // Something that is not TTasks' marker has its name: nothing is written over it.
+    // Something that is not TTasks's marker has its name: nothing is written over it.
     writeFileSync(join(folder, FOLDER_MARKER), "a file of the person's");
     expect(await markers.mark(project, folder)).toBe(false);
     expect(await markers.check(project, folder)).toEqual({ kind: "ok" });

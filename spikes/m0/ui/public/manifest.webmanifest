@@ -1,6 +1,6 @@
 {
   "name": "TTasks M0 spike",
-  "short_name": "Tasks spike",
+  "short_name": "TTasks spike",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

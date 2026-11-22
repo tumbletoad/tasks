@@ -69,7 +69,8 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --
       // A result may hold an `error` of its own (a receipt of a refusal): exit 0 is a result.
       if (ran.code === 0) return out;
       const error = out["error"] as ErrorBody | undefined;
-      if (error === undefined) throw new Error(`tasks exited ${String(ran.code)} without an error`);
+      if (error === undefined)
+        throw new Error(`ttasks exited ${String(ran.code)} without an error`);
       // The CLI adds A2's class to A3's body; the suite compares A3's.
       throw new ContractError({
         code: error.code,
@@ -99,7 +100,7 @@ grantSuite(
         expect(ran.code, entry).toBe(EXIT_CODES.forbidden);
         const error = (JSON.parse(ran.stdout) as { error?: ErrorBody & { class?: string } }).error;
         if (error === undefined)
-          throw new Error(`tasks exited ${String(ran.code)} without an error`);
+          throw new Error(`ttasks exited ${String(ran.code)} without an error`);
         // The CLI adds A2's class to A3's body; the suite compares A3's.
         expect(error.class, entry).toBe("forbidden");
         return {
