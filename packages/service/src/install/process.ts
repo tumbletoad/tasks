@@ -19,6 +19,8 @@ export interface RunOptions {
    * with a space or a quote in it. explorer.exe splits an unquoted argument at its commas.
    */
   readonly verbatim?: boolean;
+  /** The folder the program keeps its temp files in (TEMP and TMP), else this process's. */
+  readonly tempDir?: string;
 }
 
 export type Runner = (
@@ -42,6 +44,9 @@ export const runProcess: Runner = (file, args, options = {}) =>
         windowsVerbatimArguments: options.verbatim === true,
         timeout: options.timeoutMs ?? TOOL_TIMEOUT_MS,
         maxBuffer: 4 * 1024 * 1024,
+        ...(options.tempDir === undefined
+          ? {}
+          : { env: { ...process.env, TEMP: options.tempDir, TMP: options.tempDir } }),
       },
       (error, stdout, stderr) => {
         if (error === null) {

@@ -24,7 +24,7 @@ import { newId, type Id } from "@tasks/storage";
 import { seedMira } from "@tasks/testkit";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { callTools, type ToolCall } from "../../runs/test/codex-server.ts";
-import { BIN, runMain } from "./cli-harness.ts";
+import { BIN, fileTexts, runMain } from "./cli-harness.ts";
 
 const windows = process.platform === "win32";
 const FAKE = fileURLToPath(new URL("../../runs/test/claude-fake.ts", import.meta.url));
@@ -135,14 +135,6 @@ afterAll(async () => {
 const user = (argv: string[], stdin?: string) =>
   runMain(argv, { home, tty: true, ...(stdin === undefined ? {} : { stdin }) });
 
-function files(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    const facts = statSync(path);
-    return facts.isDirectory() ? files(path) : facts.isFile() ? [path] : [];
-  });
-}
-
 /** The command lines of every process this account runs now, as the system lists them. */
 function commandLines(): string {
   if (windows) {
@@ -252,9 +244,8 @@ describe("[A4.3.11.run.door-claude] tasks run with a Claude Code instance: the s
     // The request and the answer are in no file of the state folder but the run's own, and the
     // tools file is in the run's folder, which goes as a whole.
     expect(toolsPath.startsWith(folder)).toBe(true);
-    for (const file of files(stateOf(home))) {
+    for (const [file, text] of fileTexts(stateOf(home))) {
       if (file.includes(live)) continue;
-      const text = readFileSync(file).toString("latin1");
       expect(text.includes("MARKREQ8C3"), file).toBe(false);
       expect(text.includes("MARKANS2C7"), file).toBe(false);
       expect(text.includes(ticket), file).toBe(false);
