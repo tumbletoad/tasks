@@ -330,6 +330,8 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     await page.keyboard.press("Enter");
     await expect(title).toHaveAttribute("aria-expanded", "true");
     await expect(page).toHaveURL(`${world.origin}${view}?task=${ref}`);
+    // The card's controls show once its thread is read.
+    await expect(row.locator('[data-part="composer"]')).toBeVisible({ timeout: SLOW_MS });
 
     // Tab walks the header's controls, then the card: its facts, its source link, the composer,
     // then the strip, which is one stop: the arrows walk it from Note to Copy.
@@ -370,11 +372,17 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     // Keys typed into the field stay there: j is a letter here, not a move.
     await page.keyboard.press("End");
     await page.keyboard.type(", just the jump seats");
+    // The save is still on its way when the page reloads: it arrives all the same.
+    await page.route("**/api/v1/op/task.update", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      // Handed back to the browser, which would have cancelled it at the reload.
+      await route.continue().catch(() => undefined);
+    });
     await page.keyboard.press("Enter");
     await expect(title).toHaveText(`Book the moving van (${tag}), just the jump seats`);
     await expect(title).toBeFocused();
-    // The service has it: a reload shows it.
     await page.reload();
+    await page.unrouteAll({ behavior: "wait" });
     await expect(title).toHaveText(`Book the moving van (${tag}), just the jump seats`, {
       timeout: SLOW_MS,
     });
