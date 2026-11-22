@@ -10,7 +10,15 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { SHIM_METHODS } from "@ttasks/launch";
 import { opCall, type OpsHost } from "../src/ops/index.ts";
-import { bridge, launchContext, onHost, shell, written, type Agent } from "./agents.ts";
+import {
+  bridge,
+  launchContext,
+  onHost,
+  OTHER_INSTANCE,
+  shell,
+  written,
+  type Agent,
+} from "./agents.ts";
 import { contractWorld, type ContractWorld, type WorldLaunch } from "./contract/suite.ts";
 import { stateOf } from "./harness.ts";
 import { bridgeContext, openMcp, RawMcp, textOf } from "./mcp-helpers.ts";
@@ -878,6 +886,71 @@ describe("[A3.3.7.binding.resume] binding handles restore a binding, for a day",
       } finally {
         skew = 0;
       }
+    },
+  );
+});
+
+describe("[A3.3.7.binding.worlds] a world launch is what a click and setup leave, on the home a test names", () => {
+  test(
+    "registered by default; without an app, without a row, with its row revoked, or registered for another space when asked; and a bridge inside it that presents another instance",
+    { timeout: LONG },
+    async () => {
+      const live = async () => {
+        const session = await classSession(w.home, w.path, "cli-interactive");
+        try {
+          const answer = (await session.call("setup/homes", {}, { timeoutMs: 60_000 })) as {
+            homes: { instance: string; app: string; home: string; spaces: string[] }[];
+          };
+          return answer.homes;
+        } finally {
+          session.close();
+        }
+      };
+      const recorded = (launch: WorldLaunch) => w.service.launches.host.liveByTicket(launch.ticket);
+      const rowsOf = async (launch: WorldLaunch) =>
+        (await live()).filter((row) => row.instance === launch.instance);
+
+      const registered = await w.launch("M-1");
+      const home = join(w.home, "agent-homes", registered.instance);
+      expect(registered).toMatchObject({ app: "codex", home });
+      expect(recorded(registered)).toMatchObject({ app: "codex", home });
+      expect(await rowsOf(registered)).toEqual([
+        expect.objectContaining({ app: "codex", home, spaces: [w.space] }),
+      ]);
+      expect(launchContext(w.space, registered)).toMatchObject({
+        space: w.space,
+        instance: registered.instance,
+        app: "codex",
+        env: { TTASKS_TICKET: registered.ticket },
+      });
+      expect(launchContext(w.space, registered, { present: "other-instance" })).toMatchObject({
+        instance: OTHER_INSTANCE,
+        app: "codex",
+        env: { TTASKS_TICKET: registered.ticket },
+      });
+
+      const noApp = await w.launch("M-1", { home: "no-app" });
+      expect(noApp.app).toBeUndefined();
+      expect(recorded(noApp)).not.toHaveProperty("app");
+      expect(recorded(noApp)).toMatchObject({ home: noApp.home });
+      expect(await rowsOf(noApp)).toEqual([]);
+
+      const noRow = await w.launch("M-1", { home: "no-row" });
+      expect(recorded(noRow)).toMatchObject({ app: "codex", home: noRow.home });
+      expect(noRow.row).toBeUndefined();
+      expect(await rowsOf(noRow)).toEqual([]);
+
+      const revoked = await w.launch("M-1", { home: "revoked" });
+      expect(recorded(revoked)).toMatchObject({ app: "codex", home: revoked.home });
+      expect(revoked.row).toMatch(/^gr_/);
+      expect(await rowsOf(revoked)).toEqual([]);
+
+      const elsewhere = await w.launch("M-1", { home: "other-space" });
+      expect(recorded(elsewhere)).toMatchObject({ space: w.space, app: "codex" });
+      expect(await rowsOf(elsewhere)).toEqual([
+        expect.objectContaining({ spaces: [await w.other()] }),
+      ]);
+      expect(await w.other()).not.toBe(w.space);
     },
   );
 });

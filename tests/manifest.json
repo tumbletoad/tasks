@@ -2652,6 +2652,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.7.binding.worlds",
+      "title": "A test world's launch records its app and home at the click and its home is registered for the world's space as setup does; by name it is opened without an app, without a row, with its row revoked or registered for another space, and a bridge inside it can present another instance",
+      "source": "A3 3.7.2, A3 3.7.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.7.binding.named",
       "title": "A ticket (by its hash with its own launch's ID) names the live terminal launch or run it was handed for, a preset the live launch it was preset for (the newest), each with its session, space and task, a launch with the app and home its click recorded; a ticket and a preset of two give both; nothing before the claim or after the release",
       "source": "A3 3.7.2, A4 3.1",

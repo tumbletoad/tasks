@@ -9,7 +9,6 @@ import type { ErrorBody } from "@ttasks/contracts";
 import type { RunningService } from "../src/hub/service.ts";
 import { toolOf } from "../src/mcp/index.ts";
 import type { OpsHost } from "../src/ops/index.ts";
-import type { WorldLaunch } from "./contract/suite.ts";
 import { bridgeContext, openMcp, RawMcp, textOf, type Json } from "./mcp-helpers.ts";
 import { classSession, errorOf } from "./ops-helpers.ts";
 
@@ -207,7 +206,11 @@ export const OTHER_INSTANCE = "other-agent";
  */
 export function launchContext(
   space: string,
-  launch: WorldLaunch,
+  launch: {
+    readonly instance: string;
+    readonly app: string | undefined;
+    readonly ticket: string;
+  },
   options: { readonly present?: "launch" | "other-instance"; readonly env?: Json } = {},
 ): JsonObject {
   return bridgeContext({
