@@ -16,7 +16,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { envVar, FOLDER_MARKER, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
 import type { RpcSession } from "@ttasks/bridge/protocol";
@@ -320,6 +320,14 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(result.copy).toBeUndefined();
       expect(result.text).toBe("request");
       const launch = result.launch;
+      // The click recorded the agent's app and home, its preset, and the session the launch is.
+      const clicked = r.lab.running.launches.host.record(launch.id);
+      expect(clicked).toMatchObject({
+        app: "claude-code",
+        preset: presetSession(r.lab.spaceId, requestId),
+        session: `se_${launch.id.slice("la_".length)}`,
+      });
+      expect(basename(clicked?.home ?? "")).toBe(".claude");
       const confirmed = await r.lab.waitIntent(
         launch.id,
         (i) => i.state === "confirmed",
@@ -375,6 +383,9 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       const folder = realpathSync.native(join(r.lab.work, HOSTILE_FOLDER));
       const { result } = await open(r, { task: task.ref, instance: "codex" });
       const launch = result.launch;
+      const clicked = r.lab.running.launches.host.record(launch.id);
+      expect(clicked).toMatchObject({ app: "codex", home: r.codexHome });
+      expect(clicked).not.toHaveProperty("preset");
       const report = await reportAt(r.report("codex"));
       const golden = [
         "-C",

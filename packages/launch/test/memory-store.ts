@@ -6,7 +6,6 @@ import {
   evidenceConflicts,
   isOpening,
   REF_ALPHABET,
-  REFERENCE_WINDOW_MS,
   launchRefCheck,
   OPEN_STATES,
   type Evidence,
@@ -294,13 +293,9 @@ export class MemoryExecutionStore implements ExecutionStore {
       durable.receipts.set(requestId, { id: focus.id, fingerprint: print });
       return copy(focus);
     }
-    const recent = new Set(
-      [...durable.intents.values()]
-        .filter((i) => now - i.createdAt < REFERENCE_WINDOW_MS)
-        .map((i) => i.reference),
-    );
+    const held = new Set([...durable.intents.values()].map((i) => i.reference));
     let reference = randomReference();
-    while (recent.has(reference)) reference = randomReference();
+    while (held.has(reference)) reference = randomReference();
     const intent: LaunchIntent = {
       id: randomId("la"),
       reference,

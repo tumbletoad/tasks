@@ -4,7 +4,7 @@
 // the request path with the slot that came of it, the endpoint's caller. One test drives the same
 // through real ttasks-local/1 connections. Launches are the world's: opened, dispatched and claimed
 // in this process as a shim claims them. Fixture text and temporary folders only.
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { JsonObject } from "@ttasks/bridge/protocol";
@@ -25,7 +25,10 @@ let w: ContractWorld & { root: string };
 let skew = 0;
 
 beforeAll(async () => {
-  w = await contractWorld("bind", { launch: { now: () => Date.now() + skew } });
+  // The PID check runs only when a test asks: one that settles a launch mid-test changes its answer.
+  w = await contractWorld("bind", {
+    launch: { now: () => Date.now() + skew, checkMs: 24 * 60 * 60_000 },
+  });
   await user("task.add", {
     tasks: ["Fixture task one", "Fixture task two", "Fixture task three", "Fixture task four"].map(
       (title) => ({ title }),
@@ -722,6 +725,52 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
       const log = JSON.stringify(await logOf("M-4"));
       expect(log.split(input.text).length - 1).toBe(1);
       bridge.close();
+    },
+  );
+
+  test(
+    "a shell's write retried once its agent's exit is on disk, before the PID check settles the launch, commits once",
+    { timeout: LONG },
+    async () => {
+      const launch = await w.launch("M-2");
+      const bridge = await connect({ env: { TTASKS_TICKET: launch.ticket } });
+      expect(bridge.binding["state"]).toBe("bound");
+      const shell = await classSession(w.home, w.path, "cli-agent", {
+        TTASKS_TICKET: launch.ticket,
+      });
+      const input = {
+        task: "M-2",
+        kind: "progress",
+        text: "Fixture progress retried across the exit.",
+        request_id: rid(),
+      };
+      const write = async (): Promise<Json> =>
+        (await shell.call(
+          "op/call",
+          { space: w.space, op: "entry.add", input },
+          { timeoutMs: 60_000 },
+        )) as Json;
+      try {
+        const first = await write();
+        // The agent ended while the service could not take the shim's report: its exit is on
+        // disk, and the shell retries the write whose answer it lost.
+        const exit = {
+          format: 1,
+          launch: launch.id,
+          spawned: true,
+          settled: true,
+          code: 0,
+          signal: null,
+          ran_ms: 5_000,
+        };
+        writeFileSync(join(w.service.runtime.launch, launch.id, "exit.json"), JSON.stringify(exit));
+        expect(await write()).toMatchObject({ ...first, replayed: true });
+        const log = JSON.stringify(await logOf("M-2"));
+        expect(log.split(input.text).length - 1).toBe(1);
+      } finally {
+        shell.close();
+        bridge.close();
+      }
     },
   );
 });

@@ -282,8 +282,8 @@ export function cleanEvidence(evidence: Evidence): Evidence {
 
 // ---------------------------------------------------------------------------------------------
 // Launch references (A4 3.1): `L`, four random symbols from A1's ID alphabet in upper case, and a
-// check character, for example `L7KQ2M`. The space's writer makes them (unique among the space's
-// launches of the last 90 days); this module only reads them.
+// check character, for example `L7KQ2M`. The space's writer makes them (never one a launch of the
+// space held); this module only reads them.
 
 /** A1's ID alphabet in upper case: Crockford base32 without I, L, O and U. */
 export const REF_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -326,9 +326,6 @@ export const CLAIM_WINDOW_MS = 120_000;
  * clock: a wall clock that stepped back a little.
  */
 export const CLICK_SLACK_MS = 5_000;
-
-/** References are unique among the space's launches of the last 90 days (A4 3.1). */
-export const REFERENCE_WINDOW_MS = 90 * 24 * 60 * 60_000;
 
 /**
  * How long the launch machine waits for one call to the execution store. A call still unanswered

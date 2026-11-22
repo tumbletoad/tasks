@@ -54,7 +54,6 @@ export {
   LAUNCH_UNKNOWN_REASONS as STORAGE_LAUNCH_UNKNOWN_REASONS,
   OPEN_LAUNCH_STATES as STORAGE_OPEN_LAUNCH_STATES,
   OPEN_SETS as STORAGE_OPEN_SETS,
-  REFERENCE_WINDOW_MS as STORAGE_REFERENCE_WINDOW_MS,
 } from "@ttasks/storage";
 /** Storage's copies of A4's run rules, which the launch package's tests compare with contracts'. */
 export {

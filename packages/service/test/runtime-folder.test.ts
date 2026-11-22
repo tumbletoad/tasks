@@ -3,8 +3,9 @@
 // `/run/user`, so the run-user path is exercised in WSL and on CI too. What the product leaves
 // there at a clean stop, and what a service test's cleanup leaves there. Fixture data and temporary
 // folders only.
-import { existsSync, mkdirSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
+import { ENDED_KEEP_MS } from "@ttasks/launch";
 import { afterEach, describe, expect, test } from "vitest";
 import { listenEndpoint } from "../src/hub/endpoint.ts";
 import { EXIT } from "../src/hub/exit.ts";
@@ -38,7 +39,7 @@ async function lab(label: string): Promise<ShimLab> {
 
 describe("[A2.3.2.1.hub.runtime-folder] the runtime folder: nothing left after a clean stop or a test's cleanup", () => {
   test.skipIf(!LINUX)(
-    "a clean stop removes the idle runtime folder; one that holds a live shim's launch folder stays until its launch is settled",
+    "a clean stop removes the idle runtime folder; a live shim's launch folder keeps it until its launch is settled, an ended launch's record for a day",
     { timeout: 300_000 },
     async () => {
       const l = await lab("rt-stop");
@@ -70,8 +71,18 @@ describe("[A2.3.2.1.hub.runtime-folder] the runtime folder: nothing left after a
         "the launch folder removed",
       );
 
-      // A clean stop with nothing left of a launch: nothing is left under the base, and the test
-      // removed nothing itself.
+      // A clean stop after the end: only the ended launch's own record is left, for its day.
+      await l.stopService();
+      expect(l.runtime.leftovers()).toEqual([basename(dir)]);
+      expect(readdirSync(join(dir, "launch"))).toEqual(["ended"]);
+      const ended = join(dir, "launch", "ended", `${intent.id}.json`);
+      expect(readdirSync(join(dir, "launch", "ended"))).toEqual([basename(ended)]);
+
+      // A day later the next start removes it, and a clean stop leaves nothing under the base:
+      // the test removed nothing itself.
+      l.skew += ENDED_KEEP_MS;
+      await l.start();
+      await waitFor(() => (existsSync(ended) ? undefined : true), LONG_MS, "the record removed");
       await l.stopService();
       expect(l.runtime.leftovers()).toEqual([]);
     },
@@ -85,6 +96,17 @@ describe("[A2.3.2.1.hub.runtime-folder] the runtime folder: nothing left after a
       // A launch folder: everything stays.
       mkdirSync(join(launch, "la_fixture"), { recursive: true });
       removeIdleRuntime({ runtimeDir: dir, launch });
+      expect(existsSync(join(launch, "la_fixture"))).toBe(true);
+      // An ended launch's record: everything stays too, and its emptied folder does not.
+      rmdirSync(join(launch, "la_fixture"));
+      mkdirSync(join(launch, "ended"));
+      writeFileSync(join(launch, "ended", "la_fixture.json"), "{}");
+      removeIdleRuntime({ runtimeDir: dir, launch });
+      expect(existsSync(join(launch, "ended", "la_fixture.json"))).toBe(true);
+      rmSync(join(launch, "ended", "la_fixture.json"));
+      mkdirSync(join(launch, "la_fixture"));
+      removeIdleRuntime({ runtimeDir: dir, launch });
+      expect(existsSync(join(launch, "ended"))).toBe(false);
       expect(existsSync(join(launch, "la_fixture"))).toBe(true);
       // No launch folder, but something else (a socket that is not this start's): the empty
       // launch root goes, the runtime folder stays with what it holds.
