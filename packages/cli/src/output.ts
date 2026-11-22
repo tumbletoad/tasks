@@ -376,7 +376,7 @@ export function render(entry: string, result: Result, space: string): string {
         const asked =
           launches.length === 0
             ? ""
-            : ` (request for ${launches.map((l) => `launch ${String(l["launch"])}`).join(", ")})`;
+            : ` (request for ${launches.map((l) => `launch ${String(l["launch"])} [${String(l["instance"])}]`).join(", ")})`;
         lines.push(
           `  ${String(note["ref"])} ${String(note["author"])}${note["for_agents"] === true ? " → agents" : ""}${asked}: ${entryText(note["text"])}`,
         );

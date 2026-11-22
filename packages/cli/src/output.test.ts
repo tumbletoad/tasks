@@ -218,7 +218,7 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
       "  Then say so.",
     ]);
     expect(shown).toContain(
-      "  n2 user (request for launch L7KQ21): Check the booking.\n    Cancel the duplicate.\n    Then say so.",
+      "  n2 user (request for launch L7KQ21 [claude-work]): Check the booking.\n    Cancel the duplicate.\n    Then say so.",
     );
     expect(shown).not.toContain("\r");
     expect(shown).not.toContain(separator);
