@@ -358,6 +358,16 @@ describe("[A3.3.7.binding.cli] an agent's shell is the session when a live value
         { scope: `session:${session}`, status: "applied" },
       ]);
       await agent.close();
+      // A task's session is no run: run_report is refused, and says so.
+      expect(
+        (
+          await sh.refusal("run.report", {
+            sources: [{ name: "Mail", state: "ok", items_seen: 1 }],
+            summary: "Fixture summary, refused.",
+            request_id: rid(),
+          })
+        ).body,
+      ).toMatchObject({ code: "not_permitted", data: { binding: "task" } });
 
       // Its home's registration removed: the next call is refused; registered again, it goes on.
       const row = launch.row ?? "";

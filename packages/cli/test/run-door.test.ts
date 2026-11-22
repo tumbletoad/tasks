@@ -44,15 +44,15 @@ let log = "";
 let service: RunningService | undefined;
 
 /**
- * What the run's agent calls through TTasks's tools, bound by its ticket: a write, its own task bound
- * once more, reads, and another task of the space bound explicitly.
+ * What the run's agent calls through TTasks's tools, its session by its ticket: a write and a read
+ * of its own task without naming it, reads, and another task of the space named.
  */
 const RUN_CALLS: readonly ToolCall[] = [
   { name: "add_entry", arguments: { text: LOG_MARK, request_id: "runlogentry000000000001" } },
-  { name: "get_task", arguments: { bind: true } },
+  { name: "get_task", arguments: {} },
   { name: "status", arguments: {} },
   { name: "search", arguments: { q: "export" } },
-  { name: "get_task", arguments: { task: "M-1", bind: true } },
+  { name: "get_task", arguments: { task: "M-1" } },
 ];
 
 /** A tool's answer as the agent reads it: its error code, or none. */
@@ -207,7 +207,7 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
     // The run's own calls may use its space, though the instance's home was never set up for it;
     // no other connection of that home may.
     const live = (await service?.runs.list(spaceId, task))?.[0]?.run.id ?? "";
-    expect(service?.ops.homes?.may("codex", spaceId, live)).toBe(true);
+    expect(service?.runs.allows("codex", spaceId, live)).toBe(true);
     expect(service?.ops.homes?.may("codex", spaceId)).toBe(false);
     const ran = await running;
     expect(ran.code, ran.stdout + ran.stderr).toBe(0);
@@ -224,8 +224,8 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
     const shown = await user(["run", "show", id, "--json"]);
     expect(JSON.parse(shown.stdout)).toMatchObject({ answer: ANSWER_MARK, answer_final: true });
 
-    // The agent's calls of TTasks's own tools bound to the run's session: it wrote as the run, bound
-    // its own task again, read, and was told its session is bound when it named another task.
+    // The agent's calls of TTasks's own tools as the run's session: it wrote as the run, read its
+    // own task as its session without naming it, and read another task by naming it.
     const said = readFileSync(log, "utf8")
       .split("\n")
       .filter((l) => l.includes("tool_result"))
@@ -236,8 +236,10 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
       ["get_task", undefined],
       ["status", undefined],
       ["search", undefined],
-      ["get_task", "already_bound"],
+      ["get_task", undefined],
     ]);
+    expect(JSON.stringify(said[1]?.tool_result)).toContain("Session: this task");
+    expect(JSON.stringify(said[4]?.tool_result)).toContain("Pass task M-1 on each call");
     const served = service?.ops.spaces().find((s) => s.id === spaceId);
     const rows = (await served?.reader?.transaction("deferred", [
       {
@@ -246,8 +248,9 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
         params: { body: LOG_MARK },
       },
     ])) as unknown[][] | undefined;
-    expect(rows?.[0]).toEqual([expect.objectContaining({ run_id: id })]);
-    expect(service?.bindings.sessionOfLaunch(id)?.launches).toContain(id);
+    expect(rows?.[0]).toEqual([
+      expect.objectContaining({ run_id: id, session_id: `se_${id.slice("ru_".length)}` }),
+    ]);
 
     // Once the run ended, its tools' entry (its ticket with it) may no longer use the space.
     const thread = readFileSync(log, "utf8")
@@ -277,7 +280,7 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
       if (record !== undefined && FINAL.has(record.state)) {
         looks.push({
           run: record.id,
-          may: service?.ops.homes?.may("codex", spaceId, record.id) ?? false,
+          may: service?.runs.allows("codex", spaceId, record.id) ?? false,
         });
       }
     };

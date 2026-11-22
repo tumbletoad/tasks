@@ -54,12 +54,6 @@ export interface ContractTransport {
   call(entry: string, input: Record<string, unknown>, actor: Actor): Promise<unknown>;
   /** The folder that stands for the examples' working folder (`contractWorld`'s portal). */
   readonly portal: string;
-  /**
-   * Whether the agent's calls come through a connection that holds a session binding (A3 3.7.3:
-   * MCP's). A connection that cannot bind (the CLI, the UI, a script) resolves a launch reference
-   * for the call only and answers `bound: false`: the example's `bound` holds where it binds.
-   */
-  readonly binds: boolean;
   /** A launch reference for the task in the world, for an example's `launch` (`ContractWorld.launch`). */
   launch(task: string): Promise<string>;
   /** Gives the task the portal as its folder here, as the person does (`ContractWorld.folder`). */
@@ -434,7 +428,7 @@ const refs = (list: unknown, key = "ref"): unknown[] =>
   Array.isArray(list) ? (list as Value[]).map((item) => item[key]) : [];
 
 /** What a result means, per entry: the parts an example documents that a world can reproduce. */
-function meaning(entry: string, value: Value, binds: boolean): unknown {
+function meaning(entry: string, value: Value): unknown {
   switch (entry) {
     case "space.status": {
       const counts = value["counts"] as Value;
@@ -476,8 +470,8 @@ function meaning(entry: string, value: Value, binds: boolean): unknown {
       const task = value["task"] as Value;
       return {
         view: value["view"],
-        // Where the connection cannot hold a binding, a call resolves for itself: never bound.
-        bound: binds ? value["bound"] : false,
+        // The transport's connection is no launch's session: a reference reads, never binds.
+        bound: value["bound"],
         task: { ref: task["ref"], lifecycle: task["lifecycle"], title: task["title"] },
         sections: Object.keys(sections).sort(),
         instructions: refs(sections["instructions"]),
@@ -713,11 +707,11 @@ export function grantSuite(name: string, open: () => Promise<GrantTransport>): v
 }
 
 /**
- * A launched agent's session in the world's space whose agent home's row was revoked (A3 3.7.8):
- * a world launch on its home registered as setup does, its bridge bound by its ticket through the
- * local endpoint, then the row revoked as `ttasks setup agents --remove` does. A CLI call carrying
- * the ticket acts as that session, so every one of them is refused with rule grant. The world gets
- * a task M-1 if it has none.
+ * A launched agent's session in the world's space whose agent home's row was revoked: a world
+ * launch on its home registered as setup does, its bridge its session by its ticket through the
+ * local endpoint, then the row revoked as `ttasks setup agents --remove` does. A shell's call
+ * carrying the ticket is that session, so every one of them is refused with rule grant. The world
+ * gets a task M-1 if it has none.
  */
 export async function revokedSession(world: ContractWorld): Promise<{ readonly ticket: string }> {
   const added = (await opCall(
@@ -735,7 +729,6 @@ export async function revokedSession(world: ContractWorld): Promise<{ readonly t
   if (agent.binding?.["state"] !== "bound") {
     throw new Error("the agent's bridge did not bind by its ticket");
   }
-  // The bridge goes; its session lives on while the agent runs, and its ticket maps to it.
   await agent.close();
   if ((await revokeHome(world.home, world.path, [launch.row ?? ""])) !== 1) {
     throw new Error("the home's row was not revoked");
@@ -807,8 +800,8 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
             expect(parsed.success, key).toBe(true);
             const value = result as Value;
             if (typeof value["as_of"] === "string") expect(value["as_of"]).toMatch(AS_OF);
-            expect(meaning(entry.name, value, true), key).toEqual(
-              meaning(entry.name, example.output as Value, transport.binds),
+            expect(meaning(entry.name, value), key).toEqual(
+              meaning(entry.name, example.output as Value),
             );
           }
         }

@@ -10,13 +10,15 @@ import { PRODUCT_NAME } from "@ttasks/brand";
 import { AppError, resultTokens, type ErrorBody } from "@ttasks/contracts";
 import type { WriteRequest } from "@ttasks/storage";
 import { toolCaller } from "../src/mcp/index.ts";
-import { opCall, type Caller, type OpsHost } from "../src/ops/index.ts";
+import { opCall, type Binding, type Caller, type OpsHost } from "../src/ops/index.ts";
 import { GUIDE_TOKENS } from "../src/mcp/render.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { grantHome } from "./ops-helpers.ts";
 
 type Json = Record<string, unknown>;
 let w: ContractWorld & { root: string };
+/** A bridge of no launch, in the world's one space, as its bind settles it. */
+const inSpace = (): Binding => ({ kind: "none", space: w.space });
 const LONG = 120_000;
 
 beforeAll(async () => {
@@ -168,7 +170,7 @@ describe("[A3.3.4.tools.five] status: here, the session and guides", () => {
       ]);
       expect(status["here_total"]).toBe(5);
       expect(status["hint"]).toBe(
-        "2 tasks match this folder. Ask the user which one, then call get_task with task and bind true.",
+        "2 tasks match this folder. Ask the user which one, then pass its task on each call.",
       );
       // Inside the portal, its project's tasks are still there; the outer project's are not.
       const deeper = await call("space.status", { cwd: web });
@@ -276,6 +278,7 @@ describe("[A3.3.4.tools.five] status: here, the session and guides", () => {
       ops: w.service.ops,
       context: { space: null, instance: "codex-work", app: "codex", env: {} },
       conn: 1,
+      binding: inSpace(),
     });
     const result = await tool("status", {});
     expect(result.content[0].text.split("\n")[1]).toBe(
@@ -289,7 +292,12 @@ describe("[A3.3.4.tools.five] status: here, the session and guides", () => {
     expect(guided).not.toHaveProperty("here");
     expect(guided).not.toHaveProperty("sections");
     const text = (
-      await toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 })("status", {
+      await toolCaller({
+        ops: w.service.ops,
+        context: { space: null },
+        conn: 1,
+        binding: inSpace(),
+      })("status", {
         guide: "work",
       })
     ).content[0].text;
@@ -299,7 +307,12 @@ describe("[A3.3.4.tools.five] status: here, the session and guides", () => {
     expect(/^[\x20-\x7e\n·]*$/u.test(text)).toBe(true);
     // The triage and organize guides are this build's; refresh waits for its step.
     const triage = (
-      await toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 })("status", {
+      await toolCaller({
+        ops: w.service.ops,
+        context: { space: null },
+        conn: 1,
+        binding: inSpace(),
+      })("status", {
         guide: "triage",
       })
     ).content[0].text;
@@ -309,7 +322,12 @@ describe("[A3.3.4.tools.five] status: here, the session and guides", () => {
       expect(triage).toMatch(new RegExp(`\\b${tool}\\b`));
     }
     const organize = (
-      await toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 })("status", {
+      await toolCaller({
+        ops: w.service.ops,
+        context: { space: null },
+        conn: 1,
+        binding: inSpace(),
+      })("status", {
         guide: "organize",
       })
     ).content[0].text;
@@ -435,7 +453,12 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
     expect(await digestOf(alone ?? "")).toBeUndefined();
     // In the text, the folder's own words are someone's data: only fixed words stand in the
     // header (A3 3.10).
-    const mcp = toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 });
+    const mcp = toolCaller({
+      ops: w.service.ops,
+      context: { space: null },
+      conn: 1,
+      binding: inSpace(),
+    });
     const textOf = async () => (await mcp("get_task", { task: ref })).content[0].text;
     const here = await textOf();
     const block = here.indexOf("<<ttasks-data ");
@@ -490,7 +513,12 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
       of: "task",
     });
     // A folder is text someone gave: in the text it stands inside the data block (A3 3.10).
-    const mcp = toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 });
+    const mcp = toolCaller({
+      ops: w.service.ops,
+      context: { space: null },
+      conn: 1,
+      binding: inSpace(),
+    });
     const text = (await mcp("get_task", { task: ref })).content[0].text;
     expect(text.search(/Folder: .*api\n/u)).toBeGreaterThan(text.indexOf("<<ttasks-data "));
   });
@@ -532,7 +560,12 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
       "user",
     ]);
     // In the text, only the user's own note stands outside the data block.
-    const mcp = toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 });
+    const mcp = toolCaller({
+      ops: w.service.ops,
+      context: { space: null },
+      conn: 1,
+      binding: inSpace(),
+    });
     for (const input of [{ task: ref }, args]) {
       const text = (await mcp("get_task", input)).content[0].text;
       const block = text.indexOf("<<ttasks-data ");
@@ -560,7 +593,12 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
       const candidates = body.data?.["candidates"] as Json[];
       expect(candidates.map((c) => c["ref"])).toEqual([one, two, three]);
       const text = (
-        await toolCaller({ ops: w.service.ops, context: { space: null }, conn: 1 })("get_task", {
+        await toolCaller({
+          ops: w.service.ops,
+          context: { space: null },
+          conn: 1,
+          binding: inSpace(),
+        })("get_task", {
           cwd: join(w.portal, "cand"),
         })
       ).content[0].text;
