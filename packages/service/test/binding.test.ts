@@ -134,6 +134,22 @@ describe("[A3.3.7.binding.ticket] a launched agent's bridge is its session by th
         { scope: `session:${session}`, status: "applied" },
       ]);
       expect((await logOf("M-1"))[0]?.["author"]).toBe(`agent:${launch.instance}:${session}`);
+      // A task named on a call wins for that call only: the next one is the session's task again.
+      expect(
+        await agent.call("entry.add", {
+          task: "M-3",
+          kind: "progress",
+          text: "Fixture progress on a task named for this call.",
+          request_id: rid(),
+        }),
+      ).toMatch(/^logged \S+ on M-3 /);
+      expect(
+        await agent.call("entry.add", {
+          kind: "progress",
+          text: "Fixture progress on the session's task again.",
+          request_id: rid(),
+        }),
+      ).toMatch(/^logged \S+ on M-1 /);
       // A bind writes nothing: the launch's Connected comes from its terminal, not from its bridge.
       expect((await w.service.launches.read(w.space, launch.id))?.evidence["bound_at"]).toBe(
         undefined,
