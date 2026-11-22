@@ -4,6 +4,7 @@
 // cache, and the contract suite and the grant gate's refusal over MCP for both eras.
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import { offlineReply, parseOffline } from "@ttasks/bridge/mcp";
 import { LocalError, PROTOCOL } from "@ttasks/bridge/protocol";
 import { findEntry, AppError, readsOnly } from "@ttasks/contracts";
@@ -469,7 +470,7 @@ describe("[A3.3.3.mcp.calls] a tool call on the request path, as the connection'
       expect(textOf(elsewhere)).toBe(
         renderError({
           ...grantRefused().toBody(),
-          hint: "It may use the space Mira now: ask the user to restart the agent app to work there.",
+          hint: `It may use the space Mira now: ask the user to check that the agent's ${PRODUCT_NAME} entry names it (--space ${w.space}), then to restart the agent app.`,
           data: { rule: "grant", space: w.space },
         }),
       );

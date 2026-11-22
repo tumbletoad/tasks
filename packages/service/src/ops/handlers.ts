@@ -462,19 +462,22 @@ function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): Se
   if (caller.class === "bridge") {
     // A bridge never picks a space on a call: its bind settled one for its life, or none.
     const held = binding?.space;
-    const entryNamed = binding?.named === true;
-    if (held === undefined) throw noSpace(entryNamed, host.defaultSpace?.() !== undefined);
+    const manual = caller.home === undefined || caller.home === MANUAL_INSTANCE;
+    const entry: EntryFacts = {
+      named: binding?.named === true,
+      manual,
+      // The one space its home's live row names: for a hand-made entry, the machine's default.
+      mayUse: host.homes?.spaceOf(caller.home ?? ""),
+    };
+    if (held === undefined) throw noSpace(host, entry);
     try {
       return heldSpace(host, caller, held, named);
     } catch (error) {
       // Its home may use another space now: it says which, and what moves the agent there. The
       // held space is kept, never replaced, while it is denied.
       const denied = error instanceof AppError && error.data["rule"] === "grant";
-      const now = denied ? host.homes?.spaceOf(caller.home ?? "") : undefined;
-      if (now === undefined || now === held) throw error;
-      // Setup never writes a space into a hand-made entry: a person did, and a restart binds it
-      // again. Setup's own entry names the space it registered, so a restart takes the new one.
-      throw grantedElsewhere(host, now, entryNamed && caller.home === MANUAL_INSTANCE);
+      if (!denied || entry.mayUse === undefined || entry.mayUse === held) throw error;
+      throw grantedElsewhere(host, entry.mayUse, entry);
     }
   }
   return pickByRule(host, caller, named);
@@ -527,37 +530,71 @@ function unserved(live: readonly ServedSpace[], wanted: string): AppError {
 }
 
 /**
+ * What a bridge's refusal knows of its entry, so its hint says what helps that entry: whether it
+ * named a space, whether it is hand-made (no instance, so only the machine's default), and the one
+ * space its home may use now. Setup's own entry always names the space its home is registered for,
+ * so a registered home's entry that names none, or a name that is no space, was edited by hand,
+ * and the default does not help it: naming its space does.
+ */
+interface EntryFacts {
+  readonly named: boolean;
+  readonly manual: boolean;
+  readonly mayUse: string | undefined;
+}
+
+const ENTRY = `the agent's ${PRODUCT_NAME} entry`;
+
+/** A space as a hint names it: by name when it is open, else by ID. */
+function spaceWords(host: OpsHost, space: string): string {
+  const name = host.spaces().find((s) => s.id === space)?.name;
+  return name === undefined ? space : `the space ${name}`;
+}
+
+/**
  * A bridge whose bind found no space it can be sure of: refused on every call, saying what settles
  * it. Its entry named a space that is no one space here; or it named none, and its process
  * started with no default to take, or an older bridge reconnected without its space.
  */
-function noSpace(entryNamed: boolean, hasDefault: boolean): AppError {
-  const hint = entryNamed
-    ? `The agent's ${PRODUCT_NAME} entry names a space this machine has none of, or two of (${CLI_NAME} space list). Ask the user to take the space out of the entry, which then uses the default space, or to correct it, then restart the agent app.`
-    : hasDefault
-      ? "Ask the user to restart the agent app: it then works in the default space."
-      : `Ask the user to set a default space (${CLI_NAME} space use, after ${CLI_NAME} space create if there is none), then restart the agent app.`;
+function noSpace(host: OpsHost, entry: EntryFacts): AppError {
+  const unknown = entry.named
+    ? `The agent's ${PRODUCT_NAME} entry names a space this machine has none of, or two of (${CLI_NAME} space list). `
+    : "";
+  let fix: string;
+  if (!entry.manual && entry.mayUse !== undefined) {
+    fix = `It may use ${spaceWords(host, entry.mayUse)}: ask the user to name it in ${ENTRY} (--space ${entry.mayUse}), then to restart the agent app.`;
+  } else if (entry.named) {
+    fix = entry.manual
+      ? "Ask the user to take the space out of the entry, which then uses the default space, or to correct it, then restart the agent app."
+      : "Ask the user to correct it, then to restart the agent app.";
+  } else if (host.defaultSpace?.() !== undefined) {
+    fix = "Ask the user to restart the agent app: it then works in the default space.";
+  } else {
+    fix = `Ask the user to set a default space (${CLI_NAME} space use, after ${CLI_NAME} space create if there is none), then restart the agent app.`;
+  }
   return new AppError({
     code: "space_unavailable",
     message: "This connection has no space it can work in.",
-    hint,
+    hint: `${unknown}${fix}`,
     data: { reason: "no_space", retryable: false },
   });
 }
 
 /**
  * The grant refusal of a bridge whose home may use another space now, which it names, with what
- * moves it there: a restart, or for a hand-made entry that names a space, taking that out first.
+ * moves it there. A hand-made entry: a restart, which takes the default, after taking out a space
+ * it names. A registered home: a restart with that space named in its entry, as setup writes it.
  */
-function grantedElsewhere(host: OpsHost, space: string, nameInEntry: boolean): AppError {
-  const name = host.spaces().find((s) => s.id === space)?.name;
-  const there = name === undefined ? space : `the space ${name}`;
+function grantedElsewhere(host: OpsHost, space: string, entry: EntryFacts): AppError {
+  const there = spaceWords(host, space);
+  const hint = !entry.manual
+    ? `It may use ${there} now: ask the user to check that ${ENTRY} names it (--space ${space}), then to restart the agent app.`
+    : entry.named
+      ? `It may use ${there} now: ask the user to take the space out of ${ENTRY}, then to restart the agent app.`
+      : `It may use ${there} now: ask the user to restart the agent app to work there.`;
   return new AppError({
     code: "forbidden",
     message: "This agent is not registered for this space.",
-    hint: nameInEntry
-      ? `It may use ${there} now: ask the user to take the space out of the agent's ${PRODUCT_NAME} entry, then to restart the agent app.`
-      : `It may use ${there} now: ask the user to restart the agent app to work there.`,
+    hint,
     data: { rule: "grant", space },
   });
 }
