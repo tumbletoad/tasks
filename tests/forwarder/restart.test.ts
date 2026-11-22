@@ -143,7 +143,11 @@ describe("[A2.3.7.bridge.restart] bridges through a service restart", () => {
       bridge.write("not json at all CONTENTRAW\n");
       bridge.write(`${"v".repeat(64)}\u0000CONTENTNUL\n`);
       const started = Date.now();
-      const timed = bridge.call("echo", { secret: "CONTENTARG" }, "timed");
+      let held = 0;
+      const timed = bridge.call("echo", { secret: "CONTENTARG" }, "timed").then((reply) => {
+        held = Date.now() - started;
+        return reply;
+      });
       // Two 5 MiB calls take the held lines past their 8 MiB bound, so stdin is no longer read;
       // the calls after them fill stdin's own buffer. Nothing else keeps the process busy then.
       const big = "x".repeat(5 * MiB);
@@ -162,7 +166,7 @@ describe("[A2.3.7.bridge.restart] bridges through a service restart", () => {
         }),
       ]);
       // The hold is 10 s; the answer names the service as down, not the lost connection.
-      expect(Date.now() - started).toBeGreaterThanOrEqual(5_000);
+      expect(held).toBeGreaterThanOrEqual(5_000);
       expect(isOfflineText(reply, "service_down")).toBe(true);
       expect(burst).toHaveLength(42);
       for (const answer of burst) expect(isOfflineText(answer, "service_down")).toBe(true);
