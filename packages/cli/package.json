@@ -16,6 +16,7 @@
     "@tasks/service": "workspace:*"
   },
   "devDependencies": {
+    "@tasks/runs": "workspace:*",
     "@tasks/storage": "workspace:*",
     "@tasks/testkit": "workspace:*",
     "typescript": "6.0.3",

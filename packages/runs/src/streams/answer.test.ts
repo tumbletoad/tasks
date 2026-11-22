@@ -106,12 +106,19 @@ describe.each(STREAM_KINDS)(
       expect(outcome.counts.oversized).toBe(1);
     });
 
-    test("a message after the final answer does not replace it", () => {
+    test("a message after the final answer begins a new turn: it replaces the answer, and that turn has no result", () => {
       const parser = createStreamParser(kind);
       parser.push(`${finalLines(kind, "The answer.").join("\n")}\n`);
-      expect(answers(parser.push(`${messageLine(kind, "An aside.")}\n`))).toEqual([]);
+      expect(answers(parser.push(`${messageLine(kind, "More work.")}\n`)).at(-1)).toMatchObject({
+        text: "More work.",
+        final: false,
+      });
       const { outcome } = parser.end(exit0);
-      expect([outcome.result, outcome.resultFinal]).toEqual(["The answer.", true]);
+      expect([outcome.result, outcome.resultFinal, outcome.reason]).toEqual([
+        "More work.",
+        false,
+        "no_result",
+      ]);
     });
   },
 );

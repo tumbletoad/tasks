@@ -107,8 +107,15 @@ export interface UiRunPort {
   ): Promise<RunRecord>;
   list(space: string, task?: string): Promise<readonly { readonly run: RunRecord }[]>;
   stop(space: string, run: string): Promise<RunRecord | undefined>;
-  /** Why a queued run waits, as the queue last saw it. */
-  waiting(run: string): string | undefined;
+  /** What the run's record cannot say now (RunService.live). */
+  live(run: RunRecord): UiRunLive;
+}
+
+/** Why a queued run waits, since when a running one is quiet, and what a started one said so far. */
+export interface UiRunLive {
+  readonly waiting?: string;
+  readonly quietSince?: number;
+  readonly said?: { readonly text: string; readonly final: boolean; readonly cut: boolean };
 }
 
 /**
@@ -123,32 +130,42 @@ export interface UiRun {
   readonly reason: string | null;
   /** Why a queued run waits. */
   readonly waiting?: string;
+  /** Since when a running run has written nothing, milliseconds since 1970. */
+  readonly quiet_since?: number;
   readonly queued_at: number;
   readonly started_at: number | null;
   readonly ended_at: number | null;
   readonly asked: string | null;
   readonly outcome?: string;
   readonly cleanup?: string;
-  /** The agent's answer, or its question when it needs the person; null while it has none. */
+  /**
+   * The agent's answer, or its question when it needs the person. While it works, what it said
+   * last, so the person can use what it made, a server it keeps running, before stopping it.
+   */
   readonly answer: string | null;
   /** The agent finished its turn with `answer`: otherwise it is the last thing it said. */
   readonly answer_final: boolean;
   readonly answer_cut: boolean;
   readonly error?: string;
+  /** How many of the agent's requests its permission refused, when any were. */
+  readonly refused?: number;
   /** Grows with every change of the run. */
   readonly version: number;
 }
 
-/** The page's view of a run record. */
-export function uiRun(run: RunRecord, waiting?: string): UiRun {
+/** The page's view of a run record, with what only the service knows of it now. */
+export function uiRun(run: RunRecord, live: UiRunLive = {}): UiRun {
   const result = run.result;
+  const { waiting, quietSince, said } = live;
+  const refused = result === null ? 0 : result.declined + result.permissionDenials;
   const asked = run.request === null || run.request === WORK_ON_IT ? null : run.request;
   return {
     id: run.id,
     instance: run.instance,
     state: run.state,
     reason: run.reason,
-    ...(waiting === undefined || run.state !== "queued" ? {} : { waiting }),
+    ...(waiting === undefined ? {} : { waiting }),
+    ...(quietSince === undefined ? {} : { quiet_since: quietSince }),
     queued_at: run.queuedAt,
     started_at: run.startedAt,
     ended_at: run.endedAt,
@@ -160,9 +177,18 @@ export function uiRun(run: RunRecord, waiting?: string): UiRun {
           ...(result.cleanup === undefined ? {} : { cleanup: result.cleanup }),
           ...(result.error === null ? {} : { error: result.error }),
         }),
-    answer: result?.text ?? null,
-    answer_final: result?.textFinal === true,
-    answer_cut: result?.textCut === true,
+    ...(result === null
+      ? {
+          answer: said?.text ?? null,
+          answer_final: said?.final === true,
+          answer_cut: said?.cut === true,
+        }
+      : {
+          answer: result.text,
+          answer_final: result.textFinal === true,
+          answer_cut: result.textCut === true,
+        }),
+    ...(refused === 0 ? {} : { refused }),
     version: run.version,
   };
 }
@@ -462,7 +488,7 @@ export class UiLaunches {
       requestId,
     });
     this.#options.changed(space);
-    return uiRun(queued, runs.waiting(queued.id));
+    return uiRun(queued, runs.live(queued));
   }
 
   /** A task's newest runs, and every older one that may still work, oldest first. */
@@ -474,7 +500,7 @@ export class UiLaunches {
     const listed = await runs.list(this.#space(spaceRef).id ?? "", task);
     return listed
       .filter(({ run }, at) => at < RUNS_SHOWN || isOpenRun(run))
-      .map(({ run }) => uiRun(run, runs.waiting(run.id)))
+      .map(({ run }) => uiRun(run, runs.live(run)))
       .reverse();
   }
 

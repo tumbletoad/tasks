@@ -1,4 +1,5 @@
 // Drivers: each speaks one agent program's protocol over the pipes the run host gives it.
+export * from "./claude.ts";
 export * from "./codex.ts";
 export * from "./json-rpc.ts";
 export * from "./print.ts";

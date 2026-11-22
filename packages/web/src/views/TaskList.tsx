@@ -55,6 +55,11 @@ const NO_RUNS: readonly Run[] = [];
 const FRESH_MS = 1_200;
 /** Agents' changes are announced once the burst has been quiet this long (A5 3.15 item 10). */
 const QUIET_MS = 2_000;
+/**
+ * What a working run says changes nothing in its record, so the runs of a task with one are read
+ * again this often: how long it has said nothing stays true.
+ */
+const WORKING_REREAD_MS = 60_000;
 /** The waits before a failed read of busy is tried again, the last one repeating. */
 const BUSY_RETRY_MS = [1_000, 2_000, 5_000, 15_000] as const;
 
@@ -323,6 +328,27 @@ export function TaskList({
     },
     [api, live],
   );
+
+  // Keyed by which tasks have a working run, not by each read: a read of another task's runs must
+  // not start the minute again.
+  const working = useMemo(
+    () =>
+      [...runs]
+        .filter(([, list]) => list.some((run) => run.state === "running"))
+        .map(([task]) => task)
+        .sort()
+        .join(" "),
+    [runs],
+  );
+  useEffect(() => {
+    if (working === "") return;
+    const timer = setInterval(() => {
+      for (const task of working.split(" ")) loadRuns(task);
+    }, WORKING_REREAD_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [working, loadRuns]);
 
   // A launch event refreshes what busies the agent apps, for every row, and the receipts of its
   // task, which the tab follows from then on: a tile mirrors a launch made in another tab or at the

@@ -109,6 +109,14 @@ const SAMPLE = {
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {
+  test("the catalogue file names each message once: a second one would silently replace the first", () => {
+    const raw = readFileSync(join(SRC, "i18n", "en.json"), "utf8");
+    // Each message is one line of the flat file, so a key is what opens a line.
+    const keys = [...raw.matchAll(/^\s*"((?:[^"\\]|\\.)*)"\s*:/gm)].map((m) => m[1]);
+    expect(keys).toHaveLength(Object.keys(CATALOGUE).length);
+    expect(keys.filter((key, i) => keys.indexOf(key) !== i)).toEqual([]);
+  });
+
   test("every message is ICU that FormatJS formats in the source locale", () => {
     const errors: string[] = [];
     const intl = createIntl({
