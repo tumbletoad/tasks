@@ -10,6 +10,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -1357,5 +1358,31 @@ describe("[A4.5.shim.attach] an ended launch leaves nothing", () => {
     boot();
     expect(existsSync(ended)).toBe(false);
     expect(records.get(running.id)?.launch).toBe(running.id);
+  });
+
+  test("a start removes only the old records it knows from the ended folder: anything else there, and a link in its place, stays", () => {
+    const temp = tempFolder();
+    temps.push(temp);
+    const root = join(temp.path, "launch");
+    const ended = join(root, "ended");
+    mkdirSync(ended, { recursive: true });
+    const record = join(ended, `${randomId("la")}.json`);
+    const other = join(ended, "space.sqlite");
+    writeFileSync(record, '{"format":1}');
+    writeFileSync(other, "not a record");
+    new FolderRecords(root);
+    expect(existsSync(record)).toBe(false);
+    expect(readdirSync(ended)).toEqual(["space.sqlite"]);
+
+    // A link in the folder's place is not the product's: neither it nor what it names is touched.
+    rmSync(ended, { recursive: true });
+    const elsewhere = join(temp.path, "elsewhere");
+    mkdirSync(elsewhere);
+    const linked = join(elsewhere, `${randomId("la")}.json`);
+    writeFileSync(linked, '{"format":1}');
+    symlinkSync(elsewhere, ended, "junction");
+    new FolderRecords(root);
+    expect(existsSync(ended)).toBe(true);
+    expect(existsSync(linked)).toBe(true);
   });
 });

@@ -12,7 +12,7 @@
 //
 // Folders are named after the launch ID, not its reference: a reference is unique within one space
 // only, and one machine's launch root holds the launches of all its spaces.
-import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, makeDir } from "@ttasks/files";
 import { isLaunchRef } from "../intents.ts";
@@ -300,7 +300,7 @@ export function keptGiven(given: ClickGiven): ClickGiven {
   };
 }
 
-/** The home, session and preset a launch record and an ended one hold, each when present. */
+/** The home, session and preset a launch record holds, each when present. */
 function checkGiven(
   value: Record<string, unknown>,
 ): Pick<LaunchFile, "home" | "session" | "preset"> | undefined {
@@ -421,6 +421,36 @@ function onDisk(file: LaunchFile): string {
   return `${JSON.stringify(written)}\n`;
 }
 
+/**
+ * Removes the records earlier builds kept of ended launches, which nothing reads, and then their
+ * folder when it is empty. Only a file named `<launch ID>.json` is one: anything else in the
+ * folder, or a link in its place, is not the product's and stays.
+ */
+function removeEndedRecords(root: string): void {
+  const folder = join(root, ENDED_FOLDER);
+  let names: string[];
+  try {
+    if (!lstatSync(folder).isDirectory()) return;
+    names = readdirSync(folder);
+  } catch {
+    return; // None there.
+  }
+  for (const name of names) {
+    if (!name.endsWith(".json") || !LAUNCH_ID.test(name.slice(0, -".json".length))) continue;
+    const path = join(folder, name);
+    try {
+      if (lstatSync(path).isFile()) rmSync(path, { force: true, maxRetries: 5 });
+    } catch {
+      // Not removable now: a later start tries again.
+    }
+  }
+  try {
+    rmdirSync(folder);
+  } catch {
+    // Not empty, or not removable now: it stays.
+  }
+}
+
 /** The machine state in folders under the install's launch root. */
 export class FolderRecords implements RecordStore {
   readonly root: string;
@@ -447,12 +477,7 @@ export class FolderRecords implements RecordStore {
       for (const [name] of passing) this.#load(name, failed);
     }
     for (const [name, code] of failed) options.unreadable?.(name, code);
-    // Nothing reads those records, so they go.
-    try {
-      rmSync(join(root, ENDED_FOLDER), { recursive: true, force: true, maxRetries: 5 });
-    } catch {
-      // Not removable now: a later start tries again.
-    }
+    removeEndedRecords(root);
   }
 
   /** Reads a launch's file into the records, or notes the error that kept it from being read. */
