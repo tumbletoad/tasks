@@ -85,7 +85,11 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
       restoreChange("grouping", { area_id: AREA.id, project_id: null }) as Change,
     ];
     const list = changes.map((change, i) =>
-      unsaved(change, i + 1, i % 2 === 0 ? {} : { reason: "conflict", by: "Codex", at: 1_000 }),
+      unsaved(
+        change,
+        i + 1,
+        i % 2 === 0 ? { base: "1.12.0a1b2c3d" } : { reason: "conflict", by: "Codex", at: 1_000 },
+      ),
     );
     unsavedKeeper(SPACE).save(asMap(list));
     const back = unsavedKeeper(SPACE).load();
@@ -96,6 +100,7 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
         ref: original.ref,
         field: original.field,
         reason: original.reason,
+        ...(original.base === undefined ? {} : { base: original.base }),
         ...(original.by === undefined ? {} : { by: original.by, at: original.at }),
       });
       expect(effect(found?.change), original.task).toEqual(effect(original.change));
@@ -138,6 +143,14 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
         ref: "<b>",
         field: "title",
         reason: "failed",
+        source: { kind: "title", title: "x" },
+      },
+      {
+        task: "tk_13",
+        ref: "M-13",
+        field: "title",
+        reason: "failed",
+        base: "../1.2",
         source: { kind: "title", title: "x" },
       },
       // A source for another field than the one it is kept under.

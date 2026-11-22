@@ -697,7 +697,7 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     expect(found.rows.filter((row) => row.title === title)).toHaveLength(1);
   });
 
-  test("an edit still waiting behind another edit of the task when the page reloads is back as not saved, never lost", async ({
+  test("an edit still waiting behind another edit of the task when the page reloads is back as not saved, never lost, and Try again never overwrites a change made since", async ({
     page,
     world,
   }) => {
@@ -734,6 +734,20 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await expect(title).toHaveText(`Oil the hinges (${tag}) and the gate`, { timeout: SLOW_MS });
     const unsaved = row.locator('[data-part="unsaved"]');
     await expect(unsaved).toHaveAttribute("data-reason", "failed", { timeout: SLOW_MS });
+    // Someone else sets the priority after the reload: Try again meets it as a conflict.
+    const { as_of } = await read(world, ref);
+    await world.op(
+      world.mira.id,
+      "task.update",
+      { task: ref, set: { priority: 2 }, base: as_of },
+      "agent",
+    );
+    await expect(
+      row.getByRole("radiogroup", { name: "Priority" }).getByRole("radio", { name: "P2" }),
+    ).toBeChecked({ timeout: SLOW_MS });
+    await unsaved.locator('[data-part="apply-mine"]').click();
+    await expect(unsaved).toHaveAttribute("data-reason", "conflict", { timeout: SLOW_MS });
+    expect((await read(world, ref)).task.priority).toBe(2);
     await unsaved.locator('[data-part="apply-mine"]').click();
     await expect.poll(async () => (await read(world, ref)).task.priority).toBe(1);
     await expect(unsaved).toHaveCount(0);

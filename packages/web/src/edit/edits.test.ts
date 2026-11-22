@@ -60,7 +60,7 @@ class World {
   readonly answers = new Map<string, ((input: Record<string, unknown>) => unknown)[]>();
   seq = 10;
 
-  constructor(rows: readonly TaskRow[], keeper?: UnsavedKeeper) {
+  constructor(rows: readonly TaskRow[], keeper?: UnsavedKeeper, leaving?: () => Promise<unknown>) {
     this.store = new LiveStore({
       space: SPACE.id,
       frames: this.frames,
@@ -106,6 +106,7 @@ class World {
       rowOf: (ref) => [...this.store.getState().tasks.values()].find((t) => t.ref === ref),
       newRequest: () => `rq-${String((requests += 1))}`,
       ...(keeper === undefined ? {} : { keeper }),
+      ...(leaving === undefined ? {} : { leaving }),
     });
     this.edits.onToast((t) => this.toasts.push(t));
   }
@@ -604,6 +605,172 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     // Discarded in the first page, it is no longer handed on.
     w.edits.dismiss("t_00001", "effort");
     expect(kept.at(-1)).toEqual([]);
+  });
+
+  test("an edit still waiting behind another when the page goes is kept with the base it was made at: after a reload Try again sends that base, and someone's change since is a conflict with Apply mine", async () => {
+    let held: readonly Unsaved[] = [];
+    const keeper: UnsavedKeeper = {
+      load: () => [],
+      save: (unsaved) => {
+        held = [...new Set(unsaved.values())];
+      },
+    };
+    let go: () => void = () => undefined;
+    const gone = new Promise<void>((resolve) => (go = resolve));
+    const w = new World([task(1)], keeper, () => gone);
+    // The rename's answer never comes in this page: the priority waits behind it.
+    w.answer("task.update", () => new Promise(() => undefined));
+    w.edits.edit(task(1), titleChange("Oil the gate"));
+    w.edits.edit(task(1), priorityChange(1));
+    await flush();
+    expect(w.calls).toHaveLength(1);
+    go();
+    await flush();
+    expect(w.calls).toHaveLength(1);
+    expect(held.map((u) => [u.field, u.reason, u.base])).toEqual([
+      ["priority", "failed", w.asOf(10)],
+    ]);
+    // The next page: the rename landed, then someone else set the priority.
+    const next = new World([task(1)], { load: () => [...held], save: () => undefined });
+    next.feed([task(1, { title: "Oil the gate", version: 2 })], "rq-1", ["title"]);
+    next.feed(
+      [task(1, { title: "Oil the gate", priority: 2, version: 3 })],
+      "agent-1",
+      ["priority"],
+      "agent",
+    );
+    next.answer("task.update", () => {
+      throw appError("conflict", {
+        cause: "VERSION_CONFLICT",
+        conflicts: [
+          {
+            task: "M-1",
+            field: "priority",
+            value: 2,
+            version: 12,
+            by: "Codex",
+            at: "2026-11-12T09:40:00.000Z",
+          },
+        ],
+      });
+    });
+    next.edits.apply("t_00001", "priority");
+    await flush();
+    expect(next.calls[0]?.input).toMatchObject({ set: { priority: 1 }, base: w.asOf(10) });
+    expect(next.row("t_00001")?.priority).toBe(2);
+    expect(next.edits.unsaved("t_00001", "priority")).toMatchObject({
+      reason: "conflict",
+      by: "Codex",
+    });
+    expect(next.lastToast()?.action?.label).toEqual({ id: "toast.applyMine" });
+    // Apply mine is the person's choice over theirs: it goes with the base the screen shows now.
+    next.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: next.asOf(13),
+      warnings: [],
+    }));
+    next.edits.apply("t_00001", "priority");
+    await flush();
+    expect(next.calls[1]?.input).toMatchObject({ set: { priority: 1 }, base: next.asOf(12) });
+  });
+
+  test("Try again after a failed call keeps the base the edit was made at, also from its toast: a change someone made since is a conflict", async () => {
+    const w = new World([task(1)]);
+    w.answer("task.update", () => {
+      throw appError("internal", {});
+    });
+    w.edits.edit(task(1), effortChange("M"));
+    await flush();
+    const tryAgain = w.lastToast()?.action;
+    expect(tryAgain?.label).toEqual({ id: "toast.tryAgain" });
+    w.feed([task(1, { effort: "L", version: 2 })], "agent-1", ["effort"], "agent");
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["effort"],
+      as_of: w.asOf(12),
+      warnings: [],
+    }));
+    w.edits.apply("t_00001", "effort");
+    await flush();
+    expect(w.calls[1]?.input).toMatchObject({ set: { effort: "M" }, base: w.asOf(10) });
+    w.feed([task(1, { effort: "M", version: 3 })], String(w.calls[1]?.input["request_id"]), [
+      "effort",
+    ]);
+    w.answer("task.update", () => {
+      throw appError("internal", {});
+    });
+    w.edits.edit(task(1), priorityChange(3));
+    await flush();
+    w.feed([task(1, { effort: "M", priority: 2, version: 4 })], "agent-2", ["priority"], "agent");
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: w.asOf(14),
+      warnings: [],
+    }));
+    w.lastToast()?.action?.run();
+    await flush();
+    expect(w.calls[3]?.input).toMatchObject({ set: { priority: 3 }, base: w.asOf(12) });
+  });
+
+  test("an edit waiting behind another goes out when that one answers, after a switch to another tab and back, and after a return from the back-forward cache", async () => {
+    let gone: Promise<void> = new Promise(() => undefined);
+    let go: () => void = () => undefined;
+    const arm = () => {
+      gone = new Promise<void>((resolve) => (go = resolve));
+    };
+    arm();
+    const w = new World([task(1)], undefined, () => gone);
+    const updated = (seq: number) => ({
+      result: "updated",
+      task: "M-1",
+      fields: [],
+      as_of: w.asOf(seq),
+      warnings: [],
+    });
+    let answer: (value: unknown) => void = () => undefined;
+    w.answer("task.update", () => new Promise((resolve) => (answer = resolve)));
+    w.answer("task.update", () => updated(12));
+    // A switch of tabs is no leaving: the priority waits for the rename and then goes.
+    w.edits.edit(task(1), titleChange("Oil the gate"));
+    w.edits.edit(task(1), priorityChange(1));
+    await flush();
+    answer(updated(11));
+    await flush();
+    expect(w.calls.map((c) => c.input["set"])).toEqual([
+      { title: "Oil the gate" },
+      { priority: 1 },
+    ]);
+    expect(w.calls[1]?.input).toMatchObject({ base: w.asOf(11) });
+    // Into the back-forward cache with a priority waiting: it is kept as not saved there.
+    w.answer("task.update", () => new Promise((resolve) => (answer = resolve)));
+    w.edits.edit(task(1), titleChange("Oil the gates"));
+    w.edits.edit(task(1), priorityChange(2));
+    await flush();
+    go();
+    await flush();
+    expect(w.edits.unsaved("t_00001", "priority")).toMatchObject({
+      reason: "failed",
+      base: w.asOf(10),
+    });
+    // Back from the cache, the rename's answer arrives; the next edit waits for its turn again.
+    arm();
+    answer(updated(13));
+    await flush();
+    w.answer("task.update", () => new Promise((resolve) => (answer = resolve)));
+    w.answer("task.update", () => updated(15));
+    w.edits.edit(task(1), titleChange("Oil all gates"));
+    w.edits.edit(task(1), effortChange("S"));
+    await flush();
+    expect(w.calls).toHaveLength(4);
+    answer(updated(14));
+    await flush();
+    expect(w.calls.map((c) => c.input["set"]).at(-1)).toEqual({ effort: "S" });
+    expect(w.edits.unsaved("t_00001", "effort")).toBeUndefined();
   });
 
   test("an edit refused because someone finished the task meanwhile keeps the value, and its toast offers no Try again", async () => {

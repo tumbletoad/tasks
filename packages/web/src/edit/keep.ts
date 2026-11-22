@@ -24,6 +24,7 @@ const FIELDS: ReadonlySet<string> = new Set<Field>([
 
 const TASK_ID = /^[a-z]{1,4}_[0-9a-z]{1,64}$/u;
 const REF = /^[A-Za-z0-9_-]{1,64}$/u;
+const AS_OF = /^\d{1,16}\.\d{1,16}\.[0-9a-z]{1,64}$/u;
 
 /** An edit as it is kept: undefined for one that cannot be built again. */
 function keptOf(unsaved: Unsaved): string | undefined {
@@ -34,6 +35,7 @@ function keptOf(unsaved: Unsaved): string | undefined {
     ref: unsaved.ref,
     field: unsaved.field,
     reason: unsaved.reason,
+    ...(unsaved.base === undefined ? {} : { base: unsaved.base }),
     ...(unsaved.by === undefined ? {} : { by: unsaved.by }),
     ...(unsaved.at === undefined ? {} : { at: unsaved.at }),
     source,
@@ -43,11 +45,12 @@ function keptOf(unsaved: Unsaved): string | undefined {
 /** A kept edit, read by its shape. */
 export function unsavedOf(value: unknown): Unsaved | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const { task, ref, field, reason, by, at, source } = value as Record<string, unknown>;
+  const { task, ref, field, reason, base, by, at, source } = value as Record<string, unknown>;
   if (typeof task !== "string" || !TASK_ID.test(task)) return undefined;
   if (typeof ref !== "string" || !REF.test(ref)) return undefined;
   if (typeof field !== "string" || !FIELDS.has(field)) return undefined;
   if (reason !== "conflict" && reason !== "failed") return undefined;
+  if (base !== undefined && (typeof base !== "string" || !AS_OF.test(base))) return undefined;
   if (by !== undefined && (typeof by !== "string" || by.length > 200)) return undefined;
   if (at !== undefined && (typeof at !== "number" || !Number.isFinite(at))) return undefined;
   const change = changeOf(source);
@@ -58,6 +61,7 @@ export function unsavedOf(value: unknown): Unsaved | undefined {
     field: field as Field,
     change,
     reason,
+    ...(base === undefined ? {} : { base }),
     ...(by === undefined ? {} : { by }),
     ...(at === undefined ? {} : { at }),
   };
