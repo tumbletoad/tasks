@@ -416,8 +416,11 @@ async function run(initial: DefaultSpace, events: readonly Event[]): Promise<str
     if (held.get(name) === null && machineDefault !== undefined) {
       reach("a held none bound again after a default was set");
     }
+    // Only where the held space decides: without it, the bind would give another space.
     const kept = held.get(name);
-    if (typeof kept === "string" && kept !== machineDefault && !expected.session) {
+    const entry = entryOf(name)["space"];
+    const without = typeof entry === "string" ? entry : machineDefault;
+    if (typeof kept === "string" && kept !== without && !expected.session) {
       reach("a held space bound again after the default moved");
     }
     const connection = { context: contextOf(name) };
@@ -494,6 +497,9 @@ async function run(initial: DefaultSpace, events: readonly Event[]): Promise<str
     }
     const here = space === s2.spaceId ? task === task2.id : tasks.some((t) => t.id === task);
     if (!here) return { kind: "rejected", space, scope };
+    if (session && isLaunched(name) && task !== launchOf(name).task) {
+      reach("a named task over the session's");
+    }
     return { kind: "commit", space, task, scope };
   };
 
@@ -568,9 +574,13 @@ async function run(initial: DefaultSpace, events: readonly Event[]): Promise<str
         const id = `fixture-model-${tag}-${String(made).padStart(6, "0")}`;
         let task: string | undefined;
         if (ev.agent === "H") {
-          // The hand-made entry names the task of the space it works in.
+          // The hand-made entry names the task of the space it works in, or with `other` the
+          // task of the space it does not.
           const space = bridgeSpace("H");
-          task = space === s1.spaceId ? tasks[2]?.id : space === s2.spaceId ? task2.id : undefined;
+          const s1Task = tasks[2]?.id;
+          const inSpace = space === s1.spaceId ? s1Task : space === s2.spaceId ? task2.id : undefined;
+          const outside = space === s1.spaceId ? task2.id : space === s2.spaceId ? s1Task : undefined;
+          task = ev.task === "other" ? outside : inSpace;
         } else {
           const own = isLaunched(ev.agent) ? launchOf(ev.agent).task : tasks[2]?.id;
           const other = isLaunched(ev.agent) ? tasks[2]?.id : tasks[0]?.id;
@@ -584,7 +594,6 @@ async function run(initial: DefaultSpace, events: readonly Event[]): Promise<str
         };
         const request: Request = { id, agent: ev.agent, input, text, named: task };
         requests.push(request);
-        if (isLaunched(ev.agent) && ev.task === "other") reach("a named task over the session's");
         await call(ev.agent, ev.via, request);
         break;
       }
@@ -610,7 +619,17 @@ async function run(initial: DefaultSpace, events: readonly Event[]): Promise<str
           text,
           named: task,
         };
-        reach("another scope's request ID");
+        // Counted only when another scope holds the ID in the space the chat writes to.
+        const into = bridgeSpace(ev.agent);
+        const chat = `bridge:inst-d:${MACHINE}`;
+        if (
+          [...kept.keys()].some((key) => {
+            const [space, scope, id] = key.split("|");
+            return space === into && scope !== chat && id === source.id;
+          })
+        ) {
+          reach("another scope's request ID");
+        }
         await call(ev.agent, "bridge", request);
         break;
       }
@@ -725,6 +744,7 @@ describe("[A3.3.7.binding.model] who a connection is, under random interleavings
         "a named task over the session's",
         "another scope's request ID",
         "a change in the second space",
+        "a task of another space",
         "a held none bound again after a default was set",
         "a held space bound again after the default moved",
         "an open bridge after its agent's end",
