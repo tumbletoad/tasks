@@ -80,6 +80,7 @@ import {
   type FolderResolution,
   type PlanFolder,
   type ClaimReply,
+  type ClickGiven,
   type DispatchOutcome,
   type Evidence,
   type HostRefusal,
@@ -101,6 +102,7 @@ import type { ServedSpace } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
 import type { TaskFolder } from "../ops/read.ts";
+import { agentHomeOf } from "../setup/agents.ts";
 import {
   briefNames,
   chooseRoute,
@@ -720,8 +722,15 @@ export class LaunchService {
         ? presetSession(space, requestId)
         : undefined;
     let planFor: ((reference: string) => SpawnPlan) | undefined;
+    let given: ClickGiven = {};
     if (choice.route === "terminal" && instance !== undefined) {
       const chosen = instance;
+      const agent = agentHomeOf(chosen, this.#options.home, platform);
+      given = {
+        ...(agent === undefined ? {} : { app: agent.app }),
+        ...(agent?.home === undefined ? {} : { home: agent.home }),
+        ...(session === undefined ? {} : { preset: session }),
+      };
       const codexHome =
         chosen.target === "codex-cli"
           ? codexHomeOf(chosen, this.#options.home, platform)
@@ -776,7 +785,7 @@ export class LaunchService {
     let intent =
       planned === undefined
         ? await hosted.machine.open(click, requestId)
-        : await this.#openWith(space, hosted, click, requestId, (i) => planned(i.reference));
+        : await this.#openWith(space, hosted, click, requestId, (i) => planned(i.reference), given);
     const text = brief(intent.reference);
     if (text.status !== "ok") throw this.#unavailable("too_long");
     const composer = composerOf(probe.composer, note, intent);
@@ -1255,10 +1264,11 @@ ${instance}`;
     click: Omit<NewIntent, "machine">,
     requestId: string,
     planFor: (intent: LaunchIntent) => SpawnPlan,
+    given: ClickGiven = {},
   ): Promise<LaunchIntent> {
     const intent = await hosted.machine.open(click, requestId);
     if (intent.route === "terminal" && intent.state === "prepared") {
-      this.host.prepare(space, intent, planFor(intent));
+      this.host.prepare(space, intent, planFor(intent), given);
     }
     return intent;
   }

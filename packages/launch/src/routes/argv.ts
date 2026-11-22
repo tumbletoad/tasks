@@ -25,9 +25,9 @@ import { isLaunchRef } from "../intents.ts";
 import type { Instance } from "../sections.ts";
 import { encodeUrlValue } from "../t3-route.ts";
 import { TASK_REF } from "../brief/render.ts";
+import { SESSION_UUID } from "../store.ts";
 
-/** A session ID TTasks presets (A4 3.4.2): a UUID in its canonical lower-case form. */
-export const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+export { SESSION_UUID };
 
 /**
  * The session ID a click presets for Claude Code (A4 3.4.2 `--session-id`), derived from the

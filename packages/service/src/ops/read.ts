@@ -486,7 +486,7 @@ export async function readTask(
 // ---------------------------------------------------------------------------------------------
 // Launches and the bound task (A3 3.7.3, 3.4.2)
 
-/** A launch by its reference: the newest with it (references are unique for 90 days, A4 3.1). */
+/** A launch by its reference: the newest with it; launches 90 days apart may share one. */
 const LAUNCH_BY_REF: Statement = {
   sql:
     "SELECT l.id, l.reference, l.task_id, l.state, l.route, l.machine_id, l.created_at, " +

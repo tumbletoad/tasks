@@ -4,7 +4,7 @@
 // text only.
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import { newId, type Id } from "../src/ids.ts";
-import { isLaunchRef, LAUNCH_EDGES } from "../src/write/launches.ts";
+import { isLaunchRef, LAUNCH_EDGES, launchRefCheck } from "../src/write/launches.ts";
 import {
   LAUNCH_STATES,
   type Credential,
@@ -40,6 +40,8 @@ const one = (sql: string, params = {}): unknown =>
 const row = (sql: string, params = {}): Row => fx.reader.prepare(sql).get(params) ?? {};
 const lastSeq = (): number => Number(one("SELECT last_seq FROM space"));
 const HASH = "a1b2c3d4".repeat(8);
+/** The symbols of a launch reference: A1's ID alphabet in upper case. */
+const REF_SYMBOLS = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 const submit = (ops: Operation[], actor: Credential = ui, extra = {}): WriteResult =>
   fx.writer.submit(fx.request(actor, ops, extra));
@@ -81,6 +83,28 @@ const move = (
   submit([{ kind: "launch.transition", launch: launch as Id<"la">, expect, next, ...more }]);
 
 describe("[A1.5.write.launches] launch records through the write path", () => {
+  test("a new launch never takes a reference an older launch of the space held, also one a year old", () => {
+    const old = fx.writer.launch(create())?.reference ?? "";
+    // A year later, the writer's first draw for a reference is the old one's four symbols.
+    time += 365 * 24 * 60 * 60_000;
+    const symbolsOf = (reference: string) =>
+      Uint8Array.from(reference.slice(1, 5), (c) => REF_SYMBOLS.indexOf(c));
+    const other = Uint8Array.from([1, 2, 3, 4]);
+    const draws = [symbolsOf(old), other];
+    fx.reopen({
+      now: () => time,
+      random: (bytes) => {
+        const next = bytes.length === 4 ? draws.shift() : undefined;
+        if (next === undefined) globalThis.crypto.getRandomValues(bytes);
+        else bytes.set(next);
+      },
+    });
+    const fresh = fx.writer.launch(create())?.reference;
+    expect(draws).toEqual([]);
+    expect(fresh).toBe(`L1234${launchRefCheck("1234") ?? ""}`);
+    expect(fresh).not.toBe(old);
+  });
+
   test("launch.create writes a Prepared record with a reference, its history and its receipt", () => {
     const taskId = task();
     const before = row("SELECT version, touched FROM tasks WHERE id = $id", { id: taskId });

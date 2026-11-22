@@ -44,7 +44,6 @@ import {
   STORAGE_LAUNCH_UNKNOWN_REASONS,
   STORAGE_OPEN_LAUNCH_STATES,
   STORAGE_OPEN_SETS,
-  STORAGE_REFERENCE_WINDOW_MS,
   storageIsLaunchRef,
   storageNormaliseText,
   type LaunchSpace,
@@ -62,7 +61,6 @@ import {
   launchRefCheck,
   OPEN_STATES,
   REF_ALPHABET,
-  REFERENCE_WINDOW_MS,
   ROUTES,
 } from "../src/intents.ts";
 import { decodeLaunch, SpaceExecutionStore } from "../src/space-store.ts";
@@ -198,12 +196,11 @@ describe("[A4.5.execution-store.contract] a launch row read back from the space"
 });
 
 describe("[A4.5.execution-store.contract] the writer's copy of A4's launch rules", () => {
-  test("the states, edges, open states, routes, reference window, evidence and reasons are A4's", () => {
+  test("the states, edges, open states, routes, evidence and reasons are A4's", () => {
     expect([...STORAGE_LAUNCH_STATES]).toEqual([...INTENT_STATES]);
     expect(STORAGE_LAUNCH_EDGES).toEqual(EDGES);
     expect([...STORAGE_OPEN_LAUNCH_STATES]).toEqual([...OPEN_STATES]);
     expect([...STORAGE_OPEN_SETS["launches.route"]]).toEqual([...ROUTES]);
-    expect(STORAGE_REFERENCE_WINDOW_MS).toBe(REFERENCE_WINDOW_MS);
     expect(STORAGE_LAUNCH_EVIDENCE_FIELDS).toEqual(EVIDENCE_FIELDS);
     expect([...STORAGE_LAUNCH_FAIL_REASONS]).toEqual([...FAIL_REASONS]);
     expect([...STORAGE_LAUNCH_UNKNOWN_REASONS]).toEqual([...UNKNOWN_REASONS]);
