@@ -5,7 +5,7 @@
 // its title first, then its other controls.
 //
 // The row is memoised: it renders again only when its own task, its area or project, its receipts,
-// its place in the list or its state (expanded, current, fresh) changes. Every prop it takes is a
+// what busies its agent apps, its place in the list or its state (expanded, current, fresh) changes. Every prop it takes is a
 // value the list keeps by identity, so a store update that touches one task renders one row.
 import { memo, useContext, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { Instance, Receipt, Run } from "../api.ts";
@@ -24,7 +24,7 @@ import { runMarker } from "../task/runs.ts";
 import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
 import type { RowActions } from "./actions.ts";
-import { tileClick, type FolderRefusal } from "./launch.ts";
+import { tileClick, type BusyOf, type FolderRefusal } from "./launch.ts";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
 import {
@@ -79,7 +79,10 @@ export interface RowProps {
   readonly slot: number | undefined;
   readonly project: ProjectRow | undefined;
   readonly instances: readonly Instance[];
+  /** The task's launch receipts, oldest first, once the tab follows the task: its history. */
   readonly receipts: readonly Receipt[];
+  /** What busies each agent app with the task on this machine. */
+  readonly busy: BusyOf | undefined;
   /** The task's background runs, oldest first, once the tab follows the task. */
   readonly runs: readonly Run[];
   readonly ctx: RowContext;
@@ -255,6 +258,8 @@ function Slots({
             data-tip={tileTip}
             tabIndex={tab}
             onClick={(event) => {
+              // A double click is one click, even when the first one's answer came in between.
+              if (event.detail > 1) return;
               const action = tileClick(launch.state);
               if (action === "open" && launch.instance !== undefined)
                 void actions.open(task, launch.instance);
@@ -404,6 +409,7 @@ function RowView({
   project,
   instances,
   receipts,
+  busy,
   runs,
   ctx,
   expanded,
@@ -431,7 +437,7 @@ function RowView({
       ...(area === undefined ? {} : { area: { title: area.title, slot: slot ?? 1 } }),
       ...(project === undefined ? {} : { project: { title: project.title } }),
       instances,
-      receipts,
+      ...(busy === undefined ? {} : { busy }),
       sources: sourceFacts(t, task.sources),
       ...(task.sources_more === undefined ? {} : { sourcesMore: task.sources_more }),
       ...(place === undefined ? {} : { place }),
@@ -646,6 +652,7 @@ function RowView({
           <Expanded
             task={task}
             receipts={receipts}
+            busy={busy}
             runs={runs}
             instances={instances}
             actions={actions}

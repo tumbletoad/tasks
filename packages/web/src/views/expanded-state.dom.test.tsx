@@ -157,6 +157,7 @@ beforeEach(() => {
         },
       },
     },
+    busy: () => Promise.resolve([]),
     receipts: () => Promise.resolve([]),
     runs: () => Promise.resolve([]),
   } as unknown as Api;

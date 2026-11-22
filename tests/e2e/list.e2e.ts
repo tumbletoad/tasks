@@ -248,16 +248,17 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
     const rows = page.locator("[data-list] li[data-key]");
     await expect(rows.first()).toBeVisible({ timeout: SLOW_MS });
 
-    // A row the fixture launches, so a Connected tile is on screen.
+    // A row the fixture launches, so a Running tile is on screen.
     const launchedKey = (await rows.nth(1).getAttribute("data-key")) ?? "";
     const launched = page.locator(`[data-list] li[data-key="${launchedKey}"]`);
+    bulk.hold((await launched.getAttribute("data-task")) ?? "");
     await launched.locator('[data-part="title"]').click();
     await launched
       .getByRole("toolbar")
       .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
       .click();
     const tile = launched.locator('[data-part="tile"]');
-    await expect(tile).toHaveAttribute("data-state", "connected", { timeout: SLOW_MS });
+    await expect(tile).toHaveAttribute("data-state", "running", { timeout: SLOW_MS });
     await launched.locator('[data-part="title"]').click();
     await expect(launched.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "false");
 
@@ -298,7 +299,7 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
         // After a reload the page knows a task's launches once it reads them: expanding does.
         await launched.locator('[data-part="title"]').click();
         await launched.locator('[data-part="title"]').click();
-        await expect(tile).toHaveAttribute("data-state", "connected", { timeout: SLOW_MS });
+        await expect(tile).toHaveAttribute("data-state", "running", { timeout: SLOW_MS });
         const scroll = await page.evaluate(
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
         );

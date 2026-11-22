@@ -135,6 +135,11 @@ export interface OpenTaskRequest {
    * was gone: the folder is marked as this task's or its project's, and opens.
    */
   readonly markFolder?: boolean;
+  /**
+   * The person chose "Open another": a second session of the app on the task, although one runs
+   * here. Without it, an Open of an app that runs the task here is that session.
+   */
+  readonly another?: boolean;
 }
 
 /** What the context pack takes of the task (A4 3.15.5); the launch adds its reference and folder. */

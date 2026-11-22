@@ -140,6 +140,7 @@ beforeEach(async () => {
           ),
       },
     },
+    busy: () => Promise.resolve([]),
     receipts: () => Promise.resolve([]),
     runs: () => (down ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve(listed)),
     startRun: (_task: string, _instance: string, id: string, text?: string) => {

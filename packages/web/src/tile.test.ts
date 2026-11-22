@@ -1,38 +1,48 @@
 import { describe, expect, test } from "vitest";
-import type { Receipt, ReceiptState } from "./api.ts";
 import { Latest } from "./latest.ts";
-import { tileClick, tileState } from "./row/launch.ts";
-
-const receipt = (state: ReceiptState, route = "terminal", instance = "cx"): Receipt => ({
-  id: `ln_${state}`,
-  reference: "M-1",
-  instance,
-  route,
-  state,
-  reason: null,
-  at: { prepared: 1 },
-});
+import { busyByTask, tileClick, tileState } from "./row/launch.ts";
 
 describe("[A5.3.6.web.tile] the launch tile's states and clicks", () => {
-  test("each receipt state gives A5's tile state, from the instance's latest receipt", () => {
-    expect(tileState([], "cx")).toBe("ready");
-    expect(tileState([receipt("prepared")], "cx")).toBe("opening");
-    expect(tileState([receipt("dispatching")], "cx")).toBe("opening");
-    expect(tileState([receipt("dispatched")], "cx")).toBe("opening");
-    expect(tileState([receipt("dispatched", "link")], "cx")).toBe("not_confirmed");
-    expect(tileState([receipt("confirmed")], "cx")).toBe("connected");
-    expect(tileState([receipt("failed")], "cx")).toBe("ready");
-    expect(tileState([receipt("unknown")], "cx")).toBe("ready");
-    // Another instance's receipt says nothing about this tile.
-    expect(tileState([receipt("confirmed", "terminal", "cc")], "cx")).toBe("ready");
-    expect(tileState([receipt("confirmed"), receipt("failed")], "cx")).toBe("ready");
+  test("the tile shows what busies its agent app with the task here, as the service says, else Ready", () => {
+    const busy = busyByTask(
+      [
+        { task: "t1", instance: "cx", state: "running" },
+        { task: "t1", instance: "cc", state: "opening" },
+        { task: "t2", instance: "cx", state: "opening" },
+      ],
+      new Map(),
+    );
+    expect(tileState(busy.get("t1"), "cx")).toBe("running");
+    expect(tileState(busy.get("t1"), "cc")).toBe("opening");
+    expect(tileState(busy.get("t2"), "cx")).toBe("opening");
+    expect(tileState(busy.get("t2"), "cc")).toBe("ready");
+    expect(tileState(busy.get("t3"), "cx")).toBe("ready");
   });
 
-  test("only a Ready tile opens; a launch on its way or done expands the task, never a second launch", () => {
+  test("a task whose apps are busy as before keeps its object, so its row does not render again", () => {
+    const before = busyByTask(
+      [
+        { task: "t1", instance: "cx", state: "running" },
+        { task: "t2", instance: "cx", state: "opening" },
+      ],
+      new Map(),
+    );
+    const after = busyByTask(
+      [
+        { task: "t1", instance: "cx", state: "running" },
+        { task: "t2", instance: "cx", state: "running" },
+      ],
+      before,
+    );
+    expect(after.get("t1")).toBe(before.get("t1"));
+    expect(after.get("t2")).toEqual({ cx: "running" });
+    expect(busyByTask([], after).size).toBe(0);
+  });
+
+  test("Ready opens; Running expands to the thread and the strip, where another opens", () => {
     expect(tileClick("ready")).toBe("open");
     expect(tileClick("opening")).toBe("none");
-    expect(tileClick("not_confirmed")).toBe("expand");
-    expect(tileClick("connected")).toBe("expand");
+    expect(tileClick("running")).toBe("expand");
     // The states the place and the area decide (A5 3.6's table).
     expect(tileClick("unavailable")).toBe("expand");
     expect(tileClick("copy_only")).toBe("copy");

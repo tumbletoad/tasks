@@ -352,7 +352,7 @@ export class ShimLab {
 
   /**
    * A click on the lab's task: the Prepared intent. Each instance key is its own launch: a second
-   * click with the same one within 5 s returns the first (A4 3.9.1).
+   * click with the same one while the first is still opening returns the first.
    */
   open(plan: SpawnPlan, instance = "fixture-agent"): Promise<LaunchIntent> {
     return this.running.launches.open(
