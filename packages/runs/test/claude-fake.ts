@@ -400,6 +400,7 @@ export function serveClaude(
 function leave(token: string, how: "detached" | "in-group"): void {
   const standIn = join(import.meta.dirname, "stand-ins", "stand-in.ts");
   spawn(process.execPath, [standIn, "idle", `--token=${token}`], {
+    // eslint-disable-next-line no-restricted-syntax -- the idle stand-in only waits.
     detached: how === "detached",
     stdio: "ignore",
     windowsHide: true,
