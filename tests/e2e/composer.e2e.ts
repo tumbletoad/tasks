@@ -215,7 +215,9 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
       await expect(notes(page, ref).last()).toHaveText("Reading 4: 4004 kWh", {
         timeout: SLOW_MS,
       });
-      expect(await copy.boundingBox()).toEqual(before);
+      // Where it stands, and so the point pressed, never moved (its width may follow the font).
+      const after = await copy.boundingBox();
+      expect({ x: after?.x, y: after?.y }).toEqual({ x: before.x, y: before.y });
       await page.mouse.up();
       await expect.poll(async () => (await copied()).length).toBe(count + 1);
     };
