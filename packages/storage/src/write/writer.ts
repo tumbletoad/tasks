@@ -111,7 +111,6 @@ import {
 } from "./runs.ts";
 import {
   readReceipt,
-  readReceipts,
   requestFingerprint,
   writeReceipt,
   type Receipt,
@@ -1016,9 +1015,8 @@ export class SpaceWriter {
   }
 
   /**
-   * A request's receipt in a writer scope, then in the connection's earlier scope: what
-   * `receipt.get` returns (A3 3.2.3). Undefined when the scope holds none: another scope's
-   * receipts are never found.
+   * A request's receipt in a writer scope: what `receipt.get` returns (A3 3.2.3). Undefined when
+   * the scope holds none: another scope's receipts are never found.
    */
   receipt(lookup: ReceiptLookup): Receipt | undefined {
     const conn = this.#usable();
@@ -1136,18 +1134,12 @@ export class SpaceWriter {
       if (!(error instanceof RequestProblem)) throw error;
       return refused("rejected", asOf, error.problem);
     }
-    // The receipt, before staging and expansion (A1 3.7, 3.8). When the scope and the earlier
-    // scope both hold the ID, the one with this intent replays (receipts.ts: readReceipts).
-    const found = readReceipts(conn, {
+    // The receipt, before staging and expansion (A1 3.7, 3.8).
+    const prior = readReceipt(conn, {
       scope_id: request.actor.scope_id,
-      ...(request.actor.earlier_scope_id === undefined
-        ? {}
-        : { earlier_scope_id: request.actor.earlier_scope_id }),
       request_id: request.request_id,
     });
-    const same = found.find((receipt) => receipt.fingerprint === fingerprint);
-    if (same !== undefined) return same.result;
-    const prior = found[0];
+    if (prior?.fingerprint === fingerprint) return prior.result;
     if (prior !== undefined) {
       return refused("rejected", asOf, {
         code: "REQUEST_ID_REUSED",

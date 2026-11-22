@@ -35,7 +35,7 @@ class FakeSession {
   onClose: (() => void) | undefined;
   readonly #waiting: (() => void)[] = [];
 
-  constructor(binding: unknown = { handle: "bh_one", space: "sp_test", state: "bound" }) {
+  constructor(binding: unknown = { space: "sp_00000000000000000000000009", state: "bound" }) {
     this.bound = {
       protocol: 1,
       service: { version: "0", build: "fake", instance: "i" },
@@ -380,7 +380,7 @@ describe("[A2.3.7.bridge.restart] losing and finding the service", () => {
     expect(at).toEqual([500, 1_500, 3_500, 8_500, 18_500, 28_500]);
   });
 
-  test("a loss answers what was in flight, holds new requests, and binds again with the handle and mcp_init", async () => {
+  test("a loss answers what was in flight, holds new requests, and binds again with mcp_init and an older service's handle", async () => {
     const first = new FakeSession({ handle: "bh_first", space: "sp_test", state: "bound" });
     const second = new FakeSession({ handle: "bh_second", space: "sp_test", state: "bound" });
     const sessions = [first, second];
@@ -538,7 +538,7 @@ describe("[A2.3.7.bridge.restart] losing and finding the service", () => {
 
   test("an initialize answered offline while a bind is on its way: the bind is redone with mcp_init", async () => {
     let connect: (session: LineSession) => void = () => undefined;
-    const late = new FakeSession();
+    const late = new FakeSession({ handle: "bh_one", space: "sp_test", state: "bound" });
     const final = new FakeSession();
     let calls = 0;
     const { line, output, contexts } = rig(() => {
@@ -563,7 +563,8 @@ describe("[A2.3.7.bridge.restart] losing and finding the service", () => {
     });
     expect(late.closed).toBe(true);
     expect(contexts[1]).not.toHaveProperty("mcp_init");
-    // The closed bind was authenticated: its binding is resumed, not made a second time.
+    // An older service's closed bind was authenticated: its handle resumes it, so the older
+    // service makes no second binding.
     expect(contexts[2]).toMatchObject({
       mcp_init: { method: "initialize" },
       resume: { handle: "bh_one" },

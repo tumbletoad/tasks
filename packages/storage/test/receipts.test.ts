@@ -425,62 +425,6 @@ describe("[A1.5.write.receipts] the intent, the writer scope and receipt.get", (
     });
   });
 
-  test("a retry after binding finds the receipt of the unbound first attempt", () => {
-    const request = fx.request(fx.codex, [{ kind: "task.create", title: "Fix the export" }]);
-    const first = fx.writer.submit(request);
-    expectStatus(first, "applied");
-    const bound = {
-      ...fx.codex,
-      scope_id: "session:fixture",
-      earlier_scope_id: fx.codex.scope_id,
-    };
-    expect(fx.writer.submit({ ...request, actor: bound })).toEqual(replayOf(first));
-    expect(
-      fx.writer.receipt({
-        scope_id: "session:fixture",
-        earlier_scope_id: fx.codex.scope_id,
-        request_id: request.request_id,
-      }),
-    ).toMatchObject({ scope_id: fx.codex.scope_id });
-    // A new request of the bound connection is receipted under its current scope.
-    const next = fx.request(bound, [{ kind: "task.create", title: "Plan the offsite" }]);
-    expectStatus(fx.writer.submit(next), "applied");
-    expect(
-      one("SELECT scope_id FROM receipts WHERE request_id = $id", { id: next.request_id }),
-    ).toBe("session:fixture");
-  });
-
-  test("when both scopes hold the request ID, the receipt with the same intent replays", () => {
-    const task = create();
-    // An unbound connection writes R under the agent home's scope. A session connection, which
-    // never wrote unbound, independently uses R for another intent under the session's scope.
-    const note = (body: string): Operation[] => [{ kind: "note.add", task, body }];
-    const unbound = fx.request(fx.codex, note("Ask Tomas."));
-    const first = fx.writer.submit(unbound);
-    expectStatus(first, "applied");
-    const session = { ...fx.codex, scope_id: "session:fixture" };
-    const other = fx.writer.submit({ ...unbound, actor: session, ops: note("Ask Lea.") });
-    expectStatus(other, "applied");
-    // The first connection binds to the session and retries its own request: its own receipt.
-    const bound = { ...session, earlier_scope_id: fx.codex.scope_id };
-    const seq = lastSeq();
-    expect(fx.writer.submit({ ...unbound, actor: bound })).toEqual(replayOf(first));
-    // The session's request replays from the session's scope, through either connection.
-    const again = { ...unbound, ops: note("Ask Lea.") };
-    expect(fx.writer.submit({ ...again, actor: bound })).toEqual(replayOf(other));
-    expect(fx.writer.submit({ ...again, actor: session })).toEqual(replayOf(other));
-    // A third intent matches neither: REQUEST_ID_REUSED, with the current scope's original time.
-    const third = fx.writer.submit({ ...unbound, actor: bound, ops: note("Ask Ana.") });
-    expect(third.error).toMatchObject({ code: "REQUEST_ID_REUSED" });
-    expect(third.error?.at).toBe(
-      one("SELECT at FROM receipts WHERE scope_id = 'session:fixture' AND request_id = $id", {
-        id: unbound.request_id,
-      }),
-    );
-    expect(lastSeq()).toBe(seq);
-    expect(one("SELECT count(*) FROM notes WHERE task_id = $task", { task })).toBe(2);
-  });
-
   test("the fingerprint leaves out the envelope fields of an entry's input", () => {
     const task = create();
     // The service passes the entry's parsed input, which still holds request_id and base.

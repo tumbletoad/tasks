@@ -6,10 +6,11 @@ import { spawn } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
-  utimesSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -21,7 +22,6 @@ import { agentEnvironment, allowedNames, LIBUV_REQUIRED } from "../src/shim/envi
 import { sessionOf, ShimHost, type Attachment, type ClaimOutcome } from "../src/shim/host.ts";
 import {
   checkPlan,
-  ENDED_KEEP_MS,
   FolderRecords,
   HELD_FILE_WAITS_MS,
   MemoryRecords,
@@ -838,12 +838,15 @@ describe("[A4.5.shim.attach] machine state in folders", () => {
       const folder = await dispatched();
       await claim(folder.ticket);
       const fileOf = (id: string) => join(root, id, "launch.json");
-      // A scanner holds two files as the service starts; a folder stands in place of a third.
-      const momentHold = holdFile(fileOf(moment.id));
-      const stuckHold = holdFile(fileOf(stuck.id));
-      rmSync(fileOf(folder.id));
-      mkdirSync(fileOf(folder.id));
+      // Each hold is released however the test ends, from the moment it is taken.
+      const holds: { release(): void }[] = [];
       try {
+        // A scanner holds two files as the service starts; a folder stands in place of a third.
+        const momentHold = holdFile(fileOf(moment.id));
+        holds.push(momentHold);
+        holds.push(holdFile(fileOf(stuck.id)));
+        rmSync(fileOf(folder.id));
+        mkdirSync(fileOf(folder.id));
         const waits: number[] = [];
         const left: [string, string][] = [];
         records = new FolderRecords(root, {
@@ -867,8 +870,7 @@ describe("[A4.5.shim.attach] machine state in folders", () => {
           await host.attach({ credential, pid: SHIM_PID, start_time: SHIM_START }),
         ).toMatchObject({ kind: "attached" });
       } finally {
-        momentHold.release();
-        stuckHold.release();
+        for (const hold of holds) hold.release();
       }
       // A file no wait can open is left out without one.
       const waits: number[] = [];
@@ -1309,210 +1311,101 @@ describe("[A4.5.shim.attach] what the click records of the agent it starts", () 
     await host.report(attachment, SHIM_METHODS.started, { pid: 5151, started_at: now });
     const file = join(root, id, "launch.json");
     const written = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
-    const { app, home, session, preset, ...before } = written;
+    // The builds before refuse a ticket without `bridgeUsed`: written for a rollback, read by none.
+    const { bridgeUsed, ...ticketRead } = written["ticket"] as Record<string, unknown>;
+    expect(bridgeUsed).toBe(false);
+    const loaded: Record<string, unknown> = { ...written, ticket: ticketRead };
+    const { app, home, session, preset, ...before } = loaded;
     expect([app, home, session, preset].every((v) => typeof v === "string")).toBe(true);
-    writeFileSync(file, JSON.stringify(before));
+    writeFileSync(file, JSON.stringify({ ...before, ticket: written["ticket"] }));
     expect(new FolderRecords(root).get(id)).toEqual(before);
     // A later build's field: the record loads with every field this build knows, as written.
     writeFileSync(file, JSON.stringify({ ...written, thread: "a later build's field" }));
-    expect(new FolderRecords(root).get(id)).toEqual(written);
+    expect(new FolderRecords(root).get(id)).toEqual({ ...written, ticket: ticketRead });
   });
 });
 
-describe("[A4.5.shim.attach] what an ended launch leaves for a day", () => {
+describe("[A4.5.shim.attach] an ended launch leaves nothing", () => {
   const temps: { remove: () => void }[] = [];
   afterEach(() => {
     for (const t of temps.splice(0)) t.remove();
   });
 
-  test("its own record holds the six values and nothing else of the launch, is seen by no check of a running launch, survives a restart and is gone a day later", async () => {
+  test("its folder goes with its end and nothing of it stays; a start removes the records earlier builds kept of ended launches", async () => {
     const temp = tempFolder();
     temps.push(temp);
     const root = join(temp.path, "launch");
     records = new FolderRecords(root);
     boot();
-    const { id, ticket } = await dispatched();
-    const { outcome, replies } = await claim(ticket);
-    const attachment = attachmentOf(outcome);
-    await host.report(attachment, SHIM_METHODS.started, { pid: 5151, started_at: now });
-    await host.report(attachment, SHIM_METHODS.settled, {});
-    const hash = host.record(id)?.ticket?.hash;
-    pass(60_000);
-    await host.report(attachment, SHIM_METHODS.exited, {
-      code: 0,
-      signal: null,
-      ran_ms: 60_000,
-      settled: true,
-    });
-    const endedAt = now;
-    const intent = await read(id);
-    if (intent === undefined) throw new Error("no launch");
-
-    // The launch's folder went as before; its own record stayed, apart from it.
-    expect(existsSync(join(root, id))).toBe(false);
-    const file = join(root, "ended", `${id}.json`);
-    const text = readFileSync(file, "utf8");
-    expect(JSON.parse(text)).toEqual({
-      format: 1,
-      launch: id,
-      endedAt,
-      ticket: hash,
-      space: SPACE,
-      task: intent.task,
-      session: `se_${id.slice("la_".length)}`,
-      home: GIVEN.home,
-      preset: GIVEN.preset,
-    });
-    const credential = replies[0]?.credential ?? "-";
-    for (const secret of [ticket, credential, PLAN.argv[2] ?? "-", FOLDER.path, PLAN.title]) {
-      expect(text).not.toContain(secret);
-    }
-    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
-
-    // Nothing that asks whether a launch still runs sees it: the live count, the ticket, the
-    // PID check, the sweep and recovery's look.
-    const unseen = async (): Promise<void> => {
-      expect(host.record(id)).toBeUndefined();
-      expect(host.running(id)).toBe(false);
-      expect(host.runningIn(SPACE)).toEqual([]);
-      expect(host.liveSessions(SPACE)).toEqual(new Map());
-      expect(host.liveByTicket(ticket)).toBeUndefined();
-      expect(await host.check()).toBe(0);
-      expect(await machine.sweep()).toEqual([]);
-      expect(await host.observe(intent)).toEqual({ kind: "lost" });
-      expect(await read(id)).toEqual(intent);
-    };
-    await unseen();
-
-    // A restart reads it back, and it stays until a day after the end.
-    records = new FolderRecords(root);
-    boot();
-    expect(records.listEnded().map((e) => e.launch)).toEqual([id]);
-    await unseen();
-    pass(ENDED_KEEP_MS - 1);
-    await host.check();
-    expect(existsSync(file)).toBe(true);
-    pass(1);
-    await host.check();
-    expect(existsSync(file)).toBe(false);
-    expect(new FolderRecords(root).listEnded()).toEqual([]);
-    expect(await read(id)).toEqual(intent);
-  });
-
-  test("a shim gone without a report leaves the record too; a launch whose agent was never handed its ticket leaves none", async () => {
-    const lost = await dispatched();
-    attachmentOf((await claim(lost.ticket)).outcome);
-    live.delete(SHIM_PID);
-    expect(await host.check()).toBe(1);
-    expect(records.listEnded().map((e) => e.launch)).toEqual([lost.id]);
-
-    // Never claimed: its window passes and its folder goes, with nothing left.
-    const unclaimed = await dispatched();
-    pass(CLAIM_WINDOW_MS);
-    expect(await host.check()).toBe(1);
-    expect(records.get(unclaimed.id)).toBeUndefined();
-    expect(records.listEnded().map((e) => e.launch)).toEqual([lost.id]);
-  });
-
-  /** An exit the shim wrote to disk `ranMs` after its agent started now. */
-  function exitOnDisk(id: string, ranMs: number): void {
-    const exit = {
-      format: 1,
-      launch: id,
-      spawned: true,
-      settled: true,
-      code: 0,
-      signal: null,
-      ran_ms: ranMs,
-    };
-    writeFileSync(records.exitPath(id), JSON.stringify(exit));
-  }
-
-  /** Sets a file's modification time to `at` on the tests' clock, in whole seconds. */
-  const writtenAt = (path: string, at: number): void => {
-    utimesSync(path, at / 1000, at / 1000);
-  };
-
-  test("the day counts from the agent's exit, also when the service finds it later: none for an exit older than a day", async () => {
-    const temp = tempFolder();
-    temps.push(temp);
-    const root = join(temp.path, "launch");
-    records = new FolderRecords(root);
-    boot();
-    const started = now;
-    const old = await dispatched();
-    const young = await dispatched();
-    const unstarted = await dispatched();
-    for (const launch of [old, young]) {
-      const attachment = attachmentOf((await claim(launch.ticket)).outcome);
-      await host.report(attachment, SHIM_METHODS.started, { pid: 5151, started_at: started });
-    }
-    attachmentOf((await claim(unstarted.ticket)).outcome);
-    // The service is down while the agents end: each shim writes its exit to disk.
-    exitOnDisk(old.id, 60_000);
-    exitOnDisk(young.id, ENDED_KEEP_MS + 60 * 60_000);
-    exitOnDisk(unstarted.id, 0);
-    // No start was reported for this one: its exit file's own time is its end.
-    const unstartedEnd = started + ENDED_KEEP_MS + 30 * 60_000;
-    writtenAt(records.exitPath(unstarted.id), unstartedEnd);
-
-    // Two days later the service starts again and its first check settles all three.
-    pass(2 * ENDED_KEEP_MS);
-    records = new FolderRecords(root);
-    boot();
-    expect(await host.check()).toBe(3);
-    const ends = new Map(records.listEnded().map((e) => [e.launch, e.endedAt]));
-    expect(ends.has(old.id)).toBe(false);
-    expect(ends.get(young.id)).toBe(started + ENDED_KEEP_MS + 60 * 60_000);
-    expect(ends.get(unstarted.id)).toBe(unstartedEnd);
-    // Each goes a day after its own end, not a day after the check that found it.
-    pass(30 * 60_000);
-    await host.check();
-    expect(records.listEnded().map((e) => e.launch)).toEqual([young.id]);
-    pass(30 * 60_000);
-    await host.check();
-    expect(records.listEnded()).toEqual([]);
-  });
-
-  test("a removal that fails is tried again, and a damaged record or a write's leftover in its folder goes a day after it was written", async () => {
-    const temp = tempFolder();
-    temps.push(temp);
-    const root = join(temp.path, "launch");
-    records = new FolderRecords(root);
-    boot();
-    const { id, ticket } = await dispatched();
+    const { ticket } = await dispatched();
     const attachment = attachmentOf((await claim(ticket)).outcome);
+    await host.report(attachment, SHIM_METHODS.started, { pid: 5151, started_at: now });
     await host.report(attachment, SHIM_METHODS.exited, {
       code: 0,
       signal: null,
       ran_ms: 60_000,
       settled: true,
     });
-    const folder = join(root, "ended");
-    const file = join(folder, `${id}.json`);
-    // What a crash leaves: a record cut short, and an atomic write's temporary file.
-    const damaged = join(folder, `${randomId("la")}.json`);
-    const leftover = join(folder, `.${id}.json.4242.0a1b2c3d.tmp`);
-    writeFileSync(damaged, '{"format":1,"launch":');
-    writeFileSync(leftover, "{");
-    for (const path of [damaged, leftover]) writtenAt(path, now);
+    expect(readdirSync(root)).toEqual([]);
+    expect(host.liveByTicket(ticket)).toBeUndefined();
 
-    // The record cannot be removed when its day is over (here: a folder stands in its place).
-    rmSync(file);
-    mkdirSync(file);
-    writeFileSync(join(file, "held"), "");
-    pass(ENDED_KEEP_MS - 1_000);
-    await host.check();
-    expect(existsSync(damaged) && existsSync(leftover)).toBe(true);
-    pass(1_000);
-    await host.check();
-    expect(existsSync(damaged) || existsSync(leftover)).toBe(false);
-    expect(records.listEnded().map((e) => e.launch)).toEqual([id]);
-    // Once it can be removed, the next check does.
-    rmSync(file, { recursive: true });
-    writeFileSync(file, "{}");
-    await host.check();
-    expect(existsSync(file)).toBe(false);
-    expect(records.listEnded()).toEqual([]);
+    // What an earlier build left: a record of an ended launch, beside a launch still running.
+    const running = await dispatched();
+    const ended = join(root, "ended");
+    mkdirSync(ended);
+    writeFileSync(join(ended, `${randomId("la")}.json`), '{"format":1}');
+    records = new FolderRecords(root);
+    boot();
+    expect(existsSync(ended)).toBe(false);
+    expect(records.get(running.id)?.launch).toBe(running.id);
   });
+
+  test("a start removes only the old records it knows from the ended folder: anything else there, and a link in its place, stays", () => {
+    const temp = tempFolder();
+    temps.push(temp);
+    const root = join(temp.path, "launch");
+    const ended = join(root, "ended");
+    mkdirSync(ended, { recursive: true });
+    const record = join(ended, `${randomId("la")}.json`);
+    const other = join(ended, "space.sqlite");
+    writeFileSync(record, '{"format":1}');
+    writeFileSync(other, "not a record");
+    new FolderRecords(root);
+    expect(existsSync(record)).toBe(false);
+    expect(readdirSync(ended)).toEqual(["space.sqlite"]);
+
+    // A link in the folder's place is not the product's: neither it nor what it names is touched.
+    rmSync(ended, { recursive: true });
+    const elsewhere = join(temp.path, "elsewhere");
+    mkdirSync(elsewhere);
+    const linked = join(elsewhere, `${randomId("la")}.json`);
+    writeFileSync(linked, '{"format":1}');
+    symlinkSync(elsewhere, ended, "junction");
+    new FolderRecords(root);
+    expect(existsSync(ended)).toBe(true);
+    expect(existsSync(linked)).toBe(true);
+  });
+
+  // Only Windows holds a file against its removal; elsewhere the folder's mode decides.
+  test.skipIf(process.platform !== "win32")(
+    "an old record another program holds stays, with its folder, and a later start removes it",
+    () => {
+      const temp = tempFolder();
+      temps.push(temp);
+      const root = join(temp.path, "launch");
+      const ended = join(root, "ended");
+      mkdirSync(ended, { recursive: true });
+      const held = join(ended, `${randomId("la")}.json`);
+      writeFileSync(held, '{"format":1}');
+      const hold = holdFile(held);
+      try {
+        new FolderRecords(root);
+        expect(existsSync(held)).toBe(true);
+      } finally {
+        hold.release();
+      }
+      new FolderRecords(root);
+      expect(existsSync(ended)).toBe(false);
+    },
+  );
 });

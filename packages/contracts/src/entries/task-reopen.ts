@@ -12,12 +12,12 @@ import {
   Replayed,
   RequestId,
   TaskRef,
-  TaskRefInput,
+  SessionTask,
 } from "../schemas.ts";
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 
 export const TaskReopenInput = z.strictObject({
-  task: TaskRefInput.describe("Task ref (M-14) or ID; default: this session's task").optional(),
+  task: SessionTask,
   reason: safeText(200).describe("Why it is open again").optional(),
   base: Base,
   request_id: RequestId,
@@ -61,7 +61,7 @@ export const taskReopen = defineEntry({
     },
   },
   budget: { typical: 40, max: 150 },
-  errors: ["invalid_input", "not_found", "conflict", "forbidden", "request_id_conflict"],
+  errors: ["invalid_input", "not_found", "unbound", "conflict", "forbidden", "request_id_conflict"],
   examples: [
     {
       title: "Reopen M-3 when its bug comes back",

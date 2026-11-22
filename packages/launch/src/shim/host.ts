@@ -31,7 +31,6 @@ import { SESSION_UUID, type LaunchIntent } from "../store.ts";
 import { ADDED, agentEnvironment, type AgentBase } from "./environment.ts";
 import {
   checkPlan,
-  ENDED_KEEP_MS,
   isFolderReason,
   keptGiven,
   type ClickGiven,
@@ -276,7 +275,6 @@ export class ShimHost {
         hash: secretHash("ticket", launch, ticket),
         issuedAt: this.#now(),
         shimUsed: false,
-        bridgeUsed: false,
       },
     });
     return ticket;
@@ -308,7 +306,6 @@ export class ShimHost {
         hash: secretHash("ticket", launch, ticket),
         issuedAt: this.#now(),
         shimUsed: false,
-        bridgeUsed: false,
       },
     });
     return ticket;
@@ -672,8 +669,8 @@ export class ShimHost {
    * whose agent ended is settled by its `exit.json` (also while the shim still waits for Enter),
    * and one whose process ended without it as lost, and its record goes. A folder nothing more can
    * come from goes too: an unclaimed ticket past its window, a plan never dispatched past the
-   * Prepared limit, anything older than 24 hours without a live shim. So does an ended launch's
-   * record a day after its end. Returns how many launches it settled or removed.
+   * Prepared limit, anything older than 24 hours without a live shim. Returns how many launches it
+   * settled or removed.
    *
    * It decides on each launch's record as it is when it acts, never on a list read before an
    * await: it leaves a launch whose claim is under way to the next round, judges only processes it
@@ -699,7 +696,6 @@ export class ShimHost {
     for (const launch of this.#records.list().map((r) => r.launch)) {
       if (await this.#checkOne(launch, asked, times)) changed += 1;
     }
-    this.#forgetEnded();
     return changed;
   }
 
@@ -716,17 +712,10 @@ export class ShimHost {
     const now = this.#now();
     const held = record.attachment;
     let observation: Observation | undefined;
-    let endedAt = now;
     if (held !== undefined) {
       const exit = this.#records.readExit(launch);
       if (exit !== undefined) {
         observation = exitObservation(exit);
-        // The agent's end as the shim recorded it, also when the service finds it days later.
-        const ended =
-          record.agent === undefined
-            ? this.#records.exitWrittenAt(launch)
-            : record.agent.startedAt + exit.ran_ms;
-        if (ended !== undefined) endedAt = Math.min(ended, now);
       } else {
         // Gone only by the OS's answer about this very process: this PID with this start time
         // was asked about, and the PID no longer names it.
@@ -758,45 +747,16 @@ export class ShimHost {
       // Changed meanwhile (a report, a release): the next round decides on it as it is then.
       if (this.#records.get(launch) !== record) return false;
     }
-    this.release(launch, endedAt);
+    this.release(launch);
     return true;
   }
 
   /**
-   * Removes the launch's machine state: its credential, its ticket and its folder. A launch whose
-   * agent may have been handed its ticket (the claim's reply was about to leave) leaves its ended
-   * record for a day from `endedAt`, the agent's end: none when that day has passed.
+   * Removes the launch's machine state: its credential, its ticket and its folder. From here its
+   * ticket and its preset name nothing.
    */
-  release(launch: string, endedAt: number = this.#now()): void {
-    const record = this.#records.get(launch);
-    const kept = this.#now() - endedAt < ENDED_KEEP_MS;
-    if (kept && record?.ticket !== undefined && record.attachment !== undefined) {
-      try {
-        this.#records.putEnded({
-          format: 1,
-          launch,
-          endedAt,
-          ticket: record.ticket.hash,
-          space: record.space,
-          task: record.task,
-          ...(record.session === undefined ? {} : { session: record.session }),
-          ...(record.home === undefined ? {} : { home: record.home }),
-          ...(record.preset === undefined ? {} : { preset: record.preset }),
-        });
-      } catch {
-        // Without it a request retried after the end is a new one; the credential still goes.
-      }
-    }
+  release(launch: string): void {
     this.#records.remove(launch);
-  }
-
-  /** Removes the ended launches' records a day after their end. */
-  #forgetEnded(): void {
-    try {
-      this.#records.forgetEnded(this.#now() - ENDED_KEEP_MS);
-    } catch {
-      // Not removable now: the next check tries again.
-    }
   }
 }
 

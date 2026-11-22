@@ -4,9 +4,9 @@
 //   flight from one parse of each line;
 // - answers from the offline file while there is no connection (A2 3.7.4), and keeps the client's
 //   first `initialize` or `server/discover` to hand to the service as `mcp_init`;
-// - reconnects with the backoff 0.5, 1, 2, 5, then every 10 s, binding again with the handle of
-//   its last bind (A2 3.7.5) and what its first bind answer named, a space or none, which it keeps
-//   for its life.
+// - reconnects with the backoff 0.5, 1, 2, 5, then every 10 s, binding again with what its first
+//   bind answer named, a space or none, which it keeps for its life, and with the handle an older
+//   service's last answer carried (A2 3.7.5).
 //   Requests in flight at a loss get `connection_lost`. Requests that arrive while it reconnects
 //   wait for the new connection, up to `holdMs`, so a restart costs the agent at most the call
 //   that was in flight;
@@ -147,7 +147,12 @@ function spaceIn(binding: unknown): string | null | undefined {
   return typeof space === "string" && /^sp_[0-9a-z]{26}$/.test(space) ? space : undefined;
 }
 
-/** A handle the bridge keeps for the next bind: A2's `bh_…`, shaped as an ID, never logged. */
+/**
+ * The handle an older service's answer carries, kept for the next bind: A2's `bh_…`, shaped as an
+ * ID, never logged. This service sends none. Sent back, it lets an older service (an update rolled
+ * back) resume the binding it made, and tells this service that the bridge met an older one, so a
+ * bridge whose space that service chose is not moved to the default of this moment.
+ */
 function handleOf(binding: unknown): string | undefined {
   const handle = isObject(binding) ? binding["handle"] : undefined;
   return typeof handle === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(handle) ? handle : undefined;
@@ -454,8 +459,8 @@ export class Forwarder {
       this.#failed(failure ?? unavailableOf(undefined));
     } else if (this.#mcpInit !== init) {
       // The client's initialize or server/discover was answered offline while this bind was on
-      // its way without it. Bind again, so the service starts the session from it, and resume the
-      // binding this bind made (its result was authenticated) rather than make a second one.
+      // its way without it. Bind again, so the service starts the session from it. An older
+      // service's handle resumes the binding this bind made (its result was authenticated).
       this.#handle = handleOf(session.bound.binding) ?? this.#handle;
       if (this.#space === undefined) this.#space = spaceIn(session.bound.binding);
       session.close();

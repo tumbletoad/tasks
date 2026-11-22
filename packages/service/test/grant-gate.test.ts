@@ -6,7 +6,7 @@
 // Fixture text and temporary folders only.
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { CLI_NAME } from "@ttasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
 import { renderError } from "../src/mcp/index.ts";
@@ -91,11 +91,24 @@ afterAll(async () => {
 /** A3 3.5's grant refusal as a bridge's agent reads it. */
 const GRANT_TEXT = renderError(GRANT);
 
-/** The grant refusal of a bridge that is no session, when its home may use another space now. */
-const elsewhere = (name: string, space: string): string =>
+/**
+ * The grant refusal of a bridge that is no session, when its home may use another space now, with
+ * what moves it there: for a hand-made entry a restart, after taking out a space it names; for a
+ * registered home a restart with that space named in its entry.
+ */
+const elsewhere = (
+  name: string,
+  space: string,
+  entry: "hand-made" | "hand-made naming a space" | "registered",
+): string =>
   renderError({
     ...GRANT,
-    hint: `It may use the space ${name} now: ask the user to restart the agent app to work there.`,
+    hint:
+      entry === "registered"
+        ? `It may use the space ${name} now: ask the user to check that the agent's ${PRODUCT_NAME} entry names it (--space ${space}), then to restart the agent app.`
+        : entry === "hand-made naming a space"
+          ? `It may use the space ${name} now: ask the user to take the space out of the agent's ${PRODUCT_NAME} entry, then to restart the agent app.`
+          : `It may use the space ${name} now: ask the user to restart the agent app to work there.`,
     data: { rule: "grant", space },
   });
 
@@ -213,7 +226,7 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
         // Its entry's space is the one it works in: the refusal names the space its home may use.
         for (const [op, input] of CALLS.filter(([op]) => op !== "receipt.get")) {
           expect(await refusedText(other, op, withRequest(input), host), `${why}: ${op}`).toBe(
-            elsewhere("Life", life),
+            elsewhere("Life", life, "registered"),
           );
         }
         expect(touched, why).toEqual([]);
@@ -241,7 +254,7 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       const pinned = await connect({ instance: "home-life", space: w.space });
       const { host, touched } = trapped(w.space);
       expect(await refusedText(pinned, "task.get", { launch: launch.reference }, host)).toBe(
-        elsewhere("Life", life),
+        elsewhere("Life", life, "registered"),
       );
       expect(touched).toEqual([]);
       expect((await evidenceOf(launch.id)).bound_at).toBeUndefined();
@@ -484,6 +497,15 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
       // Two spaces and no default yet: neither is the machine's default.
       const manual = await connect({ instance: null, space: w.space });
       expect(await refusedText(manual, "space.status")).toBe(GRANT_TEXT);
+      // The entry setup prints names no space: with no default to take, it is told to set one.
+      const printed = await connect({ instance: null });
+      expect(printed.binding).toEqual({ space: null, state: "unbound" });
+      const none = await printed.refusal("space.status");
+      expect([none.code, none.reason]).toEqual(["space_unavailable", "no_space"]);
+      expect(none.text).toContain(`set a default space (${CLI_NAME} space use`);
+      expect(none.text).toContain("then restart the agent app");
+      expect(none.text).not.toContain("entry");
+      await printed.close();
       await asUser("space/use", { space: w.space });
       expect(await manual.call("space.status")).toContain("Space: Mira (M)");
       expect(
@@ -496,15 +518,26 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
       ).toMatch(/^logged /);
       expect((await logOf("M-4"))[0]?.["author"]).toBe("agent:manual");
       // An instance that is not an instance ID is a hand-made entry as well.
-      // In another space each is refused, naming the default it may use.
+      // In another space each is refused, naming the default it may use. A restart would bind the
+      // space its entry names again, so it is told to take that out.
       const odd = await connect({ instance: "Not An Instance!", space: life });
-      expect(await refusedText(odd, "space.status")).toBe(elsewhere("Mira", w.space));
+      expect(await refusedText(odd, "space.status")).toBe(
+        elsewhere("Mira", w.space, "hand-made naming a space"),
+      );
       const manualLife = await connect({ instance: null, space: life });
-      expect(await refusedText(manualLife, "space.status")).toBe(elsewhere("Mira", w.space));
-      // Without --space too: the default space when it binds.
+      expect(await refusedText(manualLife, "space.status")).toBe(
+        elsewhere("Mira", w.space, "hand-made naming a space"),
+      );
+      // Without --space too: the default space when it binds, which is what taking it out gives.
       const plain = await connect({ instance: null });
       expect(await plain.call("space.status")).toContain("Space: Mira (M)");
-      for (const agent of [manual, odd, manualLife, plain]) await agent.close();
+      // When the default moves, a restart is what moves it: the next process takes the new one.
+      await asUser("space/use", { space: life });
+      expect(await refusedText(plain, "space.status")).toBe(elsewhere("Life", life, "hand-made"));
+      const restarted = await connect({ instance: null });
+      expect(await restarted.call("space.status")).toContain("Space: Life (L)");
+      await asUser("space/use", { space: w.space });
+      for (const agent of [manual, odd, manualLife, plain, restarted]) await agent.close();
 
       // Nothing a refused call or a bind carried is in the log or a crash file.
       const homes = join(w.home, "agent-homes");
@@ -703,9 +736,9 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       await asUser("space/use", { space: w.space });
       const agent = await connect({ instance: "home-life" });
       expect(agent.binding).toEqual({ space: w.space, state: "unbound" });
-      expect(await refusedText(agent, "space.status")).toBe(elsewhere("Life", life));
+      expect(await refusedText(agent, "space.status")).toBe(elsewhere("Life", life, "registered"));
       await asUser("space/use", { space: life });
-      expect(await refusedText(agent, "space.status")).toBe(elsewhere("Life", life));
+      expect(await refusedText(agent, "space.status")).toBe(elsewhere("Life", life, "registered"));
       // The same process again holds Mira; a new one takes Life.
       const again = await connect({ instance: "home-life", held_space: w.space });
       expect(again.binding).toEqual({ space: w.space, state: "unbound" });
@@ -718,8 +751,20 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       expect(older.binding).toEqual({ space: null, state: "unbound" });
       const restart = await older.refusal("space.status");
       expect([restart.code, restart.reason]).toEqual(["space_unavailable", "no_space"]);
-      expect(restart.text).toContain("restart the agent app");
+      expect(restart.text).toContain(`It may use the space Life: ask the user to name it`);
       await older.close();
+      // A hand-made one with a default: the restart alone settles it.
+      const olderManual = await connect({
+        instance: null,
+        resume: { handle: "bh_0123456789abcdefghijkl" },
+      });
+      const manualRestart = await olderManual.refusal("space.status");
+      expect(manualRestart.reason).toBe("no_space");
+      expect(manualRestart.text).toContain(
+        "restart the agent app: it then works in the default space",
+      );
+      expect(manualRestart.text).not.toContain("space use");
+      await olderManual.close();
       const fresh = await connect({ instance: "home-life" });
       expect(fresh.binding).toEqual({ space: life, state: "unbound" });
       expect(await fresh.call("space.status")).toContain("Space: Life (L)");
@@ -736,7 +781,11 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       expect(unknown.binding).toEqual({ space: null, state: "unbound" });
       const none = await unknown.refusal("space.status");
       expect([none.code, none.reason]).toEqual(["space_unavailable", "no_space"]);
-      expect(none.text).toContain("restart the agent app");
+      // A default alone does not settle it: the entry's space is tried first and alone. Its home
+      // is registered, so it is told the space to name.
+      expect(none.text).toContain(`entry names a space this machine has none of, or two of`);
+      expect(none.text).toContain(`It may use the space Life: ask the user to name it`);
+      expect(none.text).not.toContain("take the space out");
       expect(
         (await unknown.refusal("space.status", {}, { host: () => ({ defaultSpace: () => life }) }))
           .reason,
@@ -761,6 +810,59 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       );
       expect(person).toMatchObject({ code: "invalid_input" });
       for (const agent of [unknown, byName, plain]) await agent.close();
+    },
+  );
+
+  test(
+    "an entry edited by hand is told what works with the default left where it is: a registered home to name its space, a hand-made entry to take a misspelled space out",
+    { timeout: LONG },
+    async () => {
+      await grant("home-edited", life);
+      await asUser("space/use", { space: w.space });
+      const advice = `It may use the space Life: ask the user to name it in the agent's ${PRODUCT_NAME} entry (--space ${life})`;
+      // Its space taken out: it binds the default, Mira, which it may not use.
+      const bare = await connect({ instance: "home-edited" });
+      expect(bare.binding).toEqual({ space: w.space, state: "unbound" });
+      expect(await refusedText(bare, "space.status")).toBe(elsewhere("Life", life, "registered"));
+      // Its space misspelled: no space, and the same advice.
+      const typo = await connect({ instance: "home-edited", space: "Lief" });
+      expect(typo.binding).toEqual({ space: null, state: "unbound" });
+      const none = await typo.refusal("space.status");
+      expect(none.reason).toBe("no_space");
+      expect(none.text).toContain(advice);
+      // Followed, with the default still Mira: the next process works in Life.
+      const fixed = await connect({ instance: "home-edited", space: life });
+      expect(await fixed.call("space.status")).toContain("Space: Life (L)");
+      // A hand-made entry's misspelled space: taking it out gives the default, which it may use.
+      const manualTypo = await connect({ instance: null, space: "Mira typo" });
+      expect((await manualTypo.refusal("space.status")).text).toContain(
+        "take the space out of the entry",
+      );
+      const manualFixed = await connect({ instance: null });
+      expect(await manualFixed.call("space.status")).toContain("Space: Mira (M)");
+      for (const each of [bare, typo, fixed, manualTypo, manualFixed]) await each.close();
+      await asUser("space/use", { space: life });
+    },
+  );
+
+  test(
+    "an entry with an instance whose home has no space it may use, never registered or revoked, gets the grant refusal at its first call, not a hint about the default",
+    { timeout: LONG },
+    async () => {
+      const row = await grant("home-gone", life);
+      expect(await revokeHome(w.home, w.path, [row])).toBe(1);
+      for (const instance of ["never-registered-here", "home-gone"]) {
+        for (const space of ["No Such Space", undefined]) {
+          const agent = await connect({ instance, ...(space === undefined ? {} : { space }) });
+          // With nothing to settle on, the bind gives the default or none; either way the
+          // command that registers the home is what helps.
+          if (space !== undefined) expect(agent.binding).toEqual({ space: null, state: "unbound" });
+          expect(await refusedText(agent, "space.status"), `${instance} ${String(space)}`).toBe(
+            GRANT_TEXT,
+          );
+          await agent.close();
+        }
+      }
     },
   );
 });

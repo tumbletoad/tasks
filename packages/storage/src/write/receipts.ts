@@ -1,18 +1,16 @@
 // Receipts (A1 3.7, 3.8; X12; A7 3.8 M1.05). Every request the writer decides gets one `receipts`
 // row, written in the request's own transaction, so a request's commit and its receipt exist
 // together or not at all. The row is keyed by the writer scope and the request ID (A3 3.7.9),
-// carries the fingerprint of the intent and stores the result. A request whose ID its scope (or the
-// connection's earlier scope) already holds is not run again: the same fingerprint returns the
-// stored result with `replayed: true`, whatever the state is now, and another fingerprint is
-// REQUEST_ID_REUSED. The lookup comes before staging, so before references, dedupe, policy and
+// carries the fingerprint of the intent and stores the result. A request whose ID its scope already
+// holds is not run again: the same fingerprint returns the stored result with `replayed: true`,
+// whatever the state is now, and another fingerprint is REQUEST_ID_REUSED. The lookup comes before staging, so before references, dedupe, policy and
 // expansion (A1 3.7).
 //
 // The fingerprint is SHA-256 over the RFC 8785 form of `{space_id, entry, input, reason}` (A1 3.8):
 // the caller's intent, never its base or request ID. With an intent from the registry it covers
 // the entry and its input as sent; without one, the operations as checked (normalised text), under
 // no entry name, which no registry entry can have. The scope is not part of it: the key holds the
-// scope, so two scopes never share a receipt, and a retry after binding must match a receipt of the
-// earlier scope.
+// scope, so two scopes never share a receipt.
 //
 // What a receipt stores is the result with one change: a conflict keeps the field, version, author
 // and time of each conflicting field but not its values (the current one, and an undo's value
@@ -46,10 +44,9 @@ export interface Receipt {
   result: WriteResult;
 }
 
-/** Where a receipt is looked up: the writer scope, then the connection's earlier scope. */
+/** Where a receipt is looked up: its writer scope and its request ID. */
 export interface ReceiptLookup {
   scope_id: string;
-  earlier_scope_id?: string;
   request_id: string;
 }
 
@@ -148,40 +145,17 @@ export function decodeReceipt(row: Row): Receipt {
 }
 
 /**
- * The receipts of a request in its writer scope and in the connection's earlier scope, in that
- * order: none, one, or one in each. Another scope's receipts are never found: the scope is part
- * of the key. It reads on the caller's connection, inside the caller's transaction when there is
- * one.
- *
- * Both scopes can hold the ID: request IDs are unique per scope (A1 3.8), so a connection that
- * wrote it unbound and a session connection that never did can each have used it. The writer
- * then replays the one whose fingerprint is the request's (A3 3.7.9: different changes never get
- * each other's result), and refuses the ID when neither is.
- */
-export function readReceipts(conn: Connection, lookup: ReceiptLookup): Receipt[] {
-  const { scope_id, earlier_scope_id, request_id } = lookup;
-  if (
-    typeof scope_id !== "string" ||
-    typeof request_id !== "string" ||
-    (earlier_scope_id !== undefined && typeof earlier_scope_id !== "string")
-  ) {
-    throw misuse("A receipt is looked up by writer scope and request ID");
-  }
-  const found: Receipt[] = [];
-  for (const scope of earlier_scope_id === undefined ? [scope_id] : [scope_id, earlier_scope_id]) {
-    const row = conn.prepare(SQL.get).get({ scope, request: request_id });
-    if (row !== undefined) found.push(decodeReceipt(row));
-  }
-  return found;
-}
-
-/**
- * The receipt of a request in its writer scope, else in the connection's earlier scope, or
- * undefined: what `receipt.get` returns, which has no intent to tell two receipts apart by, so the
- * current scope's comes first. A retry through the writer chooses by fingerprint instead.
+ * The receipt of a request in its writer scope, or undefined. Another scope's receipts are never
+ * found: the scope is part of the key. It reads on the caller's connection, inside the caller's
+ * transaction when there is one.
  */
 export function readReceipt(conn: Connection, lookup: ReceiptLookup): Receipt | undefined {
-  return readReceipts(conn, lookup)[0];
+  const { scope_id, request_id } = lookup;
+  if (typeof scope_id !== "string" || typeof request_id !== "string") {
+    throw misuse("A receipt is looked up by writer scope and request ID");
+  }
+  const row = conn.prepare(SQL.get).get({ scope: scope_id, request: request_id });
+  return row === undefined ? undefined : decodeReceipt(row);
 }
 
 /**

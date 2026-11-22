@@ -15,7 +15,7 @@ import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 type Json = Record<string, unknown>;
 let w: ContractWorld & { root: string };
 /** A bridge of no launch, in the world's one space, as its bind settles it. */
-const inSpace = (): Binding => ({ kind: "none", space: w.space });
+const inSpace = (): Binding => ({ kind: "none", space: w.space, named: false });
 const LONG = 180_000;
 
 beforeAll(async () => {

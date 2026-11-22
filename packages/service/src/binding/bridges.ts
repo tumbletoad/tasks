@@ -90,7 +90,11 @@ export class Bridges {
     const binding: Binding =
       decision.kind === "session"
         ? { kind: "session", session: decision.session }
-        : { kind: "none", space: this.#spaceOf(context, held) };
+        : {
+            kind: "none",
+            space: this.#spaceOf(context, held),
+            named: word(context["space"]) !== null,
+          };
     this.#bound.set(connection, binding);
     const space = binding.kind === "session" ? binding.session.space : binding.space;
     return { space: space ?? null, state: binding.kind === "session" ? "bound" : "unbound" };
@@ -144,8 +148,14 @@ export class Bridges {
     this.#open.delete(connection);
   }
 
-  /** How many bridge connections are open now, for doctor. */
-  get open(): number {
-    return this.#open.size;
+  /** How many bridge connections are open now, and how many are a launch's or a run's session. */
+  get open(): { readonly connections: number; readonly launch: number; readonly run: number } {
+    const counts = { connections: 0, launch: 0, run: 0 };
+    for (const connection of this.#open) {
+      counts.connections += 1;
+      const binding = this.#bound.get(connection);
+      if (binding?.kind === "session") counts[binding.session.home.of] += 1;
+    }
+    return counts;
   }
 }

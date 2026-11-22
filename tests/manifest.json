@@ -1750,7 +1750,7 @@
     },
     {
       "id": "A4.5.shim.attach",
-      "title": "Attachment and reports: an attach needs the credential, the same PID and start time and a live process, and its reply starts nothing; reports only on a connection that claimed or attached; recovery and the PID check settle a launch from exit.json, a live shim or a gone one, and its machine state goes once the shim process ended, leaving only the ended launch's own record for a day; a launch file held for a moment as a service starts is read again for a few seconds and kept, and one held past the waits, or one no wait can open, is left out with its launch ID and error code: from then the records in memory decide",
+      "title": "Attachment and reports: an attach needs the credential, the same PID and start time and a live process, and its reply starts nothing; reports only on a connection that claimed or attached; recovery and the PID check settle a launch from exit.json, a live shim or a gone one, and its machine state goes once the shim process ended, leaving nothing, and a start removes the records earlier builds kept of ended launches; a launch file held for a moment as a service starts is read again for a few seconds and kept, and one held past the waits, or one no wait can open, is left out with its launch ID and error code: from then the records in memory decide",
       "source": "A4 3.6.3, A4 3.9.3, A7 3.9 M2.08",
       "owner": "M2",
       "kind": "ci",
@@ -2557,7 +2557,7 @@
     },
     {
       "id": "A3.3.7.binding.ticket",
-      "title": "A launched agent's bridge is its session from the claim, with no window and no first use: by its ticket or by its preset alone (allow-list mode), when it presents the click's app and its home's expected instance (a live row's, any row's when all were revoked, manual for a home that never had one); its task is the default, its actor and writer scope are the session's, named after the launch, and the bind writes nothing; a forged, malformed, unclaimed or ended launch's value, a launch without an app, another app, another or a malformed instance, and two live values of two launches are none, logged with a closed reason and never the value; an open bridge stays the session after its agent's end, a new bind then is the app's and its retry a new change; a task named on a call wins for that call only; a launch file held for a moment as the service starts again is read at a later try, so the same session replays the retry, and one held through every wait is left out with one log event while the service starts and a chat started by hand and a run's ticket work",
+      "title": "A launched agent's bridge is its session from the claim, with no window and no first use: by its ticket or by its preset alone (allow-list mode), when it presents the click's app and its home's expected instance (a live row's, any row's when all were revoked, manual for a home that never had one); its task is the default, its actor and writer scope are the session's, named after the launch, and the bind writes nothing; a forged, malformed, unclaimed or ended launch's value, a launch without an app, another app, another or a malformed instance, and two live values of two launches are none, logged with a closed reason and never the value; an open bridge stays the session after its agent's end, a new bind then is the app's and its retry a new change; a task named on a call wins for that call only; a launch file held for a moment as the service starts again is read at a later try, so the same session replays the retry, and one held through every wait is left out with one log event while the service starts, a chat started by hand works and a run's ticket is still looked up past the launches",
       "source": "A3 3.7.2, A3 3.7.3, A3 3.7.4, A3 5, A4 3.1, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
@@ -2581,7 +2581,7 @@
     },
     {
       "id": "A3.3.7.binding.space",
-      "title": "One bridge process works in one space: a session in its launch's space whatever its entry or a call names (a shell naming another is forbidden with rule binding); a space its process holds wins over a launch's and is kept while denied (the refusal names the space its home may use) or closed (space_unavailable, never another space); a process told it has none keeps none; an older bridge reconnecting with a handle on an entry without a space gets none and is told to restart; a bind after the service is ready and before its spaces are handed over settles the configured space by its registered ID",
+      "title": "One bridge process works in one space: a session in its launch's space whatever its entry or a call names (a shell naming another is forbidden with rule binding); a space its process holds wins over a launch's and is kept while denied (the refusal names the space its home may use) or closed (space_unavailable, never another space); a process told it has none keeps none; an older bridge reconnecting with a handle on an entry without a space gets none and is told to restart; a bind after the service is ready and before its spaces are handed over settles the configured space by its registered ID, and a call then, a person's by the default or an agent's shell naming the space, is told it is opening, to try again",
       "source": "A2 3.7.1, A2 3.10.3, A3 3.7.8, A3 5, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
@@ -3203,7 +3203,7 @@
     },
     {
       "id": "A3.3.14.doctor.sessions",
-      "title": "ttasks doctor's sessions row passes and fails against fakes: session records dropped when read back and bridge connections in shared mode warn, by instance ID only; the service counts the bridge connections open now, in the row's shape, none shared and none dropped",
+      "title": "ttasks doctor's sessions row against fakes: the agent connections open and how many are a launch's or a run's session, never a warning, and facts in another shape skip; the service counts the bridge connections open now and the sessions among them, by launch and by run",
       "source": "A3 3.14, A3 3.7.5, A7 3.11 M4.05b",
       "owner": "M4",
       "kind": "ci",

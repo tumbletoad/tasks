@@ -24,7 +24,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { CLI_NAME, envVar, PRODUCT_NAME } from "@ttasks/brand";
-import { ENDED_FOLDER, type Instance } from "@ttasks/launch";
+import type { Instance } from "@ttasks/launch";
 import { StorageError, type Id, type SpaceWriterHandle } from "@ttasks/storage";
 import {
   DEFAULT_CONFIG,
@@ -688,16 +688,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       const has = new Set(served.map((space) => space.id ?? space.registered));
       return [
         ...served,
-        ...config.spaces
-          .filter((space) => space.enabled && !has.has(space.id))
-          .map((space) => ({
-            id: undefined,
-            registered: space.id,
-            name: undefined,
-            state: "opening" as const,
-            writer: undefined,
-            reader: undefined,
-          })),
+        ...config.spaces.filter((space) => space.enabled && !has.has(space.id)).map(openingEntry),
       ];
     };
     // The grant gate: an agent home's calls reach only the spaces its live agent-home rows name,
@@ -1418,18 +1409,33 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
 }
 
 /**
+ * A space of the configuration as binds and calls see it before the space manager has it:
+ * opening, known by the ID and the folder its entry names, with no ID or name of its own yet.
+ */
+export function openingEntry(space: { readonly id: string; readonly path: string }): ServedSpace {
+  return {
+    id: undefined,
+    registered: space.id,
+    name: undefined,
+    folder: space.path,
+    state: "opening",
+    writer: undefined,
+    reader: undefined,
+  };
+}
+
+/**
  * At a clean stop, the per-user runtime folder (`/run/user/<uid>/ttasks-<install>/`, Linux) goes
  * when nothing is left in it: the socket went with the server, and the launch root goes when it
- * holds no launch folder and no ended launch's record. A launch folder is a launch the next start
- * still needs (a live shim reattaches with it, recovery reads it), and an ended record is kept for
- * its day, so a runtime folder that holds either stays, whole. Only
+ * holds no launch folder. A launch folder is a launch the next start still needs (a live shim
+ * reattaches with it, recovery reads it), so a runtime folder that holds one stays, whole. Only
  * empty folders are removed (rmdir), so nothing in them can be lost; anything else there (a socket
  * that is not this start's) keeps the folder too. The fallback under `<state>` is the home's own.
  */
 export function removeIdleRuntime(runtime: Pick<RuntimeNames, "launch" | "runtimeDir">): void {
   const dir = runtime.runtimeDir;
   if (dir === undefined) return;
-  for (const folder of [join(runtime.launch, ENDED_FOLDER), runtime.launch, dir]) {
+  for (const folder of [runtime.launch, dir]) {
     try {
       rmdirSync(folder);
     } catch (error) {

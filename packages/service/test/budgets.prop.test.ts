@@ -246,7 +246,7 @@ async function runCorpus(size: number, pool: readonly string[], heavyCount: numb
     ops: w.service.ops,
     context,
     conn: 1,
-    binding: { kind: "none", space },
+    binding: { kind: "none", space, named: false },
   });
   const texts: { tool: string; args: Json; text: string; isError: boolean }[] = [];
   const mcp = async (name: string, args: Json): Promise<string> => {
@@ -439,7 +439,7 @@ async function runCorpus(size: number, pool: readonly string[], heavyCount: numb
           env: {},
           principal,
           home: "budget-agent",
-          binding: { kind: "none", space },
+          binding: { kind: "none", space, named: false },
         },
         { op: "task.get", input: args, space },
       )) as Json;
