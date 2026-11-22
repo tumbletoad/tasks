@@ -16,7 +16,6 @@ const styles = classes(css, [
   "asked",
   "askedBox",
   "runState",
-  "runQuiet",
   "stop",
   "said",
   "question",
@@ -138,12 +137,10 @@ export function RunBody({ run, label, onStop }: RunBodyProps) {
             {t("run.stop")}
           </button>
         ) : null}
+        {view.quiet === undefined ? null : (
+          <span data-part="run-quiet">{sayMsg(t, view.quiet)}</span>
+        )}
       </p>
-      {view.quiet === undefined ? null : (
-        <p className={styles.runQuiet} data-part="run-quiet">
-          {sayMsg(t, view.quiet)}
-        </p>
-      )}
       {view.error === undefined ? null : (
         <p className={styles.error} data-part="run-error" dir="auto">
           {view.error}

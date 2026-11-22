@@ -15,10 +15,7 @@ export interface RunView {
   readonly tone: RunTone;
   /** Its state in plain words, with how its processes ended when that is known. */
   readonly status: readonly Msg[];
-  /**
-   * How long a working run has said nothing, from a minute on. A line of its own: Stop, beside the
-   * state, stays where it is when it comes.
-   */
+  /** How long a working run has said nothing, from a minute on: after Stop, which it never moves. */
   readonly quiet?: Msg;
   /**
    * What the agent said: its answer (`answer`), the question it stopped on (`question`), or the
