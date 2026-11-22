@@ -6,74 +6,130 @@ import { repoRoot } from "./run.ts";
 
 // The product's names before it was renamed, in the forms that can only mean the product. The
 // word itself stays: it is also the domain's plural, and the stored format markers keep it.
-const OLD = "tasks";
 const OLD_NAMES: readonly RegExp[] = [
-  new RegExp(`\\bTT ${OLD[0]?.toUpperCase() ?? ""}${OLD.slice(1)}\\b`),
-  new RegExp(`(?<![\\w.-])@${OLD}/`),
-  new RegExp(`(?<![A-Za-z0-9])${OLD.toUpperCase()}_`),
+  /\bTT(?: |%20)Tasks\b/,
+  /(?<![\w.-])@tasks\//,
+  // Environment variables, which Windows reads in any case, and the tokens' and IDs' prefixes.
+  /(?<![A-Za-z0-9])TASKS_|(?<![A-Za-z0-9])Tasks_(?=[A-Z])/,
+  /(?<![\w.-])tasks_(?:(?:home|lab|service_manager|package)\b|u_|a_)/i,
   // The data folder and the marker; a property on a continued line (`  .tasks`) is not one.
-  new RegExp(`(?:[~%\\\\/"'\`]|\\S )\\.${OLD}\\b`),
-  new RegExp(`\\b${OLD}(?:w|-run)?\\.exe\\b`, "i"),
-  new RegExp(`\\b${OLD}w\\b`),
-  new RegExp(`\\blocal\\.${OLD}\\.`),
-  new RegExp(`\\bmcp__${OLD}__|\\bmcp(?:_s|S)ervers\\.${OLD}\\b`),
+  /(?:[~%\\/"'`=(:]|\S )\.tasks\b|\\\.TASKS\\/,
+  /\btasks(?:w|-run)?\.exe\b/i,
+  /\btasksw\b/,
+  /\btasks\.(?:service|sock)\b/,
+  /\blocal\.tasks\./,
+  /\bmcp__tasks(?:__|-)|\bmcp(?:_s|S)ervers(?:\.tasks\b|\[["']tasks["']\])/,
+  /\bmcp(?:_s|S)ervers["']?:\s*\{.*(?<![\w.-])tasks["']?:/,
+  // tasks-build, tasks-local/1, tasks-*-linux-x64.*, tasks-@@VERSION@@, tasks-release.
+  /(?<![\w.@-])tasks-(?=[\w<$([*@"'`])/,
+  /(?<![\w.@/-])tasks\/(?:challenge|hello|bind|no-)/,
+  /(?<=\b(?:bin|share)[\\/])tasks\b(?![.\w-])|(?<=[\\/])tasks(?=[\\/](?:bin|current|versions)\b)/,
+  // The command, where a verb only it has follows, or as code with a word after it.
+  /(?<![\w.@$/-])tasks (?:has no command|service|space|doctor|setup|mcp|--[a-z]|<[a-z])/,
+  /(?<=`)tasks (?:machine|project|session|proposals|security|policy|open|run|add|set|show|find|status|view|undo|redo|reopen|help|version|serve|install)\b/,
 ];
 
-/** The one declaration that names the earlier data folder, so install can say where it is. */
-const EARLIER = /^export const EARLIER_DATA_FOLDER = /;
+// What keeps the old identifier on purpose: the repository's address and site; the approval hash's
+// domain, which pins every approval in machine.toml; the sample generator's seed, which the frozen
+// sample digests depend on; the folder a machine keeps its test installs in; and the one
+// declaration that names the earlier data folder, so install can say what it is.
+const KEPT: readonly RegExp[] = [
+  /tumbletoad(?:\.com)?\/tasks\b/g,
+  /tasks-approval\/1/g,
+  /tasks-mira:/g,
+  /tasks-test\b/g,
+  /^export const EARLIER_DATA_FOLDER = "\.tasks";$/g,
+];
 
 /** This file, which spells the old forms to test that each is found. */
 const SELF = "scripts/old-names.test.ts";
 
+const hasOldName = (text: string): boolean => {
+  const rest = KEPT.reduce((line, kept) => line.replace(kept, ""), text);
+  return OLD_NAMES.some((re) => re.test(rest));
+};
+
 function oldNames(file: string, text: string): string[] {
   return text
     .split("\n")
-    .flatMap((line, i) =>
-      !EARLIER.test(line) && OLD_NAMES.some((re) => re.test(line))
-        ? [`${file}:${String(i + 1)}: ${line.trim()}`]
-        : [],
-    );
+    .flatMap((line, i) => (hasOldName(line) ? [`${file}:${String(i + 1)}: ${line.trim()}`] : []));
 }
 
 describe("[A7.3.2.brand.old-names] the product's earlier names do not come back", () => {
-  test("no file in the repository uses one", () => {
+  test("no file in the repository uses one, in its text or its name", () => {
     const found = repositoryFiles(repoRoot).flatMap((file) => {
       if (file === SELF) return [];
+      const named = hasOldName(file) ? [`${file}: its name`] : [];
       let bytes: Buffer;
       try {
         bytes = readFileSync(join(repoRoot, file));
       } catch {
-        return []; // listed in the index but deleted in the working tree
+        return named; // listed in the index but deleted in the working tree
       }
-      return bytes.includes(0) ? [] : oldNames(file, bytes.toString("utf8"));
+      return bytes.includes(0) ? named : [...named, ...oldNames(file, bytes.toString("utf8"))];
     });
     expect(found).toEqual([]);
   });
 
-  test("finds each form, and lets the new names and the domain's plural pass", () => {
+  test("finds each form, and lets the new names, the kept identifiers and the domain's plural pass", () => {
     const old = [
       "TT Tasks",
+      "TT%20Tasks",
       "@tasks/brand",
       "TASKS_HOME",
+      "Tasks_Home",
+      "tasks_u_abc",
       "~/.tasks/spaces",
       "a .tasks-marker folder",
+      "home=.tasks",
+      "C:\\Users\\x\\.TASKS\\STATE",
       "bin\\tasksw.exe",
       "TASKS.EXE",
+      "tasks.service",
       "local.tasks.service",
       "mcp__tasks__status",
+      "mcp__tasks-probe__probe_echo",
       "mcpServers.tasks",
+      'mcpServers["tasks"]',
+      "dist/tasks-*-linux-x64.*",
+      "folder with tasks-@@VERSION@@-win-x64.zip",
+      "tasks-local/1",
+      '"method":"tasks/hello"',
+      "tasks/no-shell-exec",
+      "~/.local/share/tasks",
+      "<root>/bin/tasks",
+      "tasks has no command misspelled",
+      "Run: tasks doctor",
+      "tasks --version",
+      "spikes/m0/kit/tasks-build.ts",
+      'mcpServers: { other: {}, tasks: { command: "x" } }',
+      'command: "/opt/tasks/bin/ttasks"',
+      "`tasks <command> --help`",
+      "with `tasks session rebind`",
     ];
     for (const line of old) expect(oldNames("x", line), line).toHaveLength(1);
     const current = [
       "TTasks",
       "@ttasks/brand",
       "TTASKS_HOME",
+      "Ttasks_Home",
       "~/.ttasks/spaces",
       "ttasksw.exe",
       "local.ttasks.service",
       "mcp__ttasks__status",
+      "dist/ttasks-*-linux-x64.*",
+      "ttasks/hello",
+      "ttasks has no command",
       "state.tasks.map(render)",
       "HAS_ACTIVE_TASKS",
+      "tasks_space, tasks_backup and tasks_export",
+      "the tasks of a space, sub-tasks-heavy, 3 tasks",
+      "the `tasks` table, mcpServers: { ttasks: {} }, `${n} tasks moved`, `tasks is an integer`",
+      "all tasks <= 5",
+      "https://github.com/tumbletoad/tasks-x and tumbletoad.com/tasks",
+      "tasks-approval/1",
+      "`tasks-mira:${String(seed)}`",
+      "~/tasks-test/m0-run",
       'export const EARLIER_DATA_FOLDER = ".tasks";',
     ];
     for (const line of current) expect(oldNames("x", line), line).toEqual([]);
