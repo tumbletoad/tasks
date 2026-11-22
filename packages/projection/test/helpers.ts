@@ -1,9 +1,9 @@
 // Shared set-up for the projection's tests: the Mira sample space with its writer in this thread,
 // a reader for the projector, a machine-state folder of its own for the trusted record and journal,
 // and the checks every test runs on a tree. Fixture text only.
-import fs, { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import fs, { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-import { join, relative, resolve, sep } from "node:path";
+import { basename, join, relative, resolve, sep } from "node:path";
 import { expect } from "vitest";
 import {
   formatAsOf,
@@ -16,7 +16,7 @@ import {
   type Operation,
   type WriteResult,
 } from "@ttasks/storage";
-import { checkedDriver, MIRA, seedMira } from "@ttasks/testkit";
+import { checkedDriver, MIRA, seedMira, type SeededSpace } from "@ttasks/testkit";
 import {
   Projector,
   type Act,
@@ -47,7 +47,26 @@ export interface World {
 
 /** The Mira sample with `tasks` tasks in `root`, opened for writing here. */
 export async function world(root: string, tasks = 24): Promise<World> {
-  const seeded = await seedMira(root, { tasks });
+  return openWorld(root, await seedMira(root, { tasks }));
+}
+
+/**
+ * Worlds for a property that needs a fresh one per run: the Mira sample with `tasks` tasks is
+ * seeded once in `seedRoot`, and each call opens a copy of its folder in the run's own `root`.
+ * seedMira is deterministic, so the copy is the space a new seed would make.
+ */
+export function worldCopies(seedRoot: string, tasks: number): (root: string) => Promise<World> {
+  let seeded: Promise<SeededSpace> | undefined;
+  return async (root) => {
+    seeded ??= seedMira(seedRoot, { tasks });
+    const seed = await seeded;
+    const folder = join(root, basename(seed.folder));
+    cpSync(seed.folder, folder, { recursive: true });
+    return openWorld(root, { ...seed, folder });
+  };
+}
+
+async function openWorld(root: string, seeded: SeededSpace): Promise<World> {
   const checked = await checkedDriver();
   const machine: MachineInfo = { id: seeded.machine, name: MIRA.machine.name, os: "linux" };
   const writer = SpaceWriter.open(openSpace(checked, seeded.folder, { role: "writer" }), {

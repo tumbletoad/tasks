@@ -8,8 +8,9 @@
 //   (`<product…> shim <ticket>`) as its child in its own working folder, and lives as long as it
 //   does, like a window that closes with its command;
 // - `handoff` (Windows Terminal, GNOME Terminal): starts a detached copy of itself as the
-//   "server", which runs the command after FAKE_TERMINAL_DELAY_MS, and exits at once with
-//   FAKE_TERMINAL_EXIT (default 0), like a client that handed the request on;
+//   "server", which runs the command once the file FAKE_TERMINAL_RELEASE exists (at once without
+//   it), and exits at once with FAKE_TERMINAL_EXIT (default 0), like a client that handed the
+//   request on;
 // - `exit`: exits at once with FAKE_TERMINAL_EXIT and runs nothing, like a direct terminal whose
 //   window failed to open;
 // - `console`: Windows PowerShell's console starter (commands.ts): hands off as `handoff` does,
@@ -18,7 +19,7 @@
 // The command's stdout and stderr go to files beside the log, so a test can read the shim's lines.
 // No fake outlives its test: it ends its command and itself after FAKE_TERMINAL_MAX_MS.
 import { spawn } from "node:child_process";
-import { appendFileSync, closeSync, openSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, openSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const env = process.env;
@@ -26,7 +27,7 @@ const log = env["FAKE_TERMINAL_LOG"];
 const mode = env["FAKE_TERMINAL_MODE"] ?? "direct";
 const role = env["FAKE_TERMINAL_ROLE"] ?? "client";
 const exitCode = Number(env["FAKE_TERMINAL_EXIT"] ?? "0");
-const delayMs = Number(env["FAKE_TERMINAL_DELAY_MS"] ?? "0");
+const release = env["FAKE_TERMINAL_RELEASE"];
 const maxMs = Number(env["FAKE_TERMINAL_MAX_MS"] ?? "120000");
 const productLength = Number(env["FAKE_TERMINAL_PRODUCT_LENGTH"] ?? "1");
 const args = process.argv.slice(2);
@@ -126,8 +127,23 @@ function handOff(): void {
 
 record({ event: "start", argv: args, cwd: process.cwd(), envNames: Object.keys(env).sort() });
 
+/** Runs `then` once the release file exists, or at once without one. */
+function whenReleased(then: () => void): void {
+  if (release === undefined || existsSync(release)) {
+    then();
+    return;
+  }
+  const guard = setTimeout(() => process.exit(124), maxMs);
+  const poll = setInterval(() => {
+    if (!existsSync(release)) return;
+    clearInterval(poll);
+    clearTimeout(guard);
+    then();
+  }, 20);
+}
+
 if (role === "server") {
-  setTimeout(mode === "console" ? runConsole : runCommand, delayMs);
+  whenReleased(mode === "console" ? runConsole : runCommand);
 } else if (mode === "exit") {
   process.exit(exitCode);
 } else if (mode === "console") {

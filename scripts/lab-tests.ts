@@ -3,7 +3,8 @@
 // The product tests always run. The lab tests run when
 //   1. `--lab` is given or TTASKS_VERIFY_LAB=1 is set,
 //   2. the base cannot be determined (fail safe), or
-//   3. a lab file or a file the lab tests depend on changed since the base.
+//   3. lab code or a file it imports changed since the base, or, in CI, also a shared file the
+//      lab tests depend on (the configuration, the verify scripts, the dependencies, the pin).
 // Otherwise verify skips them and says so in one line.
 //
 // The base:
@@ -23,12 +24,15 @@ import { repoRoot } from "./run.ts";
 /** Folders the lab tests load: lab code, and the stand-ins the shared setup puts on PATH. */
 const LAB_FOLDERS = ["spikes/", "packages/testkit/stand-ins/"];
 
+/** Files outside spikes/ that lab code imports. */
+const LAB_IMPORTS = ["tests/stream-content.ts", "tests/stream-schema.ts"];
+
 /**
- * Files outside spikes/ that the lab tests depend on: the test configuration and the setup file
- * it runs in every worker, the verify scripts, the TypeScript settings, the dependencies and Node
- * pin, the stream helpers the runs spike imports, the files the packaging spike copies into a
- * version folder, and the workflows that run the lab. The lockfile is on the list because an update
- * that moves only it can change what the lab bundles, and the UI spike tests its bundle's size.
+ * Files outside spikes/ that the lab tests depend on, which CI runs them for: the test
+ * configuration and the setup file it runs in every worker, the verify scripts, the TypeScript
+ * settings, the dependencies and Node pin, the files the packaging spike copies into a version
+ * folder, and the workflows that run the lab. The lockfile is on the list because an update that
+ * moves only it can change what the lab bundles, and the UI spike tests its bundle's size.
  */
 const LAB_SHARED_FILES = [
   "vitest.config.ts",
@@ -38,8 +42,6 @@ const LAB_SHARED_FILES = [
   "scripts/run.ts",
   "scripts/manifest.ts",
   "scripts/generated.ts",
-  "tests/stream-content.ts",
-  "tests/stream-schema.ts",
   "package.json",
   "pnpm-lock.yaml",
   "pnpm-workspace.yaml",
@@ -51,13 +53,17 @@ const LAB_SHARED_FILES = [
 ];
 const LAB_SHARED_PATTERNS = [/^tsconfig[^/]*\.json$/];
 
-/** Whether a changed path (relative to the repository root, any slash) can affect the lab tests. */
-export function isLabPath(path: string): boolean {
+/**
+ * Whether a changed path (relative to the repository root, any slash) can affect the lab tests:
+ * lab code and what it imports, or with `shared` also a file the lab shares with the product.
+ */
+export function isLabPath(path: string, shared = true): boolean {
   const p = path.replaceAll("\\", "/").replace(/^\.\//, "");
   return (
     LAB_FOLDERS.some((folder) => p.startsWith(folder)) ||
-    LAB_SHARED_FILES.includes(p) ||
-    LAB_SHARED_PATTERNS.some((pattern) => pattern.test(p))
+    LAB_IMPORTS.includes(p) ||
+    (shared &&
+      (LAB_SHARED_FILES.includes(p) || LAB_SHARED_PATTERNS.some((pattern) => pattern.test(p))))
   );
 }
 
@@ -171,9 +177,19 @@ export function decideLab(options: { lab: boolean }, env: Env, base: () => Base)
   if (!b.found) {
     return { run: true, reason: `lab tests run: the base could not be determined (${b.why})` };
   }
-  const lab = [...new Set(b.changed.map((p) => p.replaceAll("\\", "/")))].filter(isLabPath).sort();
+  // Locally a shared file alone leaves them to CI, which runs them for it.
+  const ci = inCi(env);
+  const changed = [...new Set(b.changed.map((p) => p.replaceAll("\\", "/")))];
+  const lab = changed.filter((p) => isLabPath(p, ci)).sort();
   if (lab.length === 0) {
-    return { run: false, reason: `lab tests skipped: no lab files changed since ${b.label}` };
+    const shared = ci ? 0 : changed.filter((p) => isLabPath(p)).length;
+    return {
+      run: false,
+      reason:
+        shared === 0
+          ? `lab tests skipped: no lab files changed since ${b.label}`
+          : `lab tests skipped: no lab code changed since ${b.label}; CI runs them for the ${String(shared)} shared file(s) that did`,
+    };
   }
   const listed = lab.slice(0, MAX_LISTED).join(", ");
   const more = lab.length > MAX_LISTED ? ` and ${String(lab.length - MAX_LISTED)} more` : "";

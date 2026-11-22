@@ -26,7 +26,7 @@ import {
   runInstaller,
   runProgram,
   runsElevated,
-  runVersions,
+  runVersion,
   stableCommand,
 } from "./test/kit.ts";
 
@@ -46,7 +46,7 @@ beforeAll(async () => {
   work = folders.root;
   // User-only, whatever the umask: the installer refuses a root below a folder others can change.
   mkdirSync(join(work, "h"), { mode: 0o700 });
-  const { release } = (await runVersions()).first;
+  const { release } = await runVersion("first");
   a = join(work, "h", "a");
   b = join(work, "h", "b");
   for (const root of [a, b]) {

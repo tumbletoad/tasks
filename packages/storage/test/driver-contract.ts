@@ -1283,8 +1283,11 @@ export function driverContract(subject: DriverUnderTest): void {
     };
 
     // The M0 storage bench saw "database is locked" in 5 of 15 starts while journal_mode came
-    // before busy_timeout. Each round starts three fresh workers at once.
-    const ROUNDS = 15;
+    // before busy_timeout. That order is pinned at every open by "installs the busy timeout before
+    // any statement runs" and the writer's pragma-order test; these rounds keep the real race of
+    // three fresh workers on a real file. Three rounds in each of the two tests would still catch
+    // that old bug about 9 times in 10.
+    const ROUNDS = 3;
 
     test(
       "the writer opens first and two readers follow, on a new and on an existing space, every round",

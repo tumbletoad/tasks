@@ -860,30 +860,57 @@ describe("[A3.5.search.cursors] cursor pages under random writes, deletions and 
   });
 
   test("more matches than a search keeps freeze the first ones, and total says so", async () => {
+    // The rule at a cap of 200; the product's cap is SEARCH_IDS (the next test).
+    const keep = 200;
     const word = "bulkword";
-    const batch = 400;
-    for (let n = 0; n * batch <= SEARCH_IDS; n += 1) {
-      created(
-        submit(
-          fx,
-          Array.from({ length: batch }, (_, i) => ({
-            kind: "task.create" as const,
-            title: `${word} ${String(n * batch + i)}`,
-          })),
-        ),
-      );
-    }
-    let page = await search({ q: word, limit: 50 });
-    expect(page.total).toBe(`${String(SEARCH_IDS)}+`);
+    created(
+      submit(
+        fx,
+        Array.from({ length: keep + 40 }, (_, i) => ({
+          kind: "task.create" as const,
+          title: `${word} ${String(i)}`,
+        })),
+      ),
+    );
+    // The ranked query itself reads one past the cap, to tell there are more.
+    const inner = readerOf(fx.reader);
+    const ranked: number[] = [];
+    const recording: SearchReader = {
+      transaction: async (mode, queries) => {
+        const results = await inner.transaction(mode, queries);
+        const last = results.at(-1);
+        if (Array.isArray(last)) ranked.push(last.length);
+        return results;
+      },
+    };
+    let page = await runSearch(recording, { q: word, limit: 50 }, envOf(fx, { keep }));
+    expect(ranked).toContain(keep + 1);
+    expect(ranked.every((n) => n <= keep + 1)).toBe(true);
+    expect(page.total).toBe(`${String(keep)}+`);
     const seen = ids(page);
     while (page.cursor !== undefined) {
       page = await search({ cursor: page.cursor });
       seen.push(...ids(page));
     }
-    expect(seen).toHaveLength(SEARCH_IDS);
-    expect(new Set(seen).size).toBe(SEARCH_IDS);
-    expect(page.first).toBe(SEARCH_IDS - 49);
-  }, 300_000);
+    expect(seen).toHaveLength(keep);
+    expect(new Set(seen).size).toBe(keep);
+    expect(page.first).toBe(keep - 49);
+  });
+
+  test("a search keeps SEARCH_IDS, the 10000+ its result's schema names", async () => {
+    expect(`${String(SEARCH_IDS)}+`).toBe("10000+");
+    const inner = readerOf(fx.reader);
+    const params: unknown[] = [];
+    const recording: SearchReader = {
+      transaction: (mode, queries) => {
+        params.push(...queries.flatMap((q) => Object.values(q.params ?? {})));
+        return inner.transaction(mode, queries);
+      },
+    };
+    await runSearch(recording, { q: "keepword" }, envOf(fx));
+    // The plan reads one past the cap, to tell there are more.
+    expect(params).toContain(SEARCH_IDS + 1);
+  });
 
   test("an epoch, incarnation, binding, idle or restart ends a cursor with its reason", async () => {
     const word = "expireword";

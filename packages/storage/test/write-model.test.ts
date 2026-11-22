@@ -40,9 +40,11 @@ type TaskOperation = Extract<
   { kind: "task.create" | "task.patch" | "task.move" | "task.complete" | "task.reopen" }
 >;
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
-import { checkHistory, writeFixture, type Fixture } from "./write-helpers.ts";
+import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("write-model");
+// Each run gets its own copy of one fixture space, made once.
+const fixture = fixtureCopies(temp.make, { flush: false });
 afterAll(temp.cleanup);
 
 type Field = "title" | "summary" | "priority" | "status" | "grouping" | "lifecycle" | "wrap";
@@ -635,7 +637,7 @@ function stored(result: WriteResult): WriteResult {
 const property = (seen: Seen) =>
   fc.asyncProperty(fc.array(step, { minLength: 10, maxLength: 40 }), async (steps) => {
     // 150 fresh spaces and thousands of commits: which writes apply does not depend on a flush.
-    const fx = await writeFixture(temp.make(), { flush: false });
+    const fx = await fixture();
     try {
       const actors: Credential[] = [fx.human, fx.codex, fx.claude];
       const model = new Model(fx.writer.asOf());

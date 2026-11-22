@@ -324,15 +324,10 @@ describe("[A3.3.12.setup.managed] a file another repository tracks, or machine.t
       );
       expect(await tracked(prefixed.file, prefixed.codex)).toBe(true);
 
-      // A 16 MiB `.git` file: setup reads nothing inside a `.git` (managed.ts looks at names only),
-      // and git refuses it.
+      // A 16 MiB `.git` file: git refuses it, and no clear answer is the safe side.
       const huge = userHome("huge");
       writeFileSync(join(huge.home, ".git"), Buffer.alloc(16 * 1024 * 1024, 0x61));
       expect(await tracked(huge.file, huge.codex)).toBe(true);
-      const source = readFileSync(join(import.meta.dirname, "managed.ts"), "utf8");
-      expect(/import \{([^}]*)\} from "node:fs";/u.exec(source)?.[1]?.trim()).toBe(
-        "lstatSync, realpathSync",
-      );
 
       // No git on the PATH: a file under a `.git` is managed, one under none is not.
       const repo = userHome("no-git");

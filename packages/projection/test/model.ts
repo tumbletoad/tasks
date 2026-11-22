@@ -55,16 +55,20 @@ import {
   Killed,
   settle,
   treeOf,
-  world,
+  worldCopies,
   type Fault,
   type FaultLog,
   type World,
 } from "./helpers.ts";
 
-// Each test file that imports this module has its own folder for its runs.
+// Each test file that imports this module has its own folder for its runs, and seeds the sample
+// its runs copy once.
 let root: string;
+let fresh: (folder: string) => Promise<World>;
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), "projection-model-"));
+  mkdirSync(join(root, "seed"));
+  fresh = worldCopies(join(root, "seed"), 6);
 });
 afterAll(() => {
   rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
@@ -1056,7 +1060,7 @@ export async function run(actions: readonly Action[]): Promise<void> {
   runs += 1;
   const folder = join(root, `run-${String(runs)}`);
   mkdirSync(folder);
-  const w = await world(folder, 6);
+  const w = await fresh(folder);
   try {
     const model = new Model(w, folder);
     await model.restart(null);

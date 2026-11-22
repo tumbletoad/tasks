@@ -35,7 +35,12 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { gzipSync } from "node:zlib";
 import { ENV_PREFIX, PRODUCT_ID, PRODUCT_NAME } from "../../../packages/brand/src/index.ts";
 import { isAgentMarker } from "../../../packages/bridge/src/protocol/index.ts";
-import { findMsvc } from "../../../packages/launcher-win/src/build.ts";
+import {
+  assertReleaseBinary,
+  buildRunHelper,
+  findMsvc,
+} from "../../../packages/launcher-win/src/build.ts";
+import { runLaunchers } from "../../../packages/launcher-win/test/install.ts";
 import { buildWeb } from "../../../packages/web/build.ts";
 import { windowsElevated } from "../../../packages/service/src/hub/identity.ts";
 import {
@@ -51,7 +56,7 @@ import {
 } from "../../../packages/service/src/version/folder.ts";
 import { readTarGz, readZip, writeTarGz, writeZip, type FileEntry } from "../../build/archive.ts";
 import { bundle } from "../../build/bundle.ts";
-import { LAUNCHD_WRAPPER, POSIX_LAUNCHER, windowsLaunchers } from "../../build/launchers.ts";
+import { LAUNCHD_WRAPPER, POSIX_LAUNCHER, type WindowsLaunchers } from "../../build/launchers.ts";
 import { loadPin } from "../../build/node-runtime.ts";
 import { archiveName, hostPlatform, type Platform } from "../../build/platforms.ts";
 import {
@@ -149,7 +154,7 @@ export async function offlineVersionFolder(
     node: { version: pin.version, sqlite: pin.sqlite, binary: process.execPath, license },
     launchers:
       platform === "win-x64"
-        ? windowsLaunchers(join(work, "launchers"))
+        ? await runWindowsLaunchers()
         : { posix: POSIX_LAUNCHER, launchd: LAUNCHD_WRAPPER },
     bundle: { out: bundleOut, files: bundled.files },
     ui: { out: web.out, files: web.files },
@@ -166,58 +171,64 @@ export interface RunVersion {
 }
 
 /**
- * Two versions, 0.1.0-dev.1 and 0.1.0-dev.2, built offline once per test run for every file that
- * installs or updates: both trust `key`, which signed both releases. On Windows `distinct` is the
- * second version with launchers that differ from the first's, as two releases' launchers do, so an
- * update to it swaps both stable launchers; elsewhere it is the second version. Read-only: a test
- * that changes a folder or a release copies it into a folder of its own first.
+ * The Windows release launchers and run helper of a version folder, built once per test run: the
+ * launchers are the launcher tests' own release build (runLaunchers). Checked for test hooks again,
+ * as the build checks what it ships.
  */
-export async function runVersions(): Promise<{
-  readonly key: KeyObject;
-  readonly first: RunVersion;
-  readonly second: RunVersion;
-  readonly distinct: RunVersion;
-}> {
-  const built = await builtOnce("versions", async (dir) => {
-    const key = throwawayKey();
-    const trustKeys = [opensshPublicKey(createPublicKey(key))];
-    const web = await buildWeb(join(dir, "ui"), repoRoot);
-    const version = async (n: number, at: string): Promise<RunVersion> => {
-      const folder = await offlineVersionFolder(
-        join(dir, `build-${String(n)}`),
-        { version: at, build: `run0test${String(n)}` },
-        { trustKeys, web },
-      );
-      return { folder, release: releaseOf(folder, join(dir, `dist-${String(n)}`), key, dir) };
-    };
-    const first = await version(1, "0.1.0-dev.1");
-    const second = await version(2, "0.1.0-dev.2");
-    let distinct = second;
-    if (windows) {
-      const folder = join(dir, "build-2d", "0.1.0-dev.2");
+async function runWindowsLaunchers(): Promise<WindowsLaunchers> {
+  const launchers = await runLaunchers("release");
+  const run = await builtOnce("run-helper", (dir) => buildRunHelper(dir));
+  for (const exe of [launchers.ttasks, launchers.ttasksw, run]) assertReleaseBinary(exe);
+  return { ...launchers, run };
+}
+
+/** The key that signs the run's releases and that their updaters trust, made once per test run. */
+export async function runKey(): Promise<KeyObject> {
+  const pem = await builtOnce("release-key", () =>
+    throwawayKey().export({ type: "pkcs8", format: "pem" }),
+  );
+  return createPrivateKey(pem);
+}
+
+/** The run's versions: their numbers and build labels. */
+const RUN_VERSIONS = {
+  first: { version: "0.1.0-dev.1", build: "run0test1" },
+  second: { version: "0.1.0-dev.2", build: "run0test2" },
+} as const;
+
+/**
+ * One of the run's two versions, 0.1.0-dev.1 (`first`) and 0.1.0-dev.2 (`second`), built offline
+ * once per test run when a file first asks for it: both trust runKey, which signed both releases,
+ * and share one page build. On Windows `distinct` is the second version with launchers that differ
+ * from the first's, as two releases' launchers do, so an update to it swaps both stable launchers;
+ * elsewhere it is the second version. Read-only: a test that changes a folder or a release copies
+ * it into a folder of its own first.
+ */
+export async function runVersion(which: "first" | "second" | "distinct"): Promise<RunVersion> {
+  const key = await runKey();
+  const signed = (v: RunVersion): RunVersion => ({ ...v, release: { ...v.release, key } });
+  if (which === "distinct" && !windows) return runVersion("second");
+  const built = await builtOnce(`version-${which}`, async (dir): Promise<RunVersion> => {
+    if (which === "distinct") {
+      const second = await runVersion("second");
+      const folder = join(dir, "build", RUN_VERSIONS.second.version);
       cpSync(second.folder, folder, { recursive: true });
       for (const exe of [`${PRODUCT_ID}.exe`, `${PRODUCT_ID}w.exe`]) {
         // A mark after the image, which the loader ignores: the code is the release build's.
-        appendFileSync(join(folder, "bin", exe), `\0launcher 0.1.0-dev.2\0`);
+        appendFileSync(join(folder, "bin", exe), `\0launcher ${RUN_VERSIONS.second.version}\0`);
       }
       rewriteManifest(folder);
-      distinct = { folder, release: releaseOf(folder, join(dir, "dist-2d"), key, dir) };
+      return { folder, release: releaseOf(folder, join(dir, "dist"), key, dir) };
     }
-    return {
-      key: key.export({ type: "pkcs8", format: "pem" }),
-      first,
-      second,
-      distinct,
-    };
+    const web = await builtOnce("web", (out) => buildWeb(join(out, "ui"), repoRoot));
+    const trustKeys = [opensshPublicKey(createPublicKey(key))];
+    const folder = await offlineVersionFolder(join(dir, "build"), RUN_VERSIONS[which], {
+      trustKeys,
+      web,
+    });
+    return { folder, release: releaseOf(folder, join(dir, "dist"), key, dir) };
   });
-  const key = createPrivateKey(built.key);
-  const signed = (v: RunVersion): RunVersion => ({ ...v, release: { ...v.release, key } });
-  return {
-    key,
-    first: signed(built.first),
-    second: signed(built.second),
-    distinct: signed(built.distinct),
-  };
+  return signed(built);
 }
 
 /** The manifest's fields of a version folder, as JSON. */

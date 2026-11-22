@@ -962,10 +962,10 @@ describe("[A2.3.6.local.rpc] the output deadline", () => {
     "a reader that reads slowly but steadily in real time through a burst over 16 MiB gets every reply",
     SLOW,
     async () => {
-      // Four replies of 5 MiB (20 MiB, more than the 16 MiB bound on offered lines), read 512 KiB
-      // at a time with a 100 ms pause after each: at least 39 pauses, so the burst takes longer
-      // than the deadline, and no pause comes near it.
-      const STALL = 3_000;
+      // Four replies of 5 MiB (20 MiB, more than the 16 MiB bound on offered lines), read 1 MiB at
+      // a time with a 100 ms pause after each: at least 19 pauses, so the burst takes longer than
+      // the deadline, and each pause leaves the deadline 1.4 s for a stalled event loop.
+      const STALL = 1_500;
       const clock = testClock();
       const gates: (() => void)[] = [];
       const started = await startServer(root, {
@@ -986,7 +986,7 @@ describe("[A2.3.6.local.rpc] the output deadline", () => {
         await until(() => gates.length === 4, 20_000);
         const began = performance.now();
         for (const gate of gates) gate();
-        const wire = readThrottled(socket, 512 * 1024, 100);
+        const wire = readThrottled(socket, MiB, 100);
         await until(() => wire.lines() >= 4, 60_000);
         const took = performance.now() - began;
         wire.stop();
