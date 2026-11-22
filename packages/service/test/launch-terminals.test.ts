@@ -368,6 +368,9 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
       const release = join(lab.work, "release");
       // The client exits 1 before its server starts the shim.
       const intent = await lab.launch(agentPlan(lab, report, { release }));
+      const client = terminalsStarted(r)[0]?.pid;
+      if (client === undefined) throw new Error("no terminal started");
+      expect(await r.spawner.exited(client)).toMatchObject({ code: 1 });
       writeFileSync(r.terminalRelease, "");
       await lab.waitIntent(intent.id, (i) => i.state === "confirmed", "Confirmed");
       r.spawner.trackLogs([r.terminalLog]); // its shim and terminal, alive now
