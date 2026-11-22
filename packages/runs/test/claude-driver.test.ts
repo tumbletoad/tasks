@@ -5,7 +5,15 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, test } from "vitest";
 import type { RunEvent } from "@tasks/contracts/runs";
-import { claudeArgs, claudeDriver, claudeToolsFile } from "../src/drivers/claude.ts";
+import {
+  claudeArgs,
+  claudeDriver,
+  claudeToolsFile,
+  HEARD,
+  PHASES,
+  type Heard,
+  type Phase,
+} from "../src/drivers/claude.ts";
 import type { DriverSession, Work } from "../src/drivers/types.ts";
 import {
   readClaudeFixture,
@@ -69,6 +77,226 @@ const until = async (what: string, ok: () => boolean, ms = 5_000): Promise<void>
 const SESSION = "00000000-0000-4000-8000-000000000001";
 const done = (work: Partial<Work>): unknown => expect.objectContaining(work) as unknown;
 const ofType = (fake: FakeClaude, type: string) => fake.received.filter((m) => m["type"] === type);
+
+/** What the program says, line by line, to bring the driver to each phase or to make it hear. */
+const RECORDED = readClaudeFixture("windows-plain").filter((l) => l.dir === "recv");
+const INIT = RECORDED.find((l) => l.msg["subtype"] === "init")?.msg ?? {};
+const RESULT = RECORDED.find((l) => l.msg["type"] === "result")?.msg ?? {};
+const own = (text: string) => ({
+  type: "assistant",
+  parent_tool_use_id: null,
+  message: { content: [{ type: "text", text }] },
+});
+const backgroundOf = (n: number) => ({
+  type: "system",
+  subtype: "background_tasks_changed",
+  tasks: Array.from({ length: n }, () => ({ task_type: "local_bash" })),
+});
+type Json = Record<string, unknown>;
+const ASKS: readonly Json[] = [
+  {
+    subtype: "can_use_tool",
+    tool_name: "AskUserQuestion",
+    requires_user_interaction: true,
+    input: { questions: [{ question: "Which export?", options: [{ label: "CSV" }] }] },
+  },
+  {
+    subtype: "can_use_tool",
+    tool_name: "Bash",
+    input: { command: "rm -rf dist && npm test", description: "Run the cleanup script" },
+    description: "Run the cleanup script",
+  },
+  {
+    subtype: "elicitation",
+    mcp_server_name: "reports",
+    message: "Which format should the export use?",
+    requested_schema: {
+      type: "object",
+      properties: { format: { type: "string", title: "Format", enum: ["CSV", "PDF"] } },
+    },
+  },
+];
+
+type Expected =
+  /** The run goes on in this phase, after writing `wrote` to the program. */
+  | { readonly goesOn: Exclude<Phase, "settled">; readonly wrote?: readonly string[] }
+  /** The work settles with this. */
+  | { readonly settles: Partial<Work>; readonly wrote?: readonly string[] }
+  /** Nothing changes: the work stays as it settled, and nothing reaches the program. */
+  | "unchanged";
+
+/**
+ * Every phase against everything the driver can hear. A kind of line or a phase the driver adds
+ * has no cell here: the type and the test both fail until it has one.
+ */
+const TABLE: Readonly<Record<Phase, Readonly<Record<Heard, Expected>>>> = {
+  turn: {
+    turn: { goesOn: "turn" },
+    other: { goesOn: "turn" },
+    result: { settles: { ok: true, outcome: "success", text: "Done.", textFinal: true } },
+    "result, more": { goesOn: "between" },
+    failed: { settles: { ok: false, outcome: "agent_error", error: "The API failed." } },
+    asks: {
+      settles: { outcome: "needs_input", textFinal: false },
+      wrote: ["turned down", "interrupt"],
+    },
+    "unknown request": { goesOn: "turn", wrote: ["error"] },
+    exit: { settles: { ok: false, outcome: "no_result" } },
+    stop: { goesOn: "stopping", wrote: ["interrupt"] },
+  },
+  between: {
+    turn: { goesOn: "turn" },
+    other: { goesOn: "between" },
+    result: { settles: { ok: true, outcome: "success", text: "Done.", textFinal: true } },
+    "result, more": { goesOn: "between" },
+    failed: { settles: { ok: false, outcome: "agent_error", error: "The API failed." } },
+    asks: {
+      settles: { outcome: "needs_input", textFinal: false },
+      wrote: ["turned down", "interrupt"],
+    },
+    "unknown request": { goesOn: "between", wrote: ["error"] },
+    exit: { settles: { ok: false, outcome: "no_result", text: "First.", textFinal: false } },
+    stop: {
+      settles: { ok: false, outcome: "interrupted", text: "First.", textFinal: true },
+      wrote: ["interrupt", "end"],
+    },
+  },
+  stopping: {
+    turn: { goesOn: "stopping" },
+    other: { goesOn: "stopping" },
+    result: { settles: { ok: false, outcome: "interrupted" } },
+    "result, more": { settles: { ok: false, outcome: "interrupted" } },
+    failed: { settles: { ok: false, outcome: "interrupted" } },
+    asks: { goesOn: "stopping", wrote: ["turned down"] },
+    "unknown request": { goesOn: "stopping", wrote: ["error"] },
+    exit: { settles: { ok: false, outcome: "interrupted" } },
+    stop: { goesOn: "stopping" },
+  },
+  settled: {
+    turn: "unchanged",
+    other: "unchanged",
+    result: "unchanged",
+    "result, more": "unchanged",
+    failed: "unchanged",
+    asks: "unchanged",
+    "unknown request": "unchanged",
+    exit: "unchanged",
+    stop: "unchanged",
+  },
+};
+
+/** A driver brought to `phase`, with what it writes to the program summed up as it comes. */
+async function driverIn(phase: Phase) {
+  const toProgram = new PassThrough();
+  const fromProgram = new PassThrough();
+  const wrote: string[] = [];
+  let pending = "";
+  toProgram.on("data", (chunk: Buffer) => {
+    pending += chunk.toString("utf8");
+    const lines = pending.split("\n");
+    pending = lines.pop() ?? "";
+    for (const line of lines) {
+      const m = JSON.parse(line) as { type: string; request?: Json; response?: Json };
+      if (m.type === "control_request") wrote.push(String(m.request?.["subtype"]));
+      else if (m.type === "control_response")
+        wrote.push(m.response?.["subtype"] === "success" ? "turned down" : "error");
+      else wrote.push(m.type);
+    }
+  });
+  toProgram.on("finish", () => wrote.push("end"));
+  const driver = claudeDriver({ request: "Look." })(
+    { stdin: toProgram, stdout: fromProgram },
+    () => undefined,
+  );
+  const say = async (...messages: unknown[]) => {
+    fromProgram.write(messages.map((m) => `${JSON.stringify(m)}\n`).join(""));
+    for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  };
+  await say(INIT);
+  if (phase === "between") await say(backgroundOf(1), { ...RESULT, result: "First." });
+  if (phase === "settled") await say({ ...RESULT, result: "First." });
+  if (phase === "stopping") driver.interrupt();
+  await say();
+  wrote.splice(0);
+  return { driver, wrote, say };
+}
+
+/** Makes the driver hear `heard`; `ask` is the request for the person, when it hears one. */
+async function makeHear(
+  { driver, say }: Awaited<ReturnType<typeof driverIn>>,
+  heard: Heard,
+  ask: Json,
+): Promise<void> {
+  switch (heard) {
+    case "turn":
+      return say(own("Newer words."));
+    case "other":
+      return say({ ...own("A helper's notes."), parent_tool_use_id: "toolu_h1" });
+    case "result":
+      return say(backgroundOf(0), { ...RESULT, result: "Done." });
+    case "result, more":
+      return say({ ...RESULT, result: "Done.", queued_turn_count: 1 });
+    case "failed":
+      return say({
+        ...RESULT,
+        is_error: true,
+        subtype: "error_during_execution",
+        result: "The API failed.",
+      });
+    case "asks":
+      return say({ type: "control_request", request_id: "r1", request: ask });
+    case "unknown request":
+      return say({ type: "control_request", request_id: "r2", request: { subtype: "later_kind" } });
+    case "exit":
+      driver.ended({ code: 1, signal: null });
+      return say();
+    case "stop":
+      driver.interrupt();
+      return say();
+  }
+}
+
+describe("[A4.3.11.claude.driver] the claude driver's decisions: every phase against everything it hears", () => {
+  for (const phase of PHASES) {
+    for (const heard of HEARD) {
+      test(`${phase}, hears ${heard}`, async () => {
+        const expected = TABLE[phase][heard] as Expected | undefined;
+        expect(expected, `no cell for ${phase} × ${heard}`).toBeDefined();
+        if (expected === undefined) return;
+        for (const ask of heard === "asks" ? ASKS : ASKS.slice(0, 1)) {
+          const bench = await driverIn(phase);
+          const before = await settledNow(bench.driver);
+          await makeHear(bench, heard, ask);
+          const work = await settledNow(bench.driver);
+          if (expected === "unchanged") {
+            expect(work).toEqual(before);
+            expect(bench.wrote).toEqual([]);
+            continue;
+          }
+          expect(bench.wrote).toEqual(expected.wrote ?? []);
+          if ("settles" in expected) {
+            expect(before).toBeUndefined();
+            expect(work).toEqual(done(expected.settles));
+            continue;
+          }
+          expect(work).toBeUndefined();
+          // Which phase it goes on in shows in what a Stop then does.
+          bench.wrote.splice(0);
+          bench.driver.interrupt();
+          await bench.say();
+          const stopped = await settledNow(bench.driver);
+          if (expected.goesOn === "between") {
+            expect(stopped).toEqual(done({ outcome: "interrupted" }));
+            expect(bench.wrote).toEqual(["interrupt", "end"]);
+          } else {
+            expect(stopped).toBeUndefined();
+            expect(bench.wrote).toEqual(expected.goesOn === "turn" ? ["interrupt"] : []);
+          }
+        }
+      });
+    }
+  }
+});
 
 describe("[A4.3.11.claude.driver] the claude driver against the recorded print mode", () => {
   test("a plain run: the request is the program's first line of input, and the result's answer is the work's", async () => {
@@ -157,7 +385,7 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
       done({
         ok: false,
         outcome: "needs_input",
-        text: "Claude Code asks to use Bash: Fixture text.",
+        text: "Claude Code asks to use Bash: Fixture text.\ncommand: Fixture text.",
         textFinal: false,
       }),
     );
@@ -169,7 +397,7 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     // Turning a prompt down never carries a permission: the program would write it into settings.
     expect(JSON.stringify(answer)).not.toContain("updatedPermissions");
     expect(events.filter((e) => e.kind === "answer").at(-1)).toMatchObject({
-      text: "Claude Code asks to use Bash: Fixture text.",
+      text: "Claude Code asks to use Bash: Fixture text.\ncommand: Fixture text.",
     });
     await fake.inputEnded;
   });
@@ -201,14 +429,76 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     });
   });
 
-  test("a request the driver does not know gets the protocol's error, and the run goes on", async () => {
+  test("an MCP tool's question ends the run as needing the person, with the question and its choices, and is answered with no choice made", async () => {
     const requests = [
-      { subtype: "elicitation", mcp_server_name: "docs", message: "Fill in the export's name." },
+      {
+        subtype: "elicitation",
+        mcp_server_name: "reports",
+        message: "Which format should the export use?",
+        requested_schema: {
+          type: "object",
+          properties: { format: { type: "string", title: "Format", enum: ["CSV", "PDF"] } },
+        },
+      },
     ];
     const { driver, fake } = bench({ fixture: "windows-plain", requests });
-    expect(await driver.settled).toEqual(done({ ok: true, outcome: "success" }));
+    expect(await driver.settled).toEqual(
+      done({
+        ok: false,
+        outcome: "needs_input",
+        text: "reports asks: Which format should the export use?\nFormat (CSV, PDF)",
+      }),
+    );
     const answers = ofType(fake, "control_response").map((m) => m["response"]);
-    expect(answers[0]).toMatchObject({ subtype: "error", request_id: "fake-request-0" });
+    expect(answers[0]).toEqual({
+      subtype: "success",
+      request_id: "fake-request-0",
+      response: { action: "cancel" },
+    });
+  });
+
+  test("a permission prompt says what would run or change: the command, the file, the address, an MCP tool's arguments", async () => {
+    const asked = async (request: Record<string, unknown>) => {
+      const toProgram = new PassThrough();
+      const fromProgram = new PassThrough();
+      const driver = claudeDriver({ request: "Look." })(
+        { stdin: toProgram, stdout: fromProgram },
+        () => undefined,
+      );
+      const prompt = { type: "control_request", request_id: "p1", request };
+      fromProgram.write(`${JSON.stringify(INIT)}\n${JSON.stringify(prompt)}\n`);
+      const work = await driver.settled;
+      driver.close();
+      return work.text;
+    };
+    expect(
+      await asked({
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        description: "Run the cleanup script",
+        input: { command: "rm -rf dist && npm test", description: "Run the cleanup script" },
+      }),
+    ).toBe(
+      "Claude Code asks to use Bash: Run the cleanup script\ncommand: rm -rf dist && npm test",
+    );
+    expect(
+      await asked({
+        subtype: "can_use_tool",
+        tool_name: "WebFetch",
+        input: { url: "https://example.com/report", prompt: "Summarise it." },
+      }),
+    ).toBe(
+      "Claude Code asks to use WebFetch.\nurl: https://example.com/report\nprompt: Summarise it.",
+    );
+    expect(
+      await asked({
+        subtype: "can_use_tool",
+        tool_name: "mcp__calendar__create_event",
+        input: { title: "Export review", day: "2026-11-24", attendees: ["Ana"] },
+      }),
+    ).toBe(
+      'Claude Code asks to use mcp__calendar__create_event.\ntitle: Export review\nday: 2026-11-24\nattendees: ["Ana"]',
+    );
   });
 
   test("a question settles the work when it comes, from a program that then says nothing more", async () => {

@@ -3,28 +3,21 @@
 // spoke it in fixtures/claude-stream. The flags, event names and fields are Claude Code's own; T3
 // Code's Claude adapter showed which ones an unattended client needs and how its modes map.
 //
-// One state, `phase`, alone decides what may still go to the program's input and when the work is
-// settled, with which result:
-//
-//   turn ──result, nothing pending──▶ settled with the result
-//   turn ──result, background work or a queued turn──▶ between ──a turn starts──▶ turn
-//   turn | between ──a question or a prompt for the person──▶ settled as needing the person
-//   turn ──Stop──▶ stopping ──result or exit──▶ settled as interrupted
-//   between ──Stop──▶ settled as interrupted with the last turn's answer; the input ends
+// Every decision is one cell of STEPS: where the run is (`Phase`) against what the driver hears
+// (`Heard`), each line of the program, its end, or the person's Stop. A cell says what goes to the
+// program's input and where the run goes on, or how the work settles.
 //
 // - The request is the first line on the program's input, never on its command line. The input
 //   stays open while the agent works: a Stop goes over it, and background work reports over it.
 // - Background work holds the run: a helper agent, a workflow, or a command the agent left
 //   running. When it ends, Claude Code starts a turn of its own to report on it, and that turn's
 //   answer is the run's. A command that never ends, a server, holds the run until the person
-//   stops it; the run then keeps the last turn's answer.
-// - Nobody is there to answer: a prompt for the person, a question (`AskUserQuestion`) or a
-//   permission the person's own Claude Code setup asks for, is never answered for them. It is
-//   turned down so the turn stops, and the work ends as needing the person, with what was asked as
-//   its text. Answering a prompt with a permission would make Claude Code write it into the
-//   person's settings: this driver never does. Any other request gets the protocol's error.
-// - From a Stop on, nothing but the interrupt and answers that turn a prompt down reaches the
-//   input.
+//   stops it; the run then keeps the last turn's answer. A turn that fails ends the run at once.
+// - Nobody is there to answer: a question (`AskUserQuestion`), a permission the person's own
+//   Claude Code setup asks for, or a question of an MCP tool, is never answered for them. It is
+//   turned down so the turn stops, and the work ends as needing the person, with what was asked
+//   as its text. Answering a prompt with a permission would make Claude Code write it into the
+//   person's settings: this driver never does.
 import {
   ANSWER_CAP_BYTES,
   LINE_CAP_BYTES,
@@ -53,7 +46,8 @@ export interface ClaudeSession {
 
 /**
  * How each permission runs Claude Code, in its own modes, with the person's own tools and rules.
- * Tasks' own tools are allowed in every mode: they are how the run reports its work.
+ * Tasks' own tools are allowed in every mode: they are how the run reports its work, and a
+ * read-only run reads its own task through them.
  */
 const MODES: Readonly<Record<RunPermission, readonly string[]>> = {
   "full-access": ["--permission-mode", "bypassPermissions"],
@@ -102,7 +96,15 @@ const FOR_THE_PERSON =
 /** What it hears for a prompt after a Stop. */
 const STOPPED = "The person stopped this run.";
 
-/** Words of a prompt for the person: each question with its choices. */
+/** A value of a prompt longer than this is cut: the person needs to recognise it, not read it all. */
+const VALUE_SHOWN = 1_000;
+
+const shown = (value: unknown): string => {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return text.length > VALUE_SHOWN ? `${text.slice(0, VALUE_SHOWN)}…` : text;
+};
+
+/** Words of a question for the person: each question with its choices. */
 function questionText(input: Json | undefined): string {
   const lines: string[] = [];
   for (const q of array(input?.["questions"]) ?? []) {
@@ -117,30 +119,153 @@ function questionText(input: Json | undefined): string {
   return lines.join("\n").trim();
 }
 
-/** Words of a permission prompt: the tool, and what it would do as Claude Code describes it. */
+/**
+ * Words of a permission prompt: the tool, what it would do as Claude Code describes it, and what
+ * it would act on (the command, the file, the address, the query, an MCP tool's arguments), so
+ * the person can tell what to allow.
+ */
 function permissionText(request: Json): string {
   const tool = string(request["display_name"]) ?? string(request["tool_name"]) ?? "a tool";
-  const input = record(request["input"]);
-  const what =
-    string(request["description"]) ??
-    string(input?.["description"]) ??
-    string(input?.["command"]) ??
-    string(input?.["file_path"]) ??
-    string(input?.["plan"]) ??
-    "";
-  return `Claude Code asks to use ${tool}${what === "" ? "." : `: ${what}`}`;
+  const input = record(request["input"]) ?? {};
+  const description = string(request["description"]) ?? string(input["description"]) ?? "";
+  const lines = [`Claude Code asks to use ${tool}${description === "" ? "." : `: ${description}`}`];
+  for (const [key, value] of Object.entries(input)) {
+    if (key === "description" || value === undefined || value === null) continue;
+    lines.push(`${key}: ${shown(value)}`);
+  }
+  return lines.join("\n");
+}
+
+/** Words of an MCP tool's question (`elicitation`): who asks, what, and the choices of each field. */
+function elicitationText(request: Json): string {
+  const server = string(request["mcp_server_name"]);
+  const message = string(request["message"]) ?? "";
+  const lines = [server === undefined ? message : `${server} asks: ${message}`];
+  const url = string(request["url"]);
+  if (url !== undefined) lines.push(url);
+  const fields = record(record(request["requested_schema"])?.["properties"]) ?? {};
+  for (const [key, value] of Object.entries(fields)) {
+    const field = record(value);
+    if (field === undefined) continue;
+    const name = string(field["title"]) ?? string(field["description"]) ?? key;
+    const choices = (
+      array(field["enumNames"]) ??
+      array(field["enum"]) ??
+      (array(field["oneOf"]) ?? []).map((o) => record(o)?.["title"] ?? record(o)?.["const"])
+    )
+      .map((choice) => (typeof choice === "string" ? choice : undefined))
+      .filter((choice): choice is string => choice !== undefined && choice !== "");
+    lines.push(choices.length > 0 ? `${name} (${choices.join(", ")})` : name);
+  }
+  return lines.join("\n").trim();
 }
 
 /** Where a run is: the one fact every decision of the driver reads. */
-type Phase =
+export const PHASES = [
   /** A turn goes on: from the request, or a turn the program starts by itself, to its result. */
-  | "turn"
+  "turn",
   /** The last turn ended with a result, and background work or a queued turn brings another. */
-  | "between"
+  "between",
   /** The person stopped the run during a turn: the turn's end is awaited. */
-  | "stopping"
+  "stopping",
   /** The work is settled. */
-  | "settled";
+  "settled",
+] as const;
+export type Phase = (typeof PHASES)[number];
+
+/** What the driver hears: each line of the program is one of these, and so are its end and Stop. */
+export const HEARD = [
+  /** A line of a turn of the run's own agent: its start, or one of its messages. */
+  "turn",
+  /** Any other line: a helper agent's, the list of background work, what nothing decides on. */
+  "other",
+  /** A turn's result, with nothing more to come. */
+  "result",
+  /** A turn's result while background work or a queued turn brings another. */
+  "result, more",
+  /** A turn's result that says it failed. */
+  "failed",
+  /** A request for the person: a question, a permission prompt, an MCP tool's question. */
+  "asks",
+  /** A request the driver does not know. */
+  "unknown request",
+  /** The program's output ended. */
+  "exit",
+  /** The person's Stop. */
+  "stop",
+] as const;
+export type Heard = (typeof HEARD)[number];
+
+/** How the work settles: as the program's last result judged it, or as the run decided. */
+type Settle = "judged" | "interrupted" | "unfinished" | "needs the person";
+
+interface Step {
+  /** The phase the run goes on in, or how the work settles. */
+  readonly then: Phase | Settle;
+  /** What goes to the program's input first. */
+  readonly say?: "turn down" | "turn down, stopped" | "error" | "interrupt" | "end";
+}
+
+const STEPS: Readonly<Record<Phase, Readonly<Record<Heard, Step>>>> = {
+  turn: {
+    turn: { then: "turn" },
+    other: { then: "turn" },
+    result: { then: "judged" },
+    "result, more": { then: "between" },
+    failed: { then: "judged" },
+    asks: { then: "needs the person", say: "turn down" },
+    "unknown request": { then: "turn", say: "error" },
+    exit: { then: "judged" },
+    stop: { then: "stopping", say: "interrupt" },
+  },
+  between: {
+    turn: { then: "turn" },
+    other: { then: "between" },
+    // A turn of the program's own whose first line was its result.
+    result: { then: "judged" },
+    "result, more": { then: "between" },
+    failed: { then: "judged" },
+    asks: { then: "needs the person", say: "turn down" },
+    "unknown request": { then: "between", say: "error" },
+    // The background work it was to report on never was.
+    exit: { then: "unfinished" },
+    // No turn goes on: the end of the input ends what was left running.
+    stop: { then: "interrupted", say: "end" },
+  },
+  stopping: {
+    turn: { then: "stopping" },
+    other: { then: "stopping" },
+    result: { then: "interrupted" },
+    "result, more": { then: "interrupted" },
+    failed: { then: "interrupted" },
+    asks: { then: "stopping", say: "turn down, stopped" },
+    "unknown request": { then: "stopping", say: "error" },
+    exit: { then: "interrupted" },
+    stop: { then: "stopping" },
+  },
+  settled: {
+    turn: { then: "settled" },
+    other: { then: "settled" },
+    result: { then: "settled" },
+    "result, more": { then: "settled" },
+    failed: { then: "settled" },
+    asks: { then: "settled" },
+    "unknown request": { then: "settled" },
+    exit: { then: "settled" },
+    stop: { then: "settled" },
+  },
+};
+
+const isPhase = (then: Phase | Settle): then is Phase =>
+  (PHASES as readonly string[]).includes(then);
+
+/** A request of the program, as the driver answers it. */
+interface Request {
+  readonly id: string | number;
+  /** For a request for the person: what it asks, and the answer that turns it down. */
+  readonly asked?: string;
+  readonly turnDown?: (message: string) => Json;
+}
 
 export function claudeDriver(session: ClaudeSession): OpenDriver {
   return ({ stdin, stdout }, report) => {
@@ -179,43 +304,42 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
         request: { subtype: "interrupt" },
       });
     };
-    const turnDown = (id: unknown, message: string, interrupt: boolean): void => {
+    const answer = (id: string | number, response: Json): void => {
       write({
         type: "control_response",
-        response: {
-          subtype: "success",
-          request_id: id,
-          response: { behavior: "deny", message, ...(interrupt ? { interrupt: true } : {}) },
-        },
+        response: { subtype: "success", request_id: id, response },
       });
     };
 
-    /** The work, from what the program said: how it ended, or `as` when the run decided it. */
-    const conclude = (exit: ProcessExit, as?: { asked: string } | "interrupted"): void => {
-      if (phase === "settled") return;
-      const stopped = phase === "stopping" || as === "interrupted";
-      // The program ended while background work it was to report on still went on.
-      const unfinished = phase === "between" && as === undefined;
+    /** The work, from what the program said and how the run decided it settles. */
+    const conclude = (how: Settle, exit: ProcessExit, asked: string | undefined): void => {
       phase = "settled";
       const end = parser.end(exit);
       for (const event of end.events) report(event);
       let work = workOf(end.outcome);
-      if (typeof as === "object") {
-        const capped = capText(as.asked, ANSWER_CAP_BYTES);
-        report({ kind: "answer", text: capped.text, final: false, cut: capped.capped });
-        work = {
-          ...work,
-          ok: false,
-          outcome: "needs_input",
-          text: capped.text,
-          textCut: capped.capped,
-          textFinal: false,
-          error: null,
-        };
-      } else if (stopped && work.outcome !== "interrupted") {
-        work = { ...work, ok: false, outcome: "interrupted" };
-      } else if (unfinished && work.ok) {
-        work = { ...work, ok: false, outcome: "no_result" };
+      switch (how) {
+        case "needs the person": {
+          const capped = capText(asked ?? "Claude Code asked a question.", ANSWER_CAP_BYTES);
+          report({ kind: "answer", text: capped.text, final: false, cut: capped.capped });
+          work = {
+            ...work,
+            ok: false,
+            outcome: "needs_input",
+            text: capped.text,
+            textCut: capped.capped,
+            textFinal: false,
+            error: null,
+          };
+          break;
+        }
+        case "interrupted":
+          if (work.outcome !== "interrupted") work = { ...work, ok: false, outcome: "interrupted" };
+          break;
+        case "unfinished":
+          work = { ...work, ok: false, outcome: "no_result", textFinal: false };
+          break;
+        case "judged":
+          break;
       }
       if (!work.ok && signedOut) {
         const said = `${(work.error ?? "Claude Code is not signed in.").trim()} Sign in with: claude auth login`;
@@ -224,37 +348,73 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
       settle(work);
     };
 
-    /** A prompt for the person: turned down so the turn stops, and the work needs the person. */
-    const askPerson = (id: unknown, asked: string): void => {
-      turnDown(id, FOR_THE_PERSON, true);
-      interruptTurn();
-      conclude({ code: null, signal: null }, { asked });
+    /** One cell of STEPS. A result settles at once: it says how the turn ended. */
+    const hear = (
+      heard: Heard,
+      request?: Request,
+      exit: ProcessExit = { code: 0, signal: null },
+    ) => {
+      const step = STEPS[phase][heard];
+      switch (step.say) {
+        case "turn down":
+          if (request?.turnDown !== undefined) answer(request.id, request.turnDown(FOR_THE_PERSON));
+          interruptTurn();
+          break;
+        case "turn down, stopped":
+          if (request?.turnDown !== undefined) answer(request.id, request.turnDown(STOPPED));
+          break;
+        case "error":
+          if (request !== undefined) {
+            write({
+              type: "control_response",
+              response: { subtype: "error", request_id: request.id, error: "Not supported" },
+            });
+          }
+          break;
+        case "interrupt":
+          interruptTurn();
+          break;
+        case "end":
+          interruptTurn();
+          endInput();
+          break;
+        case undefined:
+          break;
+      }
+      if (isPhase(step.then)) phase = step.then;
+      else conclude(step.then, exit, request?.asked);
     };
 
-    const control = (message: Json): void => {
+    /** A control request: what it is, and how it is turned down. */
+    const requestOf = (message: Json): { heard: Heard; request?: Request } => {
       const id = message["request_id"];
-      if (typeof id !== "string" && typeof id !== "number") return;
+      if (typeof id !== "string" && typeof id !== "number") return { heard: "other" };
       const request = record(message["request"]) ?? {};
-      if (request["subtype"] !== "can_use_tool") {
-        write({
-          type: "control_response",
-          response: {
-            subtype: "error",
-            request_id: id,
-            error: `Not supported: ${string(request["subtype"]) ?? "unknown"}`,
-          },
-        });
-        return;
-      }
-      if (phase === "stopping" || phase === "settled") {
-        turnDown(id, STOPPED, false);
-        return;
-      }
-      if (request["requires_user_interaction"] === true) {
-        const asked = questionText(record(request["input"]));
-        askPerson(id, asked === "" ? "Claude Code asked a question." : asked);
-      } else {
-        askPerson(id, permissionText(request));
+      switch (request["subtype"]) {
+        case "can_use_tool": {
+          const question = request["requires_user_interaction"] === true;
+          const asked = question ? questionText(record(request["input"])) : permissionText(request);
+          return {
+            heard: "asks",
+            request: {
+              id,
+              asked: asked === "" ? "Claude Code asked a question." : asked,
+              // A decline that stops the turn, and no permission: nothing is written to settings.
+              turnDown: (said) => ({ behavior: "deny", message: said, interrupt: true }),
+            },
+          };
+        }
+        case "elicitation":
+          return {
+            heard: "asks",
+            request: {
+              id,
+              asked: elicitationText(request),
+              turnDown: () => ({ action: "cancel" }),
+            },
+          };
+        default:
+          return { heard: "unknown request", request: { id } };
       }
     };
 
@@ -267,34 +427,33 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
       }
       const message = record(value);
       if (message === undefined) return;
-      if (phase === "between" && startsTurn(message)) phase = "turn";
       switch (message["type"]) {
+        case "result": {
+          const isError = message["is_error"];
+          const failed =
+            typeof isError === "boolean" ? isError : string(message["subtype"]) !== "success";
+          const queued = message["queued_turn_count"];
+          const more = background > 0 || (typeof queued === "number" && queued > 0);
+          hear(failed ? "failed" : more ? "result, more" : "result");
+          return;
+        }
+        case "control_request": {
+          const { heard, request } = requestOf(message);
+          hear(heard, request);
+          return;
+        }
         case "system":
           if (message["subtype"] === "background_tasks_changed") {
             background = (array(message["tasks"]) ?? []).length;
           }
-          return;
+          break;
         case "assistant":
           if (message["error"] === "authentication_failed") signedOut = true;
-          return;
-        case "result": {
-          if (phase === "stopping") {
-            conclude({ code: 0, signal: null });
-            return;
-          }
-          const queued = message["queued_turn_count"];
-          const more = background > 0 || (typeof queued === "number" && queued > 0);
-          // The result says how the turn ended, so the exit is not waited for.
-          if (more) phase = "between";
-          else conclude({ code: 0, signal: null });
-          return;
-        }
-        case "control_request":
-          control(message);
-          return;
+          break;
         default:
-          return;
+          break;
       }
+      hear(startsTurn(message) ? "turn" : "other");
     };
 
     // One line at a time through both the parser and the driver, so the work settles at the same
@@ -319,26 +478,15 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
     return {
       settled,
       interrupt: () => {
-        switch (phase) {
-          case "settled":
-          case "stopping":
-            return true;
-          case "between":
-            // No turn goes on: the end of the input ends what was left running.
-            interruptTurn();
-            endInput();
-            conclude({ code: 0, signal: null }, "interrupted");
-            return true;
-          case "turn":
-            // Nothing to say it over: the host interrupts the program itself.
-            if (inputEnded) return false;
-            phase = "stopping";
-            interruptTurn();
-            return true;
-        }
+        // Nothing to say it over: the host interrupts the program itself.
+        if (phase === "turn" && inputEnded) return false;
+        hear("stop");
+        return true;
       },
       close: endInput,
-      ended: conclude,
+      ended: (exit) => {
+        hear("exit", undefined, exit);
+      },
     };
   };
 }
