@@ -410,7 +410,7 @@ async function callWith(
   // space: such calls go one at a time per space, from that read to the writer's answer, so two
   // never both create one name or bind one folder by two spellings.
   const result = await (decidesOnNames(entry.name, call.input)
-    ? oneAtATime(space.id ?? "", () => handler(call))
+    ? oneAtATime(space.id, () => handler(call))
     : handler(call));
   const checked = entry.output.safeParse(result);
   if (!checked.success) {

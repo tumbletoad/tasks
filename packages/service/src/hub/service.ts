@@ -688,9 +688,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       const has = new Set(served.map((space) => space.id ?? space.registered));
       return [
         ...served,
-        ...config.spaces
-          .filter((space) => space.enabled && !has.has(space.id))
-          .map(openingEntry),
+        ...config.spaces.filter((space) => space.enabled && !has.has(space.id)).map(openingEntry),
       ];
     };
     // The grant gate: an agent home's calls reach only the spaces its live agent-home rows name,
