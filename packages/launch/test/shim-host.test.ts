@@ -820,6 +820,55 @@ describe("[A4.5.shim.attach] machine state in folders", () => {
     for (const t of temps.splice(0)) t.remove();
   });
 
+  test("a launch file that cannot be read as a service starts is no absent one: it is read again at each look, its launch is not lost, and no ticket is decided meanwhile", async () => {
+    const temp = tempFolder();
+    temps.push(temp);
+    const root = join(temp.path, "launch");
+    records = new FolderRecords(root);
+    boot();
+    const { id, ticket } = await dispatched();
+    const { replies } = await claim(ticket);
+    const credential = replies[0]?.credential ?? "";
+    const other = await dispatched();
+    await claim(other.ticket);
+    const file = join(root, id, "launch.json");
+    const kept = readFileSync(file, "utf8");
+    // Something holds the file as the service starts (a virus scanner on Windows): here a folder
+    // in its place, which no read can open.
+    rmSync(file);
+    mkdirSync(file);
+    records = new FolderRecords(root);
+    boot();
+    expect(records.list().map((r) => r.launch)).toEqual([other.id]);
+    expect(records.unreadable()).toEqual([id]);
+    // A ticket of a readable launch is decided; any other waits for the unreadable record.
+    expect(host.liveByTicket(other.ticket)?.launch).toBe(other.id);
+    expect(() => host.liveByTicket(ticket)).toThrow();
+    // Recovery's look finds no shim it could judge: pending, never lost.
+    const intent = await read(id);
+    if (intent === undefined) throw new Error("no intent");
+    expect(await host.observe(intent)).toEqual({ kind: "pending" });
+    // Its shim, attaching again, is asked to try again rather than told its launch is gone.
+    expect(await host.attach({ credential, pid: SHIM_PID, start_time: SHIM_START })).toEqual({
+      kind: "refused",
+      reason: "store",
+    });
+    // Readable again: the next look has it.
+    rmSync(file, { recursive: true });
+    writeFileSync(file, kept);
+    expect(records.unreadable()).toEqual([]);
+    expect(host.liveByTicket(ticket)?.launch).toBe(id);
+    expect(
+      records
+        .list()
+        .map((r) => r.launch)
+        .sort(),
+    ).toEqual([id, other.id].sort());
+    expect(await host.attach({ credential, pid: SHIM_PID, start_time: SHIM_START })).toMatchObject({
+      kind: "attached",
+    });
+  });
+
   test("user-only files, written whole, read back by a new service, a damaged one left out", async () => {
     const temp = tempFolder();
     temps.push(temp);
