@@ -17,7 +17,7 @@ function fakeFetch(): Sent[] {
     (_path: string, init: RequestInit) =>
       new Promise<Response>((resolve) => {
         sent.push({
-          size: new TextEncoder().encode(String(init.body)).length,
+          size: new TextEncoder().encode(init.body as string).length,
           keepalive: init.keepalive === true,
           answer: (body) => {
             resolve(new Response(body, { status: 200 }));
