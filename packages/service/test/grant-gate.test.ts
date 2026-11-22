@@ -844,6 +844,27 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       await asUser("space/use", { space: life });
     },
   );
+
+  test(
+    "an entry with an instance whose home has no space it may use, never registered or revoked, gets the grant refusal at its first call, not a hint about the default",
+    { timeout: LONG },
+    async () => {
+      const row = await grant("home-gone", life);
+      expect(await revokeHome(w.home, w.path, [row])).toBe(1);
+      for (const instance of ["never-registered-here", "home-gone"]) {
+        for (const space of ["No Such Space", undefined]) {
+          const agent = await connect({ instance, ...(space === undefined ? {} : { space }) });
+          // With nothing to settle on, the bind gives the default or none; either way the
+          // command that registers the home is what helps.
+          if (space !== undefined) expect(agent.binding).toEqual({ space: null, state: "unbound" });
+          expect(await refusedText(agent, "space.status"), `${instance} ${String(space)}`).toBe(
+            GRANT_TEXT,
+          );
+          await agent.close();
+        }
+      }
+    },
+  );
 });
 
 describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every connection of its home", () => {

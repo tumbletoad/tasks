@@ -84,7 +84,7 @@ import {
   type PackContent,
 } from "../launch/open.ts";
 import type { Session, SessionPort } from "./binding.ts";
-import { checkGrant, standingOf, type HomeGate } from "./grant.ts";
+import { checkGrant, grantRefused, standingOf, type HomeGate } from "./grant.ts";
 import { addDays, dateIn, dueDate, localTimeZone, pastInstant } from "./dates.ts";
 import { GUIDE_STEPS, GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
@@ -469,7 +469,13 @@ function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): Us
       manual: caller.home === undefined || caller.home === MANUAL_INSTANCE,
       mayUse: host.homes?.spaceOf(caller.home ?? ""),
     });
-    if (held === undefined) throw noSpace(host, entry());
+    if (held === undefined) {
+      const facts = entry();
+      // An instance whose home has no one live row (revoked, never registered, or two): the
+      // grant refusal's command registers the home and rewrites its entry in one step.
+      if (!facts.manual && facts.mayUse === undefined) throw grantRefused();
+      throw noSpace(host, facts);
+    }
     try {
       return heldSpace(host, caller, held, named);
     } catch (error) {
@@ -583,7 +589,10 @@ function spaceWords(host: OpsHost, space: string): string {
 /**
  * A bridge whose bind found no space it can be sure of: refused on every call, saying what settles
  * it. Its entry named a space that is no one space here; or it named none, and its process
- * started with no default to take, or an older bridge reconnected without its space.
+ * started with no default to take, or an older bridge reconnected without its space. It serves
+ * two entries: a registered home with one space it may use, told to name that space, and a
+ * hand-made entry, told what the default needs. A registered home with no such space gets the
+ * grant refusal instead (pickSpace).
  */
 function noSpace(host: OpsHost, entry: EntryFacts): AppError {
   const unknown = entry.named
@@ -593,9 +602,8 @@ function noSpace(host: OpsHost, entry: EntryFacts): AppError {
   if (!entry.manual && entry.mayUse !== undefined) {
     fix = `It may use ${spaceWords(host, entry.mayUse)}: ask the user to name it in ${ENTRY} (--space ${entry.mayUse}), then to restart the agent app.`;
   } else if (entry.named) {
-    fix = entry.manual
-      ? "Ask the user to take the space out of the entry, which then uses the default space, or to correct it, then restart the agent app."
-      : "Ask the user to correct it, then to restart the agent app.";
+    fix =
+      "Ask the user to take the space out of the entry, which then uses the default space, or to correct it, then restart the agent app.";
   } else if (host.defaultSpace?.() !== undefined) {
     fix = "Ask the user to restart the agent app: it then works in the default space.";
   } else {
