@@ -239,6 +239,21 @@ if (typeof window !== "undefined") {
   });
 }
 
+/**
+ * Whether a refusal says the part's value is already there: a conflict on each of its fields
+ * whose present value is the one the part writes.
+ */
+function inPlace(part: Change, error: unknown): boolean {
+  const problem = problemOf(error);
+  if (problem?.code !== "conflict") return false;
+  return part.fields.every((field) => {
+    const conflict = problem.conflicts.find((c) => c.field === field);
+    if (conflict === undefined || !Object.hasOwn(conflict, "value")) return false;
+    const there = restoreChange(field, conflict.value);
+    return there !== undefined && effectOf(there) === effectOf(part);
+  });
+}
+
 /** An error the service sent (the generated client's AppError), read by its shape. */
 function problemOf(error: unknown): Problem | undefined {
   if (!(error instanceof Error)) return undefined;
@@ -296,6 +311,20 @@ function newer(store: string | undefined, answer: string | undefined): string | 
   if (a === null || b === null || a[1] !== b[1] || a[3] !== b[3]) return store;
   return Number(b[2]) > Number(a[2]) ? answer : store;
 }
+
+/** Whether `base` can be compared with what the screen shows at `now`: one history, not ahead. */
+function comparable(base: string, now: string): boolean {
+  const a = AS_OF.exec(base);
+  const b = AS_OF.exec(now);
+  return a !== null && b !== null && a[1] === b[1] && a[3] === b[3] && Number(a[2]) <= Number(b[2]);
+}
+
+/** A one-field change's effect on the row, the same for one value however it was made. */
+const effectOf = (change: Change): string =>
+  JSON.stringify([
+    Object.entries(change.overlay.set).sort(([a], [b]) => (a < b ? -1 : 1)),
+    [...(change.overlay.clear ?? [])].sort(),
+  ]);
 
 /** The key of a task's field in the maps of unsaved edits and others' changes. */
 export const keyOf = (task: string, field: string) => `${task}\u0000${field}`;
@@ -394,6 +423,11 @@ export class Edits {
   readonly #remote = new Map<string, Remote>();
   /** The timers of the rows that leave, per task. */
   readonly #holds = new Map<string, unknown[]>();
+  /**
+   * The kept edits sent again by Try again or Apply mine, by task and field, until their request
+   * is decided: the browser keeps them meanwhile, so a page that goes before the answer loses none.
+   */
+  readonly #retrying = new Map<string, Unsaved>();
   #marks = 0;
   #toasts = 0;
 
@@ -405,9 +439,30 @@ export class Edits {
       for (const field of unsaved.change.fields) restored.set(keyOf(unsaved.task, field), unsaved);
     }
     if (restored.size > 0) this.#state = { ...this.#state, unsaved: restored };
+    this.#baseKept();
     deps.onChanges(({ changes }) => {
+      this.#baseKept();
       this.#heard(changes);
     });
+  }
+
+  /**
+   * A failed edit kept without a base (an earlier build kept none) takes the screen's now once
+   * there is one: a change made after the reload is then a conflict, never overwritten.
+   */
+  #baseKept(): void {
+    const now = this.#deps.asOf();
+    if (now === undefined) return;
+    const based = new Map<Unsaved, Unsaved>();
+    for (const unsaved of this.#state.unsaved.values()) {
+      if (unsaved.reason === "failed" && unsaved.base === undefined && !based.has(unsaved)) {
+        based.set(unsaved, { ...unsaved, base: now });
+      }
+    }
+    if (based.size === 0) return;
+    const next = new Map(this.#state.unsaved);
+    for (const [key, unsaved] of next) next.set(key, based.get(unsaved) ?? unsaved);
+    this.#set({ ...this.#state, unsaved: next });
   }
 
   readonly subscribe = (listener: () => void): (() => void) => {
@@ -447,7 +502,15 @@ export class Edits {
    * with the person's value. `base` is the editor's, taken when it opened; a control leaves it out.
    */
   edit(task: TaskRow, change: Change, options: { readonly base?: string } = {}): void {
-    for (const field of change.fields) this.#forget(task.id, field);
+    void this.#edit(task, change, options);
+  }
+
+  /** `edit`, resolved once its request is decided, or kept as not saved for want of an answer. */
+  #edit(task: TaskRow, change: Change, options: { readonly base?: string }): Promise<void> {
+    for (const field of change.fields) {
+      this.#retrying.delete(keyOf(task.id, field));
+      this.#forget(task.id, field);
+    }
     this.#edits += 1;
     const number = this.#edits;
     for (const field of change.fields) this.#latest.set(keyOf(task.id, field), number);
@@ -475,7 +538,7 @@ export class Edits {
       [...interim]
         .filter(([part, line]) => this.unsaved(task.id, part.fields[0] ?? "title") === line)
         .map(([part]) => part);
-    void this.#outcome(
+    return this.#outcome(
       sent.answer,
       sent.call,
       (decision, say, late) => {
@@ -491,13 +554,18 @@ export class Edits {
         }
         // Kept part by part: a part whose field the person edited again since gives way to that
         // newer choice, and the others still wait for the person.
-        const kept = late
+        const waiting = late
           ? stillShown()
           : (change.parts ?? [change]).filter((part) =>
               part.fields.every((field) => this.#latest.get(keyOf(task.id, field)) === number),
             );
+        // A conflict with the person's own value (saved after all, before a reload or from
+        // another tab) is no conflict: that part is saved.
+        const there = waiting.filter((part) => inPlace(part, decision.error));
+        if (late) for (const part of there) this.#forget(task.id, part.fields[0] ?? "title");
+        const kept = waiting.filter((part) => !there.includes(part));
         if (kept.length > 0) interim = this.#refused(task, kept, seen, decision.error, say);
-        else if (late) say(undefined);
+        else if (late || there.length > 0) say(undefined);
       },
       toast,
     );
@@ -507,17 +575,37 @@ export class Edits {
   apply(task: string, field: Field): void {
     const unsaved = this.unsaved(task, field);
     if (unsaved === undefined) return;
-    this.#again({ id: unsaved.task, ref: unsaved.ref }, unsaved.change, unsaved);
+    this.#again({ id: unsaved.task, ref: unsaved.ref }, unsaved.change, [unsaved]);
   }
 
   /**
-   * A kept value sent again: after a conflict (Apply mine) over the other value the screen shows
-   * now, after a failure (Try again) with the base the person made it at.
+   * Kept values sent again: after a conflict (Apply mine) over the other value the screen shows
+   * now; after a failure (Try again) with the base the person made it at, while the service can
+   * still compare it (after a restore it cannot: then the screen's now). The browser keeps the
+   * lines until the request is decided.
    */
-  #again(task: Pick<TaskRow, "id" | "ref">, change: Change, kept: Unsaved): void {
+  #again(task: Pick<TaskRow, "id" | "ref">, change: Change, lines: readonly Unsaved[]): void {
     const row = this.#deps.rowOf(task.ref) ?? ({ ...task } as TaskRow);
-    const base = kept.reason === "failed" ? kept.base : undefined;
-    this.edit(row, change, base === undefined ? {} : { base });
+    const kept = lines[0];
+    const now = this.#deps.asOf();
+    const base =
+      kept?.reason === "failed" &&
+      kept.base !== undefined &&
+      (now === undefined || comparable(kept.base, now))
+        ? kept.base
+        : undefined;
+    const decided = this.#edit(row, change, base === undefined ? {} : { base });
+    const keys = lines.flatMap((line) =>
+      line.change.fields.map((field) => [keyOf(line.task, field), line] as const),
+    );
+    for (const [key, line] of keys) this.#retrying.set(key, line);
+    this.#keep();
+    void decided.then(() => {
+      for (const [key, line] of keys) {
+        if (this.#retrying.get(key) === line) this.#retrying.delete(key);
+      }
+      this.#keep();
+    });
   }
 
   /** The person keeps the other value: their own goes. */
@@ -1294,9 +1382,9 @@ export class Edits {
             (part) => this.unsaved(task.id, part.fields[0] ?? "title") === lines.get(part),
           );
           const again = joinChanges(waiting);
-          const line = lines.get(waiting[0] ?? first);
-          if (again === undefined || line === undefined) return;
-          this.#again(task, again, line);
+          const kept = waiting.flatMap((part) => lines.get(part) ?? []);
+          if (again === undefined || kept.length === 0) return;
+          this.#again(task, again, kept);
         },
       },
     });
@@ -1403,6 +1491,16 @@ export class Edits {
     }
   }
 
+  /** Hands the browser what waits: the lines shown, and those sent again until decided. */
+  #keep(): void {
+    if (this.#deps.keeper === undefined) return;
+    this.#deps.keeper.save(
+      this.#retrying.size === 0
+        ? this.#state.unsaved
+        : new Map([...this.#retrying, ...this.#state.unsaved]),
+    );
+  }
+
   #toast(toast: Omit<Toast, "key">): Toast {
     this.#toasts += 1;
     const shown: Toast = { ...toast, key: this.#toasts };
@@ -1419,7 +1517,7 @@ export class Edits {
   #set(state: EditState): void {
     const before = this.#state;
     this.#state = state;
-    if (state.unsaved !== before.unsaved) this.#deps.keeper?.save(state.unsaved);
+    if (state.unsaved !== before.unsaved) this.#keep();
     for (const listener of this.#listeners) listener();
   }
 }
