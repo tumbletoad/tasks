@@ -45,6 +45,7 @@ export default defineConfig({
           name: "product",
           include: testFiles.include,
           exclude: [...testFiles.exclude, `${LAB_DIR}/**`],
+          globalSetup: ["tests/run-builds-setup.ts"],
           // A time limit only ends a test that hangs: it says nothing about how fast the code is.
           // On a loaded machine, tests that take a second or two alone have taken more than 30 s
           // beside every other file. A test's own explicit timeout still wins: give one only to

@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { assertReleaseBinary, buildLaunchers, type Launchers } from "../src/build.ts";
 import {
   addVersion,
+  runLaunchers,
   alive,
   childEnv,
   type Env,
@@ -49,11 +50,11 @@ describe.runIf(windows)("Windows launchers", () => {
   /** The native fixtures of test/fixtures/ (see native.ts). */
   let fixture: { provider: string; spy: string; starter: string };
 
-  beforeAll(() => {
+  beforeAll(async () => {
     work = tempDir("launcher");
     prepareRuntime(work);
-    release = buildLaunchers(join(work, "release"));
-    hooks = buildLaunchers(join(work, "hooks"), { testHooks: true });
+    release = await runLaunchers("release");
+    hooks = await runLaunchers("hooks");
     const dir = join(work, "fixtures");
     mkdirSync(dir);
     fixture = {
@@ -198,10 +199,14 @@ describe.runIf(windows)("Windows launchers", () => {
             expect(all.env["NODE_PATH"], "NODE_PATH reached Node").toBe(false);
             expect(all.env["TTASKS_LAUNCH_MODE"]).toBe(mode);
           }
+          expect(launchArgv(exe, []).args).toEqual([]);
+        }
+        // One at a time through both programs and both modes: every launcher copies the tail
+        // with the same code, and the runs above pass every argument through all four.
+        for (const exe of [stable(root), versionLocal(root, OLD, true)]) {
           for (const arg of HOSTILE_ARGS) {
             expect(launchArgv(exe, [arg]).args, `${exe} ${JSON.stringify(arg)}`).toEqual([arg]);
           }
-          expect(launchArgv(exe, []).args).toEqual([]);
         }
       },
       SLOW,
