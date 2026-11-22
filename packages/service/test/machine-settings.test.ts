@@ -191,42 +191,6 @@ describe("[A7.3.12.m5-11.machine-settings] this machine's settings, kept in mach
       expect(own(machineToml(world))).toBe(
         '# my terminal\n[terminal]\napp = "ghostty"\n# the fast one\n',
       );
-
-      // A choice made before the one that stands, arriving after it, changes nothing.
-      const late = await terminal({ app: "auto", at: Date.now() - 60_000 });
-      expect(late.body["result"]).toMatchObject({ terminal: { chosen: "ghostty" } });
-      expect(own(machineToml(world))).toBe(
-        '# my terminal\n[terminal]\napp = "ghostty"\n# the fast one\n',
-      );
-    },
-  );
-
-  test(
-    "of two quick choices that arrive the other way round, the later one stands",
-    SLOW,
-    async () => {
-      const world = await httpWorld("machine-order", { ui: UI }, { toml: MINE });
-      worlds.push(world);
-      const { token } = await signIn(world);
-      const port = world.port();
-      const set = async (body: unknown) => {
-        const reply = await post(port, "/api/v1/machine/pref", body, { token });
-        return { status: reply.status, body: JSON.parse(reply.body) as unknown };
-      };
-      const theme = (value: string) => ({
-        status: 200,
-        body: { result: { key: "ui.theme", value, state: "set" } },
-      });
-      const chose = Date.now();
-      expect(await set({ key: "ui.theme", value: "system", at: chose })).toEqual(theme("system"));
-      // Washi was chosen first and arrives last: System stands, and the answer says so.
-      expect(await set({ key: "ui.theme", value: "washi", at: chose - 200 })).toEqual(
-        theme("system"),
-      );
-      expect(machineToml(world)).toContain('"ui.theme" = "system"');
-      // A later choice stands, also one that says nothing of when it was made.
-      expect(await set({ key: "ui.theme", value: "washi" })).toEqual(theme("washi"));
-      expect(machineToml(world)).toContain('"ui.theme" = "washi"');
     },
   );
 });

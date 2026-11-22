@@ -22,6 +22,7 @@ import {
   servedTheme,
   type ThemeChoice,
 } from "../theme/preference.ts";
+import { Turns } from "./turns.ts";
 
 export interface MachineSettings {
   readonly theme: ThemeChoice;
@@ -51,6 +52,7 @@ export const MachineContext = createContext<MachineControl>({
 export const useMachine = (): MachineControl => useContext(MachineContext);
 
 type Key = "ui.theme" | "ui.single_keys";
+type Kept = Awaited<ReturnType<Api["setMachinePreference"]>>;
 
 /** What a `machine` message says, each value checked by its shape. */
 function settingsOf(
@@ -78,8 +80,8 @@ export function useMachineControl(
   const held = useRef<MachineSettings | undefined>(undefined);
   /** Changes on their way, per key: until they settle, the feed's older word does not show. */
   const pending = useRef(new Map<Key, number>());
-  /** The newest change per key: only its answer says what stands, as answers may cross. */
-  const newest = useRef(new Map<Key, number>());
+  /** Each key's changes, sent one at a time. */
+  const turns = useRef(new Map<Key, Turns<Kept>>());
   /** An older build's choice in this browser, handed over at the first message. */
   const legacy = useRef(legacyTheme(store));
 
@@ -105,21 +107,28 @@ export function useMachineControl(
       if (api === undefined) throw new Error("No sign-in");
       const before = shownRef.current[field];
       pending.current.set(key, (pending.current.get(key) ?? 0) + 1);
-      const mine = (newest.current.get(key) ?? 0) + 1;
-      newest.current.set(key, mine);
       setShown((s) => ({ ...s, [field]: value }));
+      let keyTurns = turns.current.get(key);
+      if (keyTurns === undefined) {
+        keyTurns = new Turns();
+        turns.current.set(key, keyTurns);
+      }
+      const turn = keyTurns.take(() => api.setMachinePreference(key, value));
       try {
-        const kept = await api.setMachinePreference(key, value);
+        const kept = await turn.answer;
         // The answer is the service's word too: the feed's message for it may come after it, or,
         // with the feed down, only at the next connection.
         const now = held.current;
-        if (now !== undefined && newest.current.get(key) === mine) {
+        if (kept !== undefined && now !== undefined) {
           const { theme, singleKeys } = settingsOf([kept], now);
           held.current = { theme, singleKeys };
         }
       } catch (error) {
-        // Refused before the service ever said what it holds: back to what was shown.
-        if (held.current === undefined) setShown((s) => ({ ...s, [field]: before }));
+        // Refused before the service ever said what it holds: back to what was shown, unless a
+        // newer choice is on its way.
+        if (held.current === undefined && turn.newest()) {
+          setShown((s) => ({ ...s, [field]: before }));
+        }
         throw error;
       } finally {
         pending.current.set(key, (pending.current.get(key) ?? 1) - 1);

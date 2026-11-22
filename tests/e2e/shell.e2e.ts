@@ -16,6 +16,14 @@ const field = (page: Page) => page.getByRole("textbox", { name: "New task" });
 const spaces = (page: Page) => page.getByRole("dialog", { name: "Spaces on this machine" });
 
 /** Chooses a theme the way a person does: a press on its label (the radio itself is hidden). */
+/** The service's answer to the page's choice of `theme`. */
+const kept = (page: Page, theme: string) =>
+  page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/machine/pref") &&
+      response.request().postData()?.includes(`"value":"${theme}"`) === true,
+  );
+
 async function choose(page: Page, theme: string): Promise<void> {
   await page.locator("label", { hasText: theme }).click();
   await expect(page.getByRole("radio", { name: new RegExp(`^${theme}`) })).toBeChecked();
@@ -136,19 +144,25 @@ test.describe("[A7.3.12.m5-01.e2e.strict-csp] The shell under the strict CSP", (
     await expect(page.locator("html")).toHaveAttribute("data-theme", "washi");
     expect(await background()).toBe("rgb(245, 242, 235)");
     await page.emulateMedia({ colorScheme: "dark" });
+    // A choice made while another is on its way is sent after that one's answer: the reload waits
+    // until the service kept System.
+    const system = kept(page, "system");
     await choose(page, "System");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "system");
     expect(await background()).toBe("rgb(23, 22, 20)");
     await page.emulateMedia({ colorScheme: "light" });
     expect(await background()).toBe("rgb(245, 242, 235)");
     // The choice holds after a reload.
+    await system;
     await page.reload();
     await showsSpace(page, world.mira.name);
     await expect(page.locator("html")).toHaveAttribute("data-theme", "system");
+    const sumi = kept(page, "sumi");
     await choose(page, "Sumi");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "sumi");
     // This machine keeps the choice: the browser keeps none of its own.
     expect(await page.evaluate((key) => localStorage.getItem(key), THEME_KEY)).toBeNull();
+    await sumi;
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "sumi");
 

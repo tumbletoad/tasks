@@ -24,6 +24,7 @@ import { isThemeChoice, THEME_CHOICES, type ThemeChoice } from "../theme/prefere
 import { AgentApps } from "./AgentApps.tsx";
 import { useTitle, useToast } from "./frame.ts";
 import { useMachine } from "./machine.ts";
+import { Turns } from "./turns.ts";
 import css from "./Settings.module.css";
 import { classes } from "./css.ts";
 
@@ -194,6 +195,7 @@ function Terminal() {
   const [view, setView] = useState<TerminalView | null | undefined>(undefined);
   /** The choice on its way: shown until the service answers. */
   const [choosing, setChoosing] = useState<string | undefined>(undefined);
+  const [turns] = useState(() => new Turns<TerminalView | null>());
 
   const read = useCallback(() => {
     if (api === undefined) return;
@@ -222,11 +224,11 @@ function Terminal() {
         value={choosing ?? view.chosen}
         onChange={(app) => {
           setChoosing(app);
-          api
-            .terminal(app)
+          const turn = turns.take(() => api.terminal(app));
+          turn.answer
             .then(
               (next) => {
-                setView(next);
+                if (next !== undefined) setView(next);
               },
               (error: unknown) => {
                 say(t(failure(error)));
@@ -235,7 +237,7 @@ function Terminal() {
               },
             )
             .finally(() => {
-              setChoosing(undefined);
+              if (turn.newest()) setChoosing(undefined);
             });
         }}
       >

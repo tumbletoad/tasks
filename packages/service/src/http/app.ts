@@ -146,10 +146,9 @@ export interface UiApps {
 export interface UiMachine {
   preferences(): readonly PreferenceRead[];
   theme(): string;
-  /** `at`: when the person chose, by the page's clock. */
-  setPreference(key: unknown, value: unknown, at?: unknown): Promise<PreferenceRead>;
+  setPreference(key: unknown, value: unknown): Promise<PreferenceRead>;
   terminal(): Promise<unknown>;
-  setTerminal(app: unknown, at?: unknown): Promise<unknown>;
+  setTerminal(app: unknown): Promise<unknown>;
   onChange(listener: () => void): () => void;
 }
 
@@ -939,14 +938,14 @@ export class HttpApp {
         });
       }
       if (action === "pref") {
-        const read = await machine.setPreference(input["key"], input["value"], input["at"]);
+        const read = await machine.setPreference(input["key"], input["value"]);
         this.#json(res, port, 200, { result: read });
         return;
       }
       const terminal =
         input["app"] === undefined
           ? await machine.terminal()
-          : await machine.setTerminal(input["app"], input["at"]);
+          : await machine.setTerminal(input["app"]);
       this.#json(res, port, 200, { result: { terminal } });
     } catch (error) {
       const body: ErrorBody =
