@@ -152,10 +152,14 @@ function elicitationText(request: Json): string {
     const field = record(value);
     if (field === undefined) continue;
     const name = string(field["title"]) ?? string(field["description"]) ?? key;
+    // A field of several choices holds them in its `items`.
+    const options = record(field["items"]) ?? field;
     const choices = (
-      array(field["enumNames"]) ??
-      array(field["enum"]) ??
-      (array(field["oneOf"]) ?? []).map((o) => record(o)?.["title"] ?? record(o)?.["const"])
+      array(options["enumNames"]) ??
+      array(options["enum"]) ??
+      (array(options["oneOf"]) ?? array(options["anyOf"]) ?? []).map(
+        (o) => record(o)?.["title"] ?? record(o)?.["const"],
+      )
     )
       .map((choice) => (typeof choice === "string" ? choice : undefined))
       .filter((choice): choice is string => choice !== undefined && choice !== "");

@@ -430,31 +430,45 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
   });
 
   test("an MCP tool's question ends the run as needing the person, with the question and its choices, and is answered with no choice made", async () => {
-    const requests = [
+    // One choice, and several choices in both of the forms MCP gives them.
+    const fields: readonly Record<string, unknown>[] = [
+      { type: "string", title: "Format", enum: ["CSV", "PDF"] },
+      { type: "array", title: "Format", items: { type: "string", enum: ["CSV", "PDF"] } },
       {
-        subtype: "elicitation",
-        mcp_server_name: "reports",
-        message: "Which format should the export use?",
-        requested_schema: {
-          type: "object",
-          properties: { format: { type: "string", title: "Format", enum: ["CSV", "PDF"] } },
+        type: "array",
+        title: "Format",
+        items: {
+          anyOf: [
+            { const: "csv", title: "CSV" },
+            { const: "pdf", title: "PDF" },
+          ],
         },
       },
     ];
-    const { driver, fake } = bench({ fixture: "windows-plain", requests });
-    expect(await driver.settled).toEqual(
-      done({
-        ok: false,
-        outcome: "needs_input",
-        text: "reports asks: Which format should the export use?\nFormat (CSV, PDF)",
-      }),
-    );
-    const answers = ofType(fake, "control_response").map((m) => m["response"]);
-    expect(answers[0]).toEqual({
-      subtype: "success",
-      request_id: "fake-request-0",
-      response: { action: "cancel" },
-    });
+    for (const format of fields) {
+      const requests = [
+        {
+          subtype: "elicitation",
+          mcp_server_name: "reports",
+          message: "Which format should the export use?",
+          requested_schema: { type: "object", properties: { format } },
+        },
+      ];
+      const { driver, fake } = bench({ fixture: "windows-plain", requests });
+      expect(await driver.settled, JSON.stringify(format)).toEqual(
+        done({
+          ok: false,
+          outcome: "needs_input",
+          text: "reports asks: Which format should the export use?\nFormat (CSV, PDF)",
+        }),
+      );
+      const answers = ofType(fake, "control_response").map((m) => m["response"]);
+      expect(answers[0]).toEqual({
+        subtype: "success",
+        request_id: "fake-request-0",
+        response: { action: "cancel" },
+      });
+    }
   });
 
   test("a permission prompt says what would run or change: the command, the file, the address, an MCP tool's arguments", async () => {
