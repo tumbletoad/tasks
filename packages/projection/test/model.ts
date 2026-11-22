@@ -1029,6 +1029,8 @@ class Model {
 }
 
 let runs = 0;
+/** How many runs this file has made so far. */
+export const runsMade = (): number => runs;
 
 /** What this file's runs reached: a fixed seed must reach each often enough to mean something. */
 const seen = {

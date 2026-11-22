@@ -2,7 +2,7 @@
 // are in model-seed-*.test.ts.
 import fc from "fast-check";
 import { describe, test } from "vitest";
-import { INVARIANTS, property, run, SUITE, type Action } from "./model.ts";
+import { INVARIANTS, property, run, runsMade, SUITE, type Action } from "./model.ts";
 
 /**
  * Fresh random runs. A defect seen once in about 800 runs passed 20 runs in most checks: finding
@@ -13,8 +13,12 @@ import { INVARIANTS, property, run, SUITE, type Action } from "./model.ts";
 const RUNS = Number(
   process.env["PROJECTION_MODEL_RUNS"] ?? (process.env["TTASKS_DEEP"] === "1" ? "2000" : "0"),
 );
-/** The deep job's soak stops at this, a pass for the runs it made. */
-const SOAK_MS = 40 * 60_000;
+/**
+ * The deep job's soak must make all its runs within this: one cut short fails, so a slow or hung
+ * soak is never read as a pass. A CI run of the fixed seeds took about 1.4 s a run on
+ * windows-2025 and 0.2 s on ubuntu-24.04.
+ */
+const SOAK_MS = 60 * 60_000;
 
 const quietRun = {
   kind: "run",
@@ -75,11 +79,20 @@ describe(SUITE, () => {
       }
       for (const actions of COUNTEREXAMPLES) await run(actions);
       if (RUNS > 0) {
-        await fc.assert(property, {
-          numRuns: RUNS,
-          interruptAfterTimeLimit: SOAK_MS,
-          markInterruptAsFailure: false,
-        });
+        const before = runsMade();
+        const started = performance.now();
+        try {
+          await fc.assert(property, {
+            numRuns: RUNS,
+            interruptAfterTimeLimit: SOAK_MS,
+            markInterruptAsFailure: true,
+          });
+        } finally {
+          const seconds = ((performance.now() - started) / 1000).toFixed(0);
+          console.log(
+            `projection model: ${String(runsMade() - before)} of ${String(RUNS)} random runs in ${seconds} s`,
+          );
+        }
       }
     },
     600_000 + Math.min(RUNS * 2_000, SOAK_MS),
