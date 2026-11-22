@@ -56,7 +56,7 @@ async function firstStart(page: Page, fresh: FreshWorld): Promise<void> {
 }
 
 test.describe("[A7.3.12.m5-12.e2e.skip] Skip: a space is all a person needs, and nothing else is changed", () => {
-  test("a name and one button make the space, and Skip goes to it with every agent app as it was", async ({
+  test("a name and one button make the space, and Skip goes to it with every agent app as it was @one-browser", async ({
     page,
     fresh,
   }) => {
@@ -82,7 +82,7 @@ test.describe("[A7.3.12.m5-12.e2e.skip] Skip: a space is all a person needs, and
 });
 
 test.describe("[A7.3.12.m5-12.e2e.first-start] The first start: a space, two apps found, one switched off, applied, and Open offers the app", () => {
-  test("from the sign-in to a space whose task opens in the app that was set up", async ({
+  test("from the sign-in to a space whose task opens in the app that was set up @one-browser", async ({
     page,
     fresh,
   }) => {
@@ -131,7 +131,7 @@ test.describe("[A7.3.12.m5-12.e2e.first-start] The first start: a space, two app
 });
 
 test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing is as easy as adding, and a home that changed is not written", () => {
-  test("Settings shows the apps as they stand, takes one out, refuses a changed home with the new view, and takes the rest out", async ({
+  test("Settings shows the apps as they stand, takes one out, refuses a changed home with the new view, and takes the rest out @one-browser", async ({
     page,
     fresh,
   }) => {
@@ -187,7 +187,7 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
 });
 
 test.describe("[A7.3.12.m5-12.e2e.switcher] The space switcher's New space and Open folder", () => {
-  test("New space makes one and goes to it; Open folder serves a space folder and goes to it", async ({
+  test("New space makes one and goes to it; Open folder serves a space folder and goes to it @one-browser", async ({
     page,
     fresh,
   }) => {

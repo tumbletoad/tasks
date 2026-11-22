@@ -18,7 +18,9 @@ export default defineConfig({
   // Each worker starts a service and opens spaces: generous bounds for a loaded machine.
   timeout: 180_000,
   expect: { timeout: 30_000 },
-  workers: 2,
+  // Every worker has its own service, home, port, pipe, fakes and browser, so workers share
+  // nothing but the built page. CI's runners have 4 processors.
+  workers: ci ? 4 : 8,
   forbidOnly: true,
   retries: 0,
   reporter: ci ? [["list"], ["html", { open: "never", outputFolder: "./report" }]] : [["list"]],
@@ -29,6 +31,13 @@ export default defineConfig({
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"], viewport } },
-    { name: "firefox", use: { ...devices["Desktop Firefox"], viewport } },
+    // A test tagged @one-browser is about the service, a process or the fake terminal, not the
+    // engine. What a second engine could do differently (keys, input methods, focus, layout,
+    // storage, the CSP, the accessibility and width checks) has tests of its own in both.
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"], viewport },
+      grepInvert: /@one-browser/,
+    },
   ],
 });

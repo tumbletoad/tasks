@@ -2801,7 +2801,7 @@
     },
     {
       "id": "A5.3.3.e2e.backup-trouble",
-      "title": "In Chromium and Firefox: an open space whose daily backup failed has a quiet mark on the space switcher, and the switcher's popover says what happened and names tasks space backup; the mark goes when the tab is shown again after backups work, without opening the switcher",
+      "title": "In Chromium: an open space whose daily backup failed has a quiet mark on the space switcher, and the switcher's popover says what happened and names tasks space backup; the mark goes when the tab is shown again after backups work, without opening the switcher",
       "source": "A5 3.3, A1 3.18",
       "owner": "M5",
       "kind": "ci",
@@ -2809,7 +2809,7 @@
     },
     {
       "id": "A5.3.3.e2e.not-open",
-      "title": "In Chromium and Firefox: a machine whose only space needs recovery shows the space with tasks space recover on the landing page, never the advice to create a space",
+      "title": "In Chromium: a machine whose only space needs recovery shows the space with tasks space recover on the landing page, never the advice to create a space",
       "source": "A5 3.3, A2 3.1",
       "owner": "M5",
       "kind": "ci",
@@ -3726,7 +3726,7 @@
     },
     {
       "id": "A7.3.9.m2-13.e2e.open",
-      "title": "Playwright with fakes, in Chromium and Firefox against the real service process: Open on a row's tile sends exactly `<cli> shim <ticket>` to the fake terminal, the receipt reaches Confirmed live in the expanded row, and an agent's log entry appears without a reload",
+      "title": "Playwright with fakes, in Chromium against the real service process: Open on a row's tile sends exactly `<cli> shim <ticket>` to the fake terminal, the receipt reaches Confirmed live in the expanded row, and an agent's log entry appears without a reload",
       "source": "A7 3.9 M2.13, A5 3.6, A5 3.9, A4 3.6.2",
       "owner": "M2",
       "kind": "ci",
@@ -3769,7 +3769,7 @@
     },
     {
       "id": "A7.3.14.m6-11.e2e.pack",
-      "title": "Playwright in Chromium and Firefox against the real service process: Shift+Copy on the expanded task puts the context pack on the clipboard (its first line the task's and launch's references, the return block for the task, within 8,000 characters), the toast says Context pack copied, and the Copy button's tooltip says what leaves, under the strict CSP",
+      "title": "Playwright in Chromium against the real service process: Shift+Copy on the expanded task puts the context pack on the clipboard (its first line the task's and launch's references, the return block for the task, within 8,000 characters), the toast says Context pack copied, and the Copy button's tooltip says what leaves, under the strict CSP",
       "source": "A7 3.14 M6.11, A4 3.4.6, A4 3.15.5, A5 3.8",
       "owner": "M6",
       "kind": "ci",
@@ -3777,7 +3777,7 @@
     },
     {
       "id": "A7.3.9.m2-10.e2e.copy",
-      "title": "Playwright in Chromium and Firefox against the real service process: Copy on a row puts the pointer brief on the clipboard (its first line the task's reference, quoted title and launch reference, then the folder line), records its launch, and the expanded row shows it as copied, under the strict CSP",
+      "title": "Playwright in Chromium against the real service process: Copy on a row puts the pointer brief on the clipboard (its first line the task's reference, quoted title and launch reference, then the folder line), records its launch, and the expanded row shows it as copied, under the strict CSP",
       "source": "A7 3.9 M2.10, A4 3.4.6, A4 3.15.4, A5 3.8",
       "owner": "M2",
       "kind": "ci",
@@ -3985,7 +3985,7 @@
     },
     {
       "id": "A7.3.9.m2-13.e2e.races",
-      "title": "Against the real service in Chromium and Firefox: a Running tile expands its row and starts no launch, the strip opens a second session only when asked, a receipt list that answers late does not take Running away, and a task that is added keeps the draft typed while it was added",
+      "title": "Against the real service in Chromium: a Running tile expands its row and starts no launch, the strip opens a second session only when asked, a receipt list that answers late does not take Running away, and a task that is added keeps the draft typed while it was added",
       "source": "A7 3.9 M2.13, A5 3.6, A5 3.9, A5 3.13",
       "owner": "M2",
       "kind": "ci",
@@ -3993,7 +3993,7 @@
     },
     {
       "id": "A5.3.9.e2e.session-end",
-      "title": "Against the real service in Chromium and Firefox: a session is shown as running while it runs, in a second tab too, and once its agent quits, its window closes, its shim is killed or it ends while the service is stopped, nothing shows it as running and Open works again in the strip and on the tile; a double click starts one session; a Confirmed launch an earlier build recorded without an end is shown as opened; screens of running, ended, did not start and opened",
+      "title": "Against the real service in Chromium, the double click and the screens in Firefox too: a session is shown as running while it runs, in a second tab too, and once its agent quits, its window closes, its shim is killed or it ends while the service is stopped, nothing shows it as running and Open works again in the strip and on the tile; a double click starts one session; a Confirmed launch an earlier build recorded without an end is shown as opened; screens of running, ended, did not start and opened",
       "source": "A5 3.6, A5 3.9",
       "owner": "M2",
       "kind": "ci",
@@ -4359,28 +4359,28 @@
     },
     {
       "id": "A7.3.12.m5-12.e2e.skip",
-      "title": "In Chromium and Firefox on a fresh install: a name and one button make the first space with its prefix proposed, the agent apps show the usual choice made, and Skip goes to the space with no agent app changed",
+      "title": "In Chromium on a fresh install: a name and one button make the first space with its prefix proposed, the agent apps show the usual choice made, and Skip goes to the space with no agent app changed",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A7.3.12.m5-12.e2e.first-start",
-      "title": "In Chromium and Firefox on a fresh install: a space with a prefix of the person's own, two agent apps found with fake commands, one switch turned off, what changes listed with exactly what is written behind one click, applied, and the task's Open button offers the app",
+      "title": "In Chromium on a fresh install: a space with a prefix of the person's own, two agent apps found with fake commands, one switch turned off, what changes listed with exactly what is written behind one click, applied, and the task's Open button offers the app",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A7.3.12.m5-12.e2e.settings",
-      "title": "In Chromium and Firefox: Settings shows the agent apps as they stand, takes one app's tools out, refuses a home that changed between the view and the click with the new view and the choice kept, and takes everything out again",
+      "title": "In Chromium: Settings shows the agent apps as they stand, takes one app's tools out, refuses a home that changed between the view and the click with the new view and the choice kept, and takes everything out again",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A7.3.12.m5-12.e2e.switcher",
-      "title": "In Chromium and Firefox: the space switcher's New space makes a space and goes to it, and Open folder refuses a folder that is not a full path in the service's words and serves a space folder",
+      "title": "In Chromium: the space switcher's New space makes a space and goes to it, and Open folder refuses a folder that is not a full path in the service's words and serves a space folder",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4767,7 +4767,7 @@
     },
     {
       "id": "A7.3.12.m5-07.e2e.strip",
-      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line and clears once the agent read it; Open without text sends the brief alone; while a session runs the strip says so and opens a second one, with the words as its request, only when asked; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
+      "title": "In Chromium and Firefox against the real service, Open without text and a launch that is not recorded in Chromium only: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line and clears once the agent read it; Open without text sends the brief alone; while a session runs the strip says so and opens a second one, with the words as its request, only when asked; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
       "source": "A5 3.8, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",
@@ -4775,7 +4775,7 @@
     },
     {
       "id": "A7.3.12.request.e2e.unread",
-      "title": "In Chromium and Firefox against the real service: Open with words on an agent that never reads the request puts the words on no command line; once the agent ended without reading them they stay in the field and in the browser's draft, and the page says the agent did not read them",
+      "title": "In Chromium against the real service: Open with words on an agent that never reads the request puts the words on no command line; once the agent ended without reading them they stay in the field and in the browser's draft, and the page says the agent did not read them",
       "source": "A5 3.8",
       "owner": "M5",
       "kind": "ci",
@@ -5167,7 +5167,7 @@
     },
     {
       "id": "A5.3.3.e2e.installed",
-      "title": "In Chromium and Firefox: the page names a newer installed version and the restart command in its status bar; after a restart into another build it offers a reload, keeps its rows and does not say the service is down",
+      "title": "In Chromium: the page names a newer installed version and the restart command in its status bar; after a restart into another build it offers a reload, keeps its rows and does not say the service is down",
       "source": "A5 3.3, A2 3.8.4",
       "owner": "M6",
       "kind": "ci",
@@ -5217,14 +5217,14 @@
     },
     {
       "id": "A7.3.12.m5-14.e2e.add-project",
-      "title": "In Chromium and Firefox: New project from a folder shows its name and repository and opens the project with its folder, Undo and Redo and Ctrl+Z take it out and back, the same works by keyboard alone, a folder that is a project's already opens that project, and a project can be added without a folder",
+      "title": "In Chromium, and by keyboard alone in Firefox too: New project from a folder shows its name and repository and opens the project with its folder, Undo and Redo and Ctrl+Z take it out and back, the same works by keyboard alone, a folder that is a project's already opens that project, and a project can be added without a folder",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A7.3.12.m5-14.e2e.project-folder",
-      "title": "In Chromium and Firefox: a project's folder line shows its folder, Change after a move says what followed and the task's own folder inside follows, Undo puts both back, and Clear and Ctrl+Z take it away and back",
+      "title": "In Chromium: a project's folder line shows its folder, Change after a move says what followed and the task's own folder inside follows, Undo puts both back, and Clear and Ctrl+Z take it away and back",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5238,7 +5238,7 @@
     },
     {
       "id": "A7.3.12.m5-14.e2e.open-refused",
-      "title": "In Chromium and Firefox: Open refused on a folder that is gone offers Choose another folder from its toast, and then opens there; a folder whose marker is missing offers Use this folder and Choose another folder on the task's folder line",
+      "title": "In Chromium: Open refused on a folder that is gone offers Choose another folder from its toast, and then opens there; a folder whose marker is missing offers Use this folder and Choose another folder on the task's folder line",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

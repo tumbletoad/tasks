@@ -168,7 +168,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     expect(await violations(page)).toEqual([]);
   });
 
-  test("Open without text opens as the tile does, a launch that is not recorded keeps the text, and while a session runs the strip opens another only when asked", async ({
+  test("Open without text opens as the tile does, a launch that is not recorded keeps the text, and while a session runs the strip opens another only when asked @one-browser", async ({
     page,
     world,
   }) => {
@@ -221,7 +221,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
 });
 
 test.describe("[A7.3.12.request.e2e.unread] An agent that never reads the request leaves the words in the field, and the page says so", () => {
-  test("the words go on no command line, the agent ends without reading them, and they stay with a notice", async ({
+  test("the words go on no command line, the agent ends without reading them, and they stay with a notice @one-browser", async ({
     page,
     world,
   }) => {

@@ -75,7 +75,7 @@ async function openRunning(world: World, p: ReturnType<typeof parts>): Promise<n
 }
 
 test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", () => {
-  test("the agent quits: the thread says it ended and how long it ran, and Open works again in the strip and on the tile, in a second tab too", async ({
+  test("the agent quits: the thread says it ended and how long it ran, and Open works again in the strip and on the tile, in a second tab too @one-browser", async ({
     page,
     world,
   }) => {
@@ -113,7 +113,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     await other.close();
   });
 
-  test("a tab opened while a session runs shows it running at once, and its tile starts no second one", async ({
+  test("a tab opened while a session runs shows it running at once, and its tile starts no second one @one-browser", async ({
     page,
     world,
   }) => {
@@ -150,7 +150,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     await expect(p.entries("ended")).toHaveCount(1, { timeout: SLOW_MS });
   });
 
-  test("its window closes: the session is no longer shown as running, and Open works again", async ({
+  test("its window closes: the session is no longer shown as running, and Open works again @one-browser", async ({
     page,
     world,
   }) => {
@@ -174,7 +174,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     await expect(p.tile).toHaveAttribute("data-state", "ready");
   });
 
-  test("its shim is killed: the session is shown as opened, never as running, and Open works again", async ({
+  test("its shim is killed: the session is shown as opened, never as running, and Open works again @one-browser", async ({
     page,
     world,
   }) => {
@@ -191,7 +191,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     world.release(ref);
   });
 
-  test("a launch an earlier build recorded as Confirmed without an end is shown as opened, never as running", async ({
+  test("a launch an earlier build recorded as Confirmed without an end is shown as opened, never as running @one-browser", async ({
     page,
     world,
   }) => {
@@ -202,7 +202,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     await expect(p.open).toHaveAttribute("aria-disabled", "false");
   });
 
-  test("the service restarts while the session runs, then while it ends: it runs on, then shows as ended", async ({
+  test("the service restarts while the session runs, then while it ends: it runs on, then shows as ended @one-browser", async ({
     page,
     restartable,
   }) => {

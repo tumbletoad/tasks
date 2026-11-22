@@ -393,7 +393,7 @@ test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens th
 });
 
 test.describe("[A5.3.3.e2e.not-open] A space that is not open says why and what to run", () => {
-  test("a machine whose only space needs recovery names the command, never space create", async ({
+  test("a machine whose only space needs recovery names the command, never space create @one-browser", async ({
     page,
     world,
   }) => {
@@ -423,7 +423,7 @@ test.describe("[A5.3.3.e2e.not-open] A space that is not open says why and what 
 });
 
 test.describe("[A5.3.3.e2e.backup-trouble] A space whose backups fail says so calmly in the switcher", () => {
-  test("the switcher carries a mark, and its popover names what to run; the mark goes when backups work again", async ({
+  test("the switcher carries a mark, and its popover names what to run; the mark goes when backups work again @one-browser", async ({
     page,
     world,
   }) => {
@@ -476,7 +476,7 @@ test.describe("[A5.3.3.e2e.backup-trouble] A space whose backups fail says so ca
 });
 
 test.describe("[A5.3.3.e2e.installed] A newer installed version, and the restart into it", () => {
-  test("the page names the installed version and the restart; after the restart it offers a reload and does not call the service down", async ({
+  test("the page names the installed version and the restart; after the restart it offers a reload and does not call the service down @one-browser", async ({
     page,
     world,
   }) => {

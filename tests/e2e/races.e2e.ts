@@ -37,7 +37,7 @@ function holdFirst() {
 }
 
 test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () => {
-  test("a late receipt list keeps Running; a Running tile expands its row, and the strip opens another only on purpose", async ({
+  test("a late receipt list keeps Running; a Running tile expands its row, and the strip opens another only on purpose @one-browser", async ({
     page,
     world,
   }) => {
@@ -110,7 +110,10 @@ test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () =>
     await expect(tile).toHaveAttribute("data-state", "ready");
   });
 
-  test("a task that is added keeps the draft typed while it was added", async ({ page, world }) => {
+  test("a task that is added keeps the draft typed while it was added @one-browser", async ({
+    page,
+    world,
+  }) => {
     await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
     const field = page.getByRole("textbox", { name: "New task" });
     const add = holdFirst();
