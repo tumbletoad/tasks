@@ -1135,6 +1135,12 @@
             "description": "Copy the context pack: the task's text, for an app without the tools",
             "type": "boolean"
           },
+          "request": {
+            "description": "Open with a note of yours on the task as the request, such as n2",
+            "maxLength": 7,
+            "pattern": "^[nl][1-9][0-9]{0,5}$",
+            "type": "string"
+          },
           "request_id": {
             "description": "New per intended change; reuse it only to retry that call",
             "maxLength": 64,
@@ -1147,7 +1153,7 @@
             "type": "string"
           },
           "text": {
-            "description": "Your words for the agent: it reads them with the task",
+            "description": "Your words for the agent: saved on the task as this launch's request",
             "maxLength": 65536,
             "type": "string"
           }
@@ -1273,13 +1279,18 @@
             ],
             "type": "object"
           },
+          "note": {
+            "description": "The note on the task that holds your words",
+            "pattern": "^[nl][1-9][0-9]{0,5}$",
+            "type": "string"
+          },
           "text": {
-            "description": "Your words: none, in the copy, saved as a note, or held for the agent",
+            "description": "Your words: none, in the copy, saved as a note, or this launch's request",
             "enum": [
               "none",
               "inline",
               "note",
-              "held"
+              "request"
             ],
             "type": "string"
           }
@@ -3707,6 +3718,16 @@
             "minimum": 1,
             "type": "integer"
           },
+          "notes": {
+            "description": "These notes too, whole, whatever their age",
+            "items": {
+              "maxLength": 7,
+              "pattern": "^n[1-9][0-9]{0,5}$",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
           "sections": {
             "description": "Return these in full instead of the digest",
             "items": {
@@ -3749,10 +3770,132 @@
                 "description": "This call bound the session",
                 "type": "boolean"
               },
+              "notes": {
+                "description": "The notes asked for by reference that the task has, whole",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "description": "When, ISO date and time",
+                      "type": "string"
+                    },
+                    "author": {
+                      "description": "Actor that wrote it, from history",
+                      "type": "string"
+                    },
+                    "cut": {
+                      "description": "Characters left out; a sections read has them",
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "for_agents": {
+                      "description": "A note from the user addressed to agents",
+                      "type": "boolean"
+                    },
+                    "ref": {
+                      "description": "Note ordinal, such as n2",
+                      "pattern": "^[nl][1-9][0-9]{0,5}$",
+                      "type": "string"
+                    },
+                    "request_for": {
+                      "description": "The user's request for these launches, oldest first: history, not yours to do",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "instance": {
+                            "description": "The agent instance it opened",
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "launch": {
+                            "description": "The launch reference",
+                            "pattern": "^L[0-9A-HJKMNP-TV-Z]{5}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "launch",
+                          "instance"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 20,
+                      "type": "array"
+                    },
+                    "slice": {
+                      "additionalProperties": false,
+                      "description": "Only this part of the text is on this page",
+                      "properties": {
+                        "from": {
+                          "description": "First character here, counted from 0",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "of": {
+                          "description": "Characters in all",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "to": {
+                          "description": "The character after the last one here",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "from",
+                        "to",
+                        "of"
+                      ],
+                      "type": "object"
+                    },
+                    "text": {
+                      "description": "Note text",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "author",
+                    "for_agents",
+                    "at",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 64,
+                "type": "array"
+              },
               "request": {
+                "additionalProperties": false,
                 "description": "The user's request for this launch: do it",
-                "maxLength": 65536,
-                "type": "string"
+                "properties": {
+                  "cut": {
+                    "description": "Characters left out; a sections read has them",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "note": {
+                    "description": "The note that holds it",
+                    "pattern": "^[nl][1-9][0-9]{0,5}$",
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "The request",
+                    "maxLength": 8000,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "note",
+                  "text"
+                ],
+                "type": "object"
               },
               "task": {
                 "additionalProperties": false,
@@ -3924,6 +4067,31 @@
                           "description": "Note ordinal, such as n2",
                           "pattern": "^[nl][1-9][0-9]{0,5}$",
                           "type": "string"
+                        },
+                        "request_for": {
+                          "description": "The user's request for these launches, oldest first: history, not yours to do",
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "instance": {
+                                "description": "The agent instance it opened",
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "launch": {
+                                "description": "The launch reference",
+                                "pattern": "^L[0-9A-HJKMNP-TV-Z]{5}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "launch",
+                              "instance"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
                         },
                         "slice": {
                           "additionalProperties": false,
@@ -4136,6 +4304,31 @@
                           "pattern": "^[nl][1-9][0-9]{0,5}$",
                           "type": "string"
                         },
+                        "request_for": {
+                          "description": "The user's request for these launches, oldest first: history, not yours to do",
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "instance": {
+                                "description": "The agent instance it opened",
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "launch": {
+                                "description": "The launch reference",
+                                "pattern": "^L[0-9A-HJKMNP-TV-Z]{5}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "launch",
+                              "instance"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
                         "slice": {
                           "additionalProperties": false,
                           "description": "Only this part of the text is on this page",
@@ -4343,10 +4536,132 @@
                 "description": "This call bound the session",
                 "type": "boolean"
               },
+              "notes": {
+                "description": "The notes asked for by reference that the task has, whole",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "description": "When, ISO date and time",
+                      "type": "string"
+                    },
+                    "author": {
+                      "description": "Actor that wrote it, from history",
+                      "type": "string"
+                    },
+                    "cut": {
+                      "description": "Characters left out; a sections read has them",
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "for_agents": {
+                      "description": "A note from the user addressed to agents",
+                      "type": "boolean"
+                    },
+                    "ref": {
+                      "description": "Note ordinal, such as n2",
+                      "pattern": "^[nl][1-9][0-9]{0,5}$",
+                      "type": "string"
+                    },
+                    "request_for": {
+                      "description": "The user's request for these launches, oldest first: history, not yours to do",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "instance": {
+                            "description": "The agent instance it opened",
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "launch": {
+                            "description": "The launch reference",
+                            "pattern": "^L[0-9A-HJKMNP-TV-Z]{5}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "launch",
+                          "instance"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 20,
+                      "type": "array"
+                    },
+                    "slice": {
+                      "additionalProperties": false,
+                      "description": "Only this part of the text is on this page",
+                      "properties": {
+                        "from": {
+                          "description": "First character here, counted from 0",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "of": {
+                          "description": "Characters in all",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "to": {
+                          "description": "The character after the last one here",
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "from",
+                        "to",
+                        "of"
+                      ],
+                      "type": "object"
+                    },
+                    "text": {
+                      "description": "Note text",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "author",
+                    "for_agents",
+                    "at",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 64,
+                "type": "array"
+              },
               "request": {
+                "additionalProperties": false,
                 "description": "The user's request for this launch: do it",
-                "maxLength": 65536,
-                "type": "string"
+                "properties": {
+                  "cut": {
+                    "description": "Characters left out; a sections read has them",
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "note": {
+                    "description": "The note that holds it",
+                    "pattern": "^[nl][1-9][0-9]{0,5}$",
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "The request",
+                    "maxLength": 8000,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "note",
+                  "text"
+                ],
+                "type": "object"
               },
               "sections": {
                 "additionalProperties": false,
@@ -4443,6 +4758,31 @@
                           "description": "Note ordinal, such as n2",
                           "pattern": "^[nl][1-9][0-9]{0,5}$",
                           "type": "string"
+                        },
+                        "request_for": {
+                          "description": "The user's request for these launches, oldest first: history, not yours to do",
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "instance": {
+                                "description": "The agent instance it opened",
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "launch": {
+                                "description": "The launch reference",
+                                "pattern": "^L[0-9A-HJKMNP-TV-Z]{5}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "launch",
+                              "instance"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
                         },
                         "slice": {
                           "additionalProperties": false,
@@ -4599,6 +4939,31 @@
                           "description": "Note ordinal, such as n2",
                           "pattern": "^[nl][1-9][0-9]{0,5}$",
                           "type": "string"
+                        },
+                        "request_for": {
+                          "description": "The user's request for these launches, oldest first: history, not yours to do",
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "instance": {
+                                "description": "The agent instance it opened",
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "launch": {
+                                "description": "The launch reference",
+                                "pattern": "^L[0-9A-HJKMNP-TV-Z]{5}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "launch",
+                              "instance"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
                         },
                         "slice": {
                           "additionalProperties": false,

@@ -9,7 +9,6 @@ import {
   SourceOutput,
   TaskRefInput,
   TaskRow,
-  USER_LIMITS,
   WrapState,
   patterns,
 } from "../schemas.ts";
@@ -31,6 +30,9 @@ const SECTIONS = [
   "history",
 ] as const;
 
+/** The most notes one read names: the requests of the sessions a task's thread shows. */
+export const NAMED_NOTES = 64;
+
 export const TaskGetInput = z.strictObject({
   task: TaskRefInput.describe("Task ref (M-14) or ID; default: the bound task").optional(),
   launch: z
@@ -50,6 +52,16 @@ export const TaskGetInput = z.strictObject({
     .string()
     .max(200)
     .describe("With sections: the before token of the last page")
+    .optional(),
+  notes: z
+    .array(
+      z
+        .string()
+        .max(7)
+        .regex(/^n[1-9][0-9]{0,5}$/u),
+    )
+    .max(NAMED_NOTES)
+    .describe("These notes too, whole, whatever their age")
     .optional(),
   cwd: Cwd.optional(),
 });
@@ -73,12 +85,28 @@ export const Slice = z
   })
   .describe("Only this part of the text is on this page");
 
+/** A launch reference (A4 3.1): `L`, four symbols and a check character. */
+const LaunchRef = z.string().regex(/^L[0-9A-HJKMNP-TV-Z]{5}$/u);
+
+/** The most launches a note names as their request: a note opened again and again stays small. */
+export const REQUEST_LAUNCHES = 20;
+
 const NoteOutput = z.strictObject({
   ref: z.string().regex(patterns.entryRef).describe("Note ordinal, such as n2"),
   author: Author,
   for_agents: z.boolean().describe("A note from the user addressed to agents"),
   at: At,
   text: z.string().describe("Note text"),
+  request_for: z
+    .array(
+      z.strictObject({
+        launch: LaunchRef.describe("The launch reference"),
+        instance: z.string().max(64).describe("The agent instance it opened"),
+      }),
+    )
+    .max(REQUEST_LAUNCHES)
+    .describe("The user's request for these launches, oldest first: history, not yours to do")
+    .optional(),
   cut: Cut.optional(),
   slice: Slice.optional(),
 });
@@ -194,14 +222,26 @@ export const TaskSections = z.strictObject({
 
 const Bound = z.boolean().describe("This call bound the session");
 
+/** The most characters of a launch's request a result holds: the note has the rest. */
+export const REQUEST_CHARS = 8_000;
+
 /**
- * What the user typed for this launch's agent when they opened the task: their instruction, held
- * on their machine for the launch and given whole to a call with its reference.
+ * What the user typed for this launch's agent when they opened the task: their instruction, a note
+ * on the task that the launch names, given to every call with the launch's reference.
  */
 const Request = z
-  .string()
-  .max(USER_LIMITS.note)
+  .strictObject({
+    note: z.string().regex(patterns.entryRef).describe("The note that holds it"),
+    text: z.string().max(REQUEST_CHARS).describe("The request"),
+    cut: Cut.optional(),
+  })
   .describe("The user's request for this launch: do it")
+  .optional();
+
+const NamedNotes = z
+  .array(NoteOutput)
+  .max(NAMED_NOTES)
+  .describe("The notes asked for by reference that the task has, whole")
   .optional();
 
 export const TaskGetResult = z.union([
@@ -211,6 +251,7 @@ export const TaskGetResult = z.union([
     bound: Bound,
     request: Request,
     task: TaskDetail.describe("The task"),
+    notes: NamedNotes,
   }),
   z.strictObject({
     view: z.literal("sections").describe("The sections asked for, in full"),
@@ -220,6 +261,7 @@ export const TaskGetResult = z.union([
     task: TaskRow.describe("The task"),
     sections: TaskSections.describe("The sections asked for"),
     before: z.string().describe("Paging token for the rest").optional(),
+    notes: NamedNotes,
   }),
   SpaceStatusResult.extend({
     view: z.literal("status").describe("A routine's launch bound the space: the overview"),
@@ -247,6 +289,8 @@ const noteForAgents = {
   at: "2026-11-12T09:12:00Z",
   text: "Keep the old export format until Lumen confirms the change.",
 } as const;
+
+const REQUEST_TEXT = "Check the 11-12 clinic export first,\nthen fix the offset.";
 
 const evidence = {
   ref: "l2",
@@ -277,7 +321,7 @@ export const taskGet = defineEntry({
   output: TaskGetResult,
   faces: {
     ui: true,
-    cli: { verb: "show", positional: ["task"], flags: { sections: "section" } },
+    cli: { verb: "show", positional: ["task"], flags: { sections: "section", notes: "note" } },
     mcp: {
       tool: "get_task",
       title: "Load a task",
@@ -290,6 +334,8 @@ export const taskGet = defineEntry({
     },
   },
   budget: { typical: 700, max: 4000 },
+  // The thread's read of its sessions' requests: whole notes, past an agent's budget.
+  agent: { hidden: ["notes"] },
   errors: [
     "invalid_input",
     "unbound",
@@ -309,7 +355,7 @@ export const taskGet = defineEntry({
         view: "digest",
         as_of: AS_OF,
         bound: true,
-        request: "Check the 11-12 clinic export first,\nthen fix the offset.",
+        request: { note: "n2", text: REQUEST_TEXT },
         task: {
           ...m14Row,
           summary: "Store UTC plus the clinic's zone ID, then convert once",
@@ -318,7 +364,16 @@ export const taskGet = defineEntry({
           folder: { path: "~/work/lumen/portal", of: "project" },
           learnings: [],
           instructions: [noteForAgents],
-          notes: [],
+          notes: [
+            {
+              ref: "n2",
+              author: "user",
+              for_agents: false,
+              at: "2026-11-12T10:20:00Z",
+              text: REQUEST_TEXT,
+              request_for: [{ launch: "L7KQ2M", instance: "claude-work" }],
+            },
+          ],
           log: [evidence],
           sources: [ticket],
           more: { instructions: 0, notes: 0, log: 0, sources: 0 },

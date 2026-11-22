@@ -28,6 +28,7 @@ import {
   PREFERENCES,
   preferenceValue,
   readPreference,
+  REQUEST_LAUNCHES,
   type PreferenceRead,
 } from "@tasks/contracts";
 import type { FoldersHere } from "./here.ts";
@@ -150,7 +151,12 @@ const authorOf = (e: string): string =>
  * else, or imported, is a note like the others.
  */
 const INSTRUCTION = `(n.addressee = 'agents' AND x.kind = 'human' AND NOT ${imported("n")})`;
-const NOTE_COLUMNS = `n.ordinal, n.addressee, n.body, n.created_at, ${authorOf("n")} AS author`;
+/** The launches that name note `n` as their request, oldest first: `[[reference, instance]]`. */
+const REQUEST_FOR =
+  "(SELECT json_group_array(json_array(l.reference, l.instance_id) ORDER BY l.created_at, l.id) " +
+  "FROM launches l WHERE l.task_id = n.task_id " +
+  "AND json_extract(l.detail, '$.evidence.request') = 'n' || n.ordinal)";
+const NOTE_COLUMNS = `n.ordinal, n.addressee, n.body, n.created_at, ${authorOf("n")} AS author, ${REQUEST_FOR} AS request_for`;
 const NOTES_FROM = `FROM notes n JOIN actors x ON x.id = n.author_id WHERE n.task_id = ${MATCH} AND n.deleted_at IS NULL`;
 /** Newest first, from ordinal `$iupto` down (all when null), at most `$ilimit`. */
 const INSTRUCTIONS: Statement = {
@@ -163,6 +169,13 @@ const NOTES: Statement = {
   sql:
     `SELECT ${NOTE_COLUMNS} ${NOTES_FROM} AND NOT ${INSTRUCTION} ` +
     "AND ($nupto IS NULL OR n.ordinal <= $nupto) ORDER BY n.ordinal DESC LIMIT $nlimit",
+  mode: "all",
+};
+/** The notes whose ordinals `$named` lists (a JSON array), whatever their age, newest first. */
+const NAMED: Statement = {
+  sql:
+    `SELECT ${NOTE_COLUMNS} ${NOTES_FROM} ` +
+    "AND n.ordinal IN (SELECT value FROM json_each($named)) ORDER BY n.ordinal DESC",
   mode: "all",
 };
 const NOTE_COUNTS: Statement = {
@@ -265,14 +278,38 @@ export function taskRow(row: Row, prefix: string): Record<string, unknown> {
   };
 }
 
-/** A note as the results show it: `text` is its body, in full. */
-export const noteOf = (row: Row) => ({
-  ref: `n${String(row["ordinal"])}`,
-  author: text(row["author"]),
-  for_agents: row["addressee"] === "agents",
-  at: iso(row["created_at"]),
-  text: text(row["body"]),
-});
+/**
+ * A note as the results show it: `text` is its body, in full, and `request_for` the launches it
+ * was the person's request for, the newest REQUEST_LAUNCHES.
+ */
+export const noteOf = (row: Row) => {
+  const launches = requestFor(row["request_for"]);
+  return {
+    ref: `n${String(row["ordinal"])}`,
+    author: text(row["author"]),
+    for_agents: row["addressee"] === "agents",
+    at: iso(row["created_at"]),
+    text: text(row["body"]),
+    ...(launches.length === 0 ? {} : { request_for: launches }),
+  };
+};
+
+function requestFor(value: unknown): { launch: string; instance: string }[] {
+  let list: unknown;
+  try {
+    list = typeof value === "string" ? JSON.parse(value) : [];
+  } catch {
+    list = [];
+  }
+  if (!Array.isArray(list)) return [];
+  return list
+    .flatMap((pair: unknown) =>
+      Array.isArray(pair) && typeof pair[0] === "string" && typeof pair[1] === "string"
+        ? [{ launch: pair[0], instance: pair[1] }]
+        : [],
+    )
+    .slice(-REQUEST_LAUNCHES);
+}
 
 export const logOf = (row: Row) => ({
   ref: `l${String(row["ordinal"])}`,
@@ -327,6 +364,8 @@ export interface TaskRead {
   readonly instructions: Row[];
   /** The other notes, newest first, as `notes` asked. */
   readonly notes: Row[];
+  /** The notes `named` asked for by ordinal, of either kind, newest first. */
+  readonly named: Row[];
   readonly log: Row[];
   readonly sources: Row[];
   /** Where the task opens on the read's machine. */
@@ -345,8 +384,8 @@ export interface TaskRead {
 
 /**
  * Reads one task and what hangs from it in one snapshot: of the instructions, notes and log the
- * ranges asked for. A reference with another space's prefix is `not_found`, never a task
- * elsewhere (A3 3.4.1), and so is a deleted task (A1 3.5).
+ * ranges asked for, and the notes named by ordinal. A reference with another space's prefix is
+ * `not_found`, never a task elsewhere (A3 3.4.1), and so is a deleted task (A1 3.5).
  */
 export async function readTask(
   reader: WorkerConnection,
@@ -356,6 +395,7 @@ export async function readTask(
     readonly instructions: EntryRange;
     readonly notes: EntryRange;
     readonly log: EntryRange;
+    readonly named?: readonly number[];
   },
 ): Promise<TaskRead> {
   const key = taskKey(ref);
@@ -371,6 +411,7 @@ export async function readTask(
     nlimit: options.notes.limit,
     lupto: options.log.upto,
     llimit: options.log.limit,
+    named: JSON.stringify(options.named ?? []),
   };
   const learned = await readsLearnings(reader);
   const folders = await hasFolderTable(reader);
@@ -386,6 +427,7 @@ export async function readTask(
     sources,
     history,
     learnings,
+    named,
     own,
     project,
   ] = await snapshot(
@@ -402,6 +444,7 @@ export async function readTask(
       SOURCES,
       HISTORY,
       learned ? LEARNINGS : NOTHING,
+      options.named === undefined || options.named.length === 0 ? NOTHING : NAMED,
       ...(folders ? [OWN_FOLDERS_OF_MATCH, PROJECT_FOLDERS_OF_MATCH] : []),
     ],
     params,
@@ -423,6 +466,7 @@ export async function readTask(
     row: task,
     instructions: instructions as Row[],
     notes: notes as Row[],
+    named: (named ?? []) as Row[],
     log: log as Row[],
     sources: sourceRows,
     folder: taskFolderOf((own ?? []) as Row[], (project ?? []) as Row[], options.machine),
@@ -500,6 +544,29 @@ export async function readLaunch(
       evidence,
     },
   };
+}
+
+/** A note the space's human wrote on a task, not imported and not removed, by its ordinal. */
+const PERSONS_NOTE: Statement = {
+  sql:
+    "SELECT n.body FROM notes n JOIN actors x ON x.id = n.author_id WHERE n.task_id = $task " +
+    `AND n.ordinal = $ordinal AND n.deleted_at IS NULL AND x.kind = 'human' AND NOT ${imported("n")}`,
+  mode: "get",
+};
+
+/**
+ * The text of a note the person wrote on task `task` (an ID), by its reference such as `n2`:
+ * undefined when the task has none, or it was removed or written by anyone else.
+ */
+export async function readPersonsNote(
+  reader: WorkerConnection,
+  task: string,
+  ref: string,
+): Promise<string | undefined> {
+  const ordinal = /^n([1-9][0-9]{0,5})$/u.exec(ref)?.[1];
+  if (ordinal === undefined) return undefined;
+  const [row] = await snapshot(reader, [PERSONS_NOTE], { task, ordinal: Number(ordinal) });
+  return isPlain(row) ? text(row["body"]) : undefined;
 }
 
 /** The bound task's reference and how many notes the user addressed to agents it has. */

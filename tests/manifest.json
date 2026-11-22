@@ -2451,22 +2451,15 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A4.5.routes.request-store",
-      "title": "The words a person typed for an agent are held for one launch in that launch's own folder: once per launch, private (0700 folder, 0600 file), read back exactly after a restart, marked read; removed with their folder when nothing else is in it, gone with a launch folder removed under them; a file that is not a request is removed at the next start",
-      "owner": "M5",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A4.5.routes.request",
-      "title": "What a person types before Open, 20,000 characters with line breaks, quotes, other scripts and an emoji, reaches the agent exactly through Tasks on every route that takes it: Claude Code's and Codex's terminal routes (the fake agent reads it with show --launch as its brief says), Codex's assisted open, the claude-cli:// link, Claude Desktop and the Codex app (an agent's get_task, its tool text whole); it is in no process's command line (Linux /proc, Windows' process table), no URL opened, no log line and no file but the launch's own request; a terminal launch's request goes with its launch, a link's once its reference no longer binds; Copy puts the words on the clipboard and holds nothing",
+      "title": "What a person types before Open, up to 20,000 characters with line breaks, quotes, other scripts and an emoji, is a note of theirs on the task at the click that the launch names, and reaches the agent through Tasks on every route that takes it: Claude Code's and Codex's terminal routes (the fake agent reads it with show --launch as its brief says, the same again, its first 8,000 characters with the rest in the note), Codex's assisted open, the claude-cli:// link, Claude Desktop and the Codex app (an agent's get_task, twice the same, its tool text whole); it is in no process's command line (Linux /proc, Windows' process table), no URL opened, no log line and no file outside the space; Copy puts the words on the clipboard and saves nothing",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
-      "id": "A4.5.routes.request-restart",
-      "title": "A request a crashed service left is removed at its next start once its launch no longer needs it: a terminal launch whose agent ended while the service was down at once, a link launch's once its reference no longer binds",
+      "id": "A4.5.routes.request-task",
+      "title": "A launch's request is task data from the click: it is on the task after a service stopped right after the click; a get_task the agent never got marks nothing and a launch past its day loses nothing; a second click that got an earlier launch keeps its words as a plain note, also on a retry; a second session with the pointer is refused it while one that loads the task sees it as history with its launch; one undo takes back the request and nothing else, and Open again with the note writes no second one; a refused click (no route, no folder, no marker) writes nothing",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4743,8 +4736,24 @@
     },
     {
       "id": "A5.3.8.web.composer-sends",
-      "title": "A composer sends its words as typed, without the blank lines around them; a note keeps one request ID across a reload so its words are saved once; a launch's words count as gone only once its agent read them, and stay when the launch failed or went on without reading them",
+      "title": "A composer sends its words as typed, without the blank lines around them; a note keeps one request ID across a reload so its words are saved once; words an Open saved on the task clear the kept draft and the field unless the person typed on since",
       "source": "A5 3.8, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.8.web.open-once",
+      "title": "An Open on its way or without an answer, pressed again with the same words (also after the task was collapsed and expanded), carries the same request ID until the service answers it, so the words are saved once, and the page says the agent may be opening; the service's refusal forgets it; a second click that got the first click's launch keeps its words as a note and says so last",
+      "source": "A5 3.8, A1 3.8",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.9.web.thread-request",
+      "title": "A launch's request shows in the thread as what the person asked its agent: in its session's entry from the click on (Prepared too) and not again as a note, gone with its note after an undo; a launch that did not open offers Open again with it on its newest launch only; a long request folds with More so the state and Open again stay in reach; a request whose session is not listed shows on its own as asked of its agent; a session's request is read whole by its reference, whatever the task holds after it",
+      "source": "A5 3.8, A5 3.9",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4767,16 +4776,24 @@
     },
     {
       "id": "A7.3.12.m5-07.e2e.strip",
-      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line and clears once the agent read it; Open without text sends the brief alone; while a session runs the strip says so and opens a second one, with the words as its request, only when asked; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
+      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line, clears once it is on the task and shows in the session's thread entry; Open without text sends the brief alone; while a session runs the strip says so and opens a second one, with the words as its request, only when asked; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
       "source": "A5 3.8, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
-      "id": "A7.3.12.request.e2e.unread",
-      "title": "In Chromium and Firefox against the real service: Open with words on an agent that never reads the request puts the words on no command line; once the agent ended without reading them they stay in the field and in the browser's draft, and the page says the agent did not read them",
-      "source": "A5 3.8",
+      "id": "A7.3.12.request.e2e.thread",
+      "title": "In Chromium and Firefox against the real service: Open with words clears the field at once in both tabs, the thread shows the request in the session's entry and not as a plain note, also after a reload, and the words go on no command line; a launch that did not open keeps the request in the thread with Open again, which opens it with the same note",
+      "source": "A5 3.8, A5 3.9",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.12.request.e2e.screens",
+      "title": "In Chromium and Firefox: a session's entry with what the person asked in Sumi and Washi at 1,440 and 390 px, axe clean and no sideways scroll, saved as screenshots for review",
+      "source": "A5 3.9, A5 3.19",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

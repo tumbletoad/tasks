@@ -289,8 +289,9 @@ describe("[A5.3.15.web.expanded-state] the expanded task's state holds against t
     mount(<TaskList view="open" filter={OPEN} empty="" expand="M-52" onExpand={() => undefined} />);
     apply(snapshot([task(1)]));
     await settle();
+    // Each read of the detail reads the task's notes once: they fit one page.
     const sectionReads = () =>
-      gets.filter((g) => g.task === "t_00052" && g.sections !== undefined).length;
+      gets.filter((g) => g.task === "t_00052" && g.sections?.includes("notes") === true).length;
     const before = sectionReads();
     expect(before).toBeGreaterThan(0);
     apply(snapshot([task(1)], 20));

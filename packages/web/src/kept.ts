@@ -94,6 +94,9 @@ export const browserKept = keptIn(() => globalThis.localStorage);
 /** Kept for this tab, across its reloads: text that belongs to where it was typed. */
 export const tabKept = keptIn(() => globalThis.sessionStorage);
 
+/** Kept as long as the page is loaded, and only for its caller. */
+export const pageKept = (): Kept => keptIn(() => undefined);
+
 /**
  * Another tab of this browser kept or removed `name` for the browser: the listener gets the new
  * value. Each tab keeps its own copy on screen, so two tabs on one task do not overwrite each

@@ -36,9 +36,16 @@ const rowOf = (page: Page, ref: string) => page.locator(`main li[data-task="${re
 const composerOf = (page: Page, ref: string) => rowOf(page, ref).locator('[data-part="composer"]');
 const stripOf = (page: Page, ref: string) =>
   rowOf(page, ref).getByRole("toolbar", { name: "Act on this task" });
+/** A session that opened: it runs, it ended, or the service cannot tell which. */
+const OPENED = ':is([data-state="opened"], [data-state="running"], [data-state="ended"])';
 const toast = (page: Page) => page.locator('[data-part="toast-text"]');
+/** What the page says when an Open got no answer. */
+const unanswered = `${APP_NAME} did not answer, so ${FAKE_INSTANCE.label} may be opening. Press Open again to be sure: it does not open twice.`;
 const notes = (page: Page, ref: string) =>
   rowOf(page, ref).locator('[data-entry="note"] [data-part="entry-text"]');
+/** What the person asked a session's agent, in its entry of the thread. */
+const asked = (page: Page, ref: string) =>
+  rowOf(page, ref).locator('[data-entry="session"] [data-part="asked"]');
 
 /** The kept text of this product, for the browser and for the tab: what a reload brings back. */
 const kept = (page: Page): Promise<Record<string, string>> =>
@@ -47,7 +54,7 @@ const kept = (page: Page): Promise<Record<string, string>> =>
     for (const storage of [localStorage, sessionStorage]) {
       for (let i = 0; i < storage.length; i += 1) {
         const key = storage.key(i) ?? "";
-        if (/\.(draft|note|top|unsaved)\./u.test(key) && key.startsWith(prefix)) {
+        if (/\.(draft|note|top|unsaved|unanswered)\./u.test(key) && key.startsWith(prefix)) {
           found[key] = storage.getItem(key) ?? "";
         }
       }
@@ -149,8 +156,9 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
       undefined,
     ]);
 
-    // Ctrl+Enter opens the first instance with the text as the request; the field clears once the
-    // agent has it, and the terminal gets the shim's command line only.
+    // Ctrl+Enter opens the first instance with the text as the request; the field clears once it is
+    // on the task, the thread shows it in the session's entry, and the terminal gets the shim's
+    // command line only.
     const before = world.terminal().length;
     const open = strip.getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` });
     await expect(open).toHaveAttribute("aria-keyshortcuts", /^(Control|Meta)\+Enter$/u);
@@ -164,6 +172,9 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     });
     expect(JSON.stringify(world.terminal().at(-1))).not.toContain("Compare the three listings");
     await expect(composer).toHaveValue("", { timeout: SLOW_MS });
+    await expect(asked(page, ref)).toContainText(`Compare the three listings (${tag})`, {
+      timeout: SLOW_MS,
+    });
     expect(Object.keys(await kept(page))).toEqual([]);
     expect(await violations(page)).toEqual([]);
   });
@@ -183,10 +194,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     await page.route("**/api/v1/op/launch.open", (route) => route.abort());
     await composer.fill(`Pick the colour first (${tag})`);
     await open.click();
-    await expect(toast(page)).toHaveText(
-      `${APP_NAME} did not answer. Try again: the task still opens only once.`,
-      { timeout: SLOW_MS },
-    );
+    await expect(toast(page)).toHaveText(unanswered, { timeout: SLOW_MS });
     await expect(composer).toHaveValue(`Pick the colour first (${tag})`);
     await page.unroute("**/api/v1/op/launch.open");
 
@@ -220,36 +228,210 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
   });
 });
 
-test.describe("[A7.3.12.request.e2e.unread] An agent that never reads the request leaves the words in the field, and the page says so", () => {
-  test("the words go on no command line, the agent ends without reading them, and they stay with a notice", async ({
+test.describe("[A7.3.12.request.e2e.thread] What a person types before Open is on the task at the click, in the thread with its session", () => {
+  test("an Open whose answer was lost after the service opened it keeps the text, and pressing it again, after a reload, is that Open: one launch, one request", async ({
     page,
     world,
   }) => {
     const tag = test.info().project.name;
-    const ref = await addTask(world, { title: `Water the plants (${tag})`, area: "home" });
-    world.leaveUnread(ref);
+    const ref = await addTask(world, { title: `Sort the post (${tag})`, area: "home" });
+    world.hold(ref);
     await openTask(page, world, ref);
     const composer = composerOf(page, ref);
     const open = stripOf(page, ref).getByRole("button", {
       name: `Open in ${FAKE_INSTANCE.label}`,
     });
-    const words = `Only the ferns, not the cactus (${tag})`;
+    const opened = calls(page, "launch.open");
     const before = world.terminal().length;
+    // The service saves the words and opens the agent, but its answer never reaches the page.
+    await page.route("**/api/v1/op/launch.open", async (route) => {
+      await route.fetch();
+      await route.abort();
+    });
+    const words = `The bills first (${tag})`;
     await composer.fill(words);
     await open.click();
+    await expect(toast(page)).toHaveText(unanswered, { timeout: SLOW_MS });
+    await expect(composer).toHaveValue(words);
+    await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
+    await page.unroute("**/api/v1/op/launch.open");
+    await expect(rowOf(page, ref).locator('[data-entry][data-state="running"]')).toBeVisible({
+      timeout: SLOW_MS,
+    });
+    // Its agent runs, and the page reloads: the button is still the Open that got no answer.
+    await page.reload();
+    await expect(composer).toHaveValue(words, { timeout: SLOW_MS });
+    await expect(open).toHaveAttribute("aria-disabled", "false");
+    for (const theme of ["sumi", "washi"] as const) {
+      await world.machine("ui.theme", theme);
+      await page.reload();
+      await expect(open).toHaveAttribute("aria-disabled", "false", { timeout: SLOW_MS });
+      await stripOf(page, ref).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: test.info().outputPath(`open-unanswered-${theme}.png`) });
+    }
+    await world.machine("ui.theme", null);
+    await open.click();
+    await expect(composer).toHaveValue("", { timeout: SLOW_MS });
+    const ids = opened.map((r) => (r.postDataJSON() as { request_id?: string }).request_id);
+    expect(ids).toHaveLength(2);
+    expect(ids[1]).toBe(ids[0]);
+    expect(world.terminal()).toHaveLength(before + 1);
+    await expect(asked(page, ref)).toHaveCount(1);
+    await expect(asked(page, ref)).toContainText(words);
+    await expect(notes(page, ref)).toHaveCount(0);
+    expect(Object.keys(await kept(page))).toEqual([]);
+    world.release(ref);
+  });
+
+  test("Open clears the field at once, here and in a second tab; the thread shows the request in the session's entry, also after a reload; the words go on no command line", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, { title: `Water the plants (${tag})`, area: "home" });
+    await openTask(page, world, ref);
+    const second = await page.context().newPage();
+    await second.goto(`${world.origin}/s/${world.mira.id}/task/${ref}`);
+    await showsSpace(second, world.mira.name);
+    const composer = composerOf(page, ref);
+    const words = `Only the ferns, not the cactus (${tag})`;
+    await composer.fill(words);
+    await expect(composerOf(second, ref)).toHaveValue(words, { timeout: SLOW_MS });
+    const before = world.terminal().length;
+    await stripOf(page, ref)
+      .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
+      .click();
+    // The field clears when the request is on the task, as Note's does: in both tabs.
+    await expect(composer).toHaveValue("", { timeout: SLOW_MS });
+    await expect(composerOf(second, ref)).toHaveValue("", { timeout: SLOW_MS });
+    expect(Object.keys(await kept(page))).toEqual([]);
+    for (const tab of [page, second]) {
+      await expect(asked(tab, ref)).toContainText(words, { timeout: SLOW_MS });
+      await expect(asked(tab, ref)).toContainText("You asked:");
+      // Not a second time as a plain note.
+      await expect(notes(tab, ref)).toHaveCount(0);
+    }
     await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
     expect(JSON.stringify(world.terminal().at(-1))).not.toContain("Only the ferns");
-    // The agent ran and ended without reading them: they stay, and the page says so.
-    await expect(toast(page)).toHaveText(
-      `${FAKE_INSTANCE.label} did not read your request. It is still in the field.`,
-      { timeout: SLOW_MS },
-    );
-    await expect(composer).toHaveValue(words);
-    expect(Object.values(await kept(page))).toContain(words);
-    await page.screenshot({ path: test.info().outputPath("request-unread.png") });
+    await expect(rowOf(page, ref).locator(`[data-entry]${OPENED}`)).toBeVisible({
+      timeout: SLOW_MS,
+    });
+    await page.reload();
+    await expect(asked(page, ref)).toContainText(words, { timeout: SLOW_MS });
+    await expect(composer).toHaveValue("");
+    await second.close();
+  });
+
+  test("a launch that did not open keeps the request in the thread with Open again, which opens it with the same note", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, { title: `Fix the shed door (${tag})`, area: "home" });
+    const id = (
+      (await world.op(world.mira.id, "task.get", { task: ref })) as { task: { id: string } }
+    ).task.id;
+    world.refuseNextOpen(id);
+    await openTask(page, world, ref);
+    const composer = composerOf(page, ref);
+    const words = `Oil the hinges first (${tag})`;
+    await composer.fill(words);
+    await stripOf(page, ref)
+      .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
+      .click();
+    await expect(composer).toHaveValue("", { timeout: SLOW_MS });
+    const failed = rowOf(page, ref).locator('[data-entry="session"][data-state="failed"]');
+    await expect(failed).toBeVisible({ timeout: SLOW_MS });
+    await expect(failed.locator('[data-part="asked"]')).toContainText(words);
+    await expect(failed.locator('[data-part="entry-text"]')).toContainText("Did not open");
+    await failed.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath("request-failed.png") });
+
+    const opened = calls(page, "launch.open");
+    const before = world.terminal().length;
+    await failed
+      .getByRole("button", { name: `Open again with this request in ${FAKE_INSTANCE.label}` })
+      .click();
+    await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
+    expect(opened[0]?.postDataJSON()).toMatchObject({ instance: FAKE_INSTANCE.key });
+    expect(opened[0]?.postDataJSON()).not.toHaveProperty("text");
+    const confirmed = rowOf(page, ref).locator(`[data-entry="session"]${OPENED}`);
+    await expect(confirmed.locator('[data-part="asked"]')).toContainText(words, {
+      timeout: SLOW_MS,
+    });
+    // One note on the task, the request of both launches; the failed one offers nothing now.
+    const read = (await world.op(world.mira.id, "task.get", {
+      task: ref,
+      sections: ["notes"],
+    })) as { sections: { notes: { text: string; request_for?: unknown[] }[] } };
+    expect(read.sections.notes).toHaveLength(1);
+    expect(read.sections.notes[0]?.request_for).toHaveLength(2);
+    await expect(rowOf(page, ref).locator('[data-part="open-again"]')).toHaveCount(0);
   });
 });
 
+test.describe("[A7.3.12.request.e2e.screens] The thread's request line in both themes: screenshots and axe", () => {
+  test("Sumi and Washi at 1,440 px and 390 px, a session with what was asked, axe clean", async ({
+    browser,
+    world,
+  }) => {
+    const tag = `${test.info().project.name}-request`;
+    const ref = await addTask(world, { title: `Renew the bike insurance (${tag})`, area: "home" });
+    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
+    for (const theme of ["sumi", "washi"] as const) {
+      const context = await browser.newContext({
+        bypassCSP: true,
+        viewport: { width: 1440, height: 1000 },
+        reducedMotion: "reduce",
+      });
+      try {
+        const page = await context.newPage();
+        await world.machine("ui.theme", theme);
+        await openTask(page, world, ref);
+        if (theme === "sumi") {
+          await composerOf(page, ref).fill(
+            "Compare the three offers first.\nThen renew the cheapest one that covers theft.",
+          );
+          await stripOf(page, ref)
+            .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
+            .click();
+        }
+        const entry = rowOf(page, ref).locator('[data-entry="session"]').first();
+        await expect(entry.locator('[data-part="asked"]')).toBeVisible({ timeout: SLOW_MS });
+        await entry.scrollIntoViewIfNeeded();
+        await entry.screenshot({ path: test.info().outputPath(`request-${theme}-1440.png`) });
+        await page.evaluate(axe);
+        const found = await page.evaluate(async (selector) => {
+          const run = (
+            window as unknown as {
+              axe: {
+                run: (
+                  context: unknown,
+                  options: unknown,
+                ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
+              };
+            }
+          ).axe.run;
+          const result = await run({ include: [selector] }, { resultTypes: ["violations"] });
+          return result.violations.map(
+            (v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`,
+          );
+        }, `li[data-task="${ref}"]`);
+        expect(found, `axe in ${theme}`).toEqual([]);
+        await page.setViewportSize({ width: 390, height: 900 });
+        await entry.scrollIntoViewIfNeeded();
+        const scroll = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
+        await page.screenshot({ path: test.info().outputPath(`request-${theme}-390.png`) });
+      } finally {
+        await context.close();
+      }
+    }
+    await world.machine("ui.theme", null);
+  });
+});
 test.describe("[A7.3.12.m5-07.e2e.keys] The composer's keys: never while an input method composes, and listed on the sheet", () => {
   test("an Enter or Ctrl+Enter that ends a composition sends nothing, the sheet lists the keys, and a key in the sheet is the sheet's", async ({
     page,

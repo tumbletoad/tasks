@@ -43,7 +43,7 @@ import {
   type Scales,
 } from "./bulk.ts";
 import type { FakeCodexCase } from "./codex-cases.ts";
-import { fakeInstanceToml, type TerminalCall } from "./fake-terminal.ts";
+import { fakeInstanceToml, refuseFile, type TerminalCall } from "./fake-terminal.ts";
 
 const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
 
@@ -107,8 +107,8 @@ export interface World {
    * runs, which can be after the run's record says it runs.
    */
   codexLeft(ref: string): FakeCodexCase[];
-  /** The fake agent reads no request on this task, as an agent without the tools or a shell. */
-  leaveUnread(ref: string): void;
+  /** The fake terminal refuses the next launch of this task (its ID), as one that would not start. */
+  refuseNextOpen(task: string): void;
   /**
    * The fake agents started on this task from now on run until `release`, or with `exit` end at
    * once with that code, as an agent that cannot start.
@@ -247,8 +247,6 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     // The fake agent is this machine's first instance: the page draws its tile (A5 3.6). It is a
     // Claude Code instance, which can run tasks too, so a world with runs has the fake Codex
     // first: the page's first runner is its default Run.
-    const unread = join(temp.root, "unread.txt");
-    writeFileSync(unread, "");
     const holds = join(temp.root, "holds");
     mkdirSync(holds);
     const cases = join(temp.root, "codex-cases.json");
@@ -271,7 +269,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     registerSpaces(
       home,
       [{ path: seeded.folder, id: opened.space.spaceId }],
-      codexes + fakeInstanceToml(home, unread, holds),
+      codexes + fakeInstanceToml(home, holds),
     );
 
     const record = join(temp.root, "terminal.jsonl");
@@ -425,8 +423,8 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         readFileSync(shown, "utf8")
           .split("\n")
           .filter((line) => line !== ""),
-      leaveUnread: (ref) => {
-        appendFileSync(unread, `${ref}\n`);
+      refuseNextOpen: (task) => {
+        appendFileSync(refuseFile(record), `${task}\n`);
       },
       hold: (ref, exit) => {
         writeFileSync(join(holds, ref), exit === undefined ? "" : `exit ${String(exit)}`);

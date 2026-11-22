@@ -158,6 +158,13 @@ describe("[A1.5.write.launches] launch records through the write path", () => {
     expect(
       submit([createOp(taskId, { instance: "claude-link", route: "link" })]).results[0]?.id,
     ).not.toBe(link);
+    // A click that failed is no click to focus on: the next one opens.
+    const failing = fresh.results[0]?.id ?? "";
+    expectStatus(move(failing, "prepared", "dispatching"), "applied");
+    expectStatus(move(failing, "dispatching", "failed", { reason: "refused" }), "applied");
+    const again = submit([createOp(taskId)]);
+    expectStatus(again, "applied");
+    expect(again.results[0]?.id).not.toBe(failing);
   });
 
   test("launch.transition is a compare-and-set that records one change of `state`", () => {
