@@ -144,6 +144,7 @@ switch (command) {
     break;
   case "detach": {
     const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], {
+      // eslint-disable-next-line no-restricted-syntax -- an idle Node, which starts nothing.
       detached: true,
       stdio: "ignore",
       windowsHide: true,
