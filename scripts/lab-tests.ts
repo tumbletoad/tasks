@@ -55,6 +55,11 @@ export function isLabPath(path: string): boolean {
   );
 }
 
+/** Whether a changed path is the projection's code, whose change gets the model's random runs. */
+export function isProjectionPath(path: string): boolean {
+  return path.replaceAll("\\", "/").replace(/^\.\//, "").startsWith("packages/projection/src/");
+}
+
 /** The base verify compares with, or why there is none. */
 export type Base =
   { found: true; label: string; changed: readonly string[] } | { found: false; why: string };

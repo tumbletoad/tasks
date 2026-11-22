@@ -1,8 +1,9 @@
 name: nightly
 
-# A7 3.18.4's nightly job, on main. M1.07 brings its first part: the 30-minute crash run per OS
-# (pnpm crash, tests/crash/harness.ts). The long property and model runs, the scale bench,
-# relative performance and the fallback-driver suite join with the steps that build them.
+# A7 3.18.4's nightly job, on main: the 30-minute crash run per OS (pnpm crash,
+# tests/crash/harness.ts), and the deep runs of the property and model tests that every check runs
+# smaller. Relative performance and the fallback-driver suite join with the steps that build them.
+# A failure here is read before the next release.
 on:
   schedule:
     - cron: "17 2 * * *"
@@ -40,3 +41,34 @@ jobs:
       # A violation fails the job and prints the seed, the round, the kill and the invariant,
       # and the command that replays it.
       - run: pnpm crash --minutes 30
+
+  # The tests that run deeper with TTASKS_DEEP=1: the projection model's 2,000-run soak (its
+  # failure prints the seed and path that become a counterexample), the launch state machine at
+  # 50,000 runs in memory and 300 on the database, and the bundle stress corpus at full size.
+  deep:
+    name: deep (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # The soak stops itself after 40 minutes (model-replay.test.ts).
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: >-
+          pnpm exec vitest run --project product
+          packages/projection/test/model-replay.test.ts
+          packages/launch/test/machine.prop.test.ts
+          packages/storage/test/bundle.test.ts
+        env:
+          TTASKS_DEEP: "1"

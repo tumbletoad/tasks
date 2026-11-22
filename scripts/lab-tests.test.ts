@@ -6,6 +6,7 @@ import {
   findBase,
   findBaseCommit,
   isLabPath,
+  isProjectionPath,
   parseVerifyArgs,
   type Base,
   type Git,
@@ -77,6 +78,14 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
     ]) {
       expect(isLabPath(p), p).toBe(false);
     }
+  });
+
+  test("the projection's code is what gives the projection model its random runs", () => {
+    expect(isProjectionPath("packages/projection/src/projector.ts")).toBe(true);
+    expect(isProjectionPath(String.raw`packages\projection\src\render\task.ts`)).toBe(true);
+    expect(isProjectionPath("./packages/projection/src/index.ts")).toBe(true);
+    expect(isProjectionPath("packages/projection/test/model.ts")).toBe(false);
+    expect(isProjectionPath("packages/storage/src/projection.ts")).toBe(false);
   });
 
   test("--lab and TTASKS_VERIFY_LAB=1 run the lab tests without looking at git", () => {

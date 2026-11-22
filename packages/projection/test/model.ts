@@ -46,7 +46,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import fc from "fast-check";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, expect } from "vitest";
 import { ProjectionError, type Projector, type ProjectorOptions } from "../src/index.ts";
 import {
   checkWatermark,
@@ -61,6 +61,7 @@ import {
   type World,
 } from "./helpers.ts";
 
+// Each test file that imports this module has its own folder for its runs.
 let root: string;
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), "projection-model-"));
@@ -100,7 +101,7 @@ interface RunFault {
   readonly from: number;
 }
 
-type Action =
+export type Action =
   | { readonly kind: "create"; readonly squat: boolean }
   | {
       readonly kind: Commit;
@@ -1029,7 +1030,7 @@ class Model {
 
 let runs = 0;
 
-/** What the runs reached: a fixed seed must reach each often enough to mean something. */
+/** What this file's runs reached: a fixed seed must reach each often enough to mean something. */
 const seen = {
   kills: 0,
   during: 0,
@@ -1047,25 +1048,8 @@ const seen = {
   refused: 0,
   holds: 0,
 };
-const LEAST = {
-  kills: 40,
-  during: 12,
-  hardlinks: 10,
-  folders: 10,
-  swaps: 5,
-  rescued: 100,
-  rests: 70,
-  leftovers: 3,
-  sameSize: 20,
-  editorSaves: 15,
-  faults: 20,
-  shortWrites: 80,
-  refused: 8,
-  // A file can be held open without sharing only on Windows.
-  holds: process.platform === "win32" ? 10 : -1,
-};
-
-async function run(actions: readonly Action[]): Promise<void> {
+/** One run: a fresh space of its own, the acts, and the checks after each. */
+export async function run(actions: readonly Action[]): Promise<void> {
   runs += 1;
   const folder = join(root, `run-${String(runs)}`);
   mkdirSync(folder);
@@ -1094,81 +1078,24 @@ async function run(actions: readonly Action[]): Promise<void> {
   }
 }
 
+export type Reached = typeof seen;
+
+/** Random sequences of acts, each run on a fresh space of its own. */
+export const property = fc.asyncProperty(fc.array(action, { minLength: 4, maxLength: 20 }), run);
+
+export const SUITE =
+  "[A1.5.projection.model] commits, a person's acts in the tree, kills at every act and faults in what the projection writes outside the tree, against the projection's invariants";
+export const INVARIANTS =
+  "no byte of a person's is lost or changed in mode, nothing outside is touched, the watermark covers only files on disk, and at rest the tree is a fresh render and every rescue was told";
+
 /**
- * Fresh random runs after the fixed seed's. A defect seen once in about 800 runs passed 20 runs in
- * most checks; finding such a one is a soak's work (PROJECTION_MODEL_RUNS=2000, about 15 minutes
- * on Windows), and each check adds what costs it seconds.
+ * `numRuns` runs of a fixed seed, which must reach each kind of trouble more often than `least`
+ * says. One file per seed (model-seed-*.test.ts), so the seeds run side by side; each file's
+ * values come from its seed's counts on Windows and Linux, with room to spare.
  */
-const RUNS = Number(process.env["PROJECTION_MODEL_RUNS"] ?? "50");
-
-const quietRun = {
-  kind: "run",
-  steps: 1,
-  killAt: null,
-  during: "none",
-  leftover: false,
-  hold: null,
-  fault: null,
-} as const;
-
-/** Sequences random runs once failed, kept as they shrank: each runs on every check. */
-const COUNTEREXAMPLES: (readonly Action[])[] = [
-  // Windows: a task renamed, its old file held open while the batch retires it; once let go, it
-  // was left in the folder for good.
-  [
-    { kind: "rename", pick: 1437316263 },
-    { ...quietRun, steps: 2, hold: 1919241737 },
-    { kind: "elsewhere", which: 0 },
-    { kind: "create", squat: false },
-    { kind: "edit", pick: 0, how: "write" },
-    { kind: "create", squat: false },
-  ],
-  // Windows: the same with a completed task reopened, so its file moves to open/.
-  [
-    { kind: "reopen", pick: 9 },
-    { ...quietRun, steps: 2, hold: 786592087 },
-    quietRun,
-    { kind: "create", squat: false },
-    { kind: "rename", pick: 0 },
-    { kind: "restart", killAt: null },
-  ],
-  // Linux: a file where completed/ was, then the person's look at completed/2026 below it.
-  [
-    { kind: "folder-file", which: 1 },
-    { kind: "folder-file", which: 2 },
-    { kind: "rest" },
-    { kind: "create", squat: false },
-  ],
-];
-
-describe("[A1.5.projection.model] commits, a person's acts in the tree, kills at every act and faults in what the projection writes outside the tree, against the projection's invariants", () => {
-  test(
-    "no byte of a person's is lost or changed in mode, nothing outside is touched, the watermark covers only files on disk, and at rest the tree is a fresh render and every rescue was told",
-    async () => {
-      const property = fc.asyncProperty(fc.array(action, { minLength: 4, maxLength: 20 }), run);
-      // A counterexample replays alone: PROJECTION_MODEL_SEED and PROJECTION_MODEL_PATH from its report.
-      const replay = process.env["PROJECTION_MODEL_SEED"];
-      if (replay !== undefined) {
-        const path = process.env["PROJECTION_MODEL_PATH"];
-        await fc.assert(property, {
-          seed: Number(replay),
-          numRuns: RUNS,
-          ...(path === undefined ? {} : { path, endOnFailure: true }),
-          verbose: fc.VerbosityLevel.VeryVerbose,
-        });
-        return;
-      }
-      // A fixed seed, whose runs must reach each kind of trouble often, then fresh random runs.
-      await fc.assert(property, { numRuns: 80, seed: 20261114 });
-      for (const [what, least] of Object.entries(LEAST)) {
-        expect(seen[what as keyof typeof seen], `${what}: ${JSON.stringify(seen)}`).toBeGreaterThan(
-          least,
-        );
-      }
-      // Apart from both, so a seed and path from either replay the same runs.
-      for (const actions of COUNTEREXAMPLES) await run(actions);
-      await fc.assert(property, { numRuns: RUNS });
-    },
-    600_000 + RUNS * 2_000,
-  );
-});
+export async function fixedSeed(seed: number, numRuns: number, least: Reached): Promise<void> {
+  await fc.assert(property, { numRuns, seed });
+  for (const [what, n] of Object.entries(least)) {
+    expect(seen[what as keyof Reached], `${what}: ${JSON.stringify(seen)}`).toBeGreaterThan(n);
+  }
+}
