@@ -170,7 +170,7 @@ describe("[A3.3.4.tools.five] status: here, the session and guides", () => {
       ]);
       expect(status["here_total"]).toBe(5);
       expect(status["hint"]).toBe(
-        "2 tasks match this folder. Ask the user which one, then pass its task on each call.",
+        "2 tasks match this folder. Ask the user which one, then pass its task on the calls that act on it.",
       );
       // Inside the portal, its project's tasks are still there; the outer project's are not.
       const deeper = await call("space.status", { cwd: web });

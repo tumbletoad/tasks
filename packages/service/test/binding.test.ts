@@ -549,7 +549,9 @@ describe("[A3.3.7.binding.reference] a launch reference reads its task on any co
       const first = await connect();
       const loaded = await first.call("task.get", { launch: launch.reference });
       expect(loaded).toContain("M-2");
-      expect(loaded).toContain("Pass task M-2 on each call: this connection is not its session");
+      expect(loaded).toContain(
+        "Pass task M-2 on the calls that act on it: this connection is not its session",
+      );
       expect(await sessionLine(first)).toContain("Session: not bound");
       const second = await connect();
       expect(await second.call("task.get", { launch: launch.reference })).toContain("M-2");
@@ -645,7 +647,7 @@ describe("[A3.3.7.binding.folder] a working folder, a hint or an argument never 
       expect(status).toContain("Session: not bound");
       expect(status).toContain("Space: Mira (M)");
       expect(status).toMatch(/M-4 .*exact/);
-      expect(status).toContain("pass task M-4 on each call");
+      expect(status).toContain("pass task M-4 on the calls that act on it");
       const refused = await agent.refusal("task.get", { cwd: w.portal });
       expect(refused.code).toBe("unbound");
       expect(refused.text).toContain("M-4");

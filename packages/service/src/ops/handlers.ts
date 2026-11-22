@@ -3545,7 +3545,7 @@ function sessionOf(
 
 /**
  * What a connection that is no session does next when tasks match the working folder exactly: with
- * one clear match it names that task on each call, with several it asks. The folder itself never
+ * one clear match it names that task on the calls that act on it, with several it asks. The folder itself never
  * chooses the task.
  */
 function hereHint(
@@ -3556,10 +3556,10 @@ function hereHint(
   const [only] = exact;
   if (exact.length === 1 && only !== undefined) {
     const ref = String(taskRow(only.row, prefix)["ref"]);
-    return `One task matches this folder. If your work belongs to it, pass task ${ref} on each call, and tell the user.`;
+    return `One task matches this folder. If your work belongs to it, pass task ${ref} on the calls that act on it, and tell the user.`;
   }
   if (exact.length > 1) {
-    return `${String(exact.length)} tasks match this folder. Ask the user which one, then pass its task on each call.`;
+    return `${String(exact.length)} tasks match this folder. Ask the user which one, then pass its task on the calls that act on it.`;
   }
   return undefined;
 }

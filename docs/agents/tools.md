@@ -1250,7 +1250,7 @@ Result:
     "inbox": 0,
     "proposals": 0
   },
-  "hint": "Two tasks match this folder. Ask the user which one, then pass its task on each call."
+  "hint": "Two tasks match this folder. Ask the user which one, then pass its task on the calls that act on it."
 }
 ```
 

@@ -133,11 +133,15 @@ describe("[A3.3.3.mcp.tool-list] one tool list on every connection, online and o
       const bound = await raw(w, bridgeContext({ space: w.space }));
       await bound.initialize();
       const call = await bound.request("tools/call", bind);
-      expect(textOf(JSON.parse(call.result ?? "{}"))).toContain("Pass task M-1 on each call");
+      expect(textOf(JSON.parse(call.result ?? "{}"))).toContain(
+        "Pass task M-1 on the calls that act on it",
+      );
       legacy.add((await bound.request("tools/list")).result ?? "");
       const boundModern = await raw(w, bridgeContext({ space: w.space }));
       const modernCall = await boundModern.request("tools/call", modern("2026-07-28", bind));
-      expect(textOf(JSON.parse(modernCall.result ?? "{}"))).toContain("Pass task M-1 on each call");
+      expect(textOf(JSON.parse(modernCall.result ?? "{}"))).toContain(
+        "Pass task M-1 on the calls that act on it",
+      );
       modernLists.add((await boundModern.request("tools/list", modern())).result ?? "");
       expect([...legacy]).toEqual([JSON.stringify(offline.tools_list.result)]);
       expect([...modernLists]).toEqual([JSON.stringify(offline.tools_list.modern_result)]);

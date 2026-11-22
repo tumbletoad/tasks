@@ -144,7 +144,7 @@ async function agentIn(r: Rig, cwd: string) {
   return {
     /** Whether the read by the launch's reference gave the task, to a connection that is no session. */
     getTask: async (launch: string) => ({
-      read: (await agent.call("task.get", { launch })).includes("on each call: this connection"),
+      read: (await agent.call("task.get", { launch })).includes("act on it: this connection"),
     }),
     close: () => agent.close(),
   };

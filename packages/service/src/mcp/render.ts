@@ -247,11 +247,11 @@ function instructionsPart(
   };
 }
 
-/** Whether the reader is the task's session, or has to name the task on each call. */
+/** Whether the reader is the task's session, or names the task on the calls that act on it. */
 const sessionOfRead = (bound: boolean, ref: string): string =>
   bound
     ? "Session: this task's, so calls without task act on it"
-    : `Pass task ${ref} on each call: this connection is not its session`;
+    : `Pass task ${ref} on the calls that act on it: this connection is not its session`;
 
 /** Whose request a note was: launches of other sessions, which the reader only learns from. */
 const requestFor = (note: Note): string =>

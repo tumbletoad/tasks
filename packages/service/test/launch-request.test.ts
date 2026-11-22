@@ -255,8 +255,8 @@ async function notesOf(r: Rig, task: string): Promise<Note[]> {
   }
 }
 
-/** What get_task says to an app's agent that is no session: it names the task on each call. */
-const NAMES = "on each call: this connection is not its session";
+/** What get_task says to an app's agent that is no session: it names the task on the calls that act on it. */
+const NAMES = "act on it: this connection is not its session";
 /** The line before the person's request in get_task's text. */
 const REQUEST = "Request from the user for this launch:";
 

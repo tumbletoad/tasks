@@ -277,7 +277,7 @@ describe("[A3.3.7.grant.space] a home granted one space reaches no other", () =>
       // Mira's own home reads the reference, and the launch's own bridge is its session.
       const right = await connect({ instance: "home-mira", space: w.space });
       const read = await right.call("task.get", { launch: launch.reference });
-      expect(read).toContain("Pass task M-2 on each call");
+      expect(read).toContain("Pass task M-2 on the calls that act on it");
       const rightTicket = await launched(ticketed);
       expect(rightTicket.binding?.["state"]).toBe("bound");
       for (const agent of [own, pinned, loose, named, right, rightTicket]) await agent.close();

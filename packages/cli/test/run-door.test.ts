@@ -239,7 +239,9 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
       ["get_task", undefined],
     ]);
     expect(JSON.stringify(said[1]?.tool_result)).toContain("Session: this task");
-    expect(JSON.stringify(said[4]?.tool_result)).toContain("Pass task M-1 on each call");
+    expect(JSON.stringify(said[4]?.tool_result)).toContain(
+      "Pass task M-1 on the calls that act on it",
+    );
     const served = service?.ops.spaces().find((s) => s.id === spaceId);
     const rows = (await served?.reader?.transaction("deferred", [
       {
