@@ -269,7 +269,6 @@ async function run(initial: DefaultSpace, events: readonly Event[]): Promise<str
         hash: secretHash("ticket", id, ticket),
         issuedAt: 1,
         shimUsed: true,
-        bridgeUsed: false,
       },
       attachment: { hash: "a".repeat(64), pid: 4242 + i, startTime: "linux:1" },
       app,

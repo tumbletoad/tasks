@@ -46,7 +46,6 @@ function world() {
         hash: secretHash("ticket", id, ticket),
         issuedAt: 1_800_000_000_000,
         shimUsed: claimed,
-        bridgeUsed: false,
       },
       ...(claimed ? { attachment: { hash: "a".repeat(64), pid: 4242, startTime: "linux:1" } } : {}),
       ...(given ? { app: "claude-code", home: "/home/fixture/.claude" } : {}),
@@ -93,7 +92,6 @@ describe("[A3.3.7.binding.named] the live launch a ticket or a preset names", ()
         hash: secretHash("ticket", one.launch, one.ticket),
         issuedAt: 1_800_000_000_000,
         shimUsed: true,
-        bridgeUsed: false,
       },
     });
     expect(w.host.liveByTicket(one.ticket)).toBeUndefined();

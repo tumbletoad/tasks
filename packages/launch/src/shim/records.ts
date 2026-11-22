@@ -2,18 +2,17 @@
 // under the install's launch folders, `<launch root>/<launch ID>/`, 0700, holding
 // - `launch.json` (0600, replaced atomically, written by the service): the spawn plan (argv, the
 //   folder or none, the instance's environment, the title), from dispatch the folder resolved right
-//   before the launch with the check the shim runs there, the ticket's hash and the use of its two
-//   roles, and once claimed the attachment credential's hash with the shim's PID and start time;
+//   before the launch with the check the shim runs there, the ticket's hash and whether its shim
+//   role is spent, and once claimed the attachment credential's hash with the shim's PID and start
+//   time;
 // - `exit.json` (written atomically by the shim when the service cannot be reached, A4 3.6.3 step 9).
-// Beside them, `<launch root>/ended/<launch ID>.json` (0600) keeps an ended launch's ticket hash,
-// space, task, session, home and preset for a day from its end; the launch's folder is gone by then.
-// None of this enters a space: a space holds IDs and codes only (A4 3.9.1). The launch root is
+// The folder goes with the launch's end, and nothing of the launch stays. None of this enters a space: a space holds IDs and codes only (A4 3.9.1). The launch root is
 // A2 3.2.1's: Linux `/run/user/<uid>/ttasks-<install>/launch/` (tmpfs, gone at logout, when no shim
 // can be left either), Windows `<state>\launch\`.
 //
 // Folders are named after the launch ID, not its reference: a reference is unique within one space
 // only, and one machine's launch root holds the launches of all its spaces.
-import { lstatSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, makeDir } from "@ttasks/files";
 import { isLaunchRef } from "../intents.ts";
@@ -97,8 +96,6 @@ export interface LaunchFile {
     readonly hash: string;
     readonly issuedAt: number;
     readonly shimUsed: boolean;
-    /** Always false now: kept so a record written now loads in the build before. */
-    readonly bridgeUsed: boolean;
   };
   /** Issued inside the claim, before its reply leaves (A4 3.1). */
   readonly attachment?: { readonly hash: string; readonly pid: number; readonly startTime: string };
@@ -114,25 +111,6 @@ export interface LaunchFile {
   readonly preset?: string;
 }
 
-/**
- * What an ended launch leaves for a day after its end: enough to know a value it handed out, and
- * none of its plan, folder or credential.
- */
-export interface EndedLaunch {
-  readonly format: 1;
-  readonly launch: string;
-  readonly endedAt: number;
-  /** The ticket's hash. */
-  readonly ticket: string;
-  readonly space: string;
-  readonly task: string | null;
-  readonly session?: string;
-  readonly home?: string;
-  readonly preset?: string;
-}
-
-/** How long an ended launch's record stays, from its end. */
-export const ENDED_KEEP_MS = 24 * 60 * 60_000;
 
 /** The shim's machine state, as the host reads and writes it. */
 export interface RecordStore {
@@ -146,18 +124,6 @@ export interface RecordStore {
   readExit(launch: string): ExitFile | undefined;
   /** Where the shim writes `exit.json`. */
   exitPath(launch: string): string;
-  /** When the launch's `exit.json` was written, wall clock milliseconds, when it is there. */
-  exitWrittenAt(launch: string): number | undefined;
-  /** The ended launches' records, apart from every live one. */
-  listEnded(): readonly EndedLaunch[];
-  /** Durable when it returns. */
-  putEnded(file: EndedLaunch): void;
-  /**
-   * Removes every ended record that ended at or before `until`, and anything else among them
-   * written then (a damaged record, a write's leftover). One that cannot be removed now is kept,
-   * for the next call.
-   */
-  forgetEnded(until: number): void;
 }
 
 /** The largest launch file read back, and so the largest written. */
@@ -286,17 +252,10 @@ export function checkLaunchFile(value: unknown): LaunchFile | undefined {
     if (!isObject(ticket) || !isHash(ticket["hash"]) || !isInstant(ticket["issuedAt"])) {
       return undefined;
     }
-    if (typeof ticket["shimUsed"] !== "boolean" || typeof ticket["bridgeUsed"] !== "boolean") {
-      return undefined;
-    }
+    if (typeof ticket["shimUsed"] !== "boolean") return undefined;
     out = {
       ...out,
-      ticket: {
-        hash: ticket["hash"],
-        issuedAt: ticket["issuedAt"],
-        shimUsed: ticket["shimUsed"],
-        bridgeUsed: ticket["bridgeUsed"],
-      },
+      ticket: { hash: ticket["hash"], issuedAt: ticket["issuedAt"], shimUsed: ticket["shimUsed"] },
     };
   }
   if (attachment !== undefined) {
@@ -361,19 +320,6 @@ function checkGiven(
   };
 }
 
-/** An ended launch's record as read from disk, checked field by field. */
-export function checkEndedFile(value: unknown): EndedLaunch | undefined {
-  if (!isObject(value) || value["format"] !== 1) return undefined;
-  const { launch, endedAt, ticket, space, task } = value;
-  if (typeof launch !== "string" || !LAUNCH_ID.test(launch) || !isInstant(endedAt)) {
-    return undefined;
-  }
-  if (!isHash(ticket) || typeof space !== "string" || !SPACE_ID.test(space)) return undefined;
-  if (task !== null && (typeof task !== "string" || !TASK_ID.test(task))) return undefined;
-  const given = checkGiven(value);
-  if (given === undefined) return undefined;
-  return { format: 1, launch, endedAt, ticket, space, task, ...given };
-}
 
 /** An `exit.json`, checked; undefined when it is not one or names another launch. */
 export function checkExitFile(value: unknown, launch: string): ExitFile | undefined {
@@ -455,8 +401,8 @@ function pause(ms: number): void {
 
 export const LAUNCH_FILE = "launch.json";
 export const EXIT_FILE = "exit.json";
-/** The folder of ended launches' records in the launch root: not a launch ID, so no live one. */
-export const ENDED_FOLDER = "ended";
+/** Where earlier builds kept a record of each ended launch, in the launch root. */
+const ENDED_FOLDER = "ended";
 
 /**
  * The launch root and each launch folder, and the files in them (A2 3.2.1, A4 3.6.3): set on each
@@ -466,16 +412,26 @@ export const ENDED_FOLDER = "ended";
 export const LAUNCH_FOLDER_MODE = 0o700;
 export const LAUNCH_FILE_MODE = 0o600;
 
+/**
+ * A launch file as written. The builds before refuse a ticket without `bridgeUsed`, so it is
+ * written, always false, for as long as an update can be rolled back to one of them; nothing reads
+ * it.
+ */
+function onDisk(file: LaunchFile): string {
+  const written =
+    file.ticket === undefined ? file : { ...file, ticket: { ...file.ticket, bridgeUsed: false } };
+  return `${JSON.stringify(written)}\n`;
+}
+
 /** The machine state in folders under the install's launch root. */
 export class FolderRecords implements RecordStore {
   readonly root: string;
   readonly #files = new Map<string, LaunchFile>();
-  readonly #ended = new Map<string, EndedLaunch>();
 
   /**
-   * Creates the root (0700, and any missing folder above it) and reads every launch file in it,
-   * and every ended launch's record. These are the only reads of the launch files: from here the
-   * records in memory are the truth. A file that cannot be read for a moment is read again over
+   * Creates the root (0700, and any missing folder above it) and reads every launch file in it.
+   * These are the only reads of the launch files: from here the records in memory are the
+   * truth. A file that cannot be read for a moment is read again over
    * `HELD_FILE_WAITS_MS`; one that still cannot is left out, as a damaged one is. The service
    * judges the root before (hub/service.ts): it holds the commands a launch runs.
    */
@@ -493,17 +449,11 @@ export class FolderRecords implements RecordStore {
       for (const [name] of passing) this.#load(name, failed);
     }
     for (const [name, code] of failed) options.unreadable?.(name, code);
-    let ended: string[];
+    // Nothing reads those records, so they go.
     try {
-      ended = readdirSync(join(root, ENDED_FOLDER));
+      rmSync(join(root, ENDED_FOLDER), { recursive: true, force: true, maxRetries: 5 });
     } catch {
-      ended = []; // None ended yet.
-    }
-    for (const name of ended) {
-      const launch = name.endsWith(".json") ? name.slice(0, -".json".length) : "";
-      if (!LAUNCH_ID.test(launch)) continue;
-      const file = checkEndedFile(readBounded(join(root, ENDED_FOLDER, name)));
-      if (file?.launch === launch) this.#ended.set(launch, file);
+      // Not removable now: a later start tries again.
     }
   }
 
@@ -529,7 +479,7 @@ export class FolderRecords implements RecordStore {
 
   put(file: LaunchFile): void {
     if (!LAUNCH_ID.test(file.launch)) throw new Error("Not a launch ID");
-    const text = `${JSON.stringify(file)}\n`;
+    const text = onDisk(file);
     // Never a file the reader would leave out after a restart.
     if (Buffer.byteLength(text, "utf8") > MAX_FILE) throw new Error("The launch file is too large");
     const folder = join(this.root, file.launch);
@@ -551,58 +501,6 @@ export class FolderRecords implements RecordStore {
 
   exitPath(launch: string): string {
     return join(this.root, launch, EXIT_FILE);
-  }
-
-  exitWrittenAt(launch: string): number | undefined {
-    if (!LAUNCH_ID.test(launch)) return undefined;
-    try {
-      return Math.round(statSync(join(this.root, launch, EXIT_FILE)).mtimeMs);
-    } catch {
-      return undefined;
-    }
-  }
-
-  listEnded(): readonly EndedLaunch[] {
-    return [...this.#ended.values()];
-  }
-
-  putEnded(file: EndedLaunch): void {
-    if (!LAUNCH_ID.test(file.launch)) throw new Error("Not a launch ID");
-    const folder = join(this.root, ENDED_FOLDER);
-    makeDir(folder, LAUNCH_FOLDER_MODE);
-    atomicWrite(join(folder, `${file.launch}.json`), `${JSON.stringify(file)}\n`, LAUNCH_FILE_MODE);
-    this.#ended.set(file.launch, file);
-  }
-
-  forgetEnded(until: number): void {
-    const folder = join(this.root, ENDED_FOLDER);
-    for (const ended of [...this.#ended.values()]) {
-      if (ended.endedAt > until) continue;
-      try {
-        rmSync(join(folder, `${ended.launch}.json`), { force: true, maxRetries: 5 });
-        this.#ended.delete(ended.launch);
-      } catch {
-        // Kept: the next call tries again.
-      }
-    }
-    // The folder is the service's alone: anything else in it is a record it could not read or
-    // a write a crash cut short, which it removes once it is a day old.
-    let names: string[];
-    try {
-      names = readdirSync(folder);
-    } catch {
-      return;
-    }
-    for (const name of names) {
-      if (name.endsWith(".json") && this.#ended.has(name.slice(0, -".json".length))) continue;
-      const path = join(folder, name);
-      try {
-        const facts = lstatSync(path);
-        if (facts.isFile() && facts.mtimeMs <= until) rmSync(path, { force: true, maxRetries: 5 });
-      } catch {
-        // Not removable now: the next call tries again.
-      }
-    }
   }
 }
 
@@ -637,28 +535,5 @@ export class MemoryRecords implements RecordStore {
 
   exitPath(launch: string): string {
     return `memory:${launch}/${EXIT_FILE}`;
-  }
-
-  /** When each exit in `exits` was written; none known is the host's own fallback. */
-  readonly exitTimes = new Map<string, number>();
-
-  exitWrittenAt(launch: string): number | undefined {
-    return this.exits.has(launch) ? this.exitTimes.get(launch) : undefined;
-  }
-
-  readonly #ended = new Map<string, EndedLaunch>();
-
-  listEnded(): readonly EndedLaunch[] {
-    return [...this.#ended.values()];
-  }
-
-  putEnded(file: EndedLaunch): void {
-    this.#ended.set(file.launch, structuredClone(file));
-  }
-
-  forgetEnded(until: number): void {
-    for (const ended of [...this.#ended.values()]) {
-      if (ended.endedAt <= until) this.#ended.delete(ended.launch);
-    }
   }
 }

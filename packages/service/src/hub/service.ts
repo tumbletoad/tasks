@@ -24,7 +24,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { CLI_NAME, envVar, PRODUCT_NAME } from "@ttasks/brand";
-import { ENDED_FOLDER, type Instance } from "@ttasks/launch";
+import type { Instance } from "@ttasks/launch";
 import { StorageError, type Id, type SpaceWriterHandle } from "@ttasks/storage";
 import {
   DEFAULT_CONFIG,
@@ -1420,16 +1420,15 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
 /**
  * At a clean stop, the per-user runtime folder (`/run/user/<uid>/ttasks-<install>/`, Linux) goes
  * when nothing is left in it: the socket went with the server, and the launch root goes when it
- * holds no launch folder and no ended launch's record. A launch folder is a launch the next start
- * still needs (a live shim reattaches with it, recovery reads it), and an ended record is kept for
- * its day, so a runtime folder that holds either stays, whole. Only
+ * holds no launch folder. A launch folder is a launch the next start still needs (a live shim
+ * reattaches with it, recovery reads it), so a runtime folder that holds one stays, whole. Only
  * empty folders are removed (rmdir), so nothing in them can be lost; anything else there (a socket
  * that is not this start's) keeps the folder too. The fallback under `<state>` is the home's own.
  */
 export function removeIdleRuntime(runtime: Pick<RuntimeNames, "launch" | "runtimeDir">): void {
   const dir = runtime.runtimeDir;
   if (dir === undefined) return;
-  for (const folder of [join(runtime.launch, ENDED_FOLDER), runtime.launch, dir]) {
+  for (const folder of [runtime.launch, dir]) {
     try {
       rmdirSync(folder);
     } catch (error) {

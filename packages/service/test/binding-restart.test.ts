@@ -96,7 +96,7 @@ describe.skipIf(!CAN_HOLD_FILES)(
     );
 
     test(
-      "held through every wait: it is left out with one log event, the service starts, and a chat started by hand and a run's ticket work",
+      "held through every wait: it is left out with one log event, the service starts, a chat started by hand works, and a run's ticket is still looked up past the launches",
       { timeout: 300_000 },
       async () => {
         const { lab, intent, ticket, served, context, file } = await launched("bind-stuck");
