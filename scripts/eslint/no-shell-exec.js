@@ -1,4 +1,4 @@
-// ESLint rule tasks/no-shell-exec: refuses exec and execSync from child_process, which always run
+// ESLint rule ttasks/no-shell-exec: refuses exec and execSync from child_process, which always run
 // a shell (A4). It follows the module through every way it can be bound statically: named,
 // aliased, default (`import cp`, `import { default as cp }`) and namespace imports,
 // `import x = require()`, require(), await import(), re-exports, destructuring (including

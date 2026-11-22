@@ -196,7 +196,7 @@ describe("[A7.3.7.m0-lifecycle.self-test] the M0.07 lifecycle lab", () => {
       state,
       // The first bind reply comes 1.5 s late, so the client's initialize lands in the wait.
       replyDelayMs: (method) => {
-        if (method !== "tasks/bind" || delayed) return 0;
+        if (method !== "ttasks/bind" || delayed) return 0;
         delayed = true;
         bindArrived();
         return 1500;

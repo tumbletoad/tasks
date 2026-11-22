@@ -343,7 +343,7 @@ export async function handshake(
   const cp = asObject(challenge?.["params"]);
   const protocols = cp?.["protocols"];
   if (
-    challenge?.["method"] !== "tasks/challenge" ||
+    challenge?.["method"] !== "ttasks/challenge" ||
     typeof cp?.["nonce"] !== "string" ||
     typeof cp["instance"] !== "string" ||
     !Array.isArray(protocols) ||
@@ -362,7 +362,7 @@ export async function handshake(
   writeLine(socket, {
     jsonrpc: "2.0",
     id: 0,
-    method: "tasks/hello",
+    method: "ttasks/hello",
     params: { protocol: ids.protocol, mode: ids.mode, nonce: ids.nc, proof: clientProof(key, ids) },
   });
   const reply = parseObject(await reader.next());
@@ -382,7 +382,7 @@ export async function handshake(
   writeLine(socket, {
     jsonrpc: "2.0",
     id: 1,
-    method: "tasks/bind",
+    method: "ttasks/bind",
     params: { ...body, mac: bindMac(ks, t) },
   });
   const bound = parseObject(await reader.next());

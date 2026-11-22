@@ -165,7 +165,7 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
           return printUsage(
             io,
             globals.json,
-            `tasks has no command ${/^[a-z][a-z0-9-]{0,30}$/.test(command) ? command : "like that"}`,
+            `ttasks has no command ${/^[a-z][a-z0-9-]{0,30}$/.test(command) ? command : "like that"}`,
           );
         }
         if (verb.entry === "launch.open") {

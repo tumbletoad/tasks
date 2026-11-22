@@ -206,7 +206,7 @@ export default defineConfig([
       "no-restricted-syntax": ["error", ...noShell, ...noTmpdir, ...noUmask, ...noReport],
       "no-restricted-imports": ["error", { paths: [...tmpdirImports, ...umaskImports] }],
       // exec and execSync always run a shell (A4). Applies everywhere, tests included.
-      "tasks/no-shell-exec": "error",
+      "ttasks/no-shell-exec": "error",
     },
   },
   {

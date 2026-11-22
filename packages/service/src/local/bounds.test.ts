@@ -81,7 +81,7 @@ describe("[A2.3.6.local.bounds] hostile and broken peers", () => {
         const cases: [string, (raw: RawSession) => Buffer | string][] = [
           ["bad_hello", () => "hello world\n"],
           ["bad_hello", () => "\n"],
-          ["bad_hello", () => '{"jsonrpc":"2.0","id":0,"method":"tasks/hello","params":{}}\n'],
+          ["bad_hello", () => '{"jsonrpc":"2.0","id":0,"method":"ttasks/hello","params":{}}\n'],
           ["too_large", () => randomBytes(4_000).toString("base64")],
           ["too_large", () => Buffer.alloc(2_000, 0x7b)],
           ["invalid_utf8", () => Buffer.from([0xc3, 0x28, 0x0a])],

@@ -83,7 +83,7 @@ function expectOnlyHello(bytes: Buffer): void {
   expect(text.split("\n")).toHaveLength(2);
   const hello = JSON.parse(text) as Json;
   expect(Object.keys(hello).sort()).toEqual(["id", "jsonrpc", "method", "params"]);
-  expect(hello).toMatchObject({ jsonrpc: "2.0", id: 0, method: "tasks/hello" });
+  expect(hello).toMatchObject({ jsonrpc: "2.0", id: 0, method: "ttasks/hello" });
   const params = hello["params"] as Json;
   expect(Object.keys(params).sort()).toEqual(["mode", "nonce", "proof", "protocol"]);
   expect(params).toMatchObject({ protocol: 1, mode: "mcp" });

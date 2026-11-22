@@ -80,7 +80,7 @@ function launches(
     spaces: () => [],
     log,
     environment: env,
-    shimCommand: ["/opt/tasks/bin/ttasks"],
+    shimCommand: ["/opt/ttasks/bin/ttasks"],
     terminals: {
       spawn,
       systemdRun: "/usr/bin/systemd-run",

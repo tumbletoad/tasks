@@ -126,7 +126,7 @@ function expectOnlyHello(bytes: Buffer, mode: Mode = "mcp"): void {
   expect(text.split("\n")).toHaveLength(2);
   const hello = JSON.parse(text) as JsonObject;
   expect(Object.keys(hello).sort()).toEqual(["id", "jsonrpc", "method", "params"]);
-  expect(hello).toMatchObject({ jsonrpc: "2.0", id: 0, method: "tasks/hello" });
+  expect(hello).toMatchObject({ jsonrpc: "2.0", id: 0, method: "ttasks/hello" });
   const params = hello["params"] as JsonObject;
   expect(Object.keys(params).sort()).toEqual(["mode", "nonce", "proof", "protocol"]);
   expect(params["protocol"]).toBe(1);
@@ -216,33 +216,33 @@ describe("[A2.3.6.local.pre-auth-bytes] a client against a fake endpoint", () =>
     const bad = [
       JSON.stringify({
         jsonrpc: "2.0",
-        method: "tasks/challenge",
+        method: "ttasks/challenge",
         params: { instance: "x", protocols: [1] },
       }),
       JSON.stringify({
         jsonrpc: "2.0",
-        method: "tasks/challenge",
+        method: "ttasks/challenge",
         params: { nonce: "short", instance: "x", protocols: [1] },
       }),
       JSON.stringify({
         jsonrpc: "2.0",
-        method: "tasks/challenge",
+        method: "ttasks/challenge",
         params: { nonce: randomToken(), instance: "a b", protocols: [1] },
       }),
       JSON.stringify({
         jsonrpc: "2.0",
-        method: "tasks/challenge",
+        method: "ttasks/challenge",
         params: { nonce: randomToken(), instance: "x", protocols: [] },
       }),
       JSON.stringify({
         jsonrpc: "2.0",
         id: 5,
-        method: "tasks/challenge",
+        method: "ttasks/challenge",
         params: { nonce: randomToken(), instance: "x", protocols: [1] },
       }),
       JSON.stringify({
         jsonrpc: "2.0",
-        method: "tasks/hello",
+        method: "ttasks/hello",
         params: { nonce: randomToken(), instance: "x", protocols: [1] },
       }),
       "x".repeat(2_000),

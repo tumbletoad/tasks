@@ -23,10 +23,10 @@ The local protocol between the TTasks service and its clients on the same machin
 ## Handshake
 
 ```
-S → C  {"jsonrpc":"2.0","method":"tasks/challenge","params":{"nonce":Ns,"instance":I,"protocols":[…]}}
-C → S  {"jsonrpc":"2.0","id":0,"method":"tasks/hello","params":{"protocol":P,"mode":M,"nonce":Nc,"proof":Pc}}
+S → C  {"jsonrpc":"2.0","method":"ttasks/challenge","params":{"nonce":Ns,"instance":I,"protocols":[…]}}
+C → S  {"jsonrpc":"2.0","id":0,"method":"ttasks/hello","params":{"protocol":P,"mode":M,"nonce":Nc,"proof":Pc}}
 S → C  {"jsonrpc":"2.0","id":0,"result":{"proof":Ps}}
-C → S  {"jsonrpc":"2.0","id":1,"method":"tasks/bind","params":{"protocol":P,"mode":M,"client":{…},"context":{…},"mac":Mb}}
+C → S  {"jsonrpc":"2.0","id":1,"method":"ttasks/bind","params":{"protocol":P,"mode":M,"client":{…},"context":{…},"mac":Mb}}
 S → C  {"jsonrpc":"2.0","id":1,"result":{…,"mac":Ms}}
 ```
 

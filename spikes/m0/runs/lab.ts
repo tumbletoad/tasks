@@ -291,7 +291,7 @@ interface ClaudeCase {
 function claudeMcpConfig(label: string, delayMs: number): string {
   const file = join(mcpDir, `${label}.json`);
   const config = {
-    mcpServers: { tasks: { type: "stdio", command: NODE, args: probeArgs(label, delayMs) } },
+    mcpServers: { ttasks: { type: "stdio", command: NODE, args: probeArgs(label, delayMs) } },
   };
   writeFileSync(file, JSON.stringify(config));
   return file;

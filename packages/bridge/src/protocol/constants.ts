@@ -74,9 +74,9 @@ export const OUTPUT_STALL_MS = 30_000;
 
 /** Handshake method names (A2 3.6.3) and rpc mode's cancellation (A2 3.6.2). */
 export const METHOD = {
-  challenge: "tasks/challenge",
-  hello: "tasks/hello",
-  bind: "tasks/bind",
+  challenge: "ttasks/challenge",
+  hello: "ttasks/hello",
+  bind: "ttasks/bind",
   cancel: "$/cancel",
 } as const;
 

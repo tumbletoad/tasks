@@ -255,7 +255,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
       env: env(),
       stdio: "ignore",
       windowsHide: true,
-      // eslint-disable-next-line no-restricted-syntax -- tasksw.exe gives the service a hidden console of its own.
+      // eslint-disable-next-line no-restricted-syntax -- ttasksw.exe gives the service a hidden console of its own.
       detached: true,
     });
     started.push(child);

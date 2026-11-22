@@ -3,7 +3,7 @@
 # below are what this script trusts. Runs on Windows PowerShell 5.1 and PowerShell 7.
 #
 # Usage: powershell -NoProfile -File install-@@VERSION@@.ps1 -Source <folder> [-Root <folder>]
-#   -Source  folder with tasks-@@VERSION@@-win-x64.zip, SHA256SUMS and SHA256SUMS.sshsig
+#   -Source  folder with ttasks-@@VERSION@@-win-x64.zip, SHA256SUMS and SHA256SUMS.sshsig
 #   -Root    install root. Defaults to $env:TTASKS_HOME. The spike installs only into a folder that
 #            is named this way, never into %USERPROFILE%\.ttasks, and never changes the user Path.
 #

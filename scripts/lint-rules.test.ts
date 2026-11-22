@@ -221,7 +221,7 @@ async function shellExecReports(code: string, path: string, linter = eslint): Pr
   const [result] = await linter.lintText(code, { filePath: join(repoRoot, path) });
   const fatal = result?.messages.find((m) => m.fatal === true);
   if (fatal) throw new Error(`could not parse ${path}: ${fatal.message}`);
-  return (result?.messages ?? []).filter((m) => m.ruleId === "tasks/no-shell-exec").length;
+  return (result?.messages ?? []).filter((m) => m.ruleId === "ttasks/no-shell-exec").length;
 }
 
 // A2 3.2.2 rule 5: the umask is read without setting it (hub/umask.ts). process.umask() without an

@@ -4,7 +4,7 @@
 # below are what this script trusts.
 #
 # Usage: sh install-@@VERSION@@.sh --source <folder> [--root <folder>]
-#   --source  folder with tasks-@@VERSION@@-linux-x64.tar.gz, SHA256SUMS and SHA256SUMS.sshsig
+#   --source  folder with ttasks-@@VERSION@@-linux-x64.tar.gz, SHA256SUMS and SHA256SUMS.sshsig
 #   --root    install root. Defaults to $TTASKS_HOME. The spike installs only into a folder that
 #             is named this way, never into ~/.local/share/tasks.
 #

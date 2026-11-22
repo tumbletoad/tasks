@@ -92,7 +92,7 @@ console.log("not json " + all);
 /** A fake claude -p: error result, answer text, model names and stderr all carry sentinels. */
 const FAKE_CLAUDE = `${FAKE_HEAD}
 if (args.includes("stream-json")) {
-  console.log(JSON.stringify({ type: "system", subtype: "init", cwd: S[2], tools: ["mcp__tasks-probe__probe_marked", "mcp__" + S[0] + "__x"] }));
+  console.log(JSON.stringify({ type: "system", subtype: "init", cwd: S[2], tools: ["mcp__ttasks-probe__probe_marked", "mcp__" + S[0] + "__x"] }));
   console.log(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name: "mcp__" + S[0] + "__t", input: { a: all } }, { type: "text", text: all }] } }));
 }
 console.log(JSON.stringify({

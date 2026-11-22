@@ -421,7 +421,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
     const fake = net.createServer((conn) => {
       writeLine(conn, {
         jsonrpc: "2.0",
-        method: "tasks/challenge",
+        method: "ttasks/challenge",
         params: { nonce: nonce(), instance: "fake", protocols: [1] },
       });
       const r = new LineReader(conn);
@@ -445,7 +445,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
     await new Promise((resolve) => fake.close(resolve));
     expect(seen).toHaveLength(1);
     const hello = parseObject(seen[0] ?? "");
-    expect(hello?.["method"]).toBe("tasks/hello");
+    expect(hello?.["method"]).toBe("ttasks/hello");
     expect(Object.keys(hello?.["params"] as JsonObject).sort()).toEqual([
       "mode",
       "nonce",
@@ -471,7 +471,7 @@ describe("[A7.3.7.m0-kit.self-test] the M0 spike kit", () => {
         const ns = nonce();
         writeLine(conn, {
           jsonrpc: "2.0",
-          method: "tasks/challenge",
+          method: "ttasks/challenge",
           params: { nonce: ns, instance: "silent", protocols: [1] },
         });
         if (stage === "challenge") return; // never answers the hello

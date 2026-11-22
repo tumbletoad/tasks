@@ -102,7 +102,7 @@ export interface ServiceOptions {
   inspect?: InspectOptions;
   /**
    * Tests only: delays the reply to an RPC method by this many ms (a slow service, finding D).
-   * Called with "tasks/bind" for the handshake's bind reply (a slow handshake, M0.07 review).
+   * Called with "ttasks/bind" for the handshake's bind reply (a slow handshake, M0.07 review).
    */
   replyDelayMs?: (method: string) => number;
 }
@@ -724,14 +724,14 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
     const ns = nonce();
     writeLine(socket, {
       jsonrpc: "2.0",
-      method: "tasks/challenge",
+      method: "ttasks/challenge",
       params: { nonce: ns, instance, protocols: [PROTOCOL] },
     });
     const hello = parseObject(await reader.next());
     const hp = asObject(hello?.["params"]);
     const mode = hp?.["mode"];
     if (
-      hello?.["method"] !== "tasks/hello" ||
+      hello?.["method"] !== "ttasks/hello" ||
       hello["id"] !== 0 ||
       hp?.["protocol"] !== PROTOCOL ||
       (mode !== "rpc" && mode !== "mcp") ||
@@ -751,7 +751,7 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
     const bind = parseObject(await reader.next());
     const bp = asObject(bind?.["params"]);
     if (
-      bind?.["method"] !== "tasks/bind" ||
+      bind?.["method"] !== "ttasks/bind" ||
       bind["id"] !== 1 ||
       bp === undefined ||
       bp["protocol"] !== ids.protocol ||
@@ -784,8 +784,8 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
             }
           : null,
     };
-    // Tests only: a slow handshake, the bind reply comes late ("tasks/bind").
-    const bindDelay = options.replyDelayMs?.("tasks/bind") ?? 0;
+    // Tests only: a slow handshake, the bind reply comes late ("ttasks/bind").
+    const bindDelay = options.replyDelayMs?.("ttasks/bind") ?? 0;
     if (bindDelay > 0) {
       await new Promise((resolve) => setTimeout(resolve, bindDelay));
       if (socket.destroyed) return;

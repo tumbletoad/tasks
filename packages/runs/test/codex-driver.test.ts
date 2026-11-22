@@ -8,7 +8,7 @@ import type { DriverSession, Work } from "../src/drivers/types.ts";
 import { serveCodex, type FakeCodex, type FakeScenario } from "./codex-server.ts";
 
 const TOOLS = {
-  command: "/opt/tasks/bin/ttasks",
+  command: "/opt/ttasks/bin/ttasks",
   args: ["mcp", "--space", "sp_x", "--instance", "codex", "--app", "codex"],
   env: { TTASKS_TICKET: "0123456789ABCDEFGHJKMNPQ" },
 };
@@ -98,7 +98,7 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
       sandbox: "danger-full-access",
       config: {
         "mcp_servers.ttasks": {
-          command: "/opt/tasks/bin/ttasks",
+          command: "/opt/ttasks/bin/ttasks",
           args: TOOLS.args,
           env: { TTASKS_TICKET: "0123456789ABCDEFGHJKMNPQ" },
         },

@@ -122,7 +122,7 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
         Path: "C:\\Windows",
         ClaudeCode: "1",
         node_options: "x",
-        Tasks_Home: "C:\\k",
+        Ttasks_Home: "C:\\k",
         JAVA_HOME: "C:\\j",
       },
       baseKind: "user",

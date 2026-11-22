@@ -654,7 +654,7 @@ async function a01Sessions(): Promise<void> {
       persist: true,
       extra,
       probe: { out, expect },
-      allowedTools: ["mcp__tasks-probe__probe_echo"],
+      allowedTools: ["mcp__ttasks-probe__probe_echo"],
     });
     runs.push({
       step: `${tag}: --session-id`,
@@ -874,7 +874,7 @@ async function a09(): Promise<void> {
   const out = join(scratch, "probe", "a09");
   const runs: JsonObject[] = [];
   const prompt =
-    "Call the tool mcp__tasks-probe__probe_marked once and the tool mcp__tasks-probe__probe_plain once, then reply with the single word OK.";
+    "Call the tool mcp__ttasks-probe__probe_marked once and the tool mcp__ttasks-probe__probe_plain once, then reply with the single word OK.";
   const first =
     process.env["TTASKS_M0_A09_SKIP_CALLS"] === "1"
       ? []
@@ -886,7 +886,7 @@ async function a09(): Promise<void> {
       prompt,
       stream: true,
       probe: { out, expect: {}, tools: "a09" },
-      allowedTools: ["mcp__tasks-probe__probe_marked", "mcp__tasks-probe__probe_plain"],
+      allowedTools: ["mcp__ttasks-probe__probe_marked", "mcp__ttasks-probe__probe_plain"],
       ...(variant === "tool-search-off" ? { extra: { ENABLE_TOOL_SEARCH: "false" } } : {}),
     });
     // Tool-use names in order, from the stream (built-in names and the two probe tools only).
@@ -897,7 +897,7 @@ async function a09(): Promise<void> {
         initTools = ((e["tools"] ?? []) as unknown[]).filter(
           (t): t is string =>
             typeof t === "string" &&
-            /^(mcp__tasks-probe__probe_(marked|plain|echo)|ToolSearch)$/.test(t),
+            /^(mcp__ttasks-probe__probe_(marked|plain|echo)|ToolSearch)$/.test(t),
         );
       }
       if (e["type"] !== "assistant") continue;
@@ -906,7 +906,7 @@ async function a09(): Promise<void> {
         if (block["type"] !== "tool_use") continue;
         const name = str(block["name"]);
         uses.push(
-          /^(mcp__tasks-probe__probe_(marked|plain)|ToolSearch)$/.test(name) ? name : "[other]",
+          /^(mcp__ttasks-probe__probe_(marked|plain)|ToolSearch)$/.test(name) ? name : "[other]",
         );
       }
     }
@@ -950,7 +950,7 @@ async function a09(): Promise<void> {
       for (const block of content)
         if (block["type"] === "tool_use")
           uses.push(
-            /^(ToolSearch|mcp__tasks-probe__probe_(marked|plain))$/.test(str(block["name"]))
+            /^(ToolSearch|mcp__ttasks-probe__probe_(marked|plain))$/.test(str(block["name"]))
               ? str(block["name"])
               : "[other]",
           );
