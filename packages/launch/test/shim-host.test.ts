@@ -837,12 +837,15 @@ describe("[A4.5.shim.attach] machine state in folders", () => {
       const folder = await dispatched();
       await claim(folder.ticket);
       const fileOf = (id: string) => join(root, id, "launch.json");
-      // A scanner holds two files as the service starts; a folder stands in place of a third.
-      const momentHold = holdFile(fileOf(moment.id));
-      const stuckHold = holdFile(fileOf(stuck.id));
-      rmSync(fileOf(folder.id));
-      mkdirSync(fileOf(folder.id));
+      // Each hold is released however the test ends, from the moment it is taken.
+      const holds: { release(): void }[] = [];
       try {
+        // A scanner holds two files as the service starts; a folder stands in place of a third.
+        const momentHold = holdFile(fileOf(moment.id));
+        holds.push(momentHold);
+        holds.push(holdFile(fileOf(stuck.id)));
+        rmSync(fileOf(folder.id));
+        mkdirSync(fileOf(folder.id));
         const waits: number[] = [];
         const left: [string, string][] = [];
         records = new FolderRecords(root, {
@@ -866,8 +869,7 @@ describe("[A4.5.shim.attach] machine state in folders", () => {
           await host.attach({ credential, pid: SHIM_PID, start_time: SHIM_START }),
         ).toMatchObject({ kind: "attached" });
       } finally {
-        momentHold.release();
-        stuckHold.release();
+        for (const hold of holds) hold.release();
       }
       // A file no wait can open is left out without one.
       const waits: number[] = [];
