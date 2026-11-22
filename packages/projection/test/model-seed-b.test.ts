@@ -16,7 +16,7 @@ const LEAST = {
   folders: 7,
   swaps: 7,
   rescued: 64,
-  rests: 30,
+  rests: 6,
   leftovers: 3,
   sameSize: 15,
   editorSaves: 16,

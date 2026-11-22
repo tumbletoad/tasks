@@ -956,7 +956,6 @@ class Model {
     this.disturbed.clear();
     this.check();
     checkWatermark(this.view, this.w.reader);
-    seen.rests += 1;
     const fresh = await this.w.fresh(join(this.w.folder, "..", `fresh-${String((this.n += 1))}`));
     const tree = treeOf(this.view);
     for (const [path, text] of fresh) expect(tree.get(path), path).toBe(text);
@@ -1000,6 +999,7 @@ class Model {
         await this.rebuild(a.killAt);
         return;
       case "rest":
+        seen.rests += 1;
         await this.rest();
         return;
       case "swap-rescue":
@@ -1040,6 +1040,7 @@ const seen = {
   folders: 0,
   swaps: 0,
   rescued: 0,
+  /** Rests in the middle of a sequence; every run also ends at rest, which is not counted. */
   rests: 0,
   leftovers: 0,
   sameSize: 0,
