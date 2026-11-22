@@ -18,13 +18,7 @@ import { CLAIM_WINDOW_MS, isLaunchRef, launchRefCheck, type Route } from "../src
 import { LaunchMachine, type DispatchOutcome } from "../src/machine.ts";
 import type { ProcessProbe } from "../src/process.ts";
 import { agentEnvironment, allowedNames, LIBUV_REQUIRED } from "../src/shim/environment.ts";
-import {
-  BRIDGE_WINDOW_MS,
-  sessionOf,
-  ShimHost,
-  type Attachment,
-  type ClaimOutcome,
-} from "../src/shim/host.ts";
+import { sessionOf, ShimHost, type Attachment, type ClaimOutcome } from "../src/shim/host.ts";
 import {
   checkPlan,
   ENDED_KEEP_MS,
@@ -382,21 +376,6 @@ describe("[A4.5.shim.claim] the one spawn claim", () => {
     expect(await read(id)).toMatchObject({ state: "unknown", reason: "lost" });
     expect(records.get(id)).toBeUndefined();
   });
-
-  test("the ticket's bridge role: once, from the agent's start until 15 minutes after it", async () => {
-    const { id, ticket } = await dispatched();
-    expect(host.redeemBridge(ticket)).toBeUndefined(); // no agent yet
-    const attachment = attachmentOf((await claim(ticket)).outcome);
-    await host.report(attachment, SHIM_METHODS.started, { pid: 5151, started_at: now });
-    expect(host.redeemBridge(ticket)).toEqual({ space: SPACE, launch: id });
-    expect(host.redeemBridge(ticket)).toBeUndefined();
-
-    const late = await dispatched();
-    const lateAttachment = attachmentOf((await claim(late.ticket)).outcome);
-    await host.report(lateAttachment, SHIM_METHODS.started, { pid: 5152, started_at: now });
-    pass(BRIDGE_WINDOW_MS);
-    expect(host.redeemBridge(late.ticket)).toBeUndefined();
-  });
 });
 
 describe("[A4.5.shim.attach] attachment, reports, recovery and the PID check", () => {
@@ -590,7 +569,8 @@ describe("[A4.5.shim.attach] attachment, reports, recovery and the PID check", (
     live.delete(SHIM_PID);
     live.delete(SHIM_PID + 2);
     live.delete(SHIM_PID + 3);
-    pass(BRIDGE_WINDOW_MS + CLAIM_WINDOW_MS);
+    // Down longer than the claim window: no shim can claim or report meanwhile.
+    pass(15 * 60_000 + CLAIM_WINDOW_MS);
     boot();
     await machine.recover();
     expect(await read(withExit.id)).toMatchObject({
@@ -1330,10 +1310,10 @@ describe("[A4.5.shim.attach] what an ended launch leaves for a day", () => {
     // PID check, the sweep and recovery's look.
     const unseen = async (): Promise<void> => {
       expect(host.record(id)).toBeUndefined();
-      expect(host.agentRuns(id)).toBe(false);
       expect(host.running(id)).toBe(false);
       expect(host.runningIn(SPACE)).toEqual([]);
-      expect(host.bridgeTicket(ticket)).toBeUndefined();
+      expect(host.liveSessions(SPACE)).toEqual(new Map());
+      expect(host.liveByTicket(ticket)).toBeUndefined();
       expect(await host.check()).toBe(0);
       expect(await machine.sweep()).toEqual([]);
       expect(await host.observe(intent)).toEqual({ kind: "lost" });

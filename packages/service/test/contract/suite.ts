@@ -22,7 +22,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { CLI_NAME } from "@ttasks/brand";
 import { registry, type ErrorBody } from "@ttasks/contracts";
-import { SHIM_METHODS, type Attachment, type SpawnPlan } from "@ttasks/launch";
+import { presetSession, SHIM_METHODS, type Attachment, type SpawnPlan } from "@ttasks/launch";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import type { HttpStart } from "../../src/http/index.ts";
 import { startService, type RunningService, type StartOptions } from "../../src/hub/service.ts";
@@ -113,6 +113,8 @@ export interface WorldLaunch {
   readonly home: string | undefined;
   /** The agent-home row the world registered for its home, revoked for `revoked`. */
   readonly row: string | undefined;
+  /** The session ID the click preset for Claude Code, when asked for. */
+  readonly preset: string | undefined;
 }
 
 /**
@@ -132,6 +134,8 @@ export interface LaunchAsks {
   readonly claimed?: boolean;
   readonly started?: boolean;
   readonly home?: WorldHome;
+  /** The click presets a session ID, as it does for Claude Code in a terminal. */
+  readonly preset?: boolean;
 }
 
 /** The start time the world's process probe reports for every process. */
@@ -243,7 +247,12 @@ export async function contractWorld(
         throw new Error("the row was not revoked");
       }
     }
-    const given = kind === "no-app" ? { home: agent.home } : agent;
+    const request = `contract-launch-${String(number).padStart(6, "0")}`;
+    const preset = launchOptions.preset === true ? presetSession(space, request) : undefined;
+    const given = {
+      ...(kind === "no-app" ? { home: agent.home } : agent),
+      ...(preset === undefined ? {} : { preset }),
+    };
     const intent = await service.launches.open(
       space,
       {
@@ -254,7 +263,7 @@ export async function contractWorld(
         taskVersion: 1,
         briefHash: "c".repeat(64),
       },
-      `contract-launch-${String(number).padStart(6, "0")}`,
+      request,
       WORLD_PLAN,
       given,
     );
@@ -263,6 +272,7 @@ export async function contractWorld(
       app: kind === "no-app" ? undefined : agent.app,
       home: agent.home,
       row,
+      preset,
     };
     await service.launches.dispatch(space, intent.id);
     const ticket = tickets.get(intent.id);
