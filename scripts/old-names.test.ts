@@ -28,6 +28,8 @@ const OLD_NAMES: readonly RegExp[] = [
   // The command, where a verb only it has follows, or as code with a word after it.
   /(?<![\w.@$/-])tasks (?:has no command|service|space|doctor|setup|mcp|--[a-z]|<[a-z])/,
   /(?<=`)tasks (?:machine|project|session|proposals|security|policy|open|run|add|set|show|find|status|view|undo|redo|reopen|help|version|serve|install)\b/,
+  // The name inside the app, where a singular verb follows it: the domain's plural takes none.
+  /(?<![\w/\\.])Tasks(?:['’]s\b| (?:never |also |still |only |always |now )?(?:is|was|does|has)\b| (?:never|also|still|only|always|now) [a-z]+[^\Wsu]s\b| (?:that|which) (?:is|was|does|has|stops|starts|runs|changes|keeps|holds|knows|needs|writes|reads|opens|sees)\b)/,
 ];
 
 // What keeps the old identifier on purpose: the repository's address and site; the approval hash's
@@ -110,6 +112,10 @@ describe("[A7.3.2.brand.old-names] the product's earlier names do not come back"
       'command: "/opt/tasks/bin/ttasks"',
       "`tasks <command> --help`",
       "with `tasks session rebind`",
+      "Tasks's own tools",
+      "Tasks is not running",
+      "- Tasks never changes another app's settings",
+      "a launch that fails or a Tasks that stops",
     ];
     for (const line of old) expect(oldNames("x", line), line).toHaveLength(1);
     const current = [
@@ -130,6 +136,7 @@ describe("[A7.3.2.brand.old-names] the product's earlier names do not come back"
       "the tasks of a space, sub-tasks-heavy, 3 tasks",
       "the `tasks` table, mcpServers: { ttasks: {} }, `${n} tasks moved`, `tasks is an integer`",
       "all tasks <= 5",
+      "TTasks never changes, Tasks never change, Tasks that agents create, Tasks that pass",
       "https://github.com/tumbletoad/tasks-x and tumbletoad.com/tasks",
       "tasks-approval/1",
       "`tasks-mira:${String(seed)}`",
