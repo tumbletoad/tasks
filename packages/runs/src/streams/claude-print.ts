@@ -16,7 +16,7 @@
 // queued message, a finished background job): a turn that begins after a result makes that
 // result's answer provisional, and a run whose last turn has no result has none.
 // A helper agent's lines (`parent_tool_use_id`) report progress only: its words are not the run's.
-import { MCP_SERVER_KEY } from "@tasks/brand";
+import { MCP_SERVER_KEY } from "@ttasks/brand";
 import type { AppToolsState, OutcomeReason, ProcessExit, ProgressLabel, Usage } from "./events.ts";
 import {
   createParser,

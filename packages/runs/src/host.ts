@@ -26,8 +26,8 @@
 //
 // Every limit runs on the monotonic clock: the start time, the run's wall and idle times, the
 // stop's grace, the close, the confirmation and the drain of the output.
-import type { RunCleanup, RunEvent, RunRecord, RunResult } from "@tasks/contracts/runs";
-import { SIGNAL_NAME, TEXT_CAP_BYTES } from "@tasks/contracts/runs";
+import type { RunCleanup, RunEvent, RunRecord, RunResult } from "@ttasks/contracts/runs";
+import { SIGNAL_NAME, TEXT_CAP_BYTES } from "@ttasks/contracts/runs";
 import type {
   AgentExit,
   Confirmation,

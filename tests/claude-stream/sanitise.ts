@@ -47,7 +47,7 @@ export const TOOLS: ReadonlySet<string> = new Set([
   "Skill",
   "tasks",
   "probe_echo",
-  "mcp__tasks__probe_echo",
+  "mcp__ttasks__probe_echo",
 ]);
 
 /** The protocol's words that a fixture keeps as they were recorded. */

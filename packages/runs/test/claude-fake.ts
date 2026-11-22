@@ -8,7 +8,7 @@
 //
 //   node claude-fake.ts [claude's arguments]     the scenario as JSON in FAKE_CLAUDE_SCENARIO
 //
-// As a program it listens on the named pipe `tasks-test-standin-<token>-<pid>` on Windows and
+// As a program it listens on the named pipe `ttasks-test-standin-<token>-<pid>` on Windows and
 // carries `--token=<token>` in its arguments elsewhere, so the stand-in census counts it.
 import { spawn } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
@@ -103,7 +103,7 @@ const callsTasks = (message: Json): boolean => {
         isObject(b) &&
         b["type"] === "tool_use" &&
         typeof b["name"] === "string" &&
-        b["name"].startsWith("mcp__tasks__"),
+        b["name"].startsWith("mcp__ttasks__"),
     )
   );
 };
@@ -427,7 +427,7 @@ async function main(): Promise<void> {
   const scenario = JSON.parse(process.env["FAKE_CLAUDE_SCENARIO"] ?? "{}") as FakeClaudeScenario;
   if (scenario.token !== undefined && process.platform === "win32") {
     createServer()
-      .listen(`\\\\.\\pipe\\tasks-test-standin-${scenario.token}-${String(process.pid)}`)
+      .listen(`\\\\.\\pipe\\ttasks-test-standin-${scenario.token}-${String(process.pid)}`)
       .unref()
       .on("error", () => undefined);
   }

@@ -158,7 +158,7 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A run's folder on this machine keeps the agent's raw output and its answer, which are task
   text. It is removed after 14 days or past the newest 200 runs, once the answer is in the run's
   record. The agent's own history, such as Codex's or Claude Code's sessions, keeps the run's
-  conversation as it keeps any session of yours, and Tasks leaves it there.
+  conversation as it keeps any session of yours, and TTasks leaves it there.
 
 ## The page
 

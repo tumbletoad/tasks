@@ -14,8 +14,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
-import { nodeDetectHost, resolveProgram } from "@tasks/launch";
+import { MemoryDurable, MemoryExecutionStore } from "@ttasks/launch/memory-store";
+import { nodeDetectHost, resolveProgram } from "@ttasks/launch";
 import { afterAll, beforeAll, describe, expect, test, type TestContext } from "vitest";
 import {
   claudeArgs,
@@ -78,7 +78,7 @@ function installFake(prefix: string): string {
 }
 
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-claude-run-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-claude-run-"));
   if (windows) natives = buildNatives(join(work, "bin"));
   const prefix = join(work, "npm");
   mkdirSync(prefix);

@@ -226,32 +226,32 @@ importers:
 
   packages/cli:
     dependencies:
-      '@tasks/brand':
+      '@ttasks/brand':
         specifier: workspace:*
         version: link:../brand
-      '@tasks/bridge':
+      '@ttasks/bridge':
         specifier: workspace:*
         version: link:../bridge
-      '@tasks/contracts':
+      '@ttasks/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@tasks/files':
+      '@ttasks/files':
         specifier: workspace:*
         version: link:../files
-      '@tasks/launch':
+      '@ttasks/launch':
         specifier: workspace:*
         version: link:../launch
-      '@tasks/service':
+      '@ttasks/service':
         specifier: workspace:*
         version: link:../service
     devDependencies:
-      '@tasks/runs':
+      '@ttasks/runs':
         specifier: workspace:*
         version: link:../runs
-      '@tasks/storage':
+      '@ttasks/storage':
         specifier: workspace:*
         version: link:../storage
-      '@tasks/testkit':
+      '@ttasks/testkit':
         specifier: workspace:*
         version: link:../testkit
       typescript:
@@ -281,17 +281,17 @@ importers:
 
   packages/launch:
     dependencies:
-      '@tasks/brand':
+      '@ttasks/brand':
         specifier: workspace:*
         version: link:../brand
-      '@tasks/contracts':
+      '@ttasks/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@tasks/files':
+      '@ttasks/files':
         specifier: workspace:*
         version: link:../files
     devDependencies:
-      '@tasks/testkit':
+      '@ttasks/testkit':
         specifier: workspace:*
         version: link:../testkit
       fast-check:
@@ -309,17 +309,17 @@ importers:
 
   packages/projection:
     dependencies:
-      '@tasks/brand':
+      '@ttasks/brand':
         specifier: workspace:*
         version: link:../brand
-      '@tasks/files':
+      '@ttasks/files':
         specifier: workspace:*
         version: link:../files
-      '@tasks/storage':
+      '@ttasks/storage':
         specifier: workspace:*
         version: link:../storage
     devDependencies:
-      '@tasks/testkit':
+      '@ttasks/testkit':
         specifier: workspace:*
         version: link:../testkit
       fast-check:
@@ -331,26 +331,26 @@ importers:
 
   packages/runs:
     dependencies:
-      '@tasks/brand':
+      '@ttasks/brand':
         specifier: workspace:*
         version: link:../brand
-      '@tasks/contracts':
+      '@ttasks/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@tasks/files':
+      '@ttasks/files':
         specifier: workspace:*
         version: link:../files
-      '@tasks/launch':
+      '@ttasks/launch':
         specifier: workspace:*
         version: link:../launch
     devDependencies:
-      '@tasks/bridge':
+      '@ttasks/bridge':
         specifier: workspace:*
         version: link:../bridge
-      '@tasks/launcher-win':
+      '@ttasks/launcher-win':
         specifier: workspace:*
         version: link:../launcher-win
-      '@tasks/testkit':
+      '@ttasks/testkit':
         specifier: workspace:*
         version: link:../testkit
       fast-check:
@@ -365,28 +365,28 @@ importers:
       '@modelcontextprotocol/server':
         specifier: 2.4.0
         version: 2.4.0
-      '@tasks/brand':
+      '@ttasks/brand':
         specifier: workspace:*
         version: link:../brand
-      '@tasks/bridge':
+      '@ttasks/bridge':
         specifier: workspace:*
         version: link:../bridge
-      '@tasks/contracts':
+      '@ttasks/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@tasks/files':
+      '@ttasks/files':
         specifier: workspace:*
         version: link:../files
-      '@tasks/launch':
+      '@ttasks/launch':
         specifier: workspace:*
         version: link:../launch
-      '@tasks/projection':
+      '@ttasks/projection':
         specifier: workspace:*
         version: link:../projection
-      '@tasks/runs':
+      '@ttasks/runs':
         specifier: workspace:*
         version: link:../runs
-      '@tasks/storage':
+      '@ttasks/storage':
         specifier: workspace:*
         version: link:../storage
       smol-toml:
@@ -402,10 +402,10 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(supports-color@7.2.0)(zod@4.6.7)
-      '@tasks/launcher-win':
+      '@ttasks/launcher-win':
         specifier: workspace:*
         version: link:../launcher-win
-      '@tasks/testkit':
+      '@ttasks/testkit':
         specifier: workspace:*
         version: link:../testkit
       '@types/ws':
@@ -420,10 +420,10 @@ importers:
 
   packages/storage:
     dependencies:
-      '@tasks/contracts':
+      '@ttasks/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@tasks/files':
+      '@ttasks/files':
         specifier: workspace:*
         version: link:../files
     devDependencies:
@@ -436,7 +436,7 @@ importers:
 
   packages/testkit:
     dependencies:
-      '@tasks/storage':
+      '@ttasks/storage':
         specifier: workspace:*
         version: link:../storage
     devDependencies:
@@ -458,10 +458,10 @@ importers:
       '@tanstack/react-virtual':
         specifier: 3.14.26
         version: 3.14.26(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@tasks/brand':
+      '@ttasks/brand':
         specifier: workspace:*
         version: link:../brand
-      '@tasks/contracts':
+      '@ttasks/contracts':
         specifier: workspace:*
         version: link:../contracts
       react:
@@ -477,13 +477,13 @@ importers:
         specifier: 12.1.7
         version: 12.1.7(@types/react@19.3.0)(react@19.3.1)
     devDependencies:
-      '@tasks/cli':
+      '@ttasks/cli':
         specifier: workspace:*
         version: link:../cli
-      '@tasks/service':
+      '@ttasks/service':
         specifier: workspace:*
         version: link:../service
-      '@tasks/storage':
+      '@ttasks/storage':
         specifier: workspace:*
         version: link:../storage
       '@types/react':

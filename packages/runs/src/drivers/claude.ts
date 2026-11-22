@@ -24,8 +24,8 @@ import {
   TEXT_CAP_BYTES,
   type ProcessExit,
   type RunPermission,
-} from "@tasks/contracts/runs";
-import { MCP_SERVER_KEY, PRODUCT_ID } from "@tasks/brand";
+} from "@ttasks/contracts/runs";
+import { MCP_SERVER_KEY, PRODUCT_ID } from "@ttasks/brand";
 import { createClaudePrintParser, startsTurn } from "../streams/claude-print.ts";
 import { LineSplitter } from "../streams/lines.ts";
 import { array, capText, record, string, type Json } from "../streams/values.ts";

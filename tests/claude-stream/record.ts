@@ -129,7 +129,7 @@ function record(scratch: string, name: string, c: Case): Promise<void> {
     const stub = fileURLToPath(new URL("../codex-app-server/mcp-stub.ts", import.meta.url));
     const file = join(scratch, `tools-${name}.json`);
     const tools = {
-      mcpServers: { tasks: { type: "stdio", command: process.execPath, args: [stub], env: {} } },
+      mcpServers: { ttasks: { type: "stdio", command: process.execPath, args: [stub], env: {} } },
     };
     const out = openSync(file, "w", 0o600);
     writeSync(out, JSON.stringify(tools));

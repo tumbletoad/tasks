@@ -3,7 +3,7 @@
 // and the words of a refusal. Fixture runs only.
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
-import { APP_NAME, CLI_NAME } from "@tasks/brand";
+import { PRODUCT_NAME, CLI_NAME } from "@ttasks/brand";
 import { Refused, type Instance, type Run } from "../api.ts";
 import en from "../i18n/en.json" with { type: "json" };
 import { mergeRuns, runMarker, runRefusal, runners, runView, withStops } from "./runs.ts";
@@ -36,7 +36,7 @@ function words(view: ReturnType<typeof runView>): string[] {
     },
   });
   return view.status.map((m) =>
-    intl.formatMessage({ id: m.id }, { product: APP_NAME, cli: CLI_NAME, ...m.values }),
+    intl.formatMessage({ id: m.id }, { product: PRODUCT_NAME, cli: CLI_NAME, ...m.values }),
   );
 }
 

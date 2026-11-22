@@ -16,7 +16,7 @@ export interface RunVerbsHost {
 }
 
 /**
- * A run as `tasks run` shows it: codes and the person's own task text, never a folder. A running
+ * A run as `ttasks run` shows it: codes and the person's own task text, never a folder. A running
  * run says since when it has been quiet; an ended one how many of its agent's requests were refused.
  */
 export function runView(run: RunRecord, task: string | null, live: RunLive = {}): JsonObject {

@@ -1,4 +1,4 @@
-// `tasks run` with a Claude Code instance, from a person's command line to a settled run, on a
+// `ttasks run` with a Claude Code instance, from a person's command line to a settled run, on a
 // service in this process with the fake Claude Code (packages/runs/test/claude-fake.ts) as the
 // instance's program: the request reaches the agent on its input and no command line, the run's
 // tools are a private file in the run's folder whose ticket no command line carries, the agent's
@@ -8,8 +8,8 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { RUNS_FOLDER, TOOLS_FILE } from "@tasks/runs";
-import { startService, type RunningService } from "@tasks/service/hub";
+import { RUNS_FOLDER, TOOLS_FILE } from "@ttasks/runs";
+import { startService, type RunningService } from "@ttasks/service/hub";
 import {
   instanceToml,
   registerSpaces,
@@ -18,10 +18,10 @@ import {
   stateOf,
   tempRoot,
   waitFor,
-} from "@tasks/service/test/harness";
-import { classSession } from "@tasks/service/test/ops-helpers";
-import { newId, type Id } from "@tasks/storage";
-import { seedMira } from "@tasks/testkit";
+} from "@ttasks/service/test/harness";
+import { classSession } from "@ttasks/service/test/ops-helpers";
+import { newId, type Id } from "@ttasks/storage";
+import { seedMira } from "@ttasks/testkit";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { callTools, type ToolCall } from "../../runs/test/codex-server.ts";
 import { BIN, runMain } from "./cli-harness.ts";
@@ -176,7 +176,7 @@ const runsOf = async (): Promise<{ id: string; instance: string; state: string }
     }
   ).runs;
 
-describe("[A4.3.11.run.door-claude] tasks run with a Claude Code instance: the same door, the same record", () => {
+describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the same door, the same record", () => {
   test("the request is on the program's input only, the tools file is private with the only Tasks entry and a ticket no command line carries, and the agent's calls are recorded as the run's", async () => {
     const running = user(["run", task, "--instance", "claude", "--wait", "-"], REQUEST_MARK);
     await waitFor(
@@ -193,11 +193,11 @@ describe("[A4.3.11.run.door-claude] tasks run with a Claude Code instance: the s
     };
     // One server, Tasks' own, for this run's instance, with the run's ticket.
     expect(Object.keys(tools.mcpServers)).toEqual(["tasks"]);
-    const entry = tools.mcpServers["tasks"];
+    const entry = tools.mcpServers["ttasks"];
     expect(entry?.args).toEqual(
       expect.arrayContaining(["mcp", "--space", spaceId, "--instance", "claude", "--app"]),
     );
-    const ticket = entry?.env["TASKS_TICKET"] ?? "";
+    const ticket = entry?.env["TTASKS_TICKET"] ?? "";
     expect(ticket.length).toBeGreaterThan(10);
     if (!windows) expect(statSync(toolsPath).mode & 0o777).toBe(0o600);
     // The program was given the file, and neither the request nor the ticket, on its command line.

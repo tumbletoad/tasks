@@ -4,7 +4,7 @@
 // fake's input ended and it exited.
 import { PassThrough } from "node:stream";
 import { describe, expect, test } from "vitest";
-import type { RunEvent } from "@tasks/contracts/runs";
+import type { RunEvent } from "@ttasks/contracts/runs";
 import {
   claudeArgs,
   claudeDriver,
@@ -409,18 +409,18 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     }
     const file = JSON.parse(
       claudeToolsFile({
-        command: "/opt/tasks/bin/tasks",
+        command: "/opt/ttasks/bin/ttasks",
         args: ["mcp", "--space", "sp_x"],
-        env: { TASKS_TICKET: "0123456789ABCDEFGHJKMNPQ" },
+        env: { TTASKS_TICKET: "0123456789ABCDEFGHJKMNPQ" },
       }),
     ) as unknown;
     expect(file).toEqual({
       mcpServers: {
         tasks: {
           type: "stdio",
-          command: "/opt/tasks/bin/tasks",
+          command: "/opt/ttasks/bin/ttasks",
           args: ["mcp", "--space", "sp_x"],
-          env: { TASKS_TICKET: "0123456789ABCDEFGHJKMNPQ" },
+          env: { TTASKS_TICKET: "0123456789ABCDEFGHJKMNPQ" },
         },
       },
     });

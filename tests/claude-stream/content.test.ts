@@ -42,7 +42,7 @@ describe("[A4.3.11.claude-stream.fixture-content] the Claude Code print-mode rec
           tools: ["Bash", "mcp__acme-crm__lookup"],
           mcp_servers: [
             { name: "acme-crm", status: "connected" },
-            { name: "tasks", status: "pending" },
+            { name: "ttasks", status: "pending" },
           ],
           skills: ["someone-private-skill"],
           model: "claude-haiku-9",
@@ -86,7 +86,7 @@ describe("[A4.3.11.claude-stream.fixture-content] the Claude Code print-mode rec
       tools: ["Bash", "fixture-tool-1"],
       mcp_servers: [
         { name: "fixture-server-1", status: "connected" },
-        { name: "tasks", status: "pending" },
+        { name: "ttasks", status: "pending" },
       ],
       claude_code_version: "2.1.325",
     });

@@ -34,10 +34,10 @@ import {
   type Instance,
   type TerminalSettings,
   type Verdict,
-} from "@tasks/launch";
-import { fitsShape, preferenceSpec, type PrefValue } from "@tasks/contracts";
-import { QUEUE_LIMITS, type QueueLimits } from "@tasks/contracts/runs";
-import { isId, type Id } from "@tasks/storage";
+} from "@ttasks/launch";
+import { fitsShape, preferenceSpec, type PrefValue } from "@ttasks/contracts";
+import { QUEUE_LIMITS, type QueueLimits } from "@ttasks/contracts/runs";
+import { isId, type Id } from "@ttasks/storage";
 import {
   currentPerson,
   factsFrom,

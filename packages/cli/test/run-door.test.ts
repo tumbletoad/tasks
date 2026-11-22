@@ -17,12 +17,12 @@ import {
   stateOf,
   tempRoot,
   waitFor,
-} from "@tasks/service/test/harness";
-import { classSession } from "@tasks/service/test/ops-helpers";
-import { FINAL_RUN_STATES, type RunRecord } from "@tasks/contracts/runs";
-import { RunMachine, type RunEnd } from "@tasks/runs";
-import { newId, type Id } from "@tasks/storage";
-import { seedMira } from "@tasks/testkit";
+} from "@ttasks/service/test/harness";
+import { classSession } from "@ttasks/service/test/ops-helpers";
+import { FINAL_RUN_STATES, type RunRecord } from "@ttasks/contracts/runs";
+import { RunMachine, type RunEnd } from "@ttasks/runs";
+import { newId, type Id } from "@ttasks/storage";
+import { seedMira } from "@ttasks/testkit";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { callTools, type ToolCall } from "../../runs/test/codex-server.ts";
 import { runLine } from "../src/runs.ts";
@@ -186,7 +186,7 @@ function commandLines(): string {
     .join("\n");
 }
 
-describe("[A4.3.11.run.door] tasks run: a person starts a background run of a task, and reads its answer", () => {
+describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a task, and reads its answer", () => {
   test("a run's line says how many of its agent's requests were refused, in the list as in show", () => {
     const run = {
       id: "ru_00r5mfcw5rfzxb9enb2vg50z3g",

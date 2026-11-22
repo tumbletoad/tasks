@@ -6,9 +6,9 @@
 // the agent's thread (Codex) or in a private file in the run's folder (Claude Code), so what the
 // agent changes through them is recorded as the run's.
 import { createHash } from "node:crypto";
-import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
-import { findEntry, cliFaces } from "@tasks/contracts";
-import type { RunAdapterId, RunPermission, RunRecord } from "@tasks/contracts/runs";
+import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
+import { findEntry, cliFaces } from "@ttasks/contracts";
+import type { RunAdapterId, RunPermission, RunRecord } from "@ttasks/contracts/runs";
 import {
   ADDED,
   agentEnvironment,
