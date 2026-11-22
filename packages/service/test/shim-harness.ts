@@ -191,6 +191,8 @@ export class ShimLab {
   readonly #options: LabOptions;
   /** Agents seen, by PID with the start time read when first seen, so cleanup stops only them. */
   readonly #agents = new Map<number, string | undefined>();
+  /** The launches this lab opened: cleanup stops the shims that claimed them, wherever they run. */
+  readonly #launches = new Set<string>();
   #requests = 0;
   #cleaned = false;
 
@@ -362,8 +364,8 @@ export class ShimLab {
    * is its own launch: a second click with the same one while the first is still opening returns
    * the first.
    */
-  open(plan: SpawnPlan, instance = "fixture-agent"): Promise<LaunchIntent> {
-    return this.running.launches.open(
+  async open(plan: SpawnPlan, instance = "fixture-agent"): Promise<LaunchIntent> {
+    const intent = await this.running.launches.open(
       this.spaceId,
       {
         task: this.taskId,
@@ -377,6 +379,8 @@ export class ShimLab {
       plan,
       agentHomeOf(this.home, instance),
     );
+    this.#launches.add(intent.id);
+    return intent;
   }
 
   /** A click and its confirmation: a terminal launch of the lab's task, dispatched. */
@@ -416,6 +420,35 @@ export class ShimLab {
   }
 
   /**
+   * The shim of every launch of this lab that is still claimed, whichever terminal started it,
+   * stopped by the PID and start time it claimed with, and awaited: a process holds its working
+   * folder, the launch's, until it has ended, and Windows refuses to remove the folder until then.
+   */
+  async #stopClaimedShims(): Promise<void> {
+    const host = this.service?.launches.host;
+    if (host === undefined) return;
+    const claimed = [...this.#launches].flatMap((id) => {
+      const held = host.record(id)?.attachment;
+      return held === undefined ? [] : [{ pid: held.pid, startTime: held.startTime }];
+    });
+    const startOf = async (pid: number) =>
+      (await startTimes([pid]).catch(() => new Map<number, string>())).get(pid);
+    const stopped: typeof claimed = [];
+    for (const shim of claimed) {
+      if ((await startOf(shim.pid)) !== shim.startTime) continue;
+      stopPid(shim.pid);
+      stopped.push(shim);
+    }
+    const deadline = Date.now() + 30_000;
+    for (const shim of stopped) {
+      while ((await startOf(shim.pid)) === shim.startTime) {
+        if (Date.now() > deadline) throw new Error("a shim did not end");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+  }
+
+  /**
    * Every shim and agent this lab started is stopped by PID, the service stopped, and the runtime
    * folder the lab caused removed by its full name, also after a test that failed halfway. Then
    * nothing may be left under the lab's runtime base: anything there fails the test. The folders
@@ -440,6 +473,7 @@ export class ShimLab {
         if (now.get(pid) === seen) stopPid(pid);
       }
       await Promise.all(this.shims.map((shim) => within(shim.exit, 30_000, "a shim's stop")));
+      await this.#stopClaimedShims();
       await this.stopService().catch(() => undefined);
     } finally {
       removeRuntimeDirOf(this.home, this.runtime.base);
