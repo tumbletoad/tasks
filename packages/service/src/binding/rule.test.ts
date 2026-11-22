@@ -48,17 +48,14 @@ const row = (instance: string, live = true, spaces = [S1]): HomeRow => ({
 
 function sources(
   options: {
-    named?: Named | "fails";
+    named?: Named;
     rows?: HomeRows;
     allows?: boolean;
     machineDefault?: string;
   } = {},
 ): DecideSources {
   return {
-    named: () => {
-      if (options.named === "fails") throw new Error("unreadable");
-      return options.named ?? { kind: "none" };
-    },
+    named: () => options.named ?? { kind: "none" },
     rows: () => options.rows ?? { kind: "rows", rows: [] },
     runAllows: () => options.allows ?? false,
     machineDefault: () => options.machineDefault,
@@ -163,8 +160,7 @@ describe("[A3.3.7.binding.rule] the one rule, and the space a bridge's bind sett
     ).toBe("none:space");
   });
 
-  test("a lookup that failed is never an answer: the launch's, the home's rows", () => {
-    expect(decide(sources({ named: "fails" }), shell)).toEqual({ kind: "failed" });
+  test("home rows that could not be read are never an answer", () => {
     expect(decide(sources({ named: one(launch(1)), rows: { kind: "failed" } }), bridge())).toEqual({
       kind: "failed",
     });

@@ -219,7 +219,12 @@ the behaviour it describes, and keep each one to a sentence or two.
   are recorded as that app's, not as a session of the task. Two hand-made entries of one app on
   different homes cannot be told apart.
 - An agent running across the one update that brought this rule comes back as its app and names
-  its task. One whose entry names no space works in none until its app is restarted.
+  its task. One whose entry names no space works in no space after the update, and after a later
+  restart of TTasks it can take the default space of that moment: restart agent apps after this
+  update.
+- When another program, such as a virus scanner, holds the file of an agent TTasks opened for more
+  than a few seconds as TTasks starts, that agent is no longer its task's session: a change it
+  repeats after a lost reply can be written twice.
 - A change retried after TTasks recorded its agent's end is a new change. A program the agent left
   running that connects after that, or a shell command, is recorded as the agent app or as an
   unknown agent, and has to name its task.

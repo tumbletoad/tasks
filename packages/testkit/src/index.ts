@@ -2,6 +2,7 @@
 // tests and scripts (the dependency rules). Fixture text only.
 export { digestDatabase, digestSchema, digestSpace } from "./digest.ts";
 export { FIXED_SAMPLE, FIXED_SAMPLE_0_1, RELEASED_SCHEMAS } from "./known.ts";
+export { CAN_HOLD_FILES, holdFile } from "./hold.ts";
 export { layoutTestInstall, type TestInstall } from "./install.ts";
 export {
   checkedDriver,

@@ -65,18 +65,6 @@ export const grantsUnread = (): AppError =>
     data: { reason: "not_ready", retryable: true },
   });
 
-/**
- * Who a connection is could not be decided now (a launch's record or a home's rows could not be
- * read): never taken as none.
- */
-export const notDecided = (): AppError =>
-  new AppError({
-    code: "service_unavailable",
-    message: "The service could not tell yet which session this call belongs to.",
-    hint: "Try again in a moment.",
-    data: { reason: "not_ready", retryable: true },
-  });
-
 /** A session's standing now, or the retryable refusal when its home's rows could not be read. */
 export function standingOf(
   sessions: SessionPort | undefined,

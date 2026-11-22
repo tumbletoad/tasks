@@ -135,14 +135,6 @@ export interface LiveLaunch {
   readonly home?: string;
 }
 
-/** A launch's file could not be read now, so what a value names is not known yet. */
-export class RecordsUnreadable extends Error {
-  constructor() {
-    super("A launch record cannot be read now");
-    this.name = "RecordsUnreadable";
-  }
-}
-
 /** Sends the claim's reply to the shim. Resolves once it has left the service. */
 export type SendReply = (reply: ClaimReply, attachment: Attachment) => Promise<void>;
 
@@ -371,7 +363,7 @@ export class ShimHost {
     }
     if (!isPid(pid) || !isStartTime(startTime)) return refused("malformed");
     const found = this.#byTicket(ticket);
-    if (found?.ticket === undefined) return refused(this.#unknownOr());
+    if (found?.ticket === undefined) return refused("unknown");
     const { launch, space } = found;
     if (found.ticket.shimUsed) return refused("used");
     const hash = found.ticket.hash;
@@ -480,8 +472,7 @@ export class ShimHost {
     if (!isPid(pid) || !isStartTime(startTime)) return refused("malformed");
     const record = this.#byCredential(credential);
     const held = record?.attachment;
-    if (record === undefined) return refused(this.#unknownOr());
-    if (held === undefined) return refused("unknown");
+    if (record === undefined || held === undefined) return refused("unknown");
     if (held.pid !== pid || held.startTime !== startTime) return refused("process");
     const alive = await this.#alive(pid, startTime);
     if (alive === undefined) return refused("check_failed");
@@ -590,30 +581,17 @@ export class ShimHost {
    * The live launch a ticket (`TTASKS_TICKET`) names: claimed (its attachment stored) and not yet
    * released. A ticket is its hash bound to its launch's ID, so it names only that launch. Every
    * record is hashed and compared, each in constant time. Machine state only: no space needs to be
-   * open. Throws `RecordsUnreadable` when it names no launch that could be read while a launch's
-   * file could not: that one may be its launch.
+   * open.
    */
   liveByTicket(ticket: string): LiveLaunch | undefined {
     if (typeof ticket !== "string" || !TICKET.test(ticket)) return undefined;
     const record = this.#byTicket(ticket);
-    if (record === undefined) this.#readable();
     return record === undefined ? undefined : this.#live(record);
-  }
-
-  /** `unknown`, or `store` (try again) while a launch's file could not be read: it may be that one. */
-  #unknownOr(): HostRefusal {
-    return this.#records.unreadable().length > 0 ? "store" : "unknown";
-  }
-
-  /** Every launch's file could be read, or `RecordsUnreadable`: an absence is not known. */
-  #readable(): void {
-    if (this.#records.unreadable().length > 0) throw new RecordsUnreadable();
   }
 
   /**
    * The live launch the click preset `preset` for (`CLAUDE_CODE_SESSION_ID`): claimed and not yet
-   * released, the newest click when more than one is. Throws `RecordsUnreadable` as
-   * `liveByTicket` does.
+   * released, the newest click when more than one is.
    */
   liveByPreset(preset: string): LiveLaunch | undefined {
     if (typeof preset !== "string" || !SESSION_UUID.test(preset)) return undefined;
@@ -622,7 +600,6 @@ export class ShimHost {
       if (record.preset !== preset || record.attachment === undefined) continue;
       if (found === undefined || record.createdAt > found.createdAt) found = record;
     }
-    if (found === undefined) this.#readable();
     return found === undefined ? undefined : this.#live(found);
   }
 
@@ -684,12 +661,7 @@ export class ShimHost {
   async observe(intent: LaunchIntent): Promise<Observation> {
     const exit = this.#records.readExit(intent.id);
     if (exit !== undefined) return exitObservation(exit);
-    const record = this.#records.get(intent.id);
-    // A file that cannot be read now holds a shim this look cannot judge.
-    if (record === undefined && this.#records.unreadable().includes(intent.id)) {
-      return { kind: "pending" };
-    }
-    const held = record?.attachment;
+    const held = this.#records.get(intent.id)?.attachment;
     if (held === undefined) return { kind: "lost" };
     const alive = await this.#alive(held.pid, held.startTime);
     return alive === false ? { kind: "lost" } : { kind: "pending" };

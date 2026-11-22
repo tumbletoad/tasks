@@ -169,7 +169,6 @@ export class ShimWorld {
     const lifeRecords: RecordStore = {
       list: () => records.list(),
       get: (launch) => records.get(launch),
-      unreadable: () => records.unreadable(),
       put: (file: LaunchFile) => {
         if (life.over) throw new Dead();
         this.#require(

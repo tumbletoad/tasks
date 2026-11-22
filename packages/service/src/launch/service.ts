@@ -254,6 +254,11 @@ export interface LaunchOptions {
   readonly environment?: EnvironmentSource;
   /** The machine state. Default: the install's launch folders. */
   readonly records?: RecordStore;
+  /**
+   * Blocks between the tries of a launch file held for a moment as the launch folders are read
+   * (`HELD_FILE_WAITS_MS`). Default: a real wait.
+   */
+  readonly recordsWait?: (ms: number) => void;
   /** Shows a resolved folder in the file manager. Default: the OS's (openFolder). */
   readonly showFolder?: (folder: string) => Promise<OpenResult>;
 }
@@ -380,7 +385,14 @@ export class LaunchService {
     this.#options = options;
     this.environment = options.environment ?? defaultEnvironment(options);
     this.host = new ShimHost({
-      records: options.records ?? new FolderRecords(options.root),
+      records:
+        options.records ??
+        new FolderRecords(options.root, {
+          ...(options.recordsWait === undefined ? {} : { wait: options.recordsWait }),
+          unreadable: (launch, code) => {
+            options.log.log("launch.file_unreadable", { launch, code });
+          },
+        }),
       probe: options.probe ?? osProbe,
       platform: options.platform,
       machine: async (space) => (await this.#space(space))?.machine,

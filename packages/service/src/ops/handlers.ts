@@ -78,7 +78,7 @@ import {
   type PackContent,
 } from "../launch/open.ts";
 import type { Session, SessionPort } from "./binding.ts";
-import { checkGrant, notDecided, standingOf, type HomeGate } from "./grant.ts";
+import { checkGrant, standingOf, type HomeGate } from "./grant.ts";
 import { addDays, dateIn, dueDate, localTimeZone, pastInstant } from "./dates.ts";
 import { GUIDE_STEPS, GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
@@ -311,13 +311,11 @@ export async function opCall(
 
 /**
  * The caller as its call goes on: an agent's shell is decided as its call starts, by the same rule
- * as a bridge's bind, so the call keeps one identity from here to its answer. A lookup that failed
- * refuses the call as retryable.
+ * as a bridge's bind, so the call keeps one identity from here to its answer.
  */
 function decided(host: OpsHost, caller: Caller): Caller {
   if (caller.class !== "cli-agent" || caller.binding !== undefined) return caller;
   const decision = host.sessions?.decide({ via: "shell", env: caller.env });
-  if (decision?.kind === "failed") throw notDecided();
   return decision?.kind === "session"
     ? { ...caller, binding: { kind: "session", session: decision.session } }
     : caller;

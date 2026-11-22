@@ -74,6 +74,8 @@ export type FieldKind =
   | "bool"
   /** A space ID, `sp_` and 26 characters of A1's alphabet. */
   | "space"
+  /** A launch ID, `la_` and 26 characters of A1's alphabet. */
+  | "launch"
   /** A service instance ID: 32 lowercase hex characters. */
   | "instance"
   | "install"
@@ -533,6 +535,13 @@ export const EVENTS = {
   // The launch shim's calls (A4 3.6.3): words and counts only, never a ticket, a credential, a
   // PID, a folder or anything of a plan.
   "launch.claimed": { lvl: "info", c: "launch", fields: {} },
+  // A launch's file still could not be read after the waits as the service started: it is left
+  // out, as a damaged one is. The launch's ID and the error code only.
+  "launch.file_unreadable": {
+    lvl: "warn",
+    c: "launch",
+    fields: { launch: "launch", code: "error_code" },
+  },
   "launch.attached": { lvl: "info", c: "launch", fields: {} },
   "launch.refused": {
     lvl: "warn",
@@ -693,6 +702,7 @@ export type EventFields<E extends EventName> = {
 const SPACE_ID = new RegExp(`^sp_[${ID_ALPHABET}]{26}$`);
 const PATTERNS: Readonly<Record<string, RegExp>> = {
   space: SPACE_ID,
+  launch: new RegExp(`^la_[${ID_ALPHABET}]{26}$`),
   instance: /^[0-9a-f]{32}$/,
   version: /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,40})?(?:\+[0-9A-Za-z.-]{1,40})?$/,
   build: /^[0-9A-Za-z][0-9A-Za-z.-]{0,39}$/,

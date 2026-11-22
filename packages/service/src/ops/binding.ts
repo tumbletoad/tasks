@@ -61,8 +61,8 @@ export const BOUND_BY = ["ticket", "preset"] as const;
 export type BoundBy = (typeof BOUND_BY)[number];
 
 /**
- * Who a connection is. `failed`: the launch or the home's rows could not be read, which is never
- * an answer: a bind fails so its bridge tries again, a call is refused as retryable.
+ * Who a connection is. `failed`: a bridge's home rows could not be read, which is never an answer:
+ * the bind fails so its bridge tries again. A shell reads no rows, so its decision never fails.
  */
 export type Decision =
   | { readonly kind: "session"; readonly session: Session; readonly by: BoundBy }

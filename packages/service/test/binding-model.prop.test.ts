@@ -4,20 +4,21 @@
 // over the same stores.
 //
 // What each call must come to is taken from the world, never from the code: which agent made it,
-// through which tool or which bridge process; whether its agent still runs and its launch file can
-// be read; whether its home is registered; which space its bridge process holds; which task it
-// named. Every answer is checked against that (refused with which code, replayed, or a new change
-// on which task), and so is everything the spaces kept: each change on the expected task in the
-// expected space, each receipt under the expected writer scope and request ID, nothing else.
+// through which tool or which bridge process; whether its agent still runs; whether its home is
+// registered; which space its bridge process holds and which the machine's default is; which task
+// it named. Every answer is checked against that (refused with which code, replayed, or a new
+// change on which task), and so is everything the spaces kept: every change of the run, in the
+// space and on the task expected, every receipt under the expected writer scope and request ID,
+// nothing else.
 //
-// What this checks: one bridge process works in one space; an open bridge is who it bound as; a
-// request commits at most once per space, writer scope and request ID; a launched agent whose
-// bridge and shell both got its value commits each request once while it lives, through either
-// tool, a reconnect, a replaced MCP process and a service restart; a task named on a call wins for
-// that call only; while its launch file cannot be read the call is refused to try again, never
-// taken as another caller's; two scopes with the same request ID are independent. What
-// docs/promises-and-limits.md does not protect (a retry after the agent's end, chats of one app
-// sharing request IDs) is predicted as it happens, never a failure. Fixture text only.
+// What this checks: one bridge process works in one space, also when the default moves; an open
+// bridge is who it bound as, also after its agent ended; a request commits at most once per space,
+// writer scope and request ID; a launched agent whose bridge and shell both got its value commits
+// each request once while it lives, through either tool, a reconnect, a replaced MCP process and a
+// service restart; a task named on a call wins for that call only; two scopes with the same request
+// ID are independent. What docs/promises-and-limits.md does not protect (a retry after the agent's
+// end, chats of one app sharing request IDs) is predicted as it happens, never a failure. Fixture
+// text only.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import fc from "fast-check";
@@ -27,7 +28,7 @@ import { AppError } from "@ttasks/contracts";
 import { MemoryRecords, newTicket, secretHash, ShimHost } from "@ttasks/launch";
 import type { ReceiptLookup, SpaceWriterHandle, WriteRequest } from "@ttasks/storage";
 import { writeFixture, type Fixture } from "@ttasks/storage/write-helpers";
-import { BindNotYet, Bridges, sessionPort } from "../src/binding/index.ts";
+import { Bridges, sessionPort } from "../src/binding/index.ts";
 import { homeGate } from "../src/hub/home-gate.ts";
 import { homeRows } from "../src/hub/home-rows.ts";
 import { namedBy } from "../src/hub/named.ts";
@@ -45,6 +46,8 @@ let s1: Fixture;
 let s2: Fixture;
 /** The tasks the agents work on, in the first space: A's, P's, and the desktop chats'. */
 let tasks: { ref: string; id: string }[] = [];
+/** The task in the second space. */
+let task2 = { ref: "", id: "" };
 
 const writerOf = (f: Fixture): SpaceWriterHandle =>
   ({
@@ -63,24 +66,31 @@ const served = (f: Fixture, name: string): ServedSpace => ({
   reader: readerOf(f.reader),
 });
 
+/** The person adds `titles` as tasks to the space of `f`. */
+async function addTasks(f: Fixture, name: string, titles: string[], requestId: string) {
+  const host: OpsHost = { machine: { id: MACHINE }, spaces: () => [served(f, name)] };
+  const added = (await opCall(
+    host,
+    { class: "cli-interactive", env: {} },
+    { op: "task.add", input: { tasks: titles.map((title) => ({ title })), request_id: requestId } },
+  )) as { tasks: { ref: string; id: string }[] };
+  return added.tasks.map((t) => ({ ref: t.ref, id: t.id }));
+}
+
 beforeAll(async () => {
   temp = tempRoot("bind-model");
   for (const name of ["s1", "s2"]) mkdirSync(join(temp.root, name));
   s1 = await writeFixture(join(temp.root, "s1"));
   s2 = await writeFixture(join(temp.root, "s2"));
-  const host: OpsHost = { machine: { id: MACHINE }, spaces: () => [served(s1, "One")] };
-  const added = (await opCall(
-    host,
-    { class: "cli-interactive", env: {} },
-    {
-      op: "task.add",
-      input: {
-        tasks: ["Fixture task A", "Fixture task P", "Fixture task D"].map((title) => ({ title })),
-        request_id: "fixture-model-tasks-000001",
-      },
-    },
-  )) as { tasks: { ref: string; id: string }[] };
-  tasks = added.tasks.map((t) => ({ ref: t.ref, id: t.id }));
+  tasks = await addTasks(
+    s1,
+    "One",
+    ["Fixture task A", "Fixture task P", "Fixture task D"],
+    "fixture-model-tasks-000001",
+  );
+  const [second] = await addTasks(s2, "Two", ["Fixture task H"], "fixture-model-tasks-000002");
+  if (second === undefined) throw new Error("no task in the second space");
+  task2 = second;
 });
 
 afterAll(() => {
@@ -92,15 +102,19 @@ afterAll(() => {
 /**
  * The agents of one run. A and P are launched in the first space (A's tools and shell get its
  * ticket; P is Claude Code in allow-list mode, its tools get the preset and its shell the ticket);
- * D1 and D2 are two chats of one desktop app; H is a hand-made entry with no instance and no space.
+ * D1 and D2 are two chats of one desktop app; H is a hand-made entry with no instance and no space,
+ * which names the task of the space its process works in.
  */
 const AGENTS = ["A", "P", "D1", "D2", "H"] as const;
 type AgentName = (typeof AGENTS)[number];
 type Launched = "A" | "P";
 const isLaunched = (name: AgentName): name is Launched => name === "A" || name === "P";
 
-/** Which task a write names: none, the agent's own, or another one. H names none. */
+/** Which task a write names: none, the agent's own, or another one. */
 type Named = "none" | "own" | "other";
+
+/** The machine's default: none, the first space or the second. */
+type DefaultSpace = 0 | 1 | 2;
 
 type Event =
   | { readonly e: "write"; readonly agent: AgentName; readonly via: Via; readonly task: Named }
@@ -109,17 +123,17 @@ type Event =
   | { readonly e: "reconnect"; readonly agent: AgentName }
   | { readonly e: "replace"; readonly agent: AgentName }
   | { readonly e: "restart" }
-  | { readonly e: "end"; readonly agent: Launched }
+  /** The agent ends; `late`: its bridge is connected then, and sends its last call once more. */
+  | { readonly e: "end"; readonly agent: Launched; readonly late: boolean }
   | { readonly e: "revoke"; readonly agent: Launched }
   | { readonly e: "restore"; readonly agent: Launched }
-  | { readonly e: "unreadable"; readonly agent: Launched }
-  | { readonly e: "readable"; readonly agent: Launched }
-  | { readonly e: "default"; readonly space: 0 | 1 | 2 };
+  | { readonly e: "default"; readonly space: DefaultSpace };
 type Via = "bridge" | "shell";
 
 const agent = fc.constantFrom(...AGENTS);
 const launched = fc.constantFrom<Launched>("A", "P");
 const via = fc.constantFrom<Via>("bridge", "shell");
+const defaultSpace = fc.constantFrom<DefaultSpace>(0, 1, 2);
 const event: fc.Arbitrary<Event> = fc.oneof(
   {
     weight: 6,
@@ -128,6 +142,16 @@ const event: fc.Arbitrary<Event> = fc.oneof(
       agent,
       via,
       task: fc.constantFrom<Named>("none", "own", "other"),
+    }),
+  },
+  // The hand-made bridge's writes, where its space and the default meet.
+  {
+    weight: 3,
+    arbitrary: fc.record({
+      e: fc.constant("write" as const),
+      agent: fc.constant("H" as const),
+      via: fc.constant("bridge" as const),
+      task: fc.constant("own" as const),
     }),
   },
   {
@@ -142,21 +166,23 @@ const event: fc.Arbitrary<Event> = fc.oneof(
       k: fc.nat(6),
     }),
   },
-  { weight: 2, arbitrary: fc.record({ e: fc.constant("reconnect" as const), agent }) },
-  { weight: 2, arbitrary: fc.record({ e: fc.constant("replace" as const), agent }) },
-  { weight: 2, arbitrary: fc.constant({ e: "restart" as const }) },
-  { weight: 1, arbitrary: fc.record({ e: fc.constant("end" as const), agent: launched }) },
-  { weight: 1, arbitrary: fc.record({ e: fc.constant("revoke" as const), agent: launched }) },
-  { weight: 2, arbitrary: fc.record({ e: fc.constant("restore" as const), agent: launched }) },
-  { weight: 1, arbitrary: fc.record({ e: fc.constant("unreadable" as const), agent: launched }) },
-  { weight: 2, arbitrary: fc.record({ e: fc.constant("readable" as const), agent: launched }) },
+  // Every agent reconnects, the hand-made bridge as often as all others together.
   {
-    weight: 1,
+    weight: 3,
     arbitrary: fc.record({
-      e: fc.constant("default" as const),
-      space: fc.constantFrom<0 | 1 | 2>(0, 1, 2),
+      e: fc.constant("reconnect" as const),
+      agent: fc.oneof(agent, fc.constant("H" as const)),
     }),
   },
+  { weight: 2, arbitrary: fc.record({ e: fc.constant("replace" as const), agent }) },
+  { weight: 2, arbitrary: fc.constant({ e: "restart" as const }) },
+  {
+    weight: 2,
+    arbitrary: fc.record({ e: fc.constant("end" as const), agent: launched, late: fc.boolean() }),
+  },
+  { weight: 1, arbitrary: fc.record({ e: fc.constant("revoke" as const), agent: launched }) },
+  { weight: 2, arbitrary: fc.record({ e: fc.constant("restore" as const), agent: launched }) },
+  { weight: 4, arbitrary: fc.record({ e: fc.constant("default" as const), space: defaultSpace }) },
 );
 
 /** One request an agent sent: its ID and its input, the same at every attempt. */
@@ -172,6 +198,8 @@ interface Request {
 /** What a call must come to, from the world. */
 type Expected =
   | { readonly kind: "refused"; readonly code: string }
+  /** A task of another space: refused as not found, and the writer keeps that answer's receipt. */
+  | { readonly kind: "rejected"; readonly space: string; readonly scope: string }
   | { readonly kind: "replayed"; readonly task: string }
   | {
       readonly kind: "commit";
@@ -189,15 +217,25 @@ const reach = (what: string): void => {
 let runs = 0;
 
 /** One run of the world. Returns what did not come as the world says it must. */
-async function run(events: readonly Event[]): Promise<string[]> {
+async function run(initial: DefaultSpace, events: readonly Event[]): Promise<string[]> {
   runs += 1;
   const tag = `r${String(runs).padStart(4, "0")}`;
   const violations: string[] = [];
   const records = new MemoryRecords();
   const rows: Grant[] = [];
-  let defaultSpace: string | undefined;
+  const spaceOf = (choice: DefaultSpace): string | undefined =>
+    choice === 0 ? undefined : choice === 1 ? s1.spaceId : s2.spaceId;
+  let machineDefault = spaceOf(initial);
   const spaces = (): ServedSpace[] => [served(s1, "One"), served(s2, "Two")];
-  const refOf = (id: string): string => tasks.find((t) => t.id === id)?.ref ?? id;
+  const refOf = (id: string): string =>
+    tasks.find((t) => t.id === id)?.ref ?? (id === task2.id ? "the second space's task" : id);
+  /** The task an answer in `space` names by its reference. */
+  const taskIn = (space: string | undefined, ref: string): string =>
+    space === s2.spaceId
+      ? ref === task2.ref
+        ? task2.id
+        : ref
+      : (tasks.find((t) => t.ref === ref)?.id ?? ref);
 
   // The two launched agents: claimed records as the click and the claim leave them, each on a
   // home setup registered for the first space.
@@ -209,7 +247,6 @@ async function run(events: readonly Event[]): Promise<string[]> {
     readonly instance: string;
     row: Grant;
     live: boolean;
-    readable: boolean;
   }
   const launches = new Map<Launched, Launch>();
   for (const [i, name] of (["A", "P"] as const).entries()) {
@@ -253,7 +290,7 @@ async function run(events: readonly Event[]): Promise<string[]> {
       revoked_at: null,
     };
     rows.push(row);
-    launches.set(name, { id, ticket, task, preset, instance, row, live: true, readable: true });
+    launches.set(name, { id, ticket, task, preset, instance, row, live: true });
   }
   const launchOf = (name: Launched): Launch => {
     const found = launches.get(name);
@@ -269,7 +306,7 @@ async function run(events: readonly Event[]): Promise<string[]> {
 
   // The hosts, made again at a restart over the same records, rows and spaces.
   const grants = { list: () => rows };
-  const gate = homeGate({ grants: () => grants, spaces, defaultSpace: () => defaultSpace });
+  const gate = homeGate({ grants: () => grants, spaces, defaultSpace: () => machineDefault });
   let shim!: ShimHost;
   let host!: OpsHost;
   let bridges!: Bridges;
@@ -292,22 +329,16 @@ async function run(events: readonly Event[]): Promise<string[]> {
     host = {
       machine: { id: MACHINE },
       spaces,
-      defaultSpace: () => defaultSpace,
+      defaultSpace: () => machineDefault,
       homes: gate,
       sessions,
       now: () => 1_800_000_000_000,
     };
-    bridges = new Bridges({ sessions, spaces, defaultSpace: () => defaultSpace });
+    bridges = new Bridges({ sessions, spaces, defaultSpace: () => machineDefault });
   };
   start();
 
   // The world's facts a decision rests on, read from the world, not from the code.
-  /** A launched agent's values name it now: its agent runs and its file can be read. */
-  const named = (name: Launched): boolean => launchOf(name).live && launchOf(name).readable;
-  /** A file that cannot be read now: a value that names no readable launch waits for it. */
-  const anyUnreadable = (): boolean => [...launches.values()].some((l) => l.live && !l.readable);
-  /** The space a hand-made entry may use: the machine's default; two spaces and none, no space. */
-  const machineDefault = (): string | undefined => defaultSpace;
   const sessionScope = (name: Launched): string =>
     `session:se_${launchOf(name).id.slice("la_".length)}`;
 
@@ -354,47 +385,49 @@ async function run(events: readonly Event[]): Promise<string[]> {
 
   /**
    * Who the bridge of `name` binds as now, and in which space, from the world: the launch's
-   * session while its values name it; none while a file it may be cannot be read (the bind fails);
-   * otherwise its own, in what its process holds, else its entry's space, else the default.
+   * session while its agent runs and its process holds that space or nothing; otherwise its own,
+   * in what its process holds, else its entry's space, else the default.
    */
-  const bindsAs = (
-    name: AgentName,
-  ):
-    | { readonly fails: true }
-    | { readonly fails: false; session: boolean; space: string | undefined } => {
-    const kept = held.has(name) ? (held.get(name) ?? undefined) : undefined;
-    if (isLaunched(name)) {
-      if (named(name)) return { fails: false, session: true, space: s1.spaceId };
-      if (anyUnreadable()) return { fails: true };
+  const bindsAs = (name: AgentName): { session: boolean; space: string | undefined } => {
+    const holds = held.has(name);
+    const kept = holds ? (held.get(name) ?? undefined) : undefined;
+    if (isLaunched(name) && launchOf(name).live && (!holds || kept === s1.spaceId)) {
+      return { session: true, space: s1.spaceId };
     }
-    if (held.has(name)) return { fails: false, session: false, space: kept };
+    if (holds) return { session: false, space: kept };
     const entry = entryOf(name)["space"];
-    if (typeof entry === "string") return { fails: false, session: false, space: entry };
-    return { fails: false, session: false, space: defaultSpace };
+    if (typeof entry === "string") return { session: false, space: entry };
+    return { session: false, space: machineDefault };
   };
 
+  /** The space the bridge of `name` works in: its connection's, or the one it would bind in. */
+  const bridgeSpace = (name: AgentName): string | undefined =>
+    connections.has(name) ? connections.get(name)?.space : bindsAs(name).space;
+
   /** The bridge connection of `name`, bound now when it has none, as the forwarder binds. */
-  const bridgeOf = (name: AgentName): Open | "failed" => {
+  const bridgeOf = (name: AgentName): Open => {
     const open = connections.get(name);
-    if (open !== undefined) return open;
-    const expected = bindsAs(name);
-    const connection = { context: contextOf(name) };
-    let answer: JsonObject;
-    try {
-      answer = bridges.bind(connection);
-    } catch (error) {
-      if (!(error instanceof BindNotYet)) throw error;
-      if (!expected.fails) violations.push(`${name}'s bind failed, and should have been decided`);
-      reach("a bind failed to try again");
-      return "failed";
+    if (open !== undefined) {
+      if (isLaunched(name) && open.session && !launchOf(name).live) {
+        reach("an open bridge after its agent's end");
+      }
+      return open;
     }
-    if (expected.fails)
-      violations.push(`${name}'s bind was decided while a launch file was unreadable`);
+    const expected = bindsAs(name);
+    if (held.get(name) === null && machineDefault !== undefined) {
+      reach("a held none bound again after a default was set");
+    }
+    const kept = held.get(name);
+    if (typeof kept === "string" && kept !== machineDefault && !expected.session) {
+      reach("a held space bound again after the default moved");
+    }
+    const connection = { context: contextOf(name) };
+    const answer = bridges.bind(connection);
     const binding = bridges.attach(connection);
     if (binding === undefined) throw new Error("no binding");
     const space = typeof answer["space"] === "string" ? answer["space"] : undefined;
     const session = answer["state"] === "bound";
-    if (!expected.fails && (expected.session !== session || expected.space !== space)) {
+    if (expected.session !== session || expected.space !== space) {
       violations.push(
         `${name} bound as ${session ? "a session" : "its own"} in ${String(space)}, expected ${expected.session ? "a session" : "its own"} in ${String(expected.space)}`,
       );
@@ -412,7 +445,10 @@ async function run(events: readonly Event[]): Promise<string[]> {
 
   /** What the spaces kept, as the model expects it: receipts by space, scope and request. */
   const kept = new Map<string, { readonly text: string; readonly task: string }>();
-  const expectedCommits = new Map<string, string[]>();
+  /** Every change the spaces must hold: `<space>|<text>|<task>`, once for each commit. */
+  const changes: string[] = [];
+  /** A receipt of a request the writer refused: no change, and the same answer at a retry. */
+  const REJECTED = "rejected";
   const keyOf = (space: string, scope: string, id: string): string => `${space}|${scope}|${id}`;
 
   /** What a write of `request` through `through` must come to now, and its writer scope. */
@@ -421,73 +457,67 @@ async function run(events: readonly Event[]): Promise<string[]> {
     through: Via,
     request: Request,
     open: Open | undefined,
-  ): { expected: Expected; scope?: string; space?: string } => {
-    let session = false;
+  ): Expected => {
+    let session: boolean;
     let space: string | undefined;
     let scope: string;
     let allowed: boolean;
     if (through === "shell" && isLaunched(name)) {
-      if (named(name)) session = true;
-      else if (anyUnreadable())
-        return { expected: { kind: "refused", code: "service_unavailable" } };
+      session = launchOf(name).live;
       space = s1.spaceId;
       scope = session ? sessionScope(name) : `agent:unknown:${MACHINE}`;
       allowed = !session || launchOf(name).row.revoked_at === null;
     } else {
-      if (open === undefined) return { expected: { kind: "refused", code: "bind_failed" } };
+      if (open === undefined) throw new Error("no bridge");
       session = open.session;
       space = open.space;
-      if (space === undefined) return { expected: { kind: "refused", code: "space_unavailable" } };
+      if (space === undefined) return { kind: "refused", code: "space_unavailable" };
       if (isLaunched(name)) {
         scope = session ? sessionScope(name) : `bridge:${launchOf(name).instance}:${MACHINE}`;
-        allowed = launchOf(name).row.revoked_at === null;
+        allowed = launchOf(name).row.revoked_at === null && space === s1.spaceId;
       } else if (name === "H") {
         scope = `bridge:manual:${MACHINE}`;
-        allowed = space === machineDefault();
+        allowed = space === machineDefault;
       } else {
         scope = `bridge:inst-d:${MACHINE}`;
-        allowed = true;
+        allowed = space === s1.spaceId;
       }
     }
-    if (!allowed) return { expected: { kind: "refused", code: "forbidden" } };
+    if (!allowed) return { kind: "refused", code: "forbidden" };
     const task = request.named ?? (session && isLaunched(name) ? launchOf(name).task : undefined);
-    if (task === undefined) return { expected: { kind: "refused", code: "unbound" } };
+    if (task === undefined) return { kind: "refused", code: "unbound" };
     const before = kept.get(keyOf(space, scope, request.id));
     if (before !== undefined) {
-      return before.text === request.text
-        ? { expected: { kind: "replayed", task: before.task }, scope, space }
-        : { expected: { kind: "refused", code: "request_id_conflict" } };
+      if (before.text !== request.text) return { kind: "refused", code: "request_id_conflict" };
+      return before.task === REJECTED
+        ? { kind: "rejected", space, scope }
+        : { kind: "replayed", task: before.task };
     }
-    return { expected: { kind: "commit", space, task, scope }, scope, space };
+    const here = space === s2.spaceId ? task === task2.id : tasks.some((t) => t.id === task);
+    if (!here) return { kind: "rejected", space, scope };
+    return { kind: "commit", space, task, scope };
   };
 
   const call = async (name: AgentName, through: Via, request: Request): Promise<void> => {
     const shell = through === "shell" && isLaunched(name);
     const open = shell ? undefined : bridgeOf(name);
-    const { expected } = expect_(
-      name,
-      shell ? "shell" : "bridge",
-      request,
-      open === "failed" ? undefined : open,
-    );
+    const expected = expect_(name, shell ? "shell" : "bridge", request, open);
     let actual: Expected;
     try {
       let result: Json;
-      if (shell) {
+      if (open === undefined) {
         result = (await opCall(
           host,
-          { class: "cli-agent", env: shellEnv(name) },
+          { class: "cli-agent", env: shellEnv(name as Launched) },
           { op: "entry.add", input: request.input, space: s1.spaceId },
         )) as Json;
-      } else if (open === undefined || open === "failed") {
-        throw new AppError({ code: "service_unavailable", message: "bind_failed" });
       } else {
         result = (await opCall(host, bridgeCaller(contextOf(name), MACHINE, open.binding), {
           op: "entry.add",
           input: request.input,
         })) as Json;
       }
-      const task = tasks.find((t) => t.ref === result["task"])?.id ?? String(result["task"]);
+      const task = taskIn(open === undefined ? s1.spaceId : open.space, String(result["task"]));
       actual =
         result["replayed"] === true
           ? { kind: "replayed", task }
@@ -496,16 +526,15 @@ async function run(events: readonly Event[]): Promise<string[]> {
             : { kind: "commit", space: "?", task, scope: "?" };
     } catch (error) {
       if (!(error instanceof AppError)) throw error;
-      actual = {
-        kind: "refused",
-        code: error.message === "bind_failed" ? "bind_failed" : error.code,
-      };
+      actual = { kind: "refused", code: error.code };
     }
     const same =
-      expected.kind === actual.kind &&
-      (expected.kind === "refused"
-        ? expected.code === (actual as { code: string }).code
-        : expected.task === (actual as { task: string }).task);
+      expected.kind === "rejected"
+        ? actual.kind === "refused" && actual.code === "not_found"
+        : expected.kind === actual.kind &&
+          (expected.kind === "refused"
+            ? expected.code === (actual as { code: string }).code
+            : expected.task === (actual as { task: string }).task);
     if (!same) {
       violations.push(
         `${name} through its ${through}, ${request.id}: ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`,
@@ -517,13 +546,17 @@ async function run(events: readonly Event[]): Promise<string[]> {
         text: request.text,
         task: expected.task,
       });
-      const where = `${expected.space}|${request.text}`;
-      expectedCommits.set(where, [...(expectedCommits.get(where) ?? []), expected.task]);
+      changes.push(`${expected.space}|${request.text}|${expected.task}`);
+      if (expected.space === s2.spaceId) reach("a change in the second space");
+    }
+    if (expected.kind === "rejected") {
+      kept.set(keyOf(expected.space, expected.scope, request.id), {
+        text: request.text,
+        task: REJECTED,
+      });
+      reach("a task of another space");
     }
     if (expected.kind === "replayed") reach("a replay");
-    if (expected.kind === "refused" && expected.code === "service_unavailable") {
-      reach("a shell refused to try again");
-    }
   };
 
   const requests: Request[] = [];
@@ -534,10 +567,16 @@ async function run(events: readonly Event[]): Promise<string[]> {
         made += 1;
         const text = `Fixture model ${tag} ${String(made)}.`;
         const id = `fixture-model-${tag}-${String(made).padStart(6, "0")}`;
-        const own = isLaunched(ev.agent) ? launchOf(ev.agent).task : tasks[2]?.id;
-        const other = isLaunched(ev.agent) ? tasks[2]?.id : tasks[0]?.id;
-        const task =
-          ev.agent === "H" || ev.task === "none" ? undefined : ev.task === "own" ? own : other;
+        let task: string | undefined;
+        if (ev.agent === "H") {
+          // The hand-made entry names the task of the space it works in.
+          const space = bridgeSpace("H");
+          task = space === s1.spaceId ? tasks[2]?.id : space === s2.spaceId ? task2.id : undefined;
+        } else {
+          const own = isLaunched(ev.agent) ? launchOf(ev.agent).task : tasks[2]?.id;
+          const other = isLaunched(ev.agent) ? tasks[2]?.id : tasks[0]?.id;
+          task = ev.task === "none" ? undefined : ev.task === "own" ? own : other;
+        }
         const input: Json = {
           kind: "progress",
           text,
@@ -592,9 +631,12 @@ async function run(events: readonly Event[]): Promise<string[]> {
       case "end": {
         const launch = launchOf(ev.agent);
         if (!launch.live) break;
+        if (ev.late) bridgeOf(ev.agent);
         records.remove(launch.id);
         launch.live = false;
         reach("end");
+        const last = requests.findLast((r) => r.agent === ev.agent);
+        if (ev.late && last !== undefined) await call(ev.agent, "bridge", last);
         break;
       }
       case "revoke":
@@ -609,16 +651,8 @@ async function run(events: readonly Event[]): Promise<string[]> {
         launch.row = row;
         break;
       }
-      case "unreadable":
-      case "readable": {
-        const launch = launchOf(ev.agent);
-        launch.readable = ev.e === "readable";
-        if (launch.readable) records.held.delete(launch.id);
-        else records.held.add(launch.id);
-        break;
-      }
       case "default":
-        defaultSpace = ev.space === 0 ? undefined : ev.space === 1 ? s1.spaceId : s2.spaceId;
+        machineDefault = spaceOf(ev.space);
         break;
     }
   }
@@ -628,38 +662,42 @@ async function run(events: readonly Event[]): Promise<string[]> {
     if (seen.size > 1)
       violations.push(`bridge process ${key} worked in ${String(seen.size)} spaces`);
   }
-  // What the spaces kept: each change on its task in its space, each receipt under its scope.
+  // What the spaces kept: every change of this run, on its task in its space, and each receipt
+  // under its scope; nothing else.
   for (const [f, space] of [
     [s1, s1.spaceId],
     [s2, s2.spaceId],
   ] as const) {
-    for (const request of requests) {
-      const actual = f.reader
-        .prepare("SELECT task_id FROM log_entries WHERE body = $body ORDER BY task_id")
-        .all({ body: request.text })
-        .map((r) => String(r["task_id"]));
-      const expectedTasks = [...(expectedCommits.get(`${space}|${request.text}`) ?? [])].sort();
-      if (JSON.stringify(actual) !== JSON.stringify(expectedTasks)) {
-        violations.push(
-          `${request.id} in ${space}: changes on ${actual.map(refOf).join(", ") || "none"}, expected ${expectedTasks.map(refOf).join(", ") || "none"}`,
-        );
-      }
+    const actual = f.reader
+      .prepare("SELECT body, task_id FROM log_entries WHERE body LIKE $prefix")
+      .all({ prefix: `Fixture model ${tag} %` })
+      .map((r) => `${String(r["body"])}|${refOf(String(r["task_id"]))}`)
+      .sort();
+    const expectedChanges = changes
+      .filter((c) => c.startsWith(`${space}|`))
+      .map((c) => {
+        const [, text, task] = c.split("|");
+        return `${String(text)}|${refOf(String(task))}`;
+      })
+      .sort();
+    if (JSON.stringify(actual) !== JSON.stringify(expectedChanges)) {
+      violations.push(
+        `${space} kept ${JSON.stringify(actual)}, expected ${JSON.stringify(expectedChanges)}`,
+      );
     }
-    const ids = new Set(requests.map((r) => r.id));
-    for (const id of ids) {
-      const scopes = f.reader
-        .prepare("SELECT scope_id FROM receipts WHERE request_id = $request ORDER BY scope_id")
-        .all({ request: id })
-        .map((r) => String(r["scope_id"]));
-      const expectedScopes = [...kept.keys()]
-        .filter((k) => k.startsWith(`${space}|`) && k.endsWith(`|${id}`))
-        .map((k) => k.slice(space.length + 1, k.length - id.length - 1))
-        .sort();
-      if (JSON.stringify(scopes) !== JSON.stringify(expectedScopes)) {
-        violations.push(
-          `${id} in ${space}: receipts under ${scopes.join(", ")}, expected ${expectedScopes.join(", ")}`,
-        );
-      }
+    const receipts = f.reader
+      .prepare("SELECT scope_id, request_id FROM receipts WHERE request_id LIKE $prefix")
+      .all({ prefix: `fixture-model-${tag}-%` })
+      .map((r) => `${String(r["scope_id"])}|${String(r["request_id"])}`)
+      .sort();
+    const expectedReceipts = [...kept.keys()]
+      .filter((k) => k.startsWith(`${space}|`))
+      .map((k) => k.slice(space.length + 1))
+      .sort();
+    if (JSON.stringify(receipts) !== JSON.stringify(expectedReceipts)) {
+      violations.push(
+        `${space} kept receipts ${JSON.stringify(receipts)}, expected ${JSON.stringify(expectedReceipts)}`,
+      );
     }
   }
   return violations;
@@ -672,9 +710,13 @@ describe("[A3.3.7.binding.model] who a connection is, under random interleavings
     async () => {
       const deep = process.env["TTASKS_DEEP"] === "1";
       await fc.assert(
-        fc.asyncProperty(fc.array(event, { minLength: 8, maxLength: 40 }), async (events) => {
-          expect(await run(events)).toEqual([]);
-        }),
+        fc.asyncProperty(
+          defaultSpace,
+          fc.array(event, { minLength: 8, maxLength: 40, size: "max" }),
+          async (initial, events) => {
+            expect(await run(initial, events)).toEqual([]);
+          },
+        ),
         { numRuns: deep ? 1_000 : 60, seed: 4_221_122, endOnFailure: true },
       );
       for (const what of [
@@ -683,8 +725,10 @@ describe("[A3.3.7.binding.model] who a connection is, under random interleavings
         "a replay",
         "a named task over the session's",
         "another scope's request ID",
-        "a bind failed to try again",
-        "a shell refused to try again",
+        "a change in the second space",
+        "a held none bound again after a default was set",
+        "a held space bound again after the default moved",
+        "an open bridge after its agent's end",
       ]) {
         expect(reached.get(what) ?? 0, what).toBeGreaterThan(0);
       }

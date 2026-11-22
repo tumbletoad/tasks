@@ -23,6 +23,7 @@ import {
   checkPlan,
   ENDED_KEEP_MS,
   FolderRecords,
+  HELD_FILE_WAITS_MS,
   MemoryRecords,
   PLAN_MAX_BYTES,
   type ClickGiven,
@@ -45,6 +46,7 @@ import {
 } from "../src/shim/wire.ts";
 import { AFTER_EXIT } from "../src/sections.ts";
 import { ExecutionRefused, LAUNCH_ID, type LaunchStore, type LaunchIntent } from "../src/store.ts";
+import { CAN_HOLD_FILES, holdFile } from "@ttasks/testkit";
 import { MemoryDurable, MemoryExecutionStore, randomId } from "./memory-store.ts";
 import { MACHINE, tempFolder } from "./stores.ts";
 
@@ -820,54 +822,66 @@ describe("[A4.5.shim.attach] machine state in folders", () => {
     for (const t of temps.splice(0)) t.remove();
   });
 
-  test("a launch file that cannot be read as a service starts is no absent one: it is read again at each look, its launch is not lost, and no ticket is decided meanwhile", async () => {
-    const temp = tempFolder();
-    temps.push(temp);
-    const root = join(temp.path, "launch");
-    records = new FolderRecords(root);
-    boot();
-    const { id, ticket } = await dispatched();
-    const { replies } = await claim(ticket);
-    const credential = replies[0]?.credential ?? "";
-    const other = await dispatched();
-    await claim(other.ticket);
-    const file = join(root, id, "launch.json");
-    const kept = readFileSync(file, "utf8");
-    // Something holds the file as the service starts (a virus scanner on Windows): here a folder
-    // in its place, which no read can open.
-    rmSync(file);
-    mkdirSync(file);
-    records = new FolderRecords(root);
-    boot();
-    expect(records.list().map((r) => r.launch)).toEqual([other.id]);
-    expect(records.unreadable()).toEqual([id]);
-    // A ticket of a readable launch is decided; any other waits for the unreadable record.
-    expect(host.liveByTicket(other.ticket)?.launch).toBe(other.id);
-    expect(() => host.liveByTicket(ticket)).toThrow();
-    // Recovery's look finds no shim it could judge: pending, never lost.
-    const intent = await read(id);
-    if (intent === undefined) throw new Error("no intent");
-    expect(await host.observe(intent)).toEqual({ kind: "pending" });
-    // Its shim, attaching again, is asked to try again rather than told its launch is gone.
-    expect(await host.attach({ credential, pid: SHIM_PID, start_time: SHIM_START })).toEqual({
-      kind: "refused",
-      reason: "store",
-    });
-    // Readable again: the next look has it.
-    rmSync(file, { recursive: true });
-    writeFileSync(file, kept);
-    expect(records.unreadable()).toEqual([]);
-    expect(host.liveByTicket(ticket)?.launch).toBe(id);
-    expect(
-      records
-        .list()
-        .map((r) => r.launch)
-        .sort(),
-    ).toEqual([id, other.id].sort());
-    expect(await host.attach({ credential, pid: SHIM_PID, start_time: SHIM_START })).toMatchObject({
-      kind: "attached",
-    });
-  });
+  test.skipIf(!CAN_HOLD_FILES)(
+    "a launch file held for a moment as the service starts is read again and kept; one held past the waits, or one no wait can open, is left out with its ID and error code",
+    async () => {
+      const temp = tempFolder();
+      temps.push(temp);
+      const root = join(temp.path, "launch");
+      records = new FolderRecords(root);
+      boot();
+      const moment = await dispatched();
+      const { replies } = await claim(moment.ticket);
+      const credential = replies[0]?.credential ?? "";
+      const stuck = await dispatched();
+      await claim(stuck.ticket);
+      const folder = await dispatched();
+      await claim(folder.ticket);
+      const fileOf = (id: string) => join(root, id, "launch.json");
+      // A scanner holds two files as the service starts; a folder stands in place of a third.
+      const momentHold = holdFile(fileOf(moment.id));
+      const stuckHold = holdFile(fileOf(stuck.id));
+      rmSync(fileOf(folder.id));
+      mkdirSync(fileOf(folder.id));
+      try {
+        const waits: number[] = [];
+        const left: [string, string][] = [];
+        records = new FolderRecords(root, {
+          wait: (ms) => {
+            waits.push(ms);
+            if (waits.length === 2) momentHold.release();
+          },
+          unreadable: (launch, code) => left.push([launch, code]),
+        });
+        boot();
+        expect(records.list().map((r) => r.launch)).toEqual([moment.id]);
+        // Every wait was taken while one file was still held, and nothing waits after them.
+        expect(waits).toEqual([...HELD_FILE_WAITS_MS]);
+        expect(left.map(([launch]) => launch).sort()).toEqual([stuck.id, folder.id].sort());
+        expect(new Map(left).get(folder.id)).toBe("EISDIR");
+        expect(["EBUSY", "EACCES", "EPERM"]).toContain(new Map(left).get(stuck.id));
+        // From here the records in memory decide: the launch left out is no launch, at once.
+        expect(host.liveByTicket(moment.ticket)?.launch).toBe(moment.id);
+        expect(host.liveByTicket(stuck.ticket)).toBeUndefined();
+        expect(
+          await host.attach({ credential, pid: SHIM_PID, start_time: SHIM_START }),
+        ).toMatchObject({ kind: "attached" });
+      } finally {
+        momentHold.release();
+        stuckHold.release();
+      }
+      // A file no wait can open is left out without one.
+      const waits: number[] = [];
+      const again = new FolderRecords(root, { wait: (ms) => waits.push(ms) });
+      expect(waits).toEqual([]);
+      expect(
+        again
+          .list()
+          .map((r) => r.launch)
+          .sort(),
+      ).toEqual([moment.id, stuck.id].sort());
+    },
+  );
 
   test("user-only files, written whole, read back by a new service, a damaged one left out", async () => {
     const temp = tempFolder();

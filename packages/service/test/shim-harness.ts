@@ -272,9 +272,12 @@ export class ShimLab {
     return [file ?? "", [...rest, "shim", ticket]];
   }
 
-  /** Starts the service of this home, with the lab's clock, terminal and runtime base. */
-  async start(): Promise<RunningService> {
-    const given = this.#options.launch ?? {};
+  /**
+   * Starts the service of this home, with the lab's clock, terminal and runtime base, and the
+   * launch options of this start on top of the lab's.
+   */
+  async start(launch: Partial<LaunchOptions> = {}): Promise<RunningService> {
+    const given = { ...this.#options.launch, ...launch };
     const adapters = this.#options.adapters;
     const env = serviceEnv(this.home, this.#options.serviceEnv);
     const options: StartOptions = {

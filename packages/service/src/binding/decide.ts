@@ -19,7 +19,7 @@ import type { BoundBy, Decision, Presented, Session, SessionHome, Standing } fro
 
 /** What the rule reads, each a port so the bind, a shell call and the model test share it. */
 export interface DecideSources {
-  /** The live launch or run the values name (hub/named.ts). Throws when it cannot be read. */
+  /** The live launch or run the values name (hub/named.ts), from the records in memory. */
   named(values: { readonly ticket?: string; readonly preset?: string }): Named;
   /** The rows of a home (hub/home-rows.ts), revoked ones included, newest first. */
   rows(app: string, home: string): HomeRows;
@@ -77,16 +77,12 @@ export function decide(sources: DecideSources, presented: Presented): Decision {
   const ticket = presented.env[TICKET];
   const preset = presented.env[PRESET];
   if (ticket === undefined && preset === undefined) return { kind: "none" };
-  let named: Named;
-  try {
-    named = sources.named({
+  const found = namedSession(
+    sources.named({
       ...(ticket === undefined ? {} : { ticket }),
       ...(preset === undefined ? {} : { preset }),
-    });
-  } catch {
-    return { kind: "failed" };
-  }
-  const found = namedSession(named);
+    }),
+  );
   if (found === undefined) return { kind: "none", reason: "values" };
   const { session, by } = found;
   if (presented.via === "shell") return { kind: "session", session, by };
