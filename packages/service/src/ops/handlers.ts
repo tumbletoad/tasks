@@ -456,7 +456,7 @@ export function defaultOf<S extends Copy>(
   return copyOf(live, defaultId) ?? "not_served";
 }
 
-function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): ServedSpace {
+function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): UsableSpace {
   const binding = caller.binding;
   if (binding?.kind === "session") return heldSpace(host, caller, binding.session.space, named);
   if (caller.class === "bridge") {
@@ -495,12 +495,15 @@ function heldSpace(
   caller: Caller,
   held: string,
   named: string | undefined,
-): ServedSpace {
+): UsableSpace {
   checkGrant(host, caller, held);
   const live = host.spaces().filter((s) => s.state !== "closed");
   if (named !== undefined && named !== held) {
     const other = findSpace(live, named);
-    if (other === undefined || isAmbiguity(other) || other.id !== held) {
+    // A name is not known until its space opens: while the held space opens, it may be its own.
+    if (other === undefined && isRetryable(unserved(live, named))) throw unserved(live, named);
+    // A copy that is still opening is known by the ID its entry names.
+    if (other === undefined || isAmbiguity(other) || (other.id ?? other.registered) !== held) {
       throw new AppError({
         code: "forbidden",
         message: "This session is bound to another space.",
@@ -509,12 +512,38 @@ function heldSpace(
       });
     }
     // A folder names its copy, which a session of the space may use.
-    if (isAbsolute(named)) return other;
+    if (isAbsolute(named)) return answerFor(live, other, named);
   }
   const found = copyOf(live, held);
   if (isAmbiguity(found)) throw ambiguousError(found);
-  if (found !== undefined) return found;
-  throw unserved(live, held);
+  return answerFor(live, found, held);
+}
+
+const isRetryable = (error: AppError): boolean => error.data["retryable"] === true;
+
+/** A space a call may go on with: open or read-only, so served, with its ID. */
+export type UsableSpace = ServedSpace & { readonly id: string };
+
+/**
+ * The one answer for the space a call means, which every call's path ends in (`pickSpace` for a
+ * person, an agent's shell, a session and a bridge, and `personSpace` for the run verbs): its copy
+ * when it is open or read-only; `opening`, to retry, while it is still opening; else `not_served`,
+ * with the copy's reason. A copy found by its folder or its registered ID while it opens has no
+ * ID yet, so nothing past here meets one.
+ */
+function answerFor(
+  live: readonly ServedSpace[],
+  found: ServedSpace | undefined,
+  wanted: string | undefined,
+): UsableSpace {
+  if (found === undefined) {
+    throw wanted === undefined ? spaceUnavailable("not_served", false) : unserved(live, wanted);
+  }
+  if (found.state === "opening") throw spaceUnavailable("opening", true);
+  if (found.id === undefined || (found.state !== "open" && found.state !== "read_only")) {
+    throw spaceUnavailable("not_served", false, found.reason ?? found.state, found.message);
+  }
+  return found as UsableSpace;
 }
 
 /**
@@ -601,11 +630,11 @@ function grantedElsewhere(host: OpsHost, space: string, entry: EntryFacts): AppE
 }
 
 /** The space a person's own command means: the one it names, else the machine's default. */
-export function personSpace(host: OpsHost, named: string | undefined): ServedSpace {
+export function personSpace(host: OpsHost, named: string | undefined): UsableSpace {
   return pickByRule(host, { class: "cli-interactive", env: {} }, named);
 }
 
-function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): ServedSpace {
+function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): UsableSpace {
   const live = host.spaces().filter((s) => s.state !== "closed");
   // A bridge's environment is not passed (A3 3.7.2: TTASKS_SPACE never chooses its space).
   const fromEnv = caller.binding === undefined ? caller.env["TTASKS_SPACE"] : undefined;
@@ -613,8 +642,7 @@ function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): S
   if (wanted !== undefined) {
     const found = findSpace(live, wanted);
     if (isAmbiguity(found)) throw ambiguousError(found);
-    if (found === undefined) throw unserved(live, wanted);
-    return found;
+    return answerFor(live, found, wanted);
   }
   if (caller.class === "cli-agent") {
     throw invalid("space", "Name the space", "Pass --space, or set TTASKS_SPACE.");
@@ -623,11 +651,10 @@ function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): S
   if (defaultId !== undefined) {
     const fallback = copyOf(live, defaultId);
     if (isAmbiguity(fallback)) throw ambiguousError(fallback);
-    if (fallback === undefined) throw unserved(live, defaultId);
-    return fallback;
+    return answerFor(live, fallback, defaultId);
   }
   const only = onlySpace(live);
-  if (only === undefined) throw spaceUnavailable("not_served", false);
+  if (only === undefined) return answerFor(live, undefined, undefined);
   if (only === "several") {
     throw invalid(
       "space",
@@ -636,7 +663,7 @@ function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): S
     );
   }
   if (isAmbiguity(only)) throw ambiguousError(only);
-  return only;
+  return answerFor(live, only, undefined);
 }
 
 function readerOf(space: ServedSpace): WorkerConnection {

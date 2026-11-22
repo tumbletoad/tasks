@@ -4,7 +4,18 @@
 // temporary folders only.
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import { startService, type RunningService } from "../src/hub/service.ts";
+import { LocalError, RpcError, type JsonObject } from "@ttasks/bridge/protocol";
+import { AppError, type ErrorBody } from "@ttasks/contracts";
+import { openingEntry, startService, type RunningService } from "../src/hub/service.ts";
+import { bridgeCaller } from "../src/mcp/index.ts";
+import {
+  opCall,
+  type Caller,
+  type OpsHost,
+  type ServedSpace,
+  type Session,
+} from "../src/ops/index.ts";
+import { runVerbs, type RunVerbsHost } from "../src/runs/verbs.ts";
 import {
   readServiceJson,
   registerSpaces,
@@ -16,7 +27,7 @@ import {
 import { hubSpace } from "./mcp-hub.ts";
 import { toolOf } from "../src/mcp/index.ts";
 import { bridgeContext, openMcp, RawMcp, textOf } from "./mcp-helpers.ts";
-import { classSession, errorOf } from "./ops-helpers.ts";
+import { classSession } from "./ops-helpers.ts";
 
 const gate = vi.hoisted(() => {
   let release = (): void => undefined;
@@ -106,46 +117,186 @@ describe("[A3.3.7.binding.space] a bind while the service starts settles the con
   );
 
   test(
-    "with a default space configured, a person's command and an agent's shell call that names the space, by ID, name or folder, are told it is still opening, to try again",
+    "every door a call comes through, asked for the space by ID, name, folder or the default while it opens, is told it is opening, to try again",
     { timeout: 180_000 },
     async () => {
-      const temp = tempRoot("call-startup");
+      const temp = tempRoot("doors-startup");
       try {
         const home = join(temp.root, "h");
         const space = await hubSpace(home);
         registerSpaces(home, [space.folder], `\n[service]\ndefault_space = "${space.id}"\n`);
-        await whileStarting(home, async (path) => {
-          const opening = async (
-            cls: "cli-interactive" | "cli-agent",
-            named?: string,
-          ): Promise<unknown> => {
-            const session = await classSession(home, path, cls, { TTASKS_AGENT: "1" });
-            try {
-              await session.call(
-                "op/call",
-                { op: "space.status", input: {}, ...(named === undefined ? {} : { space: named }) },
-                { timeoutMs: 60_000 },
-              );
-              return "answered";
-            } catch (error) {
-              const body = errorOf(error);
-              return [body.code, body.data?.["reason"], body.data?.["retryable"]];
-            } finally {
-              session.close();
+        const named = (way: Way): string | undefined =>
+          way === "id"
+            ? space.id
+            : way === "name"
+              ? "Mira"
+              : way === "folder"
+                ? space.folder
+                : undefined;
+        const asked: { readonly at: string; readonly answer: string }[] = [];
+        const ask = async (doors: readonly Door[]): Promise<void> => {
+          for (const door of doors) {
+            for (const way of door.ways) {
+              asked.push({ at: `${door.name}, by ${way}`, answer: await door.ask(named(way)) });
             }
-          };
-          const retry = ["space_unavailable", "opening", true];
-          // `ttasks status` right after a start: the machine's default, by its registered ID.
-          expect(await opening("cli-interactive")).toEqual(retry);
-          // An agent's shell names its space by ID, or by a name not known until the space opens.
-          expect(await opening("cli-agent", space.id)).toEqual(retry);
-          expect(await opening("cli-agent", "Mira")).toEqual(retry);
-          // A folder names its copy: the configured one, which is opening too.
-          expect(await opening("cli-agent", space.folder)).toEqual(retry);
-        });
+          }
+        };
+        await whileStarting(home, (path) => ask(liveDoors(home, path)));
+        // A session's doors, over the very view the start gives while it opens.
+        await ask(sessionDoors(space.id, [openingEntry({ id: space.id, path: space.folder })]));
+        expect(asked.map(({ at, answer }) => `${at}: ${answer}`)).toEqual(
+          asked.map(({ at }) => `${at}: ${OPENING}`),
+        );
       } finally {
         temp.cleanup();
       }
     },
   );
 });
+
+type Way = "id" | "name" | "folder" | "default";
+const WAYS: readonly Way[] = ["id", "name", "folder", "default"];
+
+/** What every door answers while the space opens. */
+const OPENING = "space_unavailable opening retryable";
+
+/** A door a call comes through: the ways it names a space, and its answer to one call. */
+interface Door {
+  readonly name: string;
+  readonly ways: readonly Way[];
+  ask(space: string | undefined): Promise<string>;
+}
+
+/** An answer in the table's words: what was refused, why, and whether to try again. */
+const words = (body: ErrorBody): string =>
+  `${body.code} ${String(body.data?.["reason"])} ${body.data?.["retryable"] === true ? "retryable" : "final"}`;
+
+/** A running service's doors: a person's command, an agent's shell, a bridge, each run verb. */
+function liveDoors(home: string, path: string): Door[] {
+  const rpc = async (
+    cls: "cli-interactive" | "cli-agent",
+    method: string,
+    params: JsonObject,
+  ): Promise<string> => {
+    const session = await classSession(home, path, cls, { TTASKS_AGENT: "1" });
+    try {
+      await session.call(method, params, { timeoutMs: 60_000 });
+      return "answered";
+    } catch (error) {
+      const body = error instanceof RpcError ? (error.data as ErrorBody | undefined) : undefined;
+      return body === undefined ? `failed: ${String(error)}` : words(body);
+    } finally {
+      session.close();
+    }
+  };
+  const inSpace = (space: string | undefined): JsonObject => (space === undefined ? {} : { space });
+  const status = (space: string | undefined): JsonObject => ({
+    op: "space.status",
+    input: {},
+    ...inSpace(space),
+  });
+  return [
+    {
+      name: "a person's command",
+      ways: WAYS,
+      ask: (space) => rpc("cli-interactive", "op/call", status(space)),
+    },
+    // An agent's shell that is no session names its space: the default is not its.
+    {
+      name: "an agent's shell",
+      ways: ["id", "name", "folder"],
+      ask: (space) => rpc("cli-agent", "op/call", status(space)),
+    },
+    // A bridge settles its space at the bind, from its entry or the default. A name or a folder
+    // cannot be resolved while spaces open, so the bind fails to be tried again, which is the
+    // bridge's own retry.
+    {
+      name: "a bridge",
+      ways: WAYS,
+      ask: async (space) => {
+        let session;
+        try {
+          session = await openMcp(home, path, bridgeContext({ instance: null, app: null, space }));
+        } catch (error) {
+          if (error instanceof LocalError && error.retryable) return OPENING;
+          throw error;
+        }
+        try {
+          const mcp = new RawMcp(session);
+          await mcp.initialize();
+          const reply = await mcp.request("tools/call", {
+            name: toolOf("space.status"),
+            arguments: {},
+          });
+          const text = textOf(reply.message["result"]);
+          return /^error space_unavailable \(opening\):/u.test(text) ? OPENING : text;
+        } finally {
+          session.close();
+        }
+      },
+    },
+    // Every run verb the endpoint serves, from the verbs' own table, so a new one is asked too.
+    ...Object.keys(runVerbs({} as RunVerbsHost)).map((verb): Door => ({
+      name: `the run verb ${verb}`,
+      ways: WAYS,
+      ask: (space) =>
+        rpc("cli-interactive", verb, {
+          run: "ru_00000000000000000000000001",
+          task: "M-1",
+          request_id: "fixture-run-request-000001",
+          ...inSpace(space),
+        }),
+    })),
+  ];
+}
+
+/** A session's doors, its shell and its bridge, over `view`: a session holds its launch's space. */
+function sessionDoors(held: string, view: readonly ServedSpace[]): Door[] {
+  const machine = "m_00000000000000000000000001";
+  const session: Session = {
+    session: "se_00000000000000000000000001",
+    space: held,
+    task: "t_00000000000000000000000001",
+    home: { of: "launch", app: "codex", home: undefined },
+  };
+  const host = {
+    machine: { id: machine },
+    spaces: () => view,
+    defaultSpace: () => held,
+    homes: { may: () => true, spaceOf: () => held },
+    sessions: {
+      decide: () => ({ kind: "session", by: "ticket", session }),
+      standing: () => ({ kind: "read", instance: "manual", may: () => true }),
+      live: () => new Map(),
+    },
+  } as unknown as OpsHost;
+  const ask = (caller: Caller) => async (space: string | undefined) => {
+    try {
+      await opCall(host, caller, {
+        op: "space.status",
+        input: {},
+        ...(space === undefined ? {} : { space }),
+      });
+      return "answered";
+    } catch (error) {
+      if (!(error instanceof AppError)) throw error;
+      return words(error.toBody());
+    }
+  };
+  return [
+    // Its own space by ID, name or folder, or none named.
+    {
+      name: "a session's shell",
+      ways: WAYS,
+      ask: ask({ class: "cli-agent", env: { TTASKS_TICKET: "fixture-ticket" } }),
+    },
+    // A bridge's tools name no space: it goes to the one its session holds.
+    {
+      name: "a session's bridge",
+      ways: ["default"],
+      ask: ask(
+        bridgeCaller(bridgeContext({ instance: null }), machine, { kind: "session", session }),
+      ),
+    },
+  ];
+}

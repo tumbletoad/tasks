@@ -9,6 +9,7 @@ export {
   type OpCallParams,
   type OpsHost,
   type ServedSpace,
+  type UsableSpace,
 } from "./handlers.ts";
 export { principalOf, isUserClass, type Caller, type Principal } from "./caller.ts";
 export { dateIn, dueDate, localTimeZone } from "./dates.ts";

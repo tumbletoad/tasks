@@ -690,15 +690,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         ...served,
         ...config.spaces
           .filter((space) => space.enabled && !has.has(space.id))
-          .map((space) => ({
-            id: undefined,
-            registered: space.id,
-            name: undefined,
-            folder: space.path,
-            state: "opening" as const,
-            writer: undefined,
-            reader: undefined,
-          })),
+          .map(openingEntry),
       ];
     };
     // The grant gate: an agent home's calls reach only the spaces its live agent-home rows name,
@@ -1416,6 +1408,22 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     });
     throw new ServiceExit(EXIT.crashed, "start_failed");
   }
+}
+
+/**
+ * A space of the configuration as binds and calls see it before the space manager has it:
+ * opening, known by the ID and the folder its entry names, with no ID or name of its own yet.
+ */
+export function openingEntry(space: { readonly id: string; readonly path: string }): ServedSpace {
+  return {
+    id: undefined,
+    registered: space.id,
+    name: undefined,
+    folder: space.path,
+    state: "opening",
+    writer: undefined,
+    reader: undefined,
+  };
 }
 
 /**
