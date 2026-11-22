@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Page, type Request } from "@playwright/test";
-import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
+import { APP_NAME, PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
@@ -175,7 +175,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     expect(await violations(page)).toEqual([]);
   });
 
-  test("Open without text opens as the tile does, a launch that is not recorded keeps the text, and an agent that has the task open is not opened again", async ({
+  test("Open without text opens as the tile does, a launch that is not recorded keeps the text, and while a session runs the strip opens another only when asked", async ({
     page,
     world,
   }) => {
@@ -186,37 +186,44 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     const open = stripOf(page, ref).getByRole("button", {
       name: `Open in ${FAKE_INSTANCE.label}`,
     });
-    // The service cannot be reached: nothing was started, and the text stays.
+    // The service cannot be reached: the page cannot tell whether it started, and the text stays.
     await page.route("**/api/v1/op/launch.open", (route) => route.abort());
     await composer.fill(`Pick the colour first (${tag})`);
     await open.click();
-    await expect(toast(page)).toHaveText("The launch was not recorded. Try again.", {
-      timeout: SLOW_MS,
-    });
+    await expect(toast(page)).toHaveText(
+      `${APP_NAME} did not answer. Try again: the task still opens only once.`,
+      { timeout: SLOW_MS },
+    );
     await expect(composer).toHaveValue(`Pick the colour first (${tag})`);
     await page.unroute("**/api/v1/op/launch.open");
 
-    // Without text, Open sends the brief alone and the launch reaches Confirmed.
+    // Without text, Open sends the brief alone and the session runs.
+    world.hold(ref);
     await composer.fill("");
     const opened = calls(page, "launch.open");
     const before = world.terminal().length;
     await open.click();
     await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
     expect(opened[0]?.postDataJSON()).not.toHaveProperty("text");
-    await expect(rowOf(page, ref).locator('[data-entry][data-state="confirmed"]')).toBeVisible({
+    await expect(rowOf(page, ref).locator('[data-entry][data-state="running"]')).toBeVisible({
       timeout: SLOW_MS,
     });
-    // The agent has the task open: a click would return that launch, which takes no request, so
-    // the button waits and says where the words can go instead.
-    await expect(open).toHaveAttribute("aria-disabled", "true");
-    await expect(open).toHaveAccessibleDescription(/already has this task open/u);
+    // While it runs, the strip says so and opens a second session, with the words as its
+    // request, when the person asks for one.
+    const another = stripOf(page, ref).getByRole("button", {
+      name: `Open another in ${FAKE_INSTANCE.label}`,
+    });
+    await expect(another).toHaveAttribute("aria-disabled", "false");
+    await expect(another).toHaveAccessibleDescription(/is running on this task/u);
     await composer.fill(`Now the ceiling too (${tag})`);
-    await expect(open).toHaveAttribute("aria-disabled", "true");
     await composer.focus();
     await page.keyboard.press("ControlOrMeta+Enter");
-    await expect(toast(page)).toHaveText(/already has this task open/u);
-    expect(opened).toHaveLength(1);
-    await expect(composer).toHaveValue(`Now the ceiling too (${tag})`);
+    await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 2);
+    expect(opened[1]?.postDataJSON()).toMatchObject({
+      text: `Now the ceiling too (${tag})`,
+      another: true,
+    });
+    world.release(ref);
   });
 });
 

@@ -192,7 +192,7 @@ export interface ServedSpace {
 /** What the request path needs from its host. */
 export interface OpsHost {
   /** This machine's ID: the writer scopes name it, and places belong to it. */
-  readonly machine: { readonly id: string };
+  readonly machine: { readonly id: string; readonly name?: string };
   spaces(): readonly ServedSpace[];
   /** The OS whose path rules a folder follows. Default: this process's. */
   readonly platform?: NodeJS.Platform;
@@ -2397,6 +2397,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         requestId,
         ...(pack === undefined ? {} : { pack }),
         ...(input["mark_folder"] === true ? { markFolder: true } : {}),
+        ...(input["another"] === true ? { another: true } : {}),
         // The person's words as a note of theirs: the note entry's own request path, an undoable
         // step of theirs, under a request ID the click's derives, so a repeated click finds the
         // note instead of adding a second one.
@@ -3540,7 +3541,7 @@ async function unmarkedError(call: Call, error: LaunchFolderUnmarked): Promise<A
   });
 }
 
-function launchError(error: unknown): unknown {
+export function launchError(error: unknown): unknown {
   if (error instanceof LaunchUnavailable) {
     return new AppError({
       code: "invalid_input",

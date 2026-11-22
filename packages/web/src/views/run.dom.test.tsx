@@ -166,6 +166,7 @@ beforeEach(async () => {
           ),
       },
     },
+    busy: () => Promise.resolve([]),
     receipts: () => (down ? lost() : Promise.resolve([])),
     runs: () => (down ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve(listed)),
     startRun: (_task: string, _instance: string, id: string, text?: string) => {
@@ -410,25 +411,28 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
     expect(composer()?.value).toBe("");
   });
 
-  test("an Open still on its way is the same Open after the task was collapsed and expanded; other words are another", async () => {
-    let answer: (value: Opened) => void = () => undefined;
+  test("an Open still on its way is the same Open after the task was collapsed and expanded, and after its answer was lost; other words are another", async () => {
+    let fail: (error: unknown) => void = () => undefined;
     openAnswer = (call) =>
       call === 1
-        ? new Promise((resolve) => {
-            answer = resolve;
+        ? new Promise((_, reject) => {
+            fail = reject;
           })
         : lost();
     type("Check it");
     await open();
     await reopen();
+    // A press of this tab while its Open waits for the answer is that Open.
+    await open();
+    expect(opens).toHaveLength(1);
+    fail(new TypeError("Failed to fetch"));
+    await settle();
     await open();
     expect(opens.map((o) => o.text)).toEqual(["Check it", "Check it"]);
     expect(opens[1]?.id).toBe(opens[0]?.id);
     type("Something else");
     await open();
     expect(opens[2]?.id).not.toBe(opens[0]?.id);
-    answer(opened(1, "request"));
-    await settle();
   });
 
   test("a second click that got the launch of the first keeps its words as a note and says so last", async () => {
@@ -446,9 +450,9 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
     type("And the receipts");
     await open();
     expect(toasts).toEqual([
-      "Codex was already opening this task. What you typed is saved on the task as a note.",
+      "Codex already had this task open or opening. What you typed is saved on the task as a note.",
       "Copied",
-      "Codex was already opening this task. What you typed is saved on the task as a note.",
+      "Codex already had this task open or opening. What you typed is saved on the task as a note.",
     ]);
   });
 });

@@ -14,14 +14,16 @@ import type { Instance } from "../api.ts";
 import { LiveCore, type Change, type ResnapshotReason } from "./core.ts";
 import { FrameQueue, type FrameClock } from "./frame.ts";
 import { incarnationTag, landedOf, Pending, type Overlay, type Settled } from "./pending.ts";
-import type {
-  AreaRow,
-  BatchMessage,
-  Cursor,
-  ProjectRow,
-  SnapshotMessage,
-  SpaceHead,
-  TaskRow,
+import {
+  DEFAULT_SCALES,
+  type AreaRow,
+  type BatchMessage,
+  type Cursor,
+  type ProjectRow,
+  type Scales,
+  type SnapshotMessage,
+  type SpaceHead,
+  type TaskRow,
 } from "./rows.ts";
 
 export type Phase = "starting" | "connecting" | "live" | "offline" | "signed_out" | "no_space";
@@ -41,6 +43,8 @@ export interface LiveState {
   readonly areas: ReadonlyMap<string, AreaRow>;
   readonly projects: ReadonlyMap<string, ProjectRow>;
   readonly instances: readonly Instance[];
+  /** The space's statuses and effort scale. */
+  readonly scales: Scales;
 }
 
 /** What one frame touched besides rows: tasks whose thread or row changed, and launches. */
@@ -121,6 +125,7 @@ export class LiveStore {
     areas: new Map(),
     projects: new Map(),
     instances: [],
+    scales: DEFAULT_SCALES,
   };
 
   constructor(options: StoreOptions) {
@@ -320,6 +325,7 @@ export class LiveStore {
         areas: held.areas,
         projects: held.projects,
         instances: held.instances,
+        scales: held.scales,
       };
     }
     this.#emit();

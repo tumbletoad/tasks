@@ -488,6 +488,72 @@ describe("[A4.5.routes.request] what a person types before Open is on the task a
   }
 
   test(
+    "a second Open of the app while its launch opens or its agent runs is that launch, and its words are a note of the person's; Open another starts a second session",
+    { timeout: 600_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("request-join");
+      const task = await addTask(r, "folder-join");
+      const marker = newMarker();
+      const words = requestOf(marker);
+      const first = await open(r, { task: task.ref, instance: "claude", text: words });
+      expect(first.text).toBe("request");
+      // At once: the launch is still opening, or its agent already runs. Either way it is joined,
+      // and a retry of that click after a lost answer says the same of the same note.
+      const other = `${newMarker()} other words`;
+      const secondId = rid();
+      const second = await open(r, { task: task.ref, instance: "claude", text: other }, secondId);
+      expect(second.launch.id).toBe(first.launch.id);
+      expect(second.text).toBe("note");
+      expect(second.note).not.toBe(first.note);
+      const retried = await open(r, { task: task.ref, instance: "claude", text: other }, secondId);
+      expect(retried).toMatchObject({ launch: { id: first.launch.id }, text: "note", note: second.note });
+      const report = await reportAt(r.report("claude"));
+      expect(report.read).toEqual({
+        code: 0,
+        request: hex8(shown(words)),
+        note: first.note,
+        cut: cutOf(words),
+      });
+      const { launches } = r.lab.running;
+      await r.lab.waitIntent(first.launch.id, (i) => i.state === "confirmed", "Confirmed");
+      expect(launches.running(first.launch.id)).toBe(true);
+      // A page that still showed Ready, or a command line's Open: the running session.
+      const late = `${newMarker()} late words`;
+      const third = await open(r, { task: task.ref, instance: "claude", text: late });
+      expect(third.launch.id).toBe(first.launch.id);
+      expect(third.text).toBe("note");
+      const notes = await notesOf(r, task.ref);
+      for (const [result, text] of [
+        [second, other],
+        [third, late],
+      ] as const) {
+        const note = notes.find((n) => n.ref === result.note);
+        expect(note).toMatchObject({ author: "user", for_agents: false, text });
+        expect(note?.request_for).toBeUndefined();
+      }
+      await expectOnlyInSpace(r, marker);
+      // The person's explicit choice, offered once the session is confirmed: a second agent.
+      const another = await open(r, { task: task.ref, instance: "claude", another: true });
+      expect(another.launch.id).not.toBe(first.launch.id);
+      await waitFor(
+        () => (launches.running(another.launch.id) ? true : undefined),
+        LONG_MS,
+        "the second agent running",
+      );
+      writeFileSync(r.release, "");
+      await waitFor(
+        () =>
+          launches.running(first.launch.id) || launches.running(another.launch.id)
+            ? undefined
+            : true,
+        LONG_MS,
+        "both agents ending",
+      );
+    },
+  );
+
+  test(
     "Codex's assisted open: no prompt on the command line, the brief to paste points at the request, which the agent reads",
     { timeout: 600_000 },
     async () => {
@@ -621,30 +687,6 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
       await r.lab.running.launches.tick();
       await expectOnTask(r, task.ref, result, words, "desktop");
       expect(filesOutsideWith(r, marker)).toEqual([]);
-    },
-  );
-
-  test(
-    "a second click on a launch still opening, and its retry: the second words are a note of the person's, never the first launch's request",
-    { timeout: 600_000 },
-    async () => {
-      opened.length = 0;
-      const r = await rig("request-second");
-      const task = await addTask(r, "folder-second");
-      const first = await open(r, { task: task.ref, instance: "desktop", text: "Draft A" });
-      expect(first.text).toBe("request");
-      // Within A4's five seconds the same instance gets the same launch.
-      const id = rid();
-      const second = await open(r, { task: task.ref, instance: "desktop", text: "Draft B" }, id);
-      expect(second.launch.id).toBe(first.launch.id);
-      expect(second.text).toBe("note");
-      const again = await open(r, { task: task.ref, instance: "desktop", text: "Draft B" }, id);
-      expect(again).toMatchObject({ text: "note", note: second.note });
-      const notes = await notesOf(r, task.ref);
-      expect(notes.map((n) => [n.text, n.request_for?.map((l) => l.launch)])).toEqual([
-        ["Draft B", undefined],
-        ["Draft A", [first.launch.reference]],
-      ]);
     },
   );
 

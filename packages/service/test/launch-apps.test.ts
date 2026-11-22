@@ -216,8 +216,8 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
         expect(after?.evidence.bound_at).toBeTypeOf("number");
         elsewhere.close();
 
-        // A launch of another task in the same folder (a second click on the first would return
-        // the first launch, A4 3.9.1), whose bridge works in the link's folder: Confirmed.
+        // A launch of another task in the same folder, whose bridge works in the link's folder:
+        // Confirmed.
         const second = await open(r, { task: twin.ref, instance });
         await r.lab.waitIntent(second.launch.id, (i) => i.state === "dispatched", "Dispatched");
         const here = await agentIn(r, folder);

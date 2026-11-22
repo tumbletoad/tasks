@@ -5,10 +5,19 @@
 // `ui/mint_code` over the socket, in the URL's fragment. The fake agent writes through the socket
 // as an agent does (class `cli-agent`).
 // Fixture data only. Tests only.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
+import { startTimes } from "../../packages/launch/src/process.ts";
 import { openSpace } from "../../packages/storage/src/index.ts";
 import {
   instanceToml,
@@ -25,7 +34,14 @@ import { REDEEM_PER_MINUTE } from "../../packages/service/src/http/auth.ts";
 import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { checkedDriver, seedMira } from "../../packages/testkit/src/index.ts";
-import { addBulkTasks, addFinishedTasks, type FinishedCounts } from "./bulk.ts";
+import {
+  addBulkTasks,
+  addFinishedTasks,
+  addLargeSpace,
+  setScales,
+  type FinishedCounts,
+  type Scales,
+} from "./bulk.ts";
 import type { FakeCodexCase } from "./codex-cases.ts";
 import { fakeInstanceToml, refuseFile, type TerminalCall } from "./fake-terminal.ts";
 
@@ -63,9 +79,14 @@ export interface World {
   readonly task: FixtureTask;
   /**
    * Another task of Mira's in an area, for a second launch: the tests of one worker share the
-   * world, and a task already launched shows a Connected tile, which opens nothing.
+   * world, and a task whose session still runs shows a Running tile.
    */
   readonly spare: FixtureTask;
+  /**
+   * The reference of Mira's task with a Confirmed terminal launch whose record names no end, as
+   * builds before this one recorded every session.
+   */
+  readonly launched: string;
   /** Mira's portal project's folder, as the space stores it: a temporary folder that exists. */
   readonly portal: string;
   /** The `tasks open` URL of a fresh code, landing on `to`. */
@@ -77,6 +98,8 @@ export interface World {
   machine(key: string, value: unknown): Promise<void>;
   /** The fake terminal's command lines so far. */
   terminal(): TerminalCall[];
+  /** The folders the file manager was asked to show so far, as the service resolved them. */
+  folders(): string[];
   /** The cases the next runs of the task `ref` play, in order (a world with runs). */
   codex(ref: string, cases: readonly FakeCodexCase[]): void;
   /**
@@ -86,6 +109,20 @@ export interface World {
   codexLeft(ref: string): FakeCodexCase[];
   /** The fake terminal refuses the next launch of this task (its ID), as one that would not start. */
   refuseNextOpen(task: string): void;
+  /**
+   * The fake agents started on this task from now on run until `release`, or with `exit` end at
+   * once with that code, as an agent that cannot start.
+   */
+  hold(ref: string, exit?: number): void;
+  /** The held agents of this task end, as an agent the person quits. */
+  release(ref: string): void;
+  /** The PIDs of the held agents started on this task, oldest first. */
+  heldAgents(ref: string): number[];
+  /**
+   * Stops the service, runs `whileStopped`, and starts it again on the same home: the page's
+   * origin changes with its port, so a page signs in again.
+   */
+  restart(whileStopped?: () => Promise<void>): Promise<void>;
   /** An agent logs on a task, through the service's request path as an agent does. */
   agentLog(space: string, task: string, text: string): Promise<void>;
   /**
@@ -111,6 +148,10 @@ export interface WorldOptions {
   readonly bulk?: number;
   /** Finished fixture tasks to add to Mira's space before the service opens it (bulk.ts). */
   readonly finished?: FinishedCounts;
+  /** Mira's space grown to the size of one in real use (bulk.ts addLargeSpace). */
+  readonly large?: boolean;
+  /** Mira's own statuses and effort keys. */
+  readonly scales?: Scales;
   /**
    * A second instance, after the fake agent: the fake Codex (fake-codex.ts), which can work on a
    * task in the background. `World.codex` picks the cases its runs play.
@@ -141,6 +182,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     let machine: string;
     let task: FixtureTask;
     let spare: FixtureTask;
+    let launched: string;
     try {
       machine = opened.space.authority.machineId;
       const rows = opened.conn
@@ -161,6 +203,14 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       }
       task = first;
       spare = second;
+      const confirmed = opened.conn
+        .prepare(
+          "SELECT t.ref AS ref FROM launches l JOIN tasks t ON t.id = l.task_id " +
+            "WHERE l.state = 'confirmed' AND l.route = 'terminal' LIMIT 1",
+        )
+        .get<{ ref: number }>();
+      if (confirmed === undefined) throw new Error("the fixture has no Confirmed launch");
+      launched = `${opened.space.refPrefix}-${String(confirmed.ref)}`;
     } finally {
       opened.conn.close();
     }
@@ -170,6 +220,12 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         { id: machine, name: "mira-desktop", os: OS },
         options.bulk,
       );
+    }
+    if (options.large === true) {
+      await addLargeSpace(seeded.folder, { id: machine, name: "mira-desktop", os: OS });
+    }
+    if (options.scales !== undefined) {
+      await setScales(seeded.folder, { id: machine, name: "mira-desktop", os: OS }, options.scales);
     }
     if (options.finished !== undefined) {
       await addFinishedTasks(
@@ -190,12 +246,14 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     );
     // The fake agent is this machine's first instance: the page draws its tile (A5 3.6). A world
     // with runs has the fake Codex after it.
+    const holds = join(temp.root, "holds");
+    mkdirSync(holds);
     const cases = join(temp.root, "codex-cases.json");
     writeFileSync(cases, "{}");
     registerSpaces(
       home,
       [{ path: seeded.folder, id: opened.space.spaceId }],
-      fakeInstanceToml(home) +
+      fakeInstanceToml(home, holds) +
         (options.runs === true
           ? [CODEX_INSTANCE, CODEX_OTHER]
               .map((codex) =>
@@ -214,17 +272,33 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
 
     const record = join(temp.root, "terminal.jsonl");
     writeFileSync(record, "");
-    const proc = services.start(home, { script: ENTRY, env: { E2E_UI: ui, E2E_TERMINAL: record } });
-    json = await waitReady(home, proc.pid);
-    const endpoint = json.endpoint?.path;
-    const http = json["http"] as { port?: number } | null;
-    if (endpoint === undefined || typeof http?.port !== "number") {
-      throw new Error("the service reports no endpoint or UI port");
-    }
-    const origin = `http://127.0.0.1:${String(http.port)}`;
-
-    const user = await classSession(home, endpoint, "cli-interactive");
-    sessions.push(user);
+    const shown = join(temp.root, "folders.txt");
+    writeFileSync(shown, "");
+    /** One life of the service: its process, its page's origin and its two sessions. */
+    const boot = async () => {
+      const proc = services.start(home, {
+        script: ENTRY,
+        env: { E2E_UI: ui, E2E_TERMINAL: record, E2E_FOLDERS: shown },
+      });
+      json = await waitReady(home, proc.pid);
+      const endpoint = json.endpoint?.path;
+      const http = json["http"] as { port?: number } | null;
+      if (endpoint === undefined || typeof http?.port !== "number") {
+        throw new Error("the service reports no endpoint or UI port");
+      }
+      const user = await classSession(home, endpoint, "cli-interactive");
+      sessions.push(user);
+      const agent = await classSession(home, endpoint, "cli-agent", { CLAUDECODE: "1" });
+      sessions.push(agent);
+      return { proc, origin: `http://127.0.0.1:${String(http.port)}`, user, agent };
+    };
+    let life = await boot();
+    const stop = async () => {
+      for (const s of sessions.splice(0)) s.close();
+      life.proc.send("stop");
+      await within(life.proc.exit, SLOW_MS, "the service did not stop");
+    };
+    const { user } = life;
     const created = (await user.call(
       "space/create",
       { name: "Studio", path: join(spacesRoot, "studio"), ref_prefix: "S" },
@@ -274,8 +348,6 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         { timeoutMs: SLOW_MS },
       )) as { folder: string }
     ).folder;
-    const agent = await classSession(home, endpoint, "cli-agent", { CLAUDECODE: "1" });
-    sessions.push(agent);
 
     let logs = 0;
     let ops = 0;
@@ -300,26 +372,29 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       redeems.push(Date.now());
     };
     return {
-      origin,
+      get origin() {
+        return life.origin;
+      },
       mira: { id: opened.space.spaceId, name: opened.space.name },
       studio: { id: created.space.id, name: created.space.name },
       quiet: { id: quiet.space.id, name: quiet.space.name },
       task,
       spare,
+      launched,
       portal,
       signInUrl: async (to) => {
         await roomToRedeem();
-        const minted = (await user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
+        const minted = (await life.user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
           code: string;
           port: number;
         };
         return `http://127.0.0.1:${String(minted.port)}/#k=${minted.code}&to=${encodeURIComponent(to)}`;
       },
       machine: async (key, value) => {
-        const port = Number(new URL(origin).port);
+        const port = Number(new URL(life.origin).port);
         if (token === undefined) {
           await roomToRedeem();
-          const minted = (await user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
+          const minted = (await life.user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
             code: string;
           };
           const signed = await post(port, "/api/v1/auth/redeem", { code: minted.code });
@@ -342,12 +417,30 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           .split("\n")
           .filter((line) => line !== "")
           .map((line) => JSON.parse(line) as TerminalCall),
+      folders: () =>
+        readFileSync(shown, "utf8")
+          .split("\n")
+          .filter((line) => line !== ""),
       refuseNextOpen: (task) => {
         appendFileSync(refuseFile(record), `${task}\n`);
       },
+      hold: (ref, exit) => {
+        writeFileSync(join(holds, ref), exit === undefined ? "" : `exit ${String(exit)}`);
+      },
+      release: (ref) => {
+        rmSync(join(holds, ref), { force: true });
+      },
+      heldAgents: (ref) => {
+        const file = join(holds, `${ref}.pids`);
+        if (!existsSync(file)) return [];
+        return readFileSync(file, "utf8")
+          .split("\n")
+          .filter((line) => line !== "")
+          .map(Number);
+      },
       agentLog: async (space, taskId, text) => {
         logs += 1;
-        await agent.call(
+        await life.agent.call(
           "op/call",
           {
             space,
@@ -364,7 +457,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       },
       op: async (space, op, input, as = "user") => {
         ops += 1;
-        return (as === "user" ? user : agent).call(
+        return (as === "user" ? life.user : life.agent).call(
           "op/call",
           {
             space,
@@ -378,12 +471,52 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           { timeoutMs: SLOW_MS },
         );
       },
+      restart: async (whileStopped) => {
+        await stop();
+        await whileStopped?.();
+        life = await boot();
+        // The page's sign-in for `machine` was the stopped service's port's.
+        token = undefined;
+        // Ready before its spaces are: Mira's answers once it is open again.
+        const until = Date.now() + SLOW_MS;
+        for (;;) {
+          try {
+            await life.user.call(
+              "op/call",
+              { space: opened.space.spaceId, op: "space.status", input: {} },
+              { timeoutMs: SLOW_MS },
+            );
+            break;
+          } catch (error) {
+            if (Date.now() > until) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+        }
+      },
       close: async () => {
-        for (const s of sessions.splice(0)) s.close();
-        proc.send("stop");
-        await within(proc.exit, SLOW_MS, "the service did not stop").catch(() =>
-          services.stopAll(),
-        );
+        // The shims are detached, as a terminal's are, and work in the world's folders. Every held
+        // agent ends, and each shim reports its agent's end while the service still runs, and goes.
+        for (const name of readdirSync(holds)) {
+          if (!name.endsWith(".pids")) rmSync(join(holds, name), { force: true });
+        }
+        // A shim is known by its PID and start time, so a PID the OS gave to another process since
+        // is not waited for.
+        const shims = readFileSync(record, "utf8")
+          .split("\n")
+          .filter((line) => line !== "")
+          .map((line) => JSON.parse(line) as TerminalCall)
+          .flatMap((call) =>
+            call.pid === undefined || call.start === undefined
+              ? []
+              : [{ pid: call.pid, start: call.start }],
+          );
+        const until = Date.now() + SLOW_MS;
+        while (shims.length > 0 && Date.now() < until) {
+          const live = await startTimes(shims.map((s) => s.pid)).catch(() => undefined);
+          if (live !== undefined && !shims.some((s) => live.get(s.pid) === s.start)) break;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        await stop().catch(() => services.stopAll());
         removeRuntimeDir(json);
         temp.cleanup();
       },

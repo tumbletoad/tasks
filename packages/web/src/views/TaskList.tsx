@@ -27,9 +27,16 @@ import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
 import { itemsOf, type RowItem } from "../list/items.ts";
 import { List, type Place } from "../list/List.tsx";
-import { folderRefusal, MARKER_REASONS, markerWords, type FolderRefusal } from "../row/launch.ts";
+import {
+  busyByTask,
+  folderRefusal,
+  MARKER_REASONS,
+  markerWords,
+  type BusyOf,
+  type FolderRefusal,
+} from "../row/launch.ts";
 import { contextFor, type Grouping, type RowView } from "../row/model.ts";
-import type { RowActions } from "../row/actions.ts";
+import type { OpenWith, RowActions } from "../row/actions.ts";
 import type { Clock } from "../row/dates.ts";
 import { Row } from "../row/Row.tsx";
 import { useClock } from "../row/useClock.ts";
@@ -38,6 +45,7 @@ import type { TaskRow } from "../store/rows.ts";
 import { rowOfFacts } from "../task/detail.ts";
 import { mergeRuns, runRefusal, withStops } from "../task/runs.ts";
 import css from "./TaskList.module.css";
+import { Unanswered } from "./unanswered.ts";
 
 const styles = classes(css, ["line", "announce"]);
 
@@ -47,6 +55,8 @@ const NO_RUNS: readonly Run[] = [];
 const FRESH_MS = 1_200;
 /** Agents' changes are announced once the burst has been quiet this long (A5 3.15 item 10). */
 const QUIET_MS = 2_000;
+/** The waits before a failed read of busy is tried again, the last one repeating. */
+const BUSY_RETRY_MS = [1_000, 2_000, 5_000, 15_000] as const;
 
 /**
  * The service answered with a refusal (the page's `Refused`, or the generated client's error, both
@@ -142,14 +152,19 @@ export function TaskList({
     return merged ?? state.tasks;
   }, [state.tasks, holding, expanded]);
   const [receipts, setReceipts] = useState<ReadonlyMap<string, readonly Receipt[]>>(new Map());
+  /** What busies each task's agent apps on this machine, as the service last said. */
+  const [busy, setBusy] = useState<ReadonlyMap<string, BusyOf>>(new Map());
+  const busyReads = useRef(new Latest());
+  /** A failed read of busy is tried again: the timer and how many tries failed in a row. */
+  const busyRetry = useRef<{ timer?: ReturnType<typeof setTimeout>; failed: number }>({
+    failed: 0,
+  });
   /** The runs of the tasks the tab follows, oldest first, as the service last said. */
   const [runs, setRuns] = useState<ReadonlyMap<string, readonly Run[]>>(new Map());
   /** The runs whose Stop is on its way, each with its version when Stop was pressed. */
   const [stops, setStops] = useState<ReadonlyMap<string, number>>(new Map());
-  /** Per task, the Run that got no answer: what it asked and its request ID. */
-  const unanswered = useRef(new Map<string, { readonly asked: string; readonly id: string }>());
-  /** The request ID of each Open the service has not answered, by task, instance and words. */
-  const unopened = useRef(new Map<string, string>());
+  /** Per task, the Run that got no answer; per task and app, the Open. */
+  const unanswered = useRef(new Unanswered());
   const runReads = useRef(new Latest());
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [announcement, setAnnouncement] = useState("");
@@ -158,6 +173,8 @@ export function TaskList({
   /** The tasks whose receipts the tab follows: the expanded one, and every one it launched. */
   const watched = useRef(new Set<string>());
   const receiptReads = useRef(new Latest());
+  /** This tab's Opens still waiting for their answer, by task and instance. */
+  const clicks = useRef(new Map<string, Promise<Receipt | undefined>>());
   const changed = useRef(onExpand);
   changed.current = onExpand;
   /** The expanded task's row as last seen: it stays while expanded, whatever the update did. */
@@ -260,6 +277,44 @@ export function TaskList({
     [api, live],
   );
 
+  // A read that fails is tried again while the tab is live, so Open never stays held, or offered,
+  // on what a tab last heard. An offline tab reads again once it is live.
+  const loadBusy = useCallback(() => {
+    const retry = busyRetry.current;
+    const read = (): void => {
+      clearTimeout(retry.timer);
+      const newest = busyReads.current.begin("busy");
+      api
+        .busy()
+        .then((list) => {
+          retry.failed = 0;
+          if (newest()) setBusy((known) => busyByTask(list, known));
+        })
+        .catch((error: unknown) => {
+          if (live.failed(error) || !newest()) return;
+          const wait = BUSY_RETRY_MS[Math.min(retry.failed, BUSY_RETRY_MS.length - 1)];
+          retry.failed += 1;
+          retry.timer = setTimeout(() => {
+            if (live.getState().phase === "live") read();
+          }, wait);
+        });
+    };
+    read();
+  }, [api, live]);
+
+  // Whenever the tab is live, on mount and again after it was offline, it reads what busies the
+  // agent apps: a launch may have started or ended while it heard nothing.
+  const phase = state.phase;
+  useEffect(() => {
+    if (phase === "live") loadBusy();
+  }, [phase, loadBusy]);
+  useEffect(() => {
+    const retry = busyRetry.current;
+    return () => {
+      clearTimeout(retry.timer);
+    };
+  }, []);
+
   const loadRuns = useCallback(
     (task: string) => {
       const newest = runReads.current.begin(task);
@@ -268,7 +323,7 @@ export function TaskList({
         .then((list) => {
           if (newest()) {
             // The service answered since a Run got none: that run shows here if it started.
-            unanswered.current.delete(task);
+            unanswered.current.answered(task);
             setRuns((known) => new Map(known).set(task, mergeRuns(known.get(task) ?? [], list)));
           }
         })
@@ -279,13 +334,14 @@ export function TaskList({
     [api, live],
   );
 
-  // A launch event refreshes the receipts of its task, which the tab follows from then on, so a
-  // tile mirrors a launch made in another tab or at the terminal. A run event refreshes the runs
-  // of a task the tab follows: every tab, and a reload, shows a run as the service has it. A fresh
-  // snapshot refreshes all.
+  // A launch event refreshes what busies the agent apps, for every row, and the receipts of its
+  // task, which the tab follows from then on: a tile mirrors a launch made in another tab or at the
+  // terminal. A run event refreshes the runs of a task the tab follows: every tab, and a reload,
+  // shows a run as the service has it. A fresh snapshot refreshes all.
   useEffect(
     () =>
       live.onChanges(({ changes, reset }) => {
+        if (reset || changes.some((change) => change.type === "launch")) loadBusy();
         const named = new Set<string>(reset ? watched.current : []);
         const ran = new Set<string>(reset ? watched.current : []);
         for (const change of changes) {
@@ -304,7 +360,7 @@ export function TaskList({
         }
         for (const task of ran) loadRuns(task);
       }),
-    [live, loadReceipts, loadRuns],
+    [live, loadBusy, loadReceipts, loadRuns],
   );
 
   // An update that takes the expanded task out of the live rows (completed, archived) carries its
@@ -566,7 +622,7 @@ export function TaskList({
           changed.current?.(task);
         }
       },
-      // A tile whose launch is on its way or done (A5 3.6): the row expands, and stays expanded.
+      // A tile whose session runs: the row expands, and stays expanded.
       expand: (task) => {
         if (latest.current.expanded !== task.id) {
           chosen(task.ref);
@@ -579,26 +635,30 @@ export function TaskList({
       // A folder whose marker says it may be another one opens only when the person says so: the
       // toast asks, and its action opens it there and marks it. The composer's words stay in its
       // field until then. Once the service saved them on the task the field clears, as for Note.
-      // An Open on its way or without an answer may have saved them and opened: the same Open
-      // (task, instance and words, "Open anyway" included) carries the same request ID until the
-      // service answers it, so it neither saves the words twice nor opens a second window.
-      open: (task: TaskRow, instance: Instance, text?: string, request?: string) => {
-        const same = `${task.id}\n${instance.key}\n${request ?? ""}\n${text ?? ""}`;
+      // An Open without an answer may have saved them and opened: until the service answers, the
+      // same Open (task, instance and what it carries, "Open anyway" included) carries the same
+      // request ID, so it neither saves the words twice nor opens a second window. An Open the
+      // service answers with a session that already runs starts nothing: the read of busy shows
+      // it Running.
+      open: (task: TaskRow, instance: Instance, { text, request, another = false }: OpenWith = {}) => {
+        const key = `open\n${task.id}\n${instance.key}`;
+        const asked = `${String(another)}\n${request ?? ""}\n${text ?? ""}`;
         const launch = (markFolder: boolean): Promise<Receipt | undefined> => {
           watched.current.add(task.id);
-          const id = unopened.current.get(same) ?? requestId();
-          unopened.current.set(same, id);
+          const id = unanswered.current.idFor(key, asked);
           return api
             .openLaunch(task.id, instance.key, id, {
               markFolder,
+              another,
               ...(text === undefined ? {} : { text }),
               ...(request === undefined ? {} : { request }),
             })
             .then(async (opened) => {
               const { receipt, copy } = opened;
-              unopened.current.delete(same);
+              unanswered.current.answered(key);
               refuse(task.id, undefined);
               shown(task, receipt);
+              loadBusy();
               const space = live.spaceId;
               if (text !== undefined && space !== undefined && opened.note !== undefined) {
                 savedWords(space, task.id, text);
@@ -611,7 +671,7 @@ export function TaskList({
             })
             .catch((error: unknown) => {
               const answered = refusedBy(error);
-              if (answered) unopened.current.delete(same);
+              if (answered) unanswered.current.answered(key);
               if (live.failed(error)) return undefined;
               if (!answered) {
                 say(t("row.openUnanswered", { label: instance.label }));
@@ -667,7 +727,13 @@ export function TaskList({
               return undefined;
             });
         };
-        return launch(false);
+        // A click while this tab's Open of the same task and agent waits for its answer is that
+        // same Open.
+        const waiting = clicks.current.get(key);
+        if (waiting !== undefined) return waiting;
+        const first = launch(false).finally(() => clicks.current.delete(key));
+        clicks.current.set(key, first);
+        return first;
       },
       // Copy (A4 3.4.6): the pointer brief, as a launch of its own whose reference an agent redeems.
       // Shift+Copy: the context pack, for an app without the tools (A4 3.15.5).
@@ -687,6 +753,20 @@ export function TaskList({
             return false;
           });
       },
+      // The folder opens on the computer the service runs on: the page is served there only, and
+      // the toast names that computer for a page looked at through a forwarded port.
+      folder: (task) => {
+        api.showFolder(task.id).then(
+          ({ opened, machine }) => {
+            say(t("row.folderShown", { machine: machine ?? "", opened: opened ? "yes" : "no" }));
+          },
+          (error: unknown) => {
+            if (live.failed(error)) return;
+            const refused = folderRefusal(error);
+            say(t("row.folderNotShown", { reason: refused?.reason ?? "other" }));
+          },
+        );
+      },
       // Run: the service queues the run and answers at once; the thread shows it from then on,
       // and the feed brings each of its steps. A refusal starts nothing and says why where the
       // person clicked; the folder line says it too when the folder is the reason. Without an
@@ -696,20 +776,18 @@ export function TaskList({
       run: (task, instance, text) => {
         watched.current.add(task.id);
         const asked = `${instance.key}\n${text ?? ""}`;
-        const before = unanswered.current.get(task.id);
-        const id = before?.asked === asked ? before.id : requestId();
+        const id = unanswered.current.idFor(task.id, asked);
         return api
           .startRun(task.id, instance.key, id, text)
           .then((run) => {
-            unanswered.current.delete(task.id);
+            unanswered.current.answered(task.id);
             refuse(task.id, undefined);
             showRun(task.id, run);
             return run;
           })
           .catch((error: unknown) => {
             const refusedHere = error instanceof Refused && error.code !== "internal";
-            if (refusedHere) unanswered.current.delete(task.id);
-            else unanswered.current.set(task.id, { asked, id });
+            if (refusedHere) unanswered.current.answered(task.id);
             if (live.failed(error)) return undefined;
             if (!refusedHere) {
               say(t("run.unanswered"));
@@ -780,6 +858,7 @@ export function TaskList({
     say,
     shown,
     showRun,
+    loadBusy,
     loadRuns,
     t,
     toClipboard,
@@ -807,6 +886,7 @@ export function TaskList({
       project={item.project}
       instances={state.instances}
       receipts={receipts.get(item.key) ?? NO_RECEIPTS}
+      busy={busy.get(item.key)}
       runs={withStops(runs.get(item.key) ?? NO_RUNS, stops)}
       ctx={item.finished && item.task.lifecycle !== "active" ? finishedCtx : ctx}
       expanded={expanded === item.key}

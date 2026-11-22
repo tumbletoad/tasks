@@ -61,8 +61,27 @@ export function actorOf(author: string, t: Translate): { who: string; mark: stri
 }
 
 /**
- * A4's receipt text for a state (A5 3.9). Prepared shows nothing yet. A terminal launch names the
- * terminal and why it was chosen once one was Dispatched.
+ * How a launch's entry looks: the receipt's state, except that a session that opened is shown as
+ * what the service knows of it now. Only `running` carries the live mark.
+ */
+export function entryState(receipt: Receipt): string {
+  if (receipt.state === "confirmed") return receipt.session ?? "opened";
+  return receipt.state;
+}
+
+/** How long a session ran, in the thread's short words: "40 s", "2 min", "1 h 5 min". */
+export function ranFor(ms: number, t: Translate): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return t("receipt.seconds", { count: Math.max(1, Math.round(ms / 1000)) });
+  if (minutes < 60) return t("receipt.minutes", { count: minutes });
+  return t("receipt.hours", { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
+}
+
+/**
+ * A launch's entry in the thread (A5 3.9): a record of what happened. Prepared shows nothing yet.
+ * A terminal launch names the terminal and why it was chosen once one was Dispatched. A session
+ * that opened says so, and then whether it runs or ended as far as the service knows; where it
+ * cannot know, it says only that it opened.
  */
 export function receiptText(receipt: Receipt, label: string, t: Translate): string | undefined {
   // ICU select keys cannot hold `-`: the adapter's name goes in with `_`.
@@ -73,6 +92,7 @@ export function receiptText(receipt: Receipt, label: string, t: Translate): stri
           terminal: receipt.terminal.app.replaceAll("-", "_"),
           source: receipt.terminal.source,
         });
+  const opened = t("receipt.opened", { where: where ?? label });
   switch (receipt.state) {
     case "prepared":
       return undefined;
@@ -82,17 +102,17 @@ export function receiptText(receipt: Receipt, label: string, t: Translate): stri
       if (receipt.route === "terminal" && where !== undefined) {
         return t("receipt.dispatchedIn", { where });
       }
-      return t(
-        receipt.route === "clipboard"
-          ? "receipt.copied"
-          : receipt.route === "link"
-            ? "receipt.dispatchedLink"
-            : "receipt.dispatchedTerminal",
-      );
+      if (receipt.route === "terminal") return t("receipt.dispatchedTerminal");
+      // A link or T3 only asked the app: it says so until the agent connects.
+      return t(receipt.route === "clipboard" ? "receipt.copied" : "receipt.asked", { label });
     case "confirmed":
-      return where === undefined
-        ? t("receipt.confirmed", { label })
-        : t("receipt.confirmedIn", { label, where });
+      if (receipt.session === "running") return t("receipt.running", { opened });
+      if (receipt.session === "ended") {
+        return receipt.ran_ms === undefined
+          ? t("receipt.ended", { opened })
+          : t("receipt.endedAfter", { opened, ran: ranFor(receipt.ran_ms, t) });
+      }
+      return opened;
     case "failed":
       return t("receipt.failed", {
         reason: receipt.reason ?? "failed",
@@ -261,7 +281,7 @@ export function Thread({
       text: text ?? "",
       markdown: false,
       kind: "session",
-      state: receipt.state,
+      state: entryState(receipt),
       ...(asked === undefined ? {} : { asked }),
       ...(again === undefined ? {} : { again }),
     });

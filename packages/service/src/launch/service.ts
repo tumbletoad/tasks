@@ -32,12 +32,14 @@ import {
   FolderRecords,
   identityKey,
   isBuiltInTarget,
+  isOpening,
   isUncPath,
   customReady,
   LaunchMachine,
   MATCH_POLL_MS,
   MATCH_WINDOW_MS,
   needsDefault,
+  openFolder,
   openUrl,
   osProbe,
   osSpawner,
@@ -56,6 +58,7 @@ import {
   routeOf,
   sanitiseComposer,
   sanitiseTitle,
+  sessionRecord,
   SHIM_METHODS,
   ShimHost,
   SpaceExecutionStore,
@@ -83,6 +86,8 @@ import {
   type LaunchIntent,
   type NewIntent,
   type Observation,
+  type OpenerOptions,
+  type OpenResult,
   type ProcessProbe,
   type RecordStore,
   type ReportMethod,
@@ -113,6 +118,16 @@ import {
 } from "./open.ts";
 
 /** An instance as the page draws its tile (A5 3.6): a key, a label, a monogram and a ring slot. */
+/**
+ * An agent app that is busy with a task on this machine: an Open of it is on its way, or a session
+ * of it runs. The page holds Open while one is opening and offers another while one runs.
+ */
+export interface BusyLaunch {
+  readonly task: string;
+  readonly instance: string;
+  readonly state: "opening" | "running";
+}
+
 export interface LaunchInstance {
   /** The instance's key in machine.toml's `[[instance]]`. */
   readonly key: string;
@@ -234,6 +249,8 @@ export interface LaunchOptions {
   readonly environment?: EnvironmentSource;
   /** The machine state. Default: the install's launch folders. */
   readonly records?: RecordStore;
+  /** Shows a resolved folder in the file manager. Default: the OS's (openFolder). */
+  readonly showFolder?: (folder: string) => Promise<OpenResult>;
 }
 
 export interface LaunchServiceOptions extends LaunchOptions {
@@ -634,6 +651,29 @@ export class LaunchService {
     // into a conflict, and a retry saves, prepares and dispatches nothing.
     const replayed = await hosted.store.replayed(requestId);
     if (replayed !== undefined) return this.#replay(space, replayed, request);
+    // An Open of an app that runs this task here is that session, whatever the page showed when
+    // it was clicked: only "Open another" starts a second agent in the same folder. One still
+    // opening is the writer's to join (launch.create).
+    if (request.instance !== undefined && request.another !== true) {
+      const runs = await this.#sessions(space, hosted);
+      const session = runs.find((i) => i.task === task.id && i.instance === request.instance);
+      if (session !== undefined) {
+        // That agent never gets this click's words: they stay on the task, a note of the person's.
+        const words =
+          request.composer === undefined ? undefined : sanitiseComposer(request.composer);
+        const given = words !== undefined && words.text.trim() !== "";
+        const note = given
+          ? await this.#saveWords(request, { composer: "request", composerText: words.text })
+          : undefined;
+        return {
+          intent: session,
+          copy: undefined,
+          composer: composerOf(given ? "request" : "none", note, session),
+          ...(note === undefined ? {} : { note }),
+          removed: words?.removed === true,
+        };
+      }
+    }
     const { platform } = this.#options;
     let instance: Instance | undefined;
     let choice: Choice = COPY;
@@ -779,6 +819,51 @@ export class LaunchService {
     };
   }
 
+  /** Whether the launch's session runs now: its shim is here, attached, and its agent started. */
+  running(launch: string): boolean {
+    return this.host.running(launch);
+  }
+
+  /**
+   * The task and agent pairs of a space that are busy on this machine, one entry each: opening
+   * when one of its launches is still on its way, else running when a session of it runs. Only
+   * this machine's launches count, so a launch another machine left open blocks nothing here.
+   */
+  async busy(space: string): Promise<BusyLaunch[]> {
+    const hosted = await this.#space(space).catch(() => undefined);
+    if (hosted === undefined) return [];
+    const { intents } = await hosted.store.openWork(this.#options.machine);
+    const runs = await this.#sessions(space, hosted);
+    const out = new Map<string, BusyLaunch>();
+    const add = ({ task, instance }: LaunchIntent, state: BusyLaunch["state"]): void => {
+      if (task === null) return;
+      const key = `${task}
+${instance}`;
+      if (out.get(key)?.state !== "opening") out.set(key, { task, instance, state });
+    };
+    // A Prepared launch is on its way only while a call of this service holds it: one a crash
+    // left between its click and its dispatch is opened by the next click, which joins it.
+    const owned = new Set(hosted.machine.owned());
+    for (const intent of intents) {
+      if (isOpening(intent) && (intent.state !== "prepared" || owned.has(intent.id))) {
+        add(intent, "opening");
+      }
+    }
+    for (const intent of runs) if (intent.state === "confirmed") add(intent, "running");
+    return [...out.values()];
+  }
+
+  /** The launches of a space whose agent runs here now, as the shims say and no end is recorded. */
+  async #sessions(space: string, hosted: { store: SpaceExecutionStore }): Promise<LaunchIntent[]> {
+    const read = await Promise.all(
+      this.host.runningIn(space).map((launch) => hosted.store.readIntent(launch)),
+    );
+    return read.filter(
+      (intent): intent is LaunchIntent =>
+        intent !== undefined && sessionRecord(intent.evidence) === "open",
+    );
+  }
+
   /**
    * Saves the person's words as a note of theirs on the task and gives its reference: an Open
    * route's request, or Copy's words over its budget, addressed to agents. A request that names a
@@ -843,6 +928,42 @@ export class LaunchService {
   /** Whether the folder a task opens in here resolves now and is the one set (`runFolder`). */
   async folderUsable(space: string, folder: TaskFolder): Promise<boolean> {
     return "path" in (await this.runFolder(space, folder));
+  }
+
+  /**
+   * Shows the folder a task opens in here in this computer's file manager: its own folder, its
+   * project's, or the space's work folder, resolved now as Open resolves it. Nothing but the file
+   * manager starts. Throws LaunchUnavailable (`other_machine`) or LaunchFolderUnavailable.
+   */
+  async showFolder(space: string, folder: TaskFolder): Promise<OpenResult> {
+    const planned = this.#planFolder(folder);
+    const where = await this.resolveFolder(space, planned);
+    if (where.status === "failed") {
+      throw new LaunchFolderUnavailable(where.reason, planned?.stored);
+    }
+    const show = this.#options.showFolder;
+    if (show !== undefined) return show(where.folder);
+    const shown = await openFolder(where.folder, await this.#openerOptions());
+    this.#options.log.log("launch.opener", { opener: shown.opener, result: shown.result });
+    return shown.result;
+  }
+
+  /** The OS opener's options: the person's desktop session, and the programs on their PATH. */
+  async #openerOptions(): Promise<OpenerOptions> {
+    const { platform } = this.#options;
+    const session = await this.environment.session().catch(() => ({}));
+    const env = terminalEnvironment(this.#options.env, session, platform);
+    const path = [
+      ...pathEntries(this.#personEnv, platform),
+      ...pathEntries(this.#options.env, platform),
+    ].join(":");
+    return {
+      platform,
+      env,
+      spawn: this.#options.terminals?.spawn ?? osSpawner,
+      which: (name) => findOnPosixPath(name, path),
+      cwd: this.#options.home ?? this.#options.stateDir,
+    };
   }
 
   /**
@@ -1478,20 +1599,7 @@ export class LaunchService {
       return { kind: "refused", reason: "cancelled" };
     }
     const url = expandUrl(pending.url, { cwd: where.folder, brief: pending.brief });
-    const { platform } = this.#options;
-    const session = await this.environment.session().catch(() => ({}));
-    const env = terminalEnvironment(this.#options.env, session, platform);
-    const path = [
-      ...pathEntries(this.#personEnv, platform),
-      ...pathEntries(this.#options.env, platform),
-    ].join(":");
-    const opened = await openUrl(url, {
-      platform,
-      env,
-      spawn: this.#options.terminals?.spawn ?? osSpawner,
-      which: (name) => findOnPosixPath(name, path),
-      cwd: this.#options.home ?? this.#options.stateDir,
-    });
+    const opened = await openUrl(url, await this.#openerOptions());
     this.#options.log.log("launch.opener", { opener: opened.opener, result: opened.result });
     switch (opened.result) {
       case "opened":

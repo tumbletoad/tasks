@@ -37,12 +37,13 @@ function holdFirst() {
 }
 
 test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () => {
-  test("a late receipt list keeps Confirmed, and a Connected tile expands its row and starts nothing", async ({
+  test("a late receipt list keeps Running; a Running tile expands its row, and the strip opens another only on purpose", async ({
     page,
     world,
   }) => {
     await page.goto(await world.signInUrl(`/s/${world.mira.id}/area/${world.spare.area}`));
     // Its own task: the open test launches `world.task`, and a worker's tests share the world.
+    world.hold(world.spare.ref);
     const row = page.locator(`li[data-task="${world.spare.ref}"]`);
     const main = row.locator('[data-part="title"]');
     const tile = row.locator('[data-part="tile"]');
@@ -52,7 +53,7 @@ test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () =>
     await Promise.all([page.waitForResponse("**/api/v1/launch/list"), main.click()]);
     await expect(main).toHaveAttribute("aria-expanded", "true");
 
-    // The first receipt list after the click answers only after the launch is Confirmed.
+    // The first receipt list after the click answers only after the session runs.
     const list = holdFirst();
     await page.route("**/api/v1/launch/list", list.handler);
     const before = world.terminal().length;
@@ -68,34 +69,45 @@ test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () =>
     };
     const ours = held.result.receipts.filter((r) => r.instance === FAKE_INSTANCE.key);
     expect(ours.map((r) => r.state)).not.toContain("confirmed");
-    // This launch's entry, not a seeded Confirmed one of another instance.
-    const confirmed = row.locator('[data-entry][data-state="confirmed"]', {
-      hasText: `Open in ${FAKE_INSTANCE.label}`,
-    });
-    await expect(confirmed).toBeVisible({ timeout: SLOW_MS });
-    await expect(tile).toHaveAttribute("data-state", "connected");
+    // This launch's entry: the seeded space holds no running session.
+    const running = row.locator('[data-entry][data-state="running"]');
+    await expect(running).toBeVisible({ timeout: SLOW_MS });
+    await expect(running).toContainText(`Opened in ${FAKE_INSTANCE.label} · running`);
+    await expect(tile).toHaveAttribute("data-state", "running");
     list.release();
     await list.given;
     // Give the page time to apply the late answer; it must not.
     await page.waitForTimeout(1_000);
-    await expect(confirmed).toBeVisible();
-    await expect(tile).toHaveAttribute("data-state", "connected");
+    await expect(running).toBeVisible();
+    await expect(tile).toHaveAttribute("data-state", "running");
     await page.unroute("**/api/v1/launch/list");
 
-    // Connected: a click on the tile expands the row (A5 3.6) and never starts another launch;
-    // neither does the strip's button of the connected instance, which says so.
+    // Running: a click on the tile expands the row and starts nothing.
     await main.click();
     await expect(main).toHaveAttribute("aria-expanded", "false");
     await tile.click();
     await expect(main).toHaveAttribute("aria-expanded", "true");
-    await expect(strip).toHaveAttribute("data-state", "connected");
-    await expect(strip).toHaveAttribute("aria-disabled", "true");
-    await expect(strip).toHaveAccessibleDescription(/already has this task open/u);
-    // Playwright waits for a control to be enabled: the click a person can still make is forced.
-    await strip.click({ force: true });
-    await expect(main).toHaveAttribute("aria-expanded", "true");
     await page.waitForTimeout(1_000);
     expect(world.terminal()).toHaveLength(before + 1);
+    // The strip says the session runs, and opens a second one when the person asks for it.
+    const another = row
+      .getByRole("toolbar")
+      .getByRole("button", { name: `Open another in ${FAKE_INSTANCE.label}` });
+    await expect(another).toHaveAttribute("data-state", "running");
+    await expect(another).toHaveAttribute("aria-disabled", "false");
+    await expect(another).toHaveAccessibleDescription(/is running on this task/u);
+    await another.click();
+    await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 2);
+    await expect(row.locator('[data-entry][data-state="running"]')).toHaveCount(2, {
+      timeout: SLOW_MS,
+    });
+    // Both end: nothing runs, and the strip and the tile open again.
+    world.release(world.spare.ref);
+    await expect(row.locator('[data-entry][data-state="ended"]')).toHaveCount(2, {
+      timeout: SLOW_MS,
+    });
+    await expect(strip).toHaveAttribute("data-state", "ready");
+    await expect(tile).toHaveAttribute("data-state", "ready");
   });
 
   test("a task that is added keeps the draft typed while it was added", async ({ page, world }) => {

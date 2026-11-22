@@ -4,16 +4,18 @@
 // (`POST /api/v1/op/launch.open`), on the hub's one launch machine per space: the page's click,
 // the shim's claim, recovery after a restart and the sweep all act on the same machine (A4
 // 3.9.1's section rule holds across them). This module keeps what the page needs besides: the
-// instances it draws a tile for, from the hub's launch service, and a task's last receipts, which
-// the page refetches when the change feed names a launch. And Run: the page's click starts a
+// instances it draws a tile for, from the hub's launch service, which agent apps are busy with a
+// task on this machine, and a task's last receipts, its history, which the page refetches when the
+// change feed names a launch. And Run: the page's click starts a
 // background run of a task, reads a task's runs (refetched when the feed names a run) and stops
-// one, on the service's runs (runs/service.ts), the same ones `tasks run` uses.
+// one, on the service's runs (runs/service.ts), the same ones `tasks run` uses. And a task's folder
+// shown in the file manager. The page's sign-in is the person: no agent reaches these routes.
 //
-// A receipt holds IDs, states, instants and fixed codes only, as the launch record does. The
-// person's request for a launch is a note on the task, which the page reads with the task's other
-// notes: a receipt names it by its reference. A run
-// as the page reads it holds the person's request and the agent's answer, task text that travels
-// in a request's or a response's body only.
+// A receipt holds IDs, states, instants and fixed codes only, as the launch record does, and what
+// only this machine knows: whether its session runs now. The person's request for a launch is a
+// note on the task, which the page reads with the task's other notes: a receipt names it by its
+// reference. A run as the page reads it holds the person's request and the agent's answer, task
+// text that travels in a request's or a response's body only.
 import { AppError, RequestId } from "@tasks/contracts";
 import {
   isOpenRun,
@@ -24,14 +26,18 @@ import {
 import {
   INSTANCE_KEY,
   isRoute,
+  sessionRecord,
   TASK_ID,
   TERMINAL_APPS,
   TERMINAL_SOURCES,
   type IntentState,
+  type OpenResult,
   type Route,
 } from "@tasks/launch";
 import { findSpace, isAmbiguity } from "../ops/copies.ts";
+import { launchError } from "../ops/handlers.ts";
 import type { OpsHost, ServedSpace } from "../ops/index.ts";
+import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
 import { WORK_ON_IT } from "../runs/agent.ts";
 import type { HttpLog } from "./events.ts";
 
@@ -57,6 +63,29 @@ export interface UiInstance {
 export interface UiLaunchPort {
   instances(): readonly UiInstance[];
   onChange?(listener: (space: string) => void): () => void;
+  /** Whether the launch's session runs now, as this service follows it. */
+  running?(launch: string): boolean;
+  /** The task and agent pairs of a space busy on this machine. */
+  busy?(space: string): Promise<readonly UiBusy[]>;
+  /** Shows the folder a task opens in here in the file manager (LaunchService.showFolder). */
+  showFolder?(space: string, folder: TaskFolder): Promise<OpenResult>;
+}
+
+/**
+ * An agent app busy with a task on this machine, as the page holds its Open: `opening` while an
+ * Open of it is on its way, `running` while a session of it runs.
+ */
+export interface UiBusy {
+  readonly task: string;
+  readonly instance: string;
+  readonly state: "opening" | "running";
+}
+
+/** What a folder's file manager answered: it opened, or it ran and said nothing either way. */
+export interface FolderShown {
+  readonly result: "opened" | "unknown";
+  /** This computer's name: the folder opens here, also for a page looked at from elsewhere. */
+  readonly machine: string | undefined;
 }
 
 /**
@@ -155,6 +184,14 @@ export interface UiReceipt {
   readonly terminal?: { readonly app: string; readonly source: string };
   /** The note on the task that holds what the person asked the launch's agent, such as `n2`. */
   readonly request?: string;
+  /**
+   * A Confirmed launch's session: `running` while this service follows it and it runs, `ended`
+   * once its agent's end was reported. Absent when the service does not know: a link or a T3
+   * launch, a shim that went without a word, a launch of another computer or of an earlier build.
+   */
+  readonly session?: "running" | "ended";
+  /** How long its agent ran, when its end was reported with it. */
+  readonly ran_ms?: number;
 }
 
 /** A note's entry reference, as a launch's evidence names its request. */
@@ -205,47 +242,61 @@ const LIST_SQL =
   "SELECT id, reference, instance_id, route, state, reason, detail FROM launches " +
   "WHERE task_id = $task ORDER BY created_at DESC, id DESC LIMIT 10";
 
-/** A `launches` row as the page's receipt, or undefined for a detail that does not parse. */
-export function receiptOf(row: Record<string, unknown>): UiReceipt | undefined {
-  const at: Partial<Record<IntentState, number>> = {};
-  let terminal: UiReceipt["terminal"];
-  let request: string | undefined;
+/**
+ * A `launches` row as the page's receipt, or undefined for a detail that does not parse. `runs`
+ * says whether this service follows the launch's session as running now: it counts only for a
+ * Confirmed launch whose record names no end.
+ */
+export function receiptOf(
+  row: Record<string, unknown>,
+  runs: (launch: string) => boolean = () => false,
+): UiReceipt | undefined {
+  let parsed: unknown;
   try {
-    const detail = JSON.parse(String(row["detail"])) as {
-      at?: Record<string, unknown>;
-      evidence?: Record<string, unknown>;
-    };
-    for (const [state, value] of Object.entries(detail.at ?? {})) {
-      if (typeof value === "number") at[state as IntentState] = value;
-    }
-    // Only the fixed words reach the page: anything else is left out, never shown.
-    const app = detail.evidence?.["terminal"];
-    const source = detail.evidence?.["terminal_source"];
-    if (
-      typeof app === "string" &&
-      typeof source === "string" &&
-      app !== "auto" &&
-      (TERMINAL_APPS as readonly string[]).includes(app) &&
-      (TERMINAL_SOURCES as readonly string[]).includes(source)
-    ) {
-      terminal = { app, source };
-    }
-    const asked = detail.evidence?.["request"];
-    if (typeof asked === "string" && NOTE_REF.test(asked)) request = asked;
+    parsed = JSON.parse(String(row["detail"]));
   } catch {
     return undefined;
   }
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const detail = parsed as { at?: Record<string, unknown>; evidence?: Record<string, unknown> };
+  const at: Partial<Record<IntentState, number>> = {};
+  for (const [state, value] of Object.entries(detail.at ?? {})) {
+    if (typeof value === "number") at[state as IntentState] = value;
+  }
+  const evidence = detail.evidence ?? {};
+  // Only the fixed words reach the page: anything else is left out, never shown.
+  const app = evidence["terminal"];
+  const source = evidence["terminal_source"];
+  const terminal =
+    typeof app === "string" &&
+    typeof source === "string" &&
+    app !== "auto" &&
+    (TERMINAL_APPS as readonly string[]).includes(app) &&
+    (TERMINAL_SOURCES as readonly string[]).includes(source)
+      ? { app, source }
+      : undefined;
+  const asked = evidence["request"];
+  const request = typeof asked === "string" && NOTE_REF.test(asked) ? asked : undefined;
+  const id = String(row["id"]);
+  const state = String(row["state"]) as IntentState;
   const reason = row["reason"];
+  const ran = evidence["ran_ms"];
+  const ranMs = typeof ran === "number" && Number.isSafeInteger(ran) && ran >= 0 ? ran : undefined;
+  const record = state === "confirmed" ? sessionRecord(evidence) : undefined;
+  const session =
+    record === "ended" ? "ended" : record === "open" && runs(id) ? "running" : undefined;
   return {
-    id: String(row["id"]),
+    id,
     reference: String(row["reference"]),
     instance: String(row["instance_id"]),
     route: String(row["route"]),
-    state: String(row["state"]) as IntentState,
+    state,
     reason: typeof reason === "string" ? reason : null,
     at,
     ...(terminal === undefined ? {} : { terminal }),
     ...(request === undefined ? {} : { request }),
+    ...(session === undefined ? {} : { session }),
+    ...(ranMs === undefined ? {} : { ran_ms: ranMs }),
   };
 }
 
@@ -312,6 +363,54 @@ export class UiLaunches {
     return space;
   }
 
+  /**
+   * The agent apps busy with a task on this machine, for every task of the space: what the
+   * page's tiles and Open buttons hold to, whatever receipts a tab has read.
+   */
+  async busy(spaceRef: string | undefined): Promise<readonly UiBusy[]> {
+    const space = this.#space(spaceRef).id ?? "";
+    return (await this.#options.port?.busy?.(space)) ?? [];
+  }
+
+  /**
+   * Shows a task's folder in this computer's file manager: the folder the task itself names here,
+   * never a path the page sends. A folder that is gone, on another computer, or a file, and a
+   * computer where no file manager answers, are refused with the reason.
+   */
+  async showFolder(
+    spaceRef: string | undefined,
+    input: Record<string, unknown>,
+  ): Promise<FolderShown> {
+    const { task } = input;
+    if (typeof task !== "string" || !TASK_ID.test(task)) {
+      throw invalid("Expected a task ID.", "task");
+    }
+    const space = this.#space(spaceRef);
+    const show = this.#options.port?.showFolder?.bind(this.#options.port);
+    if (show === undefined || space.reader === undefined || space.id === undefined) {
+      throw new AppError({
+        code: "space_unavailable",
+        message: "This space cannot open folders on this machine now.",
+      });
+    }
+    const { machine } = this.#options.host;
+    const read = await readLaunchTask(space.reader, task, machine.id);
+    let result: OpenResult;
+    try {
+      result = await show(space.id, read.folder);
+    } catch (error) {
+      throw launchError(error);
+    }
+    if (result !== "opened" && result !== "unknown") {
+      throw new AppError({
+        code: "invalid_input",
+        message: "No file manager answered on this computer.",
+        data: { field: "task", reason: "no_file_manager" },
+      });
+    }
+    return { result, machine: machine.name };
+  }
+
   /** A task's launch receipts, newest last (at most ten). */
   async list(spaceRef: string | undefined, input: Record<string, unknown>): Promise<UiReceipt[]> {
     const { task } = input;
@@ -320,7 +419,9 @@ export class UiLaunches {
     const reader = this.#space(spaceRef).reader;
     if (reader === undefined) throw invalid("The space is not served.", "space");
     const rows = await reader.all(LIST_SQL, { task });
-    return rows.flatMap((r) => receiptOf(r) ?? []).reverse();
+    const port = this.#options.port;
+    const runs = (launch: string): boolean => port?.running?.(launch) ?? false;
+    return rows.flatMap((r) => receiptOf(r, runs) ?? []).reverse();
   }
 
   /**

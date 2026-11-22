@@ -420,13 +420,6 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       const folder = realpathSync.native(join(r.lab.work, HOSTILE_FOLDER));
       const { result } = await open(r, { task: task.ref, instance: "claude-link" });
       expect(result.launch.route).toBe("link");
-      // Clicks straight after, from other tabs, are given the same launch. Their words are no
-      // request of it: each is saved as a note of the person's, so a page clears them.
-      for (const words of ["Start with the tests", "Other words"]) {
-        const again = await open(r, { task: task.ref, instance: "claude-link", text: words });
-        expect(again.result.launch.id).toBe(result.launch.id);
-        expect(again.result.text).toBe("note");
-      }
       const dispatched = await r.lab.waitIntent(
         result.launch.id,
         (i) => i.state === "dispatched",
@@ -449,6 +442,9 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         briefFor("prefilled", r.lab.spaceId, task, result.launch.reference, { budget: 1000 }),
       );
       expect(url).toMatch(/^[A-Za-z0-9:/?&=%._~-]+$/u);
+      // The link only asked the app: a click after it, from this tab or another, opens it again.
+      const next = await open(r, { task: task.ref, instance: "claude-link" });
+      expect(next.result.launch.id).not.toBe(result.launch.id);
     },
   );
 
@@ -537,11 +533,11 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(again2.result.text).toBe("request");
       expect(again2.result.note).toBe(held.result.note);
       expect(opened).toHaveLength(1);
-      // Another tab's click straight after is given the same launch with its own words: they are
-      // a note of the person's, not its request, and a retry of that click says the same.
+      // The link only asked the app: another tab's click after it is a launch of its own, whose
+      // request is that tab's words, and a retry of that click says so too.
       const other = await open(r, { task: task.ref, instance: "claude-link", text: "Other words" });
-      expect(other.result.launch.id).toBe(held.result.launch.id);
-      expect(other.result.text).toBe("note");
+      expect(other.result.launch.id).not.toBe(held.result.launch.id);
+      expect(other.result.text).toBe("request");
       expect(other.result.note).not.toBe(held.result.note);
       const otherAgain = await open(r, {
         task: task.ref,
@@ -549,7 +545,11 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
         text: "Other words",
         request_id: other.requestId,
       });
-      expect(otherAgain.result).toMatchObject({ text: "note", note: other.result.note });
+      expect(otherAgain.result).toMatchObject({
+        launch: { id: other.result.launch.id },
+        text: "request",
+        note: other.result.note,
+      });
     },
   );
 
@@ -760,6 +760,8 @@ describe("[A4.5.routes.folders] a launch opens in the task's folder, else its pr
       const own = await addTask(r, "Fixture own folder", "own-folder", "Portal");
       const inProject = await addTask(r, "Fixture in the project", undefined, "Portal");
       const none = await addTask(r, "Fixture without a folder");
+      // No session of its own: an Open of an app that runs a task here is that session.
+      const far = await addTask(r, "Fixture on another machine");
       const real = (name: string) => realpathSync.native(join(r.lab.work, name));
       const work = () =>
         realpathSync.native(join(stateOf(r.lab.home), "workdirs", `space-${r.lab.spaceId}`));
@@ -806,9 +808,9 @@ describe("[A4.5.routes.folders] a launch opens in the task's folder, else its pr
         service.openTask({
           space: r.lab.spaceId,
           task: {
-            id: none.id,
-            ref: none.ref,
-            title: "Fixture without a folder",
+            id: far.id,
+            ref: far.ref,
+            title: "Fixture on another machine",
             version: 1,
             folder: { kind: "other_machine", machine: "mira-laptop" },
           },

@@ -103,7 +103,7 @@ describe("[A5.3.9.web.thread-request] a launch's request shows in the thread as 
     render([asked], [receipt("la_1", "L7KQ21", "confirmed", AT)]);
     expect(entries()).toHaveLength(1);
     expect(askedIn(entries()[0])).toContain("Check the clinic export first");
-    expect(entries()[0]?.textContent).toContain("Open in Claude Code · work");
+    expect(entries()[0]?.textContent).toContain("Opened in Claude Code · work");
     expect(host.querySelector("[data-part='open-again']")).toBeNull();
 
     // The note was read before the launch was recorded: the receipt names it all the same.

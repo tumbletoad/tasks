@@ -4,9 +4,11 @@
 // page reads the receipts of a task and sees launch events on the feed, and Copy gives the
 // pointer brief. A test's terminal stands where the terminal adapters do: it records each start
 // and starts nothing. Fixture data only.
+import { mkdirSync, realpathSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { PRODUCT_NAME } from "@tasks/brand";
-import type { DispatchOutcome, LaunchIntent } from "@tasks/launch";
+import type { DispatchOutcome, LaunchIntent, OpenResult } from "@tasks/launch";
 import type { TerminalStart } from "../src/launch/index.ts";
 import { post } from "./http-client.ts";
 import { httpWorld, openFeed, signIn, type HttpWorld } from "./http-world.ts";
@@ -144,13 +146,81 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       // No text of the task travels with a receipt.
       expect(JSON.stringify(receipts)).not.toContain("appointment");
 
-      // The feed tells the page a launch changed (its receipts are read by task).
+      // The tab learns which agent apps are busy here for every task, without a task's receipts:
+      // this one is opening until its shim settles it.
+      const busy = await post(port, "/api/v1/launch/busy", {}, { token, headers });
+      expect(JSON.parse(busy.body)).toEqual({
+        result: { busy: [{ task: task.id, instance: "fake-agent", state: "opening" }] },
+      });
+      // A distinct click while it is opening gets the same launch and starts nothing.
+      const second = await post(
+        port,
+        OPEN,
+        { ...click, request_id: "click-0000000000000002" },
+        { token, headers },
+      );
+      expect(
+        (JSON.parse(second.body) as { result: { launch: { id: string } } }).result.launch.id,
+      ).toBe(launch["id"]);
+      expect(terminal.started).toHaveLength(1);
+
+      // The feed tells the page a launch changed, and of which task: a tab follows the receipts
+      // of the tasks it shows by their task.
       await feed.next(
         (m) =>
           m["type"] === "batch" &&
-          JSON.stringify(m["events"]).includes(`"type":"launch","id":"${String(launch["id"])}"`),
+          JSON.stringify(m["events"]).includes(
+            `"type":"launch","id":"${String(launch["id"])}","task":"${task.id}"`,
+          ),
       );
       feed.ws.close();
+    },
+  );
+
+  test(
+    "a Prepared launch that no call of the service holds, as a crash leaves one, holds no Open: the next click opens it",
+    SLOW,
+    async () => {
+      const terminal = recordingTerminal();
+      const w = await world(terminal.start);
+      const task = await addTask(w, "Plan the garden beds");
+      const { token } = await signIn(w);
+      const port = w.port();
+      const headers = { "tasks-space": "Mira", "tasks-build": "source" };
+      const feed = await openFeed(port, token);
+      await feed.next((m) => m["type"] === "hello");
+      feed.send({ type: "subscribe", space: "Mira" });
+      const snapshot = await feed.next((m) => m["type"] === "snapshot");
+      feed.ws.close();
+      const space = (snapshot["space"] as { id: string }).id;
+      // Recorded, and never dispatched: the service that made it stopped in between.
+      const left = await w.service.launches.open(
+        space,
+        {
+          task: task.id,
+          instance: "fake-agent",
+          route: "terminal",
+          place: null,
+          taskVersion: 1,
+          briefHash: "c".repeat(64),
+        },
+        "crash-left-000000000001",
+        { argv: [process.execPath], folder: null, env: {}, title: "Left", afterExit: "close" },
+      );
+      expect(left.state).toBe("prepared");
+      const busy = await post(port, "/api/v1/launch/busy", {}, { token, headers });
+      expect(JSON.parse(busy.body)).toEqual({ result: { busy: [] } });
+      const opened = await post(
+        port,
+        OPEN,
+        { task: task.id, instance: "fake-agent", request_id: "click-0000000000000011" },
+        { token, headers },
+      );
+      expect(
+        (JSON.parse(opened.body) as { result: { launch: { id: string } } }).result.launch.id,
+      ).toBe(left.id);
+      await until(() => Promise.resolve(terminal.started.length === 1), "the terminal");
+      expect(terminal.started[0]?.id).toBe(left.id);
     },
   );
 
@@ -223,6 +293,85 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       for (const gone of ["/api/v1/launch/open"]) {
         expect((await post(port, gone, {}, { token, headers })).status).toBe(404);
       }
+    },
+  );
+
+  test(
+    "the folder button shows the task's own folder in the file manager, read from the task; a folder that is gone or no file manager is said, and nothing else starts",
+    SLOW,
+    async () => {
+      const shown: string[] = [];
+      let answer: OpenResult = "opened";
+      const w = await httpWorld(
+        "folder",
+        {},
+        {
+          toml: TOML,
+          launch: {
+            terminal: recordingTerminal().start,
+            showFolder: (folder) => {
+              shown.push(folder);
+              return Promise.resolve(answer);
+            },
+          },
+        },
+      );
+      worlds.push(w);
+      const task = await addTask(w, "Fix appointment time zones");
+      const { token } = await signIn(w);
+      const port = w.port();
+      const headers = { "tasks-space": "Mira", "tasks-build": "source" };
+      const show = (body: Record<string, unknown>, signedIn = true) =>
+        post(port, "/api/v1/launch/folder", body, { ...(signedIn ? { token } : {}), headers });
+
+      // No folder of its own here: the space's work folder, where Open would start the agent.
+      const work = await show({ task: task.id });
+      expect(work.status).toBe(200);
+      const answered = JSON.parse(work.body) as { result: { result: string; machine: unknown } };
+      expect(answered.result.result).toBe("opened");
+      expect(typeof answered.result.machine).toBe("string");
+      expect(shown).toHaveLength(1);
+
+      const folder = join(w.root, "work", "lumen", "portal");
+      mkdirSync(folder, { recursive: true });
+      const user = await w.user();
+      const status = (await user.call("op/call", { op: "space.status", input: {} })) as {
+        as_of: string;
+      };
+      await user.call("op/call", {
+        op: "folder.manage",
+        input: {
+          action: "set",
+          task: task.id,
+          folder,
+          base: status.as_of,
+          request_id: "folder-test-set-000001",
+        },
+      });
+      expect((await show({ task: task.id })).status).toBe(200);
+      expect(shown[1]).toBe(realpathSync.native(folder));
+
+      // The page names a task, never a path: anything else is refused before anything starts.
+      expect((await show({ task: task.id, folder: "/etc" })).status).toBe(200);
+      expect(shown[2]).toBe(realpathSync.native(folder));
+      expect((await show({ task: folder })).status).toBe(400);
+      expect((await show({ task: task.id }, false)).status).toBe(401);
+
+      answer = "no_session";
+      const none = await show({ task: task.id });
+      expect(none.status).toBe(400);
+      expect(JSON.parse(none.body)).toMatchObject({
+        error: { data: { field: "task", reason: "no_file_manager" } },
+      });
+
+      answer = "opened";
+      rmSync(folder, { recursive: true });
+      const gone = await show({ task: task.id });
+      expect(gone.status).toBe(400);
+      expect(JSON.parse(gone.body)).toMatchObject({
+        error: { data: { field: "task", reason: "path_missing" } },
+      });
+      expect(shown).toHaveLength(4);
     },
   );
 

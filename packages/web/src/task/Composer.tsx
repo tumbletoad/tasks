@@ -15,7 +15,7 @@
 // that can (keymap.ts): never while an input method composes.
 import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Button, Dialog, DialogTrigger, Popover, Toolbar } from "react-aria-components";
-import { requestId, type Instance, type Receipt } from "../api.ts";
+import { requestId, type Instance } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useMachine } from "../app/machine.ts";
@@ -27,7 +27,7 @@ import type { AskField, RowActions } from "../row/actions.ts";
 import { ChevronIcon as ChevronDownIcon } from "../app/Icons.tsx";
 import { CopyIcon, RunIcon } from "../row/icons.tsx";
 import { runners } from "./runs.ts";
-import { tileState } from "../row/launch.ts";
+import { tileState, type BusyOf } from "../row/launch.ts";
 import type { TaskRow } from "../store/rows.ts";
 import { typingIn } from "../kept.ts";
 import {
@@ -70,12 +70,13 @@ const STUBS: Readonly<Record<AskField, MessageId>> = {
 
 export interface ComposerProps {
   readonly task: TaskRow;
-  readonly receipts: readonly Receipt[];
+  /** What busies each agent app with the task on this machine. */
+  readonly busy: BusyOf | undefined;
   readonly instances: readonly Instance[];
   readonly actions: RowActions;
 }
 
-export function Composer({ task, receipts, instances, actions }: ComposerProps) {
+export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const t = useT();
   const say = useToast();
   const { api, live } = useContext(Session);
@@ -182,8 +183,11 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     if (opening.has(instance.key)) return;
     setOpening((known) => new Set(known).add(instance.key));
     const request = words;
+    // The button said "Open another": the person chose a second session.
+    const another = tileState(busy, instance.key) === "running";
     // The open action says when the words are on the task (savedWords): the field clears then.
-    void actions.open(task, instance, request === "" ? undefined : request).then(() => {
+    const carried = { ...(request === "" ? {} : { text: request }), another };
+    void actions.open(task, instance, carried).then(() => {
       setOpening((known) => {
         const next = new Set(known);
         next.delete(instance.key);
@@ -213,18 +217,15 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
     });
   };
 
-  /** Why an instance does not open now, as its tip says it; undefined when it opens. */
-  const held = (instance: Instance): string | undefined => {
-    const state = tileState(receipts, instance.key);
-    if (opening.has(instance.key) || state === "opening") {
-      return t("composer.opening", { label: instance.label });
-    }
-    // A click would return the launch it has, which takes no new request.
-    if (state === "connected" || state === "not_confirmed") {
-      return t("composer.hasSession", { label: instance.label });
-    }
-    return undefined;
-  };
+  /**
+   * Why an instance does not open now, as its tip says it; undefined when it opens. Only an Open on
+   * its way holds it: a click then would return that very launch. A running session does not: the
+   * button says it opens another.
+   */
+  const held = (instance: Instance): string | undefined =>
+    opening.has(instance.key) || tileState(busy, instance.key) === "opening"
+      ? t("composer.opening", { label: instance.label })
+      : undefined;
 
   const noteKeys = keysOf("note", singleKeys);
   const openKeys = keysOf("open-first", singleKeys);
@@ -260,6 +261,8 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
             addNote();
           } else if (action === "open-first") {
             event.preventDefault();
+            // A held key repeats: one press is one Open.
+            if (event.repeat) return;
             if (first === undefined) say(t("composer.noAgent"));
             else {
               const why = held(first);
@@ -296,11 +299,18 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
 
         {instances.map((instance, i) => {
           const why = held(instance);
+          const state = tileState(busy, instance.key);
+          const another = state === "running";
           const tip =
             why ??
-            t(words === "" ? "composer.openTip" : "composer.openWithTip", {
-              label: instance.label,
-            });
+            t(
+              another
+                ? "composer.anotherTip"
+                : words === ""
+                  ? "composer.openTip"
+                  : "composer.openWithTip",
+              { label: instance.label },
+            );
           return (
             <button
               key={instance.key}
@@ -308,20 +318,26 @@ export function Composer({ task, receipts, instances, actions }: ComposerProps) 
               className={styles.button}
               data-part="open"
               data-default={i === 0 ? "" : undefined}
-              data-state={tileState(receipts, instance.key)}
+              data-state={state}
               data-ring={instance.ring}
               aria-disabled={why !== undefined}
               aria-keyshortcuts={i === 0 ? ariaKeys(openKeys, mac) : undefined}
               aria-description={tip}
               data-tip={tip}
-              onClick={() => {
+              onClick={(event) => {
+                // A double click is one Open, even when the first one's answer came in between.
+                if (event.detail > 1) return;
                 if (why === undefined) open(instance);
+              }}
+              onKeyDown={(event) => {
+                // A held Enter repeats the button's click: one press is one Open.
+                if (event.key === "Enter" && event.repeat) event.preventDefault();
               }}
             >
               <span className={styles.glyph} aria-hidden="true">
                 {instance.glyph}
               </span>
-              {t("row.openIn", { label: instance.label })}
+              {t(another ? "composer.openAnother" : "row.openIn", { label: instance.label })}
               {i === 0 && openKeys[0] !== undefined ? (
                 <kbd className={styles.hint} aria-hidden="true">
                   {keyLabel(openKeys[0])}

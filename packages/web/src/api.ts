@@ -4,8 +4,8 @@
 // WebSocket gets a single-use ticket instead (live.ts).
 //
 // Registry entries go through contracts' generated client (`/api/v1/op/<entry>`): Open and Copy
-// are A4's `launch.open`. A task's receipts, and Run, a task's runs and Stop, have routes of their
-// own (`/api/v1/launch/…`).
+// are A4's `launch.open`. The agent apps busy here, a task's receipts, and Run, a task's runs and
+// Stop, have routes of their own (`/api/v1/launch/…`).
 import { httpHeader } from "@tasks/brand";
 import { createClient, type Client } from "@tasks/contracts/generated/client.ts";
 import { TOKEN_SHAPE } from "./stored.ts";
@@ -55,6 +55,16 @@ export interface Run {
 export type ReceiptState =
   "prepared" | "dispatching" | "dispatched" | "confirmed" | "failed" | "unknown";
 
+/**
+ * An agent app busy with a task on this machine (the service's UiBusy): an Open of it is on its
+ * way, or a session of it runs.
+ */
+export interface Busy {
+  readonly task: string;
+  readonly instance: string;
+  readonly state: "opening" | "running";
+}
+
 /** A launch receipt (the service's UiReceipt): IDs, states, instants and codes only. */
 export interface Receipt {
   readonly id: string;
@@ -68,6 +78,13 @@ export interface Receipt {
   readonly terminal?: { readonly app: string; readonly source: string };
   /** The note on the task that holds what the person asked the launch's agent, such as `n2`. */
   readonly request?: string;
+  /**
+   * A Confirmed launch's session as the service knows it: `running` now, or `ended`. Absent when
+   * it cannot know, which the page never shows as running.
+   */
+  readonly session?: "running" | "ended";
+  /** How long its agent ran, when its end was reported with it. */
+  readonly ran_ms?: number;
 }
 
 /** What an Open or a Copy did with the person's words. */
@@ -356,11 +373,13 @@ export class Api {
       text,
       request,
       markFolder = false,
+      another = false,
     }: {
       readonly pack?: boolean;
       readonly text?: string;
       readonly request?: string;
       readonly markFolder?: boolean;
+      readonly another?: boolean;
     } = {},
   ): Promise<Opened> {
     const result = await this.client.launch.open({
@@ -372,6 +391,8 @@ export class Api {
       ...(request === undefined ? {} : { request }),
       // The person chose to open the task in a folder whose marker is gone or another's.
       ...(markFolder ? { mark_folder: true } : {}),
+      // "Open another": a second session, although the app runs the task here.
+      ...(another ? { another: true } : {}),
       request_id: id,
     });
     const { launch } = result;
@@ -411,6 +432,31 @@ export class Api {
       app === undefined ? {} : { app },
     );
     return reply.terminal;
+  }
+
+  /** The agent apps busy with a task on this machine, for every task of the space. */
+  async busy(): Promise<Busy[]> {
+    const reply = await this.#result<{ busy: Busy[] }>("/api/v1/launch/busy", {});
+    return reply.busy;
+  }
+
+  /**
+   * Shows the task's folder in the file manager of the computer the service runs on, which the
+   * answer names. The service reads the folder from the task.
+   */
+  async showFolder(task: string): Promise<{
+    readonly opened: boolean;
+    readonly machine: string | undefined;
+  }> {
+    const reply = await this.#result<{ result?: unknown; machine?: unknown }>(
+      "/api/v1/launch/folder",
+      { task },
+    );
+    return {
+      // "unknown": the file manager was asked and did not say whether it opened the folder.
+      opened: reply.result === "opened",
+      machine: typeof reply.machine === "string" ? reply.machine : undefined,
+    };
   }
 
   async receipts(task: string): Promise<Receipt[]> {

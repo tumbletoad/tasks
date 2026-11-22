@@ -127,14 +127,14 @@ describe("[A1.5.write.launches] launch records through the write path", () => {
     expect(one("SELECT status FROM receipts WHERE seq = $seq", { seq: lastSeq() })).toBe("applied");
   });
 
-  test("a repeated request replays; a second click within 5 s or while Dispatching focuses", () => {
+  test("a repeated request replays; a second click gets the launch still opening, and only that one", () => {
     const taskId = task();
     const request = fx.request(ui, [createOp(taskId)]);
     const first = fx.writer.submit(request);
     const replay = fx.writer.submit(request);
     expect(replay).toMatchObject({ replayed: true, results: [{ id: first.results[0]?.id }] });
     const seq = lastSeq();
-    time += 4_000;
+    time += 60_000;
     const focused = submit([createOp(taskId)]);
     expectStatus(focused, "unchanged");
     expect(focused.results[0]).toMatchObject({ id: first.results[0]?.id, status: "unchanged" });
@@ -143,17 +143,25 @@ describe("[A1.5.write.launches] launch records through the write path", () => {
     expect(other.results[0]?.id).not.toBe(first.results[0]?.id);
     const id = first.results[0]?.id ?? "";
     expectStatus(move(id, "prepared", "dispatching"), "applied");
-    time += 60_000;
     expect(submit([createOp(taskId)]).results[0]?.id).toBe(id);
     expectStatus(move(id, "dispatching", "dispatched"), "applied");
+    expect(submit([createOp(taskId)]).results[0]?.id).toBe(id);
+    // Settled: a click at once opens a new session.
+    expectStatus(move(id, "dispatched", "confirmed"), "applied");
     const fresh = submit([createOp(taskId)]);
     expectStatus(fresh, "applied");
     expect(fresh.results[0]?.id).not.toBe(id);
-    // A click that failed at once is no click to focus on: the next one, a second later, opens.
+    // A link that asked its app holds no click.
+    const link = create(taskId, { instance: "claude-link", route: "link" });
+    expectStatus(move(link, "prepared", "dispatching"), "applied");
+    expectStatus(move(link, "dispatching", "dispatched"), "applied");
+    expect(
+      submit([createOp(taskId, { instance: "claude-link", route: "link" })]).results[0]?.id,
+    ).not.toBe(link);
+    // A click that failed is no click to focus on: the next one opens.
     const failing = fresh.results[0]?.id ?? "";
     expectStatus(move(failing, "prepared", "dispatching"), "applied");
     expectStatus(move(failing, "dispatching", "failed", { reason: "refused" }), "applied");
-    time += 1_000;
     const again = submit([createOp(taskId)]);
     expectStatus(again, "applied");
     expect(again.results[0]?.id).not.toBe(failing);
@@ -277,26 +285,15 @@ describe("[A1.5.write.launches] launch records through the write path", () => {
     expectStatus(move(id, "dispatching", "unknown", { reason: "no_answer" }), "applied");
   });
 
-  test("a clock that went back does not make an old click young", () => {
+  test("a launch's state times are the wall clock's, also while commit instants stand still", () => {
     const taskId = task();
-    const first = create(taskId);
-    time -= 2_000;
-    expect(submit([createOp(taskId)]).results[0]?.id).toBe(first);
+    create(taskId);
     time -= 3_600_000;
-    const later = submit([createOp(taskId)]);
-    expectStatus(later, "applied");
-    expect(later.results[0]?.id).not.toBe(first);
-    // While the clock is behind the newest commit, commit instants stand still; the 5 s still
-    // hold between clicks, on the wall clock their state times record.
-    const laterId = later.results[0]?.id ?? "";
-    expect(fx.writer.launch(laterId)).toMatchObject({
+    const later = create(taskId, { instance: "claude-work" });
+    expect(fx.writer.launch(later)).toMatchObject({
       created_at: Number(one("SELECT max(at) FROM commits")),
       at: { prepared: time },
     });
-    time += 1_000;
-    expect(submit([createOp(taskId)]).results[0]?.id).toBe(laterId);
-    time += 5_000;
-    expect(submit([createOp(taskId)]).results[0]?.id).not.toBe(laterId);
   });
 
   test("only A4's edges move a launch, and only Failed and Unknown take a reason", () => {

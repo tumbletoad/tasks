@@ -31,6 +31,11 @@ export class ProcessCheckFailed extends Error {
 export interface ProcessProbe {
   /** The start time of each PID that names a live process; an ended one is left out. */
   startTimes(pids: readonly number[]): Promise<ReadonlyMap<number, string>>;
+  /**
+   * Whether the process may still run, answered at once for a page that is waiting: false only
+   * when it has certainly ended. Without it, a process counts as running until the PID check.
+   */
+  mayRun?(pid: number, startTime: string): boolean;
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -165,9 +170,30 @@ export async function startTimes(
   throw new ProcessCheckFailed("This OS has no exact process start time check yet");
 }
 
+/**
+ * Whether the process may still run, without waiting: exact on Linux, where the start time costs
+ * a file read; elsewhere by its PID alone, so a reused PID reads as running until the PID check,
+ * which asks the exact start time.
+ */
+export function mayRun(
+  pid: number,
+  startTime: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (platform === "linux") {
+    try {
+      return linuxStartTime(pid) === startTime;
+    } catch {
+      return true;
+    }
+  }
+  return mayBeAlive(pid);
+}
+
 /** The probe of this OS. */
 export const osProbe: ProcessProbe = {
   startTimes: (pids) => startTimes(pids),
+  mayRun: (pid, startTime) => mayRun(pid, startTime),
 };
 
 /** This process's own start time. */

@@ -153,7 +153,10 @@ test.describe("[A7.3.12.m5-10.e2e.capture] A capture shows its shortcuts before 
   }) => {
     const word = wordOf("yarrow");
     await open(page, world, "/today");
-    await page.getByRole("navigation").getByRole("link", { name: "Home", exact: true }).click();
+    await page
+      .getByRole("navigation")
+      .getByRole("link", { name: /^Home, / })
+      .click();
     const field = adding(page);
     await field.fill(`Rake the ${word} leaves`);
     await expect(panel(page).getByRole("listitem")).toHaveText(["Home"]);

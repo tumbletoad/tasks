@@ -1,16 +1,17 @@
-/* The due date's and the area's controls (A5 3.7, 3.11): a pill button that opens a popover with a
-   field and a list or a month grid. Tokens only. */
+/* The due date's and the area's controls (A5 3.7, 3.11): a button as wide and as high as the facts'
+   option grids, with their outline and corners, that opens a popover with a field and a list or a
+   month grid. Tokens only. */
 
 .pill {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 7px;
-  max-width: 100%;
-  height: 26px;
+  width: 100%;
+  height: 30px;
   padding: 0 10px;
   border: 0;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px var(--k-control);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--k-line-strong);
   background: transparent;
   font-size: 0.8125rem;
   color: var(--k-text);

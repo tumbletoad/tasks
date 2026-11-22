@@ -7,6 +7,16 @@ import type { RowMove } from "./model.ts";
 /** The agent-only fields a click asks an agent to change (A5 3.11, U11). */
 export type AskField = "summary" | "context" | "sources" | "outcome" | "learnings";
 
+/** What an Open carries besides its task and instance. */
+export interface OpenWith {
+  /** The composer's words, the launch's request. */
+  readonly text?: string;
+  /** A note of the person's already on the task, the launch's request in place of `text`. */
+  readonly request?: string;
+  /** A second session, although the app runs the task here. */
+  readonly another?: boolean;
+}
+
 /** What a row's controls do. The list keeps one object for every row, so it never changes. */
 export interface RowActions {
   /** The title or summary was clicked: expand or collapse. */
@@ -17,19 +27,21 @@ export interface RowActions {
    * Open the task in an instance, with the composer's `text` as the request, which is saved on the
    * task, or with `request`, a note of the person's already there: the receipt of the launch the
    * service recorded or returned, or undefined when it recorded none or the brief an app takes by
-   * paste did not reach the clipboard.
+   * paste did not reach the clipboard. Without `another`, an app that runs the task here already
+   * gives that session; with it, a second one starts.
    */
   readonly open: (
     task: TaskRow,
     instance: Instance,
-    text?: string,
-    request?: string,
+    carried?: OpenWith,
   ) => Promise<Receipt | undefined>;
   /**
    * Copy the pointer brief, or with `pack` (Shift+Copy) the context pack (A4 3.15.5), with the
    * composer's `text`. True once it is on the clipboard.
    */
   readonly copy: (task: TaskRow, pack?: boolean, text?: string) => Promise<boolean>;
+  /** Shows the task's folder in the file manager of the computer the service runs on. */
+  readonly folder: (task: TaskRow) => void;
   /**
    * Run: `instance` works on the task in the background, with the composer's `text` as its
    * request. The run the service queued, or undefined when it queued none (it said why).

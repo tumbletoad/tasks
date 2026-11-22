@@ -6,7 +6,7 @@ import { APP_NAME, CLI_NAME } from "@tasks/brand";
 import type { Receipt } from "../api.ts";
 import en from "../i18n/en.json" with { type: "json" };
 import type { MessageId, Values } from "../i18n/intl.tsx";
-import { receiptText } from "./Thread.tsx";
+import { entryState, ranFor, receiptText } from "./Thread.tsx";
 
 const intl = createIntl({
   locale: "en",
@@ -36,7 +36,7 @@ describe("[A4.5.terminal.receipt] the receipt names the terminal and its source"
       "Opening in Ghostty, the desktop's default…",
     );
     expect(receiptText(receipt({ state: "confirmed", terminal: ghostty }), "Codex · work", t)).toBe(
-      "Open in Codex · work · Ghostty, the desktop's default",
+      "Opened in Ghostty, the desktop's default",
     );
     const cases: [string, string, string][] = [
       ["wt", "windows", "Windows Terminal, Windows' default"],
@@ -53,7 +53,7 @@ describe("[A4.5.terminal.receipt] the receipt names the terminal and its source"
       );
     }
     expect(receiptText(receipt({}), "Cx", t)).toBe("Opening…");
-    expect(receiptText(receipt({ state: "confirmed" }), "Cx", t)).toBe("Open in Cx");
+    expect(receiptText(receipt({ state: "confirmed" }), "Cx", t)).toBe("Opened in Cx");
   });
 });
 
@@ -68,6 +68,56 @@ describe("[A4.5.receipt.folder-reason] a launch its folder stopped says why in t
     expect(failed("unsafe_folder")).toBe(
       "Did not open: the task's folder cannot be used on this machine",
     );
-    expect(failed("agent_exited")).toBe("Did not open: agent exited");
+    expect(failed("agent_exited")).toBe("Did not open: the agent ended right after it started");
+    expect(failed("expired")).toBe("Did not open: expired");
+  });
+});
+
+describe("[A5.3.9.web.session-entry] a launch's entry is a record: opened, then running or ended as far as the service knows", () => {
+  const ghostty = { app: "ghostty", source: "configured" };
+  const confirmed = (over: Partial<Receipt>) =>
+    receipt({ state: "confirmed", terminal: ghostty, ...over });
+  const where = "Opened in Ghostty, chosen in Settings";
+
+  test("running, ended with and without its length, and opened where the service cannot follow it", () => {
+    expect(receiptText(confirmed({ session: "running" }), "Cx", t)).toBe(`${where} · running`);
+    expect(receiptText(confirmed({ session: "ended", ran_ms: 125_000 }), "Cx", t)).toBe(
+      `${where} · ended after 2 min`,
+    );
+    // An earlier build recorded the end by its exit code alone.
+    expect(receiptText(confirmed({ session: "ended" }), "Cx", t)).toBe(`${where} · ended`);
+    // A launch recorded before the service followed sessions, or a shim gone without a word.
+    expect(receiptText(confirmed({}), "Cx", t)).toBe(where);
+    expect(receiptText(receipt({ state: "confirmed", route: "t3-mcp" }), "T3 Code", t)).toBe(
+      "Opened in T3 Code",
+    );
+    // A link or T3 only asked the app: it says so until the agent connects.
+    expect(receiptText(receipt({ state: "dispatched", route: "link" }), "Claude", t)).toBe(
+      "Asked Claude to open",
+    );
+    expect(receiptText(receipt({ state: "dispatched", route: "t3-mcp" }), "T3 Code", t)).toBe(
+      "Asked T3 Code to open",
+    );
+    expect(receiptText(receipt({ state: "confirmed", route: "link" }), "Claude", t)).toBe(
+      "Opened in Claude",
+    );
+  });
+
+  test("only a running session carries the live mark", () => {
+    expect(entryState(confirmed({ session: "running" }))).toBe("running");
+    expect(entryState(confirmed({ session: "ended" }))).toBe("ended");
+    expect(entryState(confirmed({}))).toBe("opened");
+    expect(entryState(receipt({ state: "dispatched", route: "link" }))).toBe("dispatched");
+    expect(entryState(receipt({ state: "dispatched" }))).toBe("dispatched");
+    expect(entryState(receipt({ state: "failed", reason: "agent_exited" }))).toBe("failed");
+  });
+
+  test("how long it ran, in short words", () => {
+    expect(ranFor(400, t)).toBe("1 s");
+    expect(ranFor(42_000, t)).toBe("42 s");
+    expect(ranFor(60_000, t)).toBe("1 min");
+    expect(ranFor(59 * 60_000 + 59_000, t)).toBe("59 min");
+    expect(ranFor(60 * 60_000, t)).toBe("1 h");
+    expect(ranFor(65 * 60_000, t)).toBe("1 h 5 min");
   });
 });

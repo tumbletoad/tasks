@@ -85,6 +85,7 @@ Usage: `tasks brief <task> [flags]`
 | `--request` | `request` | string | Open with a note of yours on the task as the request, such as n2 |
 | `--pack` | `pack` | boolean | Copy the context pack: the task's text, for an app without the tools |
 | `--mark-folder` | `mark_folder` | boolean | Open although the folder's marker is gone or another's, and mark it |
+| `--another` | `another` | boolean | Start a second session although this app already runs the task here |
 
 ## `tasks done`
 

@@ -4,7 +4,7 @@
 // under the control (edit/Unsaved.tsx). A fact without a value is an empty control a person can
 // fill. Editable values sit in outlined controls; that outline is the only hint that a value can be
 // changed by hand. A finished task's facts are read-only text.
-import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ToggleButton, ToggleButtonGroup, type Key } from "react-aria-components";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
@@ -48,8 +48,6 @@ const STATUS_LABEL: Readonly<Record<string, MessageId>> = {
   backlog: "status.backlog",
 };
 
-/** The space's statuses (`tasks.statuses`): the defaults until the snapshot carries the preference. */
-const STATUSES = ["open", "waiting", "review", "backlog"] as const;
 /** The facts whose unsaved value a finished task still shows, with their labels. */
 const UNSAVED_FACTS: readonly (readonly [Field, MessageId])[] = [
   ["status", "fact.status"],
@@ -60,8 +58,16 @@ const UNSAVED_FACTS: readonly (readonly [Field, MessageId])[] = [
   ["grouping", "fact.area"],
 ];
 
-/** The space's effort scale (`tasks.effort_scale`): the default until the snapshot carries it. */
-const EFFORTS = ["S", "M", "L"] as const;
+/** The priorities a person sets here: P1 to P3, and none (P4) by choosing the chosen one again. */
+const PRIORITIES = [1, 2, 3] as const;
+
+/**
+ * How many columns an option grid of `n` takes: one row up to four, then rows of three (five and
+ * six) or of four, so a row is never left with one option under three.
+ */
+export function columnsFor(n: number): number {
+  return n <= 4 ? Math.max(n, 1) : n <= 6 ? 3 : 4;
+}
 
 /** The status fact: the lifecycle for a finished task, Inbox, else the status's name. */
 function statusOf(task: TaskRow, t: Translate): string {
@@ -92,7 +98,7 @@ function dueOf(
   clock: Clock,
   t: Translate,
 ): { text: string; tip: string } | undefined {
-  const model = renderRow({ task, instances: [], receipts: [] }, contextFor("open", "flat", clock));
+  const model = renderRow({ task, instances: [] }, contextFor("open", "flat", clock));
   const relative = model.due === undefined ? "" : sayMsg(t, model.due.text);
   if (task.due_at !== undefined) {
     const date = shortDate(localDate(task.due_at, clock.timeZone), clock, t);
@@ -111,7 +117,7 @@ function dueOf(
 
 /** The created fact: "9 Nov · 3d", the only place a task's age shows while it is expanded. */
 function createdOf(task: TaskRow, clock: Clock, t: Translate): string {
-  const model = renderRow({ task, instances: [], receipts: [] }, contextFor("open", "flat", clock));
+  const model = renderRow({ task, instances: [] }, contextFor("open", "flat", clock));
   const date = localDate(task.created_at, clock.timeZone);
   // Created today: "today" alone, so today's date stays the strip's (A5 U1).
   const age = model.age === undefined ? "" : sayMsg(t, model.age.text);
@@ -136,7 +142,9 @@ function Fact({ label, children }: { readonly label: string; readonly children: 
 
 /**
  * A segmented control (A5 3.7): one tab stop, the arrows move along it, Space or a click chooses.
- * A clearable one clears when its chosen option is chosen again.
+ * A clearable one clears when its chosen option is chosen again. Its options sit in a grid of
+ * `columns` equal cells; with `span` fewer than that, it takes that share of the width, so two
+ * controls with the same columns line their options up under each other.
  */
 function Segmented({
   label,
@@ -144,6 +152,8 @@ function Segmented({
   options,
   value,
   clearable,
+  columns,
+  span = columns,
   onChange,
 }: {
   readonly label: string;
@@ -151,11 +161,16 @@ function Segmented({
   readonly options: readonly { readonly key: string; readonly text: string }[];
   readonly value: string | undefined;
   readonly clearable: boolean;
+  readonly columns: number;
+  readonly span?: number;
   readonly onChange: (value: string | undefined) => void;
 }) {
+  // Custom properties through React's style object, which the CSP's style-src allows.
+  const grid = { "--k-cols": columns, "--k-span": span } as CSSProperties;
   return (
     <ToggleButtonGroup
       className={styles.seg}
+      style={grid}
       data-part={part}
       aria-label={label}
       selectionMode="single"
@@ -387,12 +402,14 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
     );
   }
 
-  const statuses: string[] = [...STATUSES];
+  const statuses: string[] = [...state.scales.statuses];
   if (!statuses.includes(task.status)) statuses.push(task.status);
-  const efforts: string[] = [...EFFORTS];
+  const efforts: string[] = [...state.scales.efforts];
   if (task.effort !== undefined && task.effort !== "" && !efforts.includes(task.effort)) {
     efforts.push(task.effort);
   }
+  // Priority and effort share their columns, so their options sit under each other.
+  const shared = Math.max(columnsFor(PRIORITIES.length), columnsFor(efforts.length));
   return (
     <dl className={styles.facts} aria-label={t("fact.label")} data-editable="">
       <Fact label={t("fact.status")}>
@@ -405,6 +422,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
           })}
           value={task.status}
           clearable={false}
+          columns={columnsFor(statuses.length)}
           onChange={(status) => {
             if (status !== undefined) edits.edit(task, statusChange(status));
           }}
@@ -435,12 +453,14 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
         <Segmented
           label={t("fact.priority")}
           part="priority"
-          options={[1, 2, 3].map((n) => ({
+          options={PRIORITIES.map((n) => ({
             key: String(n),
             text: t("row.priority", { level: n }),
           }))}
           value={priority}
           clearable
+          columns={shared}
+          span={Math.min(PRIORITIES.length, shared)}
           onChange={(next) => {
             // Choosing the chosen one again sets P4: no priority (A5 3.7).
             edits.edit(task, priorityChange(next === undefined ? 4 : Number(next)));
@@ -455,6 +475,8 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
           options={efforts.map((key) => ({ key, text: key }))}
           value={task.effort === "" ? undefined : task.effort}
           clearable
+          columns={shared}
+          span={Math.min(efforts.length, shared)}
           onChange={(next) => {
             edits.edit(task, effortChange(next));
           }}

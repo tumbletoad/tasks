@@ -489,10 +489,16 @@ export async function runShim(argv: readonly string[], options: ShimOptions = {}
           await pause();
           continue;
         }
-        // Refused, or still not taken after the 30 s: this launch will not start. Lost on the
-        // way: it may have been taken, and the shim cannot tell.
-        io.say(isRefusal(error) || isRetryable(error) ? TEXT.expired : TEXT.lost);
-        return await closeAfter(io, EXIT_FAILED);
+        // Refused, or still not taken after the 30 s: this launch will not start.
+        if (isRefusal(error) || isRetryable(error)) {
+          io.say(TEXT.expired);
+          return await closeAfter(io, EXIT_FAILED);
+        }
+        // Lost on the way: it may have been taken, and the shim cannot tell. While a claimed
+        // shim lives the service holds its launch as opening, so it ends now, and the service's
+        // check of its PID frees the task's Open.
+        io.say(TEXT.lost);
+        return EXIT_FAILED;
       }
     }
     // The claim was answered: the service took it, and this connection holds its attachment. From

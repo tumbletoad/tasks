@@ -23,13 +23,14 @@ import { FolderDialog, refusalText } from "../folder/FolderDialog.tsx";
 import folderCss from "../folder/Folder.module.css";
 import { useFolderWrites } from "../folder/writes.ts";
 import type { MessageId } from "../i18n/intl.tsx";
-import type { FolderRefusal } from "../row/launch.ts";
+import type { BusyOf, FolderRefusal } from "../row/launch.ts";
 import type { AskField, RowActions } from "../row/actions.ts";
 import {
   BulbIcon,
   CopyIcon,
   FolderElsewhereIcon,
   FolderIcon,
+  FolderOpenIcon,
   OutcomeIcon,
   SourceIcon,
 } from "../row/icons.tsx";
@@ -68,6 +69,8 @@ const line = classes(folderCss, ["act"]);
 export interface ExpandedProps {
   readonly task: TaskRow;
   readonly receipts: readonly Receipt[];
+  /** What busies each agent app with it on this machine. */
+  readonly busy: BusyOf | undefined;
   /** Its background runs, oldest first. */
   readonly runs: readonly Run[];
   readonly instances: readonly Instance[];
@@ -184,6 +187,7 @@ function PlaceLine({
   detail,
   base,
   refused,
+  onShow,
 }: {
   readonly task: TaskRow;
   readonly detail: Detail | undefined;
@@ -191,6 +195,8 @@ function PlaceLine({
   readonly base: string | undefined;
   /** An Open refused on the folder since the detail was read: what it found is the newer word. */
   readonly refused: FolderRefusal | undefined;
+  /** Shows the folder in the file manager. */
+  readonly onShow: (task: TaskRow) => void;
 }) {
   const t = useT();
   const say = useToast();
@@ -265,6 +271,20 @@ function PlaceLine({
       },
     );
   };
+  const show = (
+    <button
+      type="button"
+      className={styles.act}
+      data-part="show-folder"
+      aria-label={t("place.show")}
+      data-tip={t("place.show")}
+      onClick={() => {
+        onShow(task);
+      }}
+    >
+      <FolderOpenIcon />
+    </button>
+  );
   const shown =
     refused?.folder !== undefined
       ? {
@@ -299,6 +319,7 @@ function PlaceLine({
           {missing ? <span className={styles.muted}> {shown.words}</span> : null}
         </span>
         <span className={styles.acts}>
+          {show}
           <button
             type="button"
             className={styles.act}
@@ -346,7 +367,10 @@ function PlaceLine({
       <span className={styles.muted} data-fact="" data-tip={t("place.workFolderTip")}>
         {t("place.workFolder")}
       </span>
-      <span className={styles.acts}>{ways("folder.choose")}</span>
+      <span className={styles.acts}>
+        {show}
+        {ways("folder.choose")}
+      </span>
       {chooser}
     </li>
   );
@@ -412,7 +436,15 @@ function Context({
   );
 }
 
-export function Expanded({ task, receipts, runs, instances, actions, refused }: ExpandedProps) {
+export function Expanded({
+  task,
+  receipts,
+  busy,
+  runs,
+  instances,
+  actions,
+  refused,
+}: ExpandedProps) {
   const t = useT();
   const clock = useClock(false);
   const { detail, base, failed } = useDetail(task.id);
@@ -472,6 +504,7 @@ export function Expanded({ task, receipts, runs, instances, actions, refused }: 
             detail={detail}
             base={base}
             refused={fresh ? refused : undefined}
+            onShow={actions.folder}
           />
           {learnings.map((learning, i) => (
             <li
@@ -507,7 +540,7 @@ export function Expanded({ task, receipts, runs, instances, actions, refused }: 
             instances={instances}
             partial={detail.partial}
             onOpenAgain={(note, instance) => {
-              void actions.open(task, instance, undefined, note.ref);
+              void actions.open(task, instance, { request: note.ref });
             }}
             onStop={(run) => {
               actions.stop(task, run);
@@ -521,7 +554,12 @@ export function Expanded({ task, receipts, runs, instances, actions, refused }: 
         ) : null}
       </div>
       <div className={styles.composer}>
-        <Composer task={task} receipts={receipts} instances={instances} actions={actions} />
+        <Composer
+          task={task}
+          busy={busy}
+          instances={instances}
+          actions={actions}
+        />
       </div>
     </div>
   );
