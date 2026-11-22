@@ -239,11 +239,12 @@ describe("[A3.3.14.doctor.sessions] doctor's sessions row against fakes", () => 
     const ok = sessionsCheck({ open: 3, sessions: { launch: 1, run: 1 } });
     expect(ok).toMatchObject({ id: "sessions", status: "ok" });
     expect(ok.detail).toContain("3 agent connections open");
-    expect(ok.detail).toContain("1 of an agent");
-    expect(ok.detail).toContain("1 of a background run");
+    expect(ok.detail).toContain("1 is a task's session through an agent");
+    expect(ok.detail).toContain("1 through a background run");
+    // It counts connections: one agent with a helper is two connections of one session.
     const many = sessionsCheck({ open: 5, sessions: { launch: 2, run: 3 } });
-    expect(many.detail).toContain("2 of agents");
-    expect(many.detail).toContain("3 of background runs");
+    expect(many.detail).toContain("2 are a task's session through an agent");
+    expect(many.detail).toContain("3 through a background run");
     expect(sessionsCheck({ open: 0, sessions: { launch: 0, run: 0 } }).status).toBe("ok");
     expect(sessionsCheck(null).status).toBe("skip");
     // Facts the service did not give, gave in another shape, or that cannot be true, are never

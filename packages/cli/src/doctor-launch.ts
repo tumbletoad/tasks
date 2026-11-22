@@ -319,7 +319,7 @@ export function sessionsCheck(facts: unknown): Check {
   return {
     id,
     status: "ok",
-    detail: `${plural(open, "agent connection", "agent connections")} open. Task sessions: ${plural(launch, "of an agent", "of agents")} ${PRODUCT_NAME} opened, ${plural(run, "of a background run", "of background runs")}. Any other connection names its task on each call.`,
+    detail: `${plural(open, "agent connection", "agent connections")} open: ${String(launch)} ${launch === 1 ? "is" : "are"} a task's session through an agent ${PRODUCT_NAME} opened, ${String(run)} through a background run. Any other connection names its task on each call.`,
   };
 }
 
