@@ -128,12 +128,16 @@ function permissionText(request: Json): string {
   const tool = string(request["display_name"]) ?? string(request["tool_name"]) ?? "a tool";
   const input = record(request["input"]) ?? {};
   const description = string(request["description"]) ?? string(input["description"]) ?? "";
-  const lines = [`Claude Code asks to use ${tool}${description === "" ? "." : `: ${description}`}`];
-  for (const [key, value] of Object.entries(input)) {
-    if (key === "description" || value === undefined || value === null) continue;
-    lines.push(`${key}: ${shown(value)}`);
-  }
-  return lines.join("\n");
+  const asks = `Claude Code asks to use ${tool}${description === "" ? "." : `: ${description}`}`;
+  const details = Object.entries(input)
+    .filter(([key, value]) => key !== "description" && value !== undefined && value !== null)
+    .map(([key, value]) => `${key}: ${shown(value)}`)
+    .join("\n");
+  if (details === "") return asks;
+  // As code, so a command's characters show as they are where the text is read as Markdown; the
+  // fence is one no line of it closes.
+  const fence = /^\s*~~~/mu.test(details) ? "```" : "~~~";
+  return `${asks}\n${fence}\n${details}\n${fence}`;
 }
 
 /** Words of an MCP tool's question (`elicitation`): who asks, what, and the choices of each field. */

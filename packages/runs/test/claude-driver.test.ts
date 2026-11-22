@@ -385,7 +385,7 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
       done({
         ok: false,
         outcome: "needs_input",
-        text: "Claude Code asks to use Bash: Fixture text.\ncommand: Fixture text.",
+        text: "Claude Code asks to use Bash: Fixture text.\n~~~\ncommand: Fixture text.\n~~~",
         textFinal: false,
       }),
     );
@@ -397,7 +397,7 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     // Turning a prompt down never carries a permission: the program would write it into settings.
     expect(JSON.stringify(answer)).not.toContain("updatedPermissions");
     expect(events.filter((e) => e.kind === "answer").at(-1)).toMatchObject({
-      text: "Claude Code asks to use Bash: Fixture text.\ncommand: Fixture text.",
+      text: "Claude Code asks to use Bash: Fixture text.\n~~~\ncommand: Fixture text.\n~~~",
     });
     await fake.inputEnded;
   });
@@ -479,7 +479,7 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
         input: { command: "rm -rf dist && npm test", description: "Run the cleanup script" },
       }),
     ).toBe(
-      "Claude Code asks to use Bash: Run the cleanup script\ncommand: rm -rf dist && npm test",
+      "Claude Code asks to use Bash: Run the cleanup script\n~~~\ncommand: rm -rf dist && npm test\n~~~",
     );
     expect(
       await asked({
@@ -488,7 +488,7 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
         input: { url: "https://example.com/report", prompt: "Summarise it." },
       }),
     ).toBe(
-      "Claude Code asks to use WebFetch.\nurl: https://example.com/report\nprompt: Summarise it.",
+      "Claude Code asks to use WebFetch.\n~~~\nurl: https://example.com/report\nprompt: Summarise it.\n~~~",
     );
     expect(
       await asked({
@@ -497,7 +497,7 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
         input: { title: "Export review", day: "2026-11-24", attendees: ["Ana"] },
       }),
     ).toBe(
-      'Claude Code asks to use mcp__calendar__create_event.\ntitle: Export review\nday: 2026-11-24\nattendees: ["Ana"]',
+      'Claude Code asks to use mcp__calendar__create_event.\n~~~\ntitle: Export review\nday: 2026-11-24\nattendees: ["Ana"]\n~~~',
     );
   });
 
