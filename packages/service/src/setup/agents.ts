@@ -338,6 +338,27 @@ function homeOf(
   return { path: home?.path ?? userHome, isDefault: home?.isDefault ?? false };
 }
 
+/** The app whose entry an agent of this catalogue target reads: Claude Code's or Codex's. */
+export const agentAppOf = (target: string): AgentApp | undefined =>
+  AGENT_APPS.find((a) => a !== "claude-desktop" && APPS[a].target === target);
+
+/**
+ * The app and the home an instance's agent is started on, as setup names that home (agentHomes):
+ * launch's rule, and for Codex the shared home a shadow home reads. No home when nothing names
+ * one; undefined for an instance whose agent reads no entry of setup's.
+ */
+export function agentHomeOf(
+  instance: Pick<Instance, "target" | "env" | "configHome">,
+  userHome: string | undefined,
+  platform: NodeJS.Platform,
+): { readonly app: AgentApp; readonly home?: string } | undefined {
+  const app = agentAppOf(instance.target);
+  if (app === undefined) return undefined;
+  const path = instanceHome(instance, userHome, platform)?.path;
+  if (path === undefined) return { app };
+  return { app, home: (app === "codex" ? codexSharedHome(platform, path) : undefined) ?? path };
+}
+
 /** The file of an app's entry in a home. */
 function fileOf(input: SetupInput, app: AgentApp, home: string, isDefault: boolean): string {
   const p = pathOf(input.platform);
@@ -499,9 +520,7 @@ export async function agentHomes(
   }
   for (const instance of instances) {
     if (!instance.enabled) continue;
-    const app = AGENT_APPS.find(
-      (a) => a !== "claude-desktop" && APPS[a].target === instance.target,
-    );
+    const app = agentAppOf(instance.target);
     if (app === undefined) continue;
     const { path, isDefault } = homeOf(instance, app, userHome, platform);
     if (!p.isAbsolute(path) || !input.isFolder(path)) continue;

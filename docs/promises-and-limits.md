@@ -125,6 +125,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   in the terminals TTasks opened, and `ttasks doctor` warns of that.
 - The brief an agent gets when a task opens holds the task's reference, not its title, notes or
   sources. Copy's words too long for it are kept as a note, never cut.
+- The launch reference in a brief, such as `L7KQ2M`, is never given to another launch of the
+  space, so an old brief never names a newer launch.
 - What you type before Open never goes on a command line or into a link. It is saved on the task
   at the click, as your request to that agent, before anything starts: a launch that fails or a
   TTasks that stops does not lose it, and one undo takes it back. The agent reads it with the task.
@@ -203,6 +205,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   other has. A restore over a space, or a claim of a copy, goes on from the backup's counter when
   the earlier space's database cannot be read at all.
 - A command repeated without its request ID is a new change: a note added twice is there twice.
+- For a day after an agent that TTasks opened in a terminal ends, this machine keeps a hash of the
+  ticket that agent was given, with its space, task and session. The ticket itself is never kept.
 - What you typed before Open is a note on the task: every agent that loads the task later reads it,
   marked as the request of that launch, and backups and exports hold it. Undo takes it back while
   it is your newest change; the page has no way yet to remove an older note.

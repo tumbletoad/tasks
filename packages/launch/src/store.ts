@@ -260,6 +260,8 @@ export const MACHINE_ID = ID("m");
 export const PLACE_ID = ID("pl");
 export const SESSION_ID = ID("se");
 export const LAUNCH_ID = ID("la");
+/** A session ID TTasks presets (A4 3.4.2): a UUID in its canonical lower-case form. */
+export const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 /** An instance's key in machine.toml (A4 3.2): a short key of plain characters. */
 export const INSTANCE_KEY = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 const SHA256 = /^[0-9a-f]{64}$/;

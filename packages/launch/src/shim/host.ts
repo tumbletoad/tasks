@@ -31,7 +31,10 @@ import type { LaunchIntent } from "../store.ts";
 import { ADDED, agentEnvironment, type AgentBase } from "./environment.ts";
 import {
   checkPlan,
+  ENDED_KEEP_MS,
   isFolderReason,
+  keptGiven,
+  type ClickGiven,
   type LaunchFile,
   type RecordStore,
   type SpawnPlan,
@@ -118,6 +121,14 @@ export interface BridgeTicket {
   /** A first redemption now is inside the window: 15 minutes from the agent's start. */
   readonly inWindow: boolean;
 }
+
+/**
+ * The session a launch is: the one it continues, or else one named after the launch itself, `se_`
+ * and the launch ID's 26 characters. So the session exists from the click, and a launch of a build
+ * that recorded none is still named.
+ */
+export const sessionOf = (intent: Pick<LaunchIntent, "id" | "session">): string =>
+  intent.session ?? `se_${intent.id.slice("la_".length)}`;
 
 /** Sends the claim's reply to the shim. Resolves once it has left the service. */
 export type SendReply = (reply: ClaimReply, attachment: Attachment) => Promise<void>;
@@ -219,10 +230,11 @@ export class ShimHost {
   }
 
   /**
-   * Keeps a terminal launch's spawn plan in machine state, at the click (A4 3.9.1 Prepared). A
-   * repeated click that returned the same intent keeps the plan and the ticket it has.
+   * Keeps a terminal launch's spawn plan in machine state, at the click (A4 3.9.1 Prepared), with
+   * the agent's app, its home and the session ID the click preset for it, and the session the
+   * launch is. A repeated click that returned the same intent keeps the record it has.
    */
-  prepare(space: string, intent: LaunchIntent, plan: SpawnPlan): void {
+  prepare(space: string, intent: LaunchIntent, plan: SpawnPlan, given: ClickGiven = {}): void {
     const checked = checkPlan(plan);
     if (checked === undefined) throw new Error("The spawn plan is not one the shim can start");
     if (this.#records.get(intent.id) !== undefined) return;
@@ -234,6 +246,8 @@ export class ShimHost {
       task: intent.task,
       createdAt: this.#now(),
       plan: checked,
+      ...keptGiven(given),
+      session: sessionOf(intent),
     });
   }
 
@@ -639,8 +653,8 @@ export class ShimHost {
    * whose agent ended is settled by its `exit.json` (also while the shim still waits for Enter),
    * and one whose process ended without it as lost, and its record goes. A folder nothing more can
    * come from goes too: an unclaimed ticket past its window, a plan never dispatched past the
-   * Prepared limit, anything older than 24 hours without a live shim. Returns how many launches it
-   * settled or removed.
+   * Prepared limit, anything older than 24 hours without a live shim. So does an ended launch's
+   * record a day after its end. Returns how many launches it settled or removed.
    *
    * It decides on each launch's record as it is when it acts, never on a list read before an
    * await: it leaves a launch whose claim is under way to the next round, judges only processes it
@@ -666,6 +680,7 @@ export class ShimHost {
     for (const launch of this.#records.list().map((r) => r.launch)) {
       if (await this.#checkOne(launch, asked, times)) changed += 1;
     }
+    this.#forgetEnded();
     return changed;
   }
 
@@ -682,10 +697,17 @@ export class ShimHost {
     const now = this.#now();
     const held = record.attachment;
     let observation: Observation | undefined;
+    let endedAt = now;
     if (held !== undefined) {
       const exit = this.#records.readExit(launch);
       if (exit !== undefined) {
         observation = exitObservation(exit);
+        // The agent's end as the shim recorded it, also when the service finds it days later.
+        const ended =
+          record.agent === undefined
+            ? this.#records.exitWrittenAt(launch)
+            : record.agent.startedAt + exit.ran_ms;
+        if (ended !== undefined) endedAt = Math.min(ended, now);
       } else {
         // Gone only by the OS's answer about this very process: this PID with this start time
         // was asked about, and the PID no longer names it.
@@ -717,13 +739,45 @@ export class ShimHost {
       // Changed meanwhile (a report, a release): the next round decides on it as it is then.
       if (this.#records.get(launch) !== record) return false;
     }
-    this.release(launch);
+    this.release(launch, endedAt);
     return true;
   }
 
-  /** Removes the launch's machine state: its credential, its ticket and its folder. */
-  release(launch: string): void {
+  /**
+   * Removes the launch's machine state: its credential, its ticket and its folder. A launch whose
+   * agent may have been handed its ticket (the claim's reply was about to leave) leaves its ended
+   * record for a day from `endedAt`, the agent's end: none when that day has passed.
+   */
+  release(launch: string, endedAt: number = this.#now()): void {
+    const record = this.#records.get(launch);
+    const kept = this.#now() - endedAt < ENDED_KEEP_MS;
+    if (kept && record?.ticket !== undefined && record.attachment !== undefined) {
+      try {
+        this.#records.putEnded({
+          format: 1,
+          launch,
+          endedAt,
+          ticket: record.ticket.hash,
+          space: record.space,
+          task: record.task,
+          ...(record.session === undefined ? {} : { session: record.session }),
+          ...(record.home === undefined ? {} : { home: record.home }),
+          ...(record.preset === undefined ? {} : { preset: record.preset }),
+        });
+      } catch {
+        // Without it a request retried after the end is a new one; the credential still goes.
+      }
+    }
     this.#records.remove(launch);
+  }
+
+  /** Removes the ended launches' records a day after their end. */
+  #forgetEnded(): void {
+    try {
+      this.#records.forgetEnded(this.#now() - ENDED_KEEP_MS);
+    } catch {
+      // Not removable now: the next check tries again.
+    }
   }
 }
 

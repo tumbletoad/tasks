@@ -1750,7 +1750,7 @@
     },
     {
       "id": "A4.5.shim.attach",
-      "title": "Attachment and reports: an attach needs the credential, the same PID and start time and a live process, and its reply starts nothing; reports only on a connection that claimed or attached; recovery and the PID check settle a launch from exit.json, a live shim or a gone one, and its machine state goes once the shim process ended",
+      "title": "Attachment and reports: an attach needs the credential, the same PID and start time and a live process, and its reply starts nothing; reports only on a connection that claimed or attached; recovery and the PID check settle a launch from exit.json, a live shim or a gone one, and its machine state goes once the shim process ended, leaving only the ended launch's own record for a day",
       "source": "A4 3.6.3, A4 3.9.3, A7 3.9 M2.08",
       "owner": "M2",
       "kind": "ci",
