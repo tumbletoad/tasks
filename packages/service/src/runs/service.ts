@@ -10,6 +10,7 @@ import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
 import {
   FINAL_RUN_STATES,
+  normaliseRunText,
   RUN_LIMITS,
   type NewRun,
   type RunLimits,
@@ -130,6 +131,27 @@ export interface RunRequest {
   /** The person's request, or null for "work on this task". */
   readonly request: string | null;
   readonly requestId: string;
+}
+
+/**
+ * Whether `asked` asks for the run `run` was queued for: its task (a task that cannot be read any
+ * more is taken as the same), its words, and its agent when one was named.
+ */
+async function sameAsked(
+  reader: Parameters<typeof readLaunchTask>[0],
+  run: RunRecord,
+  asked: RunRequest,
+  machine: string,
+): Promise<boolean> {
+  if (run.request !== normaliseRunText(asked.request ?? WORK_ON_IT)) return false;
+  if (asked.instance !== undefined && run.instance !== asked.instance) return false;
+  if (run.task === asked.task) return true;
+  try {
+    return (await readLaunchTask(reader, asked.task, machine)).id === run.task;
+  } catch (error) {
+    if (error instanceof AppError && error.code === "not_found") return true;
+    throw error;
+  }
 }
 
 /** How often spaces that opened since are recovered, and the queue looked at. */
@@ -356,9 +378,15 @@ export class RunService {
       throw refusal("not_served", "The space is not open on this machine.");
     }
     // A repeat is given its run as it is now, before the task is read again: a rename since, or
-    // the run's end, would build another request under the same ID.
+    // the run's end, would build another request under the same ID. Another task, agent or words
+    // under that ID is no repeat, and goes on to be refused below.
     const replayed = await hosted.machine.replayed(asked.requestId);
-    if (replayed !== undefined) return replayed;
+    if (
+      replayed !== undefined &&
+      (await sameAsked(served.reader, replayed, asked, this.#options.machine))
+    ) {
+      return replayed;
+    }
     let task: Awaited<ReturnType<typeof readLaunchTask>>;
     try {
       task = await readLaunchTask(served.reader, asked.task, this.#options.machine);
