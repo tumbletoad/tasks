@@ -219,7 +219,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   are recorded as that app's, not as a session of the task. Two hand-made entries of one app on
   different homes cannot be told apart.
 - An agent running across the one update that brought this rule comes back as its app and names
-  its task.
+  its task. One whose entry names no space works in none until its app is restarted.
 - A change retried after TTasks recorded its agent's end is a new change. A program the agent left
   running that connects after that, or a shell command, is recorded as the agent app or as an
   unknown agent, and has to name its task.
