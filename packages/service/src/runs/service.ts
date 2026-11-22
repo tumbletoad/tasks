@@ -15,7 +15,13 @@ import {
   type RunLimits,
   type RunRecord,
 } from "@ttasks/contracts/runs";
-import { decodeRun, newTicket, SpaceExecutionStore, type BridgeTicket } from "@ttasks/launch";
+import {
+  decodeRun,
+  newTicket,
+  sessionOf,
+  SpaceExecutionStore,
+  type BridgeTicket,
+} from "@ttasks/launch";
 import { decodeRunRow } from "@ttasks/storage";
 import {
   containers as platformContainers,
@@ -98,6 +104,16 @@ interface RunTicket {
   readonly task: string | null;
   readonly instance: string;
   used: boolean;
+}
+
+/** A run whose ticket is held: the session its agent is, and the instance TTasks gave it. */
+export interface LiveRun {
+  readonly run: string;
+  readonly space: string;
+  /** Null for a routine's run. */
+  readonly task: string | null;
+  readonly instance: string;
+  readonly session: string;
 }
 
 /** A run as a person sees it in a list: its record and its task's reference. */
@@ -470,6 +486,22 @@ export class RunService {
       used: found.used,
       // A run's bridge may connect whenever the agent starts it, for as long as the run runs.
       inWindow: true,
+    };
+  }
+
+  /**
+   * The run a ticket names while it is held: from the moment the run's command is taken until the
+   * host is done with the run.
+   */
+  liveByTicket(ticket: string): LiveRun | undefined {
+    const found = this.#tickets.get(ticket);
+    if (found === undefined) return undefined;
+    return {
+      run: found.run,
+      space: found.space,
+      task: found.task,
+      instance: found.instance,
+      session: sessionOf({ id: found.run }),
     };
   }
 

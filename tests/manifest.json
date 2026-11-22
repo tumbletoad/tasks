@@ -2653,7 +2653,7 @@
     },
     {
       "id": "A3.3.7.binding.named",
-      "title": "A ticket (by its hash with its own launch's ID) or a preset names a claimed launch, live or ended a day at most, with its session, space, task, app and home; an ended record wins over its live one, a preset's live launch over an ended one; a ticket and a preset of two launches give both; nothing before the claim",
+      "title": "A ticket (by its hash with its own launch's ID) names the live terminal launch or run it was handed for, a preset the live launch it was preset for (the newest), each with its session, space and task, a launch with the app and home its click recorded; a ticket and a preset of two give both; nothing before the claim or after the release",
       "source": "A3 3.7.2, A4 3.1",
       "owner": "M2",
       "kind": "ci",

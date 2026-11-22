@@ -1317,7 +1317,6 @@ describe("[A4.5.shim.attach] what an ended launch leaves for a day", () => {
       space: SPACE,
       task: intent.task,
       session: `se_${id.slice("la_".length)}`,
-      app: GIVEN.app,
       home: GIVEN.home,
       preset: GIVEN.preset,
     });

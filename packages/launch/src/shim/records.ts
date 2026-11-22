@@ -126,7 +126,6 @@ export interface EndedLaunch {
   readonly space: string;
   readonly task: string | null;
   readonly session?: string;
-  readonly app?: string;
   readonly home?: string;
   readonly preset?: string;
 }
@@ -313,6 +312,11 @@ export function checkLaunchFile(value: unknown): LaunchFile | undefined {
     }
     out = { ...out, agent: { pid: agent["pid"], startedAt: agent["startedAt"] } };
   }
+  const app = value["app"];
+  if (app !== undefined) {
+    if (typeof app !== "string" || !APP_NAME.test(app)) return undefined;
+    out = { ...out, app };
+  }
   const given = checkGiven(value);
   return given === undefined ? undefined : { ...out, ...given };
 }
@@ -337,12 +341,11 @@ export function keptGiven(given: ClickGiven): ClickGiven {
   };
 }
 
-/** The app, home, session and preset a launch record and an ended one hold, each when present. */
+/** The home, session and preset a launch record and an ended one hold, each when present. */
 function checkGiven(
   value: Record<string, unknown>,
-): Pick<LaunchFile, "app" | "home" | "session" | "preset"> | undefined {
-  const { app, home, session, preset } = value;
-  if (app !== undefined && (typeof app !== "string" || !APP_NAME.test(app))) return undefined;
+): Pick<LaunchFile, "home" | "session" | "preset"> | undefined {
+  const { home, session, preset } = value;
   if (home !== undefined && !isFolderText(home)) return undefined;
   if (session !== undefined && (typeof session !== "string" || !SESSION_ID.test(session))) {
     return undefined;
@@ -351,7 +354,6 @@ function checkGiven(
     return undefined;
   }
   return {
-    ...(app === undefined ? {} : { app }),
     ...(home === undefined ? {} : { home }),
     ...(session === undefined ? {} : { session }),
     ...(preset === undefined ? {} : { preset }),

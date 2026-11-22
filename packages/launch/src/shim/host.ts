@@ -35,7 +35,6 @@ import {
   isFolderReason,
   keptGiven,
   type ClickGiven,
-  type EndedLaunch,
   type LaunchFile,
   type RecordStore,
   type SpawnPlan,
@@ -139,8 +138,8 @@ export function sessionOf(of: { readonly id: string; readonly session?: string |
   return `se_${body}`;
 }
 
-/** What a launch a value names is: its session's facts, and whether it ended. */
-export type NamedLaunch = {
+/** A live launch a value names: its session's facts (`ShimHost.liveByTicket`, `liveByPreset`). */
+export interface LiveLaunch {
   readonly launch: string;
   readonly space: string;
   /** Null for a routine's launch. */
@@ -149,22 +148,7 @@ export type NamedLaunch = {
   /** The agent's app and home folder as the click recorded them; a launch can lack either. */
   readonly app?: string;
   readonly home?: string;
-} & (
-  | {
-      /** From its claim until its ended record is written. */
-      readonly state: "live";
-    }
-  | { readonly state: "ended"; readonly endedAt: number }
-);
-
-/**
- * What an environment's ticket and preset name together (`ShimHost.named`). Two values that name
- * different launches name neither alone: both are given, and the caller decides.
- */
-export type Named =
-  | { readonly kind: "none" }
-  | { readonly kind: "launch"; readonly launch: NamedLaunch }
-  | { readonly kind: "two"; readonly ticket: NamedLaunch; readonly preset: NamedLaunch };
+}
 
 /** Sends the claim's reply to the shim. Resolves once it has left the service. */
 export type SendReply = (reply: ClaimReply, attachment: Attachment) => Promise<void>;
@@ -644,71 +628,41 @@ export class ShimHost {
   }
 
   /**
-   * The launch an environment's ticket (`TTASKS_TICKET`) and preset (`CLAUDE_CODE_SESSION_ID`)
-   * name, live or ended. A ticket is its hash bound to its launch's ID, so it names only that
-   * launch. A launch counts from its claim; an ended one for a day from its end, and over its own
-   * live record when both are on disk. A preset names its live launch before an ended one, and the
-   * newest of each. Reads machine state only: no space needs to be open.
+   * The live launch a ticket (`TTASKS_TICKET`) names: claimed (its attachment stored) and not yet
+   * released. A ticket is its hash bound to its launch's ID, so it names only that launch. Every
+   * record is hashed and compared, each in constant time. Machine state only: no space needs to be
+   * open.
    */
-  named(values: { readonly ticket?: string; readonly preset?: string }): Named {
-    const { ticket, preset } = values;
-    const now = this.#now();
-    const ended = this.#records
-      .listEnded()
-      .filter((record) => now - record.endedAt < ENDED_KEEP_MS)
-      .sort((a, b) => b.endedAt - a.endedAt);
-    const endedIds = new Set(ended.map((record) => record.launch));
-    const live = this.#records
-      .list()
-      .filter((record) => record.attachment !== undefined && !endedIds.has(record.launch))
-      .sort((a, b) => b.createdAt - a.createdAt);
-    const liveOf = (record: LaunchFile): NamedLaunch => ({
-      state: "live",
-      launch: record.launch,
-      space: record.space,
-      task: record.task,
-      session: sessionOf({ id: record.launch, session: record.session ?? null }),
-      ...(record.app === undefined ? {} : { app: record.app }),
-      ...(record.home === undefined ? {} : { home: record.home }),
-    });
-    const endedOf = (record: EndedLaunch): NamedLaunch => ({
-      state: "ended",
-      endedAt: record.endedAt,
-      launch: record.launch,
-      space: record.space,
-      task: record.task,
-      session: sessionOf({ id: record.launch, session: record.session ?? null }),
-      ...(record.app === undefined ? {} : { app: record.app }),
-      ...(record.home === undefined ? {} : { home: record.home }),
-    });
+  liveByTicket(ticket: string): LiveLaunch | undefined {
+    if (typeof ticket !== "string" || !TICKET.test(ticket)) return undefined;
+    const record = this.#byTicket(ticket);
+    return record === undefined ? undefined : this.#live(record);
+  }
 
-    let byTicket: NamedLaunch | undefined;
-    if (typeof ticket === "string" && TICKET.test(ticket)) {
-      // Every record is hashed and compared, each in constant time.
-      for (const record of live) {
-        const hash = record.ticket?.hash;
-        if (hash !== undefined && sameHash(secretHash("ticket", record.launch, ticket), hash)) {
-          byTicket = liveOf(record);
-        }
-      }
-      for (const record of ended) {
-        if (sameHash(secretHash("ticket", record.launch, ticket), record.ticket)) {
-          byTicket = endedOf(record);
-        }
-      }
+  /**
+   * The live launch the click preset `preset` for (`CLAUDE_CODE_SESSION_ID`): claimed and not yet
+   * released, the newest click when more than one is.
+   */
+  liveByPreset(preset: string): LiveLaunch | undefined {
+    if (typeof preset !== "string" || !SESSION_UUID.test(preset)) return undefined;
+    let found: LaunchFile | undefined;
+    for (const record of this.#records.list()) {
+      if (record.preset !== preset || record.attachment === undefined) continue;
+      if (found === undefined || record.createdAt > found.createdAt) found = record;
     }
-    let byPreset: NamedLaunch | undefined;
-    if (typeof preset === "string" && SESSION_UUID.test(preset)) {
-      const found = live.find((record) => record.preset === preset);
-      const gone = ended.find((record) => record.preset === preset);
-      byPreset =
-        found !== undefined ? liveOf(found) : gone === undefined ? undefined : endedOf(gone);
-    }
-    if (byTicket === undefined || byPreset === undefined || byTicket.launch === byPreset.launch) {
-      const launch = byTicket ?? byPreset;
-      return launch === undefined ? { kind: "none" } : { kind: "launch", launch };
-    }
-    return { kind: "two", ticket: byTicket, preset: byPreset };
+    return found === undefined ? undefined : this.#live(found);
+  }
+
+  #live(record: LaunchFile): LiveLaunch | undefined {
+    if (record.attachment === undefined) return undefined;
+    return {
+      launch: record.launch,
+      space: record.space,
+      task: record.task,
+      session: sessionOf({ id: record.launch, session: record.session ?? null }),
+      ...(record.app === undefined ? {} : { app: record.app }),
+      ...(record.home === undefined ? {} : { home: record.home }),
+    };
   }
 
   /** Whether the launch's agent runs, as its machine state says (`bridgeTicket`'s rule). */
@@ -865,7 +819,6 @@ export class ShimHost {
           space: record.space,
           task: record.task,
           ...(record.session === undefined ? {} : { session: record.session }),
-          ...(record.app === undefined ? {} : { app: record.app }),
           ...(record.home === undefined ? {} : { home: record.home }),
           ...(record.preset === undefined ? {} : { preset: record.preset }),
         });
