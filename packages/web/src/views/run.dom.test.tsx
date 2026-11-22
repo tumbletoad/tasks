@@ -329,19 +329,52 @@ describe("[M6.page.run-once] one press is one run, and a Run without an answer i
     expect(started[1]?.id).not.toBe(started[0]?.id);
   });
 
-  test("the service's internal failure may follow a queued run: the same request; a refusal forgets it", async () => {
+  test("the service's internal failure may follow a queued run: the same request, also after a refusal of it again; a refusal of a first press forgets it", async () => {
     down = true;
+    const closed = () =>
+      Promise.reject(new Refused(400, "invalid_input", undefined, { reason: "task_closed" }));
     startAnswer = (call) =>
       call === 1
         ? Promise.reject(new Refused(500, "internal"))
-        : call === 2
-          ? Promise.reject(new Refused(400, "invalid_input", undefined, { reason: "task_closed" }))
+        : call === 2 || call === 4
+          ? closed()
           : queued();
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       click(1);
       await settle();
     }
-    expect(started.map((s) => s.id === started[0]?.id)).toEqual([true, true, false]);
+    // The refusal of the second press says nothing of the first, which may have queued a run.
+    expect(started.map((s) => s.id === started[0]?.id)).toEqual([true, true, true, false, false]);
+    expect(started[4]?.id).not.toBe(started[3]?.id);
+  });
+
+  test("a read of the runs while a Run is on its way says nothing of it: pressed again after its answer was lost, the same request", async () => {
+    let fail: (error: unknown) => void = () => undefined;
+    startAnswer = (call) =>
+      call === 1
+        ? new Promise((_, reject) => {
+            fail = reject;
+          })
+        : queued();
+    click(1);
+    await settle();
+    // The task collapsed and expanded: its runs are read, and none is there yet.
+    const title = () =>
+      container.querySelector<HTMLElement>(`li[data-key="${TASK.id}"] [data-part="title"]`);
+    act(() => {
+      title()?.click();
+    });
+    act(() => {
+      title()?.click();
+    });
+    await settle();
+    down = true;
+    fail(new TypeError("Failed to fetch"));
+    await settle();
+    click(1);
+    await settle();
+    expect(started).toHaveLength(2);
+    expect(started[1]?.id).toBe(started[0]?.id);
   });
 
   test("the second click of a double click and a held key start nothing more", async () => {
@@ -401,14 +434,15 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
     await settle();
   };
 
-  test("until the service answers it, the same words carry the same request ID; a refusal forgets it", async () => {
+  test("until the service answers it, the same words carry the same request ID, also after a refusal of it again; a refusal of a first press forgets it", async () => {
     expect(openButton()).not.toBeNull();
+    // The generated client's error: the service refused this press, so it did nothing.
+    const refused = () => Promise.reject(new AppError({ code: "read_only", message: "Refused" }));
     openAnswer = (call) =>
       call <= 2
         ? lost()
-        : call === 3
-          ? // The generated client's error: the service refused, so nothing was done.
-            Promise.reject(new AppError({ code: "invalid_input", message: "Refused" }))
+        : call === 3 || call === 5
+          ? refused()
           : Promise.resolve(opened(call, "request"));
     type("Check it");
     await open();
@@ -421,10 +455,17 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
     await open();
     await open();
     await open();
+    // The refusal of the third press says nothing of the first two, which may have saved the words.
     expect(opens.map((o) => o.text)).toEqual(["Check it", "Check it", "Check it", "Check it"]);
-    expect(opens.map((o) => o.id === opens[0]?.id)).toEqual([true, true, true, false]);
+    expect(opens.map((o) => o.id === opens[0]?.id)).toEqual([true, true, true, true]);
     // Saved on the task: the field clears.
     expect(composer()?.value).toBe("");
+    // A first press refused did nothing: pressed again, it is a new Open.
+    type("Then this");
+    await open();
+    await open();
+    expect(opens.slice(4).map((o) => o.text)).toEqual(["Then this", "Then this"]);
+    expect(opens[5]?.id).not.toBe(opens[4]?.id);
   });
 
   test("an Open still on its way is the same Open after the task was collapsed and expanded, and after its answer was lost; other words are another", async () => {

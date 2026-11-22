@@ -267,7 +267,7 @@ describe("[M6.page.open-once] one press is one Open, and an Open without an answ
     expect(press.defaultPrevented).toBe(true);
   });
 
-  test("until the service answers, the same Open carries the same request ID; an answer or a refusal ends it", async () => {
+  test("until the service answers, the same Open carries the same request ID; an answer ends it, and a refusal of a press again does not", async () => {
     openAnswer = (call) =>
       call <= 2
         ? lost()
@@ -285,12 +285,12 @@ describe("[M6.page.open-once] one press is one Open, and an Open without an answ
     }
     const ids = opened.map((o) => o.id);
     expect(ids).toHaveLength(6);
-    // Lost twice, then answered: one request. Then an internal failure and its retry, refused:
-    // one request. Then a new one.
+    // Lost twice, then answered: one request. Then an internal failure, after which the first
+    // press may have opened: its retry, refused, and the next press are still that request.
     expect(new Set(ids.slice(0, 3)).size).toBe(1);
     expect(ids[3]).not.toBe(ids[0]);
     expect(ids[4]).toBe(ids[3]);
-    expect(ids[5]).not.toBe(ids[4]);
+    expect(ids[5]).toBe(ids[3]);
   });
 
   test("only the strip's Open another asks for a second session; a running tile expands", async () => {
