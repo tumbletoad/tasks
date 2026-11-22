@@ -296,6 +296,18 @@ test.describe("[A7.3.12.m5-14.e2e.open-refused] Open refused on its folder offer
       const second = added.tasks[1]?.ref ?? "";
       await world.op(world.mira.id, "folder.manage", { action: "set", task: first, folder: gone });
       rmSync(gone, { recursive: true });
+      // Every write of the set-up comes before the page opens: a feed frame of one that reached the
+      // page after the refused Open would read the detail again, and that read ends the question.
+      const checkoutFolder = join(temp.root, `release-${browser}`);
+      mkdirSync(checkoutFolder);
+      await world.op(world.mira.id, "folder.manage", {
+        action: "set",
+        task: second,
+        folder: checkoutFolder,
+      });
+      // Setting it marked it; then it is moved aside and another folder made at its path.
+      renameSync(checkoutFolder, `${checkoutFolder}-aside`);
+      mkdirSync(checkoutFolder);
 
       await signedIn(page, world, `/s/${world.mira.id}/inbox`);
       const row = page.locator(`li[data-task="${first}"]`);
@@ -317,16 +329,6 @@ test.describe("[A7.3.12.m5-14.e2e.open-refused] Open refused on its folder offer
       await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
 
       // A folder replaced at its path: the line offers to use it, or to choose another.
-      const checkoutFolder = join(temp.root, `release-${browser}`);
-      mkdirSync(checkoutFolder);
-      await world.op(world.mira.id, "folder.manage", {
-        action: "set",
-        task: second,
-        folder: checkoutFolder,
-      });
-      // Setting it marked it; then it is moved aside and another folder made at its path.
-      renameSync(checkoutFolder, `${checkoutFolder}-aside`);
-      mkdirSync(checkoutFolder);
       const next = page.locator(`li[data-task="${second}"]`);
       await next.locator('[data-part="title"]').click();
       await next
