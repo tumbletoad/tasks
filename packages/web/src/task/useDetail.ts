@@ -22,7 +22,8 @@ export interface DetailState {
 const isNotFound = (error: unknown): boolean =>
   typeof error === "object" && error !== null && (error as { code?: unknown }).code === "not_found";
 
-export function useDetail(task: string): DetailState {
+/** `requests`: the notes the sessions the thread shows name as their requests, read whatever their age. */
+export function useDetail(task: string, requests: readonly string[] = []): DetailState {
   const { api, live } = useContext(Session);
   const [state, setState] = useState<DetailState>({
     detail: undefined,
@@ -30,13 +31,16 @@ export function useDetail(task: string): DetailState {
     missing: false,
   });
 
+  // One string, so receipts read again with the same requests read nothing again.
+  const named = requests.join(" ");
   useEffect(() => {
     let current = true;
+    const wanted = named === "" ? [] : named.split(" ");
     const reads = new Latest();
     const load = () => {
       const newest = reads.begin(task);
       const base = live.store.asOf;
-      readDetail(api.client, task)
+      readDetail(api.client, task, wanted)
         .then((detail) => {
           if (current && newest()) setState({ detail, base, failed: false, missing: false });
         })
@@ -55,7 +59,7 @@ export function useDetail(task: string): DetailState {
       current = false;
       stop();
     };
-  }, [api, live, task]);
+  }, [api, live, task, named]);
 
   return state;
 }

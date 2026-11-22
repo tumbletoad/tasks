@@ -12,9 +12,10 @@
 // shown in the file manager. The page's sign-in is the person: no agent reaches these routes.
 //
 // A receipt holds IDs, states, instants and fixed codes only, as the launch record does, and what
-// only this machine knows: whether the launch's agent read the person's request yet, and whether
-// its session runs now. A run as the page reads it holds the person's request and the agent's
-// answer, task text that travels in a request's or a response's body only.
+// only this machine knows: whether its session runs now. The person's request for a launch is a
+// note on the task, which the page reads with the task's other notes: a receipt names it by its
+// reference. A run as the page reads it holds the person's request and the agent's answer, task
+// text that travels in a request's or a response's body only.
 import { AppError, RequestId } from "@tasks/contracts";
 import {
   isOpenRun,
@@ -62,8 +63,6 @@ export interface UiInstance {
 export interface UiLaunchPort {
   instances(): readonly UiInstance[];
   onChange?(listener: (space: string) => void): () => void;
-  /** Where a launch's request is: waiting, read, gone unread, or undefined when none is known. */
-  requestState?(launch: string): "waiting" | "read" | "unread" | undefined;
   /** Whether the launch's session runs now, as this service follows it. */
   running?(launch: string): boolean;
   /** The task and agent pairs of a space busy on this machine. */
@@ -209,12 +208,8 @@ export interface UiReceipt {
    * launch recorded by a build that did not record them.
    */
   readonly terminal?: { readonly app: string; readonly source: string };
-  /**
-   * The person's words this launch holds for its agent: waiting until the agent read them, read
-   * once it did, unread when they went with a launch whose agent never read them. Absent when it
-   * held none, or this service started after they went.
-   */
-  readonly request?: "waiting" | "read" | "unread";
+  /** The note on the task that holds what the person asked the launch's agent, such as `n2`. */
+  readonly request?: string;
   /**
    * A Confirmed launch's session: `running` while this service follows it and it runs, `ended`
    * once its agent's end was reported. Absent when the service does not know: a link or a T3
@@ -224,6 +219,9 @@ export interface UiReceipt {
   /** How long its agent ran, when its end was reported with it. */
   readonly ran_ms?: number;
 }
+
+/** A note's entry reference, as a launch's evidence names its request. */
+const NOTE_REF = /^n[1-9][0-9]{0,5}$/u;
 
 const MONOGRAM = /^[A-Za-z0-9]{1,2}$/;
 
@@ -303,6 +301,8 @@ export function receiptOf(
     (TERMINAL_SOURCES as readonly string[]).includes(source)
       ? { app, source }
       : undefined;
+  const asked = evidence["request"];
+  const request = typeof asked === "string" && NOTE_REF.test(asked) ? asked : undefined;
   const id = String(row["id"]);
   const state = String(row["state"]) as IntentState;
   const reason = row["reason"];
@@ -320,6 +320,7 @@ export function receiptOf(
     reason: typeof reason === "string" ? reason : null,
     at,
     ...(terminal === undefined ? {} : { terminal }),
+    ...(request === undefined ? {} : { request }),
     ...(session === undefined ? {} : { session }),
     ...(ranMs === undefined ? {} : { ran_ms: ranMs }),
   };
@@ -446,13 +447,7 @@ export class UiLaunches {
     const rows = await reader.all(LIST_SQL, { task });
     const port = this.#options.port;
     const runs = (launch: string): boolean => port?.running?.(launch) ?? false;
-    return rows
-      .flatMap((r) => receiptOf(r, runs) ?? [])
-      .map((receipt) => {
-        const request = port?.requestState?.(receipt.id);
-        return request === undefined ? receipt : { ...receipt, request };
-      })
-      .reverse();
+    return rows.flatMap((r) => receiptOf(r, runs) ?? []).reverse();
   }
 
   /**

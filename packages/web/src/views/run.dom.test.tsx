@@ -7,7 +7,9 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { Refused, type Api, type Instance, type Run } from "../api.ts";
+import { AppError } from "@tasks/contracts";
+import { Refused, type Api, type Busy, type Instance, type Opened, type Run } from "../api.ts";
+import { ToastContext } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
@@ -83,6 +85,30 @@ let listed: readonly Run[];
 let stopAnswer: () => Promise<Run>;
 /** The service does not answer: a read of the runs fails as Run does. */
 let down: boolean;
+let opens: (Started & { readonly another: boolean })[];
+/** What a read of busy answers. */
+let busyNow: Busy[];
+let api: Api;
+/** What Open answers, call by call. */
+let openAnswer: (call: number) => Promise<Opened>;
+let toasts: string[];
+
+/** An Open's answer: its launch, and where the words went. */
+const opened = (call: number, text: Opened["text"]): Opened => ({
+  receipt: {
+    id: `la_${String(call)}`,
+    reference: `L7KQ2${String(call)}`,
+    instance: CODEX.key,
+    route: "terminal",
+    state: "dispatching",
+    reason: null,
+    at: { prepared: Date.UTC(2026, 10, 1, 9) },
+    ...(text === "request" ? { request: "n1" } : {}),
+  },
+  copy: undefined,
+  text,
+  note: "n1",
+});
 /** How often the page read the runs. */
 let reads: number;
 
@@ -93,6 +119,11 @@ beforeEach(async () => {
   down = false;
   startAnswer = () => Promise.resolve(record({ state: "queued", version: 1 }));
   stopAnswer = () => Promise.reject(new TypeError("Failed to fetch"));
+  opens = [];
+  busyNow = [];
+  localStorage.clear();
+  toasts = [];
+  openAnswer = (call) => Promise.resolve(opened(call, "request"));
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {
@@ -109,7 +140,7 @@ beforeEach(async () => {
     } as DOMRect;
   });
   Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
-  const api = {
+  api = {
     client: {
       task: {
         get: (input: { readonly sections?: unknown }) =>
@@ -143,8 +174,8 @@ beforeEach(async () => {
           ),
       },
     },
-    busy: () => Promise.resolve([]),
-    receipts: () => Promise.resolve([]),
+    busy: () => Promise.resolve(busyNow),
+    receipts: () => (down ? lost() : Promise.resolve([])),
     runs: () => {
       reads += 1;
       return down ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve(listed);
@@ -154,6 +185,15 @@ beforeEach(async () => {
       return startAnswer(started.length);
     },
     stopRun: () => stopAnswer(),
+    openLaunch: (
+      _task: string,
+      _instance: string,
+      id: string,
+      options: { text?: string; another?: boolean },
+    ) => {
+      opens.push({ id, text: options.text, another: options.another === true });
+      return openAnswer(opens.length);
+    },
   } as unknown as Api;
   live = new Live({
     api,
@@ -190,7 +230,9 @@ function mount(node: ReactNode, api: Api) {
   act(() => {
     root.render(
       <I18n>
-        <Session.Provider value={{ api, live }}>{node}</Session.Provider>
+        <ToastContext.Provider value={(text) => toasts.push(text)}>
+          <Session.Provider value={{ api, live }}>{node}</Session.Provider>
+        </ToastContext.Provider>
       </I18n>,
     );
   });
@@ -287,19 +329,52 @@ describe("[M6.page.run-once] one press is one run, and a Run without an answer i
     expect(started[1]?.id).not.toBe(started[0]?.id);
   });
 
-  test("the service's internal failure may follow a queued run: the same request; a refusal forgets it", async () => {
+  test("the service's internal failure may follow a queued run: the same request, also after a refusal of it again; a refusal of a first press forgets it", async () => {
     down = true;
+    const closed = () =>
+      Promise.reject(new Refused(400, "invalid_input", undefined, { reason: "task_closed" }));
     startAnswer = (call) =>
       call === 1
         ? Promise.reject(new Refused(500, "internal"))
-        : call === 2
-          ? Promise.reject(new Refused(400, "invalid_input", undefined, { reason: "task_closed" }))
+        : call === 2 || call === 4
+          ? closed()
           : queued();
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       click(1);
       await settle();
     }
-    expect(started.map((s) => s.id === started[0]?.id)).toEqual([true, true, false]);
+    // The refusal of the second press says nothing of the first, which may have queued a run.
+    expect(started.map((s) => s.id === started[0]?.id)).toEqual([true, true, true, false, false]);
+    expect(started[4]?.id).not.toBe(started[3]?.id);
+  });
+
+  test("a read of the runs while a Run is on its way says nothing of it: pressed again after its answer was lost, the same request", async () => {
+    let fail: (error: unknown) => void = () => undefined;
+    startAnswer = (call) =>
+      call === 1
+        ? new Promise((_, reject) => {
+            fail = reject;
+          })
+        : queued();
+    click(1);
+    await settle();
+    // The task collapsed and expanded: its runs are read, and none is there yet.
+    const title = () =>
+      container.querySelector<HTMLElement>(`li[data-key="${TASK.id}"] [data-part="title"]`);
+    act(() => {
+      title()?.click();
+    });
+    act(() => {
+      title()?.click();
+    });
+    await settle();
+    down = true;
+    fail(new TypeError("Failed to fetch"));
+    await settle();
+    click(1);
+    await settle();
+    expect(started).toHaveLength(2);
+    expect(started[1]?.id).toBe(started[0]?.id);
   });
 
   test("the second click of a double click and a held key start nothing more", async () => {
@@ -331,6 +406,166 @@ describe("[M6.page.run-once] one press is one run, and a Run without an answer i
     };
     expect(enter(false)).toBe(false);
     expect(enter(true)).toBe(true);
+  });
+});
+
+describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open when pressed again", () => {
+  const openButton = () =>
+    container.querySelector<HTMLButtonElement>(
+      `li[data-key="${TASK.id}"] button[data-part="open"]`,
+    );
+  const open = async () => {
+    act(() => {
+      openButton()?.click();
+    });
+    await settle();
+  };
+
+  const title = () =>
+    container.querySelector<HTMLElement>(`li[data-key="${TASK.id}"] [data-part="title"]`);
+  /** Collapse the task and expand it again: the composer is a new one, with the kept draft. */
+  const reopen = async () => {
+    act(() => {
+      title()?.click();
+    });
+    act(() => {
+      title()?.click();
+    });
+    await settle();
+  };
+
+  test("until the service answers it, the same words carry the same request ID, also after a refusal of it again; a refusal of a first press forgets it", async () => {
+    expect(openButton()).not.toBeNull();
+    // The generated client's error: the service refused this press, so it did nothing.
+    const refused = () => Promise.reject(new AppError({ code: "read_only", message: "Refused" }));
+    openAnswer = (call) =>
+      call <= 2
+        ? lost()
+        : call === 3 || call === 5
+          ? refused()
+          : Promise.resolve(opened(call, "request"));
+    type("Check it");
+    await open();
+    // No answer: the words stay, the page says Codex may be opening, and pressing again is the
+    // same request, which the service replays: one note, one launch. A read of the task's
+    // launches meanwhile changes nothing: an empty list does not say the words were not saved.
+    expect(composer()?.value).toBe("Check it");
+    expect(toasts.at(-1)).toMatch(/did not answer, so Codex may be opening/u);
+    await reopen();
+    await open();
+    await open();
+    await open();
+    // The refusal of the third press says nothing of the first two, which may have saved the words.
+    expect(opens.map((o) => o.text)).toEqual(["Check it", "Check it", "Check it", "Check it"]);
+    expect(opens.map((o) => o.id === opens[0]?.id)).toEqual([true, true, true, true]);
+    // Saved on the task: the field clears.
+    expect(composer()?.value).toBe("");
+    // A first press refused did nothing: pressed again, it is a new Open.
+    type("Then this");
+    await open();
+    await open();
+    expect(opens.slice(4).map((o) => o.text)).toEqual(["Then this", "Then this"]);
+    expect(opens[5]?.id).not.toBe(opens[4]?.id);
+  });
+
+  test("an Open still on its way is the same Open after the task was collapsed and expanded, and after its answer was lost; other words are another", async () => {
+    let fail: (error: unknown) => void = () => undefined;
+    openAnswer = (call) =>
+      call === 1
+        ? new Promise((_, reject) => {
+            fail = reject;
+          })
+        : lost();
+    type("Check it");
+    await open();
+    await reopen();
+    // A press of this tab while its Open waits for the answer is that Open.
+    await open();
+    expect(opens).toHaveLength(1);
+    fail(new TypeError("Failed to fetch"));
+    await settle();
+    await open();
+    expect(opens.map((o) => o.text)).toEqual(["Check it", "Check it"]);
+    expect(opens[1]?.id).toBe(opens[0]?.id);
+    type("Something else");
+    await open();
+    expect(opens[2]?.id).not.toBe(opens[0]?.id);
+  });
+
+  /** The tab goes offline and is live again: it reads what busies the apps again. */
+  const reconnect = async () => {
+    act(() => {
+      live.store.set({ phase: "offline" });
+    });
+    act(() => {
+      live.store.set({ phase: "live" });
+    });
+    await settle();
+  };
+
+  /** The page loads again: a new list, with what the browser kept, and the task expanded. */
+  const reload = async () => {
+    act(() => {
+      root.unmount();
+    });
+    root = createRoot(container);
+    mount(<TaskList view="open" filter={() => true} empty="" />, api);
+    await settle();
+    act(() => {
+      title()?.click();
+    });
+    await settle();
+  };
+
+  test("an Open whose answer was lost after the service saved it stays the button to press, through its launch on its way and a reload, and is pressed as that Open", async () => {
+    openAnswer = (call) => (call === 1 ? lost() : Promise.resolve(opened(call, "request")));
+    type("Check it");
+    await open();
+    expect(toasts.at(-1)).toMatch(/did not answer, so Codex may be opening/u);
+    // The service did save the words and record the launch, which is on its way.
+    busyNow = [{ task: TASK.id, instance: CODEX.key, state: "opening" }];
+    await reconnect();
+    expect(openButton()?.getAttribute("aria-disabled")).toBe("false");
+    await reload();
+    expect(composer()?.value).toBe("Check it");
+    expect(openButton()?.getAttribute("aria-disabled")).toBe("false");
+    // Its agent runs by now: the button still repeats the Open that got no answer.
+    busyNow = [{ task: TASK.id, instance: CODEX.key, state: "running" }];
+    await reconnect();
+    expect(openButton()?.textContent).toContain("Open in Codex");
+    await open();
+    expect(opens.map((o) => [o.id, o.another])).toEqual([
+      [opens[0]?.id, false],
+      [opens[0]?.id, false],
+    ]);
+    expect(composer()?.value).toBe("");
+    // Answered: the same words again are a new Open, a second session as the button says.
+    type("Check it");
+    expect(openButton()?.textContent).toContain("Open another in Codex");
+    await open();
+    expect(opens[2]?.id).not.toBe(opens[0]?.id);
+    expect(opens[2]?.another).toBe(true);
+  });
+
+  test("a second click that got the launch of the first keeps its words as a note and says so last", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.resolve() },
+    });
+    openAnswer = (call) => Promise.resolve(opened(call, "note"));
+    type("And the invoices");
+    await open();
+    expect(composer()?.value).toBe("");
+    // An app that takes the brief by paste: the brief is copied, and what became of the words is
+    // what the page says last.
+    openAnswer = (call) => Promise.resolve({ ...opened(call, "note"), copy: "brief" });
+    type("And the receipts");
+    await open();
+    expect(toasts).toEqual([
+      "Codex already had this task open or opening. What you typed is saved on the task as a note.",
+      "Copied",
+      "Codex already had this task open or opening. What you typed is saved on the task as a note.",
+    ]);
   });
 });
 

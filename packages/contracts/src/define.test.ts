@@ -16,7 +16,8 @@ import {
 import { entryAdd, EntryAddInput } from "./entries/entry-add.ts";
 import { taskAdd } from "./entries/task-add.ts";
 import { taskFinish, TaskFinishInput } from "./entries/task-finish.ts";
-import { taskGet, TaskGetInput } from "./entries/task-get.ts";
+import { TaskGetInput } from "./entries/task-get.ts";
+import { taskSearch, TaskSearchInput } from "./entries/task-search.ts";
 import { taskUpdate, TaskUpdateInput } from "./entries/task-update.ts";
 import { mcpTools, rpcMethods } from "./gen/artefacts.ts";
 import { agentInputJsonSchema, inputJsonSchema, toJsonSchema } from "./json-schema.ts";
@@ -98,7 +99,7 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
       false,
     );
     expect(inputSchemaFor(entry, "user")).toBe(Outer);
-    expect(agentOf(taskGet)).toBe(TaskGetInput);
+    expect(agentOf(taskSearch)).toBe(TaskSearchInput);
   });
 
   test("the rules are data on the entry, and the input schemas carry none", () => {
