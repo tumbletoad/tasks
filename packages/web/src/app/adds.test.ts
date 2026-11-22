@@ -57,7 +57,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("[A5.3.4.web.add-once] an add whose answer was lost keeps its request until the service says what it did", () => {
+describe("[A5.3.13.web.capture] an add whose answer was lost keeps its request until the service says what it did", () => {
   test("it is kept with the request as sent, apart from the field's text, and read back by its shape", () => {
     const kept = memory();
     keepSent(kept, SPACE, sent);

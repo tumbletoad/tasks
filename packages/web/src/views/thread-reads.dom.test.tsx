@@ -165,7 +165,7 @@ const noteText = (shown: HTMLElement) =>
     (note) => note.textContent,
   );
 
-describe("[A5.3.7.web.thread-reads] a failed read of the sessions or the runs still lets the thread be drawn", () => {
+describe("[A5.3.7.web.detail] a failed read of the sessions or the runs still lets the thread be drawn", () => {
   test("the runs cannot be read: the card's notes are drawn", async () => {
     expect(noteText(await open("runs"))).toEqual(["Measured the spot: level."]);
   });
