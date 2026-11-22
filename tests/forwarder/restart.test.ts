@@ -113,7 +113,7 @@ describe("[A2.3.7.bridge.restart] bridges through a service restart", () => {
   );
 
   test(
-    "a service that stays down: requests wait for the hold, a burst past the hold limit leaves the forwarder up, every request gets the offline answer, and stderr names no content",
+    "a service that stays down: requests wait for the hold, a burst past the hold limit leaves the forwarder up, every request gets the offline answer, stderr names no content, and a service that comes back answers again",
     { timeout: 120_000 },
     async () => {
       const home = makeHome("down");
@@ -174,6 +174,16 @@ describe("[A2.3.7.bridge.restart] bridges through a service restart", () => {
       const t0 = Date.now();
       expect(isOfflineText(await bridge.call("echo", {}), "service_down")).toBe(true);
       expect(Date.now() - t0).toBeLessThan(5_000);
+      // Past the hold the forwarder still reconnects: a service that comes back answers the same
+      // bridge. Until its bind is answered a call gets the offline answer, so it is sent again.
+      await procs.peer(home);
+      let echoed = await bridge.call("echo", { n: "back" });
+      for (const end = Date.now() + 60_000; Date.now() < end;) {
+        if (!isOfflineText(echoed, "service_down")) break;
+        await sleep(100);
+        echoed = await bridge.call("echo", { n: "back" });
+      }
+      expect(textOf(echoed)).toBe(JSON.stringify({ n: "back" }));
       bridge.end();
       expect(await bridge.proc.exit).toEqual({ code: 0, signal: null });
       const stderr = bridge.proc.stderr();
