@@ -70,6 +70,14 @@ export const idPattern = (prefix: string) => new RegExp(`^${prefix}_${B32}{26}$`
 export const TaskRefInput = z.string().max(40);
 
 /**
+ * The task of a call that defaults to the session's. A connection that is no session and names
+ * none is refused `unbound`, so the registry check makes every entry that takes it list that.
+ */
+export const SessionTask = TaskRefInput.describe(
+  "Task ref (M-14) or ID; default: this session's task",
+).optional();
+
+/**
  * The one `request_id` schema. Every write entry uses this object, and the registry check
  * refuses any other (A3 3.4.1). Every input string states a maximum, even where its pattern
  * bounds it.

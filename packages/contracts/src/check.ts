@@ -27,7 +27,7 @@ import {
 } from "./define.ts";
 import { isErrorCode } from "./errors.ts";
 import { opSpec } from "./operations.ts";
-import { Base, RequestId } from "./schemas.ts";
+import { Base, RequestId, SessionTask } from "./schemas.ts";
 
 export const LIMITS = {
   /** A field description (A3 3.2.1). */
@@ -165,6 +165,18 @@ function checkMetadata(entry: AnyEntry, say: Say): void {
     }
   } else if (entry.agent !== undefined) {
     say("a user-only entry has no agent rules: agents never call it");
+  }
+
+  const task = entry.input.shape["task"] as z.ZodType | undefined;
+  if (
+    task !== undefined &&
+    task !== SessionTask &&
+    /session's task/u.test(descriptionOf(task) ?? "")
+  ) {
+    say("a task that defaults to the session's is the shared SessionTask schema from schemas.ts");
+  }
+  if (task === SessionTask && !entry.errors.includes("unbound")) {
+    say("an entry whose task defaults to the session's lists the error unbound");
   }
 
   const seen = new Set<string>();

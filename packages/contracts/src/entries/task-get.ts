@@ -8,7 +8,7 @@ import {
   Cwd,
   LOG_KINDS,
   SourceOutput,
-  TaskRefInput,
+  SessionTask,
   TaskRow,
   WrapState,
   patterns,
@@ -34,7 +34,7 @@ const SECTIONS = [
 export const NAMED_NOTES = 64;
 
 export const TaskGetInput = z.strictObject({
-  task: TaskRefInput.describe("Task ref (M-14) or ID; default: this session's task").optional(),
+  task: SessionTask,
   launch: z
     .string()
     .max(6)

@@ -26,7 +26,7 @@ import { agentInputJsonSchema, inputJsonSchema, toJsonSchema } from "./json-sche
 import * as registryModule from "./registry.ts";
 import { registry } from "./registry.ts";
 import { normaliseText, safeLine, safeText } from "./safe-text.ts";
-import { Base, RequestId } from "./schemas.ts";
+import { Base, RequestId, SessionTask } from "./schemas.ts";
 
 const ajv = new Ajv2020({ strict: true, allowUnionTypes: true });
 
@@ -1445,6 +1445,26 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
         "fixture.note: a write entry names the A1 operations it may emit",
         "fixture.note: a write entry requires request_id",
         "fixture.note: a write entry lists the error request_id_conflict",
+      ]);
+    });
+
+    test("an entry whose task defaults to the session's takes the shared schema and lists unbound", () => {
+      const session = input.extend({ task: SessionTask });
+      const unlisted = defineEntry({ ...base, input: session });
+      expect(check(unlisted)).toEqual([
+        "fixture.note: an entry whose task defaults to the session's lists the error unbound",
+      ]);
+      expect(
+        check(defineEntry({ ...base, input: session, errors: [...base.errors, "unbound"] })),
+      ).toEqual([]);
+      // Its own copy of the schema is not the shared one, whatever it lists.
+      const copy = input.extend({
+        task: TaskRef.max(40).describe("Task ref or ID; default: this session's task").optional(),
+      });
+      expect(
+        check(defineEntry({ ...base, input: copy, errors: [...base.errors, "unbound"] })),
+      ).toEqual([
+        "fixture.note: a task that defaults to the session's is the shared SessionTask schema from schemas.ts",
       ]);
     });
 

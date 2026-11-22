@@ -2261,7 +2261,7 @@ MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archiv
 | Audience filter | caller |
 | A1 operations | `task.reopen` |
 | Faces | MCP `reopen_task`, CLI `ttasks reopen`, UI |
-| Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `request_id_conflict` |
+| Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
 | Definition, estimated tokens | 518, reported |
 | Result budget, estimated tokens | typical 40, max 150 |
 
