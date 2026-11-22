@@ -18,12 +18,18 @@ const facts = () =>
     : { platform: process.platform, env: {}, accountHome: home, uid: 501 };
 
 describe("[A2.3.12.4.install.earlier-folder] an install names an earlier build's data folder", () => {
-  test("says nothing without one, and names it and the way to its spaces with one", () => {
-    expect(earlierDataNotice(facts())).toBeUndefined();
+  test("the install that makes the data folder names an earlier one, says it stays untouched, and gives no command", () => {
+    expect(earlierDataNotice(facts(), false)).toBeUndefined();
     const earlier = join(home, EARLIER_DATA_FOLDER);
     mkdirSync(join(earlier, "spaces"), { recursive: true });
-    const notice = earlierDataNotice(facts()) ?? "";
+    const notice = earlierDataNotice(facts(), false) ?? "";
     expect(notice).toContain(earlier);
-    expect(notice).toContain(`${CLI_NAME} space open <its folder in ${join(earlier, "spaces")}>`);
+    expect(notice).toMatch(/does not use that folder and leaves it untouched/);
+    expect(notice).not.toContain(`${CLI_NAME} `);
+  });
+
+  test("says nothing to a person whose data folder of this version already existed", () => {
+    mkdirSync(join(home, EARLIER_DATA_FOLDER), { recursive: true });
+    expect(earlierDataNotice(facts(), true)).toBeUndefined();
   });
 });

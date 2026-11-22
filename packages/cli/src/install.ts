@@ -25,8 +25,7 @@ import { candidateRows, versionChecks, type Check } from "./doctor.ts";
 import type { Io } from "./io.ts";
 import { printUsage } from "./output.ts";
 
-export const INSTALL_USAGE =
-  "ttasks install --finish [--created <path>]...: the install scripts run it, through the new version's own launcher.";
+export const INSTALL_USAGE = `${CLI_NAME} install --finish [--created <path>]...: the install scripts run it, through the new version's own launcher.`;
 
 function parse(args: readonly string[]): { created: string[] } | undefined {
   const created: string[] = [];
@@ -55,10 +54,12 @@ function removeIfMade(layout: Pick<Layout, "state" | "tmp">): void {
 }
 
 /**
- * The line that names the data folder of a build from before the rename, when the person's home
- * holds one, so its spaces do not look lost.
+ * The line that names the data folder of a build from before the rename, so its spaces do not look
+ * lost. Only the install that makes this version's data folder shows it: once, and never to a
+ * person who already uses this version.
  */
-export function earlierDataNotice(facts: HostFacts): string | undefined {
+export function earlierDataNotice(facts: HostFacts, dataExisted: boolean): string | undefined {
+  if (dataExisted) return undefined;
   let home: string;
   try {
     home = homeFolder(facts);
@@ -67,7 +68,7 @@ export function earlierDataNotice(facts: HostFacts): string | undefined {
   }
   const folder = join(home, EARLIER_DATA_FOLDER);
   if (!existsSync(folder)) return undefined;
-  return `${folder} holds the data of a build from before the product was called ${PRODUCT_NAME}, which this version does not read. To use a space from it, run: ${CLI_NAME} space open <its folder in ${join(folder, "spaces")}>`;
+  return `${folder} holds the spaces and settings of a build from before the product was called ${PRODUCT_NAME}. This version does not use that folder and leaves it untouched.`;
 }
 
 export async function installCommand(
@@ -82,7 +83,7 @@ export async function installCommand(
     return printUsage(
       io,
       globals.json,
-      "ttasks install --finish runs in a version folder, through its own launcher. From source there is nothing to install.",
+      `${CLI_NAME} install --finish runs in a version folder, through its own launcher. From source there is nothing to install.`,
     );
   }
   const install = await import("@ttasks/service/version-install");
@@ -102,6 +103,7 @@ export async function installCommand(
   }
   const state = target.layout.state;
   const stateExisted = existsSync(state);
+  const dataExisted = existsSync(target.layout.data);
 
   const checks: Check[] = [
     ...(await versionChecks(io, versionFolder)),
@@ -165,7 +167,7 @@ export async function installCommand(
       "",
     ].join("\n"),
   );
-  const earlier = earlierDataNotice(facts);
+  const earlier = earlierDataNotice(facts, dataExisted);
   if (earlier !== undefined) io.stdout(`${earlier}\n`);
   if (pending && service !== undefined) {
     await offerRestart(
