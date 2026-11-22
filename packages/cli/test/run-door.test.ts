@@ -25,6 +25,7 @@ import { newId, type Id } from "@tasks/storage";
 import { seedMira } from "@tasks/testkit";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { callTools, type ToolCall } from "../../runs/test/codex-server.ts";
+import { runLine } from "../src/runs.ts";
 import { BIN, runMain } from "./cli-harness.ts";
 
 const windows = process.platform === "win32";
@@ -186,6 +187,20 @@ function commandLines(): string {
 }
 
 describe("[A4.3.11.run.door] tasks run: a person starts a background run of a task, and reads its answer", () => {
+  test("a run's line says how many of its agent's requests were refused, in the list as in show", () => {
+    const run = {
+      id: "ru_00r5mfcw5rfzxb9enb2vg50z3g",
+      task: "M-14",
+      instance: "claude-work",
+      state: "succeeded",
+      reason: null,
+    };
+    expect(runLine({ ...run, refused: 2 })).toBe(
+      "ru_00r5mfcw5rfzxb9enb2vg50z3g  M-14  claude-work  succeeded (2 refused)",
+    );
+    expect(runLine(run)).not.toContain("refused");
+  });
+
   test("the request reaches the agent over its protocol only, the answer is in the run's record, and the agent's tool call is recorded as the run's", async () => {
     const running = user(["run", task, "--wait", "-"], REQUEST_MARK);
     // While the run runs, no process carries the request on its command line.
