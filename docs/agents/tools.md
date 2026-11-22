@@ -2384,14 +2384,14 @@ MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archiv
 | A1 operations | `task.reopen` |
 | Faces | MCP `reopen_task`, CLI `ttasks reopen`, UI |
 | Errors | `invalid_input`, `not_found`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 506, reported |
+| Definition, estimated tokens | 518, reported |
 | Result budget, estimated tokens | typical 40, max 150 |
 
 ### Input
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `task` | string, max 40 | yes | Task ref (M-14) or ID |
+| `task` | string, max 40 | no | Task ref (M-14) or ID; default: this session's task |
 | `reason` | string, max 200 | agents only | Why it is open again |
 | `base` | string, max 40 | yes | as_of from your last read, verbatim |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |

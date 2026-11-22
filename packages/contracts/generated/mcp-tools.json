@@ -791,13 +791,12 @@
             "type": "string"
           },
           "task": {
-            "description": "Task ref (M-14) or ID",
+            "description": "Task ref (M-14) or ID; default: this session's task",
             "maxLength": 40,
             "type": "string"
           }
         },
         "required": [
-          "task",
           "reason",
           "base",
           "request_id"

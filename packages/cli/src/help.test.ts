@@ -106,7 +106,7 @@ describe("[A2.3.10.cli.help] help for every command", () => {
       flags: reopen.flags.map((f) => (f.flag === "--reason" ? { ...f, required: true } : f)),
     };
     const lines = verbHelp(strict).split("\n");
-    expect(lines[0]).toBe("Usage: ttasks reopen <task> --reason <reason> [options]");
+    expect(lines[0]).toBe("Usage: ttasks reopen [<task>] --reason <reason> [options]");
     expect(lines.find((line) => line.startsWith("  --reason"))).toMatch(/ \(required\)$/);
   });
 

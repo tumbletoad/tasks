@@ -33,9 +33,9 @@
       "tokens": 849
     },
     {
-      "bytes": 1012,
+      "bytes": 1035,
       "name": "reopen_task",
-      "tokens": 506
+      "tokens": 518
     },
     {
       "bytes": 1327,
@@ -59,8 +59,8 @@
     }
   ],
   "total": {
-    "bytes": 21479,
-    "tokens": 10741,
+    "bytes": 21502,
+    "tokens": 10753,
     "tools": 11
   }
 }

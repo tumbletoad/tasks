@@ -772,9 +772,9 @@
       "positionals": [
         {
           "field": "task",
-          "help": "Task ref (M-14) or ID",
+          "help": "Task ref (M-14) or ID; default: this session's task",
           "name": "task",
-          "required": true,
+          "required": false,
           "type": "string"
         }
       ],

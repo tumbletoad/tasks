@@ -175,6 +175,33 @@ describe("[A3.3.7.binding.ticket] a launched agent's bridge is its session by th
   );
 
   test(
+    "a session finishes and reopens its own task without naming it",
+    { timeout: LONG },
+    async () => {
+      const added = await user("task.add", {
+        tasks: [{ title: "Fixture task its session reopens" }],
+        request_id: rid(),
+      });
+      const ref = String((added["tasks"] as Json[])[0]?.["ref"]);
+      const agent = await launched(await w.launch(ref, { started: false }));
+      const base = async () => String((await user("space.status", {}))["as_of"]);
+      await agent.call("task.finish", {
+        outcome: "Fixture outcome before a reopen.",
+        base: await base(),
+        request_id: rid(),
+      });
+      expect(
+        await agent.call("task.reopen", {
+          reason: "Fixture reason to reopen.",
+          base: await base(),
+          request_id: rid(),
+        }),
+      ).toMatch(new RegExp(`^reopened ${ref}\\b`));
+      await agent.close();
+    },
+  );
+
+  test(
     "values that name nothing live are as if none was presented: forged, malformed, a launch no shim claimed, one whose agent ended, one whose click recorded no app",
     { timeout: LONG },
     async () => {

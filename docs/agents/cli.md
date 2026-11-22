@@ -187,11 +187,11 @@ Usage: `ttasks redo [flags]`
 
 Reopen a completed or archived task. Its earlier outcome and learnings stay.
 
-Usage: `ttasks reopen <task> [flags]`
+Usage: `ttasks reopen [<task>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<task>` | `task` | string | Task ref (M-14) or ID |
+| `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--reason` | `reason` | string | Why it is open again |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 
