@@ -1840,7 +1840,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const notes = named === undefined ? {} : { notes: read.named.map(noteOf) };
     // The connection is this task's session: its later calls need no task.
     const bound = sessionIn(call)?.task === String(read.row["id"]);
-    if (launch !== undefined) await markConnected(call, launch);
     // What the person asked this launch's agent to do: the note the launch names, while it is there.
     const asked = launch?.request;
     let request: Record<string, unknown> | undefined;
@@ -1853,9 +1852,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       }
       if (body !== undefined) request = { note: asked, ...requestText(body) };
     }
+    let answer: Record<string, unknown>;
     if (sections.length === 0) {
       const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
-      return {
+      answer = {
         view: "digest",
         as_of: read.space.asOf,
         bound,
@@ -1863,19 +1863,23 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         task: digest,
         ...notes,
       };
+    } else {
+      const logLimit = typeof input["log_limit"] === "number" ? input["log_limit"] : 20;
+      const page = sectionsOf(read, pagePlan(sections, input["before"], logLimit));
+      answer = {
+        view: "sections",
+        as_of: read.space.asOf,
+        bound,
+        ...(request === undefined ? {} : { request }),
+        task: taskRow(read.row, read.space.refPrefix),
+        sections: page.sections,
+        ...(page.before === undefined ? {} : { before: page.before }),
+        ...notes,
+      };
     }
-    const logLimit = typeof input["log_limit"] === "number" ? input["log_limit"] : 20;
-    const page = sectionsOf(read, pagePlan(sections, input["before"], logLimit));
-    return {
-      view: "sections",
-      as_of: read.space.asOf,
-      bound,
-      ...(request === undefined ? {} : { request }),
-      task: taskRow(read.row, read.space.refPrefix),
-      sections: page.sections,
-      ...(page.before === undefined ? {} : { before: page.before }),
-      ...notes,
-    };
+    // Connected only once the agent has its whole answer, the person's request included.
+    if (launch !== undefined) await markConnected(call, launch);
+    return answer;
   },
 
   "task.add": async (call) => {
