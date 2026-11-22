@@ -6,7 +6,7 @@
 // review. Fixture data only.
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn } from "./page.ts";
+import { picture, showsSpace, signIn, themes } from "./page.ts";
 import { SLOW_MS, startWorld, type World } from "./world.ts";
 
 const WIDTHS = [1280, 1440, 1920, 390] as const;
@@ -60,7 +60,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
     if (client === undefined || project === undefined)
       throw new Error("the large space has no areas");
     const project_path = `area/${client.id}/project/${project.id}`;
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       const context = await browser.newContext({ reducedMotion: "reduce" });
       try {
         const page = await context.newPage();
@@ -78,8 +78,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
               timeout: SLOW_MS,
             });
             expect(await sideways(page), `${name} at ${String(width)} px`).toBeLessThanOrEqual(0);
-            await page.screenshot({
-              path: test.info().outputPath(`owner-${name}-${theme}-${String(width)}.png`),
+            await picture(page, `owner-${name}-${theme}-${String(width)}.png`, {
               fullPage: name !== "open",
             });
           }
@@ -89,17 +88,13 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
           await first.locator('[data-part="title"]').click();
           await expect(first.locator("dl")).toBeVisible({ timeout: SLOW_MS });
           expect(await sideways(page), `expanded at ${String(width)} px`).toBeLessThanOrEqual(0);
-          await first.screenshot({
-            path: test.info().outputPath(`owner-expanded-${theme}-${String(width)}.png`),
-          });
+          await picture(first, `owner-expanded-${theme}-${String(width)}.png`);
           // Narrow, the menu is a drawer with the same entries.
           if (width === 390) {
             await page.getByRole("button", { name: "Menu" }).click();
             const drawer = page.getByRole("dialog", { name: "Views and areas" });
             await expect(drawer.getByRole("button", { name: "Fold Client work" })).toBeVisible();
-            await page.screenshot({
-              path: test.info().outputPath(`owner-drawer-${theme}-390.png`),
-            });
+            await picture(page, `owner-drawer-${theme}-390.png`);
             await page.keyboard.press("Escape");
           } else {
             await expect(
@@ -170,9 +165,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
             `option ${String(i + 1)}`,
           ).toBeLessThanOrEqual(1);
         }
-        await facts.screenshot({
-          path: test.info().outputPath(`owner-facts-${scale.statuses.join("-")}.png`),
-        });
+        await picture(facts, `owner-facts-${scale.statuses.join("-")}.png`);
       } finally {
         await world.close();
       }

@@ -9,11 +9,18 @@
 // Sumi and Washi at 1,440 and 390 px for review. The seeded space and the world's other tests add
 // tasks of their own, so the assertions name this test's tasks and the rules, never a whole list.
 // Dates are relative to the day the test runs, as the service's star is (it stars for its today).
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import {
+  axeFound,
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  themes,
+  violations,
+  watchViolations,
+} from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 /** The local calendar day `days` from today: its date and the names the page shows. */
@@ -188,7 +195,7 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
       section(page, "Changes").locator(`li[data-task="${tasks.review.ref}"]`),
     ).toBeVisible({ timeout: SLOW_MS });
 
-    await page.screenshot({ path: test.info().outputPath("today-flow.png"), fullPage: true });
+    await picture(page, "today-flow.png", { fullPage: true });
     expect(await violations(page)).toEqual([]);
 
     // A number leads to what it counts: Late to the search for what is overdue.
@@ -231,8 +238,7 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
   }) => {
     const tag = `${test.info().project.name}-screens`;
     const tasks = await seed(world, tag);
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       // axe runs its own script in the page: a context of its own without the page's CSP.
       const context = await browser.newContext({
         bypassCSP: true,
@@ -244,39 +250,16 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
         await world.machine("ui.theme", theme);
         await openToday(page, world);
         await expect(row(page, tasks.star)).toBeVisible({ timeout: SLOW_MS });
-        await page.screenshot({
-          path: test.info().outputPath(`today-${theme}-1440.png`),
-          fullPage: true,
-        });
+        await picture(page, `today-${theme}-1440.png`, { fullPage: true });
         // The mockup's moment: a Focus task expanded in place.
         await row(page, tasks.star).locator('[data-part="title"]').click();
         await expect(row(page, tasks.star).locator('[data-part="collapse"]')).toBeVisible({
           timeout: SLOW_MS,
         });
         await expect(row(page, tasks.star).locator("dl")).toBeVisible({ timeout: SLOW_MS });
-        await page.screenshot({
-          path: test.info().outputPath(`today-${theme}-1440-expanded.png`),
-          fullPage: true,
-        });
+        await picture(page, `today-${theme}-1440-expanded.png`, { fullPage: true });
 
-        await page.evaluate(axe);
-        const found = await page.evaluate(async () => {
-          const run = (
-            window as unknown as {
-              axe: {
-                run: (
-                  context: unknown,
-                  options: unknown,
-                ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-              };
-            }
-          ).axe.run;
-          const result = await run({ include: ["main"] }, { resultTypes: ["violations"] });
-          return result.violations.map(
-            (v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`,
-          );
-        });
-        expect(found, `axe in ${theme}`).toEqual([]);
+        if (pictures()) expect(await axeFound(page, ["main"]), `axe in ${theme}`).toEqual([]);
 
         await page.setViewportSize({ width: 390, height: 900 });
         await page.evaluate(() => {
@@ -286,10 +269,7 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
         );
         expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
-        await page.screenshot({
-          path: test.info().outputPath(`today-${theme}-390.png`),
-          fullPage: true,
-        });
+        await picture(page, `today-${theme}-390.png`, { fullPage: true });
       } finally {
         await context.close();
       }

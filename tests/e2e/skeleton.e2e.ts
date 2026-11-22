@@ -23,7 +23,7 @@ import {
 } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import { picture, showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS } from "./world.ts";
 
 const TOKEN_KEY = `${PRODUCT_ID}.token`;
@@ -80,7 +80,7 @@ test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
     });
 
     expect(await violations(page)).toEqual([]);
-    await page.screenshot({ path: test.info().outputPath("open-confirmed.png") });
+    await picture(page, "open-confirmed.png");
     world.release(world.task.ref);
     await expect(row.locator('[data-entry][data-state="ended"]')).toBeVisible({ timeout: SLOW_MS });
   });
@@ -131,7 +131,7 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
       const line = row.locator('[data-part="place"]');
       await expect(line).toHaveAttribute("data-state", "here", { timeout: SLOW_MS });
       await expect(line).toContainText(set.folder);
-      await page.screenshot({ path: test.info().outputPath("open-folder-here.png") });
+      await picture(page, "open-folder-here.png");
 
       // The folder goes before the click: nothing reaches the terminal, and the page says why.
       rmSync(folder, { recursive: true });
@@ -150,7 +150,7 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
       expect(world.terminal()).toHaveLength(before);
       await expect(row.locator('[data-part="tile"]')).toHaveAttribute("data-state", "ready");
       expect(await violations(page)).toEqual([]);
-      await page.screenshot({ path: test.info().outputPath("open-folder-gone.png") });
+      await picture(page, "open-folder-gone.png");
     } finally {
       rmSync(temp, { recursive: true, force: true });
     }
@@ -247,7 +247,7 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
       const line = row.locator('[data-part="place"]');
       await expect(line).toHaveAttribute("data-state", "here", { timeout: SLOW_MS });
       await expect(line).toContainText(`${set.folder} [portal-web]`);
-      await page.screenshot({ path: test.info().outputPath("open-marker-repo.png") });
+      await picture(page, "open-marker-repo.png");
 
       // The checkout is moved aside and an unrelated folder made at its path.
       renameSync(folder, join(temp, "portal-aside"));
@@ -264,7 +264,7 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
       });
       await expect(said).toBeVisible({ timeout: SLOW_MS });
       expect(world.terminal()).toHaveLength(before);
-      await page.screenshot({ path: test.info().outputPath("open-marker-missing.png") });
+      await picture(page, "open-marker-missing.png");
 
       // Nothing started, so the words wait in the field.
       await expect(composer).toHaveValue("Tag it after the tests pass");
@@ -374,7 +374,7 @@ test.describe("[A7.3.14.m6-11.e2e.pack] Shift+Copy puts the context pack on the 
       timeout: SLOW_MS,
     });
     expect(await violations(page)).toEqual([]);
-    await page.screenshot({ path: test.info().outputPath("pack-copied.png") });
+    await picture(page, "pack-copied.png");
   });
 });
 

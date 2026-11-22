@@ -13,7 +13,7 @@
 import { expect, type Page } from "@playwright/test";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { BULK_TASKS, test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import { picture, showsSpace, signIn, themes, violations, watchViolations } from "./page.ts";
 import { SLOW_MS } from "./world.ts";
 
 /**
@@ -290,7 +290,7 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
       await expect(page.locator(`[data-list] span[data-kind="${kind}"]`).first()).toBeAttached();
     }
 
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       await bulk.machine("ui.theme", theme);
       for (const width of [1440, 390]) {
         await page.setViewportSize({ width, height: 900 });
@@ -307,17 +307,13 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
         // Due, star and launch never drop; sources, folder, age and priority do when narrow.
         await expect(rows.first().locator('[data-part="star"]')).toBeVisible();
         await expect(rows.first().locator('[data-part="tile"]')).toBeVisible();
-        await page.screenshot({
-          path: test.info().outputPath(`rows-${theme}-${String(width)}.png`),
-        });
+        await picture(page, `rows-${theme}-${String(width)}.png`);
         // Further down: the long titles, the waiting chips with their people, the late dues.
         await page.evaluate(() => {
           window.scrollBy(0, 2_400);
         });
         await page.waitForTimeout(200);
-        await page.screenshot({
-          path: test.info().outputPath(`rows-${theme}-${String(width)}-down.png`),
-        });
+        await picture(page, `rows-${theme}-${String(width)}-down.png`);
         if (width === 390) {
           // A long unbroken area or project name is cut, and never widens the page. The fixture's
           // names are short and no operation renames an area yet, so the names are lengthened in
@@ -389,7 +385,7 @@ test.describe("[A5.3.6.e2e.row-due-effort] A row's due date fits its column at e
     await signIn(page, world, `/s/${world.mira.id}/open`);
     await showsSpace(page, world.mira.name);
 
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       await world.machine("ui.theme", theme);
       for (const width of [1440, 1280, 390]) {
         await page.setViewportSize({ width, height: 900 });
@@ -426,9 +422,7 @@ test.describe("[A5.3.6.e2e.row-due-effort] A row's due date fits its column at e
         );
         expect(scroll, `horizontal scroll at ${String(width)} px`).toBeLessThanOrEqual(0);
         await rowOf(shown[0] ?? "").scrollIntoViewIfNeeded();
-        await page.screenshot({
-          path: test.info().outputPath(`row-due-effort-${theme}-${String(width)}.png`),
-        });
+        await picture(page, `row-due-effort-${theme}-${String(width)}.png`);
       }
     }
     expect(await violations(page)).toEqual([]);

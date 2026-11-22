@@ -4,13 +4,21 @@
 // Verify line: Note, Open and Copy with and without text; Enter and Ctrl+Enter, never while an
 // input method composes; the top field, a task's draft and a field edit that was not saved are
 // back after a reload, also with a second tab open, and nothing is left behind once saved.
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { expect, type Page, type Request } from "@playwright/test";
 import { PRODUCT_NAME, PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { openTask, showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import {
+  axeFound,
+  openTask,
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  themes,
+  violations,
+  watchViolations,
+} from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 interface Added {
@@ -256,12 +264,12 @@ test.describe("[A7.3.12.request.e2e.thread] What a person types before Open is o
     await page.reload();
     await expect(composer).toHaveValue(words, { timeout: SLOW_MS });
     await expect(open).toHaveAttribute("aria-disabled", "false");
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       await world.machine("ui.theme", theme);
       await page.reload();
       await expect(open).toHaveAttribute("aria-disabled", "false", { timeout: SLOW_MS });
       await stripOf(page, ref).scrollIntoViewIfNeeded();
-      await page.screenshot({ path: test.info().outputPath(`open-unanswered-${theme}.png`) });
+      await picture(page, `open-unanswered-${theme}.png`);
     }
     await world.machine("ui.theme", null);
     await open.click();
@@ -339,7 +347,7 @@ test.describe("[A7.3.12.request.e2e.thread] What a person types before Open is o
     await expect(failed.locator('[data-part="asked"]')).toContainText(words);
     await expect(failed.locator('[data-part="entry-text"]')).toContainText("Did not open");
     await failed.scrollIntoViewIfNeeded();
-    await page.screenshot({ path: test.info().outputPath("request-failed.png") });
+    await picture(page, "request-failed.png");
 
     const opened = calls(page, "launch.open");
     const before = world.terminal().length;
@@ -371,8 +379,7 @@ test.describe("[A7.3.12.request.e2e.screens] The thread's request line in both t
   }) => {
     const tag = `${test.info().project.name}-request`;
     const ref = await addTask(world, { title: `Renew the bike insurance (${tag})`, area: "home" });
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       const context = await browser.newContext({
         bypassCSP: true,
         viewport: { width: 1440, height: 1000 },
@@ -393,32 +400,16 @@ test.describe("[A7.3.12.request.e2e.screens] The thread's request line in both t
         const entry = rowOf(page, ref).locator('[data-entry="session"]').first();
         await expect(entry.locator('[data-part="asked"]')).toBeVisible({ timeout: SLOW_MS });
         await entry.scrollIntoViewIfNeeded();
-        await entry.screenshot({ path: test.info().outputPath(`request-${theme}-1440.png`) });
-        await page.evaluate(axe);
-        const found = await page.evaluate(async (selector) => {
-          const run = (
-            window as unknown as {
-              axe: {
-                run: (
-                  context: unknown,
-                  options: unknown,
-                ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-              };
-            }
-          ).axe.run;
-          const result = await run({ include: [selector] }, { resultTypes: ["violations"] });
-          return result.violations.map(
-            (v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`,
-          );
-        }, `li[data-task="${ref}"]`);
-        expect(found, `axe in ${theme}`).toEqual([]);
+        await picture(entry, `request-${theme}-1440.png`);
+        if (pictures())
+          expect(await axeFound(page, [`li[data-task="${ref}"]`]), `axe in ${theme}`).toEqual([]);
         await page.setViewportSize({ width: 390, height: 900 });
         await entry.scrollIntoViewIfNeeded();
         const scroll = await page.evaluate(
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
         );
         expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
-        await page.screenshot({ path: test.info().outputPath(`request-${theme}-390.png`) });
+        await picture(page, `request-${theme}-390.png`);
       } finally {
         await context.close();
       }
@@ -746,8 +737,7 @@ test.describe("[A7.3.12.m5-07.e2e.screens] The composer's strip in both themes: 
       area: "home",
       context: "The appointment needs the old passport and two photos.",
     });
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       const context = await browser.newContext({
         bypassCSP: true,
         viewport: { width: 1440, height: 1000 },
@@ -761,29 +751,13 @@ test.describe("[A7.3.12.m5-07.e2e.screens] The composer's strip in both themes: 
         const composer = composerOf(page, ref);
         await composer.fill("");
         await row.scrollIntoViewIfNeeded();
-        await row.screenshot({ path: test.info().outputPath(`strip-${theme}-1440-empty.png`) });
+        await picture(row, `strip-${theme}-1440-empty.png`);
         await composer.fill("Book the earliest slot, and bring the old passport");
         await stripOf(page, ref).locator('[data-part="note"]').focus();
-        await row.screenshot({ path: test.info().outputPath(`strip-${theme}-1440-text.png`) });
+        await picture(row, `strip-${theme}-1440-text.png`);
 
-        await page.evaluate(axe);
-        const found = await page.evaluate(async (selector) => {
-          const run = (
-            window as unknown as {
-              axe: {
-                run: (
-                  context: unknown,
-                  options: unknown,
-                ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-              };
-            }
-          ).axe.run;
-          const result = await run({ include: [selector] }, { resultTypes: ["violations"] });
-          return result.violations.map(
-            (v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`,
-          );
-        }, `li[data-task="${ref}"]`);
-        expect(found, `axe in ${theme}`).toEqual([]);
+        if (pictures())
+          expect(await axeFound(page, [`li[data-task="${ref}"]`]), `axe in ${theme}`).toEqual([]);
 
         await page.setViewportSize({ width: 390, height: 900 });
         await stripOf(page, ref).scrollIntoViewIfNeeded();
@@ -791,9 +765,9 @@ test.describe("[A7.3.12.m5-07.e2e.screens] The composer's strip in both themes: 
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
         );
         expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
-        await page.screenshot({ path: test.info().outputPath(`strip-${theme}-390-text.png`) });
+        await picture(page, `strip-${theme}-390-text.png`);
         await composer.fill("");
-        await page.screenshot({ path: test.info().outputPath(`strip-${theme}-390-empty.png`) });
+        await picture(page, `strip-${theme}-390-empty.png`);
       } finally {
         await context.close();
       }

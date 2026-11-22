@@ -1,6 +1,15 @@
 // What the e2e tests do and read on the page: the sign-in, the space a tab shows, a task's card,
-// and CSP violations. Tests only.
-import { expect, type Locator, type Page, type Request, type Response } from "@playwright/test";
+// CSP violations, and the screens tests' pictures and axe scans. Tests only.
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import {
+  expect,
+  test,
+  type Locator,
+  type Page,
+  type Request,
+  type Response,
+} from "@playwright/test";
 import { SLOW_MS, type World } from "./world.ts";
 
 /** What can make a sign-in link: every world. */
@@ -114,3 +123,62 @@ export async function watchViolations(page: Page): Promise<void> {
 
 export const violations = (page: Page): Promise<string[]> =>
   page.evaluate(() => (window as unknown as { violations?: string[] }).violations ?? []);
+
+/**
+ * Whether this browser takes the pictures, runs axe and repeats a screen in Washi: Chromium does.
+ * A theme changes colours only and axe reads the same page in both engines, while text widths and
+ * overlays are the engine's own, so Firefox runs every width and layout check, in Sumi.
+ */
+export const pictures = (): boolean => test.info().project.name === "chromium";
+
+/** The themes a screens test goes through in this browser (see `pictures`). */
+export const themes = (): readonly ("sumi" | "washi")[] =>
+  pictures() ? ["sumi", "washi"] : ["sumi"];
+
+/** Saves `name` in the test's results for review, in the browser that takes pictures. */
+export async function picture(
+  target: Page | Locator,
+  name: string,
+  options: { readonly fullPage?: boolean } = {},
+): Promise<void> {
+  if (!pictures()) return;
+  const path = test.info().outputPath(name);
+  if ("goto" in target) await target.screenshot({ path, ...options });
+  else await target.screenshot({ path });
+}
+
+const AXE = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
+
+/**
+ * axe's violations, one line each, in the parts of the page `include` selects, or in the whole
+ * document. axe runs a script of its own, so the page's context must bypass the CSP.
+ */
+export async function axeFound(
+  page: Page,
+  include?: readonly string[],
+  rules: Readonly<Record<string, { readonly enabled: boolean }>> = {},
+): Promise<string[]> {
+  if (!(await page.evaluate(() => "axe" in window))) await page.evaluate(AXE);
+  return page.evaluate(
+    async ({ include, rules }) => {
+      const run = (
+        window as unknown as {
+          axe: {
+            run: (
+              context: unknown,
+              options: unknown,
+            ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
+          };
+        }
+      ).axe.run;
+      const result = await run(include === undefined ? document : { include }, {
+        resultTypes: ["violations"],
+        rules,
+      });
+      return result.violations.map(
+        (v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`,
+      );
+    },
+    { include, rules },
+  );
+}

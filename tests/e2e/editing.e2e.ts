@@ -6,11 +6,18 @@
 // since the person's edit, "Apply mine" when it changed while the person's editor was open, axe in
 // both themes with the date popover and a toast open, and the screenshots at 1,440 and 390 px.
 // Dates are relative to the day the test runs, as the service's are.
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import {
+  axeFound,
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  themes,
+  violations,
+  watchViolations,
+} from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 /** The local calendar day `days` from today, YYYY-MM-DD. */
@@ -377,7 +384,7 @@ test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is fini
     await expect(line.locator('[data-part="keep-theirs"]')).toBeVisible();
     await expect(line.locator('[data-part="apply-mine"]')).toHaveCount(0);
     await row.scrollIntoViewIfNeeded();
-    await page.screenshot({ path: test.info().outputPath("finished-title.png") });
+    await picture(page, "finished-title.png");
 
     // Reopened, the line offers Try again, which saves it.
     await world.op(world.mira.id, "task.reopen", {
@@ -415,8 +422,7 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
       },
     ]);
     if (ref === undefined) throw new Error("the task was not added");
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       const context = await browser.newContext({
         bypassCSP: true,
         viewport: { width: 1440, height: 1000 },
@@ -441,31 +447,14 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
         await row.locator('[data-part="due"]').click();
         await expect(page.locator('[data-part="due-field"]')).toBeFocused();
         await row.scrollIntoViewIfNeeded();
-        await page.screenshot({ path: test.info().outputPath(`editing-${theme}-1440.png`) });
+        await picture(page, `editing-${theme}-1440.png`);
 
-        await page.evaluate(axe);
-        const found = await page.evaluate(async () => {
-          const run = (
-            window as unknown as {
-              axe: {
-                run: (
-                  context: unknown,
-                  options: unknown,
-                ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-              };
-            }
-          ).axe.run;
-          // The popover is portalled to the body, outside the landmarks, as a dialog of its own:
-          // axe's region rule (content inside landmarks) does not apply to it.
-          const result = await run(document, {
-            resultTypes: ["violations"],
-            rules: { region: { enabled: false } },
-          });
-          return result.violations.map(
-            (v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`,
-          );
-        });
-        expect(found, `axe in ${theme}`).toEqual([]);
+        // The popover is portalled to the body, outside the landmarks, as a dialog of its own:
+        // axe's region rule (content inside landmarks) does not apply to it.
+        if (pictures()) {
+          const found = await axeFound(page, undefined, { region: { enabled: false } });
+          expect(found, `axe in ${theme}`).toEqual([]);
+        }
         await page.keyboard.press("Escape");
         await expect(page.locator('[data-part="due-field"]')).toHaveCount(0);
 
@@ -475,10 +464,7 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
         );
         expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
-        await page.screenshot({
-          path: test.info().outputPath(`editing-${theme}-390.png`),
-          fullPage: true,
-        });
+        await picture(page, `editing-${theme}-390.png`, { fullPage: true });
         await row.locator('[data-part="due"]').click();
         const field = page.locator('[data-part="due-field"]');
         await expect(field).toBeFocused();
@@ -487,7 +473,7 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
         await expect(popover).toBeInViewport();
         const box = await popover.boundingBox();
         expect(box === null ? -1 : box.x + box.width).toBeLessThanOrEqual(390);
-        await page.screenshot({ path: test.info().outputPath(`editing-${theme}-390-popover.png`) });
+        await picture(page, `editing-${theme}-390-popover.png`);
       } finally {
         await context.close();
       }

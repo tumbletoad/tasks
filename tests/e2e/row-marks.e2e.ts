@@ -7,14 +7,12 @@ import { join } from "node:path";
 import { expect, type Browser, type Page } from "@playwright/test";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn } from "./page.ts";
+import { picture, showsSpace, signIn, themes } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 interface Added {
   readonly tasks: readonly { readonly ref: string }[];
 }
-
-const THEMES = ["sumi", "washi"] as const;
 
 async function addTask(world: World, draft: Record<string, unknown>): Promise<string> {
   const added = (await world.op(world.mira.id, "task.add", { tasks: [draft] })) as Added;
@@ -27,7 +25,7 @@ async function addTask(world: World, draft: Record<string, unknown>): Promise<st
 async function themed(
   browser: Browser,
   world: World,
-  theme: (typeof THEMES)[number],
+  theme: ReturnType<typeof themes>[number],
   path: string,
 ): Promise<{ page: Page; close: () => Promise<void> }> {
   const context = await browser.newContext({
@@ -49,7 +47,7 @@ test.describe("[A5.3.6.e2e.draft-mark] A row says when its composer holds unsent
   }) => {
     const tag = test.info().project.name;
     const ref = await addTask(world, { title: `Draft the clinic letter (${tag})`, inbox: true });
-    for (const theme of THEMES) {
+    for (const theme of themes()) {
       const { page, close } = await themed(browser, world, theme, "/inbox");
       try {
         const row = page.locator(`main li[data-task="${ref}"]`);
@@ -68,10 +66,10 @@ test.describe("[A5.3.6.e2e.draft-mark] A row says when its composer holds unsent
         await expect(mark).toBeVisible();
         await expect(mark.getByRole("img")).toHaveAccessibleName("Unsent words in its composer");
         expect(await title.boundingBox()).toEqual(before);
-        await row.screenshot({ path: test.info().outputPath(`draft-${theme}-1440.png`) });
+        await picture(row, `draft-${theme}-1440.png`);
         await page.setViewportSize({ width: 390, height: 900 });
         await row.scrollIntoViewIfNeeded();
-        await page.screenshot({ path: test.info().outputPath(`draft-${theme}-390.png`) });
+        await picture(page, `draft-${theme}-390.png`);
         await page.setViewportSize({ width: 1440, height: 900 });
 
         // Saved as a note: the words went somewhere, and the mark goes.
@@ -117,7 +115,7 @@ test.describe("[A4.5.e2e.open-marker-screens] Open's question about a folder tha
       renameSync(folder, join(temp, "portal-aside"));
       mkdirSync(folder);
       const before = world.terminal().length;
-      for (const theme of THEMES) {
+      for (const theme of themes()) {
         const { page, close } = await themed(browser, world, theme, `/task/${ref}`);
         try {
           const row = page.locator(`main li[data-task="${ref}"]`);
@@ -129,10 +127,10 @@ test.describe("[A4.5.e2e.open-marker-screens] Open's question about a folder tha
             hasText: `The folder ${set.folder} has no TTasks marker, so it may not be the folder set for this task. Nothing was started.`,
           });
           await expect(said).toBeVisible({ timeout: SLOW_MS });
-          await page.screenshot({ path: test.info().outputPath(`marker-${theme}-1440.png`) });
+          await picture(page, `marker-${theme}-1440.png`);
           await page.setViewportSize({ width: 390, height: 900 });
           await expect(said).toBeVisible();
-          await page.screenshot({ path: test.info().outputPath(`marker-${theme}-390.png`) });
+          await picture(page, `marker-${theme}-390.png`);
         } finally {
           await close();
         }

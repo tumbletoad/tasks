@@ -10,12 +10,20 @@
 import { mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { FAKE_QUESTION, FAKE_SIGNED_OUT } from "./codex-cases.ts";
 import { test } from "./fixture.ts";
-import { openTask, showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import {
+  axeFound,
+  openTask,
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  themes,
+  violations,
+  watchViolations,
+} from "./page.ts";
 import { CODEX_INSTANCE, CODEX_OTHER, SLOW_MS, type World } from "./world.ts";
 
 const OTHER_LABEL = CODEX_OTHER.label;
@@ -328,7 +336,6 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
     const ended = await addTask(world, "Screens: runs that ended");
     world.codex(working, ["hold", "answer"]);
     world.codex(ended, ["answer", "fail", "ask"]);
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
     const page = await (
       await browser.newContext({ viewport: { width: 1440, height: 1000 } })
     ).newPage();
@@ -350,7 +357,7 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
     await expect(stateOf(runsOf(page, working).nth(1))).toContainText("Waiting to start");
     await page.context().close();
 
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       const context = await browser.newContext({
         bypassCSP: true,
         viewport: { width: 1440, height: 1000 },
@@ -365,32 +372,16 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
           await expect(runsOf(shot, ref).last()).toBeVisible();
           await row.scrollIntoViewIfNeeded();
           const name = ref === working ? "working" : "ended";
-          await row.screenshot({ path: test.info().outputPath(`run-${name}-${theme}-1440.png`) });
-          await shot.evaluate(axe);
-          const found = await shot.evaluate(async (selector) => {
-            const run = (
-              window as unknown as {
-                axe: {
-                  run: (
-                    context: unknown,
-                    options: unknown,
-                  ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-                };
-              }
-            ).axe.run;
-            const result = await run({ include: [selector] }, { resultTypes: ["violations"] });
-            return result.violations.map(
-              (v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`,
-            );
-          }, `li[data-task="${ref}"]`);
-          expect(found, `axe in ${theme}`).toEqual([]);
+          await picture(row, `run-${name}-${theme}-1440.png`);
+          if (pictures())
+            expect(await axeFound(shot, [`li[data-task="${ref}"]`]), `axe in ${theme}`).toEqual([]);
           await shot.setViewportSize({ width: 390, height: 900 });
           await runsOf(shot, ref).last().scrollIntoViewIfNeeded();
           const scroll = await shot.evaluate(
             () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
           );
           expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
-          await shot.screenshot({ path: test.info().outputPath(`run-${name}-${theme}-390.png`) });
+          await picture(shot, `run-${name}-${theme}-390.png`);
           await shot.setViewportSize({ width: 1440, height: 1000 });
         }
         // The other agent that can run is one click away, in the menu beside Run.
@@ -403,7 +394,7 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
             .getByRole("button", { name: `Run with ${OTHER_LABEL}` }),
         ).toBeVisible();
         await rowOf(shot, ended).locator('[data-part="strip"]').scrollIntoViewIfNeeded();
-        await shot.screenshot({ path: test.info().outputPath(`run-menu-${theme}-1440.png`) });
+        await picture(shot, `run-menu-${theme}-1440.png`);
         await shot.keyboard.press("Escape");
 
         await signIn(shot, world, `/s/${world.mira.id}/agents`);
@@ -411,9 +402,9 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
         await expect(rowOf(shot, ended)).toBeVisible({ timeout: SLOW_MS });
         await expect(markerOf(shot, ended)).toHaveAttribute("data-kind", "needs_input");
         await expect(markerOf(shot, working)).toHaveAttribute("data-kind", "working");
-        await shot.screenshot({ path: test.info().outputPath(`run-agents-${theme}-1440.png`) });
+        await picture(shot, `run-agents-${theme}-1440.png`);
         await shot.setViewportSize({ width: 390, height: 900 });
-        await shot.screenshot({ path: test.info().outputPath(`run-agents-${theme}-390.png`) });
+        await picture(shot, `run-agents-${theme}-390.png`);
       } finally {
         await context.close();
       }

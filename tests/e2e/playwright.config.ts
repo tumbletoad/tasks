@@ -33,7 +33,8 @@ export default defineConfig({
     { name: "chromium", use: { ...devices["Desktop Chrome"], viewport } },
     // A test tagged @one-browser is about the service, a process or the fake terminal, not the
     // engine. What a second engine could do differently (keys, input methods, focus, layout,
-    // storage, the CSP, the accessibility and width checks) has tests of its own in both.
+    // storage, the CSP, the width checks) has tests of its own in both. The screens tests take
+    // their pictures, axe scans and second theme in Chromium only (page.ts, `pictures`).
     {
       name: "firefox",
       use: { ...devices["Desktop Firefox"], viewport },

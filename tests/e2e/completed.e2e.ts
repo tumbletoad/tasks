@@ -6,7 +6,7 @@
 // every row it showed still there. Screenshots in Sumi and Washi at 1440 and 390 px. Fixture data.
 import { expect, type Page, type Route } from "@playwright/test";
 import { FINISHED_TASKS, test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import { picture, showsSpace, signIn, themes, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const SUMMARY = "Check the beds after the frost";
@@ -177,7 +177,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
       "Dropped summary",
       "Finished ending",
     ]);
-    await page.screenshot({ path: test.info().outputPath("completed-first-page.png") });
+    await picture(page, "completed-first-page.png");
 
     // From the keyboard: reaching "Show more" brings it on screen, which reads on; out of sight
     // again, with focus kept on it, Enter reads the next page.
@@ -243,7 +243,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
     const focused = page.locator("main li[data-task]:focus-within");
     await expect(focused).toBeInViewport();
     expect(Number(await focused.getAttribute("aria-posinset"))).toBe(monthSize);
-    await page.screenshot({ path: test.info().outputPath("completed-end.png") });
+    await picture(page, "completed-end.png");
 
     // A task finished while the list is open joins its month at the top, saying how it ended. The
     // list read again holds every row it showed: the month is one larger at once.
@@ -268,7 +268,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
     await expect(focused.locator("[data-part='ending'] > [dir]")).toHaveText(
       "Finished while Completed was open.",
     );
-    await page.screenshot({ path: test.info().outputPath("completed-joined.png") });
+    await picture(page, "completed-joined.png");
     expect(await violations(page)).toEqual([]);
   });
 
@@ -276,7 +276,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
     browser,
     finished,
   }) => {
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       await finished.machine("ui.theme", theme);
       for (const width of [1440, 390]) {
         const context = await browser.newContext({
@@ -297,9 +297,7 @@ test.describe("[A7.3.12.m5-05.e2e.finished] Completed holds every finished task"
             if (row !== null) window.scrollBy(0, row.getBoundingClientRect().top - 120);
           });
           await expect(page.locator("main [data-part='ending']").first()).toBeVisible();
-          await page.screenshot({
-            path: test.info().outputPath(`completed-${theme}-${String(width)}.png`),
-          });
+          await picture(page, `completed-${theme}-${String(width)}.png`);
         } finally {
           await context.close();
         }
