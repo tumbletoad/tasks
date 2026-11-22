@@ -154,7 +154,7 @@ M3.13 relies on a CI job that the local checks do not cover. M3.05's search tabl
 | M4.10 | Agent and command-line fields for folders | M4.09 | M | done |
 | M4.11 | Folder follow-ups, the old places retired | M4.10, M6.16, M3.10 | S | todo |
 
-M4.05b and M4.01b are not in the base count. M4.06 is built as a redesign in slices and not as the plan's step: a connection is a launch's session or none. Pull requests 118 and 120 are merged, 121 is open, and one slice follows it. Of M4.03 the framing, the budgets and the user's notes kept whole are built, and the labels on every item, related learnings and the secret warning are not. Until M4.02 lands every agent change is applied in full, and no route changes the autonomy level.
+M4.05b and M4.01b are not in the base count. M4.06 is built as a redesign in slices and not as the plan's step: a connection is a launch's session or none. Pull requests 118 and 120 are merged, 121 is open, and one slice follows it. Of M4.03 the framing, the budgets and the user's notes kept whole are built. Notes and log entries name their writer, and the summary, the context, the outcome and the sources carry no such label yet. Related learnings and the secret warning on a write are not built. Until M4.02 lands every agent change is applied in full, and no route changes the autonomy level.
 
 ## M5: the planner UI (parallel with M6)
 
@@ -188,7 +188,7 @@ M5.14b is not in the base count. M5.12 merged as a first space and an agent-apps
 | M6.04 | Cancellation | M6.03 | M | done |
 | M6.05 | Stream parsers | M0.11 | S | done |
 | M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | done |
-| M6.06b | What M6.06 left: `run_report` on a run's connection, approvals in Codex's narrower modes | M6.06, M4.06 | S | todo |
+| M6.06b | What M6.06 left: `run_report` on a run's connection, and asking the person about an approval in Codex's narrower modes, where the driver answers each request itself today | M6.06, M4.06 | S | todo |
 | M6.07 | Routines: Refresh and Wrap-up | M6.06, M4.07 | M | todo |
 | M6.08 | The TTasks work folder | M6.06, M2.11 | S | done |
 | M6.09 | Run and Refresh UI | M5.07, M6.07, M6.08 | M | done |
