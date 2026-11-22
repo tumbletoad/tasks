@@ -1738,8 +1738,7 @@ describe("[A1.5.bundle.stress] the largest stress-corpus bundle passes the share
       for (let i = 0; i < views; i += 1) {
         const entry = writer.addBytes(
           `view/tasks/M-${String(i)}.md`,
-          Buffer.from(`# M-${String(i)}
-`),
+          Buffer.from(`# M-${String(i)}\n`),
         );
         files[entry.name] = { size: entry.size, sha256: entry.sha256 };
       }
