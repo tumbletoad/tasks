@@ -416,7 +416,7 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     ) as unknown;
     expect(file).toEqual({
       mcpServers: {
-        tasks: {
+        ttasks: {
           type: "stdio",
           command: "/opt/ttasks/bin/ttasks",
           args: ["mcp", "--space", "sp_x"],
