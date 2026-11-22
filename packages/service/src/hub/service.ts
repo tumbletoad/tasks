@@ -103,7 +103,7 @@ import {
   type SpaceManagerOptions,
   type SpaceView,
 } from "./spaces.ts";
-import { personSpace, type OpsHost } from "../ops/index.ts";
+import { personSpace, type OpsHost, type ServedSpace } from "../ops/index.ts";
 import { FolderMarkers, MARKS_FILE } from "../ops/marker.ts";
 import { MemoryGrants, type GrantStore } from "../local/index.ts";
 import {
@@ -677,11 +677,12 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // Made before the endpoint listens (its handler table takes the shim's methods), once the
     // socket folder, which holds the launch folders on Linux, has been checked below.
     const launching: { service?: LaunchService } = {};
-    // The registered spaces as a bind reads them: the space manager's once the configuration's are
-    // handed to it, and until then those of the configuration, opening, beside any the manager has
-    // already. So a bind during startup settles the default and the only space by registered ID.
+    // The registered spaces as the binds and the request path read them: the space manager's once
+    // the configuration's are handed to it, and until then those of the configuration, opening,
+    // beside any the manager has already. So a bind during startup settles the default and the only
+    // space by registered ID, and a call right after it is told that space is still opening.
     const spacesHanded = { done: false };
-    const knownSpaces = () => {
+    const knownSpaces = (): ServedSpace[] => {
       const served = made.spaces?.served() ?? [];
       if (spacesHanded.done) return served;
       const has = new Set(served.map((space) => space.id ?? space.registered));
@@ -694,6 +695,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
             registered: space.id,
             name: undefined,
             state: "opening" as const,
+            writer: undefined,
+            reader: undefined,
           })),
       ];
     };
@@ -750,7 +753,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       ui: undefined as EndpointUi | undefined,
       ops: {
         machine,
-        spaces: () => made.spaces?.served() ?? [],
+        spaces: knownSpaces,
         platform,
         ...(personHome === undefined ? {} : { home: personHome }),
         dataFolder: layout.data,
@@ -792,7 +795,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           personSpace(
             {
               machine,
-              spaces: () => made.spaces?.served() ?? [],
+              spaces: knownSpaces,
               platform,
               defaultSpace: () => defaults.get(),
             },

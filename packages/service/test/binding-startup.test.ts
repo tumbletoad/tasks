@@ -7,7 +7,8 @@ import { describe, expect, test, vi } from "vitest";
 import { startService } from "../src/hub/service.ts";
 import { readServiceJson, removeRuntimeDir, serviceEnv, tempRoot, waitFor } from "./harness.ts";
 import { hubSpace } from "./mcp-hub.ts";
-import { bridgeContext, openMcp } from "./mcp-helpers.ts";
+import { toolOf } from "../src/mcp/index.ts";
+import { bridgeContext, openMcp, RawMcp, textOf } from "./mcp-helpers.ts";
 
 const gate = vi.hoisted(() => {
   let release = (): void => undefined;
@@ -35,7 +36,7 @@ vi.mock("../src/mcp/offline.ts", async (importOriginal) => {
 
 describe("[A3.3.7.binding.space] a bind while the service starts settles the configured space", () => {
   test(
-    "on an install with one space and no default, a hand-made entry bound before the spaces are handed over gets that space by its registered ID",
+    "on an install with one space and no default, a hand-made entry bound before the spaces are handed over gets that space by its registered ID, and its first call is told the space is still opening, to try again",
     { timeout: 180_000 },
     async () => {
       const temp = tempRoot("bind-startup");
@@ -58,6 +59,13 @@ describe("[A3.3.7.binding.space] a bind while the service starts settles the con
         );
         const session = await openMcp(home, path, bridgeContext({ instance: null, app: null }));
         expect(session.bound.binding).toEqual({ space: space.id, state: "unbound" });
+        const mcp = new RawMcp(session);
+        await mcp.initialize();
+        const reply = await mcp.request("tools/call", {
+          name: toolOf("space.status"),
+          arguments: {},
+        });
+        expect(textOf(reply.message["result"])).toMatch(/^error space_unavailable \(opening\):/);
         session.close();
       } finally {
         gate.release();
