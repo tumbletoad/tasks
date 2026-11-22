@@ -30,7 +30,6 @@ import {
   within,
   type ServiceJson,
 } from "../../packages/service/test/harness.ts";
-import { REDEEM_PER_MINUTE } from "../../packages/service/src/http/auth.ts";
 import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { checkedDriver, seedMira } from "../../packages/testkit/src/index.ts";
@@ -53,8 +52,6 @@ const OS =
 
 /** Generous bounds: a loaded machine must not fail a test that is only slow. */
 export const SLOW_MS = 120_000;
-
-const REDEEM_WINDOW_MS = 60_000;
 
 export interface SpaceInfo {
   readonly id: string;
@@ -355,26 +352,8 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
 
     let logs = 0;
     let ops = 0;
-    /** For each of this world's redeems, a time at or after the service counted it. */
-    const redeems: number[] = [];
     /** The world's own sign-in for `machine`, made once. */
     let token: string | undefined;
-    // The service redeems only so many codes a minute, and a worker's tests sign in more often
-    // than that when they run fast: every redeem, the page's and the world's own, waits for room.
-    // A page redeems its code some time after its URL is handed out, however slow the machine,
-    // but before the test asks for the next sign-in (it waits for the signed-in page first). So
-    // the last redeem counts as made now, and the window is counted from there, not from a guess.
-    const roomToRedeem = async (): Promise<void> => {
-      if (redeems.length > 0) redeems[redeems.length - 1] = Date.now();
-      for (;;) {
-        const now = Date.now();
-        while (redeems.length > 0 && (redeems[0] ?? 0) <= now - REDEEM_WINDOW_MS) redeems.shift();
-        if (redeems.length < REDEEM_PER_MINUTE) break;
-        const wait = (redeems[0] ?? now) + REDEEM_WINDOW_MS - now + 1;
-        await new Promise((resolve) => setTimeout(resolve, wait));
-      }
-      redeems.push(Date.now());
-    };
     return {
       get origin() {
         return life.origin;
@@ -387,7 +366,6 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       launched,
       portal,
       signInUrl: async (to) => {
-        await roomToRedeem();
         const minted = (await life.user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
           code: string;
           port: number;
@@ -397,7 +375,6 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       machine: async (key, value) => {
         const port = Number(new URL(life.origin).port);
         if (token === undefined) {
-          await roomToRedeem();
           const minted = (await life.user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
             code: string;
           };

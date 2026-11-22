@@ -1,4 +1,6 @@
-// Every bound of the listener in one place (A2 3.8.1, 3.8.3). Tests pass smaller ones.
+// Every bound of the listener in one place (A2 3.8.1, 3.8.3). Tests pass other ones.
+import { REDEEM_PER_MINUTE } from "./auth.ts";
+
 export interface HttpLimits {
   /** A2 3.8.1: a request's headers within 10 s (Node's parser, and the `idle` timer before them). */
   readonly headersMs: number;
@@ -29,6 +31,8 @@ export interface HttpLimits {
   /** Fragment codes and WebSocket tickets that may wait at once. */
   readonly maxCodes: number;
   readonly maxTickets: number;
+  /** Codes redeemed for a token per minute, for the whole service. */
+  readonly redeemPerMinute: number;
 }
 
 export const DEFAULT_HTTP_LIMITS: HttpLimits = {
@@ -47,4 +51,5 @@ export const DEFAULT_HTTP_LIMITS: HttpLimits = {
   feedPollMs: 1_000,
   maxCodes: 16,
   maxTickets: 64,
+  redeemPerMinute: REDEEM_PER_MINUTE,
 };
