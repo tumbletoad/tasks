@@ -1021,6 +1021,15 @@
           "repeat": false,
           "required": false,
           "type": "string"
+        },
+        {
+          "field": "notes",
+          "flag": "--note",
+          "help": "These notes too, whole, whatever their age",
+          "repeat": true,
+          "required": false,
+          "type": "string",
+          "userOnly": true
         }
       ],
       "inputOnly": [],

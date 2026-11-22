@@ -1791,6 +1791,7 @@ MCP tool `get_task`, "Load a task": Use to load a task before working on it, or 
 | `sections` | ("instructions" \| "context" \| "notes" \| "log" \| "sources" \| "outcome" \| "history")[], max 7 items | no | Return these in full instead of the digest |
 | `log_limit` | integer, 1 to 50 | no | Log entries per page; default 20 |
 | `before` | string, max 200 | no | With sections: the before token of the last page |
+| `notes` | (string, max 7)[], max 64 items | no, user only | These notes too, whole, whatever their age |
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
 
 ### Output
@@ -1892,6 +1893,20 @@ When `view` is `"digest"`:
 | `task.cut.context` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.cut.outcome` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.version` | integer, 0 to 9007199254740991 | yes | Row version |
+| `notes` | object[], max 64 items | no | The notes asked for by reference that the task has, whole |
+| `notes[].ref` | string | yes | Note ordinal, such as n2 |
+| `notes[].author` | string | yes | Actor that wrote it, from history |
+| `notes[].for_agents` | boolean | yes | A note from the user addressed to agents |
+| `notes[].at` | string | yes | When, ISO date and time |
+| `notes[].text` | string | yes | Note text |
+| `notes[].request_for` | object[], max 20 items | no | The user's request for these launches, oldest first: history, not yours to do |
+| `notes[].request_for[].launch` | string | yes | The launch reference |
+| `notes[].request_for[].instance` | string, max 64 | yes | The agent instance it opened |
+| `notes[].cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
+| `notes[].slice` | object | no | Only this part of the text is on this page |
+| `notes[].slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
+| `notes[].slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
+| `notes[].slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
 
 When `view` is `"sections"`:
 
@@ -1983,6 +1998,20 @@ When `view` is `"sections"`:
 | `sections.history[].actor` | string | yes | Actor that wrote it, from history |
 | `sections.history[].what` | string | yes | Operation kind and the fields it changed |
 | `before` | string | no | Paging token for the rest |
+| `notes` | object[], max 64 items | no | The notes asked for by reference that the task has, whole |
+| `notes[].ref` | string | yes | Note ordinal, such as n2 |
+| `notes[].author` | string | yes | Actor that wrote it, from history |
+| `notes[].for_agents` | boolean | yes | A note from the user addressed to agents |
+| `notes[].at` | string | yes | When, ISO date and time |
+| `notes[].text` | string | yes | Note text |
+| `notes[].request_for` | object[], max 20 items | no | The user's request for these launches, oldest first: history, not yours to do |
+| `notes[].request_for[].launch` | string | yes | The launch reference |
+| `notes[].request_for[].instance` | string, max 64 | yes | The agent instance it opened |
+| `notes[].cut` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
+| `notes[].slice` | object | no | Only this part of the text is on this page |
+| `notes[].slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
+| `notes[].slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
+| `notes[].slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
 
 When `view` is `"status"`:
 

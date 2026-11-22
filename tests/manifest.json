@@ -4752,7 +4752,7 @@
     },
     {
       "id": "A5.3.9.web.thread-request",
-      "title": "A launch's request shows in the thread as what the person asked its agent: in its session's entry from the click on (Prepared too) and not again as a note, gone with its note after an undo; a launch that did not open offers Open again with it on its newest launch only; a long request folds with More so the state and Open again stay in reach; a request whose session is not listed shows on its own as asked of its agent",
+      "title": "A launch's request shows in the thread as what the person asked its agent: in its session's entry from the click on (Prepared too) and not again as a note, gone with its note after an undo; a launch that did not open offers Open again with it on its newest launch only; a long request folds with More so the state and Open again stay in reach; a request whose session is not listed shows on its own as asked of its agent; a session's request is read whole by its reference, whatever the task holds after it",
       "source": "A5 3.8, A5 3.9",
       "owner": "M5",
       "kind": "ci",

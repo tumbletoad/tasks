@@ -171,6 +171,13 @@ const NOTES: Statement = {
     "AND ($nupto IS NULL OR n.ordinal <= $nupto) ORDER BY n.ordinal DESC LIMIT $nlimit",
   mode: "all",
 };
+/** The notes whose ordinals `$named` lists (a JSON array), whatever their age, newest first. */
+const NAMED: Statement = {
+  sql:
+    `SELECT ${NOTE_COLUMNS} ${NOTES_FROM} ` +
+    "AND n.ordinal IN (SELECT value FROM json_each($named)) ORDER BY n.ordinal DESC",
+  mode: "all",
+};
 const NOTE_COUNTS: Statement = {
   sql: `SELECT count(*) FILTER (WHERE ${INSTRUCTION}) AS i, count(*) FILTER (WHERE NOT ${INSTRUCTION}) AS n ${NOTES_FROM}`,
   mode: "get",
@@ -357,6 +364,8 @@ export interface TaskRead {
   readonly instructions: Row[];
   /** The other notes, newest first, as `notes` asked. */
   readonly notes: Row[];
+  /** The notes `named` asked for by ordinal, of either kind, newest first. */
+  readonly named: Row[];
   readonly log: Row[];
   readonly sources: Row[];
   /** Where the task opens on the read's machine. */
@@ -375,7 +384,7 @@ export interface TaskRead {
 
 /**
  * Reads one task and what hangs from it in one snapshot: of the instructions, notes and log the
- * ranges asked for. A reference with another space's prefix is `not_found`, never a task
+ * ranges asked for, and the notes named by ordinal. A reference with another space's prefix is `not_found`, never a task
  * elsewhere (A3 3.4.1), and so is a deleted task (A1 3.5).
  */
 export async function readTask(
@@ -386,6 +395,7 @@ export async function readTask(
     readonly instructions: EntryRange;
     readonly notes: EntryRange;
     readonly log: EntryRange;
+    readonly named?: readonly number[];
   },
 ): Promise<TaskRead> {
   const key = taskKey(ref);
@@ -401,6 +411,7 @@ export async function readTask(
     nlimit: options.notes.limit,
     lupto: options.log.upto,
     llimit: options.log.limit,
+    named: JSON.stringify(options.named ?? []),
   };
   const learned = await readsLearnings(reader);
   const folders = await hasFolderTable(reader);
@@ -416,6 +427,7 @@ export async function readTask(
     sources,
     history,
     learnings,
+    named,
     own,
     project,
   ] = await snapshot(
@@ -432,6 +444,7 @@ export async function readTask(
       SOURCES,
       HISTORY,
       learned ? LEARNINGS : NOTHING,
+      options.named === undefined || options.named.length === 0 ? NOTHING : NAMED,
       ...(folders ? [OWN_FOLDERS_OF_MATCH, PROJECT_FOLDERS_OF_MATCH] : []),
     ],
     params,
@@ -453,6 +466,7 @@ export async function readTask(
     row: task,
     instructions: instructions as Row[],
     notes: notes as Row[],
+    named: (named ?? []) as Row[],
     log: log as Row[],
     sources: sourceRows,
     folder: taskFolderOf((own ?? []) as Row[], (project ?? []) as Row[], options.machine),

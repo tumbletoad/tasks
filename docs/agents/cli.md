@@ -249,6 +249,7 @@ Usage: `tasks show [<task>] [flags]`
 | `--section` | `sections` | "instructions" \| "context" \| "notes" \| "log" \| "sources" \| "outcome" \| "history" | Return these in full instead of the digest (repeatable) |
 | `--log-limit` | `log_limit` | integer | Log entries per page; default 20 |
 | `--before` | `before` | string | With sections: the before token of the last page |
+| `--note` | `notes` | string | These notes too, whole, whatever their age (repeatable, user only) |
 
 ## `tasks status`
 

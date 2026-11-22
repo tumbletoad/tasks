@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { Client } from "@tasks/contracts/generated/client.ts";
-import { MAX_PAGES, mergePages, readDetail, rowOfFacts, type TaskFacts } from "./detail.ts";
+import { mergePages, rowOfFacts, type TaskFacts } from "./detail.ts";
 
 const FACTS: TaskFacts = {
   id: "t_0123456789abcdefghjkmnpqrs",
@@ -114,68 +113,5 @@ describe("[A5.3.7.web.detail] the expanded task's detail from the pages of a sec
       created_at: Date.parse("2026-11-09T08:00:00.000Z"),
     });
     expect(row).not.toHaveProperty("focus_on");
-  });
-});
-
-/**
- * A client whose task holds instructions that fill more pages than the page reads, and `count`
- * notes of the person's, one a page, newest first: n<count> down to n1.
- */
-function longTask(count: number) {
-  const reads: string[][] = [];
-  const note = (n: number) => ({
-    ref: `n${String(n)}`,
-    author: "user",
-    for_agents: false,
-    at: new Date(Date.UTC(2026, 10, 1) + n * 60_000).toISOString(),
-    text: `Note ${String(n)}`,
-  });
-  const client = {
-    task: {
-      get: (input: { sections?: string[]; before?: string }) => {
-        if (input.sections === undefined) return Promise.resolve({ view: "digest", task: FACTS });
-        reads.push(input.sections);
-        const page = Number(input.before ?? "0");
-        const next = { before: String(page + 1) };
-        if (input.sections.includes("instructions")) {
-          const instruction = { ...note(10_000), for_agents: true, text: "x" };
-          return Promise.resolve({
-            view: "sections",
-            sections: { instructions: [instruction] },
-            ...next,
-          });
-        }
-        const n = count - page;
-        return Promise.resolve({
-          view: "sections",
-          sections: { notes: [note(n)] },
-          ...(n > 1 ? next : {}),
-        });
-      },
-    },
-  } as unknown as Client;
-  return { client, reads };
-}
-
-describe("[A5.3.9.web.thread-request] the request a session names is in the detail whatever the task holds", () => {
-  test("instructions that fill every page leave the person's notes, newest first, their own pages", async () => {
-    const { client } = longTask(3);
-    const detail = await readDetail(client, FACTS.id);
-    expect(detail.notes.filter((n) => !n.forAgents).map((n) => n.ref)).toEqual(["n1", "n2", "n3"]);
-    expect(detail.partial).toBe(true);
-  });
-
-  test("a session's request older than the pages read is read on to, and no further", async () => {
-    const count = MAX_PAGES + 15;
-    const { client, reads } = longTask(count);
-    const wanted = `n${String(count - MAX_PAGES - 5)}`;
-    const detail = await readDetail(client, FACTS.id, [wanted]);
-    expect(detail.notes.some((n) => n.ref === wanted)).toBe(true);
-    expect(reads.filter((r) => r.includes("notes"))).toHaveLength(MAX_PAGES + 6);
-    expect(detail.partial).toBe(true);
-    // The newest session's note is gone (an undo took it back): no page more is read for it.
-    const { client: again, reads: more } = longTask(count);
-    await readDetail(again, FACTS.id, [`n${String(count + 1)}`]);
-    expect(more.filter((r) => r.includes("notes"))).toHaveLength(MAX_PAGES);
   });
 });

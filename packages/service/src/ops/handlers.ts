@@ -1918,7 +1918,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
               typeof input["log_limit"] === "number" ? input["log_limit"] : 20,
             ),
           );
-    const read = await readTask(reader, task, { machine, ...ranges });
+    const named = Array.isArray(input["notes"])
+      ? (input["notes"] as string[]).map((ref) => Number(ref.slice(1)))
+      : undefined;
+    const read = await readTask(reader, task, {
+      machine,
+      ...ranges,
+      ...(named === undefined ? {} : { named }),
+    });
+    const notes = named === undefined ? {} : { notes: read.named.map(noteOf) };
     // A3 3.7.3: an explicit task choice binds an ad-hoc session, once the task is found.
     if (input["bind"] === true && input["launch"] === undefined) {
       if (slot !== undefined && bindings !== undefined) {
@@ -1945,6 +1953,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         bound,
         ...(request === undefined ? {} : { request }),
         task: digest,
+        ...notes,
       };
     }
     const logLimit = typeof input["log_limit"] === "number" ? input["log_limit"] : 20;
@@ -1957,6 +1966,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       task: taskRow(read.row, read.space.refPrefix),
       sections: page.sections,
       ...(page.before === undefined ? {} : { before: page.before }),
+      ...notes,
     };
   },
 
@@ -2404,17 +2414,21 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         // finds the note instead of adding a second one.
         saveNote: async (body, forAgents) => {
           const principal = { ...call.principal, scope: `launch-note:${host.machine.id}` };
-          const saved = (await opCall(host, { ...call.caller, principal }, {
-            space,
-            op: "entry.add",
-            input: {
-              task: read.id,
-              kind: "note",
-              text: body,
-              ...(forAgents ? { for_agents: true } : {}),
-              request_id: noteRequestOf(requestId),
+          const saved = (await opCall(
+            host,
+            { ...call.caller, principal },
+            {
+              space,
+              op: "entry.add",
+              input: {
+                task: read.id,
+                kind: "note",
+                text: body,
+                ...(forAgents ? { for_agents: true } : {}),
+                request_id: noteRequestOf(requestId),
+              },
             },
-          })) as { entry: string };
+          )) as { entry: string };
           return saved.entry;
         },
       });

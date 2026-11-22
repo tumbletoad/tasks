@@ -3,10 +3,10 @@
 // lifecycle (its place on this machine, when it was created). The sections give the long text in
 // full: the context, every note (those to agents too), the log, the sources, the outcome and
 // learnings. A sections read comes in pages sized for an agent's budget (A3 3.4.4), so this reads
-// page after page, up to `MAX_PAGES`, and joins a text a page boundary split. The person's notes
-// are read on their own, newest first, so long instructions never crowd out the request of the
-// newest session, and on past the limit until the notes its sessions name are in. Plain code: the
-// hook (useDetail.ts) refetches it when the feed touches the task.
+// page after page, up to `MAX_PAGES`, and joins a text a page boundary split. The notes the
+// thread's sessions name as their requests come whole with the digest, by reference, whatever
+// their age or length. Plain code: the hook (useDetail.ts) refetches it when the feed touches the
+// task.
 import type { Client } from "@tasks/contracts/generated/client.ts";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 
@@ -58,10 +58,10 @@ export interface Detail {
 /** At most this many pages per read: about 80 kB of text, far beyond a task's usual size. */
 export const MAX_PAGES = 20;
 
-type Section = NonNullable<Parameters<Client["task"]["get"]>[0]["sections"]>[number];
+/** The most notes one read names, as `task.get` takes them: the newest are read. */
+const NAMED_NOTES = 64;
 
-const OTHERS: readonly Section[] = ["instructions", "context", "log", "sources", "outcome"];
-const NOTES: readonly Section[] = ["notes"];
+const SECTIONS = ["instructions", "context", "notes", "log", "sources", "outcome"] as const;
 
 /** A note reference's ordinal: `n12` is 12. */
 const ordinal = (ref: string): number => Number(ref.slice(1));
@@ -85,10 +85,21 @@ function joined<T extends { ref: string; text: string }>(pages: readonly (readon
   return out;
 }
 
-/** Every page of a sections read, merged. Pure: the pages are given. */
-export function mergePages(task: TaskFacts, pages: readonly Sections[], partial: boolean): Detail {
-  const instructions = joined<NoteOutput>(pages.map((p) => p.instructions ?? []));
-  const notes = joined<NoteOutput>(pages.map((p) => p.notes ?? []));
+/**
+ * Every page of a sections read, merged, with `named`, notes read whole by reference, in place of
+ * what the pages hold of them. Pure: the pages are given.
+ */
+export function mergePages(
+  task: TaskFacts,
+  pages: readonly Sections[],
+  partial: boolean,
+  named: readonly NoteOutput[] = [],
+): Detail {
+  const whole = new Map(named.map((note) => [note.ref, note]));
+  const paged = [
+    ...joined<NoteOutput>(pages.map((p) => p.instructions ?? [])),
+    ...joined<NoteOutput>(pages.map((p) => p.notes ?? [])),
+  ].filter((note) => !whole.has(note.ref));
   const log = joined<LogOutput>(pages.map((p) => p.log ?? []));
   const outcome = pages
     .map((p) => p.outcome?.outcome ?? "")
@@ -109,7 +120,7 @@ export function mergePages(task: TaskFacts, pages: readonly Sections[], partial:
   return {
     task,
     context: pages.map((p) => p.context ?? "").join(""),
-    notes: [...instructions, ...notes].map(toNote).sort(byTime),
+    notes: [...paged, ...whole.values()].map(toNote).sort(byTime),
     log: log
       .map((l): DetailLog => ({
         kind: "log",
@@ -173,56 +184,38 @@ export function rowOfFacts(
 }
 
 /**
- * The pages of a sections read of `sections`, up to `MAX_PAGES`, and on past them while `more`
- * says the pages so far lack what is wanted. `partial` when the pages ran out before the end.
- */
-async function readPages(
-  client: Client,
-  task: string,
-  sections: readonly Section[],
-  more: (pages: readonly Sections[]) => boolean,
-): Promise<{ pages: Sections[]; partial: boolean }> {
-  const pages: Sections[] = [];
-  let before: string | undefined;
-  for (;;) {
-    const read = await client.task.get({
-      task,
-      sections: [...sections],
-      log_limit: 50,
-      ...(before === undefined ? {} : { before }),
-    });
-    if (read.view !== "sections") return { pages, partial: false };
-    pages.push(read.sections);
-    before = read.before;
-    if (before === undefined) return { pages, partial: false };
-    if (pages.length >= MAX_PAGES && !more(pages)) return { pages, partial: true };
-  }
-}
-
-/**
  * Reads the detail of `task` (an ID or a reference) through the client: digest and every page,
- * with the notes named in `requests` (the requests of the sessions the thread shows) whatever
- * their age.
+ * and whole the notes named in `requests` (the requests of the sessions the thread shows).
  */
 export async function readDetail(
   client: Client,
   task: string,
   requests: readonly string[] = [],
 ): Promise<Detail> {
-  const digest = client.task.get({ task });
-  // Notes come newest first: a page that reached a note older than every one still missing holds
-  // all of them that exist.
-  const missing = (pages: readonly Sections[]): boolean => {
-    const seen = new Set(pages.flatMap((page) => (page.notes ?? []).map((note) => note.ref)));
-    const wanted = requests.filter((ref) => !seen.has(ref)).map(ordinal);
-    const oldest = pages.at(-1)?.notes?.at(-1)?.ref;
-    return wanted.length > 0 && (oldest === undefined || ordinal(oldest) > Math.min(...wanted));
-  };
-  const [others, notes] = await Promise.all([
-    readPages(client, task, OTHERS, () => false),
-    readPages(client, task, NOTES, missing),
-  ]);
+  const notes = [...new Set(requests)]
+    .sort((a, b) => ordinal(b) - ordinal(a))
+    .slice(0, NAMED_NOTES);
+  const digest = client.task.get({ task, ...(notes.length === 0 ? {} : { notes }) });
+  const pages: Sections[] = [];
+  let before: string | undefined;
+  let partial = false;
+  for (let page = 0; ; page += 1) {
+    if (page >= MAX_PAGES) {
+      partial = true;
+      break;
+    }
+    const read = await client.task.get({
+      task,
+      sections: [...SECTIONS],
+      log_limit: 50,
+      ...(before === undefined ? {} : { before }),
+    });
+    if (read.view !== "sections") break;
+    pages.push(read.sections);
+    before = read.before;
+    if (before === undefined) break;
+  }
   const facts = await digest;
   if (facts.view !== "digest") throw new Error("task.get answered without a digest");
-  return mergePages(facts.task, [...others.pages, ...notes.pages], others.partial || notes.partial);
+  return mergePages(facts.task, pages, partial, facts.notes ?? []);
 }

@@ -30,6 +30,9 @@ const SECTIONS = [
   "history",
 ] as const;
 
+/** The most notes one read names: the requests of the sessions a task's thread shows. */
+export const NAMED_NOTES = 64;
+
 export const TaskGetInput = z.strictObject({
   task: TaskRefInput.describe("Task ref (M-14) or ID; default: the bound task").optional(),
   launch: z
@@ -49,6 +52,16 @@ export const TaskGetInput = z.strictObject({
     .string()
     .max(200)
     .describe("With sections: the before token of the last page")
+    .optional(),
+  notes: z
+    .array(
+      z
+        .string()
+        .max(7)
+        .regex(/^n[1-9][0-9]{0,5}$/u),
+    )
+    .max(NAMED_NOTES)
+    .describe("These notes too, whole, whatever their age")
     .optional(),
   cwd: Cwd.optional(),
 });
@@ -225,6 +238,12 @@ const Request = z
   .describe("The user's request for this launch: do it")
   .optional();
 
+const NamedNotes = z
+  .array(NoteOutput)
+  .max(NAMED_NOTES)
+  .describe("The notes asked for by reference that the task has, whole")
+  .optional();
+
 export const TaskGetResult = z.union([
   z.strictObject({
     view: z.literal("digest").describe("A bounded digest of the task"),
@@ -232,6 +251,7 @@ export const TaskGetResult = z.union([
     bound: Bound,
     request: Request,
     task: TaskDetail.describe("The task"),
+    notes: NamedNotes,
   }),
   z.strictObject({
     view: z.literal("sections").describe("The sections asked for, in full"),
@@ -241,6 +261,7 @@ export const TaskGetResult = z.union([
     task: TaskRow.describe("The task"),
     sections: TaskSections.describe("The sections asked for"),
     before: z.string().describe("Paging token for the rest").optional(),
+    notes: NamedNotes,
   }),
   SpaceStatusResult.extend({
     view: z.literal("status").describe("A routine's launch bound the space: the overview"),
@@ -300,7 +321,7 @@ export const taskGet = defineEntry({
   output: TaskGetResult,
   faces: {
     ui: true,
-    cli: { verb: "show", positional: ["task"], flags: { sections: "section" } },
+    cli: { verb: "show", positional: ["task"], flags: { sections: "section", notes: "note" } },
     mcp: {
       tool: "get_task",
       title: "Load a task",
@@ -313,6 +334,8 @@ export const taskGet = defineEntry({
     },
   },
   budget: { typical: 700, max: 4000 },
+  // The thread's read of its sessions' requests: whole notes, past an agent's budget.
+  agent: { hidden: ["notes"] },
   errors: [
     "invalid_input",
     "unbound",
