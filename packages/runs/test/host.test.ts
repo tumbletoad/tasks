@@ -462,7 +462,11 @@ describe("[A4.5.run.host] the run host's rules", () => {
       const label = `${at}, ${taken}${fails ? ", refused" : ""}`;
       let take: () => void = () => undefined;
       const held = new Promise<void>((resolve, reject) => {
-        take = fails ? () => reject(new Error("The disk is full")) : resolve;
+        take = fails
+          ? () => {
+              reject(new Error("The disk is full"));
+            }
+          : resolve;
       });
       let ready: ((command: AgentCommand) => void) | undefined;
       let spawn: (() => void) | undefined;
