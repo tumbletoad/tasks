@@ -10,9 +10,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   shown both values and choose.
 - Changes sent together are saved together, or not at all.
 - A change that was reported as saved survives a crash of TTasks.
-- A change sent again with the same request ID after a lost reply is applied once. The page and the
-  agent tools resend that way by themselves. At the command line, repeat the command with the
-  `--request-id` that the failed command named.
+- A change sent again with the same request ID after a lost reply is applied once: for an agent,
+  through the same connection, or through the tools and the shell of one agent TTasks opened. The
+  page and the agent tools resend that way by themselves. At the command line, repeat the command
+  with the `--request-id` that the failed command named.
 - Every change keeps what changed and who made it: you, an agent, or a script.
 - Undo and redo never replace someone else's work that came in between, also when that work set a
   value and set it back.
@@ -100,7 +101,14 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 - An agent that uses TTasks cannot start other agents, raise its own permissions or change your
   settings for what agents may do.
-- An agent's session stays in the space it started in when you switch space.
+- An agent that TTasks opened in a terminal, and a background run, works on its task without naming
+  it. What it changes through its tools and through `ttasks` in its shell is that task's session,
+  also across a restart of TTasks.
+- Every other agent names its task on each change, and its changes are recorded as its app's. Two
+  chats of one app cannot act on each other's task.
+- An agent works in one space from the moment it connects: its task's, or the one its connection
+  named or the default space then. Switching space in the page or changing the default does not
+  move it.
 - An agent that reaches TTasks through its registered connection reaches only the spaces you
   granted it.
 - A change by an agent or a script is never recorded as yours.
@@ -120,9 +128,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Opening with a particular account uses that account's settings of the agent app.
 - TTasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.
-- Restarting or updating TTasks does not end an agent session it opened. On Linux this needs
-  systemd to give each terminal a scope of its own: where it cannot, a restart may end the sessions
-  in the terminals TTasks opened, and `ttasks doctor` warns of that.
+- Restarting or updating TTasks does not end an agent it opened, and the agent stays its task's
+  session. On Linux this needs systemd to give each terminal a scope of its own: where it cannot, a
+  restart may end the agents in the terminals TTasks opened, and `ttasks doctor` warns of that.
 - The brief an agent gets when a task opens holds the task's reference, not its title, notes or
   sources. Copy's words too long for it are kept as a note, never cut.
 - The launch reference in a brief, such as `L7KQ2M`, is never given to another launch of the
@@ -205,6 +213,29 @@ the behaviour it describes, and keep each one to a sentence or two.
   other has. A restore over a space, or a claim of a copy, goes on from the backup's counter when
   the earlier space's database cannot be read at all.
 - A command repeated without its request ID is a new change: a note added twice is there twice.
+- Everything started inside a terminal agent while it runs counts as that task's session: a new
+  conversation in the same window, a helper agent, or a program it leaves running.
+- Changes by Claude Desktop, the Codex app, T3 Code for now, or an agent a brief was pasted into
+  are recorded as that app's, not as a session of the task. Two hand-made entries of one app on
+  different homes cannot be told apart.
+- An agent running across the one update that brought this rule comes back as its app and names
+  its task.
+- A change retried after TTasks recorded its agent's end is a new change. A program the agent left
+  running that connects after that, or a shell command, is recorded as the agent app or as an
+  unknown agent, and has to name its task.
+- A program an agent left running that was connected when the agent ended stays that agent's
+  session until it disconnects. One that connects before TTasks has recorded the end does too.
+  While the agent's space is closed, recording the end waits until it opens.
+- An agent that sends a change with its tools and repeats it with `ttasks` in its shell is
+  recognised only when TTasks opened that agent and both got its ticket. Otherwise the change can
+  be written twice.
+- When agent setup changes who an agent connects as while that agent runs, a change repeated
+  through the new connection can be written twice.
+- Chats of one agent app that are not sessions share their request IDs. A change sent with an ID
+  another chat used is refused when it differs, and counted as already done when it is the same.
+- An entry without a space uses the default space when its bridge process starts. If that process
+  restarts after you change the default, the same task reference can mean a different task.
+- A change retried after a restore that removed its earlier result is a new change.
 - For a day after an agent that TTasks opened in a terminal ends, this machine keeps a hash of the
   ticket that agent was given, with its space, task and session. The ticket itself is never kept.
 - What you typed before Open is a note on the task: every agent that loads the task later reads it,

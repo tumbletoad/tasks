@@ -54,7 +54,11 @@ describe("[A3.3.7.binding.named] what an environment's ticket and preset name to
     const live = { of: "launch", ...ONE };
     expect(namedBy(s, { ticket: "T1" })).toEqual({ kind: "one", by: "ticket", live });
     expect(namedBy(s, { preset: PRESET })).toEqual({ kind: "one", by: "preset", live });
-    expect(namedBy(s, { ticket: "T1", preset: PRESET })).toEqual({ kind: "one", by: "ticket", live });
+    expect(namedBy(s, { ticket: "T1", preset: PRESET })).toEqual({
+      kind: "one",
+      by: "ticket",
+      live,
+    });
   });
 
   test("a run's ticket names the run", () => {

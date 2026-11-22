@@ -10,12 +10,7 @@ export {
   type OpsHost,
   type ServedSpace,
 } from "./handlers.ts";
-export {
-  principalOf,
-  isUserClass,
-  type Caller,
-  type Principal,
-} from "./caller.ts";
+export { principalOf, isUserClass, type Caller, type Principal } from "./caller.ts";
 export { dateIn, dueDate, localTimeZone } from "./dates.ts";
 export { readSpace, type SpaceFacts } from "./read.ts";
 export {

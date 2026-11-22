@@ -18,7 +18,7 @@ import {
 import { AS_OF_NEXT, requestId } from "./fixture.ts";
 
 export const EntryAddInput = z.strictObject({
-  task: TaskRefInput.describe("Task ref (M-14) or ID; default: the bound task").optional(),
+  task: TaskRefInput.describe("Task ref (M-14) or ID; default: this session's task").optional(),
   kind: z
     .enum(ENTRY_KINDS_IN)
     .describe("question flags it for the user; note: a note for the user")

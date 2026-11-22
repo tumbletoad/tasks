@@ -247,6 +247,12 @@ function instructionsPart(
   };
 }
 
+/** Whether the reader is the task's session, or has to name the task on each call. */
+const sessionOfRead = (bound: boolean, ref: string): string =>
+  bound
+    ? "Session: this task's, so calls without task act on it"
+    : `Pass task ${ref} on each call: this connection is not its session`;
+
 /** Whose request a note was: launches of other sessions, which the reader only learns from. */
 const requestFor = (note: Note): string =>
   note.request_for === undefined || note.request_for.length === 0
@@ -360,7 +366,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
     fixed(
       headerLine(task, result.as_of),
       task.folder === undefined ? undefined : folderLine(task.folder),
-      result.bound ? "Session: bound to this task by this call" : undefined,
+      sessionOfRead(result.bound, task.ref),
     ),
     ...requestPart(result.request, getTask, task.ref),
     instructionsPart(
@@ -444,7 +450,7 @@ function sectionsRendered(
     units,
   });
   const parts: Part[] = [fixed(headerLine(task, result.as_of))];
-  if (result.bound) parts.push(fixed("Session: bound to this task by this call"));
+  parts.push(fixed(sessionOfRead(result.bound, task.ref)));
   parts.push(...requestPart(result.request, getTask, task.ref));
   let byOthers: Note[] = [];
   if (sections.instructions !== undefined) {

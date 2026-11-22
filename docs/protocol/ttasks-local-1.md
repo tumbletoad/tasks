@@ -68,12 +68,12 @@ Canonical JSON follows RFC 8785 with I-JSON input. A string or key with a lone s
 `context` is an object:
 
 - rpc mode: `{env: {NAME: value}}` with only the agent markers (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, names starting with `CODEX_SANDBOX`, `T3CODE_THREAD_ID`, `TTASKS_TICKET`, `TTASKS_TASK`) and `TTASKS_SPACE`. A3 keeps the marker list.
-- mcp mode: `{space, instance, app, cwd, env, parent: {pid}}`, with `null` for a missing argument, plus `mcp_init` (the client's latest `initialize` or `server/discover`, once answered, at most 64 KiB) and `resume: {handle}` (the handle of the bridge's last bind). `env` holds only `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, `T3CODE_THREAD_ID`, `TTASKS_TICKET`, `TTASKS_TASK` and `TTASKS_SPACE` (`MCP_CONTEXT_ENV`), each at most 256 characters and well-formed. A `cwd` over 4,096 characters or with a lone surrogate is sent as null.
+- mcp mode: `{space, instance, app, cwd, env, parent: {pid}}`, with `null` for a missing argument, plus `mcp_init` (the client's latest `initialize` or `server/discover`, once answered, at most 64 KiB), `held_space` (the space a bind answer of this bridge process named last, kept for its life) and `resume: {handle}` (the handle of an older service's last bind, which the service ignores). `env` holds only `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, `T3CODE_THREAD_ID`, `TTASKS_TICKET`, `TTASKS_TASK` and `TTASKS_SPACE` (`MCP_CONTEXT_ENV`), each at most 256 characters and well-formed. A `cwd` over 4,096 characters or with a lone surrogate is sent as null.
 
 The result is `{protocol, service: {version, build, instance}, capabilities, spaces, binding, mac}`:
 
 - `spaces` lists each space as `{entry, id, name, ref_prefix, state, reason}`, without its holder or path.
-- `binding` is null in rpc mode. In mcp mode it is A3 3.7's `{handle, space, state}`.
+- `binding` is null in rpc mode. In mcp mode it is `{space, state}`: the one space the connection works in, or null for none, and `bound` when it is a task's session, else `unbound`. A bind that cannot be decided now fails with `bind_failed`, and the bridge binds again.
 
 A refusal is `{protocol, service, refused: {reason, min, max}, mac}`, sent at once with its proof, after which the service closes. Reasons: `client_too_old`, `service_too_old`, `invalid_bind` (a client or context that does not parse, or a kind that does not fit the mode), `mode_unsupported`. A bind whose grants row is revoked or not live is closed without a result, and revoking a row closes every connection that uses it.
 

@@ -74,7 +74,7 @@
             "type": "string"
           },
           "task": {
-            "description": "Task ref (M-14) or ID; default: the bound task",
+            "description": "Task ref (M-14) or ID; default: this session's task",
             "maxLength": 40,
             "type": "string"
           },
@@ -2559,7 +2559,7 @@
                 "type": "integer"
               },
               "state": {
-                "description": "Binding of this session",
+                "description": "bound: this connection is a task's session",
                 "enum": [
                   "bound",
                   "unbound",
@@ -2621,7 +2621,7 @@
       },
       "remote": "read",
       "scope": "space:read",
-      "summary": "Orientation: date, autonomy, this session's binding, tasks for a folder and counts."
+      "summary": "Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts."
     },
     {
       "actorKinds": [
@@ -3186,7 +3186,7 @@
             "type": "string"
           },
           "task": {
-            "description": "Task ref (M-14) or ID; default: the bound task",
+            "description": "Task ref (M-14) or ID; default: this session's task",
             "maxLength": 40,
             "type": "string"
           }
@@ -3683,10 +3683,7 @@
         "unbound",
         "not_found",
         "ambiguous",
-        "already_bound",
         "launch_unknown",
-        "launch_expired",
-        "launch_used",
         "forbidden"
       ],
       "input": {
@@ -3697,17 +3694,13 @@
             "maxLength": 200,
             "type": "string"
           },
-          "bind": {
-            "description": "With task: bind this session to it",
-            "type": "boolean"
-          },
           "cwd": {
             "description": "Your working folder, as an absolute path",
             "maxLength": 4096,
             "type": "string"
           },
           "launch": {
-            "description": "Launch reference from the Brief: bind, then load",
+            "description": "Launch reference from the Brief: load its task",
             "maxLength": 6,
             "pattern": "^L[0-9A-Z]{5}$",
             "type": "string"
@@ -3746,7 +3739,7 @@
             "type": "array"
           },
           "task": {
-            "description": "Task ref (M-14) or ID; default: the bound task",
+            "description": "Task ref (M-14) or ID; default: this session's task",
             "maxLength": 40,
             "type": "string"
           }
@@ -3767,7 +3760,7 @@
                 "type": "string"
               },
               "bound": {
-                "description": "This call bound the session",
+                "description": "This connection is the task's session: calls without task act on it",
                 "type": "boolean"
               },
               "notes": {
@@ -4533,7 +4526,7 @@
                 "type": "string"
               },
               "bound": {
-                "description": "This call bound the session",
+                "description": "This connection is the task's session: calls without task act on it",
                 "type": "boolean"
               },
               "notes": {
@@ -5251,7 +5244,7 @@
                 "type": "string"
               },
               "bound": {
-                "description": "This call bound the session",
+                "description": "This connection is the task's session: calls without task act on it",
                 "type": "boolean"
               },
               "counts": {
@@ -5600,7 +5593,7 @@
                     "type": "integer"
                   },
                   "state": {
-                    "description": "Binding of this session",
+                    "description": "bound: this connection is a task's session",
                     "enum": [
                       "bound",
                       "unbound",
@@ -5671,7 +5664,7 @@
       },
       "remote": "read",
       "scope": "space:read",
-      "summary": "Load a task as a bounded digest, or selected sections in full. With launch, bind first."
+      "summary": "Load a task as a bounded digest, or selected sections in full, by task or launch reference."
     },
     {
       "actorKinds": [
@@ -6349,7 +6342,7 @@
             "type": "object"
           },
           "task": {
-            "description": "Task ref (M-14) or ID; default: the bound task",
+            "description": "Task ref (M-14) or ID; default: this session's task",
             "maxLength": 40,
             "type": "string"
           }

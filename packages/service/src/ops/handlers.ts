@@ -1735,7 +1735,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ? undefined
         : hereHint(here, status.space.refPrefix);
     const live =
-      here === undefined || here.length === 0 ? undefined : call.host.sessions?.live(status.space.id);
+      here === undefined || here.length === 0
+        ? undefined
+        : call.host.sessions?.live(status.space.id);
     return {
       as_of: status.space.asOf,
       date: call.today,

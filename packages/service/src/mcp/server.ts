@@ -21,7 +21,10 @@ export type ToolResult = CallToolResult & {
 };
 
 /** Runs one tool call. `tool` is a listed tool's name; `args` its arguments object, unchecked. */
-export type ToolCall = (tool: string, args: Readonly<Record<string, unknown>>) => Promise<ToolResult>;
+export type ToolCall = (
+  tool: string,
+  args: Readonly<Record<string, unknown>>,
+) => Promise<ToolResult>;
 
 /** The implementation the server names in `initialize`, `server/discover` and 2026 results. */
 export const SERVER_INFO = { name: PRODUCT_ID, version: BUILD.version } as const;

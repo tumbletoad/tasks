@@ -15,14 +15,7 @@
 import { INSTANCE_ID, MANUAL_INSTANCE } from "@ttasks/launch";
 import type { Named, Live } from "../hub/named.ts";
 import type { HomeRows } from "../hub/home-rows.ts";
-import type {
-  BoundBy,
-  Decision,
-  Presented,
-  Session,
-  SessionHome,
-  Standing,
-} from "../ops/index.ts";
+import type { BoundBy, Decision, Presented, Session, SessionHome, Standing } from "../ops/index.ts";
 
 /** What the rule reads, each a port so the bind, a shell call and the model test share it. */
 export interface DecideSources {
@@ -75,7 +68,9 @@ function namedSession(named: Named): { session: Session; by: BoundBy } | undefin
 
 /** The rows of the home the click recorded; a click that recorded no folder has none. */
 const rowsOf = (sources: DecideSources, home: { app: string; home: string | undefined }) =>
-  home.home === undefined ? ({ kind: "rows", rows: [] } as const) : sources.rows(home.app, home.home);
+  home.home === undefined
+    ? ({ kind: "rows", rows: [] } as const)
+    : sources.rows(home.app, home.home);
 
 /** The rule: who the connection that presented `presented` is. */
 export function decide(sources: DecideSources, presented: Presented): Decision {
