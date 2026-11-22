@@ -11,7 +11,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmdirSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { ensurePrivateDir } from "../hub/files.ts";
-import type { Runner, RunResult } from "./process.ts";
+import type { Runner, RunOptions, RunResult } from "./process.ts";
 
 /**
  * The topmost folder of `path` that does not exist yet, in `path`'s own spelling, or undefined
@@ -247,11 +247,15 @@ export class RegExe implements Registry {
    * One run of reg.exe within what is left of `end` (no bound when undefined). A run that cannot
    * start in time, or that runs out of it, throws RegistryTimeoutError: it never reads as a result.
    */
-  async #within(args: readonly string[], end: number | undefined): Promise<RunResult> {
-    if (end === undefined) return this.#run(this.#reg, args);
+  async #within(
+    args: readonly string[],
+    end: number | undefined,
+    options: RunOptions = {},
+  ): Promise<RunResult> {
+    if (end === undefined) return this.#run(this.#reg, args, options);
     const left = end - Date.now();
     if (left <= 0) throw new RegistryTimeoutError("reg.exe did not answer in time");
-    const result = await this.#run(this.#reg, args, { timeoutMs: left });
+    const result = await this.#run(this.#reg, args, { ...options, timeoutMs: left });
     if (result.failure === "ETIMEDOUT") {
       throw new RegistryTimeoutError("reg.exe did not answer in time");
     }
@@ -262,15 +266,17 @@ export class RegExe implements Registry {
     checkKey(key);
     const end = options.timeoutMs === undefined ? undefined : Date.now() + options.timeoutMs;
     // Each read exports into a folder of its own, so reads that run at once never remove each
-    // other's. That folder, and any folder above it this read created, go again afterwards when
-    // empty: a preview or a status leaves nothing behind.
+    // other's. It is reg.exe's temp folder too: exports that start at the same moment, from any
+    // program, can pick the same temp file in a shared one and fail or write a broken file. That
+    // folder, and any folder above it this read created and left empty, go again afterwards: a
+    // preview or a status leaves nothing behind.
     const own = join(this.#scratch, `.reg-${randomBytes(8).toString("hex")}`);
     const created = firstMissing(own);
     mkdirSync(own, { recursive: true, mode: 0o700 });
     ensurePrivateDir(own);
     const file = join(own, "export.reg");
     try {
-      const result = await this.#within(["export", key, file, "/y"], end);
+      const result = await this.#within(["export", key, file, "/y"], end, { tempDir: own });
       if (result.code !== 0) {
         // reg.exe exits 1 for a missing key and for every other failure. Only a key shown missing
         // by its parent's listing is absent; anything else fails, so a value that cannot be read
@@ -280,8 +286,8 @@ export class RegExe implements Registry {
       }
       return parseRegExport(readFileSync(file).toString("utf16le"));
     } finally {
-      rmSync(file, { force: true });
-      if (created !== undefined) removeEmptyUpTo(own, created);
+      rmSync(own, { recursive: true, force: true });
+      if (created !== undefined && created !== own) removeEmptyUpTo(dirname(own), created);
     }
   }
 
