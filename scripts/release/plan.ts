@@ -30,6 +30,8 @@ export interface Plan {
   readonly version: string;
   readonly tag: string;
   readonly previous?: { readonly commit: string; readonly version: string };
+  /** Why a rehearsal installs fresh only, when it has a previous commit but does not upgrade it. */
+  readonly freshOnly?: string;
   readonly builds: readonly Build[];
 }
 
@@ -64,6 +66,13 @@ export function packageVersion(root: string, commit: string): string {
   const version = (JSON.parse(text) as { version?: unknown }).version;
   if (typeof version !== "string") throw new Refusal(`package.json at ${commit} has no version`);
   return version;
+}
+
+/** The product identifier at `commit`, from its brand constants; undefined when it has none. */
+function productIdAt(root: string, commit: string): string | undefined {
+  const text = git(root, ["show", `${commit}:packages/brand/src/index.ts`]);
+  if (!text.ok) return undefined;
+  return /^export const PRODUCT_ID = "([^"]*)";$/m.exec(text.out)?.[1];
 }
 
 /**
@@ -145,8 +154,14 @@ export function planRun(options: {
   );
   const version = rehearsalVersion(packageVersion(root, commit), options.run, 1);
   const from = previousCommit(root, commit, options.base);
+  // No build reads another product's install, so across a rename there is nothing to upgrade.
+  const [was, now] = from === undefined ? [] : [productIdAt(root, from), productIdAt(root, commit)];
+  const freshOnly =
+    was === now
+      ? undefined
+      : `The build before this one is the product ${String(was)} and this one is ${String(now)}, which does not upgrade it: this rehearsal installs fresh only.`;
   const previous =
-    from === undefined
+    from === undefined || freshOnly !== undefined
       ? undefined
       : { commit: from, version: rehearsalVersion(packageVersion(root, from), options.run, 0) };
   return {
@@ -155,6 +170,7 @@ export function planRun(options: {
     version,
     tag: releaseTag(version),
     ...(previous === undefined ? {} : { previous }),
+    ...(freshOnly === undefined ? {} : { freshOnly }),
     builds: [
       ...builds("current", commit, version),
       ...(previous === undefined ? [] : builds("previous", previous.commit, previous.version)),

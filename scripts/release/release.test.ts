@@ -43,7 +43,7 @@ import {
   releaseReadiness,
   type Gh,
 } from "./github.ts";
-import { isOnMain, planRun } from "./plan.ts";
+import { isOnMain, planOutputs, planRun } from "./plan.ts";
 import {
   ciReleaseSign,
   createReleaseKey,
@@ -765,6 +765,31 @@ describe("[A2.3.12.8.build.release-tag] a version tag starts a release only when
     // The newest release tag before the commit.
     expect(rehearsal.previous).toEqual({ commit: first, version: "0.1.0-rehearsal.7.0" });
     expect(rehearsal.builds).toHaveLength(6);
+  });
+
+  test("a rehearsal across a change of the product's identifier installs fresh only, and says why", () => {
+    const { git, commit, repo } = planRepo("plan-renamed");
+    const product = (id: string) => {
+      mkdirSync(join(repo, "packages", "brand", "src"), { recursive: true });
+      writeFileSync(
+        join(repo, "packages", "brand", "src", "index.ts"),
+        `export const PRODUCT_ID = "${id}";\n`,
+      );
+      git("add", "packages");
+    };
+    product("before");
+    const first = commit("0.1.0");
+    const same = commit("0.1.1");
+    product("after");
+    const renamed = commit("0.2.0");
+    const across = planRun({ root: repo, mode: "rehearsal", ref: renamed, base: first, run: 3 });
+    expect(across.previous).toBeUndefined();
+    expect(across.builds.map((b) => b.which)).toEqual(RELEASE_PLATFORMS.map(() => "current"));
+    expect(across.freshOnly).toMatch(/product before and this one is after.*installs fresh only/);
+    expect(planOutputs(across)).toContain("previous_version=\n");
+    const along = planRun({ root: repo, mode: "rehearsal", ref: same, base: first, run: 3 });
+    expect(along.previous).toEqual({ commit: first, version: "0.1.0-rehearsal.3.0" });
+    expect(along.freshOnly).toBeUndefined();
   });
 
   test("a tag that is not its commit's version, on a commit off main, of a development version, or missing is refused with one sentence", () => {
