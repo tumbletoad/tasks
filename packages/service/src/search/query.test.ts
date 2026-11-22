@@ -189,6 +189,8 @@ describe("[A3.5.search.parser] the query language", () => {
         { path: "q", message: expect.not.stringMatching(/unknown/i) as unknown },
       ]);
       expect(error.message).not.toBe(unknown.message);
+      // Known, and supported later: the refusal says so, whatever names the step.
+      expect(error.message).toMatch(/not support.* yet/i);
     }
   });
 
