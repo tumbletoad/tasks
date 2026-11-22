@@ -940,7 +940,7 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     expect(await count(busy)).toBe(1);
 
     // A character typed and taken back: the same words are the same add, sent as it was.
-    const again = `Order the padlock (${tag})`;
+    const again = `Order the bolt cutter (${tag})`;
     await lose(again, true);
     await page.unroute(RECEIPT);
     await field.focus();
@@ -1053,7 +1053,8 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await unsaved.locator('[data-part="apply-mine"]').click();
     await expect.poll(async () => (await read(world, ref)).task.priority).toBe(1);
     await expect(unsaved).toHaveCount(0);
-    expect(Object.keys(await kept(page))).toEqual([]);
+    // The browser keeps the value until the page hears the answer, then lets it go.
+    await expect.poll(async () => Object.keys(await kept(page))).toEqual([]);
 
     // The task changed under an open editor: Apply mine waits, also after a reload.
     const title = row.locator('[data-part="title"]');
