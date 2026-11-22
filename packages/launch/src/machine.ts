@@ -37,7 +37,7 @@
 import {
   apart,
   CLAIM_WINDOW_MS,
-  FOCUS_MS,
+  CLICK_SLACK_MS,
   PREPARED_TTL_MS,
   STEP_DEADLINE_MS,
   STORE_DEADLINE_MS,
@@ -244,7 +244,7 @@ export class LaunchMachine {
       // few milliseconds old. One the wall clock cannot place (recorded in its future, after a
       // step back) or older than the limit gets no mark: the wall clock rule then closes it.
       const age = this.#now() - clickedAt(intent);
-      if (age > -FOCUS_MS && age < PREPARED_TTL_MS) {
+      if (age > -CLICK_SLACK_MS && age < PREPARED_TTL_MS) {
         this.#mark(intent.id, { opened: this.#elapsed() - Math.max(0, age) });
       }
     }
@@ -555,6 +555,13 @@ export class LaunchMachine {
         }
         return undefined;
       case "failed":
+        // A session the bridge confirmed before its agent's early end did run: it stays
+        // Confirmed, and the end's evidence is what tells every tab that it ended.
+        if (state === "confirmed") {
+          return observation.evidence === undefined
+            ? undefined
+            : { next: "confirmed", evidence: observation.evidence };
+        }
         return state === "dispatching" || state === "dispatched" || state === "unknown"
           ? {
               next: "failed",
@@ -568,6 +575,13 @@ export class LaunchMachine {
         // Nor is a clipboard launch, which A4 3.9.2 never makes Unknown: nothing runs there.
         if (intent.route === "terminal" && intent.evidence.claim === undefined) return undefined;
         if (intent.route === "clipboard") return undefined;
+        // A session that did run stays Confirmed; the record says it is no longer followed, so
+        // nothing shows it as running.
+        if (state === "confirmed") {
+          return intent.route === "terminal"
+            ? { next: "confirmed", evidence: { lost_at: this.#now() } }
+            : undefined;
+        }
         return state === "dispatching" || state === "dispatched"
           ? { next: "unknown", reason: "lost" }
           : undefined;

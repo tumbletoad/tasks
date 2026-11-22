@@ -43,7 +43,7 @@ export const OP_PREFIX = "/api/v1/op/";
  * the registry's `launch.open`.
  */
 export const LAUNCH_PREFIX = "/api/v1/launch/";
-export const LAUNCH_ACTIONS: readonly string[] = ["list", "run", "runs", "stop", "folder"];
+export const LAUNCH_ACTIONS: readonly string[] = ["busy", "list", "run", "runs", "stop", "folder"];
 /**
  * The page's space switcher: this machine's spaces, Make default, and New space (a name's
  * proposal, then the space) and Open folder.

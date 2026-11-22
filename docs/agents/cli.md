@@ -84,6 +84,7 @@ Usage: `ttasks brief <task> [flags]`
 | `--text` | `text` | string | Your words for the agent: it reads them with the task |
 | `--pack` | `pack` | boolean | Copy the context pack: the task's text, for an app without the tools |
 | `--mark-folder` | `mark_folder` | boolean | Open although the folder's marker is gone or another's, and mark it |
+| `--another` | `another` | boolean | Start a second session although this app already runs the task here |
 
 ## `ttasks done`
 

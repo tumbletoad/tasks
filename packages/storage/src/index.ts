@@ -379,7 +379,6 @@ export {
   type ProjectedBatch,
 } from "./write/outbox.ts";
 export {
-  FOCUS_MS,
   isLaunchRef,
   LAUNCH_EDGES,
   launchRefCheck,

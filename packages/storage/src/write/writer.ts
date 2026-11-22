@@ -85,7 +85,6 @@ import {
 import {
   decodeLaunch,
   detailText,
-  FOCUS_MS,
   LAUNCH_EDGES,
   LAUNCH_SQL,
   newLaunchRef,
@@ -423,8 +422,8 @@ interface Plan {
   refPrefix: string;
   /**
    * The wall clock when the request was decided. A launch records it as the time of each state
-   * it enters (A4 3.16), and its 5 s focus reads it: commit instants stand still while the clock
-   * is behind the newest commit (A1 3.9), so they cannot tell how long ago a click was.
+   * it enters (A4 3.16): commit instants stand still while the clock is behind the newest commit
+   * (A1 3.9), so they cannot tell how long ago a click was.
    */
   wall: number;
 }
@@ -903,8 +902,7 @@ export class SpaceWriter {
 
   /**
    * The commit's instant, and the wall clock it came from. A1 3.9 keeps history ordered if the
-   * clock steps back, so the instant may be the newest commit's; an age measured against the
-   * present (A4's 5 s focus) uses the wall clock instead.
+   * clock steps back, so the instant may be the newest commit's.
    */
   #clock(): { at: number; wall: number } {
     const wall = this.#now();
@@ -1850,20 +1848,12 @@ export class SpaceWriter {
             }
           }
           const record = { task: parent, ...inputOf(op, "task") };
-          // A second click on the same task and instance while an intent is in Dispatching or
-          // younger than 5 s gets that intent (A4 3.9.1), in this request or before it. Its age
-          // is measured on the wall clock: commit instants stand still while the clock is behind
-          // the newest commit (A1 3.9), which would keep an old click young.
+          // A second click on the same task and instance while an intent of it is still opening
+          // gets that intent, in this request or before it.
           const key = `${parent}|${op.instance}`;
           const found = drafts.has(parent)
             ? undefined
-            : conn.prepare(LAUNCH_SQL.focus).get({
-                task: parent,
-                instance: op.instance,
-                machine,
-                since: wall - FOCUS_MS,
-                until: wall + FOCUS_MS,
-              });
+            : conn.prepare(LAUNCH_SQL.focus).get({ task: parent, instance: op.instance, machine });
           const focus =
             draftLaunches.get(key) ??
             (found === undefined ? undefined : new RowReader("launches", found).id("id", "la"));

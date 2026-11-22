@@ -23,7 +23,7 @@ import { FolderDialog, refusalText } from "../folder/FolderDialog.tsx";
 import folderCss from "../folder/Folder.module.css";
 import { useFolderWrites } from "../folder/writes.ts";
 import type { MessageId } from "../i18n/intl.tsx";
-import type { FolderRefusal } from "../row/launch.ts";
+import type { BusyOf, FolderRefusal } from "../row/launch.ts";
 import type { AskField, RowActions } from "../row/actions.ts";
 import {
   BulbIcon,
@@ -69,6 +69,8 @@ const line = classes(folderCss, ["act"]);
 export interface ExpandedProps {
   readonly task: TaskRow;
   readonly receipts: readonly Receipt[];
+  /** What busies each agent app with it on this machine. */
+  readonly busy: BusyOf | undefined;
   /** Its background runs, oldest first. */
   readonly runs: readonly Run[];
   readonly instances: readonly Instance[];
@@ -434,7 +436,15 @@ function Context({
   );
 }
 
-export function Expanded({ task, receipts, runs, instances, actions, refused }: ExpandedProps) {
+export function Expanded({
+  task,
+  receipts,
+  busy,
+  runs,
+  instances,
+  actions,
+  refused,
+}: ExpandedProps) {
   const t = useT();
   const clock = useClock(false);
   const { detail, base, failed } = useDetail(task.id);
@@ -541,7 +551,13 @@ export function Expanded({ task, receipts, runs, instances, actions, refused }: 
         ) : null}
       </div>
       <div className={styles.composer}>
-        <Composer task={task} receipts={receipts} instances={instances} actions={actions} />
+        <Composer
+          task={task}
+          receipts={receipts}
+          busy={busy}
+          instances={instances}
+          actions={actions}
+        />
       </div>
     </div>
   );

@@ -13,8 +13,9 @@
 //   GET  /api/v1/ws?ticket=…    the change feed (ws.ts)
 //   POST /api/v1/op/<entry>     one registry entry with a UI face, on the request path of the CLI
 //                               (Open and Copy are `launch.open`, A4 3.4, 3.15)
-//   POST /api/v1/launch/…       a task's launch receipts, Run, a task's runs and Stop, and its
-//                               folder shown in this computer's file manager (launches.ts)
+//   POST /api/v1/launch/…       the agent apps busy here, a task's launch receipts, Run, a
+//                               task's runs and Stop, and its folder shown in this computer's
+//                               file manager (launches.ts)
 //   POST /api/v1/space/list     this machine's spaces and its default space (the space switcher)
 //   POST /api/v1/space/default  Make default: machine.toml's `[service] default_space`
 //   POST /api/v1/machine/pref    Settings: set or reset a machine preference of the page's
@@ -767,10 +768,11 @@ export class HttpApp {
   }
 
   /**
-   * `POST /api/v1/launch/<action>` (checks.ts admits these only): `list`, a task's receipts;
-   * `run`, the person's Run; `runs`, a task's runs; `stop`, the person's Stop of a run; `folder`,
-   * the task's folder in the file manager. The UI's grant is the person, the only one who starts
-   * or stops a run or opens a folder from here.
+   * `POST /api/v1/launch/<action>` (checks.ts admits these only): `busy`, the agent apps busy
+   * with a task on this machine; `list`, a task's receipts; `run`, the person's Run; `runs`, a
+   * task's runs; `stop`, the person's Stop of a run; `folder`, the task's folder in the file
+   * manager. The UI's grant is the person, the only one who starts or stops a run or opens a
+   * folder from here.
    */
   async #launch(
     res: ServerResponse,
@@ -793,7 +795,9 @@ export class HttpApp {
               ? { runs: await this.launches.runs(space, input) }
               : action === "stop"
                 ? { run: await this.launches.stop(space, input) }
-                : { receipts: await this.launches.list(space, input) };
+                : action === "busy"
+                  ? { busy: await this.launches.busy(space) }
+                  : { receipts: await this.launches.list(space, input) };
       this.#json(res, port, 200, { result });
     } catch (error) {
       const body: ErrorBody =

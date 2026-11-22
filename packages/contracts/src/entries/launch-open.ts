@@ -38,6 +38,10 @@ export const LaunchOpenInput = z.strictObject({
     .boolean()
     .describe("Open although the folder's marker is gone or another's, and mark it")
     .optional(),
+  another: z
+    .boolean()
+    .describe("Start a second session although this app already runs the task here")
+    .optional(),
   request_id: RequestId,
 });
 

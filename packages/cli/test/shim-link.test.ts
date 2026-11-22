@@ -139,8 +139,15 @@ describe("[A4.5.shim.client] the shim's link", () => {
       const sessions: FakeSession[] = [];
       const lines: string[] = [];
       let started = 0;
+      let entered = 0;
       const code = await runShim(["0".repeat(24)], {
-        io: fakeIo(lines),
+        io: {
+          ...fakeIo(lines),
+          waitEnter: () => {
+            entered += 1;
+            return Promise.resolve();
+          },
+        },
         startTime: () => Promise.resolve("windows:1"),
         connect: () => {
           const answer = answers[sessions.length] ?? (() => Promise.resolve({}));
@@ -159,7 +166,7 @@ describe("[A4.5.shim.client] the shim's link", () => {
         checkFolder: () => Promise.resolve({ status: "ok" }),
         timing: { retryEveryMs: 1, connectRetryMs: 5_000 },
       });
-      return { code, sessions, lines, started };
+      return { code, sessions, lines, started, entered };
     };
 
     // Draining, then a space still opening: the same claim twice more, then the agent.
@@ -177,12 +184,18 @@ describe("[A4.5.shim.client] the shim's link", () => {
     expect(ok.started).toBe(1);
     expect(ok.code).toBe(0);
 
-    // A refusal, and a reply lost on the way, are final: one claim, no agent.
-    for (const final of [REFUSAL, new Error("connection lost")]) {
+    // A refusal, and a reply lost on the way, are final: one claim, no agent. A refused claim
+    // waits for Enter so its line can be read. A lost reply may have been taken: while the shim
+    // lives the service holds the launch as opening, so it ends at once.
+    for (const [final, entered] of [
+      [REFUSAL, 1],
+      [new Error("connection lost"), 0],
+    ] as const) {
       const no = await run([() => Promise.reject(final)]);
       expect(no.sessions).toHaveLength(1);
       expect(no.started).toBe(0);
       expect(no.code).toBe(1);
+      expect(no.entered).toBe(entered);
     }
   });
 });

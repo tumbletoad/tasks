@@ -1117,6 +1117,10 @@
       "input": {
         "additionalProperties": false,
         "properties": {
+          "another": {
+            "description": "Start a second session although this app already runs the task here",
+            "type": "boolean"
+          },
           "instance": {
             "description": "The instance to open in, from this machine's; leave out to Copy",
             "maxLength": 64,

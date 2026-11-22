@@ -2367,6 +2367,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         requestId,
         ...(pack === undefined ? {} : { pack }),
         ...(input["mark_folder"] === true ? { markFolder: true } : {}),
+        ...(input["another"] === true ? { another: true } : {}),
         // Over budget, the person's words become a note addressed to agents (A4 3.15.3): the
         // note entry's own request path, under a request ID the click's derives, so a repeated
         // click replays the note instead of adding a second one.

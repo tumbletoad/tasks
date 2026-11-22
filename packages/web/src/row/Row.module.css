@@ -566,8 +566,7 @@ a.source:hover {
 }
 
 .tile[data-state="opening"]::after,
-.tile[data-state="not_confirmed"]::after,
-.tile[data-state="connected"]::after {
+.tile[data-state="running"]::after {
   content: "";
   position: absolute;
   inset: 0 -1px;
@@ -584,11 +583,11 @@ a.source:hover {
   animation: spin 1.2s linear infinite;
 }
 
-.tile[data-state="connected"] {
+.tile[data-state="running"] {
   color: var(--k-accent);
 }
 
-.tile[data-state="connected"]::after {
+.tile[data-state="running"]::after {
   animation: pulse 2s var(--k-ease) infinite;
 }
 
@@ -634,7 +633,7 @@ a.source:hover {
 
 @media (prefers-reduced-motion: reduce) {
   .tile[data-state="opening"]::after,
-  .tile[data-state="connected"]::after {
+  .tile[data-state="running"]::after {
     animation: none;
   }
 

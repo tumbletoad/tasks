@@ -41,7 +41,11 @@ let live: Live;
 
 beforeEach(() => {
   localStorage.clear();
-  const api = { client: { task: {} }, receipts: () => Promise.resolve([]) } as unknown as Api;
+  const api = {
+    client: { task: {} },
+    busy: () => Promise.resolve([]),
+    receipts: () => Promise.resolve([]),
+  } as unknown as Api;
   live = new Live({
     api,
     route: { space: SPACE.id },

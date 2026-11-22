@@ -8,11 +8,11 @@
 // Anatomy, inline start to end: marker, check, title (+ status chip) and summary (+ area dot and
 // project on views that mix areas), then fixed columns: due, age, priority, effort, sources,
 // folder, star, launch. Every column keeps its width when it is empty, so columns line up on every row.
-import type { Instance, Receipt } from "../api.ts";
+import type { Instance } from "../api.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { TaskRow } from "../store/rows.ts";
 import { dayNumber, formatDay, formatInstant, localDate, type Clock } from "./dates.ts";
-import { launchOf, type LaunchBlock, type LaunchModel } from "./launch.ts";
+import { launchOf, type BusyOf, type LaunchBlock, type LaunchModel } from "./launch.ts";
 
 /** A message's values: plain values, or other messages that are formatted first. */
 export type MsgValues = Readonly<Record<string, string | number | Msg>>;
@@ -120,8 +120,8 @@ export interface RowInput {
   readonly project?: { readonly title: string };
   /** The instances pinned for the space, in order: the first is the effective one. */
   readonly instances: readonly Instance[];
-  /** The task's launch receipts, oldest first. */
-  readonly receipts: readonly Receipt[];
+  /** What busies each agent app with the task on this machine; none: every one is ready. */
+  readonly busy?: BusyOf;
   readonly sources?: readonly SourceFact[];
   /** How many sources the task has beyond `sources` (the compact row carries the first three). */
   readonly sourcesMore?: number;
@@ -471,8 +471,7 @@ function chipOf(task: TaskRow, ctx: RowContext): RowModel["chip"] {
 const LAUNCH_TIP: Readonly<Record<string, MessageId>> = {
   ready: "row.tile.ready",
   opening: "row.tile.opening",
-  not_confirmed: "row.tile.notConfirmed",
-  connected: "row.tile.connected",
+  running: "row.tile.running",
   unavailable: "row.tile.unavailable",
   elsewhere: "row.tile.elsewhere",
   copy_only: "row.tile.copyOnly",
@@ -554,7 +553,7 @@ export function renderRow(row: RowInput, ctx: RowContext): RowModel {
     description.push(msg("row.desc.draft"));
   }
 
-  const launch = launchOf(row.instances, row.receipts, row.launchBlock);
+  const launch = launchOf(row.instances, row.busy, row.launchBlock);
   const label = launch.instance?.label ?? "";
   const tip = msg(LAUNCH_TIP[launch.state] ?? "row.tile.ready", {
     label,

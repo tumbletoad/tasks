@@ -7,7 +7,7 @@
 // ID, a compare-and-set that moves nothing when it loses, only A4's edges, evidence that only grows,
 // a timestamp per state, openWork per machine after a restart, and records without free text.
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { EDGES, FOCUS_MS, INTENT_STATES, isLaunchRef, type IntentState } from "../src/intents.ts";
+import { EDGES, INTENT_STATES, isLaunchRef, type IntentState } from "../src/intents.ts";
 import {
   ExecutionRefused,
   LAUNCH_ID,
@@ -194,7 +194,7 @@ export function executionStoreContract(
       expect((await store.openWork(backend.machine)).intents).toEqual([]);
     });
 
-    test("a second click on the same task and instance focuses the intent in flight", async () => {
+    test("a second click on the same task and instance gets the intent still opening, and only that one", async () => {
       const input = await intentInput();
       const first = await store.createIntent(input, requestId());
       expect((await store.createIntent(input, requestId())).id).toBe(first.id);
@@ -202,19 +202,37 @@ export function executionStoreContract(
         (await store.createIntent({ ...input, instance: "claude-work" }, requestId())).id,
       ).not.toBe(first.id);
       await store.transitionIntent(first.id, "prepared", "dispatching");
-      backend.advance(FOCUS_MS * 3);
+      // However long it takes, and whatever the clock did meanwhile.
+      backend.advance(600_000);
       expect((await store.createIntent(input, requestId())).id).toBe(first.id);
+      backend.advance(-3_600_000);
       await store.transitionIntent(first.id, "dispatching", "dispatched");
+      expect((await store.createIntent(input, requestId())).id).toBe(first.id);
+      // Once its shim settled it, a click at once is a new launch: the session it opens is new.
+      await store.transitionIntent(first.id, "dispatched", "confirmed");
       const next = await store.createIntent(input, requestId());
       expect(next.id).not.toBe(first.id);
       expect(next.state).toBe("prepared");
+      await store.transitionIntent(next.id, "prepared", "failed", { reason: "cancelled" });
+      expect((await store.createIntent(input, requestId())).id).not.toBe(next.id);
+    });
+
+    test("a link or T3 launch that asked its app holds no click", async () => {
+      for (const route of ["link", "t3-mcp"] as const) {
+        const input = await intentInput({ route });
+        const asked = await store.createIntent(input, requestId());
+        await store.transitionIntent(asked.id, "prepared", "dispatching");
+        await store.transitionIntent(asked.id, "dispatching", "dispatched");
+        const next = await store.createIntent(input, requestId());
+        expect(next.id, route).not.toBe(asked.id);
+      }
     });
 
     test("every edge of A4's machine moves, records its time, and no other edge does", async () => {
       for (const from of INTENT_STATES) {
         for (const to of INTENT_STATES) {
           const intent = await intentIn(from, { instance: `edge-${from}-${to}` });
-          backend.advance(FOCUS_MS * 2);
+          backend.advance(10_000);
           const legal = EDGES[from].includes(to);
           const call = store.transitionIntent(intent.id, from, to, outcomeFor(from, to));
           if (!legal) {
@@ -304,24 +322,6 @@ export function executionStoreContract(
       for (const intent of all) {
         expect(await restarted.readIntent(intent.id), intent.state).toEqual(intent);
       }
-    });
-
-    test("a clock that went back does not make an old click young", async () => {
-      const input = await intentInput();
-      const first = await store.createIntent(input, requestId());
-      // A small step back is still within the 5 s.
-      backend.advance(-2_000);
-      expect((await store.createIntent(input, requestId())).id).toBe(first.id);
-      // An hour back: the first click is not younger than 5 s.
-      backend.advance(-3_600_000);
-      const later = await store.createIntent(input, requestId());
-      expect(later.id).not.toBe(first.id);
-      expect(later.state).toBe("prepared");
-      // Clicks while the clock is still behind: the 5 s hold between them.
-      backend.advance(1_000);
-      expect((await store.createIntent(input, requestId())).id).toBe(later.id);
-      backend.advance(5_000);
-      expect((await store.createIntent(input, requestId())).id).not.toBe(later.id);
     });
 
     test("two paths racing from one state: exactly one moves the record", async () => {

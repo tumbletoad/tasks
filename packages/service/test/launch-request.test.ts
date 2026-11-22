@@ -416,6 +416,52 @@ describe("[A4.5.routes.request] what a person types before Open reaches the agen
   }
 
   test(
+    "a second Open of the app while its launch opens or its agent runs is that launch, and holds none of its own words; Open another starts a second session",
+    { timeout: 600_000 },
+    async () => {
+      const r = await rig("request-join");
+      const task = await addTask(r, "folder-join");
+      const marker = newMarker();
+      const words = requestOf(marker);
+      const first = await open(r, { task: task.ref, instance: "claude", text: words });
+      expect(first.text).toBe("held");
+      const other = newMarker();
+      // At once: the launch is still opening, or its agent already runs. Either way it is joined.
+      const second = await open(r, { task: task.ref, instance: "claude", text: other });
+      expect(second.launch.id).toBe(first.launch.id);
+      expect(second.text).toBe("none");
+      const report = await reportAt(r.report("claude"));
+      expect(report.read).toEqual({ code: 0, request: hex8(words) });
+      const { launches } = r.lab.running;
+      await r.lab.waitIntent(first.launch.id, (i) => i.state === "confirmed", "Confirmed");
+      expect(launches.running(first.launch.id)).toBe(true);
+      // A page that still showed Ready, or a command line's Open: the running session.
+      const third = await open(r, { task: task.ref, instance: "claude", text: other });
+      expect(third.launch.id).toBe(first.launch.id);
+      expect(third.text).toBe("none");
+      await expectOnlyHeld(r, marker, first.launch.id);
+      expect(filesWith(r, other)).toEqual([]);
+      // The person's explicit choice, offered once the session is confirmed: a second agent.
+      const another = await open(r, { task: task.ref, instance: "claude", another: true });
+      expect(another.launch.id).not.toBe(first.launch.id);
+      await waitFor(
+        () => (launches.running(another.launch.id) ? true : undefined),
+        LONG_MS,
+        "the second agent running",
+      );
+      writeFileSync(r.release, "");
+      await waitFor(
+        () =>
+          launches.running(first.launch.id) || launches.running(another.launch.id)
+            ? undefined
+            : true,
+        LONG_MS,
+        "both agents ending",
+      );
+    },
+  );
+
+  test(
     "Codex's assisted open: no prompt on the command line, the brief to paste points at the request, which the agent reads exactly",
     { timeout: 600_000 },
     async () => {

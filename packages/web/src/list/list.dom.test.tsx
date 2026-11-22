@@ -142,6 +142,7 @@ beforeEach(() => {
         get: () => Promise.resolve({ sections: { log: [] } }),
       },
     },
+    busy: () => Promise.resolve([]),
     receipts: () => Promise.resolve([]),
   } as unknown as Api;
   live = new Live({

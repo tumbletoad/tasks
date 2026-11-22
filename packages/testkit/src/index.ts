@@ -45,7 +45,6 @@ export {
  * launch code never imports storage (A7 3.2), and the writer checks the same rules again.
  */
 export {
-  FOCUS_MS as STORAGE_FOCUS_MS,
   isLaunchRef as storageIsLaunchRef,
   LAUNCH_EDGES as STORAGE_LAUNCH_EDGES,
   LAUNCH_EVIDENCE_FIELDS as STORAGE_LAUNCH_EVIDENCE_FIELDS,

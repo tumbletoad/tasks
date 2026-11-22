@@ -163,6 +163,11 @@ const taskRowsSql = (folders: boolean) =>
       `(${touched("folders")})) OR t.id IN (SELECT task_id FROM runs WHERE id IN ` +
       `(${touched("runs")}))`
     : "");
+/**
+ * The tasks of the launches the batch touched. A launch's changes name no task (it is no child of
+ * its task), but a tab that shows the task's tile follows it by the task.
+ */
+const LAUNCH_TASKS = `SELECT id, task_id FROM launches WHERE id IN (${touched("launches")})`;
 const AREA_ROWS = `SELECT ${AREA_COLUMNS} FROM areas a WHERE a.id IN (${touched("areas")})`;
 const PROJECT_ROWS = `SELECT ${PROJECT_COLUMNS} FROM projects p WHERE p.id IN (${touched("projects")})`;
 
@@ -252,26 +257,44 @@ export async function readBatch(
   const visible = options.visible ?? ALL_VISIBLE;
   const params = { after, upto: after + limit };
   const folders = await hasFolderTable(reader);
-  const [space, commits, changes, actors, tasks, areas, projects, later, projectFolders, runs] =
-    await reader.transaction("deferred", [
-      { sql: SPACE_SQL, mode: "get" },
-      { sql: COMMITS, mode: "all", params },
-      { sql: CHANGES, mode: "all", params },
-      { sql: ACTORS, mode: "all", params },
-      { sql: taskRowsSql(folders), mode: "all", params },
-      { sql: AREA_ROWS, mode: "all", params },
-      { sql: PROJECT_ROWS, mode: "all", params },
-      { sql: LATER, mode: "all", params: { upto: params.upto } },
-      ...(folders
-        ? [
-            { sql: PROJECT_FOLDERS_CHANGED, mode: "all" as const, params: { after } },
-            { sql: RUN_TASKS, mode: "all" as const, params: { after } },
-          ]
-        : []),
-    ]);
+  const [
+    space,
+    commits,
+    changes,
+    actors,
+    tasks,
+    areas,
+    projects,
+    launches,
+    later,
+    projectFolders,
+    runs,
+  ] = await reader.transaction("deferred", [
+    { sql: SPACE_SQL, mode: "get" },
+    { sql: COMMITS, mode: "all", params },
+    { sql: CHANGES, mode: "all", params },
+    { sql: ACTORS, mode: "all", params },
+    { sql: taskRowsSql(folders), mode: "all", params },
+    { sql: AREA_ROWS, mode: "all", params },
+    { sql: PROJECT_ROWS, mode: "all", params },
+    { sql: LAUNCH_TASKS, mode: "all", params },
+    { sql: LATER, mode: "all", params: { upto: params.upto } },
+    ...(folders
+      ? [
+          { sql: PROJECT_FOLDERS_CHANGED, mode: "all" as const, params: { after } },
+          { sql: RUN_TASKS, mode: "all" as const, params: { after } },
+        ]
+      : []),
+  ]);
   const head = headOf(space);
   const through = Math.max(after, Math.min(head.cursor.seq, after + limit));
   const actorOf = new Map((actors as Row[]).map((a) => [String(a["id"]), a]));
+  const launchTask = new Map(
+    (launches as Row[]).flatMap((l) => {
+      const task = l["task_id"];
+      return typeof task === "string" ? [[String(l["id"]), task] as const] : [];
+    }),
+  );
   const rows = new Map<string, CompactRow>();
   for (const row of await taskRows(tasks as Row[], head.ref_prefix, options.here)) {
     const id = row["id"];
@@ -345,7 +368,7 @@ export async function readBatch(
       entities = new Map();
       bySeq.set(seq, entities);
     }
-    const task = taskOf(change);
+    const task = table === "launches" ? launchTask.get(id) : taskOf(change);
     let found = entities.get(key);
     if (found === undefined) {
       const changed: string[] = [];

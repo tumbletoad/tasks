@@ -2368,6 +2368,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "M6.page.open-once",
+      "title": "One press of Open is one Open: the second click of a double click on the tile or the strip and a held key open nothing more, an Open that got no answer carries the same request ID until the service answers, and only the strip's Open another asks for a second session",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "M6.page.busy-read",
+      "title": "A tab reads which agent apps are busy whenever it is live, again after it was offline, and tries a failed read again while it stays live",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "M6.page.e2e.run",
       "title": "In the browser: Run without words works on the task, Ctrl+Shift+Enter runs with the words, which clear once queued; the answer is the agent's text rendered as the thread renders text, a long one folded",
       "owner": "M6",
@@ -3911,8 +3925,32 @@
     },
     {
       "id": "A5.3.6.web.tile",
-      "title": "The launch tile's state follows its instance's latest receipt (Ready, Opening, Not confirmed for a link launch in Dispatched, Connected), and only a Ready tile opens: Opening does nothing, Not confirmed and Connected expand the task",
+      "title": "The launch tile is Opening while its instance's latest launch is on its way, Running while one of its sessions runs, else Ready: a session that ended, a link launch and a Confirmed launch the service cannot follow block nothing; Ready opens, Running expands the task, Opening does nothing",
       "source": "A5 3.6, A5 3.9, A7 3.9 M2.13",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.9.shim.session-end",
+      "title": "A terminal session runs while its shim is attached, its agent started and its process is there: an agent's end records how long it ran (also by a signal), a shim gone without a report stops running at once and the PID check records that it went, and after a restart only a session whose shim still runs is running",
+      "source": "A4 3.6.3, A5 3.9",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.9.service.session",
+      "title": "A Confirmed launch's receipt says running only while the service follows its session and its record names no end, ended once an end was reported (with how long it ran, or by an earlier build's exit code), and nothing for a lost shim, another computer's launch or an earlier build's record without an end",
+      "source": "A5 3.9",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.9.web.session-entry",
+      "title": "A launch's thread entry is a record: it says where it opened, then running or ended (with how long it ran when known) as the service knows it, only opened where it cannot know, and only a running session carries the live mark",
+      "source": "A5 3.9",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3927,15 +3965,23 @@
     },
     {
       "id": "A7.3.9.m2-13.e2e.races",
-      "title": "Against the real service in Chromium and Firefox: a Connected tile expands its row and starts no launch, nor does the strip's button of that instance, which says why, a receipt list that answers late does not take Confirmed away, and a task that is added keeps the draft typed while it was added",
+      "title": "Against the real service in Chromium and Firefox: a Running tile expands its row and starts no launch, the strip opens a second session only when asked, a receipt list that answers late does not take Running away, and a task that is added keeps the draft typed while it was added",
       "source": "A7 3.9 M2.13, A5 3.6, A5 3.9, A5 3.13",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.9.e2e.session-end",
+      "title": "Against the real service in Chromium and Firefox: a session is shown as running while it runs, in a second tab too, and once its agent quits, its window closes, its shim is killed or it ends while the service is stopped, nothing shows it as running and Open works again in the strip and on the tile; a double click starts one session; a Confirmed launch an earlier build recorded without an end is shown as opened; screens of running, ended, did not start and opened",
+      "source": "A5 3.6, A5 3.9",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.9.http.launch-tile",
-      "title": "The page's launch tile on the hub's launch machines: the snapshot names machine.toml's instances that open here, a click is launch.open over HTTP and records a Prepared intent through the writer, its terminal starts once, a repeated click starts nothing, the feed carries the launch event, Copy gives the pointer brief, and bad input, an unknown instance, another space, no token or the old routes are refused",
+      "title": "The page's launch tile on the hub's launch machines: the snapshot names machine.toml's instances that open here, a click is launch.open over HTTP and records a Prepared intent through the writer, its terminal starts once, a repeated click starts nothing, the feed carries the launch event with its task, Copy gives the pointer brief, and bad input, an unknown instance, another space, no token or the old routes are refused",
       "source": "A4 3.9, A4 3.4.6, A5 3.6, A5 3.9, A7 3.9 M2.13, M2.10",
       "owner": "M2",
       "kind": "ci",
@@ -4701,7 +4747,7 @@
     },
     {
       "id": "A7.3.12.m5-07.e2e.strip",
-      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line and clears once the agent read it; Open without text sends the brief alone; an agent that has the task open is not opened again, with or without text, and says where the words can go; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
+      "title": "In Chromium and Firefox against the real service: under the composer one strip; Note waits without text and says why, Enter and the button save the text as a note and clear the field, Shift+Enter makes a new line; Copy carries the text and clears it once it is on the clipboard, Shift+Copy copies the context pack; Ctrl+Enter opens the first instance with the text as the request, which never reaches the terminal's command line and clears once the agent read it; Open without text sends the brief alone; while a session runs the strip says so and opens a second one, with the words as its request, only when asked; a launch that is not recorded keeps the text; nothing is left in the browser once the text went somewhere",
       "source": "A5 3.8, A7 3.12 M5.07",
       "owner": "M5",
       "kind": "ci",

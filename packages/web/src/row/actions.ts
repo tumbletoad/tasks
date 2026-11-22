@@ -16,9 +16,15 @@ export interface RowActions {
   /**
    * Open the task in an instance, with the composer's `text` as the request: the receipt of the
    * launch the service recorded or returned, or undefined when it recorded none or the brief an
-   * app takes by paste did not reach the clipboard.
+   * app takes by paste did not reach the clipboard. Without `another`, an app that runs the task
+   * here already gives that session; with it, a second one starts.
    */
-  readonly open: (task: TaskRow, instance: Instance, text?: string) => Promise<Receipt | undefined>;
+  readonly open: (
+    task: TaskRow,
+    instance: Instance,
+    text?: string,
+    another?: boolean,
+  ) => Promise<Receipt | undefined>;
   /**
    * Copy the pointer brief, or with `pack` (Shift+Copy) the context pack (A4 3.15.5), with the
    * composer's `text`. True once it is on the clipboard.

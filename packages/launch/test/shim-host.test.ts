@@ -94,6 +94,7 @@ const probe: ProcessProbe = {
     );
     return (probeGate ?? Promise.resolve()).then(() => read);
   },
+  mayRun: (pid, startTime) => live.get(pid) === startTime,
 };
 
 /** A service life: a new machine and host on the same durable store and machine state. */
@@ -1086,5 +1087,114 @@ describe("[A4.5.environment.scrub] the claim's reply builds the agent's environm
     const again = await claim(plain.ticket);
     expect(asked).toEqual([login.id, plain.id]);
     expect(again.replies[0]?.env).not.toHaveProperty("FROM_FOLDER");
+  });
+});
+
+describe("[A5.3.9.shim.session-end] a session runs while its shim follows it, and its end is recorded", () => {
+  /** A launch whose agent started and settled: Confirmed, and running. */
+  async function running(pid = SHIM_PID): Promise<{ id: string; attachment: Attachment }> {
+    live.set(pid, SHIM_START);
+    const { id, ticket } = await dispatched();
+    const attachment = attachmentOf((await claim(ticket, { pid })).outcome);
+    await host.report(attachment, SHIM_METHODS.started, { pid: 5151, started_at: now });
+    await host.report(attachment, SHIM_METHODS.settled, {});
+    return { id, attachment };
+  }
+
+  test("an agent's end, by its code or by a signal, records how long it ran and ends the session", async () => {
+    const { id, attachment } = await running();
+    expect(host.running(id)).toBe(true);
+    await host.report(attachment, SHIM_METHODS.exited, {
+      code: null,
+      signal: "SIGHUP",
+      ran_ms: 125_000,
+      settled: true,
+    });
+    expect(await read(id)).toMatchObject({ state: "confirmed", evidence: { ran_ms: 125_000 } });
+    expect(host.running(id)).toBe(false);
+    // One that ended within 3 s failed, with how long it ran.
+    const early = await dispatched();
+    const a = attachmentOf((await claim(early.ticket)).outcome);
+    await host.report(a, SHIM_METHODS.exited, {
+      code: 1,
+      signal: null,
+      ran_ms: 400,
+      settled: false,
+    });
+    expect(await read(early.id)).toMatchObject({
+      state: "failed",
+      evidence: { exit_code: 1, ran_ms: 400 },
+    });
+  });
+
+  test("a shim gone without a report stops running at once, and the PID check records that it went", async () => {
+    const { id } = await running();
+    // Killed outright: no report. The page's next look already sees it is not running.
+    live.delete(SHIM_PID);
+    expect(host.running(id)).toBe(false);
+    pass(30_000);
+    expect(await host.check()).toBe(1);
+    const after = await read(id);
+    expect(after).toMatchObject({ state: "confirmed", evidence: { lost_at: now } });
+    expect(after?.evidence.ran_ms).toBeUndefined();
+    expect(records.get(id)).toBeUndefined();
+  });
+
+  test("after a restart only a session whose shim still runs is running; one that ended meanwhile is recorded", async () => {
+    const alive = await running(SHIM_PID + 1);
+    const gone = await running(SHIM_PID + 2);
+    const ended = await running(SHIM_PID + 3);
+    // The service stops. One shim dies without a word; another's agent ends and its shim writes
+    // exit.json, then waits for Enter.
+    live.delete(SHIM_PID + 2);
+    (records as MemoryRecords).exits.set(ended.id, {
+      format: 1,
+      launch: ended.id,
+      spawned: true,
+      settled: true,
+      code: 0,
+      signal: null,
+      ran_ms: 90_000,
+    });
+    boot();
+    expect(host.running(alive.id)).toBe(true);
+    expect(host.running(gone.id)).toBe(false);
+    await machine.recover();
+    expect(await host.check()).toBe(2);
+    expect(await read(gone.id)).toMatchObject({ state: "confirmed", evidence: { lost_at: now } });
+    expect(await read(ended.id)).toMatchObject({
+      state: "confirmed",
+      evidence: { exit_code: 0, ran_ms: 90_000 },
+    });
+    expect(host.running(ended.id)).toBe(false);
+    expect(host.running(alive.id)).toBe(true);
+    expect((await read(alive.id))?.evidence).not.toHaveProperty("lost_at");
+  });
+
+  test("an agent that ends within 3 s after the bridge confirmed its session records its end", async () => {
+    live.set(SHIM_PID, SHIM_START);
+    const { id, ticket } = await dispatched();
+    const attachment = attachmentOf((await claim(ticket)).outcome);
+    await host.report(attachment, SHIM_METHODS.started, { pid: 5151, started_at: now });
+    await machine.report(id, () => ({ kind: "confirmed", evidence: { bound_at: now } }));
+    expect(host.running(id)).toBe(true);
+    await host.report(attachment, SHIM_METHODS.exited, {
+      code: 0,
+      signal: null,
+      ran_ms: 2_000,
+      settled: false,
+    });
+    expect(await read(id)).toMatchObject({
+      state: "confirmed",
+      evidence: { bound_at: now, exit_code: 0, ran_ms: 2_000 },
+    });
+    expect(host.running(id)).toBe(false);
+  });
+
+  test("a launch whose agent has not started is not running", async () => {
+    const { id, ticket } = await dispatched();
+    attachmentOf((await claim(ticket)).outcome);
+    expect(host.running(id)).toBe(false);
+    expect(host.running("la_00000000000000000000000000")).toBe(false);
   });
 });
