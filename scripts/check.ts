@@ -13,22 +13,25 @@
 // safe-exit comes first: this script loads the product's generators and ends through
 // `process.exit`.
 import "../packages/bridge/src/safe-exit.ts";
-import { existsSync, readFileSync } from "node:fs";
-import { join, matchesGlob } from "node:path";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { isAbsolute, join, matchesGlob, relative, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { createVitest, type TestModule } from "vitest/node";
 import { LAB_DIR, SETUP_FILES, testFiles } from "../vitest.config.ts";
 import {
   E2E_DIR,
   E2E_MAX,
+  fitBudget,
   select,
   selectBrowser,
   repoFromCruise,
   type BrowserSelection,
   type Cruise,
+  type Fit,
   type Selection,
 } from "./check-plan.ts";
-import { changedSince, git, isLabPath } from "./lab-tests.ts";
+import { changedSince, isLabPath } from "./lab-tests.ts";
 import { checkIds, collectE2e, E2E_CONFIG, parseManifest, type CollectedTest } from "./manifest.ts";
 import { binPath, repoRoot, runNodeCaptured, type Captured } from "./run.ts";
 import { CRUISE_ROOTS, generated, runtime, TS_PROJECTS } from "./steps.ts";
@@ -60,7 +63,7 @@ function parseArgs(args: readonly string[]): Options {
       options.base = value;
     } else if (arg.startsWith("-")) {
       throw new Error(`unknown argument ${arg}. Use --base <rev>, --slow, --list or paths.`);
-    } else options.paths.push(arg.replaceAll("\\", "/").replace(/^\.\//, ""));
+    } else options.paths.push(arg);
   }
   if (options.base !== null && options.paths.length > 0) {
     throw new Error("give --base or paths, not both");
@@ -68,19 +71,70 @@ function parseArgs(args: readonly string[]): Options {
   return options;
 }
 
+/** Git's output. A git that fails stops the check: an empty answer would read as "nothing changed". */
+function mustGit(args: readonly string[]): string {
+  const result = spawnSync("git", args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    windowsHide: true,
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  });
+  if (result.status === 0) return result.stdout;
+  const why = (result.stderr || result.error?.message || `exit ${String(result.status)}`).trim();
+  throw new Error(`git ${args.join(" ")} failed: ${why}`);
+}
+
+/**
+ * The files the given paths name, as git spells them: a path is taken from the folder pnpm was
+ * started in, a folder stands for the files under it, and on Windows and macOS any case matches.
+ */
+function givenFiles(paths: readonly string[], files: readonly string[]): string[] {
+  const from = process.env["INIT_CWD"] ?? process.cwd();
+  const fold = process.platform === "linux" ? (p: string) => p : (p: string) => p.toLowerCase();
+  const spelled = new Map(files.map((f) => [fold(f), f]));
+  const out = new Set<string>();
+  for (const given of paths) {
+    const absolute = resolve(from, given);
+    const rel = relative(repoRoot, absolute).replaceAll("\\", "/");
+    if (rel === ".." || rel.startsWith("../") || isAbsolute(rel)) {
+      throw new Error(`${given} is outside the repository`);
+    }
+    const tracked = spelled.get(fold(rel));
+    if (tracked !== undefined) {
+      out.add(tracked);
+      continue;
+    }
+    if (!existsSync(absolute)) throw new Error(`no such file: ${given}`);
+    if (statSync(absolute).isDirectory()) {
+      const prefix = rel === "" ? "" : `${fold(rel)}/`;
+      const inside = files.filter((f) => fold(f).startsWith(prefix));
+      if (inside.length === 0) throw new Error(`no files git knows under ${given}`);
+      for (const f of inside) out.add(f);
+    } else out.add(rel);
+  }
+  return [...out].sort();
+}
+
 /** The changed files and how to name where they come from. */
-function findChange(options: Options): { changed: string[]; label: string } {
+function findChange(
+  options: Options,
+  files: readonly string[],
+): { changed: string[]; label: string } {
   if (options.paths.length > 0) {
-    const missing = options.paths.filter((p) => !existsSync(join(repoRoot, p)));
-    if (missing.length > 0) throw new Error(`no such file: ${missing.join(", ")}`);
-    return { changed: options.paths, label: "given on the command line" };
+    return { changed: givenFiles(options.paths, files), label: "given on the command line" };
   }
   const rev = options.base ?? "origin/main";
-  const mergeBase = git(["merge-base", rev, "HEAD"])?.trim();
-  if (mergeBase === undefined || mergeBase === "") {
-    throw new Error(`no merge base with ${rev} here. Fetch it, or give --base <rev>.`);
+  let mergeBase: string;
+  try {
+    mergeBase = mustGit(["merge-base", rev, "HEAD"]).trim();
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    throw new Error(`no merge base with ${rev} here (${why}). Fetch it, or give --base <rev>.`, {
+      cause: error,
+    });
   }
-  const changed = changedSince(git, mergeBase);
+  const changed = changedSince(mustGit, mergeBase);
   if (changed === null) throw new Error(`git diff against ${mergeBase} failed`);
   return {
     changed: [...new Set(changed.map((p) => p.replaceAll("\\", "/")))].sort(),
@@ -179,9 +233,15 @@ const platformName = { win32: "Windows", linux: "Linux", darwin: "macOS" }[
 
 let options: Options;
 let change: { changed: string[]; label: string };
+/** Every file git tracks or would track that is there. */
+let files: string[];
 try {
   options = parseArgs(process.argv.slice(2));
-  change = findChange(options);
+  const listed = mustGit(["ls-files", "-co", "--exclude-standard", "-z"])
+    .split("\0")
+    .filter((p) => p !== "");
+  files = listed.filter((p) => existsSync(join(repoRoot, p)));
+  change = findChange(options, listed);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exit(2);
@@ -244,20 +304,23 @@ pending.push(
     output: cruised.output,
   }),
 );
-const listed = git(["ls-files", "-co", "--exclude-standard", "-z"]) ?? "";
-const repo = repoFromCruise(
-  cruised.graph,
-  listed.split("\0").filter((p) => p !== "" && existsSync(join(repoRoot, p))),
-  (p) => readFileSync(join(repoRoot, p), "utf8"),
+// The changed files that are gone stay in the repository's file list: a module that names one
+// still selects its tests.
+const repo = repoFromCruise(cruised.graph, [...new Set([...files, ...changed])], (p) =>
+  readFileSync(join(repoRoot, p), "utf8"),
 );
-const tests = repo.files.filter(isProductTest);
+const tests = files.filter(isProductTest);
+const isTest = (p: string) =>
+  isProductTest(p) ||
+  (p.startsWith(E2E_DIR) && p.endsWith(".e2e.ts")) ||
+  p.startsWith(`${LAB_DIR}/`);
 const selection: Selection = select(
   changed,
   repo,
-  { tests, setup: SETUP_FILES },
+  { tests, setup: SETUP_FILES, isTest },
   { slow: options.slow },
 );
-const e2eFiles = repo.files.filter((p) => p.startsWith(E2E_DIR) && p.endsWith(".e2e.ts"));
+const e2eFiles = files.filter((p) => p.startsWith(E2E_DIR) && p.endsWith(".e2e.ts"));
 const browser: BrowserSelection = selectBrowser(changed, selection.reached, e2eFiles);
 
 const vitest = await createVitest(
@@ -265,51 +328,84 @@ const vitest = await createVitest(
   {},
 );
 const project = vitest.getProjectByName("product");
-const specs = selection.run.map((file) => project.createSpecification(join(repoRoot, file)));
 const workers = typeof project.config.maxWorkers === "number" ? project.config.maxWorkers : 1;
-// The tests' wall time from the durations Vitest last recorded: the work spread over the workers,
-// or the longest file when that is longer. Only the spread makes a change CI-sized: a long file
-// that runs is the change's own test.
-const durations = specs.map((s) => vitest.cache.getTestSpecificationResult(s)?.duration);
-const unknown = durations.filter((d) => d === undefined).length;
-const known = durations.map((d) => (d ?? UNKNOWN_FILE_S * 1000) / 1000);
-const spread = known.reduce((sum, d) => sum + d, 0) / workers;
-const seconds = Math.max(spread, ...known);
-const ciSized = !options.slow && spread > BUDGET_S;
+/** The duration Vitest last recorded for a file, in seconds. */
+const recorded = new Map(
+  selection.run.map((file) => {
+    const ms = vitest.cache.getTestSpecificationResult(
+      project.createSpecification(join(repoRoot, file)),
+    )?.duration;
+    return [file, ms === undefined ? undefined : ms / 1000];
+  }),
+);
+const secondsOf = (file: string) => recorded.get(file) ?? UNKNOWN_FILE_S;
+// The tests' wall time: the work spread over the workers, or the longest file when that is longer.
+// Only the spread makes a change CI-sized: a long file that runs is the change's own test.
+const spreadOf = (run: readonly string[]) =>
+  run.reduce((sum, file) => sum + secondsOf(file), 0) / workers;
+const wallOf = (run: readonly string[]) => Math.max(spreadOf(run), ...run.map(secondsOf));
+const unknown = selection.run.filter((file) => recorded.get(file) === undefined).length;
+const ciSized = !options.slow && spreadOf(selection.run) > BUDGET_S;
+const fit: Fit | null = ciSized
+  ? fitBudget(selection, changed, secondsOf, BUDGET_S * workers)
+  : null;
+const runFiles = fit === null ? selection.run : fit.run.map((r) => r.file);
+const specs = runFiles.map((file) => project.createSpecification(join(repoRoot, file)));
 
 const why = selection.everything === null ? "" : ` (all: ${selection.everything})`;
 console.log(
   `selected ${String(selection.run.length + selection.deferred.length)} of ` +
     `${plural(tests.length, "product test file")}${why}; ` +
-    `${String(selection.deferred.length)} slow left to CI; tests about ${seconds.toFixed(0)} s ` +
-    `at ${String(workers)} workers`,
+    `${String(selection.deferred.length)} slow left to CI; ` +
+    `tests about ${wallOf(selection.run).toFixed(0)} s at ${String(workers)} workers`,
 );
+if (selection.unseen.length > 0) {
+  const shown = selection.unseen.slice(0, 10).join(", ");
+  const more =
+    selection.unseen.length > 10 ? ` and ${String(selection.unseen.length - 10)} more` : "";
+  console.log(
+    `the check cannot tell what these affect, so it counts them as affecting every test: ${shown}${more}`,
+  );
+}
 if (unknown > 0) {
   console.log(
     `no recorded duration yet for ${plural(unknown, "file")}: each counted as ${String(UNKNOWN_FILE_S)} s`,
   );
 }
-if (ciSized) {
+if (fit !== null) {
   console.log(
-    `this is a CI-sized change: its tests take more than ${String(BUDGET_S)} s here, so none run`,
+    `this is a CI-sized change: its tests take more than ${String(BUDGET_S)} s here, so the ` +
+      `${plural(fit.run.length, "closest test file")} that fit run (about ` +
+      `${wallOf(runFiles).toFixed(0)} s) and CI runs the other ${String(fit.left.length)}`,
   );
 }
+const browserFiles = ciSized ? [] : options.slow ? [...browser.run, ...browser.over] : browser.run;
 if (options.list) {
-  const time = (d: number | undefined) =>
-    (d === undefined ? "?" : (d / 1000).toFixed(1)).padStart(6);
-  selection.run.forEach((file, i) => {
-    console.log(`  run     ${time(durations[i])} s  ${file}`);
-  });
+  const time = (file: string) => (recorded.get(file)?.toFixed(1) ?? "?").padStart(6);
+  const reason = new Map(
+    fit?.run.map((r) => [r.file, r.why === "edited" ? "edited" : "uses a changed file"]),
+  );
+  for (const file of runFiles) {
+    const because = reason.get(file);
+    console.log(
+      `  run     ${time(file)} s  ${file}${because === undefined ? "" : ` (${because})`}`,
+    );
+  }
+  for (const file of fit?.left ?? []) console.log(`  over    ${time(file)} s  ${file}`);
   for (const file of selection.deferred) console.log(`  slow    left to CI  ${file}`);
-  for (const file of browser.run) console.log(`  browser Chromium    ${file} (${browser.why})`);
-  for (const file of browser.over) console.log(`  browser left to CI  ${file}`);
+  for (const file of [...browser.run, ...browser.over]) {
+    console.log(
+      browserFiles.includes(file)
+        ? `  browser Chromium    ${file} (${browser.why})`
+        : `  browser left to CI  ${file}`,
+    );
+  }
   await vitest.close();
   process.exit(0);
 }
 
 let browserRan: string[] = [];
 let browserSkipped = "";
-const browserFiles = ciSized ? [] : options.slow ? [...browser.run, ...browser.over] : browser.run;
 if (browserFiles.length > 0) {
   if (!existsSync(chromium.executablePath())) {
     browserSkipped = "Chromium is not installed: pnpm exec playwright install chromium";
@@ -334,7 +430,7 @@ if (browserFiles.length > 0) {
 }
 
 let ran: TestModule[] = [];
-if (specs.length > 0 && !ciSized) {
+if (specs.length > 0) {
   const result = await timed(`product tests (${plural(specs.length, "file")})`, async () => {
     await vitest.standalone();
     const run = await vitest.runTestSpecifications(specs);
@@ -379,10 +475,10 @@ const results = await Promise.all(pending);
 // always CI's.
 const notRun: string[] = [];
 const selected = selection.run.length + selection.deferred.length;
-if (ciSized) {
+if (fit !== null && fit.left.length > 0) {
   notRun.push(
-    `all ${plural(selection.run.length, "selected product test file")}: a CI-sized change ` +
-      `(about ${seconds.toFixed(0)} s). Push, or run pnpm check --slow`,
+    `${String(fit.left.length)} of ${plural(selection.run.length, "selected product test file")}: ` +
+      `a CI-sized change (about ${wallOf(selection.run).toFixed(0)} s). Push, or run pnpm check --slow`,
   );
 }
 if (tests.length > selected) {

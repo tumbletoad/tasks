@@ -2,6 +2,7 @@ import { matchesGlob } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   E2E_MAX,
+  fitBudget,
   READS,
   repoFromCruise,
   select,
@@ -45,6 +46,26 @@ const sources: Record<string, string> = {
   "tests/e2e/world.ts": 'import "../../packages/k/src/fakes/index.ts";',
   "tests/e2e/search.e2e.ts": 'import "./world.ts";',
   "tests/e2e/skeleton.e2e.ts": 'import "./world.ts";',
+  "packages/l/test/detect.test.ts": "toMatchFileSnapshot(`./golden/detect.${os}.json`);",
+  "packages/l/test/golden/detect.linux.json": "{}",
+  "packages/l/test/golden/detect.darwin.json": "{}",
+  "packages/r/test/fake.ts":
+    'export const FIXTURES = join(\n  import.meta.dirname,\n  "..",\n  "..",\n  "..",\n  "fixtures",\n  "claude-stream",\n);',
+  "packages/r/test/driver.test.ts": 'import "./fake.ts";',
+  "fixtures/claude-stream/plain.jsonl": "",
+  "packages/n/test/native.ts":
+    'const dir = join(dirname(fileURLToPath(import.meta.url)), "fixtures");',
+  "packages/n/test/native.test.ts": 'import "./native.ts";',
+  "packages/n/test/fixtures/spy.c": "",
+  "packages/n/test/args.test.ts": 'parse(["--part", "build"]); // the `fixtures` folder',
+  "packages/n/test/build/out.txt": "",
+  "packages/c/src/config.test.ts":
+    'const FIXTURES = fileURLToPath(new URL("../test/config/", import.meta.url));',
+  "packages/c/test/config/machine.toml": "",
+  "packages/c/src/protocol.ts": "export interface Message {}",
+  "packages/c/src/client.ts": 'import type { Message } from "./protocol.ts";',
+  ".github/workflows/ci.yml": "",
+  LICENSE: "",
 };
 const imports: Record<string, [string, string[]][]> = {
   "packages/a/src/use.ts": [["packages/a/src/core.ts", ["local", "import"]]],
@@ -60,6 +81,9 @@ const imports: Record<string, [string, string[]][]> = {
   "tests/e2e/world.ts": [["packages/k/src/fakes/index.ts", ["local", "import"]]],
   "tests/e2e/search.e2e.ts": [["tests/e2e/world.ts", ["local", "import"]]],
   "tests/e2e/skeleton.e2e.ts": [["tests/e2e/world.ts", ["local", "import"]]],
+  "packages/r/test/driver.test.ts": [["packages/r/test/fake.ts", ["local", "import"]]],
+  "packages/n/test/native.test.ts": [["packages/n/test/native.ts", ["local", "import"]]],
+  "packages/c/src/client.ts": [["packages/c/src/protocol.ts", ["local", "type-only"]]],
 };
 const graph: Cruise = {
   modules: Object.keys(sources).map((source) => ({
@@ -73,7 +97,11 @@ const graph: Cruise = {
 };
 const repo = repoFromCruise(graph, Object.keys(sources), (p) => sources[p] ?? "");
 const tests = Object.keys(sources).filter((p) => p.endsWith(".test.ts"));
-const set = { tests, setup: [SETUP] };
+const set = {
+  tests,
+  setup: [SETUP],
+  isTest: (p: string) => p.endsWith(".test.ts") || p.endsWith(".e2e.ts"),
+};
 const selected = (changed: string[], slow = false) => {
   const s = select(changed, repo, set, { slow });
   return [...s.run, ...s.deferred].sort();
@@ -110,6 +138,7 @@ describe("[A7.3.3.check.selection] pnpm check selects the tests a change can rea
       "packages/a/package.json",
       ".node-version",
       "tsconfig.base.json",
+      "packages/web/tsconfig.json",
       "vitest.config.ts",
     ]) {
       const s = select([changed], repo, set, { slow: true });
@@ -128,8 +157,49 @@ describe("[A7.3.3.check.selection] pnpm check selects the tests a change can rea
     ]);
   });
 
-  test("a file nothing reaches selects nothing", () => {
-    expect(selected(["docs/promises-and-limits.md"])).toEqual([]);
+  test("a file a test reads under a name it builds is selected, also when it is renamed", () => {
+    expect(selected(["packages/l/test/golden/detect.linux.json"])).toEqual([
+      "packages/l/test/detect.test.ts",
+    ]);
+    // The check keeps a gone file in the list, so a rename is the old name and the new one.
+    const renamed = [
+      "packages/l/test/golden/detect.linux.json",
+      "packages/l/test/golden/detect.darwin.json",
+    ];
+    expect(selected(renamed)).toEqual(["packages/l/test/detect.test.ts"]);
+  });
+
+  test("a file in a folder that a test names is selected by its change", () => {
+    expect(selected(["fixtures/claude-stream/plain.jsonl"])).toEqual([
+      "packages/r/test/driver.test.ts",
+    ]);
+    expect(selected(["packages/n/test/fixtures/spy.c"])).toEqual([
+      "packages/n/test/native.test.ts",
+    ]);
+    expect(selected(["packages/c/test/config/machine.toml"])).toEqual([
+      "packages/c/src/config.test.ts",
+    ]);
+  });
+
+  test("a changed file no test reaches selects every test, and is named", () => {
+    for (const changed of [".github/workflows/ci.yml", "packages/n/test/build/out.txt"]) {
+      const s = select([changed], repo, set, { slow: true });
+      expect(s.unseen, changed).toEqual([changed]);
+      expect(s.everything, changed).toContain(changed);
+      expect(s.run, changed).toHaveLength(tests.length);
+    }
+  });
+
+  test("prose, the licence and a file imported for its types only select nothing", () => {
+    for (const changed of [
+      "docs/promises-and-limits.md",
+      "LICENSE",
+      "packages/c/src/protocol.ts",
+    ]) {
+      const s = select([changed], repo, set, { slow: true });
+      expect(s.everything, changed).toBeNull();
+      expect(s.run, changed).toEqual([]);
+    }
   });
 
   test("a slow file is selected but left to CI, unless it is the change's own test", () => {
@@ -153,6 +223,10 @@ describe("[A7.3.3.check.selection] pnpm check selects the tests a change can rea
     const files = (git(["ls-files", "-z"]) ?? "").split("\0");
     for (const slow of SLOW) expect(files, slow.test).toContain(slow.test);
     for (const read of READS) {
+      expect(
+        files.some((f) => matchesGlob(f, read.changed)),
+        read.changed,
+      ).toBe(true);
       for (const pattern of read.tests) {
         expect(
           files.some((f) => matchesGlob(f, pattern)),
@@ -160,6 +234,40 @@ describe("[A7.3.3.check.selection] pnpm check selects the tests a change can rea
         ).toBe(true);
       }
     }
+  });
+});
+
+describe("[A7.3.3.check.budget] pnpm check runs the closest tests when a change is over its budget", () => {
+  const changed = ["packages/a/src/core.ts", "packages/a/test/use.test.ts"];
+  const selection = select(changed, repo, set, { slow: true });
+  const seconds = (file: string) =>
+    ({ "packages/a/test/use.test.ts": 30, "tests/update/installed.test.ts": 5 })[file] ?? 10;
+
+  test("the tests the change edits come first, then the ones that use a changed file, shortest first", () => {
+    const fit = fitBudget(selection, changed, seconds, 45);
+    expect(fit.run).toEqual([
+      { file: "packages/a/test/use.test.ts", why: "edited" },
+      { file: "tests/update/installed.test.ts", why: "direct" },
+      { file: "packages/projection/test/model.test.ts", why: "direct" },
+    ]);
+    expect(fit.left).toEqual([]);
+  });
+
+  test("what does not fit is left, and a test that only reaches a change through others waits", () => {
+    const fit = fitBudget(selection, changed, seconds, 36);
+    expect(fit.run.map((r) => r.file)).toEqual([
+      "packages/a/test/use.test.ts",
+      "tests/update/installed.test.ts",
+    ]);
+    expect(fit.left).toEqual(["packages/projection/test/model.test.ts"]);
+    const far = fitBudget(
+      select(["packages/a/src/core.ts"], repo, set, { slow: true }),
+      ["packages/a/src/core.ts"],
+      seconds,
+      1000,
+    );
+    expect(far.run.map((r) => r.file)).not.toContain("packages/a/test/use.test.ts");
+    expect(far.left).toEqual(["packages/a/test/use.test.ts"]);
   });
 });
 

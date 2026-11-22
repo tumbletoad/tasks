@@ -42,7 +42,14 @@
     },
     {
       "id": "A7.3.3.check.selection",
-      "title": "pnpm check selects the tests that import, spawn or read a changed file, every test for a change to the shared setup, and leaves the slow files to CI unless they are the change's own",
+      "title": "pnpm check selects the tests that import, spawn or read a changed file, by its name, its folder or a name built at run time, every test for a change to the shared setup or one it cannot connect to a test, and leaves the slow files to CI unless they are the change's own",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.3.check.budget",
+      "title": "pnpm check runs the closest tests that fit its budget when a change's tests are over it: the edited test files, then the tests that use a changed file, shortest first",
       "owner": "M0",
       "kind": "ci",
       "profiles": ["v1"]

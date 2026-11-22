@@ -1,20 +1,21 @@
 // What `pnpm check` runs for a change, and what it leaves to CI. No I/O: every input is passed in.
 //
-// A test reaches a file through what it imports at run time, and through a path it names in a
-// string: a module that spawns `new URL("../src/hub/main.ts", import.meta.url)` or reads
-// `here("terminal.ts")` depends on that file as much as an importer does. The walk goes backwards
-// from the changed files over both kinds of edge. What neither can see (a test that reads a whole
-// folder) is in READS, and a change that can alter every test selects all of them.
+// A test reaches a file through what it imports at run time, and through a path it names in
+// strings: a module that spawns `new URL("../src/hub/main.ts", import.meta.url)`, reads
+// `join(here, "..", "fixtures", "claude-stream")` or compares with `./golden/detect.${os}.json`
+// depends on those files as much as an importer does. The walk goes backwards from the changed
+// files over both kinds of edge. What neither can see is in READS. A changed file the walk connects
+// to no test selects every test: the check cannot tell that it affects none.
 import { matchesGlob } from "node:path";
 
 /** Paths are relative to the repository root, with forward slashes. */
 export interface Repo {
-  /** Every file git tracks or would track. */
+  /** Every file git tracks or would track, and changed files that are gone. */
   files: readonly string[];
-  /** Each module's run-time imports. Type-only imports are left out: they never load. */
-  imports: ReadonlyMap<string, readonly string[]>;
-  /** A module's source text. */
-  read: (path: string) => string;
+  /** For each file, the modules that import it at run time or name it in a string. */
+  usedBy: ReadonlyMap<string, readonly string[]>;
+  /** Files a module imports for their types only: the type checker covers a change to them. */
+  typed: ReadonlySet<string>;
 }
 
 /** The parts of dependency-cruiser's JSON output that the check reads. */
@@ -26,34 +27,45 @@ export interface Cruise {
   };
 }
 
-/** The repository as the selection sees it, from dependency-cruiser's graph and the file list. */
+/** The repository as the selection sees it: dependency-cruiser's graph, the files and their text. */
 export function repoFromCruise(
   graph: Cruise,
   files: readonly string[],
   read: (path: string) => string,
 ): Repo {
   const known = new Set(files);
-  const imports = new Map<string, string[]>();
+  const usedBy = new Map<string, Set<string>>();
+  const use = (file: string, module: string) => {
+    if (file === module) return;
+    const set = usedBy.get(file);
+    if (set === undefined) usedBy.set(file, new Set([module]));
+    else set.add(module);
+  };
+  const typed = new Set<string>();
   for (const m of graph.modules) {
-    const loaded = m.dependencies.filter(
-      (d) =>
-        known.has(d.resolved) &&
-        !d.dependencyTypes.includes("type-only") &&
-        !d.dependencyTypes.includes("type-import"),
-    );
-    imports.set(
-      m.source,
-      loaded.map((d) => d.resolved),
-    );
+    for (const d of m.dependencies) {
+      if (!known.has(d.resolved)) continue;
+      const typeOnly =
+        d.dependencyTypes.includes("type-only") || d.dependencyTypes.includes("type-import");
+      if (typeOnly) typed.add(d.resolved);
+      else use(d.resolved, m.source);
+    }
   }
-  return { files, imports, read };
+  for (const [file, modules] of namers(files, read)) for (const m of modules) use(file, m);
+  return {
+    files,
+    usedBy: new Map([...usedBy].map(([file, set]) => [file, [...set]])),
+    typed,
+  };
 }
 
 export interface TestSet {
-  /** The product test files. */
+  /** The product test files that exist. */
   tests: readonly string[];
   /** Files every test loads before its own imports: Vitest's setup files. */
   setup: readonly string[];
+  /** Whether a path is a test of any kind, the check's or one it leaves to CI, there or gone. */
+  isTest: (path: string) => boolean;
 }
 
 /** A change to one of these can change how every test runs. */
@@ -62,16 +74,25 @@ const EVERYTHING = [
   /^pnpm-workspace\.yaml$/,
   /(^|\/)package\.json$/,
   /^\.node-version$/,
-  /^tsconfig[^/]*\.json$/,
+  /(^|\/)tsconfig[^/]*\.json$/,
   /^vitest\.config\.ts$/,
 ];
 
 /**
- * Tests that read files no import or path literal names: a folder they scan, or the whole tree.
+ * Kinds of file that no test reads, or that a step of the check covers in full: a change to one
+ * that no test reaches affects nothing the check leaves out.
+ */
+const INERT = [/\.md$/i, /(^|\/)LICENSE[^/]*$/, /^\.prettier(rc[^/]*|ignore)$/];
+
+/** A READS entry for every file: it does not connect a file to a test of what it does. */
+const ANY = "**";
+
+/**
+ * Tests that read files no import or path string names: a folder they scan, or the whole tree.
  * When CI fails on a test the check did not select, the missing edge goes here.
  */
 export const READS: readonly { changed: string; tests: readonly string[] }[] = [
-  { changed: "**", tests: ["scripts/machine-facts.test.ts"] },
+  { changed: ANY, tests: ["scripts/machine-facts.test.ts"] },
   {
     changed: "packages/web/src/**",
     tests: ["packages/web/test/catalogue.test.ts", "packages/web/test/styles.test.ts"],
@@ -109,8 +130,12 @@ export const SLOW: readonly { test: string; home?: string }[] = [
 export interface Selection {
   /** The change that selects every test, or null. */
   everything: string | null;
+  /** Changed files that reach no test and are not INERT: the check cannot tell what they affect. */
+  unseen: string[];
   /** Every file that reaches a changed file, the changed files included. */
   reached: ReadonlySet<string>;
+  /** Selected test files that are changed themselves, or import or name a changed file. */
+  direct: ReadonlySet<string>;
   /** Selected test files that run. */
   run: string[];
   /** Selected slow test files left to CI. */
@@ -118,8 +143,13 @@ export interface Selection {
 }
 
 const SOURCE = /\.(?:[cm]?[jt]sx?)$/;
-/** A string literal without interpolation that could be a path. */
-const LITERAL = /(["'`])([\w@.~/+-]{3,200})\1/g;
+/** A string that could be a path or a part of one. In a template, each `${…}` stands for a name. */
+const PART = /"[\w@.~/+-]+"|'[\w@.~/+-]+'|`(?:[\w@.~/+-]|\$\{[^`}]*\})+`/;
+/** One such string, or several in a row as a call's arguments: `join(here, "..", "fixtures")`. */
+const PARTS = new RegExp(`(?:${PART.source})(?:\\s*,\\s*(?:${PART.source}))*`, "g");
+const EACH_PART = new RegExp(PART.source, "g");
+/** What comes before a call's second argument: `join(here, ` or `join(dirname(x), `. */
+const AFTER_PATH = /[\w)]\s*,\s*$/;
 /** What comes before an import specifier: the graph holds those, with their kind. */
 const SPECIFIER = /(?:\bfrom|\bimport|\bexport|\brequire\s*\(|\bimport\s*\()\s*$/;
 
@@ -140,6 +170,9 @@ function resolveIn(base: string, rel: string): string | null {
   return parts.join("/");
 }
 
+/** A string as a path pattern: quotes off, each `${…}` as `*`. */
+const pattern = (part: string) => part.slice(1, -1).replace(/\$\{[^}]*\}/g, "*");
+
 /**
  * Whether a module that names a file by its bare name also names its folder, as in
  * `join(root, "tests", "manifest.json")`. A bare name alone is too common to count: dozens of
@@ -153,71 +186,114 @@ function namesFolder(source: string, file: string): boolean {
 }
 
 /**
- * For each file, the modules that name it in a string literal: as a path relative to the module,
- * or by a path suffix that only that file has (`"hub/main.ts"`, `"eslint.config.js"`).
+ * For each file, the modules that name it in strings: as a path relative to the module or to the
+ * repository, by a path suffix that only it has (`"hub/main.ts"`, `"eslint.config.js"`), inside a
+ * folder named the same ways, or as a match of a name built at run time (`golden/detect.${os}.json`).
  */
-export function namers(repo: Repo): Map<string, Set<string>> {
-  const files = new Set(repo.files);
+function namers(
+  files: readonly string[],
+  read: (path: string) => string,
+): Map<string, Set<string>> {
+  const known = new Set(files);
+  /** Each folder's files, at any depth. */
+  const under = new Map<string, string[]>();
   const bySuffix = new Map<string, string[]>();
-  for (const file of repo.files) {
+  const index = (map: Map<string, string[]>, key: string, file: string) => {
+    const list = map.get(key);
+    if (list === undefined) map.set(key, [file]);
+    else list.push(file);
+  };
+  for (const file of known) {
     const parts = file.split("/");
-    for (let i = 0; i < parts.length; i++) {
-      const suffix = parts.slice(i).join("/");
-      const list = bySuffix.get(suffix);
-      if (list === undefined) bySuffix.set(suffix, [file]);
-      else list.push(file);
-    }
+    for (let i = 1; i < parts.length; i++) index(under, parts.slice(0, i).join("/"), file);
+    for (let i = 0; i < parts.length; i++) index(bySuffix, parts.slice(i).join("/"), file);
   }
-  const named = new Map<string, Set<string>>();
-  for (const module of repo.files) {
+  /** Folders by each of their path suffixes. */
+  const dirsBySuffix = new Map<string, string[]>();
+  for (const dir of under.keys()) {
+    const parts = dir.split("/");
+    for (let i = 0; i < parts.length; i++) index(dirsBySuffix, parts.slice(i).join("/"), dir);
+  }
+  /** The files a path names: the file, the files in the folder, or the matches of a built name. */
+  const at = (path: string, folders: boolean): readonly string[] => {
+    if (!path.includes("*")) {
+      if (known.has(path)) return [path];
+      return folders ? (under.get(path) ?? []) : [];
+    }
+    const parts = path.split("/");
+    const fixed = parts
+      .slice(
+        0,
+        parts.findIndex((p) => p.includes("*")),
+      )
+      .join("/");
+    return fixed === "" ? [] : (under.get(fixed) ?? []).filter((f) => matchesGlob(f, path));
+  };
+
+  const result = new Map<string, Set<string>>();
+  for (const module of known) {
     if (!SOURCE.test(module)) continue;
     let source: string;
     try {
-      source = repo.read(module);
+      source = read(module);
     } catch {
       continue;
     }
-    for (const match of source.matchAll(LITERAL)) {
-      const literal = match[2] ?? "";
-      if (SPECIFIER.test(source.slice(Math.max(0, match.index - 12), match.index))) continue;
-      const targets = new Set<string>();
-      const relative = resolveIn(parentDir(module), literal);
-      if (relative !== null && files.has(relative)) targets.add(relative);
-      const suffix = literal.replace(/^(?:\.{1,2}\/)+/, "");
-      const owners = bySuffix.get(suffix);
-      const owner = owners?.length === 1 ? owners[0] : undefined;
-      if (owner !== undefined && (suffix.includes("/") || namesFolder(source, owner))) {
-        targets.add(owner);
+    const targets = new Set<string>();
+    /**
+     * `bare`: a single name without a folder. It names a folder next to the module only as the
+     * one name after a path, as in `join(here, "fixtures")`: elsewhere a word like "build" is an
+     * argument or a word in a comment.
+     */
+    const consider = (path: string, bare: false | "name" | "folder") => {
+      if (!/\w/.test(path)) return;
+      const relative = resolveIn(parentDir(module), path);
+      if (relative !== null && relative !== "") {
+        for (const f of at(relative, bare !== "name")) targets.add(f);
       }
-      for (const target of targets) {
-        if (target === module) continue;
-        const set = named.get(target);
-        if (set === undefined) named.set(target, new Set([module]));
-        else set.add(module);
+      const plain = path.replace(/^(?:\.{1,2}\/)+/, "");
+      if (plain.includes("/")) for (const f of at(plain, true)) targets.add(f);
+      if (plain.includes("*")) return;
+      const owners = bySuffix.get(plain);
+      const owner = owners?.length === 1 ? owners[0] : undefined;
+      if (owner !== undefined && (!bare || namesFolder(source, owner))) targets.add(owner);
+      const dirs = plain.includes("/") ? dirsBySuffix.get(plain) : undefined;
+      const dir = dirs?.length === 1 ? dirs[0] : undefined;
+      if (dir !== undefined) for (const f of under.get(dir) ?? []) targets.add(f);
+    };
+    for (const run of source.matchAll(PARTS)) {
+      if (SPECIFIER.test(source.slice(Math.max(0, run.index - 12), run.index))) continue;
+      const raw = [...run[0].matchAll(EACH_PART)].map((m) => m[0]);
+      const parts = raw.map(pattern);
+      if (parts.length > 1) consider(parts.join("/"), false);
+      const afterPath =
+        parts.length === 1 &&
+        !run[0].startsWith("`") &&
+        AFTER_PATH.test(source.slice(Math.max(0, run.index - 40), run.index));
+      for (const part of parts) {
+        if (part.length < 3) continue;
+        consider(part, part.includes("/") ? false : afterPath ? "folder" : "name");
       }
     }
+    for (const target of targets) {
+      if (target === module) continue;
+      const set = result.get(target);
+      if (set === undefined) result.set(target, new Set([module]));
+      else set.add(module);
+    }
   }
-  return named;
+  return result;
 }
 
-/** Every file that can reach one of `changed`, the changed files included. */
-function reaching(changed: readonly string[], repo: Repo): Set<string> {
-  const named = namers(repo);
-  const importers = new Map<string, string[]>();
-  for (const [module, deps] of repo.imports) {
-    for (const dep of deps) {
-      const list = importers.get(dep);
-      if (list === undefined) importers.set(dep, [module]);
-      else list.push(module);
-    }
-  }
-  const seen = new Set(changed);
-  const queue = [...changed];
-  for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
-    for (const next of [...(importers.get(file) ?? []), ...(named.get(file) ?? [])]) {
-      if (!seen.has(next)) {
-        seen.add(next);
-        queue.push(next);
+/** Every file that can reach `file`, `file` included. */
+function reaching(file: string, usedBy: Repo["usedBy"]): Set<string> {
+  const seen = new Set([file]);
+  const queue = [file];
+  for (let next = queue.pop(); next !== undefined; next = queue.pop()) {
+    for (const user of usedBy.get(next) ?? []) {
+      if (!seen.has(user)) {
+        seen.add(user);
+        queue.push(user);
       }
     }
   }
@@ -232,15 +308,30 @@ export function select(
   options: { slow: boolean },
 ): Selection {
   const tests = new Set(set.tests);
-  const reached = reaching(changed, repo);
+  const reached = new Set<string>();
+  const unseen: string[] = [];
+  for (const file of changed) {
+    const mine = reaching(file, repo.usedBy);
+    for (const f of mine) reached.add(f);
+    const seen =
+      [...mine].some((f) => set.isTest(f)) ||
+      repo.typed.has(file) ||
+      INERT.some((rule) => rule.test(file)) ||
+      EVERYTHING.some((rule) => rule.test(file)) ||
+      READS.some((read) => read.changed !== ANY && matchesGlob(file, read.changed));
+    if (!seen) unseen.push(file);
+  }
   const trigger = changed.find((p) => EVERYTHING.some((rule) => rule.test(p)));
   const setup = set.setup.find((file) => reached.has(file));
+  const more = unseen.length > 1 ? ` (and ${String(unseen.length - 1)} more)` : "";
   const everything =
     trigger !== undefined
       ? `${trigger} changed`
       : setup !== undefined
         ? `the setup file ${setup} reaches a changed file`
-        : null;
+        : unseen[0] !== undefined
+          ? `${unseen[0]}${more} reaches no test the check can see`
+          : null;
 
   const selected = new Set<string>();
   if (everything !== null) {
@@ -250,10 +341,13 @@ export function select(
     for (const read of READS) {
       if (!changed.some((p) => matchesGlob(p, read.changed))) continue;
       for (const test of set.tests) {
-        if (read.tests.some((pattern) => matchesGlob(test, pattern))) selected.add(test);
+        if (read.tests.some((glob) => matchesGlob(test, glob))) selected.add(test);
       }
     }
   }
+  const direct = new Set(
+    changed.flatMap((p) => [p, ...(repo.usedBy.get(p) ?? [])]).filter((f) => tests.has(f)),
+  );
 
   const run: string[] = [];
   const deferred: string[] = [];
@@ -266,7 +360,47 @@ export function select(
       (slow.home !== undefined && changed.some((p) => p.startsWith(slow.home ?? "")));
     (now ? run : deferred).push(test);
   }
-  return { everything, reached, run, deferred };
+  return { everything, unseen, reached, direct, run, deferred };
+}
+
+export interface Fit {
+  /** The tests that run, in the order they were chosen, and why each one. */
+  run: { file: string; why: "edited" | "direct" }[];
+  /** The selected tests that do not run. */
+  left: string[];
+}
+
+/**
+ * For a selection over the budget, the closest tests that fit in it: the test files the change
+ * edits, then the tests that import or name a changed file, each group shortest first. `budget`
+ * is in file-seconds: the wall time it allows times the workers.
+ */
+export function fitBudget(
+  selection: Selection,
+  changed: readonly string[],
+  seconds: (file: string) => number,
+  budget: number,
+): Fit {
+  const shortestFirst = (files: string[]) =>
+    files.sort((a, b) => seconds(a) - seconds(b) || a.localeCompare(b));
+  const edited = shortestFirst(selection.run.filter((f) => changed.includes(f)));
+  const direct = shortestFirst(
+    selection.run.filter((f) => selection.direct.has(f) && !changed.includes(f)),
+  );
+  const run: Fit["run"] = [];
+  let used = 0;
+  for (const [files, why] of [
+    [edited, "edited"],
+    [direct, "direct"],
+  ] as const) {
+    for (const file of files) {
+      if (used + seconds(file) > budget) continue;
+      used += seconds(file);
+      run.push({ file, why });
+    }
+  }
+  const chosen = new Set(run.map((r) => r.file));
+  return { run, left: selection.run.filter((f) => !chosen.has(f)) };
 }
 
 export const E2E_DIR = "tests/e2e/";
