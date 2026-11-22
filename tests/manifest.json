@@ -2652,6 +2652,38 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.7.binding.worlds",
+      "title": "A test world's launch records its app and home at the click and its home is registered for the world's space as setup does; by name it is opened without an app, without a row, with its row revoked or registered for another space, and a bridge inside it can present another instance",
+      "source": "A3 3.7.2, A3 3.7.4",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.named",
+      "title": "A ticket (by its hash with its own launch's ID) names the live terminal launch or run it was handed for, a preset the live launch it was preset for (the newest), each with its session, space and task, a launch with the app and home its click recorded; a ticket and a preset of two give both; nothing before the claim or after the release",
+      "source": "A3 3.7.2, A4 3.1",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.session-name",
+      "title": "A launch and a background run are each named as a session by one function: the session it continues, else se_ and its ID's 26 characters; nothing else is named",
+      "source": "A3 3.7.2",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.home-rows",
+      "title": "An app and a home folder give that home's agent-home rows, newest first, each with its instance, its spaces and whether it is live, the folder compared as the OS compares paths; a grants table that cannot be read is a failed lookup, never a home without rows",
+      "source": "A3 3.7.4, A3 3.7.8",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.7.grant.space",
       "title": "A home granted one space reaches no other: its own space works; the other, named by ID or by name in its entry or picked as the machine default, is forbidden with rule grant before its reader or writer is touched, and is not pinned, at the bind or at a call; a target that does not resolve is the grant refusal unless the home is granted it; a launch reference, a ticket or a task of the other space binds and reads nothing there and is not used up; after a service restart the rows still decide",
       "source": "A3 3.7.3, A3 3.7.4, A3 3.7.8, A3 3.5, A7 3.9 M2.04b",

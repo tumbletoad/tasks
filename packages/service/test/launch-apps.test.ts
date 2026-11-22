@@ -7,7 +7,7 @@
 import { mkdirSync, realpathSync, statSync, writeFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import type { JsonObject, RpcSession } from "@ttasks/bridge/protocol";
+import type { RpcSession } from "@ttasks/bridge/protocol";
 import {
   briefReference,
   PACK_CEILING,
@@ -15,9 +15,8 @@ import {
   type SpawnRequest,
   type SpawnedProcess,
 } from "@ttasks/launch";
-import { bridgePrincipal, clientOf } from "../src/mcp/index.ts";
-import { opCall, type Caller } from "../src/ops/index.ts";
 import { briefNames } from "../src/launch/open.ts";
+import { bridge } from "./agents.ts";
 import { instanceToml, readLog, tempRoot } from "./harness.ts";
 import { bridgeContext } from "./mcp-helpers.ts";
 import { classSession, errorOf, grantHome } from "./ops-helpers.ts";
@@ -135,28 +134,21 @@ const open = async (r: Rig, input: Record<string, unknown>): Promise<Opened> =>
     { timeoutMs: 60_000 },
   )) as Opened;
 
-/** An agent's MCP connection working in `cwd`, bound as the endpoint binds one, and its get_task. */
+/** An agent's MCP connection working in `cwd`, as an app's bridge makes it, and its get_task. */
 async function agentIn(r: Rig, cwd: string) {
-  const context: JsonObject = bridgeContext({ space: r.lab.spaceId, instance: "app-agent", cwd });
-  const connection = { context };
-  await r.lab.running.bindings.bridge(connection);
-  const slot = r.lab.running.bindings.attach(connection);
-  if (slot === undefined) throw new Error("no slot");
-  const caller: Caller = {
-    class: "bridge",
-    env: {},
-    principal: bridgePrincipal(context, r.lab.running.ops.machine.id),
-    client: clientOf(context),
-    binding: slot,
-  };
+  const served = { service: r.lab.running, home: r.lab.home, path: r.lab.running.endpoint.path };
+  const agent = await bridge(
+    served,
+    bridgeContext({ space: r.lab.spaceId, instance: "app-agent", cwd }),
+  );
   return {
-    getTask: async (launch: string) =>
-      (await opCall(r.lab.running.ops, caller, { op: "task.get", input: { launch } })) as {
-        bound: boolean;
-      },
-    close: () => {
-      r.lab.running.bindings.closed(slot);
-    },
+    /** Whether the read bound the connection's session to the launch's task. */
+    getTask: async (launch: string) => ({
+      bound: (await agent.call("task.get", { launch })).includes(
+        "Session: bound to this task by this call",
+      ),
+    }),
+    close: () => agent.close(),
   };
 }
 
@@ -214,7 +206,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
         const after = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
         expect(after?.state).toBe("dispatched");
         expect(after?.evidence.bound_at).toBeTypeOf("number");
-        elsewhere.close();
+        await elsewhere.close();
 
         // A launch of another task in the same folder, whose bridge works in the link's folder:
         // Confirmed.
@@ -224,7 +216,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
         expect((await here.getTask(second.launch.reference)).bound).toBe(true);
         const confirmed = await r.lab.running.launches.read(r.lab.spaceId, second.launch.id);
         expect(confirmed?.state).toBe("confirmed");
-        here.close();
+        await here.close();
 
         // A bridge that names no folder confirms nothing either.
         const third = await open(r, { task: other.ref, instance });
@@ -234,7 +226,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
         expect((await r.lab.running.launches.read(r.lab.spaceId, third.launch.id))?.state).toBe(
           "dispatched",
         );
-        nowhere.close();
+        await nowhere.close();
 
         const checks = readLog(r.lab.home).filter((e) => e["ev"] === "launch.folder_check");
         expect(checks.map((e) => e["result"])).toEqual(["other", "same", "unknown"]);
@@ -274,7 +266,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
         const after = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
         expect(after?.evidence.folder_id).toBe(keyOf(folder));
         expect(after?.state).toBe("confirmed");
-        here.close();
+        await here.close();
         const checks = readLog(r.lab.home).filter((e) => e["ev"] === "launch.folder_check");
         expect(checks.map((e) => e["result"])).toEqual(["same"]);
       } finally {
@@ -304,7 +296,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
       expect((await r.lab.running.launches.read(r.lab.spaceId, plain.launch.id))?.state).toBe(
         "confirmed",
       );
-      one.close();
+      await one.close();
 
       // A record as a best-effort app's link leaves it (its folder's identity), under an instance
       // ID that machine.toml now gives another target: the check still applies.
@@ -320,7 +312,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
       expect((await r.lab.running.launches.read(r.lab.spaceId, marked.launch.id))?.state).toBe(
         "dispatched",
       );
-      two.close();
+      await two.close();
     },
   );
 

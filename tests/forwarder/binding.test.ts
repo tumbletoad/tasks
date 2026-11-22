@@ -42,14 +42,15 @@ describe("[A3.3.7.binding.bridge-process] a launched agent's bridge binds by the
       const ticket = lab.tickets.get(intent.id);
       if (ticket === undefined) throw new Error("no ticket");
 
-      // As the agent app starts it: the entry's arguments, the agent's environment with the ticket.
+      // As the agent app starts it: the entry setup wrote for the launch's home, and the agent's
+      // environment with the ticket.
       const command = forwarderCommand([
         "--space",
         lab.spaceId,
         "--instance",
         "fixture-agent",
         "--app",
-        "test",
+        "codex",
       ]);
       const bridge = new Bridge(
         procs.spawn(
