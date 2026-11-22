@@ -70,15 +70,24 @@ const STUBS: Readonly<Record<AskField, MessageId>> = {
   learnings: "ask.learnings",
 };
 
+/** Focus in the field, the caret after its words. */
+function toEnd(element: HTMLTextAreaElement | null): void {
+  if (element === null) return;
+  element.focus();
+  element.setSelectionRange(element.value.length, element.value.length);
+}
+
 export interface ComposerProps {
   readonly task: TaskRow;
   /** What busies each agent app with the task on this machine. */
   readonly busy: BusyOf | undefined;
   readonly instances: readonly Instance[];
   readonly actions: RowActions;
+  /** False while the card holds its controls back: an ask meanwhile takes focus once it shows. */
+  readonly shown?: boolean;
 }
 
-export function Composer({ task, busy, instances, actions }: ComposerProps) {
+export function Composer({ task, busy, instances, actions, shown = true }: ComposerProps) {
   const t = useT();
   const say = useToast();
   const { api, live } = useContext(Session);
@@ -87,6 +96,9 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const keyLabel = useKeyLabel();
   const space = live.spaceId ?? "";
   const field = useRef<HTMLTextAreaElement>(null);
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
+  const focusOnShow = useRef(false);
   const [text, setText] = useState(() => readDraft(space, task.id));
   /** The text on screen, for answers that arrive later. */
   const now = useRef(text);
@@ -139,13 +151,16 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
           setText(next);
         });
         keepDraft(space, task.id, next);
-        const element = field.current;
-        if (element === null) return;
-        element.focus();
-        element.setSelectionRange(element.value.length, element.value.length);
+        if (shownRef.current) toEnd(field.current);
+        else focusOnShow.current = true;
       }),
     [space, task.id, t],
   );
+  useEffect(() => {
+    if (!shown || !focusOnShow.current) return;
+    focusOnShow.current = false;
+    toEnd(field.current);
+  }, [shown]);
 
   // Another tab of this task changed the draft: this one follows unless the person types here.
   useEffect(
