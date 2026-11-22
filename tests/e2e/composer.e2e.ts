@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Page, type Request } from "@playwright/test";
-import { PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
+import { APP_NAME, PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
@@ -184,7 +184,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     await composer.fill(`Pick the colour first (${tag})`);
     await open.click();
     await expect(toast(page)).toHaveText(
-      `${PRODUCT_NAME} did not answer. Try again: the task still opens only once.`,
+      `${APP_NAME} did not answer. Try again: the task still opens only once.`,
       { timeout: SLOW_MS },
     );
     await expect(composer).toHaveValue(`Pick the colour first (${tag})`);
