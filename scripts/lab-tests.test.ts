@@ -38,6 +38,8 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
       "spikes/m0/kit/kit.ts",
       "spikes/m0/README.md",
       "vitest.config.ts",
+      "packages/testkit/src/setup.ts",
+      "packages/testkit/stand-ins/systemd-run",
       "scripts/verify.ts",
       "scripts/lab-tests.ts",
       "scripts/run.ts",
@@ -61,6 +63,7 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
       "packages/brand/src/index.ts",
       "packages/brand/package.json",
       "packages/brand/LICENSE",
+      "packages/testkit/src/mira.ts",
       "packages/storage/tsconfig.json",
       "scripts/lab-tests.test.ts",
       "scripts/eslint/no-shell-exec.js",
@@ -132,11 +135,44 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
     });
   });
 
-  test("verify accepts --lab and a bare --, and refuses any other argument", () => {
-    expect(parseVerifyArgs([])).toEqual({ lab: false });
-    expect(parseVerifyArgs(["--lab"])).toEqual({ lab: true });
-    expect(parseVerifyArgs(["--", "--lab"])).toEqual({ lab: true });
+  test("verify accepts --lab, --part, --shard and a bare --, and refuses any other argument", () => {
+    expect(parseVerifyArgs([])).toEqual({ lab: false, part: null, shard: null });
+    expect(parseVerifyArgs(["--", "--lab"])).toEqual({ lab: true, part: null, shard: null });
+    expect(parseVerifyArgs(["--part", "checks"])).toEqual({
+      lab: false,
+      part: "checks",
+      shard: null,
+    });
+    expect(parseVerifyArgs(["--part", "product", "--shard", "2/4"])).toEqual({
+      lab: false,
+      part: "product",
+      shard: "2/4",
+    });
+    expect(parseVerifyArgs(["--shard", "3/3", "--part", "lab"])).toEqual({
+      lab: false,
+      part: "lab",
+      shard: "3/3",
+    });
     expect(() => parseVerifyArgs(["--lba"])).toThrow(/unknown argument "--lba"/);
+    expect(() => parseVerifyArgs(["--part", "tests"])).toThrow(/--part takes one of/);
+    expect(() => parseVerifyArgs(["--part"])).toThrow(/--part takes one of/);
+    for (const shard of ["0/4", "5/4", "1", "1/4x"]) {
+      expect(() => parseVerifyArgs(["--part", "product", "--shard", shard])).toThrow(
+        /--shard takes/,
+      );
+    }
+    expect(() => parseVerifyArgs(["--shard", "1/2"])).toThrow(/--shard needs --part product/);
+    expect(() => parseVerifyArgs(["--part", "checks", "--shard", "1/2"])).toThrow(/--shard needs/);
+    // A wrapper that appends its own option must not silently replace the one it was given.
+    expect(() => parseVerifyArgs(["--part", "product", "--part", "checks"])).toThrow(
+      /--part is given twice: product and checks/,
+    );
+    expect(() => parseVerifyArgs(["--part", "lab", "--shard", "1/3", "--shard", "2/3"])).toThrow(
+      /--shard is given twice: 1\/3 and 2\/3/,
+    );
+    expect(
+      parseVerifyArgs(["--part", "lab", "--part", "lab", "--shard", "1/3", "--shard", "1/3"]),
+    ).toEqual({ lab: false, part: "lab", shard: "1/3" });
   });
 
   test("locally the base is the merge base with origin/main", () => {
