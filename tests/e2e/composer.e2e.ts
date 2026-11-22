@@ -262,11 +262,14 @@ test.describe("[A7.3.12.request.e2e.thread] What a person types before Open is o
     await page.reload();
     await expect(composer).toHaveValue(words, { timeout: SLOW_MS });
     await expect(open).toHaveAttribute("aria-disabled", "false");
-    for (const scheme of ["light", "dark"] as const) {
-      await page.emulateMedia({ colorScheme: scheme });
+    for (const theme of ["sumi", "washi"] as const) {
+      await world.machine("ui.theme", theme);
+      await page.reload();
+      await expect(open).toHaveAttribute("aria-disabled", "false", { timeout: SLOW_MS });
       await stripOf(page, ref).scrollIntoViewIfNeeded();
-      await page.screenshot({ path: test.info().outputPath(`open-unanswered-${scheme}.png`) });
+      await page.screenshot({ path: test.info().outputPath(`open-unanswered-${theme}.png`) });
     }
+    await world.machine("ui.theme", null);
     await open.click();
     await expect(composer).toHaveValue("", { timeout: SLOW_MS });
     const ids = opened.map((r) => (r.postDataJSON() as { request_id?: string }).request_id);
