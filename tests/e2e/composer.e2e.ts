@@ -703,10 +703,14 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     const ref = await addTask(world, { title: `Oil the hinges (${tag})`, area: "home" });
     await openTask(page, world, ref);
     const row = rowOf(page, ref);
-    // The service answers each edit late: the priority waits behind the rename when the page goes.
+    // The rename's answer comes only after the page went: the priority waits behind it until then.
     const updates = calls(page, "task.update");
+    let answer: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
     await page.route("**/api/v1/op/task.update", async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await answered;
       const response = await route.fetch();
       await route.fulfill({ response }).catch(() => undefined);
     });
@@ -722,6 +726,7 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
       .click();
     await page.reload();
     expect(updates).toHaveLength(1);
+    answer();
     await page.unrouteAll({ behavior: "wait" });
     // The rename went out, and the priority is offered again, as any edit that was not saved.
     await expect(title).toHaveText(`Oil the hinges (${tag}) and the gate`, { timeout: SLOW_MS });
