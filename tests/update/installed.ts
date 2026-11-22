@@ -1,6 +1,6 @@
 // A real test install for the updater's tests with real builds (installed-*.test.ts,
 // launchers-*.test.ts, restart.test.ts): the run's two versions, built offline once per test run
-// as the install scripts' tests build them (runVersions: the real bundles and launchers, the Node
+// as the install scripts' tests build them (runVersion: the real bundles and launchers, the Node
 // that runs the tests as the runtime, both trusting a throwaway key that signed their releases);
 // the older one installed by its install script into a temporary TTASKS_HOME of the caller's own;
 // its service run through the install's stable command or its supervisor; and the updater child
@@ -29,8 +29,9 @@ import {
   installEnv,
   installsFolder,
   runInstaller,
+  runKey,
   runProgram,
-  runVersions,
+  runVersion,
   stableCommand,
   type Release,
 } from "../../scripts/install/test/kit.ts";
@@ -58,7 +59,7 @@ export interface OpenOptions {
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Installs the first of the run's two versions (runVersions, built once per test run) into a
+ * Installs the first of the run's two versions (runVersion, built once per test run) into a
  * folder of the caller's own. Call it from a beforeAll. When that fails, its folder is removed
  * before the error is thrown: the caller then has nothing to close.
  */
@@ -76,12 +77,12 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
   const work = folders.root;
   const started: ChildProcess[] = [];
   let goCount = 0;
-  const built = await runVersions();
-  const keys = [keyLine(built.key)];
-  const second = options.distinctLaunchers === true ? built.distinct : built.second;
-  const versions: [string, string] = [built.first.release.version, second.release.version];
+  const keys = [keyLine(await runKey())];
+  const firstBuilt = await runVersion("first");
+  const second = await runVersion(options.distinctLaunchers === true ? "distinct" : "second");
+  const versions: [string, string] = [firstBuilt.release.version, second.release.version];
   const releases: Record<string, Release> = {
-    [versions[0]]: built.first.release,
+    [versions[0]]: firstBuilt.release,
     [versions[1]]: second.release,
   };
   const root = join(work, "home");
