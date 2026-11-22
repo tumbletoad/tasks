@@ -872,7 +872,20 @@ describe("[A3.5.search.cursors] cursor pages under random writes, deletions and 
         })),
       ),
     );
-    let page = await search({ q: word, limit: 50 }, { keep });
+    // The ranked query itself reads one past the cap, to tell there are more.
+    const inner = readerOf(fx.reader);
+    const ranked: number[] = [];
+    const recording: SearchReader = {
+      transaction: async (mode, queries) => {
+        const results = await inner.transaction(mode, queries);
+        const last = results.at(-1);
+        if (Array.isArray(last)) ranked.push(last.length);
+        return results;
+      },
+    };
+    let page = await runSearch(recording, { q: word, limit: 50 }, envOf(fx, { keep }));
+    expect(ranked).toContain(keep + 1);
+    expect(ranked.every((n) => n <= keep + 1)).toBe(true);
     expect(page.total).toBe(`${String(keep)}+`);
     const seen = ids(page);
     while (page.cursor !== undefined) {
