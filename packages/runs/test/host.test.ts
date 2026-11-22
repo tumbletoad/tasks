@@ -2,6 +2,7 @@
 // Stop before the agent's PID, while it runs and after it exited, the start time, the run's limits,
 // a container that refuses to empty and End by force, and the next start after a crash.
 import { spawn, type ChildProcess } from "node:child_process";
+import { PassThrough } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { RunLimits, RunRecord } from "@tasks/contracts/runs";
 import type { RunStore } from "@tasks/launch/execution-store";
@@ -440,6 +441,102 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect((await host.stop(id))?.state).toBe("cancelling");
     expect((await host.ended(id))?.state).toBe("cancelled");
     expect(starts).toBe(0);
+  });
+
+  test("Stop at each stage of a start, however late the store takes it: nothing reaches the agent, and the run is cancelled", async () => {
+    // Where the start is when Stop comes, and how far it got when the store took the Stop.
+    const cases = [
+      { at: "preparing", taken: "at once" },
+      { at: "preparing", taken: "after the command" },
+      { at: "preparing", taken: "after the container" },
+      { at: "spawning", taken: "at once" },
+      { at: "spawning", taken: "after the container" },
+    ] as const;
+    const turns = async () => {
+      for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve));
+    };
+    for (const { at, taken } of cases) {
+      let take: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        take = resolve;
+      });
+      let ready: ((command: AgentCommand) => void) | undefined;
+      let spawn: (() => void) | undefined;
+      let starts = 0;
+      let input = "";
+      const { host, id } = await bareHost({
+        containers: {
+          ...refusing,
+          start: (spec) => {
+            starts += 1;
+            const stdin = new PassThrough();
+            stdin.on("data", (chunk: Buffer) => {
+              input += chunk.toString("utf8");
+            });
+            const stdout = new PassThrough();
+            const stderr = new PassThrough();
+            const exited = new Promise<AgentExit>((resolve) => {
+              stdin.once("finish", () => {
+                stdout.end();
+                stderr.end();
+                resolve({ code: 0, signal: null });
+              });
+            });
+            return new Promise((resolve) => {
+              spawn = () => {
+                resolve({ name: spec.name, pid: 4242, stdin, stdout, stderr, exited });
+              };
+            });
+          },
+        },
+        wrap: (store) => ({
+          createRun: (input, request) => store.createRun(input, request),
+          readRun: (run) => store.readRun(run),
+          openWork: (machine) => store.openWork(machine),
+          transitionRun: async (run, seen, next, patch) => {
+            if (next === "cancelling" && taken !== "at once") await held;
+            return store.transitionRun(run, seen, next, patch);
+          },
+        }),
+      });
+      await host.start(
+        id,
+        () =>
+          new Promise<AgentCommand>((resolve) => {
+            ready = resolve;
+          }),
+      );
+      await turns();
+      const command: AgentCommand = {
+        command: "claude",
+        args: [],
+        cwd: ".",
+        env: {},
+        open: claudeDriver({ request: "Delete the old exports." }),
+      };
+      if (at === "spawning") {
+        ready?.(command);
+        await turns();
+        expect(starts, at).toBe(1);
+      }
+      const stopped = host.stop(id);
+      if (taken !== "at once") {
+        // The start goes as far as it goes before the store answers.
+        ready?.(command);
+        await turns();
+        if (taken === "after the container") {
+          spawn?.();
+          await turns();
+        }
+        take();
+      }
+      await stopped;
+      spawn?.();
+      const after = await host.ended(id);
+      expect(after?.state, `${at}, ${taken}`).toBe("cancelled");
+      expect(input, `${at}, ${taken}`).toBe("");
+      if (at === "preparing") expect(starts, `${at}, ${taken}`).toBe(0);
+    }
   });
 
   test("a Stop the store does not take still stops the run", async () => {

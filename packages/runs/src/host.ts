@@ -331,22 +331,13 @@ export class RunHost {
    * once. A run no flow of this service holds is settled from its container's name, as at start.
    */
   async stop(id: string): Promise<RunRecord | undefined> {
-    let cancelled: { run: RunRecord | undefined; stopping: boolean };
-    try {
-      cancelled = await this.#machine.cancel(id);
-    } catch (error) {
-      // The store did not take the Stop, or did not say so in time. The person asked for it, so
-      // the agent is stopped all the same; the record then says how it ended rather than cancelled.
-      this.#flows.get(id)?.stop();
-      throw error;
-    }
-    const { run, stopping } = cancelled;
-    if (!stopping || run === undefined) return run;
+    // The flow hears the Stop before the store is asked: a start that goes on while the store
+    // answers must not open the agent's input. When the store does not take it, the agent is
+    // stopped all the same, and the record then says how it ended rather than cancelled.
     const flow = this.#flows.get(id);
-    if (flow !== undefined) {
-      flow.stop();
-      return run;
-    }
+    if (flow !== undefined && !flow.settling) flow.stop();
+    const { run, stopping } = await this.#machine.cancel(id);
+    if (!stopping || run === undefined || flow !== undefined) return run;
     return this.#reconcile(run);
   }
 
