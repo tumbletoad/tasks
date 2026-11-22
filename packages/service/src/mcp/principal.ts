@@ -1,18 +1,15 @@
-// Who an MCP connection is while it is unbound (A3 3.7.4, 3.7.9): its calls carry the actor
-// `agent:<instance>` from the bind context's `instance` (the entry's `--instance`, an A4 instance
-// ID), or `agent:manual` for an entry without one (a hand-made entry). A bound connection acts as
-// its session instead (ops/caller.ts `sessionPrincipal`).
+// Who an MCP connection is when it is no session: its calls carry the actor `agent:<instance>`
+// from the bind context's `instance` (the entry's `--instance`, an A4 instance ID), or
+// `agent:manual` for an entry without one (a hand-made entry). A session acts as itself instead
+// (ops/caller.ts `sessionPrincipal`).
 //
-// The unbound writer scope is the agent home's grant row (A3 3.7.9):
-// `bridge:<instance>:<machine>`, named by what the row and the connection share, the instance on
-// this machine. The grant gate (ops/grant.ts) lets a connection call only while a live row of its
-// instance grants the space, so every unbound write is under the scope of the row that allowed
-// it. The scope is not the row's ID: setup replaces a row whenever its answer changes (an account
-// label, the hosts), and a scope that changed with it would lose the receipts a retry must find;
-// it stays the same across bridge processes, restarts and replaced rows, and a connection that
-// binds keeps it as its earlier scope (A3 3.7.9), so a retry on either side of a change
-// replays. The space is the entry's `--space`, never the environment's hint (A3 3.7.2, 3.7.8);
-// without one, the request path's default applies.
+// Its writer scope is `bridge:<instance>:<machine>`, named by what the agent-home row and the
+// connection share, the instance on this machine. The grant gate (ops/grant.ts) lets a connection
+// call only while a live row of its instance grants the space, so every such write is under the
+// scope of the row that allowed it. The scope is not the row's ID: setup replaces a row whenever
+// its answer changes (an account label, the hosts), and a scope that changed with it would lose
+// the receipts a retry must find. Every chat of that app on this machine that is no session
+// shares it, and with it its request IDs.
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { INSTANCE_ID, MANUAL_INSTANCE } from "@ttasks/launch";
 import type { Principal } from "../ops/index.ts";

@@ -98,6 +98,7 @@ import {
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
 import type { ConnectionInfo, RpcContext, RpcHandlers } from "../local/index.ts";
+import type { SpaceWriterHandle } from "@ttasks/storage";
 import type { ServedSpace } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
@@ -1293,24 +1294,28 @@ ${instance}`;
   }
 
   /**
-   * The bridge's binding of a launch (A3 3.7.7 `session.bound`, A4 3.9.1): `confirmed` with
-   * `bound_at`, in the launch's section, which also settles an Unknown launch. Returns the launch
-   * as it is after: one that took no binding (it failed, or a terminal launch no shim claimed)
-   * holds no `bound_at`, and one bound before holds its first. A store that cannot take it now is
-   * `space_unavailable`, to retry; a space not open as this machine's takes none.
+   * An agent read a launch's task by its reference (A4 3.9.1): `confirmed` with `bound_at`, in
+   * the launch's section, which also settles an Unknown launch. Only through `writer`, the open
+   * writable copy the read used: when that writer no longer serves the space, nothing is marked.
+   * Returns the launch as it is after: one that took no mark (it failed, or a terminal launch no
+   * shim claimed) holds no `bound_at`, and one marked before holds its first. A store that cannot
+   * take it now is `space_unavailable`, to retry.
    */
-  async confirmBinding(
+  async connected(
     space: string,
+    writer: SpaceWriterHandle,
     launch: string,
     at: number,
-    folder?: string,
+    folder: string | undefined,
   ): Promise<LaunchIntent | undefined> {
+    const served = this.#options.spaces().find((s) => s.id === space && isOpen(s));
+    if (served?.writer !== writer) return undefined;
     const hosted = await this.#space(space).catch(() => undefined);
     const machine = hosted?.machine;
     if (hosted === undefined || machine === undefined) {
       throw new AppError({
         code: "space_unavailable",
-        message: "The space cannot record this launch's binding now.",
+        message: "The space cannot record this launch as connected now.",
         hint: "Try again in a moment.",
         data: { reason: "not_served", retryable: true },
       });
@@ -1336,7 +1341,7 @@ ${instance}`;
     } catch {
       throw new AppError({
         code: "space_unavailable",
-        message: "The space cannot record this launch's binding now.",
+        message: "The space cannot record this launch as connected now.",
         hint: "Try again in a moment.",
         data: { reason: "busy", retryable: true },
       });

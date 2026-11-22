@@ -20,16 +20,8 @@ export type ToolResult = CallToolResult & {
   readonly content: [{ readonly type: "text"; readonly text: string }];
 };
 
-/**
- * Runs one tool call. `tool` is a listed tool's name; `args` its arguments object, unchecked.
- * `thread` is the call's `_meta.threadId` (Codex sends it on every `tools/call`, A3 3.7.2),
- * unchecked: binding records it, nothing else reads it.
- */
-export type ToolCall = (
-  tool: string,
-  args: Readonly<Record<string, unknown>>,
-  thread?: unknown,
-) => Promise<ToolResult>;
+/** Runs one tool call. `tool` is a listed tool's name; `args` its arguments object, unchecked. */
+export type ToolCall = (tool: string, args: Readonly<Record<string, unknown>>) => Promise<ToolResult>;
 
 /** The implementation the server names in `initialize`, `server/discover` and 2026 results. */
 export const SERVER_INFO = { name: PRODUCT_ID, version: BUILD.version } as const;
@@ -55,7 +47,7 @@ export function createServer(call: ToolCall, working?: Working) {
   // The generated list as it is: never rebuilt, never filtered.
   server.setRequestHandler("tools/list", () => ({ tools: TOOLS }) as never);
   server.setRequestHandler("tools/call", async (request, ctx) => {
-    const { name, arguments: args, _meta: meta } = request.params;
+    const { name, arguments: args } = request.params;
     if (toolEntry(name) === undefined) {
       throw new ProtocolError(ProtocolErrorCode.InvalidParams, "Unknown tool");
     }
@@ -63,11 +55,7 @@ export function createServer(call: ToolCall, working?: Working) {
     // retry with the same request ID finds its receipt. Its place is held until it ends.
     const ended = working?.(ctx.mcpReq.id);
     try {
-      return await call(
-        name,
-        args ?? {},
-        (meta as Record<string, unknown> | undefined)?.["threadId"],
-      );
+      return await call(name, args ?? {});
     } finally {
       ended?.();
     }

@@ -97,6 +97,7 @@ export interface LaunchFile {
     readonly hash: string;
     readonly issuedAt: number;
     readonly shimUsed: boolean;
+    /** Always false now: kept so a record written now loads in the build before. */
     readonly bridgeUsed: boolean;
   };
   /** Issued inside the claim, before its reply leaves (A4 3.1). */

@@ -51,8 +51,7 @@ import {
   WS_CLOSES,
 } from "../http/events.ts";
 import { CLOSE_REASONS, REFUSE_REASONS, TOOL_NAMES } from "../mcp/endpoint.ts";
-import { IGNORED } from "../binding/bindings.ts";
-import { VIA } from "../binding/sessions.ts";
+import { BOUND_BY, UNBOUND_REASONS } from "../ops/binding.ts";
 import { AGENT_APPS } from "../setup/state.ts";
 import { REFUSALS } from "./exit.ts";
 import { appendPrivate, makeDir } from "./files.ts";
@@ -527,20 +526,10 @@ export const EVENTS = {
     c: "mcp",
     fields: { type: "error_type", code: "error_code" },
   },
-  // Session binding (A3 3.7, M2.04): how a connection bound, and why a bind frame's ticket or
-  // handle was not used. Never a ticket, a handle, a native ID, a session, a task or a folder.
-  "binding.bound": { lvl: "info", c: "mcp", fields: { via: [...VIA, "handle"] } },
-  "binding.ignored": {
-    lvl: "warn",
-    c: "mcp",
-    fields: { input: ["ticket", "handle"], reason: IGNORED },
-  },
-  "binding.lost": { lvl: "info", c: "mcp", fields: {} },
-  // Two conversations through one connection (A3 3.7.5): its calls bind only by their own ID.
-  "binding.shared": { lvl: "info", c: "mcp", fields: {} },
-  "binding.report_failed": { lvl: "warn", c: "mcp", fields: {} },
-  "binding.store_failed": { lvl: "error", c: "mcp", fields: {} },
-  "binding.store_dropped": { lvl: "warn", c: "mcp", fields: { count: "int" } },
+  // Who an agent's connection is: which value made it a session, or why one it presented did not.
+  // Never a ticket, a preset, a session, a task or a folder.
+  "binding.bound": { lvl: "info", c: "mcp", fields: { how: BOUND_BY } },
+  "binding.unbound": { lvl: "info", c: "mcp", fields: { reason: UNBOUND_REASONS } },
   // The launch shim's calls (A4 3.6.3): words and counts only, never a ticket, a credential, a
   // PID, a folder or anything of a plan.
   "launch.claimed": { lvl: "info", c: "launch", fields: {} },

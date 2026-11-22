@@ -51,15 +51,19 @@ function sources(
 describe("[A3.3.7.binding.named] what an environment's ticket and preset name together", () => {
   test("a launch's ticket or preset names that launch; both of one launch name it once", () => {
     const s = sources({ T1: ONE }, { [PRESET]: ONE });
-    const one = { kind: "one", live: { of: "launch", ...ONE } };
-    expect(namedBy(s, { ticket: "T1" })).toEqual(one);
-    expect(namedBy(s, { preset: PRESET })).toEqual(one);
-    expect(namedBy(s, { ticket: "T1", preset: PRESET })).toEqual(one);
+    const live = { of: "launch", ...ONE };
+    expect(namedBy(s, { ticket: "T1" })).toEqual({ kind: "one", by: "ticket", live });
+    expect(namedBy(s, { preset: PRESET })).toEqual({ kind: "one", by: "preset", live });
+    expect(namedBy(s, { ticket: "T1", preset: PRESET })).toEqual({ kind: "one", by: "ticket", live });
   });
 
   test("a run's ticket names the run", () => {
     const s = sources({}, {}, { R1: RUN });
-    expect(namedBy(s, { ticket: "R1" })).toEqual({ kind: "one", live: { of: "run", ...RUN } });
+    expect(namedBy(s, { ticket: "R1" })).toEqual({
+      kind: "one",
+      by: "ticket",
+      live: { of: "run", ...RUN },
+    });
   });
 
   test("a ticket and a preset of two launches, or of a run and a launch, give both", () => {
@@ -79,6 +83,7 @@ describe("[A3.3.7.binding.named] what an environment's ticket and preset name to
     const s = sources({ T1: ONE }, { [PRESET]: ONE });
     expect(namedBy(s, { ticket: "unknown", preset: PRESET })).toMatchObject({
       kind: "one",
+      by: "preset",
       live: { launch: ONE.launch },
     });
     expect(

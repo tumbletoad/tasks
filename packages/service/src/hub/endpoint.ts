@@ -17,7 +17,7 @@
 // from a closed list, so the log stays content-free by construction.
 import { PROTOCOL, RPC_ERROR, RpcError, type JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
-import { sessionFacts, type Bindings } from "../binding/index.ts";
+import { sessionFacts, type Bridges } from "../binding/index.ts";
 import type { HttpEvent, HttpStatus } from "../http/index.ts";
 import {
   MemoryGrants,
@@ -128,11 +128,8 @@ export interface EndpointHub {
   };
   /** `ttasks setup t3` (`t3/*`). */
   readonly t3?: T3Host;
-  /**
-   * Session binding (A3 3.7, M2.04): an mcp mode connection's binding from its bind frame, and a
-   * `cli-agent` call's session from its ticket.
-   */
-  readonly bindings?: Bindings;
+  /** Each mcp mode connection's binding, decided at its bind. A shell's call is decided in `op/call`. */
+  readonly bridges?: Bridges;
   /** `ttasks setup agents` (`setup/*`): the agent-home rows of the grants table. */
   readonly agentHomes?: AgentHomesHost;
   /** `ttasks setup instances` (`instances/*`): machine.toml's [[instance]] entries. */
@@ -201,18 +198,14 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
     ...(ops === undefined
       ? {}
       : {
-          // A2 3.6.4: one registry operation, for the connection's class and environment. A
-          // `cli-agent` call whose ticket maps to a live session acts as it (A3 3.7.4).
-          "op/call": (params, context) => {
-            const cls = context.connection.class;
-            const env = envOf(context.connection.context);
-            const binding = cls === "cli-agent" ? hub.bindings?.mapped(env) : undefined;
-            return opCall(
+          // One registry operation, for the connection's class and environment. An agent's
+          // shell is decided by its environment as the call starts (ops/handlers.ts).
+          "op/call": (params, context) =>
+            opCall(
               ops,
-              { class: cls, env, ...(binding === undefined ? {} : { binding }) },
+              { class: context.connection.class, env: envOf(context.connection.context) },
               params,
-            );
-          },
+            ),
           "op/list": () => opList(),
         }),
     ...Object.fromEntries(
@@ -231,7 +224,7 @@ export function handlerTable(hub: EndpointHub): RpcHandlers {
         environment: null,
         terminal: null,
       },
-    "doctor/sessions": () => (hub.bindings === undefined ? null : sessionFacts(hub.bindings)),
+    "doctor/sessions": () => (hub.bridges === undefined ? null : sessionFacts(hub.bridges)),
     "service/status": () => hub.status(),
     // A2 3.8.4 step 1: a one-time code for `ttasks open`, and the port to use it on.
     "ui/mint_code": () => {
@@ -403,7 +396,7 @@ export const listenEndpoint: ListenEndpoint = async (options) => {
       : {
           mcp: mcpEndpoint({
             ops,
-            ...(hub.bindings === undefined ? {} : { bindings: hub.bindings }),
+            ...(hub.bridges === undefined ? {} : { bridges: hub.bridges }),
             log: (event) => {
               const { ev, ...fields } = event;
               hub.log.log(ev, fields);
@@ -413,16 +406,13 @@ export const listenEndpoint: ListenEndpoint = async (options) => {
               : { seen: hub.agentHomes.seen.saw.bind(hub.agentHomes.seen) }),
           }),
         }),
-    // mcp mode: the binding its bind frame resolves (A2 3.6.4 `{handle, space, state}`). A failure
-    // there leaves the connection unbound rather than refusing it: its tools still work.
-    bind: async (info) => {
+    // mcp mode: who the connection is and its space, `{space, state}`. One that cannot be decided
+    // now fails the bind, and the bridge tries again: it is never bound as none because a lookup
+    // failed.
+    bind: (info) => {
       const spaces = hub.status().spaces.map(bindSpace);
-      if (info.mode !== "mcp" || hub.bindings === undefined) return { spaces };
-      try {
-        return { spaces, binding: await hub.bindings.bridge(info) };
-      } catch {
-        return { spaces };
-      }
+      if (info.mode !== "mcp" || hub.bridges === undefined) return { spaces };
+      return { spaces, binding: hub.bridges.bind(info) };
     },
     grants: options.grants ?? new MemoryGrants(),
     log: (event) => {
