@@ -83,10 +83,13 @@ let listed: readonly Run[];
 let stopAnswer: () => Promise<Run>;
 /** The service does not answer: a read of the runs fails as Run does. */
 let down: boolean;
+/** How often the page read the runs. */
+let reads: number;
 
 beforeEach(async () => {
   started = [];
   listed = [];
+  reads = 0;
   down = false;
   startAnswer = () => Promise.resolve(record({ state: "queued", version: 1 }));
   stopAnswer = () => Promise.reject(new TypeError("Failed to fetch"));
@@ -141,7 +144,10 @@ beforeEach(async () => {
       },
     },
     receipts: () => Promise.resolve([]),
-    runs: () => (down ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve(listed)),
+    runs: () => {
+      reads += 1;
+      return down ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve(listed);
+    },
     startRun: (_task: string, _instance: string, id: string, text?: string) => {
       started.push({ id, text });
       return startAnswer(started.length);
@@ -351,5 +357,31 @@ describe("[M6.page.run-follow] a Stop that did not reach the service", () => {
     fail(new TypeError("Failed to fetch"));
     await settle();
     expect(stop()).not.toBeNull();
+  });
+});
+
+describe("[M6.page.run-follow] how long a working run has said nothing stays true", () => {
+  test("its runs are read again every minute, however often they were read in between", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      listed = [record()];
+      click(1);
+      await settle();
+      const first = reads;
+      // A read in between, 40 s into the minute.
+      act(() => {
+        vi.advanceTimersByTime(40_000);
+      });
+      click(1);
+      await settle();
+      expect(reads).toBe(first + 1);
+      act(() => {
+        vi.advanceTimersByTime(25_000);
+      });
+      await settle();
+      expect(reads).toBe(first + 2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

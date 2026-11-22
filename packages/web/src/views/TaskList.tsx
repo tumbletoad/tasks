@@ -272,18 +272,26 @@ export function TaskList({
     [api, live],
   );
 
+  // Keyed by which tasks have a working run, not by each read: a read of another task's runs must
+  // not start the minute again.
+  const working = useMemo(
+    () =>
+      [...runs]
+        .filter(([, list]) => list.some((run) => run.state === "running"))
+        .map(([task]) => task)
+        .sort()
+        .join(" "),
+    [runs],
+  );
   useEffect(() => {
-    const working = [...runs]
-      .filter(([, list]) => list.some((run) => run.state === "running"))
-      .map(([task]) => task);
-    if (working.length === 0) return;
+    if (working === "") return;
     const timer = setInterval(() => {
-      for (const task of working) loadRuns(task);
+      for (const task of working.split(" ")) loadRuns(task);
     }, WORKING_REREAD_MS);
     return () => {
       clearInterval(timer);
     };
-  }, [runs, loadRuns]);
+  }, [working, loadRuns]);
 
   // A launch event refreshes the receipts of its task, which the tab follows from then on, so a
   // tile mirrors a launch made in another tab or at the terminal. A run event refreshes the runs
