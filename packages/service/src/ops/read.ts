@@ -384,8 +384,8 @@ export interface TaskRead {
 
 /**
  * Reads one task and what hangs from it in one snapshot: of the instructions, notes and log the
- * ranges asked for, and the notes named by ordinal. A reference with another space's prefix is `not_found`, never a task
- * elsewhere (A3 3.4.1), and so is a deleted task (A1 3.5).
+ * ranges asked for, and the notes named by ordinal. A reference with another space's prefix is
+ * `not_found`, never a task elsewhere (A3 3.4.1), and so is a deleted task (A1 3.5).
  */
 export async function readTask(
   reader: WorkerConnection,
