@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
 import { CLI_NAME, EARLIER_DATA_FOLDER } from "@ttasks/brand";
-import { earlierDataNotice } from "../src/install.ts";
+import { earlierDataNotice, makesDataFolder } from "../src/install.ts";
 
 const home = mkdtempSync(join(tmpdir(), "ttasks-earlier-"));
 afterAll(() => {
@@ -19,10 +19,10 @@ const facts = () =>
 
 describe("[A2.3.12.4.install.earlier-folder] an install names an earlier build's data folder", () => {
   test("the install that makes the data folder names an earlier one, says it stays untouched, and gives no command", () => {
-    expect(earlierDataNotice(facts(), false)).toBeUndefined();
+    expect(earlierDataNotice(facts(), true)).toBeUndefined();
     const earlier = join(home, EARLIER_DATA_FOLDER);
     mkdirSync(join(earlier, "spaces"), { recursive: true });
-    const notice = earlierDataNotice(facts(), false) ?? "";
+    const notice = earlierDataNotice(facts(), true) ?? "";
     expect(notice).toContain(earlier);
     expect(notice).toMatch(/does not use that folder and leaves it untouched/);
     expect(notice).not.toContain(`${CLI_NAME} `);
@@ -30,6 +30,18 @@ describe("[A2.3.12.4.install.earlier-folder] an install names an earlier build's
 
   test("says nothing to a person whose data folder of this version already existed", () => {
     mkdirSync(join(home, EARLIER_DATA_FOLDER), { recursive: true });
-    expect(earlierDataNotice(facts(), true)).toBeUndefined();
+    expect(earlierDataNotice(facts(), false)).toBeUndefined();
+  });
+
+  test("a separate install makes its data folder when the script made its root in this run", () => {
+    const root = join(home, "separate");
+    mkdirSync(root);
+    const separate = { data: root, home: root };
+    expect(makesDataFolder(separate, [".", "versions", "home.marker"])).toBe(true);
+    expect(makesDataFolder(separate, ["versions/0.2.0"])).toBe(false);
+    const daily = { data: join(home, "daily-data"), home: undefined };
+    expect(makesDataFolder(daily, [])).toBe(true);
+    mkdirSync(daily.data);
+    expect(makesDataFolder(daily, ["."])).toBe(false);
   });
 });

@@ -58,8 +58,8 @@ function removeIfMade(layout: Pick<Layout, "state" | "tmp">): void {
  * lost. Only the install that makes this version's data folder shows it: once, and never to a
  * person who already uses this version.
  */
-export function earlierDataNotice(facts: HostFacts, dataExisted: boolean): string | undefined {
-  if (dataExisted) return undefined;
+export function earlierDataNotice(facts: HostFacts, madeData: boolean): string | undefined {
+  if (!madeData) return undefined;
   let home: string;
   try {
     home = homeFolder(facts);
@@ -69,6 +69,17 @@ export function earlierDataNotice(facts: HostFacts, dataExisted: boolean): strin
   const folder = join(home, EARLIER_DATA_FOLDER);
   if (!existsSync(folder)) return undefined;
   return `${folder} holds the spaces and settings of a build from before the product was called ${PRODUCT_NAME}. This version does not use that folder and leaves it untouched.`;
+}
+
+/**
+ * Whether this install makes the data folder. A separate install keeps its data in its root, which
+ * the install script made in this run when it names "." among what it created.
+ */
+export function makesDataFolder(
+  layout: Pick<Layout, "data" | "home">,
+  created: readonly string[],
+): boolean {
+  return layout.home === undefined ? !existsSync(layout.data) : created.includes(".");
 }
 
 export async function installCommand(
@@ -103,7 +114,7 @@ export async function installCommand(
   }
   const state = target.layout.state;
   const stateExisted = existsSync(state);
-  const dataExisted = existsSync(target.layout.data);
+  const madeData = makesDataFolder(target.layout, parsed.created);
 
   const checks: Check[] = [
     ...(await versionChecks(io, versionFolder)),
@@ -167,7 +178,7 @@ export async function installCommand(
       "",
     ].join("\n"),
   );
-  const earlier = earlierDataNotice(facts, dataExisted);
+  const earlier = earlierDataNotice(facts, madeData);
   if (earlier !== undefined) io.stdout(`${earlier}\n`);
   if (pending && service !== undefined) {
     await offerRestart(
