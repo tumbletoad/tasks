@@ -1,7 +1,8 @@
 // `get_task`'s two views (A3 3.4.4, 3.9.6): the digest v0, bounded by A3's limits per part, and a
 // page of the sections asked for (pages.ts). Both are built by the request path from one snapshot,
 // so every face returns the same result; MCP's text is its rendering (mcp/render.ts).
-import type { Row } from "@ttasks/storage";
+import { REQUEST_CHARS } from "@tasks/contracts";
+import type { Row } from "@tasks/storage";
 import { invalid } from "./errors.ts";
 import {
   buildPage,
@@ -50,6 +51,14 @@ function clipped(value: string, max: number): { text: string; cut?: number } {
   const chars = Array.from(value);
   if (chars.length <= max) return { text: value };
   return { text: chars.slice(0, max).join(""), cut: chars.length - max };
+}
+
+/**
+ * A launch's request as a result holds it: its first REQUEST_CHARS characters, with how many were
+ * left out. The note it is has the rest, in a sections read.
+ */
+export function requestText(body: string): { text: string; cut?: number } {
+  return clipped(body, REQUEST_CHARS);
 }
 
 /** What the digest reads of the lists: A3 3.9.6's newest few. */
@@ -196,13 +205,14 @@ export function pageRanges(plan: PagePlan): {
 const bytes = (value: string): number => Buffer.byteLength(value, "utf8");
 
 /** A list of entries as page items, keyed by ordinal. */
-function entries<T extends { author: string; text: string }>(
+function entries<T extends { author: string; text: string; request_for?: unknown }>(
   rows: readonly Row[],
   shape: (row: Row) => T,
 ): PageItem<T>[] {
   return rows.map((row) => {
     const value = shape(row);
-    return { value, key: ordinalOf(row), text: value.text, extra: bytes(value.author) };
+    const launches = value.request_for === undefined ? 0 : bytes(JSON.stringify(value.request_for));
+    return { value, key: ordinalOf(row), text: value.text, extra: bytes(value.author) + launches };
   });
 }
 

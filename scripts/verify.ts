@@ -1,19 +1,16 @@
-// pnpm verify (A7 3.3): every check a pull request must pass, in order, stopping at the first
+// pnpm verify: every check a pull request must pass, in order, stopping at the first
 // failure with the name of the step that failed.
 //
 // The product tests always run. The M0 lab self-tests (spikes/) run serially, and only when lab
-// code or a file they depend on changed, or when asked: pnpm verify --lab, or TTASKS_VERIFY_LAB=1.
-// The rule is in lab-tests.ts (A7 3.3).
+// code or a file they depend on changed, or when asked: pnpm verify --lab, or TASKS_VERIFY_LAB=1.
+// The rule is in lab-tests.ts.
 //
 // `--part checks|product|lab` runs one slice and `--shard i/n` one Vitest shard of a test part,
 // so CI can spread verify over several machines. With no part it runs every step.
 //
 // safe-exit comes first: this script loads the product's generators and ends through
-// `process.exit` (A2 3.12.1).
+// `process.exit`.
 import "../packages/bridge/src/safe-exit.ts";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { checkGenerated, generators } from "./generated.ts";
 import {
   decideLab,
   findBase,
@@ -24,6 +21,7 @@ import {
 } from "./lab-tests.ts";
 import { verifyManifest } from "./manifest.ts";
 import { binPath, repoRoot, runNode } from "./run.ts";
+import { CRUISE_ROOTS, generated, runtime, TS_PROJECTS } from "./steps.ts";
 
 type Step = () => boolean | Promise<boolean>;
 
@@ -33,55 +31,12 @@ const tool =
   () =>
     runNode(binPath(pkg, bin), args).status === 0;
 
-function runtime(): boolean {
-  const pinned = readFileSync(join(repoRoot, ".node-version"), "utf8").trim();
-  const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
-    devEngines?: { runtime?: { version?: string } };
-  };
-  const declared = pkg.devEngines?.runtime?.version;
-  if (declared !== pinned) {
-    console.error(
-      `package.json devEngines.runtime.version is ${String(declared)}, .node-version is ${pinned}`,
-    );
-    return false;
-  }
-  if (process.version !== `v${pinned}`) {
-    console.error(
-      `running on Node ${process.version}, but the repository pins v${pinned}. Run it through pnpm.`,
-    );
-    return false;
-  }
-  console.log(`Node ${process.version}`);
-  return true;
-}
-
-async function generated(): Promise<boolean> {
-  if (generators.length === 0) {
-    console.log("no generators registered yet");
-    return true;
-  }
-  const problems = await checkGenerated(repoRoot, generators);
-  for (const p of problems) console.error(p);
-  if (problems.length > 0) console.error("Run pnpm gen and commit the result.");
-  return problems.length === 0;
-}
-
 async function manifest(): Promise<boolean> {
   const { errors, tests } = await verifyManifest(repoRoot);
   for (const e of errors) console.error(e);
   console.log(`${String(tests)} tests checked against tests/manifest.json`);
   return errors.length === 0;
 }
-
-const cruiseRoots = ["packages", "scripts", "tests", "spikes"].filter((d) =>
-  existsSync(join(repoRoot, d)),
-);
-
-/**
- * The TypeScript projects: Node code, the browser page (DOM, JSX) and the end-to-end tests (Node,
- * with the DOM for code that runs in the page).
- */
-const TS_PROJECTS = ["tsconfig.json", "packages/web/tsconfig.json", "tests/e2e/tsconfig.json"];
 
 function typecheck(): boolean {
   let ok = true;
@@ -115,7 +70,7 @@ const allSteps: [name: string, part: VerifyPart | "all", step: Step][] = [
       ".dependency-cruiser.cjs",
       "--output-type",
       "err",
-      ...cruiseRoots,
+      ...CRUISE_ROOTS,
     ]),
   ],
   ["test manifest", "checks", manifest],

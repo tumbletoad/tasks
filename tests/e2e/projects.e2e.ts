@@ -46,7 +46,7 @@ async function signedIn(page: Page, world: World, to: string): Promise<void> {
 }
 
 test.describe("[A7.3.12.m5-14.e2e.add-project] New project from a folder, and its undo", () => {
-  test("the folder's name and repository are shown, the project opens with its folder, and Undo and Redo take it out and back", async ({
+  test("the folder's name and repository are shown, the project opens with its folder, and Undo and Redo take it out and back @one-browser", async ({
     page,
     world,
   }) => {
@@ -130,7 +130,7 @@ test.describe("[A7.3.12.m5-14.e2e.add-project] New project from a folder, and it
     }
   });
 
-  test("a folder that is a project's already opens that project, and a project can have no folder", async ({
+  test("a folder that is a project's already opens that project, and a project can have no folder @one-browser", async ({
     page,
     world,
   }) => {
@@ -167,7 +167,7 @@ test.describe("[A7.3.12.m5-14.e2e.add-project] New project from a folder, and it
 });
 
 test.describe("[A7.3.12.m5-14.e2e.project-folder] A project's folder changed after a move takes its tasks' folders along", () => {
-  test("the line shows the folder, Change after a move says what followed, the task's folder follows, and Undo, Clear and Ctrl+Z put each back", async ({
+  test("the line shows the folder, Change after a move says what followed, the task's folder follows, and Undo, Clear and Ctrl+Z put each back @one-browser", async ({
     page,
     world,
   }) => {
@@ -275,7 +275,7 @@ test.describe("[A7.3.12.m5-14.e2e.task-folder] A task's own folder set and clear
 });
 
 test.describe("[A7.3.12.m5-14.e2e.open-refused] Open refused on its folder offers the way on in place", () => {
-  test("a folder that is gone: Choose another folder from the toast, then Open opens there; a marker's question: Use this folder or another", async ({
+  test("a folder that is gone: Choose another folder from the toast, then Open opens there; a marker's question: Use this folder or another @one-browser", async ({
     page,
     world,
   }) => {
@@ -404,6 +404,7 @@ test.describe("[A7.3.12.m5-14.e2e.screens] New project, the chooser and the fold
       {
         await newProject(page).click();
         const dialog = page.getByRole("dialog", { name: "New project" });
+        await expect(folderField(dialog)).toBeFocused();
         await expect(dialog.getByRole("option", { name: "Home (~)" })).toBeVisible();
         await shoot(page, `project-new-${theme}`, '[role="dialog"]');
         const sep = process.platform === "win32" ? "\\" : "/";

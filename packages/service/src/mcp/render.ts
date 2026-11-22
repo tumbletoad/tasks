@@ -184,6 +184,8 @@ type Note = {
   readonly for_agents: boolean;
   readonly at: string;
   readonly text: string;
+  readonly request_for?:
+    readonly { readonly launch: string; readonly instance: string }[] | undefined;
   readonly cut?: number | undefined;
   readonly slice?: Slice | undefined;
 };
@@ -245,9 +247,15 @@ function instructionsPart(
   };
 }
 
+/** Whose request a note was: launches of other sessions, which the reader only learns from. */
+const requestFor = (note: Note): string =>
+  note.request_for === undefined || note.request_for.length === 0
+    ? ""
+    : `(request for ${note.request_for.map((l) => `launch ${l.launch} [${l.instance}]`).join(", ")}) `;
+
 const noteLines = (note: Note): string[] =>
   entryLines(
-    `- ${note.ref} [${note.author}] ${day(note.at)} ${rangeOf(note.slice)}`,
+    `- ${note.ref} [${note.author}] ${day(note.at)} ${requestFor(note)}${rangeOf(note.slice)}`,
     withCut(note.text, note.cut),
   );
 
@@ -305,11 +313,15 @@ const storedFolder = (folder: DigestTask["folder"]): string[][] =>
 
 const SECTION_NAMES = ["context", "notes", "log", "sources", "outcome", "history"];
 
+type Request = NonNullable<TaskGetRequest>;
+type TaskGetRequest = Extract<TaskGet, { view: "digest" }>["request"];
+
 /**
  * The user's request for the launch the call named: their own words, the instruction to act on,
- * so they stand outside the data block, whole, each line as typed after a two-space indent.
+ * so they stand outside the data block, each line as typed after a two-space indent. A request
+ * longer than a result holds says where the rest is.
  */
-function requestPart(request: string | undefined): Part[] {
+function requestPart(request: Request | undefined, getTask: string, ref: string): Part[] {
   if (request === undefined) return [];
   return [
     {
@@ -317,18 +329,25 @@ function requestPart(request: string | undefined): Part[] {
       whole: true,
       units: [
         ["Request from the user for this launch:"],
-        ...request.split("\n").map((line) => [`  ${line}`]),
+        ...request.text.split(/\r\n|[\n\r\u2028\u2029]/u).map((line) => [`  ${line}`]),
+        ...(request.cut === undefined
+          ? []
+          : [
+              [
+                `  ... (+${String(request.cut)} chars) The rest is note ${request.note}: ${getTask} task "${ref}" sections ["notes"].`,
+              ],
+            ]),
       ],
     },
   ];
 }
 
 /** The tokens the request's lines take: its room on top of the result's budget. */
-const requestTokens = (request: string | undefined): number =>
+const requestTokens = (request: Request | undefined, getTask: string, ref: string): number =>
   request === undefined
     ? 0
     : resultTokens(
-        requestPart(request)
+        requestPart(request, getTask, ref)
           .flatMap((part) => part.units.flat())
           .join("\n"),
       ) + 1;
@@ -343,7 +362,7 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
       task.folder === undefined ? undefined : folderLine(task.folder),
       result.bound ? "Session: bound to this task by this call" : undefined,
     ),
-    ...requestPart(result.request),
+    ...requestPart(result.request, getTask, task.ref),
     instructionsPart(
       task.instructions,
       task.instructions.length + more.instructions,
@@ -426,7 +445,7 @@ function sectionsRendered(
   });
   const parts: Part[] = [fixed(headerLine(task, result.as_of))];
   if (result.bound) parts.push(fixed("Session: bound to this task by this call"));
-  parts.push(...requestPart(result.request));
+  parts.push(...requestPart(result.request, getTask, task.ref));
   let byOthers: Note[] = [];
   if (sections.instructions !== undefined) {
     // Only what the user wrote stands outside the data block as instructions (A3 3.10).
@@ -760,7 +779,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
     if (result.view === "status") {
       return { parts: statusParts(result, result.bound), more: STATUS_MORE };
     }
-    const extra = requestTokens(result.request);
+    const extra = requestTokens(result.request, getTask, result.task.ref);
     if (result.view === "digest") {
       return { ...digestRendered(result, getTask), max: DIGEST_TOKENS, extra };
     }

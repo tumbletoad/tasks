@@ -128,7 +128,7 @@ test.describe("[M6.page.e2e.run] Run from the page, with and without words, and 
 });
 
 test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a second tab and Stop", () => {
-  test("a working run shows calmly in the thread and on the row, the same after a reload and in a second tab; Stop answers at once and then says what was ended", async ({
+  test("a working run shows calmly in the thread and on the row, the same after a reload and in a second tab; Stop answers at once and then says what was ended @one-browser", async ({
     page,
     runs: world,
   }) => {
@@ -170,7 +170,7 @@ test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a sec
     await other.close();
   });
 
-  test("a run queued behind the task's other run says why it waits, and starts once that one stopped", async ({
+  test("a run queued behind the task's other run says why it waits, and starts once that one stopped @one-browser", async ({
     page,
     runs: world,
   }) => {
@@ -199,7 +199,7 @@ test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a sec
 });
 
 test.describe("[M6.page.e2e.needs] A run that needs the person, and one that failed", () => {
-  test("the agent's question is shown and findable from the row and Agents; a signed-out agent's failure is said in its own words", async ({
+  test("the agent's question is shown and findable from the row and Agents; a signed-out agent's failure is said in its own words @one-browser", async ({
     page,
     runs: world,
   }) => {
@@ -238,7 +238,7 @@ test.describe("[M6.page.e2e.needs] A run that needs the person, and one that fai
 });
 
 test.describe("[M6.page.e2e.refused] A run that cannot start says why and keeps the words", () => {
-  test("a folder that is gone, and one whose marker is missing, start nothing and keep what was typed", async ({
+  test("a folder that is gone, and one whose marker is missing, start nothing and keep what was typed @one-browser", async ({
     page,
     runs: world,
   }) => {

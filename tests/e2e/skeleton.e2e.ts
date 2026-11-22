@@ -29,7 +29,7 @@ import { SLOW_MS } from "./world.ts";
 const TOKEN_KEY = `${PRODUCT_ID}.token`;
 
 test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
-  test("Open sends the shim to the fake terminal, the session runs, a log entry appears", async ({
+  test("Open sends the shim to the fake terminal, the session runs, a log entry appears @one-browser", async ({
     page,
     world,
   }) => {
@@ -87,7 +87,7 @@ test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
 });
 
 test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why when it is gone", () => {
-  test("the expanded task shows its folder, and Open on a folder that went starts nothing and names it", async ({
+  test("the expanded task shows its folder, and Open on a folder that went starts nothing and names it @one-browser", async ({
     page,
     world,
   }) => {
@@ -158,7 +158,7 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
 });
 
 test.describe("[A5.3.7.e2e.show-folder] the folder button opens the task's folder in the file manager", () => {
-  test("the row's folder button and the expanded folder line show the task's folder; a folder that went is said and nothing opens", async ({
+  test("the row's folder button and the expanded folder line show the task's folder; a folder that went is said and nothing opens @one-browser", async ({
     page,
     world,
   }) => {
@@ -213,7 +213,7 @@ test.describe("[A5.3.7.e2e.show-folder] the folder button opens the task's folde
 });
 
 test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that may be another one", () => {
-  test("the folder's line names its repository; a checkout replaced at its path starts nothing until the person uses it", async ({
+  test("the folder's line names its repository; a checkout replaced at its path starts nothing until the person uses it @one-browser", async ({
     page,
     world,
   }) => {
@@ -283,7 +283,7 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
 });
 
 test.describe("[A7.3.9.m2-10.e2e.copy] Copy puts the pointer brief on the clipboard", () => {
-  test("Copy copies the pointer brief, records its launch, and the receipt says it was copied", async ({
+  test("Copy copies the pointer brief, records its launch, and the receipt says it was copied @one-browser", async ({
     page,
     world,
   }) => {
@@ -333,7 +333,7 @@ test.describe("[A7.3.9.m2-10.e2e.copy] Copy puts the pointer brief on the clipbo
 });
 
 test.describe("[A7.3.14.m6-11.e2e.pack] Shift+Copy puts the context pack on the clipboard", () => {
-  test("Shift+Copy copies the context pack, the toast says so, and the tooltip says what leaves", async ({
+  test("Shift+Copy copies the context pack, the toast says so, and the tooltip says what leaves @one-browser", async ({
     page,
     world,
   }) => {

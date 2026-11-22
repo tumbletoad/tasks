@@ -21,7 +21,7 @@ import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
 import { starChange, statusChange, triageChange } from "../edit/change.ts";
 import { useEditState, useEdits } from "../edit/useEdits.ts";
-import { askFor, carry } from "../task/composer.ts";
+import { askFor, savedWords } from "../task/composer.ts";
 import { areaSlots, groupTasks, type Group, type GroupTasks } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { Latest } from "../latest.ts";
@@ -36,7 +36,7 @@ import {
   type FolderRefusal,
 } from "../row/launch.ts";
 import { contextFor, type Grouping, type RowView } from "../row/model.ts";
-import type { RowActions } from "../row/actions.ts";
+import type { OpenWith, RowActions } from "../row/actions.ts";
 import type { Clock } from "../row/dates.ts";
 import { Row } from "../row/Row.tsx";
 import { useClock } from "../row/useClock.ts";
@@ -45,7 +45,7 @@ import type { TaskRow } from "../store/rows.ts";
 import { rowOfFacts } from "../task/detail.ts";
 import { mergeRuns, runRefusal, withStops } from "../task/runs.ts";
 import css from "./TaskList.module.css";
-import { Unanswered } from "./unanswered.ts";
+import { openAsked, openName, Unanswered, unansweredOpens } from "./unanswered.ts";
 
 const styles = classes(css, ["line", "announce"]);
 
@@ -62,6 +62,16 @@ const QUIET_MS = 2_000;
 const WORKING_REREAD_MS = 60_000;
 /** The waits before a failed read of busy is tried again, the last one repeating. */
 const BUSY_RETRY_MS = [1_000, 2_000, 5_000, 15_000] as const;
+
+/**
+ * The service answered with a refusal (the page's `Refused`, or the generated client's error, both
+ * with a code): nothing was done. A lost reply, or the service's own failure, may follow a change.
+ */
+function refusedBy(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as Error & { code?: unknown }).code;
+  return typeof code === "string" && code !== "internal";
+}
 
 /** The expanded task as the list last showed it: its group and its place in that group's list. */
 export interface HeldRow {
@@ -158,8 +168,10 @@ export function TaskList({
   const [runs, setRuns] = useState<ReadonlyMap<string, readonly Run[]>>(new Map());
   /** The runs whose Stop is on its way, each with its version when Stop was pressed. */
   const [stops, setStops] = useState<ReadonlyMap<string, number>>(new Map());
-  /** Per task, the Run that got no answer; per task and app, the Open. */
+  /** Per task, the Run that got no answer. */
   const unanswered = useRef(new Unanswered());
+  /** Per task, how many Runs are on their way: a read of the runs meanwhile may predate theirs. */
+  const runsOut = useRef(new Map<string, number>());
   const runReads = useRef(new Latest());
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [announcement, setAnnouncement] = useState("");
@@ -313,12 +325,14 @@ export function TaskList({
   const loadRuns = useCallback(
     (task: string) => {
       const newest = runReads.current.begin(task);
+      const quiet = () => (runsOut.current.get(task) ?? 0) === 0;
+      const quietAtStart = quiet();
       api
         .runs(task)
         .then((list) => {
           if (newest()) {
             // The service answered since a Run got none: that run shows here if it started.
-            unanswered.current.answered(task);
+            if (quietAtStart && quiet()) unanswered.current.answered(task);
             setRuns((known) => new Map(known).set(task, mergeRuns(known.get(task) ?? [], list)));
           }
         })
@@ -650,47 +664,59 @@ export function TaskList({
       // gets it on the clipboard too.
       // A folder whose marker says it may be another one opens only when the person says so: the
       // toast asks, and its action opens it there and marks it. The composer's words stay in its
-      // field until then.
-      // Without an answer the launch may have started: until the service answers again, the same
-      // Open carries the same request ID, so a retry never opens the task a second time. An Open
-      // the service answers with a session that already runs starts nothing: the read of busy
-      // shows it Running.
-      open: (task: TaskRow, instance: Instance, text?: string, another = false) => {
+      // field until then. Once the service saved them on the task the field clears, as for Note.
+      // An Open without an answer may have saved them and opened: until the service answers, the
+      // same Open (task, instance and what it carries, "Open anyway" included) carries the same
+      // request ID, also after a reload and from another tab, so it neither saves the words twice
+      // nor opens a second window. An Open the service answers with a session that already runs
+      // starts nothing: the read of busy shows it Running.
+      open: (
+        task: TaskRow,
+        instance: Instance,
+        { text, request, another = false }: OpenWith = {},
+      ) => {
         const key = `open\n${task.id}\n${instance.key}`;
+        const name = openName(live.spaceId ?? "", task.id, instance.key);
+        const asked = openAsked(another, text, request);
         const launch = (markFolder: boolean): Promise<Receipt | undefined> => {
           watched.current.add(task.id);
-          const asked = `${String(markFolder)}\n${String(another)}\n${text ?? ""}`;
-          const id = unanswered.current.idFor(key, asked);
+          const id = unansweredOpens.idFor(name, asked);
           return api
             .openLaunch(task.id, instance.key, id, {
               markFolder,
               another,
               ...(text === undefined ? {} : { text }),
+              ...(request === undefined ? {} : { request }),
             })
-            .then(async ({ receipt, copy }) => {
-              unanswered.current.answered(key);
+            .then(async (opened) => {
+              const { receipt, copy } = opened;
+              unansweredOpens.answered(name, id);
               refuse(task.id, undefined);
               shown(task, receipt);
               loadBusy();
-              // The app takes the brief by paste: without it on the clipboard the words did not go.
-              if (copy !== undefined && !(await toClipboard(copy))) return undefined;
-              // TTasks holds the words for this launch's agent: the composer's field keeps them
-              // until it read them, also after "Open anyway".
               const space = live.spaceId;
-              if (text !== undefined && receipt.request !== undefined && space !== undefined) {
-                carry(space, task.id, receipt.id, text);
+              if (text !== undefined && space !== undefined && opened.note !== undefined) {
+                savedWords(space, task.id, text);
               }
+              // The app takes the brief by paste: without it on the clipboard nothing opens.
+              if (copy !== undefined && !(await toClipboard(copy))) return undefined;
+              // A second click while the first was opening got that launch: its words are a note.
+              if (opened.text === "note") say(t("row.openedEarlier", { label: instance.label }));
               return receipt;
             })
             .catch((error: unknown) => {
-              const refusedHere = error instanceof Refused && error.code !== "internal";
-              if (refusedHere) unanswered.current.answered(key);
-              else unanswered.current.lost(key, asked, id);
+              const answered = refusedBy(error);
+              if (answered) unansweredOpens.refused(name, id);
               if (live.failed(error)) return undefined;
+              if (!answered) {
+                say(t("row.openUnanswered", { label: instance.label }));
+                loadReceipts(task.id);
+                return undefined;
+              }
               const found = folderRefusal(error);
               if (found === undefined) {
                 refuse(task.id, undefined);
-                say(t(refusedHere ? "row.openFailed" : "row.openUnanswered"));
+                say(t("row.openFailed"));
                 return undefined;
               }
               // The expanded task's folder line says what was found and offers the ways on: use
@@ -786,8 +812,13 @@ export function TaskList({
         watched.current.add(task.id);
         const asked = `${instance.key}\n${text ?? ""}`;
         const id = unanswered.current.idFor(task.id, asked);
+        const out = runsOut.current;
+        out.set(task.id, (out.get(task.id) ?? 0) + 1);
         return api
           .startRun(task.id, instance.key, id, text)
+          .finally(() => {
+            out.set(task.id, (out.get(task.id) ?? 1) - 1);
+          })
           .then((run) => {
             unanswered.current.answered(task.id);
             refuse(task.id, undefined);
@@ -796,8 +827,7 @@ export function TaskList({
           })
           .catch((error: unknown) => {
             const refusedHere = error instanceof Refused && error.code !== "internal";
-            if (refusedHere) unanswered.current.answered(task.id);
-            else unanswered.current.lost(task.id, asked, id);
+            if (refusedHere) unanswered.current.refused(task.id, id);
             if (live.failed(error)) return undefined;
             if (!refusedHere) {
               say(t("run.unanswered"));

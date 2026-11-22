@@ -41,11 +41,15 @@ const agentEnv = process.env["E2E_AGENT_ENV"];
 
 const code = await runServe({
   identity: () => ({ root: false, elevated: false, package: packageIdentity(process.env) }),
-  http: { ports: [0], persist: false, ui },
+  // A worker's tests sign in by code many times a minute. The service's own limit of 10 a minute
+  // is proven by packages/service/src/http/listener.test.ts.
+  http: { ports: [0], persist: false, ui, limits: { redeemPerMinute: 10_000 } },
   // Settings lists the terminals detection finds: the same two on every OS the tests run on.
   launch: {
     terminal: fakeTerminal(record),
     terminals: { host: twoTerminalsHost },
+    // A killed shim is noticed at the next PID check: soon, so its tests do not wait on the clock.
+    checkMs: 2_000,
     // The file manager records the folder it is asked to show, one per line, and opens no window.
     showFolder: (folder) => {
       appendFileSync(folders, `${folder}\n`);

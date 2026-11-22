@@ -24,11 +24,13 @@ const MAX_WORKERS = Math.max(2, Math.min(8, availableParallelism() - 1));
 
 // Tests never fall back to whatever a developer has in their environment. The setup file puts the
 // test stand-ins first on PATH (Linux: systemd-run), so no test reaches the person's user manager.
+export const SETUP_FILES = ["packages/testkit/src/setup.ts"];
+
 const shared = {
   unstubEnvs: true,
   restoreMocks: true,
   maxWorkers: MAX_WORKERS,
-  setupFiles: ["packages/testkit/src/setup.ts"],
+  setupFiles: SETUP_FILES,
 };
 
 export default defineConfig({

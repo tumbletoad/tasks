@@ -114,17 +114,24 @@ export interface OpenTaskRequest {
   /** The instance's key; undefined is Copy (A4 3.4.6). */
   readonly instance: string | undefined;
   /**
-   * The person's own words for the agent (A5 3.8), never stored in the space: an Open route holds
-   * them for the launch's agent, Copy puts them on the clipboard.
+   * The person's own words for the agent (A5 3.8): an Open route saves them on the task as the
+   * launch's request (`saveNote`), Copy puts them on the clipboard.
    */
   readonly composer: string | undefined;
+  /**
+   * Open with a note of the person's already on the task as the request, its entry reference: the
+   * request path read it, and `composer` holds its text. Nothing new is saved.
+   */
+  readonly requestNote?: string;
   /** The click's request ID (A1 3.8): a repeat replays the same intent. */
   readonly requestId: string;
   /**
-   * Copy's words over its budget are saved as a note addressed to agents (A4 3.15.3), before the
-   * intent is recorded. The request path saves it under the click's own request ID.
+   * Saves the person's words as a note of theirs on the task, before the intent is recorded, and
+   * gives its entry reference: an Open route's request, or Copy's words over its budget addressed to
+   * agents (A4 3.15.3). The request path saves it under a request ID the click's derives, so a
+   * repeated click gets the same note.
    */
-  readonly saveNote: (text: string) => Promise<void>;
+  readonly saveNote: (text: string, forAgents: boolean) => Promise<string>;
   /**
    * Shift+Copy (A4 3.15.5): the task's text as the request path read it, for the context pack in
    * place of the pointer brief. Only with Copy (no instance).
@@ -153,8 +160,10 @@ export interface OpenTaskResult {
   readonly intent: LaunchIntent;
   /** Text for the person's clipboard: Copy's pointer brief, the Codex assisted open's brief. */
   readonly copy: string | undefined;
-  /** Where the composer text went: held is an Open route's request, which the agent reads. */
+  /** Where the composer text went: `request` is the note the launch names, which the agent reads. */
   readonly composer: BriefComposer;
+  /** The note that holds the words, for `request` and `note`. */
+  readonly note?: string;
   /** The sanitiser removed something from the composer text (A4 3.15.6's quiet notice). */
   readonly removed: boolean;
 }

@@ -81,7 +81,8 @@ Usage: `ttasks brief <task> [flags]`
 |---|---|---|---|
 | `<task>` | `task` | string | Task ref (M-14) or ID |
 | `--instance` | `instance` | string | The instance to open in, from this machine's; leave out to Copy |
-| `--text` | `text` | string | Your words for the agent: it reads them with the task |
+| `--text` | `text` | string | Your words for the agent: saved on the task as this launch's request |
+| `--request` | `request` | string | Open with a note of yours on the task as the request, such as n2 |
 | `--pack` | `pack` | boolean | Copy the context pack: the task's text, for an app without the tools |
 | `--mark-folder` | `mark_folder` | boolean | Open although the folder's marker is gone or another's, and mark it |
 | `--another` | `another` | boolean | Start a second session although this app already runs the task here |
@@ -248,6 +249,7 @@ Usage: `ttasks show [<task>] [flags]`
 | `--section` | `sections` | "instructions" \| "context" \| "notes" \| "log" \| "sources" \| "outcome" \| "history" | Return these in full instead of the digest (repeatable) |
 | `--log-limit` | `log_limit` | integer | Log entries per page; default 20 |
 | `--before` | `before` | string | With sections: the before token of the last page |
+| `--note` | `notes` | string | These notes too, whole, whatever their age (repeatable, user only) |
 
 ## `ttasks status`
 

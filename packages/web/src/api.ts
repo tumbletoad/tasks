@@ -80,12 +80,8 @@ export interface Receipt {
   readonly at: Readonly<Partial<Record<ReceiptState, number>>>;
   /** A terminal launch: the terminal Dispatched and why it was chosen, as fixed words. */
   readonly terminal?: { readonly app: string; readonly source: string };
-  /**
-   * The words the person typed, which TTasks holds for the launch's agent: `waiting` until the
-   * agent read them, `read` once it did, `unread` when they went with a launch whose agent never
-   * read them. Absent when none are known (none were held, or the service restarted since).
-   */
-  readonly request?: "waiting" | "read" | "unread";
+  /** The note on the task that holds what the person asked the launch's agent, such as `n2`. */
+  readonly request?: string;
   /**
    * A Confirmed launch's session as the service knows it: `running` now, or `ended`. Absent when
    * it cannot know, which the page never shows as running.
@@ -93,6 +89,19 @@ export interface Receipt {
   readonly session?: "running" | "ended";
   /** How long its agent ran, when its end was reported with it. */
   readonly ran_ms?: number;
+}
+
+/** What an Open or a Copy did with the person's words. */
+export interface Opened {
+  readonly receipt: Receipt;
+  /** Text for the clipboard. */
+  readonly copy: string | undefined;
+  /**
+   * Where the words went: `request` and `note` are on the task (the note `note`), `inline` in the
+   * copy, `none` when none were given.
+   */
+  readonly text: "none" | "inline" | "note" | "request";
+  readonly note: string | undefined;
 }
 
 /** Open's terminal as Settings shows it (the service's TerminalView): fixed words only. */
@@ -356,7 +365,8 @@ export class Api {
   /**
    * A click on a tile, or on Copy without an instance (A4's `launch.open`): the launch's receipt,
    * and for Copy (or an open whose app takes the brief by paste) the text for the clipboard.
-   * `text` is what the person typed in the composer: the agent's request.
+   * `text` is what the person typed in the composer: the agent's request, which Open saves on the
+   * task; `request` opens again with a note of theirs already there.
    */
   async openLaunch(
     task: string,
@@ -365,21 +375,24 @@ export class Api {
     {
       pack = false,
       text,
+      request,
       markFolder = false,
       another = false,
     }: {
       readonly pack?: boolean;
       readonly text?: string;
+      readonly request?: string;
       readonly markFolder?: boolean;
       readonly another?: boolean;
     } = {},
-  ): Promise<{ receipt: Receipt; copy: string | undefined }> {
+  ): Promise<Opened> {
     const result = await this.client.launch.open({
       task,
       ...(instance === undefined ? {} : { instance }),
       // Shift+Copy (A4 3.15.5): the context pack in place of the pointer brief.
       ...(pack ? { pack: true } : {}),
       ...(text === undefined || text.trim() === "" ? {} : { text }),
+      ...(request === undefined ? {} : { request }),
       // The person chose to open the task in a folder whose marker is gone or another's.
       ...(markFolder ? { mark_folder: true } : {}),
       // "Open another": a second session, although the app runs the task here.
@@ -400,10 +413,11 @@ export class Api {
         state: launch.state,
         reason: launch.reason ?? null,
         at,
-        // Open holds the words for the agent: they wait until it reads them.
-        ...(result.text === "held" ? { request: "waiting" as const } : {}),
+        ...(result.text === "request" && result.note !== undefined ? { request: result.note } : {}),
       },
       copy: result.copy,
+      text: result.text,
+      note: result.note,
     };
   }
 

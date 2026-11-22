@@ -30,7 +30,6 @@ import {
   within,
   type ServiceJson,
 } from "../../packages/service/test/harness.ts";
-import { REDEEM_PER_MINUTE } from "../../packages/service/src/http/auth.ts";
 import { post } from "../../packages/service/test/http-client.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import { checkedDriver, seedMira } from "../../packages/testkit/src/index.ts";
@@ -43,7 +42,7 @@ import {
   type Scales,
 } from "./bulk.ts";
 import type { FakeCodexCase } from "./codex-cases.ts";
-import { fakeInstanceToml, type TerminalCall } from "./fake-terminal.ts";
+import { fakeInstanceToml, refuseFile, type TerminalCall } from "./fake-terminal.ts";
 
 const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
 
@@ -53,8 +52,6 @@ const OS =
 
 /** Generous bounds: a loaded machine must not fail a test that is only slow. */
 export const SLOW_MS = 120_000;
-
-const REDEEM_WINDOW_MS = 60_000;
 
 export interface SpaceInfo {
   readonly id: string;
@@ -107,8 +104,8 @@ export interface World {
    * runs, which can be after the run's record says it runs.
    */
   codexLeft(ref: string): FakeCodexCase[];
-  /** The fake agent reads no request on this task, as an agent without the tools or a shell. */
-  leaveUnread(ref: string): void;
+  /** The fake terminal refuses the next launch of this task (its ID), as one that would not start. */
+  refuseNextOpen(task: string): void;
   /**
    * The fake agents started on this task from now on run until `release`, or with `exit` end at
    * once with that code, as an agent that cannot start.
@@ -247,8 +244,6 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     // The fake agent is this machine's first instance: the page draws its tile (A5 3.6). It is a
     // Claude Code instance, which can run tasks too, so a world with runs has the fake Codex
     // first: the page's first runner is its default Run.
-    const unread = join(temp.root, "unread.txt");
-    writeFileSync(unread, "");
     const holds = join(temp.root, "holds");
     mkdirSync(holds);
     const cases = join(temp.root, "codex-cases.json");
@@ -271,7 +266,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
     registerSpaces(
       home,
       [{ path: seeded.folder, id: opened.space.spaceId }],
-      codexes + fakeInstanceToml(home, unread, holds),
+      codexes + fakeInstanceToml(home, holds),
     );
 
     const record = join(temp.root, "terminal.jsonl");
@@ -355,26 +350,8 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
 
     let logs = 0;
     let ops = 0;
-    /** For each of this world's redeems, a time at or after the service counted it. */
-    const redeems: number[] = [];
     /** The world's own sign-in for `machine`, made once. */
     let token: string | undefined;
-    // The service redeems only so many codes a minute, and a worker's tests sign in more often
-    // than that when they run fast: every redeem, the page's and the world's own, waits for room.
-    // A page redeems its code some time after its URL is handed out, however slow the machine,
-    // but before the test asks for the next sign-in (it waits for the signed-in page first). So
-    // the last redeem counts as made now, and the window is counted from there, not from a guess.
-    const roomToRedeem = async (): Promise<void> => {
-      if (redeems.length > 0) redeems[redeems.length - 1] = Date.now();
-      for (;;) {
-        const now = Date.now();
-        while (redeems.length > 0 && (redeems[0] ?? 0) <= now - REDEEM_WINDOW_MS) redeems.shift();
-        if (redeems.length < REDEEM_PER_MINUTE) break;
-        const wait = (redeems[0] ?? now) + REDEEM_WINDOW_MS - now + 1;
-        await new Promise((resolve) => setTimeout(resolve, wait));
-      }
-      redeems.push(Date.now());
-    };
     return {
       get origin() {
         return life.origin;
@@ -387,7 +364,6 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       launched,
       portal,
       signInUrl: async (to) => {
-        await roomToRedeem();
         const minted = (await life.user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
           code: string;
           port: number;
@@ -397,7 +373,6 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       machine: async (key, value) => {
         const port = Number(new URL(life.origin).port);
         if (token === undefined) {
-          await roomToRedeem();
           const minted = (await life.user.call("ui/mint_code", {}, { timeoutMs: SLOW_MS })) as {
             code: string;
           };
@@ -425,8 +400,8 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
         readFileSync(shown, "utf8")
           .split("\n")
           .filter((line) => line !== ""),
-      leaveUnread: (ref) => {
-        appendFileSync(unread, `${ref}\n`);
+      refuseNextOpen: (task) => {
+        appendFileSync(refuseFile(record), `${task}\n`);
       },
       hold: (ref, exit) => {
         writeFileSync(join(holds, ref), exit === undefined ? "" : `exit ${String(exit)}`);

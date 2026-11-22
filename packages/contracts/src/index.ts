@@ -73,6 +73,8 @@ export {
   TaskFinishedResult,
 } from "./entries/task-finished.ts";
 export {
+  REQUEST_CHARS,
+  REQUEST_LAUNCHES,
   TaskDetail,
   taskGet,
   TaskGetInput,

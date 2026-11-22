@@ -2,7 +2,7 @@ name: e2e
 
 # The browser tests (pnpm e2e: the real service and the built page, in Chromium and Firefox) on
 # every pull request that is not a draft and on every push to main, as check.yml runs verify. They
-# run on Linux and Windows, each browser in two shards, so the answer comes in about ten minutes.
+# run on Linux and Windows, each browser in a job of its own.
 # The job named "e2e" passes only when all of them did: it is the one to read.
 on:
   pull_request:
@@ -18,17 +18,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  shard:
+  browsers:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: pnpm e2e --project ${{ matrix.browser }} --shard ${{ matrix.shard }}/2 (${{ matrix.os }})
+    name: pnpm e2e --project ${{ matrix.browser }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2025]
         browser: [chromium, firefox]
-        shard: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -68,15 +67,15 @@ jobs:
 
       # Under umask 002 on Linux, as check.yml runs verify: a desktop with user private groups.
       - if: runner.os == 'Linux'
-        run: umask 002 && pnpm e2e --project ${{ matrix.browser }} --shard ${{ matrix.shard }}/2
+        run: umask 002 && pnpm e2e --project ${{ matrix.browser }}
       - if: runner.os != 'Linux'
-        run: pnpm e2e --project ${{ matrix.browser }} --shard ${{ matrix.shard }}/2
+        run: pnpm e2e --project ${{ matrix.browser }}
 
       # The tests use invented data only, so the report, traces and screenshots hold no one's tasks.
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: e2e-report-${{ matrix.os }}-${{ matrix.browser }}-${{ matrix.shard }}
+          name: e2e-report-${{ matrix.os }}-${{ matrix.browser }}
           path: |
             tests/e2e/report/
             tests/e2e/results/
@@ -85,7 +84,7 @@ jobs:
 
   e2e:
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
-    needs: shard
+    needs: browsers
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -97,7 +96,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: .github/gate.sh
           sparse-checkout-cone-mode: false
-      # 8 is the number of shard jobs: one added or removed without changing it fails the gate.
+      # 4 is the number of test jobs: one added or removed without changing it fails the gate.
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/gate.sh e2e 8
+        run: bash .github/gate.sh e2e 4

@@ -19,7 +19,8 @@ export interface Caller {
   readonly grant?: string;
   /**
    * The principal the transport determined for this connection while it is unbound, when its class
-   * has no fixed one: an MCP connection's (mcp/principal.ts). Otherwise the class's. A bound slot's
+   * has no fixed one: an MCP connection's (mcp/principal.ts), or the one a handler writes a step
+   * under on the caller's behalf (`launch.open`'s note). Otherwise the class's. A bound slot's
    * session decides the principal instead (`sessionPrincipal`).
    */
   readonly principal?: Principal;

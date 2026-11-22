@@ -447,7 +447,8 @@ export function Expanded({
 }: ExpandedProps) {
   const t = useT();
   const clock = useClock(false);
-  const { detail, base, failed } = useDetail(task.id);
+  const requests = [...new Set(receipts.flatMap((receipt) => receipt.request ?? []))].sort();
+  const { detail, base, failed } = useDetail(task.id, requests);
   // A refusal holds until the detail is read again: that read says where the folder stands then.
   const [held, setHeld] = useState<{ refused: FolderRefusal; detail: Detail | undefined }>();
   if (refused !== held?.refused) setHeld(refused === undefined ? undefined : { refused, detail });
@@ -539,6 +540,9 @@ export function Expanded({
             runs={runs}
             instances={instances}
             partial={detail.partial}
+            onOpenAgain={(note, instance) => {
+              void actions.open(task, instance, { request: note.ref });
+            }}
             onStop={(run) => {
               actions.stop(task, run);
             }}
@@ -551,13 +555,7 @@ export function Expanded({
         ) : null}
       </div>
       <div className={styles.composer}>
-        <Composer
-          task={task}
-          receipts={receipts}
-          busy={busy}
-          instances={instances}
-          actions={actions}
-        />
+        <Composer task={task} busy={busy} instances={instances} actions={actions} />
       </div>
     </div>
   );

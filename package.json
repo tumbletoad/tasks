@@ -13,6 +13,7 @@
   },
   "scripts": {
     "verify": "node scripts/verify.ts",
+    "check": "node scripts/check.ts",
     "gen": "node scripts/gen.ts",
     "seed": "node scripts/seed.ts",
     "ttasks": "node packages/cli/src/bin.ts",

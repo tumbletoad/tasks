@@ -1,22 +1,29 @@
-// What a person types before Open (`launch.open`'s text) never travels on a command line, in a
-// link, in a log line or in a file other than the launch's own request: per route and catalogue
-// entry that takes it, through the service, a real `ttasks shim`, and testkit's fake Claude Code and
-// Codex, which read the request as their brief says when the tools are missing (`ttasks show
-// --launch`). The link apps' opener is a recording spawner, and an agent's MCP connection stands
-// for the app. The words arrive exactly, a 20,000-character request with line breaks, quotes and
-// other scripts; the file goes with its launch and after a restart. No real agent, app or agent
-// home is used. Fixture data and temporary folders only.
+// What a person types before Open (`launch.open`'s text) becomes a note of theirs on the task at
+// the click, which the launch names as its request: per route and catalogue entry that takes it,
+// through the service, a real `tasks shim`, and testkit's fake Claude Code and Codex, which read the
+// request as their brief says when the tools are missing (`tasks show --launch`). The words never
+// travel on a command line, in a link, in a log line or in a file outside the space. The link apps'
+// opener is a recording spawner, and an agent's MCP connection stands for the app. No real agent,
+// app or agent home is used. Fixture data and temporary folders only.
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import {
+  chmodSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { join, relative } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { MCP_SERVER_KEY } from "@ttasks/brand";
-import type { JsonObject, RpcSession } from "@ttasks/bridge/protocol";
+import { MCP_SERVER_KEY } from "@tasks/brand";
+import { REQUEST_CHARS } from "@tasks/contracts";
+import type { JsonObject, RpcSession } from "@tasks/bridge/protocol";
 import {
   briefReference,
   powershellPath,
-  REQUEST_FILE,
   REQUEST_LINE,
   type SpawnRequest,
   type SpawnedProcess,
@@ -26,7 +33,7 @@ import { bridgePrincipal, clientOf, renderResult } from "../src/mcp/index.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { instanceToml, tempRoot, waitFor } from "./harness.ts";
 import { bridgeContext } from "./mcp-helpers.ts";
-import { classSession, grantHome } from "./ops-helpers.ts";
+import { classSession, errorOf, grantHome } from "./ops-helpers.ts";
 import { CLI_BIN, LONG_MS, ShimLab } from "./shim-harness.ts";
 
 const WINDOWS = process.platform === "win32";
@@ -40,21 +47,23 @@ function requestOf(marker: string, length = 20_000): string {
   const head = [
     `${marker}: look at "this" first, it's 'quoted'.`,
     'Then run it with %PATH% & ^ \\" and $HOME `x` $(y);',
-    `Café, 日本語, ${String.fromCodePoint(0x1f469, 0x200d, 0x1f4bb)}`,
+    `Café, 日本語, ${JOINED}`,
     "",
     "\tindented with a tab",
   ].join("\n");
   return `${head}\n${"z".repeat(length - head.length - 1)}`;
 }
 
+/** An emoji that holds a zero-width joiner, a character that carries meaning in written languages too. */
+const JOINED = String.fromCodePoint(0x1f469, 0x200d, 0x1f4bb);
 const newMarker = (): string => `M4RK${randomBytes(8).toString("hex")}`;
 const hex8 = (text: string): string => Buffer.from(text, "utf8").toString("hex");
-
-/** Rounds of the service until one ran wholly after this call: a round under way may predate it. */
-async function settle(r: Rig): Promise<void> {
-  await r.lab.running.launches.tick();
-  await r.lab.running.launches.tick();
-}
+/** What a result holds of a request: its first REQUEST_CHARS code points. */
+const shown = (words: string): string => Array.from(words).slice(0, REQUEST_CHARS).join("");
+const cutOf = (words: string): number | undefined => {
+  const left = Array.from(words).length - REQUEST_CHARS;
+  return left > 0 ? left : undefined;
+};
 
 const labs: ShimLab[] = [];
 const sessions: RpcSession[] = [];
@@ -171,33 +180,82 @@ interface Opened {
   readonly launch: { id: string; reference: string; state: string; route: string };
   readonly copy?: string;
   readonly text: string;
+  readonly note?: string;
 }
+
+interface Request {
+  readonly note: string;
+  readonly text: string;
+  readonly cut?: number;
+}
+
+interface Note {
+  readonly ref: string;
+  readonly author: string;
+  readonly for_agents: boolean;
+  readonly text: string;
+  readonly request_for?: { launch: string; instance: string }[];
+  readonly slice?: { from: number; to: number; of: number };
+}
+
+const call = async (r: Rig, op: string, input: Record<string, unknown>): Promise<unknown> =>
+  r.user.call(
+    "op/call",
+    { space: r.lab.spaceId, op, input: { ...input, request_id: rid() } },
+    { timeoutMs: 60_000 },
+  );
 
 async function addTask(r: Rig, folder: string): Promise<{ ref: string }> {
   mkdirSync(join(r.lab.work, folder), { recursive: true });
-  const call = (op: string, input: Record<string, unknown>) =>
-    r.user.call(
-      "op/call",
-      { space: r.lab.spaceId, op, input: { ...input, request_id: rid() } },
-      { timeoutMs: 60_000 },
-    );
-  const added = (await call("task.add", { tasks: [{ title: "Fixture task for a request" }] })) as {
-    tasks: { ref: string }[];
-  };
+  const added = (await call(r, "task.add", {
+    tasks: [{ title: "Fixture task for a request" }],
+  })) as { tasks: { ref: string }[] };
   const task = added.tasks[0];
   if (task === undefined) throw new Error("no task");
-  await call("folder.manage", { action: "set", task: task.ref, folder: join(r.lab.work, folder) });
+  await call(r, "folder.manage", {
+    action: "set",
+    task: task.ref,
+    folder: join(r.lab.work, folder),
+  });
   return task;
 }
 
-const open = async (r: Rig, input: Record<string, unknown>): Promise<Opened> =>
+const open = async (r: Rig, input: Record<string, unknown>, requestId = rid()): Promise<Opened> =>
   (await r.user.call(
     "op/call",
-    { space: r.lab.spaceId, op: "launch.open", input: { ...input, request_id: rid() } },
+    { space: r.lab.spaceId, op: "launch.open", input: { ...input, request_id: requestId } },
     { timeoutMs: 60_000 },
   )) as Opened;
 
-/** An agent's MCP connection, as an app's bridge makes it, and its get_task by the reference. */
+/** Every note of the task, whole: a sections read, page after page, its slices joined. */
+async function notesOf(r: Rig, task: string): Promise<Note[]> {
+  const out: Note[] = [];
+  let before: string | undefined;
+  for (;;) {
+    const page = (await r.user.call(
+      "op/call",
+      {
+        space: r.lab.spaceId,
+        op: "task.get",
+        input: {
+          task,
+          sections: ["instructions", "notes"],
+          ...(before === undefined ? {} : { before }),
+        },
+      },
+      { timeoutMs: 60_000 },
+    )) as { sections: { instructions?: Note[]; notes?: Note[] }; before?: string };
+    for (const note of [...(page.sections.instructions ?? []), ...(page.sections.notes ?? [])]) {
+      const last = out.find((n) => n.ref === note.ref);
+      if (last === undefined) out.push(note);
+      else out[out.indexOf(last)] = { ...last, text: last.text + note.text };
+    }
+    before = page.before;
+    if (before === undefined) return out;
+  }
+}
+
+/** An agent's MCP connection, as an app's bridge makes it, and its get_task. */
 async function mcpAgent(r: Rig, cwd: string) {
   const context: JsonObject = bridgeContext({ space: r.lab.spaceId, instance: "app-agent", cwd });
   const connection = { context };
@@ -211,10 +269,11 @@ async function mcpAgent(r: Rig, cwd: string) {
     client: clientOf(context),
     binding: slot,
   };
-  const getTask = async (launch: string) =>
-    (await opCall(r.lab.running.ops, caller, { op: "task.get", input: { launch } })) as {
+  const getTask = async (input: Record<string, unknown>) =>
+    (await opCall(r.lab.running.ops, caller, { op: "task.get", input })) as {
       bound: boolean;
-      request?: string;
+      request?: Request;
+      task: { notes: Note[] };
     };
   return {
     getTask,
@@ -229,7 +288,7 @@ async function mcpAgent(r: Rig, cwd: string) {
  * that TTasks did not start runs it: an agent marker and no TTASKS_SPACE. A process of its own,
  * waited for without blocking this one, where the service runs.
  */
-async function cliShow(r: Rig, brief: string): Promise<{ request?: string }> {
+async function cliShow(r: Rig, brief: string): Promise<{ request?: Request }> {
   const command = /run `\S+ ([^`]+)`\.$/mu.exec(brief)?.[1];
   if (command === undefined) throw new Error("The brief names no command");
   const outside = { ...process.env };
@@ -248,11 +307,12 @@ async function cliShow(r: Rig, brief: string): Promise<{ request?: string }> {
     child.once("exit", resolve);
   });
   try {
-    return JSON.parse(out) as { request?: string };
+    return JSON.parse(out) as { request?: Request };
   } catch {
     throw new Error(`show --launch exited ${String(code)} without a result`);
   }
 }
+
 /** The fake CLI's report once it is there. */
 async function reportAt(path: string): Promise<CliAgentReport> {
   await waitFor(
@@ -295,13 +355,14 @@ function filesUnder(roots: readonly string[]): string[] {
   return out;
 }
 
-/** The lab's folders: its home, spaces, work folders and the per-user runtime folder (Linux). */
-const labRoots = (r: Rig): string[] => [r.lab.root, r.lab.runtime.base];
-
-/** The files that hold `marker`, by their bytes. */
-function filesWith(r: Rig, marker: string): string[] {
+/**
+ * The files outside the space that hold `marker`, by their bytes: under the lab's home, its work
+ * folders and the per-user runtime folder (Linux), the space's own folder left out.
+ */
+function filesOutsideWith(r: Rig, marker: string): string[] {
   const needle = Buffer.from(marker, "utf8");
-  return filesUnder(labRoots(r)).filter((path) => {
+  return filesUnder([r.lab.root, r.lab.runtime.base]).filter((path) => {
+    if (!relative(r.lab.spaceFolder, path).startsWith("..")) return false;
     try {
       return readFileSync(path).includes(needle);
     } catch {
@@ -309,10 +370,6 @@ function filesWith(r: Rig, marker: string): string[] {
     }
   });
 }
-
-/** The request files under the lab, by the launch folder that holds them. */
-const requestFiles = (r: Rig): string[] =>
-  filesUnder(labRoots(r)).filter((path) => basename(path) === REQUEST_FILE);
 
 /**
  * The command lines of every process this account can read now: Linux's /proc, Windows' process
@@ -362,9 +419,9 @@ async function commandLines(): Promise<string[] | undefined> {
 
 /**
  * The marker is in no process's command line, no URL the launch opened, no log line, and no file
- * but the request of `launch` in its own folder.
+ * outside the space.
  */
-async function expectOnlyHeld(r: Rig, marker: string, launch: string): Promise<void> {
+async function expectOnlyInSpace(r: Rig, marker: string): Promise<void> {
   const lines = await commandLines();
   if (lines !== undefined) {
     expect(lines.length).toBeGreaterThan(1);
@@ -375,16 +432,31 @@ async function expectOnlyHeld(r: Rig, marker: string, launch: string): Promise<v
   }
   const log = join(r.lab.home, "state", "logs", "service.log");
   expect(readFileSync(log, "utf8")).not.toContain(marker);
-  const held = filesWith(r, marker);
-  expect(held.map((path) => [basename(dirname(path)), basename(path)])).toEqual([
-    [launch, REQUEST_FILE],
-  ]);
+  expect(filesOutsideWith(r, marker)).toEqual([]);
 }
 
-describe("[A4.5.routes.request] what a person types before Open reaches the agent through TTasks, never a command line, a link, a log or another file", () => {
+/** The task holds the words whole as the person's note, which names the launch it asked. */
+async function expectOnTask(
+  r: Rig,
+  task: string,
+  result: Opened,
+  words: string,
+  instance: string,
+): Promise<void> {
+  expect(result.note).toMatch(/^n\d+$/u);
+  const note = (await notesOf(r, task)).find((n) => n.ref === result.note);
+  expect(note).toMatchObject({
+    author: "user",
+    for_agents: false,
+    request_for: [{ launch: result.launch.reference, instance }],
+  });
+  expect(note?.text).toBe(words);
+}
+
+describe("[A4.5.routes.request] what a person types before Open is on the task at the click, reaches the agent through Tasks, and never a command line, a link, a log or a file outside the space", () => {
   for (const instance of ["claude", "codex"] as const) {
     test(
-      `${instance}'s terminal route: the brief points at the request, the fake agent reads it exactly with show --launch, and the file goes with the launch`,
+      `${instance}'s terminal route: the brief points at the request, the fake agent reads it with show --launch, the same each time, and the rest is in the note`,
       { timeout: 600_000 },
       async () => {
         opened.length = 0;
@@ -393,54 +465,80 @@ describe("[A4.5.routes.request] what a person types before Open reaches the agen
         const marker = newMarker();
         const words = requestOf(marker);
         const result = await open(r, { task: task.ref, instance, text: words });
-        expect(result.text).toBe("held");
+        expect(result.text).toBe("request");
+        await expectOnTask(r, task.ref, result, words, instance);
         const report = await reportAt(r.report(instance));
         // The brief after `--` is the pointer, whose last line says the request comes with it.
-        expect(report.argv.at(-1)?.split("\n").at(-1)).toBe(REQUEST_LINE);
-        expect(report.read).toEqual({ code: 0, request: hex8(words) });
-        expect(r.lab.running.launches.requestState(result.launch.id)).toBe("read");
-        await expectOnlyHeld(r, marker, result.launch.id);
-
-        // The agent ends: its launch's folder goes, the request with it.
+        const brief = report.argv.at(-1) ?? "";
+        expect(brief.split("\n").at(-1)).toBe(REQUEST_LINE);
+        expect(report.read).toEqual({
+          code: 0,
+          request: hex8(shown(words)),
+          note: result.note,
+          cut: cutOf(words),
+        });
+        // Asked again, the same.
+        expect((await cliShow(r, brief)).request).toEqual({
+          note: result.note,
+          text: shown(words),
+          cut: cutOf(words),
+        });
+        await expectOnlyInSpace(r, marker);
         writeFileSync(r.release, "");
-        await waitFor(
-          () => (requestFiles(r).length === 0 ? true : undefined),
-          LONG_MS,
-          "the request's removal",
-        );
-        expect(filesWith(r, marker)).toEqual([]);
-        // The page still learns that it was read.
-        expect(r.lab.running.launches.requestState(result.launch.id)).toBe("read");
       },
     );
   }
 
   test(
-    "a second Open of the app while its launch opens or its agent runs is that launch, and holds none of its own words; Open another starts a second session",
+    "a second Open of the app while its launch opens or its agent runs is that launch, and its words are a note of the person's; Open another starts a second session",
     { timeout: 600_000 },
     async () => {
+      opened.length = 0;
       const r = await rig("request-join");
       const task = await addTask(r, "folder-join");
       const marker = newMarker();
       const words = requestOf(marker);
       const first = await open(r, { task: task.ref, instance: "claude", text: words });
-      expect(first.text).toBe("held");
-      const other = newMarker();
-      // At once: the launch is still opening, or its agent already runs. Either way it is joined.
-      const second = await open(r, { task: task.ref, instance: "claude", text: other });
+      expect(first.text).toBe("request");
+      // At once: the launch is still opening, or its agent already runs. Either way it is joined,
+      // and a retry of that click after a lost answer says the same of the same note.
+      const other = `${newMarker()} other words ${JOINED}`;
+      const secondId = rid();
+      const second = await open(r, { task: task.ref, instance: "claude", text: other }, secondId);
       expect(second.launch.id).toBe(first.launch.id);
-      expect(second.text).toBe("none");
+      expect(second.text).toBe("note");
+      expect(second.note).not.toBe(first.note);
+      const retried = await open(r, { task: task.ref, instance: "claude", text: other }, secondId);
+      expect(retried).toMatchObject({
+        launch: { id: first.launch.id },
+        text: "note",
+        note: second.note,
+      });
       const report = await reportAt(r.report("claude"));
-      expect(report.read).toEqual({ code: 0, request: hex8(words) });
+      expect(report.read).toEqual({
+        code: 0,
+        request: hex8(shown(words)),
+        note: first.note,
+        cut: cutOf(words),
+      });
       const { launches } = r.lab.running;
       await r.lab.waitIntent(first.launch.id, (i) => i.state === "confirmed", "Confirmed");
       expect(launches.running(first.launch.id)).toBe(true);
       // A page that still showed Ready, or a command line's Open: the running session.
-      const third = await open(r, { task: task.ref, instance: "claude", text: other });
+      const late = `${newMarker()} late words ${JOINED}`;
+      const third = await open(r, { task: task.ref, instance: "claude", text: late });
       expect(third.launch.id).toBe(first.launch.id);
-      expect(third.text).toBe("none");
-      await expectOnlyHeld(r, marker, first.launch.id);
-      expect(filesWith(r, other)).toEqual([]);
+      expect(third.text).toBe("note");
+      const notes = await notesOf(r, task.ref);
+      for (const [result, text] of [
+        [second, other],
+        [third, late],
+      ] as const) {
+        const note = notes.find((n) => n.ref === result.note);
+        expect(note).toMatchObject({ author: "user", for_agents: false, text });
+        expect(note?.request_for).toBeUndefined();
+      }
+      await expectOnlyInSpace(r, marker);
       // The person's explicit choice, offered once the session is confirmed: a second agent.
       const another = await open(r, { task: task.ref, instance: "claude", another: true });
       expect(another.launch.id).not.toBe(first.launch.id);
@@ -462,33 +560,29 @@ describe("[A4.5.routes.request] what a person types before Open reaches the agen
   );
 
   test(
-    "Codex's assisted open: no prompt on the command line, the brief to paste points at the request, which the agent reads exactly",
+    "Codex's assisted open: no prompt on the command line, the brief to paste points at the request, which the agent reads",
     { timeout: 600_000 },
     async () => {
       opened.length = 0;
       const r = await rig("request-assisted");
       const task = await addTask(r, "folder-assisted");
       const marker = newMarker();
-      const words = requestOf(marker);
+      const words = requestOf(marker, 3_000);
       const result = await open(r, { task: task.ref, instance: "codex-assisted", text: words });
-      expect(result.text).toBe("held");
+      expect(result.text).toBe("request");
       // The brief goes on the clipboard in the person's click: a pointer, without the words.
       expect(result.copy?.split("\n").at(-1)).toBe(REQUEST_LINE);
       expect(result.copy).not.toContain(marker);
       const report = await reportAt(r.report("codex-assisted"));
       expect(report.argv).not.toContain("--");
       // The person pastes the brief; the agent reads the task with its reference.
-      const reference = briefReference(result.copy ?? "") ?? "";
-      expect(reference).toBe(result.launch.reference);
-      await expectOnlyHeld(r, marker, result.launch.id);
-      expect((await cliShow(r, result.copy ?? "")).request).toBe(words);
-      expect(r.lab.running.launches.requestState(result.launch.id)).toBe("read");
+      expect(briefReference(result.copy ?? "")).toBe(result.launch.reference);
+      await expectOnlyInSpace(r, marker);
+      expect((await cliShow(r, result.copy ?? "")).request).toEqual({
+        note: result.note,
+        text: words,
+      });
       writeFileSync(r.release, "");
-      await waitFor(
-        () => (requestFiles(r).length === 0 ? true : undefined),
-        LONG_MS,
-        "the request's removal",
-      );
     },
   );
 
@@ -498,7 +592,7 @@ describe("[A4.5.routes.request] what a person types before Open reaches the agen
     ["codex-app", "prompt"],
   ] as const) {
     test(
-      `${instance}: the link carries the pointer only, the app's agent gets the request whole with get_task, and it goes once the launch reference no longer binds`,
+      `${instance}: the link carries the pointer only, and the app's agent gets the request with get_task, as often as it asks`,
       { timeout: 600_000 },
       async () => {
         opened.length = 0;
@@ -506,44 +600,37 @@ describe("[A4.5.routes.request] what a person types before Open reaches the agen
         const task = await addTask(r, `folder-${instance}`);
         const folder = join(r.lab.work, `folder-${instance}`);
         const marker = newMarker();
-        const words = requestOf(marker);
+        const words = requestOf(marker, 6_000);
         const result = await open(r, { task: task.ref, instance, text: words });
-        expect(result.text).toBe("held");
+        expect(result.text).toBe("request");
         await r.lab.waitIntent(result.launch.id, (i) => i.state === "dispatched", "Dispatched");
         expect(opened).toHaveLength(1);
         const url = opened[0]?.argv.at(-1) ?? "";
         const prefill = new URL(url).searchParams.get(key) ?? "";
         expect(prefill.split("\n").at(-1)).toBe(REQUEST_LINE);
         if (result.copy !== undefined) expect(result.copy).not.toContain(marker);
-        expect(r.lab.running.launches.requestState(result.launch.id)).toBe("waiting");
-        await expectOnlyHeld(r, marker, result.launch.id);
+        await expectOnlyInSpace(r, marker);
 
         const agent = await mcpAgent(r, folder);
-        const got = await agent.getTask(result.launch.reference);
+        const got = await agent.getTask({ launch: result.launch.reference });
         expect(got.bound).toBe(true);
-        expect(got.request).toBe(words);
-        // The tool's text holds every line whole, as typed.
+        expect(got.request).toEqual({ note: result.note, text: words });
+        // The tool's text holds every line whole, as typed, as the person's request.
         const text = renderResult("task.get", got);
+        expect(text).toContain("Request from the user for this launch:");
         for (const line of words.split("\n")) expect(text).toContain(`  ${line}`);
-        expect(r.lab.running.launches.requestState(result.launch.id)).toBe("read");
+        // The same call again, and an agent of the app without the tools: the same words.
+        expect((await agent.getTask({ launch: result.launch.reference })).request).toEqual(
+          got.request,
+        );
         agent.close();
-        // An agent of the app without the tools runs the command the link's brief names.
-        expect((await cliShow(r, prefill)).request).toBe(words);
-
-        // Kept while the reference binds, also across a restart; gone at the first round after.
-        await r.lab.stopService();
-        await r.lab.start();
-        expect(requestFiles(r)).toHaveLength(1);
-        r.lab.skew += DAY_MS + 1_000;
-        await settle(r);
-        expect(requestFiles(r)).toEqual([]);
-        expect(filesWith(r, marker)).toEqual([]);
+        expect((await cliShow(r, prefill)).request).toEqual(got.request);
       },
     );
   }
 
   test(
-    "Copy puts the words on the clipboard in the person's click, and holds nothing",
+    "Copy puts the words on the clipboard in the person's click, and saves nothing",
     { timeout: 300_000 },
     async () => {
       const r = await rig("request-copy");
@@ -552,57 +639,203 @@ describe("[A4.5.routes.request] what a person types before Open reaches the agen
       const words = requestOf(marker, 2_000);
       const result = await open(r, { task: task.ref, text: words });
       expect(result.text).toBe("inline");
+      expect(result.note).toBeUndefined();
       // Copy's brief keeps no hidden character, an emoji's joiner included: the rest as typed.
       expect(result.copy?.split("\n").slice(6, 8)).toEqual(words.split("\n").slice(0, 2));
-      expect(requestFiles(r)).toEqual([]);
-      expect(filesWith(r, marker)).toEqual([]);
+      expect(await notesOf(r, task.ref)).toEqual([]);
+      expect(filesOutsideWith(r, marker)).toEqual([]);
     },
   );
 });
 
-describe("[A4.5.routes.request-restart] a request a crashed service left is removed at its next start once its launch no longer needs it", () => {
+describe("[A4.5.routes.request-task] the request is task data from the click: what used to lose it cannot", () => {
   test(
-    "a terminal launch whose agent ended while the service was down, and a link launch past its day",
+    "a service stopped right after the click: the words are on the task when it starts again, and the launch still names them",
     { timeout: 600_000 },
     async () => {
       opened.length = 0;
-      const r = await rig("request-restart");
-      const task = await addTask(r, "folder-restart");
-      const other = await addTask(r, "folder-restart-link");
-      const terminal = await open(r, {
-        task: task.ref,
-        instance: "claude",
-        text: requestOf(newMarker(), 500),
-      });
-      await reportAt(r.report("claude"));
-      const link = await open(r, {
-        task: other.ref,
-        instance: "desktop",
-        text: requestOf(newMarker(), 500),
-      });
-      await r.lab.waitIntent(link.launch.id, (i) => i.state === "dispatched", "Dispatched");
-      const held = () => requestFiles(r).map((path) => basename(dirname(path)));
-      expect(held().sort()).toEqual([terminal.launch.id, link.launch.id].sort());
-
-      // The service goes away without a word to anyone; the agent ends meanwhile.
+      const r = await rig("request-stop");
+      const task = await addTask(r, "folder-stop");
+      const words = requestOf(newMarker(), 500);
+      const result = await open(r, { task: task.ref, instance: "desktop", text: words });
       await r.lab.stopService();
-      writeFileSync(r.release, "");
-      expect(held().sort()).toEqual([terminal.launch.id, link.launch.id].sort());
-
-      // The next start: the ended launch's request goes with its folder; the link's still binds.
       await r.lab.start();
-      await waitFor(
-        () => (held().length === 1 ? true : undefined),
-        LONG_MS,
-        "the ended launch's request removed",
-      );
-      expect(held()).toEqual([link.launch.id]);
+      const user = await classSession(r.lab.home, r.lab.running.endpoint.path, "cli-interactive");
+      sessions.push(user);
+      await expectOnTask({ ...r, user }, task.ref, result, words, "desktop");
+    },
+  );
 
-      // A start a day later: the link's reference no longer binds, and its request goes too.
-      await r.lab.stopService();
+  test(
+    "an answer lost, the page opened again under a new sign-in, the same click again: one launch and one note",
+    { timeout: 600_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("request-signin");
+      const task = await addTask(r, "folder-signin");
+      const words = requestOf(newMarker(), 500);
+      const requestId = rid();
+      const asPage = async (grant: string): Promise<Opened> =>
+        (await opCall(
+          r.lab.running.ops,
+          { class: "ui", env: {}, grant },
+          {
+            space: r.lab.spaceId,
+            op: "launch.open",
+            input: { task: task.ref, instance: "desktop", text: words, request_id: requestId },
+          },
+        )) as Opened;
+      const first = await asPage(`gr_${randomBytes(16).toString("hex")}`);
+      const again = await asPage(`gr_${randomBytes(16).toString("hex")}`);
+      expect(again).toMatchObject({ launch: { id: first.launch.id }, text: "request" });
+      expect(again.note).toBe(first.note);
+      expect((await notesOf(r, task.ref)).map((n) => n.ref)).toEqual([first.note]);
+    },
+  );
+
+  test(
+    "a get_task the agent never got, a launch past its day: nothing is marked, the request is served again, and nothing expires",
+    { timeout: 600_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("request-day");
+      const task = await addTask(r, "folder-day");
+      const folder = join(r.lab.work, "folder-day");
+      const marker = newMarker();
+      const words = requestOf(marker, 500);
+      const result = await open(r, { task: task.ref, instance: "desktop", text: words });
+      await r.lab.waitIntent(result.launch.id, (i) => i.state === "dispatched", "Dispatched");
+      const agent = await mcpAgent(r, folder);
+      // An answer the agent never receives (a call it cancelled) is an answer like the next.
+      await agent.getTask({ launch: result.launch.reference });
+      expect((await agent.getTask({ launch: result.launch.reference })).request).toEqual({
+        note: result.note,
+        text: words,
+      });
+      agent.close();
+
+      // A day and more later, after rounds of the service: the request is on the task.
       r.lab.skew += DAY_MS + 1_000;
-      await r.lab.start();
-      await waitFor(() => (held().length === 0 ? true : undefined), LONG_MS, "the link's request");
+      await r.lab.running.launches.tick();
+      await r.lab.running.launches.tick();
+      await expectOnTask(r, task.ref, result, words, "desktop");
+      expect(filesOutsideWith(r, marker)).toEqual([]);
+    },
+  );
+
+  test(
+    "a second session with the launch's pointer is refused it; a session that loads the task sees the request as history, with its launch",
+    { timeout: 600_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("request-sessions");
+      const task = await addTask(r, "folder-sessions");
+      const folder = join(r.lab.work, "folder-sessions");
+      const result = await open(r, { task: task.ref, instance: "desktop", text: "Fix the offset" });
+      await r.lab.waitIntent(result.launch.id, (i) => i.state === "dispatched", "Dispatched");
+      const own = await mcpAgent(r, folder);
+      expect((await own.getTask({ launch: result.launch.reference })).request?.text).toBe(
+        "Fix the offset",
+      );
+      const other = await mcpAgent(r, folder);
+      await expect(other.getTask({ launch: result.launch.reference })).rejects.toMatchObject({
+        code: "launch_used",
+      });
+      const loaded = await other.getTask({ task: task.ref });
+      expect(loaded.request).toBeUndefined();
+      expect(loaded.task.notes).toEqual([
+        expect.objectContaining({
+          ref: result.note,
+          text: "Fix the offset",
+          request_for: [{ launch: result.launch.reference, instance: "desktop" }],
+        }),
+      ]);
+      const text = renderResult("task.get", loaded);
+      expect(text).not.toContain("Request from the user for this launch");
+      expect(text).toContain(`(request for launch ${result.launch.reference} [desktop])`);
+      own.close();
+      other.close();
+    },
+  );
+
+  test(
+    "one undo takes back the request and nothing else; Open again with the note writes no second one",
+    { timeout: 600_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("request-undo");
+      const task = await addTask(r, "folder-undo");
+      const folder = join(r.lab.work, "folder-undo");
+      const result = await open(r, { task: task.ref, instance: "desktop", text: "Fix the offset" });
+      await r.lab.waitIntent(result.launch.id, (i) => i.state === "dispatched", "Dispatched");
+      // Open again with the same note, in another app.
+      const again = await open(r, {
+        task: task.ref,
+        instance: "codex-app",
+        request: result.note,
+      });
+      expect(again).toMatchObject({ text: "request", note: result.note });
+      expect(again.launch.id).not.toBe(result.launch.id);
+      expect((await notesOf(r, task.ref)).map((n) => n.request_for?.map((l) => l.launch))).toEqual([
+        [result.launch.reference, again.launch.reference],
+      ]);
+
+      await call(r, "history.undo", {});
+      expect(await notesOf(r, task.ref)).toEqual([]);
+      // The launches stay as they were, with no request to give.
+      const state = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
+      expect(state?.state).toBe("dispatched");
+      const agent = await mcpAgent(r, folder);
+      expect((await agent.getTask({ launch: result.launch.reference })).request).toBeUndefined();
+      agent.close();
+      // The folder is still the task's: the undo took the note only.
+      const digest = (await r.user.call(
+        "op/call",
+        { space: r.lab.spaceId, op: "task.get", input: { task: task.ref } },
+        { timeoutMs: 60_000 },
+      )) as { task: { folder?: { path: string } } };
+      expect(digest.task.folder?.path).toBeDefined();
+      // A note that is gone is no request to open again.
+      expect(
+        errorOf(
+          await open(r, { task: task.ref, instance: "desktop", request: result.note }).catch(
+            (e: unknown) => e,
+          ),
+        ),
+      ).toMatchObject({ code: "not_found" });
+    },
+  );
+
+  test(
+    "a refused click writes nothing: no route here, a folder that is gone, a marker that is gone",
+    { timeout: 600_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("request-refused");
+      const task = await addTask(r, "folder-refused");
+      const refusedWith = async (input: Record<string, unknown>): Promise<unknown> =>
+        errorOf(
+          await open(r, { task: task.ref, text: "Fix it", ...input }).catch((e: unknown) => e),
+        );
+      expect(await refusedWith({ instance: "not-here" })).toMatchObject({
+        data: { reason: "not_set_up" },
+      });
+      // The folder's checkout is moved aside: a terminal and a link find no folder.
+      renameSync(join(r.lab.work, "folder-refused"), join(r.lab.work, "folder-aside"));
+      for (const instance of ["claude", "desktop"]) {
+        expect(await refusedWith({ instance }), instance).toMatchObject({
+          data: { reason: "path_missing" },
+        });
+      }
+      // Another folder at the same path: its marker is not the task's.
+      mkdirSync(join(r.lab.work, "folder-refused"));
+      for (const instance of ["claude", "desktop"]) {
+        expect(await refusedWith({ instance }), instance).toMatchObject({
+          data: { reason: "marker_missing" },
+        });
+      }
+      expect(await notesOf(r, task.ref)).toEqual([]);
+      expect(opened).toEqual([]);
     },
   );
 });

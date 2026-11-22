@@ -5,8 +5,8 @@
 // the task through the tools, which label what came from outside.
 //
 // The person's words go two ways. An Open route never carries them: the brief's last line says
-// that the request comes with the task, and the caller holds the words for the agent (`held`),
-// which the tools serve with the launch. Copy puts them on the clipboard in the person's own
+// that the request comes with the task, where the caller saves the words as the launch's request
+// (`request`), which the tools serve with the launch. Copy puts them on the clipboard in the person's own
 // click, after the pointer, keeping their line breaks; over Copy's budget they become a note
 // addressed to agents (the caller saves it) and the last line points at it.
 //
@@ -78,11 +78,11 @@ export type Brief =
        */
       readonly hash: string;
       /**
-       * Where the composer text went: none was given, into Copy's brief, into a note, or `held`:
-       * an Open route's brief says the request comes with the task, and the caller holds it.
+       * Where the composer text went: none was given, into Copy's brief, into a note, or `request`:
+       * an Open route's brief says the request comes with the task, where the caller saves it.
        */
       readonly composer: BriefComposer;
-      /** The composer text as it was used (sanitised), for the caller's note or to hold. */
+      /** The composer text as it was used (sanitised for Copy), for the caller to save. */
       readonly composerText: string | undefined;
       /** The sanitiser removed something from the composer text (the UI's quiet notice). */
       readonly removed: boolean;
@@ -90,7 +90,7 @@ export type Brief =
   /** Over the route's budget even without the composer text: the route cannot carry it. */
   | { readonly status: "too_long" };
 
-export type BriefComposer = "none" | "inline" | "note" | "held";
+export type BriefComposer = "none" | "inline" | "note" | "request";
 
 /** Stands for the launch reference in the hashed text. */
 export const REFERENCE_SLOT = "{{launch.ref}}";
@@ -106,7 +106,7 @@ const NAME = /^[a-z][a-z0-9_ -]{0,63}$/;
 export const WAIT_LINE = "Read the task, then wait for my instructions.";
 /** The last line when the composer text was saved as a note (A4 3.15.3). */
 export const NOTE_LINE = "Read my latest note on the task first.";
-/** The last line of an Open route's brief when the person's words are held for the agent. */
+/** The last line of an Open route's brief when the person's words are the launch's request. */
 export const REQUEST_LINE = "Load it now: my request for this launch comes with it.";
 
 /** The fixed lines every brief starts with (A4 3.15.2). */
@@ -206,11 +206,11 @@ export function renderBrief(input: BriefInput): Brief {
   if (!Number.isSafeInteger(input.budget) || input.budget <= 0) throw new Error("Not a budget");
 
   if (input.kind !== "pointer") {
-    // Held as typed: the words never stand in the brief, so nothing of them needs a fence.
+    // Saved as typed: the words never stand in the brief, so nothing of them needs a fence.
     const words = input.composer?.trim() === "" ? undefined : input.composer;
     const text = compose(input, input.reference, words === undefined ? undefined : REQUEST_LINE);
     if (text.length > input.budget) return { status: "too_long" };
-    return done(input, text, words === undefined ? "none" : "held", words, false);
+    return done(input, text, words === undefined ? "none" : "request", words, false);
   }
   const given = input.composer === undefined ? undefined : sanitiseComposer(input.composer);
   const composer = given !== undefined && given.text.trim() !== "" ? given.text : undefined;
@@ -230,7 +230,7 @@ const MARKS: Readonly<Record<BriefComposer, string | undefined>> = {
   none: undefined,
   inline: COMPOSER_MARK,
   note: NOTE_LINE,
-  held: REQUEST_LINE,
+  request: REQUEST_LINE,
 };
 
 function done(

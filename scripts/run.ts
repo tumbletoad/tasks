@@ -1,6 +1,6 @@
 // Runs the repository's tools with the current Node binary. Never through a shell and never through
-// the .cmd shims in node_modules/.bin, so the same call works on Windows and Linux (A4, A7 3.3).
-import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+// the .cmd shims in node_modules/.bin, so the same call works on Windows and Linux.
+import { spawn, spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,4 +41,28 @@ export function runNode(
   });
   if (result.error) throw result.error;
   return result;
+}
+
+/** What a command run with `runNodeCaptured` printed, stdout and stderr in the order they came. */
+export interface Captured {
+  status: number | null;
+  output: string;
+}
+
+/** Runs `node <script> <args>` with the running Node binary, without waiting, output captured. */
+export function runNodeCaptured(script: string, args: readonly string[]): Promise<Captured> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [script, ...args], {
+      cwd: repoRoot,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    const chunks: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.on("error", reject);
+    child.on("close", (status) => {
+      resolve({ status, output: Buffer.concat(chunks).toString("utf8") });
+    });
+  });
 }

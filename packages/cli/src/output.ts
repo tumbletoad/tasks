@@ -107,6 +107,12 @@ function finished(lifecycle: unknown): string | undefined {
   return undefined;
 }
 
+/** A line break as the tools' text answers split a request on (mcp/render.ts). */
+const LINE_BREAK = /\r\n|[\n\r\p{Zl}\p{Zp}]/u;
+
+/** An entry's text: a line after its first stays indented under the entry, never at the margin. */
+const entryText = (text: unknown): string => String(text).split(LINE_BREAK).join("\n    ");
+
 /** One task: its one state (the status while it is active), its priority, due date and inbox. */
 function taskLine(task: Result): string {
   const parts = [finished(task["lifecycle"]) ?? str(task["status"]), `p${str(task["priority"])}`];
@@ -328,10 +334,16 @@ export function render(entry: string, result: Result, space: string): string {
     case "task.get": {
       const task = (result["task"] ?? {}) as Result;
       lines.push(taskLine(task));
-      // The user's request for the launch named: whole, each line as typed after an indent.
-      if (typeof result["request"] === "string") {
+      // The user's request for the launch named: each line as typed after an indent.
+      const request = result["request"] as Result | undefined;
+      if (typeof request?.["text"] === "string") {
         lines.push("Request from the user for this launch:");
-        for (const line of result["request"].split("\n")) lines.push(`  ${line}`);
+        for (const line of request["text"].split(LINE_BREAK)) lines.push(`  ${line}`);
+        if (typeof request["cut"] === "number") {
+          lines.push(
+            `  ... (+${String(request["cut"])} chars) The rest is note ${String(request["note"])}: --section notes.`,
+          );
+        }
       }
       if (typeof task["summary"] === "string" && task["summary"] !== "")
         lines.push(`  ${task["summary"]}`);
@@ -349,7 +361,7 @@ export function render(entry: string, result: Result, space: string): string {
       }
       const sections = (result["sections"] ?? task) as Result;
       for (const note of (sections["instructions"] as Result[] | undefined) ?? []) {
-        lines.push(`  ${String(note["ref"])} user → agents: ${String(note["text"])}`);
+        lines.push(`  ${String(note["ref"])} user → agents: ${entryText(note["text"])}`);
       }
       if (typeof sections["context"] === "string" && sections["context"] !== "") {
         lines.push("", sections["context"]);
@@ -360,13 +372,18 @@ export function render(entry: string, result: Result, space: string): string {
         );
       }
       for (const note of (sections["notes"] as Result[] | undefined) ?? []) {
+        const launches = (note["request_for"] as Result[] | undefined) ?? [];
+        const asked =
+          launches.length === 0
+            ? ""
+            : ` (request for ${launches.map((l) => `launch ${String(l["launch"])} [${String(l["instance"])}]`).join(", ")})`;
         lines.push(
-          `  ${String(note["ref"])} ${String(note["author"])}${note["for_agents"] === true ? " → agents" : ""}: ${String(note["text"])}`,
+          `  ${String(note["ref"])} ${String(note["author"])}${note["for_agents"] === true ? " → agents" : ""}${asked}: ${entryText(note["text"])}`,
         );
       }
       for (const entry of (sections["log"] as Result[] | undefined) ?? []) {
         lines.push(
-          `  ${String(entry["ref"])} ${String(entry["kind"])} ${String(entry["author"])}: ${String(entry["text"])}`,
+          `  ${String(entry["ref"])} ${String(entry["kind"])} ${String(entry["author"])}: ${entryText(entry["text"])}`,
         );
       }
       for (const row of (sections["history"] as Result[] | undefined) ?? []) {

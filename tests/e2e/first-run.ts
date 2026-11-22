@@ -25,9 +25,6 @@ const ENTRY = fileURLToPath(new URL("./serve-entry.ts", import.meta.url));
 /** Generous bounds: a loaded machine must not fail a test that is only slow. */
 export const SLOW_MS = 120_000;
 
-const REDEEMS_PER_WINDOW = 10;
-const REDEEM_WINDOW_MS = 60_000;
-
 export interface FreshWorld {
   readonly origin: string;
   /** The scratch home the agent apps are found in. */
@@ -92,7 +89,6 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
     const origin = `http://127.0.0.1:${String(http.port)}`;
     const user = await classSession(home, endpoint, "cli-interactive");
     sessions.push(user);
-    const redeems: number[] = [];
     let token: string | undefined;
     let ops = 0;
     const read = (path: string): string => (existsSync(path) ? readFileSync(path, "utf8") : "");
@@ -103,22 +99,12 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
       agentHome,
       spaces: join(home, "spaces"),
       signInUrl: async (to) => {
-        // The service redeems at most 10 codes a minute: wait for room rather than be signed out.
-        const now = Date.now();
-        while (redeems.length > 0 && (redeems[0] ?? 0) <= now - REDEEM_WINDOW_MS) redeems.shift();
-        if (redeems.length >= REDEEMS_PER_WINDOW) {
-          const wait = (redeems[0] ?? now) + REDEEM_WINDOW_MS + 250 - now;
-          await new Promise((resolve) => setTimeout(resolve, wait));
-          redeems.shift();
-        }
-        redeems.push(Date.now());
         const minted = (await userCall("ui/mint_code", {})) as { code: string; port: number };
         return `http://127.0.0.1:${String(minted.port)}/#k=${minted.code}&to=${encodeURIComponent(to)}`;
       },
       machine: async (key, value) => {
         const port = Number(new URL(origin).port);
         if (token === undefined) {
-          redeems.push(Date.now());
           const minted = (await userCall("ui/mint_code", {})) as { code: string };
           const signed = await post(port, "/api/v1/auth/redeem", { code: minted.code });
           token = (JSON.parse(signed.body) as { token: string }).token;

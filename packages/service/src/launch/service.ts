@@ -36,7 +36,6 @@ import {
   isUncPath,
   customReady,
   LaunchMachine,
-  LaunchRequests,
   MATCH_POLL_MS,
   MATCH_WINDOW_MS,
   needsDefault,
@@ -55,7 +54,6 @@ import {
   regPath,
   renderBrief,
   renderContextPack,
-  REQUEST_KEEP_MS,
   resolveLaunchFolder,
   routeOf,
   sanitiseComposer,
@@ -68,6 +66,7 @@ import {
   terminalEnvironment,
   UserEnvironment,
   type Brief,
+  type BriefComposer,
   type BriefFolder,
   type Instance,
   type AgentBase,
@@ -92,7 +91,6 @@ import {
   type ProcessProbe,
   type RecordStore,
   type ReportMethod,
-  type RequestState,
   type Route,
   type SpawnPlan,
 } from "@ttasks/launch";
@@ -368,8 +366,6 @@ export class LaunchService {
     string,
     { readonly space: string; readonly match: ReferenceMatch; readonly at: number }
   >();
-  /** The person's words for each launch's agent, in the launch's own folder (requests.ts). */
-  readonly #requests: LaunchRequests;
   readonly #timers = new Set<NodeJS.Timeout>();
   readonly #listeners = new Set<(space: string) => void>();
   /** `launch.open` calls under way, by space and request ID: the last of each queue. */
@@ -377,7 +373,6 @@ export class LaunchService {
 
   constructor(options: LaunchServiceOptions) {
     this.#options = options;
-    this.#requests = new LaunchRequests(options.root);
     this.environment = options.environment ?? defaultEnvironment(options);
     this.host = new ShimHost({
       records: options.records ?? new FolderRecords(options.root),
@@ -663,7 +658,20 @@ export class LaunchService {
       const runs = await this.#sessions(space, hosted);
       const session = runs.find((i) => i.task === task.id && i.instance === request.instance);
       if (session !== undefined) {
-        return { intent: session, copy: undefined, composer: "none", removed: false };
+        // That agent never gets this click's words: they stay on the task, a note of the person's,
+        // saved as typed like a new launch's request, since they never stand in a brief.
+        const words = request.composer;
+        const given = words !== undefined && words.trim() !== "";
+        const note = given
+          ? await this.#saveWords(request, { composer: "request", composerText: words })
+          : undefined;
+        return {
+          intent: session,
+          copy: undefined,
+          composer: composerOf(given ? "request" : "none", note, session),
+          ...(note === undefined ? {} : { note }),
+          removed: false,
+        };
       }
     }
     const { platform } = this.#options;
@@ -703,10 +711,6 @@ export class LaunchService {
     // the same lines and the same hash (the hash holds the reference as a slot).
     const probe = brief(REFERENCE_LENGTH_STAND_IN);
     if (probe.status !== "ok") throw this.#unavailable("too_long");
-    // Copy's words over its budget: saved before the intent is recorded.
-    if (probe.composer === "note" && probe.composerText !== undefined) {
-      await request.saveNote(probe.composerText);
-    }
 
     // The terminal route's plan: the agent's argv with the brief, kept in machine state.
     const session =
@@ -746,8 +750,17 @@ export class LaunchService {
       if (checkPlan(planFor(REFERENCE_LENGTH_STAND_IN)) === undefined) {
         throw new Error("The spawn plan is not one the shim can start");
       }
+      // The terminal's folder is the last check of a new click: a refused click saves nothing.
+      await this.#preflight(space, hosted, requestId, folder);
     }
 
+    // The person's words are on the task before the launch is recorded, so a launch that fails, a
+    // service that stops, or a page that closes never loses them.
+    const note = await this.#saveWords(request, probe);
+    const evidence = {
+      ...(session === undefined ? {} : { preset: session }),
+      ...(probe.composer === "request" && note !== undefined ? { request: note } : {}),
+    };
     const click: Omit<NewIntent, "machine"> = {
       task: task.id,
       instance: instance?.id ?? COPY_INSTANCE,
@@ -755,33 +768,16 @@ export class LaunchService {
       place: null,
       taskVersion: task.version,
       briefHash: probe.hash,
-      ...(session === undefined ? {} : { evidence: { preset: session } }),
+      ...(Object.keys(evidence).length === 0 ? {} : { evidence }),
     };
     const planned = planFor;
     let intent =
       planned === undefined
         ? await hosted.machine.open(click, requestId)
-        : await this.#openWith(space, hosted, click, requestId, folder, (i) =>
-            planned(i.reference),
-          );
+        : await this.#openWith(space, hosted, click, requestId, (i) => planned(i.reference));
     const text = brief(intent.reference);
     if (text.status !== "ok") throw this.#unavailable("too_long");
-    // The person's words wait for the agent in the launch's own folder before anything starts. A
-    // launch that started already takes no new request.
-    let composer = probe.composer;
-    if (composer === "held") {
-      const words = probe.composerText;
-      const route = choice.route;
-      const held =
-        words !== undefined &&
-        intent.state === "prepared" &&
-        (route === "terminal" || route === "link") &&
-        this.#requests.put(
-          { space, launch: intent.id, route, at: (this.#options.now ?? Date.now)() },
-          words,
-        );
-      if (!held) composer = "none";
-    }
+    const composer = composerOf(probe.composer, note, intent);
     if (choice.route === "link" && intent.state === "prepared" && !this.#links.has(intent.id)) {
       const link =
         instance !== undefined && isBuiltInTarget(instance.target)
@@ -818,25 +814,9 @@ export class LaunchService {
       intent,
       copy: choice.copy ? text.text : undefined,
       composer,
+      ...(note === undefined ? {} : { note }),
       removed: probe.removed,
     };
-  }
-
-  /**
-   * The words the person typed for a launch's agent, for a call that names the launch by its
-   * reference (`task.get`), and that the agent read them: the page then clears its field.
-   * Undefined when none are held for it.
-   */
-  requestFor(space: string, launch: string): string | undefined {
-    const text = this.#requests.text(space, launch);
-    if (text === undefined) return undefined;
-    if (this.#requests.markRead(launch)) this.#changed(space);
-    return text;
-  }
-
-  /** Where a launch's request is: waiting, read, gone unread, or undefined when none is known. */
-  requestState(launch: string): RequestState {
-    return this.#requests.state(launch);
   }
 
   /** Whether the launch's session runs now: its shim is here, attached, and its agent started. */
@@ -885,25 +865,21 @@ ${instance}`;
   }
 
   /**
-   * Removes the requests no launch needs any more: a terminal launch's once its machine state is
-   * gone (it ended, or never dispatched), a link launch's once it failed or its reference no longer
-   * binds. Runs with every round, so a restart removes what an ended launch left.
+   * Saves the person's words as a note of theirs on the task and gives its reference: an Open
+   * route's request, or Copy's words over its budget, addressed to agents. A request that names a
+   * note already on the task saves nothing. Undefined when the words go nowhere else.
    */
-  async #sweepRequests(): Promise<void> {
-    const now = (this.#options.now ?? Date.now)();
-    for (const held of this.#requests.list()) {
-      let keep: boolean;
-      if (held.route === "terminal") keep = this.host.record(held.launch) !== undefined;
-      else if (now - held.at >= REQUEST_KEEP_MS) keep = false;
-      else {
-        const intent = await this.read(held.space, held.launch).catch(() => undefined);
-        keep = intent?.state !== "failed";
-      }
-      if (!keep) {
-        this.#requests.remove(held.launch);
-        this.#changed(held.space);
-      }
+  async #saveWords(
+    request: OpenTaskRequest,
+    brief: { readonly composer: BriefComposer; readonly composerText: string | undefined },
+  ): Promise<string | undefined> {
+    const words = brief.composerText;
+    if (brief.composer === "request") {
+      if (request.requestNote !== undefined) return request.requestNote;
+      return words === undefined ? undefined : request.saveNote(words, false);
     }
+    if (brief.composer === "note" && words !== undefined) return request.saveNote(words, true);
+    return undefined;
   }
 
   /**
@@ -1099,8 +1075,9 @@ ${instance}`;
    * A repeated `launch.open` (A1 3.8): the intent its request made, as it is now. A request ID
    * names one click, so another task or instance under it is refused as reused, whatever the
    * rest says. The text for the clipboard is rendered again for the intent's reference with the
-   * task as it is now, while the instance still takes the intent's route here. Nothing is saved,
-   * prepared or dispatched: the click that made the intent did that, or its intent expires.
+   * task as it is now, while the instance still takes the intent's route here. Nothing is prepared
+   * or dispatched: the click that made the intent did that, or its intent expires. The words' note
+   * is the one the click saved, which the same request finds again.
    */
   async #replay(
     space: string,
@@ -1122,29 +1099,25 @@ ${instance}`;
         choice = undefined;
       }
     }
+    const text =
+      choice?.route === intent.route
+        ? (await this.#briefOf(space, request, choice))(intent.reference)
+        : undefined;
+    const brief = text?.status === "ok" ? text : undefined;
     const given = request.composer?.trim() ?? "";
-    // An Open route's words are the launch's request, held since the first call, or gone. A click
-    // given an earlier click's launch held nothing of its own: words it sent that differ from the
-    // held ones are not its, so a retry of it never reports them held.
-    const stored = this.#requests.text(space, intent.id);
-    const held =
-      this.#requests.state(intent.id) !== undefined &&
-      (stored === undefined || stored === sanitiseComposer(request.composer ?? "").text);
-    const bare: OpenTaskResult = {
-      intent,
-      copy: undefined,
-      composer:
-        given === "" ? "none" : intent.route === "clipboard" ? "inline" : held ? "held" : "none",
-      removed: false,
-    };
-    if (choice?.route !== intent.route) return bare;
-    const text = (await this.#briefOf(space, request, choice))(intent.reference);
-    if (text.status !== "ok") return bare;
+    const kind: BriefComposer =
+      brief?.composer ??
+      (given === "" ? "none" : intent.route === "clipboard" ? "inline" : "request");
+    const note = await this.#saveWords(request, {
+      composer: kind,
+      composerText: brief?.composerText ?? request.composer,
+    });
     return {
       intent,
-      copy: choice.copy ? text.text : undefined,
-      composer: text.composer === "held" && !held ? "none" : text.composer,
-      removed: text.removed,
+      copy: brief !== undefined && choice?.copy === true ? brief.text : undefined,
+      composer: composerOf(kind, note, intent),
+      ...(note === undefined ? {} : { note }),
+      removed: brief?.removed ?? false,
     };
   }
 
@@ -1188,9 +1161,6 @@ ${instance}`;
     }
     await this.host.check().catch((error: unknown) => {
       this.#failed("check", error);
-    });
-    await this.#sweepRequests().catch((error: unknown) => {
-      this.#failed("sweep", error);
     });
     this.#pruneMatches();
     // A link click whose dispatch never ran: its intent expires in Prepared (A4 3.9.1).
@@ -1247,29 +1217,40 @@ ${instance}`;
     if (checkPlan(plan) === undefined) {
       throw new Error("The spawn plan is not one the shim can start");
     }
-    return this.#openWith(space, hosted, click, requestId, plan.folder, () => plan);
+    await this.#preflight(space, hosted, requestId, plan.folder);
+    return this.#openWith(space, hosted, click, requestId, () => plan);
   }
 
   /**
-   * A terminal click: the folder's preflight for a new request, the intent, then its spawn plan
-   * in machine state for a Prepared intent that has none. `planFor` builds the plan for the
-   * intent the store returned (its launch reference is the writer's).
+   * A new terminal click's folder must resolve now, or it is refused with the reason
+   * (`LaunchFolderUnavailable`). A repeated request is not checked: it makes no new intent.
+   */
+  async #preflight(
+    space: string,
+    hosted: { store: SpaceExecutionStore },
+    requestId: string,
+    folder: PlanFolder | null,
+  ): Promise<void> {
+    if (await hosted.store.decided(requestId)) return;
+    const where = await this.resolveFolder(space, folder);
+    if (where.status === "failed") {
+      this.#options.log.log("launch.folder_refused", { stage: "open", reason: where.reason });
+      throw new LaunchFolderUnavailable(where.reason, folder?.stored);
+    }
+  }
+
+  /**
+   * A terminal click: the intent, then its spawn plan in machine state for a Prepared intent that
+   * has none. `planFor` builds the plan for the intent the store returned (its launch reference is
+   * the writer's).
    */
   async #openWith(
     space: string,
     hosted: { machine: LaunchMachine; store: SpaceExecutionStore },
     click: Omit<NewIntent, "machine">,
     requestId: string,
-    folder: PlanFolder | null,
     planFor: (intent: LaunchIntent) => SpawnPlan,
   ): Promise<LaunchIntent> {
-    if (!(await hosted.store.decided(requestId))) {
-      const where = await this.resolveFolder(space, folder);
-      if (where.status === "failed") {
-        this.#options.log.log("launch.folder_refused", { stage: "open", reason: where.reason });
-        throw new LaunchFolderUnavailable(where.reason, folder?.stored);
-      }
-    }
     const intent = await hosted.machine.open(click, requestId);
     if (intent.route === "terminal" && intent.state === "prepared") {
       this.host.prepare(space, intent, planFor(intent));
@@ -1452,11 +1433,7 @@ ${instance}`;
       this.#refused("report", outcome.reason);
       throw answer(outcome.reason);
     }
-    if (outcome.ended) {
-      this.#attachments.delete(context.connection);
-      // The agent ended: its request is no use to anyone now.
-      this.#requests.remove(attachment.launch);
-    }
+    if (outcome.ended) this.#attachments.delete(context.connection);
     if (outcome.folder !== undefined) {
       this.#options.log.log("launch.folder_refused", { stage: "shim", reason: outcome.folder });
     }
@@ -1816,6 +1793,21 @@ ${instance}`;
       ...(code === undefined ? {} : { code }),
     });
   }
+}
+
+/**
+ * Where a click's words went, as the launch it got says: an Open route's words are its request only
+ * when the launch names their note. A second click that got the launch of an earlier one (A4
+ * 3.9.1) leaves them a note of the person's.
+ */
+function composerOf(
+  kind: BriefComposer,
+  note: string | undefined,
+  intent: LaunchIntent,
+): BriefComposer {
+  if (kind !== "request") return kind;
+  if (note === undefined) return "none";
+  return intent.evidence.request === note ? "request" : "note";
 }
 
 const isOpen = (space: ServedSpace): boolean =>

@@ -1,10 +1,10 @@
 // The composer: what the person types about a task, and the one strip under it where that text
-// goes. Note saves it as a note on the task. Open starts an agent instance on the task with the
-// text as its request, which TTasks holds for the agent and never puts on a command line or in a
-// link (without text it opens as the tile does). Copy puts the brief on the clipboard with the
-// text, Shift+Copy the context pack. Each clears the field once its text has gone somewhere: the
-// note was saved, the agent read the request, the brief is on the clipboard. Text typed meanwhile
-// stays. Until then the draft is kept (composer.ts), so a reload brings it back.
+// goes. Note saves it as a note on the task. Open saves it on the task as the request of the agent
+// it starts, which never goes on a command line or in a link (without text it opens as the tile
+// does). Copy puts the brief on the clipboard with the text, Shift+Copy the context pack. Each
+// clears the field once its text has gone somewhere: the note or the request is on the task, the
+// brief is on the clipboard. Text typed meanwhile stays. Until then the draft is kept
+// (composer.ts), so a reload brings it back. Near its limit the strip says how much more fits.
 //
 // Run starts an agent that works on the task in the background, without a window, with the text
 // as its request (without text it works on the task): one button for the first instance that can
@@ -15,7 +15,7 @@
 // that can (keymap.ts): never while an input method composes.
 import { useContext, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Button, Dialog, DialogTrigger, Popover, Toolbar } from "react-aria-components";
-import { requestId, type Instance, type Receipt } from "../api.ts";
+import { requestId, type Instance } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useMachine } from "../app/machine.ts";
@@ -36,11 +36,12 @@ import {
   keepNote,
   onAsk,
   onDraft,
+  onSaved,
   readDraft,
   readNote,
-  settled,
   wordsOf,
 } from "./composer.ts";
+import { openAsked, useUnansweredOpens } from "../views/unanswered.ts";
 import css from "./Expanded.module.css";
 
 const styles = classes(css, [
@@ -54,7 +55,11 @@ const styles = classes(css, [
   "others",
   "runMenu",
   "runItem",
+  "limit",
 ]);
+
+/** The strip says how much more fits once the field holds this much of DRAFT_MAX. */
+const LIMIT_SHOWN = DRAFT_MAX - 2_000;
 
 const STUBS: Readonly<Record<AskField, MessageId>> = {
   summary: "ask.summary",
@@ -66,14 +71,13 @@ const STUBS: Readonly<Record<AskField, MessageId>> = {
 
 export interface ComposerProps {
   readonly task: TaskRow;
-  readonly receipts: readonly Receipt[];
   /** What busies each agent app with the task on this machine. */
   readonly busy: BusyOf | undefined;
   readonly instances: readonly Instance[];
   readonly actions: RowActions;
 }
 
-export function Composer({ task, receipts, busy, instances, actions }: ComposerProps) {
+export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const t = useT();
   const say = useToast();
   const { api, live } = useContext(Session);
@@ -108,18 +112,15 @@ export function Composer({ task, receipts, busy, instances, actions }: ComposerP
     if (wordsOf(now.current) === words) setText("");
   };
 
-  // A launch that carries the words clears them once its agent read them. A failed one leaves them
-  // here, and one whose agent went on without reading them says so.
-  useEffect(() => {
-    for (const done of settled(space, task.id, receipts)) {
-      if (done.delivery === "reached") sent(done.words);
-      else if (done.delivery === "unread") {
-        const label =
-          instances.find((i) => i.key === done.receipt.instance)?.label ?? done.receipt.instance;
-        say(t("composer.notRead", { label }));
-      }
-    }
-  });
+  // An Open saved the words on the task, also one the person confirmed from a toast.
+  useEffect(
+    () =>
+      onSaved((saved) => {
+        if (saved.space === space && saved.task === task.id) sent(saved.words);
+      }),
+    // `sent` reads the field through a ref and the draft as it is kept: it never goes stale.
+    [space, task.id],
+  );
 
   // A request starts here: its stub follows what the person had written, which stays.
   useEffect(
@@ -153,6 +154,18 @@ export function Composer({ task, receipts, busy, instances, actions }: ComposerP
   );
 
   const words = wordsOf(text);
+  const unanswered = useUnansweredOpens(space, task.id);
+  /**
+   * An Open of these words in `instance` that got no answer, here, before a reload or in another
+   * tab: whether it asked for a second session. Undefined when there is none.
+   */
+  const retried = (instance: Instance): boolean | undefined => {
+    const asked = unanswered(instance.key);
+    const text = words === "" ? undefined : words;
+    if (asked === openAsked(false, text)) return false;
+    if (asked === openAsked(true, text)) return true;
+    return undefined;
+  };
 
   const addNote = () => {
     if (words === "") {
@@ -179,15 +192,20 @@ export function Composer({ task, receipts, busy, instances, actions }: ComposerP
     );
   };
 
+  /**
+   * Whether `instance`'s Open asks for a second session: as the unanswered Open of these words did,
+   * which pressing again repeats, else when the button says "Open another".
+   */
+  const another = (instance: Instance): boolean =>
+    retried(instance) ?? tileState(busy, instance.key) === "running";
+
   const open = (instance: Instance) => {
     if (opening.has(instance.key)) return;
     setOpening((known) => new Set(known).add(instance.key));
     const request = words;
-    // The button said "Open another": the person chose a second session.
-    const another = tileState(busy, instance.key) === "running";
-    // The launch carries the words from the open action (carry), so the field clears once its
-    // agent read them.
-    void actions.open(task, instance, request === "" ? undefined : request, another).then(() => {
+    // The open action says when the words are on the task (savedWords): the field clears then.
+    const carried = { ...(request === "" ? {} : { text: request }), another: another(instance) };
+    void actions.open(task, instance, carried).then(() => {
       setOpening((known) => {
         const next = new Set(known);
         next.delete(instance.key);
@@ -220,10 +238,12 @@ export function Composer({ task, receipts, busy, instances, actions }: ComposerP
   /**
    * Why an instance does not open now, as its tip says it; undefined when it opens. Only an Open on
    * its way holds it: a click then would return that very launch. A running session does not: the
-   * button says it opens another.
+   * button says it opens another. Nor does a launch on its way when an Open of these words got no
+   * answer: pressing again is that Open, which the page asked the person to do.
    */
   const held = (instance: Instance): string | undefined =>
-    opening.has(instance.key) || tileState(busy, instance.key) === "opening"
+    opening.has(instance.key) ||
+    (retried(instance) === undefined && tileState(busy, instance.key) === "opening")
       ? t("composer.opening", { label: instance.label })
       : undefined;
 
@@ -300,11 +320,11 @@ export function Composer({ task, receipts, busy, instances, actions }: ComposerP
         {instances.map((instance, i) => {
           const why = held(instance);
           const state = tileState(busy, instance.key);
-          const another = state === "running";
+          const second = another(instance);
           const tip =
             why ??
             t(
-              another
+              second
                 ? "composer.anotherTip"
                 : words === ""
                   ? "composer.openTip"
@@ -337,7 +357,7 @@ export function Composer({ task, receipts, busy, instances, actions }: ComposerP
               <span className={styles.glyph} aria-hidden="true">
                 {instance.glyph}
               </span>
-              {t(another ? "composer.openAnother" : "row.openIn", { label: instance.label })}
+              {t(second ? "composer.openAnother" : "row.openIn", { label: instance.label })}
               {i === 0 && openKeys[0] !== undefined ? (
                 <kbd className={styles.hint} aria-hidden="true">
                   {keyLabel(openKeys[0])}
@@ -411,6 +431,11 @@ export function Composer({ task, receipts, busy, instances, actions }: ComposerP
             )}
           </span>
         )}
+        {text.length >= LIMIT_SHOWN ? (
+          <span className={styles.limit} data-part="limit" aria-live="polite">
+            {t("composer.left", { left: Math.max(0, DRAFT_MAX - text.length), max: DRAFT_MAX })}
+          </span>
+        ) : null}
         <span className={styles.gap} aria-hidden="true" />
         <button
           type="button"
