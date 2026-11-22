@@ -4,8 +4,6 @@
 //
 // Verify line, second sentence, in the Inbox: a task that starts to match the open view (added, or
 // reopened) appears without a reload, and one that leaves it (completed) goes.
-// Completed and search have no read path in the service yet: their invalidation is tested in
-// packages/web/src/store/queries.test.ts against the store, and here once those views exist.
 import { expect } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { picture, showsSpace, signIn } from "./page.ts";

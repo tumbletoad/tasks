@@ -5,11 +5,6 @@
 // opens it; the keyboard path passes. Also: untrusted text in every part of a task stays text,
 // only allowed schemes become links, no CSP report, axe finds nothing in the expanded task in
 // either theme, and the screenshots in Sumi and Washi at 1,440 px (and 390 px) for review.
-//
-// Two lifecycles are not linked here, because no operation makes them before M3.04: an archived
-// (dropped) task (`task.finish` refuses `status: dropped` until then) and a restorable deleted
-// one (no tombstone, and `task.get` reads none). Their host views are a unit test
-// (`A5.3.3.web.task-host`).
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import {
