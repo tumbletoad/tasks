@@ -857,7 +857,7 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     expect(found.rows.filter((row) => row.title === title)).toHaveLength(1);
   });
 
-  test("an add whose answer was lost is made once when it is pressed again after a reload, also when that press meets a busy service or the words now read otherwise", async ({
+  test("an add whose answer was lost is made once: found by itself after a reload, pressed again on a busy service, on words edited and put back, and on words changed since", async ({
     page,
     world,
   }) => {
@@ -867,6 +867,7 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     const field = page.getByRole("textbox", { name: "New task" });
     const added = calls(page, "task.add");
     const ADD = "**/api/v1/op/task.add";
+    const RECEIPT = "**/api/v1/op/receipt.get";
     const count = async (title: string) => {
       const found = (await world.op(world.mira.id, "task.search", {
         q: title,
@@ -874,8 +875,23 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
       })) as { rows: { title: string }[] };
       return found.rows.filter((row) => row.title === title).length;
     };
-    /** The add reaches the service only after the page reloaded: its answer is lost. */
-    const lose = async (title: string) => {
+    /**
+     * The add reaches the service only after the page reloaded: its answer is lost. The page's
+     * receipt reads wait until the add is made, or with `unheard` fail until the test lets them.
+     */
+    const lose = async (title: string, unheard: boolean) => {
+      let made: () => void = () => undefined;
+      const landed = new Promise<void>((resolve) => {
+        made = resolve;
+      });
+      await page.route(RECEIPT, async (route) => {
+        if (unheard) {
+          await route.abort();
+          return;
+        }
+        await landed;
+        await route.continue().catch(() => undefined);
+      });
       let release: () => void = () => undefined;
       const released = new Promise<void>((resolve) => {
         release = resolve;
@@ -889,16 +905,27 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
       await page.keyboard.press("Enter");
       await page.reload();
       release();
-      await page.unrouteAll({ behavior: "wait" });
+      await page.unroute(ADD);
       await expect.poll(() => count(title), { timeout: SLOW_MS }).toBe(1);
+      made();
+      if (!unheard) await page.unroute(RECEIPT);
       await showsSpace(page, world.mira.name);
-      await expect(field).toHaveValue(title);
     };
-    const ids = () => added.map((r) => (r.postDataJSON() as { request_id: string }).request_id);
+    const bodies = () =>
+      added.map((r) => r.postDataJSON() as { request_id: string; tasks: unknown[] });
 
-    // Pressed again, the service is busy for a moment: the add it made before is found.
-    const busy = `Order the hinge pins (${tag})`;
-    await lose(busy);
+    // After the reload the page asks what the add did, finds the task, and the words go.
+    const found = `Order the hinge pins (${tag})`;
+    await lose(found, false);
+    await expect(field).toHaveValue("", { timeout: SLOW_MS });
+    await expect(toast(page)).toHaveText(/^Added to /u);
+    expect(await count(found)).toBe(1);
+
+    // Pressed again while the service is busy for a moment: the add it made before is found.
+    const busy = `Order the hasp (${tag})`;
+    await lose(busy, true);
+    await expect(field).toHaveValue(busy);
+    await page.unroute(RECEIPT);
     await page.route(ADD, (route) =>
       route.fulfill({
         status: 503,
@@ -909,25 +936,41 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await field.focus();
     await page.keyboard.press("Enter");
     await expect(field).toHaveValue("", { timeout: SLOW_MS });
-    await page.unrouteAll({ behavior: "wait" });
+    await page.unroute(ADD);
     expect(await count(busy)).toBe(1);
-    expect(new Set(ids()).size).toBe(1);
 
-    // Pressed again the next day, the same words make another add ("tomorrow" is another date):
-    // the service says the ID carried another add, and the one it made is found.
-    const later = `Order the gate latch (${tag})`;
-    await lose(later);
-    await page.route(ADD, async (route) => {
-      const body = route.request().postDataJSON() as { tasks: Record<string, unknown>[] };
-      const tasks = body.tasks.map((task) => ({ ...task, priority: 4 }));
-      await route.continue({ postData: JSON.stringify({ ...body, tasks }) });
-    });
+    // A character typed and taken back: the same words are the same add, sent as it was.
+    const again = `Order the padlock (${tag})`;
+    await lose(again, true);
+    await page.unroute(RECEIPT);
     await field.focus();
+    await page.keyboard.press("End");
+    await page.keyboard.type("x");
+    await page.keyboard.press("Backspace");
     await page.keyboard.press("Enter");
     await expect(field).toHaveValue("", { timeout: SLOW_MS });
-    await page.unrouteAll({ behavior: "wait" });
-    expect(await count(later)).toBe(1);
-    expect(new Set(ids()).size).toBe(2);
+    expect(await count(again)).toBe(1);
+    const sent = bodies().slice(-2);
+    expect(sent[1]?.request_id).toBe(sent[0]?.request_id);
+    expect(sent[1]?.tasks).toEqual(sent[0]?.tasks);
+
+    // The words fixed since: the page says the earlier ones were added, and adds nothing more
+    // until the next press.
+    const typo = `Order the gate lacth (${tag})`;
+    const fixed = `Order the gate latch (${tag})`;
+    await lose(typo, true);
+    await page.unroute(RECEIPT);
+    await field.fill(fixed);
+    await page.keyboard.press("Enter");
+    await expect(toast(page)).toHaveText(/^Your earlier words were added to /u, {
+      timeout: SLOW_MS,
+    });
+    await expect(field).toHaveValue(fixed);
+    expect(await count(typo)).toBe(1);
+    expect(await count(fixed)).toBe(0);
+    await page.keyboard.press("Enter");
+    await expect(field).toHaveValue("", { timeout: SLOW_MS });
+    expect(await count(fixed)).toBe(1);
   });
 
   test("an edit still waiting behind another edit of the task when the page reloads is back as not saved, never lost, and Try again never overwrites a change made since", async ({

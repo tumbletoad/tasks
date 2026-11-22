@@ -18,7 +18,8 @@
 // the field until the feed confirms the add, so the field tracks it until then: the same text is
 // not sent again while it is on its way, and when the space's session ends first (a switch of
 // space stops its store, which then confirms nothing), an add the service took drops its text from
-// the space's kept draft.
+// the space's kept draft. An add whose answer was lost is kept apart from the draft (adds.ts) until
+// the service says what it did.
 import { useNavigate, useParams, useRouter, useRouterState } from "@tanstack/react-router";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "react-aria-components";
@@ -30,6 +31,7 @@ import {
   type Chip,
 } from "../capture/parse.ts";
 import { requestId } from "../api.ts";
+import { keepSent, readSent, wordOn, type SentAdd } from "./adds.ts";
 import { Session } from "../context.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { tabKept } from "../kept.ts";
@@ -72,14 +74,7 @@ const FIELD_MAX = 500;
 interface Draft {
   readonly text: string;
   readonly kept: ReadonlySet<string>;
-  /**
-   * The request ID of the add of this text that got no answer: the same add again, also after a
-   * reload, carries it, so the service gives back the task it made instead of a second.
-   */
-  readonly request?: string;
 }
-
-const REQUEST_ID = /^[0-9a-f-]{36}$/u;
 
 const draftName = (space: string) => `top.${space}`;
 
@@ -90,62 +85,25 @@ function readTop(space: string): Draft | undefined {
 /** A kept draft, read by its shape. */
 function draftOf(value: unknown): Draft | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const { text, kept, request } = value as { text?: unknown; kept?: unknown; request?: unknown };
+  const { text, kept } = value as { text?: unknown; kept?: unknown };
   if (typeof text !== "string" || text === "" || text.length > FIELD_MAX) return undefined;
   const keys = Array.isArray(kept)
     ? kept.filter((k): k is string => typeof k === "string" && k.length <= 100).slice(0, 50)
     : [];
-  return {
-    text,
-    kept: new Set(keys),
-    ...(typeof request === "string" && REQUEST_ID.test(request) ? { request } : {}),
-  };
+  return { text, kept: new Set(keys) };
 }
 
-/** Keeps the draft; the same text keeps the request ID of its unanswered add. */
 function keepTop(space: string, draft: Draft | undefined): void {
-  const before = readTop(space);
-  const request = draft?.request ?? (before?.text === draft?.text ? before?.request : undefined);
   const value =
     draft === undefined || draft.text === ""
       ? undefined
-      : JSON.stringify({
-          text: draft.text,
-          kept: [...draft.kept],
-          ...(request === undefined ? {} : { request }),
-        });
+      : JSON.stringify({ text: draft.text, kept: [...draft.kept] });
   if (tabKept.read(draftName(space)) !== value) tabKept.keep(draftName(space), value);
 }
 
-/** The request ID for an add of `text`: its unanswered one's, else a new one, kept with it. */
-function requestFor(space: string, text: string, kept: ReadonlySet<string>): string {
-  const before = readTop(space);
-  if (before?.text === text && before.request !== undefined) return before.request;
-  const request = requestId();
-  keepTop(space, { text, kept, request });
-  return request;
-}
-
-/** The add of `text` did nothing: the next one is a new request. */
-function dropRequest(space: string, text: string): void {
-  const before = readTop(space);
-  if (before?.text !== text || before.request === undefined) return;
-  tabKept.keep(draftName(space), JSON.stringify({ text, kept: [...before.kept] }));
-}
-
-/** A receipt's outcome of an add that made its task. */
-const MADE: ReadonlySet<string> = new Set(["applied", "proposed", "unchanged"]);
-
-/**
- * Whether an error is the service's decision on the request: it did nothing. A busy or opening
- * service has not decided, and `internal` cannot say.
- */
-function decided(error: unknown): boolean {
-  const code = error instanceof Error ? (error as { code?: unknown }).code : undefined;
-  return (
-    typeof code === "string" &&
-    !["internal", "service_unavailable", "space_unavailable"].includes(code)
-  );
+/** The service said what the sent add `request` did: it is let go. */
+function retire(space: string, request: string): void {
+  if (readSent(tabKept, space)?.request === request) keepSent(tabKept, space, undefined);
 }
 
 /** How long the search waits for typing to pause before it reads. */
@@ -229,6 +187,35 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
     keepTop(space, text === "" ? undefined : { text, kept });
     if (text.trim() === "") setKept((known) => (known.size === 0 ? known : new Set()));
   }, [space, text, kept]);
+
+  /** The field's words now, for an answer that arrives later. */
+  const now = useRef(text);
+  now.current = text;
+  // An add whose answer was lost, kept from before a reload or a lost connection: once the page is
+  // live, its receipt says what it did. The words go only when they are still the ones sent.
+  useEffect(() => {
+    const before = readSent(tabKept, space);
+    if (!live || before === undefined) return;
+    let gone = false;
+    void wordOn((request) => api.client.receipt.get({ request }), before.request).then((word) => {
+      if (gone || sending.current.has(before.text)) return;
+      if (readSent(tabKept, space)?.request !== before.request) return;
+      if (word === "refused") retire(space, before.request);
+      if (typeof word !== "object") return;
+      retire(space, before.request);
+      if (now.current !== before.text) {
+        say(t("top.addedBefore", { where: before.where }));
+        return;
+      }
+      forget(space, before.text);
+      setText("");
+      say(t("top.added", { where: before.where }));
+    });
+    return () => {
+      gone = true;
+    };
+    // Asked once per space whenever the page is live again, not on every new `say` or `t`.
+  }, [live, space, api]);
 
   // Back, Forward, a reload or a link changed the URL's query: the field follows it. Leaving the
   // search route by any way ends the search.
@@ -361,7 +348,6 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
     // Shortcuts alone: the panel says a title is missing.
     if (draft === undefined) return;
     if (!live || sending.current.has(submitted)) return;
-    sending.current.add(submitted);
     const area = capture.chips.find((chip) => chip.kind === "area");
     const where =
       area === undefined
@@ -369,40 +355,65 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
           ? t("nav.waiting")
           : t("capture.inbox")
         : chipLabel(t, area, clock.locale);
-    // Through the live store: no optimistic row, and the text goes when the feed confirms the
-    // add, so the new row is on screen when it does. Only the text that was added goes: whatever
-    // the person typed meanwhile stays, here and in the space's kept draft.
+    const fresh: SentAdd = { request: requestId(), text: submitted, task: draft, where };
+    const before = readSent(tabKept, space);
+    // The same words as an add whose answer was lost: that add again, as it was sent.
+    if (before === undefined || before.text === submitted) {
+      send(before ?? fresh);
+      return;
+    }
+    // Other words since: what that add did comes first, so this press never makes it twice.
+    sending.current.add(submitted);
+    void wordOn(receipt, before.request).then((word) => {
+      sending.current.delete(submitted);
+      if (typeof word === "object") {
+        retire(space, before.request);
+        if (mounted.current) say(t("top.addedBefore", { where: before.where }));
+        return;
+      }
+      if (word === "refused") retire(space, before.request);
+      send(fresh);
+    });
+  };
+
+  const receipt = (request: string) => api.client.receipt.get({ request });
+
+  /**
+   * Sends `add` through the live store: no optimistic row, and the text goes when the feed
+   * confirms the add, so the new row is on screen when it does. Only the text that was added
+   * goes: whatever the person typed meanwhile stays, here and in the space's kept draft.
+   */
+  const send = (add: SentAdd) => {
+    const submitted = add.text;
+    keepSent(tabKept, space, add);
+    sending.current.add(submitted);
     const sent = feed.write(
       async (request_id) => {
         try {
-          return await api.client.task.add({ tasks: [draft], request_id });
+          return await api.client.task.add({ tasks: [add.task], request_id });
         } catch (error) {
-          // The ID may carry an add of these words made before a reload, whose answer was lost: a
-          // busy service, or words that read otherwise now ("tomorrow" after midnight), refuses
-          // this one. Its receipt says what that add did; only an ID that made nothing is let go.
-          const found = await api.client.receipt
-            .get({ request: request_id })
-            .catch(() => undefined);
-          if (found?.found === true && MADE.has(found.status)) return { as_of: found.as_of };
-          if (found !== undefined && (found.found || decided(error))) {
-            dropRequest(space, submitted);
-          }
+          // The ID may carry this add made before a reload, whose answer was lost: its receipt
+          // says what that add did. It is let go only when the service refused it.
+          const word = await wordOn(receipt, request_id);
+          if (typeof word === "object") return { as_of: word.as_of };
+          if (word === "refused") retire(space, request_id);
           throw error;
         }
       },
       undefined,
-      requestFor(space, submitted, kept),
+      add.request,
     );
     void sent.settled.then((settled) => {
       sending.current.delete(submitted);
       taken.current.delete(submitted);
       if (settled !== "confirmed") return;
       forget(space, submitted);
-      if (mounted.current) say(t("top.added", { where }));
+      if (mounted.current) say(t("top.added", { where: add.where }));
       setText((current) => (current === submitted ? "" : current));
     });
     sent.answer.then(
       () => {
+        retire(space, add.request);
         if (!sending.current.has(submitted)) return;
         if (mounted.current) taken.current.add(submitted);
         else forget(space, submitted);
