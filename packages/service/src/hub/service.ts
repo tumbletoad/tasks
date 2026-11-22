@@ -694,6 +694,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
             id: undefined,
             registered: space.id,
             name: undefined,
+            folder: space.path,
             state: "opening" as const,
             writer: undefined,
             reader: undefined,

@@ -37,26 +37,34 @@ const gate = vi.hoisted(() => {
   };
 });
 
-/** Starts the service of `home`, held before the hand-over, and its endpoint once it says ready. */
-async function heldStart(
-  home: string,
-): Promise<{ starting: Promise<RunningService>; path: string }> {
+/**
+ * Runs `body` with the endpoint of `home`'s service, started and held before the hand-over. The
+ * hold is released and the service stopped however the body or the wait for readiness ends.
+ */
+async function whileStarting(home: string, body: (path: string) => Promise<void>): Promise<void> {
   gate.arm();
-  const starting = startService({
+  const starting: Promise<RunningService> = startService({
     env: serviceEnv(home),
     identity: () => ({ root: false, elevated: false, package: null }),
     maintenance: false,
     say: () => undefined,
   });
-  const path = await waitFor(
-    () => {
-      const json = readServiceJson(home);
-      return json?.state === "ready" ? json.endpoint?.path : undefined;
-    },
-    60_000,
-    "the service says it is ready",
-  );
-  return { starting, path };
+  try {
+    const path = await waitFor(
+      () => {
+        const json = readServiceJson(home);
+        return json?.state === "ready" ? json.endpoint?.path : undefined;
+      },
+      60_000,
+      "the service says it is ready",
+    );
+    await body(path);
+  } finally {
+    gate.release();
+    const service = await starting;
+    await service.stop();
+    removeRuntimeDir(service);
+  }
 }
 
 vi.mock("../src/mcp/offline.ts", async (importOriginal) => {
@@ -76,70 +84,66 @@ describe("[A3.3.7.binding.space] a bind while the service starts settles the con
     { timeout: 180_000 },
     async () => {
       const temp = tempRoot("bind-startup");
-      const home = join(temp.root, "h");
-      const space = await hubSpace(home);
-      const { starting, path } = await heldStart(home);
       try {
-        const session = await openMcp(home, path, bridgeContext({ instance: null, app: null }));
-        expect(session.bound.binding).toEqual({ space: space.id, state: "unbound" });
-        const mcp = new RawMcp(session);
-        await mcp.initialize();
-        const reply = await mcp.request("tools/call", {
-          name: toolOf("space.status"),
-          arguments: {},
+        const home = join(temp.root, "h");
+        const space = await hubSpace(home);
+        await whileStarting(home, async (path) => {
+          const session = await openMcp(home, path, bridgeContext({ instance: null, app: null }));
+          expect(session.bound.binding).toEqual({ space: space.id, state: "unbound" });
+          const mcp = new RawMcp(session);
+          await mcp.initialize();
+          const reply = await mcp.request("tools/call", {
+            name: toolOf("space.status"),
+            arguments: {},
+          });
+          expect(textOf(reply.message["result"])).toMatch(/^error space_unavailable \(opening\):/);
+          session.close();
         });
-        expect(textOf(reply.message["result"])).toMatch(/^error space_unavailable \(opening\):/);
-        session.close();
       } finally {
-        gate.release();
-        const service = await starting;
-        await service.stop();
-        removeRuntimeDir(service);
         temp.cleanup();
       }
     },
   );
 
   test(
-    "with a default space configured, a person's command and an agent's shell call that names the space are told it is still opening, to try again",
+    "with a default space configured, a person's command and an agent's shell call that names the space, by ID, name or folder, are told it is still opening, to try again",
     { timeout: 180_000 },
     async () => {
       const temp = tempRoot("call-startup");
-      const home = join(temp.root, "h");
-      const space = await hubSpace(home);
-      registerSpaces(home, [space.folder], `\n[service]\ndefault_space = "${space.id}"\n`);
-      const { starting, path } = await heldStart(home);
       try {
-        const opening = async (
-          cls: "cli-interactive" | "cli-agent",
-          named?: string,
-        ): Promise<unknown> => {
-          const session = await classSession(home, path, cls, { TTASKS_AGENT: "1" });
-          try {
-            await session.call(
-              "op/call",
-              { op: "space.status", input: {}, ...(named === undefined ? {} : { space: named }) },
-              { timeoutMs: 60_000 },
-            );
-            return "answered";
-          } catch (error) {
-            const body = errorOf(error);
-            return [body.code, body.data?.["reason"], body.data?.["retryable"]];
-          } finally {
-            session.close();
-          }
-        };
-        const retry = ["space_unavailable", "opening", true];
-        // `ttasks status` right after a start: the machine's default, by its registered ID.
-        expect(await opening("cli-interactive")).toEqual(retry);
-        // An agent's shell names its space by ID, or by a name not known until the space opens.
-        expect(await opening("cli-agent", space.id)).toEqual(retry);
-        expect(await opening("cli-agent", "Mira")).toEqual(retry);
+        const home = join(temp.root, "h");
+        const space = await hubSpace(home);
+        registerSpaces(home, [space.folder], `\n[service]\ndefault_space = "${space.id}"\n`);
+        await whileStarting(home, async (path) => {
+          const opening = async (
+            cls: "cli-interactive" | "cli-agent",
+            named?: string,
+          ): Promise<unknown> => {
+            const session = await classSession(home, path, cls, { TTASKS_AGENT: "1" });
+            try {
+              await session.call(
+                "op/call",
+                { op: "space.status", input: {}, ...(named === undefined ? {} : { space: named }) },
+                { timeoutMs: 60_000 },
+              );
+              return "answered";
+            } catch (error) {
+              const body = errorOf(error);
+              return [body.code, body.data?.["reason"], body.data?.["retryable"]];
+            } finally {
+              session.close();
+            }
+          };
+          const retry = ["space_unavailable", "opening", true];
+          // `ttasks status` right after a start: the machine's default, by its registered ID.
+          expect(await opening("cli-interactive")).toEqual(retry);
+          // An agent's shell names its space by ID, or by a name not known until the space opens.
+          expect(await opening("cli-agent", space.id)).toEqual(retry);
+          expect(await opening("cli-agent", "Mira")).toEqual(retry);
+          // A folder names its copy: the configured one, which is opening too.
+          expect(await opening("cli-agent", space.folder)).toEqual(retry);
+        });
       } finally {
-        gate.release();
-        const service = await starting;
-        await service.stop();
-        removeRuntimeDir(service);
         temp.cleanup();
       }
     },
