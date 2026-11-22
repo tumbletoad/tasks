@@ -15,7 +15,7 @@ import { createRequire } from "node:module";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { FAKE_QUESTION, FAKE_SIGNED_OUT } from "./codex-cases.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { openTask, showsSpace, violations, watchViolations } from "./page.ts";
 import { CODEX_INSTANCE, CODEX_OTHER, SLOW_MS, type World } from "./world.ts";
 
 const OTHER_LABEL = CODEX_OTHER.label;
@@ -48,16 +48,6 @@ const stateOf = (entry: Locator) => entry.locator('[data-part="run-state"]');
 const markerOf = (page: Page, ref: string) =>
   rowOf(page, ref).locator("[data-row-line] > span").first();
 const toast = (page: Page) => page.locator('[data-part="toast-text"]');
-
-async function openTask(page: Page, world: World, ref: string): Promise<void> {
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
-  await showsSpace(page, world.mira.name);
-  await expect(rowOf(page, ref).locator('[data-part="title"]')).toHaveAttribute(
-    "aria-expanded",
-    "true",
-    { timeout: SLOW_MS },
-  );
-}
 
 test.describe("[M6.page.e2e.run] Run from the page, with and without words, and read the answer", () => {
   test("Run without words works on the task; Ctrl+Shift+Enter runs with the words, which clear once queued; the answer is the agent's text, a long one folded", async ({
@@ -369,6 +359,7 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
         }
         // The other agent that can run is one click away, in the menu beside Run.
         await openTask(shot, world, ended);
+        await expect(runsOf(shot, ended)).toHaveCount(3);
         await stripOf(shot, ended).getByRole("button", { name: "Run with another agent" }).click();
         await expect(
           shot

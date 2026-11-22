@@ -10,7 +10,7 @@ import { expect, type Page, type Request } from "@playwright/test";
 import { PRODUCT_NAME, PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { openTask, showsSpace, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 interface Added {
@@ -82,16 +82,6 @@ async function catchClipboard(page: Page): Promise<() => Promise<string[]>> {
     };
   });
   return () => page.evaluate(() => (window as unknown as { copied: string[] }).copied);
-}
-
-async function openTask(page: Page, world: World, ref: string): Promise<void> {
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
-  await showsSpace(page, world.mira.name);
-  await expect(rowOf(page, ref).locator('[data-part="title"]')).toHaveAttribute(
-    "aria-expanded",
-    "true",
-    { timeout: SLOW_MS },
-  );
 }
 
 test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Copy, with and without text", () => {

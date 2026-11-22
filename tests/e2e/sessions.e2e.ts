@@ -5,7 +5,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { showsSpace } from "./page.ts";
+import { openTask, showsSpace } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 /** A new task of Mira's in the Inbox, for one test alone. */
@@ -18,9 +18,7 @@ async function newTask(world: World, title: string): Promise<string> {
 
 /** The task expanded through its link, signed in: its row and the parts the tests read. */
 async function expanded(page: Page, world: World, ref: string) {
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
-  await showsSpace(page, world.mira.name);
-  return parts(page.locator(`li[data-task="${ref}"]`));
+  return parts(await openTask(page, world, ref));
 }
 
 function parts(row: Locator) {
