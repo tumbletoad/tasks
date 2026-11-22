@@ -14,7 +14,7 @@ export type Live = ({ readonly of: "launch" } & LiveLaunch) | ({ readonly of: "r
  */
 export type Named =
   | { readonly kind: "none" }
-  | { readonly kind: "one"; readonly live: Live }
+  | { readonly kind: "one"; readonly by: "ticket" | "preset"; readonly live: Live }
   | { readonly kind: "two"; readonly ticket: Live; readonly preset: Live };
 
 export interface NamedSources {
@@ -50,6 +50,6 @@ export function namedBy(
   if (byTicket !== undefined && byPreset !== undefined && !sameLive(byTicket, byPreset)) {
     return { kind: "two", ticket: byTicket, preset: byPreset };
   }
-  const live = byTicket ?? byPreset;
-  return live === undefined ? { kind: "none" } : { kind: "one", live };
+  if (byTicket !== undefined) return { kind: "one", by: "ticket", live: byTicket };
+  return byPreset === undefined ? { kind: "none" } : { kind: "one", by: "preset", live: byPreset };
 }

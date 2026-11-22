@@ -1750,7 +1750,7 @@
     },
     {
       "id": "A4.5.shim.attach",
-      "title": "Attachment and reports: an attach needs the credential, the same PID and start time and a live process, and its reply starts nothing; reports only on a connection that claimed or attached; recovery and the PID check settle a launch from exit.json, a live shim or a gone one, and its machine state goes once the shim process ended, leaving only the ended launch's own record for a day",
+      "title": "Attachment and reports: an attach needs the credential, the same PID and start time and a live process, and its reply starts nothing; reports only on a connection that claimed or attached; recovery and the PID check settle a launch from exit.json, a live shim or a gone one, and its machine state goes once the shim process ended, leaving only the ended launch's own record for a day; a launch file held for a moment as a service starts is read again for a few seconds and kept, and one held past the waits, or one no wait can open, is left out with its launch ID and error code: from then the records in memory decide",
       "source": "A4 3.6.3, A4 3.9.3, A7 3.9 M2.08",
       "owner": "M2",
       "kind": "ci",
@@ -1950,7 +1950,7 @@
     },
     {
       "id": "A4.5.routes.apps",
-      "title": "Open in Claude Desktop and the Codex app through the service: the link with the folder resolved at dispatch and the prefilled brief, the brief returned for the clipboard, Dispatched with the folder's identity, and the bridge's binding confirms only from the same folder: from another folder the launch stays Dispatched and the binding still holds",
+      "title": "Open in Claude Desktop and the Codex app through the service: the link with the folder resolved at dispatch and the prefilled brief, the brief returned for the clipboard, Dispatched with the folder's identity, and an agent's read by the reference confirms only from the same folder: from another folder the launch stays Dispatched with the read recorded",
       "source": "A4 3.4.4, A4 3.4.5, A4 3.9.2, A7 3.14 M6.11",
       "owner": "M6",
       "kind": "ci",
@@ -2214,7 +2214,7 @@
     },
     {
       "id": "A2.3.7.bridge.restart",
-      "title": "10 bridges through a service restart see at most one connection_lost each and keep their binding through resume.handle and mcp_init; calls made during the outage wait for the new service; a service that stays down gets the offline answer after the hold; the reconnect backoff and hold follow A2 3.7.4",
+      "title": "10 bridges through a service restart see at most one connection_lost each and keep their binding through resume.handle and mcp_init; calls made during the outage wait for the new service; a service that stays down gets the offline answer after the hold; the reconnect backoff and hold follow A2 3.7.4; what the first bind answer named of the process's space, a space or none, is sent back at every later bind and never replaced, and an older service's answer that has not chosen a space yet is not none",
       "source": "A2 3.7.4, A2 3.7.5, A2 5, A7 3.9 M2.01",
       "owner": "M2",
       "kind": "ci",
@@ -2278,7 +2278,7 @@
     },
     {
       "id": "A3.3.3.mcp.tool-list",
-      "title": "tools/list is byte-identical on every connection, whatever its bind context (unbound, ticket, native IDs, resume handle, another instance or space), online and offline, in both eras; initialize and server/discover equal the offline file's results",
+      "title": "tools/list is byte-identical on every connection, whatever its bind context (no value, ticket, native IDs, an old bridge's handle, another instance or space) and after a call, online and offline, in both eras; initialize and server/discover equal the offline file's results",
       "source": "A3 3.3 (X3), A3 5, A2 3.7.3, A7 3.9 M2.02",
       "owner": "M2",
       "kind": "ci",
@@ -2502,7 +2502,7 @@
     },
     {
       "id": "A4.5.routes.request-task",
-      "title": "A launch's request is task data from the click: it is on the task after a service stopped right after the click; a get_task the agent never got marks nothing and a launch past its day loses nothing; a second click that got an earlier launch keeps its words as a plain note, also on a retry; a second session with the pointer is refused it while one that loads the task sees it as history with its launch; one undo takes back the request and nothing else, and Open again with the note writes no second one; a refused click (no route, no folder, no marker) writes nothing",
+      "title": "A launch's request is task data from the click: it is on the task after a service stopped right after the click; a get_task the agent never got marks nothing and a launch past its day loses nothing; a second click that got an earlier launch keeps its words as a plain note, also on a retry; every agent that reads the pointer gets the request, and one that loads the task sees it as history with its launch; one undo takes back the request and nothing else, and Open again with the note writes no second one; a refused click (no route, no folder, no marker) writes nothing; a read by the pointer that fails before its whole answer is ready marks nothing, and the next one marks it Connected",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2557,7 +2557,7 @@
     },
     {
       "id": "A3.3.7.binding.ticket",
-      "title": "The ticket from the bind frame binds the launch's session once, the actor and the launch's bound_at follow, no secret reaches machine state; a forged, malformed, other install's or other space's ticket, one before the agent started or past its 15-minute window, one presented again while its session's connection is open, and one after the agent ended bind nothing; presented again with the session's native ID or once its connection closed it binds the same session",
+      "title": "A launched agent's bridge is its session from the claim, with no window and no first use: by its ticket or by its preset alone (allow-list mode), when it presents the click's app and its home's expected instance (a live row's, any row's when all were revoked, manual for a home that never had one); its task is the default, its actor and writer scope are the session's, named after the launch, and the bind writes nothing; a forged, malformed, unclaimed or ended launch's value, a launch without an app, another app, another or a malformed instance, and two live values of two launches are none, logged with a closed reason and never the value; an open bridge stays the session after its agent's end, a new bind then is the app's and its retry a new change; a task named on a call wins for that call only; a launch file held for a moment as the service starts again is read at a later try, so the same session replays the retry, and one held through every wait is left out with one log event while the service starts and a chat started by hand and a run's ticket work",
       "source": "A3 3.7.2, A3 3.7.3, A3 3.7.4, A3 5, A4 3.1, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
@@ -2565,23 +2565,15 @@
     },
     {
       "id": "A3.3.7.binding.reference",
-      "title": "get_task with a launch reference binds once; the same connection again and a resumed one get the same binding, another gets launch_used with the task; a bound connection gets already_bound; mistyped, unclaimed, ended and over 24-hour references bind nothing; a connection that cannot hold a binding resolves the reference for its call only and uses nothing up",
+      "title": "get_task with a launch reference reads its task on every connection and never binds: bound only for the launch's own session, which reads its task by task too; a mistyped reference and one no launch here has are launch_unknown, any launch that left the service reads whatever its age or state; the person's classes and a script read it too; an old caller's bind field is invalid_input",
       "source": "A3 3.4.4, A3 3.5, A3 3.7.3, A3 3.7.5, A3 5, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
-      "id": "A3.3.7.binding.explicit",
-      "title": "get_task with task and bind true binds an ad-hoc session: later calls default to its task, an explicit task applies to its call only, its writes carry the session's actor, and a retry after binding replays the unbound first attempt",
-      "source": "A3 3.4.1, A3 3.7.3, A3 3.7.4, A3 3.7.9, A3 5, A7 3.9 M2.04",
-      "owner": "M2",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A3.3.7.binding.folder",
-      "title": "A working folder never binds: the bind frame's cwd, TTASKS_TASK and TTASKS_SPACE, status with one exact match and get_task with only cwd leave the connection unbound, and a tool argument naming a session is refused",
+      "title": "A working folder never chooses the task: the bind frame's cwd, TTASKS_TASK and TTASKS_SPACE, status with one exact match (its hint names the task to pass) and get_task with only cwd leave the connection no session, and a tool argument naming a session is refused",
       "source": "A3 3.7.1, A3 3.7.2, A3 3.7.3, A3 3.7.6, A3 5, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
@@ -2589,7 +2581,7 @@
     },
     {
       "id": "A3.3.7.binding.space",
-      "title": "A session is pinned to its space: a call naming another space is forbidden, a resume through a bind frame naming another space keeps the session's, and a pinned space no longer served is space_unavailable, never another space",
+      "title": "One bridge process works in one space: a session in its launch's space whatever its entry or a call names (a shell naming another is forbidden with rule binding); a space its process holds wins over a launch's and is kept while denied (the refusal names the space its home may use) or closed (space_unavailable, never another space); a process told it has none keeps none; an older bridge reconnecting with a handle on an entry without a space gets none and is told to restart; a bind after the service is ready and before its spaces are handed over settles the configured space by its registered ID",
       "source": "A2 3.7.1, A2 3.10.3, A3 3.7.8, A3 5, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
@@ -2597,7 +2589,7 @@
     },
     {
       "id": "A3.3.7.binding.cli",
-      "title": "A cli-agent call's ticket maps to its launch's live session and acts as it in the session's space, binding nothing new, and a retry of a write it made before the mapping replays, also while that write is still in flight; without a session it maps to nothing, writes as agent:unknown and spends no role",
+      "title": "An agent's shell is the session when a live value names its launch, decided at each call with no bridge first: from the claim, its task the default, the same scope as its bridge so a retry through the other tool replays, also a write still held in the writer; run_report is refused to it; its home's revoke refuses its next call and a restore lets it go on; a retry across an exit on disk before the launch is released commits once; accepted as the limits say, a change from tools that got no value repeated through the shell, or repeated after setup changed the agent's entry, is written twice",
       "source": "A2 3.10.5, A3 3.7.4, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
@@ -2605,39 +2597,15 @@
     },
     {
       "id": "A3.3.7.binding.bridge-process",
-      "title": "A real bridge process started with a launched agent's ticket in its environment is bound at its bind frame, writes as the session, and after a service restart resumes the same binding with its handle, a retry replaying",
+      "title": "A real bridge process started with a launched agent's ticket in its environment is its session from the bind frame, writes as the session, and after a service restart is the same session, a retry replaying",
       "source": "A2 3.7.5, A3 3.7.2, A3 3.7.3, A3 3.7.6, A3 5, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
-      "id": "A3.3.7.binding.records",
-      "title": "Session records and binding handles survive a restart through their store, are checked one by one when read back, hold no handle; two connections redeeming one launch at once bind one session; a launch bound before leaves no session; a store that cannot write binds nothing and spends no ticket, a re-presented one included; a connection unbound at its bind keeps its unbound scope as a lookup, on disk with its handle; a reference bind the launch does not take leaves no slot bound, a resumed one included, and calls meanwhile wait for it; a launch that does not answer binds nothing yet, the same connection's retry recognises a late write as its own, and a later refusal leaves nothing bound; a shared connection stays shared across a reconnect and a restart, and a thread ID its session does not hold joins no session; at capacity a bind makes room without evicting a live session and survives a restart; presented native IDs are checked",
-      "source": "A2 3.6.4, A3 3.7.3, A3 3.7.4, A4 3.10, A7 3.9 M2.04",
-      "owner": "M2",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A3.3.7.binding.shared",
-      "title": "Over a real mcp mode connection that carries two thread IDs, a call is the bound session's only when its own ID proves it: another thread's call inherits no task or actor, its launch reference resolves for its call only and is not used up, and the bound thread keeps its binding, also after the bridge reconnects with its handle",
-      "source": "A3 3.7.2, A3 3.7.5, A3 5, A7 3.9 M2.04",
-      "owner": "M2",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
-      "id": "A3.3.7.binding.resume",
-      "title": "A binding handle restores its binding; another instance's, a forged or a malformed handle restores nothing; one unused for a day answers lost, and the connection continues unbound, says its session ended and works with an explicit task",
-      "source": "A2 3.6.4, A2 3.7.5, A3 3.7.3, A3 3.7.4, A3 5, A7 3.9 M2.04",
-      "owner": "M2",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A3.3.7.binding.ui-tabs",
-      "title": "Through the real service, two UI tabs with their feeds and an agent bound to a task: one tab switches space; the bound session keeps its space and task and its write lands there, the other tab sees it in its view and feed, and the switched tab's space is untouched",
+      "title": "Through the real service, two UI tabs with their feeds and an agent opened on a task: one tab switches space; the session keeps its space and task and its write lands there, the other tab sees it in its view and feed, and the switched tab's space is untouched",
       "source": "A2 3.10.5, A3 3.7.1, A3 3.7.8, A3 5, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
@@ -2645,7 +2613,7 @@
     },
     {
       "id": "A3.3.7.binding.wire",
-      "title": "Over real mcp mode connections the bind result carries the binding, and get_task by a launch reference, status's session line and launch_used read as A3's texts",
+      "title": "Over real mcp mode connections the bind result is the space and the state, with no handle, and an old bridge's handle is ignored",
       "source": "A2 3.6.4, A3 3.4.4, A3 3.7.3, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
@@ -2684,8 +2652,24 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.7.binding.rule",
+      "title": "The one rule over stand-ins for its readers: no value is none; a value naming nothing live, a launch without app or task and two live sessions are none for the values; a shell is the session by the value alone, a run's with its run; a bridge presents the click's app and its home's instance (live row, any row when all revoked, manual when none), a run's bridge the run's instance; a held space wins; a failed lookup is no answer; what a session may do is read at each call; a bridge's bind settles its space once (held, the session's, the entry's, the default, the only space by registered ID, else none) and an entry's name not resolvable while spaces open fails the bind",
+      "source": "A3 3.7.2, A3 3.7.4, A3 3.7.8",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.7.binding.model",
+      "title": "Under random interleavings of writes and retries through a launched agent's bridge and shell, a named task over the session's, reconnects, replaced MCP processes, restarts, the agent's end with its bridge open or closed, revokes and restores, a default at the start and its changes, a hand-made entry naming the task of its space and chats of one app reusing IDs, every answer and every kept change is what the world says: refused with which code, replayed, or a change on the expected task in the expected space under the expected writer scope and request ID, and one bridge process works in one space",
+      "source": "A3 3.7.2, A3 3.7.9, A1 3.8",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.7.grant.space",
-      "title": "A home granted one space reaches no other: its own space works; the other, named by ID or by name in its entry or picked as the machine default, is forbidden with rule grant before its reader or writer is touched, and is not pinned, at the bind or at a call; a target that does not resolve is the grant refusal unless the home is granted it; a launch reference, a ticket or a task of the other space binds and reads nothing there and is not used up; after a service restart the rows still decide",
+      "title": "A home granted one space reaches no other: its own space works; a bridge whose entry names the other, by ID or by name, works there and is forbidden with rule grant before its reader or writer is touched, the refusal naming the space it may use; a launch reference, a ticket or a task of the other space makes nothing a session and reads nothing there; an entry without --space takes the machine's default at its bind and keeps it, never moved by a later default, while the next bridge process takes the default then; an entry naming no space that exists gets none, refused on every call with what settles it",
       "source": "A3 3.7.3, A3 3.7.4, A3 3.7.8, A3 3.5, A7 3.9 M2.04b",
       "owner": "M2",
       "kind": "ci",
@@ -2693,7 +2677,7 @@
     },
     {
       "id": "A3.3.7.grant.revoke",
-      "title": "A revoked agent-home row refuses the next call of every connection of its home with forbidden and rule grant: an open unbound one, a bound one, one bound by its ticket, one resumed by its handle, a CLI call acting as its session and a real mcp mode connection; registered again they go on as they were. A session is its home's: another instance presenting its ticket again binds nothing, and a call on a session needs both its home's and its connection's row. A write admitted before the revoke is checked again before its actor is registered and before the writer gets it, and a bind asks the gate again in its section",
+      "title": "A revoked agent-home row refuses the next call of every connection of its home with forbidden and rule grant: an open one that is no session, a launched agent's bridge and its shell, a bridge of the session that connects then, and a real mcp mode connection; registered again they go on with no reconnect. Another home's bridge presenting a session's ticket is none. A write admitted before the revoke is checked again before its actor is registered and before the writer gets it",
       "source": "A3 3.7.4, A3 3.7.8, A3 3.13.1, A7 3.9 M2.04b",
       "owner": "M2",
       "kind": "ci",
@@ -2709,7 +2693,7 @@
     },
     {
       "id": "A3.3.7.grant.scope",
-      "title": "The unbound writer scope of an MCP connection is its home's grant row: shared by the home's connections, kept when the row is replaced or revoked and made again, and kept as the earlier scope once the connection binds, so a retry never writes twice",
+      "title": "The writer scope of an MCP connection that is no session is its home's grant row: shared by the home's connections and kept when the row is replaced or revoked and made again, so a retry never writes twice",
       "source": "A3 3.7.9, A1 3.8, A7 3.9 M2.04b",
       "owner": "M2",
       "kind": "ci",
@@ -3219,7 +3203,7 @@
     },
     {
       "id": "A3.3.14.doctor.sessions",
-      "title": "ttasks doctor's sessions row passes and fails against fakes: session records dropped when read back and bridge connections in shared mode warn, by instance ID only; the service counts open bridge connections, the shared ones by instance and the dropped records through the binding service's public surface",
+      "title": "ttasks doctor's sessions row passes and fails against fakes: session records dropped when read back and bridge connections in shared mode warn, by instance ID only; the service counts the bridge connections open now, in the row's shape, none shared and none dropped",
       "source": "A3 3.14, A3 3.7.5, A7 3.11 M4.05b",
       "owner": "M4",
       "kind": "ci",
@@ -5179,7 +5163,7 @@
     },
     {
       "id": "A3.3.4.tools.run-report",
-      "title": "run_report on an unbound and on a task-bound MCP connection in both eras, and from a person's terminal and an agent's shell, returns not_permitted with the binding it found, and writes nothing: no commit, no actor, no receipt",
+      "title": "run_report on an MCP connection that is no session in both eras, from a person's terminal and an agent's shell, and from a task's session, returns not_permitted with what the connection is, and writes nothing: no commit, no actor, no receipt",
       "source": "A3 3.2.3, A3 3.3, A3 3.4.12, A3 3.5, A7 3.11 M4.01",
       "owner": "M4",
       "kind": "ci",

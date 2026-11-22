@@ -11,6 +11,7 @@ export {
   type Era,
 } from "./eras.ts";
 export {
+  bridgeCaller,
   mcpEndpoint,
   toolCaller,
   TOOL_NAMES,

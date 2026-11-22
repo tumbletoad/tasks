@@ -98,6 +98,7 @@ import {
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
 import type { ConnectionInfo, RpcContext, RpcHandlers } from "../local/index.ts";
+import type { SpaceWriterHandle } from "@ttasks/storage";
 import type { ServedSpace } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
@@ -253,6 +254,11 @@ export interface LaunchOptions {
   readonly environment?: EnvironmentSource;
   /** The machine state. Default: the install's launch folders. */
   readonly records?: RecordStore;
+  /**
+   * Blocks between the tries of a launch file held for a moment as the launch folders are read
+   * (`HELD_FILE_WAITS_MS`). Default: a real wait.
+   */
+  readonly recordsWait?: (ms: number) => void;
   /** Shows a resolved folder in the file manager. Default: the OS's (openFolder). */
   readonly showFolder?: (folder: string) => Promise<OpenResult>;
 }
@@ -379,7 +385,14 @@ export class LaunchService {
     this.#options = options;
     this.environment = options.environment ?? defaultEnvironment(options);
     this.host = new ShimHost({
-      records: options.records ?? new FolderRecords(options.root),
+      records:
+        options.records ??
+        new FolderRecords(options.root, {
+          ...(options.recordsWait === undefined ? {} : { wait: options.recordsWait }),
+          unreadable: (launch, code) => {
+            options.log.log("launch.file_unreadable", { launch, code });
+          },
+        }),
       probe: options.probe ?? osProbe,
       platform: options.platform,
       machine: async (space) => (await this.#space(space))?.machine,
@@ -1293,24 +1306,28 @@ ${instance}`;
   }
 
   /**
-   * The bridge's binding of a launch (A3 3.7.7 `session.bound`, A4 3.9.1): `confirmed` with
-   * `bound_at`, in the launch's section, which also settles an Unknown launch. Returns the launch
-   * as it is after: one that took no binding (it failed, or a terminal launch no shim claimed)
-   * holds no `bound_at`, and one bound before holds its first. A store that cannot take it now is
-   * `space_unavailable`, to retry; a space not open as this machine's takes none.
+   * An agent read a launch's task by its reference (A4 3.9.1): `confirmed` with `bound_at`, in
+   * the launch's section, which also settles an Unknown launch. Only through `writer`, the open
+   * writable copy the read used: when that writer no longer serves the space, nothing is marked.
+   * Returns the launch as it is after: one that took no mark (it failed, or a terminal launch no
+   * shim claimed) holds no `bound_at`, and one marked before holds its first. A store that cannot
+   * take it now is `space_unavailable`, to retry.
    */
-  async confirmBinding(
+  async connected(
     space: string,
+    writer: SpaceWriterHandle,
     launch: string,
     at: number,
-    folder?: string,
+    folder: string | undefined,
   ): Promise<LaunchIntent | undefined> {
+    const served = this.#options.spaces().find((s) => s.id === space && isOpen(s));
+    if (served?.writer !== writer) return undefined;
     const hosted = await this.#space(space).catch(() => undefined);
     const machine = hosted?.machine;
     if (hosted === undefined || machine === undefined) {
       throw new AppError({
         code: "space_unavailable",
-        message: "The space cannot record this launch's binding now.",
+        message: "The space cannot record this launch as connected now.",
         hint: "Try again in a moment.",
         data: { reason: "not_served", retryable: true },
       });
@@ -1336,7 +1353,7 @@ ${instance}`;
     } catch {
       throw new AppError({
         code: "space_unavailable",
-        message: "The space cannot record this launch's binding now.",
+        message: "The space cannot record this launch as connected now.",
         hint: "Try again in a moment.",
         data: { reason: "busy", retryable: true },
       });
@@ -1344,12 +1361,12 @@ ${instance}`;
   }
 
   /**
-   * What the bridge's binding tells about a launch (A4 3.9.2): Confirmed, except for a best-effort
-   * app's link (A4 3.4.4, 3.4.5), whose session may have started in another folder than the link
-   * named. That one is Confirmed only when the bridge's working folder has the identity the link's
-   * folder had at its dispatch; otherwise the binding is recorded as evidence and the launch stays
-   * Dispatched ("Opened · not confirmed"). It is decided in the launch's section on the record as
-   * it is then (`here` is the bridge folder's identity key, read before), so a binding that arrives
+   * What an agent's read by the reference tells about a launch (A4 3.9.2): Confirmed, except for a
+   * best-effort app's link (A4 3.4.4, 3.4.5), whose session may have started in another folder than
+   * the link named. That one is Confirmed only when the bridge's working folder has the identity the
+   * link's folder had at its dispatch; otherwise the read is recorded as evidence and the launch
+   * stays Dispatched ("Opened · not confirmed"). It is decided in the launch's section on the record
+   * as it is then (`here` is the bridge folder's identity key, read before), so a read that arrives
    * while the opener still runs is decided after the dispatch recorded the folder. A link launch is
    * checked when its record holds a folder identity (only a best-effort app's link records one,
    * whatever its instance has become in machine.toml since), when its instance's route asks for
@@ -1588,7 +1605,7 @@ ${instance}`;
         return this.#dispatchLink(intent);
       case "clipboard":
         // Copy (A4 3.4.6): the page copies the pointer brief in the person's click. The launch is
-        // Dispatched at once and Confirmed if an agent redeems its reference (M2.04).
+        // Dispatched at once and Confirmed once an agent reads its task by its reference.
         return { kind: "accepted" };
       default:
         return { kind: "refused" };

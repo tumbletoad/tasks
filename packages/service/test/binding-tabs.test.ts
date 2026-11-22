@@ -1,7 +1,7 @@
-// A space switch in a UI tab changes nothing for a bound session or for another tab (A7 3.9 M2.04's
-// Verify line; A2 3.10.5 step 4, A3 3.7.8, A5's per-tab space). Through the real service in this
-// process: its UI listener with two signed-in tabs, each with its feed, and an agent's real
-// ttasks-local/1 mcp mode connection bound to a task. Fixture text and temporary folders only.
+// A space switch in a UI tab changes nothing for a session or for another tab (A7 3.9 M2.04's Verify
+// line; A2 3.10.5 step 4, A5's per-tab space). Through the real service in this process: its UI
+// listener with two signed-in tabs, each with its feed, and a launched agent's real ttasks-local/1
+// mcp mode connection, the session of its task. Fixture text and temporary folders only.
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { RpcSession } from "@ttasks/bridge/protocol";
@@ -9,8 +9,9 @@ import { routePath, type ErrorBody } from "@ttasks/contracts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { post } from "./http-client.ts";
 import { openFeed, signIn, type FeedClient } from "./http-world.ts";
-import { bridgeContext, openMcp, RawMcp, textOf } from "./mcp-helpers.ts";
-import { classSession, grantHome } from "./ops-helpers.ts";
+import { launchContext } from "./agents.ts";
+import { openMcp, RawMcp, textOf } from "./mcp-helpers.ts";
+import { classSession } from "./ops-helpers.ts";
 
 type Json = Record<string, unknown>;
 const LONG = 180_000;
@@ -43,8 +44,6 @@ beforeAll(async () => {
       { timeoutMs: 60_000 },
     );
   }
-  // The agent's home, registered for Mira as setup does.
-  await grantHome(w.home, w.path, { instance: "tabs-agent", space: w.space });
 }, LONG);
 afterAll(async () => {
   for (const session of sessions) session.close();
@@ -93,9 +92,9 @@ async function switchTo(t: Tab, space: string): Promise<void> {
 let n = 0;
 const rid = () => `fixture-tabs-${String((n += 1)).padStart(6, "0")}`;
 
-describe("[A3.3.7.binding.ui-tabs] a space switch in a UI tab changes nothing for a bound session or another tab", () => {
+describe("[A3.3.7.binding.ui-tabs] a space switch in a UI tab changes nothing for a session or another tab", () => {
   test(
-    "two tabs on Mira, an agent bound to M-1; one tab switches to Life; the session still writes to M-1 in Mira, the other tab sees it, the switched tab does not",
+    "two tabs on Mira, an agent opened on M-1; one tab switches to Life; the session still writes to M-1 in Mira, the other tab sees it, the switched tab does not",
     { timeout: LONG },
     async () => {
       const port = w.service.status().http?.port ?? 0;
@@ -104,17 +103,14 @@ describe("[A3.3.7.binding.ui-tabs] a space switch in a UI tab changes nothing fo
       await switchTo(one, w.space);
       await switchTo(two, w.space);
 
-      // The agent's connection names Mira and binds to M-1.
-      const agent = new RawMcp(
-        await openMcp(w.home, w.path, bridgeContext({ space: w.space, instance: "tabs-agent" })),
-      );
+      // The agent TTasks opened on M-1: its bridge is that task's session, in Mira.
+      const launch = await w.launch("M-1");
+      const agent = new RawMcp(await openMcp(w.home, w.path, launchContext(w.space, launch)));
       try {
         await agent.initialize();
         const tool = async (name: string, args: Json): Promise<string> =>
           textOf((await agent.request("tools/call", { name, arguments: args })).message["result"]);
-        expect(await tool("get_task", { task: "M-1", bind: true })).toContain(
-          "Session: bound to this task by this call",
-        );
+        expect(await tool("status", {})).toContain("Session: bound to M-1");
 
         // Tab one switches to Life.
         await switchTo(one, life);
@@ -122,7 +118,7 @@ describe("[A3.3.7.binding.ui-tabs] a space switch in a UI tab changes nothing fo
         expect(lifeStatus.status).toBe(200);
         expect((lifeStatus.body["result"] as Json)["space"]).toMatchObject({ id: life });
 
-        // The bound session: still Mira, still M-1, and its write lands there.
+        // The session: still Mira, still M-1, and its write lands there.
         const status = await tool("status", {});
         expect(status).toContain("Session: bound to M-1");
         expect(

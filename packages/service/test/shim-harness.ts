@@ -154,6 +154,11 @@ export interface LabOptions {
   readonly serviceEnv?: Record<string, string>;
   /** More of machine.toml: `[[instance]]` tables (harness.ts instanceToml), given the lab's root. */
   readonly toml?: (root: string) => string;
+  /**
+   * The service's UI listener on a free port, so its grants table is service.sqlite's as an
+   * install's is: the agent homes registered before a restart are there at the next start.
+   */
+  readonly http?: boolean;
 }
 
 /**
@@ -186,6 +191,8 @@ export class ShimLab {
   readonly #options: LabOptions;
   /** Agents seen, by PID with the start time read when first seen, so cleanup stops only them. */
   readonly #agents = new Map<number, string | undefined>();
+  /** The launches this lab opened: cleanup stops the shims that claimed them, wherever they run. */
+  readonly #launches = new Set<string>();
   #requests = 0;
   #cleaned = false;
 
@@ -265,9 +272,12 @@ export class ShimLab {
     return [file ?? "", [...rest, "shim", ticket]];
   }
 
-  /** Starts the service of this home, with the lab's clock, terminal and runtime base. */
-  async start(): Promise<RunningService> {
-    const given = this.#options.launch ?? {};
+  /**
+   * Starts the service of this home, with the lab's clock, terminal and runtime base, and the
+   * launch options of this start on top of the lab's.
+   */
+  async start(launch: Partial<LaunchOptions> = {}): Promise<RunningService> {
+    const given = { ...this.#options.launch, ...launch };
     const adapters = this.#options.adapters;
     const env = serviceEnv(this.home, this.#options.serviceEnv);
     const options: StartOptions = {
@@ -305,6 +315,7 @@ export class ShimLab {
           : { terminals: adapters, shimCommand: this.product }),
         ...given,
       },
+      ...(this.#options.http === true ? { http: { ports: [0], persist: false } } : {}),
     };
     const service = await (this.#options.installed?.start ?? startService)(options);
     this.service = service;
@@ -356,8 +367,8 @@ export class ShimLab {
    * is its own launch: a second click with the same one while the first is still opening returns
    * the first.
    */
-  open(plan: SpawnPlan, instance = "fixture-agent"): Promise<LaunchIntent> {
-    return this.running.launches.open(
+  async open(plan: SpawnPlan, instance = "fixture-agent"): Promise<LaunchIntent> {
+    const intent = await this.running.launches.open(
       this.spaceId,
       {
         task: this.taskId,
@@ -371,6 +382,8 @@ export class ShimLab {
       plan,
       agentHomeOf(this.home, instance),
     );
+    this.#launches.add(intent.id);
+    return intent;
   }
 
   /** A click and its confirmation: a terminal launch of the lab's task, dispatched. */
@@ -410,6 +423,35 @@ export class ShimLab {
   }
 
   /**
+   * The shim of every launch of this lab that is still claimed, whichever terminal started it,
+   * stopped by the PID and start time it claimed with, and awaited: a process holds its working
+   * folder, the launch's, until it has ended, and Windows refuses to remove the folder until then.
+   */
+  async #stopClaimedShims(): Promise<void> {
+    const host = this.service?.launches.host;
+    if (host === undefined) return;
+    const claimed = [...this.#launches].flatMap((id) => {
+      const held = host.record(id)?.attachment;
+      return held === undefined ? [] : [{ pid: held.pid, startTime: held.startTime }];
+    });
+    const startOf = async (pid: number) =>
+      (await startTimes([pid]).catch(() => new Map<number, string>())).get(pid);
+    const stopped: typeof claimed = [];
+    for (const shim of claimed) {
+      if ((await startOf(shim.pid)) !== shim.startTime) continue;
+      stopPid(shim.pid);
+      stopped.push(shim);
+    }
+    const deadline = Date.now() + 30_000;
+    for (const shim of stopped) {
+      while ((await startOf(shim.pid)) === shim.startTime) {
+        if (Date.now() > deadline) throw new Error("a shim did not end");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+  }
+
+  /**
    * Every shim and agent this lab started is stopped by PID, the service stopped, and the runtime
    * folder the lab caused removed by its full name, also after a test that failed halfway. Then
    * nothing may be left under the lab's runtime base: anything there fails the test. The folders
@@ -434,6 +476,7 @@ export class ShimLab {
         if (now.get(pid) === seen) stopPid(pid);
       }
       await Promise.all(this.shims.map((shim) => within(shim.exit, 30_000, "a shim's stop")));
+      await this.#stopClaimedShims();
       await this.stopService().catch(() => undefined);
     } finally {
       removeRuntimeDirOf(this.home, this.runtime.base);

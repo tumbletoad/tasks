@@ -16,10 +16,6 @@
     }
   ],
   "errors": {
-    "already_bound": {
-      "class": "conflict",
-      "exit": 4
-    },
     "ambiguous": {
       "class": "not_found",
       "exit": 3
@@ -44,15 +40,7 @@
       "class": "usage",
       "exit": 2
     },
-    "launch_expired": {
-      "class": "not_found",
-      "exit": 3
-    },
     "launch_unknown": {
-      "class": "not_found",
-      "exit": 3
-    },
-    "launch_used": {
       "class": "not_found",
       "exit": 3
     },
@@ -485,7 +473,7 @@
       "positionals": [
         {
           "field": "task",
-          "help": "Task ref (M-14) or ID; default: the bound task",
+          "help": "Task ref (M-14) or ID; default: this session's task",
           "name": "task",
           "required": false,
           "type": "string"
@@ -585,7 +573,7 @@
       "positionals": [
         {
           "field": "task",
-          "help": "Task ref (M-14) or ID; default: the bound task",
+          "help": "Task ref (M-14) or ID; default: this session's task",
           "name": "task",
           "required": false,
           "type": "string"
@@ -636,7 +624,7 @@
       "positionals": [
         {
           "field": "task",
-          "help": "Task ref (M-14) or ID; default: the bound task",
+          "help": "Task ref (M-14) or ID; default: this session's task",
           "name": "task",
           "required": false,
           "type": "string"
@@ -784,9 +772,9 @@
       "positionals": [
         {
           "field": "task",
-          "help": "Task ref (M-14) or ID",
+          "help": "Task ref (M-14) or ID; default: this session's task",
           "name": "task",
-          "required": true,
+          "required": false,
           "type": "string"
         }
       ],
@@ -957,7 +945,7 @@
       "positionals": [
         {
           "field": "task",
-          "help": "Task ref (M-14) or ID; default: the bound task",
+          "help": "Task ref (M-14) or ID; default: this session's task",
           "name": "task",
           "required": false,
           "type": "string"
@@ -976,18 +964,10 @@
         {
           "field": "launch",
           "flag": "--launch",
-          "help": "Launch reference from the Brief: bind, then load",
+          "help": "Launch reference from the Brief: load its task",
           "repeat": false,
           "required": false,
           "type": "string"
-        },
-        {
-          "field": "bind",
-          "flag": "--bind",
-          "help": "With task: bind this session to it",
-          "repeat": false,
-          "required": false,
-          "type": "boolean"
         },
         {
           "field": "sections",
@@ -1037,13 +1017,13 @@
       "positionals": [
         {
           "field": "task",
-          "help": "Task ref (M-14) or ID; default: the bound task",
+          "help": "Task ref (M-14) or ID; default: this session's task",
           "name": "task",
           "required": false,
           "type": "string"
         }
       ],
-      "summary": "Load a task as a bounded digest, or selected sections in full. With launch, bind first.",
+      "summary": "Load a task as a bounded digest, or selected sections in full, by task or launch reference.",
       "verb": "show"
     },
     {
@@ -1095,7 +1075,7 @@
       "inputOnly": [],
       "kind": "read",
       "positionals": [],
-      "summary": "Orientation: date, autonomy, this session's binding, tasks for a folder and counts.",
+      "summary": "Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts.",
       "verb": "status"
     },
     {

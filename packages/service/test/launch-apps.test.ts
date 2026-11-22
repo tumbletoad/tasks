@@ -142,11 +142,9 @@ async function agentIn(r: Rig, cwd: string) {
     bridgeContext({ space: r.lab.spaceId, instance: "app-agent", cwd }),
   );
   return {
-    /** Whether the read bound the connection's session to the launch's task. */
+    /** Whether the read by the launch's reference gave the task, to a connection that is no session. */
     getTask: async (launch: string) => ({
-      bound: (await agent.call("task.get", { launch })).includes(
-        "Session: bound to this task by this call",
-      ),
+      read: (await agent.call("task.get", { launch })).includes("act on it: this connection"),
     }),
     close: () => agent.close(),
   };
@@ -199,10 +197,10 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
         expect(query.get(folderKey)).toBe(folder);
         expect(query.get(briefKey)).toBe(brief.text);
 
-        // A session that started in another folder (a scratch workspace): the binding holds, the
-        // launch stays Dispatched ("Opened · not confirmed").
+        // A session that started in another folder (a scratch workspace): it reads the task, the
+        // read is recorded, and the launch stays Dispatched ("Opened · not confirmed").
         const elsewhere = await agentIn(r, realpathSync.native(join(r.lab.work, "elsewhere")));
-        expect((await elsewhere.getTask(result.launch.reference)).bound).toBe(true);
+        expect((await elsewhere.getTask(result.launch.reference)).read).toBe(true);
         const after = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
         expect(after?.state).toBe("dispatched");
         expect(after?.evidence.bound_at).toBeTypeOf("number");
@@ -213,7 +211,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
         const second = await open(r, { task: twin.ref, instance });
         await r.lab.waitIntent(second.launch.id, (i) => i.state === "dispatched", "Dispatched");
         const here = await agentIn(r, folder);
-        expect((await here.getTask(second.launch.reference)).bound).toBe(true);
+        expect((await here.getTask(second.launch.reference)).read).toBe(true);
         const confirmed = await r.lab.running.launches.read(r.lab.spaceId, second.launch.id);
         expect(confirmed?.state).toBe("confirmed");
         await here.close();
@@ -222,7 +220,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
         const third = await open(r, { task: other.ref, instance });
         await r.lab.waitIntent(third.launch.id, (i) => i.state === "dispatched", "Dispatched");
         const nowhere = await agentIn(r, null as unknown as string);
-        expect((await nowhere.getTask(third.launch.reference)).bound).toBe(true);
+        expect((await nowhere.getTask(third.launch.reference)).read).toBe(true);
         expect((await r.lab.running.launches.read(r.lab.spaceId, third.launch.id))?.state).toBe(
           "dispatched",
         );
@@ -235,7 +233,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
   }
 
   test(
-    "a bridge that binds while the opener still runs is decided after the dispatch recorded the folder: Confirmed from the link's folder",
+    "an agent that reads the launch while the opener still runs is decided after the dispatch recorded the folder: Confirmed from the link's folder",
     { timeout: 300_000 },
     async () => {
       opened.length = 0;
@@ -248,7 +246,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
       });
       try {
         const opening = open(r, { task: task.ref, instance: "desktop" });
-        // The opener runs: the app has the link, and its bridge binds before the opener exits.
+        // The opener runs: the app has the link, and its agent reads the task before the opener exits.
         for (let i = 0; opened.length === 0 && i < 3_000; i += 1) {
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
@@ -257,11 +255,11 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
         expect(reference).not.toBe("");
         const here = await agentIn(r, folder);
         const bound = here.getTask(reference);
-        // Whether the binding's report is queued before the opener exits or after, it is decided
+        // Whether the read's mark is queued before the opener exits or after, it is decided
         // on the record the dispatch left.
         await new Promise((resolve) => setTimeout(resolve, 200));
         release();
-        expect((await bound).bound).toBe(true);
+        expect((await bound).read).toBe(true);
         const result = await opening;
         const after = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
         expect(after?.evidence.folder_id).toBe(keyOf(folder));
@@ -287,12 +285,12 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
       const folder = realpathSync.native(join(r.lab.work, FOLDER));
       const elsewhere = realpathSync.native(join(r.lab.work, "elsewhere"));
 
-      // `claude-cli://`: its binding through the reference confirms it, from any folder.
+      // `claude-cli://`: an agent's read by the reference confirms it, from any folder.
       const plain = await open(r, { task: first.ref, instance: "claude-link" });
       expect(plain.launch.route).toBe("link");
       await r.lab.waitIntent(plain.launch.id, (i) => i.state === "dispatched", "Dispatched");
       const one = await agentIn(r, elsewhere);
-      expect((await one.getTask(plain.launch.reference)).bound).toBe(true);
+      expect((await one.getTask(plain.launch.reference)).read).toBe(true);
       expect((await r.lab.running.launches.read(r.lab.spaceId, plain.launch.id))?.state).toBe(
         "confirmed",
       );
@@ -308,7 +306,7 @@ describe("[A4.5.routes.apps] Open in Claude Desktop and the Codex app: the link,
         evidence: { folder_id: keyOf(folder) },
       });
       const two = await agentIn(r, elsewhere);
-      expect((await two.getTask(marked.launch.reference)).bound).toBe(true);
+      expect((await two.getTask(marked.launch.reference)).read).toBe(true);
       expect((await r.lab.running.launches.read(r.lab.spaceId, marked.launch.id))?.state).toBe(
         "dispatched",
       );

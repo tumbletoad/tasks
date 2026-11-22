@@ -25,8 +25,8 @@ and `cwd`.
 | `ttasks reopen` | `task.reopen` | Reopen a completed or archived task. Its earlier outcome and learnings stay. |
 | `ttasks run-report` | `run.report` | Report a run's coverage, one row per source: works only in a run or routine. |
 | `ttasks set` | `task.update` | Change an active task's fields, summary, context, group or sources. |
-| `ttasks show` | `task.get` | Load a task as a bounded digest, or selected sections in full. With launch, bind first. |
-| `ttasks status` | `space.status` | Orientation: date, autonomy, this session's binding, tasks for a folder and counts. |
+| `ttasks show` | `task.get` | Load a task as a bounded digest, or selected sections in full, by task or launch reference. |
+| `ttasks status` | `space.status` | Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts. |
 | `ttasks undo` | `history.undo` | Undo your newest change in the space, field by field as long as nobody changed it. |
 
 ## `ttasks add`
@@ -95,7 +95,7 @@ Usage: `ttasks done [<task>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<task>` | `task` | string | Task ref (M-14) or ID; default: the bound task |
+| `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--status` | `status` | "done" \| "dropped" | dropped: abandoned |
 | `--outcome` | `outcome` | string | What changed and the evidence; agents must give it |
 | `--learning` | `learnings` | string | Lessons reusable beyond this task (repeatable) |
@@ -125,7 +125,7 @@ Usage: `ttasks log [<task>] <text> [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<task>` | `task` | string | Task ref (M-14) or ID; default: the bound task |
+| `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `<text>` | `text` | string | The entry, in Markdown |
 | `--kind` | `kind` | "progress" \| "evidence" \| "decision" \| "blocker" \| "question" \| "note" | question flags it for the user; note: a note for the user |
 | `--at` | `at` | string | When a log entry was made, only for older work: ISO date or instant |
@@ -142,7 +142,7 @@ Sets `kind: "note"`.
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<task>` | `task` | string | Task ref (M-14) or ID; default: the bound task |
+| `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `<text>` | `text` | string | The entry, in Markdown |
 | `--for-agents` | `for_agents` | boolean | Address the note to agents (user only) |
 | `--at` | `at` | string | When a log entry was made, only for older work: ISO date or instant |
@@ -187,11 +187,11 @@ Usage: `ttasks redo [flags]`
 
 Reopen a completed or archived task. Its earlier outcome and learnings stay.
 
-Usage: `ttasks reopen <task> [flags]`
+Usage: `ttasks reopen [<task>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<task>` | `task` | string | Task ref (M-14) or ID |
+| `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--reason` | `reason` | string | Why it is open again |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 
@@ -215,7 +215,7 @@ Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<task>` | `task` | string | Task ref (M-14) or ID; default: the bound task |
+| `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--clear` | `clear` | "summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus" | Fields to clear (repeatable) |
 | `--remove-source` | `remove_sources` | string | Source keys or URLs to unlink (repeatable) |
 | `--reason` | `reason` | string | Why, shown in history and proposals |
@@ -237,15 +237,14 @@ Only through `--input`: `context`, `add_sources`.
 
 ## `ttasks show`
 
-Load a task as a bounded digest, or selected sections in full. With launch, bind first.
+Load a task as a bounded digest, or selected sections in full, by task or launch reference.
 
 Usage: `ttasks show [<task>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<task>` | `task` | string | Task ref (M-14) or ID; default: the bound task |
-| `--launch` | `launch` | string | Launch reference from the Brief: bind, then load |
-| `--bind` | `bind` | boolean | With task: bind this session to it |
+| `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
+| `--launch` | `launch` | string | Launch reference from the Brief: load its task |
 | `--section` | `sections` | "instructions" \| "context" \| "notes" \| "log" \| "sources" \| "outcome" \| "history" | Return these in full instead of the digest (repeatable) |
 | `--log-limit` | `log_limit` | integer | Log entries per page; default 20 |
 | `--before` | `before` | string | With sections: the before token of the last page |
@@ -253,7 +252,7 @@ Usage: `ttasks show [<task>] [flags]`
 
 ## `ttasks status`
 
-Orientation: date, autonomy, this session's binding, tasks for a folder and counts.
+Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts.
 
 Usage: `ttasks status [flags]`
 

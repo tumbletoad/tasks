@@ -27,7 +27,7 @@ import {
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 
 export const TaskFinishInput = z.strictObject({
-  task: TaskRefInput.describe("Task ref (M-14) or ID; default: the bound task").optional(),
+  task: TaskRefInput.describe("Task ref (M-14) or ID; default: this session's task").optional(),
   status: z.enum(["done", "dropped"]).describe("dropped: abandoned").optional(),
   outcome: safeText(USER_LIMITS.outcome)
     .describe("What changed and the evidence; agents must give it")

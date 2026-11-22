@@ -18,17 +18,12 @@ import { CLAIM_WINDOW_MS, isLaunchRef, launchRefCheck, type Route } from "../src
 import { LaunchMachine, type DispatchOutcome } from "../src/machine.ts";
 import type { ProcessProbe } from "../src/process.ts";
 import { agentEnvironment, allowedNames, LIBUV_REQUIRED } from "../src/shim/environment.ts";
-import {
-  BRIDGE_WINDOW_MS,
-  sessionOf,
-  ShimHost,
-  type Attachment,
-  type ClaimOutcome,
-} from "../src/shim/host.ts";
+import { sessionOf, ShimHost, type Attachment, type ClaimOutcome } from "../src/shim/host.ts";
 import {
   checkPlan,
   ENDED_KEEP_MS,
   FolderRecords,
+  HELD_FILE_WAITS_MS,
   MemoryRecords,
   PLAN_MAX_BYTES,
   type ClickGiven,
@@ -51,6 +46,7 @@ import {
 } from "../src/shim/wire.ts";
 import { AFTER_EXIT } from "../src/sections.ts";
 import { ExecutionRefused, LAUNCH_ID, type LaunchStore, type LaunchIntent } from "../src/store.ts";
+import { CAN_HOLD_FILES, holdFile } from "@ttasks/testkit";
 import { MemoryDurable, MemoryExecutionStore, randomId } from "./memory-store.ts";
 import { MACHINE, tempFolder } from "./stores.ts";
 
@@ -382,21 +378,6 @@ describe("[A4.5.shim.claim] the one spawn claim", () => {
     expect(await read(id)).toMatchObject({ state: "unknown", reason: "lost" });
     expect(records.get(id)).toBeUndefined();
   });
-
-  test("the ticket's bridge role: once, from the agent's start until 15 minutes after it", async () => {
-    const { id, ticket } = await dispatched();
-    expect(host.redeemBridge(ticket)).toBeUndefined(); // no agent yet
-    const attachment = attachmentOf((await claim(ticket)).outcome);
-    await host.report(attachment, SHIM_METHODS.started, { pid: 5151, started_at: now });
-    expect(host.redeemBridge(ticket)).toEqual({ space: SPACE, launch: id });
-    expect(host.redeemBridge(ticket)).toBeUndefined();
-
-    const late = await dispatched();
-    const lateAttachment = attachmentOf((await claim(late.ticket)).outcome);
-    await host.report(lateAttachment, SHIM_METHODS.started, { pid: 5152, started_at: now });
-    pass(BRIDGE_WINDOW_MS);
-    expect(host.redeemBridge(late.ticket)).toBeUndefined();
-  });
 });
 
 describe("[A4.5.shim.attach] attachment, reports, recovery and the PID check", () => {
@@ -590,7 +571,8 @@ describe("[A4.5.shim.attach] attachment, reports, recovery and the PID check", (
     live.delete(SHIM_PID);
     live.delete(SHIM_PID + 2);
     live.delete(SHIM_PID + 3);
-    pass(BRIDGE_WINDOW_MS + CLAIM_WINDOW_MS);
+    // Down longer than the claim window: no shim can claim or report meanwhile.
+    pass(15 * 60_000 + CLAIM_WINDOW_MS);
     boot();
     await machine.recover();
     expect(await read(withExit.id)).toMatchObject({
@@ -839,6 +821,67 @@ describe("[A4.5.shim.attach] machine state in folders", () => {
   afterEach(() => {
     for (const t of temps.splice(0)) t.remove();
   });
+
+  test.skipIf(!CAN_HOLD_FILES)(
+    "a launch file held for a moment as the service starts is read again and kept; one held past the waits, or one no wait can open, is left out with its ID and error code",
+    async () => {
+      const temp = tempFolder();
+      temps.push(temp);
+      const root = join(temp.path, "launch");
+      records = new FolderRecords(root);
+      boot();
+      const moment = await dispatched();
+      const { replies } = await claim(moment.ticket);
+      const credential = replies[0]?.credential ?? "";
+      const stuck = await dispatched();
+      await claim(stuck.ticket);
+      const folder = await dispatched();
+      await claim(folder.ticket);
+      const fileOf = (id: string) => join(root, id, "launch.json");
+      // A scanner holds two files as the service starts; a folder stands in place of a third.
+      const momentHold = holdFile(fileOf(moment.id));
+      const stuckHold = holdFile(fileOf(stuck.id));
+      rmSync(fileOf(folder.id));
+      mkdirSync(fileOf(folder.id));
+      try {
+        const waits: number[] = [];
+        const left: [string, string][] = [];
+        records = new FolderRecords(root, {
+          wait: (ms) => {
+            waits.push(ms);
+            if (waits.length === 2) momentHold.release();
+          },
+          unreadable: (launch, code) => left.push([launch, code]),
+        });
+        boot();
+        expect(records.list().map((r) => r.launch)).toEqual([moment.id]);
+        // Every wait was taken while one file was still held, and nothing waits after them.
+        expect(waits).toEqual([...HELD_FILE_WAITS_MS]);
+        expect(left.map(([launch]) => launch).sort()).toEqual([stuck.id, folder.id].sort());
+        expect(new Map(left).get(folder.id)).toBe("EISDIR");
+        expect(["EBUSY", "EACCES", "EPERM"]).toContain(new Map(left).get(stuck.id));
+        // From here the records in memory decide: the launch left out is no launch, at once.
+        expect(host.liveByTicket(moment.ticket)?.launch).toBe(moment.id);
+        expect(host.liveByTicket(stuck.ticket)).toBeUndefined();
+        expect(
+          await host.attach({ credential, pid: SHIM_PID, start_time: SHIM_START }),
+        ).toMatchObject({ kind: "attached" });
+      } finally {
+        momentHold.release();
+        stuckHold.release();
+      }
+      // A file no wait can open is left out without one.
+      const waits: number[] = [];
+      const again = new FolderRecords(root, { wait: (ms) => waits.push(ms) });
+      expect(waits).toEqual([]);
+      expect(
+        again
+          .list()
+          .map((r) => r.launch)
+          .sort(),
+      ).toEqual([moment.id, stuck.id].sort());
+    },
+  );
 
   test("user-only files, written whole, read back by a new service, a damaged one left out", async () => {
     const temp = tempFolder();
@@ -1330,10 +1373,10 @@ describe("[A4.5.shim.attach] what an ended launch leaves for a day", () => {
     // PID check, the sweep and recovery's look.
     const unseen = async (): Promise<void> => {
       expect(host.record(id)).toBeUndefined();
-      expect(host.agentRuns(id)).toBe(false);
       expect(host.running(id)).toBe(false);
       expect(host.runningIn(SPACE)).toEqual([]);
-      expect(host.bridgeTicket(ticket)).toBeUndefined();
+      expect(host.liveSessions(SPACE)).toEqual(new Map());
+      expect(host.liveByTicket(ticket)).toBeUndefined();
       expect(await host.check()).toBe(0);
       expect(await machine.sweep()).toEqual([]);
       expect(await host.observe(intent)).toEqual({ kind: "lost" });

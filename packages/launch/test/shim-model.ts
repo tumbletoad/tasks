@@ -10,7 +10,7 @@ import { expect } from "vitest";
 import { CLAIM_WINDOW_MS, PREPARED_TTL_MS } from "../src/intents.ts";
 import { LaunchMachine, type DispatchOutcome } from "../src/machine.ts";
 import type { ProcessProbe } from "../src/process.ts";
-import { BRIDGE_WINDOW_MS, ShimHost, type Attachment } from "../src/shim/host.ts";
+import { ShimHost, type Attachment } from "../src/shim/host.ts";
 import {
   MemoryRecords,
   type LaunchFile,
@@ -592,7 +592,8 @@ export class ShimWorld {
       shim.alive = false;
       this.#processes.delete(shim.pid);
     }
-    await this.time.pass(PREPARED_TTL_MS + BRIDGE_WINDOW_MS + CLAIM_WINDOW_MS);
+    // Longer than every window a launch waits in.
+    await this.time.pass(PREPARED_TTL_MS + 15 * 60_000 + CLAIM_WINDOW_MS);
     await this.restart();
     await this.#drain();
     const machine = this.#machine;

@@ -44,7 +44,6 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --
     portal: w.portal,
     folder: (task) => w.folder(task),
     // The CLI holds no binding: `ttasks show --launch` resolves the reference for that call.
-    binds: false,
     // An entry with no command is the UI's alone.
     carries: onCli,
     launch: async (task) => (await w.launch(task)).reference,

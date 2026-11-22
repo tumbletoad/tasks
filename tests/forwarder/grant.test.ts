@@ -6,7 +6,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { CLI_NAME } from "../../packages/brand/src/index.ts";
 import { hubGrant, hubSpace, spaceOpen } from "../../packages/service/test/mcp-hub.ts";
 import { classSession } from "../../packages/service/test/ops-helpers.ts";
 import {
@@ -29,8 +28,12 @@ afterEach(async () => {
   for (const home of homes.splice(0)) home.remove();
 });
 
-/** A3 3.5's text form of the refusal (A3 3.7.8). */
-const REFUSED = `error forbidden: This agent is not registered for this space. Ask the user to run: ${CLI_NAME} setup agents`;
+/**
+ * A3 3.5's text form of the refusal for a bridge whose entry names a space its home may not use:
+ * it names the space the home may use, which a restart of the agent app moves it to.
+ */
+const REFUSED =
+  "error forbidden: This agent is not registered for this space. It may use the space Mira now: ask the user to restart the agent app to work there.";
 
 async function startHub(home: Home): Promise<{ hub: Proc; path: string }> {
   const hub = procs.hub(home);

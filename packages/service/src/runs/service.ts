@@ -15,13 +15,7 @@ import {
   type RunLimits,
   type RunRecord,
 } from "@ttasks/contracts/runs";
-import {
-  decodeRun,
-  newTicket,
-  sessionOf,
-  SpaceExecutionStore,
-  type BridgeTicket,
-} from "@ttasks/launch";
+import { decodeRun, newTicket, sessionOf, SpaceExecutionStore } from "@ttasks/launch";
 import { decodeRunRow } from "@ttasks/storage";
 import {
   containers as platformContainers,
@@ -103,7 +97,6 @@ interface RunTicket {
   readonly run: string;
   readonly task: string | null;
   readonly instance: string;
-  used: boolean;
 }
 
 /** A run whose ticket is held: the session its agent is, and the instance TTasks gave it. */
@@ -475,20 +468,6 @@ export class RunService {
     return { run: record, task, answer };
   }
 
-  /** What a run's ticket names for the bridge, or undefined for no ticket of a live run. */
-  bridgeTicket(ticket: string): BridgeTicket | undefined {
-    const found = this.#tickets.get(ticket);
-    if (found === undefined) return undefined;
-    return {
-      space: found.space,
-      launch: found.run,
-      task: found.task,
-      used: found.used,
-      // A run's bridge may connect whenever the agent starts it, for as long as the run runs.
-      inWindow: true,
-    };
-  }
-
   /**
    * The run a ticket names while it is held: from the moment the run's command is taken until the
    * host is done with the run.
@@ -505,17 +484,18 @@ export class RunService {
     };
   }
 
-  /** Spends a run ticket's first redemption. */
-  redeemBridge(ticket: string): { space: string; launch: string } | undefined {
-    const found = this.#tickets.get(ticket);
-    if (found === undefined || found.used) return undefined;
-    found.used = true;
-    return { space: found.space, launch: found.run };
-  }
-
-  /** Whether a run this service started still runs. */
-  agentRuns(run: string): boolean {
-    return [...this.#lanes.values()].some((lane) => lane.host.hosted().includes(run));
+  /** How many of each task's runs in `space` run now, by the host's own state. */
+  liveSessions(space: string): Map<string, number> {
+    const host = this.#lanes.get(space)?.host;
+    const runs = new Map<string, string>();
+    for (const ticket of this.#tickets.values()) {
+      if (ticket.space === space && ticket.task !== null && host?.running(ticket.run) === true) {
+        runs.set(ticket.run, ticket.task);
+      }
+    }
+    const counts = new Map<string, number>();
+    for (const task of runs.values()) counts.set(task, (counts.get(task) ?? 0) + 1);
+    return counts;
   }
 
   /**
@@ -676,7 +656,6 @@ export class RunService {
             run: run.id,
             task: run.task,
             instance: run.instance,
-            used: false,
           });
           const forget = (): void => {
             this.#tickets.delete(ticket);
