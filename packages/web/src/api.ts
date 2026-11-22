@@ -222,6 +222,7 @@ async function postJson(
   path: string,
   body: string,
   headers: Record<string, string>,
+  keepalive = false,
 ): Promise<{ status: number; body: string }> {
   const reply = await fetch(path, {
     method: "POST",
@@ -231,6 +232,7 @@ async function postJson(
     cache: "no-store",
     referrerPolicy: "no-referrer",
     redirect: "error",
+    keepalive,
   });
   return { status: reply.status, body: await reply.text() };
 }
@@ -261,19 +263,24 @@ export class Api {
     this.client = createClient({ post: (path, body) => this.post(path, body) });
   }
 
-  async post(path: string, body: string): Promise<{ status: number; body: string }> {
+  /** `keepalive`: the request still goes out when the tab reloads or closes right after it. */
+  async post(
+    path: string,
+    body: string,
+    keepalive = false,
+  ): Promise<{ status: number; body: string }> {
     const space = this.#space();
     const headers: Record<string, string> = { Authorization: `Bearer ${this.#token}` };
     if (this.#build !== "") headers[BUILD_HEADER] = this.#build;
     if (space !== undefined) headers[SPACE_HEADER] = space;
-    const reply = await postJson(path, body, headers);
+    const reply = await postJson(path, body, headers, keepalive);
     if (reply.status === 401) throw new SignedOut();
     if (reply.status === 409 && reply.body.includes('"reason":"build"')) throw new StaleBuild();
     return reply;
   }
 
-  async #result<T>(path: string, input: unknown): Promise<T> {
-    const reply = await this.post(path, JSON.stringify(input));
+  async #result<T>(path: string, input: unknown, keepalive = false): Promise<T> {
+    const reply = await this.post(path, JSON.stringify(input), keepalive);
     const parsed = JSON.parse(reply.body) as {
       result?: T;
       error?: { code?: unknown; message?: unknown; data?: unknown };
@@ -421,12 +428,15 @@ export class Api {
     };
   }
 
-  /** Sets one of this machine's settings of the page, or resets it with null. */
+  /**
+   * Sets one of this machine's settings of the page, or resets it with null. The page shows the
+   * choice at once, so a reload right after the click must not lose it.
+   */
   async setMachinePreference(
     key: string,
     value: unknown,
   ): Promise<{ readonly key: string; readonly value: unknown; readonly state: string }> {
-    return this.#result("/api/v1/machine/pref", { key, value });
+    return this.#result("/api/v1/machine/pref", { key, value }, true);
   }
 
   /** Open's terminal, and with `app` the choice of one (`auto`: the system's default). */
@@ -434,6 +444,7 @@ export class Api {
     const reply = await this.#result<{ terminal: TerminalView | null }>(
       "/api/v1/machine/terminal",
       app === undefined ? {} : { app },
+      app !== undefined,
     );
     return reply.terminal;
   }
