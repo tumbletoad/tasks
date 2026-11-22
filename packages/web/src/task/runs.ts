@@ -72,7 +72,7 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
   const refused =
     run.refused === undefined || run.refused === 0
       ? []
-      : [msg("run.refused", { count: run.refused, label })];
+      : [msg("run.permissionRefused", { count: run.refused, label })];
   const quietMs = run.quiet_since === undefined ? 0 : now - run.quiet_since;
   const quiet =
     quietMs < QUIET_SHOWN_MS

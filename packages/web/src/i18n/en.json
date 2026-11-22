@@ -307,7 +307,7 @@
   "run.notStarted": "Did not start: {reason, select, task_closed {the task was finished or deleted first} instance_gone {{label} is no longer set up on this machine} folder_gone {the task's folder was not found, or its marker changed} start_timed_out {{label} did not start in time} other {{label} could not be started on this machine}}.",
   "run.serviceEnded": "Interrupted when {product} restarted. Run it again to go on.",
   "run.failed": "{reason, select, agent_error {{label} ended with an error.} no_output {{label} ended without saying anything. Check that it is set up and signed in here.} no_result {{label} ended before it finished.} interrupted {{label} stopped before it finished.} max_turns {{label} stopped at its limit of steps.} max_budget {{label} stopped at its budget.} other {{label} ended without finishing.}}",
-  "run.refused": "Its permission refused {count, plural, one {# request} other {# requests}} of {label}.",
+  "run.permissionRefused": "Its permission refused {count, plural, one {# request} other {# requests}} of {label}.",
   "run.cleanup.confirmed": "Nothing it started was left.",
   "run.cleanup.leftovers": "What it left running was ended.",
   "run.cleanup.found": "{product} ended what it could find of it.",
