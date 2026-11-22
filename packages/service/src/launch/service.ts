@@ -658,19 +658,19 @@ export class LaunchService {
       const runs = await this.#sessions(space, hosted);
       const session = runs.find((i) => i.task === task.id && i.instance === request.instance);
       if (session !== undefined) {
-        // That agent never gets this click's words: they stay on the task, a note of the person's.
-        const words =
-          request.composer === undefined ? undefined : sanitiseComposer(request.composer);
-        const given = words !== undefined && words.text.trim() !== "";
+        // That agent never gets this click's words: they stay on the task, a note of the person's,
+        // saved as typed like a new launch's request, since they never stand in a brief.
+        const words = request.composer;
+        const given = words !== undefined && words.trim() !== "";
         const note = given
-          ? await this.#saveWords(request, { composer: "request", composerText: words.text })
+          ? await this.#saveWords(request, { composer: "request", composerText: words })
           : undefined;
         return {
           intent: session,
           copy: undefined,
           composer: composerOf(given ? "request" : "none", note, session),
           ...(note === undefined ? {} : { note }),
-          removed: words?.removed === true,
+          removed: false,
         };
       }
     }

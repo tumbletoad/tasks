@@ -47,13 +47,15 @@ function requestOf(marker: string, length = 20_000): string {
   const head = [
     `${marker}: look at "this" first, it's 'quoted'.`,
     'Then run it with %PATH% & ^ \\" and $HOME `x` $(y);',
-    `Café, 日本語, ${String.fromCodePoint(0x1f469, 0x200d, 0x1f4bb)}`,
+    `Café, 日本語, ${JOINED}`,
     "",
     "\tindented with a tab",
   ].join("\n");
   return `${head}\n${"z".repeat(length - head.length - 1)}`;
 }
 
+/** An emoji that holds a zero-width joiner, a character that carries meaning in written languages too. */
+const JOINED = String.fromCodePoint(0x1f469, 0x200d, 0x1f4bb);
 const newMarker = (): string => `M4RK${randomBytes(8).toString("hex")}`;
 const hex8 = (text: string): string => Buffer.from(text, "utf8").toString("hex");
 /** What a result holds of a request: its first REQUEST_CHARS code points. */
@@ -500,7 +502,7 @@ describe("[A4.5.routes.request] what a person types before Open is on the task a
       expect(first.text).toBe("request");
       // At once: the launch is still opening, or its agent already runs. Either way it is joined,
       // and a retry of that click after a lost answer says the same of the same note.
-      const other = `${newMarker()} other words`;
+      const other = `${newMarker()} other words ${JOINED}`;
       const secondId = rid();
       const second = await open(r, { task: task.ref, instance: "claude", text: other }, secondId);
       expect(second.launch.id).toBe(first.launch.id);
@@ -523,7 +525,7 @@ describe("[A4.5.routes.request] what a person types before Open is on the task a
       await r.lab.waitIntent(first.launch.id, (i) => i.state === "confirmed", "Confirmed");
       expect(launches.running(first.launch.id)).toBe(true);
       // A page that still showed Ready, or a command line's Open: the running session.
-      const late = `${newMarker()} late words`;
+      const late = `${newMarker()} late words ${JOINED}`;
       const third = await open(r, { task: task.ref, instance: "claude", text: late });
       expect(third.launch.id).toBe(first.launch.id);
       expect(third.text).toBe("note");
