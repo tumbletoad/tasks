@@ -218,23 +218,37 @@ export interface ProjectFolderView {
 /** A fresh request ID (A1 3.8): 128 random bits, new per intended change. */
 export const requestId = (): string => crypto.randomUUID();
 
+/**
+ * Requests go out with `keepalive` while the bodies of those in flight stay within this many bytes
+ * (the browser takes 64 KiB of them together): what the person did is still sent when the tab
+ * reloads or closes right after it. Past it a request is an ordinary one.
+ */
+const KEEPALIVE_BYTES = 48 * 1024;
+let keptAlive = 0;
+
 async function postJson(
   path: string,
   body: string,
   headers: Record<string, string>,
-  keepalive = false,
 ): Promise<{ status: number; body: string }> {
-  const reply = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body,
-    credentials: "omit",
-    cache: "no-store",
-    referrerPolicy: "no-referrer",
-    redirect: "error",
-    keepalive,
-  });
-  return { status: reply.status, body: await reply.text() };
+  const size = new TextEncoder().encode(body).length;
+  const keepalive = keptAlive + size <= KEEPALIVE_BYTES;
+  if (keepalive) keptAlive += size;
+  try {
+    const reply = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body,
+      credentials: "omit",
+      cache: "no-store",
+      referrerPolicy: "no-referrer",
+      redirect: "error",
+      keepalive,
+    });
+    return { status: reply.status, body: await reply.text() };
+  } finally {
+    if (keepalive) keptAlive -= size;
+  }
 }
 
 /** `POST /api/v1/auth/redeem`: a fragment code for a token, or null. */
@@ -263,24 +277,19 @@ export class Api {
     this.client = createClient({ post: (path, body) => this.post(path, body) });
   }
 
-  /** `keepalive`: the request still goes out when the tab reloads or closes right after it. */
-  async post(
-    path: string,
-    body: string,
-    keepalive = false,
-  ): Promise<{ status: number; body: string }> {
+  async post(path: string, body: string): Promise<{ status: number; body: string }> {
     const space = this.#space();
     const headers: Record<string, string> = { Authorization: `Bearer ${this.#token}` };
     if (this.#build !== "") headers[BUILD_HEADER] = this.#build;
     if (space !== undefined) headers[SPACE_HEADER] = space;
-    const reply = await postJson(path, body, headers, keepalive);
+    const reply = await postJson(path, body, headers);
     if (reply.status === 401) throw new SignedOut();
     if (reply.status === 409 && reply.body.includes('"reason":"build"')) throw new StaleBuild();
     return reply;
   }
 
-  async #result<T>(path: string, input: unknown, keepalive = false): Promise<T> {
-    const reply = await this.post(path, JSON.stringify(input), keepalive);
+  async #result<T>(path: string, input: unknown): Promise<T> {
+    const reply = await this.post(path, JSON.stringify(input));
     const parsed = JSON.parse(reply.body) as {
       result?: T;
       error?: { code?: unknown; message?: unknown; data?: unknown };
@@ -429,15 +438,14 @@ export class Api {
   }
 
   /**
-   * Sets one of this machine's settings of the page, or resets it with null. The page shows the
-   * choice at once, so a reload right after the click must not lose it. `at` is when the person
-   * chose: of two quick choices that arrive the other way round, the later one stands.
+   * Sets one of this machine's settings of the page, or resets it with null. `at` is when the
+   * person chose: of two quick choices that arrive the other way round, the later one stands.
    */
   async setMachinePreference(
     key: string,
     value: unknown,
   ): Promise<{ readonly key: string; readonly value: unknown; readonly state: string }> {
-    return this.#result("/api/v1/machine/pref", { key, value, at: Date.now() }, true);
+    return this.#result("/api/v1/machine/pref", { key, value, at: Date.now() });
   }
 
   /** Open's terminal, and with `app` the choice of one (`auto`: the system's default). */
@@ -445,7 +453,6 @@ export class Api {
     const reply = await this.#result<{ terminal: TerminalView | null }>(
       "/api/v1/machine/terminal",
       app === undefined ? {} : { app, at: Date.now() },
-      app !== undefined,
     );
     return reply.terminal;
   }
