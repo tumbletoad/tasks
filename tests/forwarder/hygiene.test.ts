@@ -55,6 +55,13 @@ describe("[A2.3.7.bridge.hygiene] what the forwarder writes, copies and leaves b
       expect(textOf(await bridge.call("echo", { secret: "CONTENTARG" }))).toContain("CONTENTARG");
       await procs.kill(peer);
       where.removeServiceFile();
+      // The service's exit does not mean the bridge saw its connection end: a call before that
+      // goes into the old connection and gets `connection_lost`.
+      await waitFor(
+        () => (bridge.proc.stderr().includes("lost the connection") ? true : undefined),
+        EXIT_MS,
+        "the bridge sees the service gone",
+      );
       bridge.write("not json at all CONTENTRAW\n");
       bridge.write(`${"v".repeat(64)}\u0000CONTENTNUL\n`);
       expect(

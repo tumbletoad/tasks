@@ -209,7 +209,7 @@ test.describe("[M6.page.e2e.needs] A run that needs the person, and one that fai
     await runButton(page, ref).click();
     const asked = runsOf(page, ref).first();
     await expect(stateOf(asked)).toContainText(
-      `Needs you: ${CODEX_INSTANCE.label} asked a question and stopped.`,
+      `Needs you: ${CODEX_INSTANCE.label} stopped to ask you something.`,
       { timeout: SLOW_MS },
     );
     await expect(asked.locator('[data-part="run-said"]')).toContainText(FAKE_QUESTION);

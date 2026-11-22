@@ -87,6 +87,17 @@ export class ReadContext {
     this.out.push({ kind: "answer", ...this.answerSeen });
   }
 
+  /**
+   * A new turn began after one the agent finished: the answer it finished that turn with is only
+   * the latest thing it said, which the new turn's words replace.
+   */
+  answerReopened(): void {
+    const seen = this.answerSeen;
+    if (seen === null || !seen.final) return;
+    this.answerSeen = { ...seen, final: false };
+    this.out.push({ kind: "answer", ...this.answerSeen });
+  }
+
   /** The agent finished its turn with the answer it gave last, if any. */
   answerFinished(): void {
     const seen = this.answerSeen;

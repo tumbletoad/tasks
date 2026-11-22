@@ -16,8 +16,9 @@
     "@ttasks/service": "workspace:*"
   },
   "devDependencies": {
-    "@ttasks/storage": "workspace:*",
-    "@ttasks/testkit": "workspace:*",
+    "@tasks/runs": "workspace:*",
+    "@tasks/storage": "workspace:*",
+    "@tasks/testkit": "workspace:*",
     "typescript": "6.0.3",
     "vitest": "5.1.0"
   }

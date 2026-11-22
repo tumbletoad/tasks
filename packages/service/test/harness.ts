@@ -169,14 +169,14 @@ export async function within<T>(promise: Promise<T>, ms: number, what: string): 
 
 /** Polls `check` until it returns a value other than undefined, or fails after `ms`. */
 export async function waitFor<T>(
-  check: () => T | undefined,
+  check: () => T | undefined | Promise<T | undefined>,
   ms: number,
   what: string,
   every = 25,
 ): Promise<T> {
   const deadline = Date.now() + ms;
   for (;;) {
-    const value = check();
+    const value = await check();
     if (value !== undefined) return value;
     if (Date.now() > deadline) throw new Error(`timed out: ${what}`);
     await new Promise((resolve) => setTimeout(resolve, every));

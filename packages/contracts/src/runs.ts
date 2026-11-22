@@ -396,21 +396,22 @@ export function cutRunAnswer(text: string): { text: string; cut: boolean } {
 export interface RunLimits {
   /** Claude's `--max-turns`. */
   maxTurns: number;
-  /** Wall time, in ms. */
-  wallMs: number;
-  /** Time without a stdout line, in ms. */
-  idleMs: number;
+  /** Wall time, in ms. Without it, a run may take as long as its work does. */
+  wallMs?: number;
+  /** Time without a stdout line, in ms. Without it, a run may be quiet as long as it needs. */
+  idleMs?: number;
   /** Claude's optional `--max-budget-usd`, an estimate that can overshoot. */
   budgetUsd?: number;
 }
 
 /**
- * A run's default limits, a task's and a routine's. The time limits are guidelines: machine.toml's
- * `[runs]` can change them for the runs queued after.
+ * A run's default limits, a task's and a routine's. No time limit ends a run by default: healthy
+ * work can be long or quiet, and the person can see a quiet run and stop it. machine.toml's `[runs]`
+ * can set one for the runs queued after.
  */
 export const RUN_LIMITS: Readonly<Record<"task" | "routine", RunLimits>> = {
-  task: { maxTurns: 50, wallMs: 60 * 60_000, idleMs: 20 * 60_000 },
-  routine: { maxTurns: 150, wallMs: 60 * 60_000, idleMs: 20 * 60_000 },
+  task: { maxTurns: 50 },
+  routine: { maxTurns: 150 },
 };
 
 /** How many runs may run at once: on this machine, per agent instance, and per task. */

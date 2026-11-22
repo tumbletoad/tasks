@@ -244,32 +244,34 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       }),
       { mode: 0o600 },
     );
-    // The fake agent is this machine's first instance: the page draws its tile (A5 3.6). A world
-    // with runs has the fake Codex after it.
+    // The fake agent is this machine's first instance: the page draws its tile (A5 3.6). It is a
+    // Claude Code instance, which can run tasks too, so a world with runs has the fake Codex
+    // first: the page's first runner is its default Run.
     const unread = join(temp.root, "unread.txt");
     writeFileSync(unread, "");
     const holds = join(temp.root, "holds");
     mkdirSync(holds);
     const cases = join(temp.root, "codex-cases.json");
     writeFileSync(cases, "{}");
+    const codexes =
+      options.runs === true
+        ? [CODEX_INSTANCE, CODEX_OTHER]
+            .map((codex) =>
+              instanceToml({
+                id: codex.key,
+                target: "codex-cli",
+                label: codex.label,
+                exec: process.execPath,
+                args_prefix: [FAKE_CODEX],
+                env: { FAKE_CODEX_CASES: cases },
+              }),
+            )
+            .join("")
+        : "";
     registerSpaces(
       home,
       [{ path: seeded.folder, id: opened.space.spaceId }],
-      fakeInstanceToml(home, unread, holds) +
-        (options.runs === true
-          ? [CODEX_INSTANCE, CODEX_OTHER]
-              .map((codex) =>
-                instanceToml({
-                  id: codex.key,
-                  target: "codex-cli",
-                  label: codex.label,
-                  exec: process.execPath,
-                  args_prefix: [FAKE_CODEX],
-                  env: { FAKE_CODEX_CASES: cases },
-                }),
-              )
-              .join("")
-          : ""),
+      codexes + fakeInstanceToml(home, unread, holds),
     );
 
     const record = join(temp.root, "terminal.jsonl");

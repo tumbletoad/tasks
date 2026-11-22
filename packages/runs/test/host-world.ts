@@ -8,9 +8,9 @@
 // The world keeps its own truth of what the processes did, which the host never sees, and checks
 // the store against it.
 import { PassThrough } from "node:stream";
-import type { RunRecord, RunState } from "@ttasks/contracts/runs";
-import { FINAL_RUN_STATES } from "@ttasks/contracts/runs";
-import type { RunStore } from "@ttasks/launch/execution-store";
+import type { RunLimits, RunRecord, RunState } from "@tasks/contracts/runs";
+import { FINAL_RUN_STATES } from "@tasks/contracts/runs";
+import type { RunStore } from "@tasks/launch/execution-store";
 import {
   ContainerError,
   RunHost,
@@ -20,6 +20,7 @@ import {
   type Contained,
   type Containers,
   type ContainerSpec,
+  type OpenDriver,
   type RunFolders,
   type SavedAnswer,
 } from "../src/index.ts";
@@ -116,6 +117,12 @@ export class World {
   readonly stopped = new Set<string>();
   /** Every state a check found a run in. */
   readonly seen = new Set<string>();
+  /** What reached each run's agent on its input. */
+  readonly input = new Map<string, string>();
+  /** The driver every run gets; without one, the print-mode parser's. */
+  open: OpenDriver | undefined;
+  /** The limits every run is queued with. */
+  limits: RunLimits = MODEL_LIMITS;
 
   constructor(backend: WorldBackend) {
     this.#backend = backend;
@@ -293,11 +300,21 @@ export class World {
     return {
       name,
       pid: this.#pids,
-      stdin: new PassThrough(),
+      stdin: this.#stdin(name),
       stdout: box.stdout,
       stderr: box.stderr,
       exited,
     };
+  }
+
+  /** An agent's input, kept for the test as it arrives. */
+  #stdin(name: string): PassThrough {
+    const stdin = new PassThrough();
+    this.input.set(name, "");
+    stdin.on("data", (chunk: Buffer) => {
+      this.input.set(name, (this.input.get(name) ?? "") + chunk.toString("utf8"));
+    });
+    return stdin;
   }
 
   #agentExit(box: Box, exit: AgentExit): void {
@@ -389,7 +406,7 @@ export class World {
               request: "Fix the export.",
               briefHash: "0a1b2c3d".repeat(8),
               permission: "auto-edit",
-              limits: MODEL_LIMITS,
+              limits: this.limits,
             },
             `host-model-${String(this.#requests).padStart(8, "0")}`,
           );
@@ -402,7 +419,15 @@ export class World {
       case "start":
         if (id === undefined) break;
         this.modes.set(id, { mode: event.mode, obeys: event.obeys });
-        quiet(host.start(id, () => ({ command: "agent", args: [], cwd: "/w", env: {} })));
+        quiet(
+          host.start(id, () => ({
+            command: "agent",
+            args: [],
+            cwd: "/w",
+            env: {},
+            ...(this.open === undefined ? {} : { open: this.open }),
+          })),
+        );
         break;
       case "answerStart":
         if (id !== undefined) this.hung.get(id)?.answer(event.ok);

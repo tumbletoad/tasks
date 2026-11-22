@@ -2,12 +2,13 @@
 // restart of the service as it would have before: the instance machine.toml names now, the task's
 // folder as Open would use it, the person's environment, the program resolved before it starts,
 // and the brief with the person's request, which goes over the agent's protocol and never on a
-// command line. TTasks's own tools are the bridge, given to the agent's thread with the run's ticket
-// in their environment, so what the agent changes through them is recorded as the run's.
+// command line. Tasks' own tools are the bridge with the run's ticket in its environment, given to
+// the agent's thread (Codex) or in a private file in the run's folder (Claude Code), so what the
+// agent changes through them is recorded as the run's.
 import { createHash } from "node:crypto";
-import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
-import { findEntry, cliFaces } from "@ttasks/contracts";
-import type { RunPermission, RunRecord } from "@ttasks/contracts/runs";
+import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
+import { findEntry, cliFaces } from "@tasks/contracts";
+import type { RunAdapterId, RunPermission, RunRecord } from "@tasks/contracts/runs";
 import {
   ADDED,
   agentEnvironment,
@@ -19,6 +20,9 @@ import {
   type Instance,
 } from "@ttasks/launch";
 import {
+  claudeArgs,
+  claudeDriver,
+  claudeToolsFile,
   CODEX_ARGS,
   codexDriver,
   sameFolder,
@@ -50,12 +54,18 @@ export interface RunAgents {
   command(): readonly string[] | undefined;
 }
 
-/** The targets a run can drive, and the driver each gets. */
-const DRIVERS: Readonly<Record<string, "codex">> = { "codex-cli": "codex" };
+/** The targets a run can drive, and the adapter, which names the driver, each gets. */
+const DRIVERS: Readonly<Record<string, RunAdapterId>> = {
+  "codex-cli": "codex",
+  "claude-cli": "claude-print",
+};
 
 /** Whether an instance can run tasks in the background. */
 export const runsWith = (instance: Instance): boolean =>
   instance.enabled && Object.hasOwn(DRIVERS, instance.target) && instance.exec !== undefined;
+
+/** The adapter a run of `instance` records: which program's protocol its driver speaks. */
+export const runAdapter = (instance: Instance): RunAdapterId => DRIVERS[instance.target] ?? "codex";
 
 /** The permission a run of `instance` gets: full access unless the instance names a narrower one. */
 export function runPermission(instance: Instance): RunPermission {
@@ -130,9 +140,17 @@ export function runBriefHash(ref: string, title: string): string {
     .digest("hex");
 }
 
+/** A run's command, and its private files: written into the run's folder before it starts. */
+export interface BuiltRun {
+  readonly command: AgentCommand;
+  /** The tools file's text, for an agent that takes its tools from a file. */
+  readonly toolsFile?: string;
+}
+
 /**
  * What a run starts, from its record, or why it cannot start now. `ticket` is the run's: the
- * bridge presents it, and the agent's own shell has it for TTasks's command line.
+ * bridge presents it, and the agent's own shell has it for Tasks' command line. `toolsPath` is
+ * where the run's tools file will be.
  */
 export async function buildRun(
   agents: RunAgents,
@@ -140,9 +158,16 @@ export async function buildRun(
   run: RunRecord,
   machine: string,
   ticket: string,
-): Promise<AgentCommand | StartRefusal> {
+  toolsPath: string,
+): Promise<BuiltRun | StartRefusal> {
   const instance = agents.instances().find((i) => i.id === run.instance);
-  if (instance === undefined || !runsWith(instance) || instance.exec === undefined) {
+  // An instance whose program changed since the run was queued is not the one the run asked for.
+  if (
+    instance === undefined ||
+    !runsWith(instance) ||
+    instance.exec === undefined ||
+    runAdapter(instance) !== run.adapter
+  ) {
     return "instance_gone";
   }
   const reader = served.reader;
@@ -170,30 +195,37 @@ export async function buildRun(
     instance.target,
   );
   if (!program.ok) return "spawn_failed";
-  return {
-    command: program.command,
-    args: [...program.args, ...CODEX_ARGS],
-    cwd: folder.path,
-    env,
-    open: codexDriver({
-      inFolder: sameFolder(folder.path, agents.platform),
-      request: runBrief(task.ref, task.title, run.request),
-      permission: run.permission,
-      tools: {
-        command: command[0] ?? "",
-        args: [
-          ...command.slice(1),
-          "mcp",
-          "--space",
-          space,
-          "--instance",
-          instance.id,
-          "--app",
-          "codex",
-        ],
-        env: { [ADDED.ticket]: ticket },
+  const request = runBrief(task.ref, task.title, run.request);
+  const tools = (app: string) => ({
+    command: command[0] ?? "",
+    args: [...command.slice(1), "mcp", "--space", space, "--instance", instance.id, "--app", app],
+    env: { [ADDED.ticket]: ticket },
+  });
+  if (run.adapter === "claude-print") {
+    return {
+      command: {
+        command: program.command,
+        args: [...program.args, ...claudeArgs(run.permission, toolsPath)],
+        cwd: folder.path,
+        env,
+        open: claudeDriver({ request }),
       },
-      client: { version: agents.version },
-    }),
+      toolsFile: claudeToolsFile(tools("claude-code")),
+    };
+  }
+  return {
+    command: {
+      command: program.command,
+      args: [...program.args, ...CODEX_ARGS],
+      cwd: folder.path,
+      env,
+      open: codexDriver({
+        inFolder: sameFolder(folder.path, agents.platform),
+        request,
+        permission: run.permission,
+        tools: tools("codex"),
+        client: { version: agents.version },
+      }),
+    },
   };
 }

@@ -1,5 +1,6 @@
 // The parser for `claude -p --output-format stream-json --verbose` (A4 3.11.3, 3.11.4), shaped on
-// the Claude Code 2.1.322 recordings of lab run N (fixtures/streams/claude-print/).
+// the Claude Code 2.1.322 recordings of lab run N (fixtures/streams/claude-print/) and the 2.1.325
+// ones of the run driver (fixtures/claude-stream/).
 //
 // | Event                          | Use                                                        |
 // |--------------------------------|------------------------------------------------------------|
@@ -9,10 +10,13 @@
 // | `result`                       | the final state, result text, usage, permission denials    |
 // | `user`, `rate_limit_event`, other `system` subtypes, `stream_event` | known, nothing to use |
 //
-// The run is judged by the last `result` event's `is_error`, not by the exit code: Claude exits 0
-// after Ctrl+C with `is_error: true`, and 1 after an invalid model with `subtype: success` and
-// `is_error: true` (A4 3.11.3).
-import { MCP_SERVER_KEY } from "@ttasks/brand";
+// The run is judged by the last turn's `result` event's `is_error`, not by the exit code: Claude
+// exits 0 after Ctrl+C with `is_error: true`, and 1 after an invalid model with `subtype: success`
+// and `is_error: true` (A4 3.11.3). A program kept open for more input starts turns of its own (a
+// queued message, a finished background job): a turn that begins after a result makes that
+// result's answer provisional, and a run whose last turn has no result has none.
+// A helper agent's lines (`parent_tool_use_id`) report progress only: its words are not the run's.
+import { MCP_SERVER_KEY } from "@tasks/brand";
 import type { AppToolsState, OutcomeReason, ProcessExit, ProgressLabel, Usage } from "./events.ts";
 import {
   createParser,
@@ -23,8 +27,18 @@ import {
 } from "./parser.ts";
 import { addCounts, amount, array, count, nativeId, record, string, type Json } from "./values.ts";
 
-/** Known event types that carry nothing the run needs. */
-const IGNORED = new Set(["user", "rate_limit_event", "stream_event"]);
+/** Known event types that carry nothing the run needs. The driver answers the control lines. */
+const IGNORED = new Set([
+  "user",
+  "rate_limit_event",
+  "stream_event",
+  "control_request",
+  "control_response",
+  "control_cancel_request",
+]);
+
+/** The program's own diagnostics in a result's `errors`: not words for the person. */
+const DIAGNOSTIC = /^\[[a-z_]+\]/;
 
 const TTASKS_TOOL_PREFIX = `mcp__${MCP_SERVER_KEY}__`;
 
@@ -57,6 +71,15 @@ export function claudeToolLabel(name: string | undefined): ProgressLabel {
   return Object.hasOwn(LABELS, name) ? (LABELS[name] ?? "tool") : "tool";
 }
 
+/** A line that belongs to a turn of the run's own agent: its start, or one of its messages. */
+export function startsTurn(event: Json): boolean {
+  if (event["type"] === "system") return event["subtype"] === "init";
+  return event["type"] === "assistant" && !fromHelper(event);
+}
+
+/** A line of a helper agent the run's agent started. */
+const fromHelper = (event: Json): boolean => typeof event["parent_tool_use_id"] === "string";
+
 interface FinalResult {
   /** The last result's verdict: its is_error, or its subtype when is_error is missing. */
   failed: boolean;
@@ -65,10 +88,16 @@ interface FinalResult {
 }
 
 class ClaudeReader implements CliReader {
+  /** The result of the last turn; null while a turn goes on that has none yet. */
   private final: FinalResult | null = null;
   private readonly toolUses = new RecentKeys();
 
   read(event: Json, ctx: ReadContext): boolean {
+    // A result right after a result is a new turn's, one whose first line is its end.
+    if (this.final !== null && (startsTurn(event) || event["type"] === "result")) {
+      this.final = null;
+      ctx.answerReopened();
+    }
     switch (event["type"]) {
       case "system":
         if (event["subtype"] === "init") this.init(event, ctx);
@@ -124,9 +153,13 @@ class ClaudeReader implements CliReader {
       if (block === undefined) continue;
       if (block["type"] === "tool_use") {
         const id = string(block["id"]);
-        if (id === undefined || this.toolUses.add(id))
-          ctx.progress(claudeToolLabel(string(block["name"])));
-      } else if (block["type"] === "text") {
+        const label = claudeToolLabel(string(block["name"]));
+        if (id === undefined || this.toolUses.add(id)) ctx.progress(label);
+        // Tasks' tools may still be starting when the session starts: a call says they connected.
+        if (label === "tasks" && ctx.session !== null && ctx.session.appTools !== "connected") {
+          ctx.sessionSeen(ctx.session.cwd, "connected");
+        }
+      } else if (block["type"] === "text" && !fromHelper(event)) {
         const text = string(block["text"]);
         if (text === undefined) ctx.counts.malformed += 1;
         else if (apiError) ctx.error(text);
@@ -146,12 +179,15 @@ class ClaudeReader implements CliReader {
     // On a failure, `result` holds the error text, not an answer.
     if (!failed && text !== undefined) ctx.answer(text, true);
     const errors = array(event["errors"]);
-    const firstError = errors?.find((e) => typeof e === "string");
+    const firstError = errors?.find((e) => typeof e === "string" && !DIAGNOSTIC.test(e));
     if (typeof firstError === "string") ctx.error(firstError);
     else if (failed && text !== undefined) ctx.error(text);
 
-    const denials = array(event["permission_denials"]);
-    ctx.counts.permissionDenials = denials?.length ?? 0;
+    // A question the driver turned down to hand it to the person is not a refusal.
+    const denials = (array(event["permission_denials"]) ?? []).filter(
+      (d) => record(d)?.["tool_name"] !== "AskUserQuestion",
+    );
+    ctx.counts.permissionDenials = denials.length;
 
     const usage = this.usage(event);
     if (usage !== undefined) ctx.usageSeen(usage);

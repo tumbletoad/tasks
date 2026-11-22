@@ -217,6 +217,34 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.claude.driver",
+      "title": "The claude driver against a fake Claude Code that speaks exactly the recorded print-mode exchanges: the request is the program's first line of input and never an argument, the result's answer and verdict are the work's, the permission maps to Claude Code's own modes, a command and a call of Tasks' tools report their progress, a permission prompt is declined and counted, a question for the person ends the run as needing the person with the question kept and a later one changes nothing, an unknown request gets the protocol's error, a signed-out program ends with its own words and the sign-in command, a helper agent in the background or a queued turn keeps the work open until the program's own turn, which can still ask, while a command left in the background does not, every final result settles the work before the input closes and at the same line however the output is chunked, Stop between turns, during the turn, during start-up and of a silent program, a program that does not exit after its work settles with its answer, a program that stops writing, and a whole answer after megabytes of other output",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.run.door-claude",
+      "title": "tasks run with a Claude Code instance: the request reaches the agent on its input and on no process's command line, the run's tools are a private file in the run's folder with the only Tasks entry and a ticket no command line carries, the agent's calls through it bind to the run's session and are recorded with the run's ID, its entry opens nothing once the run ended, the request, the answer and the ticket are in no file of the state folder but the run's own, a person with more than one instance names one, Stop cancels a Claude Code run during its turn, and a signed-out Claude Code ends the run with the command to sign in",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.claude.run",
+      "title": "A Claude Code run in the run host with real processes, behind its npm shim, in a job object on Windows and without a process group everywhere: start to answer with the request on the program's input and on no command line, Stop during a turn and during start-up over the program's input, a program that does not exit after its work is ended with its answer kept, a process the agent left behind is ended and the cleanup says so, and nothing of a run is left alive",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.claude-stream.fixture-content",
+      "title": "The recorded Claude Code print-mode exchanges hold only what their sanitiser writes (protocol words, built-in tool names, synthetic IDs, fixture paths, names, times, texts and numbers) and pass the stream fixtures' scan; the sanitiser drops a recording's paths, servers, skills, models, prompts and answers, and the check refuses any other value",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.codex-app-server.fixture-content",
       "title": "The recorded codex app-server exchanges hold only what their sanitiser writes (protocol words, synthetic IDs, fixture paths, texts and numbers) and pass the stream fixtures' scan; the sanitiser drops a recording's paths, account, machine name, prompts, answers and ticket, and the check refuses any other value",
       "owner": "M6",
@@ -1533,14 +1561,14 @@
     },
     {
       "id": "A4.3.11.run.door",
-      "title": "ttasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of TTasks's tools binds to the run's session and is recorded with the run's ID, only the run's own calls may use its space without the home's registration, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, also with the ID a start hands out, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, and a missing task is refused",
+      "title": "tasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of Tasks' tools binds to the run's session and is recorded with the run's ID, only the run's own calls may use its space without the home's registration and only until the run ends, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, also with the ID a start hands out, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, and a missing task is refused",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A4.3.11.codex.driver",
-      "title": "The codex driver against a fake app server that speaks exactly the recorded exchanges: the request goes over the protocol, the final answer is the work's, a narrower mode runs in Codex's own sandbox, each server request kind is answered as the permission says while the turn goes on, a blocking question ends the run as needing the person with the question kept, and so does a question the turn ends with, and is kept when the wait for background work is stopped, the thread of an agent the run's agent started is never the run's own and holds the run while it works or until it is closed, a thread the server says works in another folder than the run's is given no work, a server that ends during background work leaves the work unfinished, an unknown request kind gets the protocol's error, Stop during start-up and during a turn, a server that stops answering, background work after the turn, and a whole answer after megabytes of other output",
+      "title": "The codex driver against a fake app server that speaks exactly the recorded exchanges: the request goes over the protocol, the final answer is the work's, a narrower mode runs in Codex's own sandbox, each server request kind is answered as the permission says while the turn goes on, a blocking question ends the run as needing the person with the question kept, and so does a question the turn ends with, and is kept when the wait for background work is stopped, the thread of an agent the run's agent started is never the run's own and holds the run while it works or until it is closed, a thread the server says works in another folder than the run's is given no work, a server that ends during background work leaves the work unfinished, an unknown request kind gets the protocol's error, Stop during start-up and during a turn, a server that stops answering, background work after the turn, a whole answer after megabytes of other output, and a request that comes after the work settled hears no one answered and changes nothing",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]

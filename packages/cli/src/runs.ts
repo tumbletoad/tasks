@@ -43,13 +43,23 @@ const FINAL = new Set(["succeeded", "failed", "timed_out", "cancelled", "unknown
 
 type Shown = Record<string, unknown>;
 
-/** One line for a run: its ID, task, state and why. */
-function line(run: Shown): string {
+/** How long a running run has been quiet, from a minute on: then the person may want to stop it. */
+function quiet(run: Shown, now: number): string {
+  const since = run["quiet_since"];
+  if (typeof since !== "number") return "";
+  const minutes = Math.floor((now - since) / 60_000);
+  return minutes < 1 ? "" : ` (quiet for ${String(minutes)} min)`;
+}
+
+/** One line for a run: its ID, task, state and why, and how many of its requests were refused. */
+export function runLine(run: Shown, now = Date.now()): string {
   const state = String(run["state"]);
   const reason = typeof run["reason"] === "string" ? ` (${run["reason"]})` : "";
   const waiting = typeof run["waiting"] === "string" ? ` (waits: ${run["waiting"]})` : "";
   const task = typeof run["task"] === "string" ? run["task"] : "-";
-  return `${String(run["id"])}  ${task}  ${String(run["instance"])}  ${state}${reason}${waiting}`;
+  const count = run["refused"];
+  const refused = typeof count === "number" && count > 0 ? ` (${String(count)} refused)` : "";
+  return `${String(run["id"])}  ${task}  ${String(run["instance"])}  ${state}${reason}${waiting}${quiet(run, now)}${refused}`;
 }
 
 const CLEANUP: Readonly<Record<string, string>> = {
@@ -60,7 +70,7 @@ const CLEANUP: Readonly<Record<string, string>> = {
 
 /** A run for a person: its line, how its processes ended, then its answer. */
 function described(run: Shown): string {
-  const out = [line(run)];
+  const out = [runLine(run)];
   const cleanup = typeof run["cleanup"] === "string" ? CLEANUP[run["cleanup"]] : undefined;
   if (cleanup !== undefined) out.push(cleanup);
   if (run["state"] === "unknown") {
@@ -69,6 +79,12 @@ function described(run: Shown): string {
     );
   }
   if (typeof run["error"] === "string") out.push(`The agent said: ${run["error"]}`);
+  const refused = run["refused"];
+  if (typeof refused === "number" && refused > 0) {
+    out.push(
+      `Its permission refused ${String(refused)} of the agent's requests: it worked without them.`,
+    );
+  }
   const answer = run["answer"];
   if (typeof answer === "string" && answer !== "") {
     const what =
@@ -110,7 +126,10 @@ export async function runCommand(
       });
       const runs = Array.isArray(listed["runs"]) ? (listed["runs"] as Shown[]) : [];
       if (globals.json) io.stdout(`${JSON.stringify(listed)}\n`);
-      else io.stdout(runs.length === 0 ? "No runs.\n" : `${runs.map(line).join("\n")}\n`);
+      else
+        io.stdout(
+          runs.length === 0 ? "No runs.\n" : `${runs.map((run) => runLine(run)).join("\n")}\n`,
+        );
       return 0;
     }
     if (first === "show" || first === "stop") {
@@ -119,7 +138,7 @@ export async function runCommand(
       }
       const shown = await call(`runs/${first}`, { ...space, run: rest[0] });
       if (globals.json) io.stdout(`${JSON.stringify(shown)}\n`);
-      else io.stdout(first === "show" ? described(shown) : `${line(shown)}\n`);
+      else io.stdout(first === "show" ? described(shown) : `${runLine(shown)}\n`);
       return 0;
     }
     // A run of a task.
@@ -174,7 +193,7 @@ export async function runCommand(
     if (!wait) {
       if (globals.json) io.stdout(`${JSON.stringify(started)}\n`);
       else {
-        io.stdout(`${line(started)}\n`);
+        io.stdout(`${runLine(started)}\n`);
         io.stderr(`See it with: ${CLI_NAME} run show ${id}\n`);
       }
       return 0;

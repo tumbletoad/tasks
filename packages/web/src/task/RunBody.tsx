@@ -3,7 +3,7 @@
 // answer and the question are the agent's text: Markdown that is never HTML, links made safe
 // (markdown.tsx), a long one folded at ten lines until More. The state line is announced politely
 // as it changes, so Stop's outcome is heard where Stop was pressed.
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Run } from "../api.ts";
 import { classes } from "../app/css.ts";
 import { useT } from "../i18n/intl.tsx";
@@ -62,8 +62,23 @@ function Folded({ text, className }: { readonly text: string; readonly className
   );
 }
 
+/** Renders again every half minute while `on`: a quiet run's minutes go on. */
+function useTick(on: boolean): void {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!on) return;
+    const timer = setInterval(() => {
+      setTick((n) => n + 1);
+    }, 30_000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [on]);
+}
+
 export function RunBody({ run, label, onStop }: RunBodyProps) {
   const t = useT();
+  useTick(run.quiet_since !== undefined);
   const view = runView(run, label);
   const said = view.said;
   return (
