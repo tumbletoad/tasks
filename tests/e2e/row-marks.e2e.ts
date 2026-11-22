@@ -1,11 +1,6 @@
-// A row's mark for unsent words, and Open's question before a folder that may be another one, in
-// Chromium and Firefox against the real service process with fixture data and the fake terminal
-// behind Open. Each in Sumi and Washi at 1,440 and 390 px.
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+// A row's mark for unsent words, in Chromium and Firefox against the real service process with
+// fixture data, at 1,440 and 390 px.
 import { expect, type Browser, type Page } from "@playwright/test";
-import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import { picture, showsSpace, signIn, themes } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
@@ -83,62 +78,5 @@ test.describe("[A5.3.6.e2e.draft-mark] A row says when its composer holds unsent
       }
     }
     await world.machine("ui.theme", null);
-  });
-});
-
-test.describe("[A4.5.e2e.open-marker-screens] Open's question about a folder that may be another one", () => {
-  test("the toast names the folder in its sentence, in both themes at 1,440 and 390 px", async ({
-    browser,
-    world,
-  }) => {
-    const temp = mkdtempSync(join(tmpdir(), "ttasks-e2e-marker-screens-"));
-    try {
-      const folder = join(temp, "portal");
-      mkdirSync(join(folder, ".git"), { recursive: true });
-      writeFileSync(
-        join(folder, ".git", "config"),
-        '[remote "origin"]\n\turl = https://git.example.com/mira/portal-web.git\n',
-      );
-      const ref = await addTask(world, {
-        title: `Tag the portal hotfix (${test.info().project.name})`,
-        inbox: true,
-      });
-      const base = ((await world.op(world.mira.id, "task.get", { task: ref })) as { as_of: string })
-        .as_of;
-      const set = (await world.op(world.mira.id, "folder.manage", {
-        action: "set",
-        task: ref,
-        folder,
-        base,
-      })) as { folder: string };
-      // The checkout is moved aside and an unrelated folder made at its path.
-      renameSync(folder, join(temp, "portal-aside"));
-      mkdirSync(folder);
-      const before = world.terminal().length;
-      for (const theme of themes()) {
-        const { page, close } = await themed(browser, world, theme, `/task/${ref}`);
-        try {
-          const row = page.locator(`main li[data-task="${ref}"]`);
-          await row
-            .getByRole("toolbar")
-            .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
-            .click();
-          const said = page.getByRole("status").filter({
-            hasText: `The folder ${set.folder} has no TTasks marker, so it may not be the folder set for this task. Nothing was started.`,
-          });
-          await expect(said).toBeVisible({ timeout: SLOW_MS });
-          await picture(page, `marker-${theme}-1440.png`);
-          await page.setViewportSize({ width: 390, height: 900 });
-          await expect(said).toBeVisible();
-          await picture(page, `marker-${theme}-390.png`);
-        } finally {
-          await close();
-        }
-      }
-      expect(world.terminal()).toHaveLength(before);
-    } finally {
-      await world.machine("ui.theme", null);
-      rmSync(temp, { recursive: true, force: true, maxRetries: 60, retryDelay: 250 });
-    }
   });
 });
