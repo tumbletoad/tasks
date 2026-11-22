@@ -91,6 +91,8 @@ export class MachineSettings {
   readonly #listeners = new Set<() => void>();
   /** Changes run one at a time, each against the file the one before it wrote. */
   #queue: Promise<unknown> = Promise.resolve();
+  /** When the choice that stands for each setting was made, in milliseconds since 1970. */
+  readonly #chosenAt = new Map<string, number>();
 
   constructor(options: MachineSettingsOptions) {
     this.#o = options;
@@ -132,16 +134,38 @@ export class MachineSettings {
     }
   }
 
+  /**
+   * Whether a choice made at `at` (the page's clock, which is this machine's; none: now) is the
+   * newest of `what`. Two quick choices travel on two connections and can arrive the other way
+   * round: the earlier one must not undo the later.
+   */
+  #newest(what: string, at: unknown): boolean {
+    const made = typeof at === "number" && Number.isFinite(at) ? at : Date.now();
+    const standing = this.#chosenAt.get(what);
+    if (standing !== undefined && made < standing) return false;
+    this.#chosenAt.set(what, made);
+    return true;
+  }
+
   #run<T>(work: () => T | Promise<T>): Promise<T> {
     const run = this.#queue.then(work, work);
     this.#queue = run.catch(() => undefined);
     return run;
   }
 
-  /** Sets one of the page's machine preferences, or resets it to its default with null. */
-  setPreference(key: unknown, value: unknown): Promise<PreferenceRead> {
+  /**
+   * Sets one of the page's machine preferences, or resets it to its default with null. A choice
+   * made before the one that stands changes nothing, and the answer is what stands.
+   */
+  setPreference(key: unknown, value: unknown, at?: unknown): Promise<PreferenceRead> {
     if (!isPageKey(key)) return Promise.reject(notASetting());
     return this.#run(() => {
+      const standing = () => {
+        const read = this.preferences().find((p) => p.key === key);
+        if (read === undefined) throw notASetting();
+        return read;
+      };
+      if (!this.#newest(key, at)) return standing();
       const edited = setMachinePreference(
         this.#o.configDir,
         key,
@@ -153,9 +177,7 @@ export class MachineSettings {
       else this.#values.set(key, value as PrefValue);
       this.#o.log.log("config.preference_set", { key, reset: value === null });
       this.#changed();
-      const read = this.preferences().find((p) => p.key === key);
-      if (read === undefined) throw notASetting();
-      return read;
+      return standing();
     });
   }
 
@@ -169,7 +191,7 @@ export class MachineSettings {
    * machine.toml; another is one of the terminals found here, or the one machine.toml names now.
    * A `path` belongs to the terminal it was written for, so choosing another one takes it out.
    */
-  setTerminal(app: unknown): Promise<TerminalView | null> {
+  setTerminal(app: unknown, at?: unknown): Promise<TerminalView | null> {
     const port = this.#o.terminal;
     if (port === undefined) return Promise.reject(notASetting());
     if (typeof app !== "string" || !(TERMINAL_APPS as readonly string[]).includes(app)) {
@@ -177,6 +199,7 @@ export class MachineSettings {
     }
     const chosen = app as TerminalSettings["app"];
     return this.#run(async () => {
+      if (!this.#newest("terminal", at)) return port.view();
       const current = port.settings();
       if (chosen !== "auto" && chosen !== current.app) {
         const view = await port.view();

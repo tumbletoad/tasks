@@ -430,20 +430,21 @@ export class Api {
 
   /**
    * Sets one of this machine's settings of the page, or resets it with null. The page shows the
-   * choice at once, so a reload right after the click must not lose it.
+   * choice at once, so a reload right after the click must not lose it. `at` is when the person
+   * chose: of two quick choices that arrive the other way round, the later one stands.
    */
   async setMachinePreference(
     key: string,
     value: unknown,
   ): Promise<{ readonly key: string; readonly value: unknown; readonly state: string }> {
-    return this.#result("/api/v1/machine/pref", { key, value }, true);
+    return this.#result("/api/v1/machine/pref", { key, value, at: Date.now() }, true);
   }
 
   /** Open's terminal, and with `app` the choice of one (`auto`: the system's default). */
   async terminal(app?: string): Promise<TerminalView | null> {
     const reply = await this.#result<{ terminal: TerminalView | null }>(
       "/api/v1/machine/terminal",
-      app === undefined ? {} : { app },
+      app === undefined ? {} : { app, at: Date.now() },
       app !== undefined,
     );
     return reply.terminal;

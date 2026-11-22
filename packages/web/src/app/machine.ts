@@ -78,6 +78,8 @@ export function useMachineControl(
   const held = useRef<MachineSettings | undefined>(undefined);
   /** Changes on their way, per key: until they settle, the feed's older word does not show. */
   const pending = useRef(new Map<Key, number>());
+  /** The newest change per key: only its answer says what stands, as answers may cross. */
+  const newest = useRef(new Map<Key, number>());
   /** An older build's choice in this browser, handed over at the first message. */
   const legacy = useRef(legacyTheme(store));
 
@@ -103,13 +105,15 @@ export function useMachineControl(
       if (api === undefined) throw new Error("No sign-in");
       const before = shownRef.current[field];
       pending.current.set(key, (pending.current.get(key) ?? 0) + 1);
+      const mine = (newest.current.get(key) ?? 0) + 1;
+      newest.current.set(key, mine);
       setShown((s) => ({ ...s, [field]: value }));
       try {
         const kept = await api.setMachinePreference(key, value);
         // The answer is the service's word too: the feed's message for it may come after it, or,
         // with the feed down, only at the next connection.
         const now = held.current;
-        if (now !== undefined) {
+        if (now !== undefined && newest.current.get(key) === mine) {
           const { theme, singleKeys } = settingsOf([kept], now);
           held.current = { theme, singleKeys };
         }

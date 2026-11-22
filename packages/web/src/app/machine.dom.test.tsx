@@ -94,4 +94,28 @@ describe("[A7.3.12.m5-11.machine-page] the page's copy of this machine's setting
     expect(control.theme).toBe("sumi");
     expect(document.documentElement.dataset["theme"]).toBe("sumi");
   });
+
+  test("of two quick choices, the later one shows, whichever answer comes last", async () => {
+    const { api, calls } = fakeApi();
+    act(() => {
+      root.render(<Probe api={api} />);
+    });
+    act(() => {
+      control.receive(FEED);
+    });
+    let first: Promise<void> | undefined;
+    let second: Promise<void> | undefined;
+    act(() => {
+      first = control.setTheme("washi");
+      second = control.setTheme("system");
+    });
+    // System's answer comes first; Washi's, which the service answers with what stands, after it.
+    await act(async () => {
+      calls[1]?.resolve({ key: "ui.theme", value: "system", state: "set" });
+      await second;
+      calls[0]?.resolve({ key: "ui.theme", value: "washi", state: "set" });
+      await first;
+    });
+    expect(control.theme).toBe("system");
+  });
 });
