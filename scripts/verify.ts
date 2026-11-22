@@ -5,13 +5,23 @@
 // code or a file they depend on changed, or when asked: pnpm verify --lab, or TASKS_VERIFY_LAB=1.
 // The rule is in lab-tests.ts (A7 3.3).
 //
+// `--part checks|product|lab` runs one slice and `--shard i/n` one Vitest shard of a test part,
+// so CI can spread verify over several machines. With no part it runs every step.
+//
 // safe-exit comes first: this script loads the product's generators and ends through
 // `process.exit` (A2 3.12.1).
 import "../packages/bridge/src/safe-exit.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkGenerated, generators } from "./generated.ts";
-import { decideLab, findBase, parseVerifyArgs, type LabDecision } from "./lab-tests.ts";
+import {
+  decideLab,
+  findBase,
+  parseVerifyArgs,
+  type LabDecision,
+  type VerifyOptions,
+  type VerifyPart,
+} from "./lab-tests.ts";
 import { verifyManifest } from "./manifest.ts";
 import { binPath, repoRoot, runNode } from "./run.ts";
 
@@ -81,14 +91,25 @@ function typecheck(): boolean {
   return ok;
 }
 
-const steps: [name: string, step: Step][] = [
-  ["runtime", runtime],
-  ["generated files", generated],
-  ["typecheck", typecheck],
-  ["lint", tool("eslint", "eslint", ["--max-warnings", "0", "."])],
-  ["format", tool("prettier", "prettier", ["--check", "--log-level", "warn", "."])],
+let options: VerifyOptions;
+try {
+  options = parseVerifyArgs(process.argv.slice(2));
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error);
+  process.exit(2);
+}
+const shard = options.shard === null ? [] : ["--shard", options.shard];
+
+/** Every step with the part it belongs to. The runtime check comes first in every part. */
+const allSteps: [name: string, part: VerifyPart | "all", step: Step][] = [
+  ["runtime", "all", runtime],
+  ["generated files", "checks", generated],
+  ["typecheck", "checks", typecheck],
+  ["lint", "checks", tool("eslint", "eslint", ["--max-warnings", "0", "."])],
+  ["format", "checks", tool("prettier", "prettier", ["--check", "--log-level", "warn", "."])],
   [
     "dependency rules",
+    "checks",
     tool("dependency-cruiser", "depcruise", [
       "--config",
       ".dependency-cruiser.cjs",
@@ -97,32 +118,30 @@ const steps: [name: string, step: Step][] = [
       ...cruiseRoots,
     ]),
   ],
-  ["test manifest", manifest],
-  ["product tests", tool("vitest", "vitest", ["run", "--project", "product"])],
-  ["lab tests", labTests],
+  ["test manifest", "checks", manifest],
+  ["product tests", "product", tool("vitest", "vitest", ["run", "--project", "product", ...shard])],
+  ["lab tests", "lab", labTests],
 ];
+const steps = allSteps.filter(
+  ([, part]) => options.part === null || part === "all" || part === options.part,
+);
 
-let options: { lab: boolean };
-try {
-  options = parseVerifyArgs(process.argv.slice(2));
-} catch (error) {
-  console.error(error instanceof Error ? error.message : error);
-  process.exit(2);
-}
 // Decided before any step runs, so the rule that applied is the first thing the output says.
-const lab: LabDecision = decideLab(options, process.env, () => findBase(process.env));
-console.log(lab.reason);
+const lab: LabDecision | null = steps.some(([, part]) => part === "lab")
+  ? decideLab(options, process.env, () => findBase(process.env))
+  : null;
+if (lab !== null) console.log(lab.reason);
 
 function labTests(): boolean {
-  if (!lab.run) {
-    console.log(lab.reason);
+  if (lab === null || !lab.run) {
+    if (lab !== null) console.log(lab.reason);
     return true;
   }
-  return runNode(binPath("vitest", "vitest"), ["run", "--project", "lab"]).status === 0;
+  return runNode(binPath("vitest", "vitest"), ["run", "--project", "lab", ...shard]).status === 0;
 }
 
 const started = performance.now();
-for (const [index, [name, step]] of steps.entries()) {
+for (const [index, [name, , step]] of steps.entries()) {
   const label = `[${String(index + 1)}/${String(steps.length)}] ${name}`;
   console.log(`\n${label}`);
   const t0 = performance.now();
@@ -141,5 +160,10 @@ for (const [index, [name, step]] of steps.entries()) {
   console.log(`${label}: ok (${seconds} s)`);
 }
 const total = `${((performance.now() - started) / 1000).toFixed(1)} s`;
-// A pass without the lab tests must not read as "the lab still works".
-console.log(`\nverify passed (${total})${lab.run ? "" : `. ${lab.reason}`}`);
+// A pass of one part, or without the lab tests, must not read as a pass of everything.
+const slice =
+  options.part === null
+    ? ""
+    : ` of part ${options.part}${options.shard === null ? "" : `, shard ${options.shard}`}`;
+const skipped = lab === null || lab.run ? "" : `. ${lab.reason}`;
+console.log(`\nverify passed${slice} (${total})${skipped}`);

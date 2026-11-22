@@ -67,14 +67,53 @@ export interface LabDecision {
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
+/**
+ * A slice of verify, so CI can spread it over several machines: the static checks, the product
+ * tests or the lab tests. Together the parts are every step.
+ */
+export const VERIFY_PARTS = ["checks", "product", "lab"] as const;
+export type VerifyPart = (typeof VERIFY_PARTS)[number];
+
+export interface VerifyOptions {
+  lab: boolean;
+  /** Null runs every part. */
+  part: VerifyPart | null;
+  /** Vitest's `index/count`, for the product or lab part. */
+  shard: string | null;
+}
+
 /** The verify options. Throws on an argument it does not know, so a typo never skips anything. */
-export function parseVerifyArgs(args: readonly string[]): { lab: boolean } {
-  let lab = false;
-  for (const arg of args) {
-    if (arg === "--lab") lab = true;
-    else if (arg !== "--") throw new Error(`unknown argument ${JSON.stringify(arg)}. Use --lab.`);
+export function parseVerifyArgs(args: readonly string[]): VerifyOptions {
+  const options: VerifyOptions = { lab: false, part: null, shard: null };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--") continue;
+    if (arg === "--lab") {
+      options.lab = true;
+    } else if (arg === "--part") {
+      const value = args[++i] ?? "";
+      const part = VERIFY_PARTS.find((p) => p === value);
+      if (part === undefined) {
+        throw new Error(
+          `--part takes one of ${VERIFY_PARTS.join(", ")}, not ${JSON.stringify(value)}`,
+        );
+      }
+      options.part = part;
+    } else if (arg === "--shard") {
+      const value = args[++i] ?? "";
+      const m = /^([1-9]\d*)\/([1-9]\d*)$/.exec(value);
+      if (m === null || Number(m[1]) > Number(m[2])) {
+        throw new Error(`--shard takes index/count, such as 1/4, not ${JSON.stringify(value)}`);
+      }
+      options.shard = value;
+    } else {
+      throw new Error(`unknown argument ${JSON.stringify(arg)}. Use --lab, --part or --shard.`);
+    }
   }
-  return { lab };
+  if (options.shard !== null && options.part !== "product" && options.part !== "lab") {
+    throw new Error("--shard needs --part product or --part lab");
+  }
+  return options;
 }
 
 const MAX_LISTED = 5;
