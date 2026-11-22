@@ -54,9 +54,7 @@ export const SpaceStatusResult = z.strictObject({
     .describe("The space this session uses"),
   session: z
     .strictObject({
-      state: z
-        .enum(["bound", "unbound"])
-        .describe("bound: this connection is a task's session"),
+      state: z.enum(["bound", "unbound"]).describe("bound: this connection is a task's session"),
       task: TaskRef.optional(),
       instance: z.string().describe("Agent instance").optional(),
       app: z.string().describe("Agent app").optional(),

@@ -578,8 +578,10 @@ async function run(initial: DefaultSpace, events: readonly Event[]): Promise<str
           // task of the space it does not.
           const space = bridgeSpace("H");
           const s1Task = tasks[2]?.id;
-          const inSpace = space === s1.spaceId ? s1Task : space === s2.spaceId ? task2.id : undefined;
-          const outside = space === s1.spaceId ? task2.id : space === s2.spaceId ? s1Task : undefined;
+          const inSpace =
+            space === s1.spaceId ? s1Task : space === s2.spaceId ? task2.id : undefined;
+          const outside =
+            space === s1.spaceId ? task2.id : space === s2.spaceId ? s1Task : undefined;
           task = ev.task === "other" ? outside : inSpace;
         } else {
           const own = isLaunched(ev.agent) ? launchOf(ev.agent).task : tasks[2]?.id;

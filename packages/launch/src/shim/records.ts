@@ -111,7 +111,6 @@ export interface LaunchFile {
   readonly preset?: string;
 }
 
-
 /** The shim's machine state, as the host reads and writes it. */
 export interface RecordStore {
   list(): readonly LaunchFile[];
@@ -319,7 +318,6 @@ function checkGiven(
     ...(preset === undefined ? {} : { preset }),
   };
 }
-
 
 /** An `exit.json`, checked; undefined when it is not one or names another launch. */
 export function checkExitFile(value: unknown, launch: string): ExitFile | undefined {

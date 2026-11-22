@@ -515,9 +515,7 @@ describe("[A3.3.7.grant.unregistered] a home with no row, and an entry without -
       const odd = await connect({ instance: "Not An Instance!", space: life });
       expect(await refusedText(odd, "space.status")).toBe(elsewhere("Mira", w.space, true));
       const manualLife = await connect({ instance: null, space: life });
-      expect(await refusedText(manualLife, "space.status")).toBe(
-        elsewhere("Mira", w.space, true),
-      );
+      expect(await refusedText(manualLife, "space.status")).toBe(elsewhere("Mira", w.space, true));
       // Without --space too: the default space when it binds, which is what taking it out gives.
       const plain = await connect({ instance: null });
       expect(await plain.call("space.status")).toContain("Space: Mira (M)");
