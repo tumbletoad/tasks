@@ -455,6 +455,36 @@ describe("[A4.3.11.9.run.stop-unknown] Stop of a run whose processes were not co
 });
 
 describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: what blocks it, nothing new starts, Stop on request, and the hold goes with its connection", () => {
+  test("a working run comes with what it said so far and since when it is quiet; a run being stopped is not quiet, and one that waits said nothing", async () => {
+    const { home, spaceId } = await setUp("runs-live");
+    const boxes = fakeBoxes();
+    const service = await start(home, { containers: boxes.containers });
+    const task = await addTask(home, service, 1);
+    const command = agent(ANSWERS, home);
+    const first = await service.runs.start(spaceId, input(task), "runs-live-run-000001", command);
+    const running = await runUntil(service, spaceId, first.id, (r) => r.state === "running", "it");
+    const live = await waitFor(
+      () => {
+        const now = service.runs.live(running);
+        return now.said === undefined ? undefined : now;
+      },
+      15_000,
+      "what it said",
+    );
+    expect(live.said).toEqual({ text: "Still looking.", final: false, cut: false });
+    expect(typeof live.quietSince).toBe("number");
+    // The host still holds the run while its Stop is on its way: it is stopping, not quiet.
+    const stopping = service.runs.live({ ...running, state: "cancelling" });
+    expect(stopping).not.toHaveProperty("quietSince");
+    expect(stopping.said?.text).toBe("Still looking.");
+    expect(service.runs.live({ ...running, state: "queued" })).not.toHaveProperty("said");
+    boxes.finish(first.id);
+    const ended = await service.runs.ended(spaceId, first.id);
+    expect(ended).toMatchObject({ state: "succeeded" });
+    // An ended run's record says it all.
+    expect(ended === undefined ? undefined : service.runs.live(ended)).toEqual({});
+  }, 60_000);
+
   test("the hold names the running run with its task, a new run waits with the reason update, stop_held stops the run with its answer, and closing the hold's connection lets the queue move", async () => {
     const { home, spaceId } = await setUp(
       "runs-hold",
@@ -501,7 +531,7 @@ describe("[A4.3.11.9.run.update-hold] an update's hold over the local endpoint: 
     const second = await service.runs.start(spaceId, unlimited, "runs-hold-run-000002", command);
     expect(second.limits).toMatchObject({ wallMs: 7 * 60_000, idleMs: 3 * 60_000 });
     await waitFor(
-      () => (service.runs.live(second.id).waiting === "update" ? true : undefined),
+      () => (service.runs.live(second).waiting === "update" ? true : undefined),
       15_000,
       "the reason it waits",
     );

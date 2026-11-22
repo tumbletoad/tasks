@@ -89,9 +89,11 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
     case "running":
     case "waiting_for_input":
     case "reconciling":
+      // What it said so far stays in view: a server it keeps running is the person's to use.
       return {
         tone: "working",
         status: [msg("run.working", { label }), ...quiet],
+        ...said("last"),
         stoppable: true,
       };
     case "cancelling":

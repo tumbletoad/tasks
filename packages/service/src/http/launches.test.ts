@@ -90,7 +90,6 @@ describe("[M6.page.run-view] the page's view of a run", () => {
           cleanup: "confirmed",
         },
       }),
-      { waiting: "task_limit" },
     );
     expect(ended).toMatchObject({
       asked: "Check the export",
@@ -101,19 +100,19 @@ describe("[M6.page.run-view] the page's view of a run", () => {
       answer: "Which month?",
       answer_final: false,
     });
-    // Only a queued run waits.
     expect(ended).not.toHaveProperty("waiting");
     expect(ended).not.toHaveProperty("refused");
   });
 
-  test("a running run says since when it is quiet, and an ended one how many requests were refused", () => {
+  test("a running run says since when it is quiet and what it said so far, and an ended one how many requests were refused", () => {
     const since = Date.UTC(2026, 10, 21, 9, 30);
-    expect(uiRun(record({ state: "running" }), { quietSince: since })).toMatchObject({
+    const said = { text: "The server listens on port 5173.", final: true, cut: false };
+    expect(uiRun(record({ state: "running" }), { quietSince: since, said })).toMatchObject({
       quiet_since: since,
+      answer: "The server listens on port 5173.",
+      answer_final: true,
+      answer_cut: false,
     });
-    expect(uiRun(record({ state: "queued" }), { quietSince: since })).not.toHaveProperty(
-      "quiet_since",
-    );
     const refused = uiRun(
       record({
         state: "succeeded",

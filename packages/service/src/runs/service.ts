@@ -36,6 +36,7 @@ import {
   type ProbeResult,
   type RunHostLog,
   type RunTimes,
+  type SavedAnswer,
   type StartRefusal,
   type WaitReason,
 } from "@tasks/runs";
@@ -123,6 +124,8 @@ export interface RunLive {
   readonly waiting?: WaitReason;
   /** Wall clock milliseconds since when a running run wrote nothing. */
   readonly quietSince?: number;
+  /** The answer saved so far, while a run that started has none in its record yet. */
+  readonly said?: { readonly text: string; readonly final: boolean; readonly cut: boolean };
 }
 
 /** The time limits `[runs]` sets, and only those: a run without one has none. */
@@ -452,14 +455,7 @@ export class RunService {
       record.task === null || served?.reader === undefined
         ? null
         : ((await readTaskRef(served.reader, record.task).catch(() => undefined)) ?? null);
-    let answer: string | null = record.result?.text ?? null;
-    if (answer === null && !FINAL.has(record.state)) {
-      try {
-        answer = this.#files.readAnswer(record.id)?.text ?? null;
-      } catch {
-        answer = null;
-      }
-    }
+    const answer = record.result?.text ?? this.live(record).said?.text ?? null;
     return { run: record, task, answer };
   }
 
@@ -535,16 +531,32 @@ export class RunService {
   }
 
   /**
-   * What a run's record cannot say: why a queued run waits, as the last round saw it, and since
-   * when one that runs here has written nothing.
+   * What a run's record cannot say: why a queued run waits, as the last round saw it, since when
+   * a running one has written nothing, and what one that started said so far. Each holds only in
+   * the state it is about: a run being stopped is not quiet, a started one does not wait.
    */
-  live(run: string): RunLive {
-    const waiting = this.#supervisor.waiting(run);
+  live(run: RunRecord): RunLive {
+    if (run.state === "queued") {
+      const waiting = this.#supervisor.waiting(run.id);
+      return waiting === undefined ? {} : { waiting };
+    }
+    if (run.result !== null || FINAL.has(run.state)) return {};
     let quietSince: number | undefined;
-    for (const lane of this.#lanes.values()) quietSince ??= lane.host.quietSince(run);
+    if (run.state === "running") {
+      for (const lane of this.#lanes.values()) quietSince ??= lane.host.quietSince(run.id);
+    }
+    let saved: SavedAnswer | undefined;
+    try {
+      saved = this.#files.readAnswer(run.id);
+    } catch {
+      saved = undefined;
+    }
+    const text = saved?.text ?? null;
     return {
-      ...(waiting === undefined ? {} : { waiting }),
       ...(quietSince === undefined ? {} : { quietSince }),
+      ...(saved === undefined || text === null
+        ? {}
+        : { said: { text, final: saved.final, cut: saved.cut } }),
     };
   }
 

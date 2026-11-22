@@ -73,6 +73,19 @@ describe("[M6.page.run-words] a run's entry says what is the case and what the p
     expect(quiet.status[1]).toEqual({ id: "run.quiet", values: { minutes: 25 } });
   });
 
+  test("a working run shows what it said so far, so a server it keeps running can be used before Stop", () => {
+    const serving = runView(
+      run({ answer: "The preview is at http://localhost:5173.", answer_final: true }),
+      "Claude Code",
+    );
+    expect(serving).toMatchObject({
+      tone: "working",
+      stoppable: true,
+      said: { kind: "last", text: "The preview is at http://localhost:5173." },
+    });
+    expect(runView(run(), "Claude Code").said).toBeUndefined();
+  });
+
   test("a run whose permission refused some of the agent's requests says how many", () => {
     const done = runView(run({ state: "succeeded", refused: 2 }), "Claude Code");
     expect(words(done)).toContain("Its permission refused 2 requests of Claude Code.");
