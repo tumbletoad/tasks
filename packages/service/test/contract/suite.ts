@@ -28,7 +28,7 @@ import { startService, type RunningService, type StartOptions } from "../../src/
 import { renderError } from "../../src/mcp/index.ts";
 import { opCall } from "../../src/ops/index.ts";
 import { removeRuntimeDir, serviceEnv, tempRoot } from "../harness.ts";
-import { classSession, grantHome, revokeHome } from "../ops-helpers.ts";
+import { agentHomeOf, classSession, grantHome, revokeHome } from "../ops-helpers.ts";
 
 /** The request IDs of the registry's examples (contracts' entries/fixture.ts). */
 const requestIdOf = (n: number): string =>
@@ -85,12 +85,16 @@ export interface ContractWorld {
    */
   folder(task: string): Promise<void>;
   /**
-   * A terminal launch of `task` (a reference or ID), opened, dispatched and claimed in this process
-   * as its shim would claim it (the world's terminal keeps the ticket, its process probe says every
-   * process lives), and unless `started` is false its agent started: what a launched agent holds.
-   * With `claimed` false no shim claims it: its Brief reached no agent.
+   * A terminal launch of `task` (a reference or ID) as a real click makes one: on an instance of its
+   * own, with the instance's agent home (`agentHomeOf`) recorded at the click and registered for the
+   * world's space as setup does, unless `home` asks for one of the other homes. Opened, dispatched
+   * and claimed in this process as its shim would claim it (the world's terminal keeps the ticket,
+   * its process probe says every process lives), and unless `started` is false its agent started:
+   * what a launched agent holds. With `claimed` false no shim claims it: its Brief reached no agent.
    */
   launch(task: string, options?: LaunchAsks): Promise<WorldLaunch>;
+  /** A second space, Other (prefix O), made the first time it is asked for. */
+  other(): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -101,12 +105,29 @@ export interface WorldLaunch {
   readonly ticket: string;
   /** The shim's attachment, once claimed. */
   readonly attachment: Attachment | undefined;
+  /** The instance the click chose, and the app and home folder it recorded (none without). */
+  readonly instance: string;
+  readonly app: string | undefined;
+  readonly home: string | undefined;
 }
 
-/** How far a world launch goes: claimed by its shim, and its agent started (both by default). */
+/**
+ * The agent home a world launch is opened on:
+ * - `registered`: its app and home recorded, and a live row of its instance for the world's space;
+ * - `no-app`: the click recorded its home but no app;
+ * - `no-row`: its app and home recorded, and setup never registered the home;
+ * - `revoked`: registered, then the row revoked as `ttasks setup agents --remove` does;
+ * - `other-space`: registered for the world's Other space (`other()`), while the launch is in the
+ *   world's own.
+ */
+export const WORLD_HOMES = ["registered", "no-app", "no-row", "revoked", "other-space"] as const;
+export type WorldHome = (typeof WORLD_HOMES)[number];
+
+/** How far a world launch goes, and on which home: claimed, started and registered by default. */
 export interface LaunchAsks {
   readonly claimed?: boolean;
   readonly started?: boolean;
+  readonly home?: WorldHome;
 }
 
 /** The start time the world's process probe reports for every process. */
@@ -174,6 +195,22 @@ export async function contractWorld(
     user.close();
   }
   const space = created.space?.id ?? created.id ?? "";
+  const path = service.endpoint.path;
+  let otherSpace: Promise<string> | undefined;
+  const other = (): Promise<string> =>
+    (otherSpace ??= (async () => {
+      const operator = await classSession(home, path, "cli-interactive");
+      try {
+        const made = (await operator.call(
+          "space/create",
+          { name: "Other", path: join(temp.root, "s", "other"), ref_prefix: "O" },
+          { timeoutMs: 120_000 },
+        )) as { space: { id: string } };
+        return made.space.id;
+      } finally {
+        operator.close();
+      }
+    })());
   let launches = 0;
   const launch = async (task: string, launchOptions: LaunchAsks = {}): Promise<WorldLaunch> => {
     // In the world's space by its ID: a test may serve more spaces beside it.
@@ -183,13 +220,23 @@ export async function contractWorld(
       { op: "task.get", input: { task, sections: ["history"] }, space },
     )) as { task: { id: string } };
     launches += 1;
+    // An instance of its own, so a second launch of a task while the first is still opening is a
+    // launch of its own rather than the first one again. One home per instance, as setup has it.
+    const instance = `contract-agent-${String(launches)}`;
+    const agent = agentHomeOf(home, instance);
+    const kind = launchOptions.home ?? "registered";
+    if (kind === "registered") await grantHome(home, path, { instance, space });
+    if (kind === "other-space") await grantHome(home, path, { instance, space: await other() });
+    if (kind === "revoked") {
+      const row = await grantHome(home, path, { instance, space });
+      if ((await revokeHome(home, path, [row])) !== 1) throw new Error("the row was not revoked");
+    }
+    const given = kind === "no-app" ? { home: agent.home } : agent;
     const intent = await service.launches.open(
       space,
       {
         task: read.task.id,
-        // An instance of its own, so a second launch of a task while the first is still opening is
-        // a launch of its own rather than the first one again.
-        instance: `contract-agent-${String(launches)}`,
+        instance,
         route: "terminal",
         place: null,
         taskVersion: 1,
@@ -197,12 +244,14 @@ export async function contractWorld(
       },
       `contract-launch-${String(launches).padStart(6, "0")}`,
       WORLD_PLAN,
+      given,
     );
+    const made = { instance, app: kind === "no-app" ? undefined : agent.app, home: agent.home };
     await service.launches.dispatch(space, intent.id);
     const ticket = tickets.get(intent.id);
     if (ticket === undefined) throw new Error("the launch was not dispatched to its terminal");
     if (launchOptions.claimed === false) {
-      return { id: intent.id, reference: intent.reference, ticket, attachment: undefined };
+      return { id: intent.id, reference: intent.reference, ticket, attachment: undefined, ...made };
     }
     const claimed = await service.launches.host.claim(
       { ticket, role: "shim", pid: process.pid, start_time: WORLD_START },
@@ -216,7 +265,13 @@ export async function contractWorld(
       });
       if (started.kind !== "applied") throw new Error("the agent's start was not recorded");
     }
-    return { id: intent.id, reference: intent.reference, ticket, attachment: claimed.attachment };
+    return {
+      id: intent.id,
+      reference: intent.reference,
+      ticket,
+      attachment: claimed.attachment,
+      ...made,
+    };
   };
   let folders = 0;
   const folder = async (task: string): Promise<void> => {
@@ -245,6 +300,7 @@ export async function contractWorld(
     root: temp.root,
     folder,
     launch,
+    other,
     close: async () => {
       await service.stop();
       removeRuntimeDir(service);

@@ -1,0 +1,197 @@
+// An agent's connections to a service in this process, made the way a bridge and a shell make them:
+// through the local endpoint (ttasks-local/1), a bridge in mcp mode with its bind frame and MCP tool
+// calls, a shell in rpc mode with its environment and `op/call`. Nothing reaches into the service's
+// binding: a test reads what the endpoint gives back (the bind answer, each call's answer or
+// refusal) and what the space kept (the receipts a request left, under their writer scopes, and
+// the log). Tests only.
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import type { ErrorBody } from "@ttasks/contracts";
+import type { RunningService } from "../src/hub/service.ts";
+import { toolOf } from "../src/mcp/index.ts";
+import type { WorldLaunch } from "./contract/suite.ts";
+import { bridgeContext, openMcp, RawMcp, textOf, type Json } from "./mcp-helpers.ts";
+import { classSession, errorOf } from "./ops-helpers.ts";
+
+/** A service in this process, as a test world holds it. */
+export interface Served {
+  readonly service: RunningService;
+  readonly home: string;
+  readonly path: string;
+}
+
+/** A refused call, as its agent read it. */
+export interface Refusal {
+  readonly code: string;
+  /** The reason word a refusal names, when it names one. */
+  readonly reason: string | undefined;
+  /** What the agent read: a bridge's tool text, a shell's message. */
+  readonly text: string;
+  /** The whole A3 error body: a shell's. A bridge reads text only. */
+  readonly body: ErrorBody | undefined;
+}
+
+export class Refused extends Error {
+  readonly refusal: Refusal;
+  constructor(refusal: Refusal) {
+    super(refusal.text);
+    this.name = "Refused";
+    this.refusal = refusal;
+  }
+}
+
+/** One agent connection. A bridge's answers are its tools' texts; a shell's, `op/call`'s results. */
+export interface Agent<Answer> {
+  /** The bind answer: what the bind frame resolved for a bridge. A shell has none: null. */
+  readonly binding: Json | null;
+  /**
+   * One registry operation as this connection's agent calls it: its MCP tool, or `op/call`.
+   * Rejects with `Refused`. Only a shell can name a space: no tool takes one.
+   */
+  call(op: string, input?: Json, options?: { readonly space?: string }): Promise<Answer>;
+  /** The refusal of a call that must be refused. */
+  refusal(op: string, input?: Json, options?: { readonly space?: string }): Promise<Refusal>;
+  /** Ends the connection; resolves once the service saw it end. */
+  close(): Promise<void>;
+}
+
+/** The bridge connections the service holds open now (`ttasks doctor`'s sessions row). */
+async function openBridges(world: Served): Promise<number | undefined> {
+  const user = await classSession(world.home, world.path, "cli-interactive");
+  try {
+    const facts = (await user.call("doctor/sessions", {}, { timeoutMs: 60_000 })) as {
+      open?: number;
+    } | null;
+    return facts?.open;
+  } finally {
+    user.close();
+  }
+}
+
+const refusalOf = async <A>(call: Promise<A>, op: string): Promise<Refusal> => {
+  const outcome = await call.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  if (outcome instanceof Refused) return outcome.refusal;
+  if (outcome === undefined) throw new Error(`${op} was not refused`);
+  throw outcome;
+};
+
+/** A tool's error text, `error <code> (<reason>): …`, as its refusal. */
+const ERROR_TEXT = /^error ([a-z_]+)(?: \(([a-z_]+)\))?:/;
+
+/**
+ * A bridge's connection: the handshake with its bind frame (`context`, as `bridgeContext` or
+ * `launchContext` builds it), the MCP opening, then each call through the tool of its entry.
+ */
+export async function bridge(world: Served, context: JsonObject): Promise<Agent<string>> {
+  const mcp = new RawMcp(await openMcp(world.home, world.path, context));
+  await mcp.initialize();
+  const call: Agent<string>["call"] = async (op, input = {}, options = {}) => {
+    if (options.space !== undefined) throw new Error("No tool takes a space: a bridge names none");
+    const reply = await mcp.request("tools/call", { name: toolOf(op), arguments: input });
+    const result = reply.message["result"] as { isError?: boolean } | undefined;
+    if (result === undefined) throw new Error(`${op}: ${JSON.stringify(reply.error)}`);
+    const text = textOf(result);
+    if (result.isError !== true) return text;
+    const [, code, reason] = ERROR_TEXT.exec(text) ?? [];
+    if (code === undefined) throw new Error(`${op}: not an error text: ${text}`);
+    throw new Refused({ code, reason, text, body: undefined });
+  };
+  return {
+    binding: (mcp.session.bound.binding as Json | null | undefined) ?? null,
+    call,
+    refusal: (op, input, options) => refusalOf(call(op, input, options), op),
+    close: async () => {
+      const before = await openBridges(world);
+      mcp.close();
+      if (before === undefined) return;
+      const deadline = Date.now() + 30_000;
+      while (((await openBridges(world)) ?? 0) >= before) {
+        if (Date.now() > deadline) throw new Error("the service did not see the bridge close");
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    },
+  };
+}
+
+/**
+ * A shell's connection: the `ttasks` command an agent runs in its terminal, which presents its
+ * environment only (`env`: an agent marker at least, such as the ticket), then each call through
+ * `op/call`. It stays open across calls, as a test's would; the CLI opens one per command.
+ */
+export async function shell(world: Served, env: Record<string, string>): Promise<Agent<Json>> {
+  const session = await classSession(world.home, world.path, "cli-agent", env);
+  const call: Agent<Json>["call"] = async (op, input = {}, options = {}) => {
+    try {
+      return (await session.call(
+        "op/call",
+        { op, input, ...(options.space === undefined ? {} : { space: options.space }) },
+        { timeoutMs: 60_000 },
+      )) as Json;
+    } catch (error) {
+      const body = errorOf(error);
+      const reason = body.data?.["reason"];
+      throw new Refused({
+        code: body.code,
+        reason: typeof reason === "string" ? reason : undefined,
+        text: body.message,
+        body,
+      });
+    }
+  };
+  return {
+    binding: null,
+    call,
+    refusal: (op, input, options) => refusalOf(call(op, input, options), op),
+    close: () => {
+      session.close();
+      return Promise.resolve();
+    },
+  };
+}
+
+/** The instance a bridge of another app or home inside a launched agent presents. */
+export const OTHER_INSTANCE = "other-agent";
+
+/**
+ * What the bridge of a launched agent presents: the entry setup writes for the launch's home (its
+ * space, instance and app) and the agent's environment, with the ticket. `present`
+ * `other-instance`: a bridge inside the same agent whose entry names another instance.
+ */
+export function launchContext(
+  space: string,
+  launch: WorldLaunch,
+  options: { readonly present?: "launch" | "other-instance"; readonly env?: Json } = {},
+): JsonObject {
+  return bridgeContext({
+    space,
+    instance: options.present === "other-instance" ? OTHER_INSTANCE : launch.instance,
+    app: launch.app ?? null,
+    env: { TTASKS_TICKET: launch.ticket, ...options.env } as JsonObject,
+  });
+}
+
+/** A request's receipt as the space kept it: under which writer scope, and its outcome. */
+export interface Written {
+  readonly scope: string;
+  readonly status: string;
+}
+
+/**
+ * The receipts a request ID left in `space`, under every writer scope: one for a request that
+ * committed once, two for one written twice under two scopes, none for one never decided.
+ */
+export async function written(world: Served, space: string, requestId: string): Promise<Written[]> {
+  const served = world.service.ops.spaces().find((s) => s.id === space);
+  const reader = served?.reader;
+  if (reader === undefined) throw new Error("the space is not served");
+  const [rows] = (await reader.transaction("deferred", [
+    {
+      sql: "SELECT scope_id, status FROM receipts WHERE request_id = $request ORDER BY scope_id",
+      mode: "all",
+      params: { request: requestId },
+    },
+  ])) as { scope_id: string; status: string }[][];
+  return (rows ?? []).map((row) => ({ scope: row.scope_id, status: row.status }));
+}

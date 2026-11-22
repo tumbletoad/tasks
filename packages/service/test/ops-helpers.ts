@@ -53,19 +53,30 @@ export interface HomeRow {
 }
 
 /**
+ * The agent home of an instance in the tests' worlds: its app, and a folder of the test's home that
+ * nothing reads, one per instance. A world's launch records it at its click, and `grantHome`
+ * registers it, so the two name the same home as a real click and setup do.
+ */
+export const agentHomeOf = (home: string, instance: string): { app: string; home: string } => ({
+  app: "codex",
+  home: join(home, "agent-homes", instance),
+});
+
+/**
  * Registers an agent home for a space as `ttasks setup agents --apply` does, through the user's
  * `setup/home_grant` (A3 3.7.4): one live agent-home row of the instance naming the space, so its
- * MCP connections pass the grant gate. The home folder is a name of the test's home that nothing
- * reads; one per instance, so granting the instance again replaces its row. Returns the row's ID.
+ * MCP connections pass the grant gate. The home is the instance's (`agentHomeOf`), so granting the
+ * instance again replaces its row. Returns the row's ID.
  */
 export async function grantHome(home: string, path: string, row: HomeRow): Promise<string> {
   const user = await classSession(home, path, "cli-interactive");
   try {
+    const agent = agentHomeOf(home, row.instance);
     const answer = (await user.call(
       "setup/home_grant",
       {
-        app: "codex",
-        home: join(home, "agent-homes", row.instance),
+        app: agent.app,
+        home: agent.home,
         instance: row.instance,
         account: row.account ?? "",
         space: row.space,
