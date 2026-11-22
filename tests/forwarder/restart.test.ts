@@ -113,76 +113,70 @@ describe("[A2.3.7.bridge.restart] bridges through a service restart", () => {
   );
 
   test(
-    "a service that stays down: requests wait for the hold, then get the offline answer",
+    "a service that stays down: requests wait for the hold, a burst past the hold limit leaves the forwarder up, every request gets the offline answer, and stderr names no content",
     { timeout: 120_000 },
     async () => {
       const home = makeHome("down");
       homes.push(home);
       const peer = await procs.peer(home);
-      const bridge = procs.bridge(home);
+      // Content the offline path must never write to stderr, its warnings included.
+      const env = {
+        TTASKS_TICKET: "CONTENTTICKET",
+        CLAUDE_CODE_SESSION_ID: "CONTENTSESSION",
+        TTASKS_TASK: "CONTENTTASK",
+        CONTENT_SECRET: "CONTENTSECRET",
+      };
+      const bridge = procs.bridge(home, { env });
       await bridge.initialize();
       await whoami(bridge);
       await procs.kill(peer);
       home.removeServiceFile();
       // The peer's exit can reach this test before the bridge has handled its end of the
       // connection. A call sent then is in flight when the connection ends, and gets
-      // connection_lost at once (A2 3.7.5). So the call waits until the bridge has noticed the loss.
+      // connection_lost at once (A2 3.7.5). So the calls wait until the bridge has noticed the loss.
       await waitFor(
         () => (bridge.proc.stderr().includes("lost the connection") ? true : undefined),
         30_000,
         "the bridge notices the loss",
       );
+      // Junk lines, held and then handled offline.
+      bridge.write("not json at all CONTENTRAW\n");
+      bridge.write(`${"v".repeat(64)}\u0000CONTENTNUL\n`);
       const started = Date.now();
-      const reply = await bridge.call("echo", {});
-      // The hold is 10 s; the answer names the service as down, not the lost connection.
-      expect(Date.now() - started).toBeGreaterThanOrEqual(5_000);
-      expect(isOfflineText(reply, "service_down")).toBe(true);
-      // Later calls are answered offline at once.
-      const t0 = Date.now();
-      expect(isOfflineText(await bridge.call("echo", {}), "service_down")).toBe(true);
-      expect(Date.now() - t0).toBeLessThan(5_000);
-      expect(bridge.stray).toEqual([]);
-    },
-  );
-
-  test(
-    "a burst past the hold limit while the service is down: the forwarder stays up and answers every request",
-    { timeout: 120_000 },
-    async () => {
-      const home = makeHome("burst");
-      homes.push(home);
-      const peer = await procs.peer(home);
-      const bridge = procs.bridge(home);
-      await bridge.initialize();
-      await whoami(bridge);
-      await procs.kill(peer);
-      home.removeServiceFile();
-      await waitFor(
-        () => (bridge.proc.stderr().includes("lost the connection") ? true : undefined),
-        30_000,
-        "the bridge notices the loss",
-      );
+      const timed = bridge.call("echo", { secret: "CONTENTARG" }, "timed");
       // Two 5 MiB calls take the held lines past their 8 MiB bound, so stdin is no longer read;
       // the calls after them fill stdin's own buffer. Nothing else keeps the process busy then.
       const big = "x".repeat(5 * MiB);
       const calls = Promise.all([
+        timed,
         bridge.call("echo", { big }, "big-1"),
         bridge.call("echo", { big }, "big-2"),
         ...Array.from({ length: 40 }, (_, n) =>
           bridge.call("echo", { pad: "y".repeat(20_000) }, `pad-${String(n)}`),
         ),
       ]);
-      const replies = await Promise.race([
+      const [reply, ...burst] = await Promise.race([
         calls,
         bridge.proc.exit.then((exit) => {
           throw new Error(`the forwarder ended early: ${JSON.stringify(exit)}`);
         }),
       ]);
-      expect(replies).toHaveLength(42);
-      for (const reply of replies) expect(isOfflineText(reply, "service_down")).toBe(true);
+      // The hold is 10 s; the answer names the service as down, not the lost connection.
+      expect(Date.now() - started).toBeGreaterThanOrEqual(5_000);
+      expect(isOfflineText(reply, "service_down")).toBe(true);
+      expect(burst).toHaveLength(42);
+      for (const answer of burst) expect(isOfflineText(answer, "service_down")).toBe(true);
+      // Later calls are answered offline at once.
+      const t0 = Date.now();
+      expect(isOfflineText(await bridge.call("echo", {}), "service_down")).toBe(true);
+      expect(Date.now() - t0).toBeLessThan(5_000);
       bridge.end();
       expect(await bridge.proc.exit).toEqual({ code: 0, signal: null });
-      expect(bridge.proc.stderr()).not.toContain("Warning");
+      const stderr = bridge.proc.stderr();
+      expect(stderr).not.toContain("Warning");
+      for (const word of ["CONTENT", "bh_", home.root, "sp_test"]) {
+        expect(stderr).not.toContain(word);
+      }
       expect(bridge.stray).toEqual([]);
     },
   );
