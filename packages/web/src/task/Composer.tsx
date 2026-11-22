@@ -51,6 +51,7 @@ const styles = classes(css, [
   "button",
   "glyph",
   "hint",
+  "label",
   "gap",
   "runs",
   "others",
@@ -360,7 +361,16 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
               <span className={styles.glyph} aria-hidden="true">
                 {instance.glyph}
               </span>
-              {t(second ? "composer.openAnother" : "row.openIn", { label: instance.label })}
+              {/* Both labels hold the button's width: reading that a session runs never moves
+                  the buttons after it under a press. */}
+              <span className={styles.label}>
+                <span data-off={second || undefined}>
+                  {t("row.openIn", { label: instance.label })}
+                </span>
+                <span data-off={!second || undefined}>
+                  {t("composer.openAnother", { label: instance.label })}
+                </span>
+              </span>
               {i === 0 && openKeys[0] !== undefined ? (
                 <kbd className={styles.hint} aria-hidden="true">
                   {keyLabel(openKeys[0])}

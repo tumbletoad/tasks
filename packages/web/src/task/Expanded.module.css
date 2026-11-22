@@ -1,8 +1,8 @@
 /*
- * The expanded task's body (A5 3.7, 3.20): content 1fr and facts 304 px with a 36 px gap, then
- * the composer's place across both. The facts come first in the document, so below 1,024 px the
- * one column reads header, facts, content, composer in document order; at full width the grid
- * places them, and `order` is never used. Tokens only.
+ * The expanded task's body (A5 3.7, 3.20): content 1fr, the composer first in it, and facts
+ * 304 px with a 36 px gap. The facts come first in the document, so below 1,024 px the one column
+ * reads header, facts, content in document order; at full width the grid places them, and
+ * `order` is never used. Tokens only.
  */
 
 .body {
@@ -784,6 +784,18 @@ a + .muted,
 /* Copy stands apart, at the strip's end. */
 .gap {
   flex: 1 1 0;
+}
+
+.label {
+  display: inline-grid;
+}
+
+.label > * {
+  grid-area: 1 / 1;
+}
+
+.label > [data-off] {
+  visibility: hidden;
 }
 
 /* How much more fits, near the composer's limit: said before a click, never after. */
