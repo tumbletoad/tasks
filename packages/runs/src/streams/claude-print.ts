@@ -93,7 +93,8 @@ class ClaudeReader implements CliReader {
   private readonly toolUses = new RecentKeys();
 
   read(event: Json, ctx: ReadContext): boolean {
-    if (this.final !== null && startsTurn(event)) {
+    // A result right after a result is a new turn's, one whose first line is its end.
+    if (this.final !== null && (startsTurn(event) || event["type"] === "result")) {
       this.final = null;
       ctx.answerReopened();
     }

@@ -93,84 +93,120 @@ const backgroundOf = (n: number) => ({
   tasks: Array.from({ length: n }, () => ({ task_type: "local_bash" })),
 });
 type Json = Record<string, unknown>;
-const ASKS: readonly Json[] = [
+/** Each request for the person, and the words of it the run shows. */
+const ASKS: readonly { readonly request: Json; readonly asked: string }[] = [
   {
-    subtype: "can_use_tool",
-    tool_name: "AskUserQuestion",
-    requires_user_interaction: true,
-    input: { questions: [{ question: "Which export?", options: [{ label: "CSV" }] }] },
-  },
-  {
-    subtype: "can_use_tool",
-    tool_name: "Bash",
-    input: { command: "rm -rf dist && npm test", description: "Run the cleanup script" },
-    description: "Run the cleanup script",
-  },
-  {
-    subtype: "elicitation",
-    mcp_server_name: "reports",
-    message: "Which format should the export use?",
-    requested_schema: {
-      type: "object",
-      properties: { format: { type: "string", title: "Format", enum: ["CSV", "PDF"] } },
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "AskUserQuestion",
+      requires_user_interaction: true,
+      input: { questions: [{ question: "Which export?", options: [{ label: "CSV" }] }] },
     },
+    asked: "Which export? (CSV)",
+  },
+  {
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "Bash",
+      input: { command: "rm -rf dist && npm test", description: "Run the cleanup script" },
+      description: "Run the cleanup script",
+    },
+    asked:
+      "Claude Code asks to use Bash: Run the cleanup script\n~~~\ncommand: rm -rf dist && npm test\n~~~",
+  },
+  {
+    request: {
+      subtype: "elicitation",
+      mcp_server_name: "reports",
+      message: "Which format should the export use?",
+      requested_schema: {
+        type: "object",
+        properties: { format: { type: "string", title: "Format", enum: ["CSV", "PDF"] } },
+      },
+    },
+    asked: "reports asks: Which format should the export use?\nFormat (CSV, PDF)",
   },
 ];
 
+/** The words of the request the run heard, in a cell of TABLE. */
+const ASKED = Symbol("the request's words");
+
+/** The answer the run shows: its words, and whether they are the agent's final answer. */
+type Answer = readonly [text: string | null | typeof ASKED, final: boolean];
+
 type Expected =
   /** The run goes on in this phase, after writing `wrote` to the program. */
-  | { readonly goesOn: Exclude<Phase, "settled">; readonly wrote?: readonly string[] }
+  | {
+      readonly goesOn: Exclude<Phase, "settled">;
+      readonly answer: Answer;
+      readonly wrote?: readonly string[];
+    }
   /** The work settles with this. */
-  | { readonly settles: Partial<Work>; readonly wrote?: readonly string[] }
+  | {
+      readonly settles: Partial<Omit<Work, "text" | "textFinal">>;
+      readonly answer: Answer;
+      readonly wrote?: readonly string[];
+    }
   /** Nothing changes: the work stays as it settled, and nothing reaches the program. */
   | "unchanged";
 
 /**
  * Every phase against everything the driver can hear. A kind of line or a phase the driver adds
- * has no cell here: the type and the test both fail until it has one.
+ * has no cell here: the type and the test both fail until it has one. Before it hears, a turn has
+ * said nothing yet, and between turns the last turn's final answer is "First.".
  */
 const TABLE: Readonly<Record<Phase, Readonly<Record<Heard, Expected>>>> = {
   turn: {
-    turn: { goesOn: "turn" },
-    other: { goesOn: "turn" },
-    result: { settles: { ok: true, outcome: "success", text: "Done.", textFinal: true } },
-    "result, more": { goesOn: "between" },
-    failed: { settles: { ok: false, outcome: "agent_error", error: "The API failed." } },
+    turn: { goesOn: "turn", answer: ["Newer words.", false] },
+    other: { goesOn: "turn", answer: [null, false] },
+    result: { settles: { ok: true, outcome: "success" }, answer: ["Done.", true] },
+    "result, more": { goesOn: "between", answer: ["Done.", true] },
+    failed: {
+      settles: { ok: false, outcome: "agent_error", error: "The API failed." },
+      answer: [null, false],
+    },
     asks: {
-      settles: { outcome: "needs_input", textFinal: false },
+      settles: { outcome: "needs_input" },
+      answer: [ASKED, false],
       wrote: ["turned down", "interrupt"],
     },
-    "unknown request": { goesOn: "turn", wrote: ["error"] },
-    exit: { settles: { ok: false, outcome: "no_result" } },
-    stop: { goesOn: "stopping", wrote: ["interrupt"] },
+    "unknown request": { goesOn: "turn", answer: [null, false], wrote: ["error"] },
+    exit: { settles: { ok: false, outcome: "no_result" }, answer: [null, false] },
+    stop: { goesOn: "stopping", answer: [null, false], wrote: ["interrupt"] },
   },
   between: {
-    turn: { goesOn: "turn" },
-    other: { goesOn: "between" },
-    result: { settles: { ok: true, outcome: "success", text: "Done.", textFinal: true } },
-    "result, more": { goesOn: "between" },
-    failed: { settles: { ok: false, outcome: "agent_error", error: "The API failed." } },
+    turn: { goesOn: "turn", answer: ["Newer words.", false] },
+    other: { goesOn: "between", answer: ["First.", true] },
+    result: { settles: { ok: true, outcome: "success" }, answer: ["Done.", true] },
+    "result, more": { goesOn: "between", answer: ["Done.", true] },
+    // A turn whose first line is its result: what the last turn said is no answer of this one.
+    failed: {
+      settles: { ok: false, outcome: "agent_error", error: "The API failed." },
+      answer: ["First.", false],
+    },
     asks: {
-      settles: { outcome: "needs_input", textFinal: false },
+      settles: { outcome: "needs_input" },
+      answer: [ASKED, false],
       wrote: ["turned down", "interrupt"],
     },
-    "unknown request": { goesOn: "between", wrote: ["error"] },
-    exit: { settles: { ok: false, outcome: "no_result", text: "First.", textFinal: false } },
+    "unknown request": { goesOn: "between", answer: ["First.", true], wrote: ["error"] },
+    exit: { settles: { ok: false, outcome: "no_result" }, answer: ["First.", false] },
     stop: {
-      settles: { ok: false, outcome: "interrupted", text: "First.", textFinal: true },
+      settles: { ok: false, outcome: "interrupted" },
+      answer: ["First.", true],
       wrote: ["interrupt", "end"],
     },
   },
   stopping: {
-    turn: { goesOn: "stopping" },
-    other: { goesOn: "stopping" },
-    result: { settles: { ok: false, outcome: "interrupted" } },
-    "result, more": { settles: { ok: false, outcome: "interrupted" } },
-    failed: { settles: { ok: false, outcome: "interrupted" } },
-    asks: { goesOn: "stopping", wrote: ["turned down"] },
-    "unknown request": { goesOn: "stopping", wrote: ["error"] },
-    exit: { settles: { ok: false, outcome: "interrupted" } },
-    stop: { goesOn: "stopping" },
+    turn: { goesOn: "stopping", answer: ["Newer words.", false] },
+    other: { goesOn: "stopping", answer: [null, false] },
+    result: { settles: { ok: false, outcome: "interrupted" }, answer: ["Done.", true] },
+    "result, more": { settles: { ok: false, outcome: "interrupted" }, answer: ["Done.", true] },
+    failed: { settles: { ok: false, outcome: "interrupted" }, answer: [null, false] },
+    asks: { goesOn: "stopping", answer: [null, false], wrote: ["turned down"] },
+    "unknown request": { goesOn: "stopping", answer: [null, false], wrote: ["error"] },
+    exit: { settles: { ok: false, outcome: "interrupted" }, answer: [null, false] },
+    stop: { goesOn: "stopping", answer: [null, false] },
   },
   settled: {
     turn: "unchanged",
@@ -204,9 +240,12 @@ async function driverIn(phase: Phase) {
     }
   });
   toProgram.on("finish", () => wrote.push("end"));
+  let answer: Answer = [null, false];
   const driver = claudeDriver({ request: "Look." })(
     { stdin: toProgram, stdout: fromProgram },
-    () => undefined,
+    (event) => {
+      if (event.kind === "answer") answer = [event.text, event.final];
+    },
   );
   const say = async (...messages: unknown[]) => {
     fromProgram.write(messages.map((m) => `${JSON.stringify(m)}\n`).join(""));
@@ -218,14 +257,14 @@ async function driverIn(phase: Phase) {
   if (phase === "stopping") driver.interrupt();
   await say();
   wrote.splice(0);
-  return { driver, wrote, say };
+  return { driver, wrote, say, answer: () => answer };
 }
 
 /** Makes the driver hear `heard`; `ask` is the request for the person, when it hears one. */
 async function makeHear(
   { driver, say }: Awaited<ReturnType<typeof driverIn>>,
   heard: Heard,
-  ask: Json,
+  ask: (typeof ASKS)[number],
 ): Promise<void> {
   switch (heard) {
     case "turn":
@@ -244,7 +283,7 @@ async function makeHear(
         result: "The API failed.",
       });
     case "asks":
-      return say({ type: "control_request", request_id: "r1", request: ask });
+      return say({ type: "control_request", request_id: "r1", request: ask.request });
     case "unknown request":
       return say({ type: "control_request", request_id: "r2", request: { subtype: "later_kind" } });
     case "exit":
@@ -274,12 +313,16 @@ describe("[A4.3.11.claude.driver] the claude driver's decisions: every phase aga
             continue;
           }
           expect(bench.wrote).toEqual(expected.wrote ?? []);
+          const [text, final] = expected.answer;
+          const answer = [text === ASKED ? ask.asked : text, final];
           if ("settles" in expected) {
             expect(before).toBeUndefined();
             expect(work).toEqual(done(expected.settles));
+            expect([work?.text, work?.textFinal], "the answer").toEqual(answer);
             continue;
           }
           expect(work).toBeUndefined();
+          expect(bench.answer(), "the answer").toEqual(answer);
           // Which phase it goes on in shows in what a Stop then does.
           bench.wrote.splice(0);
           bench.driver.interrupt();
@@ -296,6 +339,19 @@ describe("[A4.3.11.claude.driver] the claude driver's decisions: every phase aga
       });
     }
   }
+
+  test("a follow-up turn that ends at once with no words leaves the last turn's words provisional, in one write or several", async () => {
+    for (const together of [true, false]) {
+      const bench = await driverIn("between");
+      const lines = [backgroundOf(0), { ...RESULT, result: "" }];
+      if (together) await bench.say(...lines);
+      else for (const line of lines) await bench.say(line);
+      const work = await settledNow(bench.driver);
+      expect(work, `together: ${String(together)}`).toEqual(
+        done({ ok: true, outcome: "success", text: "First.", textFinal: false }),
+      );
+    }
+  });
 });
 
 describe("[A4.3.11.claude.driver] the claude driver against the recorded print mode", () => {
