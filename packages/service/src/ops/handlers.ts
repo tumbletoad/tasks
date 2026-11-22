@@ -509,12 +509,15 @@ function heldSpace(
   throw spaceUnavailable("not_served", false);
 }
 
-/** A bridge whose bind found no space: refused on every call, saying what settles it. */
+/**
+ * A bridge whose bind found no space it can be sure of: refused on every call, saying what settles
+ * it. Its process started with no space to choose, or an older bridge reconnected without one.
+ */
 const noSpace = (): AppError =>
   new AppError({
     code: "space_unavailable",
-    message: "This connection has no space: none was named or set as the default when it started.",
-    hint: `Ask the user to set a default space (${CLI_NAME} space use) or to name the space in the agent's ${PRODUCT_NAME} entry, then to restart the agent app.`,
+    message: "This connection has no space it can work in.",
+    hint: `Ask the user to restart the agent app. If this stays, set a default space (${CLI_NAME} space use) or name the space in the agent's ${PRODUCT_NAME} entry first.`,
     data: { reason: "no_space", retryable: false },
   });
 

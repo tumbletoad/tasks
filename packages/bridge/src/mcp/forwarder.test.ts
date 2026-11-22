@@ -424,6 +424,42 @@ describe("[A2.3.7.bridge.restart] losing and finding the service", () => {
     });
   });
 
+  test("what the first bind answer named, a space or none, is sent back at every later bind and never replaced", async () => {
+    const SPACE = "sp_00000000000000000000000001";
+    for (const [answers, held] of [
+      [[null, SPACE], null],
+      [[SPACE, null], SPACE],
+    ] as const) {
+      const sessions = [...answers, SPACE].map(
+        (space) => new FakeSession({ space, state: "unbound" }),
+      );
+      const all = [...sessions];
+      const { line, contexts } = rig(() => {
+        const next = sessions.shift();
+        return next === undefined ? notDown() : Promise.resolve(asSession(next));
+      });
+      line(request(1, "initialize", { protocolVersion: "2025-06-18" }));
+      for (const [i, session] of all.slice(0, 2).entries()) {
+        await vi.waitFor(() => {
+          expect(session.sent.length).toBeGreaterThan(0);
+        });
+        if (i === 0)
+          session.deliver({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2025-06-18" } });
+        session.end();
+        line(request(10 + i, "tools/call", { name: "status" }));
+        await vi.waitFor(
+          () => {
+            expect(contexts.length).toBeGreaterThan(i + 1);
+          },
+          { timeout: 10_000 },
+        );
+      }
+      expect(contexts[0]).not.toHaveProperty("held_space");
+      expect(contexts[1]?.["held_space"], JSON.stringify(answers)).toBe(held);
+      expect(contexts[2]?.["held_space"], JSON.stringify(answers)).toBe(held);
+    }
+  });
+
   test("a hold that runs out gives the offline answer with the last reason", async () => {
     const first = new FakeSession();
     // The first reconnect attempt (after 0.5 s) fails before the hold runs out.

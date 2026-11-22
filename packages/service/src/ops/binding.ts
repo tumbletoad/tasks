@@ -41,8 +41,11 @@ export type Presented =
       /** The entry's `--app` as sent; null when it named none. */
       readonly app: string | null;
       readonly env: Readonly<Record<string, string>>;
-      /** The space this bridge process holds from an earlier bind: it wins over a launch's. */
-      readonly held: string | undefined;
+      /**
+       * What an earlier bind of this bridge process answered: a space, which wins over a
+       * launch's, or null for none, which it keeps for its life. Undefined: no bind answered yet.
+       */
+      readonly held: string | null | undefined;
     }
   | { readonly via: "shell"; readonly env: Readonly<Record<string, string>> };
 

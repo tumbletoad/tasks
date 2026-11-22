@@ -5,7 +5,8 @@
 // - answers from the offline file while there is no connection (A2 3.7.4), and keeps the client's
 //   first `initialize` or `server/discover` to hand to the service as `mcp_init`;
 // - reconnects with the backoff 0.5, 1, 2, 5, then every 10 s, binding again with the handle of
-//   its last bind (A2 3.7.5) and the space a bind answer named, which it keeps for its life.
+//   its last bind (A2 3.7.5) and what its first bind answer named, a space or none, which it keeps
+//   for its life.
 //   Requests in flight at a loss get `connection_lost`. Requests that arrive while it reconnects
 //   wait for the new connection, up to `holdMs`, so a restart costs the agent at most the call
 //   that was in flight;
@@ -134,11 +135,14 @@ const BLANK = /^\s*$/;
 const isPowerOfTen = (n: number): boolean => /^10*$/.test(String(n));
 
 /**
- * The space a bind answer names, which this process keeps and sends back at every bind: one
- * bridge process works in one space for its life, so an answer without one never clears it.
+ * What a bind answer says of this process's space: a space, or null for none. One bridge process
+ * works in one space for its life, so the first answer is kept and sent back at every bind.
+ * Undefined: the answer says nothing of it.
  */
-function spaceIn(binding: unknown): string | undefined {
-  const space = isObject(binding) ? binding["space"] : undefined;
+function spaceIn(binding: unknown): string | null | undefined {
+  if (!isObject(binding) || !Object.hasOwn(binding, "space")) return undefined;
+  const space = binding["space"];
+  if (space === null) return null;
   return typeof space === "string" && /^sp_[0-9a-z]{26}$/.test(space) ? space : undefined;
 }
 
@@ -181,7 +185,7 @@ export class Forwarder {
   /** The latest `initialize` or `server/discover` the bridge dispatched, for later binds. */
   #mcpInit: JsonObject | undefined;
   #handle: string | undefined;
-  #space: string | undefined;
+  #space: string | null | undefined;
   #content: OfflineContent | undefined;
   #missingReported = false;
   #stopping = false;
@@ -452,7 +456,7 @@ export class Forwarder {
       // its way without it. Bind again, so the service starts the session from it, and resume the
       // binding this bind made (its result was authenticated) rather than make a second one.
       this.#handle = handleOf(session.bound.binding) ?? this.#handle;
-      this.#space = spaceIn(session.bound.binding) ?? this.#space;
+      if (this.#space === undefined) this.#space = spaceIn(session.bound.binding);
       session.close();
       this.#schedule(0);
     } else {
@@ -466,7 +470,7 @@ export class Forwarder {
     this.#failure = undefined;
     this.#reported = undefined;
     this.#handle = handleOf(session.bound.binding);
-    this.#space = spaceIn(session.bound.binding) ?? this.#space;
+    if (this.#space === undefined) this.#space = spaceIn(session.bound.binding);
     clearTimeout(this.#hold);
     this.#hold = undefined;
     this.#mode = "online";

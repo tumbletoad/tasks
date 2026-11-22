@@ -118,8 +118,8 @@ export function decide(sources: DecideSources, presented: Presented): Decision {
 }
 
 /**
- * One bridge process works in one space for its life: a space it holds from an earlier bind wins
- * over a launch's, where the same task reference can name another task.
+ * One bridge process works in one space for its life: what it holds from an earlier bind, a space
+ * or none, wins over a launch's, where the same task reference can name another task.
  */
 const heldElsewhere = (presented: Presented, session: Session): boolean =>
   presented.via === "bridge" && presented.held !== undefined && presented.held !== session.space;

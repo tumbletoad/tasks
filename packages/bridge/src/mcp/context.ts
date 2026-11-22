@@ -60,13 +60,13 @@ export function baseContext(
 /**
  * The context of one bind: the base, the client's first `initialize` or `server/discover` once it
  * was answered (A2 3.7.4), the binding handle an older service gave an earlier bind (A2 3.7.5), and
- * the space an earlier bind answer named, which this process keeps for its life.
+ * what an earlier bind answer named of its space, a space or null for none, kept for its life.
  */
 export function bindContext(
   base: BaseContext,
   mcpInit: JsonObject | undefined,
   handle: string | undefined,
-  held?: string,
+  held?: string | null,
 ): JsonObject {
   return {
     space: base.space,

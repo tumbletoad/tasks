@@ -154,6 +154,8 @@ describe("[A3.3.7.binding.rule] the one rule, and the space a bridge's bind sett
   test("a space the bridge process holds wins: a launch in another space leaves it none there", () => {
     const named = one(launch(1));
     const rows: HomeRows = { kind: "rows", rows: [row("codex-a")] };
+    // Held as no space: also a launch's own space does not move it.
+    expect(kindOf(decide(sources({ named, rows }), bridge({ held: null })))).toBe("none:space");
     expect(kindOf(decide(sources({ named, rows }), bridge({ held: S2 })))).toBe("none:space");
     expect(kindOf(decide(sources({ named, rows }), bridge({ held: S1 })))).toBe("session");
     expect(
@@ -263,5 +265,12 @@ describe("[A3.3.7.binding.rule] the one rule, and the space a bridge's bind sett
     // While spaces open: the only one by the ID its entry in the configuration names.
     expect(bind(none, {}, opening)).toEqual({ space: S1, state: "unbound" });
     expect(() => bind({ kind: "failed" }, {})).toThrow(BindNotYet);
+    // A process told it has no space keeps none: a default set since gives it none.
+    expect(bind(none, { held_space: null }, open, S2)).toEqual({ space: null, state: "unbound" });
+    // An older bridge reconnects with a handle and no held space: on an entry that names no space,
+    // which space it worked in is not known, so it gets none; one its entry names is that one.
+    const legacy = { resume: { handle: "bh_0123456789abcdefghijkl" } };
+    expect(bind(none, legacy, open, S2)).toEqual({ space: null, state: "unbound" });
+    expect(bind(none, { ...legacy, space: S1 }, open, S2)).toEqual({ space: S1, state: "unbound" });
   });
 });

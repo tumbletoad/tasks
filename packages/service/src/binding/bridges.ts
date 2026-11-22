@@ -1,6 +1,9 @@
 // A bridge's bind: who its connection is (decide.ts), and the one space it works in for its life.
 // The space is settled here and nowhere else, so no call ever picks or pins one for a bridge:
-// - a space its process holds from an earlier bind (the bind frame's `held_space`) wins;
+// - what its process holds from an earlier bind (the bind frame's `held_space`) wins: a space, or
+//   none, which it keeps for its life;
+// - an older bridge that reconnects with a handle and holds nothing is in a space it cannot name:
+//   one its entry names, else none, so it cannot be moved to the default of this moment;
 // - else a session's space is its launch's or run's, whatever its entry names (the grant gate
 //   refuses it there until its home is registered for that space);
 // - else the entry's `--space`, else the machine's default, else the only space. The default and
@@ -44,6 +47,13 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const word = (value: unknown): string | null =>
   typeof value === "string" && value !== "" ? value : null;
 
+/** What the bridge process holds: a space ID, null for none, undefined when it holds nothing. */
+function heldOf(context: JsonObject): string | null | undefined {
+  const held = context["held_space"];
+  if (held === null) return null;
+  return typeof held === "string" && isId(held, "sp") ? held : undefined;
+}
+
 /** The bind context's environment: its text values only. */
 function envOf(context: JsonObject): Record<string, string> {
   const env = context["env"];
@@ -68,8 +78,7 @@ export class Bridges {
    */
   bind(connection: { readonly context: JsonObject }): JsonObject {
     const context = connection.context;
-    const heldWord = word(context["held_space"]);
-    const held = heldWord !== null && isId(heldWord, "sp") ? heldWord : undefined;
+    const held = heldOf(context);
     const decision = this.#options.sessions.decide({
       via: "bridge",
       instance: word(context["instance"]),
@@ -81,10 +90,20 @@ export class Bridges {
     const binding: Binding =
       decision.kind === "session"
         ? { kind: "session", session: decision.session }
-        : { kind: "none", space: held ?? this.#settle(word(context["space"])) };
+        : { kind: "none", space: this.#spaceOf(context, held) };
     this.#bound.set(connection, binding);
     const space = binding.kind === "session" ? binding.session.space : binding.space;
     return { space: space ?? null, state: binding.kind === "session" ? "bound" : "unbound" };
+  }
+
+  /** The space of a connection that is none. */
+  #spaceOf(context: JsonObject, held: string | null | undefined): string | undefined {
+    if (held !== undefined) return held ?? undefined;
+    const named = word(context["space"]);
+    const resume = context["resume"];
+    const older = isObject(resume) && typeof resume["handle"] === "string";
+    if (older && named === null) return undefined;
+    return this.#settle(named);
   }
 
   /** The space of a connection that is none and holds none: its entry's, the default, the only. */
