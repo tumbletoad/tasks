@@ -48,7 +48,8 @@ jobs:
   deep:
     name: deep (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # The soak must make all its runs within 60 minutes (model-replay.test.ts), or it fails.
+    # The soak must make all its runs within 60 minutes (model-replay.test.ts), or it fails. Run
+    # 45021261026 made its 2,000 in 30 minutes on windows-2025 (the job 31) and 6 on ubuntu-24.04.
     timeout-minutes: 90
     strategy:
       fail-fast: false

@@ -15,8 +15,8 @@ const RUNS = Number(
 );
 /**
  * The deep job's soak must make all its runs within this: one cut short fails, so a slow or hung
- * soak is never read as a pass. A CI run of the fixed seeds took about 1.4 s a run on
- * windows-2025 and 0.2 s on ubuntu-24.04.
+ * soak is never read as a pass. The nightly job made its 2,000 runs in 30 minutes on windows-2025
+ * and 6 on ubuntu-24.04.
  */
 const SOAK_MS = 60 * 60_000;
 
