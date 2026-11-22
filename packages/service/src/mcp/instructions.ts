@@ -42,7 +42,7 @@ export const START_RULE =
 
 export const INSTRUCTIONS = [
   START_RULE,
-  `Pass task on each call unless ${getTask} said this connection is the task's session. If several tasks match, ask the user.`,
+  `Pass task in every call, unless ${getTask} said this connection is the task's session. If several tasks match, ask the user.`,
   "",
   "While you work on a task:",
   `- Notes "from the user, for agents" are the user's instructions for the task. Read them first.`,

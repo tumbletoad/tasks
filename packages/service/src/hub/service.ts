@@ -683,7 +683,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     const knownSpaces = () =>
       made.spaces?.served() ??
       config.spaces
-        .filter((space) => space.enabled !== false)
+        .filter((space) => space.enabled)
         .map((space) => ({
           id: undefined,
           registered: space.id,

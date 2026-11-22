@@ -459,14 +459,15 @@ function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): Se
     // A bridge never picks a space on a call: its bind settled one for its life, or none.
     const held = binding?.space;
     if (held === undefined) throw noSpace();
-    // Its home may use another space now: it says which, and that the agent app's restart moves
-    // it there. The held space is kept, never replaced, while it is denied.
-    const home = caller.home ?? "";
-    if (host.homes?.may(home, held) !== true) {
-      const now = host.homes?.spaceOf(home);
-      if (now !== undefined && now !== held) throw grantedElsewhere(host, now);
+    try {
+      return heldSpace(host, caller, held, named);
+    } catch (error) {
+      // Its home may use another space now: it says which, and that the agent app's restart moves
+      // it there. The held space is kept, never replaced, while it is denied.
+      const denied = error instanceof AppError && error.data["rule"] === "grant";
+      const now = denied ? host.homes?.spaceOf(caller.home ?? "") : undefined;
+      throw now !== undefined && now !== held ? grantedElsewhere(host, now) : error;
     }
-    return heldSpace(host, caller, held, named);
   }
   return pickByRule(host, caller, named);
 }

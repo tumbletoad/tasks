@@ -11,7 +11,7 @@ import { AppError } from "@ttasks/contracts";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import type { McpChannel } from "../local/index.ts";
 import type { Bridges } from "../binding/index.ts";
-import { opCall, type Binding, type OpsHost } from "../ops/index.ts";
+import { opCall, type Binding, type Caller, type OpsHost } from "../ops/index.ts";
 import { bridgePrincipal, clientOf, instanceOf, spaceOf } from "./principal.ts";
 import { renderError, renderResult, showsWhole } from "./render.ts";
 import { createServer, type ToolCall, type ToolResult } from "./server.ts";
@@ -93,9 +93,24 @@ const INTERNAL = new AppError({
 });
 
 /**
- * The tool calls of one connection: the request path, as who the connection is, in the one space
- * its bind settled. No tool names a space.
+ * Who a bridge connection's calls come from: who it is by its bind, in the one space that bind
+ * settled. No environment: TTASKS_SPACE is a hint for diagnostics, never a space.
  */
+export function bridgeCaller(context: JsonObject, machine: string, binding: Binding): Caller {
+  const cwd = context["cwd"];
+  return {
+    class: "bridge",
+    env: {},
+    principal: bridgePrincipal(context, machine),
+    client: clientOf(context),
+    // The agent home whose grant rows decide the spaces this connection may use when it is none.
+    home: instanceOf(context),
+    binding,
+    ...(typeof cwd === "string" ? { folder: cwd } : {}),
+  };
+}
+
+/** The tool calls of one connection: the request path, as `bridgeCaller`. No tool names a space. */
 export function toolCaller(options: {
   readonly ops: OpsHost;
   readonly context: JsonObject;
@@ -104,32 +119,17 @@ export function toolCaller(options: {
   readonly seen?: McpEndpointOptions["seen"];
   readonly binding: Binding;
 }): ToolCall {
-  const principal = bridgePrincipal(options.context, options.ops.machine.id);
-  const client = clientOf(options.context);
-  // The agent home whose grant rows decide the spaces this connection may use when it is none.
-  const home = instanceOf(options.context);
-  const cwd = options.context["cwd"];
-  const folder = typeof cwd === "string" ? cwd : undefined;
+  const caller: Caller = {
+    ...bridgeCaller(options.context, options.ops.machine.id, options.binding),
+    shows: showsWhole,
+  };
+  const { client, folder } = caller;
   return async (tool, args) => {
     const entry = toolEntry(tool);
     if (entry === undefined) return text(renderError(INTERNAL.toBody()), true);
     try {
-      const result = await opCall(
-        options.ops,
-        // No environment: TTASKS_SPACE is a hint for diagnostics, never a space.
-        {
-          class: "bridge",
-          env: {},
-          principal,
-          client,
-          home,
-          binding: options.binding,
-          ...(folder === undefined ? {} : { folder }),
-          shows: showsWhole,
-        },
-        { op: entry.name, input: args },
-      );
-      options.seen?.(client.instance, client.app, folder);
+      const result = await opCall(options.ops, caller, { op: entry.name, input: args });
+      options.seen?.(client?.instance, client?.app, folder);
       return text(renderResult(entry.name, result), false);
     } catch (error) {
       if (error instanceof AppError) return text(renderError(error.toBody()), true);
