@@ -462,22 +462,23 @@ function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): Se
   if (caller.class === "bridge") {
     // A bridge never picks a space on a call: its bind settled one for its life, or none.
     const held = binding?.space;
-    const manual = caller.home === undefined || caller.home === MANUAL_INSTANCE;
-    const entry: EntryFacts = {
+    // Read only for a refusal: the one space its home's live row names, for a hand-made entry the
+    // machine's default.
+    const entry = (): EntryFacts => ({
       named: binding?.named === true,
-      manual,
-      // The one space its home's live row names: for a hand-made entry, the machine's default.
+      manual: caller.home === undefined || caller.home === MANUAL_INSTANCE,
       mayUse: host.homes?.spaceOf(caller.home ?? ""),
-    };
-    if (held === undefined) throw noSpace(host, entry);
+    });
+    if (held === undefined) throw noSpace(host, entry());
     try {
       return heldSpace(host, caller, held, named);
     } catch (error) {
       // Its home may use another space now: it says which, and what moves the agent there. The
       // held space is kept, never replaced, while it is denied.
-      const denied = error instanceof AppError && error.data["rule"] === "grant";
-      if (!denied || entry.mayUse === undefined || entry.mayUse === held) throw error;
-      throw grantedElsewhere(host, entry.mayUse, entry);
+      if (!(error instanceof AppError) || error.data["rule"] !== "grant") throw error;
+      const facts = entry();
+      if (facts.mayUse === undefined || facts.mayUse === held) throw error;
+      throw grantedElsewhere(host, facts.mayUse, facts);
     }
   }
   return pickByRule(host, caller, named);
