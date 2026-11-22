@@ -186,7 +186,7 @@ describe("[A4.3.9.http.launch-tile] the page's launch tile on the hub's launch m
       const task = await addTask(w, "Plan the garden beds");
       const { token } = await signIn(w);
       const port = w.port();
-      const headers = { "tasks-space": "Mira", "tasks-build": "source" };
+      const headers = { "ttasks-space": "Mira", "ttasks-build": "source" };
       const feed = await openFeed(port, token);
       await feed.next((m) => m["type"] === "hello");
       feed.send({ type: "subscribe", space: "Mira" });

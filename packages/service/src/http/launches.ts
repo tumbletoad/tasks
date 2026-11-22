@@ -15,7 +15,7 @@
 // only this machine knows: whether the launch's agent read the person's request yet, and whether
 // its session runs now. A run as the page reads it holds the person's request and the agent's
 // answer, task text that travels in a request's or a response's body only.
-import { AppError, RequestId } from "@tasks/contracts";
+import { AppError, RequestId } from "@ttasks/contracts";
 import {
   isOpenRun,
   RUN_REQUEST_MAX_BYTES,

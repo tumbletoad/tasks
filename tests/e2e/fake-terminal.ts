@@ -32,7 +32,7 @@ export const FAKE_INSTANCE = {
 
 /**
  * The instance's table in machine.toml: Claude Code's target, run as the fake, which reads the
- * person's request as its brief says without the tools (`tasks show --launch`) from the install of
+ * person's request as its brief says without the tools (`ttasks show --launch`) from the install of
  * `home`, except on the tasks the file `unread` lists. On a task `holds` has a file for, the fake
  * runs until that file is removed.
  */
