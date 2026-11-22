@@ -133,20 +133,25 @@ export function parseManifest(json: unknown): { entries: ManifestEntry[]; errors
   return { entries, errors };
 }
 
-/** Checks the collected tests against the manifest entries. Returns one message per problem. */
-export function checkManifest(entries: readonly ManifestEntry[], tests: readonly CollectedTest[]) {
+/** One message per test that carries no manifest ID or an ID the manifest does not hold. */
+export function checkIds(entries: readonly ManifestEntry[], tests: readonly CollectedTest[]) {
   const errors: string[] = [];
-  const known = new Map(entries.map((e) => [e.id, e]));
-  const covered = new Set<string>();
+  const known = new Set(entries.map((e) => e.id));
   for (const t of tests) {
     const where = `${t.file}${t.line === undefined ? "" : `:${String(t.line)}`} "${t.name}"`;
     const ids = idsInTitle(t.name);
     if (ids.length === 0) errors.push(`${where} carries no manifest ID`);
     for (const id of ids) {
-      if (known.has(id)) covered.add(id);
-      else errors.push(`${where} carries unknown manifest ID "${id}"`);
+      if (!known.has(id)) errors.push(`${where} carries unknown manifest ID "${id}"`);
     }
   }
+  return errors;
+}
+
+/** Checks the collected tests against the manifest entries. Returns one message per problem. */
+export function checkManifest(entries: readonly ManifestEntry[], tests: readonly CollectedTest[]) {
+  const errors = checkIds(entries, tests);
+  const covered = new Set(tests.flatMap((t) => idsInTitle(t.name)));
   for (const e of entries) {
     if (e.kind !== "manual" && !covered.has(e.id)) {
       errors.push(`manifest entry "${e.id}" (${e.kind}) has no test carrying its ID`);
