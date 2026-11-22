@@ -443,27 +443,32 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(starts).toBe(0);
   });
 
-  test("Stop at each stage of a start, however late the store takes it: nothing reaches the agent, and the run is cancelled", async () => {
-    // Where the start is when Stop comes, and how far it got when the store took the Stop.
+  test("Stop at each stage of a start, however late the store answers: nothing reaches the agent, and a Stop the store takes cancels the run", async () => {
+    // Where the start is when Stop comes, how far it got when the store answered, and whether
+    // the store took the Stop.
     const cases = [
-      { at: "preparing", taken: "at once" },
-      { at: "preparing", taken: "after the command" },
-      { at: "preparing", taken: "after the container" },
-      { at: "spawning", taken: "at once" },
-      { at: "spawning", taken: "after the container" },
+      { at: "queued", taken: "after the start was asked", fails: false },
+      { at: "queued", taken: "after the start was asked", fails: true },
+      { at: "preparing", taken: "at once", fails: false },
+      { at: "preparing", taken: "after the command", fails: false },
+      { at: "preparing", taken: "after the container", fails: false },
+      { at: "spawning", taken: "at once", fails: false },
+      { at: "spawning", taken: "after the container", fails: false },
     ] as const;
     const turns = async () => {
       for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve));
     };
-    for (const { at, taken } of cases) {
+    for (const { at, taken, fails } of cases) {
+      const label = `${at}, ${taken}${fails ? ", refused" : ""}`;
       let take: () => void = () => undefined;
-      const held = new Promise<void>((resolve) => {
-        take = resolve;
+      const held = new Promise<void>((resolve, reject) => {
+        take = fails ? () => reject(new Error("The disk is full")) : resolve;
       });
       let ready: ((command: AgentCommand) => void) | undefined;
       let spawn: (() => void) | undefined;
       let starts = 0;
       let input = "";
+      let asked = false;
       const { host, id } = await bareHost({
         containers: {
           ...refusing,
@@ -494,18 +499,24 @@ describe("[A4.5.run.host] the run host's rules", () => {
           readRun: (run) => store.readRun(run),
           openWork: (machine) => store.openWork(machine),
           transitionRun: async (run, seen, next, patch) => {
-            if (next === "cancelling" && taken !== "at once") await held;
+            // The Stop's own write: `cancelling`, or `cancelled` for a run still queued.
+            if (!asked && (next === "cancelling" || next === "cancelled") && taken !== "at once") {
+              asked = true;
+              await held;
+            }
             return store.transitionRun(run, seen, next, patch);
           },
         }),
       });
-      await host.start(
-        id,
-        () =>
-          new Promise<AgentCommand>((resolve) => {
-            ready = resolve;
-          }),
-      );
+      const begin = () =>
+        host.start(
+          id,
+          () =>
+            new Promise<AgentCommand>((resolve) => {
+              ready = resolve;
+            }),
+        );
+      if (at !== "queued") await begin();
       await turns();
       const command: AgentCommand = {
         command: "claude",
@@ -520,6 +531,9 @@ describe("[A4.5.run.host] the run host's rules", () => {
         expect(starts, at).toBe(1);
       }
       const stopped = host.stop(id);
+      stopped.catch(() => undefined);
+      // A queued run's start is asked while the store holds the Stop.
+      const late = at === "queued" ? begin() : undefined;
       if (taken !== "at once") {
         // The start goes as far as it goes before the store answers.
         ready?.(command);
@@ -530,12 +544,16 @@ describe("[A4.5.run.host] the run host's rules", () => {
         }
         take();
       }
-      await stopped;
+      if (fails) await expect(stopped, label).rejects.toThrow("The disk is full");
+      else await stopped;
+      await late;
+      ready?.(command);
+      await turns();
       spawn?.();
       const after = await host.ended(id);
-      expect(after?.state, `${at}, ${taken}`).toBe("cancelled");
-      expect(input, `${at}, ${taken}`).toBe("");
-      if (at === "preparing") expect(starts, `${at}, ${taken}`).toBe(0);
+      expect(after?.state, label).toBe(fails ? "failed" : "cancelled");
+      expect(input, label).toBe("");
+      if (at !== "spawning") expect(starts, label).toBe(0);
     }
   });
 

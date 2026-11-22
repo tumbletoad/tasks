@@ -333,10 +333,19 @@ export class RunHost {
   async stop(id: string): Promise<RunRecord | undefined> {
     // The flow hears the Stop before the store is asked: a start that goes on while the store
     // answers must not open the agent's input. When the store does not take it, the agent is
-    // stopped all the same, and the record then says how it ended rather than cancelled.
+    // stopped all the same, and the record then says how it ended rather than cancelled. A start
+    // asked while the store answered goes on once the store refuses: it is stopped as well.
     const flow = this.#flows.get(id);
     if (flow !== undefined && !flow.settling) flow.stop();
-    const { run, stopping } = await this.#machine.cancel(id);
+    let cancelled: { run: RunRecord | undefined; stopping: boolean };
+    try {
+      cancelled = await this.#machine.cancel(id);
+    } catch (error) {
+      const late = this.#flows.get(id);
+      if (late !== undefined && !late.settling) late.stop();
+      throw error;
+    }
+    const { run, stopping } = cancelled;
     if (!stopping || run === undefined || flow !== undefined) return run;
     return this.#reconcile(run);
   }
