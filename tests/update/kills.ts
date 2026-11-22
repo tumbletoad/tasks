@@ -44,9 +44,10 @@ const RESTART_WAIT_MS = 5_000;
 
 /**
  * The rounds of `mode` at `points`, as one test of a file of their own. From 'tested' on the
- * candidate's self-test has passed before the armed step, so a stand-in passes it: the real one
- * runs in the earlier rounds, in installed.test.ts and installed-repair.test.ts, and in every
- * install.
+ * candidate's self-test has passed before the armed step, so a stand-in passes it. The real one
+ * runs where the updater goes on past an earlier kill (the service-killed rounds before
+ * 'tested'), in installed.test.ts's bridge and command tests, in installed-repair.test.ts, and in
+ * every install. An updater killed before 'tested' never reaches it.
  */
 export function killRounds(mode: "updater" | "service", points: readonly Point[]): void {
   // The installed service refuses an elevated token (exit 64): skipped in an elevated process,

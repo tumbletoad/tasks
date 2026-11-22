@@ -2,7 +2,7 @@
 // argv element on each OS, what each outcome means for the launch, and that a fallback runs only
 // when the opener before it never started, so one launch never opens a URL twice. No real opener
 // runs and no real link is opened. Fixture data only.
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { openFolder, openUrl, type OpenerOptions } from "../src/opener.ts";
 import type { SpawnRequest, SpawnedProcess } from "../src/terminals/accept.ts";
 
@@ -43,6 +43,7 @@ function recorder(answers: Record<string, number | "missing" | "hang">): {
 const linux = (
   answers: Record<string, number | "missing" | "hang">,
   env: Record<string, string> = { DISPLAY: ":0" },
+  deadline: "short" | "default" = "short",
 ) => {
   const r = recorder(answers);
   const options: OpenerOptions = {
@@ -51,7 +52,7 @@ const linux = (
     spawn: r.spawn,
     which: (name) => (name in { gio: 1, "xdg-open": 1 } ? `/usr/bin/${name}` : undefined),
     cwd: "/home/mira",
-    timeoutMs: 200,
+    ...(deadline === "short" ? { timeoutMs: 200 } : {}),
   };
   return { r, options };
 };
@@ -173,5 +174,23 @@ describe("[A4.5.routes.opener] the OS's URL opener: one element, defined outcome
     const hung = linux({ "/usr/bin/gio": "hang" });
     expect(await openUrl(URL_, hung.options)).toEqual({ result: "unknown", opener: "gio" });
     expect(hung.r.stopped).toEqual(["/usr/bin/gio"]);
+  });
+
+  test("with no deadline given, an opener gets 10 s: not stopped at 9,999 ms, stopped and unknown at 10,000 ms", async () => {
+    const hung = linux({ "/usr/bin/gio": "hang" }, undefined, "default");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      let answer: unknown;
+      const asked = openUrl(URL_, hung.options).then((opened) => (answer = opened));
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(answer).toBeUndefined();
+      expect(hung.r.stopped).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      await asked;
+      expect(answer).toEqual({ result: "unknown", opener: "gio" });
+      expect(hung.r.stopped).toEqual(["/usr/bin/gio"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

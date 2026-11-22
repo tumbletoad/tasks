@@ -33,7 +33,6 @@ import {
   terminalChain,
   terminalChoice,
   terminalCommand,
-  SCOPE_PROBE_MS,
   TerminalLauncher,
   windowsCommandLine,
   xdgListFiles,
@@ -1517,12 +1516,13 @@ describe("[A4.5.terminal.acceptance] acceptance per adapter: Dispatched, or the 
           });
         },
       });
-      // The probe's deadline on a fake clock; the start below runs on the real one.
+      // The probe's deadline on a fake clock, at the 5 s the probe promises; the start below runs
+      // on the real one.
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       try {
         let answer: boolean | undefined;
         const asked = launcher.scopes({}).then((scopes) => (answer = scopes));
-        await vi.advanceTimersByTimeAsync(SCOPE_PROBE_MS - 1);
+        await vi.advanceTimersByTimeAsync(4_999);
         expect(answer).toBeUndefined();
         expect(stopped).toEqual([]);
         await vi.advanceTimersByTimeAsync(1);
