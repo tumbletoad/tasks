@@ -129,7 +129,7 @@ describe("[A7.3.2.brand.old-names] the product's earlier names do not come back"
       "https://github.com/tumbletoad/tasks-x and tumbletoad.com/tasks",
       "tasks-approval/1",
       "`tasks-mira:${String(seed)}`",
-      "~/tasks-test/m0-run",
+      "the tasks-test folder",
       'export const EARLIER_DATA_FOLDER = ".tasks";',
     ];
     for (const line of current) expect(oldNames("x", line), line).toEqual([]);
