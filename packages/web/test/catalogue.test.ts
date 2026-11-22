@@ -53,7 +53,6 @@ const SAMPLE = {
   days: 2,
   weeks: 15,
   years: 2,
-  minutes: 25,
   n: 3,
   level: 1,
   person: "Tom Haas",
