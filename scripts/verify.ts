@@ -19,6 +19,7 @@ import {
   decideLab,
   findBase,
   isProjectionPath,
+  projectionFolders,
   parseVerifyArgs,
   type LabDecision,
   type VerifyOptions,
@@ -106,11 +107,12 @@ if (
   process.env["PROJECTION_MODEL_RUNS"] === undefined
 ) {
   const base = findBase(process.env);
-  const changed = !base.found || base.changed.some((p) => isProjectionPath(p));
+  const folders = projectionFolders();
+  const changed = !base.found || base.changed.some((p) => isProjectionPath(p, folders));
   if (changed) {
     process.env["PROJECTION_MODEL_RUNS"] = "50";
     console.log(
-      `projection model: 50 random runs, ${base.found ? `the projection changed since ${base.label}` : `the base could not be determined (${base.why})`}`,
+      `projection model: 50 random runs, ${base.found ? `the projection or a package it uses changed since ${base.label}` : `the base could not be determined (${base.why})`}`,
     );
   }
 }
