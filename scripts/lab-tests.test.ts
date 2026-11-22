@@ -55,6 +55,8 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
       "NOTICE",
       ".github/workflows/check.yml",
       ".github/workflows/m0-packaging.yml",
+      "tests/stream-content.ts",
+      "tests/stream-schema.ts",
       "spikes\\m0\\kit\\kit.ts",
     ]) {
       expect(isLabPath(p), p).toBe(true);
@@ -74,6 +76,8 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
       "tests/manifest.json",
       "README.md",
       "spikes-notes.md",
+      ".github/workflows/e2e.yml",
+      ".github/workflows/build.yml",
     ]) {
       expect(isLabPath(p), p).toBe(false);
     }

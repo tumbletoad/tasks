@@ -1,5 +1,8 @@
-// pnpm verify: every check a pull request must pass, in order, stopping at the first
-// failure with the name of the step that failed.
+// pnpm verify: every check a pull request must pass, stopping at the first failure with the name
+// of the step that failed.
+//
+// The static checks each use one core, so they run side by side, and each prints its output when it
+// ends. The tests run after them, so a typing or lint error is reported in about a minute.
 //
 // The product tests always run. The M0 lab self-tests (spikes/) run serially, and only when lab
 // code or a file they depend on changed, or when asked: pnpm verify --lab, or TTASKS_VERIFY_LAB=1.
@@ -11,6 +14,7 @@
 // safe-exit comes first: this script loads the product's generators and ends through
 // `process.exit`.
 import "../packages/bridge/src/safe-exit.ts";
+import { join } from "node:path";
 import {
   decideLab,
   findBase,
@@ -19,32 +23,23 @@ import {
   type VerifyOptions,
   type VerifyPart,
 } from "./lab-tests.ts";
-import { verifyManifest } from "./manifest.ts";
-import { binPath, repoRoot, runNode } from "./run.ts";
-import { CRUISE_ROOTS, generated, runtime, TS_PROJECTS } from "./steps.ts";
+import { binPath, repoRoot, runNode, runNodeCaptured, type Captured } from "./run.ts";
+import { CRUISE_ROOTS, generated, runtime, typecheck } from "./steps.ts";
 
-type Step = () => boolean | Promise<boolean>;
+/** Whether the step passed. A step that runs beside others returns its output, to print at its end. */
+type Step = () => boolean | Promise<boolean | Captured>;
 
-/** Runs a dependency's command with the current Node and reports whether it exited with 0. */
+/** A dependency's command with the current Node, its output passed through as it comes. */
 const tool =
   (pkg: string, bin: string, args: readonly string[]): Step =>
   () =>
     runNode(binPath(pkg, bin), args).status === 0;
 
-async function manifest(): Promise<boolean> {
-  const { errors, tests } = await verifyManifest(repoRoot);
-  for (const e of errors) console.error(e);
-  console.log(`${String(tests)} tests checked against tests/manifest.json`);
-  return errors.length === 0;
-}
-
-function typecheck(): boolean {
-  let ok = true;
-  for (const project of TS_PROJECTS) {
-    if (runNode(binPath("typescript", "tsc"), ["-p", project]).status !== 0) ok = false;
-  }
-  return ok;
-}
+/** A dependency's command with the current Node, its output kept until it ends. */
+const quiet =
+  (pkg: string, bin: string, args: readonly string[]): Step =>
+  () =>
+    runNodeCaptured(binPath(pkg, bin), args);
 
 let options: VerifyOptions;
 try {
@@ -55,34 +50,50 @@ try {
 }
 const shard = options.shard === null ? [] : ["--shard", options.shard];
 
-/** Every step with the part it belongs to. The runtime check comes first in every part. */
-const allSteps: [name: string, part: VerifyPart | "all", step: Step][] = [
-  ["runtime", "all", runtime],
-  ["generated files", "checks", generated],
-  ["typecheck", "checks", typecheck],
-  ["lint", "checks", tool("eslint", "eslint", ["--max-warnings", "0", "."])],
-  ["format", "checks", tool("prettier", "prettier", ["--check", "--log-level", "warn", "."])],
+type Named = [name: string, part: VerifyPart | "all", step: Step];
+
+/** Every step with the part it belongs to, in order. The steps of one stage run side by side. */
+const allStages: Named[][] = [
+  [["runtime", "all", runtime]],
+  [["generated files", "checks", generated]],
   [
-    "dependency rules",
-    "checks",
-    tool("dependency-cruiser", "depcruise", [
-      "--config",
-      ".dependency-cruiser.cjs",
-      "--output-type",
-      "err",
-      ...CRUISE_ROOTS,
-    ]),
+    ["typecheck", "checks", () => typecheck()],
+    ["lint", "checks", () => runNodeCaptured(join(repoRoot, "scripts", "lint.ts"), [])],
+    ["format", "checks", quiet("prettier", "prettier", ["--check", "--log-level", "warn", "."])],
+    [
+      "dependency rules",
+      "checks",
+      quiet("dependency-cruiser", "depcruise", [
+        "--config",
+        ".dependency-cruiser.cjs",
+        "--output-type",
+        "err",
+        ...CRUISE_ROOTS,
+      ]),
+    ],
+    [
+      "test manifest",
+      "checks",
+      () => runNodeCaptured(join(repoRoot, "scripts", "manifest.ts"), []),
+    ],
   ],
-  ["test manifest", "checks", manifest],
-  ["product tests", "product", tool("vitest", "vitest", ["run", "--project", "product", ...shard])],
-  ["lab tests", "lab", labTests],
+  [
+    [
+      "product tests",
+      "product",
+      tool("vitest", "vitest", ["run", "--project", "product", ...shard]),
+    ],
+  ],
+  [["lab tests", "lab", labTests]],
 ];
-const steps = allSteps.filter(
-  ([, part]) => options.part === null || part === "all" || part === options.part,
-);
+const stages = allStages
+  .map((stage) =>
+    stage.filter(([, part]) => options.part === null || part === "all" || part === options.part),
+  )
+  .filter((stage) => stage.length > 0);
 
 // Decided before any step runs, so the rule that applied is the first thing the output says.
-const lab: LabDecision | null = steps.some(([, part]) => part === "lab")
+const lab: LabDecision | null = stages.flat().some(([, part]) => part === "lab")
   ? decideLab(options, process.env, () => findBase(process.env))
   : null;
 if (lab !== null) console.log(lab.reason);
@@ -95,24 +106,43 @@ function labTests(): boolean {
   return runNode(binPath("vitest", "vitest"), ["run", "--project", "lab", ...shard]).status === 0;
 }
 
+const count = String(stages.flat().length);
 const started = performance.now();
-for (const [index, [name, , step]] of steps.entries()) {
-  const label = `[${String(index + 1)}/${String(steps.length)}] ${name}`;
-  console.log(`\n${label}`);
-  const t0 = performance.now();
-  let ok: boolean;
-  try {
-    ok = await step();
-  } catch (error) {
-    console.error(error);
-    ok = false;
-  }
-  const seconds = ((performance.now() - t0) / 1000).toFixed(1);
-  if (!ok) {
-    console.error(`\nverify FAILED at step "${name}" (${seconds} s)`);
+let index = 0;
+for (const stage of stages) {
+  const labels = stage.map(([name]) => `[${String(++index)}/${count}] ${name}`);
+  console.log(
+    `\n${labels.length === 1 ? (labels[0] ?? "") : `${labels.join(", ")}: side by side`}`,
+  );
+  const results = await Promise.all(
+    stage.map(async ([name, , step], i) => {
+      const t0 = performance.now();
+      let ok: boolean;
+      let output = "";
+      try {
+        const result = await step();
+        if (typeof result === "boolean") ok = result;
+        else {
+          ok = result.status === 0;
+          output = result.output.trimEnd();
+        }
+      } catch (error) {
+        ok = false;
+        output = error instanceof Error ? (error.stack ?? error.message) : String(error);
+      }
+      const seconds = ((performance.now() - t0) / 1000).toFixed(1);
+      const label = labels[i] ?? name;
+      if (output !== "") console.log(`${stage.length === 1 ? "" : `\n${label}\n`}${output}`);
+      console.log(`${label}: ${ok ? "ok" : "FAILED"} (${seconds} s)`);
+      return { name, ok, seconds };
+    }),
+  );
+  const failed = results.filter((r) => !r.ok);
+  if (failed.length > 0) {
+    const steps = failed.map((r) => `step "${r.name}" (${r.seconds} s)`).join(" and ");
+    console.error(`\nverify FAILED at ${steps}`);
     process.exit(1);
   }
-  console.log(`${label}: ok (${seconds} s)`);
 }
 const total = `${((performance.now() - started) / 1000).toFixed(1)} s`;
 // A pass of one part, or without the lab tests, must not read as a pass of everything.

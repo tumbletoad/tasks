@@ -1,6 +1,10 @@
-import { matchesGlob } from "node:path";
+import { realpathSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, matchesGlob } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+  browserFilters,
   E2E_MAX,
   fitBudget,
   READS,
@@ -11,6 +15,7 @@ import {
   type Cruise,
 } from "./check-plan.ts";
 import { git } from "./lab-tests.ts";
+import { binPath, runNode } from "./run.ts";
 
 const SETUP = "packages/testkit/src/setup.ts";
 
@@ -253,28 +258,42 @@ describe("[A7.3.3.check.budget] pnpm check runs the closest tests when a change 
     expect(fit.left).toEqual([]);
   });
 
-  test("what does not fit is left, and a test that only reaches a change through others waits", () => {
+  test("what does not fit is left", () => {
     const fit = fitBudget(selection, changed, seconds, 36);
     expect(fit.run.map((r) => r.file)).toEqual([
       "packages/a/test/use.test.ts",
       "tests/update/installed.test.ts",
     ]);
     expect(fit.left).toEqual(["packages/projection/test/model.test.ts"]);
-    const far = fitBudget(
-      select(["packages/a/src/core.ts"], repo, set, { slow: true }),
-      ["packages/a/src/core.ts"],
-      seconds,
-      1000,
-    );
-    expect(far.run.map((r) => r.file)).not.toContain("packages/a/test/use.test.ts");
-    expect(far.left).toEqual(["packages/a/test/use.test.ts"]);
+  });
+
+  test("the tests that reach a changed file through other files fill what is left of the budget", () => {
+    const core = ["packages/a/src/core.ts"];
+    const far = (budget: number) =>
+      fitBudget(select(core, repo, set, { slow: true }), core, seconds, budget);
+    expect(far(1000).run).toEqual([
+      { file: "tests/update/installed.test.ts", why: "direct" },
+      { file: "packages/projection/test/model.test.ts", why: "direct" },
+      { file: "packages/a/test/use.test.ts", why: "through others" },
+    ]);
+    expect(far(40).left).toEqual(["packages/a/test/use.test.ts"]);
+  });
+
+  test("a far test that alone takes longer than the budget's wall time is left, whatever the workers", () => {
+    const core = ["packages/a/src/core.ts"];
+    const fit = fitBudget(select(core, repo, set, { slow: true }), core, seconds, 20, 3);
+    expect(fit.run.map((r) => r.file)).toEqual([
+      "tests/update/installed.test.ts",
+      "packages/projection/test/model.test.ts",
+    ]);
+    expect(fit.left).toEqual(["packages/a/test/use.test.ts"]);
   });
 });
 
 describe("[A7.3.3.check.browser] pnpm check runs a browser test when a change reaches the page", () => {
   const e2e = ["skeleton", "today", "sidebar", "search"].map((n) => `tests/e2e/${n}.e2e.ts`);
-  const browser = (changed: string[]) =>
-    selectBrowser(changed, select(changed, repo, set, { slow: false }).reached, e2e);
+  const browser = (changed: string[], overBudget = false) =>
+    selectBrowser(changed, select(changed, repo, set, { slow: false }).reached, e2e, overBudget);
 
   test("a change that does not reach the page runs none", () => {
     expect(browser(["packages/a/src/core.ts"]).run).toEqual([]);
@@ -299,5 +318,46 @@ describe("[A7.3.3.check.browser] pnpm check runs a browser test when a change re
     const s = browser([...edited, "packages/web/src/views/Today.tsx"]);
     expect(s.run).toEqual(edited.slice(0, E2E_MAX));
     expect([...s.run, ...s.over].sort()).toEqual([...edited, "tests/e2e/today.e2e.ts"].sort());
+  });
+
+  test("a change over the budget still runs the end-to-end file it edits, and only that", () => {
+    const changed = ["tests/e2e/search.e2e.ts", "packages/web/src/views/Today.tsx"];
+    const s = browser(changed, true);
+    expect(s.run).toEqual(["tests/e2e/search.e2e.ts"]);
+    expect(s.over).toEqual(["tests/e2e/today.e2e.ts"]);
+    expect(browser(["packages/web/src/views/Today.tsx"], true).run).toEqual([]);
+  });
+
+  test("Playwright runs each chosen file and only that file, whatever its name holds", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ttasks-check-e2e-"));
+    try {
+      await mkdir(join(dir, "tests", "e2e"), { recursive: true });
+      await writeFile(
+        join(dir, "playwright.config.mjs"),
+        'export default { testDir: "tests/e2e", testMatch: "**/*.e2e.ts" };',
+      );
+      // The real path: through pnpm's link it would load a second Playwright that runs no test.
+      const cli = realpathSync(binPath("@playwright/test", "playwright"));
+      const pw = JSON.stringify(join(cli, "..", "index.js"));
+      for (const name of ["a[detail]", "a", "xa", "a(1)+b"]) {
+        const body = `import { test } from ${pw};\ntest("t", () => {});\n`;
+        await writeFile(join(dir, "tests", "e2e", `${name}.e2e.ts`), body);
+      }
+      const listed = (files: string[]) => {
+        const r = runNode(
+          cli,
+          ["test", "--list", "--config", "playwright.config.mjs", ...browserFilters(files)],
+          { cwd: dir, capture: true },
+        );
+        return [...r.stdout.matchAll(/^\s+(\S+\.e2e\.ts):/gm)].map((m) => m[1]).sort();
+      };
+      expect(listed(["tests/e2e/a[detail].e2e.ts", "tests/e2e/a.e2e.ts"])).toEqual([
+        "a.e2e.ts",
+        "a[detail].e2e.ts",
+      ]);
+      expect(listed(["tests/e2e/a(1)+b.e2e.ts"])).toEqual(["a(1)+b.e2e.ts"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

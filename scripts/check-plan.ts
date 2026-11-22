@@ -115,14 +115,15 @@ export const READS: readonly { changed: string; tests: readonly string[] }[] = [
  * Files that take 40 s or more alone on a quiet desktop, so that any one of them fills the check's
  * minute. They are left to CI unless `--slow` is given, and still run when they changed themselves
  * or when a changed file lies under their `home`: there they are the test of what changed.
+ * Longest first: a checkout with no recorded durations starts them in this order.
  */
 export const SLOW: readonly { test: string; home?: string }[] = [
   { test: "tests/update/installed.test.ts", home: "tests/update/" },
-  { test: "tests/update/launchers.test.ts", home: "tests/update/" },
   { test: "scripts/install/install.test.ts", home: "scripts/install/" },
   { test: "packages/projection/test/model.test.ts" },
   { test: "packages/cli/test/doctor-agents.test.ts" },
   { test: "packages/storage/test/bundle.test.ts" },
+  { test: "tests/update/launchers.test.ts", home: "tests/update/" },
   { test: "packages/launch/test/machine.prop.test.ts" },
   { test: "packages/service/test/launch-shim.test.ts" },
 ];
@@ -365,36 +366,45 @@ export function select(
 
 export interface Fit {
   /** The tests that run, in the order they were chosen, and why each one. */
-  run: { file: string; why: "edited" | "direct" }[];
+  run: { file: string; why: "edited" | "direct" | "through others" }[];
   /** The selected tests that do not run. */
   left: string[];
 }
 
 /**
  * For a selection over the budget, the closest tests that fit in it: the test files the change
- * edits, then the tests that import or name a changed file, each group shortest first. `budget`
- * is in file-seconds: the wall time it allows times the workers.
+ * edits, then the tests that import or name a changed file, then the tests that reach one through
+ * other files, each group shortest first, until the budget is used: `wall` seconds on each of the
+ * `workers`. A file that only fills spare room must also fit in `wall` alone, since it runs on one
+ * worker.
  */
 export function fitBudget(
   selection: Selection,
   changed: readonly string[],
   seconds: (file: string) => number,
-  budget: number,
+  wall: number,
+  workers = 1,
 ): Fit {
+  const budget = wall * workers;
   const shortestFirst = (files: string[]) =>
     files.sort((a, b) => seconds(a) - seconds(b) || a.localeCompare(b));
   const edited = shortestFirst(selection.run.filter((f) => changed.includes(f)));
   const direct = shortestFirst(
     selection.run.filter((f) => selection.direct.has(f) && !changed.includes(f)),
   );
+  const others = shortestFirst(
+    selection.run.filter((f) => !selection.direct.has(f) && !changed.includes(f)),
+  );
   const run: Fit["run"] = [];
   let used = 0;
   for (const [files, why] of [
     [edited, "edited"],
     [direct, "direct"],
+    [others, "through others"],
   ] as const) {
     for (const file of files) {
       if (used + seconds(file) > budget) continue;
+      if (why === "through others" && seconds(file) > wall) continue;
       used += seconds(file);
       run.push({ file, why });
     }
@@ -404,6 +414,15 @@ export function fitBudget(
 }
 
 export const E2E_DIR = "tests/e2e/";
+
+/**
+ * Playwright's arguments for the given end-to-end files. Playwright reads each argument as a
+ * regular expression searched in a test file's path, so each is escaped and anchored to match its
+ * own file and no other.
+ */
+export function browserFilters(files: readonly string[]): string[] {
+  return files.map((f) => `/(?:^|\\/)${f.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}$/`);
+}
 /** Files that are the page or serve it: a change that reaches one reaches the browser. */
 export const PAGE_ROOTS = ["packages/web/src/main.tsx", "packages/service/src/http/app.ts"];
 /** The end-to-end file that loads the page and checks its frame, for a change no name matches. */
@@ -424,11 +443,13 @@ export interface BrowserSelection {
  * The end-to-end files for a change, in this order: the ones it edits, one named after a changed
  * part of the page (`views/Today.tsx` → `today.e2e.ts`), the skeleton test when neither gives one,
  * then the ones that reach a changed file through their own helpers. The first E2E_MAX of them run.
+ * A change over the budget runs only the ones it edits: they are its own tests.
  */
 export function selectBrowser(
   changed: readonly string[],
   reached: ReadonlySet<string>,
   e2eFiles: readonly string[],
+  overBudget: boolean,
 ): BrowserSelection {
   const edited = changed.filter((p) => e2eFiles.includes(p)).sort();
   const page = PAGE_ROOTS.some((root) => reached.has(root));
@@ -457,5 +478,6 @@ export function selectBrowser(
       : edited.length > 0
         ? "the change edits them"
         : "the change does not reach the page";
-  return { run: wanted.slice(0, E2E_MAX), over: wanted.slice(E2E_MAX), why };
+  const run = (overBudget ? edited : wanted).slice(0, E2E_MAX);
+  return { run, over: wanted.filter((f) => !run.includes(f)), why };
 }
