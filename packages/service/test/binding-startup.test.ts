@@ -133,11 +133,15 @@ describe("[A3.3.7.binding.space] a bind while the service starts settles the con
               : way === "folder"
                 ? space.folder
                 : undefined;
-        const asked: { readonly at: string; readonly answer: string }[] = [];
+        const asked: { readonly at: string; readonly answer: string; readonly want: string }[] = [];
         const ask = async (doors: readonly Door[]): Promise<void> => {
           for (const door of doors) {
             for (const way of door.ways) {
-              asked.push({ at: `${door.name}, by ${way}`, answer: await door.ask(named(way)) });
+              asked.push({
+                at: `${door.name}, by ${way}`,
+                answer: await door.ask(named(way)),
+                want: door.otherwise?.[way] ?? OPENING,
+              });
             }
           }
         };
@@ -145,14 +149,43 @@ describe("[A3.3.7.binding.space] a bind while the service starts settles the con
         // A session's doors, over the very view the start gives while it opens.
         await ask(sessionDoors(space.id, [openingEntry({ id: space.id, path: space.folder })]));
         expect(asked.map(({ at, answer }) => `${at}: ${answer}`)).toEqual(
-          asked.map(({ at }) => `${at}: ${OPENING}`),
+          asked.map(({ at, want }) => `${at}: ${want}`),
         );
       } finally {
         temp.cleanup();
       }
     },
   );
+
+  test("a session that names another space while that one opens is refused at once: its ID or its folder is never its own, and a name is known once its own space is open", async () => {
+    const held = "sp_00000000000000000000000001";
+    const other = "sp_00000000000000000000000002";
+    const own: ServedSpace = {
+      id: held,
+      registered: held,
+      name: "Mira",
+      folder: "/fixture/spaces/mira",
+      state: "open",
+      writer: undefined,
+      reader: undefined,
+    };
+    const view = [own, openingEntry({ id: other, path: "/fixture/spaces/life" })];
+    const [shell] = sessionDoors(held, view);
+    if (shell === undefined) throw new Error("no session shell");
+    const answers = [];
+    for (const named of [other, "/fixture/spaces/life", "Life"]) {
+      answers.push(`${named}: ${await shell.ask(named)}`);
+    }
+    expect(answers).toEqual([
+      `${other}: ${BOUND_ELSEWHERE}`,
+      `/fixture/spaces/life: ${BOUND_ELSEWHERE}`,
+      `Life: ${BOUND_ELSEWHERE}`,
+    ]);
+  });
 });
+
+/** A session's refusal of a space it is not bound to. */
+const BOUND_ELSEWHERE = "forbidden binding final";
 
 type Way = "id" | "name" | "folder" | "default";
 const WAYS: readonly Way[] = ["id", "name", "folder", "default"];
@@ -160,16 +193,26 @@ const WAYS: readonly Way[] = ["id", "name", "folder", "default"];
 /** What every door answers while the space opens. */
 const OPENING = "space_unavailable opening retryable";
 
-/** A door a call comes through: the ways it names a space, and its answer to one call. */
+/**
+ * A door a call comes through: the ways it names a space, its answer to one call, and for a way
+ * that is no space's lookup at this door, the answer it gets instead.
+ */
 interface Door {
   readonly name: string;
   readonly ways: readonly Way[];
+  readonly otherwise?: Partial<Record<Way, string>>;
   ask(space: string | undefined): Promise<string>;
 }
 
-/** An answer in the table's words: what was refused, why, and whether to try again. */
-const words = (body: ErrorBody): string =>
-  `${body.code} ${String(body.data?.["reason"])} ${body.data?.["retryable"] === true ? "retryable" : "final"}`;
+/** An answer in the table's words: what was refused, why (its reason, rule or field), and whether to retry. */
+const words = (body: ErrorBody): string => {
+  const issues = body.data?.["issues"];
+  const path = Array.isArray(issues)
+    ? (issues[0] as { path?: unknown } | undefined)?.path
+    : undefined;
+  const why = body.data?.["reason"] ?? body.data?.["rule"] ?? path;
+  return `${body.code} ${String(why)} ${body.data?.["retryable"] === true ? "retryable" : "final"}`;
+};
 
 /** A running service's doors: a person's command, an agent's shell, a bridge, each run verb. */
 function liveDoors(home: string, path: string): Door[] {
@@ -178,7 +221,13 @@ function liveDoors(home: string, path: string): Door[] {
     method: string,
     params: JsonObject,
   ): Promise<string> => {
-    const session = await classSession(home, path, cls, { TTASKS_AGENT: "1" });
+    // An agent's shell shows its app's marker; a person's command shows none.
+    const session = await classSession(
+      home,
+      path,
+      cls,
+      cls === "cli-agent" ? { CLAUDECODE: "1" } : {},
+    );
     try {
       await session.call(method, params, { timeoutMs: 60_000 });
       return "answered";
@@ -201,10 +250,11 @@ function liveDoors(home: string, path: string): Door[] {
       ways: WAYS,
       ask: (space) => rpc("cli-interactive", "op/call", status(space)),
     },
-    // An agent's shell that is no session names its space: the default is not its.
+    // An agent's shell that is no session names its space: told so when it names none.
     {
       name: "an agent's shell",
-      ways: ["id", "name", "folder"],
+      ways: WAYS,
+      otherwise: { default: "invalid_input space final" },
       ask: (space) => rpc("cli-agent", "op/call", status(space)),
     },
     // A bridge settles its space at the bind, from its entry or the default. A name or a folder

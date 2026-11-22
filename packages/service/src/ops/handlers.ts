@@ -507,7 +507,10 @@ function heldSpace(
   if (named !== undefined && named !== held) {
     const other = findSpace(live, named);
     // A name is not known until its space opens: while the held space opens, it may be its own.
-    if (other === undefined && isRetryable(unserved(live, named))) throw unserved(live, named);
+    // Another ID, or another space's folder, is never its own, opening or not.
+    const ownOpening = live.some((s) => s.state === "opening" && s.registered === held);
+    const name = !isId(named, "sp") && !isAbsolute(named);
+    if (other === undefined && name && ownOpening) throw spaceUnavailable("opening", true);
     // A copy that is still opening is known by the ID its entry names.
     if (other === undefined || isAmbiguity(other) || (other.id ?? other.registered) !== held) {
       throw new AppError({
@@ -524,8 +527,6 @@ function heldSpace(
   if (isAmbiguity(found)) throw ambiguousError(found);
   return answerFor(live, found, held);
 }
-
-const isRetryable = (error: AppError): boolean => error.data["retryable"] === true;
 
 /** A space a call may go on with: open or read-only, so served, with its ID. */
 export type UsableSpace = ServedSpace & { readonly id: string };
