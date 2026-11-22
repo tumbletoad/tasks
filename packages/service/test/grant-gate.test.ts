@@ -364,6 +364,40 @@ describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every conne
   );
 });
 
+describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every connection of its home", () => {
+  test(
+    "a launched agent's shell finds its own receipt while its home is registered; once the row is revoked the lookup is refused with rule grant before the space's reader is touched",
+    { timeout: LONG },
+    async () => {
+      const launch = await w.launch("M-3");
+      // On main a shell acts as the session its launch's bridge made.
+      const agent = await launched(launch);
+      expect(agent.binding?.["state"]).toBe("bound");
+      const sh = await shell(w, { TTASKS_TICKET: launch.ticket });
+      try {
+        const request = rid();
+        await sh.call("entry.add", {
+          kind: "progress",
+          text: "Fixture progress before the revoke.",
+          request_id: request,
+        });
+        expect(await sh.call("receipt.get", { request })).toMatchObject({
+          found: true,
+          status: "applied",
+        });
+
+        expect(await revokeHome(w.home, w.path, [launch.row ?? ""])).toBe(1);
+        const { host, touched } = trapped(w.space);
+        expect((await sh.refusal("receipt.get", { request }, { host })).body).toEqual(GRANT);
+        expect(touched).toEqual([]);
+      } finally {
+        await sh.close();
+        await agent.close();
+      }
+    },
+  );
+});
+
 describe("[A3.3.7.grant.precedence] grant and binding: which refusal wins", () => {
   test(
     "a session in a granted space that names another space gets binding; once its space is no longer granted, every call gets grant, whatever it names",
@@ -832,7 +866,7 @@ describe("[A3.3.7.grant.revoke] a revoked row stops the next call of every conne
 
 describe("[A3.3.7.binding.worlds] a world launch is what a click and setup leave, on the home a test names", () => {
   test(
-    "registered by default; without an app, without a row, with its row revoked, or registered for another space when asked; and a bridge inside it that presents another instance",
+    "registered by default, also two at once; without an app, without a row, with its row revoked, or registered for another space when asked; and a bridge inside it that presents another instance",
     { timeout: LONG },
     async () => {
       const live = async () => {
@@ -849,6 +883,15 @@ describe("[A3.3.7.binding.worlds] a world launch is what a click and setup leave
       const recorded = (launch: WorldLaunch) => w.service.launches.host.liveByTicket(launch.ticket);
       const rowsOf = async (launch: WorldLaunch) =>
         (await live()).filter((row) => row.instance === launch.instance);
+
+      // Two launches of one task opened at the same time are two launches, each on its own home.
+      const both = await Promise.all([w.launch("M-1"), w.launch("M-1")]);
+      expect(new Set(both.map((l) => l.id)).size).toBe(2);
+      expect(new Set(both.map((l) => l.instance)).size).toBe(2);
+      for (const launch of both) {
+        expect(recorded(launch)).toMatchObject({ launch: launch.id, app: "codex" });
+        expect(await rowsOf(launch)).toHaveLength(1);
+      }
 
       const registered = await w.launch("M-1");
       const home = join(w.home, "agent-homes", registered.instance);

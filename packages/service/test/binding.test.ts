@@ -613,9 +613,34 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
       const atGate = new Promise<void>((resolve) => {
         reached = resolve;
       });
+      // The retry's call, settled to its binding: from here to its wait for the write in flight
+      // the request path runs without awaiting anything but itself.
+      let atWait = (): void => undefined;
+      const retryArrived = new Promise<void>((resolve) => {
+        atWait = resolve;
+      });
       // The space's writer, holding the shell's first write until the gate opens.
       let holding = true;
       const held = (own: OpsHost): Partial<OpsHost> => ({
+        ...(own.bindings === undefined
+          ? {}
+          : {
+              bindings: new Proxy(own.bindings, {
+                get(target, key) {
+                  const value: unknown = Reflect.get(target, key, target);
+                  if (key !== "use" || typeof value !== "function") {
+                    return typeof value === "function"
+                      ? (value as (...a: unknown[]) => unknown).bind(target)
+                      : value;
+                  }
+                  // Only a connection that holds a session's slot calls it: the mapped retry.
+                  return async (...args: unknown[]) => {
+                    await (value as (...a: unknown[]) => Promise<void>).apply(target, args);
+                    if (!holding) atWait();
+                  };
+                },
+              }),
+            }),
         spaces: () =>
           own.spaces().map((s) => {
             const writer = s.writer;
@@ -660,8 +685,15 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
         await atGate;
         agent = await launched(launch);
         expect(agent.binding?.["state"]).toBe("bound");
-        const retry = mapped.call("entry.add", input);
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        let retried = false;
+        const retry = mapped.call("entry.add", input).finally(() => {
+          retried = true;
+        });
+        await retryArrived;
+        // Every step the retry takes on its own runs before the next turn of the event loop: it
+        // is waiting for the first write now, and has not been answered.
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(retried).toBe(false);
         open();
         return Promise.all([original, retry]);
       });

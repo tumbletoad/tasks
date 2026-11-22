@@ -730,7 +730,11 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
       const text = await other.getTask({ task: task.ref });
       expect(text).not.toContain(REQUEST);
       expect(text).toContain("Fix the offset");
-      expect(text).toContain(`(request for launch ${result.launch.reference} [desktop])`);
+      // The note is shown under its own reference, as the original request's.
+      const note = result.note ?? "";
+      expect(note).not.toBe("");
+      const line = text.split("\n").find((l) => l.startsWith(`- ${note} `));
+      expect(line).toContain(`(request for launch ${result.launch.reference} [desktop])`);
       await own.close();
       await other.close();
     },

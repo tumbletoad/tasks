@@ -227,10 +227,11 @@ export async function contractWorld(
       { class: "cli-interactive", env: {} },
       { op: "task.get", input: { task, sections: ["history"] }, space },
     )) as { task: { id: string } };
-    launches += 1;
+    // Taken once: launches opened at the same time each keep their own number across the awaits.
+    const number = (launches += 1);
     // An instance of its own, so a second launch of a task while the first is still opening is a
     // launch of its own rather than the first one again. One home per instance, as setup has it.
-    const instance = `contract-agent-${String(launches)}`;
+    const instance = `contract-agent-${String(number)}`;
     const agent = agentHomeOf(home, instance);
     const kind = launchOptions.home ?? "registered";
     let row: string | undefined;
@@ -253,7 +254,7 @@ export async function contractWorld(
         taskVersion: 1,
         briefHash: "c".repeat(64),
       },
-      `contract-launch-${String(launches).padStart(6, "0")}`,
+      `contract-launch-${String(number).padStart(6, "0")}`,
       WORLD_PLAN,
       given,
     );

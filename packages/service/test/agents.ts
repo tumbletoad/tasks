@@ -160,6 +160,9 @@ export async function bridge(world: Served, context: JsonObject): Promise<Agent<
     call,
     refusal: (op, input, options) => refusalOf(call(op, input, options), op),
     close: async () => {
+      // One close at a time is counted, and no bridge of these connects while one is (`bridge`
+      // waits): the count drops below `before` only by this connection's own end.
+      await ended(world);
       const before = await openBridges(world);
       mcp.close();
       if (before === undefined) return;
