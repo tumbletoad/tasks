@@ -3203,7 +3203,7 @@
     },
     {
       "id": "A3.3.14.doctor.sessions",
-      "title": "ttasks doctor's sessions row passes and fails against fakes: session records dropped when read back and bridge connections in shared mode warn, by instance ID only; the service counts the bridge connections open now, in the row's shape, none shared and none dropped",
+      "title": "ttasks doctor's sessions row against fakes: the agent connections open and how many are a launch's or a run's session, never a warning, and facts in another shape skip; the service counts the bridge connections open now and the sessions among them, by launch and by run",
       "source": "A3 3.14, A3 3.7.5, A7 3.11 M4.05b",
       "owner": "M4",
       "kind": "ci",

@@ -55,7 +55,7 @@ export const SpaceStatusResult = z.strictObject({
   session: z
     .strictObject({
       state: z
-        .enum(["bound", "unbound", "routine"])
+        .enum(["bound", "unbound"])
         .describe("bound: this connection is a task's session"),
       task: TaskRef.optional(),
       instance: z.string().describe("Agent instance").optional(),
@@ -190,7 +190,7 @@ export const spaceStatus = defineEntry({
         time_zone: "Europe/Lisbon",
         autonomy: "full",
         space: { id: SPACE_ID, name: "Mira", ref_prefix: "M" },
-        session: { state: "routine", instance: "codex-work", app: "Codex CLI" },
+        session: { state: "unbound", instance: "codex-work", app: "Codex CLI" },
         counts: {
           statuses: STATUS_COUNTS,
           inbox: 0,

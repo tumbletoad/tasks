@@ -13,8 +13,7 @@ import {
   WrapState,
   patterns,
 } from "../schemas.ts";
-import { STATUS_COUNTS, SpaceStatusResult } from "./space-status.ts";
-import { AS_OF, M14, M3, SPACE_ID } from "./fixture.ts";
+import { AS_OF, M14, M3 } from "./fixture.ts";
 
 /**
  * The sections whose payload A3 3.4.4 defines. `sessions` and `proposals` arrive with the steps
@@ -265,10 +264,6 @@ export const TaskGetResult = z.union([
     before: z.string().describe("Paging token for the rest").optional(),
     notes: NamedNotes,
   }),
-  SpaceStatusResult.extend({
-    view: z.literal("status").describe("A routine's launch bound the space: the overview"),
-    bound: Bound,
-  }),
 ]);
 
 const m14Row = {
@@ -436,26 +431,6 @@ export const taskGet = defineEntry({
             learnings: ["Always store UTC plus the clinic's zone ID, never offsets."],
           },
         },
-      },
-    },
-    {
-      title: "A routine's launch reference binds the space and returns the overview",
-      input: { launch: "L9WD4P" },
-      output: {
-        view: "status",
-        bound: true,
-        as_of: AS_OF,
-        date: "2026-11-12",
-        time_zone: "Europe/Lisbon",
-        autonomy: "full",
-        space: { id: SPACE_ID, name: "Mira", ref_prefix: "M" },
-        session: { state: "routine", instance: "codex-work", app: "Codex CLI" },
-        counts: {
-          statuses: STATUS_COUNTS,
-          inbox: 0,
-          proposals: 0,
-        },
-        hint: "This session is bound to the space. Pass task on every task call.",
       },
     },
   ],

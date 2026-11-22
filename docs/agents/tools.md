@@ -1114,7 +1114,7 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `space.name` | string | yes | Space name |
 | `space.ref_prefix` | string | yes | Task reference prefix |
 | `session` | object | yes | This session |
-| `session.state` | "bound" \| "unbound" \| "routine" | yes | bound: this connection is a task's session |
+| `session.state` | "bound" \| "unbound" | yes | bound: this connection is a task's session |
 | `session.task` | string | no | Task reference |
 | `session.instance` | string | no | Agent instance |
 | `session.app` | string | no | Agent app |
@@ -1281,7 +1281,7 @@ Result:
     "ref_prefix": "M"
   },
   "session": {
-    "state": "routine",
+    "state": "unbound",
     "instance": "codex-work",
     "app": "Codex CLI"
   },
@@ -2009,72 +2009,6 @@ When `view` is `"sections"`:
 | `notes[].slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
 | `notes[].slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
 
-When `view` is `"status"`:
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `as_of` | string | yes | Read position; pass it as base on your next write |
-| `date` | string | yes | Today in the space's time zone |
-| `time_zone` | string | yes | IANA time zone of the space |
-| `autonomy` | "full" \| "review" \| "suggest" | yes | Autonomy level for this session |
-| `space` | object | yes | The space this session uses |
-| `space.id` | string | yes | Space ID |
-| `space.name` | string | yes | Space name |
-| `space.ref_prefix` | string | yes | Task reference prefix |
-| `session` | object | yes | This session |
-| `session.state` | "bound" \| "unbound" \| "routine" | yes | bound: this connection is a task's session |
-| `session.task` | string | no | Task reference |
-| `session.instance` | string | no | Agent instance |
-| `session.app` | string | no | Agent app |
-| `session.notes_for_agents` | integer, 0 to 1000000000 | no | Notes from the user to agents on the task |
-| `session.proposals_rejected` | integer, 0 to 1000000000 | no | Proposals rejected since the last call |
-| `here` | object[], max 8 items | no | Active tasks for cwd: exact, inside, below; up to 8 |
-| `here[].id` | string | yes | Task ID |
-| `here[].ref` | string | yes | Task reference |
-| `here[].title` | string | yes | Title |
-| `here[].lifecycle` | "active" \| "completed" \| "archived" | yes | Lifecycle |
-| `here[].status` | string | yes | Status key |
-| `here[].inbox` | boolean | yes | In the Inbox |
-| `here[].priority` | integer, 1 to 4 | yes | 1 highest, 4 none |
-| `here[].effort` | string | no | Effort |
-| `here[].due` | string \| object | no | Due date, or a due time with its zone |
-| `here[].due.at` | string | yes | Due time, in UTC |
-| `here[].due.tz` | string | yes | IANA time zone of the commitment |
-| `here[].area` | string | no | Area name |
-| `here[].project` | string | no | Project name |
-| `here[].match` | "exact" \| "inside" \| "below" | yes | Its folder is cwd, contains it or is in it |
-| `here[].live_sessions` | integer, 0 to 1000000000 | yes | Live agent sessions on it |
-| `here_total` | integer, 0 to 1000000000 | no | Active tasks for cwd in all |
-| `counts` | object | yes | Counts of active tasks |
-| `counts.statuses` | object[] | yes | Active tasks per status, in the space's order |
-| `counts.statuses[].status` | string | yes | Status key |
-| `counts.statuses[].count` | integer, 0 to 1000000000 | yes | Active tasks with it |
-| `counts.inbox` | integer, 0 to 1000000000 | yes | Tasks in the Inbox |
-| `counts.proposals` | integer, 0 to 1000000000 | yes | Pending proposals |
-| `sections` | object[] | no | The sections asked for with include |
-| `sections[].name` | "today" \| "week" \| "review" \| "waiting" \| "inbox" \| "changes" | yes | Section |
-| `sections[].tasks` | object[] | yes | Up to 8 tasks |
-| `sections[].tasks[].id` | string | yes | Task ID |
-| `sections[].tasks[].ref` | string | yes | Task reference |
-| `sections[].tasks[].title` | string | yes | Title |
-| `sections[].tasks[].lifecycle` | "active" \| "completed" \| "archived" | yes | Lifecycle |
-| `sections[].tasks[].status` | string | yes | Status key |
-| `sections[].tasks[].inbox` | boolean | yes | In the Inbox |
-| `sections[].tasks[].priority` | integer, 1 to 4 | yes | 1 highest, 4 none |
-| `sections[].tasks[].effort` | string | no | Effort |
-| `sections[].tasks[].due` | string \| object | no | Due date, or a due time with its zone |
-| `sections[].tasks[].due.at` | string | yes | Due time, in UTC |
-| `sections[].tasks[].due.tz` | string | yes | IANA time zone of the commitment |
-| `sections[].tasks[].area` | string | no | Area name |
-| `sections[].tasks[].project` | string | no | Project name |
-| `sections[].total` | integer, 0 to 1000000000 | yes | Its tasks not listed in an earlier section |
-| `sections[].more` | true | no | It has more tasks than total says |
-| `sections[].above` | integer, 1 to 1000 | no | Its tasks listed in an earlier section |
-| `guide` | string | no | The workflow guide asked for |
-| `hint` | string | no | What to do next |
-| `view` | "status" | yes | A routine's launch bound the space: the overview |
-| `bound` | boolean | yes | This connection is the task's session: calls without task act on it |
-
 ### Examples
 
 #### Load M-14 by the launch reference from the Brief, with the user's request
@@ -2309,62 +2243,6 @@ Result:
       ]
     }
   }
-}
-```
-
-#### A routine's launch reference binds the space and returns the overview
-
-Called by the agent.
-
-```json
-{
-  "launch": "L9WD4P"
-}
-```
-
-Result:
-
-```json
-{
-  "view": "status",
-  "bound": true,
-  "as_of": "1.1046.5n0w8k3q",
-  "date": "2026-11-12",
-  "time_zone": "Europe/Lisbon",
-  "autonomy": "full",
-  "space": {
-    "id": "sp_7c0hq2m4w9d8k1r6t3v5x0b2nf",
-    "name": "Mira",
-    "ref_prefix": "M"
-  },
-  "session": {
-    "state": "routine",
-    "instance": "codex-work",
-    "app": "Codex CLI"
-  },
-  "counts": {
-    "statuses": [
-      {
-        "status": "open",
-        "count": 11
-      },
-      {
-        "status": "waiting",
-        "count": 2
-      },
-      {
-        "status": "review",
-        "count": 2
-      },
-      {
-        "status": "backlog",
-        "count": 1
-      }
-    ],
-    "inbox": 0,
-    "proposals": 0
-  },
-  "hint": "This session is bound to the space. Pass task on every task call."
 }
 ```
 
