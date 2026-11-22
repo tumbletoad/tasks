@@ -211,29 +211,6 @@ interface Problem {
   readonly commit?: string;
 }
 
-/**
- * Resolves to false when the page goes away: a reload, a close, another site. A page that comes
- * back from the browser's back-forward cache waits anew.
- */
-let leaving: Promise<false> = new Promise(() => undefined);
-if (typeof window !== "undefined") {
-  let go: () => void = () => undefined;
-  const arm = () => {
-    leaving = new Promise((resolve) => {
-      go = () => {
-        resolve(false);
-      };
-    });
-  };
-  arm();
-  window.addEventListener("pagehide", () => {
-    go();
-  });
-  window.addEventListener("pageshow", (event) => {
-    if (event.persisted) arm();
-  });
-}
-
 /** An error the service sent (the generated client's AppError), read by its shape. */
 function problemOf(error: unknown): Problem | undefined {
   if (!(error instanceof Error)) return undefined;
@@ -1185,11 +1162,7 @@ export class Edits {
     };
     const sent = this.#deps.write(async (request) => {
       try {
-        // The page going away ends the wait as not sent: the edit is kept as not saved and offered
-        // after the reload. Sent now, it could arrive before the edit it waits for.
-        if (waits.length > 0 && !(await Promise.race([ahead.wait(), leaving]))) {
-          throw new NotSent();
-        }
+        if (waits.length > 0 && !(await ahead.wait())) throw new NotSent();
         // The same base for a second send with the same request ID: one intent, sent again.
         const base = this.#baseFor(task, fields, seen);
         const one = this.#call(

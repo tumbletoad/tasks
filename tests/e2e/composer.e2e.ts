@@ -697,48 +697,6 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     expect(found.rows.filter((row) => row.title === title)).toHaveLength(1);
   });
 
-  test("an edit still waiting behind another edit of the task when the page reloads is back as not saved, never lost", async ({
-    page,
-    world,
-  }) => {
-    const tag = test.info().project.name;
-    const ref = await addTask(world, { title: `Oil the hinges (${tag})`, area: "home" });
-    await openTask(page, world, ref);
-    const row = rowOf(page, ref);
-    // The rename's answer comes only after the page went: the priority waits behind it until then.
-    const updates = calls(page, "task.update");
-    let answer: () => void = () => undefined;
-    const answered = new Promise<void>((resolve) => {
-      answer = resolve;
-    });
-    await page.route("**/api/v1/op/task.update", async (route) => {
-      await answered;
-      const response = await route.fetch();
-      await route.fulfill({ response }).catch(() => undefined);
-    });
-    const title = row.locator('[data-part="title"]');
-    await title.focus();
-    await page.keyboard.press("F2");
-    await page.keyboard.press("End");
-    await page.keyboard.type(" and the gate");
-    await page.keyboard.press("Enter");
-    await row
-      .getByRole("radiogroup", { name: "Priority" })
-      .getByRole("radio", { name: "P1" })
-      .click();
-    await page.reload();
-    expect(updates).toHaveLength(1);
-    answer();
-    await page.unrouteAll({ behavior: "wait" });
-    // The rename went out, and the priority is offered again, as any edit that was not saved.
-    await expect(title).toHaveText(`Oil the hinges (${tag}) and the gate`, { timeout: SLOW_MS });
-    const unsaved = row.locator('[data-part="unsaved"]');
-    await expect(unsaved).toHaveAttribute("data-reason", "failed", { timeout: SLOW_MS });
-    await unsaved.locator('[data-part="apply-mine"]').click();
-    await expect.poll(async () => (await read(world, ref)).task.priority).toBe(1);
-    await expect(unsaved).toHaveCount(0);
-  });
-
   test("a field edit that was not saved is back after a reload with its choices: the connection was down, the task changed under it, the task was finished", async ({
     page,
     world,
