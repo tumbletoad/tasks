@@ -116,7 +116,6 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
     const ui = process.env["E2E_UI_BUILD"];
     if (ui === undefined) throw new Error("global-setup.ts did not build the page");
     await page.setViewportSize({ width: 1440, height: 1000 });
-    // No tool sets a space's statuses yet: each scale is a space of its own, set before it opens.
     const scales = [
       { statuses: ["open", "backlog"], efforts: ["S", "L"] },
       { statuses: ["open", "waiting", "review", "backlog"], efforts: ["S", "M", "L", "XL"] },
@@ -130,11 +129,17 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
         efforts: ["S", "M", "L"],
       },
     ];
-    for (const scale of scales) {
-      const world = await startWorld(ui, { scales: scale });
-      try {
-        await signIn(page, world, `/s/${world.mira.id}/open`);
-        await showsSpace(page, world.mira.name);
+    // No tool sets a space's statuses yet: one service, with a space of its own per scale, each
+    // set before the service opens it.
+    const world = await startWorld(ui, { scales });
+    try {
+      for (const [at, scale] of scales.entries()) {
+        const space = world.scaled[at];
+        if (space === undefined) throw new Error("the world has no space for this scale");
+        const to = `/s/${space.id}/open`;
+        if (at === 0) await signIn(page, world, to);
+        else await page.goto(`${world.origin}${to}`);
+        await showsSpace(page, space.name);
         const first = page.locator("main li[data-key]").first();
         await first.locator('[data-part="title"]').click();
         const facts = first.locator("dl");
@@ -166,9 +171,9 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
           ).toBeLessThanOrEqual(1);
         }
         await picture(facts, `owner-facts-${scale.statuses.join("-")}.png`);
-      } finally {
-        await world.close();
       }
+    } finally {
+      await world.close();
     }
   });
 });
