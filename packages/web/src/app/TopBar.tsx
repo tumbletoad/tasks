@@ -29,6 +29,7 @@ import {
   parseCapture,
   type Chip,
 } from "../capture/parse.ts";
+import { requestId } from "../api.ts";
 import { Session } from "../context.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { tabKept } from "../kept.ts";
@@ -71,7 +72,14 @@ const FIELD_MAX = 500;
 interface Draft {
   readonly text: string;
   readonly kept: ReadonlySet<string>;
+  /**
+   * The request ID of the add of this text that got no answer: the same add again, also after a
+   * reload, carries it, so the service gives back the task it made instead of a second.
+   */
+  readonly request?: string;
 }
+
+const REQUEST_ID = /^[0-9a-f-]{36}$/u;
 
 const draftName = (space: string) => `top.${space}`;
 
@@ -82,20 +90,47 @@ function readTop(space: string): Draft | undefined {
 /** A kept draft, read by its shape. */
 function draftOf(value: unknown): Draft | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const { text, kept } = value as { text?: unknown; kept?: unknown };
+  const { text, kept, request } = value as { text?: unknown; kept?: unknown; request?: unknown };
   if (typeof text !== "string" || text === "" || text.length > FIELD_MAX) return undefined;
   const keys = Array.isArray(kept)
     ? kept.filter((k): k is string => typeof k === "string" && k.length <= 100).slice(0, 50)
     : [];
-  return { text, kept: new Set(keys) };
+  return {
+    text,
+    kept: new Set(keys),
+    ...(typeof request === "string" && REQUEST_ID.test(request) ? { request } : {}),
+  };
 }
 
+/** Keeps the draft; the same text keeps the request ID of its unanswered add. */
 function keepTop(space: string, draft: Draft | undefined): void {
+  const before = readTop(space);
+  const request = draft?.request ?? (before?.text === draft?.text ? before?.request : undefined);
   const value =
     draft === undefined || draft.text === ""
       ? undefined
-      : JSON.stringify({ text: draft.text, kept: [...draft.kept] });
+      : JSON.stringify({
+          text: draft.text,
+          kept: [...draft.kept],
+          ...(request === undefined ? {} : { request }),
+        });
   if (tabKept.read(draftName(space)) !== value) tabKept.keep(draftName(space), value);
+}
+
+/** The request ID for an add of `text`: its unanswered one's, else a new one, kept with it. */
+function requestFor(space: string, text: string, kept: ReadonlySet<string>): string {
+  const before = readTop(space);
+  if (before?.text === text && before.request !== undefined) return before.request;
+  const request = requestId();
+  keepTop(space, { text, kept, request });
+  return request;
+}
+
+/** The add of `text` was refused: it did nothing, so the next one is a new request. */
+function dropRequest(space: string, text: string): void {
+  const before = readTop(space);
+  if (before?.text !== text || before.request === undefined) return;
+  tabKept.keep(draftName(space), JSON.stringify({ text, kept: [...before.kept] }));
 }
 
 /** How long the search waits for typing to pause before it reads. */
@@ -322,7 +357,11 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
     // Through the live store: no optimistic row, and the text goes when the feed confirms the
     // add, so the new row is on screen when it does. Only the text that was added goes: whatever
     // the person typed meanwhile stays, here and in the space's kept draft.
-    const sent = feed.write((request_id) => api.client.task.add({ tasks: [draft], request_id }));
+    const sent = feed.write(
+      (request_id) => api.client.task.add({ tasks: [draft], request_id }),
+      undefined,
+      requestFor(space, submitted, kept),
+    );
     void sent.settled.then((settled) => {
       sending.current.delete(submitted);
       taken.current.delete(submitted);
@@ -339,6 +378,9 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
       },
       (error: unknown) => {
         sending.current.delete(submitted);
+        // A refusal the service sent did nothing: the same text again is a new add.
+        const code = error instanceof Error ? (error as { code?: unknown }).code : undefined;
+        if (typeof code === "string" && code !== "internal") dropRequest(space, submitted);
         if (!feed.failed(error)) say(t("top.addFailed"));
       },
     );

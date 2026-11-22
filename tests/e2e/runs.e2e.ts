@@ -117,6 +117,42 @@ test.describe("[M6.page.e2e.run] Run from the page, with and without words, and 
   });
 });
 
+test.describe("[M6.page.e2e.run-once] A Run pressed again after a reload is the same Run", () => {
+  test("a Run sent just before a reload, and pressed again on the words the reload kept, starts one run", async ({
+    page,
+    runs: world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, "Check the guest wifi");
+    await openTask(page, world, ref);
+    const composer = composerOf(page, ref);
+    // Each Run reaches the service late: the first one is still on its way when the page reloads.
+    const sent: string[] = [];
+    let answered = 0;
+    await page.route("**/api/v1/launch/run", async (route) => {
+      sent.push((route.request().postDataJSON() as { request_id: string }).request_id);
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      const response = await route.fetch();
+      answered += 1;
+      await route.fulfill({ response }).catch(() => undefined);
+    });
+    const words = `Only the guest network (${tag})`;
+    await composer.fill(words);
+    await runButton(page, ref).click();
+    await page.reload();
+    await expect(composer).toHaveValue(words, { timeout: SLOW_MS });
+    await runButton(page, ref).click();
+    await expect(composer).toHaveValue("", { timeout: SLOW_MS });
+    await expect.poll(() => answered, { timeout: SLOW_MS }).toBe(2);
+    await page.unroute("**/api/v1/launch/run");
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toBe(sent[0]);
+    await page.reload();
+    await expect(stateOf(runsOf(page, ref).first())).toContainText("Done.", { timeout: SLOW_MS });
+    await expect(runsOf(page, ref)).toHaveCount(1);
+  });
+});
+
 test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a second tab and Stop", () => {
   test("a working run shows calmly in the thread and on the row, the same after a reload and in a second tab; Stop answers at once and then says what was ended @one-browser", async ({
     page,

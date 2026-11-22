@@ -45,7 +45,7 @@ import type { TaskRow } from "../store/rows.ts";
 import { rowOfFacts } from "../task/detail.ts";
 import { mergeRuns, runRefusal, withStops } from "../task/runs.ts";
 import css from "./TaskList.module.css";
-import { openAsked, openName, Unanswered, unansweredOpens } from "./unanswered.ts";
+import { openAsked, openName, runName, unansweredOpens, unansweredRuns } from "./unanswered.ts";
 
 const styles = classes(css, ["line", "announce"]);
 
@@ -168,10 +168,6 @@ export function TaskList({
   const [runs, setRuns] = useState<ReadonlyMap<string, readonly Run[]>>(new Map());
   /** The runs whose Stop is on its way, each with its version when Stop was pressed. */
   const [stops, setStops] = useState<ReadonlyMap<string, number>>(new Map());
-  /** Per task, the Run that got no answer. */
-  const unanswered = useRef(new Unanswered());
-  /** Per task, how many Runs are on their way: a read of the runs meanwhile may predate theirs. */
-  const runsOut = useRef(new Map<string, number>());
   const runReads = useRef(new Latest());
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [announcement, setAnnouncement] = useState("");
@@ -325,14 +321,10 @@ export function TaskList({
   const loadRuns = useCallback(
     (task: string) => {
       const newest = runReads.current.begin(task);
-      const quiet = () => (runsOut.current.get(task) ?? 0) === 0;
-      const quietAtStart = quiet();
       api
         .runs(task)
         .then((list) => {
           if (newest()) {
-            // The service answered since a Run got none: that run shows here if it started.
-            if (quietAtStart && quiet()) unanswered.current.answered(task);
             setRuns((known) => new Map(known).set(task, mergeRuns(known.get(task) ?? [], list)));
           }
         })
@@ -806,28 +798,24 @@ export function TaskList({
       // and the feed brings each of its steps. A refusal starts nothing and says why where the
       // person clicked; the folder line says it too when the folder is the reason. Without an
       // answer, or with the service's internal failure, the run may have been queued: until the
-      // service answers again, the same Run carries the same request ID, so the service gives
-      // that run back instead of starting a second.
+      // service answers it, also after a reload, the same Run carries the same request ID, so the
+      // service gives that run back instead of starting a second.
       run: (task, instance, text) => {
         watched.current.add(task.id);
         const asked = `${instance.key}\n${text ?? ""}`;
-        const id = unanswered.current.idFor(task.id, asked);
-        const out = runsOut.current;
-        out.set(task.id, (out.get(task.id) ?? 0) + 1);
+        const name = runName(live.spaceId ?? "", task.id);
+        const id = unansweredRuns.idFor(name, asked);
         return api
           .startRun(task.id, instance.key, id, text)
-          .finally(() => {
-            out.set(task.id, (out.get(task.id) ?? 1) - 1);
-          })
           .then((run) => {
-            unanswered.current.answered(task.id);
+            unansweredRuns.answered(name, id);
             refuse(task.id, undefined);
             showRun(task.id, run);
             return run;
           })
           .catch((error: unknown) => {
             const refusedHere = error instanceof Refused && error.code !== "internal";
-            if (refusedHere) unanswered.current.refused(task.id, id);
+            if (refusedHere) unansweredRuns.refused(name, id);
             if (live.failed(error)) return undefined;
             if (!refusedHere) {
               say(t("run.unanswered"));
