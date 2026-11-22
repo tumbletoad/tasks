@@ -383,7 +383,6 @@ export {
   LAUNCH_EDGES,
   launchRefCheck,
   OPEN_LAUNCH_STATES,
-  REFERENCE_WINDOW_MS,
   type LaunchDetail,
   type LaunchRecord,
 } from "./write/launches.ts";

@@ -1885,7 +1885,7 @@ export class SpaceWriter {
             };
           }
           const id = newId("la", random);
-          const reference = newLaunchRef(conn, at, draftRefs, random);
+          const reference = newLaunchRef(conn, draftRefs, random);
           draftLaunches.set(key, id);
           draftRefs.add(reference);
           return {

@@ -30,13 +30,13 @@ export const LAUNCH_EDGES: Readonly<Record<LaunchState, readonly LaunchState[]>>
 /** The states recovery reads (A4 3.16.1 `openWork`): not final. */
 export const OPEN_LAUNCH_STATES = ["prepared", "dispatching", "dispatched"] as const;
 
-/** References are unique among the space's launches of the last 90 days (A4 3.1). */
-export const REFERENCE_WINDOW_MS = 90 * 24 * 60 * 60_000;
-
 /** A1's ID alphabet in upper case. */
 const REF_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-/** Tries for a reference no launch of the last 90 days holds: 2^20 exist, so 32 never run out. */
+/**
+ * Tries for a reference no launch of the space ever held: 2^20 exist and launches are never
+ * deleted, so 32 tries fail only once a space has held most of a million launches.
+ */
 const REFERENCE_TRIES = 32;
 
 export const LAUNCH_SQL = {
@@ -51,8 +51,7 @@ export const LAUNCH_SQL = {
     "AND machine_id = $machine " +
     "AND (state IN ('prepared','dispatching') OR (state = 'dispatched' AND route = 'terminal')) " +
     "ORDER BY created_at DESC, id DESC LIMIT 1",
-  referenceTaken:
-    "SELECT 1 AS taken FROM launches WHERE reference = $reference AND created_at > $since LIMIT 1",
+  referenceTaken: "SELECT 1 AS taken FROM launches WHERE reference = $reference LIMIT 1",
   place: "SELECT machine_id, deleted_at FROM places WHERE id = $id",
   /** The note a launch names as its request: one of its task's, not deleted. */
   request:
@@ -95,23 +94,22 @@ export function isLaunchRef(text: unknown): text is string {
 }
 
 /**
- * A new launch reference that no launch of the last 90 days holds, nor one this request made.
- * Each symbol takes 5 bits of one random byte: 256 is a multiple of 32, so none is favoured.
+ * A new launch reference that no launch of the space ever held, nor one this request made, so an
+ * old brief never names a newer launch. Each symbol takes 5 bits of one random byte: 256 is a
+ * multiple of 32, so none is favoured.
  */
 export function newLaunchRef(
   conn: Connection,
-  at: number,
   taken: ReadonlySet<string>,
   random: RandomSource,
 ): string {
-  const since = at - REFERENCE_WINDOW_MS;
   for (let attempt = 0; attempt < REFERENCE_TRIES; attempt += 1) {
     const bytes = new Uint8Array(4);
     random(bytes);
     const symbols = Array.from(bytes, (b) => REF_ALPHABET.charAt(b % 32)).join("");
     const reference = `L${symbols}${launchRefCheck(symbols) ?? ""}`;
     if (taken.has(reference)) continue;
-    if (conn.prepare(LAUNCH_SQL.referenceTaken).get({ reference, since }) === undefined) {
+    if (conn.prepare(LAUNCH_SQL.referenceTaken).get({ reference }) === undefined) {
       return reference;
     }
   }
