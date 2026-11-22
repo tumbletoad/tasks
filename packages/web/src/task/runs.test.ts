@@ -65,12 +65,13 @@ describe("[M6.page.run-words] a run's entry says what is the case and what the p
 
   test("a working run says how long it has said nothing, from a minute on, and keeps Stop", () => {
     const since = 1_000_000;
-    expect(ids(runView(run({ quiet_since: since }), "Codex", since + 59_000))).toEqual([
-      "run.working",
-    ]);
+    const early = runView(run({ quiet_since: since }), "Codex", since + 59_000);
+    expect(ids(early)).toEqual(["run.working"]);
+    expect(early.quiet).toBeUndefined();
     const quiet = runView(run({ quiet_since: since }), "Codex", since + 25 * 60_000 + 5_000);
     expect(quiet).toMatchObject({ tone: "working", stoppable: true });
-    expect(quiet.status[1]).toEqual({ id: "run.quiet", values: { minutes: 25 } });
+    expect(ids(quiet)).toEqual(["run.working"]);
+    expect(quiet.quiet).toEqual({ id: "run.quiet", values: { minutes: 25 } });
   });
 
   test("a working run shows what it said so far, so a server it keeps running can be used before Stop", () => {

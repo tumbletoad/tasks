@@ -433,6 +433,15 @@ a + .muted,
   box-shadow: inset 0 0 0 1.5px var(--k-muted);
 }
 
+/* Under the state line, in line with its words after the dot. */
+.runQuiet {
+  margin: 0;
+  padding-inline-start: 14px;
+  color: var(--k-text-2);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
 .runState > span + span {
   margin-inline-start: 0.3em;
 }
