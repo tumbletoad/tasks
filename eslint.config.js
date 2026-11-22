@@ -9,7 +9,7 @@ import tseslint from "typescript-eslint";
 import noShellExec from "./scripts/eslint/no-shell-exec.js";
 
 // Local rules that no-restricted-syntax cannot express, because they follow bindings.
-const tasks = { rules: { "no-shell-exec": noShellExec } };
+const ttasks = { rules: { "no-shell-exec": noShellExec } };
 
 const TEST_FILES = ["**/*.test.{ts,tsx,js,jsx,mjs}", "**/test/**", "tests/**"];
 
@@ -201,7 +201,7 @@ export default defineConfig([
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
     linterOptions: { reportUnusedDisableDirectives: "error" },
-    plugins: { tasks },
+    plugins: { ttasks },
     rules: {
       "no-restricted-syntax": ["error", ...noShell, ...noTmpdir, ...noUmask, ...noReport],
       "no-restricted-imports": ["error", { paths: [...tmpdirImports, ...umaskImports] }],

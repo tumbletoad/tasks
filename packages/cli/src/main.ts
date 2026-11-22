@@ -155,7 +155,7 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
         }
         const slot = SLOTS[command];
         if (slot === undefined) {
-          return printUsage(io, globals.json, `ttasks ${command} is not in this build yet`);
+          return printUsage(io, globals.json, `${CLI_NAME} ${command} is not in this build yet`);
         }
         return await slot(io, globals, args, options);
       }
@@ -165,7 +165,7 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
           return printUsage(
             io,
             globals.json,
-            `ttasks has no command ${/^[a-z][a-z0-9-]{0,30}$/.test(command) ? command : "like that"}`,
+            `${CLI_NAME} has no command ${/^[a-z][a-z0-9-]{0,30}$/.test(command) ? command : "like that"}`,
           );
         }
         if (verb.entry === "launch.open") {

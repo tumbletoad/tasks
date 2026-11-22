@@ -1,6 +1,5 @@
 // The fixed values of `ttasks-local/1` (A2 3.6, docs/protocol/ttasks-local-1.md). They are wire
-// constants: a native forwarder hard-codes the same values, so a product rename does not change
-// them. Every bound the protocol applies is named here.
+// constants that a forwarder hard-codes too. Every bound the protocol applies is named here.
 
 /** The protocol this build speaks (A2 3.6.6). An integer that changes only for incompatible changes. */
 export const PROTOCOL = 1;

@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
+import { CLI_NAME } from "@ttasks/brand";
 import { SERVICE_VERBS } from "@ttasks/service/install";
 import { CLI_SPEC } from "./args.ts";
 import { LOCAL_COMMANDS, shortHelp, verbHelp } from "./help.ts";
@@ -113,6 +114,13 @@ describe("[A2.3.10.cli.help] help for every command", () => {
     const version = await helpOf(["version"]);
     expect(version).toMatch(/\d+\.\d+\.\d+/);
     expect(await helpOf(["--version"])).toBe(version);
+  });
+
+  test("a command that does not exist is named with the command's own name", async () => {
+    const io = recorder(["misspelled"]);
+    expect(await main(io)).not.toBe(0);
+    expect(io.err).toContain(`${CLI_NAME} has no command misspelled.`);
+    expect(io.err.match(/\S*tasks\b/gi)).toEqual([CLI_NAME, CLI_NAME]);
   });
 
   test("the description column of each help lines up", () => {
