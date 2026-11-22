@@ -404,6 +404,7 @@ test.describe("[A7.3.12.m5-14.e2e.screens] New project, the chooser and the fold
       {
         await newProject(page).click();
         const dialog = page.getByRole("dialog", { name: "New project" });
+        await expect(folderField(dialog)).toBeFocused();
         await expect(dialog.getByRole("option", { name: "Home (~)" })).toBeVisible();
         await shoot(page, `project-new-${theme}`, '[role="dialog"]');
         const sep = process.platform === "win32" ? "\\" : "/";

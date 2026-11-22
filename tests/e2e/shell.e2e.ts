@@ -315,6 +315,32 @@ test.describe("[A7.3.12.m5-01.e2e.add-once] An add on its way is sent once, and 
     expect(adds).toHaveLength(1);
   });
 
+  test("the next draft typed before the feed confirms an add stays in the field", async ({
+    page,
+    world,
+  }) => {
+    const sockets = await feeds(page);
+    await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+    await showsSpace(page, world.mira.name);
+    await expect(field(page)).toBeEnabled();
+    const feed = sockets.at(-1);
+    if (feed === undefined) throw new Error("the page opened no feed");
+
+    feed.hold = true;
+    const project = test.info().project.name;
+    const first = `Call the plumber (${project})`;
+    const second = `Water the plants (${project})`;
+    await field(page).fill(first);
+    await Promise.all([page.waitForResponse("**/api/v1/op/task.add"), field(page).press("Enter")]);
+    // The person goes on typing the next one while the first waits for its confirmation.
+    await field(page).fill(second);
+    feed.release();
+    await expect(page.locator('[data-part="title"]', { hasText: first })).toHaveCount(1, {
+      timeout: SLOW_MS,
+    });
+    await expect(field(page)).toHaveValue(second);
+  });
+
   test("a switch of space before the feed confirms an add leaves no draft of it behind", async ({
     page,
     world,
@@ -423,7 +449,7 @@ test.describe("[A5.3.3.e2e.not-open] A space that is not open says why and what 
 });
 
 test.describe("[A5.3.3.e2e.backup-trouble] A space whose backups fail says so calmly in the switcher", () => {
-  test("the switcher carries a mark, and its popover names what to run; the mark goes when backups work again @one-browser", async ({
+  test("the switcher carries a mark, and its popover names what to run; the mark goes when backups work again", async ({
     page,
     world,
   }) => {
@@ -476,7 +502,7 @@ test.describe("[A5.3.3.e2e.backup-trouble] A space whose backups fail says so ca
 });
 
 test.describe("[A5.3.3.e2e.installed] A newer installed version, and the restart into it", () => {
-  test("the page names the installed version and the restart; after the restart it offers a reload and does not call the service down @one-browser", async ({
+  test("the page names the installed version and the restart; after the restart it offers a reload and does not call the service down", async ({
     page,
     world,
   }) => {

@@ -98,7 +98,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     world.release(ref);
     await expect(p.entries("ended")).toHaveCount(1, { timeout: SLOW_MS });
     await expect(p.words("ended")).toHaveText(
-      new RegExp(`^Opened in ${FAKE_INSTANCE.label} · ended after \\d+ s$`, "u"),
+      new RegExp(`^Opened in ${FAKE_INSTANCE.label} · ended after \\d+ (s|min)$`, "u"),
     );
     await expect(p.entries("running")).toHaveCount(0);
     await expect(q.tile).toHaveAttribute("data-state", "ready", { timeout: SLOW_MS });
@@ -146,6 +146,7 @@ test.describe("[A5.3.9.e2e.session-end] A session that ended blocks nothing", ()
     await expect(p.entries("running")).toHaveCount(1, { timeout: SLOW_MS });
     expect(world.terminal()).toHaveLength(before + 1);
     await expect(p.row.locator('[data-entry="session"]')).toHaveCount(1);
+    await expect(p.another).toHaveAccessibleDescription(/is running on this task/u);
     world.release(ref);
     await expect(p.entries("ended")).toHaveCount(1, { timeout: SLOW_MS });
   });

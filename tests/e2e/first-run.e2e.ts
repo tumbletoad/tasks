@@ -56,7 +56,7 @@ async function firstStart(page: Page, fresh: FreshWorld): Promise<void> {
 }
 
 test.describe("[A7.3.12.m5-12.e2e.skip] Skip: a space is all a person needs, and nothing else is changed", () => {
-  test("a name and one button make the space, and Skip goes to it with every agent app as it was @one-browser", async ({
+  test("a name and one button make the space, and Skip goes to it with every agent app as it was", async ({
     page,
     fresh,
   }) => {

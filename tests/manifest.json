@@ -2801,7 +2801,7 @@
     },
     {
       "id": "A5.3.3.e2e.backup-trouble",
-      "title": "In Chromium: an open space whose daily backup failed has a quiet mark on the space switcher, and the switcher's popover says what happened and names tasks space backup; the mark goes when the tab is shown again after backups work, without opening the switcher",
+      "title": "In Chromium and Firefox: an open space whose daily backup failed has a quiet mark on the space switcher, and the switcher's popover says what happened and names tasks space backup; the mark goes when the tab is shown again after backups work, without opening the switcher",
       "source": "A5 3.3, A1 3.18",
       "owner": "M5",
       "kind": "ci",
@@ -3953,7 +3953,7 @@
     },
     {
       "id": "A5.3.9.shim.session-end",
-      "title": "A terminal session runs while its shim is attached, its agent started and its process is there: an agent's end records how long it ran (also by a signal), a shim gone without a report stops running at once and the PID check records that it went, and after a restart only a session whose shim still runs is running",
+      "title": "A terminal session runs while its shim is attached, its agent started and its process is there: an agent's end records how long it ran (also by a signal), a shim gone without a report stops running at once and the PID check records that it went, and after a restart only a session whose shim still runs is running; the service runs the PID check every 30 s on its own",
       "source": "A4 3.6.3, A5 3.9",
       "owner": "M2",
       "kind": "ci",
@@ -3985,7 +3985,7 @@
     },
     {
       "id": "A7.3.9.m2-13.e2e.races",
-      "title": "Against the real service in Chromium: a Running tile expands its row and starts no launch, the strip opens a second session only when asked, a receipt list that answers late does not take Running away, and a task that is added keeps the draft typed while it was added",
+      "title": "Against the real service in Chromium: a Running tile expands its row and starts no launch, the strip opens a second session only when asked and a receipt list that answers late does not take Running away",
       "source": "A7 3.9 M2.13, A5 3.6, A5 3.9, A5 3.13",
       "owner": "M2",
       "kind": "ci",
@@ -4193,7 +4193,7 @@
     },
     {
       "id": "A7.3.12.m5-01.e2e.add-once",
-      "title": "In Chromium and Firefox against the real service, with the feed's confirmation held back: an add the service took is not sent again by Enter or the button while its text waits for the feed, and lands once; a switch of space before the confirmation leaves no draft of the add behind in the space it was made in",
+      "title": "In Chromium and Firefox against the real service, with the feed's confirmation held back: an add the service took is not sent again by Enter or the button while its text waits for the feed, and lands once; a draft typed while the confirmation waits stays in the field after it; a switch of space before the confirmation leaves no draft of the add behind in the space it was made in",
       "source": "A5 3.3, A5 3.15, A7 3.12 M5.01",
       "owner": "M5",
       "kind": "ci",
@@ -4359,7 +4359,7 @@
     },
     {
       "id": "A7.3.12.m5-12.e2e.skip",
-      "title": "In Chromium on a fresh install: a name and one button make the first space with its prefix proposed, the agent apps show the usual choice made, and Skip goes to the space with no agent app changed",
+      "title": "In Chromium and Firefox on a fresh install: a name and one button make the first space with its prefix proposed, the agent apps show the usual choice made, and Skip goes to the space with no agent app changed",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5167,7 +5167,7 @@
     },
     {
       "id": "A5.3.3.e2e.installed",
-      "title": "In Chromium: the page names a newer installed version and the restart command in its status bar; after a restart into another build it offers a reload, keeps its rows and does not say the service is down",
+      "title": "In Chromium and Firefox: the page names a newer installed version and the restart command in its status bar; after a restart into another build it offers a reload, keeps its rows and does not say the service is down",
       "source": "A5 3.3, A2 3.8.4",
       "owner": "M6",
       "kind": "ci",
