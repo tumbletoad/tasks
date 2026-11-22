@@ -145,14 +145,16 @@ the behaviour it describes, and keep each one to a sentence or two.
 - What a run's agent changes through Tasks' own tools is recorded as that run's.
 - A Claude Code run gets Tasks' tools in a file in the run's folder. The file holds the run's
   ticket, which opens your space only while the run runs.
-- A Claude Code run answers nothing for you: a question, or an approval your Claude Code setup
-  asks for under a narrower `run_permission`, ends the run as needing you, with what was asked.
-  That permission uses Claude Code's own modes with your own tools and settings, so a tool you
-  approved there stays approved.
+- A Claude Code run answers nothing for you: a question, an MCP tool's question, or an approval
+  your Claude Code setup asks for under a narrower `run_permission`, ends the run as needing you,
+  with what was asked and what it would act on. That permission uses Claude Code's own modes with
+  your own tools and settings, so a tool you approved there stays approved. Tasks' own tools are
+  allowed in every mode: the run reads its task and reports through them.
 - A run is done when its work is: work the agent left running in the background holds it until
   the agent reported on it, and a server it left running holds it until you stop it.
 - No time limit ends a run unless you set one (`max_minutes`, `max_quiet_minutes` under `[runs]`
-  in `machine.toml`). A working run shows how long it has said nothing, so you can stop it.
+  in `machine.toml`). A working run shows how long it has said nothing and what it said last, so
+  you can use a server it keeps running, or stop it.
 - A run's folder on this machine keeps the agent's raw output and its answer, which are task
   text. It is removed after 14 days or past the newest 200 runs, once the answer is in the run's
   record. The agent's own history, such as Codex's or Claude Code's sessions, keeps the run's
