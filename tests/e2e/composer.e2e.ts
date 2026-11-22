@@ -645,6 +645,8 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
 
     await page.reload();
     await expect(composer).toHaveValue(`Buy a new latch (${tag})`, { timeout: SLOW_MS });
+    // The composer shows, and takes focus, once the card's thread is read.
+    await expect(composer).toBeVisible({ timeout: SLOW_MS });
     await composer.focus();
     await page.keyboard.press("Enter");
     await expect(composer).toHaveValue("", { timeout: SLOW_MS });
