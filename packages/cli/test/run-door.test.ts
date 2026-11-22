@@ -5,7 +5,7 @@
 // queued run starts after a restart, only the person starts one, and a folder that is not here
 // refuses it. Fixture spaces only.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startService, type RunningService } from "@ttasks/service/hub";
@@ -26,7 +26,7 @@ import { seedMira } from "@ttasks/testkit";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { callTools, type ToolCall } from "../../runs/test/codex-server.ts";
 import { runLine } from "../src/runs.ts";
-import { BIN, runMain } from "./cli-harness.ts";
+import { BIN, fileTexts, runMain } from "./cli-harness.ts";
 
 const windows = process.platform === "win32";
 const SERVER = fileURLToPath(new URL("../../runs/test/codex-server.ts", import.meta.url));
@@ -151,15 +151,6 @@ afterAll(async () => {
 const user = (argv: string[], stdin?: string) =>
   runMain(argv, { home, tty: true, ...(stdin === undefined ? {} : { stdin }) });
 
-/** Every file under `dir` that holds content, with its path: no folder, socket or pipe. */
-function files(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    const facts = statSync(path);
-    return facts.isDirectory() ? files(path) : facts.isFile() ? [path] : [];
-  });
-}
-
 /** The command lines of every process this account runs now, as the system lists them. */
 function commandLines(): string {
   if (windows) {
@@ -271,9 +262,8 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
     expect(JSON.stringify(late[0])).toContain("not registered");
 
     // The request and the answer are in no file of the state folder but the run's own.
-    for (const file of files(stateOf(home))) {
+    for (const [file, text] of fileTexts(stateOf(home))) {
       if (file.includes(id)) continue;
-      const text = readFileSync(file).toString("latin1");
       expect(text.includes("MARKREQ7Q2"), file).toBe(false);
       expect(text.includes("MARKANS9X4"), file).toBe(false);
     }

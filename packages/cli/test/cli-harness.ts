@@ -9,6 +9,7 @@
 // that need a test hook (a lost reply, a newer protocol) still run the CLI from source, against the
 // built service; `runMain` runs the CLI in this process, as a person at a terminal, also against it.
 import { spawn } from "node:child_process";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -318,4 +319,28 @@ export async function runMain(
   };
   const code = await main(io, options.main);
   return { code, stdout, stderr };
+}
+
+/**
+ * The text (latin1) of every file under `dir` that holds content, by path: no folder, socket or
+ * pipe. A running service replaces its files through a temp file and a rename, so a file listed
+ * can be gone before it is read: then the folder changed, and it is read again from the start.
+ */
+export function fileTexts(dir: string): Map<string, string> {
+  const read = (at: string, into: Map<string, string>): Map<string, string> => {
+    for (const name of readdirSync(at)) {
+      const path = join(at, name);
+      const facts = statSync(path);
+      if (facts.isDirectory()) read(path, into);
+      else if (facts.isFile()) into.set(path, readFileSync(path).toString("latin1"));
+    }
+    return into;
+  };
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return read(dir, new Map());
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT" || attempt >= 20) throw error;
+    }
+  }
 }

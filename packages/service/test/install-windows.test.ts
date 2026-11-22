@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Worker } from "node:worker_threads";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { system32 } from "../src/hub/identity.ts";
 import { readEntry } from "../src/install/commands.ts";
@@ -201,6 +202,38 @@ describe.skipIf(!windows)(
       expect(await registry.values(`${keys.approved}32`)).toBeUndefined();
       expect(await registry.values(keys.approved)).toBeDefined();
     });
+
+    test("reads that start at the same moment each read the whole tree", async () => {
+      const { registry } = context();
+      const whole = dump(await registry.tree(SCRATCH));
+      const reads = await Promise.all(
+        Array.from(
+          { length: 8 },
+          (_, n) =>
+            new Promise<string[][]>((resolve, reject) => {
+              const results: string[][] = [];
+              const worker = new Worker(new URL("./registry-reads-worker.ts", import.meta.url), {
+                workerData: {
+                  regExe,
+                  scratch: join(dir, `reads-${String(n)}`),
+                  key: SCRATCH,
+                  rounds: 20,
+                },
+              });
+              worker.on("message", (read: { tree?: RegTree; error?: string }) =>
+                results.push(read.error === undefined ? dump(read.tree) : [read.error]),
+              );
+              worker.once("error", reject);
+              worker.once("exit", () => {
+                resolve(results);
+              });
+            }),
+        ),
+      );
+      const all = reads.flat();
+      expect(all).toHaveLength(160);
+      expect(all.filter((read) => read.join("\n") !== whole.join("\n"))).toEqual([]);
+    }, 120_000);
 
     test("a value of something else at the install's name stays as it was", async () => {
       const { registry, ctx } = context();

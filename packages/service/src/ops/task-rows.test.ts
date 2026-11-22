@@ -4,15 +4,19 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, test } from "vitest";
-import type { Row } from "@ttasks/storage";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import type { Row } from "@tasks/storage";
 import { taskRows, type FeedHere } from "./task-rows.ts";
 
 const HERE = "m_7c0hq2m4w9d8k1r6t3v5x0b2nf";
 const LAPTOP = "m_3z8sm956jp8dajmtsar5kx026c";
-const home = mkdtempSync(join(tmpdir(), "ttasks-rows-"));
+// Made in beforeAll: collecting the tests (the manifest check) loads this file but runs no hook.
+let home = "";
+beforeAll(() => {
+  home = mkdtempSync(join(tmpdir(), "tasks-rows-"));
+});
 afterAll(() => {
-  rmSync(home, { recursive: true, force: true });
+  if (home !== "") rmSync(home, { recursive: true, force: true });
 });
 
 const sep = process.platform === "win32" ? "\\" : "/";
