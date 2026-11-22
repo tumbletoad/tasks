@@ -878,9 +878,9 @@ export class SpaceWriterHandle {
   }
 
   /**
-   * A request's receipt in a writer scope, then in the connection's earlier scope: what
-   * `receipt.get` returns (A1 3.8, A3 3.2.3). Undefined when the scope holds none. It waits in
-   * the writer's queue behind the requests sent before it, so it sees their receipts.
+   * A request's receipt in a writer scope: what `receipt.get` returns (A1 3.8, A3 3.2.3).
+   * Undefined when the scope holds none. It waits in the writer's queue behind the requests sent
+   * before it, so it sees their receipts.
    */
   async receipt(lookup: ReceiptLookup): Promise<Receipt | undefined> {
     const found = await this.#queued(() =>
