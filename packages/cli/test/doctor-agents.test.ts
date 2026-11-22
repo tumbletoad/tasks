@@ -10,7 +10,16 @@
 // folder or agent command is read or run. The service, the fakes and the scratch homes are
 // doctor-agents-world.ts's; `--live` and an entry setup did not write are in
 // doctor-agents-live.test.ts.
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { classSession } from "@ttasks/service/test/ops-helpers";
@@ -26,7 +35,6 @@ import {
   fakes,
   home,
   read,
-  root,
   row,
   run,
   service,
@@ -36,6 +44,38 @@ import {
   user,
   setStarted,
 } from "./doctor-agents-world.ts";
+
+/** The live processes whose command line holds `mark`. */
+function marked(mark: string): number[] {
+  if (process.platform === "win32") {
+    // The mark goes in by the environment, so this query's own command line does not hold it.
+    const listed = spawnSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-Command",
+        "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($env:MARK) } | ForEach-Object { $_.ProcessId }",
+      ],
+      { encoding: "utf8", windowsHide: true, timeout: 60_000, env: { ...process.env, MARK: mark } },
+    );
+    return listed.stdout
+      .split(/\s+/)
+      .filter((n) => n !== "")
+      .map(Number);
+  }
+  return readdirSync("/proc")
+    .filter((entry) => /^\d+$/.test(entry))
+    .filter((entry) => {
+      try {
+        return readFileSync(join("/proc", entry, "cmdline"), "utf8")
+          .split("\0")
+          .includes(mark);
+      } catch {
+        return false;
+      }
+    })
+    .map(Number);
+}
 
 useDoctorWorld();
 
@@ -292,38 +332,46 @@ describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", (
     "an entry's command that starts and never answers: its row fails by the deadline and no process is left",
     async () => {
       await applyAll(["--app", "claude-desktop"]);
-      // The entry's command stands for a bridge that reads nothing and never ends by itself.
-      const pidFile = join(root, "hung.pid");
-      const hung = `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`;
+      // The entry's command stands for a bridge that reads nothing and never ends by itself. It is
+      // found by a mark on its command line, whether or not it got as far as running its code.
+      const mark = `ttasks-hung-${randomBytes(6).toString("hex")}`;
       const options = agents();
       const report = await doctor({
         ...options,
-        // What is proved is that the deadline ends the probe, not its length. It leaves room for
-        // Node to start and write its PID under load.
+        // What is proved is that the deadline ends the probe, not its length.
         bridgeProbeMs: 5_000,
         resolve: (argv) =>
           argv[0] === tasks
-            ? [process.execPath, "-e", hung, ...argv.slice(1)]
+            ? [process.execPath, "-e", "setInterval(() => {}, 1000);", mark, ...argv.slice(1)]
             : (options.resolve?.(argv) ?? argv),
       });
-      const pid = Number(readFileSync(pidFile, "utf8"));
-      const alive = () => {
-        try {
-          process.kill(pid, 0);
-          return true;
-        } catch {
-          return false;
-        }
-      };
       try {
         expect(row(report, "bridge.claude-desktop")).toMatchObject({ status: "fail" });
         expect(row(report, "bridge.claude-desktop")?.detail).toContain("did not answer in time");
         // The probe's process ends with its deadline: doctor leaves nothing running.
         const until = Date.now() + 10_000;
-        while (alive() && Date.now() < until) await new Promise((r) => setTimeout(r, 100));
-        expect(alive()).toBe(false);
+        while (marked(mark).length > 0 && Date.now() < until) {
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        expect(marked(mark)).toEqual([]);
+        // And the census sees such a process while it runs.
+        const control = `${mark}-control`;
+        const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000);", control], {
+          stdio: "ignore",
+          windowsHide: true,
+        });
+        try {
+          // Until its program is running, a child's command line can still be its parent's.
+          const seen = Date.now() + 10_000;
+          while (marked(control).length === 0 && Date.now() < seen) {
+            await new Promise((r) => setTimeout(r, 100));
+          }
+          expect(marked(control)).toEqual([child.pid]);
+        } finally {
+          child.kill("SIGKILL");
+        }
       } finally {
-        if (alive()) process.kill(pid, "SIGKILL");
+        for (const pid of marked(mark)) process.kill(pid, "SIGKILL");
         const removed = await run(["setup", "agents", "--remove", "--json"]);
         expect(removed.code, removed.stdout).toBe(0);
       }
