@@ -100,9 +100,16 @@ jobs:
     needs: part
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
     steps:
-      - if: needs.part.result != 'success'
-        run: |
-          echo "A job of this run did not pass: ${{ needs.part.result }}"
-          exit 1
-      - run: echo "Every check passed."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/gate.sh
+          sparse-checkout-cone-mode: false
+      # 15 is the number of part jobs: one added or removed without changing it fails the gate.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/gate.sh check 15
