@@ -1193,7 +1193,7 @@ Result:
   "session": {
     "state": "unbound",
     "instance": "claude-code",
-    "app": "Claude Code CLI"
+    "app": "claude-code"
   },
   "here": [
     {
@@ -1283,7 +1283,7 @@ Result:
   "session": {
     "state": "unbound",
     "instance": "codex-work",
-    "app": "Codex CLI"
+    "app": "codex"
   },
   "counts": {
     "statuses": [

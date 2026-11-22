@@ -145,7 +145,7 @@ export const spaceStatus = defineEntry({
         time_zone: "Europe/Lisbon",
         autonomy: "full",
         space: { id: SPACE_ID, name: "Mira", ref_prefix: "M" },
-        session: { state: "unbound", instance: "claude-code", app: "Claude Code CLI" },
+        session: { state: "unbound", instance: "claude-code", app: "claude-code" },
         here: [
           {
             ...M14,
@@ -188,7 +188,7 @@ export const spaceStatus = defineEntry({
         time_zone: "Europe/Lisbon",
         autonomy: "full",
         space: { id: SPACE_ID, name: "Mira", ref_prefix: "M" },
-        session: { state: "unbound", instance: "codex-work", app: "Codex CLI" },
+        session: { state: "unbound", instance: "codex-work", app: "codex" },
         counts: {
           statuses: STATUS_COUNTS,
           inbox: 0,
