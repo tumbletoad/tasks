@@ -17,6 +17,7 @@ import {
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
+import { atomicWrite } from "../../packages/files/src/index.ts";
 import { startTimes } from "../../packages/launch/src/process.ts";
 import { openSpace } from "../../packages/storage/src/index.ts";
 import {
@@ -387,7 +388,8 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       codex: (task, next) => {
         const known = JSON.parse(readFileSync(cases, "utf8")) as Record<string, FakeCodexCase[]>;
         known[task] = [...next];
-        writeFileSync(cases, JSON.stringify(known));
+        // Whole or not at all: a run's fake Codex reads the file while the test writes it.
+        atomicWrite(cases, JSON.stringify(known));
       },
       codexLeft: (task) =>
         (JSON.parse(readFileSync(cases, "utf8")) as Record<string, FakeCodexCase[]>)[task] ?? [],

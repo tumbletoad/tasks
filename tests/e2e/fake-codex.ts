@@ -8,8 +8,9 @@
 // Fixture data only. Tests only.
 // First: this script ends through process.exit.
 import "../../packages/bridge/src/safe-exit.ts";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
+import { atomicWrite } from "../../packages/files/src/index.ts";
 import { ADDED } from "../../packages/launch/src/index.ts";
 import {
   readFixture,
@@ -29,7 +30,8 @@ function take(file: string | undefined, task: string | undefined): FakeCodexCase
   }
   const [next, ...rest] = cases[task] ?? [];
   cases[task] = rest;
-  writeFileSync(file, JSON.stringify(cases));
+  // Whole or not at all: the test reads the file while runs take their cases.
+  atomicWrite(file, JSON.stringify(cases));
   return next ?? "answer";
 }
 
