@@ -40,7 +40,7 @@ export function createClient(transport: ClientTransport) {
       get: (input: InputOf<"receipt.get">): Promise<OutputOf<"receipt.get">> => call("receipt.get", input),
     },
     space: {
-      /** Orientation: date, autonomy, this session's binding, tasks for a folder and counts. */
+      /** Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts. */
       status: (input: InputOf<"space.status">): Promise<OutputOf<"space.status">> => call("space.status", input),
     },
     task: {
@@ -50,7 +50,7 @@ export function createClient(transport: ClientTransport) {
       finish: (input: InputOf<"task.finish">): Promise<OutputOf<"task.finish">> => call("task.finish", input),
       /** Finished tasks, newest first, a page at a time: the page's Completed view. */
       finished: (input: InputOf<"task.finished">): Promise<OutputOf<"task.finished">> => call("task.finished", input),
-      /** Load a task as a bounded digest, or selected sections in full. With launch, bind first. */
+      /** Load a task as a bounded digest, or selected sections in full, by task or launch reference. */
       get: (input: InputOf<"task.get">): Promise<OutputOf<"task.get">> => call("task.get", input),
       /** Reopen a completed or archived task. Its earlier outcome and learnings stay. */
       reopen: (input: InputOf<"task.reopen">): Promise<OutputOf<"task.reopen">> => call("task.reopen", input),

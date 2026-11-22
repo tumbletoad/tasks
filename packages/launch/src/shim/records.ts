@@ -97,6 +97,7 @@ export interface LaunchFile {
     readonly hash: string;
     readonly issuedAt: number;
     readonly shimUsed: boolean;
+    /** Always false now: kept so a record written now loads in the build before. */
     readonly bridgeUsed: boolean;
   };
   /** Issued inside the claim, before its reply leaves (A4 3.1). */
@@ -406,12 +407,50 @@ export const isFolderReason = (value: unknown): value is ResolveReason =>
   (RESOLVE_REASONS as readonly unknown[]).includes(value);
 
 function readBounded(path: string): unknown {
+  const read = readOnce(path);
+  return read.kind === "read" ? read.value : undefined;
+}
+
+/**
+ * A file's parsed JSON, or the code of the error that kept it from being read. A file that is not
+ * there, too large or not JSON reads as undefined.
+ */
+function readOnce(
+  path: string,
+): { kind: "read"; value: unknown } | { kind: "failed"; code: string } {
+  let text: string;
   try {
-    if (statSync(path).size > MAX_FILE) return undefined;
-    return JSON.parse(readFileSync(path, "utf8")) as unknown;
-  } catch {
-    return undefined;
+    if (statSync(path).size > MAX_FILE) return { kind: "read", value: undefined };
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+    return code === "ENOENT" ? { kind: "read", value: undefined } : { kind: "failed", code };
   }
+  try {
+    return { kind: "read", value: JSON.parse(text) as unknown };
+  } catch {
+    return { kind: "read", value: undefined };
+  }
+}
+
+/**
+ * The waits between the tries of a launch file another program holds for a moment (a scanner, a
+ * backup, a sharing violation): about three seconds in all, once, as the service starts.
+ */
+export const HELD_FILE_WAITS_MS: readonly number[] = [250, 750, 2_000];
+
+/** The read errors that can pass. Any other (a folder in the file's place, a loop) does not. */
+const PASSING = new Set(["EACCES", "EPERM", "EBUSY", "EAGAIN", "EMFILE", "ENFILE"]);
+
+export interface FolderRecordsOptions {
+  /** Blocks for `ms` milliseconds between tries. */
+  readonly wait?: (ms: number) => void;
+  /** A launch file left out because it could not be read: the launch's ID and the error code. */
+  readonly unreadable?: (launch: string, code: string) => void;
+}
+
+function pause(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 export const LAUNCH_FILE = "launch.json";
@@ -435,17 +474,25 @@ export class FolderRecords implements RecordStore {
 
   /**
    * Creates the root (0700, and any missing folder above it) and reads every launch file in it,
-   * and every ended launch's record. A damaged one is left out. The service judges the root before
-   * (hub/service.ts): it holds the commands a launch runs.
+   * and every ended launch's record. These are the only reads of the launch files: from here the
+   * records in memory are the truth. A file that cannot be read for a moment is read again over
+   * `HELD_FILE_WAITS_MS`; one that still cannot is left out, as a damaged one is. The service
+   * judges the root before (hub/service.ts): it holds the commands a launch runs.
    */
-  constructor(root: string) {
+  constructor(root: string, options: FolderRecordsOptions = {}) {
     this.root = root;
     makeDir(root, LAUNCH_FOLDER_MODE);
+    const failed = new Map<string, string>();
     for (const name of readdirSync(root)) {
-      if (!LAUNCH_ID.test(name)) continue;
-      const file = checkLaunchFile(readBounded(join(root, name, LAUNCH_FILE)));
-      if (file?.launch === name) this.#files.set(name, file);
+      if (LAUNCH_ID.test(name)) this.#load(name, failed);
     }
+    for (const ms of HELD_FILE_WAITS_MS) {
+      const passing = [...failed].filter(([, code]) => PASSING.has(code));
+      if (passing.length === 0) break;
+      (options.wait ?? pause)(ms);
+      for (const [name] of passing) this.#load(name, failed);
+    }
+    for (const [name, code] of failed) options.unreadable?.(name, code);
     let ended: string[];
     try {
       ended = readdirSync(join(root, ENDED_FOLDER));
@@ -458,6 +505,18 @@ export class FolderRecords implements RecordStore {
       const file = checkEndedFile(readBounded(join(root, ENDED_FOLDER, name)));
       if (file?.launch === launch) this.#ended.set(launch, file);
     }
+  }
+
+  /** Reads a launch's file into the records, or notes the error that kept it from being read. */
+  #load(name: string, failed: Map<string, string>): void {
+    const read = readOnce(join(this.root, name, LAUNCH_FILE));
+    if (read.kind === "failed") {
+      failed.set(name, read.code);
+      return;
+    }
+    failed.delete(name);
+    const file = checkLaunchFile(read.value);
+    if (file?.launch === name) this.#files.set(name, file);
   }
 
   list(): readonly LaunchFile[] {

@@ -42,7 +42,7 @@ let service: RunningService | undefined;
 
 const RUN_CALLS: readonly ToolCall[] = [
   { name: "add_entry", arguments: { text: LOG_MARK, request_id: "runlogentryclaude000001" } },
-  { name: "get_task", arguments: { bind: true } },
+  { name: "get_task", arguments: {} },
 ];
 
 const codeOf = (result: unknown): string | undefined => {
@@ -200,7 +200,7 @@ describe("[A4.3.11.run.door-claude] ttasks run with a Claude Code instance: the 
     const lines = commandLines();
     expect(lines).not.toContain("MARKREQ8C3");
     expect(lines).not.toContain(ticket);
-    expect(service?.ops.homes?.may("claude", spaceId, live)).toBe(true);
+    expect(service?.runs.allows("claude", spaceId, live)).toBe(true);
     expect(service?.ops.homes?.may("claude", spaceId)).toBe(false);
     // While the run runs, its ticket names it, as the session named after it.
     expect(service?.runs.liveByTicket(ticket)).toEqual({

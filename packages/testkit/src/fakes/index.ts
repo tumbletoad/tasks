@@ -167,19 +167,37 @@ export class FakeSpawner {
     }
   }
 
-  /** Stops every process it tracked, by PID, while the PID still names that process. */
+  /**
+   * Stops every process it tracked, by PID, while the PID still names that process, and resolves
+   * once each is gone: a process holds its working folder until it has ended, so a folder removed
+   * before then is refused on Windows.
+   */
   async stopAll(): Promise<void> {
+    const stopped: { readonly pid: number; readonly first: string }[] = [];
     for (const [pid, seen] of this.#seen) {
       const first = await seen;
       if (first === undefined) continue;
-      const now = await this.#options.identify([pid]).catch(() => new Map<number, string>());
-      if (now.get(pid) !== first) continue;
+      if ((await this.#startOf(pid)) !== first) continue;
       try {
         process.kill(pid, "SIGKILL");
+        stopped.push({ pid, first });
       } catch {
         // Gone meanwhile.
       }
     }
+    const deadline = Date.now() + 30_000;
+    for (const { pid, first } of stopped) {
+      while ((await this.#startOf(pid)) === first) {
+        if (Date.now() > deadline) throw new Error(`process ${String(pid)} did not end`);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+  }
+
+  /** The start time the PID names now, or none when it names no process. */
+  async #startOf(pid: number): Promise<string | undefined> {
+    const now = await this.#options.identify([pid]).catch(() => new Map<number, string>());
+    return now.get(pid);
   }
 }
 

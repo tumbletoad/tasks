@@ -1,5 +1,5 @@
-// Session binding (A3 3.7, M2.04): the service that binds agent connections to sessions, and the
-// machine state that keeps sessions and binding handles until a schema step adds the table.
-export * from "./bindings.ts";
+// Who an agent's connection is: a session of a launch or run TTasks started, or none.
+export * from "./bridges.ts";
+export * from "./decide.ts";
 export * from "./doctor.ts";
-export * from "./sessions.ts";
+export * from "./port.ts";

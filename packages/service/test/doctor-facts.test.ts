@@ -19,11 +19,10 @@ import {
   type Spawner,
   type TerminalSettings,
 } from "@ttasks/launch";
-import { sessionFacts } from "../src/binding/index.ts";
+import { Bridges, sessionFacts } from "../src/binding/index.ts";
 import type { Logger } from "../src/hub/log.ts";
 import { t3Host, t3Verbs } from "../src/hub/t3.ts";
 import { LaunchService } from "../src/launch/service.ts";
-import { Slot } from "../src/ops/index.ts";
 
 let base = "";
 
@@ -251,32 +250,24 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
 });
 
 describe("[A3.3.14.doctor.sessions] the service's answer for doctor's sessions row", () => {
-  test("doctor/sessions: open bridge connections, the shared ones by instance, the dropped records", () => {
-    const slot = (instance: string, shared: boolean, kind: "bridge" | "mapped" = "bridge") => {
-      const made = new Slot({ kind, instance, origin: kind === "bridge" ? "mcp" : "cli" });
-      made.shared = shared;
-      return made;
-    };
-    const open = [
-      slot("codex", true),
-      slot("codex", true),
-      slot("claude", false),
-      slot("manual", true),
-      // A CLI call mapped to a session is no connection of an agent app.
-      slot("codex", true, "mapped"),
-    ];
-    expect(sessionFacts({ open: () => open, dropped: 1 })).toEqual({
-      open: 4,
-      shared: [
-        { instance: "codex", count: 2 },
-        { instance: "manual", count: 1 },
-      ],
-      dropped: 1,
+  test("doctor/sessions: the bridge connections open now, in the row's shape, none shared or dropped", () => {
+    const bridges = new Bridges({
+      sessions: {
+        decide: () => ({ kind: "none" }),
+        standing: () => ({ kind: "failed" }),
+        live: () => new Map(),
+      },
+      spaces: () => [],
+      defaultSpace: () => undefined,
     });
-    expect(sessionFacts({ open: () => [], dropped: 0 })).toEqual({
-      open: 0,
-      shared: [],
-      dropped: 0,
-    });
+    const connections = [1, 2, 3].map(() => ({ context: {} }));
+    for (const connection of connections) bridges.bind(connection);
+    // A connection whose bind was answered counts once its MCP session starts, until it ends.
+    for (const connection of connections) bridges.attach(connection);
+    bridges.closed(connections[0] ?? {});
+    expect(sessionFacts(bridges)).toEqual({ open: 2, shared: [], dropped: 0 });
+    // A connection that never bound is none of them.
+    expect(bridges.attach({ context: {} })).toBeUndefined();
+    expect(sessionFacts(bridges)).toEqual({ open: 2, shared: [], dropped: 0 });
   });
 });

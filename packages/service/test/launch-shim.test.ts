@@ -14,13 +14,7 @@ import {
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { RpcError } from "@ttasks/bridge/protocol";
-import {
-  BRIDGE_WINDOW_MS,
-  CLAIM_WINDOW_MS,
-  REFUSED,
-  startTimes,
-  type PlanFolder,
-} from "@ttasks/launch";
+import { CLAIM_WINDOW_MS, REFUSED, startTimes, type PlanFolder } from "@ttasks/launch";
 import type { FakeAgentReport } from "@ttasks/runs/fake-agents";
 import { readLog, stateOf, waitFor } from "./harness.ts";
 import {
@@ -97,10 +91,10 @@ describe("[A4.5.shim.reattach] restart after both ticket windows: reattach, exit
       expect(held?.ticket?.shimUsed).toBe(true);
       expect(held?.attachment?.pid).toBe(shim.pid);
 
-      // Both windows pass while the service is down: 120 s from the ticket's issue (shim role),
-      // 15 minutes from the agent's start (bridge role).
+      // The claim window (120 s from the ticket's issue) and a quarter of an hour pass while the
+      // service is down.
       await l.stopService();
-      l.skew += BRIDGE_WINDOW_MS + CLAIM_WINDOW_MS + 60_000;
+      l.skew += 15 * 60_000 + CLAIM_WINDOW_MS + 60_000;
       const service = await l.start();
 
       // The shim reattaches with its credential: no new claim, an attachment.
@@ -111,8 +105,8 @@ describe("[A4.5.shim.reattach] restart after both ticket windows: reattach, exit
       );
       expect(readLog(l.home).filter((e) => e["ev"] === "launch.claimed")).toHaveLength(1);
 
-      // No second claim: the ticket again, even from the shim's own live process, and its bridge
-      // role, are refused.
+      // No second claim: the ticket again, even from the shim's own live process, is refused. It
+      // still names its launch, whose agent runs, for the agent's tools and shell: no window.
       const own = (await startTimes([shim.pid])).get(shim.pid) ?? "";
       const session = await shimSession(l.home, service.endpoint.path);
       try {
@@ -125,7 +119,7 @@ describe("[A4.5.shim.reattach] restart after both ticket windows: reattach, exit
       } finally {
         session.close();
       }
-      expect(service.launches.host.redeemBridge(ticket)).toBeUndefined();
+      expect(service.launches.host.liveByTicket(ticket)).toMatchObject({ launch: intent.id });
 
       // The agent ends: the shim reports its exit through the attachment, and exits with its code.
       shim.endInput();

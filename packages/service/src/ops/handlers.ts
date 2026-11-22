@@ -6,7 +6,7 @@
 //   entry → exposure (the class may call it) → principal (audience, actor, writer scope)
 //   → the caller's input parsed with the contract (SafeText, defaults, the audience's limits)
 //   → the space → reads through the space's reader, writes expanded into A1 operations and sent
-//     to the space's writer with the scope, the earlier scope and the intent
+//     to the space's writer with the scope and the intent
 //   → the contract's result, checked against the entry's output schema, or the error body.
 //
 // A write's result is built from the writer's result and the caller's input only, so a replay of
@@ -59,7 +59,7 @@ import {
 } from "./caller.ts";
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
-import { apart, ExecutionRefused, isLaunchRef, PACK_LOG, type LaunchIntent } from "@ttasks/launch";
+import { ExecutionRefused, isLaunchRef, PACK_LOG, type LaunchIntent } from "@ttasks/launch";
 import {
   ambiguousError,
   copyOf,
@@ -77,8 +77,8 @@ import {
   type OpenTaskResult,
   type PackContent,
 } from "../launch/open.ts";
-import { type BindOutcome, type BindingPort, type FoundLaunch } from "./binding.ts";
-import { checkGrant, grantRefused, homesOf, type HomeGate } from "./grant.ts";
+import type { Session, SessionPort } from "./binding.ts";
+import { checkGrant, standingOf, type HomeGate } from "./grant.ts";
 import { addDays, dateIn, dueDate, localTimeZone, pastInstant } from "./dates.ts";
 import { GUIDE_STEPS, GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
@@ -210,10 +210,10 @@ export interface OpsHost {
   /** The space's time zone. Default: this machine's. */
   readonly timeZone?: () => string;
   /**
-   * Session binding (binding/, M2.04). Without it no connection binds: a launch reference and an
-   * explicit bind resolve for the call only.
+   * Who an agent's connection is, and what a session may do now (binding/). Without it no
+   * connection is a session.
    */
-  readonly bindings?: BindingPort;
+  readonly sessions?: SessionPort;
   /**
    * machine.toml's `[service] default_space` as it is now (A2 3.1): what an unbound call of the
    * person and a new tab use. Default: none.
@@ -230,9 +230,22 @@ export interface OpsHost {
   readonly resultMismatch?: (entry: string) => void;
 }
 
-/** What `launch.open` needs of the launch service (launch/service.ts). */
+/** What the request path needs of the launch service (launch/service.ts). */
 export interface LaunchPort {
   openTask(request: OpenTaskRequest): Promise<OpenTaskResult>;
+  /**
+   * Marks a link or Copy launch Connected after an agent read its task through `writer`, the open
+   * writable copy the read used: nothing when that writer no longer serves the space. A
+   * best-effort app's link is confirmed only from the folder its link named. Throws when the space
+   * cannot take it now.
+   */
+  connected(
+    space: string,
+    writer: SpaceWriterHandle,
+    launch: string,
+    at: number,
+    folder: string | undefined,
+  ): Promise<unknown>;
 }
 
 /** `op/call`'s params (A2 3.6.4). */
@@ -289,99 +302,46 @@ export async function opCall(
   if (typeof params.op !== "string") throw invalid("op", "Expected an operation name");
   const entry = findEntry(params.op);
   if (entry === undefined) throw opUnknown();
-  const slot = caller.binding;
-  if (entry.actors === "run") {
-    // A run-only entry needs a run's or a routine's binding, which none is before M6 (A3 3.4.12).
-    // The refusal names the binding it found, read once any bind in progress settles but without
-    // `use`, which records the call (a last use, an unbound write): the call leaves no trace, and
-    // it reads neither its input nor a space.
-    const bound =
-      slot === undefined
-        ? false
-        : host.bindings === undefined
-          ? slot.session !== undefined
-          : await host.bindings.holds(slot);
-    checkExposure(entry, caller.class, bound ? "task" : "none");
-  } else {
-    checkExposure(entry, caller.class);
-  }
-  // The call reads a settled binding (binding/bindings.ts `use`).
-  if (slot !== undefined && host.bindings !== undefined) await host.bindings.use(slot);
-  return callAs(host, caller, entry, params);
+  const who = decided(host, caller);
+  // A run-only entry is refused to every connection: it names whether the call is a session's,
+  // and reads neither its input nor a space.
+  checkExposure(entry, caller.class, who.binding?.kind === "session" ? "task" : "none");
+  return callAs(host, who, entry, params);
 }
-
-/** A write's request ID as the call gives it (checked later with the input). */
-function requestIdOf(params: OpCallParams): string | undefined {
-  const given =
-    params.request_id ?? (isRecord(params.input) ? params.input["request_id"] : undefined);
-  return typeof given === "string" && given.length <= 256 ? given : undefined;
-}
-
-/** Writes in flight, by machine, writer scope and request ID. */
-const writesInFlight = new Map<string, Set<Promise<void>>>();
 
 /**
- * Runs a write as `principal` (A3 3.7.9). One whose principal keeps an earlier writer scope (a
- * connection or a shell that was unbound and is bound now) first waits for the writes with its
- * request ID still in flight in that scope: a retry of one of them then finds its receipt through
- * the earlier scope rather than writing twice. Writes in one scope do not wait for each other:
- * the writer replays a retry that races its first call.
+ * The caller as its call goes on: an agent's shell is decided as its call starts, by the same rule
+ * as a bridge's bind, so the call keeps one identity from here to its answer.
  */
-async function writing<T>(
-  key: (scope: string) => string,
-  principal: Principal,
-  work: () => Promise<T>,
-): Promise<T> {
-  // Registered before anything awaits, so a retry that starts later sees it.
-  const own = key(principal.scope);
-  let end = (): void => undefined;
-  const mine = new Promise<void>((resolve) => {
-    end = resolve;
-  });
-  let all = writesInFlight.get(own);
-  if (all === undefined) {
-    all = new Set();
-    writesInFlight.set(own, all);
-  }
-  const set = all;
-  set.add(mine);
-  try {
-    const earlier =
-      principal.earlierScope === undefined
-        ? undefined
-        : writesInFlight.get(key(principal.earlierScope));
-    if (earlier !== undefined) await Promise.all([...earlier]);
-    return await work();
-  } finally {
-    set.delete(mine);
-    end();
-    if (set.size === 0 && writesInFlight.get(own) === set) writesInFlight.delete(own);
-  }
+function decided(host: OpsHost, caller: Caller): Caller {
+  if (caller.class !== "cli-agent" || caller.binding !== undefined) return caller;
+  const decision = host.sessions?.decide({ via: "shell", env: caller.env });
+  return decision?.kind === "session"
+    ? { ...caller, binding: { kind: "session", session: decision.session } }
+    : caller;
 }
 
-/** `opCall` once the call's binding is settled. */
-async function callAs(
+/**
+ * `opCall` as the caller's principal: a session writes as itself, computed from who the connection
+ * is and its home's instance now, never from anything in the call. A retry that races its first
+ * call needs no wait here: both reach the one writer, which decides one and replays the other.
+ */
+function callAs(
   host: OpsHost,
   caller: Caller,
   entry: AnyEntry,
   params: OpCallParams,
 ): Promise<unknown> {
-  // A bound connection acts as its session (A3 3.7.4): computed from the slot, which only the
-  // binding service sets, never from anything in the call.
-  const slot = caller.binding;
-  const bound = slot?.session;
+  const standing = standingOf(host.sessions, caller);
   const principal =
-    slot !== undefined && bound !== undefined
-      ? sessionPrincipal(slot, bound)
+    standing !== undefined && caller.binding?.kind === "session"
+      ? sessionPrincipal(
+          caller.binding.session,
+          standing.instance,
+          caller.class === "bridge" ? "mcp" : "cli",
+        )
       : (caller.principal ?? principalOf(caller.class, host.machine.id, caller.grant));
-  // A mixed entry's read action is a read (A3 3.2.3): no request ID, nothing to wait for.
-  const request = readsOnly(entry, params.input) ? undefined : requestIdOf(params);
-  if (request === undefined) return callWith(host, caller, entry, params, principal);
-  return writing(
-    (scope) => `${host.machine.id}\n${scope}\n${request}`,
-    principal,
-    () => callWith(host, caller, entry, params, principal),
-  );
+  return callWith(host, caller, entry, params, principal);
 }
 
 /**
@@ -491,81 +451,83 @@ export function defaultOf<S extends Copy>(
 }
 
 function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): ServedSpace {
-  const slot = caller.binding;
-  // The agent home the call comes from (grant.ts): its space must be one its row grants, checked
-  // on the space the call would use and before anything is read from it (A3 3.7.8).
-  const homes = homesOf(caller);
-  // A binding carries its space (A3 3.7.8): a bound connection's calls go to its session's space,
-  // an unbound one's to the space it pinned, whichever space anything else names or shows. A call
-  // that names another space is refused (A2 3.10.3: "wrong space for this binding"), never sent to
-  // either; a space no longer served is `space_unavailable`, never another space.
-  const pinned = slot?.session?.space ?? slot?.space;
-  if (slot !== undefined && pinned !== undefined) {
-    // The grant comes first: a home that may not use the space its binding pins can do nothing
-    // here, whatever the call names, so `binding` (leave out the space) would not help it.
-    checkGrant(host.homes, caller, pinned);
-    const live = host.spaces().filter((s) => s.state !== "closed");
-    if (named !== undefined && named !== pinned) {
-      const other = findSpace(live, named);
-      if (other === undefined || isAmbiguity(other) || other.id !== pinned) {
-        throw new AppError({
-          code: "forbidden",
-          message: "This session is bound to another space.",
-          hint: "Leave out the space: a session's calls go to the space it is bound to.",
-          data: { rule: "binding" },
-        });
-      }
-      // A folder names its copy, which a binding to the space may use.
-      if (isAbsolute(named)) return other;
+  const binding = caller.binding;
+  if (binding?.kind === "session") return heldSpace(host, caller, binding.session.space, named);
+  if (caller.class === "bridge") {
+    // A bridge never picks a space on a call: its bind settled one for its life, or none.
+    const held = binding?.space;
+    if (held === undefined) throw noSpace();
+    try {
+      return heldSpace(host, caller, held, named);
+    } catch (error) {
+      // Its home may use another space now: it says which, and that the agent app's restart moves
+      // it there. The held space is kept, never replaced, while it is denied.
+      const denied = error instanceof AppError && error.data["rule"] === "grant";
+      const now = denied ? host.homes?.spaceOf(caller.home ?? "") : undefined;
+      throw now !== undefined && now !== held ? grantedElsewhere(host, now) : error;
     }
-    const found = copyOf(live, pinned);
-    if (isAmbiguity(found)) throw ambiguousError(found);
-    if (found === undefined) throw spaceUnavailable("not_served", false);
-    return found;
   }
-  const wanted = named ?? slot?.named;
-  let picked: ServedSpace;
-  try {
-    picked = pickByRule(host, caller, wanted);
-  } catch (error) {
-    // An agent home learns nothing of a space it may not use (A3 3.7.8): a target that does not
-    // resolve (not served, a name or ID two spaces share, none chosen) is the grant refusal, unless
-    // it is a space the home is granted, whose own answer (`space_unavailable`, `ambiguous`) helps.
-    if (homes.length > 0 && !grantedTarget(host, homes, wanted)) throw grantRefused();
-    throw error;
-  }
-  // Refused before it is pinned: a connection keeps no space it may not use.
-  checkGrant(host.homes, caller, picked.id);
-  // An unbound connection pins the space of its first call when its bind frame could not name one
-  // (A2 3.7.1: it never follows a later change of the default).
-  if (slot !== undefined && picked.id !== undefined) host.bindings?.pin(slot, picked.id);
-  return picked;
+  return pickByRule(host, caller, named);
 }
 
 /**
- * Whether the target of an agent home's call, the space it named or else the machine's default, is
- * the home's own: every live space it matches as `pickByRule` matches (a named space by ID, else by
- * name; the default by ID only), or the ID itself when none is live, is granted to every home of
- * the call. One match the home may not use is enough to say no, so `ambiguous` never tells a home of
- * another space with its space's name.
+ * The space a session or a bridge holds, kept whether it is open, opening, closed or denied: the
+ * grant first, so a home that may not use it can do nothing whatever the call names; a call that
+ * names another space is refused, never sent to either; a held space not served now is
+ * `space_unavailable`, never another space.
  */
-function grantedTarget(
+function heldSpace(
   host: OpsHost,
-  homes: readonly string[],
-  wanted: string | undefined,
-): boolean {
-  const target = wanted ?? host.defaultSpace?.();
-  if (target === undefined) return false;
+  caller: Caller,
+  held: string,
+  named: string | undefined,
+): ServedSpace {
+  checkGrant(host, caller, held);
   const live = host.spaces().filter((s) => s.state !== "closed");
-  const byId = live.filter((s) => s.id === target);
-  const matched =
-    byId.length > 0 || wanted === undefined
-      ? byId
-      : live.filter((s) => s.name?.toLowerCase() === target.toLowerCase());
-  const candidates = matched.length > 0 ? matched.map((s) => s.id) : [target];
-  return candidates.every(
-    (id) => id !== undefined && homes.every((home) => host.homes?.may(home, id) === true),
-  );
+  if (named !== undefined && named !== held) {
+    const other = findSpace(live, named);
+    if (other === undefined || isAmbiguity(other) || other.id !== held) {
+      throw new AppError({
+        code: "forbidden",
+        message: "This session is bound to another space.",
+        hint: "Leave out the space: a session's calls go to the space it is bound to.",
+        data: { rule: "binding" },
+      });
+    }
+    // A folder names its copy, which a session of the space may use.
+    if (isAbsolute(named)) return other;
+  }
+  const found = copyOf(live, held);
+  if (isAmbiguity(found)) throw ambiguousError(found);
+  if (found !== undefined) return found;
+  // A space that is still opening has no ID of its own yet, only the one its entry names.
+  if (live.some((s) => s.state === "opening" && s.registered === held)) {
+    throw spaceUnavailable("opening", true);
+  }
+  throw spaceUnavailable("not_served", false);
+}
+
+/**
+ * A bridge whose bind found no space it can be sure of: refused on every call, saying what settles
+ * it. Its process started with no space to choose, or an older bridge reconnected without one.
+ */
+const noSpace = (): AppError =>
+  new AppError({
+    code: "space_unavailable",
+    message: "This connection has no space it can work in.",
+    hint: `Ask the user to set a default space (${CLI_NAME} space use) or name the space in the agent's ${PRODUCT_NAME} entry, creating one first if there is none (${CLI_NAME} space create), then restart the agent app.`,
+    data: { reason: "no_space", retryable: false },
+  });
+
+/** The grant refusal of a bridge whose home may use another space now, which it names. */
+function grantedElsewhere(host: OpsHost, space: string): AppError {
+  const name = host.spaces().find((s) => s.id === space)?.name;
+  return new AppError({
+    code: "forbidden",
+    message: "This agent is not registered for this space.",
+    hint: `It may use ${name === undefined ? space : `the space ${name}`} now: ask the user to restart the agent app to work there.`,
+    data: { rule: "grant", space },
+  });
 }
 
 /** The space a person's own command means: the one it names, else the machine's default. */
@@ -707,16 +669,13 @@ async function submit(
     // The grant again before anything reaches the space (A3 3.7.8): a row revoked while this call
     // read and staged stops it before its actor is registered, and once more (below) before the
     // writer gets the request.
-    checkGrant(call.host.homes, call.caller, call.space.id);
+    checkGrant(call.host, call.caller, call.space.id);
     const principalId = await actorOf(writer, principal);
     const request: WriteRequest = {
       space_id: writer.spaceId,
       request_id: String(input["request_id"]),
       actor: {
         scope_id: principal.scope,
-        ...(principal.earlierScope === undefined
-          ? {}
-          : { earlier_scope_id: principal.earlierScope }),
         principal_id: principalId,
         actor_kind: principal.actorKind,
         machine_id: call.host.machine.id as Id<"m">,
@@ -736,9 +695,7 @@ async function submit(
     };
     // The last step before the writer: no write is handed over after the revoke took effect. Only
     // a request the writer holds already can still commit.
-    checkGrant(call.host.homes, call.caller, call.space.id);
-    // An unbound connection's write was registered when its call started (`opCall`), so a retry
-    // after a lost reply, once bound, still finds this receipt.
+    checkGrant(call.host, call.caller, call.space.id);
     result = await writer.submit(request);
   } catch (error) {
     throw storageFailure(error);
@@ -910,16 +867,44 @@ function changedFields(named: readonly string[], facts: CommitFacts): string[] {
 const CANDIDATES = 3;
 
 /**
- * The task a call names, else the bound task (A3 3.4.1), else `unbound` (A3 3.5) with the tasks
- * for the caller's `cwd` as candidates, best first, when it gave one. The working folder never
- * binds and never picks the task (A3 3.7.3): the model or the user chooses from the candidates.
+ * An agent read a link or Copy launch's task: the launch is marked Connected, once. Only for a
+ * bridge or an agent's shell, on the open writable copy this call read, with the grant checked
+ * again. It never fails the read: a mark that did not land is tried again at the next such read.
+ */
+async function markConnected(call: Call, launch: FoundLaunch): Promise<void> {
+  const { caller, space } = call;
+  if (caller.class !== "bridge" && caller.class !== "cli-agent") return;
+  if (launch.route !== "link" && launch.route !== "clipboard") return;
+  if (launch.state === "failed" || launch.boundAt !== undefined) return;
+  if (space.state !== "open" || space.writer === undefined || space.id === undefined) return;
+  try {
+    checkGrant(call.host, caller, space.id);
+    await call.host.launches?.connected(
+      space.id,
+      space.writer,
+      launch.id,
+      (call.host.now ?? Date.now)(),
+      caller.folder,
+    );
+  } catch {
+    // Tried again at the next read.
+  }
+}
+
+/** The session a call's connection is, if it is one. */
+const sessionIn = (call: Call): Session | undefined =>
+  call.caller.binding?.kind === "session" ? call.caller.binding.session : undefined;
+
+/**
+ * The task a call names, else its session's task, else `unbound` with the tasks for the caller's
+ * `cwd` as candidates, best first, when it gave one. The working folder never picks the task:
+ * the model or the user chooses from the candidates.
  */
 async function taskOf(call: Call): Promise<string> {
   const task = call.input["task"];
   if (typeof task === "string") return task;
-  const slot = call.caller.binding;
-  const bound = slot?.session?.task;
-  if (typeof bound === "string") return bound;
+  const bound = sessionIn(call)?.task;
+  if (bound !== undefined) return bound;
   const cwd = call.input["cwd"];
   let candidates: Record<string, unknown>[] = [];
   if (typeof cwd === "string") {
@@ -931,22 +916,27 @@ async function taskOf(call: Call): Promise<string> {
         .map(({ row }) => taskRow(row, read.space.refPrefix));
     }
   }
-  // A binding that ended (A3 3.7.3 "A lost binding"): the calls that relied on it say so.
-  const lost = slot?.lost === true && slot.session === undefined;
   throw new AppError({
     code: "unbound",
-    message: lost
-      ? `Your ${PRODUCT_NAME} session ended: this call is not bound to a task.`
-      : "Name the task: this call is not bound to one.",
-    hint: lost
-      ? "Pass task, or ask the user."
-      : "Pass task, such as M-14. status with your cwd lists the tasks for your folder.",
+    message: "Name the task: this call is not bound to one.",
+    hint: "Pass task, such as M-14. status with your cwd lists the tasks for your folder.",
     ...(candidates.length === 0 ? {} : { data: { candidates } }),
   });
 }
 
-/** A3 3.7.3: a launch reference binds within 24 hours of its launch. */
-export const LAUNCH_BIND_MS = 24 * 60 * 60_000;
+/** A launch as its reference finds it in the call's space. */
+interface FoundLaunch {
+  /** `la_` ID. */
+  readonly id: string;
+  /** Its task (`t_` ID). */
+  readonly task: string;
+  readonly state: string;
+  readonly route: string;
+  /** Whether it was marked Connected already (evidence `bound_at`). */
+  readonly boundAt: number | undefined;
+  /** The note the launch names as the person's request. */
+  readonly request: string | undefined;
+}
 
 const launchUnknown = (typo: boolean): AppError =>
   new AppError({
@@ -958,16 +948,12 @@ const launchUnknown = (typo: boolean): AppError =>
   });
 
 /**
- * The launch a reference names in the call's space (A3 3.7.3), checked as far as the
- * reference alone decides: a reference whose check character fails, one no launch of this space
- * and machine has, or one that never left the service (Prepared) is `launch_unknown`; one older
- * than 24 hours is `launch_expired` with its task. A connection that cannot bind resolves the
- * reference with this alone; binding decides the rest (binding/).
+ * The launch a reference names in the call's space: one whose check character fails, that no
+ * launch of this space and machine has, of a routine, or that never left the service (Prepared) is
+ * `launch_unknown`. Any other reads its task, whatever its age or state: a reference is never
+ * given to another launch.
  */
-async function launchOf(
-  call: Call,
-  reference: unknown,
-): Promise<FoundLaunch & { task: string; request: string | undefined }> {
+async function launchOf(call: Call, reference: unknown): Promise<FoundLaunch> {
   if (!isLaunchRef(reference)) throw launchUnknown(true);
   let found;
   try {
@@ -976,7 +962,6 @@ async function launchOf(
     throw storageFailure(error);
   }
   const launch = found.launch;
-  // A routine's launch binds the space, not a task (M6): none exists in this build.
   if (
     launch === undefined ||
     launch.task === null ||
@@ -985,78 +970,16 @@ async function launchOf(
   ) {
     throw launchUnknown(false);
   }
-  const now = (call.host.now ?? Date.now)();
-  if (apart(now, launch.clickedAt, LAUNCH_BIND_MS)) {
-    throw new AppError({
-      code: "launch_expired",
-      message: "This launch reference is more than 24 hours old.",
-      hint: `Pass task ${launch.taskRef ?? "with its reference"} instead.`,
-      ...(launch.taskRef === undefined ? {} : { data: { task: launch.taskRef } }),
-    });
-  }
   const boundAt = launch.evidence["bound_at"];
   const request = launch.evidence["request"];
   return {
-    request: typeof request === "string" ? request : undefined,
     id: launch.id,
-    reference: launch.reference,
-    space: found.space.id,
     task: launch.task,
-    taskRef: launch.taskRef,
     state: launch.state,
     route: launch.route,
     boundAt: typeof boundAt === "number" ? boundAt : undefined,
-    exited: launch.evidence["exit_code"] !== undefined,
+    request: typeof request === "string" ? request : undefined,
   };
-}
-
-/**
- * True when a bind through a tool bound the connection (or found it bound to what it asked for);
- * otherwise the refusal (A3 3.5), with the task references the agent can pass instead.
- */
-async function bindWith(
-  call: Call,
-  outcome: BindOutcome,
-  taskRef: string | undefined,
-): Promise<boolean> {
-  const withTask = taskRef === undefined ? {} : { data: { task: taskRef } };
-  const instead = `Pass task ${taskRef ?? "with its reference"} instead.`;
-  switch (outcome.kind) {
-    case "bound":
-      return true;
-    case "already_bound": {
-      let ref: string | undefined;
-      if (outcome.task !== null) {
-        try {
-          ref = await readTaskRef(readerOf(call.space), outcome.task);
-        } catch {
-          ref = undefined;
-        }
-      }
-      throw new AppError({
-        code: "already_bound",
-        message: `This session is bound to ${ref ?? "another task"} already.`,
-        hint: `Pass task on a call for another task. Ask the user to rebind the session in ${PRODUCT_NAME}.`,
-        ...(ref === undefined ? {} : { data: { task: ref } }),
-      });
-    }
-    case "launch_used":
-      throw new AppError({
-        code: "launch_used",
-        message: "Another session used this launch reference already.",
-        hint: instead,
-        ...withTask,
-      });
-    case "launch_ended":
-      throw new AppError({
-        code: "launch_expired",
-        message: "This launch has ended.",
-        hint: instead,
-        ...withTask,
-      });
-    case "launch_unknown":
-      throw launchUnknown(false);
-  }
 }
 
 /**
@@ -1468,9 +1391,6 @@ async function applied(call: Call): Promise<boolean> {
   try {
     const found = await writer.receipt({
       scope_id: call.principal.scope,
-      ...(call.principal.earlierScope === undefined
-        ? {}
-        : { earlier_scope_id: call.principal.earlierScope }),
       request_id: String(call.input["request_id"]),
     });
     return found !== undefined;
@@ -1800,7 +1720,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const cwd = guide === undefined && typeof input["cwd"] === "string" ? input["cwd"] : undefined;
     // Null: a cwd that relates to no folder here, so no task matches it.
     const found = cwd === undefined ? undefined : ((await hereFor(call, cwd)) ?? null);
-    const boundTask = call.caller.binding?.session?.task ?? undefined;
+    const boundTask = sessionIn(call)?.task;
     const status = await readStatus(reader, {
       today: call.today,
       week: addDays(call.today, 7),
@@ -1811,13 +1731,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     });
     const here =
       found === undefined ? undefined : found === null ? [] : hereRows(status.here, found.found);
-    // A bound session needs no way to bind: the hint is for one that has to choose a task.
+    // A session has its task: the hint is for a connection that has to name one.
     const hint =
-      here === undefined || call.caller.binding?.session !== undefined ? undefined : hereHint(here);
+      here === undefined || boundTask !== undefined
+        ? undefined
+        : hereHint(here, status.space.refPrefix);
     const live =
       here === undefined || here.length === 0
         ? undefined
-        : call.host.bindings?.liveSessions(status.space.id);
+        : call.host.sessions?.live(status.space.id);
     return {
       as_of: status.space.asOf,
       date: call.today,
@@ -1887,23 +1809,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw invalid("before", "A before token pages a sections read", "Pass its sections too.");
     }
     const reader = readerOf(call.space);
-    const slot = call.caller.binding;
-    const bindings = call.host.bindings;
     let task: string;
-    // Whether this call bound the connection, or found it bound already to what it asked for.
-    let bound = false;
-    // The note the launch names as the person's request.
-    let asked: string | undefined;
+    // A reference reads its launch's task for this call, on any connection: it never binds.
+    let launch: FoundLaunch | undefined;
     if (typeof input["launch"] === "string") {
-      // A3 3.7.3: bind by the launch reference, then load its task. A connection that
-      // cannot hold a binding resolves the reference for this call only.
       if (input["task"] !== undefined) throw invalid("task", "Pass task or launch, not both");
-      const launch = await launchOf(call, input["launch"]);
-      if (slot !== undefined && bindings !== undefined) {
-        bound = await bindWith(call, await bindings.redeem(slot, launch), launch.taskRef);
-      }
+      launch = await launchOf(call, input["launch"]);
       task = launch.task;
-      asked = launch.request;
     } else {
       task = await taskOf(call);
     }
@@ -1927,14 +1839,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ...(named === undefined ? {} : { named }),
     });
     const notes = named === undefined ? {} : { notes: read.named.map(noteOf) };
-    // A3 3.7.3: an explicit task choice binds an ad-hoc session, once the task is found.
-    if (input["bind"] === true && input["launch"] === undefined) {
-      if (slot !== undefined && bindings !== undefined) {
-        const id = String(read.row["id"]);
-        bound = await bindWith(call, await bindings.bindTask(slot, read.space.id, id), undefined);
-      }
-    }
+    // The connection is this task's session: its later calls need no task.
+    const bound = sessionIn(call)?.task === String(read.row["id"]);
     // What the person asked this launch's agent to do: the note the launch names, while it is there.
+    const asked = launch?.request;
     let request: Record<string, unknown> | undefined;
     if (asked !== undefined) {
       let body: string | undefined;
@@ -1945,9 +1853,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       }
       if (body !== undefined) request = { note: asked, ...requestText(body) };
     }
+    let answer: Record<string, unknown>;
     if (sections.length === 0) {
       const digest = digestOf(read, call.today, await digestFolder(call, read.folder));
-      return {
+      answer = {
         view: "digest",
         as_of: read.space.asOf,
         bound,
@@ -1955,19 +1864,23 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         task: digest,
         ...notes,
       };
+    } else {
+      const logLimit = typeof input["log_limit"] === "number" ? input["log_limit"] : 20;
+      const page = sectionsOf(read, pagePlan(sections, input["before"], logLimit));
+      answer = {
+        view: "sections",
+        as_of: read.space.asOf,
+        bound,
+        ...(request === undefined ? {} : { request }),
+        task: taskRow(read.row, read.space.refPrefix),
+        sections: page.sections,
+        ...(page.before === undefined ? {} : { before: page.before }),
+        ...notes,
+      };
     }
-    const logLimit = typeof input["log_limit"] === "number" ? input["log_limit"] : 20;
-    const page = sectionsOf(read, pagePlan(sections, input["before"], logLimit));
-    return {
-      view: "sections",
-      as_of: read.space.asOf,
-      bound,
-      ...(request === undefined ? {} : { request }),
-      task: taskRow(read.row, read.space.refPrefix),
-      sections: page.sections,
-      ...(page.before === undefined ? {} : { before: page.before }),
-      ...notes,
-    };
+    // Connected only once the agent has its whole answer, the person's request included.
+    if (launch !== undefined) await markConnected(call, launch);
+    return answer;
   },
 
   "task.add": async (call) => {
@@ -2491,9 +2404,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     try {
       stored = await readReceipt(reader, {
         scope_id: call.principal.scope,
-        ...(call.principal.earlierScope === undefined
-          ? {}
-          : { earlier_scope_id: call.principal.earlierScope }),
         request_id: String(call.input["request"]),
       });
     } catch (error) {
@@ -2507,7 +2417,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const reader = readerOf(call.space);
     const { host } = call;
     const space = call.space.id ?? "";
-    const boundTask = call.caller.binding?.session?.task ?? undefined;
+    const boundTask = sessionIn(call)?.task;
     try {
       // The input passed the entry's schema (TaskSearchInput) and its SafeText.
       const input: SearchInput = call.input;
@@ -2527,7 +2437,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           ? {}
           : { shows: (page: unknown) => call.caller.shows?.("task.search", page) !== false }),
         live: () =>
-          [...(host.bindings?.liveSessions(space) ?? new Map<string, number>())]
+          [...(host.sessions?.live(space) ?? new Map<string, number>())]
             .filter(([, count]) => count > 0)
             .map(([task]) => task),
         here: async (cwd) => {
@@ -2632,11 +2542,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     };
   },
 
-  // Refused by the exposure gate before any handler runs (`opCall`): no connection is bound to a
-  // run or routine before M6.06. The handler says the same, so no path reaches a write.
+  // Refused by the exposure gate before any handler runs (`opCall`). The handler says the same, so
+  // no path reaches a write.
   "run.report": (call) => {
-    const bound = call.caller.binding?.session !== undefined;
-    checkExposure(call.entry, call.caller.class, bound ? "task" : "none");
+    checkExposure(call.entry, call.caller.class, sessionIn(call) === undefined ? "none" : "task");
     return Promise.reject(new AppError({ code: "internal", message: "No run binding exists." }));
   },
 };
@@ -3362,7 +3271,6 @@ async function refuseBehindScript(call: Call): Promise<void> {
   try {
     const stored = await readReceipt(reader, {
       scope_id: principal.scope,
-      ...(principal.earlierScope === undefined ? {} : { earlier_scope_id: principal.earlierScope }),
       request_id: String(call.input["request_id"]),
     });
     if (receiptResult(stored).found) return;
@@ -3621,15 +3529,15 @@ function sinceOf(value: unknown, now: number): number {
 const CLIENT_WORD = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 /**
- * This connection's session (A3 3.4.2): bound, with its task line and the notes from the user for
- * agents on it, or unbound. An MCP connection shows the instance and app its entry names.
+ * This connection's session: bound, with its task line and the notes from the user for agents on
+ * it, or unbound. An MCP connection shows the instance and app its entry names.
  */
 function sessionOf(
   call: Call,
   bound: { readonly ref: string; readonly instructions: number } | undefined,
 ): Record<string, unknown> {
   const { instance, app } = call.caller.client ?? {};
-  const session = call.caller.binding?.session;
+  const session = sessionIn(call);
   return {
     state: session === undefined ? "unbound" : "bound",
     ...(session === undefined || bound === undefined
@@ -3640,22 +3548,23 @@ function sessionOf(
   };
 }
 
-const getTaskTool = findEntry("task.get")?.faces.mcp?.tool ?? "task.get";
-
 /**
- * What an unbound session does next when tasks match the working folder exactly (A3 3.4.2's
- * example, 3.7.6 E): with one clear match it binds and tells the user, with several it asks. The
- * folder itself never binds.
+ * What a connection that is no session does next when tasks match the working folder exactly: with
+ * one clear match it names that task on the calls that act on it, with several it asks. The folder itself never
+ * chooses the task.
  */
 function hereHint(
   here: readonly { readonly row: Row; readonly match: Match }[],
+  prefix: string,
 ): string | undefined {
-  const exact = here.filter((h) => h.match === "exact").length;
-  if (exact === 1) {
-    return `One task matches this folder. If your work belongs to it, call ${getTaskTool} with task and bind true, and tell the user.`;
+  const exact = here.filter((h) => h.match === "exact");
+  const [only] = exact;
+  if (exact.length === 1 && only !== undefined) {
+    const ref = String(taskRow(only.row, prefix)["ref"]);
+    return `One task matches this folder. If your work belongs to it, pass task ${ref} on the calls that act on it, and tell the user.`;
   }
-  if (exact > 1) {
-    return `${String(exact)} tasks match this folder. Ask the user which one, then call ${getTaskTool} with task and bind true.`;
+  if (exact.length > 1) {
+    return `${String(exact.length)} tasks match this folder. Ask the user which one, then pass its task on the calls that act on it.`;
   }
   return undefined;
 }

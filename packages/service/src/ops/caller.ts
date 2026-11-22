@@ -1,12 +1,11 @@
-// Who calls (A2 3.6.5, A3 3.7.4, 3.7.9): the connection class decides the audience of the input,
-// the actor in history and the writer scope. The client never names a principal. A session binding
-// (M2.04, binding.ts) gives a bound connection its session's principal and scope, and keeps the
-// earlier scope of a connection that wrote unbound; a run's (M6) will do the same.
+// Who calls: the connection class decides the audience of the input, the actor in history and the
+// writer scope. The client never names a principal. A session (binding.ts) writes as itself, under
+// its own scope only: a request is found again only through the scope that wrote it.
 import { PRODUCT_NAME } from "@ttasks/brand";
 import type { AnyEntry } from "@ttasks/contracts";
 import { AppError, findEntry } from "@ttasks/contracts";
 import type { ConnectionClass } from "../local/index.ts";
-import { runOf, type BoundSession, type Slot } from "./binding.ts";
+import type { Binding, Session } from "./binding.ts";
 
 export interface Caller {
   readonly class: ConnectionClass;
@@ -18,28 +17,31 @@ export interface Caller {
    */
   readonly grant?: string;
   /**
-   * The principal the transport determined for this connection while it is unbound, when its class
-   * has no fixed one: an MCP connection's (mcp/principal.ts), or the one a handler writes a step
-   * under on the caller's behalf (`launch.open`'s note). Otherwise the class's. A bound slot's
-   * session decides the principal instead (`sessionPrincipal`).
+   * The principal the transport determined for this connection when it is no session and its
+   * class has no fixed one: an MCP connection's (mcp/principal.ts), or the one a handler writes a
+   * step under on the caller's behalf (`launch.open`'s note). Otherwise the class's.
    */
   readonly principal?: Principal;
   /**
-   * What the connection says about the agent app it serves, for `status`'s session line (A3
-   * 3.4.2): the bridge's instance and app words from its entry. Shown, never trusted (A3 3.3).
+   * What the connection says about the agent app it serves, for `status`'s session line: the
+   * bridge's instance and app words from its entry. Shown, never trusted.
    */
   readonly client?: { readonly instance?: string; readonly app?: string };
   /**
-   * The agent home an MCP connection belongs to, for the grant gate (grant.ts, A3 3.7.8): the
-   * instance its entry names, or `manual` for an entry without one. A slot's instance decides
-   * instead when the call has a binding.
+   * The agent home an MCP connection that is no session belongs to, for the grant gate: the
+   * instance its entry names, or `manual` for an entry without one.
    */
   readonly home?: string;
   /**
-   * The connection's binding (binding.ts): an MCP connection's for its life, or a `cli-agent`
-   * call's whose ticket maps to a live session. Absent: the connection cannot bind.
+   * A bridge's binding, fixed at its bind. A shell's call is decided as it starts (`opCall`) and
+   * carries none here.
    */
-  readonly binding?: Slot;
+  readonly binding?: Binding;
+  /**
+   * The bridge's working folder as its bind frame said: a best-effort app's link launch is marked
+   * Connected only from the folder its link named. It decides nothing else.
+   */
+  readonly folder?: string;
   /**
    * Whether the caller's face shows an entry's result whole: an agent's tool text has a budget.
    * A page of search then holds only the rows it shows, so its cursor goes on from the first row
@@ -55,12 +57,10 @@ export interface Principal {
   readonly actorKind: "human" | "agent";
   /** The actor's label: `user` for the space's human, else A3 3.7.4's name. */
   readonly label: string;
-  /** The writer scope (A3 3.7.9): receipts are keyed by it. Stable across processes. */
+  /** The writer scope: receipts are keyed by it. Stable across processes. */
   readonly scope: string;
-  /** A writer scope the connection wrote under before it bound (A3 3.7.9). */
-  readonly earlierScope?: string;
   readonly origin: "cli" | "ui" | "mcp";
-  /** The bound session (`se_` ID): A1's credential carries it into every commit and log entry. */
+  /** The session (`se_` ID): A1's credential carries it into every commit and log entry. */
   readonly session?: string;
   /**
    * The background run (`ru_` ID) the session acts for, when TTasks started its agent: the
@@ -122,23 +122,22 @@ export function principalOf(cls: ConnectionClass, machine: string, grant?: strin
 }
 
 /**
- * The principal of a call on a slot bound to `session` (A3 3.7.4, 3.7.9): the actor
- * `agent:<instance>:<session>`, the session as writer scope, and the connection's unbound scope as
- * a second receipt lookup when it wrote unbound before it bound.
+ * The principal of a session's call: the actor `agent:<instance>:<session>` and the session as
+ * writer scope, the same for its bridge and its shell, and the run a run's session acts for.
  */
-export function sessionPrincipal(slot: Slot, session: BoundSession): Principal {
-  const run = runOf(session);
+export function sessionPrincipal(
+  session: Session,
+  instance: string,
+  origin: "mcp" | "cli",
+): Principal {
   return {
     audience: "agent",
     actorKind: "agent",
-    label: `agent:${session.instance}:${session.id}`,
-    scope: `session:${session.id}`,
-    ...(slot.wroteUnbound && slot.unboundScope !== undefined
-      ? { earlierScope: slot.unboundScope }
-      : {}),
-    origin: slot.origin,
-    session: session.id,
-    ...(run === undefined ? {} : { run }),
+    label: `agent:${instance}:${session.session}`,
+    scope: `session:${session.session}`,
+    origin,
+    session: session.session,
+    ...(session.home.of === "run" ? { run: session.home.run } : {}),
   };
 }
 

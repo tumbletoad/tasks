@@ -45,18 +45,29 @@ function machineDefault(host: HomeGateHost): string | undefined {
   return live.size === 1 ? [...live][0] : undefined;
 }
 
-export function homeGate(host: HomeGateHost): HomeGate {
+/** The one live row of `instance`: none, or two that a home registered before setup refused it. */
+function liveRow(host: HomeGateHost, instance: string) {
+  const now = new Date();
+  const rows = host
+    .grants()
+    .list("agent_home")
+    .filter((row) => row.attrs["instance"] === instance && isLive(row, now));
+  return rows.length === 1 ? rows[0] : undefined;
+}
+
+export function homeGate(host: HomeGateHost): HomeGate & { machineDefault(): string | undefined } {
   return {
     may(instance, space) {
       // The hand-made entry has no row: a row naming `manual` (setup refuses to make one) gives
       // it nothing, and nothing else of it outlives a revoke.
       if (instance === MANUAL_INSTANCE) return machineDefault(host) === space;
-      const now = new Date();
-      const rows = host
-        .grants()
-        .list("agent_home")
-        .filter((row) => row.attrs["instance"] === instance && isLive(row, now));
-      return rows.length === 1 && rows[0]?.spaces.includes(space) === true;
+      return liveRow(host, instance)?.spaces.includes(space) === true;
     },
+    spaceOf(instance) {
+      if (instance === MANUAL_INSTANCE) return machineDefault(host);
+      const spaces = liveRow(host, instance)?.spaces ?? [];
+      return spaces.length === 1 ? spaces[0] : undefined;
+    },
+    machineDefault: () => machineDefault(host),
   };
 }

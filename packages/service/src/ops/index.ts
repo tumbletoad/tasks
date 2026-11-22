@@ -10,27 +10,21 @@ export {
   type OpsHost,
   type ServedSpace,
 } from "./handlers.ts";
-export {
-  principalOf,
-  isUserClass,
-  sessionPrincipal,
-  type Caller,
-  type Principal,
-} from "./caller.ts";
+export { principalOf, isUserClass, type Caller, type Principal } from "./caller.ts";
 export { dateIn, dueDate, localTimeZone } from "./dates.ts";
 export { readSpace, type SpaceFacts } from "./read.ts";
-export { LAUNCH_BIND_MS } from "./handlers.ts";
 export {
-  MAX_PRESENTED,
-  NATIVE_ID,
-  NATIVE_SOURCES,
-  runOf,
-  Slot,
-  type BindOutcome,
-  type BindingPort,
-  type BoundSession,
-  type FoundLaunch,
-  type NativeSource,
+  BOUND_BY,
+  UNBOUND_REASONS,
+  type Binding,
+  type BoundBy,
+  type Decision,
+  type Presented,
+  type Session,
+  type SessionHome,
+  type SessionPort,
+  type Standing,
+  type UnboundReason,
 } from "./binding.ts";
 export { readOnly } from "./errors.ts";
 export { grantRefused, MANUAL_INSTANCE, type HomeGate } from "./grant.ts";

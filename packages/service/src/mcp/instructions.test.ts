@@ -91,7 +91,6 @@ describe("[A3.3.6.mcp.instructions] the server instructions", () => {
   test("the fields and values the text names are the tools' own", () => {
     const claims: readonly (readonly [string, string, string?])[] = [
       ["get_task", "task"],
-      ["get_task", "bind"],
       ["get_task", "launch"],
       ["get_task", "sections"],
       ["search", "scope", "learnings"],

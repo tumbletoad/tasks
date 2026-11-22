@@ -30,7 +30,7 @@ import {
 } from "@ttasks/launch";
 import { FAKE_CLI_AGENT, type CliAgentReport } from "@ttasks/testkit";
 import { opCall } from "../src/ops/index.ts";
-import { bridge } from "./agents.ts";
+import { bridge, type HostPatch } from "./agents.ts";
 import { instanceToml, tempRoot, waitFor } from "./harness.ts";
 import { bridgeContext } from "./mcp-helpers.ts";
 import { classSession, errorOf, grantHome } from "./ops-helpers.ts";
@@ -255,8 +255,8 @@ async function notesOf(r: Rig, task: string): Promise<Note[]> {
   }
 }
 
-/** What get_task says when the read bound the connection's session to the launch's task. */
-const BOUND = "Session: bound to this task by this call";
+/** What get_task says to an app's agent that is no session: it names the task on the calls that act on it. */
+const NAMES = "act on it: this connection is not its session";
 /** The line before the person's request in get_task's text. */
 const REQUEST = "Request from the user for this launch:";
 
@@ -604,7 +604,7 @@ describe("[A4.5.routes.request] what a person types before Open is on the task a
 
         const agent = await mcpAgent(r, folder);
         const text = await agent.getTask({ launch: result.launch.reference });
-        expect(text).toContain(BOUND);
+        expect(text).toContain(NAMES);
         // The tool's text holds every line whole, as typed, as the person's request.
         expect(text).toContain(REQUEST);
         for (const line of words.split("\n")) expect(text).toContain(`  ${line}`);
@@ -712,7 +712,7 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
   );
 
   test(
-    "a second session with the launch's pointer is refused it; a session that loads the task sees the request as history, with its launch",
+    "every agent that reads the launch's pointer gets the request; one that loads the task by its reference sees it as history, with its launch",
     { timeout: 600_000 },
     async () => {
       opened.length = 0;
@@ -726,7 +726,10 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
         `${REQUEST}\n  Fix the offset`,
       );
       const other = await mcpAgent(r, folder);
-      expect((await other.refusal({ launch: result.launch.reference })).code).toBe("launch_used");
+      expect(await other.getTask({ launch: result.launch.reference })).toContain(
+        `${REQUEST}
+  Fix the offset`,
+      );
       const text = await other.getTask({ task: task.ref });
       expect(text).not.toContain(REQUEST);
       expect(text).toContain("Fix the offset");
@@ -737,6 +740,77 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
       expect(line).toContain(`(request for launch ${result.launch.reference} [desktop])`);
       await own.close();
       await other.close();
+    },
+  );
+
+  test(
+    "a read by the launch's pointer that fails before its answer is ready marks nothing; the next read marks it Connected",
+    { timeout: 600_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("request-mark");
+      const task = await addTask(r, "folder-mark");
+      const folder = join(r.lab.work, "folder-mark");
+      const result = await open(r, { task: task.ref, instance: "desktop", text: "Fix the offset" });
+      await r.lab.waitIntent(result.launch.id, (i) => i.state === "dispatched", "Dispatched");
+      const served = {
+        service: r.lab.running,
+        home: r.lab.home,
+        path: r.lab.running.endpoint.path,
+      };
+      const agent = await bridge(
+        served,
+        bridgeContext({ space: r.lab.spaceId, instance: "app-agent", cwd: folder }),
+      );
+      // The person's request cannot be read once: the read fails after it found the launch.
+      let failures = 1;
+      const noteFails: HostPatch = (own) => ({
+        spaces: () =>
+          own.spaces().map((s) => {
+            const reader = s.reader;
+            if (reader === undefined) return s;
+            return {
+              ...s,
+              reader: new Proxy(reader, {
+                get(target, key) {
+                  const value: unknown = Reflect.get(target, key, target);
+                  if (key !== "transaction" || typeof value !== "function") {
+                    return typeof value === "function"
+                      ? (value as (...a: unknown[]) => unknown).bind(target)
+                      : value;
+                  }
+                  return (mode: unknown, statements: readonly { readonly sql: string }[]) => {
+                    if (
+                      failures > 0 &&
+                      statements.some((q) => q.sql.includes("n.ordinal = $ordinal"))
+                    ) {
+                      failures -= 1;
+                      return Promise.reject(new Error("the note could not be read"));
+                    }
+                    return (value as (...a: unknown[]) => unknown).call(target, mode, statements);
+                  };
+                },
+              }),
+            };
+          }),
+      });
+      const refused = await agent.refusal(
+        "task.get",
+        { launch: result.launch.reference },
+        { host: noteFails },
+      );
+      expect(refused.code).not.toBe("");
+      expect(failures).toBe(0);
+      const before = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
+      expect(before?.evidence.bound_at).toBeUndefined();
+      expect(before?.state).toBe("dispatched");
+      expect(await agent.call("task.get", { launch: result.launch.reference })).toContain(
+        `${REQUEST}
+  Fix the offset`,
+      );
+      const after = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
+      expect(after?.evidence.bound_at).toBeTypeOf("number");
+      await agent.close();
     },
   );
 

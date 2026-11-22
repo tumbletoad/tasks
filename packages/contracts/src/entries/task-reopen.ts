@@ -17,7 +17,7 @@ import {
 import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 
 export const TaskReopenInput = z.strictObject({
-  task: TaskRefInput.describe("Task ref (M-14) or ID"),
+  task: TaskRefInput.describe("Task ref (M-14) or ID; default: this session's task").optional(),
   reason: safeText(200).describe("Why it is open again").optional(),
   base: Base,
   request_id: RequestId,
