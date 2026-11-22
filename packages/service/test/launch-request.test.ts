@@ -453,7 +453,7 @@ async function expectOnTask(
   expect(note?.text).toBe(words);
 }
 
-describe("[A4.5.routes.request] what a person types before Open is on the task at the click, reaches the agent through Tasks, and never a command line, a link, a log or a file outside the space", () => {
+describe("[A4.5.routes.request] what a person types before Open is on the task at the click, reaches the agent through TTasks, and never a command line, a link, a log or a file outside the space", () => {
   for (const instance of ["claude", "codex"] as const) {
     test(
       `${instance}'s terminal route: the brief points at the request, the fake agent reads it with show --launch, the same each time, and the rest is in the note`,

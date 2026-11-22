@@ -2481,7 +2481,7 @@
     },
     {
       "id": "A4.5.routes.request",
-      "title": "What a person types before Open, up to 20,000 characters with line breaks, quotes, other scripts and an emoji, is a note of theirs on the task at the click that the launch names, and reaches the agent through Tasks on every route that takes it: Claude Code's and Codex's terminal routes (the fake agent reads it with show --launch as its brief says, the same again, its first 8,000 characters with the rest in the note), Codex's assisted open, the claude-cli:// link, Claude Desktop and the Codex app (an agent's get_task, twice the same, its tool text whole); it is in no process's command line (Linux /proc, Windows' process table), no URL opened, no log line and no file outside the space; Copy puts the words on the clipboard and saves nothing",
+      "title": "What a person types before Open, up to 20,000 characters with line breaks, quotes, other scripts and an emoji, is a note of theirs on the task at the click that the launch names, and reaches the agent through TTasks on every route that takes it: Claude Code's and Codex's terminal routes (the fake agent reads it with show --launch as its brief says, the same again, its first 8,000 characters with the rest in the note), Codex's assisted open, the claude-cli:// link, Claude Desktop and the Codex app (an agent's get_task, twice the same, its tool text whole); it is in no process's command line (Linux /proc, Windows' process table), no URL opened, no log line and no file outside the space; Copy puts the words on the clipboard and saves nothing",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

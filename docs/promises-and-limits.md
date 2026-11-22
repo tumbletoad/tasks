@@ -127,10 +127,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   sources. Copy's words too long for it are kept as a note, never cut.
 - What you type before Open never goes on a command line or into a link. It is saved on the task
   at the click, as your request to that agent, before anything starts: a launch that fails or a
-  Tasks that stops does not lose it, and one undo takes it back. The agent reads it with the task.
+  TTasks that stops does not lose it, and one undo takes it back. The agent reads it with the task.
   When Open gets no answer, pressing it again, also after a reload or in another tab of the
   browser, saves the words once and opens the agent once. The browser keeps that for a day.
-- Tasks never changes another app's trust or approval settings.
+- TTasks never changes another app's trust or approval settings.
 
 ## Background runs
 
