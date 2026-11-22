@@ -14,7 +14,12 @@ const gate = vi.hoisted(() => {
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
-  return { held, release: () => release() };
+  return {
+    held,
+    release: () => {
+      release();
+    },
+  };
 });
 
 vi.mock("../src/mcp/offline.ts", async (importOriginal) => {
