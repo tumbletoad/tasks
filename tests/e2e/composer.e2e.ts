@@ -36,7 +36,11 @@ const rowOf = (page: Page, ref: string) => page.locator(`main li[data-task="${re
 const composerOf = (page: Page, ref: string) => rowOf(page, ref).locator('[data-part="composer"]');
 const stripOf = (page: Page, ref: string) =>
   rowOf(page, ref).getByRole("toolbar", { name: "Act on this task" });
+/** A session that opened: it runs, it ended, or the service cannot tell which. */
+const OPENED = ':is([data-state="opened"], [data-state="running"], [data-state="ended"])';
 const toast = (page: Page) => page.locator('[data-part="toast-text"]');
+/** What the page says when an Open got no answer. */
+const unanswered = `${APP_NAME} did not answer, so ${FAKE_INSTANCE.label} may be opening. Press Open again to be sure: it does not open twice.`;
 const notes = (page: Page, ref: string) =>
   rowOf(page, ref).locator('[data-entry="note"] [data-part="entry-text"]');
 /** What the person asked a session's agent, in its entry of the thread. */
@@ -50,7 +54,7 @@ const kept = (page: Page): Promise<Record<string, string>> =>
     for (const storage of [localStorage, sessionStorage]) {
       for (let i = 0; i < storage.length; i += 1) {
         const key = storage.key(i) ?? "";
-        if (/\.(draft|note|top|unsaved)\./u.test(key) && key.startsWith(prefix)) {
+        if (/\.(draft|note|top|unsaved|unanswered)\./u.test(key) && key.startsWith(prefix)) {
           found[key] = storage.getItem(key) ?? "";
         }
       }
@@ -190,10 +194,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     await page.route("**/api/v1/op/launch.open", (route) => route.abort());
     await composer.fill(`Pick the colour first (${tag})`);
     await open.click();
-    await expect(toast(page)).toHaveText(
-      `${APP_NAME} did not answer. Try again: the task still opens only once.`,
-      { timeout: SLOW_MS },
-    );
+    await expect(toast(page)).toHaveText(unanswered, { timeout: SLOW_MS });
     await expect(composer).toHaveValue(`Pick the colour first (${tag})`);
     await page.unroute("**/api/v1/op/launch.open");
 
@@ -228,6 +229,57 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
 });
 
 test.describe("[A7.3.12.request.e2e.thread] What a person types before Open is on the task at the click, in the thread with its session", () => {
+  test("an Open whose answer was lost after the service opened it keeps the text, and pressing it again, after a reload, is that Open: one launch, one request", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, { title: `Sort the post (${tag})`, area: "home" });
+    world.hold(ref);
+    await openTask(page, world, ref);
+    const composer = composerOf(page, ref);
+    const open = stripOf(page, ref).getByRole("button", {
+      name: `Open in ${FAKE_INSTANCE.label}`,
+    });
+    const opened = calls(page, "launch.open");
+    const before = world.terminal().length;
+    // The service saves the words and opens the agent, but its answer never reaches the page.
+    await page.route("**/api/v1/op/launch.open", async (route) => {
+      await route.fetch();
+      await route.abort();
+    });
+    const words = `The bills first (${tag})`;
+    await composer.fill(words);
+    await open.click();
+    await expect(toast(page)).toHaveText(unanswered, { timeout: SLOW_MS });
+    await expect(composer).toHaveValue(words);
+    await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
+    await page.unroute("**/api/v1/op/launch.open");
+    await expect(rowOf(page, ref).locator('[data-entry][data-state="running"]')).toBeVisible({
+      timeout: SLOW_MS,
+    });
+    // Its agent runs, and the page reloads: the button is still the Open that got no answer.
+    await page.reload();
+    await expect(composer).toHaveValue(words, { timeout: SLOW_MS });
+    await expect(open).toHaveAttribute("aria-disabled", "false");
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await stripOf(page, ref).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: test.info().outputPath(`open-unanswered-${scheme}.png`) });
+    }
+    await open.click();
+    await expect(composer).toHaveValue("", { timeout: SLOW_MS });
+    const ids = opened.map((r) => (r.postDataJSON() as { request_id?: string }).request_id);
+    expect(ids).toHaveLength(2);
+    expect(ids[1]).toBe(ids[0]);
+    expect(world.terminal()).toHaveLength(before + 1);
+    await expect(asked(page, ref)).toHaveCount(1);
+    await expect(asked(page, ref)).toContainText(words);
+    await expect(notes(page, ref)).toHaveCount(0);
+    expect(Object.keys(await kept(page))).toEqual([]);
+    world.release(ref);
+  });
+
   test("Open clears the field at once, here and in a second tab; the thread shows the request in the session's entry, also after a reload; the words go on no command line", async ({
     page,
     world,
@@ -258,7 +310,7 @@ test.describe("[A7.3.12.request.e2e.thread] What a person types before Open is o
     }
     await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
     expect(JSON.stringify(world.terminal().at(-1))).not.toContain("Only the ferns");
-    await expect(rowOf(page, ref).locator('[data-entry][data-state="confirmed"]')).toBeVisible({
+    await expect(rowOf(page, ref).locator(`[data-entry]${OPENED}`)).toBeVisible({
       timeout: SLOW_MS,
     });
     await page.reload();
@@ -300,7 +352,7 @@ test.describe("[A7.3.12.request.e2e.thread] What a person types before Open is o
     await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
     expect(opened[0]?.postDataJSON()).toMatchObject({ instance: FAKE_INSTANCE.key });
     expect(opened[0]?.postDataJSON()).not.toHaveProperty("text");
-    const confirmed = rowOf(page, ref).locator('[data-entry="session"][data-state="confirmed"]');
+    const confirmed = rowOf(page, ref).locator(`[data-entry="session"]${OPENED}`);
     await expect(confirmed.locator('[data-part="asked"]')).toContainText(words, {
       timeout: SLOW_MS,
     });
