@@ -94,6 +94,16 @@ const noReport = [
     message: REPORT_MESSAGE,
   },
 ];
+// On Windows a process started `detached` has no console, so each console program it starts
+// without windowsHide opens a window on the person's screen, a launched agent included. A test's
+// process stays attached there, or its disable comment says why nothing it starts can show one.
+const noConsoleless = [
+  {
+    selector: `CallExpression:matches([callee.name=${SPAWNERS}], [callee.property.name=${SPAWNERS}]) > ObjectExpression > Property[key.name='detached']:not([value.value=false]):not([value.operator='!=='][value.right.value='win32'])`,
+    message:
+      'A test\'s process started detached has no console on Windows, and each console program it starts opens a window. Use detached: process.platform !== "win32", or say in a disable comment why it starts none.',
+  },
+];
 const umaskImports = ["process", "node:process"].map((name) => ({
   name,
   importNames: ["umask"],
@@ -253,9 +263,23 @@ export default defineConfig([
     },
   },
   {
+    files: ["packages/testkit/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...noShell,
+        ...noTmpdir,
+        ...noAppData,
+        ...noUmask,
+        ...noReport,
+        ...noConsoleless,
+      ],
+    },
+  },
+  {
     files: TEST_FILES,
     rules: {
-      "no-restricted-syntax": ["error", ...noShell],
+      "no-restricted-syntax": ["error", ...noShell, ...noConsoleless],
       "no-restricted-imports": "off",
     },
   },

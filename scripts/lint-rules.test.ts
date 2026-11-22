@@ -70,6 +70,26 @@ describe("[A7.3.3.lint.custom-rules] the custom lint rules of A7 3.3", () => {
     expect(await messages(off, SOURCE)).toEqual([]);
   });
 
+  test("a test's process may not start without a console on Windows", async () => {
+    // The fake terminal that started the shim detached, so its agent opened a window.
+    const shim =
+      'import process from "node:process";\nimport { spawn } from "node:child_process";\nspawn(process.execPath, ["bin.ts", "shim"], { stdio: "ignore", windowsHide: true, detached: true });\n';
+    const helper = "packages/testkit/src/fakes/probe.js";
+    for (const path of [TEST, "tests/e2e/probe.js", helper]) {
+      expect(await messages(shim, path), path).toEqual([
+        expect.stringMatching(/^no-restricted-syntax: A test's process started detached/),
+      ]);
+    }
+    const member =
+      'import process from "node:process";\nimport cp from "node:child_process";\ncp.spawn("x", [], { detached: process.platform === "win32" });\n';
+    expect(await messages(member, TEST)).toEqual([expect.stringMatching(/^no-restricted-syntax/)]);
+    const attached =
+      'import process from "node:process";\nimport { spawn } from "node:child_process";\nspawn("x", [], { detached: process.platform !== "win32" });\nspawn("x", [], { detached: false });\n';
+    expect(await messages(attached, TEST)).toEqual([]);
+    expect(await messages(attached, helper)).toEqual([]);
+    expect(await messages(shim, SOURCE)).toEqual([]);
+  });
+
   test("spawning a .cmd or .bat file is refused", async () => {
     const direct = 'import { spawn } from "node:child_process";\nspawn("pnpm.cmd", ["i"]);\n';
     const member = 'import cp from "node:child_process";\ncp.execFileSync("run.BAT", []);\n';
