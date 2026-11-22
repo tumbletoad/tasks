@@ -1,5 +1,4 @@
 // Whether `pnpm verify` runs the M0 lab self-tests (the "lab" Vitest project, spikes/).
-// The rule: A7 3.3, "Lab tests in pnpm verify".
 //
 // The product tests always run. The lab tests run when
 //   1. `--lab` is given or TTASKS_VERIFY_LAB=1 is set,
@@ -12,7 +11,7 @@
 //   - GitHub Actions, pull_request: the merge commit's first parent, which is the tip of the base
 //     branch the pull request was merged onto for this run (or the event's base SHA when HEAD is
 //     not a merge commit and that commit is present).
-//   - GitHub Actions, push: the first parent of HEAD.
+//   - GitHub Actions, push: the commit the ref pointed at before, from the event.
 //   - Locally: the merge base of HEAD and origin/main, so a branch behind main is judged on its
 //     own changes only.
 // Uncommitted and untracked files count as changes.
@@ -20,17 +19,18 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { repoRoot } from "./run.ts";
 
-/** Folders whose files are lab code. */
-const LAB_FOLDERS = ["spikes/"];
+/** Folders the lab tests load: lab code, and the stand-ins the shared setup puts on PATH. */
+const LAB_FOLDERS = ["spikes/", "packages/testkit/stand-ins/"];
 
 /**
- * Files outside spikes/ that the lab tests depend on: the test configuration, the verify scripts,
- * the TypeScript settings, the dependencies and Node pin, the files the packaging spike copies
- * into a version folder, and the CI workflows. The lockfile is on the list because a lab test
- * checks the Node runtime digests against it.
+ * Files outside spikes/ that the lab tests depend on: the test configuration and the setup file
+ * it runs in every worker, the verify scripts, the TypeScript settings, the dependencies and Node
+ * pin, the files the packaging spike copies into a version folder, and the CI workflows. The
+ * lockfile is on the list because a lab test checks the Node runtime digests against it.
  */
 const LAB_SHARED_FILES = [
   "vitest.config.ts",
+  "packages/testkit/src/setup.ts",
   "scripts/verify.ts",
   "scripts/lab-tests.ts",
   "scripts/run.ts",
@@ -67,14 +67,59 @@ export interface LabDecision {
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
+/**
+ * A slice of verify, so CI can spread it over several machines: the static checks, the product
+ * tests or the lab tests. Together the parts are every step.
+ */
+export const VERIFY_PARTS = ["checks", "product", "lab"] as const;
+export type VerifyPart = (typeof VERIFY_PARTS)[number];
+
+export interface VerifyOptions {
+  lab: boolean;
+  /** Null runs every part. */
+  part: VerifyPart | null;
+  /** Vitest's `index/count`, for the product or lab part. */
+  shard: string | null;
+}
+
 /** The verify options. Throws on an argument it does not know, so a typo never skips anything. */
-export function parseVerifyArgs(args: readonly string[]): { lab: boolean } {
-  let lab = false;
-  for (const arg of args) {
-    if (arg === "--lab") lab = true;
-    else if (arg !== "--") throw new Error(`unknown argument ${JSON.stringify(arg)}. Use --lab.`);
+export function parseVerifyArgs(args: readonly string[]): VerifyOptions {
+  const options: VerifyOptions = { lab: false, part: null, shard: null };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--") continue;
+    if (arg === "--lab") {
+      options.lab = true;
+    } else if (arg === "--part") {
+      const value = args[++i] ?? "";
+      const part = VERIFY_PARTS.find((p) => p === value);
+      if (part === undefined) {
+        throw new Error(
+          `--part takes one of ${VERIFY_PARTS.join(", ")}, not ${JSON.stringify(value)}`,
+        );
+      }
+      if (options.part !== null && options.part !== part) {
+        throw new Error(`--part is given twice: ${options.part} and ${part}`);
+      }
+      options.part = part;
+    } else if (arg === "--shard") {
+      const value = args[++i] ?? "";
+      const m = /^([1-9]\d*)\/([1-9]\d*)$/.exec(value);
+      if (m === null || Number(m[1]) > Number(m[2])) {
+        throw new Error(`--shard takes index/count, such as 1/4, not ${JSON.stringify(value)}`);
+      }
+      if (options.shard !== null && options.shard !== value) {
+        throw new Error(`--shard is given twice: ${options.shard} and ${value}`);
+      }
+      options.shard = value;
+    } else {
+      throw new Error(`unknown argument ${JSON.stringify(arg)}. Use --lab, --part or --shard.`);
+    }
   }
-  return { lab };
+  if (options.shard !== null && options.part !== "product" && options.part !== "lab") {
+    throw new Error("--shard needs --part product or --part lab");
+  }
+  return options;
 }
 
 const MAX_LISTED = 5;
