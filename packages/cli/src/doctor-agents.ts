@@ -318,7 +318,12 @@ export async function agentChecks(
                 status: "skip",
                 detail: "No service: the bridge's round trip needs it.",
               }
-            : await bridgeCheck(io, view, resolve),
+            : await bridgeCheck(
+                io,
+                view,
+                resolve,
+                options.agents?.bridgeProbeMs ?? BRIDGE_PROBE_MS,
+              ),
         );
       }
       if (view.home.app === "claude-desktop" && view.state === "registered") {
@@ -943,6 +948,7 @@ async function bridgeCheck(
   io: Io,
   view: HomeView,
   resolve: (argv: readonly string[]) => readonly string[],
+  probeMs: number,
 ): Promise<Check> {
   const id = `bridge.${view.home.instance}`;
   const argv = resolve(view.record?.entry_argv ?? []);
@@ -952,7 +958,7 @@ async function bridgeCheck(
     detail: `${name(view)}: the entry's command ${why}. Run: ${CLI_NAME} doctor again once the service runs; if it stays, run ${CLI_NAME} setup agents --remove, then ${CLI_NAME} setup agents`,
   });
   const legacy = async (): Promise<Check | number> => {
-    const bridge = probe(argv, io.env, io.cwd, BRIDGE_PROBE_MS);
+    const bridge = probe(argv, io.env, io.cwd, probeMs);
     // An answer missing because the deadline ended the probe is a probe out of time.
     const fail = (why: string) => failed(bridge.timedOut() ? "did not answer in time" : why);
     try {
@@ -988,7 +994,7 @@ async function bridgeCheck(
     }
   };
   const modern = async (): Promise<boolean> => {
-    const bridge = probe(argv, io.env, io.cwd, BRIDGE_PROBE_MS);
+    const bridge = probe(argv, io.env, io.cwd, probeMs);
     try {
       const discovered = await bridge.request("server/discover", MODERN_META);
       return isMessage(discovered?.["result"]);

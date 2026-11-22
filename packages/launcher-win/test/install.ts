@@ -17,9 +17,17 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Launchers } from "../src/build.ts";
+import { builtOnce } from "../../../tests/run-builds.ts";
+import { buildLaunchers, type Launchers } from "../src/build.ts";
 
 export const windows = process.platform === "win32";
+
+/**
+ * The release build of the launchers, or the build with the test hooks, made once per test run
+ * (tests/run-builds.ts). Read-only: a test copies them where it runs them.
+ */
+export const runLaunchers = (kind: "release" | "hooks"): Promise<Launchers> =>
+  builtOnce(`launchers-${kind}`, (dir) => buildLaunchers(dir, { testHooks: kind === "hooks" }));
 
 const stubEntry = join(dirname(fileURLToPath(import.meta.url)), "stub", "ttasks.mjs");
 

@@ -3,8 +3,9 @@
 // repairs to a complete version"). Windows only: on Linux and macOS the stable command is a link
 // to `current/bin/ttasks` that no update replaces, and a journal lists no launcher.
 //
-// Two versions built as the install scripts' tests build them, the second one's launchers made to
-// differ from the first's (tests/update/installed.ts), so an update swaps both. Each round:
+// The run's two versions, the second one's launchers made to differ from the first's
+// (tests/update/installed.ts), so an update swaps both. One file per stable launcher
+// (launchers-*.test.ts), each with its own install, so the two run side by side. Each round:
 //   1. the install is one complete version, its service runs under the supervisor (bin\ttasksw.exe,
 //      started as the Run value starts it) and an agent's bridge runs from bin\ttasks.exe, so both
 //      stable launchers run and Windows refuses to replace either: each swap takes two renames;
@@ -21,116 +22,109 @@
 //      the service runs it and the stable command runs. Before the switch that is the old version,
 //      from it on the new one. A supervisor that started from the old ttasksw.exe hands over to the
 //      new one.
-// The candidate's self-test is M6.12's and runs in installed.test.ts; here a stand-in passes it.
+// The candidate's self-test is M6.12's and runs in installed*.test.ts; here a stand-in passes it.
 //
 // Nothing here touches a real install, autostart place, PATH or shell profile, and every process
 // it stops is one it started or one this install's service.json names.
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { readJournal } from "../../packages/service/src/version/journal.ts";
 import { currentVersion } from "../../packages/service/src/version/switch.ts";
 import { runProgram, runsElevated } from "../../scripts/install/test/kit.ts";
-import { openInstalled, windows, type Installed } from "./installed.ts";
+import { installedForFile, windows, type Installed } from "./installed.ts";
 
-/** Builds, an install script run and many service starts: a slow runner gets room. */
-const SLOW = 900_000;
 const ROUNDS = 2_400_000;
 
-const CONSOLE = `${PRODUCT_ID}.exe`;
-const GUI = `${PRODUCT_ID}w.exe`;
+export const CONSOLE = `${PRODUCT_ID}.exe`;
+export const GUI = `${PRODUCT_ID}w.exe`;
 const LAUNCHERS = [CONSOLE, GUI] as const;
 const POINTS = ["staged", "aside", "placed"] as const;
 const ENTRIES = ["stable command", "supervisor"] as const;
 
-// Its service refuses an elevated token (exit 64): skipped in an elevated process (kit.ts).
-describe.runIf(windows && !runsElevated())(
-  "[A2.3.12.6.update.launchers] an updater killed between the renames and the copy of each stable launcher: the next start repairs to a complete version",
-  () => {
-    let w: Installed;
+/** The rounds of the stable launcher `name`, as one test of a file of their own. */
+export function launcherRounds(name: (typeof LAUNCHERS)[number]): void {
+  // Its service refuses an elevated token (exit 64): skipped in an elevated process (kit.ts).
+  const runs = windows && !runsElevated();
+  const install = installedForFile("launchers", { distinctLaunchers: true, skip: !runs });
+  describe.runIf(runs)(
+    "[A2.3.12.6.update.launchers] an updater killed between the renames and the copy of each stable launcher: the next start repairs to a complete version",
+    () => {
+      let w: Installed;
+      const bin = (name: string) => join(w.root, "bin", name);
+      const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      const ended = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
+      const waitEnded = async (child: ChildProcess, label: string) => {
+        const end = Date.now() + 60_000;
+        while (!ended(child)) {
+          if (Date.now() > end) throw new Error(`${label} did not end`);
+          await pause(50);
+        }
+      };
 
-    beforeAll(async () => {
-      w = await openInstalled("launchers", { distinctLaunchers: true });
-    }, SLOW);
+      /** An agent's MCP bridge from the stable command: bin\ttasks.exe runs while it lives. */
+      const startBridge = (): ChildProcess => {
+        const bridge = spawn(w.stable, ["mcp"], {
+          env: w.env(),
+          stdio: ["pipe", "ignore", "ignore"],
+          windowsHide: true,
+        });
+        w.started.push(bridge);
+        return bridge;
+      };
 
-    afterAll(async () => {
-      await w.close();
-    }, SLOW);
-
-    const bin = (name: string) => join(w.root, "bin", name);
-    const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-    const ended = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
-    const waitEnded = async (child: ChildProcess, label: string) => {
-      const end = Date.now() + 60_000;
-      while (!ended(child)) {
-        if (Date.now() > end) throw new Error(`${label} did not end`);
-        await pause(50);
-      }
-    };
-
-    /** An agent's MCP bridge from the stable command: bin\ttasks.exe runs while it lives. */
-    const startBridge = (): ChildProcess => {
-      const bridge = spawn(w.stable, ["mcp"], {
-        env: w.env(),
-        stdio: ["pipe", "ignore", "ignore"],
-        windowsHide: true,
-      });
-      w.started.push(bridge);
-      return bridge;
-    };
-
-    /** Stops the bridge and the service; a supervisor ends with its service's exit 0. */
-    const stopAll = async (bridge: ChildProcess | undefined, label: string) => {
-      if (bridge !== undefined && !ended(bridge)) {
-        bridge.kill("SIGKILL");
-        await waitEnded(bridge, `${label}: the bridge`);
-      }
-      await w.stopService();
-    };
-
-    /**
-     * The next start through `entry`. When the kill left that launcher missing it cannot start:
-     * then the other one runs first, for an ordinary command (`version`), and puts it back from the
-     * version current names (its sibling repair, before the service or any repair of Node's has
-     * run). Returns the supervisor's process when the start went through the supervisor.
-     */
-    const nextStart = async (
-      entry: (typeof ENTRIES)[number],
-      label: string,
-    ): Promise<ChildProcess | undefined> => {
-      const name = entry === "supervisor" ? GUI : CONSOLE;
-      const sibling = name === CONSOLE ? GUI : CONSOLE;
-      expect(existsSync(bin(name)) || existsSync(bin(sibling)), `${label}: both missing`).toBe(
-        true,
-      );
-      if (!existsSync(bin(name))) {
-        const current = currentVersion(w.root, process.platform) ?? "";
-        const ran = runProgram(bin(sibling), ["version"]);
-        expect(ran.status, `${label}: ${sibling} version`).toBe(0);
-        expect(ran.stderr, `${label}: the sibling repair says so`).toMatch(
-          new RegExp(`put .*${name.replace(".", "\\.")} back from versions`),
-        );
-        expect(
-          readFileSync(bin(name)).equals(
-            readFileSync(join(w.root, "versions", current, "bin", name)),
-          ),
-          `${label}: ${name} put back as ${current}'s`,
-        ).toBe(true);
-      }
-      if (entry === "supervisor") return await w.startSupervisor();
-      await w.startService();
-      return undefined;
-    };
-
-    test(
-      "each launcher killed staged, renamed aside and renamed in, then started again through the stable command and through the supervisor",
-      async () => {
-        const outcomes: string[] = [];
-        let from = await w.ensureService();
+      /** Stops the bridge and the service; a supervisor ends with its service's exit 0. */
+      const stopAll = async (bridge: ChildProcess | undefined, label: string) => {
+        if (bridge !== undefined && !ended(bridge)) {
+          bridge.kill("SIGKILL");
+          await waitEnded(bridge, `${label}: the bridge`);
+        }
         await w.stopService();
-        for (const name of LAUNCHERS) {
+      };
+
+      /**
+       * The next start through `entry`. When the kill left that launcher missing it cannot start:
+       * then the other one runs first, for an ordinary command (`version`), and puts it back from the
+       * version current names (its sibling repair, before the service or any repair of Node's has
+       * run). Returns the supervisor's process when the start went through the supervisor.
+       */
+      const nextStart = async (
+        entry: (typeof ENTRIES)[number],
+        label: string,
+      ): Promise<ChildProcess | undefined> => {
+        const name = entry === "supervisor" ? GUI : CONSOLE;
+        const sibling = name === CONSOLE ? GUI : CONSOLE;
+        expect(existsSync(bin(name)) || existsSync(bin(sibling)), `${label}: both missing`).toBe(
+          true,
+        );
+        if (!existsSync(bin(name))) {
+          const current = currentVersion(w.root, process.platform) ?? "";
+          const ran = runProgram(bin(sibling), ["version"]);
+          expect(ran.status, `${label}: ${sibling} version`).toBe(0);
+          expect(ran.stderr, `${label}: the sibling repair says so`).toMatch(
+            new RegExp(`put .*${name.replace(".", "\\.")} back from versions`),
+          );
+          expect(
+            readFileSync(bin(name)).equals(
+              readFileSync(join(w.root, "versions", current, "bin", name)),
+            ),
+            `${label}: ${name} put back as ${current}'s`,
+          ).toBe(true);
+        }
+        if (entry === "supervisor") return await w.startSupervisor();
+        await w.startService();
+        return undefined;
+      };
+
+      test(
+        `${name} killed staged, renamed aside and renamed in, then started again through the stable command and through the supervisor`,
+        async () => {
+          w = install();
+          const outcomes: string[] = [];
+          let from = await w.ensureService();
+          await w.stopService();
           for (const point of POINTS) {
             for (const entry of ENTRIES) {
               const label = `${point}:${name}, next start through the ${entry}`;
@@ -197,10 +191,10 @@ describe.runIf(windows && !runsElevated())(
               from = now;
             }
           }
-        }
-        expect(outcomes).toHaveLength(LAUNCHERS.length * POINTS.length * ENTRIES.length);
-      },
-      ROUNDS,
-    );
-  },
-);
+          expect(outcomes).toHaveLength(POINTS.length * ENTRIES.length);
+        },
+        ROUNDS,
+      );
+    },
+  );
+}

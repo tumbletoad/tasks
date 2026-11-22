@@ -101,6 +101,17 @@ export const READS: readonly { changed: string; tests: readonly string[] }[] = [
   { changed: ".dependency-cruiser.cjs", tests: ["scripts/dependency-rules.test.ts"] },
   { changed: "packages/launcher-win/src/**", tests: ["packages/launcher-win/test/*.test.ts"] },
   { changed: "scripts/install/**", tests: ["scripts/install/*.test.ts"] },
+  // The run's shared builds: vitest.config.ts names the setup as a string, and every file that
+  // takes a build reaches it only through a kit.
+  {
+    changed: "tests/run-builds*.ts",
+    tests: [
+      "tests/run-builds.test.ts",
+      "tests/update/*.test.ts",
+      "scripts/install/*.test.ts",
+      "packages/launcher-win/test/*.test.ts",
+    ],
+  },
   {
     changed: "fixtures/streams/**",
     tests: [
@@ -112,20 +123,23 @@ export const READS: readonly { changed: string; tests: readonly string[] }[] = [
 ];
 
 /**
- * Files that take 40 s or more alone on a quiet desktop, so that any one of them fills the check's
- * minute. They are left to CI unless `--slow` is given, and still run when they changed themselves
- * or when a changed file lies under their `home`: there they are the test of what changed.
- * Longest first: a checkout with no recorded durations starts them in this order.
+ * Files that take 30 s or more in a full run on the desktop, so that a few of them fill the
+ * check's minute. They are left to CI unless `--slow` is given, and still run when they changed
+ * themselves or when a changed file lies under their `home`: there they are the test of what
+ * changed. Longest first: a checkout with no recorded durations starts them in this order.
  */
 export const SLOW: readonly { test: string; home?: string }[] = [
-  { test: "tests/update/installed.test.ts", home: "tests/update/" },
-  { test: "scripts/install/install.test.ts", home: "scripts/install/" },
-  { test: "packages/projection/test/model.test.ts" },
-  { test: "packages/cli/test/doctor-agents.test.ts" },
-  { test: "packages/storage/test/bundle.test.ts" },
-  { test: "tests/update/launchers.test.ts", home: "tests/update/" },
-  { test: "packages/launch/test/machine.prop.test.ts" },
   { test: "packages/service/test/launch-shim.test.ts" },
+  { test: "tests/update/installed-repair.test.ts", home: "tests/update/" },
+  { test: "tests/update/launchers-console.test.ts", home: "tests/update/" },
+  { test: "tests/update/installed-kill-service-after.test.ts", home: "tests/update/" },
+  { test: "tests/update/installed-kill-updater-after.test.ts", home: "tests/update/" },
+  { test: "packages/cli/test/doctor-agents.test.ts" },
+  { test: "tests/update/launchers-gui.test.ts", home: "tests/update/" },
+  { test: "scripts/install/install-replace.test.ts", home: "scripts/install/" },
+  { test: "scripts/install/install-tamper.test.ts", home: "scripts/install/" },
+  { test: "scripts/install/install-finish.test.ts", home: "scripts/install/" },
+  { test: "tests/update/installed-kill-service-before.test.ts", home: "tests/update/" },
 ];
 
 export interface Selection {
@@ -306,7 +320,7 @@ export function select(
   changed: readonly string[],
   repo: Repo,
   set: TestSet,
-  options: { slow: boolean },
+  options: { slow: boolean; slowFiles?: typeof SLOW },
 ): Selection {
   const tests = new Set(set.tests);
   const reached = new Set<string>();
@@ -353,7 +367,7 @@ export function select(
   const run: string[] = [];
   const deferred: string[] = [];
   for (const test of [...selected].sort()) {
-    const slow = SLOW.find((s) => s.test === test);
+    const slow = (options.slowFiles ?? SLOW).find((s) => s.test === test);
     const now =
       options.slow ||
       slow === undefined ||

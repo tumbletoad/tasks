@@ -48,6 +48,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.3.run-builds.once",
+      "title": "a build the test run shares is built once and never again while files use it, also when the first builder publishes between another caller's look and its lock",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.3.check.budget",
       "title": "pnpm check runs the closest tests that fit its budget when a change's tests are over it: the edited test files, then the tests that use a changed file, shortest first",
       "owner": "M0",

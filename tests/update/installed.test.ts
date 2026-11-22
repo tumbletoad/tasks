@@ -1,177 +1,45 @@
 // The updater with real builds, a real install and real processes (A7 3.13 M6.12's Verify line):
-// two versions built offline as the install scripts' tests build them (the real bundles and
-// launchers, the Node that runs the tests as the runtime), both trusting a throwaway key made
-// here, released and signed with it; the older one installed by its install script into a
-// temporary TTASKS_HOME of this file's own; its service run through the install's stable command
-// (tests/update/installed.ts). On Windows the two versions' launchers differ, so every update
-// here also swaps both stable launchers (A7 3.13 M6.13).
+// the run's two versions (installed.ts), the older one installed into a temporary TTASKS_HOME of
+// this file's own and its service run through the install's stable command. On Windows the two
+// versions' launchers differ, so every update here also swaps both stable launchers (A7 3.13
+// M6.13). The kills at every journal step are in installed-kill-*.test.ts, the repair's in
+// installed-repair.test.ts.
 //
-//   kill      An updater child (tests/update/child.ts, the updater from source with one step armed)
-//             is stopped at every journal step; then either it is killed, or the service is killed
-//             and the updater goes on. Then the service starts again through the stable command,
-//             and the install must be the complete old or the complete new version: current names
-//             one, its folder matches its manifest, no journal or staging folder is left, the
-//             Windows launchers are that version's, and the service names that version. A repair
-//             killed at each of its own steps is finished by the next start; a running service
-//             finishes an update whose updater died within its 10 s check. A bridge (an agent's
-//             session) started before an update keeps running through it and answers after it.
+//   bridge    A bridge (an agent's session) started before an update keeps running through it and
+//             answers after it.
 //   command   `ttasks update --from`, `--rollback` and `--repair` through the installed stable
 //             command, with no service running (a restart through the OS is the injected seam's,
-//             exercised above with its stand-in): a second update waits for the first, and the
-//             data folders are byte-identical before and after an update and after a rollback.
+//             exercised in the kill rounds with its stand-in): a second update waits for the
+//             first, and the data folders are byte-identical before and after an update and after
+//             a rollback.
 //
 // Nothing here touches a real install, autostart place, PATH or shell profile, and every process
 // it stops is one it started: the services this install's service.json names, the children.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe as suite, expect, test } from "vitest";
-import { readServiceRecord } from "../../packages/service/src/install/context.ts";
+import { describe as suite, expect, test } from "vitest";
 import { currentVersion, readInstallRecord } from "../../packages/service/src/version/switch.ts";
 import { createSpace, newId } from "../../packages/storage/src/index.ts";
 import { checkedDriver } from "../../packages/testkit/src/index.ts";
 import { runProgram, runsElevated, snapshot } from "../../scripts/install/test/kit.ts";
-import { openInstalled, type Installed } from "./installed.ts";
+import { installedForFile, SLOW } from "./installed.ts";
 
 /**
  * Every test here runs the installed service, which refuses an elevated token (exit 64): skipped
- * in an elevated process, where nothing of the file runs, its builds included (kit.ts).
+ * in an elevated process, where nothing of the file runs, its install included (kit.ts).
  */
-const describe = suite.skipIf(runsElevated());
-/** Builds, an install script run and many service starts: a slow runner gets room. */
-const SLOW = 900_000;
-const ROUNDS = 2_400_000;
-
-let w: Installed;
-
-beforeAll(async () => {
-  w = await openInstalled("update", { distinctLaunchers: true });
-}, SLOW);
-
-afterAll(async () => {
-  await w.close();
-}, SLOW);
+const elevated = runsElevated();
+const describe = suite.skipIf(elevated);
+const install = installedForFile("update", { distinctLaunchers: true, skip: elevated });
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** The update's journal steps a kill is tested at (the launcher swap only when launchers change). */
-const POINTS = [
-  "locked",
-  "prepared",
-  "unpacked",
-  "placed",
-  "tested",
-  "staged",
-  "current",
-  "switched",
-  "launchers_done",
-  "recorded",
-  "restarted",
-  "done",
-] as const;
-
 describe("[A2.3.12.6.update.kill] a kill at each journal step, of the updater or of the service, ends on the complete old or new version after the next start", () => {
-  test(
-    "the updater killed at each step, then the service started again",
-    async () => {
-      await w.ensureService();
-      const outcomes: string[] = [];
-      for (const point of POINTS) {
-        const from = await w.expectComplete(`before ${point}`);
-        const run = await w.runChild("update", {
-          archive: w.archiveOf(w.other(from)),
-          arm: point,
-          mode: "updater",
-        });
-        expect(run.armed, `${point}: reached`).toBe(true);
-        // The next start: the service is stopped (if the kill left it running) and started again,
-        // and its start-up repair finishes or rolls back what the updater left.
-        await w.stopService();
-        await w.startService();
-        const ended = await w.expectComplete(`updater killed at ${point}`);
-        outcomes.push(`${point}: ${from === ended ? "old" : "new"}`);
-      }
-      // Before the switch nothing is done; from it on, the new version is complete.
-      expect(outcomes).toEqual(
-        POINTS.map((p) => `${p}: ${POINTS.indexOf(p) < POINTS.indexOf("current") ? "old" : "new"}`),
-      );
-    },
-    ROUNDS,
-  );
-
-  test(
-    "the service killed at each step while the updater goes on",
-    async () => {
-      await w.ensureService();
-      for (const point of POINTS) {
-        const from = await w.expectComplete(`before ${point}`);
-        const run = await w.runChild("update", {
-          archive: w.archiveOf(w.other(from)),
-          arm: point,
-          mode: "service",
-        });
-        expect(run.armed, `${point}: reached`).toBe(true);
-        await w.ensureService();
-        const ended = await w.expectComplete(`service killed at ${point}`);
-        // The updater lived and finished, bringing back the service it found running; except when
-        // the service it had just restarted on the new version died before its handshake: then it
-        // waited its 30 s and rolled back (A2 3.12.6 step 13). A supervisor would have restarted it.
-        expect(ended, `${point}: ${JSON.stringify(run.lines.at(-1))}`).toBe(
-          point === "restarted" ? from : w.other(from),
-        );
-      }
-    },
-    ROUNDS,
-  );
-
-  test(
-    "a repair killed at each of its steps is finished by the next start; a running service finishes an update whose updater died",
-    async () => {
-      await w.ensureService();
-      for (const point of [
-        "repair:decided",
-        "repair:current",
-        "repair:launchers",
-        "repair:record",
-      ]) {
-        const from = await w.expectComplete(`before ${point}`);
-        // An update cut off after its switch, with no service to repair it...
-        await w.stopService();
-        await w.runChild("update", {
-          archive: w.archiveOf(w.other(from)),
-          arm: "switched",
-          mode: "updater",
-        });
-        // ...a repair killed at `point`...
-        const run = await w.runChild("repair", { arm: point, mode: "updater" });
-        expect(run.armed, `${point}: reached`).toBe(true);
-        // ...and the next start.
-        await w.startService();
-        expect(await w.expectComplete(`repair killed at ${point}`)).toBe(w.other(from));
-      }
-      // The updater dies after the switch while the old service runs: within its 10 s check the
-      // service finishes the update, then exits 75 for its manager to start the new version.
-      const from = await w.expectComplete("before the running service's repair");
-      const before = readServiceRecord(w.state)?.pid ?? 0;
-      await w.runChild("update", {
-        archive: w.archiveOf(w.other(from)),
-        arm: "switched",
-        mode: "updater",
-      });
-      await w.waitGone(before, 30_000);
-      expect(existsSync(join(w.state, "update.json"))).toBe(false);
-      expect(currentVersion(w.root, process.platform)).toBe(w.other(from));
-      const log = readFileSync(join(w.state, "logs", "service.log"), "utf8");
-      expect(log).toMatch(/"update\.repaired"/);
-      await w.startService();
-      expect(await w.expectComplete("after the running service's repair")).toBe(w.other(from));
-    },
-    ROUNDS,
-  );
-
   test(
     "a session's bridge started before an update keeps running through the restart and answers after it",
     async () => {
+      const w = install();
       await w.ensureService();
       const from = await w.expectComplete("before the session");
       const bridge = spawn(w.stable, ["mcp"], {
@@ -258,6 +126,7 @@ describe("[A2.3.12.6.update.installed] ttasks update through the installed stabl
   test(
     "--from, a second update that waits, --rollback and --repair, with the data folders byte-identical",
     async () => {
+      const w = install();
       // A fixture space (creating one through the CLI needs a person at a terminal), and the
       // service's own files in state from a run; then the service stops, so the update restarts
       // nothing through the OS.

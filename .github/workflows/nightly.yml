@@ -1,8 +1,9 @@
 name: nightly
 
-# A7 3.18.4's nightly job, on main. M1.07 brings its first part: the 30-minute crash run per OS
-# (pnpm crash, tests/crash/harness.ts). The long property and model runs, the scale bench,
-# relative performance and the fallback-driver suite join with the steps that build them.
+# A7 3.18.4's nightly job, on main: the 30-minute crash run per OS (pnpm crash,
+# tests/crash/harness.ts), and the deep runs of the property and model tests that every check runs
+# smaller. Relative performance and the fallback-driver suite join with the steps that build them.
+# A failure opens an issue, or comments on the one still open (the report job).
 on:
   schedule:
     - cron: "17 2 * * *"
@@ -40,3 +41,67 @@ jobs:
       # A violation fails the job and prints the seed, the round, the kill and the invariant,
       # and the command that replays it.
       - run: pnpm crash --minutes 30
+
+  # The tests that run deeper with TTASKS_DEEP=1: the projection model's 2,000-run soak (its
+  # failure prints the seed and path that become a counterexample), the launch state machine at
+  # 50,000 runs in memory and 300 on the database, and the bundle stress corpus at full size.
+  deep:
+    name: deep (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # The soak must make all its runs within 60 minutes (model-replay.test.ts), or it fails. Run
+    # 45021261026 made its 2,000 in 30 minutes on windows-2025 (the job 31) and 6 on ubuntu-24.04.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    env:
+      TTASKS_DEEP: "1"
+      DEEP_TESTS: >-
+        packages/projection/test/model-replay.test.ts
+        packages/launch/test/machine.prop.test.ts
+        packages/storage/test/bundle.test.ts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      # Linux under umask 002, as check.yml runs verify and for its reason: the default of a
+      # desktop with user private groups, where every file a person or a test makes is
+      # group-writable.
+      - if: runner.os == 'Linux'
+        run: umask 002 && pnpm exec vitest run --project product $DEEP_TESTS
+      - if: runner.os != 'Linux'
+        shell: bash
+        run: pnpm exec vitest run --project product $DEEP_TESTS
+
+  # A failed night is told in one open issue, so it is seen before the next release: a new issue,
+  # or a comment on the one still open.
+  report:
+    needs: [crash, deep]
+    if: ${{ failure() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly run failed"
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+            --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)
+          body="The nightly run of $(date -u +%Y-%m-%d) failed: $RUN"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

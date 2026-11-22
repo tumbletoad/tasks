@@ -1,26 +1,19 @@
-// A real test install for the updater's tests with real builds (installed.test.ts,
-// launchers.test.ts): two versions built offline as the install scripts' tests build them (the
-// real bundles and launchers, the Node that runs the tests as the runtime), both trusting a
-// throwaway key made here, released and signed with it; the older one installed by its install
-// script into a temporary TTASKS_HOME of the caller's own; its service run through the install's
-// stable command or its supervisor; and the updater child (child.ts) run against it.
+// A real test install for the updater's tests with real builds (installed-*.test.ts,
+// launchers-*.test.ts, restart.test.ts): the run's two versions, built offline once per test run
+// as the install scripts' tests build them (runVersions: the real bundles and launchers, the Node
+// that runs the tests as the runtime, both trusting a throwaway key that signed their releases);
+// the older one installed by its install script into a temporary TTASKS_HOME of the caller's own;
+// its service run through the install's stable command or its supervisor; and the updater child
+// (child.ts) run against it.
 //
 // Nothing here touches a real install, autostart place, PATH or shell profile, and every process
 // it stops is one it started or one this install's service.json names. Tests only. Nothing is
 // created when this module loads: openInstalled() does it, from a test's beforeAll.
 import { spawn, type ChildProcess } from "node:child_process";
-import {
-  appendFileSync,
-  existsSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect } from "vitest";
+import { afterAll, beforeAll, expect } from "vitest";
 import { PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { canonicalStatePath, installId } from "../../packages/service/src/hub/paths.ts";
 import {
@@ -29,23 +22,16 @@ import {
   readServiceRecord,
   shutdownService,
 } from "../../packages/service/src/install/context.ts";
-import {
-  checkVersionFolder,
-  writeVersionManifest,
-} from "../../packages/service/src/version/folder.ts";
+import { checkVersionFolder } from "../../packages/service/src/version/folder.ts";
 import { currentVersion } from "../../packages/service/src/version/switch.ts";
-import { buildWeb } from "../../packages/web/build.ts";
-import { repoRoot } from "../../scripts/run.ts";
 import {
   HOME_VAR,
   installEnv,
   installsFolder,
-  offlineVersionFolder,
-  releaseOf,
   runInstaller,
   runProgram,
+  runVersions,
   stableCommand,
-  throwawayKey,
   type Release,
 } from "../../scripts/install/test/kit.ts";
 import { keyLine } from "./fixture.ts";
@@ -72,33 +58,9 @@ export interface OpenOptions {
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Windows: makes a version folder's launchers differ from another build's of the same source: a
- * mark appended after the image, which the loader ignores, and the manifest written again so it
- * lists the folder exactly. The launchers' code is the release build's, unchanged.
- */
-function distinctLaunchers(folder: string, mark: string): void {
-  for (const exe of [`${PRODUCT_ID}.exe`, `${PRODUCT_ID}w.exe`]) {
-    appendFileSync(join(folder, "bin", exe), `\0launcher ${mark}\0`);
-  }
-  const manifest = JSON.parse(readFileSync(join(folder, "manifest.json"), "utf8")) as Record<
-    string,
-    unknown
-  >;
-  rmSync(join(folder, "manifest.json"));
-  writeVersionManifest(folder, {
-    version: String(manifest["version"]),
-    build: String(manifest["build"]),
-    platform: String(manifest["platform"]),
-    node: String(manifest["node"]),
-    sqlite: String(manifest["sqlite"]),
-    protocol: manifest["protocol"] as { min: number; max: number },
-  });
-}
-
-/**
- * Builds both versions, releases them and installs the first one. Call it from a beforeAll. When
- * that fails, its folder is removed before the error is thrown: the caller then has nothing to
- * close.
+ * Installs the first of the run's two versions (runVersions, built once per test run) into a
+ * folder of the caller's own. Call it from a beforeAll. When that fails, its folder is removed
+ * before the error is thrown: the caller then has nothing to close.
  */
 export async function openInstalled(label: string, options: OpenOptions = {}) {
   const folders = installsFolder(label);
@@ -114,21 +76,14 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
   const work = folders.root;
   const started: ChildProcess[] = [];
   let goCount = 0;
-  const key = throwawayKey();
-  const keys = [keyLine(key)];
-  const web = await buildWeb(join(work, "ui"), repoRoot);
-  const versions: [string, string] = ["0.1.0-dev.1", "0.1.0-dev.2"];
-  const releases: Record<string, Release> = {};
-  for (const [n, version] of versions.entries()) {
-    const folder = await offlineVersionFolder(
-      join(work, `build-${String(n)}`),
-      { version, build: `upd0test${String(n)}` },
-      { trustKeys: keys, web },
-    );
-    if (options.distinctLaunchers === true && windows && n === 1)
-      distinctLaunchers(folder, version);
-    releases[version] = releaseOf(folder, join(work, `dist-${String(n)}`), key, work);
-  }
+  const built = await runVersions();
+  const keys = [keyLine(built.key)];
+  const second = options.distinctLaunchers === true ? built.distinct : built.second;
+  const versions: [string, string] = [built.first.release.version, second.release.version];
+  const releases: Record<string, Release> = {
+    [versions[0]]: built.first.release,
+    [versions[1]]: second.release,
+  };
   const root = join(work, "home");
   const first = releases[versions[0]];
   if (first === undefined) throw new Error("no first release");
@@ -280,7 +235,8 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
    * Runs the updater child with `arm`. At the armed step, `whileHeld` runs first (the child waits
    * there, holding update.lock); then `mode` `updater` kills the child there; `service` kills the
    * service and lets the child go on to its end; `hold` lets it go on. `selfTest` `pass` stands
-   * in for the candidate's self-test (tests of other steps than the self-test).
+   * in for the candidate's self-test (tests of other steps than the self-test). `restartWaitMs`
+   * is how long the updater waits for the restarted service before it rolls back.
    */
   const runChild = async (
     task: "update" | "repair",
@@ -290,6 +246,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
       mode?: "updater" | "service" | "hold";
       whileHeld?: () => Promise<void>;
       selfTest?: "real" | "pass";
+      restartWaitMs?: number;
     },
   ): Promise<ChildRun> => {
     goCount += 1;
@@ -312,6 +269,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
         Object.entries(env()).filter((entry): entry is [string, string] => entry[1] !== undefined),
       ),
       ...(run.selfTest === undefined ? {} : { selfTest: run.selfTest }),
+      ...(run.restartWaitMs === undefined ? {} : { restartWaitMs: run.restartWaitMs }),
     };
     child.stdin.write(`${JSON.stringify(description)}\n`);
     const lines: Record<string, unknown>[] = [];
@@ -468,3 +426,27 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
 }
 
 export type Installed = Awaited<ReturnType<typeof openInstalled>>;
+
+/** Builds, an install script run and many service starts: a slow runner gets room. */
+export const SLOW = 900_000;
+
+/**
+ * This file's own install, opened in its beforeAll and closed in its afterAll; the getter gives it
+ * to the tests. Nothing is installed where `skip` holds (an elevated process, kit.ts).
+ */
+export function installedForFile(
+  label: string,
+  options: OpenOptions & { readonly skip?: boolean } = {},
+): () => Installed {
+  let w: Installed | undefined;
+  beforeAll(async () => {
+    if (options.skip !== true) w = await openInstalled(label, options);
+  }, SLOW);
+  afterAll(async () => {
+    await w?.close();
+  }, SLOW);
+  return () => {
+    if (w === undefined) throw new Error("no install");
+    return w;
+  };
+}

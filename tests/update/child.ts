@@ -44,6 +44,8 @@ export interface ChildTask {
    * for tests of the steps after it (the launchers' swap), so each round costs no self-test.
    */
   readonly selfTest?: "real" | "pass";
+  /** How long the updater waits for the restarted service (default: the product's). */
+  readonly restartWaitMs?: number;
 }
 
 const line = (value: unknown): void => {
@@ -106,6 +108,7 @@ const options: UpdateOptions = {
     task.selfTest === "pass"
       ? () => Promise.resolve({ ok: true, failed: [] })
       : launcherSelfTest(task.env, process.platform),
+  ...(task.restartWaitMs === undefined ? {} : { restartWaitMs: task.restartWaitMs }),
   // A launcher's steps are armed by `<point>:<name>`, for example `aside:ttasks.exe`.
   seams: {
     update: at,

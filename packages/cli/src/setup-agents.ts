@@ -119,6 +119,8 @@ export interface AgentsSetupOptions {
   readonly desktopStarted?: () => Promise<number | "not_running" | undefined>;
   /** Doctor: how long a headless run of `--live` may take. Default: 180 s. */
   readonly liveMs?: number;
+  /** Doctor: how long one bridge probe may take in all, its start included. Default: 20 s. */
+  readonly bridgeProbeMs?: number;
   /** macOS: the system's Applications folder (the Codex app's engine). Default: /Applications. */
   readonly systemApplications?: string;
 }
