@@ -424,15 +424,35 @@ describe("[A2.3.7.bridge.restart] losing and finding the service", () => {
     });
   });
 
-  test("what the first bind answer named, a space or none, is sent back at every later bind and never replaced", async () => {
+  test("what the first bind answer named, a space or none, is sent back at every later bind and never replaced; an older service's answer without a space chosen is not none", async () => {
     const SPACE = "sp_00000000000000000000000001";
+    const answer = (space: string | null) => ({ space, state: "unbound" });
+    // An older service (a rollback after the update) answers with a handle, and null while it
+    // has not chosen the connection's space yet.
+    const older = (space?: string | null) => ({
+      handle: "bh_fixture",
+      ...(space === undefined ? {} : { space }),
+      state: "unbound",
+    });
     for (const [answers, held] of [
-      [[null, SPACE], null],
-      [[SPACE, null], SPACE],
+      [
+        [answer(null), answer(SPACE)],
+        [null, null],
+      ],
+      [
+        [answer(SPACE), answer(null)],
+        [SPACE, SPACE],
+      ],
+      [
+        [older(null), older(SPACE)],
+        [undefined, SPACE],
+      ],
+      [
+        [older(), older(null)],
+        [undefined, undefined],
+      ],
     ] as const) {
-      const sessions = [...answers, SPACE].map(
-        (space) => new FakeSession({ space, state: "unbound" }),
-      );
+      const sessions = [...answers, answer(SPACE)].map((binding) => new FakeSession(binding));
       const all = [...sessions];
       const { line, contexts } = rig(() => {
         const next = sessions.shift();
@@ -455,8 +475,12 @@ describe("[A2.3.7.bridge.restart] losing and finding the service", () => {
         );
       }
       expect(contexts[0]).not.toHaveProperty("held_space");
-      expect(contexts[1]?.["held_space"], JSON.stringify(answers)).toBe(held);
-      expect(contexts[2]?.["held_space"], JSON.stringify(answers)).toBe(held);
+      for (const [i, want] of held.entries()) {
+        const context = contexts[i + 1];
+        if (want === undefined)
+          expect(context, JSON.stringify(answers)).not.toHaveProperty("held_space");
+        else expect(context?.["held_space"], JSON.stringify(answers)).toBe(want);
+      }
     }
   });
 

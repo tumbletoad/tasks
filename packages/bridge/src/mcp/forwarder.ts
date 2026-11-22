@@ -137,12 +137,13 @@ const isPowerOfTen = (n: number): boolean => /^10*$/.test(String(n));
 /**
  * What a bind answer says of this process's space: a space, or null for none. One bridge process
  * works in one space for its life, so the first answer is kept and sent back at every bind.
- * Undefined: the answer says nothing of it.
+ * Undefined: the answer says nothing of it. An older service's answer carries a handle, and its
+ * null is a space that service has not chosen yet, not none.
  */
 function spaceIn(binding: unknown): string | null | undefined {
   if (!isObject(binding) || !Object.hasOwn(binding, "space")) return undefined;
   const space = binding["space"];
-  if (space === null) return null;
+  if (space === null) return Object.hasOwn(binding, "handle") ? undefined : null;
   return typeof space === "string" && /^sp_[0-9a-z]{26}$/.test(space) ? space : undefined;
 }
 
