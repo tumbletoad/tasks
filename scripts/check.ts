@@ -20,6 +20,7 @@ import { chromium } from "@playwright/test";
 import { createVitest, type TestModule } from "vitest/node";
 import { LAB_DIR, SETUP_FILES, testFiles } from "../vitest.config.ts";
 import {
+  browserFilters,
   E2E_DIR,
   E2E_MAX,
   fitBudget,
@@ -339,7 +340,7 @@ const wallOf = (run: readonly string[]) => Math.max(spreadOf(run), ...run.map(se
 const unknown = selection.run.filter((file) => recorded.get(file) === undefined).length;
 const ciSized = !options.slow && spreadOf(selection.run) > BUDGET_S;
 const fit: Fit | null = ciSized
-  ? fitBudget(selection, changed, secondsOf, BUDGET_S * workers)
+  ? fitBudget(selection, changed, secondsOf, BUDGET_S, workers)
   : null;
 const runFiles = fit === null ? selection.run : fit.run.map((r) => r.file);
 const browser: BrowserSelection = selectBrowser(changed, selection.reached, e2eFiles, ciSized);
@@ -420,7 +421,7 @@ if (browserFiles.length > 0) {
           "--config",
           E2E_CONFIG,
           "--project=chromium",
-          ...browserFiles.map((f) => f.slice(E2E_DIR.length)),
+          ...browserFilters(browserFiles),
         ]),
       ),
     );

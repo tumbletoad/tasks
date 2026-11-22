@@ -1,6 +1,10 @@
-import { matchesGlob } from "node:path";
+import { realpathSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, matchesGlob } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+  browserFilters,
   E2E_MAX,
   fitBudget,
   READS,
@@ -11,6 +15,7 @@ import {
   type Cruise,
 } from "./check-plan.ts";
 import { git } from "./lab-tests.ts";
+import { binPath, runNode } from "./run.ts";
 
 const SETUP = "packages/testkit/src/setup.ts";
 
@@ -273,6 +278,16 @@ describe("[A7.3.3.check.budget] pnpm check runs the closest tests when a change 
     ]);
     expect(far(40).left).toEqual(["packages/a/test/use.test.ts"]);
   });
+
+  test("a far test that alone takes longer than the budget's wall time is left, whatever the workers", () => {
+    const core = ["packages/a/src/core.ts"];
+    const fit = fitBudget(select(core, repo, set, { slow: true }), core, seconds, 20, 3);
+    expect(fit.run.map((r) => r.file)).toEqual([
+      "tests/update/installed.test.ts",
+      "packages/projection/test/model.test.ts",
+    ]);
+    expect(fit.left).toEqual(["packages/a/test/use.test.ts"]);
+  });
 });
 
 describe("[A7.3.3.check.browser] pnpm check runs a browser test when a change reaches the page", () => {
@@ -311,5 +326,38 @@ describe("[A7.3.3.check.browser] pnpm check runs a browser test when a change re
     expect(s.run).toEqual(["tests/e2e/search.e2e.ts"]);
     expect(s.over).toEqual(["tests/e2e/today.e2e.ts"]);
     expect(browser(["packages/web/src/views/Today.tsx"], true).run).toEqual([]);
+  });
+
+  test("Playwright runs each chosen file and only that file, whatever its name holds", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ttasks-check-e2e-"));
+    try {
+      await mkdir(join(dir, "tests", "e2e"), { recursive: true });
+      await writeFile(
+        join(dir, "playwright.config.mjs"),
+        'export default { testDir: "tests/e2e", testMatch: "**/*.e2e.ts" };',
+      );
+      // The real path: through pnpm's link it would load a second Playwright that runs no test.
+      const cli = realpathSync(binPath("@playwright/test", "playwright"));
+      const pw = JSON.stringify(join(cli, "..", "index.js"));
+      for (const name of ["a[detail]", "a", "xa", "a(1)+b"]) {
+        const body = `import { test } from ${pw};\ntest("t", () => {});\n`;
+        await writeFile(join(dir, "tests", "e2e", `${name}.e2e.ts`), body);
+      }
+      const listed = (files: string[]) => {
+        const r = runNode(
+          cli,
+          ["test", "--list", "--config", "playwright.config.mjs", ...browserFilters(files)],
+          { cwd: dir, capture: true },
+        );
+        return [...r.stdout.matchAll(/^\s+(\S+\.e2e\.ts):/gm)].map((m) => m[1]).sort();
+      };
+      expect(listed(["tests/e2e/a[detail].e2e.ts", "tests/e2e/a.e2e.ts"])).toEqual([
+        "a.e2e.ts",
+        "a[detail].e2e.ts",
+      ]);
+      expect(listed(["tests/e2e/a(1)+b.e2e.ts"])).toEqual(["a(1)+b.e2e.ts"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

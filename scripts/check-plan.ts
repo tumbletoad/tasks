@@ -374,15 +374,18 @@ export interface Fit {
 /**
  * For a selection over the budget, the closest tests that fit in it: the test files the change
  * edits, then the tests that import or name a changed file, then the tests that reach one through
- * other files, each group shortest first, until the budget is used. `budget` is in file-seconds:
- * the wall time it allows times the workers.
+ * other files, each group shortest first, until the budget is used: `wall` seconds on each of the
+ * `workers`. A file that only fills spare room must also fit in `wall` alone, since it runs on one
+ * worker.
  */
 export function fitBudget(
   selection: Selection,
   changed: readonly string[],
   seconds: (file: string) => number,
-  budget: number,
+  wall: number,
+  workers = 1,
 ): Fit {
+  const budget = wall * workers;
   const shortestFirst = (files: string[]) =>
     files.sort((a, b) => seconds(a) - seconds(b) || a.localeCompare(b));
   const edited = shortestFirst(selection.run.filter((f) => changed.includes(f)));
@@ -401,6 +404,7 @@ export function fitBudget(
   ] as const) {
     for (const file of files) {
       if (used + seconds(file) > budget) continue;
+      if (why === "through others" && seconds(file) > wall) continue;
       used += seconds(file);
       run.push({ file, why });
     }
@@ -410,6 +414,15 @@ export function fitBudget(
 }
 
 export const E2E_DIR = "tests/e2e/";
+
+/**
+ * Playwright's arguments for the given end-to-end files. Playwright reads each argument as a
+ * regular expression searched in a test file's path, so each is escaped and anchored to match its
+ * own file and no other.
+ */
+export function browserFilters(files: readonly string[]): string[] {
+  return files.map((f) => `/(?:^|\\/)${f.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}$/`);
+}
 /** Files that are the page or serve it: a change that reaches one reaches the browser. */
 export const PAGE_ROOTS = ["packages/web/src/main.tsx", "packages/service/src/http/app.ts"];
 /** The end-to-end file that loads the page and checks its frame, for a change no name matches. */
