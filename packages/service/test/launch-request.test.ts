@@ -665,6 +665,33 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
   );
 
   test(
+    "an answer lost, the page opened again under a new sign-in, the same click again: one launch and one note",
+    { timeout: 600_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("request-signin");
+      const task = await addTask(r, "folder-signin");
+      const words = requestOf(newMarker(), 500);
+      const requestId = rid();
+      const asPage = async (grant: string): Promise<Opened> =>
+        (await opCall(
+          r.lab.running.ops,
+          { class: "ui", env: {}, grant },
+          {
+            space: r.lab.spaceId,
+            op: "launch.open",
+            input: { task: task.ref, instance: "desktop", text: words, request_id: requestId },
+          },
+        )) as Opened;
+      const first = await asPage(`gr_${randomBytes(16).toString("hex")}`);
+      const again = await asPage(`gr_${randomBytes(16).toString("hex")}`);
+      expect(again).toMatchObject({ launch: { id: first.launch.id }, text: "request" });
+      expect(again.note).toBe(first.note);
+      expect((await notesOf(r, task.ref)).map((n) => n.ref)).toEqual([first.note]);
+    },
+  );
+
+  test(
     "a get_task the agent never got, a launch past its day: nothing is marked, the request is served again, and nothing expires",
     { timeout: 600_000 },
     async () => {

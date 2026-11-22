@@ -2399,10 +2399,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...(input["mark_folder"] === true ? { markFolder: true } : {}),
         ...(input["another"] === true ? { another: true } : {}),
         // The person's words as a note of theirs: the note entry's own request path, an undoable
-        // step of theirs, under a request ID the click's derives, so a repeated click finds the
-        // note instead of adding a second one.
+        // step of theirs, under a request ID the click's derives. Its writer scope is the click's
+        // as the launch's replay is, not the sign-in's: a click repeated from any page or shell
+        // finds the note instead of adding a second one.
         saveNote: async (body, forAgents) => {
-          const saved = (await opCall(host, call.caller, {
+          const principal = { ...call.principal, scope: `launch-note:${host.machine.id}` };
+          const saved = (await opCall(host, { ...call.caller, principal }, {
             space,
             op: "entry.add",
             input: {
