@@ -23,6 +23,7 @@ import { describe, expect, test } from "vitest";
 import { CLI_NAME } from "@ttasks/brand";
 import { registry, type ErrorBody } from "@ttasks/contracts";
 import { SHIM_METHODS, type Attachment, type SpawnPlan } from "@ttasks/launch";
+import type { RpcSession } from "@ttasks/bridge/protocol";
 import type { HttpStart } from "../../src/http/index.ts";
 import { startService, type RunningService, type StartOptions } from "../../src/hub/service.ts";
 import { renderError } from "../../src/mcp/index.ts";
@@ -94,7 +95,7 @@ export interface ContractWorld {
    * what a launched agent holds. With `claimed` false no shim claims it: its Brief reached no agent.
    */
   launch(task: string, options?: LaunchAsks): Promise<WorldLaunch>;
-  /** A second space, Other (prefix O), made the first time it is asked for. */
+  /** A second space, Life (prefix L), made the first time it is asked for. */
   other(): Promise<string>;
   close(): Promise<void>;
 }
@@ -120,7 +121,7 @@ export interface WorldLaunch {
  * - `no-app`: the click recorded its home but no app;
  * - `no-row`: its app and home recorded, and setup never registered the home;
  * - `revoked`: registered, then the row revoked as `ttasks setup agents --remove` does;
- * - `other-space`: registered for the world's Other space (`other()`), while the launch is in the
+ * - `other-space`: registered for the world's second space (`other()`), while the launch is in the
  *   world's own.
  */
 export const WORLD_HOMES = ["registered", "no-app", "no-row", "revoked", "other-space"] as const;
@@ -199,6 +200,10 @@ export async function contractWorld(
   }
   const space = created.space?.id ?? created.id ?? "";
   const path = service.endpoint.path;
+  // The person's session that registers the launches' homes, as setup does: one for the world.
+  let setupSession: Promise<RpcSession> | undefined;
+  const person = (): Promise<RpcSession> =>
+    (setupSession ??= classSession(home, path, "cli-interactive"));
   let otherSpace: Promise<string> | undefined;
   const other = (): Promise<string> =>
     (otherSpace ??= (async () => {
@@ -206,7 +211,7 @@ export async function contractWorld(
       try {
         const made = (await operator.call(
           "space/create",
-          { name: "Other", path: join(temp.root, "s", "other"), ref_prefix: "O" },
+          { name: "Life", path: join(temp.root, "s", "life"), ref_prefix: "L" },
           { timeoutMs: 120_000 },
         )) as { space: { id: string } };
         return made.space.id;
@@ -229,12 +234,13 @@ export async function contractWorld(
     const agent = agentHomeOf(home, instance);
     const kind = launchOptions.home ?? "registered";
     let row: string | undefined;
-    if (kind === "registered") row = await grantHome(home, path, { instance, space });
-    if (kind === "other-space")
-      row = await grantHome(home, path, { instance, space: await other() });
-    if (kind === "revoked") {
-      row = await grantHome(home, path, { instance, space });
-      if ((await revokeHome(home, path, [row])) !== 1) throw new Error("the row was not revoked");
+    if (kind !== "no-app" && kind !== "no-row") {
+      const setup = await person();
+      const where = kind === "other-space" ? await other() : space;
+      row = await grantHome(home, path, { instance, space: where }, setup);
+      if (kind === "revoked" && (await revokeHome(home, path, [row], setup)) !== 1) {
+        throw new Error("the row was not revoked");
+      }
     }
     const given = kind === "no-app" ? { home: agent.home } : agent;
     const intent = await service.launches.open(
@@ -312,6 +318,7 @@ export async function contractWorld(
     launch,
     other,
     close: async () => {
+      if (setupSession !== undefined) (await setupSession).close();
       await service.stop();
       removeRuntimeDir(service);
       temp.cleanup();

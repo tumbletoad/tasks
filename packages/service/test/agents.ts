@@ -4,7 +4,7 @@
 // binding: a test reads what the endpoint gives back (the bind answer, each call's answer or
 // refusal) and what the space kept (the receipts a request left, under their writer scopes, and
 // the log). Tests only.
-import type { JsonObject } from "@ttasks/bridge/protocol";
+import type { JsonObject, RpcSession } from "@ttasks/bridge/protocol";
 import type { ErrorBody } from "@ttasks/contracts";
 import type { RunningService } from "../src/hub/service.ts";
 import { toolOf } from "../src/mcp/index.ts";
@@ -91,21 +91,32 @@ export interface Agent<Answer> {
   call(op: string, input?: Json, options?: CallOptions): Promise<Answer>;
   /** The refusal of a call that must be refused. */
   refusal(op: string, input?: Json, options?: CallOptions): Promise<Refusal>;
-  /** Ends the connection; resolves once the service saw it end. */
+  /** Ends the connection. The next bridge connects once the service saw it end (`ended`). */
   close(): Promise<void>;
 }
 
+/** One person's session per service, for the questions a test asks between calls. */
+const users = new WeakMap<RunningService, Promise<RpcSession>>();
+
 /** The bridge connections the service holds open now (`ttasks doctor`'s sessions row). */
 async function openBridges(world: Served): Promise<number | undefined> {
-  const user = await classSession(world.home, world.path, "cli-interactive");
-  try {
-    const facts = (await user.call("doctor/sessions", {}, { timeoutMs: 60_000 })) as {
-      open?: number;
-    } | null;
-    return facts?.open;
-  } finally {
-    user.close();
+  let user = users.get(world.service);
+  if (user === undefined || (await user).closed) {
+    user = classSession(world.home, world.path, "cli-interactive");
+    users.set(world.service, user);
   }
+  const facts = (await (await user).call("doctor/sessions", {}, { timeoutMs: 60_000 })) as {
+    open?: number;
+  } | null;
+  return facts?.open;
+}
+
+/** Per service, the bridge connections that were closed and that it may not have seen end yet. */
+const ending = new WeakMap<RunningService, Set<Promise<void>>>();
+
+/** Resolves once the service saw every closed bridge connection end, as an app's next start does. */
+export async function ended(world: Served): Promise<void> {
+  await Promise.all([...(ending.get(world.service) ?? [])]);
 }
 
 const refusalOf = async <A>(call: Promise<A>, op: string): Promise<Refusal> => {
@@ -126,6 +137,9 @@ const ERROR_TEXT = /^error ([a-z_]+)(?: \(([a-z_]+)\))?:/;
  * `launchContext` builds it), the MCP opening, then each call through the tool of its entry.
  */
 export async function bridge(world: Served, context: JsonObject): Promise<Agent<string>> {
+  // Main's resolver decides a bind by the connections still open: a bridge closed before this one
+  // is gone first.
+  await ended(world);
   const mcp = new RawMcp(await openMcp(world.home, world.path, context));
   await mcp.initialize();
   const call: Agent<string>["call"] = async (op, input = {}, options = {}) => {
@@ -149,11 +163,20 @@ export async function bridge(world: Served, context: JsonObject): Promise<Agent<
       const before = await openBridges(world);
       mcp.close();
       if (before === undefined) return;
-      const deadline = Date.now() + 30_000;
-      while (((await openBridges(world)) ?? 0) >= before) {
-        if (Date.now() > deadline) throw new Error("the service did not see the bridge close");
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
+      // Seen by the next bridge's connect; a service that stops meanwhile sees everything end.
+      const seen = (async () => {
+        const deadline = Date.now() + 30_000;
+        while (((await openBridges(world)) ?? 0) >= before) {
+          if (Date.now() > deadline) throw new Error("the service did not see the bridge close");
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      })().catch((error: unknown) => {
+        if (world.service.status().state === "ready") throw error;
+      });
+      const set = ending.get(world.service) ?? new Set();
+      ending.set(world.service, set);
+      set.add(seen);
+      void seen.finally(() => set.delete(seen));
     },
   };
 }

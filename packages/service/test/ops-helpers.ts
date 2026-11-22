@@ -68,8 +68,13 @@ export const agentHomeOf = (home: string, instance: string): { app: string; home
  * MCP connections pass the grant gate. The home is the instance's (`agentHomeOf`), so granting the
  * instance again replaces its row. Returns the row's ID.
  */
-export async function grantHome(home: string, path: string, row: HomeRow): Promise<string> {
-  const user = await classSession(home, path, "cli-interactive");
+export async function grantHome(
+  home: string,
+  path: string,
+  row: HomeRow,
+  session?: RpcSession,
+): Promise<string> {
+  const user = session ?? (await classSession(home, path, "cli-interactive"));
   try {
     const agent = agentHomeOf(home, row.instance);
     const answer = (await user.call(
@@ -85,19 +90,24 @@ export async function grantHome(home: string, path: string, row: HomeRow): Promi
     )) as { grant: { grant: string } };
     return answer.grant.grant;
   } finally {
-    user.close();
+    if (session === undefined) user.close();
   }
 }
 
 /** Revokes agent-home rows as `ttasks setup agents --remove` does (`setup/home_revoke`). */
-export async function revokeHome(home: string, path: string, grants: string[]): Promise<number> {
-  const user = await classSession(home, path, "cli-interactive");
+export async function revokeHome(
+  home: string,
+  path: string,
+  grants: string[],
+  session?: RpcSession,
+): Promise<number> {
+  const user = session ?? (await classSession(home, path, "cli-interactive"));
   try {
     const answer = (await user.call("setup/home_revoke", { grants }, { timeoutMs: 60_000 })) as {
       revoked: number;
     };
     return answer.revoked;
   } finally {
-    user.close();
+    if (session === undefined) user.close();
   }
 }
