@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 interface Added {
@@ -129,7 +129,7 @@ test.describe("[A7.3.12.m5-06.e2e.expanded] The expanded task: each fact once, u
     await page.addInitScript(() => {
       (window as unknown as { __xss: number }).__xss = 0;
     });
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
+    await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
     await showsSpace(page, world.mira.name);
 
     // The link lands on the host view, the area view, with the task expanded in its URL.
@@ -256,7 +256,7 @@ test.describe("[A7.3.12.m5-06.e2e.task-links] A link to a task in each lifecycle
       base: await asOf(world, done),
     });
     await watchViolations(page);
-    await page.goto(await world.signInUrl(`/s/${space}/today`));
+    await signIn(page, world, `/s/${space}/today`);
     await showsSpace(page, world.mira.name);
 
     const opens = async (ref: string, path: RegExp, current: string) => {
@@ -315,7 +315,7 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     });
     // Another task in the same group, so the list's keys have a row to move to.
     await addTask(world, { title: `Return the van keys (${tag})`, area: "home" });
-    await page.goto(await world.signInUrl(`/s/${space}/today`));
+    await signIn(page, world, `/s/${space}/today`);
     await showsSpace(page, world.mira.name);
     // The Home area lists the task (Today lists only what it selects, A5 3.4).
     await page
@@ -424,7 +424,7 @@ test.describe("[A7.3.12.m5-06.e2e.screens] The expanded task in both themes: scr
         const page = await context.newPage();
         await world.machine("ui.theme", theme);
         // A task link: the sign-in's route is a path, and the route lands on the host view.
-        await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
+        await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
         await showsSpace(page, world.mira.name);
         const row = page.locator(`li[data-task="${ref}"]`);
         await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true", {

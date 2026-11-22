@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 /** The local calendar day `days` from today, YYYY-MM-DD. */
@@ -63,7 +63,7 @@ async function tabInto(page: Page, target: Locator, max = 30): Promise<void> {
 }
 
 async function openArea(page: Page, world: World, name: string): Promise<void> {
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}/today`));
+  await signIn(page, world, `/s/${world.mira.id}/today`);
   await showsSpace(page, world.mira.name);
   await page
     .getByRole("navigation")
@@ -214,7 +214,7 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
       { title: `Renew the parking permit (${tag})`, area: "home", due: first },
     ]);
     if (ref === undefined) throw new Error("the task was not added");
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
+    await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
     await showsSpace(page, world.mira.name);
     const row = rowOf(page, ref);
     await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true", {
@@ -273,7 +273,7 @@ test.describe("[A7.3.12.m5-08.e2e.ask] An agent-only field starts a request in t
       },
     ]);
     if (ref === undefined) throw new Error("the task was not added");
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
+    await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
     await showsSpace(page, world.mira.name);
     const row = rowOf(page, ref);
     const composer = row.locator('[data-part="composer"]');
@@ -349,7 +349,7 @@ test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is fini
       { title: `Renew the library card (${tag})`, area: "home" },
     ]);
     if (ref === undefined) throw new Error("the task was not added");
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
+    await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
     await showsSpace(page, world.mira.name);
     const row = rowOf(page, ref);
     const title = row.locator('[data-part="title"]');
@@ -425,7 +425,7 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
       try {
         const page = await context.newPage();
         await world.machine("ui.theme", theme);
-        await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
+        await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
         await showsSpace(page, world.mira.name);
         const row = rowOf(page, ref);
         await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true", {

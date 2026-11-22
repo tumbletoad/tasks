@@ -7,7 +7,7 @@
 import { expect, type Page, type WebSocketRoute } from "@playwright/test";
 import { CLI_NAME, PRODUCT_ID, PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, spaceSwitcher, violations, watchViolations } from "./page.ts";
+import { showsSpace, signIn, spaceSwitcher, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const THEME_KEY = `${PRODUCT_ID}.theme`;
@@ -45,7 +45,7 @@ test.describe("[A7.3.12.m5-01.e2e.space-per-tab] Each tab keeps its space; a new
     const project = test.info().project.name;
     const a = await context.newPage();
     const b = await context.newPage();
-    await a.goto(await world.signInUrl(`/s/${mira.id}`));
+    await signIn(a, world, `/s/${mira.id}`);
     await showsSpace(a, mira.name);
     await expect(a).toHaveURL(`${origin}/s/${mira.id}/today`);
     // The second tab uses the token the first one stored, on a view of its own.
@@ -126,7 +126,7 @@ test.describe("[A7.3.12.m5-01.e2e.strict-csp] The shell under the strict CSP", (
     await watchViolations(page);
     const requests: string[] = [];
     page.on("request", (request) => requests.push(request.url()));
-    const response = await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    const response = await signIn(page, world, `/s/${world.mira.id}`);
     const csp = response?.headers()["content-security-policy"] ?? "";
     expect(csp).toMatch(/style-src 'self' 'nonce-[A-Za-z0-9+/]{22}=='/);
     expect(csp).not.toMatch(/unsafe-inline|unsafe-eval/);
@@ -224,7 +224,7 @@ test.describe("[A5.3.19.e2e.screens] The shell in Sumi, Washi and System, wide a
     page,
     world,
   }) => {
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${world.task.ref}`));
+    await signIn(page, world, `/s/${world.mira.id}/task/${world.task.ref}`);
     const row = page.locator(`li[data-task="${world.task.ref}"]`);
     await expect(row).toHaveAttribute("data-expanded", "true");
     // System is shown with the machine in light mode, so it differs from Sumi.
@@ -306,7 +306,7 @@ test.describe("[A7.3.12.m5-01.e2e.add-once] An add on its way is sent once, and 
       if (request.url().endsWith("/api/v1/op/task.add")) adds.push(request.url());
     });
     // The Inbox, where the add field puts a task.
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+    await signIn(page, world, `/s/${world.mira.id}/inbox`);
     await showsSpace(page, world.mira.name);
     await expect(field(page)).toBeEnabled();
     const feed = sockets.at(-1);
@@ -334,7 +334,7 @@ test.describe("[A7.3.12.m5-01.e2e.add-once] An add on its way is sent once, and 
     world,
   }) => {
     const sockets = await feeds(page);
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+    await signIn(page, world, `/s/${world.mira.id}/inbox`);
     await showsSpace(page, world.mira.name);
     await expect(field(page)).toBeEnabled();
     const feed = sockets.at(-1);
@@ -360,7 +360,7 @@ test.describe("[A7.3.12.m5-01.e2e.add-once] An add on its way is sent once, and 
     world,
   }) => {
     const sockets = await feeds(page);
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    await signIn(page, world, `/s/${world.mira.id}`);
     await showsSpace(page, world.mira.name);
     await expect(field(page)).toBeEnabled();
     const feed = sockets.at(-1);
@@ -400,7 +400,7 @@ test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens th
       });
     });
     // The link `ttasks open <task>` makes without a space.
-    await page.goto(await world.signInUrl(`/task/${world.task.ref}`));
+    await signIn(page, world, `/task/${world.task.ref}`);
     await page.getByRole("link", { name: world.mira.name }).click();
     // The task route lands on the task's host view, the task in its URL (A5 3.3).
     await expect(page).toHaveURL(hostOf(world, world.task.ref));
@@ -416,7 +416,7 @@ test.describe("[A7.3.12.m5-01.e2e.task-links] A route that names a task opens th
   }) => {
     const first = page.locator(`li[data-task="${world.task.ref}"]`);
     const second = page.locator(`li[data-task="${world.spare.ref}"]`);
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${world.task.ref}`));
+    await signIn(page, world, `/s/${world.mira.id}/task/${world.task.ref}`);
     await expect(first).toHaveAttribute("data-expanded", "true");
     // A navigation inside the page, as the router makes one.
     await page.evaluate((path) => {
@@ -453,7 +453,7 @@ test.describe("[A5.3.3.e2e.not-open] A space that is not open says why and what 
         },
       });
     });
-    await page.goto(await world.signInUrl("/"));
+    await signIn(page, world, "/");
     const note = page.locator('[data-part="not-open"]');
     await expect(note).toHaveAttribute("data-why", "needs_recovery");
     await expect(note).toContainText(`${CLI_NAME} space recover`);
@@ -489,7 +489,7 @@ test.describe("[A5.3.3.e2e.backup-trouble] A space whose backups fail says so ca
     });
     // Screenshots of the popover as it stands, not as it fades in.
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+    await signIn(page, world, `/s/${world.mira.id}/inbox`);
     const trigger = page.getByRole("button", {
       name: `Space ${world.mira.name}. Its backups need attention. Switch space`,
     });
@@ -533,7 +533,7 @@ test.describe("[A5.3.3.e2e.installed] A newer installed version, and the restart
         );
       });
     });
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${world.task.ref}`));
+    await signIn(page, world, `/s/${world.mira.id}/task/${world.task.ref}`);
     const row = page.locator(`li[data-task="${world.task.ref}"]`);
     await expect(row).toBeVisible();
     const installed = page.locator('[data-part="installed"]');

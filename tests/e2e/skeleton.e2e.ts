@@ -23,7 +23,7 @@ import {
 } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS } from "./world.ts";
 
 const TOKEN_KEY = `${PRODUCT_ID}.token`;
@@ -35,7 +35,7 @@ test.describe("[A7.3.9.m2-13.e2e.open] Open from the skeleton page", () => {
   }) => {
     await watchViolations(page);
     const before = world.terminal().length;
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    await signIn(page, world, `/s/${world.mira.id}`);
     await showsSpace(page, world.mira.name);
     await expect(page).toHaveURL(`${world.origin}/s/${world.mira.id}/today`);
     // The task's area lists it (Today lists only what it selects, A5 3.4).
@@ -114,7 +114,7 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
         base,
       })) as { folder: string };
 
-      await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+      await signIn(page, world, `/s/${world.mira.id}/inbox`);
       await showsSpace(page, world.mira.name);
       // A task with no folder, in no project: it opens in the space's work folder.
       const other = page.locator(`li[data-task="${plain}"]`);
@@ -176,7 +176,7 @@ test.describe("[A5.3.7.e2e.show-folder] the folder button opens the task's folde
         .as_of;
       await world.op(world.mira.id, "folder.manage", { action: "set", task: ref, folder, base });
 
-      await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+      await signIn(page, world, `/s/${world.mira.id}/inbox`);
       await showsSpace(page, world.mira.name);
       const row = page.locator(`li[data-task="${ref}"]`);
       const button = row.locator('[data-part="folder"]');
@@ -240,7 +240,7 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
         base,
       })) as { folder: string };
 
-      await page.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
+      await signIn(page, world, `/s/${world.mira.id}/inbox`);
       await showsSpace(page, world.mira.name);
       const row = page.locator(`li[data-task="${ref}"]`);
       await row.locator('[data-part="title"]').click();
@@ -288,7 +288,7 @@ test.describe("[A7.3.9.m2-10.e2e.copy] Copy puts the pointer brief on the clipbo
     world,
   }) => {
     await watchViolations(page);
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/area/${world.spare.area}`));
+    await signIn(page, world, `/s/${world.mira.id}/area/${world.spare.area}`);
     await showsSpace(page, world.mira.name);
     // What the page writes to the clipboard, kept in the page: no clipboard permission needed.
     await page.evaluate(() => {
@@ -338,7 +338,7 @@ test.describe("[A7.3.14.m6-11.e2e.pack] Shift+Copy puts the context pack on the 
     world,
   }) => {
     await watchViolations(page);
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/area/${world.spare.area}`));
+    await signIn(page, world, `/s/${world.mira.id}/area/${world.spare.area}`);
     await showsSpace(page, world.mira.name);
     await page.evaluate(() => {
       const copied: string[] = [];
@@ -383,8 +383,8 @@ test.describe("[A7.3.9.m2-13.e2e.two-tabs] Each tab keeps its own space", () => 
     const mira = await context.newPage();
     const studio = await context.newPage();
     // The Inbox, where the add field puts a task.
-    await mira.goto(await world.signInUrl(`/s/${world.mira.id}/inbox`));
-    await studio.goto(await world.signInUrl(`/s/${world.studio.id}/inbox`));
+    await signIn(mira, world, `/s/${world.mira.id}/inbox`);
+    await signIn(studio, world, `/s/${world.studio.id}/inbox`);
     await showsSpace(mira, world.mira.name);
     await showsSpace(studio, world.studio.name);
     await expect(studio.locator('[data-part="title"]')).toHaveText(["Sketch the spring poster"]);
@@ -449,7 +449,7 @@ test.describe("[A2.3.8.3.e2e.strict-csp] The built page under the strict CSP", (
     world,
   }) => {
     await watchViolations(page);
-    const response = await page.goto(await world.signInUrl(`/s/${world.mira.id}`));
+    const response = await signIn(page, world, `/s/${world.mira.id}`);
     const csp = response?.headers()["content-security-policy"] ?? "";
     expect(csp).toContain("script-src 'self'");
     expect(csp).toContain("worker-src 'none'");

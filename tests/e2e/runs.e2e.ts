@@ -15,7 +15,7 @@ import { createRequire } from "node:module";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { FAKE_QUESTION, FAKE_SIGNED_OUT } from "./codex-cases.ts";
 import { test } from "./fixture.ts";
-import { openTask, showsSpace, violations, watchViolations } from "./page.ts";
+import { openTask, showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { CODEX_INSTANCE, CODEX_OTHER, SLOW_MS, type World } from "./world.ts";
 
 const OTHER_LABEL = CODEX_OTHER.label;
@@ -242,7 +242,7 @@ test.describe("[M6.page.e2e.needs] A run that needs the person, and one that fai
     await expect(markerOf(page, ref)).toHaveAttribute("data-kind", "needs_input");
 
     // Agents lists it under Needs you, without opening the task.
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/agents`));
+    await signIn(page, world, `/s/${world.mira.id}/agents`);
     await showsSpace(page, world.mira.name);
     const needs = page.locator("main").getByText("Needs you", { exact: true });
     await expect(needs).toBeVisible({ timeout: SLOW_MS });
@@ -406,7 +406,7 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
         await shot.screenshot({ path: test.info().outputPath(`run-menu-${theme}-1440.png`) });
         await shot.keyboard.press("Escape");
 
-        await shot.goto(await world.signInUrl(`/s/${world.mira.id}/agents`));
+        await signIn(shot, world, `/s/${world.mira.id}/agents`);
         await showsSpace(shot, world.mira.name);
         await expect(rowOf(shot, ended)).toBeVisible({ timeout: SLOW_MS });
         await expect(markerOf(shot, ended)).toHaveAttribute("data-kind", "needs_input");

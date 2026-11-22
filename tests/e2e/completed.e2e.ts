@@ -6,7 +6,7 @@
 // every row it showed still there. Screenshots in Sumi and Washi at 1440 and 390 px. Fixture data.
 import { expect, type Page, type Route } from "@playwright/test";
 import { FINISHED_TASKS, test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const SUMMARY = "Check the beds after the frost";
@@ -124,7 +124,7 @@ const underPointer = (page: Page, y: number) =>
   }, y);
 
 async function openCompleted(page: Page, world: World): Promise<void> {
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}/completed`));
+  await signIn(page, world, `/s/${world.mira.id}/completed`);
   await showsSpace(page, world.mira.name);
   await expect(page.getByRole("group", { name: "Checked off", exact: true })).toBeVisible({
     timeout: SLOW_MS,

@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 /** The local calendar day `days` from today: its date and the names the page shows. */
@@ -90,7 +90,7 @@ const row = (page: Page, ref: string) => page.locator(`main li[data-task="${ref}
 const shownText = (page: Page) => page.locator("body").innerText();
 
 async function openToday(page: Page, world: World): Promise<void> {
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}/today`));
+  await signIn(page, world, `/s/${world.mira.id}/today`);
   await showsSpace(page, world.mira.name);
 }
 

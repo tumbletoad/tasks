@@ -10,7 +10,7 @@ import { expect, type Page, type Request } from "@playwright/test";
 import { PRODUCT_NAME, PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { openTask, showsSpace, violations, watchViolations } from "./page.ts";
+import { openTask, showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 interface Added {
@@ -191,7 +191,7 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       await route.continue();
     });
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/task/${ref}`));
+    await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
     await showsSpace(page, world.mira.name);
     const copied = await catchClipboard(page);
     const copy = stripOf(page, ref).locator('[data-part="copy"]');
@@ -520,7 +520,7 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
   }) => {
     const tag = test.info().project.name;
     const { origin, mira, studio } = world;
-    await page.goto(await world.signInUrl(`/s/${mira.id}/today`));
+    await signIn(page, world, `/s/${mira.id}/today`);
     await showsSpace(page, mira.name);
     const field = page.getByRole("textbox", { name: "New task" });
     // A paste longer than the field takes is cut: the field says so. Only Chromium lets a page
@@ -661,7 +661,7 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
   }) => {
     const tag = test.info().project.name;
     const title = `Order the padlock (${tag})`;
-    await page.goto(await world.signInUrl(`/s/${world.mira.id}/today`));
+    await signIn(page, world, `/s/${world.mira.id}/today`);
     await showsSpace(page, world.mira.name);
     const field = page.getByRole("textbox", { name: "New task" });
     // Each add reaches the service late: the first one is still on its way when the page reloads.

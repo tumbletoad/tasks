@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { expect, type Browser, type Page } from "@playwright/test";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
-import { showsSpace } from "./page.ts";
+import { showsSpace, signIn } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 interface Added {
@@ -37,7 +37,7 @@ async function themed(
   });
   const page = await context.newPage();
   await world.machine("ui.theme", theme);
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}${path}`));
+  await signIn(page, world, `/s/${world.mira.id}${path}`);
   await showsSpace(page, world.mira.name);
   return { page, close: () => context.close() };
 }

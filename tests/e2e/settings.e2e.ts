@@ -9,13 +9,13 @@ import { createRequire } from "node:module";
 import { expect, type Page } from "@playwright/test";
 import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, violations, watchViolations } from "./page.ts";
+import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const LEGACY_THEME_KEY = `${PRODUCT_ID}.theme`;
 
 async function open(page: Page, world: World, path: string): Promise<void> {
-  await page.goto(await world.signInUrl(`/s/${world.mira.id}${path}`));
+  await signIn(page, world, `/s/${world.mira.id}${path}`);
   await showsSpace(page, world.mira.name);
 }
 
@@ -61,7 +61,7 @@ test.describe("[A7.3.12.m5-11.e2e.theme] The theme is this machine's: every tab 
       const fresh = await browser.newContext();
       try {
         const other = await fresh.newPage();
-        const response = await other.goto(await world.signInUrl(`/s/${world.mira.id}/today`));
+        const response = await signIn(other, world, `/s/${world.mira.id}/today`);
         expect(await response?.text()).toContain('data-theme="washi"');
         await showsSpace(other, world.mira.name);
         await expect(html(other)).toHaveAttribute("data-theme", "washi");
