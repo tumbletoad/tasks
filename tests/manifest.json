@@ -70,6 +70,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A7.3.3.verify.lint-complete",
+      "title": "pnpm verify's lint fails on a lint thread that ends before it reports its files, on an error and on a warning, and passes clean files",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.2.brand.names",
       "title": "Product names live in one place: TTasks, by TumbleToad; the CLI name and the environment prefix derive from the identifier, the MCP key is a plain identifier of its own",
       "source": "A7 3.2, A2 3.2.1, A3 3.2.4",

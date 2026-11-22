@@ -58,11 +58,7 @@ const allStages: Named[][] = [
   [["generated files", "checks", generated]],
   [
     ["typecheck", "checks", () => typecheck()],
-    [
-      "lint",
-      "checks",
-      quiet("eslint", "eslint", ["--max-warnings", "0", "--concurrency", "2", "."]),
-    ],
+    ["lint", "checks", () => runNodeCaptured(join(repoRoot, "scripts", "lint.ts"), [])],
     ["format", "checks", quiet("prettier", "prettier", ["--check", "--log-level", "warn", "."])],
     [
       "dependency rules",
