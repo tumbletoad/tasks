@@ -209,6 +209,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
         env: env(),
         stdio: "ignore",
         windowsHide: true,
+        // eslint-disable-next-line no-restricted-syntax -- the stable launcher gives the service a hidden console of its own.
         detached: true,
       });
       started.push(child);
@@ -254,6 +255,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
       env: env(),
       stdio: "ignore",
       windowsHide: true,
+      // eslint-disable-next-line no-restricted-syntax -- tasksw.exe gives the service a hidden console of its own.
       detached: true,
     });
     started.push(child);

@@ -89,6 +89,7 @@ function child(role: string, options: { detached?: boolean; stdio?: StdioOptions
     process.execPath,
     [process.argv[1] ?? "", role, `--token=${token}`, `--max-ms=${String(maxMs)}`],
     {
+      // eslint-disable-next-line no-restricted-syntax -- every role starts its children with windowsHide.
       detached: options.detached ?? false,
       stdio: options.stdio ?? "ignore",
       windowsHide: true,

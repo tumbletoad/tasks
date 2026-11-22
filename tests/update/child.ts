@@ -89,6 +89,7 @@ const ctx = {
   startDetached: () => {
     const child = spawn(task.stable, ["serve"], {
       env: task.env,
+      // eslint-disable-next-line no-restricted-syntax -- the stable launcher gives the service a hidden console of its own.
       detached: true,
       stdio: "ignore",
       windowsHide: true,

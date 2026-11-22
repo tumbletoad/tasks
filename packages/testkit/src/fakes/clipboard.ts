@@ -39,6 +39,7 @@ if (env["FAKE_CLIP_HOLDER"] === "1") {
         windowsHide: true,
         // On Linux and macOS it stays in the tool's process group, as xclip's does. On Windows a
         // child that is not detached dies with its parent's job, which no real tool there has.
+        // eslint-disable-next-line no-restricted-syntax -- the holder only waits.
         detached: process.platform === "win32",
       });
       holder.unref();

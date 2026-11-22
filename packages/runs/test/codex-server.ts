@@ -423,6 +423,7 @@ export async function callTools(
 function leave(token: string, how: "detached" | "in-group"): void {
   const standIn = join(import.meta.dirname, "stand-ins", "stand-in.ts");
   spawn(process.execPath, [standIn, "idle", `--token=${token}`], {
+    // eslint-disable-next-line no-restricted-syntax -- an idle stand-in, which starts nothing.
     detached: how === "detached",
     stdio: "ignore",
     windowsHide: true,

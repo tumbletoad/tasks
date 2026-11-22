@@ -166,7 +166,7 @@ describe.skipIf(!posix)(
         process.execPath,
         [START_ENTRY, root, ctx.program, join(dir, "units"), ctx.home],
         {
-          detached: true,
+          detached: process.platform !== "win32",
           stdio: ["ignore", "pipe", "pipe"],
           cwd: dir,
         },
