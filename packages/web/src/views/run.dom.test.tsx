@@ -8,7 +8,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AppError } from "@tasks/contracts";
-import { Refused, type Api, type Instance, type Opened, type Run } from "../api.ts";
+import { Refused, type Api, type Busy, type Instance, type Opened, type Run } from "../api.ts";
 import { ToastContext } from "../app/frame.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
@@ -85,7 +85,10 @@ let listed: readonly Run[];
 let stopAnswer: () => Promise<Run>;
 /** The service does not answer: a read of the runs fails as Run does. */
 let down: boolean;
-let opens: Started[];
+let opens: (Started & { readonly another: boolean })[];
+/** What a read of busy answers. */
+let busyNow: Busy[];
+let api: Api;
 /** What Open answers, call by call. */
 let openAnswer: (call: number) => Promise<Opened>;
 let toasts: string[];
@@ -114,6 +117,8 @@ beforeEach(async () => {
   startAnswer = () => Promise.resolve(record({ state: "queued", version: 1 }));
   stopAnswer = () => Promise.reject(new TypeError("Failed to fetch"));
   opens = [];
+  busyNow = [];
+  localStorage.clear();
   toasts = [];
   openAnswer = (call) => Promise.resolve(opened(call, "request"));
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
@@ -132,7 +137,7 @@ beforeEach(async () => {
     } as DOMRect;
   });
   Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
-  const api = {
+  api = {
     client: {
       task: {
         get: (input: { readonly sections?: unknown }) =>
@@ -166,7 +171,7 @@ beforeEach(async () => {
           ),
       },
     },
-    busy: () => Promise.resolve([]),
+    busy: () => Promise.resolve(busyNow),
     receipts: () => (down ? lost() : Promise.resolve([])),
     runs: () => (down ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve(listed)),
     startRun: (_task: string, _instance: string, id: string, text?: string) => {
@@ -174,8 +179,13 @@ beforeEach(async () => {
       return startAnswer(started.length);
     },
     stopRun: () => stopAnswer(),
-    openLaunch: (_task: string, _instance: string, id: string, options: { text?: string }) => {
-      opens.push({ id, text: options.text });
+    openLaunch: (
+      _task: string,
+      _instance: string,
+      id: string,
+      options: { text?: string; another?: boolean },
+    ) => {
+      opens.push({ id, text: options.text, another: options.another === true });
       return openAnswer(opens.length);
     },
   } as unknown as Api;
@@ -433,6 +443,61 @@ describe("[A5.3.8.web.open-once] an Open that got no answer is the same Open whe
     type("Something else");
     await open();
     expect(opens[2]?.id).not.toBe(opens[0]?.id);
+  });
+
+  /** The tab goes offline and is live again: it reads what busies the apps again. */
+  const reconnect = async () => {
+    act(() => {
+      live.store.set({ phase: "offline" });
+    });
+    act(() => {
+      live.store.set({ phase: "live" });
+    });
+    await settle();
+  };
+
+  /** The page loads again: a new list, with what the browser kept, and the task expanded. */
+  const reload = async () => {
+    act(() => {
+      root.unmount();
+    });
+    root = createRoot(container);
+    mount(<TaskList view="open" filter={() => true} empty="" />, api);
+    await settle();
+    act(() => {
+      title()?.click();
+    });
+    await settle();
+  };
+
+  test("an Open whose answer was lost after the service saved it stays the button to press, through its launch on its way and a reload, and is pressed as that Open", async () => {
+    openAnswer = (call) => (call === 1 ? lost() : Promise.resolve(opened(call, "request")));
+    type("Check it");
+    await open();
+    expect(toasts.at(-1)).toMatch(/did not answer, so Codex may be opening/u);
+    // The service did save the words and record the launch, which is on its way.
+    busyNow = [{ task: TASK.id, instance: CODEX.key, state: "opening" }];
+    await reconnect();
+    expect(openButton()?.getAttribute("aria-disabled")).toBe("false");
+    await reload();
+    expect(composer()?.value).toBe("Check it");
+    expect(openButton()?.getAttribute("aria-disabled")).toBe("false");
+    // Its agent runs by now: the button still repeats the Open that got no answer.
+    busyNow = [{ task: TASK.id, instance: CODEX.key, state: "running" }];
+    await reconnect();
+    expect(openButton()?.textContent).toContain("Open in Codex");
+    await open();
+    expect(opens.map((o) => [o.id, o.another])).toEqual([
+      [opens[0]?.id, false],
+      [opens[0]?.id, false],
+    ]);
+    expect(composer()?.value).toBe("");
+    // Answered: the same words again are a new Open, a second session as the button says.
+    type("Check it");
+    expect(openButton()?.textContent).toContain("Open another in Codex");
+    await open();
+    expect(opens[2]?.id).not.toBe(opens[0]?.id);
+    expect(opens[2]?.another).toBe(true);
   });
 
   test("a second click that got the launch of the first keeps its words as a note and says so last", async () => {

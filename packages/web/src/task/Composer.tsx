@@ -41,6 +41,7 @@ import {
   readNote,
   wordsOf,
 } from "./composer.ts";
+import { openAsked, useUnansweredOpens } from "../views/unanswered.ts";
 import css from "./Expanded.module.css";
 
 const styles = classes(css, [
@@ -153,6 +154,18 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   );
 
   const words = wordsOf(text);
+  const unanswered = useUnansweredOpens(space, task.id);
+  /**
+   * An Open of these words in `instance` that got no answer, here, before a reload or in another
+   * tab: whether it asked for a second session. Undefined when there is none.
+   */
+  const retried = (instance: Instance): boolean | undefined => {
+    const asked = unanswered(instance.key);
+    const text = words === "" ? undefined : words;
+    if (asked === openAsked(false, text)) return false;
+    if (asked === openAsked(true, text)) return true;
+    return undefined;
+  };
 
   const addNote = () => {
     if (words === "") {
@@ -179,14 +192,19 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
     );
   };
 
+  /**
+   * Whether `instance`'s Open asks for a second session: as the unanswered Open of these words did,
+   * which pressing again repeats, else when the button says "Open another".
+   */
+  const another = (instance: Instance): boolean =>
+    retried(instance) ?? tileState(busy, instance.key) === "running";
+
   const open = (instance: Instance) => {
     if (opening.has(instance.key)) return;
     setOpening((known) => new Set(known).add(instance.key));
     const request = words;
-    // The button said "Open another": the person chose a second session.
-    const another = tileState(busy, instance.key) === "running";
     // The open action says when the words are on the task (savedWords): the field clears then.
-    const carried = { ...(request === "" ? {} : { text: request }), another };
+    const carried = { ...(request === "" ? {} : { text: request }), another: another(instance) };
     void actions.open(task, instance, carried).then(() => {
       setOpening((known) => {
         const next = new Set(known);
@@ -220,10 +238,12 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   /**
    * Why an instance does not open now, as its tip says it; undefined when it opens. Only an Open on
    * its way holds it: a click then would return that very launch. A running session does not: the
-   * button says it opens another.
+   * button says it opens another. Nor does a launch on its way when an Open of these words got no
+   * answer: pressing again is that Open, which the page asked the person to do.
    */
   const held = (instance: Instance): string | undefined =>
-    opening.has(instance.key) || tileState(busy, instance.key) === "opening"
+    opening.has(instance.key) ||
+    (retried(instance) === undefined && tileState(busy, instance.key) === "opening")
       ? t("composer.opening", { label: instance.label })
       : undefined;
 
@@ -300,11 +320,11 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
         {instances.map((instance, i) => {
           const why = held(instance);
           const state = tileState(busy, instance.key);
-          const another = state === "running";
+          const second = another(instance);
           const tip =
             why ??
             t(
-              another
+              second
                 ? "composer.anotherTip"
                 : words === ""
                   ? "composer.openTip"
@@ -337,7 +357,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
               <span className={styles.glyph} aria-hidden="true">
                 {instance.glyph}
               </span>
-              {t(another ? "composer.openAnother" : "row.openIn", { label: instance.label })}
+              {t(second ? "composer.openAnother" : "row.openIn", { label: instance.label })}
               {i === 0 && openKeys[0] !== undefined ? (
                 <kbd className={styles.hint} aria-hidden="true">
                   {keyLabel(openKeys[0])}

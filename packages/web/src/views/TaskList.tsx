@@ -45,7 +45,7 @@ import type { TaskRow } from "../store/rows.ts";
 import { rowOfFacts } from "../task/detail.ts";
 import { mergeRuns, runRefusal, withStops } from "../task/runs.ts";
 import css from "./TaskList.module.css";
-import { Unanswered } from "./unanswered.ts";
+import { openAsked, openName, Unanswered, unansweredOpens } from "./unanswered.ts";
 
 const styles = classes(css, ["line", "announce"]);
 
@@ -163,7 +163,7 @@ export function TaskList({
   const [runs, setRuns] = useState<ReadonlyMap<string, readonly Run[]>>(new Map());
   /** The runs whose Stop is on its way, each with its version when Stop was pressed. */
   const [stops, setStops] = useState<ReadonlyMap<string, number>>(new Map());
-  /** Per task, the Run that got no answer; per task and app, the Open. */
+  /** Per task, the Run that got no answer. */
   const unanswered = useRef(new Unanswered());
   const runReads = useRef(new Latest());
   const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
@@ -637,15 +637,20 @@ export function TaskList({
       // field until then. Once the service saved them on the task the field clears, as for Note.
       // An Open without an answer may have saved them and opened: until the service answers, the
       // same Open (task, instance and what it carries, "Open anyway" included) carries the same
-      // request ID, so it neither saves the words twice nor opens a second window. An Open the
-      // service answers with a session that already runs starts nothing: the read of busy shows
-      // it Running.
-      open: (task: TaskRow, instance: Instance, { text, request, another = false }: OpenWith = {}) => {
+      // request ID, also after a reload and from another tab, so it neither saves the words twice
+      // nor opens a second window. An Open the service answers with a session that already runs
+      // starts nothing: the read of busy shows it Running.
+      open: (
+        task: TaskRow,
+        instance: Instance,
+        { text, request, another = false }: OpenWith = {},
+      ) => {
         const key = `open\n${task.id}\n${instance.key}`;
-        const asked = `${String(another)}\n${request ?? ""}\n${text ?? ""}`;
+        const name = openName(live.spaceId ?? "", task.id, instance.key);
+        const asked = openAsked(another, text, request);
         const launch = (markFolder: boolean): Promise<Receipt | undefined> => {
           watched.current.add(task.id);
-          const id = unanswered.current.idFor(key, asked);
+          const id = unansweredOpens.idFor(name, asked);
           return api
             .openLaunch(task.id, instance.key, id, {
               markFolder,
@@ -655,7 +660,7 @@ export function TaskList({
             })
             .then(async (opened) => {
               const { receipt, copy } = opened;
-              unanswered.current.answered(key);
+              unansweredOpens.answered(name, id);
               refuse(task.id, undefined);
               shown(task, receipt);
               loadBusy();
@@ -671,7 +676,7 @@ export function TaskList({
             })
             .catch((error: unknown) => {
               const answered = refusedBy(error);
-              if (answered) unanswered.current.answered(key);
+              if (answered) unansweredOpens.answered(name, id);
               if (live.failed(error)) return undefined;
               if (!answered) {
                 say(t("row.openUnanswered", { label: instance.label }));
