@@ -36,7 +36,7 @@ import {
   type Verdict,
 } from "@tasks/launch";
 import { fitsShape, preferenceSpec, type PrefValue } from "@tasks/contracts";
-import { QUEUE_LIMITS, RUN_LIMITS, type QueueLimits } from "@tasks/contracts/runs";
+import { QUEUE_LIMITS, type QueueLimits } from "@tasks/contracts/runs";
 import { isId, type Id } from "@tasks/storage";
 import {
   currentPerson,
@@ -105,18 +105,15 @@ export interface MachineConfig {
  * `[runs]`: how many background runs run at once (`at_once`, `per_instance`, `per_task`), and
  * how long a run may take in total and without output (`max_minutes`, `max_quiet_minutes`), for
  * the runs queued after a change. Guidelines a person sets: a lower limit stops nothing that runs.
+ * Without a time limit set, none ends a run.
  */
 export interface RunSettings {
   readonly limits: QueueLimits;
-  readonly wallMs: number;
-  readonly idleMs: number;
+  readonly wallMs?: number;
+  readonly idleMs?: number;
 }
 
-export const DEFAULT_RUN_SETTINGS: RunSettings = {
-  limits: QUEUE_LIMITS,
-  wallMs: RUN_LIMITS.task.wallMs,
-  idleMs: RUN_LIMITS.task.idleMs,
-};
+export const DEFAULT_RUN_SETTINGS: RunSettings = { limits: QUEUE_LIMITS };
 
 /** `[runs]`. A bad value drops itself with its problem, and its default applies. */
 function readRuns(doc: TomlDocument, problems: Problems): RunSettings {
@@ -125,18 +122,21 @@ function readRuns(doc: TomlDocument, problems: Problems): RunSettings {
   const d = DEFAULT_RUN_SETTINGS;
   const count = (name: string, fallback: number) =>
     runs.int(name, { min: 1, max: 100 }) ?? fallback;
-  const minutes = (name: string, fallback: number) => {
+  const minutes = (name: string): number | undefined => {
     const value = runs.int(name, { min: 1, max: 24 * 60 });
-    return value === undefined ? fallback : value * 60_000;
+    return value === undefined ? undefined : value * 60_000;
   };
+  const limits: QueueLimits = {
+    runs: count("at_once", d.limits.runs),
+    perInstance: count("per_instance", d.limits.perInstance),
+    perTask: count("per_task", d.limits.perTask),
+  };
+  const wallMs = minutes("max_minutes");
+  const idleMs = minutes("max_quiet_minutes");
   const settings: RunSettings = {
-    limits: {
-      runs: count("at_once", d.limits.runs),
-      perInstance: count("per_instance", d.limits.perInstance),
-      perTask: count("per_task", d.limits.perTask),
-    },
-    wallMs: minutes("max_minutes", d.wallMs),
-    idleMs: minutes("max_quiet_minutes", d.idleMs),
+    limits,
+    ...(wallMs === undefined ? {} : { wallMs }),
+    ...(idleMs === undefined ? {} : { idleMs }),
   };
   runs.done();
   return settings;

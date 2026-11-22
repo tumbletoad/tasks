@@ -53,8 +53,11 @@ const NOT_STARTED: ReadonlySet<string> = new Set([
   "start_timed_out",
 ]);
 
-/** A run as its thread entry shows it. */
-export function runView(run: Run, label: string): RunView {
+/** A running run says how long it has said nothing, from a minute on. */
+const QUIET_SHOWN_MS = 60_000;
+
+/** A run as its thread entry shows it, at `now`. */
+export function runView(run: Run, label: string, now = Date.now()): RunView {
   // How its processes ended is said after a stop or a time limit, where the person asked for an
   // end; after an end of its own only when something it left had to be ended.
   const ended =
@@ -66,6 +69,15 @@ export function runView(run: Run, label: string): RunView {
   const said = (kind: "answer" | "question" | "last") =>
     text.trim() === "" ? {} : { said: { kind, text, cut: run.answer_cut } };
   const error = run.error === undefined || run.error.trim() === "" ? {} : { error: run.error };
+  const refused =
+    run.refused === undefined || run.refused === 0
+      ? []
+      : [msg("run.permissionRefused", { count: run.refused, label })];
+  const quietMs = run.quiet_since === undefined ? 0 : now - run.quiet_since;
+  const quiet =
+    quietMs < QUIET_SHOWN_MS
+      ? []
+      : [msg("run.quiet", { minutes: Math.floor(quietMs / QUIET_SHOWN_MS) })];
   switch (run.state) {
     case "queued":
       return {
@@ -77,13 +89,19 @@ export function runView(run: Run, label: string): RunView {
     case "running":
     case "waiting_for_input":
     case "reconciling":
-      return { tone: "working", status: [msg("run.working", { label })], stoppable: true };
+      // What it said so far stays in view: a server it keeps running is the person's to use.
+      return {
+        tone: "working",
+        status: [msg("run.working", { label }), ...quiet],
+        ...said("last"),
+        stoppable: true,
+      };
     case "cancelling":
       return { tone: "stopping", status: [msg("run.stopping")], stoppable: false };
     case "succeeded":
       return {
         tone: "done",
-        status: [msg("run.done"), ...cleanup],
+        status: [msg("run.done"), ...refused, ...cleanup],
         ...said(run.answer_final ? "answer" : "last"),
         stoppable: false,
       };
@@ -131,7 +149,7 @@ export function runView(run: Run, label: string): RunView {
       }
       return {
         tone: "failed",
-        status: [msg("run.failed", { reason, label }), ...cleanup],
+        status: [msg("run.failed", { reason, label }), ...refused, ...cleanup],
         ...said("last"),
         ...error,
         stoppable: false,

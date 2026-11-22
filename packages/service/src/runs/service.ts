@@ -27,6 +27,7 @@ import {
   RunMachine,
   RUNS_FOLDER,
   Supervisor,
+  TOOLS_FILE,
   type AgentCommand,
   type Containers,
   type Hold,
@@ -35,6 +36,7 @@ import {
   type ProbeResult,
   type RunHostLog,
   type RunTimes,
+  type SavedAnswer,
   type StartRefusal,
   type WaitReason,
 } from "@tasks/runs";
@@ -45,11 +47,13 @@ import type { ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, readRunRows, readTaskRef, type TaskFolder } from "../ops/read.ts";
 import {
   buildRun,
+  runAdapter,
   runBriefHash,
   runFolder,
   runPermission,
   runsWith,
   WORK_ON_IT,
+  type BuiltRun,
   type RunAgents,
 } from "./agent.ts";
 
@@ -114,6 +118,21 @@ export interface RunRequest {
 
 /** How often spaces that opened since are recovered, and the queue looked at. */
 const ROUND_MS = 30_000;
+
+/** What a run's record cannot say, from this service: see RunService.live. */
+export interface RunLive {
+  readonly waiting?: WaitReason;
+  /** Wall clock milliseconds since when a running run wrote nothing. */
+  readonly quietSince?: number;
+  /** The answer saved so far, while a run that started has none in its record yet. */
+  readonly said?: { readonly text: string; readonly final: boolean; readonly cut: boolean };
+}
+
+/** The time limits `[runs]` sets, and only those: a run without one has none. */
+const timeLimits = (settings: RunSettings): Pick<RunLimits, "wallMs" | "idleMs"> => ({
+  ...(settings.wallMs === undefined ? {} : { wallMs: settings.wallMs }),
+  ...(settings.idleMs === undefined ? {} : { idleMs: settings.idleMs }),
+});
 
 interface Hosted {
   readonly writer: unknown;
@@ -294,8 +313,7 @@ export class RunService {
     const settings = this.#settings();
     const limits = input.limits ?? {
       ...RUN_LIMITS[input.routine === null ? "task" : "routine"],
-      wallMs: settings.wallMs,
-      idleMs: settings.idleMs,
+      ...timeLimits(settings),
     };
     // No round may take the run before its command is known.
     const hold = this.#supervisor.hold();
@@ -345,7 +363,7 @@ export class RunService {
         asked.instance !== undefined
           ? "No instance with this ID on this machine can run a task."
           : able.length === 0
-            ? "No instance on this machine can run a task: runs use a Codex instance."
+            ? "No instance on this machine can run a task: runs use a Codex or Claude Code instance."
             : "Several instances on this machine can run a task.",
         able.length === 0
           ? `Set one up with: ${CLI_NAME} setup instances`
@@ -381,13 +399,13 @@ export class RunService {
         task: task.id,
         routine: null,
         instance: instance.id,
-        adapter: "codex",
+        adapter: runAdapter(instance),
         place: null,
         // A task's run always holds what was asked: the person's words, else to work on the task.
         request: asked.request ?? WORK_ON_IT,
         briefHash: runBriefHash(task.ref, task.title),
         permission: runPermission(instance),
-        limits: { ...RUN_LIMITS.task, wallMs: settings.wallMs, idleMs: settings.idleMs },
+        limits: { ...RUN_LIMITS.task, ...timeLimits(settings) },
       },
       asked.requestId,
     );
@@ -437,14 +455,7 @@ export class RunService {
       record.task === null || served?.reader === undefined
         ? null
         : ((await readTaskRef(served.reader, record.task).catch(() => undefined)) ?? null);
-    let answer: string | null = record.result?.text ?? null;
-    if (answer === null && !FINAL.has(record.state)) {
-      try {
-        answer = this.#files.readAnswer(record.id)?.text ?? null;
-      } catch {
-        answer = null;
-      }
-    }
+    const answer = record.result?.text ?? this.live(record).said?.text ?? null;
     return { run: record, task, answer };
   }
 
@@ -480,6 +491,8 @@ export class RunService {
    * calls may use that space whether or not its home was set up for it.
    */
   allows(instance: string, space: string, run: string): boolean {
+    // The right ends as the run's end is recorded, before anyone can read that end.
+    if (this.#lanes.get(space)?.host.running(run) !== true) return false;
     for (const ticket of this.#tickets.values()) {
       if (ticket.run === run && ticket.instance === instance && ticket.space === space) {
         return true;
@@ -517,9 +530,34 @@ export class RunService {
     return this.#supervisor.ended({ space, host, machine }, run);
   }
 
-  /** Why a queued run waits, as the last round saw it. */
-  waiting(run: string): WaitReason | undefined {
-    return this.#supervisor.waiting(run);
+  /**
+   * What a run's record cannot say: why a queued run waits, as the last round saw it, since when
+   * a running one has written nothing, and what one that started said so far. Each holds only in
+   * the state it is about: a run being stopped is not quiet, a started one does not wait.
+   */
+  live(run: RunRecord): RunLive {
+    if (run.state === "queued") {
+      const waiting = this.#supervisor.waiting(run.id);
+      return waiting === undefined ? {} : { waiting };
+    }
+    if (run.result !== null || FINAL.has(run.state)) return {};
+    let quietSince: number | undefined;
+    if (run.state === "running") {
+      for (const lane of this.#lanes.values()) quietSince ??= lane.host.quietSince(run.id);
+    }
+    let saved: SavedAnswer | undefined;
+    try {
+      saved = this.#files.readAnswer(run.id);
+    } catch {
+      saved = undefined;
+    }
+    const text = saved?.text ?? null;
+    return {
+      ...(quietSince === undefined ? {} : { quietSince }),
+      ...(saved === undefined || text === null
+        ? {}
+        : { said: { text, final: saved.final, cut: saved.cut } }),
+    };
   }
 
   /** An update's hold: no run starts until it is released. */
@@ -586,18 +624,21 @@ export class RunService {
     const agents = this.#options.agents;
     if (given === undefined && agents !== undefined) {
       const ticket = newTicket();
-      let built: AgentCommand | StartRefusal;
+      let built: BuiltRun | StartRefusal;
       try {
-        built = await buildRun(agents, served, run, this.#options.machine, ticket);
+        const toolsPath = join(this.#files.folder(run.id), TOOLS_FILE);
+        built = await buildRun(agents, served, run, this.#options.machine, ticket, toolsPath);
       } catch (error) {
         if (error instanceof AppError && error.code === "not_found")
           return { refused: "task_closed" };
         throw error;
       }
       if (typeof built === "string") return { refused: built };
-      const command = built;
+      const { command, toolsFile } = built;
       return {
         command: () => {
+          // The run's folder is there now: its tools file goes in before its program starts.
+          if (toolsFile !== undefined) this.#files.writePrivate(run.id, TOOLS_FILE, toolsFile);
           this.#tickets.set(ticket, {
             space: lane.space,
             run: run.id,
@@ -608,7 +649,7 @@ export class RunService {
           const forget = (): void => {
             this.#tickets.delete(ticket);
           };
-          void lane.host.ended(run.id).then(forget, forget);
+          void lane.host.hosting(run.id).then(forget, forget);
           return command;
         },
       };

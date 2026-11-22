@@ -36,6 +36,8 @@ export interface Run {
   readonly reason: string | null;
   /** Why a queued run waits. */
   readonly waiting?: string;
+  /** Since when a running run has said nothing, milliseconds since 1970. */
+  readonly quiet_since?: number;
   readonly queued_at: number;
   readonly started_at: number | null;
   readonly ended_at: number | null;
@@ -48,6 +50,8 @@ export interface Run {
   readonly answer_final: boolean;
   readonly answer_cut: boolean;
   readonly error?: string;
+  /** How many of the agent's requests its permission refused, when any were. */
+  readonly refused?: number;
   /** Grows with every change of the run: of two reads, the higher is newer. */
   readonly version: number;
 }

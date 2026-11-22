@@ -13,8 +13,9 @@
 //   what is still there is ended.
 // - Stop works at every moment, start-up and a close included, and waits for nothing: it is
 //   committed first (`cancelling`), the agent is asked to stop over its protocol (or interrupted
-//   when it has none), and after the grace time the container is killed. A container that is not
-//   confirmed empty in time leaves the run `unknown`, with End by force.
+//   when it has none), and after the grace time the container is killed. A Stop before the
+//   agent's process was there means its driver never opens: nothing of the work reaches it. A
+//   container that is not confirmed empty in time leaves the run `unknown`, with End by force.
 // - The answer is kept whole up to 1 MiB, also after megabytes of other output, and each answer
 //   is saved to the run's folder as it comes, so a crash of the service keeps the last one.
 // - When the service ends, its runs' processes end with it (the container's own guarantee). The
@@ -26,7 +27,7 @@
 // Every limit runs on the monotonic clock: the start time, the run's wall and idle times, the
 // stop's grace, the close, the confirmation and the drain of the output.
 import type { RunCleanup, RunEvent, RunRecord, RunResult } from "@tasks/contracts/runs";
-import { SIGNAL_NAME } from "@tasks/contracts/runs";
+import { SIGNAL_NAME, TEXT_CAP_BYTES } from "@tasks/contracts/runs";
 import type {
   AgentExit,
   Confirmation,
@@ -39,6 +40,7 @@ import type { DriverSession, OpenDriver, Work } from "./drivers/types.ts";
 import { RunMachine, type RunEnd } from "./machine.ts";
 import type { RunFolders, SavedAnswer } from "./run-files.ts";
 import { STREAM_KINDS, type StreamKind } from "./streams/index.ts";
+import { capText } from "./streams/values.ts";
 
 /** The host's time limits, in milliseconds. A run's wall and idle times come from its record. */
 export interface RunTimes {
@@ -102,14 +104,18 @@ export const containerName = (run: string): string => run;
 /** One run this host works on, from its start until its record is final. */
 interface Flow {
   readonly id: string;
-  /** A Stop was accepted for it. */
-  stopping: boolean;
+  /** Whether a Stop was accepted for it by now: one can come during any wait of its flow. */
+  readonly stopping: () => boolean;
   readonly stopped: Promise<"stop">;
   readonly stop: () => void;
   /** The container's start has not answered yet: a container may still appear. */
   startPending: boolean;
   /** The end it settles with once its container is confirmed empty, while it is `unknown`. */
   pending: RunEnd | undefined;
+  /** Its end is being recorded: from here on the run no longer runs. */
+  settling: boolean;
+  /** While its agent runs: when it last wrote output, or started, in wall clock milliseconds. */
+  quietSince: number | undefined;
   readonly abort: AbortController;
   done: Promise<RunRecord | undefined>;
 }
@@ -294,9 +300,30 @@ export class RunHost {
 
   /** Resolves with the run's record once this host's work on it is over. */
   async ended(id: string): Promise<RunRecord | undefined> {
-    const flow = this.#flows.get(id);
-    if (flow !== undefined) await flow.done;
+    await this.hosting(id);
     return this.#machine.read(id);
+  }
+
+  /** Resolves as soon as this host's work on the run is over: its end recorded, or the host closed. */
+  async hosting(id: string): Promise<void> {
+    await this.#flows.get(id)?.done;
+  }
+
+  /**
+   * Whether the run runs here now: started by this host, and its end not yet being recorded. It
+   * is false before anyone can read the run's end from the store.
+   */
+  running(id: string): boolean {
+    const flow = this.#flows.get(id);
+    return flow !== undefined && !flow.settling && !this.#isClosed();
+  }
+
+  /**
+   * Since when the run's agent has written nothing, in wall clock milliseconds, while it runs here:
+   * a quiet run is shown as one, so the person can judge whether to stop it.
+   */
+  quietSince(id: string): number | undefined {
+    return this.running(id) ? this.#flows.get(id)?.quietSince : undefined;
   }
 
   /**
@@ -304,22 +331,22 @@ export class RunHost {
    * once. A run no flow of this service holds is settled from its container's name, as at start.
    */
   async stop(id: string): Promise<RunRecord | undefined> {
+    // The flow hears the Stop before the store is asked: a start that goes on while the store
+    // answers must not open the agent's input. When the store does not take it, the agent is
+    // stopped all the same, and the record then says how it ended rather than cancelled. A start
+    // asked while the store answered goes on once the store refuses: it is stopped as well.
+    const flow = this.#flows.get(id);
+    if (flow !== undefined && !flow.settling) flow.stop();
     let cancelled: { run: RunRecord | undefined; stopping: boolean };
     try {
       cancelled = await this.#machine.cancel(id);
     } catch (error) {
-      // The store did not take the Stop, or did not say so in time. The person asked for it, so
-      // the agent is stopped all the same; the record then says how it ended rather than cancelled.
-      this.#flows.get(id)?.stop();
+      const late = this.#flows.get(id);
+      if (late !== undefined && !late.settling) late.stop();
       throw error;
     }
     const { run, stopping } = cancelled;
-    if (!stopping || run === undefined) return run;
-    const flow = this.#flows.get(id);
-    if (flow !== undefined) {
-      flow.stop();
-      return run;
-    }
+    if (!stopping || run === undefined || flow !== undefined) return run;
     return this.#reconcile(run);
   }
 
@@ -394,16 +421,19 @@ export class RunHost {
       };
     });
     const abort = new AbortController();
+    let stopping = false;
     const flow: Flow = {
       id,
-      stopping: false,
+      stopping: () => stopping,
       stopped,
       stop: () => {
-        flow.stopping = true;
+        stopping = true;
         stop();
       },
       startPending: false,
       pending: undefined,
+      settling: false,
+      quietSince: undefined,
       abort,
       done: Promise.resolve(undefined),
     };
@@ -456,7 +486,7 @@ export class RunHost {
     if (prepared === undefined) {
       return this.#settle(flow.id, { kind: "start_failed", reason: "start_timed_out" });
     }
-    if (prepared === "stop" || flow.stopping) {
+    if (prepared === "stop" || flow.stopping()) {
       return this.#settle(flow.id, { kind: "start_failed", reason: "spawn_failed" });
     }
     const open = prepared.open ?? defaultDriver(run);
@@ -484,6 +514,22 @@ export class RunHost {
     // The container's contract: a refused start leaves nothing running and no container.
     if (!started.ok) return this.#settle(flow.id, { kind: "start_failed", reason: "spawn_failed" });
     return this.#running(flow, run, started.contained, open);
+  }
+
+  /**
+   * A Stop came while the agent's process started: its driver is never opened, so nothing of the
+   * work reaches its input. Its PID is recorded, and what it is is ended.
+   */
+  async #stoppedAtStart(flow: Flow, contained: Contained): Promise<RunRecord | undefined> {
+    contained.stdin.on("error", () => undefined);
+    contained.stdin.end();
+    contained.stdout.resume();
+    contained.stderr.resume();
+    await this.#machine.started(flow.id, contained.pid, this.#now()).catch((error: unknown) => {
+      this.#failed("started", error);
+    });
+    const end: RunEnd = { kind: "start_failed", reason: "spawn_failed" };
+    return this.#confirmed(flow, end, await this.#endContainer(contained.name));
   }
 
   /**
@@ -531,6 +577,7 @@ export class RunHost {
     contained: Contained,
     open: OpenDriver,
   ): Promise<RunRecord | undefined> {
+    if (flow.stopping()) return this.#stoppedAtStart(flow, contained);
     const name = contained.name;
     const startedAt = this.#elapsed();
     const agent: { exit: AgentExit | undefined; at: number | undefined } = {
@@ -548,12 +595,17 @@ export class RunHost {
     // output thrown away, so an agent that answers and exits quickly would lose its answer.
     const logs = this.#files.logs(flow.id);
     let lastOutput = startedAt;
+    flow.quietSince = this.#now();
     contained.stdout.on("data", (chunk: Buffer) => {
       lastOutput = this.#elapsed();
+      flow.quietSince = this.#now();
       logs.stdout(chunk);
     });
+    // The end of what it wrote on stderr: the only explanation of a start that said nothing else.
+    let stderrTail = Buffer.alloc(0);
     contained.stderr.on("data", (chunk: Buffer) => {
       logs.stderr(chunk);
+      stderrTail = Buffer.concat([stderrTail, chunk]).subarray(-TEXT_CAP_BYTES);
     });
     const drained = Promise.all([endOf(contained.stdout), endOf(contained.stderr)]);
     let session: DriverSession;
@@ -610,6 +662,10 @@ export class RunHost {
       session.ended(agent.exit ?? { code: null, signal: null });
       work = (await settledNow(session)) ?? (await unopened.settled);
     }
+    if (work.outcome === "no_output" && work.error === null) {
+      const said = stderrTail.toString("utf8").replace(/^�+/u, "").trim();
+      if (said !== "") work = { ...work, error: capText(said).text };
+    }
     if (this.#isClosed()) {
       // The service ends, and the run with it: its work did not settle by itself, and the next
       // start records why from what was saved.
@@ -637,7 +693,7 @@ export class RunHost {
     const ended = why === "settled" || why === "exited";
     const { confirmed, cleanup } = await this.#cleanUp(
       name,
-      ended && agent.exit !== undefined && !flow.stopping ? this.#times.settleMs : 0,
+      ended && agent.exit !== undefined && !flow.stopping() ? this.#times.settleMs : 0,
     );
     if (confirmed.state === "empty" || confirmed.state === "unconfirmable") {
       // Nothing holds the pipes any more: the rest of the output arrives.
@@ -683,17 +739,22 @@ export class RunHost {
     };
   }
 
-  /** Resolves with the run's limit that passed first: its wall time, or its time without output. */
+  /**
+   * Resolves with the run's limit that passed first: its wall time, or its time without output.
+   * A run without either never resolves here.
+   */
   async #limits(
     run: RunRecord,
     startedAt: number,
     lastOutput: () => number,
     signal: AbortSignal,
   ): Promise<"wall" | "idle"> {
+    const { wallMs, idleMs } = run.limits;
+    if (wallMs === undefined && idleMs === undefined) return new Promise<never>(() => undefined);
     for (;;) {
       const now = this.#elapsed();
-      const wall = startedAt + run.limits.wallMs - now;
-      const idle = lastOutput() + run.limits.idleMs - now;
+      const wall = wallMs === undefined ? Infinity : startedAt + wallMs - now;
+      const idle = idleMs === undefined ? Infinity : lastOutput() + idleMs - now;
       if (wall <= 0) return "wall";
       if (idle <= 0) return "idle";
       await this.#wait(Math.min(wall, idle), signal);
@@ -806,6 +867,9 @@ export class RunHost {
    * `retryMs` for as long as the host is open: the run's end is known, and only this flow holds it.
    */
   async #settle(id: string, end: RunEnd): Promise<RunRecord | undefined> {
+    // Before the end can be read from the store, the run no longer runs here.
+    const flow = this.#flows.get(id);
+    if (flow !== undefined) flow.settling = true;
     // A closed host's runs end with its service: the next start records why.
     if (this.#isClosed()) return undefined;
     for (;;) {
