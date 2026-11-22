@@ -4,7 +4,7 @@
 // not read back at this start (`dropped`, logged as `binding.store_dropped`). Counts and instance
 // IDs only: an instance is an A4 instance ID or `manual` (bindings.ts `instanceIn`), never a path,
 // a native ID, a handle or a task.
-import type { JsonObject } from "@tasks/bridge/protocol";
+import type { JsonObject } from "@ttasks/bridge/protocol";
 import type { Slot } from "../ops/index.ts";
 
 export interface SessionSource {

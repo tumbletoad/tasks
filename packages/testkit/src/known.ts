@@ -13,7 +13,7 @@ export const FIXED_SAMPLE = {
  * the 0.1 fixture builder no longer produces what the 0.1 release produced, so the migration tests
  * that start from it would no longer start from a real 0.1 space: make the builder produce it again
  * (for example by freezing a generator change behind the chain), never update this value. The
- * generator's seed string carries the identifier (`tasks-mira:`, PLAN.md Q).
+ * generator's seed string carries the identifier (`tasks-mira:`, kept through the rename).
  */
 export const FIXED_SAMPLE_0_1 = {
   seed: "fixed",

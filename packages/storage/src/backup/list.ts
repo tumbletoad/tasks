@@ -1,4 +1,4 @@
-// Listing a space's backups (A1 3.18, `tasks space backups list` in M1.10). The listing reads each
+// Listing a space's backups (A1 3.18, `ttasks space backups list` in M1.10). The listing reads each
 // sidecar and checks that its `.db.gz` is there with the size the sidecar records. It does not
 // decompress anything, and it verifies nothing: a restore checks the backup in full before it uses
 // it, and retention keeps the newest backup that a trial restore verified (verifyBackup).

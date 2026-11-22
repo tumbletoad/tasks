@@ -105,7 +105,7 @@ describe("[A1.3.15.folders.deepest] the project a working folder belongs to", ()
   });
 
   test("a project folder reached through a link holds the folders of its target", async () => {
-    const root = mkdtempSync(join(tmpdir(), "tasks-deepest-"));
+    const root = mkdtempSync(join(tmpdir(), "ttasks-deepest-"));
     try {
       const real = join(root, "real", "portal");
       mkdirSync(join(real, "src"), { recursive: true });

@@ -11,9 +11,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import type { RpcSession } from "@tasks/bridge/protocol";
-import { backupsFolder, createSpace, newId, type Id } from "@tasks/storage";
-import { checkedDriver } from "@tasks/testkit";
+import type { RpcSession } from "@ttasks/bridge/protocol";
+import { backupsFolder, createSpace, newId, type Id } from "@ttasks/storage";
+import { checkedDriver } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { readSpaceSettings } from "../src/hub/space-settings.ts";

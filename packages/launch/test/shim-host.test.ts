@@ -240,7 +240,7 @@ describe("[A4.5.shim.claim] the one spawn claim", () => {
     expect(reply?.credential).toMatch(CREDENTIAL);
     expect(reply?.env).toMatchObject({
       CODEX_HOME: "/home/mira/.codex-work",
-      TASKS_TICKET: ticket,
+      TTASKS_TICKET: ticket,
     });
     expect(reply?.env).not.toHaveProperty("SECRET");
     // The claim's evidence is its own random ID, never a secret.
@@ -688,22 +688,26 @@ describe("[A4.5.shim.environment] the agent's environment", () => {
         XDG_RUNTIME_DIR: "/run/user/1000",
         CODEX_HOME: "/inherited/codex",
         CLAUDE_CONFIG_DIR: "/inherited/claude",
-        TASKS_HOME: "/inherited/tasks",
+        TTASKS_HOME: "/inherited/tasks",
         CLAUDECODE: "1",
         NODE_OPTIONS: "--inspect",
         AWS_SECRET_ACCESS_KEY: "fixture",
         UNSET: undefined,
       },
-      instance: { CODEX_HOME: "/home/mira/.codex-work", FIXTURE_INSTANCE: "1", TASKS_TASK: "nope" },
-      additions: { TASKS_TICKET: "T".repeat(24), TASKS_TASK: "t_x", TASKS_SPACE: SPACE },
+      instance: {
+        CODEX_HOME: "/home/mira/.codex-work",
+        FIXTURE_INSTANCE: "1",
+        TTASKS_TASK: "nope",
+      },
+      additions: { TTASKS_TICKET: "T".repeat(24), TTASKS_TASK: "t_x", TTASKS_SPACE: SPACE },
     });
     expect(env).toEqual({
       CODEX_HOME: "/home/mira/.codex-work",
       FIXTURE_INSTANCE: "1",
       HOME: "/home/mira",
-      TASKS_SPACE: SPACE,
-      TASKS_TASK: "t_x",
-      TASKS_TICKET: "T".repeat(24),
+      TTASKS_SPACE: SPACE,
+      TTASKS_TASK: "t_x",
+      TTASKS_TICKET: "T".repeat(24),
       LC_TIME: "nl_NL.UTF-8",
       PATH: "/usr/bin",
       XDG_RUNTIME_DIR: "/run/user/1000",
@@ -1037,7 +1041,7 @@ describe("[A4.5.environment.scrub] the claim's reply builds the agent's environm
       SHELL: "/usr/bin/zsh",
       GOPATH: "/home/mira/go",
       CLAUDECODE: "1",
-      TASKS_HOME: "/k",
+      TTASKS_HOME: "/k",
     };
     // A via_login_shell launch's own base, as its dispatch step took it in the task's folder: the
     // profile re-exported what A4 scrubs and set a home variable, and the scrub still applies.
@@ -1070,7 +1074,7 @@ describe("[A4.5.environment.scrub] the claim's reply builds the agent's environm
     expect(reply).not.toHaveProperty("login_shell");
     expect(reply?.argv).toEqual(PLAN.argv);
     expect(reply?.env).toMatchObject({ GOPATH: "/home/mira/go", FROM_FOLDER: "1" });
-    for (const name of ["CLAUDECODE", "TASKS_HOME", "NODE_OPTIONS"]) {
+    for (const name of ["CLAUDECODE", "TTASKS_HOME", "NODE_OPTIONS"]) {
       expect(reply?.env, name).not.toHaveProperty(name);
     }
     // The home is the instance's, never the profile's.

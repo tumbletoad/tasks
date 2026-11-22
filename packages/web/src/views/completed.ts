@@ -5,7 +5,7 @@
 // "Checked off" (completed, its wrap-up still waiting) sits on top, so the source reads that part
 // whole first, then every other finished task. A page may cross from one part to the other; its
 // cursor names the part and the read's own cursor there.
-import type { Client } from "@tasks/contracts/generated/client.ts";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { Group } from "../groups.ts";
 import { finishedDayOf } from "../row/model.ts";

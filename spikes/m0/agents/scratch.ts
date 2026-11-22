@@ -22,7 +22,7 @@ import {
 import { isAbsolute, relative, resolve } from "node:path";
 
 /** The marker file the lab writes into the scratch root and into every folder it owns. */
-export const OWNER_MARKER = ".tasks-lab-owner";
+export const OWNER_MARKER = ".ttasks-lab-owner";
 
 /** A refusal of the removal rule. The message is one of a fixed set and never holds a path. */
 export class ScratchRefusal extends Error {
@@ -181,7 +181,7 @@ export function openScratch(root: string, win = process.platform === "win32"): S
 export const E02_MODES = ["run-user", "state"] as const;
 export type E02Mode = (typeof E02_MODES)[number];
 
-/** E02's modes from `TASKS_M0_E02_MODES` (comma list) or the machine's default. */
+/** E02's modes from `TTASKS_M0_E02_MODES` (comma list) or the machine's default. */
 export function parseE02Modes(value: string | undefined, win: boolean): E02Mode[] {
   if (value === undefined || value === "") return win ? ["state"] : ["run-user", "state"];
   const modes = value.split(",");

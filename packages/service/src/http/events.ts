@@ -5,7 +5,7 @@
 // these lists as the only values its fields accept, so a request's path, query, headers or body
 // can never reach the log. This module imports nothing from the hub, so the catalogue can import
 // it without a cycle (the local library's events work the same way).
-import { registry } from "@tasks/contracts";
+import { registry } from "@ttasks/contracts";
 
 /** What a request asks for, as one word. The path itself is never logged. */
 export const ROUTES = [
@@ -17,9 +17,9 @@ export const ROUTES = [
   "file",
   /** `/healthz`: `ok`, for doctor and for other local users (A2 3.8.5). */
   "healthz",
-  /** `/.well-known/tasks`: `{"app":"tasks","protocol":1}`. */
+  /** `/.well-known/ttasks`: `{"app":"ttasks","protocol":1}`. */
   "well_known",
-  /** `POST /api/v1/auth/probe`: `tasks open` checks the listener before it trusts the port. */
+  /** `POST /api/v1/auth/probe`: `ttasks open` checks the listener before it trusts the port. */
   "probe",
   /** `POST /api/v1/auth/redeem`: a fragment code for a bearer token. */
   "redeem",

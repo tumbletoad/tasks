@@ -3,7 +3,7 @@
 // fails through a stand-in for read.ts's readScriptChange. A service in this process, fixture
 // text and temporary folders only.
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { HistoryUndoResult } from "@tasks/contracts";
+import { HistoryUndoResult } from "@ttasks/contracts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 

@@ -1,5 +1,5 @@
 {
-  "name": "@tasks/service",
+  "name": "@ttasks/service",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -28,21 +28,21 @@
     "./version-update": "./src/version/update.ts"
   },
   "dependencies": {
-    "@tasks/brand": "workspace:*",
-    "@tasks/bridge": "workspace:*",
-    "@tasks/contracts": "workspace:*",
-    "@tasks/files": "workspace:*",
-    "@tasks/launch": "workspace:*",
-    "@tasks/projection": "workspace:*",
-    "@tasks/runs": "workspace:*",
-    "@tasks/storage": "workspace:*",
+    "@ttasks/brand": "workspace:*",
+    "@ttasks/bridge": "workspace:*",
+    "@ttasks/contracts": "workspace:*",
+    "@ttasks/files": "workspace:*",
+    "@ttasks/launch": "workspace:*",
+    "@ttasks/projection": "workspace:*",
+    "@ttasks/runs": "workspace:*",
+    "@ttasks/storage": "workspace:*",
     "@modelcontextprotocol/server": "2.4.0",
     "smol-toml": "1.9.1",
     "ws": "8.22.0"
   },
   "devDependencies": {
-    "@tasks/launcher-win": "workspace:*",
-    "@tasks/testkit": "workspace:*",
+    "@ttasks/launcher-win": "workspace:*",
+    "@ttasks/testkit": "workspace:*",
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@types/ws": "8.18.1",

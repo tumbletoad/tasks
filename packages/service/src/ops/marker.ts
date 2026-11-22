@@ -1,4 +1,4 @@
-// The marker Tasks leaves in a project's or a task's folder: `.tasks-marker/` with the IDs of the
+// The marker TTasks leaves in a project's or a task's folder: `.ttasks-marker/` with the IDs of the
 // space and of each project or task whose folder it is, and a `.gitignore` holding `*`, so a
 // checkout's `git status` stays clean without a change to the repository's own ignore files. It
 // holds no task text. A launch reads it just before an agent starts: a folder this machine marked
@@ -9,21 +9,21 @@
 // undo may give an owner back a folder, and only a folder that was marked for that owner can have
 // lost its marker. With each mark it keeps what identifies the folder itself (`identityOf`), so a
 // marker that went while the folder stayed (`git clean -x`) is put back without a question, and
-// a folder made again at the path (a fresh clone) still asks. A folder Tasks cannot write to
+// a folder made again at the path (a fresh clone) still asks. A folder TTasks cannot write to
 // (read-only, a share) gets no marker and is opened as before: that is the limit of the
 // protection, not a refusal.
 import { readFileSync } from "node:fs";
 import { lstat, readFile, rm, rmdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { FOLDER_MARKER, PRODUCT_NAME } from "@tasks/brand";
+import { FOLDER_MARKER, PRODUCT_NAME } from "@ttasks/brand";
 import {
   atomicWrite,
   atomicWriteAsync,
   createFileAsync,
   makeDir,
   makeDirAsync,
-} from "@tasks/files";
-import { folderKey } from "@tasks/storage";
+} from "@ttasks/files";
+import { folderKey } from "@ttasks/storage";
 import { bounded, openPath, osOf } from "./folders.ts";
 
 /** A project or a task of a space, as a marker names it. */
@@ -42,7 +42,7 @@ export const MARKS_FILE = "folder-marks.json";
 const ABOUT = `${PRODUCT_NAME} keeps this folder to know which project or task this folder belongs to. Clearing the folder in ${PRODUCT_NAME} removes it.`;
 
 /**
- * What a folder's marker says: no marker, its owners, an owners file that is not one Tasks writes
+ * What a folder's marker says: no marker, its owners, an owners file that is not one TTasks writes
  * (`malformed`), or a marker this machine cannot read or should not touch (`unreadable`: a read
  * error, or a link where the marker's folder belongs).
  */
@@ -119,7 +119,7 @@ const IGNORE_ALL = "*\n";
 
 /**
  * Adds `owner` to the marker of the folder at `absolute`, making the marker when there is none.
- * An owners file that is not one Tasks writes is written over: it is in the marker's own folder.
+ * An owners file that is not one TTasks writes is written over: it is in the marker's own folder.
  * False when the folder takes no marker: it cannot be written, or something that is not a folder
  * has the marker's name.
  */

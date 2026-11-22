@@ -1,4 +1,4 @@
-// The spike forwarder: a stand-in for the bridge `tasks mcp` (A2 3.7), stdio to the socket or
+// The spike forwarder: a stand-in for the bridge `ttasks mcp` (A2 3.7), stdio to the socket or
 // pipe, for rows B01-B06, A01-A07, S05 (P-4, P-5) and S08:
 //   node forwarder.mjs --state <state> [--space <id>] [--instance <id>] [--app <name>] [--reconnect]
 // Online it completes the handshake in mcp mode with the binding context, then pipes lines
@@ -43,9 +43,9 @@ const BINDING_ENV = [
   "CLAUDE_CODE_SESSION_ID",
   "CODEX_THREAD_ID",
   "T3CODE_THREAD_ID",
-  "TASKS_TICKET",
-  "TASKS_TASK",
-  "TASKS_SPACE",
+  "TTASKS_TICKET",
+  "TTASKS_TASK",
+  "TTASKS_SPACE",
 ];
 
 /** A2 3.7.4: retry after 0.5, 1, 2 and 5 s, then every 10 s. */
@@ -94,7 +94,7 @@ if (app !== undefined) context["app"] = app;
 
 function offline(reason: Reason): void {
   const respond = createMcpResponder({
-    name: "tasks",
+    name: "ttasks",
     instructions: STUB_INSTRUCTIONS,
     tools: STUB_TOOLS,
     call: () => textResult(OFFLINE_TEXTS[reason], true),

@@ -19,7 +19,7 @@ import {
 
 let work: string;
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-manifest-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-manifest-"));
 });
 afterAll(() => {
   rmSync(work, { recursive: true, force: true });
@@ -48,9 +48,9 @@ function folder(files: Record<string, string>): string {
 }
 
 const FILES = {
-  "bin/tasks": "#!/bin/sh\n",
+  "bin/ttasks": "#!/bin/sh\n",
   "runtime/node": "fixture runtime\n",
-  "lib/tasks.mjs": "// fixture entry\n",
+  "lib/ttasks.mjs": "// fixture entry\n",
   "lib/chunks/cli.mjs": "// fixture chunk\n",
   LICENSE: "fixture licence\n",
 };
@@ -61,13 +61,13 @@ describe("[A2.3.12.2.build.version-manifest] manifest.json lists every file of a
     const manifest = writeVersionManifest(dir, FIELDS);
     expect(Object.keys(manifest.files)).toEqual([
       "LICENSE",
-      "bin/tasks",
+      "bin/ttasks",
       "lib/chunks/cli.mjs",
-      "lib/tasks.mjs",
+      "lib/ttasks.mjs",
       "runtime/node",
     ]);
     expect(manifest.files["runtime/node"]).toBe(sha256File(join(dir, "runtime", "node")));
-    expect(manifest).toMatchObject({ format: 1, name: "tasks", ...FIELDS });
+    expect(manifest).toMatchObject({ format: 1, name: "ttasks", ...FIELDS });
     const text = serializeManifest(manifest);
     // The line form the POSIX install script reads with sed, and nothing else at that indent.
     const lines = text
@@ -83,11 +83,11 @@ describe("[A2.3.12.2.build.version-manifest] manifest.json lists every file of a
   test("the checker finds a changed, a missing, an extra and a linked file", () => {
     const dir = folder(FILES);
     writeVersionManifest(dir, FIELDS);
-    writeFileSync(join(dir, "lib", "tasks.mjs"), "// changed\n");
+    writeFileSync(join(dir, "lib", "ttasks.mjs"), "// changed\n");
     rmSync(join(dir, "LICENSE"));
     writeFileSync(join(dir, "lib", "extra.mjs"), "");
     const problems = [
-      "changed: lib/tasks.mjs",
+      "changed: lib/ttasks.mjs",
       "missing: LICENSE",
       "not in manifest.json: lib/extra.mjs",
     ];
@@ -126,7 +126,7 @@ describe("[A2.3.12.2.build.version-manifest] manifest.json lists every file of a
 
   test("a manifest that is not exactly the format is refused", () => {
     const good = JSON.parse(
-      serializeManifest({ format: 1, name: "tasks", ...FIELDS, files: {} }),
+      serializeManifest({ format: 1, name: "ttasks", ...FIELDS, files: {} }),
     ) as Record<string, unknown>;
     const bad: Record<string, unknown>[] = [
       { ...good, format: 2 },
@@ -172,20 +172,20 @@ describe("[A2.3.12.2.build.version-manifest] manifest.json lists every file of a
     writeFileSync(join(root, "current"), "../escape");
     expect(checkInstallAround(v1, "linux")).toEqual(["current does not name a version"]);
     writeFileSync(join(root, "current"), "0.1.0");
-    // A TASKS_HOME install keeps its command folder in its root.
+    // A TTASKS_HOME install keeps its command folder in its root.
     writeFileSync(join(root, "home.marker"), "");
     mkdirSync(join(root, "bin"));
-    writeFileSync(join(root, "bin", "tasks.exe"), "");
-    expect(checkInstallAround(v1, "win32")).toEqual(["missing stable launcher: bin/tasksw.exe"]);
+    writeFileSync(join(root, "bin", "ttasks.exe"), "");
+    expect(checkInstallAround(v1, "win32")).toEqual(["missing stable launcher: bin/ttasksw.exe"]);
     expect(checkInstallAround(v1, "linux")).toEqual([]);
     // A version folder outside versions/ is no install's.
     expect(checkInstallAround(join(work, "loose", "0.1.0"), "win32")).toEqual([]);
   });
 
   test("the daily install's stable launchers are in the command folder beside share", () => {
-    // ~/.local/share/tasks with its command folder ~/.local/bin (A2 3.2.1).
+    // ~/.local/share/ttasks with its command folder ~/.local/bin (A2 3.2.1).
     const local = join(work, "home", ".local");
-    const root = join(local, "share", "tasks");
+    const root = join(local, "share", "ttasks");
     const v1 = join(root, "versions", "0.1.0");
     mkdirSync(v1, { recursive: true });
     writeFileSync(join(v1, "manifest.json"), "{}");
@@ -193,20 +193,20 @@ describe("[A2.3.12.2.build.version-manifest] manifest.json lists every file of a
     // No command folder yet: nothing to check.
     expect(checkInstallAround(v1, "win32")).toEqual([]);
     mkdirSync(join(local, "bin"));
-    writeFileSync(join(local, "bin", "tasksw.exe"), "");
-    expect(checkInstallAround(v1, "win32")).toEqual(["missing stable launcher: bin/tasks.exe"]);
-    writeFileSync(join(local, "bin", "tasks.exe"), "");
+    writeFileSync(join(local, "bin", "ttasksw.exe"), "");
+    expect(checkInstallAround(v1, "win32")).toEqual(["missing stable launcher: bin/ttasks.exe"]);
+    writeFileSync(join(local, "bin", "ttasks.exe"), "");
     expect(checkInstallAround(v1, "win32")).toEqual([]);
     // A bin folder in the program's own root is not where the daily install's command lives.
-    rmSync(join(local, "bin", "tasks.exe"));
+    rmSync(join(local, "bin", "ttasks.exe"));
     mkdirSync(join(root, "bin"));
-    writeFileSync(join(root, "bin", "tasks.exe"), "");
-    expect(checkInstallAround(v1, "win32")).toEqual(["missing stable launcher: bin/tasks.exe"]);
+    writeFileSync(join(root, "bin", "ttasks.exe"), "");
+    expect(checkInstallAround(v1, "win32")).toEqual(["missing stable launcher: bin/ttasks.exe"]);
   });
 
-  test("a root with no home.marker that is not share\\tasks has no command folder to check", () => {
+  test("a root with no home.marker that is not share\\ttasks has no command folder to check", () => {
     // No launcher dispatches into <base>\x\y: a stable launcher finds <root>\bin's root only by
-    // home.marker, and the daily root only as share\tasks beside its own folder. So an unrelated
+    // home.marker, and the daily root only as share\ttasks beside its own folder. So an unrelated
     // <base>\bin two levels up is not this install's command folder.
     const base = join(work, "base");
     const v1 = join(base, "x", "y", "versions", "0.1.0");

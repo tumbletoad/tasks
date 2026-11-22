@@ -18,7 +18,7 @@
 //   the shared file, so the shared home is the one with the entry (codexSharedHome).
 import { lstatSync, readdirSync, readlinkSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
-import { envValue, INSTANCE_ID, targetDef, type Env, type Proposal } from "@tasks/launch";
+import { envValue, INSTANCE_ID, targetDef, type Env, type Proposal } from "@ttasks/launch";
 import type { AgentApp } from "./state.ts";
 
 const pathOf = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
@@ -62,9 +62,9 @@ export function claudeDesktopFolders(input: HostsInput): string[] {
   const p = pathOf(input.platform);
   const candidates: string[] = [];
   if (input.platform === "win32") {
-    // eslint-disable-next-line no-restricted-syntax -- where Claude Desktop keeps its file, never a path Tasks writes for itself
+    // eslint-disable-next-line no-restricted-syntax -- where Claude Desktop keeps its file, never a path TTasks writes for itself
     const local = absolute(input, "LOCALAPPDATA");
-    // eslint-disable-next-line no-restricted-syntax -- where Claude Desktop keeps its file, never a path Tasks writes for itself
+    // eslint-disable-next-line no-restricted-syntax -- where Claude Desktop keeps its file, never a path TTasks writes for itself
     const roaming = absolute(input, "APPDATA");
     if (local !== undefined) {
       const data = p.join(local, "Claude-Data");
@@ -127,7 +127,7 @@ export function codexAppEngines(input: HostsInput): string[] {
 //   wins, and an empty value replaces the inherited one too), else the variable T3 inherited (`~`
 //   expanded for Codex only), else `~/.codex` or `~/.claude` when the value is blank. Codex keeps a
 //   path as written, Claude trims it. A relative path is resolved against T3's working folder,
-//   which Tasks cannot know, so its instance is skipped. A Codex instance in `setupMode: "managed"`
+//   which TTasks cannot know, so its instance is skipped. A Codex instance in `setupMode: "managed"`
 //   ignores the variables. A Claude home named by a path is CLAUDE_CONFIG_DIR, so Claude Code reads
 //   `.claude.json` inside it. An instance turned off runs nothing, and its home is not worked out.
 // - Codex's `config.shadowHomePath` is the folder Codex runs in, whose entries other than the
@@ -137,11 +137,11 @@ export function codexAppEngines(input: HostsInput): string[] {
 // value can be a secret and is never read, kept or printed. A value kept in T3's secret store (a
 // `secret` reference) is not known here, so its instance is skipped as `secret_home`.
 
-/** The T3 drivers whose agents Tasks registers its tools for and opens tasks in. */
+/** The T3 drivers whose agents TTasks registers its tools for and opens tasks in. */
 export const T3_AGENT_DRIVERS = { codex: "codex", claudeAgent: "claude-code" } as const;
 export type T3AgentDriver = keyof typeof T3_AGENT_DRIVERS;
 
-/** T3's other built-in drivers: their agents are not Tasks's, so they are passed over quietly. */
+/** T3's other built-in drivers: their agents are not TTasks's, so they are passed over quietly. */
 const T3_OTHER_DRIVERS: ReadonlySet<string> = new Set([
   "cursor",
   "grok",
@@ -157,7 +157,7 @@ const T3_OTHER_DRIVERS: ReadonlySet<string> = new Set([
 /** T3's pattern for an instance ID and a driver kind. */
 const T3_SLUG = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/u;
 
-/** One enabled provider instance of a driver Tasks knows, as T3 runs it. */
+/** One enabled provider instance of a driver TTasks knows, as T3 runs it. */
 export interface T3ProviderInstance {
   /** Its key in `providerInstances`, which T3's `--provider` and `instanceId` take. */
   readonly id: string;
@@ -177,18 +177,18 @@ export interface T3ProviderInstance {
 
 /** Why an entry of T3's settings was passed over (named by doctor's `t3.homes`). */
 export type T3Skip =
-  /** A driver T3 did not have when Tasks was built: never guessed. */
+  /** A driver T3 did not have when TTasks was built: never guessed. */
   | "unknown_driver"
   /** The entry is not of the form T3 writes, or its home is no absolute folder. */
   | "invalid_entry"
-  /** Its home variable is in T3's secret store: Tasks cannot know the home. */
+  /** Its home variable is in T3's secret store: TTasks cannot know the home. */
   | "secret_home";
 
 /** What T3's settings say, for setup and doctor. */
 export interface T3Settings {
   /** `read`, or what kept the file from being read: then T3's defaults stand. */
   readonly file: "read" | "missing" | "refused";
-  /** The enabled instances of a driver Tasks knows: the only ones that run agents. */
+  /** The enabled instances of a driver TTasks knows: the only ones that run agents. */
   readonly instances: readonly T3ProviderInstance[];
   /** The keys of instances of those drivers that T3 has turned off, their homes not worked out. */
   readonly off: readonly string[];
@@ -246,7 +246,7 @@ function expandHome(input: HostsInput, value: string): string {
 
 /**
  * A path value T3 resolves: absolute after `~` expansion (when T3 expands that value), or the entry
- * is skipped. T3 resolves a relative one against its own working folder, which Tasks cannot know.
+ * is skipped. T3 resolves a relative one against its own working folder, which TTasks cannot know.
  */
 function folderOf(input: HostsInput, value: string, expand = true): string {
   const p = pathOf(input.platform);
@@ -306,7 +306,7 @@ const isOff = (value: Record<string, unknown>, config: Record<string, unknown>):
   optionalFlag(value, "enabled") === false || optionalFlag(config, "enabled") === false;
 
 /**
- * The home an enabled instance of a driver Tasks knows runs its agent in, as T3's drivers resolve
+ * The home an enabled instance of a driver TTasks knows runs its agent in, as T3's drivers resolve
  * it, or undefined for the app's default home. A path names a home when it is not blank: Codex keeps
  * it as written, Claude trimmed. `~` is expanded in `homePath`, in an `environment` entry, and in an
  * inherited CODEX_HOME, but not in an inherited CLAUDE_CONFIG_DIR, which T3 takes literally.
@@ -335,7 +335,7 @@ function homeOfInstance(
   return inherited === undefined ? undefined : folderOf(input, inherited, codex);
 }
 
-/** One listed or default instance of a driver Tasks knows, as T3 runs it; undefined when off. */
+/** One listed or default instance of a driver TTasks knows, as T3 runs it; undefined when off. */
 function instanceOf(
   input: HostsInput,
   id: string,
@@ -366,7 +366,7 @@ function instanceOf(
 }
 
 /**
- * The enabled provider instances of T3's parsed settings (`doc`) whose driver Tasks knows, with the
+ * The enabled provider instances of T3's parsed settings (`doc`) whose driver TTasks knows, with the
  * home each runs in, the keys of those turned off, and the entries passed over with why. T3's default `codex` and
  * `claudeAgent` instances are there when the file does not list them, and a missing or refused
  * file (`file`) means only those. Reads nothing but `doc`.
@@ -461,8 +461,8 @@ function t3ProposalId(instance: T3ProviderInstance): string {
 }
 
 /**
- * `tasks setup instances` for T3 (A4 3.2): one complete proposal per enabled provider instance of a
- * driver Tasks opens through T3, from the detection's T3 proposal (`base`: its command). The label
+ * `ttasks setup instances` for T3 (A4 3.2): one complete proposal per enabled provider instance of a
+ * driver TTasks opens through T3, from the detection's T3 proposal (`base`: its command). The label
  * is T3's display name (T3's own name for the driver when the settings give none), the account the
  * home folder's suffix, and the model T3's default selection when it names this provider instance,
  * else the catalogue's default for the driver.

@@ -38,7 +38,7 @@ const byId = (instances: readonly T3ProviderInstance[], id: string): T3ProviderI
 
 let base: string;
 beforeAll(() => {
-  base = mkdtempSync(join(tmpdir(), "tasks-t3-settings-"));
+  base = mkdtempSync(join(tmpdir(), "ttasks-t3-settings-"));
 });
 afterAll(() => {
   rmSync(base, { recursive: true, force: true });

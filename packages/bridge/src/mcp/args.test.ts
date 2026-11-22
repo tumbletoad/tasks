@@ -1,4 +1,4 @@
-// `tasks mcp`'s arguments (A2 3.7.1, A3 3.7.2) and the bind context built from an allow-list.
+// `ttasks mcp`'s arguments (A2 3.7.1, A3 3.7.2) and the bind context built from an allow-list.
 import { describe, expect, test } from "vitest";
 import { MCP_CONTEXT_ENV } from "../protocol/index.ts";
 import { parseArgs } from "./args.ts";
@@ -36,32 +36,32 @@ describe("[A2.3.7.bridge.hygiene] arguments and the bind context", () => {
 
   test("only the allow-listed environment values are copied, each short and well-formed", () => {
     const env: Record<string, string | undefined> = {
-      TASKS_TICKET: "Q4M8",
+      TTASKS_TICKET: "Q4M8",
       CLAUDE_CODE_SESSION_ID: "6f1c",
       CODEX_THREAD_ID: "019a",
       T3CODE_THREAD_ID: "t3",
-      TASKS_TASK: "M-14",
-      TASKS_SPACE: "sp_x",
+      TTASKS_TASK: "M-14",
+      TTASKS_SPACE: "sp_x",
       CLAUDECODE: "1",
       CODEX_SANDBOX: "seatbelt",
       PATH: "/usr/bin",
       HOME: "/home/mira",
-      TASKS_HOME: "/x",
+      TTASKS_HOME: "/x",
     };
     expect(contextEnv(env)).toEqual({
-      TASKS_TICKET: "Q4M8",
+      TTASKS_TICKET: "Q4M8",
       CLAUDE_CODE_SESSION_ID: "6f1c",
       CODEX_THREAD_ID: "019a",
       T3CODE_THREAD_ID: "t3",
-      TASKS_TASK: "M-14",
-      TASKS_SPACE: "sp_x",
+      TTASKS_TASK: "M-14",
+      TTASKS_SPACE: "sp_x",
     });
     expect(MCP_CONTEXT_ENV).toHaveLength(6);
     expect(
       contextEnv({
-        TASKS_TICKET: "",
-        TASKS_TASK: "x".repeat(MAX_ENV_VALUE + 1),
-        TASKS_SPACE: "lone \ud800 surrogate",
+        TTASKS_TICKET: "",
+        TTASKS_TASK: "x".repeat(MAX_ENV_VALUE + 1),
+        TTASKS_SPACE: "lone \ud800 surrogate",
         CODEX_THREAD_ID: undefined,
       }),
     ).toEqual({});
@@ -70,14 +70,14 @@ describe("[A2.3.7.bridge.hygiene] arguments and the bind context", () => {
   test("the context holds the arguments, cwd, env and parent; mcp_init and resume only when known", () => {
     const base = baseContext(
       { space: "sp_a", instance: null, app: "codex" },
-      { env: { TASKS_TICKET: "T", SECRET: "S" }, cwd: "/work/repo", ppid: 4802 },
+      { env: { TTASKS_TICKET: "T", SECRET: "S" }, cwd: "/work/repo", ppid: 4802 },
     );
     expect(bindContext(base, undefined, undefined)).toEqual({
       space: "sp_a",
       instance: null,
       app: "codex",
       cwd: "/work/repo",
-      env: { TASKS_TICKET: "T" },
+      env: { TTASKS_TICKET: "T" },
       parent: { pid: 4802 },
     });
     const init = { jsonrpc: "2.0", id: 0, method: "initialize", params: {} };

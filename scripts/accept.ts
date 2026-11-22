@@ -10,8 +10,8 @@
 //     current version folder, and the root itself for the tests of the install as installed,
 //   - a built version folder (M1.13's `pnpm build` writes one to dist/<platform>/<version>/), or a
 //     folder holding exactly one.
-// The tests that start a service and `tasks` processes lay out a test install of the version
-// folder in their own temporary TASKS_HOME and run it through its launcher
+// The tests that start a service and `ttasks` processes lay out a test install of the version
+// folder in their own temporary TTASKS_HOME and run it through its launcher
 // (packages/cli/test/cli-harness.ts), so no test changes the install it was given.
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -21,16 +21,16 @@ import { binPath, repoRoot, runNode } from "./run.ts";
 /** The parts of a milestone's acceptance: the manifest IDs each one runs. */
 export const PARTS: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
   m1: {
-    // M1.10's Verify line: the CLI against a real service child in a temporary TASKS_HOME.
+    // M1.10's Verify line: the CLI against a real service child in a temporary TTASKS_HOME.
     cli: ["A2.3.10.cli.accept"],
     // M1.13's check that the bundles behave like the source, with --installed: the CLI's
-    // acceptance, with the folder's integrity and runtime rows and `tasks mcp` as the build's own
+    // acceptance, with the folder's integrity and runtime rows and `ttasks mcp` as the build's own
     // bridge through the launcher, and the space verbs, whose writes, backups and restores run in
     // the built service's storage, space-admin and maintenance workers.
     build: ["A2.3.10.cli.accept", "A2.3.10.cli.space"],
   },
   m2: {
-    // M1's build part, and M2.08's launch shim from the build: `tasks shim` through the folder's
+    // M1's build part, and M2.08's launch shim from the build: `ttasks shim` through the folder's
     // launcher against the folder's own bundled service (A4 3.6.3).
     build: ["A2.3.10.cli.accept", "A2.3.10.cli.space", "A4.5.shim.installed"],
   },
@@ -44,9 +44,9 @@ export const PARTS: Readonly<Record<string, Readonly<Record<string, readonly str
 };
 
 /** The variable that tells the test harness which built version folder to run. */
-export const INSTALLED_VAR = "TASKS_ACCEPT_INSTALLED";
+export const INSTALLED_VAR = "TTASKS_ACCEPT_INSTALLED";
 /** The variable that names the install root, when `--installed` names one (M1.14). */
-export const INSTALL_ROOT_VAR = "TASKS_ACCEPT_INSTALL_ROOT";
+export const INSTALL_ROOT_VAR = "TTASKS_ACCEPT_INSTALL_ROOT";
 
 /**
  * The version folder an install root's `current` names (A2 3.12.2): a link to versions/<v>, or on

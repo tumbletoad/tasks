@@ -30,7 +30,7 @@ import { join, posix } from "node:path";
 import { powershellPath } from "../process.ts";
 import { scriptOutput } from "../windows-reads.ts";
 import type { AgentBase } from "../shim/environment.ts";
-import { atomicWrite } from "@tasks/files";
+import { atomicWrite } from "@ttasks/files";
 import { captureOutput, type Capture } from "./capture.ts";
 import {
   mergeLayers,

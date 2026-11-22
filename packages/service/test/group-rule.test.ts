@@ -1,4 +1,4 @@
-// One rule for who else may write a folder Tasks trusts (A2 3.2.2 rule 5), held twice: by the
+// One rule for who else may write a folder TTasks trusts (A2 3.2.2 rule 5), held twice: by the
 // service (hub/permissions.ts) and by the install script (scripts/install/install.sh, between its
 // `# rule: begin` and `# rule: end` lines). Both run the one table of cases in
 // fixtures/group-rule.json, so they cannot drift apart: the person's own private group may write,
@@ -13,7 +13,7 @@ import { chmodSync, chownSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { ownGroupOf, readAccount } from "@tasks/files/person";
+import { ownGroupOf, readAccount } from "@ttasks/files/person";
 import {
   currentPerson,
   factsOf,

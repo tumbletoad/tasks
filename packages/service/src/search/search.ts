@@ -8,7 +8,7 @@
 // since keeps its place as a placeholder with its reference and no content (A3 3.9.5). A snippet
 // is always FTS5's `snippet()` over the document's current text, else the current summary, so a
 // page never shows text the space no longer holds.
-import { AppError, CURSOR_PATTERN, SEARCH_IDS, type SEARCH_SCOPES } from "@tasks/contracts";
+import { AppError, CURSOR_PATTERN, SEARCH_IDS, type SEARCH_SCOPES } from "@ttasks/contracts";
 import {
   decodeRowsByIds,
   decodeSpaceRow,
@@ -24,7 +24,7 @@ import {
   type Row,
   type SpaceRow,
   type TransactionMode,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 import { dateIn } from "../ops/dates.ts";
 import { invalid } from "../ops/errors.ts";
 import { keysOf, present, taskRow } from "../ops/read.ts";

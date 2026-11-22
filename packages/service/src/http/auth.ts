@@ -1,9 +1,9 @@
 // Getting a token into the browser (A2 3.8.4), and the short-lived secrets around it.
 //
-//   1. `tasks open` calls `ui/mint_code` over the socket: a code of 32 random bytes, single use,
+//   1. `ttasks open` calls `ui/mint_code` over the socket: a code of 32 random bytes, single use,
 //      valid 60 s, kept only as its SHA-256.
 //   2. It proves the listener first: `POST /api/v1/auth/probe {"nonce"}` must answer
-//      HMAC-SHA256(ipc.key, "tasks-http-probe\n" + instance + "\n" + port + "\n" + nonce). A
+//      HMAC-SHA256(ipc.key, "ttasks-http-probe\n" + instance + "\n" + port + "\n" + nonce). A
 //      process squatting on the port cannot, so it never sees a code.
 //   3. The page redeems the code (`POST /api/v1/auth/redeem {"code"}`) for a bearer token, a `ui`
 //      row of the grants table (grants.ts).
@@ -106,10 +106,10 @@ export class RateLimit {
 /** The nonce a probe may carry: base64url, 16 to 128 characters. */
 export const PROBE_NONCE = /^[A-Za-z0-9_-]{16,128}$/;
 
-/** The listener's proof for `tasks open` (A2 3.8.4 step 2), base64url. */
+/** The listener's proof for `ttasks open` (A2 3.8.4 step 2), base64url. */
 export function probeProof(key: Uint8Array, instance: string, port: number, nonce: string): string {
   return createHmac("sha256", key)
-    .update(`tasks-http-probe\n${instance}\n${String(port)}\n${nonce}`, "utf8")
+    .update(`ttasks-http-probe\n${instance}\n${String(port)}\n${nonce}`, "utf8")
     .digest("base64url");
 }
 

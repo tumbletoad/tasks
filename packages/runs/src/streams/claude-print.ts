@@ -4,7 +4,7 @@
 //
 // | Event                          | Use                                                        |
 // |--------------------------------|------------------------------------------------------------|
-// | `system` / `init`              | native ID (`session_id`), `session` (cwd, Tasks tools)     |
+// | `system` / `init`              | native ID (`session_id`), `session` (cwd, TTasks tools)     |
 // | `assistant`, `tool_use` blocks | a progress label per tool call                             |
 // | `assistant`, `text` blocks     | a message; the last one is the result if `result` has none |
 // | `result`                       | the final state, result text, usage, permission denials    |
@@ -16,7 +16,7 @@
 // queued message, a finished background job): a turn that begins after a result makes that
 // result's answer provisional, and a run whose last turn has no result has none.
 // A helper agent's lines (`parent_tool_use_id`) report progress only: its words are not the run's.
-import { MCP_SERVER_KEY } from "@tasks/brand";
+import { MCP_SERVER_KEY } from "@ttasks/brand";
 import type { AppToolsState, OutcomeReason, ProcessExit, ProgressLabel, Usage } from "./events.ts";
 import {
   createParser,
@@ -40,7 +40,7 @@ const IGNORED = new Set([
 /** The program's own diagnostics in a result's `errors`: not words for the person. */
 const DIAGNOSTIC = /^\[[a-z_]+\]/;
 
-const TASKS_TOOL_PREFIX = `mcp__${MCP_SERVER_KEY}__`;
+const TTASKS_TOOL_PREFIX = `mcp__${MCP_SERVER_KEY}__`;
 
 const LABELS: Readonly<Record<string, ProgressLabel>> = {
   Bash: "command",
@@ -67,7 +67,7 @@ const LABELS: Readonly<Record<string, ProgressLabel>> = {
 /** The progress label for a tool name. Unknown tools are "tool": the name is never passed on. */
 export function claudeToolLabel(name: string | undefined): ProgressLabel {
   if (name === undefined) return "tool";
-  if (name.startsWith(TASKS_TOOL_PREFIX)) return "tasks";
+  if (name.startsWith(TTASKS_TOOL_PREFIX)) return "tasks";
   return Object.hasOwn(LABELS, name) ? (LABELS[name] ?? "tool") : "tool";
 }
 
@@ -155,7 +155,7 @@ class ClaudeReader implements CliReader {
         const id = string(block["id"]);
         const label = claudeToolLabel(string(block["name"]));
         if (id === undefined || this.toolUses.add(id)) ctx.progress(label);
-        // Tasks' tools may still be starting when the session starts: a call says they connected.
+        // TTasks's tools may still be starting when the session starts: a call says they connected.
         if (label === "tasks" && ctx.session !== null && ctx.session.appTools !== "connected") {
           ctx.sessionSeen(ctx.session.cwd, "connected");
         }

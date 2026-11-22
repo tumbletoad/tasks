@@ -12,28 +12,28 @@ and `cwd`.
 
 | Verb | Entry | Summary |
 |---|---|---|
-| `tasks add` | `task.add` | Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it. |
-| `tasks area` | `group.manage` | List the areas and projects, or create, rename, move, archive or unarchive one. |
-| `tasks brief` | `launch.open` | Open a task in an agent app on this machine, or Copy its pointer brief. |
-| `tasks done` | `task.finish` | Finish or abandon a task with an outcome and learnings, and create its follow-ups. |
-| `tasks find` | `task.search` | Find active tasks, finished tasks and learnings: rows only, a page at a time. |
-| `tasks log` | `entry.add` | Append to a task's log, or record a note for the user. |
-| `tasks note` | `entry.add` | Append to a task's log, or record a note for the user. |
-| `tasks prefs` | `prefs.manage` | Read and change the space's preferences that are not policy. |
-| `tasks receipt` | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. |
-| `tasks redo` | `history.redo` | Redo the change you undid last, as long as nobody changed its fields since. |
-| `tasks reopen` | `task.reopen` | Reopen a completed or archived task. Its earlier outcome and learnings stay. |
-| `tasks run-report` | `run.report` | Report a run's coverage, one row per source: works only in a run or routine. |
-| `tasks set` | `task.update` | Change an active task's fields, summary, context, group or sources. |
-| `tasks show` | `task.get` | Load a task as a bounded digest, or selected sections in full. With launch, bind first. |
-| `tasks status` | `space.status` | Orientation: date, autonomy, this session's binding, tasks for a folder and counts. |
-| `tasks undo` | `history.undo` | Undo your newest change in the space, field by field as long as nobody changed it. |
+| `ttasks add` | `task.add` | Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it. |
+| `ttasks area` | `group.manage` | List the areas and projects, or create, rename, move, archive or unarchive one. |
+| `ttasks brief` | `launch.open` | Open a task in an agent app on this machine, or Copy its pointer brief. |
+| `ttasks done` | `task.finish` | Finish or abandon a task with an outcome and learnings, and create its follow-ups. |
+| `ttasks find` | `task.search` | Find active tasks, finished tasks and learnings: rows only, a page at a time. |
+| `ttasks log` | `entry.add` | Append to a task's log, or record a note for the user. |
+| `ttasks note` | `entry.add` | Append to a task's log, or record a note for the user. |
+| `ttasks prefs` | `prefs.manage` | Read and change the space's preferences that are not policy. |
+| `ttasks receipt` | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. |
+| `ttasks redo` | `history.redo` | Redo the change you undid last, as long as nobody changed its fields since. |
+| `ttasks reopen` | `task.reopen` | Reopen a completed or archived task. Its earlier outcome and learnings stay. |
+| `ttasks run-report` | `run.report` | Report a run's coverage, one row per source: works only in a run or routine. |
+| `ttasks set` | `task.update` | Change an active task's fields, summary, context, group or sources. |
+| `ttasks show` | `task.get` | Load a task as a bounded digest, or selected sections in full. With launch, bind first. |
+| `ttasks status` | `space.status` | Orientation: date, autonomy, this session's binding, tasks for a folder and counts. |
+| `ttasks undo` | `history.undo` | Undo your newest change in the space, field by field as long as nobody changed it. |
 
-## `tasks add`
+## `ttasks add`
 
 Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it.
 
-Usage: `tasks add <title> [flags]`
+Usage: `ttasks add <title> [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
@@ -57,11 +57,11 @@ Usage: `tasks add <title> [flags]`
 
 Only through `--input`: `tasks[].sources`.
 
-## `tasks area`
+## `ttasks area`
 
 List the areas and projects, or create, rename, move, archive or unarchive one.
 
-Usage: `tasks area <action> [<path>] [<to>] [flags]`
+Usage: `ttasks area <action> [<path>] [<to>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
@@ -71,11 +71,11 @@ Usage: `tasks area <action> [<path>] [<to>] [flags]`
 | `--folder` | `folder` | string | create, set_folder: the project's folder here, "cwd" or an absolute path |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 
-## `tasks brief`
+## `ttasks brief`
 
 Open a task in an agent app on this machine, or Copy its pointer brief.
 
-Usage: `tasks brief <task> [flags]`
+Usage: `ttasks brief <task> [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
@@ -87,11 +87,11 @@ Usage: `tasks brief <task> [flags]`
 | `--mark-folder` | `mark_folder` | boolean | Open although the folder's marker is gone or another's, and mark it |
 | `--another` | `another` | boolean | Start a second session although this app already runs the task here |
 
-## `tasks done`
+## `ttasks done`
 
 Finish or abandon a task with an outcome and learnings, and create its follow-ups.
 
-Usage: `tasks done [<task>] [flags]`
+Usage: `ttasks done [<task>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
@@ -104,11 +104,11 @@ Usage: `tasks done [<task>] [flags]`
 
 Only through `--input`: `follow_ups`.
 
-## `tasks find`
+## `ttasks find`
 
 Find active tasks, finished tasks and learnings: rows only, a page at a time.
 
-Usage: `tasks find [<q>] [flags]`
+Usage: `ttasks find [<q>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
@@ -117,11 +117,11 @@ Usage: `tasks find [<q>] [flags]`
 | `--limit` | `limit` | integer | Rows per page; default 15 |
 | `--cursor` | `cursor` | string | Next page: the last page's cursor, alone |
 
-## `tasks log`
+## `ttasks log`
 
 Append to a task's log, or record a note for the user.
 
-Usage: `tasks log [<task>] <text> [flags]`
+Usage: `ttasks log [<task>] <text> [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
@@ -132,11 +132,11 @@ Usage: `tasks log [<task>] <text> [flags]`
 
 Only through `--input`: `links`.
 
-## `tasks note`
+## `ttasks note`
 
 Append to a task's log, or record a note for the user.
 
-Usage: `tasks note [<task>] <text> [flags]`
+Usage: `ttasks note [<task>] <text> [flags]`
 
 Sets `kind: "note"`.
 
@@ -149,11 +149,11 @@ Sets `kind: "note"`.
 
 Only through `--input`: `links`.
 
-## `tasks prefs`
+## `ttasks prefs`
 
 Read and change the space's preferences that are not policy.
 
-Usage: `tasks prefs <action> [flags]`
+Usage: `ttasks prefs <action> [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
@@ -163,31 +163,31 @@ Usage: `tasks prefs <action> [flags]`
 
 Only through `--input`: `set`.
 
-## `tasks receipt`
+## `ttasks receipt`
 
 The stored result of a write, by its request_id, in the caller's own writer scope.
 
-Usage: `tasks receipt <request> [flags]`
+Usage: `ttasks receipt <request> [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
 | `<request>` | `request` | string | The request_id of the write to look up |
 
-## `tasks redo`
+## `ttasks redo`
 
 Redo the change you undid last, as long as nobody changed its fields since.
 
-Usage: `tasks redo [flags]`
+Usage: `ttasks redo [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
 | `--commit` | `commit` | string | The change you mean: refused unless it is the next one to redo |
 
-## `tasks reopen`
+## `ttasks reopen`
 
 Reopen a completed or archived task. Its earlier outcome and learnings stay.
 
-Usage: `tasks reopen <task> [flags]`
+Usage: `ttasks reopen <task> [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
@@ -195,11 +195,11 @@ Usage: `tasks reopen <task> [flags]`
 | `--reason` | `reason` | string | Why it is open again |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 
-## `tasks run-report`
+## `ttasks run-report`
 
 Report a run's coverage, one row per source: works only in a run or routine.
 
-Usage: `tasks run-report [flags]`
+Usage: `ttasks run-report [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
@@ -207,11 +207,11 @@ Usage: `tasks run-report [flags]`
 
 Only through `--input`: `sources`.
 
-## `tasks set`
+## `ttasks set`
 
 Change an active task's fields, summary, context, group or sources.
 
-Usage: `tasks set [<task>] <key>=<value>... [flags]`
+Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
@@ -235,11 +235,11 @@ Usage: `tasks set [<task>] <key>=<value>... [flags]`
 
 Only through `--input`: `context`, `add_sources`.
 
-## `tasks show`
+## `ttasks show`
 
 Load a task as a bounded digest, or selected sections in full. With launch, bind first.
 
-Usage: `tasks show [<task>] [flags]`
+Usage: `ttasks show [<task>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
@@ -251,11 +251,11 @@ Usage: `tasks show [<task>] [flags]`
 | `--before` | `before` | string | With sections: the before token of the last page |
 | `--note` | `notes` | string | These notes too, whole, whatever their age (repeatable, user only) |
 
-## `tasks status`
+## `ttasks status`
 
 Orientation: date, autonomy, this session's binding, tasks for a folder and counts.
 
-Usage: `tasks status [flags]`
+Usage: `ttasks status [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
@@ -263,11 +263,11 @@ Usage: `tasks status [flags]`
 | `--since` | `since` | string | For changes: 24h, 7d or an ISO time; default 24h |
 | `--guide` | `guide` | "work" \| "refresh" \| "triage" \| "organize" | Return this workflow guide instead |
 
-## `tasks undo`
+## `ttasks undo`
 
 Undo your newest change in the space, field by field as long as nobody changed it.
 
-Usage: `tasks undo [flags]`
+Usage: `ttasks undo [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|

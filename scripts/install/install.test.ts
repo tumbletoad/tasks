@@ -145,7 +145,7 @@ function expectRefused(ran: Ran, reason: RegExp, parentBefore: string[], parent:
   expect(listing(parent)).toEqual(parentBefore);
 }
 
-describe("[A2.3.12.4.install.script] install.sh and install.ps1 make a separate install in a temporary TASKS_HOME", () => {
+describe("[A2.3.12.4.install.script] install.sh and install.ps1 make a separate install in a temporary TTASKS_HOME", () => {
   test(
     "through each verifier path: the signature, the hash, the self-test through the version's own launcher, then current",
     () => {
@@ -188,7 +188,7 @@ describe("[A2.3.12.4.install.script] install.sh and install.ps1 make a separate 
   );
 
   test(
-    "--root names the root as TASKS_HOME does, the install's doctor passes, and nothing outside the root changes",
+    "--root names the root as TTASKS_HOME does, the install's doctor passes, and nothing outside the root changes",
     () => {
       const root = join(homes, "by-parameter");
       const before = listing(homes);
@@ -402,12 +402,12 @@ function powershellFile(path: string): {
 }
 
 describe("[A2.3.12.4.install.root] the install root: named, absolute, at most 168 long, and changed by no one else", () => {
-  test("without TASKS_HOME or a root, a relative root, or a missing parent, nothing is installed", () => {
+  test("without TTASKS_HOME or a root, a relative root, or a missing parent, nothing is installed", () => {
     const before = listing(homes);
     const none = install({ env: { [HOME_VAR]: undefined } });
     expect(none.status).not.toBe(0);
     expect(none.stderr).toMatch(new RegExp(`Set (\\$env:)?${ENV_PREFIX}HOME or pass -?-[Rr]oot`));
-    const relative = install({ root: "tasks-relative" });
+    const relative = install({ root: "ttasks-relative" });
     expect(relative.status).not.toBe(0);
     expect(relative.stderr).toMatch(/full path|absolute path/);
     const dots = install({ root: `${homes}${sep}x${sep}..${sep}dots` });

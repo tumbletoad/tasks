@@ -234,7 +234,7 @@ const sameCounts = (a: Record<string, number>, b: Record<string, number>): boole
 /**
  * The most a space row may hold for a restore to take it (A1 3.18 "Bundle limits"): the restore's
  * first write rewrites the row, twice with its trial claim, so the log and the growth of that write
- * stay a few MiB, which the free-space reserve covers. Tasks' own writes keep the row far smaller:
+ * stay a few MiB, which the free-space reserve covers. TTasks's own writes keep the row far smaller:
  * a name of at most 100 characters and about 260 bytes of lineage per claim.
  */
 export const SPACE_ROW_MAX_BYTES = 1024 * 1024;

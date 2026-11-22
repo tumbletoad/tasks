@@ -4,7 +4,7 @@
 //   create, open, restore --to, restore latest     the folder's entry: added with `enabled = true`,
 //   restore in place, recover                      or set to `enabled = true` (opened again)
 //   close                                          the folder's entry: `enabled = false`. Closed, it is
-//                                                  listed, and `tasks space open <folder>` opens it
+//                                                  listed, and `ttasks space open <folder>` opens it
 //                                                  again
 //   forget                                         the folder's entry taken out, of a closed or
 //                                                  unavailable space only; no file of it is touched
@@ -23,8 +23,8 @@
 // ID; nothing else changes an entry's ID, so a hand edit of one is never undone: a verb that serves
 // a space whose folder's entry names another space records nothing and says so (`other_space`).
 //
-// The edit is machine.toml's one editor (config/edit.ts), as `[service] default_space`, `tasks roots
-// add` and `tasks setup instances` use it: the file is read, the edits are worked out on the very
+// The edit is machine.toml's one editor (config/edit.ts), as `[service] default_space`, `ttasks roots
+// add` and `ttasks setup instances` use it: the file is read, the edits are worked out on the very
 // bytes read, spliced in with every other byte kept (comments, order, line breaks, a byte order
 // mark), and written atomically with the file's own mode, only if the file is still what was read
 // just before the rename. A file saved meanwhile is read again and the edit made on it, up to three
@@ -35,14 +35,14 @@
 // place, a file or folder that fails the permission rule, a write the OS refuses) does not undo or
 // refuse the verb: the space is served or closed as the person asked, for this run, and the verb's
 // answer says in a plain line that a restart will not keep it, why, and the command that records it
-// once the file is fixed: `tasks space open <folder>` or `tasks space close <folder>`, which do
+// once the file is fixed: `ttasks space open <folder>` or `ttasks space close <folder>`, which do
 // nothing more to a space already open or closed, so the verb itself (a create, a claim) is never
 // repeated (A2 3.10.1). The service's own view is its space manager, which the verb changed; the
 // next start reads the file.
 import { resolve } from "node:path";
-import { CLI_NAME } from "@tasks/brand";
-import { isTable } from "@tasks/launch";
-import type { Id } from "@tasks/storage";
+import { CLI_NAME } from "@ttasks/brand";
+import { isTable } from "@ttasks/launch";
+import type { Id } from "@ttasks/storage";
 import { commitEdit, prepareEditOf, type Edit, type EditRefusal } from "../config/edit.ts";
 import type { TomlDocument } from "../config/toml.ts";
 import type { Logger } from "./log.ts";
@@ -203,7 +203,7 @@ export function recordSpace(host: SpaceRecordsHost, change: SpaceChange): Record
 }
 
 /**
- * Takes the entry of `folder` out of machine.toml's `[[spaces]]` (`tasks space forget`): the space
+ * Takes the entry of `folder` out of machine.toml's `[[spaces]]` (`ttasks space forget`): the space
  * is no longer listed or opened at a start. No entry for the folder is nothing to do. Never throws.
  */
 export function forgetSpaceRecord(host: SpaceRecordsHost, folder: string): Recorded {
@@ -271,7 +271,7 @@ export function because(why: NotRecorded): string {
 
 /**
  * What fixes it. `again` is the command that records the space's state once the file is fixed
- * (`tasks space open <folder>` or `close`), never the verb itself, which may not be repeatable.
+ * (`ttasks space open <folder>` or `close`), never the verb itself, which may not be repeatable.
  */
 function fix(why: NotRecorded, again: string, id: string): string {
   if (why === "unsupported_layout") return "Change the space's [[spaces]] entry by hand.";

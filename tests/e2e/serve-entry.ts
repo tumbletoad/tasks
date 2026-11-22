@@ -1,8 +1,8 @@
-// The end-to-end tests' `tasks serve`: the real runServe() in a child process, as
+// The end-to-end tests' `ttasks serve`: the real runServe() in a child process, as
 // packages/service/test/serve-entry.ts runs it, with the page's built folder (E2E_UI), a
 // terminal that records the command line it is given and runs that shim (E2E_TERMINAL, the file it
 // records into), and a file manager that records the folders it is asked to show (E2E_FOLDERS). The page opens through the service's own `launch.open` and launch machines, as
-// `tasks serve` does. The listener takes a port the OS assigns, and machine.toml's port is never
+// `ttasks serve` does. The listener takes a port the OS assigns, and machine.toml's port is never
 // written. Tests only.
 //
 // A line `stop` on stdin stops it gracefully, on every OS.
@@ -30,9 +30,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 
 // The agent apps the page finds: a scratch home and the fake agents' environment (first-run.ts),
 // else an empty home with nothing on its PATH, so no test ever looks at a real agent app.
-const tasksHome = process.env["TASKS_HOME"];
+const tasksHome = process.env["TTASKS_HOME"];
 if (tasksHome === undefined) {
-  process.stderr.write("TASKS_HOME must be set\n");
+  process.stderr.write("TTASKS_HOME must be set\n");
   process.exit(64);
 }
 const agentHome = process.env["E2E_AGENT_HOME"] ?? join(tasksHome, "agent-home");

@@ -1,5 +1,5 @@
 // Codex's native thread ID by reference match (A4 3.4.3, L15): Codex cannot preset an ID, so for
-// up to two minutes after its start Tasks looks for the session file of this launch. A file
+// up to two minutes after its start TTasks looks for the session file of this launch. A file
 // matches only when its `session_meta` record names this launch's folder and a user message in it
 // starts with this launch's brief: the reference counts only in the brief's first line, after the
 // title's closing quote (briefReference), never where a title or an instruction file quotes one.
@@ -21,7 +21,7 @@ import { EVIDENCE_ID } from "../intents.ts";
 
 /** A4 3.4.3: at most the first 64 KB of a file is read. */
 export const ROLLOUT_READ_BYTES = 64 * 1024;
-/** A4 3.4.3: Tasks looks for two minutes after the agent's start. */
+/** A4 3.4.3: TTasks looks for two minutes after the agent's start. */
 export const MATCH_WINDOW_MS = 120_000;
 /** How often the folders are looked at while the window is open. */
 export const MATCH_POLL_MS = 1_000;

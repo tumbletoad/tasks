@@ -3,10 +3,10 @@
 // so a test can kill it by force mid run and start another on the same space. It runs where
 // harness.ts runs: in a delegated user unit on Linux, as a plain child of the test on Windows.
 //
-//   node run-service.ts [<tasks-run.exe>] <config as JSON>
+//   node run-service.ts [<ttasks-run.exe>] <config as JSON>
 //
 // The config names the fixture space (createLaunchSpace), the state folder for the run folders,
-// tasks-run.exe on Windows, the host's times and the queue's limits (default: none that a test of a
+// ttasks-run.exe on Windows, the host's times and the queue's limits (default: none that a test of a
 // single run meets). It reads one JSON request per
 // line on stdin and answers each on stdout, in order:
 //   {"op":"hello"}                          -> {"pid":<n>}
@@ -25,11 +25,11 @@
 // Every answer is {"ok":true,"result":…} or {"ok":false,"error":"…"}.
 //
 // safe-exit comes first: this script loads the product's code and ends through process.exit.
-import "@tasks/bridge/safe-exit";
+import "@ttasks/bridge/safe-exit";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { SpaceExecutionStore } from "@tasks/launch";
-import { openLaunchSpaceAt, type LaunchSpaceFolder } from "@tasks/testkit";
+import { SpaceExecutionStore } from "@ttasks/launch";
+import { openLaunchSpaceAt, type LaunchSpaceFolder } from "@ttasks/testkit";
 import {
   containers,
   QUEUE_LIMITS,

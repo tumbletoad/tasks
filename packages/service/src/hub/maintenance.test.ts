@@ -1,8 +1,8 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { backupSpace, backupsFolder, createSpace, listBackups, newId } from "@tasks/storage";
-import { checkedDriver } from "@tasks/testkit";
+import { backupSpace, backupsFolder, createSpace, listBackups, newId } from "@ttasks/storage";
+import { checkedDriver } from "@ttasks/testkit";
 import { tempRoot } from "../../test/harness.ts";
 import { Maintenance } from "./maintenance.ts";
 

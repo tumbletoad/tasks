@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLIENT_KINDS } from "@tasks/bridge/protocol";
+import { CLIENT_KINDS } from "@ttasks/bridge/protocol";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   BIND_REFUSALS,
@@ -30,7 +30,7 @@ const FREE_TEXT = [
   "Fix appointment time zones",
   "/home/mira/Tasks/work",
   "C:\\Users\\mira\\Tasks\\work",
-  "tasks_u_3q7k9d2xw8f4r6t1c5v0b2n8aaXYZ",
+  "ttasks_u_3q7k9d2xw8f4r6t1c5v0b2n8aaXYZ",
   "CODEX_THREAD_ID=019a\nsecret",
   "missing because of the sync client",
   "ENOENT: no such file or directory, open '/home/mira/Tasks/work/space.json'",
@@ -60,7 +60,7 @@ describe("[A2.3.13.hub.logs-content-free] the log takes no free text", () => {
     }
   });
 
-  test("tasks-local/1's events enter the catalogue whole, and only the library's listed words do", () => {
+  test("ttasks-local/1's events enter the catalogue whole, and only the library's listed words do", () => {
     const at = { t: new Date("2026-11-13T08:00:00Z"), pid: 4120 };
     const events: LocalEvent[] = [
       ...HANDSHAKE_STAGES.flatMap((stage) =>

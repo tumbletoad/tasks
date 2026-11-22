@@ -106,7 +106,7 @@ const SIDECAR_TEMPORARY = /^\.(.+)\.json\.tmp-[0-9a-f]{16}$/;
 /**
  * Whether `name` is a temporary file that a backup writes, by its exact pattern. Only these and a
  * `.db.gz` without its sidecar are ever removed as leftovers: a backups folder can be shared with
- * other programs (a synced folder), and their files are never Tasks's to delete.
+ * other programs (a synced folder), and their files are never TTasks's to delete.
  */
 export function isBackupTemporary(name: string): boolean {
   if (BACKUP_TEMPORARY.test(name)) return true;

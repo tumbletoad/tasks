@@ -87,7 +87,7 @@ const FORBIDDEN = /[\u0000-\u001f\u007f<>:"|?*\\]/;
 
 /**
  * Checks that `name` is a plain relative path, and says whether it names a folder (a final `/`).
- * The writer and the reader both call this, so Tasks never writes a name it would refuse.
+ * The writer and the reader both call this, so TTasks never writes a name it would refuse.
  */
 export function checkEntryName(name: string): { directory: boolean } {
   if (name.length === 0 || Buffer.byteLength(name, "utf8") > MAX_NAME_BYTES) {
@@ -866,7 +866,7 @@ const FLAG_DESCRIPTOR = 0x0008;
 
 /**
  * The local header's CRC and sizes repeat the central record's (APPNOTE 4.4.4, 4.5.3): a reader
- * that trusts the local header, as a streaming unzip tool does, then sees the same archive Tasks
+ * that trusts the local header, as a streaming unzip tool does, then sees the same archive TTasks
  * checked. Where a size field holds ZIP64's mark, the local ZIP64 field carries both sizes. With a
  * data descriptor (flag bit 3) the three may be zero instead, as streaming writers leave them.
  */
@@ -929,7 +929,7 @@ function readEntries(fd: number, fileSize: number, policy: BundlePolicy): ZipEnt
       throw invalidArchive("an entry is encrypted");
     }
     if (method !== STORED && method !== DEFLATE) {
-      throw invalidArchive("an entry uses a compression method Tasks does not read");
+      throw invalidArchive("an entry uses a compression method TTasks does not read");
     }
     const name = decodeName(Buffer.from(cursor.take(nameLength)), flags);
     const extra = Buffer.from(cursor.take(extraLength));

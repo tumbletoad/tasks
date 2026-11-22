@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { ServiceCommandError } from "../src/install/errors.ts";
 import { planInstall } from "../src/install/commands.ts";
 import { umaskRefusal } from "../src/hub/umask.ts";
@@ -216,19 +216,19 @@ describe.skipIf(process.platform === "win32")(
   },
 );
 
-describe("[A2.3.2.2.permissions.umask] tasks service install and such a umask", () => {
+describe("[A2.3.2.2.permissions.umask] ttasks service install and such a umask", () => {
   test("the line says what is wrong and what to do; a umask that keeps the owner's bits passes", () => {
     for (const mask of [0o000, 0o002, 0o022, 0o027, 0o077, 0o007]) {
       expect(umaskRefusal(mask, "it stops")).toBeUndefined();
     }
     expect(umaskRefusal(undefined, "it stops")).toBeUndefined();
     expect(umaskRefusal(0o477, "it stops")).toBe(
-      "Your umask (0477) takes away your own access to every new file or folder, so it stops: TT Tasks could not use the files it creates. Set the usual umask first, for example: umask 022",
+      "Your umask (0477) takes away your own access to every new file or folder, so it stops: TTasks could not use the files it creates. Set the usual umask first, for example: umask 022",
     );
   });
 
   test("install refuses it before it plans anything", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "tasks-um-install-"));
+    const dir = mkdtempSync(join(tmpdir(), "ttasks-um-install-"));
     cleanups.push(() => {
       rmSync(dir, { recursive: true, force: true });
     });
@@ -241,7 +241,7 @@ describe("[A2.3.2.2.permissions.umask] tasks service install and such a umask", 
   });
 
   test("install --finish refuses it, and one it cannot read, before its self-test makes anything", () => {
-    const dir = mkdtempSync(join(tmpdir(), "tasks-um-finish-"));
+    const dir = mkdtempSync(join(tmpdir(), "ttasks-um-finish-"));
     cleanups.push(() => {
       rmSync(dir, { recursive: true, force: true });
     });

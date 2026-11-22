@@ -2,7 +2,7 @@
 // 3.5's text form, 3.9.6's digest, 3.10's framing). The text is the entry's rendering of the
 // structured result that `op/call` returns, so every face reports the same outcome: the MCP
 // contract suite holds the two equal. text.ts frames stored text and fits the budget.
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import {
   LIMITS,
   findEntry,
@@ -10,7 +10,7 @@ import {
   resultTokens,
   type ErrorBody,
   type OutputOf,
-} from "@tasks/contracts";
+} from "@ttasks/contracts";
 import { toolOf } from "./tools.ts";
 import {
   clip,

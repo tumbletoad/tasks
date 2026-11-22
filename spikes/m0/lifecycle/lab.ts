@@ -248,10 +248,10 @@ interface WinProcess {
   exe: string;
 }
 
-/** node.exe, tasks.exe and tasksw.exe processes with their parent and image (kept in memory). */
+/** node.exe, ttasks.exe and ttasksw.exe processes with their parent and image (kept in memory). */
 function windowsProcesses(): WinProcess[] {
   const r = windowsPowerShell(
-    "Get-CimInstance Win32_Process -Filter \"Name='node.exe' or Name='tasks.exe' or Name='tasksw.exe' or Name='WindowsTerminal.exe' or Name='OpenConsole.exe'\" | ForEach-Object { '{0}|{1}|{2}' -f $_.ProcessId, $_.ParentProcessId, $_.ExecutablePath }",
+    "Get-CimInstance Win32_Process -Filter \"Name='node.exe' or Name='ttasks.exe' or Name='ttasksw.exe' or Name='WindowsTerminal.exe' or Name='OpenConsole.exe'\" | ForEach-Object { '{0}|{1}|{2}' -f $_.ProcessId, $_.ParentProcessId, $_.ExecutablePath }",
   );
   return r.stdout
     .split(/\r?\n/)
@@ -274,7 +274,7 @@ function imageOf(pid: number, list?: WinProcess[]): string | undefined {
   return (list ?? windowsProcesses()).find((p) => p.pid === pid)?.exe;
 }
 
-/** Node, tasks.exe and tasksw.exe processes whose image is under `root`, except this harness. */
+/** Node, ttasks.exe and ttasksw.exe processes whose image is under `root`, except this harness. */
 function underRoot(root: string): WinProcess[] {
   const prefix = `${root.toLowerCase().replace(/[\\/]+$/, "")}\\`;
   return windowsProcesses().filter(
@@ -284,9 +284,9 @@ function underRoot(root: string): WinProcess[] {
 
 /**
  * Stops a service tree this command started through Explorer (Windows), which is not its child:
- * a shutdown call, up to 15 s for the supervisor and tasksw.exe to end after the service's clean
- * exit, then the supervisor stand-in (a node.exe under tasksw.exe) first so it cannot restart the
- * service, tasksw.exe, and the rest, by PID. Only processes whose image is under `root`.
+ * a shutdown call, up to 15 s for the supervisor and ttasksw.exe to end after the service's clean
+ * exit, then the supervisor stand-in (a node.exe under ttasksw.exe) first so it cannot restart the
+ * service, ttasksw.exe, and the rest, by PID. Only processes whose image is under `root`.
  */
 async function stopUnderRoot(
   root: string,
@@ -303,7 +303,7 @@ async function stopUnderRoot(
   }
   const after15 = left.length;
   for (let round = 0; round < 3 && left.length > 0; round++) {
-    const launchers = new Set(left.filter((p) => /tasksw\.exe$/i.test(p.exe)).map((p) => p.pid));
+    const launchers = new Set(left.filter((p) => /ttasksw\.exe$/i.test(p.exe)).map((p) => p.pid));
     const supervisors = left.filter((p) => launchers.has(p.ppid));
     for (const p of [...supervisors, ...left.filter((q) => launchers.has(q.pid)), ...left]) {
       hardKill(p.pid);
@@ -322,20 +322,20 @@ async function stopUnderRoot(
   return { after_15s: after15, after_cleanup: left.length };
 }
 
-/** Starts `bin\tasksw.exe` with no arguments: through Explorer as the Run value does, or directly. */
+/** Starts `bin\ttasksw.exe` with no arguments: through Explorer as the Run value does, or directly. */
 function startSupervisor(root: string, how: string): string {
-  const tasksw = join(root, "bin", "tasksw.exe");
+  const ttasksw = join(root, "bin", "ttasksw.exe");
   if (how === "direct") {
-    const child = spawn(tasksw, [], { detached: true, stdio: "ignore", windowsHide: true });
+    const child = spawn(ttasksw, [], { detached: true, stdio: "ignore", windowsHide: true });
     child.unref();
-    return "bin\\tasksw.exe started directly (no arguments), the lab supervisor";
+    return "bin\\ttasksw.exe started directly (no arguments), the lab supervisor";
   }
-  spawnSync(join(process.env["SystemRoot"] ?? "C:\\Windows", "explorer.exe"), [tasksw], {
+  spawnSync(join(process.env["SystemRoot"] ?? "C:\\Windows", "explorer.exe"), [ttasksw], {
     windowsHide: true,
     shell: false,
     timeout: 30_000,
   });
-  return "explorer.exe bin\\tasksw.exe (no arguments), the lab supervisor";
+  return "explorer.exe bin\\ttasksw.exe (no arguments), the lab supervisor";
 }
 
 /** The version label in `<root>/versions/<label>/...`, never the path. */
@@ -387,7 +387,7 @@ class Bridge {
     return this.request("initialize", {
       protocolVersion: "2025-11-25",
       capabilities: {},
-      clientInfo: { name: "tasks-lab-m0.07", version: "1" },
+      clientInfo: { name: "ttasks-lab-m0.07", version: "1" },
     });
   }
 
@@ -723,7 +723,7 @@ function tryDelete(file: string): JsonObject {
   }
 }
 
-/** The Node process behind a launcher: Windows `tasks.exe`'s child, Linux the same PID (exec). */
+/** The Node process behind a launcher: Windows `ttasks.exe`'s child, Linux the same PID (exec). */
 function nodeBehind(launcherPid: number, list?: WinProcess[]): number | undefined {
   if (!WIN) return launcherPid;
   return (list ?? windowsProcesses()).find(
@@ -753,17 +753,19 @@ async function s08(args: string[]): Promise<Result> {
   const newV = need(args, "--new");
   const result = header("S08");
   const bin = join(root, "bin");
-  const tasks = join(bin, WIN ? "tasks.exe" : "tasks");
-  const tasksw = WIN ? join(bin, "tasksw.exe") : tasks;
+  const tasks = join(bin, WIN ? "ttasks.exe" : "ttasks");
+  const ttasksw = WIN ? join(bin, "ttasksw.exe") : tasks;
   const state = join(root, "state", "s08");
   if (readCurrent(root) !== oldV) throw new Error("current must name the old version first");
   result["versions"] = { old: oldV, new: newV };
-  result["service_launcher"] = WIN ? "bin\\tasksw.exe" : "bin/tasks";
-  result["bridge_launcher"] = WIN ? "bin\\tasks.exe mcp --reconnect" : "bin/tasks mcp --reconnect";
+  result["service_launcher"] = WIN ? "bin\\ttasksw.exe" : "bin/ttasks";
+  result["bridge_launcher"] = WIN
+    ? "bin\\ttasks.exe mcp --reconnect"
+    : "bin/ttasks mcp --reconnect";
 
   const steps: Record<string, Json> = {};
   result["steps"] = steps;
-  let svc = await startService([tasksw, "service", "--state", state], state);
+  let svc = await startService([ttasksw, "service", "--state", state], state);
   steps["1_service_old"] = { version: versionLabel(imageOf(svc.info.pid)) };
 
   const bridge = new Bridge([tasks, "mcp", "--state", state, "--reconnect"]);
@@ -787,33 +789,33 @@ async function s08(args: string[]): Promise<Result> {
     if (WIN) {
       const newBin = join(root, "versions", newV, "bin");
       const swap: Record<string, Json> = {};
-      for (const name of ["tasks.exe", "tasksw.exe"]) {
+      for (const name of ["ttasks.exe", "ttasksw.exe"]) {
         copyFileSync(join(newBin, name), join(bin, `${name}.new`));
         swap[`replace_running_${name}`] = replace(
-          join(newBin, "tasks.exe"),
+          join(newBin, "ttasks.exe"),
           join(bin, `${name}.new`),
           join(bin, name),
         );
       }
       // Control: the same call against a copy that is not running.
-      copyFileSync(join(newBin, "tasks.exe"), join(bin, "control.exe"));
-      copyFileSync(join(newBin, "tasks.exe"), join(bin, "control.exe.new"));
+      copyFileSync(join(newBin, "ttasks.exe"), join(bin, "control.exe"));
+      copyFileSync(join(newBin, "ttasks.exe"), join(bin, "control.exe.new"));
       swap["replace_idle_copy"] = replace(
-        join(newBin, "tasks.exe"),
+        join(newBin, "ttasks.exe"),
         join(bin, "control.exe.new"),
         join(bin, "control.exe"),
       );
       rmSync(join(bin, "control.exe"), { force: true });
       rmSync(join(bin, "control.exe.new"), { force: true });
       // The two-rename path of A2 3.12.6 step 10, one launcher at a time.
-      for (const name of ["tasks.exe", "tasksw.exe"]) {
+      for (const name of ["ttasks.exe", "ttasksw.exe"]) {
         swap[`rename_running_${name}_aside`] = tryRename(
           join(bin, name),
           join(bin, `${name}.old-1`),
         );
         swap[`rename_new_${name}_in`] = tryRename(join(bin, `${name}.new`), join(bin, name));
       }
-      swap["delete_running_old_launcher"] = tryDelete(join(bin, "tasks.exe.old-1"));
+      swap["delete_running_old_launcher"] = tryDelete(join(bin, "ttasks.exe.old-1"));
       // A2 3.12.6 step 14's old in-use test, a refused rename, on a folder that is in use. It is
       // an observation only: A2 3.12.6 retires versions under leases, never by such a probe.
       const gc = tryRename(join(root, "versions", oldV), join(root, "versions", `${oldV}.gc-test`));
@@ -827,7 +829,7 @@ async function s08(args: string[]): Promise<Result> {
     // Restart the service from the new version; the old bridge reconnects.
     await shutdown(state, svc.proc);
     const during = await bridge.status();
-    svc = await startService([tasksw, "service", "--state", state], state);
+    svc = await startService([ttasksw, "service", "--state", state], state);
     const back = await untilOnline(bridge, svc.info.instance, 60_000);
     steps["5_restart_new"] = {
       service_version: versionLabel(imageOf(svc.info.pid)),
@@ -839,13 +841,13 @@ async function s08(args: string[]): Promise<Result> {
     // Rollback: current back to the old version, launchers back, restart, reconnect again.
     const rollback: Record<string, Json> = { switched: switchCurrent(root, oldV) };
     if (WIN) {
-      for (const name of ["tasks.exe", "tasksw.exe"]) {
+      for (const name of ["ttasks.exe", "ttasksw.exe"]) {
         rollback[`rename_${name}_aside`] = tryRename(join(bin, name), join(bin, `${name}.old-2`));
         rollback[`rename_${name}_back`] = tryRename(join(bin, `${name}.old-1`), join(bin, name));
       }
     }
     await shutdown(state, svc.proc);
-    svc = await startService([tasksw, "service", "--state", state], state);
+    svc = await startService([ttasksw, "service", "--state", state], state);
     const again = await untilOnline(bridge, svc.info.instance, 60_000);
     steps["6_rollback"] = {
       ...rollback,
@@ -858,7 +860,7 @@ async function s08(args: string[]): Promise<Result> {
     await shutdown(state, svc.proc);
   }
   if (WIN) {
-    for (const name of ["tasks.exe", "tasksw.exe"]) {
+    for (const name of ["ttasks.exe", "ttasksw.exe"]) {
       steps[`8_delete_${name}.old-2`] = tryDelete(join(bin, `${name}.old-2`));
     }
   }
@@ -868,7 +870,7 @@ async function s08(args: string[]): Promise<Result> {
 // ------------------------------------------------------------------------------------------
 // S04: a Windows Terminal tab and a detached run survive killing the service (Windows)
 
-const TAB_TITLE = "Tasks lab M0.07 (closes by itself)";
+const TAB_TITLE = "TTasks lab M0.07 (closes by itself)";
 
 async function s04(args: string[]): Promise<Result> {
   if (!WIN) throw new Error("S04 is the Windows row");
@@ -877,8 +879,8 @@ async function s04(args: string[]): Promise<Result> {
   const terminal = args.includes("--terminal");
   const result = header("S04");
   const bin = join(root, "bin");
-  const tasks = join(bin, "tasks.exe");
-  const tasksw = join(bin, "tasksw.exe");
+  const tasks = join(bin, "ttasks.exe");
+  const ttasksw = join(bin, "ttasksw.exe");
   const state = join(root, "state", "s04");
   const cwd = join(work, "s04-folder");
   mkdirSync(cwd, { recursive: true });
@@ -888,10 +890,10 @@ async function s04(args: string[]): Promise<Result> {
   const wt = resolveTool("wt", process.env as Record<string, string>, "win32");
   result["windows_terminal_installed"] = wt !== undefined;
 
-  let svc = await startService([tasksw, "service", "--state", state], state);
+  let svc = await startService([ttasksw, "service", "--state", state], state);
   const pids: Record<string, number | undefined> = {};
   try {
-    // The run: a run ticket, then the run shim started detached by the service, through tasks.exe.
+    // The run: a run ticket, then the run shim started detached by the service, through ttasks.exe.
     const agent = "setTimeout(() => process.exit(0), 45000)";
     const runTicket = (await rpc(state, "spike.mint_ticket", {
       argv: [node, "-e", agent],
@@ -932,7 +934,7 @@ async function s04(args: string[]): Promise<Result> {
     // The terminal: a Windows Terminal tab running the interactive shim, closing by itself.
     if (terminal && wt !== undefined) {
       const tabAgent =
-        "console.log('Tasks lab M0.07: fixture tab. It closes by itself within a minute.'); setTimeout(() => process.exit(0), 40000)";
+        "console.log('TTasks lab M0.07: fixture tab. It closes by itself within a minute.'); setTimeout(() => process.exit(0), 40000)";
       const tabTicket = (await rpc(state, "spike.mint_ticket", {
         argv: [node, "-e", tabAgent],
         cwd: folder,
@@ -986,7 +988,7 @@ async function s04(args: string[]): Promise<Result> {
 
     // The next service: the run shim re-attaches.
     const attachesBefore = events(state).filter((e) => e["kind"] === "run.attach").length;
-    svc = await startService([tasksw, "service", "--state", state], state);
+    svc = await startService([ttasksw, "service", "--state", state], state);
     const attached = await waitFor(
       () => events(state).filter((e) => e["kind"] === "run.attach").length > attachesBefore,
       15_000,
@@ -1010,7 +1012,7 @@ async function s04(args: string[]): Promise<Result> {
 }
 
 // ------------------------------------------------------------------------------------------
-// S09: a TASKS_HOME test install beside a stand-in daily install (Linux, A2 M0-S14)
+// S09: a TTASKS_HOME test install beside a stand-in daily install (Linux, A2 M0-S14)
 
 function installId(state: string): string {
   return sha256Hex(realpathSync.native(state)).slice(0, 16);
@@ -1035,7 +1037,7 @@ function stopUnit(unit: string): number | null {
 
 /** A daily CLI call and a daily bridge call, both through the daily install's launcher. */
 async function dailyCalls(daily: string, state: string, instance: string): Promise<JsonObject> {
-  const launcher = join(daily, "bin", "tasks");
+  const launcher = join(daily, "bin", "ttasks");
   const cli = spawnSync(launcher, ["call", "--state", state, "service/status"], {
     encoding: "utf8",
     shell: false,
@@ -1066,14 +1068,14 @@ async function s09(args: string[]): Promise<Result> {
   const testState = join(test, "state", "service");
   mkdirSync(dailyState, { recursive: true, mode: 0o700 });
   mkdirSync(testState, { recursive: true, mode: 0o700 });
-  const dailyUnit = `tasks-lab-${installId(dailyState)}`;
-  const testUnit = `tasks-lab-${installId(testState)}`;
+  const dailyUnit = `ttasks-lab-${installId(dailyState)}`;
+  const testUnit = `ttasks-lab-${installId(testState)}`;
   let testUp = false;
   let dailyUp = false;
   try {
     if (
       systemdRun(dailyUnit, [
-        join(daily, "bin", "tasks"),
+        join(daily, "bin", "ttasks"),
         "service",
         "--state",
         dailyState,
@@ -1095,10 +1097,10 @@ async function s09(args: string[]): Promise<Result> {
     const points: Record<string, Json> = {};
     points["before_test_install"] = await dailyCalls(daily, dailyState, d.instance);
 
-    // The test install, with TASKS_HOME set the way its launcher sets it (home.marker).
+    // The test install, with TTASKS_HOME set the way its launcher sets it (home.marker).
     if (
       systemdRun(testUnit, [
-        join(test, "bin", "tasks"),
+        join(test, "bin", "ttasks"),
         "service",
         "--state",
         testState,
@@ -1117,7 +1119,7 @@ async function s09(args: string[]): Promise<Result> {
     points["while_test_install_runs"] = await dailyCalls(daily, dailyState, d.instance);
     const testStatus = (await rpc(testState, "service/status")) as JsonObject;
     // The test install pointed at the daily state folder: the lock refuses it (A2 3.4).
-    const intrude = spawnSync(join(test, "bin", "tasks"), ["service", "--state", dailyState], {
+    const intrude = spawnSync(join(test, "bin", "ttasks"), ["service", "--state", dailyState], {
       encoding: "utf8",
       shell: false,
       timeout: 30_000,
@@ -1216,16 +1218,16 @@ async function e01(args: string[]): Promise<Result> {
   let tree = false;
   try {
     if (WIN) {
-      // The closest unattended parent to the Run value: Explorer starts tasksw.exe with no
-      // arguments, as `tasks service start` does (A2 3.3.5). The lab entry then supervises.
+      // The closest unattended parent to the Run value: Explorer starts ttasksw.exe with no
+      // arguments, as `ttasks service start` does (A2 3.3.5). The lab entry then supervises.
       // `--start direct` (the self-test) starts it without Explorer. Owned from here on: the
       // finally below stops whatever runs from the install.
       tree = true;
       result["started_by"] = startSupervisor(root, option(args, "--start") ?? "explorer");
     } else {
       mkdirSync(state, { recursive: true, mode: 0o700 });
-      unit = `tasks-lab-${installId(state)}`;
-      const code = systemdRun(unit, [join(root, "bin", "tasks"), "service", "--state", state]);
+      unit = `ttasks-lab-${installId(state)}`;
+      const code = systemdRun(unit, [join(root, "bin", "ttasks"), "service", "--state", state]);
       result["started_by"] = `systemd-run --user transient unit (exit ${String(code)})`;
     }
     const info = await waitFor(
@@ -1262,7 +1264,7 @@ async function e01(args: string[]): Promise<Result> {
   } finally {
     if (unit !== undefined) stopUnit(unit);
     if (tree) {
-      // The supervisor and tasksw.exe stop after the service's clean exit (code 0), and on a
+      // The supervisor and ttasksw.exe stop after the service's clean exit (code 0), and on a
       // failure they are stopped here. This harness may itself run on the install's node.exe, so
       // it is left out.
       const left = await stopUnderRoot(root, state);
@@ -1303,12 +1305,12 @@ async function s01(args: string[]): Promise<Result> {
   result["service_unit"] = transient ? "transient (helper check)" : "installed unit";
   result["terminal"] =
     terminal === undefined ? "none: the shim runs headless in its scope" : basename(terminal);
-  const tasks = join(root, "bin", "tasks");
+  const tasks = join(root, "bin", "ttasks");
   const node = join(realpathSync.native(join(root, "current")), "runtime", "node");
   const folder = join(root, "state", "s01-folder");
   mkdirSync(folder, { recursive: true });
   const tag = sha256Hex(String(Date.now())).slice(0, 8);
-  const scopeUnit = `tasks-lab-term-${tag}`;
+  const scopeUnit = `ttasks-lab-term-${tag}`;
   const pids: Record<string, number | undefined> = {};
   const alive2 = () =>
     Object.fromEntries(Object.entries(pids).map(([k, p]) => [k, p !== undefined && alive(p)]));
@@ -1327,7 +1329,7 @@ async function s01(args: string[]): Promise<Result> {
     const termTicket = (await rpc(state, "spike.mint_ticket", {
       argv: [node, "-e", "setTimeout(() => process.exit(0), 120000)"],
       cwd: realpathSync.native(folder),
-      title: "Tasks lab S01 terminal",
+      title: "TTasks lab S01 terminal",
     })) as JsonObject;
     const termTag = sha256Hex(text(termTicket["ticket"])).slice(0, 12);
     const inner = [tasks, "shim", "--state", state, text(termTicket["ticket"])];
@@ -1357,7 +1359,7 @@ async function s01(args: string[]): Promise<Result> {
       brief: "Fixture brief for row S01.",
     })) as JsonObject;
     const runTag = text(runTicket["run"]);
-    runUnit = `tasks-lab-run-${runTag}`;
+    runUnit = `ttasks-lab-run-${runTag}`;
     await rpc(state, "spike.spawn", {
       argv: [
         "systemd-run",

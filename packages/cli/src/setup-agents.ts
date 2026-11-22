@@ -1,22 +1,22 @@
-// `tasks setup agents` (A3 3.13; M2.14, M4.05): Tasks's MCP server entry in this machine's agent
+// `ttasks setup agents` (A3 3.13; M2.14, M4.05): TTasks's MCP server entry in this machine's agent
 // homes: Claude Code's user scope, every Codex home (the Codex app reads the default one), the
 // homes T3 Code's provider instances use, and Claude Desktop's configuration. Loaded only for this
 // command (setup.ts), so no other command pays for the TOML reader and the lock.
 //
-//   tasks setup agents [--preview]  each home's change: the exact command (or, for Claude Desktop,
+//   ttasks setup agents [--preview]  each home's change: the exact command (or, for Claude Desktop,
 //                                   the one entry setup writes), the key-level diff and the hash
 //                                   of every file read, and the apply command with the plan's
 //                                   token. The default: it writes nothing
-//   tasks setup agents --apply --plan <token>
-//                                   carries out that preview: registers Tasks in each home without
+//   ttasks setup agents --apply --plan <token>
+//                                   carries out that preview: registers TTasks in each home without
 //                                   an entry yet, or refuses when the plan is not the same any more
-//   tasks setup agents --remove     takes back each entry setup wrote that is still exactly its own
-//   tasks setup agents --status     each home, registered or not, and its agent-home row (reads only)
-//   tasks setup agents print --app <name>
+//   ttasks setup agents --remove     takes back each entry setup wrote that is still exactly its own
+//   ttasks setup agents --status     each home, registered or not, and its agent-home row (reads only)
+//   ttasks setup agents print --app <name>
 //                                   the entry and the file it belongs in, for an app setup does not
 //                                   manage or a managed file (A3 3.13.7): a hand-made entry, which
 //                                   uses the machine's default space (A3 3.7.8). Writes nothing
-//   tasks setup agents print-block --for claude|agents
+//   ttasks setup agents print-block --for claude|agents
 //                                   the instruction block and the file it belongs in, for a managed
 //                                   file's source or an app setup does not write (A3 3.12). Reads no
 //                                   home and writes nothing
@@ -29,7 +29,7 @@
 // service, so a plan of only that part asks the service nothing.
 //
 // The CLI changes the homes itself, in the person's session and environment, so the apps' commands
-// are the ones on the person's PATH (setup/agents.ts in @tasks/service). The service keeps the
+// are the ones on the person's PATH (setup/agents.ts in @ttasks/service). The service keeps the
 // agent-home rows of the grants table (hub/agent-homes.ts) and says which spaces it serves. Apply
 // and remove run only for a person at a terminal: a script or an agent is refused before anything
 // is read or written, and the service checks the class again for every row.
@@ -38,8 +38,8 @@
 // approval settings, so the preview names the change for the person to make by hand.
 import { statSync } from "node:fs";
 import { posix, win32 } from "node:path";
-import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
-import { AppError } from "@tasks/contracts";
+import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
+import { AppError } from "@ttasks/contracts";
 import {
   detect,
   MAX_LINE_BYTES,
@@ -47,9 +47,9 @@ import {
   pasteShell,
   shellLine,
   type Env,
-} from "@tasks/launch";
-import { loadMachineConfig } from "@tasks/service/config";
-import { homeFolder, hostFacts, resolveLayout } from "@tasks/service/paths";
+} from "@ttasks/launch";
+import { loadMachineConfig } from "@ttasks/service/config";
+import { homeFolder, hostFacts, resolveLayout } from "@ttasks/service/paths";
 import {
   AGENT_APPS,
   appLabel,
@@ -97,7 +97,7 @@ import {
   type PrintApp,
   type RowCall,
   type SetupInput,
-} from "@tasks/service/setup";
+} from "@ttasks/service/setup";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import { personAtTerminal, type Io } from "./io.ts";
@@ -291,7 +291,7 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
 };
 
 /**
- * Why a home was left, for people. An entry of Tasks's name that setup did not write (one added by
+ * Why a home was left, for people. An entry of TTasks's name that setup did not write (one added by
  * hand) also says how to take it out with the app's own command, so the next setup can register
  * the home (A3 3.7.8: the grant gate's refusal of such an entry sends the person here).
  */
@@ -411,7 +411,7 @@ async function pickSpace(
   });
 }
 
-/** What setup reads and runs on this machine, for `tasks setup agents` and `tasks doctor`. */
+/** What setup reads and runs on this machine, for `ttasks setup agents` and `ttasks doctor`. */
 export async function setupInputOf(
   io: Io,
   options: { readonly agents?: AgentsSetupOptions },
@@ -420,8 +420,8 @@ export async function setupInputOf(
   const layout = resolveLayout(facts);
   const env = options.agents?.env ?? io.env;
   const userHome = options.agents?.home ?? homeFolder(facts);
-  // The install's stable command (A2 3.12) in the layout's command folder: `~/.local/bin/tasks`,
-  // or `<root>/bin/tasks` of a TASKS_HOME install (`tasks.exe` on Windows).
+  // The install's stable command (A2 3.12) in the layout's command folder: `~/.local/bin/ttasks`,
+  // or `<root>/bin/ttasks` of a TTASKS_HOME install (`ttasks.exe` on Windows).
   const tasks = (io.platform === "win32" ? win32 : posix).join(
     layout.bin,
     io.platform === "win32" ? `${CLI_NAME}.exe` : CLI_NAME,

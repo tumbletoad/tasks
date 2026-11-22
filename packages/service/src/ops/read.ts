@@ -22,7 +22,7 @@ import {
   type ReceiptLookup,
   type Row,
   type WorkerConnection,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 import {
   AppError,
   PREFERENCES,
@@ -30,7 +30,7 @@ import {
   readPreference,
   REQUEST_LAUNCHES,
   type PreferenceRead,
-} from "@tasks/contracts";
+} from "@ttasks/contracts";
 import type { FoldersHere } from "./here.ts";
 
 /** One statement of a read. Only the parameters the statement names are bound. */
@@ -347,7 +347,7 @@ const notFound = (): AppError =>
   new AppError({
     code: "not_found",
     message: "No task has this reference in this space.",
-    hint: "Check the reference with tasks status or tasks find.",
+    hint: "Check the reference with ttasks status or ttasks find.",
   });
 
 /** Which entries of a list a read takes: newest first, from ordinal `upto` down, at most `limit`. */

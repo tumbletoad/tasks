@@ -14,8 +14,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
-import { nodeDetectHost, resolveProgram } from "@tasks/launch";
+import { MemoryDurable, MemoryExecutionStore } from "@ttasks/launch/memory-store";
+import { nodeDetectHost, resolveProgram } from "@ttasks/launch";
 import { afterAll, beforeAll, describe, expect, test, type TestContext } from "vitest";
 import {
   claudeArgs,
@@ -78,7 +78,7 @@ function installFake(prefix: string): string {
 }
 
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-claude-run-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-claude-run-"));
   if (windows) natives = buildNatives(join(work, "bin"));
   const prefix = join(work, "npm");
   mkdirSync(prefix);
@@ -236,7 +236,7 @@ describe("[A4.3.11.claude.run] a Claude Code run in the run host: the program re
     });
 
     test(`${kind}: a process the agent left behind is ended, and the cleanup says so beside the work's answer`, async (ctx: TestContext) => {
-      if (!grouped) ctx.skip("a detached process is beyond what Tasks can find without a group");
+      if (!grouped) ctx.skip("a detached process is beyond what TTasks can find without a group");
       const token = newToken();
       const b = bench(make());
       const id = await startRun(

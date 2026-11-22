@@ -20,7 +20,7 @@ import {
   RUN_STATES,
   TEXT_CAP_BYTES,
   ANSWER_CAP_BYTES,
-} from "@tasks/contracts/runs";
+} from "@ttasks/contracts/runs";
 import {
   STORAGE_FINAL_RUN_STATES,
   STORAGE_OPEN_RUN_STATES,
@@ -49,7 +49,7 @@ import {
   storageNormaliseText,
   type LaunchSpace,
   type WorkerLaunchSpace,
-} from "@tasks/testkit";
+} from "@ttasks/testkit";
 import { describe, expect, test } from "vitest";
 import {
   EDGES,

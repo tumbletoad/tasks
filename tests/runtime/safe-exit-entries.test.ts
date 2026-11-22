@@ -1,9 +1,9 @@
 // Which scripts load safe-exit.ts, and that they load it first (A2 3.12.1). A script that runs the
-// product's code and ends through `process.exit` must evaluate @tasks/bridge/safe-exit before any
+// product's code and ends through `process.exit` must evaluate @ttasks/bridge/safe-exit before any
 // other module of its own, or it can hang in that exit. The check finds such scripts itself, so a
 // new one cannot be forgotten. It reads every source module under packages/, tests/ and scripts/
 // with TypeScript's parser and builds the graph of their imports: static imports, re-exports and
-// dynamic `import()` of a literal, relative or through a `@tasks/` package's exports. Then:
+// dynamic `import()` of a literal, relative or through a `@ttasks/` package's exports. Then:
 // - a module that exits is one that calls `process.exit` or `process.reallyExit`, written any way;
 // - under packages/*/src, an exiting module that no module imports is a script entry (one that is
 //   imported is a part of the product that such an entry loads);
@@ -134,7 +134,7 @@ interface Module {
   readonly imports: string[];
 }
 
-/** The `@tasks/` packages: their folder and the files their exports name. */
+/** The `@ttasks/` packages: their folder and the files their exports name. */
 function workspacePackages(): Map<string, { dir: string; exports: Record<string, string> }> {
   const packages = new Map<string, { dir: string; exports: Record<string, string> }>();
   for (const entry of readdirSync(join(ROOT, "packages"), { withFileTypes: true })) {
@@ -157,7 +157,7 @@ function resolver(packages: ReturnType<typeof workspacePackages>) {
       const path = resolve(dirname(from), specifier);
       return SOURCE.test(path) && existsSync(path) ? path : undefined;
     }
-    const match = /^(@tasks\/[^/]+)(\/.*)?$/u.exec(specifier);
+    const match = /^(@ttasks\/[^/]+)(\/.*)?$/u.exec(specifier);
     const pkg = match?.[1] === undefined ? undefined : packages.get(match[1]);
     if (pkg === undefined) return undefined;
     const target = pkg.exports[`.${match?.[2] ?? ""}`];
@@ -235,10 +235,10 @@ describe("[A2.3.12.1.runtime.safe-exit] every script that ends through process.e
       staticSpecifiers(
         parseText(
           "x.ts",
-          '#!/usr/bin/env node\n/* import "./c.ts"; */\n// import "./d.ts";\nimport type { A } from "./a.ts";\nexport { b } from "./b.ts";\nimport "@tasks/bridge/safe-exit";\nexport type { E } from "./e.ts";\nimport { type F } from "./f.ts";\n',
+          '#!/usr/bin/env node\n/* import "./c.ts"; */\n// import "./d.ts";\nimport type { A } from "./a.ts";\nexport { b } from "./b.ts";\nimport "@ttasks/bridge/safe-exit";\nexport type { E } from "./e.ts";\nimport { type F } from "./f.ts";\n',
         ),
       ),
-    ).toEqual(["./b.ts", "@tasks/bridge/safe-exit", "./f.ts"]);
+    ).toEqual(["./b.ts", "@ttasks/bridge/safe-exit", "./f.ts"]);
     for (const text of [
       "process.exit(1);",
       "if (x) process.exit(await run());",

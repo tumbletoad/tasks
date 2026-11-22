@@ -23,9 +23,9 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
-import { CLI_NAME, envVar, PRODUCT_NAME } from "@tasks/brand";
-import type { Instance } from "@tasks/launch";
-import { StorageError, type Id } from "@tasks/storage";
+import { CLI_NAME, envVar, PRODUCT_NAME } from "@ttasks/brand";
+import type { Instance } from "@ttasks/launch";
+import { StorageError, type Id } from "@ttasks/storage";
 import {
   DEFAULT_CONFIG,
   fatalProblems,
@@ -138,10 +138,10 @@ export const UPDATE_CHECK_MS = 10_000;
 /**
  * Logs what a repair of an interrupted update did, and whether the service must restart so its
  * manager starts what the install now is: when current names another version than this build's
- * own, or when the repair may have replaced the Windows supervisor (tasksw.exe, repair.ts
+ * own, or when the repair may have replaced the Windows supervisor (ttasksw.exe, repair.ts
  * supervisorReplaced) and this service runs under it. That supervisor may still run from the old
  * file, renamed aside; before it starts the service again (after this exit 75, or after any other
- * exit, should this one die first) it sees that bin\tasksw.exe is another file and starts that
+ * exit, should this one die first) it sees that bin\ttasksw.exe is another file and starts that
  * one in its place (launcher.c hand_over). A service run from source names no version and never
  * restarts for this.
  */
@@ -164,7 +164,7 @@ function afterRepair(log: Logger, outcome: RepairOutcome | undefined, manager: M
     log.log("update.restart", { version: outcome.current, why: "version" });
     return true;
   }
-  if (manager !== "tasksw" || !supervisorReplaced(outcome)) return false;
+  if (manager !== "ttasksw" || !supervisorReplaced(outcome)) return false;
   log.log("update.restart", { version: outcome.current, why: "supervisor" });
   return true;
 }
@@ -186,7 +186,7 @@ export const ENDPOINT_TRIES = 3;
  */
 export const LOST_SPACE_CLOSE_MS = 2_000;
 
-export const TASKS_SERVICE_MANAGER = envVar("SERVICE_MANAGER");
+export const TTASKS_SERVICE_MANAGER = envVar("SERVICE_MANAGER");
 
 export { BUILD };
 
@@ -235,7 +235,7 @@ export interface StartOptions {
   readonly http?: HttpStart;
   /** Where session records and binding handles are kept. Default: `<state>/sessions.json`. */
   readonly sessions?: SessionStore;
-  /** Background runs: the containers, tasks-run.exe and the host's times, for tests. */
+  /** Background runs: the containers, ttasks-run.exe and the host's times, for tests. */
   readonly runs?: RunOptions;
   /**
    * The page's agent apps: the environment and home folder they are looked for in, and the home
@@ -284,7 +284,7 @@ export interface RunningService {
 }
 
 const managerOf = (env: Env): Manager => {
-  const value = env[TASKS_SERVICE_MANAGER] ?? "";
+  const value = env[TTASKS_SERVICE_MANAGER] ?? "";
   return (MANAGERS as readonly string[]).includes(value) ? (value as Manager) : "manual";
 };
 
@@ -581,7 +581,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       },
       instances: () => instances,
       // What a run starts, from its record: the folder a launch would work in, the person's
-      // environment as Open's agents get it, and Tasks' own command for the bridge its agent is given.
+      // environment as Open's agents get it, and TTasks's own command for the bridge its agent is given.
       agents: {
         platform,
         home: runHome,
@@ -671,10 +671,10 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       }
       return made.spaces;
     };
-    // The instances Open uses: machine.toml's at start, then what `tasks setup instances` writes.
+    // The instances Open uses: machine.toml's at start, then what `ttasks setup instances` writes.
     let instances: readonly Instance[] = config.instances;
     // The machine's default space (A2 3.1): machine.toml's at start, then what Make default and
-    // `tasks space use` write (default-space.ts).
+    // `ttasks space use` write (default-space.ts).
     const defaults = new DefaultSpace({
       configDir: layout.config,
       log,
@@ -691,7 +691,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       spaces: () => made.spaces?.served() ?? [],
       defaultSpace: () => defaults.get(),
     });
-    // A run's agent was given Tasks' tools by Tasks itself: while the run runs, the run's own
+    // A run's agent was given TTasks's tools by TTasks itself: while the run runs, the run's own
     // calls may use its space whether or not its home was set up for it. No other connection of
     // that home may.
     const homes: typeof registered = {
@@ -728,7 +728,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       // are measured on one clock.
       ...(options.launch?.now === undefined ? {} : { now: options.launch.now }),
     });
-    // What `~` means in a folder here, and Tasks' own data, where no folder is bound.
+    // What `~` means in a folder here, and TTasks's own data, where no folder is bound.
     let personHome: string | undefined;
     try {
       personHome = homeFolder(facts);
@@ -802,7 +802,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         // `doctor/launch` (A3 3.14): the launch service's own scope probe and environment check.
         doctor: (take: boolean) => launching.service?.doctor(take) ?? Promise.resolve(undefined),
       },
-      // `tasks setup t3` (M2.11): T3's routes over `<state>/t3`, the paired one and the CLI
+      // `ttasks setup t3` (M2.11): T3's routes over `<state>/t3`, the paired one and the CLI
       // fallback (M6.10). Launching through them is a later step's.
       t3: t3Host({
         log,
@@ -812,7 +812,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         env,
         instances: config.instances,
       }),
-      // `tasks setup agents` (M2.14): the agent-home rows of the grants table.
+      // `ttasks setup agents` (M2.14): the agent-home rows of the grants table.
       agentHomes: {
         log,
         platform,
@@ -1071,7 +1071,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         log: httpLog,
         // The page's tiles open through the same launch machines as the shim's claims.
         launch: launches,
-        // The page's Run starts the same background runs as `tasks run`, with any instance that
+        // The page's Run starts the same background runs as `ttasks run`, with any instance that
         // can run.
         runs: {
           queueTask: (space, asked) => runs.queueTask(space, asked),
@@ -1409,7 +1409,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
 }
 
 /**
- * At a clean stop, the per-user runtime folder (`/run/user/<uid>/tasks-<install>/`, Linux) goes
+ * At a clean stop, the per-user runtime folder (`/run/user/<uid>/ttasks-<install>/`, Linux) goes
  * when nothing is left in it: the socket went with the server, and the launch root goes when it
  * holds no launch folder. A launch folder is a launch the next start still needs (a live shim
  * reattaches with it, recovery reads it), so a runtime folder that holds one stays, whole. Only

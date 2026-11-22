@@ -1,9 +1,9 @@
 /*
- * tasks-run.exe: the holder of one background run's job object on Windows.
+ * ttasks-run.exe: the holder of one background run's job object on Windows.
  *
- *   tasks-run.exe start <name> <program> <command line>
- *   tasks-run.exe confirm <name>
- *   tasks-run.exe end <name>
+ *   ttasks-run.exe start <name> <program> <command line>
+ *   ttasks-run.exe confirm <name>
+ *   ttasks-run.exe end <name>
  *
  * start creates the job Local\<name> (a name that exists is refused), with kill on close and no
  * breakaway, and starts <program> with <command line> already inside it: no moment exists in
@@ -415,6 +415,6 @@ int wmain(int argc, wchar_t **argv) {
     if (argc == 3 && wcscmp(argv[1], L"end") == 0 && valid_name(argv[2])) {
         return confirm(argv[2], 1);
     }
-    print("usage: tasks-run start <name> <program> <command line> | confirm <name> | end <name>\n");
+    print("usage: ttasks-run start <name> <program> <command line> | confirm <name> | end <name>\n");
     return EXIT_USAGE;
 }

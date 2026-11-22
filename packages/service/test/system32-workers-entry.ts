@@ -2,7 +2,7 @@
 // the service does when a space opens beside a synced-folder check. When it ran its time it writes
 // the folder it found and how many workers ran to stderr and exits 0. A worker that fails ends it
 // with 1. argv: how long to run, in ms. Tests only.
-import "@tasks/bridge/safe-exit";
+import "@ttasks/bridge/safe-exit";
 import { Worker } from "node:worker_threads";
 import { system32 } from "../src/hub/identity.ts";
 

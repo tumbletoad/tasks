@@ -23,7 +23,7 @@ import {
 export const VERSION = "0.0.0-spike";
 
 export function tempDir(label: string): string {
-  return mkdtempSync(join(tmpdir(), `tasks-${label}-`));
+  return mkdtempSync(join(tmpdir(), `ttasks-${label}-`));
 }
 
 export function removeDir(dir: string): void {

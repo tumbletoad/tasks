@@ -1,8 +1,8 @@
 // Row decoders and the integer domain (A1 3.4). The driver reads an INTEGER
-// as a number within ±(2^53 − 1) and as a bigint beyond. Every INTEGER column Tasks writes holds a
+// as a number within ±(2^53 − 1) and as a bigint beyond. Every INTEGER column TTasks writes holds a
 // count, a flag, a sequence number, a reference, an ordinal or a millisecond instant inside the
 // ranges below, so a decoder refuses a bigint, a fraction, a value of another type or a value out
-// of range: the space then holds data Tasks did not write, and it is SPACE_INVALID. The errors
+// of range: the space then holds data TTasks did not write, and it is SPACE_INVALID. The errors
 // name the table and column, never the value.
 import type { Row } from "./driver.ts";
 import { StorageError } from "./errors.ts";

@@ -1,4 +1,4 @@
-// Whether the service's process still runs, as `tasks service stop` and `start` wait for it.
+// Whether the service's process still runs, as `ttasks service stop` and `start` wait for it.
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFileSync } from "node:fs";

@@ -513,7 +513,7 @@ export function TaskList({
     leaving.current = wanted.current === ref ? undefined : { ref: wanted.current };
   }, []);
 
-  // The URL's task (a link, `tasks open <task>`, a reload, Back and Forward) expands once it is
+  // The URL's task (a link, `ttasks open <task>`, a reload, Back and Forward) expands once it is
   // found: in the live rows, or read with `task.get` once the rows are live and do not hold it.
   // A URL without a task collapses. A task that does not exist leaves the URL with a toast. Each
   // URL task is applied once (`handled`): the URL this list wrote itself, after the person

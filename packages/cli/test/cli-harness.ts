@@ -1,10 +1,10 @@
-// Test helpers for the CLI: a real service as a child process in a temporary TASKS_HOME with one
-// space, and `tasks` commands as child processes against it. Every PID is recorded and stopped by
+// Test helpers for the CLI: a real service as a child process in a temporary TTASKS_HOME with one
+// space, and `ttasks` commands as child processes against it. Every PID is recorded and stopped by
 // the test that started it, and the temporary folder is removed by its full name. Tests only.
 //
-// Against a build (`pnpm accept --installed <version folder>`, which sets TASKS_ACCEPT_INSTALLED):
-// the temporary TASKS_HOME is a test install of that version folder (testkit's layoutTestInstall),
-// the service is `<home>/bin/tasks serve` through the stable launcher, and every `tasks` command
+// Against a build (`pnpm accept --installed <version folder>`, which sets TTASKS_ACCEPT_INSTALLED):
+// the temporary TTASKS_HOME is a test install of that version folder (testkit's layoutTestInstall),
+// the service is `<home>/bin/ttasks serve` through the stable launcher, and every `ttasks` command
 // without a test script of its own runs through that launcher too, as real processes. Commands
 // that need a test hook (a lost reply, a newer protocol) still run the CLI from source, against the
 // built service; `runMain` runs the CLI in this process, as a person at a terminal, also against it.
@@ -13,7 +13,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isAgentMarker, LocalError } from "@tasks/bridge/protocol";
+import { isAgentMarker, LocalError } from "@ttasks/bridge/protocol";
 import {
   diagnostics,
   openSession,
@@ -29,17 +29,17 @@ import {
   READY_MS,
   type Proc,
   type ServiceJson,
-} from "@tasks/service/test/harness";
-import { classSession } from "@tasks/service/test/ops-helpers";
-import { layoutTestInstall, type TestInstall } from "@tasks/testkit";
+} from "@ttasks/service/test/harness";
+import { classSession } from "@ttasks/service/test/ops-helpers";
+import { layoutTestInstall, type TestInstall } from "@ttasks/testkit";
 import { main, type Io, type MainOptions } from "../src/main.ts";
 
 /** The built version folder the acceptance runs against, from `pnpm accept --installed`. */
-export const INSTALLED = process.env["TASKS_ACCEPT_INSTALLED"];
+export const INSTALLED = process.env["TTASKS_ACCEPT_INSTALLED"];
 
 export const BIN = fileURLToPath(new URL("../src/bin.ts", import.meta.url));
 export const NEWER = fileURLToPath(new URL("./newer-cli.ts", import.meta.url));
-/** The CLI with a fault from TASKS_TEST_FAULT: a lost write reply, or a trace of its operations. */
+/** The CLI with a fault from TTASKS_TEST_FAULT: a lost write reply, or a trace of its operations. */
 export const FAULTY = fileURLToPath(new URL("./faulty-cli.ts", import.meta.url));
 
 /** A slow runner must not fail a test that is only slow. */
@@ -52,7 +52,7 @@ export interface Ran {
 }
 
 /**
- * The environment of a `tasks` child: the service's (TASKS_HOME, no other Tasks variable), without
+ * The environment of a `ttasks` child: the service's (TTASKS_HOME, no other TTasks variable), without
  * the agent markers of the shell that runs the tests, so the class is `cli-script` unless `extra`
  * adds a marker.
  */
@@ -71,7 +71,7 @@ export interface CliWorld {
   readonly json: ServiceJson;
   /** The test install of a build, when the acceptance runs against one. */
   readonly install: TestInstall | undefined;
-  /** Runs `tasks <args>` as a child process. */
+  /** Runs `ttasks <args>` as a child process. */
   tasks(
     args: readonly string[],
     options?: { env?: Record<string, string>; stdin?: string; script?: string },
@@ -99,7 +99,7 @@ export async function startWorld(
       ...(install === undefined ? {} : { command: [install.launcher, "serve"] as const }),
       ...(options.env === undefined ? {} : { env: options.env }),
     });
-    // tasks.exe starts Node as its child, so on Windows service.json names Node's PID, not the
+    // ttasks.exe starts Node as its child, so on Windows service.json names Node's PID, not the
     // launcher's. The POSIX launcher execs Node: one process.
     json =
       install !== undefined && process.platform === "win32"
@@ -153,7 +153,7 @@ export async function startWorld(
           });
         }),
         CLI_MS,
-        "a tasks command",
+        "a ttasks command",
       );
     };
     const ready = json;
@@ -171,7 +171,7 @@ export async function startWorld(
           for (const child of children) child.kill("SIGKILL");
           if (install === undefined) service.send("stop");
           else {
-            // The built `tasks serve` has no test entry to read a stop line: the graceful stop on
+            // The built `ttasks serve` has no test entry to read a stop line: the graceful stop on
             // every OS is service/shutdown (A2 3.3.5), which a script's connection may send.
             const session = await openSession(home, path).catch(() => undefined);
             await session
@@ -268,7 +268,7 @@ async function reportLostService(service: Proc, home: string, saved: ServiceJson
 }
 
 /**
- * Runs `tasks <argv>` in this process with a recorded Io. `tty` makes the connection a person's
+ * Runs `ttasks <argv>` in this process with a recorded Io. `tty` makes the connection a person's
  * (`cli-interactive`), as a terminal would: the class is decided by the service from it. `true`
  * is a terminal on every stream; an object names each stream, as a pipe or a redirect leaves them.
  */

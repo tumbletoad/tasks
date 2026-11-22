@@ -5,7 +5,7 @@ import fc from "fast-check";
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { Connection } from "../src/driver.ts";
 import { newId, type Id } from "../src/ids.ts";
-import { opSpec } from "@tasks/contracts";
+import { opSpec } from "@ttasks/contracts";
 import { openWriter } from "../src/open.ts";
 import { openSpace } from "../src/space.ts";
 import {

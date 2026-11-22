@@ -1,4 +1,4 @@
-// Pairing with T3 Code (A4 3.4.1 "Pairing"): Tasks registers as an outside OAuth client of the
+// Pairing with T3 Code (A4 3.4.1 "Pairing"): TTasks registers as an outside OAuth client of the
 // local T3 server and the person approves it on T3's own page in the browser. The flow is the MCP
 // authorization specification's: protected resource metadata (RFC 9728) names the authorization
 // server, whose metadata (RFC 8414) names its endpoints; dynamic client registration (RFC 7591);
@@ -8,16 +8,16 @@
 // - PKCE with S256 only. A server that does not list S256 is refused, never asked for `plain`.
 // - A fresh verifier and state for every attempt, 256 random bits each, never reused or stored.
 // - The redirect is `http://127.0.0.1:<port>/callback` on a port the OS assigns for this attempt,
-//   and every endpoint Tasks sends a secret to (registration, token) must be on loopback too.
+//   and every endpoint TTasks sends a secret to (registration, token) must be on loopback too.
 // - The state is compared, in constant time, before the code is exchanged. A request with another
 //   state, or none, is answered 400 and changes nothing: the attempt keeps waiting for its own.
 // - Every wait has a deadline: each HTTP request (T3_REQUEST_MS) and the person's approval
 //   (PAIR_DEADLINE_MS), after which the listener closes.
-// - Secrets (the verifier, the code, the tokens) never reach a URL Tasks makes other than the
+// - Secrets (the verifier, the code, the tokens) never reach a URL TTasks makes other than the
 //   authorization URL's challenge and state, an argv, a log line or an error message.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { PRODUCT_NAME } from "@tasks/brand";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import {
   loopbackUrl,
   readObject,
@@ -88,7 +88,7 @@ async function getJson(fetchFn: Fetch, url: string, ms: number) {
   return readObject(response);
 }
 
-/** A loopback URL's text, or a refusal: Tasks sends nothing to another host. */
+/** A loopback URL's text, or a refusal: TTasks sends nothing to another host. */
 function loopback(value: unknown): string {
   const url = loopbackUrl(value);
   if (url === undefined) throw new PairingError("unsupported");

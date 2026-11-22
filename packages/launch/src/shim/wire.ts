@@ -1,6 +1,6 @@
-// The shim's part of tasks-local/1 (A4 3.6.3, A2 3.6.4): the methods a shim connection calls, the
+// The shim's part of ttasks-local/1 (A4 3.6.3, A2 3.6.4): the methods a shim connection calls, the
 // shapes of their params and replies, the patterns of the ticket and the attachment credential, and
-// the shim's timings. Both sides read this file: the shim (`tasks shim`, packages/cli/src/shim) and
+// the shim's timings. Both sides read this file: the shim (`ttasks shim`, packages/cli/src/shim) and
 // the service (host.ts). It imports types only, so the shim loads it without anything else of
 // launch.
 //

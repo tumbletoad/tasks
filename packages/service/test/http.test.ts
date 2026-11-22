@@ -169,7 +169,7 @@ describe("[A2.3.8.http.hub] the listener in the service", () => {
       const user = await w.user();
       await user.call("space/open", { path: join(w.root, "s", "mira") }, { timeoutMs: 120_000 });
       expect(await user.call("op/call", { op: "space.status", input: {} })).toHaveProperty("as_of");
-      // tasks open is refused with A2's message.
+      // ttasks open is refused with A2's message.
       const refused = await user.call("ui/mint_code", {}).then(
         () => undefined,
         (e: unknown) => errorOf(e),
@@ -180,7 +180,7 @@ describe("[A2.3.8.http.hub] the listener in the service", () => {
       });
       expect(refused?.message).toBe(blockedMessage(port));
       expect(refused?.message).toContain(
-        `holds or recently held TT Tasks's UI port ${String(port)}.`,
+        `holds or recently held TTasks's UI port ${String(port)}.`,
       );
       // Choosing the blocked port again needs --reuse.
       const again = await user.call("service/port", { port }).then(
@@ -201,7 +201,7 @@ describe("[A2.3.8.http.hub] the listener in the service", () => {
       }
       const later = await w.restart({ holders: () => [] });
       expect(later.status().http?.blocked).toBe("foreign_port_holder");
-      // `tasks service port <n>` resolves it: a new port, the sightings cleared, a restart (75).
+      // `ttasks service port <n>` resolves it: a new port, the sightings cleared, a restart (75).
       const free = await holdPort();
       await free.release();
       const resolver = await w.user();

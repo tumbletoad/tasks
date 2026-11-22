@@ -1,4 +1,4 @@
-// T3 Code's fallback route, `t3-cli` (A4 3.4.1 "Fallback route", A7 3.13 M6.10): when Tasks is not
+// T3 Code's fallback route, `t3-cli` (A4 3.4.1 "Fallback route", A7 3.13 M6.10): when TTasks is not
 // paired with T3, a task opens through T3's own command line. It is off (T3_CLI_ROUTE below): T3's
 // command line has no `project list`, which the route needs. It serves exact project roots only:
 //
@@ -21,7 +21,7 @@
 // as the thread's title (never the task's own title, A4 3.4.1), the instance's
 // provider instance and model. The brief goes on stdin; no brief, task text or token is in argv,
 // the environment or a log line. On Windows T3's `t3` is a `.cmd` shim, which runs through cmd.exe
-// and so re-parses its arguments: Tasks never runs it. It reads the shim once per use, strictly
+// and so re-parses its arguments: TTasks never runs it. It reads the shim once per use, strictly
 // (parseT3Shim), and starts the executable it names directly with the entry and the two variables it
 // sets; a shim it cannot read exactly makes the route unusable, never guessed.
 import { spawn } from "node:child_process";
@@ -64,7 +64,7 @@ const REFERENCE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 const PROVIDER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/u;
 const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$/u;
 
-/** How Tasks runs T3's command line: an executable, the arguments before Tasks's, its variables. */
+/** How TTasks runs T3's command line: an executable, the arguments before TTasks's, its variables. */
 export interface T3CliCommand {
   /** Absolute; never a `.cmd`, `.bat` or `.ps1` file. */
   readonly file: string;
@@ -81,7 +81,7 @@ const isScript = (file: string): boolean => /\.(cmd|bat|ps1)$/iu.test(file);
 
 /**
  * Windows programs that read their arguments, or their stdin, as commands: started directly they
- * still re-parse what Tasks passes (cmd.exe splits at `&`), so none of them is ever T3's CLI.
+ * still re-parse what TTasks passes (cmd.exe splits at `&`), so none of them is ever T3's CLI.
  */
 const COMMAND_PROCESSORS = new Set([
   "bash.exe",
@@ -141,7 +141,7 @@ function t3Form(file: string, prefix: readonly string[], electron: boolean): boo
  * exactly one command, `"<executable>" ["<argument>" …] %*`, optionally followed by `exit /b` or
  * `exit /b %errorlevel%`. `%~dp0` (the shim's own folder) may start a value or a word; no other
  * `%`, and none of cmd's operators (`^ & | < > !`), anywhere. ASCII only: cmd reads the file in the
- * console's code page, so another character could mean something else to cmd than to Tasks. The
+ * console's code page, so another character could mean something else to cmd than to TTasks. The
  * command must be one of T3's forms (t3Form). Undefined when the shim is anything else.
  */
 export function parseT3Shim(text: string, shimPath: string): T3CliCommand | undefined {
@@ -227,7 +227,7 @@ export function readShimFile(path: string): string | undefined {
 }
 
 /**
- * How Tasks runs this instance's `t3`: its `exec` and `args_prefix`, or, for a Windows `.cmd` or
+ * How TTasks runs this instance's `t3`: its `exec` and `args_prefix`, or, for a Windows `.cmd` or
  * `.bat` shim, what the shim names (parseT3Shim) followed by `args_prefix`. `no_cli` without an
  * `exec`; `cli_unusable` for a PowerShell script or a shim that cannot be read exactly.
  */
@@ -402,7 +402,7 @@ export type T3CliAvailability =
 /** What a launch hands the CLI between its click and its dispatch. Memory only. */
 interface Staged {
   readonly args: readonly string[];
-  /** The command's own arguments before Tasks's (the entry), for the dispatch's `project list`. */
+  /** The command's own arguments before TTasks's (the entry), for the dispatch's `project list`. */
   readonly prefix: readonly string[];
   readonly env: Readonly<Record<string, string>>;
   readonly file: string;
@@ -499,7 +499,7 @@ export class T3CliRoute {
     }
     const home = this.#options.home;
     if (home === undefined) return { state: "not_running" };
-    // The CLI must speak to the T3 Tasks reads: a shim that names another home is not used.
+    // The CLI must speak to the T3 TTasks reads: a shim that names another home is not used.
     const named = found.command.env["T3CODE_HOME"];
     if (named !== undefined && !this.#sameFolder(named, home)) return { state: "cli_unusable" };
     if ((await readT3Origin(home, this.#platform)).status !== "ok") return { state: "not_running" };
@@ -856,7 +856,7 @@ export const T3_CLI_ROUTE = false;
 /**
  * The T3 route for `instance` now, from what both routes already read (machine state, T3's runtime
  * file, the instance; no request, no process, no polling). With the CLI route off (T3_CLI_ROUTE) it
- * is the paired route or why not: `not_paired` says to pair with `tasks setup t3`. With it on:
+ * is the paired route or why not: `not_paired` says to pair with `ttasks setup t3`. With it on:
  * - `pick: "t3-cli"`, the person's choice: the CLI route, or why it cannot be used;
  * - paired and T3 running: `t3-mcp`;
  * - paired and T3 not running: `not_running`, "Start T3 Code";

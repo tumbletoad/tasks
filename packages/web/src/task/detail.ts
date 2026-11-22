@@ -7,7 +7,7 @@
 // thread's sessions name as their requests come whole with the digest, by reference, whatever
 // their age or length. Plain code: the hook (useDetail.ts) refetches it when the feed touches the
 // task.
-import type { Client } from "@tasks/contracts/generated/client.ts";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 
 type GetResult = Awaited<ReturnType<Client["task"]["get"]>>;

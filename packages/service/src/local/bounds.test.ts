@@ -4,7 +4,7 @@
 // refused so the hub can pick another (A2 3.4).
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { openLines, openRpc } from "@tasks/bridge/protocol";
+import { openLines, openRpc } from "@ttasks/bridge/protocol";
 import {
   clientInfo,
   endpointRoot,
@@ -12,7 +12,7 @@ import {
   rawConnect,
   sleep,
   until,
-} from "@tasks/bridge/test/endpoint";
+} from "@ttasks/bridge/test/endpoint";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { testClock, type TestClock } from "../../test/clock.ts";
 import { startServer, type Started } from "../../test/local.ts";
@@ -81,7 +81,7 @@ describe("[A2.3.6.local.bounds] hostile and broken peers", () => {
         const cases: [string, (raw: RawSession) => Buffer | string][] = [
           ["bad_hello", () => "hello world\n"],
           ["bad_hello", () => "\n"],
-          ["bad_hello", () => '{"jsonrpc":"2.0","id":0,"method":"tasks/hello","params":{}}\n'],
+          ["bad_hello", () => '{"jsonrpc":"2.0","id":0,"method":"ttasks/hello","params":{}}\n'],
           ["too_large", () => randomBytes(4_000).toString("base64")],
           ["too_large", () => Buffer.alloc(2_000, 0x7b)],
           ["invalid_utf8", () => Buffer.from([0xc3, 0x28, 0x0a])],

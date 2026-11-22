@@ -31,18 +31,18 @@ import { runKeys } from "./render.ts";
 let dir: string;
 let fake: FakeContext;
 let registry: MemoryRegistry;
-const RUN_NAME = `TT Tasks (${TEST_INSTALL_ID})`;
-const keys = runKeys("HKCU\\Software\\tasks-test-memory");
+const RUN_NAME = `TTasks (${TEST_INSTALL_ID})`;
+const keys = runKeys("HKCU\\Software\\ttasks-test-memory");
 
 beforeEach(() => {
-  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-svc-entries-")));
+  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-svc-entries-")));
   registry = new MemoryRegistry();
   // Another program's Run value and Task Manager's record of it, and the daily install's value.
   registry.set(keys.run, { name: "OtherApp", kind: "REG_SZ", data: '"C:\\Other\\other.exe" -m' });
   registry.set(keys.run, {
-    name: "TT Tasks",
+    name: "TTasks",
     kind: "REG_SZ",
-    data: '"C:\\Users\\m\\.local\\bin\\tasksw.exe"',
+    data: '"C:\\Users\\m\\.local\\bin\\ttasksw.exe"',
   });
   registry.set(keys.approved, {
     name: "OtherApp",
@@ -63,19 +63,19 @@ const run = (
   context: FakeContext = fake,
 ) => serviceEntry(verb, flags, capture.io, () => context.ctx);
 
-describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, start, stop, restart and status", () => {
+describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall, start, stop, restart and status", () => {
   test("install shows its preview first and changes nothing until it gets a yes", async () => {
     const before = registry.dump();
     const declined = captureIO(false);
     expect(await run("install", {}, declined)).toBe(0);
     expect(declined.text()).toBe(
       [
-        `tasks service install, for the test install at ${fake.ctx.layout.root} (install ID ${TEST_INSTALL_ID}).`,
+        `ttasks service install, for the test install at ${fake.ctx.layout.root} (install ID ${TEST_INSTALL_ID}).`,
         "This will:",
         `  1. Set the value "${RUN_NAME}" (REG_SZ) in ${keys.run}`,
         `       to "${fake.ctx.program}". Windows starts it at each sign-in.`,
         `  2. Start the service through Explorer, as Windows does at sign-in: explorer.exe "${fake.ctx.program}", and wait until it is ready.`,
-        "Nothing else changes. To undo it: tasks service uninstall",
+        "Nothing else changes. To undo it: ttasks service uninstall",
         "Nothing was changed.",
         "",
       ].join("\n"),
@@ -87,7 +87,7 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     // No one to ask and no --yes: the preview, then exit 2 and nothing changed.
     const unattended = captureIO();
     expect(await run("install", {}, unattended)).toBe(2);
-    expect(unattended.errors()).toContain("Try: tasks service install --yes");
+    expect(unattended.errors()).toContain("Try: ttasks service install --yes");
     const asJson = captureIO(true);
     expect(await run("install", { json: true }, asJson)).toBe(2);
     expect(JSON.parse(asJson.text())).toMatchObject({
@@ -119,21 +119,21 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     // Explorer gets only the time start has left.
     expect(fake.tools.options.at(-1)).toMatchObject({ verbatim: true });
     expect(fake.tools.options.at(-1)?.timeoutMs).toBeLessThanOrEqual(fake.ctx.readyTimeoutMs);
-    expect(out.text()).toContain("Done. TT Tasks's service is installed.");
+    expect(out.text()).toContain("Done. TTasks's service is installed.");
     expect(out.text()).toContain(
-      "runs: ready, PID 4121, version 0.0.0-test (test), started by tasksw.",
+      "runs: ready, PID 4121, version 0.0.0-test (test), started by ttasksw.",
     );
 
     // A second install finds its value and changes nothing, and the service already runs.
     const again = captureIO();
     expect(await run("install", { yes: true }, again)).toBe(0);
     expect(again.text()).toContain("It is already there and the same, so it is left as it is.");
-    expect(again.text()).toContain("TT Tasks's service runs: ready");
+    expect(again.text()).toContain("TTasks's service runs: ready");
     expect(fake.tools.lines().filter((line) => line.startsWith("explorer.exe"))).toHaveLength(1);
     expect(registry.writes).toHaveLength(1);
   });
 
-  test("without Explorer in this session, start runs tasksw.exe directly; from a package it refuses", async () => {
+  test("without Explorer in this session, start runs ttasksw.exe directly; from a package it refuses", async () => {
     const noShell = fakeContext({
       platform: "win32",
       dir: join(dir, "b"),
@@ -199,7 +199,7 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     rmSync(fake.ctx.program);
     const out = captureIO(true);
     expect(await run("install", { yes: true }, out)).toBe(3);
-    expect(out.errors()).toContain("No TT Tasks build at");
+    expect(out.errors()).toContain("No TTasks build at");
     expect(registry.writes).toEqual([]);
   });
 
@@ -239,21 +239,21 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     expect(await run("status", { json: true }, status)).toBe(0);
     expect(JSON.parse(status.text())).toMatchObject({
       install_id: TEST_INSTALL_ID,
-      tasks_home: fake.ctx.layout.root,
+      ttasks_home: fake.ctx.layout.root,
       entry: { kind: "run-value", name: RUN_NAME, state: "ours", current: true },
       autostart: { kind: "run", startup_apps: "off" },
-      service: { answers: true, state: "ready", manager: "tasksw" },
+      service: { answers: true, state: "ready", manager: "ttasksw" },
     });
     const text = captureIO();
     expect(await run("status", {}, text)).toBe(0);
     expect(text.text()).toContain(
-      "Startup apps: off. TT Tasks is turned off in Startup apps (Task Manager)",
+      "Startup apps: off. TTasks is turned off in Startup apps (Task Manager)",
     );
 
     const reinstall = captureIO();
     const writes = registry.writes.length;
     expect(await run("install", { yes: true }, reinstall)).toBe(0);
-    expect(reinstall.text()).toContain("TT Tasks is turned off in Startup apps (Task Manager)");
+    expect(reinstall.text()).toContain("TTasks is turned off in Startup apps (Task Manager)");
     expect(registry.writes).toHaveLength(writes);
     expect(registry.dump().some((line) => line.includes(`${RUN_NAME} | REG_BINARY | 03`))).toBe(
       true,
@@ -265,7 +265,7 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     expect(removed.text()).toContain(
       `Remove Task Manager's on or off record for "${RUN_NAME}" from ${keys.approved}.`,
     );
-    expect(removed.text()).toContain("TT Tasks's service has stopped.");
+    expect(removed.text()).toContain("TTasks's service has stopped.");
     expect(fake.service.running).toBe(false);
     // The key-level diff: exactly what was there before install.
     expect(registry.dump()).toEqual(before);
@@ -289,14 +289,14 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
 
   test("restart is stop, then start through Explorer, with one answer that names the version that runs now; status names an installed version the service does not run", async () => {
     fake.service.version = "0.1.0";
-    fake.service.start("tasksw");
+    fake.service.start("ttasksw");
     // An install put 0.2.0 in place while the service ran.
     writeFileSync(join(fake.ctx.layout.root, "current"), "0.2.0");
     fake.service.current = "0.2.0";
     const pending = captureIO();
     expect(await run("status", {}, pending)).toBe(0);
     expect(pending.text()).toContain(
-      "  Installed: 0.2.0, not yet running. To run it: tasks service restart\n",
+      "  Installed: 0.2.0, not yet running. To run it: ttasks service restart\n",
     );
     const pendingJson = captureIO();
     expect(await run("status", { json: true }, pendingJson)).toBe(0);
@@ -308,9 +308,9 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     const restarted = captureIO();
     expect(await run("restart", {}, restarted)).toBe(0);
     expect(restarted.text()).toBe(
-      `TT Tasks's service restarted on version 0.2.0 (it ran 0.1.0 before): ready, PID ${String(fake.service.pid)}, build test, started by tasksw.\n`,
+      `TTasks's service restarted on version 0.2.0 (it ran 0.1.0 before): ready, PID ${String(fake.service.pid)}, build test, started by ttasksw.\n`,
     );
-    expect(fake.service.events.slice(-2)).toEqual(["stop", "start tasksw"]);
+    expect(fake.service.events.slice(-2)).toEqual(["stop", "start ttasksw"]);
     const after = captureIO();
     expect(await run("status", {}, after)).toBe(0);
     expect(after.text()).not.toContain("Installed:");
@@ -327,50 +327,50 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     });
     const again = captureIO();
     expect(await run("restart", {}, again)).toBe(0);
-    expect(again.text()).toMatch(/^TT Tasks's service restarted on version 0\.2\.0: ready, /);
+    expect(again.text()).toMatch(/^TTasks's service restarted on version 0\.2\.0: ready, /);
 
     // An agent's shell may not restart it, as it may not stop it: refused before anything is asked.
     const agent = fakeContext({ platform: "win32", dir: join(dir, "agent"), agentShell: true });
-    agent.service.start("tasksw");
+    agent.service.start("ttasksw");
     const refused = captureIO();
     expect(await run("restart", {}, refused, agent)).toBe(5);
-    expect(refused.errors()).toContain("tasks service restart is not run from an agent's shell");
-    expect(agent.service.events).toEqual(["start tasksw"]);
+    expect(refused.errors()).toContain("ttasks service restart is not run from an agent's shell");
+    expect(agent.service.events).toEqual(["start ttasksw"]);
   });
 
   test("restart leaves a running service alone when it could not start it again, and says so when the start fails after the stop", async () => {
     // No program to start: the running service keeps running.
     const gone = fakeContext({ platform: "win32", dir: join(dir, "gone") });
-    gone.service.start("tasksw");
+    gone.service.start("ttasksw");
     rmSync(gone.ctx.program);
     const refused = captureIO();
     expect(await run("restart", {}, refused, gone)).toBe(3);
-    expect(refused.errors()).toContain("No TT Tasks build at");
-    expect(gone.service.events).toEqual(["start tasksw"]);
+    expect(refused.errors()).toContain("No TTasks build at");
+    expect(gone.service.events).toEqual(["start ttasksw"]);
     expect(gone.service.running).toBe(true);
 
     // The stop worked and the new service never became ready: the error says the old one stopped.
-    fake.service.start("tasksw");
+    fake.service.start("ttasksw");
     fake.service.becomesReady = false;
     const failed = captureIO();
     expect(await run("restart", {}, failed)).not.toBe(0);
     expect(failed.errors()).toContain(
-      "TT Tasks's service stopped for the restart, and the start failed: TT Tasks's service did not become ready",
+      "TTasks's service stopped for the restart, and the start failed: TTasks's service did not become ready",
     );
-    expect(failed.errors()).toContain("Try: tasks service status");
+    expect(failed.errors()).toContain("Try: ttasks service status");
   });
 
   test("stop asks the service over its endpoint, and an agent's shell may not", async () => {
     const idle = captureIO();
     expect(await run("stop", {}, idle)).toBe(0);
-    expect(idle.text()).toBe("TT Tasks's service is not running.\n");
+    expect(idle.text()).toBe("TTasks's service is not running.\n");
 
-    fake.service.start("tasksw");
+    fake.service.start("ttasksw");
     const stopped = captureIO();
     expect(await run("stop", { json: true }, stopped)).toBe(0);
     expect(JSON.parse(stopped.text())).toEqual({ outcome: "stopped", via: "shutdown" });
 
-    fake.service.start("tasksw");
+    fake.service.start("ttasksw");
     fake.service.shutdownAnswer = "forbidden";
     const agent = captureIO();
     expect(await run("stop", {}, agent)).toBe(5);
@@ -522,7 +522,7 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
         const reads = { count: 0, writesAtChange: -1 };
         if (verb === "uninstall") {
           registry.set(keys.run, { name: RUN_NAME, kind: "REG_SZ", data: `"${fake.ctx.program}"` });
-          if (!fake.service.running) fake.service.start("tasksw");
+          if (!fake.service.running) fake.service.start("ttasksw");
         } else {
           await registry.remove(keys.run, RUN_NAME).catch(() => undefined);
           fake.service.stop();
@@ -595,7 +595,7 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     expect(await run("install", {}, written)).toBe(4);
     registry.afterWrite = undefined;
     expect(written.errors()).toContain(
-      "changed while tasks service install was running: after step 1 it is not what that step left there. tasks service install stopped and did not go on. Step 1 was carried out.",
+      "changed while ttasks service install was running: after step 1 it is not what that step left there. ttasks service install stopped and did not go on. Step 1 was carried out.",
     );
     expect(fake.tools.lines().some((line) => line.startsWith("explorer.exe"))).toBe(false);
     expect(runValue()).toEqual(foreignValue);
@@ -686,7 +686,7 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
 
   test("round 3: install then uninstall from a registry root that does not exist leaves no key behind", async () => {
     const fresh = new MemoryRegistry();
-    const root = "HKCU\\Software\\tasks-test-fresh";
+    const root = "HKCU\\Software\\ttasks-test-fresh";
     const freshKeys = runKeys(root);
     const ctx = fakeContext({
       platform: "win32",
@@ -754,7 +754,7 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
   test("start succeeds only with a ready service: one starting is waited for, one stopping is let end first", async () => {
     // Someone else's start, still without an endpoint: waited for, not started twice.
     fake.service.hiddenProbes = 2;
-    fake.service.start("tasksw");
+    fake.service.start("ttasksw");
     const starting = captureIO();
     expect(await run("start", { json: true }, starting)).toBe(0);
     expect(JSON.parse(starting.text())).toMatchObject({
@@ -768,7 +768,7 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     fake.service.stop();
     fake.service.hiddenProbes = 0;
     fake.service.startingProbes = 3;
-    fake.service.start("tasksw");
+    fake.service.start("ttasksw");
     const answering = captureIO();
     expect(await run("start", { json: true }, answering)).toBe(0);
     expect(JSON.parse(answering.text())).toMatchObject({ outcome: "already_running" });
@@ -783,12 +783,12 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     expect(await run("start", { json: true }, after)).toBe(0);
     expect(JSON.parse(after.text())).toMatchObject({ outcome: "started", via: "explorer" });
     expect(fake.ctx.alive(old)).toBe(false);
-    expect(fake.service.events.slice(-2)).toEqual(["stop", "start tasksw"]);
+    expect(fake.service.events.slice(-2)).toEqual(["stop", "start ttasksw"]);
   });
 
   test("stop waits for a service still starting, and for its process to end, not only its endpoint", async () => {
     fake.service.hiddenProbes = 3;
-    fake.service.start("tasksw");
+    fake.service.start("ttasksw");
     const pid = fake.service.pid;
     const early = captureIO();
     expect(await run("stop", { json: true }, early)).toBe(0);
@@ -798,7 +798,7 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
 
     // The endpoint closes at once, the process ends three waits later: stop returns after that.
     fake.service.drainTicks = 3;
-    fake.service.start("tasksw");
+    fake.service.start("ttasksw");
     const draining = fake.service.pid;
     const late = captureIO();
     expect(await run("stop", { json: true }, late)).toBe(0);
@@ -806,7 +806,7 @@ describe("[A2.3.3.5.service-install.commands] tasks service install, uninstall, 
     expect(fake.ctx.alive(draining)).toBe(false);
 
     // One already draining is waited for too.
-    fake.service.start("tasksw");
+    fake.service.start("ttasksw");
     const other = fake.service.pid;
     await fake.ctx.shutdown();
     const already = captureIO();

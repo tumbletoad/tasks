@@ -35,8 +35,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { registry } from "@tasks/contracts";
-import { makeDir } from "@tasks/files";
+import { MCP_SERVER_KEY } from "@ttasks/brand";
+import { registry } from "@ttasks/contracts";
+import { makeDir } from "@ttasks/files";
 import {
   applyBlock,
   BLOCK_VERSION,
@@ -65,7 +66,7 @@ const BOM = "\u{FEFF}";
 let base: string;
 let n = 0;
 beforeAll(() => {
-  base = mkdtempSync(join(tmpdir(), "tasks-block-"));
+  base = mkdtempSync(join(tmpdir(), "ttasks-block-"));
 });
 afterAll(() => {
   rmSync(base, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
@@ -95,7 +96,7 @@ function world(): World {
       userHome: user,
       env: { PATH: "" },
       stateDir: state,
-      tasks: join(root, "bin", "tasks"),
+      tasks: join(root, "bin", "ttasks"),
       detection: {
         platform: process.platform,
         commands: [],
@@ -141,13 +142,14 @@ describe("[A3.3.12.setup.block] the instruction block on scratch homes", () => {
     expect(/^[\x20-\x7e\n]*$/u.test(text)).toBe(true);
     const named = [...text.matchAll(/`([a-z_]+)`/gu)].map((m) => m[1] ?? "");
     expect(named.length).toBeGreaterThanOrEqual(5);
-    for (const word of named.filter((w) => w !== "tasks")) expect(tools.has(word), word).toBe(true);
-    expect(text).toMatch(/^<!-- tasks:begin v1 \(added by tasks setup; remove with: /u);
-    expect(text.endsWith("<!-- tasks:end -->")).toBe(true);
+    for (const word of named.filter((w) => w !== MCP_SERVER_KEY))
+      expect(tools.has(word), word).toBe(true);
+    expect(text).toMatch(/^<!-- ttasks:begin v1 \(added by ttasks setup; remove with: /u);
+    expect(text.endsWith("<!-- ttasks:end -->")).toBe(true);
     // The printed block: the same body, a begin marker that says it was added by hand.
     const printed = printedBlock().split("\n");
     expect(printed[0]).toBe(
-      "<!-- tasks:begin v1 (from tasks setup agents print-block; remove it by hand) -->",
+      "<!-- ttasks:begin v1 (from ttasks setup agents print-block; remove it by hand) -->",
     );
     expect(printed.at(-1)).toBe("");
     expect(printed.slice(1, -1)).toEqual(text.split("\n").slice(1));
@@ -182,7 +184,7 @@ describe("[A3.3.12.setup.block] the instruction block on scratch homes", () => {
     expect(change.kind).toBe("add");
     // The preview's diff: the last line gains its newline, then a blank line and the block.
     expect(change.diff).toContain("-- Last line, no newline\n\\ No newline at end of file\n");
-    expect(change.diff).toContain("+- Last line, no newline\n+\n+<!-- tasks:begin v1 ");
+    expect(change.diff).toContain("+- Last line, no newline\n+\n+<!-- ttasks:begin v1 ");
     // The preview wrote nothing.
     expect(bytes(file)).toBe(Buffer.from(before).toString("latin1"));
     expect(existsSync(join(setupDir(w.state), BLOCKS_FILE))).toBe(false);
@@ -240,7 +242,7 @@ describe("[A3.3.12.setup.block] the instruction block on scratch homes", () => {
     if (item === undefined) throw new Error("no item");
     expect(applyBlock(input, item).result).toBe("added");
     expect(readFileSync(join(home.home, "AGENTS.md"), "utf8")).toBe("plain\n");
-    expect(readFileSync(join(home.home, "AGENTS.override.md"), "utf8")).toContain("tasks:begin");
+    expect(readFileSync(join(home.home, "AGENTS.override.md"), "utf8")).toContain("ttasks:begin");
 
     const other = w.home("codex", ".codex-plain");
     expect((await plan(input, [other]))[0]?.view.file).toBe(join(other.home, "AGENTS.md"));
@@ -359,11 +361,11 @@ describe("[A3.3.12.setup.block] the instruction block on scratch homes", () => {
       refusal: "markers",
       lines: [2, 7, 9, 14],
     });
-    writeFileSync(file, "a\n<!-- tasks:end -->\n<!-- tasks:begin v1 -->\n");
+    writeFileSync(file, "a\n<!-- ttasks:end -->\n<!-- ttasks:begin v1 -->\n");
     const [unbalanced] = await plan(input, [home]);
     expect(unbalanced?.view).toMatchObject({ state: "refused", refusal: "markers", lines: [2, 3] });
     // A marker quoted inside a sentence is not one.
-    writeFileSync(file, "Setup writes `<!-- tasks:begin v1 -->` blocks.\n");
+    writeFileSync(file, "Setup writes `<!-- ttasks:begin v1 -->` blocks.\n");
     expect((await plan(input, [home]))[0]?.view.state).toBe("absent");
   });
 
@@ -388,7 +390,8 @@ describe("[A3.3.12.setup.block] the instruction block on scratch homes", () => {
     const input = w.input();
     const home = w.home("claude-code", ".claude");
     const file = join(home.home, "CLAUDE.md");
-    const older = "<!-- tasks:begin v0 (added by tasks setup) -->\r\n## Old\r\n<!-- tasks:end -->";
+    const older =
+      "<!-- ttasks:begin v0 (added by ttasks setup) -->\r\n## Old\r\n<!-- ttasks:end -->";
     const text = `top\r\n\r\n${older}\r\nafter, by the person\r\n`;
     writeFileSync(file, text);
     // The record of the older apply, as that build wrote it.

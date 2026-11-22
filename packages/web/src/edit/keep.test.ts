@@ -3,7 +3,7 @@
 // The field edits that wait, kept in the browser across a reload (keep.ts): each control's edit
 // comes back as the control made it, a value no control could make never comes back, and a tab
 // removes only what it kept or read.
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { beforeEach, describe, expect, test } from "vitest";
 import {
   changeOf,

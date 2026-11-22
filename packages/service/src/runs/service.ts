@@ -1,22 +1,22 @@
 // Background runs in the service: at start, the probe of this machine's process groups (on Linux
 // it is also when the service moves itself into its unit's `main` cgroup), which decides only how a
-// run's processes are ended: in a process group where one can be made, else as far as Tasks can
+// run's processes are ended: in a process group where one can be made, else as far as TTasks can
 // find them. Then for each space open as this machine's a run host over its execution store, whose
 // recovery settles the space's open runs before any of them is hosted again; and over all of them
 // one supervisor, which starts queued runs within machine.toml's `[runs]` limits, holds new starts
 // while an update waits, and removes old run folders.
 import { dirname, join } from "node:path";
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
-import { AppError } from "@tasks/contracts";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { AppError } from "@ttasks/contracts";
 import {
   FINAL_RUN_STATES,
   RUN_LIMITS,
   type NewRun,
   type RunLimits,
   type RunRecord,
-} from "@tasks/contracts/runs";
-import { decodeRun, newTicket, SpaceExecutionStore, type BridgeTicket } from "@tasks/launch";
-import { decodeRunRow } from "@tasks/storage";
+} from "@ttasks/contracts/runs";
+import { decodeRun, newTicket, SpaceExecutionStore, type BridgeTicket } from "@ttasks/launch";
+import { decodeRunRow } from "@ttasks/storage";
 import {
   containers as platformContainers,
   FallbackContainers,
@@ -39,7 +39,7 @@ import {
   type SavedAnswer,
   type StartRefusal,
   type WaitReason,
-} from "@tasks/runs";
+} from "@ttasks/runs";
 import { DEFAULT_RUN_SETTINGS, type RunSettings } from "../config/machine-toml.ts";
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
@@ -61,9 +61,9 @@ import {
 export interface RunOptions {
   /** This platform's process groups. Default: the cgroup or job containers (`containers()`). */
   readonly containers?: Containers;
-  /** Where no process group can be made. Default: the agent's process tree as Tasks finds it. */
+  /** Where no process group can be made. Default: the agent's process tree as TTasks finds it. */
   readonly ungrouped?: Containers;
-  /** Windows: tasks-run.exe. Default: the one in this version folder's `bin`. */
+  /** Windows: ttasks-run.exe. Default: the one in this version folder's `bin`. */
   readonly runHelper?: string;
   readonly times?: Partial<RunTimes>;
 }
@@ -106,7 +106,7 @@ export interface ListedRun {
   readonly task: string | null;
 }
 
-/** What `tasks run` asks: a task, the instance to use or none, and the person's words. */
+/** What `ttasks run` asks: a task, the instance to use or none, and the person's words. */
 export interface RunRequest {
   /** The task's reference or ID. */
   readonly task: string;
@@ -164,8 +164,8 @@ export type RunsStatus =
   | { readonly available: null };
 
 /**
- * tasks-run.exe beside the launchers of the version folder this Node runs from
- * (`<version>/runtime/node.exe`, `<version>/bin/tasks-run.exe`).
+ * ttasks-run.exe beside the launchers of the version folder this Node runs from
+ * (`<version>/runtime/node.exe`, `<version>/bin/ttasks-run.exe`).
  */
 export const defaultRunHelper = (execPath: string = process.execPath): string =>
   join(dirname(execPath), "..", "bin", RUN_HELPER);
@@ -327,7 +327,7 @@ export class RunService {
   }
 
   /**
-   * `tasks run`: queues a run of a task, to start once its limits allow, built from its record
+   * `ttasks run`: queues a run of a task, to start once its limits allow, built from its record
    * then. Refused at once with the person's words when it could not start here: no such task, a
    * task that is done, no instance that runs tasks, or a folder on another machine or not found.
    * A repeat of the same request ID gives the run it queued, and starts nothing twice.
@@ -487,7 +487,7 @@ export class RunService {
   }
 
   /**
-   * Whether `run`, of `instance`, runs in `space` now: Tasks gave that run its tools, so its own
+   * Whether `run`, of `instance`, runs in `space` now: TTasks gave that run its tools, so its own
    * calls may use that space whether or not its home was set up for it.
    */
   allows(instance: string, space: string, run: string): boolean {
@@ -790,7 +790,7 @@ export class RunService {
   }
 }
 
-/** A refusal of `tasks run`, in the person's words, with what the page needs to say it too. */
+/** A refusal of `ttasks run`, in the person's words, with what the page needs to say it too. */
 const refusal = (
   reason: string,
   message: string,

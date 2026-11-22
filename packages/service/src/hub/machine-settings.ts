@@ -6,8 +6,8 @@
 // Every change is one splice of machine.toml that keeps the rest of the file (config/edit.ts), and
 // applies at once: the service holds what it read at start and each value it wrote since, and tells
 // every open tab (the feed's `machine` message).
-import { AppError, preferenceSpec, type PreferenceRead, type PrefValue } from "@tasks/contracts";
-import { TERMINAL_APPS, type TerminalSettings } from "@tasks/launch";
+import { AppError, preferenceSpec, type PreferenceRead, type PrefValue } from "@ttasks/contracts";
+import { TERMINAL_APPS, type TerminalSettings } from "@ttasks/launch";
 import { commitEdit, prepareEditOf, type Edit, type EditRefusal } from "../config/edit.ts";
 import { parseMachineConfig } from "../config/machine-toml.ts";
 import { setMachinePreference } from "../config/preferences.ts";
@@ -61,7 +61,7 @@ function refused(reason: EditRefusal): AppError {
       return new AppError({
         code: "invalid_input",
         message: "machine.toml cannot be read as it is, so nothing was changed.",
-        hint: "Run tasks doctor, then fix machine.toml.",
+        hint: "Run ttasks doctor, then fix machine.toml.",
       });
     case "unsupported_layout":
       return new AppError({
@@ -73,7 +73,7 @@ function refused(reason: EditRefusal): AppError {
       return new AppError({
         code: "invalid_input",
         message: "The setting cannot be written to machine.toml.",
-        hint: "Run tasks doctor.",
+        hint: "Run ttasks doctor.",
       });
   }
 }

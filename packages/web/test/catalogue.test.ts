@@ -4,22 +4,17 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
-import { APP_NAME, CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import en from "../src/i18n/en.json" with { type: "json" };
 
-// As intl.tsx gives them to every message (the page's module is JSX, outside this project): inside
-// its own page the app is called by the name inside the app (PLAN.md Q).
+// As intl.tsx gives them to every message (the page's module is JSX, outside this project).
 const CATALOGUE: Readonly<Record<string, string>> = en;
 const SOURCE_LOCALE = "en";
-const BRAND_VALUES = { product: APP_NAME, cli: CLI_NAME };
+const BRAND_VALUES = { product: PRODUCT_NAME, cli: CLI_NAME };
 
-/**
- * Whether a message spells out one of the product's names: the product's full name or the name
- * inside the app, in their own letter case, or the command where a message runs it. The command
- * `tasks` is also the domain's plural ("2 tasks"), so the word alone is not a name.
- */
+/** Whether a message spells out the product's name, or the command where a message runs it. */
 const spellsName = (text: string): boolean =>
-  new RegExp(`\\b(?:${PRODUCT_NAME}|${APP_NAME})\\b`).test(text) ||
+  new RegExp(`\\b${PRODUCT_NAME}\\b`).test(text) ||
   new RegExp(`(?:\\bRun |\`)${CLI_NAME}\\b`, "i").test(text);
 
 const SRC = join(import.meta.dirname, "..", "src");
@@ -159,7 +154,7 @@ describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {
     expect(
       [
         `${PRODUCT_NAME} was updated.`,
-        `${APP_NAME} work folder`,
+        `${PRODUCT_NAME} work folder`,
         `Run ${CLI_NAME} open to sign in.`,
         `run \`${CLI_NAME} doctor\``,
       ].map(spellsName),

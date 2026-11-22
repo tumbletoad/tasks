@@ -45,9 +45,9 @@ function home(label: string): Home {
 
 /** Every value the bind context would carry, each a sentinel the pre-auth bytes must not hold. */
 const SENTINELS = {
-  TASKS_TICKET: "SENTINELTICKET",
-  TASKS_TASK: "SENTINELTASK",
-  TASKS_SPACE: "SENTINELENVSPACE",
+  TTASKS_TICKET: "SENTINELTICKET",
+  TTASKS_TASK: "SENTINELTASK",
+  TTASKS_SPACE: "SENTINELENVSPACE",
   CLAUDE_CODE_SESSION_ID: "SENTINELSESSION",
   CODEX_THREAD_ID: "SENTINELTHREAD",
   T3CODE_THREAD_ID: "SENTINELT3",
@@ -83,7 +83,7 @@ function expectOnlyHello(bytes: Buffer): void {
   expect(text.split("\n")).toHaveLength(2);
   const hello = JSON.parse(text) as Json;
   expect(Object.keys(hello).sort()).toEqual(["id", "jsonrpc", "method", "params"]);
-  expect(hello).toMatchObject({ jsonrpc: "2.0", id: 0, method: "tasks/hello" });
+  expect(hello).toMatchObject({ jsonrpc: "2.0", id: 0, method: "ttasks/hello" });
   const params = hello["params"] as Json;
   expect(Object.keys(params).sort()).toEqual(["mode", "nonce", "proof", "protocol"]);
   expect(params).toMatchObject({ protocol: 1, mode: "mcp" });

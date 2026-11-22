@@ -1,4 +1,4 @@
-// Shared wire code of the M0 spike kit: `tasks-local/1` framing and the mutual HMAC handshake of
+// Shared wire code of the M0 spike kit: `ttasks-local/1` framing and the mutual HMAC handshake of
 // A2 3.6, at spike level. Lab code: never shipped, never imported by a package (A7 3.7).
 //
 // Like the product bridge (A2 3.7.1), this file imports only Node built-ins, so the forwarder and
@@ -124,7 +124,7 @@ export const clientProof = (key: Buffer, h: HandshakeIds): string =>
   b64url(
     hmac(
       key,
-      `tasks-local/1 client\n${h.instance}\n${String(h.protocol)}\n${h.mode}\n${h.ns}\n${h.nc}`,
+      `ttasks-local/1 client\n${h.instance}\n${String(h.protocol)}\n${h.mode}\n${h.ns}\n${h.nc}`,
     ),
   );
 
@@ -132,27 +132,27 @@ export const serverProof = (key: Buffer, h: HandshakeIds): string =>
   b64url(
     hmac(
       key,
-      `tasks-local/1 server\n${h.instance}\n${String(h.protocol)}\n${h.mode}\n${h.nc}\n${h.ns}`,
+      `ttasks-local/1 server\n${h.instance}\n${String(h.protocol)}\n${h.mode}\n${h.nc}\n${h.ns}`,
     ),
   );
 
 export const sessionKey = (key: Buffer, h: HandshakeIds): Buffer =>
-  hmac(key, `tasks-local/1 session\n${h.instance}\n${h.ns}\n${h.nc}`);
+  hmac(key, `ttasks-local/1 session\n${h.instance}\n${h.ns}\n${h.nc}`);
 
 export const transcript = (h: HandshakeIds, protocols: unknown, body: unknown): string =>
   sha256Hex(
-    `tasks-local/1 transcript\n${h.instance}\n${h.ns}\n${h.nc}\n${jcs(protocols)}\n${jcs(body)}`,
+    `ttasks-local/1 transcript\n${h.instance}\n${h.ns}\n${h.nc}\n${jcs(protocols)}\n${jcs(body)}`,
   );
 
 export const bindMac = (ks: Buffer, t: string): string =>
-  b64url(hmac(ks, `tasks-local/1 bind\n${t}`));
+  b64url(hmac(ks, `ttasks-local/1 bind\n${t}`));
 
 export const boundMac = (ks: Buffer, t: string, resultWithoutMac: unknown): string =>
-  b64url(hmac(ks, `tasks-local/1 bound\n${t}\n${sha256Hex(jcs(resultWithoutMac))}`));
+  b64url(hmac(ks, `ttasks-local/1 bound\n${t}\n${sha256Hex(jcs(resultWithoutMac))}`));
 
 /** The HTTP listener's answer to `POST /api/v1/auth/probe` (A2 3.8.4 step 2). */
 export const httpProbeProof = (key: Buffer, instance: string, port: number, np: string): string =>
-  b64url(hmac(key, `tasks-http-probe\n${instance}\n${String(port)}\n${np}`));
+  b64url(hmac(key, `ttasks-http-probe\n${instance}\n${String(port)}\n${np}`));
 
 // ---------------------------------------------------------------------------------------------
 // Framing (A2 3.6.2): UTF-8, one JSON object per line, at most 8 MiB per line.
@@ -313,7 +313,7 @@ export function clientInfo(kind: ClientInfo["kind"]): ClientInfo {
     version: SPIKE_VERSION,
     build: SPIKE_BUILD,
     pid: process.pid,
-    package: process.env["TASKS_PACKAGE"] ?? null,
+    package: process.env["TTASKS_PACKAGE"] ?? null,
     tty: { stdin: isatty(0), stdout: isatty(1) },
   };
 }
@@ -325,7 +325,7 @@ export interface BindOptions {
 }
 
 const untrusted = (where: string) =>
-  new KitError("untrusted_endpoint", `Something other than Tasks is listening at ${where}.`);
+  new KitError("untrusted_endpoint", `Something other than TTasks is listening at ${where}.`);
 
 /**
  * Runs the client side of A2 3.6.3 on a connected socket: verify the challenge, send only the
@@ -343,7 +343,7 @@ export async function handshake(
   const cp = asObject(challenge?.["params"]);
   const protocols = cp?.["protocols"];
   if (
-    challenge?.["method"] !== "tasks/challenge" ||
+    challenge?.["method"] !== "ttasks/challenge" ||
     typeof cp?.["nonce"] !== "string" ||
     typeof cp["instance"] !== "string" ||
     !Array.isArray(protocols) ||
@@ -362,7 +362,7 @@ export async function handshake(
   writeLine(socket, {
     jsonrpc: "2.0",
     id: 0,
-    method: "tasks/hello",
+    method: "ttasks/hello",
     params: { protocol: ids.protocol, mode: ids.mode, nonce: ids.nc, proof: clientProof(key, ids) },
   });
   const reply = parseObject(await reader.next());
@@ -382,7 +382,7 @@ export async function handshake(
   writeLine(socket, {
     jsonrpc: "2.0",
     id: 1,
-    method: "tasks/bind",
+    method: "ttasks/bind",
     params: { ...body, mac: bindMac(ks, t) },
   });
   const bound = parseObject(await reader.next());
@@ -529,7 +529,7 @@ export async function connectWithRetry(
 }
 
 /**
- * `tasks open`'s listener check (A2 3.8.4 step 2), bounded: true only when the listener on `port`
+ * `ttasks open`'s listener check (A2 3.8.4 step 2), bounded: true only when the listener on `port`
  * answers the HMAC probe correctly within `timeoutMs`. A silent or slow squatter gives false.
  */
 export async function verifyListener(

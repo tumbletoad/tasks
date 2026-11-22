@@ -92,7 +92,7 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
     world,
   }) => {
     await watchViolations(page);
-    const temp = mkdtempSync(join(tmpdir(), "tasks-e2e-folder-"));
+    const temp = mkdtempSync(join(tmpdir(), "ttasks-e2e-folder-"));
     try {
       const folder = join(temp, "portal");
       mkdirSync(folder);
@@ -124,7 +124,7 @@ test.describe("[A4.5.e2e.open-folder] Open uses the task's folder, and says why 
         "work_folder",
         { timeout: SLOW_MS },
       );
-      await expect(other.locator('[data-part="place"]')).toContainText("Tasks work folder");
+      await expect(other.locator('[data-part="place"]')).toContainText("TTasks work folder");
       const row = page.locator(`li[data-task="${ref}"]`);
       await row.locator('[data-part="title"]').click();
       await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true");
@@ -163,7 +163,7 @@ test.describe("[A5.3.7.e2e.show-folder] the folder button opens the task's folde
     world,
   }) => {
     await watchViolations(page);
-    const temp = mkdtempSync(join(tmpdir(), "tasks-e2e-show-"));
+    const temp = mkdtempSync(join(tmpdir(), "ttasks-e2e-show-"));
     try {
       const folder = join(temp, "portal");
       mkdirSync(folder);
@@ -218,7 +218,7 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
     world,
   }) => {
     await watchViolations(page);
-    const temp = mkdtempSync(join(tmpdir(), "tasks-e2e-marker-"));
+    const temp = mkdtempSync(join(tmpdir(), "ttasks-e2e-marker-"));
     try {
       const folder = join(temp, "portal");
       mkdirSync(join(folder, ".git"), { recursive: true });
@@ -260,7 +260,7 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
       await composer.fill("Tag it after the tests pass");
       await open.click();
       const said = page.getByRole("status").filter({
-        hasText: `The folder ${set.folder} has no Tasks marker, so it may not be the folder set for this task. Nothing was started.`,
+        hasText: `The folder ${set.folder} has no TTasks marker, so it may not be the folder set for this task. Nothing was started.`,
       });
       await expect(said).toBeVisible({ timeout: SLOW_MS });
       expect(world.terminal()).toHaveLength(before);
@@ -368,7 +368,7 @@ test.describe("[A7.3.14.m6-11.e2e.pack] Shift+Copy puts the context pack on the 
         "u",
       ),
     );
-    expect(pack ?? "").toContain(`\`\`\`tasks-update\ntask: ${world.spare.ref}\n`);
+    expect(pack ?? "").toContain(`\`\`\`ttasks-update\ntask: ${world.spare.ref}\n`);
     expect((pack ?? "").length).toBeLessThanOrEqual(8_000);
     await expect(page.getByRole("status").filter({ hasText: "Context pack copied" })).toBeVisible({
       timeout: SLOW_MS,
@@ -427,7 +427,7 @@ test.describe("[A2.3.8.4.e2e.page-secrets] The code and the token stay out of UR
     await showsSpace(page, world.mira.name);
     expect(page.url()).not.toContain("#");
     const token = await page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY);
-    expect(token).toMatch(/^tasks_u_[A-Za-z0-9_-]{43}$/);
+    expect(token).toMatch(/^ttasks_u_[A-Za-z0-9_-]{43}$/);
     for (const url of urls) {
       expect(url).not.toContain(code);
       expect(url).not.toContain(token ?? "no token");
@@ -435,7 +435,7 @@ test.describe("[A2.3.8.4.e2e.page-secrets] The code and the token stay out of UR
 
     // A value another page wrote under the token's key is not a token: dropped, signed out.
     await page.evaluate((key) => {
-      localStorage.setItem(key, '{"token":"tasks_u_x"}<img src=x onerror=alert(1)>');
+      localStorage.setItem(key, '{"token":"ttasks_u_x"}<img src=x onerror=alert(1)>');
     }, TOKEN_KEY);
     await page.reload();
     await expect(page.getByText(`Run ${CLI_NAME} open to sign in this browser.`)).toBeVisible();

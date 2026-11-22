@@ -30,7 +30,7 @@ export const MANIFEST_FILE = "space.json";
 export const DATABASE_FILE = "space.db";
 
 /**
- * The largest space.json this build reads: 64 KiB. A manifest Tasks writes is under 1 KiB plus
+ * The largest space.json this build reads: 64 KiB. A manifest TTasks writes is under 1 KiB plus
  * about 250 bytes per lineage entry, so the file holds some 250 lineage entries, and manifestFor
  * leaves older ones in the database only. A larger file is damaged, and reading stops at the limit.
  */

@@ -16,7 +16,7 @@ import {
 import { repoRoot } from "./run.ts";
 
 async function writeTree(files: Record<string, string>): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "tasks-manifest-"));
+  const root = await mkdtemp(join(tmpdir(), "ttasks-manifest-"));
   for (const [path, content] of Object.entries(files)) {
     await mkdir(dirname(join(root, path)), { recursive: true });
     await writeFile(join(root, path), content);

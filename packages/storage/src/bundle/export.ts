@@ -1,4 +1,4 @@
-// Export bundles (A1 3.18, `tasks space export --mode backup|fork|transfer`): a ZIP archive that
+// Export bundles (A1 3.18, `ttasks space export --mode backup|fork|transfer`): a ZIP archive that
 // holds a consistent snapshot of the space with everything needed to restore or import it, and
 // reads without the app.
 //
@@ -33,7 +33,7 @@
 //    reached through no link, of the row's size, in no secrets folder, its bytes scanned for secrets
 //    (a warning, as the rows') and hashed to the row's hash while they are written.
 // 5. A trial restore of the archive, the restore's own steps (restore/restore.ts restoreCopy) in
-//    the work folder: Tasks never publishes a bundle its restore would refuse.
+//    the work folder: TTasks never publishes a bundle its restore would refuse.
 // 6. Publication: the archive takes its name `<mode>-<utc>-e<epoch>-s<seq>.zip` in the exports
 //    folder by a hard link or an exclusive create (files.ts publishExclusive), never by a rename,
 //    so nothing there is ever replaced, and the folder is synced. That is the one publication

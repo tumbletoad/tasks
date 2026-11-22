@@ -19,7 +19,7 @@ const BASE: BaseContext = {
   instance: "inst",
   app: "app",
   cwd: "/work",
-  env: { TASKS_TICKET: "T" },
+  env: { TTASKS_TICKET: "T" },
   parent: { pid: 1 },
 };
 
@@ -417,7 +417,7 @@ describe("[A2.3.7.bridge.restart] losing and finding the service", () => {
     );
     expect(JSON.parse(second.sent[0] ?? "{}")).toMatchObject({ id: 5 });
     expect(output.lines).toHaveLength(4);
-    expect(contexts[0]).toEqual({ ...BASE, env: { TASKS_TICKET: "T" } });
+    expect(contexts[0]).toEqual({ ...BASE, env: { TTASKS_TICKET: "T" } });
     expect(contexts[1]).toMatchObject({
       resume: { handle: "bh_first" },
       mcp_init: request(1, "initialize", { protocolVersion: "2025-06-18" }),

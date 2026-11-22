@@ -7,12 +7,12 @@
 #   powershell -NoProfile -ExecutionPolicy Bypass -File cold-start.ps1 -Root <lab install root> `
 #     -Out <results .jsonl> -Label <text> [-Metric offline|online|shim|all] [-State <folder>]
 #
-# offline  bin\tasks.exe mcp with the service not running: spawn to the first byte of the reply to
+# offline  bin\ttasks.exe mcp with the service not running: spawn to the first byte of the reply to
 #          an MCP initialize (the offline first launch after a reboot). Refuses if the service runs.
 # online   the same with the service running (the runtime is then already warm from the service).
-# shim     mints a ticket through bin\tasks.exe ticket (Node), then times bin\tasks.exe shim from
+# shim     mints a ticket through bin\ttasks.exe ticket (Node), then times bin\ttasks.exe shim from
 #          spawn to its claim (the service's claim event). Needs the service.
-# all      offline, then starts the service through bin\tasksw.exe if it is not running, then online
+# all      offline, then starts the service through bin\ttasksw.exe if it is not running, then online
 #          and shim, each labelled. It stops the service again if it started it.
 #
 # The clock stops at the first byte of the reply. After that the script reads the whole reply,
@@ -28,7 +28,7 @@
 #
 # "The service runs" means more than a live PID: service.json names a node.exe under this
 # install's versions\<v>\runtime\ whose arguments, after the runtime's own options, are
-# versions\<v>\lib\tasks.mjs and then `service`, and which started no later than service.json was
+# versions\<v>\lib\ttasks.mjs and then `service`, and which started no later than service.json was
 # written. After a reboot a stale service.json may name any process. These checks use CIM.
 #
 # Every wait is bounded (-Limit, default 20 s). Every process the script starts is owned from the
@@ -54,9 +54,9 @@ $ErrorActionPreference = 'Stop'
 
 $Root = [IO.Path]::GetFullPath($Root).TrimEnd('\')
 if (-not $State) { $State = Join-Path $Root 'state\service' }
-$tasks = Join-Path $Root 'bin\tasks.exe'
-$tasksw = Join-Path $Root 'bin\tasksw.exe'
-$init = '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tasks-cold-start","version":"1"}}}' + "`n"
+$tasks = Join-Path $Root 'bin\ttasks.exe'
+$ttasksw = Join-Path $Root 'bin\ttasksw.exe'
+$init = '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ttasks-cold-start","version":"1"}}}' + "`n"
 $statusCall = '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"status","arguments":{}}}' + "`n"
 
 # Every process this script started and has not seen end.
@@ -122,11 +122,11 @@ function Test-ServiceRunning {
   $versions = (Join-Path $Root 'versions') + '\'
   if (-not $p.ExecutablePath.StartsWith($versions, [StringComparison]::OrdinalIgnoreCase)) { return $false }
   if (-not $p.ExecutablePath.EndsWith('\runtime\node.exe', [StringComparison]::OrdinalIgnoreCase)) { return $false }
-  # The arguments after the runtime and its options (--...) are this version's lib\tasks.mjs,
+  # The arguments after the runtime and its options (--...) are this version's lib\ttasks.mjs,
   # then `service`.
   $version = Split-Path -Parent (Split-Path -Parent $p.ExecutablePath)
   if ((Split-Path -Parent $version) + '\' -ne $versions) { return $false }
-  $entry = Join-Path $version 'lib\tasks.mjs'
+  $entry = Join-Path $version 'lib\ttasks.mjs'
   [string[]]$words = Split-CommandLine $p.CommandLine
   $i = 1
   while ($i -lt $words.Count -and $words[$i].StartsWith('--')) { $i++ }
@@ -164,8 +164,8 @@ function Start-Owned($Psi) {
   return $p
 }
 
-# Ends an owned process: waits up to $Seconds for it to end by itself, then kills it. tasks.exe
-# holds its Node in a kill-on-close job object, so killing tasks.exe ends its Node too.
+# Ends an owned process: waits up to $Seconds for it to end by itself, then kills it. ttasks.exe
+# holds its Node in a kill-on-close job object, so killing ttasks.exe ends its Node too.
 function Stop-Owned($P, [int]$Seconds = 0) {
   try {
     if (-not $P.HasExited -and -not $P.WaitForExit($Seconds * 1000)) {
@@ -321,7 +321,7 @@ function Measure-Bridge([string]$Name) {
   Write-Record "forwarder_$Name" $ms $ok $running $answer $note
 }
 
-# Runs bin\tasks.exe with a fixed argument string and returns its standard output, bounded.
+# Runs bin\ttasks.exe with a fixed argument string and returns its standard output, bounded.
 # PowerShell would drop the "--" before a native command's arguments, so the arguments are passed
 # as written.
 function Invoke-Tasks([string]$Arguments) {
@@ -363,7 +363,7 @@ function Measure-Shim {
 }
 
 function Start-LabService {
-  $script:service = Start-Owned (New-StartInfo $tasksw ('service --state "' + $State + '"'))
+  $script:service = Start-Owned (New-StartInfo $ttasksw ('service --state "' + $State + '"'))
   $script:started = $true
   if ($FailAt -eq 'service-started') { throw 'failing on purpose after starting the service (test hook)' }
   $end = (Get-Date).AddSeconds($Limit)
@@ -375,16 +375,16 @@ function Start-LabService {
 }
 
 # The processes of this install whose parent is $ParentId. CIM keeps the parent's PID after the
-# parent ended, so this finds tasksw.exe's Node also once tasksw.exe is gone.
+# parent ended, so this finds ttasksw.exe's Node also once ttasksw.exe is gone.
 function Get-ChildrenOf([int]$ParentId) {
   $prefix = $Root + '\'
   return @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$ParentId" -ErrorAction SilentlyContinue |
       Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
 }
 
-# Stops the service this script started: a shutdown call when it is ready, then tasksw.exe (it
+# Stops the service this script started: a shutdown call when it is ready, then ttasksw.exe (it
 # ends by itself after its Node's clean exit, else it is killed), then any Node of it still alive.
-# tasksw.exe has no job object, so its Node is ended by its own PID. Returns the PIDs left.
+# ttasksw.exe has no job object, so its Node is ended by its own PID. Returns the PIDs left.
 function Stop-LabService {
   $left = @()
   $taskswId = $script:service.Id

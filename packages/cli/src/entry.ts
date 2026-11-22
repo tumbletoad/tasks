@@ -1,28 +1,28 @@
-// `lib/tasks.mjs`, the entry of a built version folder (A2 3.12.2). The launchers run it as
-// `runtime/node --report-exclude-env lib/tasks.mjs <args>`. From source, bin.ts is the entry.
+// `lib/ttasks.mjs`, the entry of a built version folder (A2 3.12.2). The launchers run it as
+// `runtime/node --report-exclude-env lib/ttasks.mjs <args>`. From source, bin.ts is the entry.
 //
 // 1. It turns on Node's on-disk compile cache in `<cache>/compile/` before anything else loads, so
 //    later starts skip most parsing (A2 3.12.2). The build bundles this file on its own, without
 //    code splitting, so it imports no chunk before the cache is on.
-// 2. It routes before it loads, as bin.ts does: `tasks mcp` hands over to the bridge, which the
-//    build ships as its own `lib/bridge.mjs` of Node built-ins only (A2 3.7.1); `tasks shim` hands
+// 2. It routes before it loads, as bin.ts does: `ttasks mcp` hands over to the bridge, which the
+//    build ships as its own `lib/bridge.mjs` of Node built-ins only (A2 3.7.1); `ttasks shim` hands
 //    over to the launch shim, which the build ships as its own `lib/shim.mjs` (A4 3.6.3); every
 //    other command loads the CLI, which the build ships as `lib/chunks/cli.mjs`.
 // 3. It tells the CLI which version folder it runs from: its own parent, whose manifest.json
 //    doctor's integrity and runtime rows check, and whose `ui/` the service serves (M2.13).
-// Before all of these, safe-exit: the bridge, the shim and `tasks serve` end through
+// Before all of these, safe-exit: the bridge, the shim and `ttasks serve` end through
 // `process.exit`, which the pinned Node can otherwise hang in (A2 3.12.1).
-import "@tasks/bridge/safe-exit";
+import "@ttasks/bridge/safe-exit";
 import module from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { hostFacts, resolveLayout } from "@tasks/service/paths";
+import { hostFacts, resolveLayout } from "@ttasks/service/paths";
 import { MCP_VERB, runBridge } from "./mcp.ts";
 
 try {
   module.enableCompileCache(join(resolveLayout(hostFacts()).cache, "compile"));
 } catch {
-  // No home folder or a relative TASKS_HOME: the command itself reports that. Nothing is cached.
+  // No home folder or a relative TTASKS_HOME: the command itself reports that. Nothing is cached.
 }
 
 const argv = process.argv.slice(2);

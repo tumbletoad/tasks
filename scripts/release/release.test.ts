@@ -43,7 +43,7 @@ import {
   releaseReadiness,
   type Gh,
 } from "./github.ts";
-import { isOnMain, planRun } from "./plan.ts";
+import { isOnMain, planOutputs, planRun } from "./plan.ts";
 import {
   ciReleaseSign,
   createReleaseKey,
@@ -85,7 +85,7 @@ let pinned: string;
 let pem: string;
 
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-release-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-release-"));
   keys = join(work, "keys");
   mkdirSync(keys);
   createReleaseKey(keys, PASSPHRASE, repoRoot, NO_CI);
@@ -108,7 +108,7 @@ afterAll(() => {
 function archive(version: string, platform: Platform, trusts: readonly string[]): Buffer {
   const entries = [
     {
-      path: "lib/tasks.mjs",
+      path: "lib/ttasks.mjs",
       data: Buffer.from(`const UPDATE_KEYS = ${JSON.stringify(trusts)};\n`),
       mode: 0o644,
     },
@@ -183,7 +183,7 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
   test("keygen writes an encrypted Ed25519 key and its OpenSSH public key, and replaces nothing", () => {
     expect(pem).toMatch(/^-----BEGIN ENCRYPTED PRIVATE KEY-----\n/);
     expect(readFileSync(join(keys, PUBLIC_KEY_FILE), "utf8")).toMatch(
-      /^ssh-ed25519 [A-Za-z0-9+/]+=* tasks-release\n$/,
+      /^ssh-ed25519 [A-Za-z0-9+/]+=* ttasks-release\n$/,
     );
     expect(readReleaseKey(pem, PASSPHRASE).asymmetricKeyType).toBe("ed25519");
     expect(() => readReleaseKey(pem, "wrong passphrase")).toThrow(Refusal);
@@ -201,7 +201,7 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
 
   test("signs SHA256SUMS over every archive, in raw and OpenSSH formats, with the key's public half", async () => {
     const signed = await sign({ expect: readFileSync(join(keys, PUBLIC_KEY_FILE), "utf8") });
-    expect(signed.archives).toEqual(["tasks-0.1.0-linux-x64.tar.gz", "tasks-0.1.0-win-x64.zip"]);
+    expect(signed.archives).toEqual(["ttasks-0.1.0-linux-x64.tar.gz", "ttasks-0.1.0-win-x64.zip"]);
     const sums = readFileSync(join(dist, "SHA256SUMS"));
     expect(
       sums
@@ -255,7 +255,7 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
     // Refused before any question, by whichever check comes first for the committed keys.
     expect(ran.status).toBe(2);
     expect(ran.stderr).not.toMatch(/Passphrase/);
-    expect(readdirSync(unsigned)).toEqual(["tasks-0.1.0-linux-x64.tar.gz"]);
+    expect(readdirSync(unsigned)).toEqual(["ttasks-0.1.0-linux-x64.tar.gz"]);
     // keygen asks first, so it shows the question's own refusal whatever is pinned.
     const out = join(work, "keygen-no-terminal");
     mkdirSync(out);
@@ -333,7 +333,7 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
 
     const mixed = folderOf("mixed", "0.1.0", ["linux-x64"]);
     writeFileSync(
-      join(mixed, "tasks-0.1.0-dev.7-win-x64.zip"),
+      join(mixed, "ttasks-0.1.0-dev.7-win-x64.zip"),
       archive("0.1.0-dev.7", "win-x64", [pinned]),
     );
     await expect(sign({ dist: mixed })).rejects.toThrow(/more than one version/);
@@ -356,7 +356,7 @@ describe("[A2.3.12.8.build.release-script] the release script signs SHA256SUMS w
       [RELEASE_KEY_PLACEHOLDER],
     );
     await expect(sign({ dist: beforePinning })).rejects.toThrow(/trusts no release key/);
-    expect(readdirSync(testBuild)).toEqual(["tasks-0.1.0-linux-x64.tar.gz"]);
+    expect(readdirSync(testBuild)).toEqual(["ttasks-0.1.0-linux-x64.tar.gz"]);
   });
 
   test("takes only a key file that is exactly one encrypted PKCS#8 key", () => {
@@ -443,7 +443,7 @@ describe("[A2.3.12.8.build.release-ci-sign] the release workflow signs with the 
     // Outside the release environment its secrets are empty.
     expect(() => ciSign(folder, { key: "" })).toThrow(/only in the release environment/);
     expect(() => ciSign(folder, { passphrase: "" })).toThrow(/only in the release environment/);
-    expect(readdirSync(folder)).toEqual(["tasks-0.2.0-linux-x64.tar.gz"]);
+    expect(readdirSync(folder)).toEqual(["ttasks-0.2.0-linux-x64.tar.gz"]);
   });
 
   test("refuses a test key under the release name, an unencrypted key, a wrong passphrase and the placeholder", () => {
@@ -465,7 +465,7 @@ describe("[A2.3.12.8.build.release-ci-sign] the release workflow signs with the 
     expect(() => ciSign(folder, { key: plain })).toThrow(/encrypted/);
     expect(() => ciSign(folder, { passphrase: "another passphrase" })).toThrow(/does not open/);
     expect(() => ciSign(folder, { pinned: [RELEASE_KEY_PLACEHOLDER] })).toThrow(/not pinned yet/);
-    expect(readdirSync(folder)).toEqual(["tasks-0.2.0-linux-x64.tar.gz"]);
+    expect(readdirSync(folder)).toEqual(["ttasks-0.2.0-linux-x64.tar.gz"]);
   });
 
   test("takes the key from the secrets only: a key file is refused, wherever it lies", () => {
@@ -521,7 +521,7 @@ describe("[A2.3.12.8.build.release-ci-sign] the release workflow signs with the 
     const seen = new Set<string>();
     const outside: string[] = [];
     const workspaceFile = (specifier: string): string | undefined => {
-      const parts = /^@tasks\/([^/]+)(\/.+)?$/.exec(specifier);
+      const parts = /^@ttasks\/([^/]+)(\/.+)?$/.exec(specifier);
       if (parts === null) return undefined;
       const dir = join(repoRoot, "packages", parts[1] ?? "");
       if (!existsSync(join(dir, "package.json"))) return undefined;
@@ -647,7 +647,7 @@ describe("[A2.3.12.8.build.release-rehearsal] a rehearsal signs what a release w
       ),
     ).toBe(true);
     // The product's updater, with today's keys and with a real pinned key.
-    const archivePath = join(folder, "tasks-0.1.0-rehearsal.4.1-linux-x64.tar.gz");
+    const archivePath = join(folder, "ttasks-0.1.0-rehearsal.4.1-linux-x64.tar.gz");
     for (const [trusted, reason] of [
       [
         RELEASE_PUBLIC_KEYS,
@@ -765,6 +765,31 @@ describe("[A2.3.12.8.build.release-tag] a version tag starts a release only when
     // The newest release tag before the commit.
     expect(rehearsal.previous).toEqual({ commit: first, version: "0.1.0-rehearsal.7.0" });
     expect(rehearsal.builds).toHaveLength(6);
+  });
+
+  test("a rehearsal across a change of the product's identifier installs fresh only, and says why", () => {
+    const { git, commit, repo } = planRepo("plan-renamed");
+    const product = (id: string) => {
+      mkdirSync(join(repo, "packages", "brand", "src"), { recursive: true });
+      writeFileSync(
+        join(repo, "packages", "brand", "src", "index.ts"),
+        `export const PRODUCT_ID = "${id}";\n`,
+      );
+      git("add", "packages");
+    };
+    product("before");
+    const first = commit("0.1.0");
+    const same = commit("0.1.1");
+    product("after");
+    const renamed = commit("0.2.0");
+    const across = planRun({ root: repo, mode: "rehearsal", ref: renamed, base: first, run: 3 });
+    expect(across.previous).toBeUndefined();
+    expect(across.builds.map((b) => b.which)).toEqual(RELEASE_PLATFORMS.map(() => "current"));
+    expect(across.freshOnly).toMatch(/product before and this one is after.*installs fresh only/);
+    expect(planOutputs(across)).toContain("previous_version=\n");
+    const along = planRun({ root: repo, mode: "rehearsal", ref: same, base: first, run: 3 });
+    expect(along.previous).toEqual({ commit: first, version: "0.1.0-rehearsal.3.0" });
+    expect(along.freshOnly).toBeUndefined();
   });
 
   test("a tag that is not its commit's version, on a commit off main, of a development version, or missing is refused with one sentence", () => {
@@ -1225,7 +1250,7 @@ describe("[A2.3.12.8.build.release-files] the signing job signs exactly the arch
         version: "0.2.0",
         out: join(work, "gathered-3"),
       }),
-    ).toThrow(/not tasks-0.2.0-linux-arm64/);
+    ).toThrow(/not ttasks-0.2.0-linux-arm64/);
     expect(existsSync(join(work, "gathered-2"))).toBe(false);
   });
 

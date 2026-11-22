@@ -4,8 +4,8 @@
 // it), closes everything else and prints what became of the deadline. It never calls
 // process.exit: the test checks that nothing left behind keeps the process alive. argv[2] is the
 // endpoint path. Tests only.
-import { connect } from "@tasks/bridge/protocol";
-import { clientInfo, testKey, until } from "@tasks/bridge/test/endpoint";
+import { connect } from "@ttasks/bridge/protocol";
+import { clientInfo, testKey, until } from "@ttasks/bridge/test/endpoint";
 import { serve, type LocalEvent } from "../src/local/index.ts";
 import { testClock } from "./clock.ts";
 import { INSTANCE } from "./local.ts";

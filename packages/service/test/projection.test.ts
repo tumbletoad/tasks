@@ -1,6 +1,6 @@
 // The projection in the service (A1 3.13, A1 3.9's maintenance worker): each space open as this
 // machine's keeps its `view/` in a worker of its own, with its trusted record beside the space's
-// machine-local settings; `tasks view rebuild` (`view/rebuild`) renders what is missing or
+// machine-local settings; `ttasks view rebuild` (`view/rebuild`) renders what is missing or
 // different again, for the user only; a close stops the worker. Services run in this process on
 // temporary homes; fixture spaces only.
 import {
@@ -14,9 +14,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, join } from "node:path";
-import { RpcError } from "@tasks/bridge/protocol";
-import { backupSpace, newId, type Id } from "@tasks/storage";
-import { checkedDriver, seedMira } from "@tasks/testkit";
+import { RpcError } from "@ttasks/bridge/protocol";
+import { backupSpace, newId, type Id } from "@ttasks/storage";
+import { checkedDriver, seedMira } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { projectionStateOf, recordProjectionRescue } from "../src/hub/space-settings.ts";
@@ -141,7 +141,7 @@ describe("[A1.5.projection.service] the service keeps each open space's projecti
     expect(events).toContain("space.projection_reconciled");
   }, 120_000);
 
-  test("tasks view rebuild: a deleted file comes back and an edited one is moved aside and rendered again; only the user may ask", async () => {
+  test("ttasks view rebuild: a deleted file comes back and an edited one is moved aside and rendered again; only the user may ask", async () => {
     const { home, folder, spaceId } = await setUp("projreb");
     const service = await start(home, folder);
     const view = join(folder, "view");

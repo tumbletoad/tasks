@@ -407,21 +407,21 @@ export function defaultTargets(
   const t = new Map<string, string>();
   t.set("~/Tasks", join(home, "Tasks"));
   if (platform === "win32") {
-    t.set("<root> %USERPROFILE%\\.tasks", join(home, ".tasks"));
-    t.set("<config>", join(home, ".tasks", "config"));
-    t.set("<state>", join(home, ".tasks", "state"));
-    t.set("<cache>", join(home, ".tasks", "cache"));
+    t.set("<root> %USERPROFILE%\\.ttasks", join(home, ".ttasks"));
+    t.set("<config>", join(home, ".ttasks", "config"));
+    t.set("<state>", join(home, ".ttasks", "state"));
+    t.set("<cache>", join(home, ".ttasks", "cache"));
   } else if (platform === "darwin") {
-    const base = join(home, "Library", "Application Support", "tasks");
+    const base = join(home, "Library", "Application Support", "ttasks");
     t.set("<root>", base);
     t.set("<config>", join(base, "config"));
     t.set("<state>", join(base, "state"));
-    t.set("<cache>", join(home, "Library", "Caches", "tasks"));
+    t.set("<cache>", join(home, "Library", "Caches", "ttasks"));
   } else {
-    t.set("<root> ~/.local/share/tasks", join(home, ".local", "share", "tasks"));
-    t.set("<config> ~/.config/tasks", join(home, ".config", "tasks"));
-    t.set("<state> ~/.local/state/tasks", join(home, ".local", "state", "tasks"));
-    t.set("<cache> ~/.cache/tasks", join(home, ".cache", "tasks"));
+    t.set("<root> ~/.local/share/ttasks", join(home, ".local", "share", "ttasks"));
+    t.set("<config> ~/.config/ttasks", join(home, ".config", "ttasks"));
+    t.set("<state> ~/.local/state/ttasks", join(home, ".local", "state", "ttasks"));
+    t.set("<cache> ~/.cache/ttasks", join(home, ".cache", "ttasks"));
     t.set("socket dir /run/user/<uid>", `/run/user/${String(uid)}`);
   }
   return t;

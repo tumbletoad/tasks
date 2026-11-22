@@ -4,7 +4,7 @@
 //      (SHA256SUMS.test-key.pub; the key itself is gone with the build), written into <work>,
 //   2. an install into <work>/home through each verifier path of A2 3.12.4 (the first is the root
 //      the acceptance then takes; the others go beside it), each checked: current, the stable
-//      command, install.json and its install ID, `tasks version` through the stable command,
+//      command, install.json and its install ID, `ttasks version` through the stable command,
 //   3. the tampered downloads of the Verify line through each verifier path: a look-alike archive
 //      whose runnable files are canary stand-ins, SHA256SUMS rewritten, signed again by another
 //      key, edited, or its signature missing. Each must stop before anything from it runs, with

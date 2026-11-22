@@ -1,12 +1,12 @@
 /*
- * Tasks's Windows launchers (A2 3.12.3, 3.3.2). One source builds both:
- *   tasks.exe   console subsystem. Runs Node once inside a kill-on-close job object and returns
+ * TTasks's Windows launchers (A2 3.12.3, 3.3.2). One source builds both:
+ *   ttasks.exe   console subsystem. Runs Node once inside a kill-on-close job object and returns
  *               Node's exit code. If Windows refuses any step of the job, Node never runs (70).
- *   tasksw.exe  GUI subsystem (TASKS_GUI). No console window and no job object. With no
- *               arguments, from the stable bin folder, it supervises `tasks serve`.
+ *   ttasksw.exe  GUI subsystem (TTASKS_GUI). No console window and no job object. With no
+ *               arguments, from the stable bin folder, it supervises `ttasks serve`.
  * From the stable bin folder, each one puts back its sibling when an update was cut off between
  * the two renames of that launcher (repair_sibling).
- * TASKS_TEST_HOOKS builds a test-only launcher: it can simulate a refused job step, shorten the
+ * TTASKS_TEST_HOOKS builds a test-only launcher: it can simulate a refused job step, shorten the
  * supervisor's time unit and trace the supervisor's decisions. Release builds never define it.
  *
  * README.md in this package describes the two modes, the environment, the supervisor, the exit
@@ -41,9 +41,9 @@
 #define VERSION_MAX 64
 
 /* The stable launchers' file names in the command folder (A2 3.12.2). Each repairs the other. */
-#define CONSOLE_LAUNCHER L"tasks.exe"
-#define GUI_LAUNCHER L"tasksw.exe"
-#ifdef TASKS_GUI
+#define CONSOLE_LAUNCHER L"ttasks.exe"
+#define GUI_LAUNCHER L"ttasksw.exe"
+#ifdef TTASKS_GUI
 #define SIBLING_LAUNCHER CONSOLE_LAUNCHER
 #else
 #define SIBLING_LAUNCHER GUI_LAUNCHER
@@ -51,7 +51,7 @@
 /* A launcher is a few hundred KB: the sibling repair copies nothing larger than this. */
 #define LAUNCHER_MAX_BYTES (16LL * 1024 * 1024)
 
-#ifdef TASKS_GUI
+#ifdef TTASKS_GUI
 /*
  * The supervisor's policy (A2 3.3.2): restart after 1, 2, 4 and 8 time
  * units, and give up at the 5th failure within the window. A restart that the service requests
@@ -109,7 +109,7 @@ static void out(const wchar_t *fmt, ...) {
 static void *must_alloc(size_t count, size_t size) {
     void *p = calloc(count, size);
     if (p == NULL) {
-        say(L"tasks: out of memory\n");
+        say(L"ttasks: out of memory\n");
         ExitProcess(EXIT_SOFTWARE);
     }
     return p;
@@ -129,7 +129,7 @@ static wchar_t *copy_path(const wchar_t *path) {
 static wchar_t *join(const wchar_t *dir, const wchar_t *name) {
     wchar_t *p = new_path();
     if (_snwprintf_s(p, PATH_CAP, _TRUNCATE, L"%s\\%s", dir, name) < 0) {
-        say(L"tasks: path too long\n");
+        say(L"ttasks: path too long\n");
         ExitProcess(EXIT_SOFTWARE);
     }
     return p;
@@ -175,10 +175,10 @@ static int require(const wchar_t *path, int kind) {
     int found = path_kind(path);
     if (found == kind) return 1;
     if (found == KIND_LINK) {
-        say(L"tasks: %s is a link or junction. The launcher runs only files inside its own "
+        say(L"ttasks: %s is a link or junction. The launcher runs only files inside its own "
             L"install.\n", path);
     } else {
-        say(L"tasks: missing %s\n", path);
+        say(L"ttasks: missing %s\n", path);
     }
     return 0;
 }
@@ -292,14 +292,14 @@ static int read_current(const wchar_t *root, wchar_t *version, int quiet) {
     HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) {
-        if (!quiet) say(L"tasks: cannot read %s (error %lu)\n", path, GetLastError());
+        if (!quiet) say(L"ttasks: cannot read %s (error %lu)\n", path, GetLastError());
         free(path);
         return 0;
     }
     if (!ReadFile(h, buf, (DWORD)sizeof buf, &n, NULL)) n = 0;
     CloseHandle(h);
     if (!valid_version(buf, n)) {
-        if (!quiet) say(L"tasks: %s does not hold a valid version\n", path);
+        if (!quiet) say(L"ttasks: %s does not hold a valid version\n", path);
         free(path);
         return 0;
     }
@@ -314,7 +314,7 @@ static int read_current(const wchar_t *root, wchar_t *version, int quiet) {
 typedef struct {
     int version_local;    /* 1: inside a version folder. 0: stable dispatch through current */
     int command_folder;   /* 1: stable dispatch from the daily install's command folder */
-    int separate;         /* 1: <root>\home.marker is a file: a TASKS_HOME install */
+    int separate;         /* 1: <root>\home.marker is a file: a TTASKS_HOME install */
     wchar_t *self;        /* the launcher's own path, long form */
     wchar_t *root;        /* the install root */
     wchar_t *version_dir; /* version-local mode only: the version folder the launcher sits in */
@@ -322,13 +322,13 @@ typedef struct {
 
 typedef struct {
     wchar_t *node;  /* <version folder>\runtime\node.exe */
-    wchar_t *entry; /* <version folder>\lib\tasks.mjs */
+    wchar_t *entry; /* <version folder>\lib\ttasks.mjs */
 } Target;
 
 /* The program's folder below the daily install's share folder (A2 3.2.1). */
-#define PRODUCT_FOLDER L"tasks"
+#define PRODUCT_FOLDER L"ttasks"
 
-/* Whether folder\home.marker is a file: the folder is a TASKS_HOME install's root. */
+/* Whether folder\home.marker is a file: the folder is a TTASKS_HOME install's root. */
 static int has_marker(const wchar_t *folder) {
     wchar_t *marker = join(folder, L"home.marker");
     int found = path_kind(marker) == KIND_FILE;
@@ -341,11 +341,11 @@ static int has_marker(const wchar_t *folder) {
  * of the launcher's folder.
  *   - Version-local: P's parent is named "versions" and P\manifest.json is a file, so P is the
  *     version folder and the root is the parent of "versions".
- *   - Stable dispatch in a TASKS_HOME install: P\home.marker is a file, so the root is P, which
+ *   - Stable dispatch in a TTASKS_HOME install: P\home.marker is a file, so the root is P, which
  *     holds bin\, versions\, current and the data folders together.
  *   - Stable dispatch in the daily install otherwise: the launcher sits in the command folder
- *     (%USERPROFILE%\.local\bin) and the root is P\share\tasks (%USERPROFILE%\.local\share\tasks).
- *     resolve() requires share and share\tasks to be plain folders, as versions below them, so
+ *     (%USERPROFILE%\.local\bin) and the root is P\share\ttasks (%USERPROFILE%\.local\share\ttasks).
+ *     resolve() requires share and share\ttasks to be plain folders, as versions below them, so
  *     no link can point the command folder at another install.
  */
 static int locate(Place *place) {
@@ -355,10 +355,10 @@ static int locate(Place *place) {
     DWORD n = GetModuleFileNameW(NULL, raw, PATH_CAP);
     ZeroMemory(place, sizeof *place);
     if (n == 0 || n >= PATH_CAP) {
-        say(L"tasks: cannot find the launcher's own path\n");
+        say(L"ttasks: cannot find the launcher's own path\n");
         return 0;
     }
-    /* The long form, so TASKS_ROOT, TASKS_LAUNCHER and Node's path never carry 8.3 names. */
+    /* The long form, so TTASKS_ROOT, TTASKS_LAUNCHER and Node's path never carry 8.3 names. */
     place->self = new_path();
     n = GetLongPathNameW(raw, place->self, PATH_CAP);
     if (n == 0 || n >= PATH_CAP) wcscpy_s(place->self, PATH_CAP, raw);
@@ -366,7 +366,7 @@ static int locate(Place *place) {
 
     p = copy_path(place->self);
     if (!cut_last(p) || !cut_last(p)) {
-        say(L"tasks: unexpected launcher location %s\n", place->self);
+        say(L"ttasks: unexpected launcher location %s\n", place->self);
         return 0;
     }
     parent = copy_path(p);
@@ -406,11 +406,11 @@ static void release_target(Target *t) {
 }
 
 /*
- * Resolves node.exe and lib\tasks.mjs (A2 3.12.3 step 2). Stable dispatch reads current on every
+ * Resolves node.exe and lib\ttasks.mjs (A2 3.12.3 step 2). Stable dispatch reads current on every
  * call, so a restarted service runs the version current names now. Version-local mode never
  * reads current. In both modes versions and the version folder are checked before anything
  * under them, so a launcher started through a junction there runs nothing outside its install.
- * From the daily install's command folder, share and share\tasks are checked first the same way.
+ * From the daily install's command folder, share and share\ttasks are checked first the same way.
  * Anything missing, or a link below the root, fails with a message naming it.
  */
 static int resolve(const Place *place, Target *t) {
@@ -448,7 +448,7 @@ static int resolve(const Place *place, Target *t) {
     runtime = join(version_dir, L"runtime");
     lib = join(version_dir, L"lib");
     t->node = join(runtime, L"node.exe");
-    t->entry = join(lib, L"tasks.mjs");
+    t->entry = join(lib, L"ttasks.mjs");
     ok = require(runtime, KIND_FOLDER) && require(t->node, KIND_FILE) && require(lib, KIND_FOLDER) &&
          require(t->entry, KIND_FILE);
     free(version_dir);
@@ -520,11 +520,11 @@ static int restore_sibling(const wchar_t *root, const wchar_t *version, const wc
     }
     if (in != INVALID_HANDLE_VALUE) CloseHandle(in);
     if (ok) {
-        say(L"tasks: put %s back from versions\\%s: an update of this install was cut off\n",
+        say(L"ttasks: put %s back from versions\\%s: an update of this install was cut off\n",
             sibling, version);
     } else {
         ok = path_kind(sibling) == KIND_FILE; /* put there by someone else meanwhile */
-        if (!ok) say(L"tasks: %s is missing and could not be put back\n", sibling);
+        if (!ok) say(L"ttasks: %s is missing and could not be put back\n", sibling);
     }
     free(versions);
     free(folder);
@@ -536,7 +536,7 @@ static int restore_sibling(const wchar_t *root, const wchar_t *version, const wc
 
 /*
  * The data folder, where the service keeps <state> (A2 3.2.1, 3.2.2 rule 1): the
- * root of a TASKS_HOME install, else %USERPROFILE%\.tasks, as the service finds it. NULL when
+ * root of a TTASKS_HOME install, else %USERPROFILE%\.ttasks, as the service finds it. NULL when
  * USERPROFILE is not a full path (a drive letter and a backslash, or a UNC share).
  */
 static wchar_t *data_folder(const Place *place) {
@@ -591,7 +591,7 @@ static int update_journal(const Place *place) {
  * Node's repair reconciles the rest from the journal (A2 3.12.6). Without a journal nothing is
  * repaired: then no update is under way, and whatever else manages the command folder (install
  * --finish and its undo, an uninstall) is never raced. From the daily install's command folder,
- * share and share\tasks must be plain folders before current is read, as resolve requires. A repair
+ * share and share\ttasks must be plain folders before current is read, as resolve requires. A repair
  * that cannot be made is reported, and the launcher goes on as it would have: it never changes
  * what it runs.
  */
@@ -636,7 +636,7 @@ static void repair_sibling(const Place *place) {
  *   - OPENSSL_LOADER: what the OpenSSL in Node reads to find a configuration file (which can
  *     load a provider DLL from any path), the folder of included files, providers and engines.
  *   - LAUNCHER_OWNED: the launcher's own variables, which set_environment then sets afresh, and
- *     TASKS_SERVICE_MANAGER, which only the supervisor sets (to "tasksw"), so the service's
+ *     TTASKS_SERVICE_MANAGER, which only the supervisor sets (to "ttasksw"), so the service's
  *     status names who started it (M1.12).
  * Everything else passes through, including the proxy variables and SSL_CERT_FILE and
  * SSL_CERT_DIR, which select data, not code.
@@ -651,8 +651,8 @@ static const wchar_t *const OPENSSL_LOADER[] = {
     L"OPENSSL_MODULES",
 };
 static const wchar_t *const LAUNCHER_OWNED[] = {
-    L"TASKS_ROOT",    L"TASKS_LAUNCHER", L"TASKS_LAUNCH_MODE",
-    L"TASKS_PACKAGE", L"TASKS_HOME",     L"TASKS_SERVICE_MANAGER",
+    L"TTASKS_ROOT",    L"TTASKS_LAUNCHER", L"TTASKS_LAUNCH_MODE",
+    L"TTASKS_PACKAGE", L"TTASKS_HOME",     L"TTASKS_SERVICE_MANAGER",
 };
 
 /*
@@ -717,8 +717,8 @@ static int clean_environment(void) {
         if (!SetEnvironmentVariableW(name, NULL)) break;
         found = find_removed(name, &entries);
     }
-    if (found == 1) say(L"tasks: cannot remove %s from the environment\n", name);
-    if (found < 0) say(L"tasks: cannot clean the environment\n");
+    if (found == 1) say(L"ttasks: cannot remove %s from the environment\n", name);
+    if (found < 0) say(L"ttasks: cannot clean the environment\n");
     free(name);
     return found == 0;
 }
@@ -730,7 +730,7 @@ static int clean_environment(void) {
 static int set_variable(const wchar_t *name, const wchar_t *value) {
     if (value == NULL) return 1;
     if (!SetEnvironmentVariableW(name, value)) {
-        say(L"tasks: cannot set %s (error %lu)\n", name, GetLastError());
+        say(L"ttasks: cannot set %s (error %lu)\n", name, GetLastError());
         return 0;
     }
     return 1;
@@ -753,19 +753,19 @@ static wchar_t *package_name(LONG *rc) {
 
 /*
  * The environment rule above, and the variables the launcher owns get exactly the values its
- * location gives, whatever the caller set: TASKS_ROOT, TASKS_LAUNCHER, TASKS_LAUNCH_MODE,
- * TASKS_PACKAGE, and TASKS_HOME when <root>\home.marker exists (removed otherwise).
+ * location gives, whatever the caller set: TTASKS_ROOT, TTASKS_LAUNCHER, TTASKS_LAUNCH_MODE,
+ * TTASKS_PACKAGE, and TTASKS_HOME when <root>\home.marker exists (removed otherwise).
  */
 static int set_environment(const Place *place) {
     LONG rc;
-    /* Any failure here only leaves TASKS_PACKAGE unset: it informs the entry and guards nothing,
+    /* Any failure here only leaves TTASKS_PACKAGE unset: it informs the entry and guards nothing,
      * unlike --package-info, which the installer relies on and which exits 70 on an error. */
     wchar_t *package = package_name(&rc);
-    int ok = clean_environment() && set_variable(L"TASKS_ROOT", place->root) &&
-             set_variable(L"TASKS_LAUNCHER", place->self) &&
-             set_variable(L"TASKS_LAUNCH_MODE", place->version_local ? L"version" : L"stable") &&
-             set_variable(L"TASKS_PACKAGE", package) &&
-             set_variable(L"TASKS_HOME", place->separate ? place->root : NULL);
+    int ok = clean_environment() && set_variable(L"TTASKS_ROOT", place->root) &&
+             set_variable(L"TTASKS_LAUNCHER", place->self) &&
+             set_variable(L"TTASKS_LAUNCH_MODE", place->version_local ? L"version" : L"stable") &&
+             set_variable(L"TTASKS_PACKAGE", package) &&
+             set_variable(L"TTASKS_HOME", place->separate ? place->root : NULL);
     free(package);
     return ok;
 }
@@ -782,7 +782,7 @@ static int package_info(void) {
         out(L"none\n");
         return 0;
     }
-    say(L"tasks: GetCurrentPackageFullName failed (%ld)\n", rc);
+    say(L"ttasks: GetCurrentPackageFullName failed (%ld)\n", rc);
     return EXIT_SOFTWARE;
 }
 
@@ -816,7 +816,7 @@ static wchar_t *command_line(const Target *t, const wchar_t *tail) {
     wchar_t *cmdline = (wchar_t *)must_alloc(CMDLINE_CAP, sizeof(wchar_t));
     if (_snwprintf_s(cmdline, CMDLINE_CAP, _TRUNCATE, L"\"%s\" --report-exclude-env \"%s\"%s%s",
                      t->node, t->entry, *tail != L'\0' ? L" " : L"", tail) < 0) {
-        say(L"tasks: the command line is too long for Windows\n");
+        say(L"ttasks: the command line is too long for Windows\n");
         free(cmdline);
         return NULL;
     }
@@ -858,7 +858,7 @@ static int duplicate_std(DWORD which, HANDLE *copy) {
     if (GetFileType(h) == FILE_TYPE_UNKNOWN && GetLastError() != NO_ERROR) return 1;
     if (!DuplicateHandle(GetCurrentProcess(), h, GetCurrentProcess(), copy, 0, TRUE,
                          DUPLICATE_SAME_ACCESS)) {
-        say(L"tasks: cannot pass a standard handle to Node (error %lu)\n", GetLastError());
+        say(L"ttasks: cannot pass a standard handle to Node (error %lu)\n", GetLastError());
         *copy = NULL;
         return 0;
     }
@@ -890,7 +890,7 @@ static int prepare_spawn(Spawn *s) {
     if (!s->initialized ||
         !UpdateProcThreadAttribute(s->attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, s->list,
                                    s->count * sizeof(HANDLE), NULL, NULL)) {
-        say(L"tasks: cannot limit the handles Node inherits (error %lu)\n", GetLastError());
+        say(L"ttasks: cannot limit the handles Node inherits (error %lu)\n", GetLastError());
         release_spawn(s);
         return 0;
     }
@@ -907,7 +907,7 @@ static BOOL spawn(Spawn *s, const Target *t, wchar_t *cmdline, DWORD flags,
                           &s->si.StartupInfo, pi);
 }
 
-#ifndef TASKS_GUI
+#ifndef TTASKS_GUI
 /*
  * Ctrl+C and Ctrl+Break go to the whole console group, so Node receives them too and decides.
  * The launcher only stays alive to report Node's exit code. A handler function is used instead
@@ -917,14 +917,14 @@ static BOOL WINAPI ignore_ctrl(DWORD type) {
     return type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT;
 }
 
-#ifdef TASKS_TEST_HOOKS
+#ifdef TTASKS_TEST_HOOKS
 /*
- * Test builds only: TASKS_TEST_JOB_FAIL names one step of the job setup (create, limits, assign,
+ * Test builds only: TTASKS_TEST_JOB_FAIL names one step of the job setup (create, limits, assign,
  * resume) that then fails as if Windows had refused it.
  */
 static int simulated_failure(const wchar_t *step) {
     wchar_t value[16];
-    DWORD n = GetEnvironmentVariableW(L"TASKS_TEST_JOB_FAIL", value, _countof(value));
+    DWORD n = GetEnvironmentVariableW(L"TTASKS_TEST_JOB_FAIL", value, _countof(value));
     if (n == 0 || n >= _countof(value) || wcscmp(value, step) != 0) return 0;
     SetLastError(ERROR_ACCESS_DENIED);
     return 1;
@@ -964,7 +964,7 @@ static HANDLE new_job(const wchar_t **step) {
 }
 
 /*
- * tasks.exe (A2 3.12.3 step 5): Node runs only inside the job. The job is ready
+ * ttasks.exe (A2 3.12.3 step 5): Node runs only inside the job. The job is ready
  * before Node exists, and Node starts suspended, so a refusal at any step stops it before it runs
  * any code. Returns Node's exit code, or 70.
  */
@@ -979,7 +979,7 @@ static int run_in_job(const Target *t, const wchar_t *tail) {
     /* Never closed: closing a kill-on-close job ends Node. It closes when the launcher exits. */
     HANDLE job = new_job(&step);
     if (job == NULL) {
-        say(L"tasks: cannot create the job object for Node (%s, error %lu). Node did not start.\n",
+        say(L"ttasks: cannot create the job object for Node (%s, error %lu). Node did not start.\n",
             step, GetLastError());
         return EXIT_SOFTWARE;
     }
@@ -994,7 +994,7 @@ static int run_in_job(const Target *t, const wchar_t *tail) {
     if (GetConsoleCP() == 0) flags |= CREATE_NO_WINDOW;
     SetConsoleCtrlHandler(ignore_ctrl, TRUE);
     started = spawn(&spawned, t, cmdline, flags, &pi);
-    if (!started) say(L"tasks: cannot start %s (error %lu)\n", t->node, GetLastError());
+    if (!started) say(L"ttasks: cannot start %s (error %lu)\n", t->node, GetLastError());
     release_spawn(&spawned);
     free(cmdline);
     if (!started) return EXIT_SOFTWARE;
@@ -1010,7 +1010,7 @@ static int run_in_job(const Target *t, const wchar_t *tail) {
         WaitForSingleObject(pi.hProcess, INFINITE);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
-        say(L"tasks: cannot run Node inside its job object (%s, error %lu). Node was stopped "
+        say(L"ttasks: cannot run Node inside its job object (%s, error %lu). Node was stopped "
             L"before it ran.\n", step, error);
         return EXIT_SOFTWARE;
     }
@@ -1020,11 +1020,11 @@ static int run_in_job(const Target *t, const wchar_t *tail) {
     CloseHandle(pi.hProcess);
     return (int)code;
 }
-#endif /* !TASKS_GUI */
+#endif /* !TTASKS_GUI */
 
-#ifdef TASKS_GUI
+#ifdef TTASKS_GUI
 /*
- * tasksw.exe (A2 3.12.3 step 6): Node without a window and outside any job, so processes the
+ * ttasksw.exe (A2 3.12.3 step 6): Node without a window and outside any job, so processes the
  * service starts detached outlive both. Returns 0 if Node could not start, else 1 with its exit
  * code in *code.
  */
@@ -1040,7 +1040,7 @@ static int run_hidden(const Target *t, const wchar_t *tail, DWORD *code) {
     }
     ZeroMemory(&pi, sizeof pi);
     started = spawn(&spawned, t, cmdline, CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW, &pi);
-    if (!started) say(L"tasks: cannot start %s (error %lu)\n", t->node, GetLastError());
+    if (!started) say(L"ttasks: cannot start %s (error %lu)\n", t->node, GetLastError());
     release_spawn(&spawned);
     free(cmdline);
     if (!started) return 0;
@@ -1053,24 +1053,24 @@ static int run_hidden(const Target *t, const wchar_t *tail, DWORD *code) {
 
 /* ---- The supervisor (A2 3.3.2) --------------------------------------------------------------- */
 
-#ifdef TASKS_TEST_HOOKS
-/* Test builds only: TASKS_TEST_TIME_UNIT_MS (1 to 60000) replaces the one-second time unit. */
+#ifdef TTASKS_TEST_HOOKS
+/* Test builds only: TTASKS_TEST_TIME_UNIT_MS (1 to 60000) replaces the one-second time unit. */
 static DWORD time_unit_ms(void) {
     wchar_t value[16];
     wchar_t *end = NULL;
     unsigned long ms;
-    DWORD n = GetEnvironmentVariableW(L"TASKS_TEST_TIME_UNIT_MS", value, _countof(value));
+    DWORD n = GetEnvironmentVariableW(L"TTASKS_TEST_TIME_UNIT_MS", value, _countof(value));
     if (n == 0 || n >= _countof(value)) return TIME_UNIT_MS;
     ms = wcstoul(value, &end, 10);
     return (end != value && *end == L'\0' && ms >= 1 && ms <= 60000) ? (DWORD)ms : TIME_UNIT_MS;
 }
 
-/* Test builds only: appends one line per supervisor decision to the file TASKS_TEST_TRACE names. */
+/* Test builds only: appends one line per supervisor decision to the file TTASKS_TEST_TRACE names. */
 static void trace(const wchar_t *fmt, ...) {
     wchar_t *path = new_path();
     wchar_t line[256];
     char utf8[1024];
-    DWORD n = GetEnvironmentVariableW(L"TASKS_TEST_TRACE", path, PATH_CAP);
+    DWORD n = GetEnvironmentVariableW(L"TTASKS_TEST_TRACE", path, PATH_CAP);
     va_list ap;
     if (n > 0 && n < PATH_CAP) {
         HANDLE h = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS,
@@ -1144,7 +1144,7 @@ static void write_give_up(const Place *place, const Failure *ring, int count, in
     BOOL ok;
 
     if (data == NULL) {
-        say(L"tasks: USERPROFILE names no folder, so the supervisor's give-up record is not "
+        say(L"ttasks: USERPROFILE names no folder, so the supervisor's give-up record is not "
             L"written\n");
         return;
     }
@@ -1185,7 +1185,7 @@ static void write_give_up(const Place *place, const Failure *ring, int count, in
         ok = h != INVALID_HANDLE_VALUE &&
              WriteFile(h, json, (DWORD)strlen(json), &written, NULL) && FlushFileBuffers(h) &&
              rename_open_file(h, file, TRUE);
-        if (!ok) say(L"tasks: cannot write %s (error %lu)\n", file, GetLastError());
+        if (!ok) say(L"ttasks: cannot write %s (error %lu)\n", file, GetLastError());
     }
     if (h != INVALID_HANDLE_VALUE) {
         if (!ok) discard_open_file(h);
@@ -1227,7 +1227,7 @@ static FileId file_id(const wchar_t *path) {
 }
 
 /*
- * Whether the command folder's tasksw.exe is now another plain file than the one this supervisor
+ * Whether the command folder's ttasksw.exe is now another plain file than the one this supervisor
  * started from: an update, or the service's repair of an interrupted one, put a new supervisor
  * there while this one ran from the old file, which Windows let it rename aside (A2 3.12.6).
  */
@@ -1239,7 +1239,7 @@ static int supervisor_replaced(const Place *place, const FileId *own) {
 }
 
 /*
- * Starts the supervisor that is now at the command folder's tasksw.exe, with no arguments and no
+ * Starts the supervisor that is now at the command folder's ttasksw.exe, with no arguments and no
  * inherited handle, to supervise in this one's place. It cleans the environment and finds its install by
  * its own location, as every launcher does. Returns 0 when it could not be started: this one then
  * goes on supervising.
@@ -1258,7 +1258,7 @@ static int hand_over(const Place *place) {
     }
     free(cmdline);
     if (!started) {
-        say(L"tasksw: cannot start the new supervisor %s (error %lu)\n", place->self,
+        say(L"ttasksw: cannot start the new supervisor %s (error %lu)\n", place->self,
             GetLastError());
         return 0;
     }
@@ -1268,7 +1268,7 @@ static int hand_over(const Place *place) {
 }
 
 /*
- * Before each start of the service but the first: when bin\tasksw.exe is another file than the one
+ * Before each start of the service but the first: when bin\ttasksw.exe is another file than the one
  * this supervisor runs from, starts that one in its place. Every restart checks, whatever ended the
  * service, so a service that dies after its repair replaced the supervisor, before it could ask
  * for the restart (exit 75), still leaves the service to the new one. Returns 1 when it handed
@@ -1285,7 +1285,7 @@ static int handed_over(const Place *place, const FileId *own) {
 }
 
 /*
- * tasksw.exe with no arguments (A2 3.3.1, 3.3.2): starts `tasks serve` from the version current
+ * ttasksw.exe with no arguments (A2 3.3.1, 3.3.2): starts `ttasks serve` from the version current
  * names, waits, and applies the exit-code table.
  *   0, 64, 73  stop, and exit with that code
  *   75         start again at once, re-reading current (more than QUICK_RESTART_LIMIT of these
@@ -1293,7 +1293,7 @@ static int handed_over(const Place *place, const FileId *own) {
  *   other      a failure, as is a start that fails: restart after 1, 2, 4 and 8 units. The
  *              GIVE_UP_FAILURES-th failure within the window writes the give-up record and the
  *              supervisor exits 70
- * Before any restart, when bin\tasksw.exe is no longer the file this supervisor runs from (an
+ * Before any restart, when bin\ttasksw.exe is no longer the file this supervisor runs from (an
  * update or a repair replaced it), the new one is started in its place, and this one exits 0
  * (handed_over).
  */
@@ -1309,7 +1309,7 @@ static int supervise(const Place *place) {
     ZeroMemory(failures, sizeof failures);
     ZeroMemory(quick, sizeof quick);
     /* The service records its manager in service.json and its status (A2 3.2.3). */
-    if (!set_variable(L"TASKS_SERVICE_MANAGER", L"tasksw")) return EXIT_SOFTWARE;
+    if (!set_variable(L"TTASKS_SERVICE_MANAGER", L"ttasksw")) return EXIT_SOFTWARE;
     for (;;) {
         Target target;
         DWORD code = EXIT_SOFTWARE;
@@ -1363,7 +1363,7 @@ static int supervise(const Place *place) {
         if (handed_over(place, &own)) return 0;
     }
 }
-#endif /* TASKS_GUI */
+#endif /* TTASKS_GUI */
 
 /* ---- Entry ----------------------------------------------------------------------------------- */
 
@@ -1375,7 +1375,7 @@ int wmain(int argc, wchar_t **argv) {
     /* --package-info answers before anything is read, so an installer can ask a candidate first. */
     if (argc >= 2 && wcscmp(argv[1], L"--package-info") == 0) {
         if (argc != 2) {
-            say(L"usage: tasks --package-info\n");
+            say(L"usage: ttasks --package-info\n");
             return EXIT_USAGE;
         }
         return package_info();
@@ -1385,11 +1385,11 @@ int wmain(int argc, wchar_t **argv) {
     repair_sibling(&place);
     if (!set_environment(&place)) return EXIT_SOFTWARE;
 
-#ifdef TASKS_GUI
+#ifdef TTASKS_GUI
     if (argc < 2) {
         /* A supervisor inside a version folder would pin the service to that version forever. */
         if (place.version_local) {
-            say(L"tasksw: supervises only from the bin folder of an install, not from a version "
+            say(L"ttasksw: supervises only from the bin folder of an install, not from a version "
                 L"folder\n");
             return EXIT_USAGE;
         }
@@ -1398,7 +1398,7 @@ int wmain(int argc, wchar_t **argv) {
 #endif
 
     if (!resolve(&place, &target)) return EXIT_SOFTWARE;
-#ifdef TASKS_GUI
+#ifdef TTASKS_GUI
     {
         DWORD exit_code = EXIT_SOFTWARE;
         code = run_hidden(&target, command_tail(GetCommandLineW()), &exit_code)

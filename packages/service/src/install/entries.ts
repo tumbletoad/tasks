@@ -1,4 +1,4 @@
-// The thin entries of `tasks service install|uninstall|start|stop|restart|status`: they print and
+// The thin entries of `ttasks service install|uninstall|start|stop|restart|status`: they print and
 // return the exit code. The CLI (packages/cli/src/service.ts, A2 3.10.1) parses the command
 // line and calls serviceEntry with the verb and its flags.
 //
@@ -6,7 +6,7 @@
 // anything. `--yes` applies without asking, `--dry-run` shows the preview and changes nothing. A
 // run that cannot ask (no terminal, or `--json`) and has neither flag changes nothing and exits 2.
 import { createInterface } from "node:readline/promises";
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { blockedMessage, movedMessage } from "../http/messages.ts";
 import {
   applyPlan,
@@ -58,7 +58,7 @@ const FLAGS: Readonly<Record<string, keyof ServiceFlags>> = {
   "--json": "json",
 };
 
-/** The verb and flags of `tasks service <verb> [flags]`, or undefined when they are not valid. */
+/** The verb and flags of `ttasks service <verb> [flags]`, or undefined when they are not valid. */
 export function parseServiceArgs(
   args: readonly string[],
 ): { readonly verb: ServiceVerb; readonly flags: ServiceFlags } | undefined {
@@ -278,7 +278,7 @@ function uiText(http: Extract<ServiceAnswer, { answers: true }>["http"]): string
   return `http://127.0.0.1:${String(http.port)}`;
 }
 
-/** `tasks service status` for people. */
+/** `ttasks service status` for people. */
 export function statusText(ctx: ServiceContext, report: StatusReport): string {
   const entry = report.entry;
   const where =
@@ -419,7 +419,7 @@ async function changeEntry(
 }
 
 /**
- * Runs one `tasks service` verb and returns its exit code (A2 3.10.3). `context` gives the install
+ * Runs one `ttasks service` verb and returns its exit code (A2 3.10.3). `context` gives the install
  * and the places it writes: the real ones by default. Tests pass their own.
  */
 export async function serviceEntry(

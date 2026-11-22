@@ -1,22 +1,22 @@
 // The shim's connection to the service (A4 3.6.3 steps 2 and 9, "Re-attaching"). Finding the
 // service is the bridge's discovery (A2 3.6.1): `<state>/service.json` and `ipc.key`, read again
 // for every attempt, so a restarted service, with its new pipe name, is found. The handshake is
-// tasks-local/1's: the shim sends nothing about its launch before the service's proof verified.
+// ttasks-local/1's: the shim sends nothing about its launch before the service's proof verified.
 //
 // After the claim the connection holds the attachment. Reports wait in order in a queue; when the
 // connection drops (a service restart or update) the agent keeps running and the shim tries again
 // every 5 s with `launch.attach {credential, pid, start_time}`, then sends what waited. A refused
 // attach ends the link: the service no longer knows this shim, and only `exit.json` is left.
-import { envVar } from "@tasks/brand";
-import { installFolders, readEndpoint, readKey, hostFacts } from "@tasks/bridge/discovery";
+import { envVar } from "@ttasks/brand";
+import { installFolders, readEndpoint, readKey, hostFacts } from "@ttasks/bridge/discovery";
 import {
   openRpc,
   RPC_ERROR,
   RpcError,
   type JsonObject,
   type RpcSession,
-} from "@tasks/bridge/protocol";
-import { REFUSED, SHIM_METHODS, type ReportMethod } from "@tasks/launch/shim-wire";
+} from "@ttasks/bridge/protocol";
+import { REFUSED, SHIM_METHODS, type ReportMethod } from "@ttasks/launch/shim-wire";
 
 /** This build's identity in the bind frame. M1.13's release build stamps its own. */
 export const SHIM_BUILD = { version: "0.0.0", build: "source" } as const;
@@ -73,7 +73,7 @@ export async function connectOnce(place: Place): Promise<RpcSession> {
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** A3's error body of a Tasks error, as the service sent it. */
+/** A3's error body of a TTasks error, as the service sent it. */
 function bodyOf(error: unknown): Record<string, unknown> | undefined {
   if (!(error instanceof RpcError) || error.code !== RPC_ERROR.app) return undefined;
   return isObject(error.data) ? error.data : undefined;

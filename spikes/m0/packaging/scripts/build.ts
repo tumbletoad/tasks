@@ -5,9 +5,9 @@
 //     [--signature require|skip] [--level 0-9]
 //
 // 1. Downloads the official Node from nodejs.org and verifies it (src/node-runtime.ts).
-// 2. Compiles tasks.exe and tasksw.exe with MSVC (win-x64, on Windows only).
+// 2. Compiles ttasks.exe and ttasksw.exe with MSVC (win-x64, on Windows only).
 // 3. Assembles <work>/stage/<version>/ with manifest.json.
-// 4. Packs <dist>/tasks-<version>-<platform>.tar.gz or .zip and reads it back as a check.
+// 4. Packs <dist>/ttasks-<version>-<platform>.tar.gz or .zip and reads it back as a check.
 // This script needs the network. pnpm verify never runs it. The workflow m0-packaging does.
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -57,10 +57,10 @@ const runtime = await fetchNodeRuntime({
   signature: values.signature,
 });
 
-let launchers: { tasks: string; tasksw: string } | undefined;
+let launchers: { ttasks: string; ttasksw: string } | undefined;
 if (platform === "win-x64") {
   launchers = compileLaunchers(join(work, "launchers"));
-  console.log(`launchers: compiled ${launchers.tasks} and ${launchers.tasksw}`);
+  console.log(`launchers: compiled ${launchers.ttasks} and ${launchers.ttasksw}`);
 }
 
 const stage = join(work, "stage", values.version);

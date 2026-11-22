@@ -19,7 +19,7 @@ import {
   type RunPatch,
   type RunRecord,
   type RunState,
-} from "@tasks/contracts/runs";
+} from "@ttasks/contracts/runs";
 import {
   checkNewIntent,
   checkNewRun,

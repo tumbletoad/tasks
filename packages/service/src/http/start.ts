@@ -3,8 +3,8 @@
 // block when another user holds or held the port. The hub starts it after the local endpoint is
 // bound and before `ready`, reports `status()` in service.json and `service/status`, and stops it
 // first in the drain (hub/service.ts).
-import { PRODUCT_NAME } from "@tasks/brand";
-import { AppError } from "@tasks/contracts";
+import { PRODUCT_NAME } from "@ttasks/brand";
+import { AppError } from "@ttasks/contracts";
 import { editMachineToml } from "../config/edit.ts";
 import type { OpsHost } from "../ops/index.ts";
 import {
@@ -113,7 +113,7 @@ export interface RunningHttp {
   status(): HttpStatus;
   /** `ui/mint_code`: a code and the port to use it on, or the reason there is none. */
   mintCode(): { code: string; port: number; persisted: number | null; moved: boolean };
-  /** `tasks service port <n> [--reuse]` (A2 3.8.2 step 5): machine.toml and the observations. */
+  /** `ttasks service port <n> [--reuse]` (A2 3.8.2 step 5): machine.toml and the observations. */
   setPort(port: number, reuse: boolean): Promise<void>;
   close(): Promise<void>;
 }
@@ -221,7 +221,7 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
   };
 
   // A listener that cannot be bound at all (no loopback address, say) leaves the service without
-  // a UI, never without its socket: `tasks open` and doctor then say the listener is not running.
+  // a UI, never without its socket: `ttasks open` and doctor then say the listener is not running.
   const choice = await choosePort(options.configured, facts, options.ports ?? PORT_RANGE).catch(
     () => undefined,
   );
@@ -303,7 +303,7 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
         throw new AppError({
           code: "service_unavailable",
           message: blockedMessage(persisted),
-          hint: "tasks service port <n>",
+          hint: "ttasks service port <n>",
           data: { reason: "ui_blocked", retryable: false },
         });
       }
@@ -311,7 +311,7 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
         throw new AppError({
           code: "service_unavailable",
           message: `${PRODUCT_NAME}'s UI listener is not running.`,
-          hint: "Run: tasks doctor",
+          hint: "Run: ttasks doctor",
           data: { reason: "ui_unavailable", retryable: false },
         });
       }
@@ -330,7 +330,7 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
         throw new AppError({
           code: "invalid_input",
           message: `Another user held port ${String(port)}. Choosing it again needs --reuse.`,
-          hint: `tasks service port ${String(port)} --reuse`,
+          hint: `ttasks service port ${String(port)} --reuse`,
           data: { issues: [{ path: "reuse", message: "Required for this port" }] },
         });
       }

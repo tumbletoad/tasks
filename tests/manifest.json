@@ -63,7 +63,7 @@
     },
     {
       "id": "A7.3.3.verify.lab-selection",
-      "title": "pnpm verify runs the serial lab tests on --lab, TASKS_VERIFY_LAB=1, an unknown base or a change to lab or shared files, and otherwise says it skipped them",
+      "title": "pnpm verify runs the serial lab tests on --lab, TTASKS_VERIFY_LAB=1, an unknown base or a change to lab or shared files, and otherwise says it skipped them",
       "source": "A7 3.3, A7 3.7",
       "owner": "M0",
       "kind": "ci",
@@ -71,8 +71,16 @@
     },
     {
       "id": "A7.3.2.brand.names",
-      "title": "Product names live in one place: TT Tasks, Tasks inside the app, by TumbleToad; the CLI name and the environment prefix derive from the identifier, the MCP key is a plain identifier of its own",
+      "title": "Product names live in one place: TTasks, by TumbleToad; the CLI name and the environment prefix derive from the identifier, the MCP key is a plain identifier of its own",
       "source": "A7 3.2, A2 3.2.1, A3 3.2.4",
+      "owner": "M0",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A7.3.2.brand.old-names",
+      "title": "No file in the repository uses the product's earlier names in a form that can only mean the product, while the domain's plural, the stored format markers and the earlier data folder's one declaration pass",
+      "source": "A7 3.2",
       "owner": "M0",
       "kind": "ci",
       "profiles": ["v1"]
@@ -95,7 +103,7 @@
     },
     {
       "id": "A7.3.7.m0-lifecycle.self-test",
-      "title": "The M0.07 lifecycle lab: the forwarder reconnects and replays initialize, also one sent during a slow handshake, the service's environment snapshot, its parsers and E01's differences, the tasksw.exe supervisor stand-in, the lab release folder and its entry",
+      "title": "The M0.07 lifecycle lab: the forwarder reconnects and replays initialize, also one sent during a slow handshake, the service's environment snapshot, its parsers and E01's differences, the ttasksw.exe supervisor stand-in, the lab release folder and its entry",
       "source": "A7 3.7 (M0.07), A2 3.3.2, 3.7.4, 3.7.5, A4 3.8",
       "owner": "M0",
       "kind": "ci",
@@ -207,7 +215,7 @@
     },
     {
       "id": "A7.3.7.m0-launch.trust-patch",
-      "title": "The M0.10 lab code: the text-level trust-entry patch for Claude Code's .claude.json and Codex's config.toml, and its undo, restore every fixture file byte for byte by the config recorder (no file, no projects, other entries, comments and odd whitespace, CRLF and LF, a byte order mark, an existing entry with another value); a file changed after the patch reverts only Tasks's key, and only while it still holds Tasks's value; unsupported layouts and files the scanner cannot account for are refused untouched; the lab command refuses a scratch folder it did not create",
+      "title": "The M0.10 lab code: the text-level trust-entry patch for Claude Code's .claude.json and Codex's config.toml, and its undo, restore every fixture file byte for byte by the config recorder (no file, no projects, other entries, comments and odd whitespace, CRLF and LF, a byte order mark, an existing entry with another value); a file changed after the patch reverts only TTasks's key, and only while it still holds TTasks's value; unsupported layouts and files the scanner cannot account for are refused untouched; the lab command refuses a scratch folder it did not create",
       "source": "A7 3.7 (M0.10, row L10), A4 3.14, A4 M0-L16",
       "owner": "M0",
       "kind": "ci",
@@ -231,14 +239,14 @@
     },
     {
       "id": "A4.3.11.claude.driver",
-      "title": "The claude driver against a fake Claude Code that speaks exactly the recorded print-mode exchanges: the request is the program's first line of input and never an argument, the result's answer and verdict are the work's, the permission maps to Claude Code's own modes, a command and a call of Tasks' tools report their progress, a permission prompt is declined and counted, a question for the person ends the run as needing the person with the question kept and a later one changes nothing, an unknown request gets the protocol's error, a signed-out program ends with its own words and the sign-in command, a helper agent in the background or a queued turn keeps the work open until the program's own turn, which can still ask, while a command left in the background does not, every final result settles the work before the input closes and at the same line however the output is chunked, Stop between turns, during the turn, during start-up and of a silent program, a program that does not exit after its work settles with its answer, a program that stops writing, and a whole answer after megabytes of other output",
+      "title": "The claude driver against a fake Claude Code that speaks exactly the recorded print-mode exchanges: the request is the program's first line of input and never an argument, the result's answer and verdict are the work's, the permission maps to Claude Code's own modes, a command and a call of TTasks's tools report their progress, a permission prompt is declined and counted, a question for the person ends the run as needing the person with the question kept and a later one changes nothing, an unknown request gets the protocol's error, a signed-out program ends with its own words and the sign-in command, a helper agent in the background or a queued turn keeps the work open until the program's own turn, which can still ask, while a command left in the background does not, every final result settles the work before the input closes and at the same line however the output is chunked, Stop between turns, during the turn, during start-up and of a silent program, a program that does not exit after its work settles with its answer, a program that stops writing, and a whole answer after megabytes of other output",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A4.3.11.run.door-claude",
-      "title": "tasks run with a Claude Code instance: the request reaches the agent on its input and on no process's command line, the run's tools are a private file in the run's folder with the only Tasks entry and a ticket no command line carries, the agent's calls through it bind to the run's session and are recorded with the run's ID, its entry opens nothing once the run ended, the request, the answer and the ticket are in no file of the state folder but the run's own, a person with more than one instance names one, Stop cancels a Claude Code run during its turn, and a signed-out Claude Code ends the run with the command to sign in",
+      "title": "ttasks run with a Claude Code instance: the request reaches the agent on its input and on no process's command line, the run's tools are a private file in the run's folder with the only TTasks entry and a ticket no command line carries, the agent's calls through it bind to the run's session and are recorded with the run's ID, its entry opens nothing once the run ended, the request, the answer and the ticket are in no file of the state folder but the run's own, a person with more than one instance names one, Stop cancels a Claude Code run during its turn, and a signed-out Claude Code ends the run with the command to sign in",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -826,7 +834,7 @@
     },
     {
       "id": "A1.3.15.folders.request-path",
-      "title": "Folders through the request path of a running service: a project made for a folder in one change, named after its folder when no name is given; the folder moved on disk with a task's folder and another project's inside it moving along, undone and redone in one step each; a folder given another while it is still there leaving the folders inside it, named in the answer; the repository's name in the project list without its address; a folder another project has answered as that project or refused naming it, a project's folder cleared; a folder inside the Tasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; a retry that replays after the project was renamed; a new project named by several drafts or by calls at once made once; an agent's task filed into an area and project it names first, created with it; a project's folder that does not answer refused in time, holding up no other call of the space, and its late answer writing nothing",
+      "title": "Folders through the request path of a running service: a project made for a folder in one change, named after its folder when no name is given; the folder moved on disk with a task's folder and another project's inside it moving along, undone and redone in one step each; a folder given another while it is still there leaving the folders inside it, named in the answer; the repository's name in the project list without its address; a folder another project has answered as that project or refused naming it, a project's folder cleared; a folder inside the TTasks home or a space folder, a missing folder, a file and a relative path refused with nothing written; a retry that replays after the project was renamed; a new project named by several drafts or by calls at once made once; an agent's task filed into an area and project it names first, created with it; a project's folder that does not answer refused in time, holding up no other call of the space, and its late answer writing nothing",
       "source": "A1 3.15, A3 3.4.5",
       "owner": "M4",
       "kind": "ci",
@@ -834,7 +842,7 @@
     },
     {
       "id": "A3.3.4.folders.cli",
-      "title": "Folders at the command line: tasks add and tasks set give a task its folder with --folder, a folder relative to the working one, folder= and --here, and --clear folder takes it away; --here beside --folder is a usage error; tasks area create --folder --create makes a folder that is not there and binds it, one undo takes the project, its new area and its folder back and leaves the folder on disk; --folder . --create binds an existing folder; a refused call removes the folder --create made; tasks area list and tasks show print the folders; the old --place and place= name --folder",
+      "title": "Folders at the command line: ttasks add and ttasks set give a task its folder with --folder, a folder relative to the working one, folder= and --here, and --clear folder takes it away; --here beside --folder is a usage error; ttasks area create --folder --create makes a folder that is not there and binds it, one undo takes the project, its new area and its folder back and leaves the folder on disk; --folder . --create binds an existing folder; a refused call removes the folder --create made; ttasks area list and ttasks show print the folders; the old --place and place= name --folder",
       "source": "A2 3.10, A3 3.4.13",
       "owner": "M4",
       "kind": "ci",
@@ -866,7 +874,7 @@
     },
     {
       "id": "A1.5.migration.drill",
-      "title": "The installed-build migration failure and restore drill with the real 0.2, 0.3 and 0.4: a populated 0.1 fixture space, a fault planted in its migration's last step, the space left at 0.1 and served read-only with A1's message and refusing word search with why while filters answer, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space, whose new task tasks find finds by a word",
+      "title": "The installed-build migration failure and restore drill with the real 0.2, 0.3 and 0.4: a populated 0.1 fixture space, a fault planted in its migration's last step, the space left at 0.1 and served read-only with A1's message and refusing word search with why while filters answer, a restore of the pre-migration backup with the fixture's counts and last_seq; with the fault gone the same build does not try again by itself and writes no barrier backup, the build's CLI takes --retry-migration and a script's retry is refused, and the person's retry upgrades the space, whose new task ttasks find finds by a word",
       "source": "A1 5, A7 3.10 M3.01, A7 3.8 M1.15, MIL-02",
       "owner": "M3",
       "kind": "installed",
@@ -1185,7 +1193,7 @@
     },
     {
       "id": "A2.3.12.3.launcher-win.build",
-      "title": "The launcher build makes a console tasks.exe and a GUI tasksw.exe with ASLR, DEP and CFG, and release builds carry no test hooks",
+      "title": "The launcher build makes a console ttasks.exe and a GUI ttasksw.exe with ASLR, DEP and CFG, and release builds carry no test hooks",
       "source": "A2 3.12.3, A7 3.8 M1.11",
       "owner": "M1",
       "kind": "ci",
@@ -1193,7 +1201,7 @@
     },
     {
       "id": "A2.3.12.3.launcher-win.argv",
-      "title": "Hostile argv reaches Node byte for byte through tasks.exe and tasksw.exe in both modes, NODE_OPTIONS and NODE_PATH are removed, the launcher's variables come from its location and exit codes pass through",
+      "title": "Hostile argv reaches Node byte for byte through ttasks.exe and ttasksw.exe in both modes, NODE_OPTIONS and NODE_PATH are removed, the launcher's variables come from its location and exit codes pass through",
       "source": "A2 3.12.3, A2 5, A7 3.8 M1.11",
       "owner": "M1",
       "kind": "ci",
@@ -1217,7 +1225,7 @@
     },
     {
       "id": "A2.3.12.3.launcher-win.job",
-      "title": "Killing tasks.exe kills Node through its job object, a detached child of Node survives, and a refused job step stops Node before it runs",
+      "title": "Killing ttasks.exe kills Node through its job object, a detached child of Node survives, and a refused job step stops Node before it runs",
       "source": "A2 3.12.3, A7 3.8 M1.11",
       "owner": "M1",
       "kind": "ci",
@@ -1225,7 +1233,7 @@
     },
     {
       "id": "A2.3.12.3.launcher-win.modes",
-      "title": "A version-local launcher runs its own version without reading current, in a fresh install and during an update; stable dispatch finds the root from its location (a TASKS_HOME root with home.marker, else share\\tasks beside the daily command folder), validates current and refuses hostile contents and links, share and share\\tasks included; nothing in the working directory or environment steers it",
+      "title": "A version-local launcher runs its own version without reading current, in a fresh install and during an update; stable dispatch finds the root from its location (a TTASKS_HOME root with home.marker, else share\\ttasks beside the daily command folder), validates current and refuses hostile contents and links, share and share\\ttasks included; nothing in the working directory or environment steers it",
       "source": "A2 3.12.3, A2 5, SL-02, A7 3.8 M1.11",
       "owner": "M1",
       "kind": "ci",
@@ -1233,7 +1241,7 @@
     },
     {
       "id": "A2.3.3.2.launcher-win.supervisor",
-      "title": "tasksw.exe supervises tasks serve: restarts after 1, 2, 4 and 8 s, gives up at the 5th failure in 10 minutes with its record (in the daily install, in %USERPROFILE%\\.tasks\\state; none when USERPROFILE names no folder), stops on 0, 64 and 73, restarts at once on 75 re-reading current, and leaves the service outside any job",
+      "title": "ttasksw.exe supervises ttasks serve: restarts after 1, 2, 4 and 8 s, gives up at the 5th failure in 10 minutes with its record (in the daily install, in %USERPROFILE%\\.ttasks\\state; none when USERPROFILE names no folder), stops on 0, 64 and 73, restarts at once on 75 re-reading current, and leaves the service outside any job",
       "source": "A2 3.3.1, A2 3.3.2, A7 3.8 M1.11",
       "owner": "M1",
       "kind": "ci",
@@ -1241,7 +1249,7 @@
     },
     {
       "id": "A2.3.2.hub.paths",
-      "title": "Folders per OS from fake environments: the data in ~/.tasks and the program in ~/.local/share/tasks with the command in ~/.local/bin on every OS, neither inside the other, a default space path the space rules accept; the account's home on Linux and macOS whatever HOME a snap sets, USERPROFILE on Windows, XDG variables never read, TASKS_HOME holding the whole install and refused when relative",
+      "title": "Folders per OS from fake environments: the data in ~/.ttasks and the program in ~/.local/share/ttasks with the command in ~/.local/bin on every OS, neither inside the other, a default space path the space rules accept; the account's home on Linux and macOS whatever HOME a snap sets, USERPROFILE on Windows, XDG variables never read, TTASKS_HOME holding the whole install and refused when relative",
       "source": "A2 3.2.1, A2 3.2.2, A2 5, A7 3.8 M1.08",
       "owner": "M1",
       "kind": "ci",
@@ -1249,7 +1257,7 @@
     },
     {
       "id": "A2.3.2.data-folder.kept",
-      "title": "No command removes anything in the data folder unasked: with a daily install's ~/.tasks full of configuration, spaces, logs, cache and an empty folder, service install then uninstall leaves it file for file as it was on Windows, Linux and macOS, and the logs folder install makes for launchd stays",
+      "title": "No command removes anything in the data folder unasked: with a daily install's ~/.ttasks full of configuration, spaces, logs, cache and an empty folder, service install then uninstall leaves it file for file as it was on Windows, Linux and macOS, and the logs folder install makes for launchd stays",
       "source": "A2 3.2.1, A2 3.3",
       "owner": "M1",
       "kind": "ci",
@@ -1257,7 +1265,7 @@
     },
     {
       "id": "A2.3.2.hub.install-id",
-      "title": "The install ID: symlinked, trailing-separator and Windows case variants of one state path give one ID, two TASKS_HOME paths that end in the same name give different IDs, and the ID names the runtime folder, the socket or pipe and the launch folders",
+      "title": "The install ID: symlinked, trailing-separator and Windows case variants of one state path give one ID, two TTASKS_HOME paths that end in the same name give different IDs, and the ID names the runtime folder, the socket or pipe and the launch folders",
       "source": "A2 3.2.1, A2 S30, A2 5, SL-03, A7 3.8 M1.08",
       "owner": "M1",
       "kind": "ci",
@@ -1280,7 +1288,7 @@
     },
     {
       "id": "A2.3.3.hub.exit-codes",
-      "title": "tasks serve's exit codes as a process: a graceful stop drains and exits 0, a stop from outside over tasks-local/1 (service/shutdown, refused to an agent's connection) exits 0 on every OS and 75 with restart, the caller getting its reply first, package identity exits 64 with its record, an uncaught exception or unhandled rejection exits 70 with a crash file, and main.ts applies the real identity check. A failed bind exits 70 without a stale service.json, a drain whose file steps fail still ends with its code, and a stop does not wait for a space still opening",
+      "title": "ttasks serve's exit codes as a process: a graceful stop drains and exits 0, a stop from outside over ttasks-local/1 (service/shutdown, refused to an agent's connection) exits 0 on every OS and 75 with restart, the caller getting its reply first, package identity exits 64 with its record, an uncaught exception or unhandled rejection exits 70 with a crash file, and main.ts applies the real identity check. A failed bind exits 70 without a stale service.json, a drain whose file steps fail still ends with its code, and a stop does not wait for a space still opening",
       "source": "A2 3.3.1, A2 3.13, A7 3.8 M1.08",
       "owner": "M1",
       "kind": "ci",
@@ -1367,7 +1375,7 @@
     },
     {
       "id": "A2.3.13.hub.logs-content-free",
-      "title": "The log takes only catalogue events and typed fields, drops free text cast past the types, takes error codes and classes from closed lists only, rotates at the file's real size only in the lock holder, stays bounded while the holder is idle, takes tasks-local/1's events whole with only their listed words, and a grep of a service's logs and crash files for fixture strings finds nothing",
+      "title": "The log takes only catalogue events and typed fields, drops free text cast past the types, takes error codes and classes from closed lists only, rotates at the file's real size only in the lock holder, stays bounded while the holder is idle, takes ttasks-local/1's events whole with only their listed words, and a grep of a service's logs and crash files for fixture strings finds nothing",
       "source": "A2 3.13, A2 S27, A7 3.8 M1.08",
       "owner": "M1",
       "kind": "ci",
@@ -1383,7 +1391,7 @@
     },
     {
       "id": "A2.3.3.service-install.golden",
-      "title": "Golden unit file, Run values and plist per install ID: plain names for the daily install, the install ID in a test install's unit, Run value and label, two test folders with one name kept apart, paths quoted or refused as each format needs, and an entry at the install's name counted as ours only when it starts a Tasks launcher",
+      "title": "Golden unit file, Run values and plist per install ID: plain names for the daily install, the install ID in a test install's unit, Run value and label, two test folders with one name kept apart, paths quoted or refused as each format needs, and an entry at the install's name counted as ours only when it starts a TTasks launcher",
       "source": "A2 3.2.2, A2 3.3.2, A2 3.3.3, A2 3.3.4, SL-03, A7 3.8 M1.12",
       "owner": "M1",
       "kind": "ci",
@@ -1422,7 +1430,7 @@
     },
     {
       "id": "A2.3.3.3.service-install.start-by-hand",
-      "title": "Linux with a user manager and no unit of this install: tasks service start runs the real service detached, in no process group or session of the terminal that started it, says in one line that it does not start by itself and how to install the unit, survives that terminal's hang-up, and stop and status reach it; status says that nothing starts it at sign-in or boot whatever linger says; tasks service install takes it over, stopping it right before the unit's start, so two services never run",
+      "title": "Linux with a user manager and no unit of this install: ttasks service start runs the real service detached, in no process group or session of the terminal that started it, says in one line that it does not start by itself and how to install the unit, survives that terminal's hang-up, and stop and status reach it; status says that nothing starts it at sign-in or boot whatever linger says; ttasks service install takes it over, stopping it right before the unit's start, so two services never run",
       "source": "A2 3.3.3, A2 3.3.5, A2 3.3.6",
       "owner": "M1",
       "kind": "ci",
@@ -1430,7 +1438,7 @@
     },
     {
       "id": "A2.3.3.4.service-install.launchd-wrapper",
-      "title": "The tasks-launchd wrapper with a stub service under /bin/sh: exits 0, 64 and 73 map to 0, 70 and other crashes pass through, 75 restarts at once and more than 5 in a row exit 75, SIGTERM is forwarded, and a stop during a 75 restart ends in 0",
+      "title": "The ttasks-launchd wrapper with a stub service under /bin/sh: exits 0, 64 and 73 map to 0, 70 and other crashes pass through, 75 restarts at once and more than 5 in a row exit 75, SIGTERM is forwarded, and a stop during a 75 restart ends in 0",
       "source": "A2 3.3.1, A2 3.3.4, A2 5, A7 3.8 M1.12",
       "owner": "M1",
       "kind": "ci",
@@ -1438,7 +1446,7 @@
     },
     {
       "id": "A2.3.3.5.service-install.commands",
-      "title": "tasks service install, uninstall, start, stop, restart and status as entries: the preview before any write, a confirmation or --yes, --dry-run, refusals as root, elevated or packaged, the Explorer start and its fallback, waiting for a ready service, stop through the manager or service/shutdown, restart as stop then start naming the version that runs, and status with the entry, Startup apps, systemd and linger state, the service's answer and an installed version it does not run",
+      "title": "ttasks service install, uninstall, start, stop, restart and status as entries: the preview before any write, a confirmation or --yes, --dry-run, refusals as root, elevated or packaged, the Explorer start and its fallback, waiting for a ready service, stop through the manager or service/shutdown, restart as stop then start naming the version that runs, and status with the entry, Startup apps, systemd and linger state, the service's answer and an installed version it does not run",
       "source": "A2 3.3.2, A2 3.3.3, A2 3.3.5, A2 3.5, A2 3.10.3, A7 3.8 M1.12",
       "owner": "M1",
       "kind": "ci",
@@ -1558,7 +1566,7 @@
     },
     {
       "id": "A4.3.11.8.container.kill",
-      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows), killing it leaves nothing of a stand-in agent that behaves, forks late, detaches and daemonises, ignores the interrupt, holds its output pipe after it exited, floods its output, moves into a nested cgroup (Linux) or dies, counted from the operating system, and confirmEmpty says occupied while anything of it lives",
+      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by ttasks-run.exe on Windows), killing it leaves nothing of a stand-in agent that behaves, forks late, detaches and daemonises, ignores the interrupt, holds its output pipe after it exited, floods its output, moves into a nested cgroup (Linux) or dies, counted from the operating system, and confirmEmpty says occupied while anything of it lives",
       "source": "A4 3.11.8",
       "owner": "M6",
       "kind": "ci",
@@ -1574,7 +1582,7 @@
     },
     {
       "id": "A4.3.11.run.door",
-      "title": "tasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of Tasks' tools binds to the run's session and is recorded with the run's ID, only the run's own calls may use its space without the home's registration and only until the run ends, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, also with the ID a start hands out, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, and a missing task is refused",
+      "title": "ttasks run from a person's command line: the request reaches the agent over its protocol and on no process's command line, the answer is in the run's record, the agent's own call of TTasks's tools binds to the run's session and is recorded with the run's ID, only the run's own calls may use its space without the home's registration and only until the run ends, the request and the answer are in no file of the state folder but the run's own, a retry with the same request ID starts nothing twice, also with the ID a start hands out, a queued run starts after a restart of the service, a script and an agent's shell are refused and queue nothing, Stop cancels a queued run, and a missing task is refused",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -1625,7 +1633,7 @@
     },
     {
       "id": "A4.3.11.8.container.probe",
-      "title": "The container probe names why runs cannot be contained (no systemd, no cgroup v2, no user manager, not a service, no Delegate=yes, no cgroup.kill, no tasks-run.exe, another platform), and start refuses there",
+      "title": "The container probe names why runs cannot be contained (no systemd, no cgroup v2, no user manager, not a service, no Delegate=yes, no cgroup.kill, no ttasks-run.exe, another platform), and start refuses there",
       "source": "A4 3.11.8",
       "owner": "M6",
       "kind": "ci",
@@ -1633,7 +1641,7 @@
     },
     {
       "id": "A4.3.11.8.run.stop",
-      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows), Stop for a stand-in agent that ignores it, starts children late, or detached a child and a daemon ends the agent and everything it started, counted from the operating system, and the run is cancelled, with the answer an agent gave on the interrupt",
+      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by ttasks-run.exe on Windows), Stop for a stand-in agent that ignores it, starts children late, or detached a child and a daemon ends the agent and everything it started, counted from the operating system, and the run is cancelled, with the answer an agent gave on the interrupt",
       "source": "A4 3.11.8",
       "owner": "M6",
       "kind": "ci",
@@ -1680,7 +1688,7 @@
     },
     {
       "id": "A4.3.11.9.run.queue",
-      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by tasks-run.exe on Windows): four runs with room for two run two and keep two queued, saying why and with nothing of them alive, and each Stop starts the oldest waiting one; a run that reaches its total time and one quiet too long end timed out with their answers; under an update's hold nothing new starts, the running runs are named, stopping all of them keeps each answer, and the queue moves once the hold goes; every test counts what lives from the operating system",
+      "title": "On a real container (a delegated user unit's cgroup on Linux, a job held by ttasks-run.exe on Windows): four runs with room for two run two and keep two queued, saying why and with nothing of them alive, and each Stop starts the oldest waiting one; a run that reaches its total time and one quiet too long end timed out with their answers; under an update's hold nothing new starts, the running runs are named, stopping all of them keeps each answer, and the queue moves once the hold goes; every test counts what lives from the operating system",
       "source": "A4 3.11.9, A7 3.13 M6.03",
       "owner": "M6",
       "kind": "ci",
@@ -1712,7 +1720,7 @@
     },
     {
       "id": "A4.5.shim.reattach",
-      "title": "Restart the service after both ticket windows have passed: a real tasks shim reattaches with its attachment credential, reports its fake agent's exit, and cannot obtain a second claim, its ticket's bridge role is spent too, and neither secret reaches the log",
+      "title": "Restart the service after both ticket windows have passed: a real ttasks shim reattaches with its attachment credential, reports its fake agent's exit, and cannot obtain a second claim, its ticket's bridge role is spent too, and neither secret reaches the log",
       "source": "A4 3.6.3, A4 3.9.3, A4 5.1, A7 3.9 M2.08",
       "owner": "M2",
       "kind": "ci",
@@ -1752,7 +1760,7 @@
     },
     {
       "id": "A4.5.shim.entry",
-      "title": "tasks shim is entered before the CLI loads: it loads only its own modules, the protocol client, discovery and two leaf modules of launch, and a bad argument exits 2 without echoing it",
+      "title": "ttasks shim is entered before the CLI loads: it loads only its own modules, the protocol client, discovery and two leaf modules of launch, and a bad argument exits 2 without echoing it",
       "source": "A4 3.6.3, A2 3.7.1, A7 3.9 M2.08",
       "owner": "M2",
       "kind": "ci",
@@ -1800,7 +1808,7 @@
     },
     {
       "id": "A4.5.shim.installed",
-      "title": "pnpm accept m2 --part build --installed: tasks shim through a built version folder's launcher against that folder's own bundled service claims its ticket, runs a fake agent as its child in the checked folder and reports its exit; without --installed the same test runs the source",
+      "title": "pnpm accept m2 --part build --installed: ttasks shim through a built version folder's launcher against that folder's own bundled service claims its ticket, runs a fake agent as its child in the checked folder and reports its exit; without --installed the same test runs the source",
       "source": "A4 3.6.3, A2 3.12.2, A7 3.9 M2.08",
       "owner": "M2",
       "kind": "installed",
@@ -1880,7 +1888,7 @@
     },
     {
       "id": "A4.5.terminal.service",
-      "title": "Through a real service with fake terminals from testkit and a real tasks shim: the fake terminal receives only tasks shim <ticket>; a handoff client that exits 0 at once and whose shim claims after 5 s gives one window and Confirmed; a direct terminal that dies at once has its ticket revoked and refused, and the next terminal claims; Linux scopes and the setsid fallback; the terminal's environment",
+      "title": "Through a real service with fake terminals from testkit and a real ttasks shim: the fake terminal receives only ttasks shim <ticket>; a handoff client that exits 0 at once and whose shim claims after 5 s gives one window and Confirmed; a direct terminal that dies at once has its ticket revoked and refused, and the next terminal claims; Linux scopes and the setsid fallback; the terminal's environment",
       "source": "A4 3.6.2, A4 3.6.3, A4 3.7, SL-09, A7 3.9 M2.09",
       "owner": "M2",
       "kind": "ci",
@@ -1936,7 +1944,7 @@
     },
     {
       "id": "A4.5.clipboard.tools",
-      "title": "The clipboard tools of tasks brief --copy: wl-copy, xclip, then xsel by session on Linux, pbcopy on macOS, Windows PowerShell's Set-Clipboard by its full path; the text on standard input byte for byte and never in argv; only an exit 0 is a copy; the next tool after a failure; a hung tool ended; a forked selection holder left to serve; PowerShell reads standard input as UTF-8",
+      "title": "The clipboard tools of ttasks brief --copy: wl-copy, xclip, then xsel by session on Linux, pbcopy on macOS, Windows PowerShell's Set-Clipboard by its full path; the text on standard input byte for byte and never in argv; only an exit 0 is a copy; the next tool after a failure; a hung tool ended; a forked selection holder left to serve; PowerShell reads standard input as UTF-8",
       "source": "A4 3.4.6, A7 3.14 M6.11",
       "owner": "M6",
       "kind": "ci",
@@ -1952,7 +1960,7 @@
     },
     {
       "id": "A4.5.brief.copy-cli",
-      "title": "tasks brief --copy puts the brief or the context pack on the clipboard through the injected tool and says so; with no tool, or a tool that fails, it says why and prints the text; tasks brief --pack prints the context pack",
+      "title": "ttasks brief --copy puts the brief or the context pack on the clipboard through the injected tool and says so; with no tool, or a tool that fails, it says why and prints the text; ttasks brief --pack prints the context pack",
       "source": "A4 3.4.6, A4 3.15.5, A7 3.14 M6.11",
       "owner": "M6",
       "kind": "ci",
@@ -1992,7 +2000,7 @@
     },
     {
       "id": "A4.5.environment.scrub",
-      "title": "A4 3.8's scrub after merging (agent sessions' variables, NODE_OPTIONS, ELECTRON_RUN_AS_NODE, every TASKS_*), the home variables before the instance's env, the person's own base taken whole and the service's through the allow-list, the executable's folder in front of PATH; a terminal's environment keeps only the install's home of the product's variables; no service variable the plan scrubs and no product secret reaches the agent",
+      "title": "A4 3.8's scrub after merging (agent sessions' variables, NODE_OPTIONS, ELECTRON_RUN_AS_NODE, every TTASKS_*), the home variables before the instance's env, the person's own base taken whole and the service's through the allow-list, the executable's folder in front of PATH; a terminal's environment keeps only the install's home of the product's variables; no service variable the plan scrubs and no product secret reaches the agent",
       "source": "A4 3.8, A7 3.9 M2.09",
       "owner": "M2",
       "kind": "ci",
@@ -2088,7 +2096,7 @@
     },
     {
       "id": "A3.3.2.3.history",
-      "title": "history.undo and history.redo through the request path: user-only (an agent gets forbidden, rule user_only), the tasks a change changed back, UNDO_CONFLICT as conflict with the value written, the value now and the value undo restores, a partial undo's unresolved fields, NOTHING_TO_UNDO and NOTHING_TO_REDO as not_found, and tasks undo and tasks redo on the CLI",
+      "title": "history.undo and history.redo through the request path: user-only (an agent gets forbidden, rule user_only), the tasks a change changed back, UNDO_CONFLICT as conflict with the value written, the value now and the value undo restores, a partial undo's unresolved fields, NOTHING_TO_UNDO and NOTHING_TO_REDO as not_found, and ttasks undo and ttasks redo on the CLI",
       "source": "A1 3.10.1, A3 3.2.3, A3 3.5, A5 3.12, A7 3.10 M3.02",
       "owner": "M3",
       "kind": "ci",
@@ -2096,7 +2104,7 @@
     },
     {
       "id": "A2.3.6.local.framing",
-      "title": "tasks-local/1 framing: split and merged chunks give the same lines, the line limit closes the decoder for good, invalid UTF-8 fails only its line, a BOM is kept for the parser to refuse, and a line without its terminator is never returned",
+      "title": "ttasks-local/1 framing: split and merged chunks give the same lines, the line limit closes the decoder for good, invalid UTF-8 fails only its line, a BOM is kept for the parser to refuse, and a line without its terminator is never returned",
       "source": "A2 3.6.2, A2 5, A7 3.8 M1.09",
       "owner": "M1",
       "kind": "ci",
@@ -2104,7 +2112,7 @@
     },
     {
       "id": "A2.3.6.local.proofs",
-      "title": "tasks-local/1 proofs: the formulas of A2 3.6.3, RFC 8785 canonical JSON, a proof with another key, instance, protocol, mode or nonce never matches, a replayed client proof fails against a new nonce, and every proof comparison runs through timingSafeEqual",
+      "title": "ttasks-local/1 proofs: the formulas of A2 3.6.3, RFC 8785 canonical JSON, a proof with another key, instance, protocol, mode or nonce never matches, a replayed client proof fails against a new nonce, and every proof comparison runs through timingSafeEqual",
       "source": "A2 3.6.3, A2 5, A7 3.8 M1.09",
       "owner": "M1",
       "kind": "ci",
@@ -2120,7 +2128,7 @@
     },
     {
       "id": "A2.3.6.local.handshake",
-      "title": "tasks-local/1 end to end over a socket or pipe: both modes bind, a client with a wrong key receives no byte after its hello, a replayed hello is refused, a bind with a tampered protocol, mode or context fails its proof, a tampered bind result fails at the client, and the service's events hold no nonce, proof or context",
+      "title": "ttasks-local/1 end to end over a socket or pipe: both modes bind, a client with a wrong key receives no byte after its hello, a replayed hello is refused, a bind with a tampered protocol, mode or context fails its proof, a tampered bind result fails at the client, and the service's events hold no nonce, proof or context",
       "source": "A2 3.6.3, A2 3.13, A2 5, A7 3.8 M1.09",
       "owner": "M1",
       "kind": "ci",
@@ -2232,7 +2240,7 @@
     },
     {
       "id": "A2.3.7.bridge.cli-entry",
-      "title": "tasks mcp through the CLI's entry hands over to the bridge before the CLI loads: its arguments reach the bridge unparsed, only the bridge's modules and the allowed built-ins load, stdout holds only MCP frames, and the exit codes are the bridge's",
+      "title": "ttasks mcp through the CLI's entry hands over to the bridge before the CLI loads: its arguments reach the bridge unparsed, only the bridge's modules and the allowed built-ins load, stdout holds only MCP frames, and the exit codes are the bridge's",
       "source": "A2 3.7.1, A2 3.10, A2 3.12.2, A7 3.9 M2.01",
       "owner": "M2",
       "kind": "ci",
@@ -2240,7 +2248,7 @@
     },
     {
       "id": "A3.3.3.mcp.clients",
-      "title": "Official MCP clients of both eras (SDK 1.x, and SDK 2.x in legacy, auto and pinned 2026-07-28 modes) start tasks mcp as real processes, through the CLI's entry and the bridge's direct entry, against a real service with a space from machine.toml: each lists the five tools, reads the server instructions and calls a tool",
+      "title": "Official MCP clients of both eras (SDK 1.x, and SDK 2.x in legacy, auto and pinned 2026-07-28 modes) start ttasks mcp as real processes, through the CLI's entry and the bridge's direct entry, against a real service with a space from machine.toml: each lists the five tools, reads the server instructions and calls a tool",
       "source": "A3 3.3, A3 5 (M0 item 7), A7 3.9 M2.02",
       "owner": "M2",
       "kind": "ci",
@@ -2272,7 +2280,7 @@
     },
     {
       "id": "A3.3.3.mcp.calls",
-      "title": "A tool call goes to the request path as the connection's unbound principal (agent:<instance>, a machine-qualified writer scope, the entry's --space, never TASKS_SPACE), user-only fields are refused, and an error comes back as a tool result in A3 3.5's text form",
+      "title": "A tool call goes to the request path as the connection's unbound principal (agent:<instance>, a machine-qualified writer scope, the entry's --space, never TTASKS_SPACE), user-only fields are refused, and an error comes back as a tool result in A3 3.5's text form",
       "source": "A3 3.3, A3 3.5, A3 3.7.3, A3 3.7.4, A3 3.7.8, A3 3.7.9, A7 3.9 M2.02",
       "owner": "M2",
       "kind": "ci",
@@ -2473,7 +2481,7 @@
     },
     {
       "id": "A4.5.routes.request",
-      "title": "What a person types before Open, up to 20,000 characters with line breaks, quotes, other scripts and an emoji, is a note of theirs on the task at the click that the launch names, and reaches the agent through Tasks on every route that takes it: Claude Code's and Codex's terminal routes (the fake agent reads it with show --launch as its brief says, the same again, its first 8,000 characters with the rest in the note), Codex's assisted open, the claude-cli:// link, Claude Desktop and the Codex app (an agent's get_task, twice the same, its tool text whole); it is in no process's command line (Linux /proc, Windows' process table), no URL opened, no log line and no file outside the space; Copy puts the words on the clipboard and saves nothing",
+      "title": "What a person types before Open, up to 20,000 characters with line breaks, quotes, other scripts and an emoji, is a note of theirs on the task at the click that the launch names, and reaches the agent through TTasks on every route that takes it: Claude Code's and Codex's terminal routes (the fake agent reads it with show --launch as its brief says, the same again, its first 8,000 characters with the rest in the note), Codex's assisted open, the claude-cli:// link, Claude Desktop and the Codex app (an agent's get_task, twice the same, its tool text whole); it is in no process's command line (Linux /proc, Windows' process table), no URL opened, no log line and no file outside the space; Copy puts the words on the clipboard and saves nothing",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2519,7 +2527,7 @@
     },
     {
       "id": "A3.5.search.find",
-      "title": "task.search through the request path for the user and a script: the entry's schema and limits, a default page of 15, the next page by its cursor alone, another binding's cursor refused and a restart dropping every cursor; and tasks find printing a page's header, task and learning rows, placeholders, the changed marker and the next page",
+      "title": "task.search through the request path for the user and a script: the entry's schema and limits, a default page of 15, the next page by its cursor alone, another binding's cursor refused and a restart dropping every cursor; and ttasks find printing a page's header, task and learning rows, placeholders, the changed marker and the next page",
       "source": "A3 3.4.3, A3 3.4.13, A3 3.9.4, A3 3.9.5, A7 3.10 M3.05",
       "owner": "M3",
       "kind": "ci",
@@ -2559,7 +2567,7 @@
     },
     {
       "id": "A3.3.7.binding.folder",
-      "title": "A working folder never binds: the bind frame's cwd, TASKS_TASK and TASKS_SPACE, status with one exact match and get_task with only cwd leave the connection unbound, and a tool argument naming a session is refused",
+      "title": "A working folder never binds: the bind frame's cwd, TTASKS_TASK and TTASKS_SPACE, status with one exact match and get_task with only cwd leave the connection unbound, and a tool argument naming a session is refused",
       "source": "A3 3.7.1, A3 3.7.2, A3 3.7.3, A3 3.7.6, A3 5, A7 3.9 M2.04",
       "owner": "M2",
       "kind": "ci",
@@ -2671,7 +2679,7 @@
     },
     {
       "id": "A3.3.7.grant.faces",
-      "title": "forbidden with rule grant has A3's body through every face that carries an agent home's call: in process, tasks-local/1's op/call and the CLI's --json for a CLI call acting as a session whose home is not granted, and MCP's text in both eras; the UI is the user and carries none",
+      "title": "forbidden with rule grant has A3's body through every face that carries an agent home's call: in process, ttasks-local/1's op/call and the CLI's --json for a CLI call acting as a session whose home is not granted, and MCP's text in both eras; the UI is the user and carries none",
       "source": "A3 3.2.2, A3 3.5, A3 3.7.8, A7 3.9 M2.04b",
       "owner": "M2",
       "kind": "ci",
@@ -2751,7 +2759,7 @@
     },
     {
       "id": "A2.3.10.cli.help",
-      "title": "Every command of the verb table and every generated verb has its own help, the same from tasks help <command> and tasks <command> --help; a command's subcommands are in it; a flag the contract requires is marked required and in the usage line; each help's description column lines up",
+      "title": "Every command of the verb table and every generated verb has its own help, the same from ttasks help <command> and ttasks <command> --help; a command's subcommands are in it; a flag the contract requires is marked required and in the usage line; each help's description column lines up",
       "source": "A2 3.10.1, A3 3.2.2",
       "owner": "M1",
       "kind": "ci",
@@ -2775,7 +2783,7 @@
     },
     {
       "id": "A3.3.4.finish.already-wrapped",
-      "title": "tasks done on a finished task: without an outcome it says the task is already completed and exits 0; with another outcome than the stored one it is a conflict that says so and names the remedy, never a stale base",
+      "title": "ttasks done on a finished task: without an outcome it says the task is already completed and exits 0; with another outcome than the stored one it is a conflict that says so and names the remedy, never a stale base",
       "source": "A3 3.4.8, A3 3.5",
       "owner": "M3",
       "kind": "ci",
@@ -2783,7 +2791,7 @@
     },
     {
       "id": "A3.3.7.actors.script-undo-note",
-      "title": "tasks undo in a terminal undoes the person's own change and, when a script of the same person changed the space after it, says in one line which task and what kind of change, and that a script's change is not on the undo stack",
+      "title": "ttasks undo in a terminal undoes the person's own change and, when a script of the same person changed the space after it, says in one line which task and what kind of change, and that a script's change is not on the undo stack",
       "source": "A3 3.7.4, A1 3.10.1",
       "owner": "M3",
       "kind": "ci",
@@ -2807,7 +2815,7 @@
     },
     {
       "id": "A2.3.10.cli.space-needs-recovery",
-      "title": "a space with a rollback journal is listed by tasks space list and doctor with tasks space recover <folder>, and the recovery the line names opens it",
+      "title": "a space with a rollback journal is listed by ttasks space list and doctor with ttasks space recover <folder>, and the recovery the line names opens it",
       "source": "A2 3.10.1, A1 3.18",
       "owner": "M2",
       "kind": "ci",
@@ -2815,7 +2823,7 @@
     },
     {
       "id": "A5.3.3.e2e.backup-trouble",
-      "title": "In Chromium and Firefox: an open space whose daily backup failed has a quiet mark on the space switcher, and the switcher's popover says what happened and names tasks space backup; the mark goes when the tab is shown again after backups work, without opening the switcher",
+      "title": "In Chromium and Firefox: an open space whose daily backup failed has a quiet mark on the space switcher, and the switcher's popover says what happened and names ttasks space backup; the mark goes when the tab is shown again after backups work, without opening the switcher",
       "source": "A5 3.3, A1 3.18",
       "owner": "M5",
       "kind": "ci",
@@ -2823,7 +2831,7 @@
     },
     {
       "id": "A5.3.3.e2e.not-open",
-      "title": "In Chromium: a machine whose only space needs recovery shows the space with tasks space recover on the landing page, never the advice to create a space",
+      "title": "In Chromium: a machine whose only space needs recovery shows the space with ttasks space recover on the landing page, never the advice to create a space",
       "source": "A5 3.3, A2 3.1",
       "owner": "M5",
       "kind": "ci",
@@ -2846,7 +2854,7 @@
     },
     {
       "id": "A2.3.10.cli.accept",
-      "title": "pnpm accept m1 --part cli against a real service child in a temporary TASKS_HOME: two parallel tasks add give distinct IDs and references, a stale base exits 4, a lost reply retried with --request-id in a new process after another write replays, a CLI newer than the service exits 7 with service_too_old, tasks show --json matches its schema",
+      "title": "pnpm accept m1 --part cli against a real service child in a temporary TTASKS_HOME: two parallel ttasks add give distinct IDs and references, a stale base exits 4, a lost reply retried with --request-id in a new process after another write replays, a CLI newer than the service exits 7 with service_too_old, ttasks show --json matches its schema",
       "source": "A2 3.10, A3 3.4.1, A7 3.8 M1.10",
       "owner": "M1",
       "kind": "installed",
@@ -2854,7 +2862,7 @@
     },
     {
       "id": "A2.3.10.cli.space",
-      "title": "tasks space create, list, open, close, backup, backups list, restore (new folder and in place), claim and recover through the service; the user-only verbs refuse the script and agent classes",
+      "title": "ttasks space create, list, open, close, backup, backups list, restore (new folder and in place), claim and recover through the service; the user-only verbs refuse the script and agent classes",
       "source": "A2 3.10.1, A1 3.18, A6 3.3, A7 3.8 M1.10",
       "owner": "M1",
       "kind": "installed",
@@ -2862,7 +2870,7 @@
     },
     {
       "id": "A2.3.10.cli.space-words",
-      "title": "tasks space says what is so and the ways it names work: claim of another machine's space names export, close, restore --to and claim, which then work and print A6's claim warning; a backup restores into a new folder by the name space backups prints; --space takes a relative folder for any command; a create where a space is names tasks space open <folder>; tasks recover is tasks space recover; a record machine.toml cannot take is one line on stderr",
+      "title": "ttasks space says what is so and the ways it names work: claim of another machine's space names export, close, restore --to and claim, which then work and print A6's claim warning; a backup restores into a new folder by the name space backups prints; --space takes a relative folder for any command; a create where a space is names ttasks space open <folder>; ttasks recover is ttasks space recover; a record machine.toml cannot take is one line on stderr",
       "source": "A2 3.10.1, A2 3.10.5, A6 3.5, A1 3.18",
       "owner": "M3",
       "kind": "installed",
@@ -2878,7 +2886,7 @@
     },
     {
       "id": "A2.3.10.cli.space-export",
-      "title": "tasks space export writes a bundle in backup or fork mode, with JSON lines when asked, says it is plaintext, and the bundle restores into a new folder as a read-only copy; a transfer waits for M3.08 and a script is refused; a secret-shaped title is a warning with its kind and place and never the text, and the bundle is written",
+      "title": "ttasks space export writes a bundle in backup or fork mode, with JSON lines when asked, says it is plaintext, and the bundle restores into a new folder as a read-only copy; a transfer waits for M3.08 and a script is refused; a secret-shaped title is a warning with its kind and place and never the text, and the bundle is written",
       "source": "A2 3.10.1, A1 3.18, A6 3.16.4, A6 3.16.6, A7 3.10 M3.07",
       "owner": "M3",
       "kind": "ci",
@@ -2886,7 +2894,7 @@
     },
     {
       "id": "A2.3.13.cli.doctor",
-      "title": "tasks doctor --self-test with the service checks: not running, untrusted endpoint, a running service's handshake, versions and spaces, recent crash files; works without a service; --json",
+      "title": "ttasks doctor --self-test with the service checks: not running, untrusted endpoint, a running service's handshake, versions and spaces, recent crash files; works without a service; --json",
       "source": "A2 3.13, A7 3.8 M1.10",
       "owner": "M1",
       "kind": "ci",
@@ -2981,7 +2989,7 @@
     },
     {
       "id": "A4.3.2.setup.instances",
-      "title": "tasks setup instances against fake agent commands and a real service: the preview shows each command with its version and each home, the exact entries and the plan, and writes nothing; only the person applies the preview's plan; the service writes machine.toml and Open offers the instances at once; the same apply again says the entries are there and exits 0 without a change; doctor's instances row names setup instances, then setup agents, then passes; remove takes back only an entry still exactly as written and the file comes back",
+      "title": "ttasks setup instances against fake agent commands and a real service: the preview shows each command with its version and each home, the exact entries and the plan, and writes nothing; only the person applies the preview's plan; the service writes machine.toml and Open offers the instances at once; the same apply again says the entries are there and exits 0 without a change; doctor's instances row names setup instances, then setup agents, then passes; remove takes back only an entry still exactly as written and the file comes back",
       "source": "A4 3.2, A2 3.2.4, A3 3.13.1, A5 3.17",
       "owner": "M2",
       "kind": "ci",
@@ -3013,7 +3021,7 @@
     },
     {
       "id": "A4.5.t3.cli-route",
-      "title": "With T3's command line as it is (no project list) only the paired T3 route opens a task and an unpaired instance names tasks setup t3; turned on, the T3 CLI fallback route against a fake T3 and a fake t3 command line serves exact roots only: an exact root opens there with the brief on stdin, a nested folder asks Register and never opens the containing project, a worktree needs pairing, thread start is given project IDs only, the t3-cli launch states (Unknown on any exit without a thread, a T3 error included, never repeated, Unknown lost after a restart, Failed folder_mismatch for another project or a root that changed before thread start), and Start T3 Code when T3 is not running",
+      "title": "With T3's command line as it is (no project list) only the paired T3 route opens a task and an unpaired instance names ttasks setup t3; turned on, the T3 CLI fallback route against a fake T3 and a fake t3 command line serves exact roots only: an exact root opens there with the brief on stdin, a nested folder asks Register and never opens the containing project, a worktree needs pairing, thread start is given project IDs only, the t3-cli launch states (Unknown on any exit without a thread, a T3 error included, never repeated, Unknown lost after a restart, Failed folder_mismatch for another project or a root that changed before thread start), and Start T3 Code when T3 is not running",
       "source": "A4 3.4.1, A4 3.9.2, A4 3.9.3, A7 3.13 M6.10",
       "owner": "M6",
       "kind": "ci",
@@ -3037,7 +3045,7 @@
     },
     {
       "id": "A4.3.4.1.t3.pairing",
-      "title": "Pairing with T3 by OAuth: discovery, dynamic registration and PKCE with S256 only, a fresh verifier and state per attempt, the redirect on loopback, the state compared before any exchange, a deadline on every wait, loopback endpoints only, and no secret in a URL Tasks makes, an error or a refusal",
+      "title": "Pairing with T3 by OAuth: discovery, dynamic registration and PKCE with S256 only, a fresh verifier and state per attempt, the redirect on loopback, the state compared before any exchange, a deadline on every wait, loopback endpoints only, and no secret in a URL TTasks makes, an error or a refusal",
       "source": "A4 3.4.1, A4 3.16, A7 3.9 M2.11",
       "owner": "M2",
       "kind": "ci",
@@ -3045,7 +3053,7 @@
     },
     {
       "id": "A4.3.4.1.t3.setup",
-      "title": "tasks setup t3 through the service: user-only, the browser hand-off, the token in a 0600 file in a 0700 folder of machine state and nowhere else (not machine.toml, the log, service.json or an answer), a new grant ID at every pairing, and the status",
+      "title": "ttasks setup t3 through the service: user-only, the browser hand-off, the token in a 0600 file in a 0700 folder of machine state and nowhere else (not machine.toml, the log, service.json or an answer), a new grant ID at every pairing, and the status",
       "source": "A4 3.4.1, A4 3.16, A2 3.10, A7 3.9 M2.11",
       "owner": "M2",
       "kind": "ci",
@@ -3053,7 +3061,7 @@
     },
     {
       "id": "A3.3.13.setup.exact",
-      "title": "tasks setup agents on scratch homes with fake commands: the preview gives the exact argv, environment and key-level diff and writes nothing; apply registers the entry with each app's own command (Codex's two keys by a single-key patch that keeps CRLF, the byte order mark and the mode); remove leaves every file key-identical, and byte-identical here; the record holds no other server's value",
+      "title": "ttasks setup agents on scratch homes with fake commands: the preview gives the exact argv, environment and key-level diff and writes nothing; apply registers the entry with each app's own command (Codex's two keys by a single-key patch that keeps CRLF, the byte order mark and the mode); remove leaves every file key-identical, and byte-identical here; the record holds no other server's value",
       "source": "A3 3.13.1, A3 3.13.2, A3 3.13.4, A7 3.9 M2.14",
       "owner": "M2",
       "kind": "ci",
@@ -3061,7 +3069,7 @@
     },
     {
       "id": "A3.3.13.setup.refuse",
-      "title": "tasks setup agents refuses a home it does not understand and runs nothing there (not UTF-8, invalid JSON or TOML, a duplicate key, a link or a generated file, servers inline or as dotted keys, an entry it did not write, no usable command), leaves an entry changed by hand alone, forgets one removed by hand, and takes back a command that failed",
+      "title": "ttasks setup agents refuses a home it does not understand and runs nothing there (not UTF-8, invalid JSON or TOML, a duplicate key, a link or a generated file, servers inline or as dotted keys, an entry it did not write, no usable command), leaves an entry changed by hand alone, forgets one removed by hand, and takes back a command that failed",
       "source": "A3 3.13.1, A3 3.12, A7 3.9 M2.14",
       "owner": "M2",
       "kind": "ci",
@@ -3069,7 +3077,7 @@
     },
     {
       "id": "A3.3.13.setup.cli",
-      "title": "tasks setup agents through the CLI and the service: the preview names the served space and writes nothing, a script or an agent is refused before anything is written, apply keeps one agent-home row per home in the grants table and reuses it, status shows entries and rows, remove takes entries and rows back",
+      "title": "ttasks setup agents through the CLI and the service: the preview names the served space and writes nothing, a script or an agent is refused before anything is written, apply keeps one agent-home row per home in the grants table and reuses it, status shows entries and rows, remove takes entries and rows back",
       "source": "A3 3.13.1, A3 3.7.4, A2 3.2.5, A7 3.9 M2.14",
       "owner": "M2",
       "kind": "ci",
@@ -3117,7 +3125,7 @@
     },
     {
       "id": "A3.3.12.setup.block-cli",
-      "title": "tasks setup agents --parts block and print-block through the CLI, with no service: print-block prints the block and its file and writes nothing; the preview shows the unified diff and writes nothing; only the user applies, with the preview's plan and parts; remove takes the block out byte for byte; a remove of the entries says the blocks stay; doctor's block row passes for a current block, warns for an older or missing one, and is information only for none and for a managed file",
+      "title": "ttasks setup agents --parts block and print-block through the CLI, with no service: print-block prints the block and its file and writes nothing; the preview shows the unified diff and writes nothing; only the user applies, with the preview's plan and parts; remove takes the block out byte for byte; a remove of the entries says the blocks stay; doctor's block row passes for a current block, warns for an older or missing one, and is information only for none and for a managed file",
       "source": "A3 3.12, A3 3.13.1, A3 3.14, A7 3.11 M4.04",
       "owner": "M4",
       "kind": "ci",
@@ -3125,7 +3133,7 @@
     },
     {
       "id": "A3.3.13.setup.apps",
-      "title": "tasks setup agents on scratch homes for the remaining apps: Claude Desktop's entry is spliced in and taken out leaving the file byte-identical (CRLF, byte order mark, mode, other servers), never in a file the app has not made, and several of its files ask for --home; the Codex app is a host of the default Codex home and its engine the command when no CLI is there; T3's provider instances' homes are offered and marked as read by T3 while T3's settings are only read; a managed home is left alone, also a Claude Desktop file a repository tracks through linked git metadata, by apply and by remove",
+      "title": "ttasks setup agents on scratch homes for the remaining apps: Claude Desktop's entry is spliced in and taken out leaving the file byte-identical (CRLF, byte order mark, mode, other servers), never in a file the app has not made, and several of its files ask for --home; the Codex app is a host of the default Codex home and its engine the command when no CLI is there; T3's provider instances' homes are offered and marked as read by T3 while T3's settings are only read; a managed home is left alone, also a Claude Desktop file a repository tracks through linked git metadata, by apply and by remove",
       "source": "A3 3.13.3, A3 3.13.5, A3 3.13.6, A3 3.12, A7 3.11 M4.05",
       "owner": "M4",
       "kind": "ci",
@@ -3149,7 +3157,7 @@
     },
     {
       "id": "A3.3.14.doctor.agents",
-      "title": "tasks doctor's agent checks against fakes and a real service: with no home registered it reads no home and says to run setup; after setup every row passes (mcp, codex.engines with the Codex app's engine, bridge in both eras with a status round trip, grants, t3.homes, desktop.restart), and each fault fails or warns with the command that fixes it (an entry edited or gone, an engine that rejects the file, a missing grant row, a T3 home without the entry, Claude Desktop started before the change, CLAUDE_CODE_MCP_ALLOWLIST_ENV); print, print-block, approve-tools and the block's preview write nothing",
+      "title": "ttasks doctor's agent checks against fakes and a real service: with no home registered it reads no home and says to run setup; after setup every row passes (mcp, codex.engines with the Codex app's engine, bridge in both eras with a status round trip, grants, t3.homes, desktop.restart), and each fault fails or warns with the command that fixes it (an entry edited or gone, an engine that rejects the file, a missing grant row, a T3 home without the entry, Claude Desktop started before the change, CLAUDE_CODE_MCP_ALLOWLIST_ENV); print, print-block, approve-tools and the block's preview write nothing",
       "source": "A3 3.14, A3 3.13.1, A3 3.13.7, A7 3.11 M4.05",
       "owner": "M4",
       "kind": "ci",
@@ -3157,7 +3165,7 @@
     },
     {
       "id": "A3.3.14.doctor.launch",
-      "title": "tasks doctor's launch rows pass and fail against fakes: launch.scopes from the launch's own scope probe, run once per start (a warning without scopes), launch.terminal naming the terminal a launch opens first and why (a warning when it is missing or the person's default has no adapter, named without a path), launch.env from the environment's check (the last snapshot attempt's outcome and the age of the one in use, taken now only with --live; the registry read on Windows), launch.t3 from t3/status (a pairing that cannot renew itself warns 5 days before its token runs out); an older service's silence skips them",
+      "title": "ttasks doctor's launch rows pass and fail against fakes: launch.scopes from the launch's own scope probe, run once per start (a warning without scopes), launch.terminal naming the terminal a launch opens first and why (a warning when it is missing or the person's default has no adapter, named without a path), launch.env from the environment's check (the last snapshot attempt's outcome and the age of the one in use, taken now only with --live; the registry read on Windows), launch.t3 from t3/status (a pairing that cannot renew itself warns 5 days before its token runs out); an older service's silence skips them",
       "source": "A3 3.14, A4 3.4.1, A4 3.7, A4 3.8, A7 3.11 M4.05b",
       "owner": "M4",
       "kind": "ci",
@@ -3165,7 +3173,7 @@
     },
     {
       "id": "A3.3.14.doctor.sessions",
-      "title": "tasks doctor's sessions row passes and fails against fakes: session records dropped when read back and bridge connections in shared mode warn, by instance ID only; the service counts open bridge connections, the shared ones by instance and the dropped records through the binding service's public surface",
+      "title": "ttasks doctor's sessions row passes and fails against fakes: session records dropped when read back and bridge connections in shared mode warn, by instance ID only; the service counts open bridge connections, the shared ones by instance and the dropped records through the binding service's public surface",
       "source": "A3 3.14, A3 3.7.5, A7 3.11 M4.05b",
       "owner": "M4",
       "kind": "ci",
@@ -3173,7 +3181,7 @@
     },
     {
       "id": "A3.3.14.doctor.manual",
-      "title": "tasks doctor's manual row: an entry of the server's name that setup did not write warns, one without --instance for what it reaches (the default space only), one with an instance for its refusal, each with the app's own mcp remove and no path",
+      "title": "ttasks doctor's manual row: an entry of the server's name that setup did not write warns, one without --instance for what it reaches (the default space only), one with an instance for its refusal, each with the app's own mcp remove and no path",
       "source": "A3 3.14, A3 3.7.8, A7 3.11 M4.05b",
       "owner": "M4",
       "kind": "ci",
@@ -3189,7 +3197,7 @@
     },
     {
       "id": "A3.3.14.doctor.live",
-      "title": "tasks doctor --live against fake apps: a headless claude -p and codex exec with the prompt on stdin start the home's entry and call status, the service records the call by instance (setup/seen), and the row passes only for a call seen after the run started; without --live nothing is run",
+      "title": "ttasks doctor --live against fake apps: a headless claude -p and codex exec with the prompt on stdin start the home's entry and call status, the service records the call by instance (setup/seen), and the row passes only for a call seen after the run started; without --live nothing is run",
       "source": "A3 3.14, A7 3.11 M4.05",
       "owner": "M4",
       "kind": "ci",
@@ -3261,7 +3269,7 @@
     },
     {
       "id": "A2.3.8.http.tokens",
-      "title": "UI tokens: tasks_u_ and 256 bits, hash-only storage in service.sqlite, valid across a restart, refused 7 days after last use and 30 days after creation, revocation durable and told to listeners, dead rows dropped, uses written at most once a minute; codes and tickets single use with their expiry; the probe HMAC",
+      "title": "UI tokens: ttasks_u_ and 256 bits, hash-only storage in service.sqlite, valid across a restart, refused 7 days after last use and 30 days after creation, revocation durable and told to listeners, dead rows dropped, uses written at most once a minute; codes and tickets single use with their expiry; the probe HMAC",
       "source": "A2 3.2.5, A2 3.8.4, A2 5, A7 3.9 M2.12",
       "owner": "M2",
       "kind": "ci",
@@ -3285,7 +3293,7 @@
     },
     {
       "id": "A2.3.8.http.hub",
-      "title": "The listener in the service: bound before ready and reported in service.json and service/status, closed by the drain; ui/mint_code for the operator classes only; another user on the persisted port leaves no UI, every UI token revoked durably and the socket working, until tasks service port resolves it; this user own holder gives a fallback for the run and the retry moves back",
+      "title": "The listener in the service: bound before ready and reported in service.json and service/status, closed by the drain; ui/mint_code for the operator classes only; another user on the persisted port leaves no UI, every UI token revoked durably and the socket working, until ttasks service port resolves it; this user own holder gives a fallback for the run and the retry moves back",
       "source": "A2 3.3.1, A2 3.8.2, A2 3.8.4, A7 3.9 M2.12",
       "owner": "M2",
       "kind": "ci",
@@ -3325,7 +3333,7 @@
     },
     {
       "id": "A2.3.9.cli.open",
-      "title": "tasks open against a real service: a code minted over the socket, the listener proved by its HMAC probe before the port is trusted, the code only in the URL fragment and redeemable once, --space and --task as the route, --print-url with its warning, an agent shell told to ask the user, A2 message and exit 6 when another user holds the port, the moved line, tasks service port with --reuse for the person only",
+      "title": "ttasks open against a real service: a code minted over the socket, the listener proved by its HMAC probe before the port is trusted, the code only in the URL fragment and redeemable once, --space and --task as the route, --print-url with its warning, an agent shell told to ask the user, A2 message and exit 6 when another user holds the port, the moved line, ttasks service port with --reuse for the person only",
       "source": "A2 3.8.2, A2 3.8.4, A2 3.9, A7 3.9 M2.12",
       "owner": "M2",
       "kind": "ci",
@@ -3333,7 +3341,7 @@
     },
     {
       "id": "A2.3.9.cli.open-start",
-      "title": "tasks open with the service not running: it is started as tasks service start starts it, one line on stderr says so, then the page opens; a running service is not started again; a failed start says why and names the command, exit 6; an agent's shell never starts it and is told to ask the user",
+      "title": "ttasks open with the service not running: it is started as ttasks service start starts it, one line on stderr says so, then the page opens; a running service is not started again; a failed start says why and names the command, exit 6; an agent's shell never starts it and is told to ask the user",
       "source": "A2 S6, A2 3.3.6, A2 3.9",
       "owner": "M2",
       "kind": "ci",
@@ -3341,7 +3349,7 @@
     },
     {
       "id": "A2.3.13.cli.doctor-http",
-      "title": "tasks doctor: other interactive user accounts warn per OS from injected facts, an agent app sandbox accounts are not counted; the http row passes the live self-test (Host evil.example gets 421, a fresh nonce repeated in the meta tag, worker-src none), fails with A2 message when blocked, warns when moved, and parses Windows excluded port ranges",
+      "title": "ttasks doctor: other interactive user accounts warn per OS from injected facts, an agent app sandbox accounts are not counted; the http row passes the live self-test (Host evil.example gets 421, a fresh nonce repeated in the meta tag, worker-src none), fails with A2 message when blocked, warns when moved, and parses Windows excluded port ranges",
       "source": "A2 3.13, A2 3.8.2, A6 3.3, R18, A7 3.9 M2.12",
       "owner": "M2",
       "kind": "ci",
@@ -3437,7 +3445,7 @@
     },
     {
       "id": "A2.3.12.3.build.posix-launcher",
-      "title": "The POSIX launcher passes hostile argv to Node unchanged, removes every NODE_ variable but NODE_EXTRA_CA_CERTS and OpenSSL's loader settings, takes TASKS_HOME from its location only, and passes exit codes through, by its own path and through current",
+      "title": "The POSIX launcher passes hostile argv to Node unchanged, removes every NODE_ variable but NODE_EXTRA_CA_CERTS and OpenSSL's loader settings, takes TTASKS_HOME from its location only, and passes exit codes through, by its own path and through current",
       "source": "A2 3.12.3, A7 3.8 M1.13",
       "owner": "M1",
       "kind": "ci",
@@ -3501,7 +3509,7 @@
     },
     {
       "id": "A2.3.13.cli.doctor-version",
-      "title": "tasks doctor checks the version folder it runs from: integrity against manifest.json and current, and the runtime gate against the manifest's pins; both are skipped from source",
+      "title": "ttasks doctor checks the version folder it runs from: integrity against manifest.json and current, and the runtime gate against the manifest's pins; both are skipped from source",
       "source": "A2 3.13, A2 3.12.1, A7 3.8 M1.13",
       "owner": "M1",
       "kind": "ci",
@@ -3573,7 +3581,7 @@
     },
     {
       "id": "A1.3.15.roots.retired",
-      "title": "Roots are retired: a machine.toml with [roots] sections parses, doctor names them once as lines that do nothing, tasks roots points to where tasks open now and its add fails, and no command changes the file",
+      "title": "Roots are retired: a machine.toml with [roots] sections parses, doctor names them once as lines that do nothing, ttasks roots points to where tasks open now and its add fails, and no command changes the file",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3676,7 +3684,7 @@
     },
     {
       "id": "A2.3.12.4.install.script",
-      "title": "install.sh and install.ps1 install into a temporary TASKS_HOME through each verifier path (ssh-keygen, then openssl or the Authenticode-checked node.exe): signature, hash, self-test through the version-local launcher, then current, with its own install ID and install.json",
+      "title": "install.sh and install.ps1 install into a temporary TTASKS_HOME through each verifier path (ssh-keygen, then openssl or the Authenticode-checked node.exe): signature, hash, self-test through the version-local launcher, then current, with its own install ID and install.json",
       "source": "A2 3.12.4, A2 3.2.2, SL-02, SL-03, A7 3.8 M1.14",
       "owner": "M1",
       "kind": "ci",
@@ -3700,7 +3708,7 @@
     },
     {
       "id": "A2.3.12.6.install.finish",
-      "title": "tasks install --finish switches only its own separate install: update.lock held by another stops it with nothing changed, current and the stable command are switched, changed Windows launchers are renamed aside, install.json records the versions and what the installer created",
+      "title": "ttasks install --finish switches only its own separate install: update.lock held by another stops it with nothing changed, current and the stable command are switched, changed Windows launchers are renamed aside, install.json records the versions and what the installer created",
       "source": "A2 3.12.4, A2 3.12.6, A2 3.2.3, A7 3.8 M1.14",
       "owner": "M1",
       "kind": "ci",
@@ -3716,7 +3724,7 @@
     },
     {
       "id": "A2.3.2.2.install.side-by-side",
-      "title": "Two installs made by the install script into two temporary TASKS_HOMEs have two install IDs and endpoints, and the second's service started and stopped beside the first leaves the first's CLI and bridge calls working before, during and after",
+      "title": "Two installs made by the install script into two temporary TTASKS_HOMEs have two install IDs and endpoints, and the second's service started and stopped beside the first leaves the first's CLI and bridge calls working before, during and after",
       "source": "A2 3.2.1, A2 3.2.2, SL-03, A7 3.7 G2 (S06), A7 3.8 M1.14",
       "owner": "M1",
       "kind": "ci",
@@ -4047,7 +4055,7 @@
     },
     {
       "id": "A2.3.1.hub.spaces-remembered",
-      "title": "space create, open and close record the space in machine.toml's [[spaces]] (enabled, or enabled = false), keeping the person's comments, order, hand edits made while the service runs and the file's mode; after a restart the open spaces open and the closed one is listed closed with its ID; a folder gone at the start leaves its entry unavailable(missing) and in the file while the others open, and space open serves it again once it is back; a create where a space is names tasks space open <folder>, and a create in a gone space's folder re-points the entry",
+      "title": "space create, open and close record the space in machine.toml's [[spaces]] (enabled, or enabled = false), keeping the person's comments, order, hand edits made while the service runs and the file's mode; after a restart the open spaces open and the closed one is listed closed with its ID; a folder gone at the start leaves its entry unavailable(missing) and in the file while the others open, and space open serves it again once it is back; a create where a space is names ttasks space open <folder>, and a create in a gone space's folder re-points the entry",
       "source": "A2 3.1, A2 3.2.4, A2 3.10.1",
       "owner": "M3",
       "kind": "ci",
@@ -4437,7 +4445,7 @@
     },
     {
       "id": "A2.3.10.cli.space-use",
-      "title": "tasks space use sets the machine's default space by name or folder through space/use, tasks space list marks it, an unbound command of the person then uses it while an agent's still names its space, scripts and agents are refused, and an unknown space is a usage error",
+      "title": "ttasks space use sets the machine's default space by name or folder through space/use, ttasks space list marks it, an unbound command of the person then uses it while an agent's still names its space, scripts and agents are refused, and an unknown space is a usage error",
       "source": "A2 3.1, A2 3.10.5, A7 3.12 M5.01",
       "owner": "M5",
       "kind": "ci",
@@ -4445,7 +4453,7 @@
     },
     {
       "id": "A2.3.12.6.update.verify",
-      "title": "tasks update verifies a release with the installed version's own keys before anything of it is unpacked or run: no trusted key, another key, a swapped archive, a rewritten or missing SHA256SUMS signature, another name or platform, and signed archives with entries that leave the folder, links, device names or files the manifest does not list are refused with the install unchanged and no self-test run",
+      "title": "ttasks update verifies a release with the installed version's own keys before anything of it is unpacked or run: no trusted key, another key, a swapped archive, a rewritten or missing SHA256SUMS signature, another name or platform, and signed archives with entries that leave the folder, links, device names or files the manifest does not list are refused with the install unchanged and no self-test run",
       "source": "A2 3.12.4, A2 3.12.5, A2 3.12.6, SL-13, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
@@ -4493,7 +4501,7 @@
     },
     {
       "id": "A2.3.12.6.update.kill",
-      "title": "With real builds in a temporary TASKS_HOME, an updater child killed at every journal step, or the service killed there while the updater goes on, ends on the complete old or new version after the next start through the stable command; a repair killed at each of its steps is finished by the next start; a running service finishes an update whose updater died; a session's bridge keeps running through an update and answers after it",
+      "title": "With real builds in a temporary TTASKS_HOME, an updater child killed at every journal step, or the service killed there while the updater goes on, ends on the complete old or new version after the next start through the stable command; a repair killed at each of its steps is finished by the next start; a running service finishes an update whose updater died; a session's bridge keeps running through an update and answers after it",
       "source": "A2 3.12.6, A2 3.11, SL-02, SL-08, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
@@ -4501,7 +4509,7 @@
     },
     {
       "id": "A2.3.12.6.update.installed",
-      "title": "tasks update --from, --rollback and --repair through an installed stable command: a second update waits for the lock, the same archive again is current already, the data folders are byte-identical after an update and a rollback, doctor's update row passes, and without a terminal or --yes, or in an agent's shell, nothing is changed",
+      "title": "ttasks update --from, --rollback and --repair through an installed stable command: a second update waits for the lock, the same archive again is current already, the data folders are byte-identical after an update and a rollback, doctor's update row passes, and without a terminal or --yes, or in an agent's shell, nothing is changed",
       "source": "A2 3.12.6, A2 3.13, A7 3.13 M6.12",
       "owner": "M6",
       "kind": "ci",
@@ -4525,7 +4533,7 @@
     },
     {
       "id": "A2.3.3.2.launcher-win.handover",
-      "title": "A supervisor whose bin\\tasksw.exe was replaced while it ran starts the new one in its place before any restart of the service (after an exit 75, or after the wait after a failure), and exits 0; the new one supervises; one whose file is unchanged restarts the service itself",
+      "title": "A supervisor whose bin\\ttasksw.exe was replaced while it ran starts the new one in its place before any restart of the service (after an exit 75, or after the wait after a failure), and exits 0; the new one supervises; one whose file is unchanged restarts the service itself",
       "source": "A2 3.3.2, A2 3.12.6, A7 3.13 M6.13",
       "owner": "M6",
       "kind": "ci",
@@ -4533,7 +4541,7 @@
     },
     {
       "id": "A2.3.12.6.update.launchers",
-      "title": "With real builds whose launchers differ, in a temporary TASKS_HOME on Windows, an updater killed at each step of each launcher's swap (staged, renamed aside, renamed in) while both launchers run, then started again through the stable command and through the supervisor, ends on one complete version: both launchers match its hashes, current names it, the stable command runs, and the supervisor that ran from the old file hands over to the new one",
+      "title": "With real builds whose launchers differ, in a temporary TTASKS_HOME on Windows, an updater killed at each step of each launcher's swap (staged, renamed aside, renamed in) while both launchers run, then started again through the stable command and through the supervisor, ends on one complete version: both launchers match its hashes, current names it, the stable command runs, and the supervisor that ran from the old file hands over to the new one",
       "source": "A2 3.12.3, A2 3.12.6, SL-08, A7 3.13 M6.13",
       "owner": "M6",
       "kind": "ci",
@@ -4933,7 +4941,7 @@
     },
     {
       "id": "A1.5.projection.service",
-      "title": "The service keeps each space open as this machine's projected into its view/ in a worker of its own, with the trusted record beside the space's settings: the first render of the sample space, a task added through the request path in its file and the catalogue, tasks view rebuild bringing back a deleted file and moving an edited one aside, for the user only, a rescue whose save failed told again at the next start, with a settings file that does not read back never written over, and a restore in place projected anew",
+      "title": "The service keeps each space open as this machine's projected into its view/ in a worker of its own, with the trusted record beside the space's settings: the first render of the sample space, a task added through the request path in its file and the catalogue, ttasks view rebuild bringing back a deleted file and moving an edited one aside, for the user only, a rescue whose save failed told again at the next start, with a settings file that does not read back never written over, and a restore in place projected anew",
       "source": "A1 3.9, A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -4981,7 +4989,7 @@
     },
     {
       "id": "A1.5.projection.reconcile",
-      "title": "Reconciliation file by file: a generated file deleted or edited while the projection runs is rendered again at the next start, after a batch that failed, and on tasks view rebuild; a rebuild asked for while a failing batch runs stays a full one; a rebuild of an intact tree writes and removes nothing; a root file deleted is placed again; a file the record does not hold is left alone",
+      "title": "Reconciliation file by file: a generated file deleted or edited while the projection runs is rendered again at the next start, after a batch that failed, and on ttasks view rebuild; a rebuild asked for while a failing batch runs stays a full one; a rebuild of an intact tree writes and removes nothing; a root file deleted is placed again; a file the record does not hold is left alone",
       "source": "A1 3.13, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -4989,7 +4997,7 @@
     },
     {
       "id": "A1.5.projection.cli",
-      "title": "tasks view rebuild from the CLI: the user rebuilds a space's view from an interactive terminal and a deleted generated file comes back, a script is refused with forbidden, and help names the command",
+      "title": "ttasks view rebuild from the CLI: the user rebuilds a space's view from an interactive terminal and a deleted generated file comes back, a script is refused with forbidden, and help names the command",
       "source": "A1 3.13, A2 3.10, A7 3.10 M3.10",
       "owner": "M3",
       "kind": "ci",
@@ -5176,6 +5184,14 @@
       "title": "The end of an install whose service runs another version: at a terminal one question that says what a restart ends, and a yes restarts it; otherwise, after a no, a failed restart or in an agent's shell, the last lines name the running version and the one restart command, quoted for the shell",
       "source": "A2 3.12.4, A2 3.3.5",
       "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A2.3.12.4.install.earlier-folder",
+      "title": "An install that finds the data folder of a build from before the rename names it and how to open a space from it, and says nothing without one",
+      "source": "A2 3.12.4",
+      "owner": "M1",
       "kind": "ci",
       "profiles": ["v1"]
     },

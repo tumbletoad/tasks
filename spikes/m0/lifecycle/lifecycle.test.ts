@@ -1,5 +1,5 @@
 // The self-test of the M0.07 lab additions (A7 3.7, rows S03, S08, E01 and lab session 3): the
-// forwarder's reconnect, the service's environment snapshot and its parsers, the tasksw.exe
+// forwarder's reconnect, the service's environment snapshot and its parsers, the ttasksw.exe
 // supervisor stand-in, the lab release folder and its entry, and the POSIX cold-start supervisor.
 // Fixture text only. Every process a test starts is stopped before its folder is removed.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
@@ -51,7 +51,7 @@ const children = new Set<ChildProcess>();
 const services = new Set<RunningService>();
 
 beforeAll(() => {
-  work = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-lifecycle-")));
+  work = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-lifecycle-")));
   js = buildKit(join(work, "kit-js"));
 });
 
@@ -66,7 +66,7 @@ afterAll(async () => {
     for (const name of ["state-r", "state-d", "state-s", "cold/root/state/service"]) {
       const state = join(work, name);
       if (!existsSync(state)) continue;
-      const dir = `/run/user/${String(process.getuid())}/tasks-${sha256Hex(realpathSync.native(state)).slice(0, 16)}`;
+      const dir = `/run/user/${String(process.getuid())}/ttasks-${sha256Hex(realpathSync.native(state)).slice(0, 16)}`;
       rmSync(dir, { recursive: true, force: true });
     }
   }
@@ -196,7 +196,7 @@ describe("[A7.3.7.m0-lifecycle.self-test] the M0.07 lifecycle lab", () => {
       state,
       // The first bind reply comes 1.5 s late, so the client's initialize lands in the wait.
       replyDelayMs: (method) => {
-        if (method !== "tasks/bind" || delayed) return 0;
+        if (method !== "ttasks/bind" || delayed) return 0;
         delayed = true;
         bindArrived();
         return 1500;
@@ -420,7 +420,7 @@ describe("[A7.3.7.m0-lifecycle.self-test] the M0.07 lifecycle lab", () => {
         readFileSync(join(folder, "manifest.json"), "utf8"),
       ) as JsonObject;
       expect(manifest["version"]).toBe("0.0.7-lab.t");
-      expect(readFileSync(join(folder, "lib", "tasks.mjs"))).toEqual(
+      expect(readFileSync(join(folder, "lib", "ttasks.mjs"))).toEqual(
         readFileSync(join(lab.lifecycle, "entry.mjs")),
       );
       for (const name of ["forwarder", "shim", "kit", "service", "wire", "snapshot"]) {
@@ -431,8 +431,8 @@ describe("[A7.3.7.m0-lifecycle.self-test] the M0.07 lifecycle lab", () => {
       expect(() => assembleLabFolder(folder, join(work, "lab"), "0.0.7-lab.t", lab)).toThrow();
     });
 
-    test("its entry routes version and mcp, and refuses no command without tasksw", async () => {
-      const entry = join(folder, "lib", "tasks.mjs");
+    test("its entry routes version and mcp, and refuses no command without ttasksw", async () => {
+      const entry = join(folder, "lib", "ttasks.mjs");
       const run = (args: string[]) =>
         spawnSync(process.execPath, [entry, ...args], {
           encoding: "utf8",

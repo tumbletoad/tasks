@@ -114,8 +114,8 @@ describe("[A2.3.10.cli.parse] arguments from cli-spec.json", () => {
     ];
     for (const message of messages) expect(message).not.toContain("secret");
     expect(messages[0]).toBe("--priority takes a whole number");
-    expect(messages[1]).toBe("tasks add has no such option");
-    expect(messages[4]).toBe("tasks add needs <title>");
+    expect(messages[1]).toBe("ttasks add has no such option");
+    expect(messages[4]).toBe("ttasks add needs <title>");
     expect(() => splitGlobals(["--request-id", SECRET])).toThrow(/^--request-id takes/);
     expect(() => splitGlobals(["--timeout", SECRET])).toThrow(
       "--timeout takes a whole number of seconds",

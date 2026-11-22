@@ -2,7 +2,7 @@
 // Linux and Windows: a test file calls driverContract() with a factory for the driver. The suite
 // lives in packages/storage, not testkit, because A7 3.2 gives testkit fixtures, sample spaces
 // and harnesses, and this suite needs nothing from them. It is exported as
-// @tasks/storage/driver-contract so a second driver (M3.13) can run it from wherever it lives.
+// @ttasks/storage/driver-contract so a second driver (M3.13) can run it from wherever it lives.
 //
 // Every test works in its own temporary folder and removes it afterwards. A connection left open
 // keeps its file locked on Windows, so a leak fails the test's clean-up there.

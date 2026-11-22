@@ -125,7 +125,7 @@ describe("[A2.3.1.default-space] Make default and the machine's default space", 
       fresh.ws.close();
       named.ws.close();
 
-      // `tasks space use` sets it back, the same way.
+      // `ttasks space use` sets it back, the same way.
       expect(await user.call("space/use", { space: mira }, { timeoutMs: 60_000 })).toEqual({
         default: mira,
       });

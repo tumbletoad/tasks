@@ -1,11 +1,11 @@
-// `tasks doctor`'s launch rows and sessions row (A3 3.14; A4 3.4.1, 3.7, 3.8; M4.05b), from what
+// `ttasks doctor`'s launch rows and sessions row (A3 3.14; A4 3.4.1, 3.7, 3.8; M4.05b), from what
 // the running service answers. Doctor starts no program for them: the service probes as a launch
 // would, through its own launch service.
 //
 //   launch.scopes   Linux: terminals start without a systemd scope, so a restart or update of the
 //                   service may end the sessions in them (warn)
 //   launch.terminal the terminal a launch opens first and why: warn when it was not
-//                   found, when the default the person set is one Tasks cannot open, or when
+//                   found, when the default the person set is one TTasks cannot open, or when
 //                   the operating system's setting could not be read
 //   launch.env     the person's environment as a launch reads it: on Linux and macOS the last
 //                   login-shell snapshot the service attempted did not succeed, with the age of the
@@ -18,8 +18,8 @@
 //
 // Rows hold words, counts, dates and instance IDs only: never a path, a variable's name or value,
 // a token or a task. None of them fails the report: each names what launches lose, and the fix.
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
-import { INSTANCE_ID } from "@tasks/launch";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { INSTANCE_ID } from "@ttasks/launch";
 import type { Session } from "./connect.ts";
 
 export interface Check {
@@ -103,7 +103,7 @@ export const TERMINAL_SOURCE_WORDS: Readonly<Record<string, string>> = {
   installed: "the first installed",
 };
 
-/** A name the service gave for a default Tasks cannot open: plain characters only. */
+/** A name the service gave for a default TTasks cannot open: plain characters only. */
 const SHOWN_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$/;
 
 /** `launch.terminal`: `doctor/launch`'s `terminal`. */

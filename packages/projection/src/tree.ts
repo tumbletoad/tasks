@@ -45,7 +45,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
-import { createFile, makeDir, writeAll } from "@tasks/files";
+import { createFile, makeDir, writeAll } from "@ttasks/files";
 
 /** The files at the tree's root besides the tasks', in the order a publish places them. */
 export const ROOT_FILES = ["README.md", "index.md", "catalog.jsonl", ".projection.json"] as const;

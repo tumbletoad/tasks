@@ -539,7 +539,7 @@ if [ -e "$target" ] || [ -L "$target" ]; then
   # The same version is already there (A2 3.12.4 step 7). It runs only if it is exactly this signed
   # release: a plain folder that only this user can change, all through (checked before its files
   # are, so none can change after), its manifest.json byte for byte the staged one, every file
-  # checked against that. Otherwise it is left as it is: a running Tasks may use it.
+  # checked against that. Otherwise it is left as it is: a running TTasks may use it.
   if [ -L "$target" ] || [ ! -d "$target" ]; then
     problem='it is a link or not a folder'
   elif [ -n "$(tree_unsafe "$target")" ]; then

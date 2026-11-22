@@ -1,7 +1,7 @@
 // Runs where no process group can hold them (Linux without systemd or a delegated unit, Windows
-// without tasks-run.exe): the agent is the service's own child, and its processes are what Tasks
+// without ttasks-run.exe): the agent is the service's own child, and its processes are what TTasks
 // can find of its tree. Nothing confirms that none is left, so every confirmation is
-// `unconfirmable`: the run settles, and its cleanup says that Tasks ended what it could find.
+// `unconfirmable`: the run settles, and its cleanup says that TTasks ended what it could find.
 //
 // What is found: on Linux the agent's process group (its own, from the start) and every process
 // whose parents lead back to the agent, read from /proc at the kill; on Windows the agent's tree as

@@ -12,7 +12,7 @@
 // of the calls. Each line names the tool it is about, because Claude Code loads only the tool names
 // and these instructions at start (A3 3.3). The guides line names the guides this build has
 // (`GUIDES`), so a guide that arrives with a later step joins it then.
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { GUIDES } from "../ops/guides.ts";
 import { DATA_WORD } from "./text.ts";
 import { toolOf } from "./tools.ts";

@@ -25,9 +25,9 @@ import {
   StorageWorker,
   type Id,
   type LockedFile,
-} from "@tasks/storage";
-import { createSpaceAt, STEPS_0_1 } from "@tasks/storage/revisions";
-import { checkedDriver } from "@tasks/testkit";
+} from "@ttasks/storage";
+import { createSpaceAt, STEPS_0_1 } from "@ttasks/storage/revisions";
+import { checkedDriver } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { workerWithSteps } from "../../storage/test/worker-helpers.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
@@ -165,7 +165,7 @@ describe("[A2.3.1.hub.startup] the start-up sequence for spaces (A2 3.1)", () =>
       message:
         "Migration to 0.6 failed (STORAGE_SQL). Your data is unchanged. The space stays at 0.1. " +
         `Backup: ${backup?.name ?? "?"}. It is tried again after an update, or now with: ` +
-        "tasks space open <folder> --retry-migration",
+        "ttasks space open <folder> --retry-migration",
       id: bad.space.spaceId,
     });
     expect(JSON.stringify(readLog(home))).not.toContain("Your data is unchanged");

@@ -1,8 +1,8 @@
-// `tasks shim` from a build (A4 3.6.3): with `pnpm accept m2 --part build --installed <folder>`
+// `ttasks shim` from a build (A4 3.6.3): with `pnpm accept m2 --part build --installed <folder>`
 // the lab's home is a test install of the built version folder (testkit's layoutTestInstall), the
-// terminal starts `<home>/bin/tasks shim <ticket>` through the stable launcher, which runs the
-// folder's lib/tasks.mjs and its lib/shim.mjs on the folder's own Node, and the service is the
-// folder's own bundled hub (lib/chunks/hub-<hash>.mjs, the chunk `tasks serve` loads), started in
+// terminal starts `<home>/bin/ttasks shim <ticket>` through the stable launcher, which runs the
+// folder's lib/ttasks.mjs and its lib/shim.mjs on the folder's own Node, and the service is the
+// folder's own bundled hub (lib/chunks/hub-<hash>.mjs, the chunk `ttasks serve` loads), started in
 // this process because a launch is opened and dispatched in-process until M2.13 adds the verbs for
 // it. Without --installed the same test runs the source: bin.ts and the source service. Fixture
 // data and temporary folders only.
@@ -10,12 +10,12 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
-import type { FakeAgentReport } from "@tasks/runs/fake-agents";
+import type { FakeAgentReport } from "@ttasks/runs/fake-agents";
 import type { startService } from "../src/hub/service.ts";
 import { ShimLab } from "./shim-harness.ts";
 
 /** The built version folder the acceptance runs against, from `pnpm accept --installed`. */
-const INSTALLED = process.env["TASKS_ACCEPT_INSTALLED"];
+const INSTALLED = process.env["TTASKS_ACCEPT_INSTALLED"];
 
 const labs: ShimLab[] = [];
 afterEach(async () => {
@@ -37,7 +37,7 @@ async function builtService(versionFolder: string): Promise<typeof startService>
   return loaded.startService as typeof startService;
 }
 
-describe("[A4.5.shim.installed] tasks shim through the build's launcher against the build's service", () => {
+describe("[A4.5.shim.installed] ttasks shim through the build's launcher against the build's service", () => {
   test(
     "a ticket is claimed, a fake agent runs as the shim's child in the checked folder, and its exit is reported",
     { timeout: 300_000 },

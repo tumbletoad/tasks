@@ -1,11 +1,11 @@
-// `tasks brief <task> [--pack] [--copy]` (A4 3.4.6): Copy from a terminal. The verb is the
+// `ttasks brief <task> [--pack] [--copy]` (A4 3.4.6): Copy from a terminal. The verb is the
 // registry's `launch.open` without an instance; `--pack` is its own input (the context pack, A4
 // 3.15.5). `--copy` is the CLI's: the text goes to the OS's clipboard tool through its standard
-// input (`@tasks/launch/clipboard`), and the person is told it did. When no tool is here, or the
+// input (`@ttasks/launch/clipboard`), and the person is told it did. When no tool is here, or the
 // tool fails, the CLI says so plainly and prints the text instead: a copy that did not happen is
 // never reported.
-import { PRODUCT_NAME } from "@tasks/brand";
-import { copyText, type CopyResult } from "@tasks/launch/clipboard";
+import { PRODUCT_NAME } from "@ttasks/brand";
+import { copyText, type CopyResult } from "@ttasks/launch/clipboard";
 import type { Globals, VerbSpec } from "./args.ts";
 import type { ConnectOptions } from "./connect.ts";
 import type { Io } from "./io.ts";
@@ -44,7 +44,7 @@ export function copyFailure(result: Exclude<CopyResult, { status: "copied" }>): 
   }
 }
 
-/** `tasks brief`: the generated verb, with `--copy` taken out before its arguments are read. */
+/** `ttasks brief`: the generated verb, with `--copy` taken out before its arguments are read. */
 export async function briefCommand(
   io: Io,
   globals: Globals,

@@ -2,9 +2,9 @@
 // line, with the folder as the person reads it (the home as `~`) and the name's own proposal for
 // the reference prefix and the folder, so one field and one button make a space.
 import { posix, win32 } from "node:path";
-import type { JsonObject } from "@tasks/bridge/protocol";
-import { AppError } from "@tasks/contracts";
-import { defaultRefPrefix } from "@tasks/storage";
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import { AppError } from "@ttasks/contracts";
+import { defaultRefPrefix } from "@ttasks/storage";
 import type { ConnectionClass } from "../local/index.ts";
 import { shownPath } from "./agent-apps.ts";
 import { defaultSpaceFolder, type Layout } from "./paths.ts";

@@ -41,7 +41,7 @@ async function open(dir: string, now: Date = T0) {
 
 describe("[A2.3.8.http.tokens] UI tokens and the grants table in service.sqlite", () => {
   test(
-    "a token is tasks_u_ and 256 bits; only its hash is stored, and it works after a restart",
+    "a token is ttasks_u_ and 256 bits; only its hash is stored, and it works after a restart",
     SLOW,
     async () => {
       const dir = stateDir();
@@ -57,7 +57,7 @@ describe("[A2.3.8.http.tokens] UI tokens and the grants table in service.sqlite"
       expect(stored).toHaveLength(1);
       expect(JSON.stringify(stored)).not.toContain(token ?? "missing");
       expect(JSON.stringify(stored)).not.toContain(
-        (token ?? "tasks_u_x").slice(UI_TOKEN_PREFIX.length),
+        (token ?? "ttasks_u_x").slice(UI_TOKEN_PREFIX.length),
       );
       await first.grants.close();
       await first.db.close();

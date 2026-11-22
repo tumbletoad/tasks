@@ -152,7 +152,7 @@ async function main(): Promise<void> {
   const o = parse(process.argv.slice(2));
   const started = performance.now();
   mkdirSync(o.out, { recursive: true });
-  const runDir = mkdtempSync(join(o.work ?? o.out, "tasks-storage-bench-"));
+  const runDir = mkdtempSync(join(o.work ?? o.out, "ttasks-storage-bench-"));
   const ctx: Context = {
     scale: o.scale,
     seed: o.seed,

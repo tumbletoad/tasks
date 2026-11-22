@@ -1,5 +1,5 @@
 // The run host on real containers: a stand-in service (stand-ins/run-service.ts) hosts runs of
-// stand-in agents over a fixture space, in a delegated user unit on Linux and with tasks-run.exe
+// stand-in agents over a fixture space, in a delegated user unit on Linux and with ttasks-run.exe
 // on Windows, and the tests count what is alive from the operating system, never from the
 // container. Where no real container can be made, the tests say so and skip: a fake would prove
 // nothing.
@@ -7,9 +7,9 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { createLaunchSpace, type LaunchSpaceFolder } from "@tasks/testkit";
+import { createLaunchSpace, type LaunchSpaceFolder } from "@ttasks/testkit";
 import { afterAll, beforeAll, describe, expect, test, type TestContext } from "vitest";
-import type { RunRecord } from "@tasks/contracts/runs";
+import type { RunRecord } from "@ttasks/contracts/runs";
 import { RunFiles, RUNS_FOLDER } from "../src/index.ts";
 import { buildNatives, type Natives } from "./stand-ins/native.ts";
 import {
@@ -33,7 +33,7 @@ const services: Service[] = [];
 const units: string[] = [];
 
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-run-host-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-run-host-"));
   if (windows) {
     natives = buildNatives(join(work, "bin"));
     place = { ok: true };
@@ -61,7 +61,7 @@ async function bench(label: string): Promise<{ space: LaunchSpaceFolder; state: 
   return { space: await createLaunchSpace(folder), state: join(folder, "state") };
 }
 
-/** A run service on the bench: in the user unit `tasks-test-container-<label>` on Linux. */
+/** A run service on the bench: in the user unit `ttasks-test-container-<label>` on Linux. */
 async function startService(
   label: string,
   at: { space: LaunchSpaceFolder; state: string },
@@ -212,7 +212,7 @@ describe("[A4.3.11.9.run.crash] the service killed by force mid run and mid answ
     return startService(label, at);
   }
 
-  test("killed mid run: interrupted because Tasks restarted, with the last message", async (ctx) => {
+  test("killed mid run: interrupted because TTasks restarted, with the last message", async (ctx) => {
     need(ctx);
     const label = `crash-${newToken()}`;
     const at = await bench(label);

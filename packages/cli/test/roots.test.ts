@@ -1,9 +1,9 @@
-// `tasks roots` is retired: it points to where tasks open now and changes nothing, so a person or a
+// `ttasks roots` is retired: it points to where tasks open now and changes nothing, so a person or a
 // script that still calls it learns why, and machine.toml keeps every byte. No service is needed.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { configOf, tempRoot } from "@tasks/service/test/harness";
+import { configOf, tempRoot } from "@ttasks/service/test/harness";
 import { runMain } from "./cli-harness.ts";
 
 const cleanups: (() => void)[] = [];
@@ -11,7 +11,7 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
 });
 
-describe("[A1.3.15.roots.retired] tasks roots is a pointer and changes nothing", () => {
+describe("[A1.3.15.roots.retired] ttasks roots is a pointer and changes nothing", () => {
   test("list says where tasks open now; add fails and writes nothing; machine.toml keeps its bytes", async () => {
     const { root, cleanup } = tempRoot("rt");
     cleanups.push(cleanup);

@@ -1,8 +1,8 @@
 // The CLI's arguments (A2 3.10.2, A3 3.2.2): the global flags, then a generated verb's arguments
 // from `cli-spec.json`. Argv can hold task text, so a usage error names the option or the verb,
 // never a value it was given.
-import { RequestId } from "@tasks/contracts";
-import spec from "@tasks/contracts/generated/cli-spec.json" with { type: "json" };
+import { RequestId } from "@ttasks/contracts";
+import spec from "@ttasks/contracts/generated/cli-spec.json" with { type: "json" };
 
 /** A usage error (exit 2). Its message names options and verbs only. */
 export class UsageError extends Error {
@@ -323,7 +323,7 @@ export async function parseVerb(
       const eq = token.indexOf("=");
       const name = token.startsWith("--") && eq > 0 ? token.slice(0, eq) : token;
       const flag = flags.get(name);
-      if (flag === undefined) throw unknownOption(`tasks ${verb.verb}`, token);
+      if (flag === undefined) throw unknownOption(`ttasks ${verb.verb}`, token);
       let raw: string | undefined =
         token.startsWith("--") && eq > 0 ? token.slice(eq + 1) : undefined;
       if (raw === undefined) {
@@ -352,7 +352,7 @@ export async function parseVerb(
       Object.hasOwn(RENAMED, old) &&
       keys.has(RENAMED[old] ?? "")
     ) {
-      throw new UsageError(`tasks ${verb.verb} has no key ${old}: use ${RENAMED[old] ?? ""}=`);
+      throw new UsageError(`ttasks ${verb.verb} has no key ${old}: use ${RENAMED[old] ?? ""}=`);
     }
     if (!ended && key !== undefined && verb.keyValue !== undefined) {
       const raw = await text(token.slice(eq + 1), key.type);
@@ -363,11 +363,11 @@ export async function parseVerb(
     tokens.push(token);
   }
   // Positionals in order. With fewer arguments than positionals, an optional one before a
-  // required one is left out first: `tasks log "text"` gives the text, and the
+  // required one is left out first: `ttasks log "text"` gives the text, and the
   // task comes from the binding.
   const specs = verb.positionals;
   if (tokens.length > specs.length) {
-    throw new UsageError(`tasks ${verb.verb} takes no more arguments`);
+    throw new UsageError(`ttasks ${verb.verb} takes no more arguments`);
   }
   let spare = tokens.length - specs.filter((s) => s.required).length;
   for (const spec of specs) {
@@ -376,7 +376,7 @@ export async function parseVerb(
     const token = tokens.shift();
     if (token === undefined) {
       if (spec.required && base === undefined) {
-        throw new UsageError(`tasks ${verb.verb} needs <${spec.name}>`);
+        throw new UsageError(`ttasks ${verb.verb} needs <${spec.name}>`);
       }
       continue;
     }
@@ -393,7 +393,7 @@ export async function parseVerb(
   if (base === undefined) {
     for (const flag of verb.flags) {
       if (flag.required && valueAt(input, flag.field) === undefined) {
-        throw new UsageError(`tasks ${verb.verb} needs ${flag.flag}`);
+        throw new UsageError(`ttasks ${verb.verb} needs ${flag.flag}`);
       }
     }
   }

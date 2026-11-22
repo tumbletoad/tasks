@@ -93,7 +93,7 @@ test.describe("[A4.5.e2e.open-marker-screens] Open's question about a folder tha
     browser,
     world,
   }) => {
-    const temp = mkdtempSync(join(tmpdir(), "tasks-e2e-marker-screens-"));
+    const temp = mkdtempSync(join(tmpdir(), "ttasks-e2e-marker-screens-"));
     try {
       const folder = join(temp, "portal");
       mkdirSync(join(folder, ".git"), { recursive: true });
@@ -126,7 +126,7 @@ test.describe("[A4.5.e2e.open-marker-screens] Open's question about a folder tha
             .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
             .click();
           const said = page.getByRole("status").filter({
-            hasText: `The folder ${set.folder} has no Tasks marker, so it may not be the folder set for this task. Nothing was started.`,
+            hasText: `The folder ${set.folder} has no TTasks marker, so it may not be the folder set for this task. Nothing was started.`,
           });
           await expect(said).toBeVisible({ timeout: SLOW_MS });
           await page.screenshot({ path: test.info().outputPath(`marker-${theme}-1440.png`) });

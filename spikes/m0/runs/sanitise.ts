@@ -343,7 +343,7 @@ function walk(spec: Spec, v: unknown, path: string, r: Replacer, c: Collector): 
 }
 
 const isProbeServer = (x: unknown) =>
-  typeof x === "object" && x !== null && (x as Record<string, unknown>)["name"] === "tasks";
+  typeof x === "object" && x !== null && (x as Record<string, unknown>)["name"] === "ttasks";
 
 /** One event: by its spec, or `{"type":"unknown-event"}` for a type the schema does not know. */
 export function sanitiseEvent(

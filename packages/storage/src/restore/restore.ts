@@ -1,4 +1,4 @@
-// Restoring a backup or an export bundle (A1 3.18, `tasks space restore <backup>` in M1.10), into
+// Restoring a backup or an export bundle (A1 3.18, `ttasks space restore <backup>` in M1.10), into
 // a new folder or in place. Both build the restored folder complete and verified next to its final
 // place first (unpack.ts), so a restore never exposes a half-built space under a space's name. A
 // bundle restores as a backup does, whatever its mode: what a transfer or a fork bundle becomes on

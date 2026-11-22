@@ -2,7 +2,7 @@
 //
 // The sidebar's folded areas (folds.ts): kept for the browser per space, back after a reload, and
 // what is read back is checked, so anything else stored there unfolds nothing and breaks nothing.
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { beforeEach, describe, expect, test } from "vitest";
 import { keepFolds, readFolds, shownFolds, toggleFold } from "./folds.ts";
 

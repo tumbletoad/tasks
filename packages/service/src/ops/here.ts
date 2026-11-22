@@ -14,8 +14,8 @@
 // that is not there or does not answer in time matches nothing.
 import { realpath, stat } from "node:fs/promises";
 import { posix, win32 } from "node:path";
-import { folderPath } from "@tasks/launch";
-import type { Row } from "@tasks/storage";
+import { folderPath } from "@ttasks/launch";
+import type { Row } from "@ttasks/storage";
 import { bounded, openPath } from "./folders.ts";
 
 export type Match = "exact" | "inside" | "below";

@@ -22,7 +22,7 @@ import {
   type BigIntStats,
 } from "node:fs";
 import { join } from "node:path";
-import { makeDir, type CreateFlags } from "@tasks/files";
+import { makeDir, type CreateFlags } from "@ttasks/files";
 import { StorageError, type StorageErrorCode } from "./errors.ts";
 import { osRandom } from "./ids.ts";
 
@@ -151,7 +151,7 @@ export const FILE_MODE = 0o600;
  * Creates `path` as a new file (exclusively: never through a link, never over anything) with
  * exactly `mode`, and returns its open descriptor. When the mode cannot be set the new file is
  * removed and the error thrown. Node's errors pass through: the caller maps them (fsCall). The
- * same rule as @tasks/files' createFile, through `io`, the seam storage's tests inject failures
+ * same rule as @ttasks/files' createFile, through `io`, the seam storage's tests inject failures
  * at.
  */
 export function createFileExact(
@@ -179,7 +179,7 @@ export function createEmptyFile(path: string, mode: number = FILE_MODE): void {
 }
 
 /**
- * Creates `dir`, and with `recursive` every missing folder above it, through @tasks/files: one
+ * Creates `dir`, and with `recursive` every missing folder above it, through @ttasks/files: one
  * folder at a time, never with mkdir's recursive flag. A folder whose mkdir this call saw succeed
  * gets exactly `mode`, set on an O_NOFOLLOW descriptor of this user's folder; one that was already
  * there (EEXIST), or that another process made first, keeps its mode. Without `recursive`, an

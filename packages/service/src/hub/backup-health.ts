@@ -1,8 +1,8 @@
 // Whether an open space's backups are working, as the service last saw them: its daily upkeep
 // failed, or the newest backup does not pass a trial restore. A person sees it where they look at
-// their spaces (`tasks space list`, `tasks doctor`, the page's space switcher), with what to do,
+// their spaces (`ttasks space list`, `ttasks doctor`, the page's space switcher), with what to do,
 // until a backup succeeds again. Nothing is stored: each start's first upkeep finds it again.
-import { CLI_NAME } from "@tasks/brand";
+import { CLI_NAME } from "@ttasks/brand";
 import type { MaintenanceReport } from "./maintenance.ts";
 
 /**
@@ -20,7 +20,7 @@ export interface BackupHealth {
   readonly lastGood?: number;
 }
 
-/** What `tasks space list`, doctor and the page get for a space whose backups are not working. */
+/** What `ttasks space list`, doctor and the page get for a space whose backups are not working. */
 export interface BackupTroubleView {
   readonly why: BackupTroubleWhy;
   readonly code?: string;

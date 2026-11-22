@@ -2,8 +2,8 @@
 // the error body of a failed call, and agent homes registered and revoked as setup does. Tests
 // only.
 import { join } from "node:path";
-import { openRpc, RpcError, type RpcSession } from "@tasks/bridge/protocol";
-import type { ErrorBody } from "@tasks/contracts";
+import { openRpc, RpcError, type RpcSession } from "@ttasks/bridge/protocol";
+import type { ErrorBody } from "@ttasks/contracts";
 import { keyOf, within } from "./harness.ts";
 
 export type CliClass = "cli-interactive" | "cli-script" | "cli-agent";
@@ -53,7 +53,7 @@ export interface HomeRow {
 }
 
 /**
- * Registers an agent home for a space as `tasks setup agents --apply` does, through the user's
+ * Registers an agent home for a space as `ttasks setup agents --apply` does, through the user's
  * `setup/home_grant` (A3 3.7.4): one live agent-home row of the instance naming the space, so its
  * MCP connections pass the grant gate. The home folder is a name of the test's home that nothing
  * reads; one per instance, so granting the instance again replaces its row. Returns the row's ID.
@@ -78,7 +78,7 @@ export async function grantHome(home: string, path: string, row: HomeRow): Promi
   }
 }
 
-/** Revokes agent-home rows as `tasks setup agents --remove` does (`setup/home_revoke`). */
+/** Revokes agent-home rows as `ttasks setup agents --remove` does (`setup/home_revoke`). */
 export async function revokeHome(home: string, path: string, grants: string[]): Promise<number> {
   const user = await classSession(home, path, "cli-interactive");
   try {

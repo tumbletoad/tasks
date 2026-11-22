@@ -2,7 +2,7 @@
 // colour scheme live through the stylesheet alone. The choice is this machine's: the service keeps
 // it in machine.toml, the shell arrives with it on the root element, so the first paint is already
 // in it, and the feed brings each change to every tab.
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import type { TokenStore } from "../stored.ts";
 
 export const THEME_CHOICES = ["sumi", "washi", "system"] as const;

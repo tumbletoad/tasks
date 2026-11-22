@@ -4,7 +4,7 @@
 // embeds the same list in lib/. This is the one place they are written down.
 //
 // THE RELEASE KEY DOES NOT EXIST YET. The owner makes it once, on their own machine, with
-// `pnpm release keygen` (A2 3.12.5), and its public line (`tasks-release-ed25519.pub`, which
+// `pnpm release keygen` (A2 3.12.5), and its public line (`ttasks-release-ed25519.pub`, which
 // starts `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI`) replaces the placeholder below in a reviewed
 // commit. Until then a release build of the install scripts fails (renderReleaseInstallers), so an
 // installer can never ship that trusts a test key, or nothing. Tests and CI render their install
@@ -22,7 +22,7 @@ export const RELEASE_PUBLIC_KEYS: readonly string[] = [RELEASE_KEY_PLACEHOLDER];
 /**
  * The keys this build's updater trusts (A2 3.12.5: "embedded in lib/"): the pinned release keys.
  * An installed version verifies a candidate with these before anything of the candidate runs, so
- * while the placeholder stands, `tasks update` refuses every archive. Only the install scripts'
+ * while the placeholder stands, `ttasks update` refuses every archive. Only the install scripts'
  * test kit replaces this line, in its own test builds (scripts/build/bundle.ts `trustKeys`), so a
  * test install can be updated with a throwaway key; `pnpm build` and a release never do.
  */

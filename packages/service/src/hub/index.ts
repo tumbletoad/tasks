@@ -1,4 +1,4 @@
-// The service hub (A2 3.1 to 3.4, 3.13): `tasks serve`, its folders and install ID, its locks,
+// The service hub (A2 3.1 to 3.4, 3.13): `ttasks serve`, its folders and install ID, its locks,
 // service.json, exit codes, refusals, log and crash files. The local protocol is `./local` (M1.09)
 // and plugs in at endpoint.ts, whose handler table is where rpc methods are registered.
 export { EXIT, REFUSALS, ServiceExit, type ExitCode, type Refusal } from "./exit.ts";
@@ -8,7 +8,7 @@ export {
   INSTALL_ID_LENGTH,
   installId,
   isInstallId,
-  TASKS_HOME,
+  TTASKS_HOME,
   LayoutError,
   MAX_SOCKET_PATH_BYTES,
   pipeName,
@@ -26,7 +26,7 @@ export {
   detectIdentity,
   integrityLevel,
   INTEGRITY,
-  TASKS_PACKAGE,
+  TTASKS_PACKAGE,
   packageIdentity,
   type Identity,
 } from "./identity.ts";
@@ -83,7 +83,7 @@ export {
 export {
   BUILD,
   DRAIN_MS,
-  TASKS_SERVICE_MANAGER,
+  TTASKS_SERVICE_MANAGER,
   SERVICE_FILE,
   SERVICE_LOCK,
   startService,

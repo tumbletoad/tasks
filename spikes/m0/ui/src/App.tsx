@@ -187,7 +187,7 @@ export function App({
   return (
     <div className="shell">
       <header className="top">
-        <span className="brand">Tasks M0 spike</span>
+        <span className="brand">TTasks M0 spike</span>
         <nav className="views" aria-label="Views">
           {(["area", "due"] as const).map((view) => (
             <button

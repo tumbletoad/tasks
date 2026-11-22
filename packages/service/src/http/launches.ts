@@ -8,7 +8,7 @@
 // task on this machine, and a task's last receipts, its history, which the page refetches when the
 // change feed names a launch. And Run: the page's click starts a
 // background run of a task, reads a task's runs (refetched when the feed names a run) and stops
-// one, on the service's runs (runs/service.ts), the same ones `tasks run` uses. And a task's folder
+// one, on the service's runs (runs/service.ts), the same ones `ttasks run` uses. And a task's folder
 // shown in the file manager. The page's sign-in is the person: no agent reaches these routes.
 //
 // A receipt holds IDs, states, instants and fixed codes only, as the launch record does, and what
@@ -16,13 +16,13 @@
 // note on the task, which the page reads with the task's other notes: a receipt names it by its
 // reference. A run as the page reads it holds the person's request and the agent's answer, task
 // text that travels in a request's or a response's body only.
-import { AppError, RequestId } from "@tasks/contracts";
+import { AppError, RequestId } from "@ttasks/contracts";
 import {
   isOpenRun,
   RUN_REQUEST_MAX_BYTES,
   type RunRecord,
   type RunState,
-} from "@tasks/contracts/runs";
+} from "@ttasks/contracts/runs";
 import {
   INSTANCE_KEY,
   isRoute,
@@ -33,7 +33,7 @@ import {
   type IntentState,
   type OpenResult,
   type Route,
-} from "@tasks/launch";
+} from "@ttasks/launch";
 import { findSpace, isAmbiguity } from "../ops/copies.ts";
 import { launchError } from "../ops/handlers.ts";
 import type { OpsHost, ServedSpace } from "../ops/index.ts";
@@ -370,7 +370,7 @@ export class UiLaunches {
   }
 
   /**
-   * The served space a request names (its `Tasks-Space`): an ID or a name, the copy of it that
+   * The served space a request names (its `TTasks-Space`): an ID or a name, the copy of it that
    * copies.ts's rule picks among the served copies (A2 3.10.5).
    */
   #space(ref: string | undefined): ServedSpace {

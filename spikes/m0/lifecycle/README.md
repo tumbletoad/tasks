@@ -6,8 +6,8 @@ Lab code for lab run S and E (A7 3.7, step M0.07): service lifecycle, process pl
 
 | File | What |
 |---|---|
-| `entry.ts` | The lab release's `lib/tasks.mjs`: routes `service`, `call`, `open`, `ticket`, `run-shim`, `accounts`, `tree` to the kit, `mcp` to the forwarder, `shim` to the stand-in shim, `tasksw.exe` with no arguments (or `supervise`) to the supervisor, and `version`, `wait`, `gate`, `install` as the packaging spike does |
-| `supervisor.ts` | A Node stand-in for the `tasksw.exe` supervisor loop of A2 3.3.2, which the spike's C launcher does not have. Exit 0, 64, 73: stop. 75: start again at once, re-reading `current`. Other: restart after 1, 2, 4, 8 s; the 5th crash in 10 minutes writes `<state>\crash\supervisor-gave-up.json` and stops. Events go to `<root>\state\supervisor.jsonl` |
+| `entry.ts` | The lab release's `lib/ttasks.mjs`: routes `service`, `call`, `open`, `ticket`, `run-shim`, `accounts`, `tree` to the kit, `mcp` to the forwarder, `shim` to the stand-in shim, `ttasksw.exe` with no arguments (or `supervise`) to the supervisor, and `version`, `wait`, `gate`, `install` as the packaging spike does |
+| `supervisor.ts` | A Node stand-in for the `ttasksw.exe` supervisor loop of A2 3.3.2, which the spike's C launcher does not have. Exit 0, 64, 73: stop. 75: start again at once, re-reading `current`. Other: restart after 1, 2, 4, 8 s; the 5th crash in 10 minutes writes `<state>\crash\supervisor-gave-up.json` and stops. Events go to `<root>\state\supervisor.jsonl` |
 | `build.ts` | `buildLab(out)`: the kit and the lab sources as `.mjs` (`<out>/kit/`, `<out>/lifecycle/`). `assembleLabFolder`: a packaging-spike version folder turned into a lab release (entry, supervisor and kit added, `manifest.json` written again, launchers and Node unchanged) |
 | `make-release.ts` | Builds the lab releases `0.0.7-lab.a` and `0.0.7-lab.b` for the stages given (win-x64, linux-x64), packs them and signs them with a throwaway key: install them with the packaging spike's `install.ps1` and `install.sh` |
 | `lab.ts` | The harness: `s04`, `s06`, `s07`, `s08`, `s09`, `e01`, `accounts` (S12), and the helpers `s01` (the S01 pre-test in a transient unit) and `s03-crash` (the S03 pre-test of the supervisor stand-in). Each writes one result file: numbers, yes or no, exit codes, version labels and tool names only |
@@ -32,5 +32,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File <s>\dist\install-0.0.7-lab.a
 ## What the lab code does not cover
 
 - Spaces: the kit has none. S09's "the test install cannot open the daily spaces" is checked at the service lock (a test-install service on the daily state folder exits 73).
-- The supervisor is Node, not C: the S03 pre-test's restart policy is the stand-in's (A2 3.3.2), and a `taskkill /F` must name the service's PID, never `node.exe` by image name. Session 3 uses M1.11's `tasksw.exe`.
+- The supervisor is Node, not C: the S03 pre-test's restart policy is the stand-in's (A2 3.3.2), and a `taskkill /F` must name the service's PID, never `node.exe` by image name. Session 3 uses M1.11's `ttasksw.exe`.
 - Resume handles and the offline cache file in the forwarder (A2 3.7.3, 3.7.5).

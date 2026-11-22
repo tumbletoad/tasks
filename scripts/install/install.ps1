@@ -353,7 +353,7 @@ try {
     throw "Set `$env:@@HOME_VAR@@ or pass -Root <folder>. This installer makes separate installs only, into a folder you name."
   }
   $Root = $Root.TrimEnd('\')
-  if ($Root -cnotmatch '^[A-Za-z]:\\.') { throw 'The install root must be a full path on a local disk, such as C:\Users\you\tasks-test.' }
+  if ($Root -cnotmatch '^[A-Za-z]:\\.') { throw 'The install root must be a full path on a local disk, such as C:\Users\you\ttasks-test.' }
   if ([System.IO.Path]::GetFullPath($Root) -cne $Root) {
     throw 'The install root must be written as a full path without . or .. and without trailing dots or spaces.'
   }
@@ -528,7 +528,7 @@ process.exitCode = verified ? 0 : 1;
   # ---- 5. Into versions\<version> ---------------------------------------------------------------
   if (Test-Path -LiteralPath $target) {
     # The same version is already there (A2 3.12.4 step 7): it runs only if it is exactly this
-    # signed release. Otherwise it is left as it is: a running Tasks may use it.
+    # signed release. Otherwise it is left as it is: a running TTasks may use it.
     $problem = Test-ExistingVersion $target $stagedManifest
     if ($problem) {
       throw ("versions\$Version already exists but is not this signed release: $problem. " +

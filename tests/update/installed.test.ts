@@ -2,7 +2,7 @@
 // two versions built offline as the install scripts' tests build them (the real bundles and
 // launchers, the Node that runs the tests as the runtime), both trusting a throwaway key made
 // here, released and signed with it; the older one installed by its install script into a
-// temporary TASKS_HOME of this file's own; its service run through the install's stable command
+// temporary TTASKS_HOME of this file's own; its service run through the install's stable command
 // (tests/update/installed.ts). On Windows the two versions' launchers differ, so every update
 // here also swaps both stable launchers (A7 3.13 M6.13).
 //
@@ -15,7 +15,7 @@
 //             killed at each of its own steps is finished by the next start; a running service
 //             finishes an update whose updater died within its 10 s check. A bridge (an agent's
 //             session) started before an update keeps running through it and answers after it.
-//   command   `tasks update --from`, `--rollback` and `--repair` through the installed stable
+//   command   `ttasks update --from`, `--rollback` and `--repair` through the installed stable
 //             command, with no service running (a restart through the OS is the injected seam's,
 //             exercised above with its stand-in): a second update waits for the first, and the
 //             data folders are byte-identical before and after an update and after a rollback.
@@ -254,7 +254,7 @@ describe("[A2.3.12.6.update.kill] a kill at each journal step, of the updater or
   );
 });
 
-describe("[A2.3.12.6.update.installed] tasks update through the installed stable command", () => {
+describe("[A2.3.12.6.update.installed] ttasks update through the installed stable command", () => {
   test(
     "--from, a second update that waits, --rollback and --repair, with the data folders byte-identical",
     async () => {

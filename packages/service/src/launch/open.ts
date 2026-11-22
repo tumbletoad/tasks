@@ -3,8 +3,8 @@
 // call. The choice of route per instance, the facts a launch reads about its task, the names the
 // brief takes from the registry, and the one fact a Codex launch reads from its home.
 import { join } from "node:path";
-import { CLI_NAME, envVar, MCP_SERVER_KEY } from "@tasks/brand";
-import { cliFaces, findEntry } from "@tasks/contracts";
+import { CLI_NAME, envVar, MCP_SERVER_KEY } from "@ttasks/brand";
+import { cliFaces, findEntry } from "@ttasks/contracts";
 import {
   instanceHome,
   isBuiltInTarget,
@@ -19,7 +19,7 @@ import {
   type PackInput,
   type ResolveReason,
   type Route,
-} from "@tasks/launch";
+} from "@ttasks/launch";
 import { decodeConfig, parseToml, readConfigFile } from "../config/toml.ts";
 import type { MarkerOwner } from "../ops/marker.ts";
 import type { TaskFolder } from "../ops/read.ts";
@@ -293,7 +293,7 @@ export function codexHomeOf(
 }
 
 /**
- * Whether Tasks's MCP entry in a Codex home declares the ticket in `env_vars` (A4 3.4.3): read
+ * Whether TTasks's MCP entry in a Codex home declares the ticket in `env_vars` (A4 3.4.3): read
  * only, one key of `<home>/config.toml`, through the bounded reader machine.toml uses. Nothing of
  * the file is kept or logged but the names the entry lists, which the override must repeat (a
  * `-c` override replaces the whole list). `unknown` when it cannot be read, or lists something

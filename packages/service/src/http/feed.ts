@@ -22,8 +22,8 @@
 //   too, as an entity of its own, and one that changes a project's folder carries the rows of the
 //   project's tasks the batch holds, so the row the client holds never shows a source, a folder
 //   or a run state the space no longer has.
-import type { PreferenceRead } from "@tasks/contracts";
-import type { Row, WorkerConnection } from "@tasks/storage";
+import type { PreferenceRead } from "@ttasks/contracts";
+import type { Row, WorkerConnection } from "@ttasks/storage";
 import { hasFolderTable } from "../ops/read.ts";
 import {
   compact,

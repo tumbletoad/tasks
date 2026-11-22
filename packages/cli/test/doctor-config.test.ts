@@ -1,10 +1,10 @@
-// `tasks doctor`'s config row (A2 3.13, A2 3.2.4): machine.toml as the service reads it, with the
+// `ttasks doctor`'s config row (A2 3.13, A2 3.2.4): machine.toml as the service reads it, with the
 // command that fixes a file or folder another user could change. Fixture text only.
 import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { currentPerson, shellPath } from "@tasks/service/permissions";
-import { tempRoot } from "@tasks/service/test/harness";
+import { currentPerson, shellPath } from "@ttasks/service/permissions";
+import { tempRoot } from "@ttasks/service/test/harness";
 import { configCheck } from "../src/doctor.ts";
 
 const cleanups: (() => void)[] = [];
@@ -22,13 +22,13 @@ function home(): {
   const h = join(root, "h");
   mkdirSync(join(h, "config"), { recursive: true, mode: 0o700 });
   return {
-    io: { env: { TASKS_HOME: h }, platform: process.platform },
+    io: { env: { TTASKS_HOME: h }, platform: process.platform },
     dir: join(h, "config"),
     file: join(h, "config", "machine.toml"),
   };
 }
 
-describe("[A2.3.2.2.permissions.rule] tasks doctor's config row", () => {
+describe("[A2.3.2.2.permissions.rule] ttasks doctor's config row", () => {
   test("no machine.toml, a valid one, one the service refuses, one with an entry dropped", () => {
     const { io, file } = home();
     expect(configCheck(io)).toMatchObject({ id: "config", status: "ok" });

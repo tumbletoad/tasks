@@ -1,5 +1,5 @@
 // The stand-in service of the M0 spike kit (A7 3.7, M0.02): a user-only Unix socket or named pipe
-// with the `tasks-local/1` handshake (A2 3.6), a stub MCP endpoint in mcp mode, rpc methods for
+// with the `ttasks-local/1` handshake (A2 3.6), a stub MCP endpoint in mcp mode, rpc methods for
 // the shims and the lab, and the browser listener of A2 3.8 with its token bootstrap, a WebSocket
 // echo and a fixture-only Reveal action. It exercises the real OS mechanisms at spike level. It is
 // not the protocol.
@@ -67,7 +67,7 @@ export interface KitEvent {
 }
 
 /**
- * Where the Unix socket lives (A2 3.2.1): `auto` uses `/run/user/<uid>/tasks-<install>/` when that
+ * Where the Unix socket lives (A2 3.2.1): `auto` uses `/run/user/<uid>/ttasks-<install>/` when that
  * per-user runtime folder exists and is private, else `<state>/run/`. `run-user` and `state` force
  * one, so row E02 can run against both.
  */
@@ -102,7 +102,7 @@ export interface ServiceOptions {
   inspect?: InspectOptions;
   /**
    * Tests only: delays the reply to an RPC method by this many ms (a slow service, finding D).
-   * Called with "tasks/bind" for the handshake's bind reply (a slow handshake, M0.07 review).
+   * Called with "ttasks/bind" for the handshake's bind reply (a slow handshake, M0.07 review).
    */
   replyDelayMs?: (method: string) => number;
 }
@@ -230,7 +230,7 @@ export function selectSocketDir(options: {
   if (choice === "state") return fallback;
   const userDir = uid === undefined ? undefined : join(runUserBase, String(uid));
   const ok = userDir !== undefined && usable(userDir);
-  if (ok) return { dir: join(userDir, `tasks-${install}`), kind: "run-user" };
+  if (ok) return { dir: join(userDir, `ttasks-${install}`), kind: "run-user" };
   if (choice === "run-user") {
     throw new KitError(
       "runtime_dir_unavailable",
@@ -288,7 +288,7 @@ function revealTargets(state: string, tree: string | undefined): { label: string
 }
 
 /** The placeholder the spike UI's `index.html` carries where the per-response nonce goes. */
-export const UI_NONCE_PLACEHOLDER = "__TASKS_NONCE__";
+export const UI_NONCE_PLACEHOLDER = "__TTASKS_NONCE__";
 
 /** Media types of the files a built spike UI holds. Anything else is not served. */
 export const UI_TYPES: Readonly<Record<string, string>> = {
@@ -375,7 +375,7 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
   let runtime: "run-user" | "state" | "pipe" = "pipe";
   try {
     if (process.platform === "win32") {
-      endpoint = { kind: "pipe", path: `\\\\.\\pipe\\tasks-spike-${install}-${instance}` };
+      endpoint = { kind: "pipe", path: `\\\\.\\pipe\\ttasks-spike-${install}-${instance}` };
     } else {
       const choice = options.socketDir ?? "auto";
       const selected = selectSocketDir({
@@ -389,7 +389,7 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
       runtime = selected.kind;
       mkdirSync(selected.dir, { recursive: true, mode: 0o700 });
       assertPrivate([{ path: selected.dir, kind: "dir", what: "socket folder" }], options.inspect);
-      const path = join(selected.dir, "tasks.sock");
+      const path = join(selected.dir, "ttasks.sock");
       if (Buffer.byteLength(path) > 100) {
         throw new KitError("socket_path_too_long", `Socket path too long: ${path}`);
       }
@@ -593,7 +593,7 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
           throw new RpcError(
             1001,
             "launch_expired",
-            "This launch expired. Press Open again in Tasks.",
+            "This launch expired. Press Open again in TTasks.",
           );
         }
         record.claimed = true;
@@ -680,7 +680,7 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
 
   function serveMcp(socket: net.Socket, reader: LineReader, context: JsonObject): void {
     const respond = createMcpResponder({
-      name: "tasks-stand-in",
+      name: "ttasks-stand-in",
       instructions: STUB_INSTRUCTIONS,
       tools: STUB_TOOLS,
       call: (name, args) =>
@@ -724,14 +724,14 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
     const ns = nonce();
     writeLine(socket, {
       jsonrpc: "2.0",
-      method: "tasks/challenge",
+      method: "ttasks/challenge",
       params: { nonce: ns, instance, protocols: [PROTOCOL] },
     });
     const hello = parseObject(await reader.next());
     const hp = asObject(hello?.["params"]);
     const mode = hp?.["mode"];
     if (
-      hello?.["method"] !== "tasks/hello" ||
+      hello?.["method"] !== "ttasks/hello" ||
       hello["id"] !== 0 ||
       hp?.["protocol"] !== PROTOCOL ||
       (mode !== "rpc" && mode !== "mcp") ||
@@ -751,7 +751,7 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
     const bind = parseObject(await reader.next());
     const bp = asObject(bind?.["params"]);
     if (
-      bind?.["method"] !== "tasks/bind" ||
+      bind?.["method"] !== "ttasks/bind" ||
       bind["id"] !== 1 ||
       bp === undefined ||
       bp["protocol"] !== ids.protocol ||
@@ -784,8 +784,8 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
             }
           : null,
     };
-    // Tests only: a slow handshake, the bind reply comes late ("tasks/bind").
-    const bindDelay = options.replyDelayMs?.("tasks/bind") ?? 0;
+    // Tests only: a slow handshake, the bind reply comes late ("ttasks/bind").
+    const bindDelay = options.replyDelayMs?.("ttasks/bind") ?? 0;
     if (bindDelay > 0) {
       await new Promise((resolve) => setTimeout(resolve, bindDelay));
       if (socket.destroyed) return;
@@ -892,8 +892,8 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
       return 200;
     }
     if (method === "GET" && path === "/healthz") return reply(200, "ok", "text/plain");
-    if (method === "GET" && path === "/.well-known/tasks") {
-      return reply(200, { app: "tasks", protocol: PROTOCOL });
+    if (method === "GET" && path === "/.well-known/ttasks") {
+      return reply(200, { app: "ttasks", protocol: PROTOCOL });
     }
     if (method === "POST" && path === "/api/v1/auth/probe") {
       const body = await readJsonBody(req);
@@ -910,7 +910,7 @@ export async function startService(options: ServiceOptions): Promise<RunningServ
       if (record === undefined || Date.now() > record.expires) {
         return reply(401, { error: "code_invalid" });
       }
-      const token = `tasks_u_${b64url(randomBytes(32))}`;
+      const token = `ttasks_u_${b64url(randomBytes(32))}`;
       const session = `us_${b64url(randomBytes(8))}`;
       tokens.set(hash(token), { session });
       return reply(200, { token, session_id: session });

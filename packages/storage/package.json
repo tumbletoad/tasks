@@ -1,5 +1,5 @@
 {
-  "name": "@tasks/storage",
+  "name": "@ttasks/storage",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
     "./write-helpers": "./test/write-helpers.ts"
   },
   "dependencies": {
-    "@tasks/contracts": "workspace:*",
-    "@tasks/files": "workspace:*"
+    "@ttasks/contracts": "workspace:*",
+    "@ttasks/files": "workspace:*"
   },
   "devDependencies": {
     "fast-check": "4.10.2",

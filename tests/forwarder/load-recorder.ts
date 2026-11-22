@@ -1,6 +1,6 @@
 // Preloaded with --import by cli-entry.test.ts: records the URL of every module the process
 // resolves after this file (the entry included), and writes them, one per line, to the file named
-// by KF_LOAD_LOG when the process exits. So a test sees what a real `tasks mcp` loads, dynamic
+// by KF_LOAD_LOG when the process exits. So a test sees what a real `ttasks mcp` loads, dynamic
 // imports included, not what a static walk infers. Tests only.
 import { writeFileSync } from "node:fs";
 import { registerHooks } from "node:module";

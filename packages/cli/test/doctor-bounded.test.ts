@@ -1,4 +1,4 @@
-// The helper runner (@tasks/launch helpers.ts; A3 3.14, M4.05): every program doctor and setup
+// The helper runner (@ttasks/launch helpers.ts; A3 3.14, M4.05): every program doctor and setup
 // start ends with what it started while it runs, at its deadline and when the process that started
 // it exits, and a signal the host handles itself stays the host's.
 // Each case starts a program that starts a descendant of its own, and checks both. On Windows the
@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, describe, expect, test } from "vitest";
-import { startHelper } from "@tasks/launch";
+import { startHelper } from "@ttasks/launch";
 
 const temps: string[] = [];
 afterAll(() => {
@@ -46,7 +46,7 @@ interface Tree {
 }
 
 function tree(label: string): Tree {
-  const dir = mkdtempSync(join(tmpdir(), `tasks-helpers-${label}-`));
+  const dir = mkdtempSync(join(tmpdir(), `ttasks-helpers-${label}-`));
   temps.push(dir);
   const direct = join(dir, "direct.pid");
   const descendant = join(dir, "descendant.pid");

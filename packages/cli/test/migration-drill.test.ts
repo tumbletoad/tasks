@@ -18,10 +18,10 @@
 // authority. Fixture data only, in the world's temporary folder.
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { openSpace, openWriter } from "@tasks/storage";
-import { STEPS_0_1 } from "@tasks/storage/revisions";
-import { stateOf } from "@tasks/service/test/harness";
-import { checkedDriver, seedMira } from "@tasks/testkit";
+import { openSpace, openWriter } from "@ttasks/storage";
+import { STEPS_0_1 } from "@ttasks/storage/revisions";
+import { stateOf } from "@ttasks/service/test/harness";
+import { checkedDriver, seedMira } from "@ttasks/testkit";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { runMain, startWorld, type CliWorld } from "./cli-harness.ts";
 
@@ -40,7 +40,7 @@ const parsed = (stdout: string) => JSON.parse(stdout) as Record<string, unknown>
 
 /** How a failed migration is tried again (A1 3.17), at the end of its message. */
 const TRIED_AGAIN =
-  "It is tried again after an update, or now with: tasks space open <folder> --retry-migration";
+  "It is tried again after an update, or now with: ttasks space open <folder> --retry-migration";
 
 /**
  * A failed migration's message (A1 3.17), for the 0.1 to 0.5 migration, and how it is

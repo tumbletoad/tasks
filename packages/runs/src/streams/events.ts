@@ -1,7 +1,7 @@
 // The normalised run events and the final run outcome of A4 3.11.1, as the stream parsers of
-// A4 3.11.4 produce them. The shapes live in packages/contracts (`@tasks/contracts/runs`), beside
+// A4 3.11.4 produce them. The shapes live in packages/contracts (`@ttasks/contracts/runs`), beside
 // the run record's; this module re-exports them for the parsers and adds what only they use.
-import type { StreamCounts } from "@tasks/contracts/runs";
+import type { StreamCounts } from "@ttasks/contracts/runs";
 
 export {
   ANSWER_CAP_BYTES,
@@ -19,7 +19,7 @@ export {
   type RunOutcome,
   type StreamCounts,
   type Usage,
-} from "@tasks/contracts/runs";
+} from "@ttasks/contracts/runs";
 
 /** The print-mode adapters' stream formats: one parser each. */
 export const STREAM_KINDS = ["claude-print"] as const;

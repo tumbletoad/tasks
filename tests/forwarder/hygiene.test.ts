@@ -41,14 +41,14 @@ describe("[A2.3.7.bridge.hygiene] what the forwarder writes, copies and leaves b
       const where = home("content");
       const peer = await procs.peer(where);
       const env = {
-        TASKS_TICKET: "CONTENTTICKET",
+        TTASKS_TICKET: "CONTENTTICKET",
         CLAUDE_CODE_SESSION_ID: "CONTENTSESSION",
-        TASKS_TASK: "CONTENTTASK",
+        TTASKS_TASK: "CONTENTTASK",
         // Not on the allow-list: never copied.
         CLAUDECODE: "1",
         CODEX_SANDBOX: "seatbelt",
         CONTENT_SECRET: "CONTENTSECRET",
-        TASKS_PACKAGE: "",
+        TTASKS_PACKAGE: "",
       };
       const bridge = procs.bridge(where, { env });
       await bridge.initialize();
@@ -96,8 +96,8 @@ describe("[A2.3.7.bridge.hygiene] what the forwarder writes, copies and leaves b
       for (const bind of peerBinds(where)) {
         expect(Object.keys(bind.context["env"] as Json).sort()).toEqual([
           "CLAUDE_CODE_SESSION_ID",
-          "TASKS_TASK",
-          "TASKS_TICKET",
+          "TTASKS_TASK",
+          "TTASKS_TICKET",
         ]);
         const keys = Object.keys(bind.context);
         for (const key of keys) {
@@ -221,7 +221,7 @@ describe("[A2.3.7.bridge.hygiene] what the forwarder writes, copies and leaves b
       });
       await current.initialize();
       expect(isOfflineText(await current.call("status"), "service_too_old")).toBe(false);
-      expect(textOf(await current.call("status"))).toMatch(/^TT Tasks · /);
+      expect(textOf(await current.call("status"))).toMatch(/^TTasks · /);
       expect(current.stray).toEqual([]);
     },
   );

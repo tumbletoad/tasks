@@ -5,9 +5,9 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { AppError, FinishedRow, TaskFinishedResult } from "@tasks/contracts";
-import { newId, type Id, type Operation, type WriteResult } from "@tasks/storage";
-import { MACHINE, writeFixture, type Fixture } from "@tasks/storage/write-helpers";
+import { AppError, FinishedRow, TaskFinishedResult } from "@ttasks/contracts";
+import { newId, type Id, type Operation, type WriteResult } from "@ttasks/storage";
+import { MACHINE, writeFixture, type Fixture } from "@ttasks/storage/write-helpers";
 import { readBatch } from "../src/http/feed.ts";
 import type { Caller } from "../src/ops/caller.ts";
 import { opCall, type OpsHost } from "../src/ops/index.ts";

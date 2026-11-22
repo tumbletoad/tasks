@@ -30,7 +30,7 @@ const key = () => opensshPublicKey(generateKeyPairSync("ed25519").publicKey);
 
 let work: string;
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-render-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-render-"));
 });
 afterAll(() => {
   rmSync(work, { recursive: true, force: true });
@@ -92,13 +92,12 @@ describe("[A2.3.12.4.install.render] the install scripts pin the release keys, o
     }
     // A test-signed build writes one per kind of archive it holds.
     expect(
-      installerKinds(["tasks-0.1.0-linux-x64.tar.gz", "tasks-0.1.0-darwin-arm64.tar.gz"]),
+      installerKinds(["ttasks-0.1.0-linux-x64.tar.gz", "ttasks-0.1.0-darwin-arm64.tar.gz"]),
     ).toEqual(["sh"]);
-    expect(installerKinds(["tasks-0.1.0-win-x64.zip"])).toEqual(["ps1"]);
-    expect(installerKinds(["tasks-0.1.0-linux-arm64.tar.gz", "tasks-0.1.0-win-x64.zip"])).toEqual([
-      "sh",
-      "ps1",
-    ]);
+    expect(installerKinds(["ttasks-0.1.0-win-x64.zip"])).toEqual(["ps1"]);
+    expect(installerKinds(["ttasks-0.1.0-linux-arm64.tar.gz", "ttasks-0.1.0-win-x64.zip"])).toEqual(
+      ["sh", "ps1"],
+    );
   });
 
   test("the templates keep the keys in one marked block, and each rendered script is valid for its shell", () => {
@@ -127,10 +126,10 @@ describe("[A2.3.12.4.install.render] the install scripts pin the release keys, o
           "-NoProfile",
           "-NonInteractive",
           "-Command",
-          "$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($env:TASKS_TEST_SCRIPT, [ref]$null, [ref]$e); if ($e.Count) { $e | ForEach-Object { $_.Message }; exit 1 }",
+          "$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($env:TTASKS_TEST_SCRIPT, [ref]$null, [ref]$e); if ($e.Count) { $e | ForEach-Object { $_.Message }; exit 1 }",
         ],
         {
-          env: { ...process.env, TASKS_TEST_SCRIPT: rendered("ps1") },
+          env: { ...process.env, TTASKS_TEST_SCRIPT: rendered("ps1") },
           encoding: "utf8",
           windowsHide: true,
         },

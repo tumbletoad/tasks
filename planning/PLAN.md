@@ -1,6 +1,6 @@
-# TT Tasks: plan
+# TTasks: plan
 
-TT Tasks, by TumbleToad, is an open-source, agent-first task app between a plain task list and T3 Code: a calm task list that agents keep up to date, and a launch pad that sends each task to the right agent app, in the right folder, with the right account. Inside the app it is called Tasks. Its identifier is `tasks` everywhere. The site is `tumbletoad.com/tasks`.
+TTasks, by TumbleToad, is an open-source, agent-first task app between a plain task list and T3 Code: a calm task list that agents keep up to date, and a launch pad that sends each task to the right agent app, in the right folder, with the right account. Its identifier is `ttasks` everywhere. The site is `tumbletoad.com/tasks`.
 
 This file holds the decisions, the architecture in overview, the milestone order and pointers. The specifications A1 to A7 in `appendix/` hold the detail and win on specifics. `AGENTS.md` sets how the work runs. `VISION.md` describes the intended experience.
 
@@ -29,18 +29,18 @@ These carry the most weight. The plan as a whole is a guide, not a contract (D21
 | D13 | Autonomy | Autonomy is set per space, up to **Full**: agent-created tasks then go straight onto the list, with an Inbox as an option. New users choose a level during setup. |
 | D14 | Notes | All notes are visible to agents in v1. An audience field lets "only me" notes come later without a migration. |
 | D15 | Agent instructions | The MCP server carries its own instructions. A block in `CLAUDE.md` or `AGENTS.md` is optional and previewed. Managed instruction sources get the text to add by hand. |
-| D16 | Data location | Spaces live under `~/.tasks/spaces/` by default, outside project folders, or anywhere through `machine.toml`. One machine owns each space. Work and personal spaces stay separate. Sync comes later. |
+| D16 | Data location | Spaces live under `~/.ttasks/spaces/` by default, outside project folders, or anywhere through `machine.toml`. One machine owns each space. Work and personal spaces stay separate. Sync comes later. |
 | D17 | Licence and theme | **Apache-2.0.** A calm Zen theme, **dark by default**. |
-| D18 | Testing | Tested regularly on **Windows and Linux**, on real machines as well as in CI. On a real Linux machine (Ubuntu 24.04 without sudo rights), test builds are user-level `TASKS_HOME` installs: no sudo, nothing outside the home folder. No test creates a user account on a real machine: second-user tests run only in CI, on throwaway runners. |
-| D19 | Real work use | Once Tasks is **mature enough** (a durable space with verified backups, the importer, Today and the lists with the expanded task, editing and check-off with undo, agents updating tasks through MCP, Open in T3 Code and Codex), the first user uses it for real work, before v1. From then on **every build must keep working for real spaces**: migrations run only after a verified backup, and a break is fixed before anything else. Real work data never enters the repository, fixtures, screenshots or logs. |
+| D18 | Testing | Tested regularly on **Windows and Linux**, on real machines as well as in CI. On a real Linux machine (Ubuntu 24.04 without sudo rights), test builds are user-level `TTASKS_HOME` installs: no sudo, nothing outside the home folder. No test creates a user account on a real machine: second-user tests run only in CI, on throwaway runners. |
+| D19 | Real work use | Once TTasks is **mature enough** (a durable space with verified backups, the importer, Today and the lists with the expanded task, editing and check-off with undo, agents updating tasks through MCP, Open in T3 Code and Codex), the first user uses it for real work, before v1. From then on **every build must keep working for real spaces**: migrations run only after a verified backup, and a break is fixed before anything else. Real work data never enters the repository, fixtures, screenshots or logs. |
 | D21 | Direction | The plan is **a guide, not a contract**. When something blocks, another solution faithful to the vision is found and written into the specification. A decision changes the specification it belongs to, in the same pull request as the code. Work goes on improving after the milestones. The core stays lean, and code is rewritten when a better solution appears. |
 | D22 | Order, not dates | No calendar estimates. Milestones are ordered by dependencies. |
 | D23 | Tool definitions | **No forced size limit on MCP tool definitions.** They stay lean, with every exception that is needed or makes sense. Their size is measured and reported. Limits on what a tool returns stay. |
-| D24 | Name | **TT Tasks**, **by TumbleToad**, called **Tasks** inside the app, at `tumbletoad.com/tasks`. |
-| D25 | Identifier and folders | The identifier is **`tasks`** everywhere. All of a person's data and configuration live in `~/.tasks` (`%USERPROFILE%\.tasks`). The program is installed elsewhere, and removing it never removes data. |
+| D24 | Name | **TTasks**, **by TumbleToad**, at `tumbletoad.com/tasks`. |
+| D25 | Identifier and folders | The identifier is **`ttasks`** everywhere. All of a person's data and configuration live in `~/.ttasks` (`%USERPROFILE%\.ttasks`). The program is installed elsewhere, and removing it never removes data. |
 | D26 | Limits | **Limits are guidelines until real use.** The targets for performance, latency, memory and token counts were chosen by feel. Implementers aim for them and reviewers flag a breach, but no feature is cut or reworked for a limit unless the result is clearly bad or damaging, and a feature that is better or more complete while over a limit stays. **Functionality, usability, stability, flexibility and maintainability come before performance.** The limits are re-evaluated when the product is close to maturity and can be tested for its final look and feel. |
 | D27 | What quality work protects | **A person's work comes first.** Reviews, tests and hardening cover what a person does, in ordinary use and in unusual but plausible use, that could lose or damage their work or frustrate them: an edit at the wrong moment, a crash, a restore, two windows, a full disk, a sync tool, a wrong clock. Hostile code on the same machine is kept in mind and the cheap protections are taken, but not every such hole is closed: the specification says what is not covered. A small visual flaw or a minor bug ranks below all of that. |
-| D28 | Folders | **Folders belong to projects and tasks.** Adding a project means choosing an existing folder or creating one, from the page or by an agent. A folder is an absolute path stored in the space with the machine it is on, and it travels with sync, backups and export bundles: a local path is not a secret. A task may have its own absolute folder, also inside a project, and needs no project and no folder. There are no roots and no relative paths. **Tasks sets no limit on where agents work**: only the person's own setup of an agent app does. Where a rule costs a person a concept, a step or a refusal and buys little, it goes. |
+| D28 | Folders | **Folders belong to projects and tasks.** Adding a project means choosing an existing folder or creating one, from the page or by an agent. A folder is an absolute path stored in the space with the machine it is on, and it travels with sync, backups and export bundles: a local path is not a secret. A task may have its own absolute folder, also inside a project, and needs no project and no folder. There are no roots and no relative paths. **TTasks sets no limit on where agents work**: only the person's own setup of an agent app does. Where a rule costs a person a concept, a step or a refusal and buys little, it goes. |
 
 ### A.2 Architecture decisions
 
@@ -56,14 +56,14 @@ These carry the most weight. The plan as a whole is a guide, not a contract (D21
 | R8 | Launch records | A **launch intent is persisted before dispatch**. Outcomes: Dispatched, Confirmed, Failed or Unknown. An uncertain launch is never retried automatically. |
 | R9 | Launch and run | **Launching** an app the user works in and **owning a run** are separate interfaces. A run's exit code never completes a task. |
 | R10 | Targets and instances | Built-in **targets** are reviewed code. **Instances** (one per account or config home), terminals, custom targets and every executable command line live only in machine-local configuration. Space data holds only references. A definition that arrives with space data stays disabled until the user approves its exact command. |
-| R11 | Exact folders | A launch uses the task's own **folder** on this machine, else its project's, else none here when either lives on another machine, else the space's Tasks work folder. A folder is `(owner, machine, absolute path)` (D28). Tasks never silently opens another clone, a parent folder, the current folder or the last folder used. |
+| R11 | Exact folders | A launch uses the task's own **folder** on this machine, else its project's, else none here when either lives on another machine, else the space's TTasks work folder. A folder is `(owner, machine, absolute path)` (D28). TTasks never silently opens another clone, a parent folder, the current folder or the last folder used. |
 | R12 | Search | SQLite **FTS5**, compact rows, details on request, cursors bound to a snapshot. Related learnings in the task digest. No embeddings in v1. |
 | R13 | Local transport | Agents and the CLI use a **local socket or named pipe only the user's own processes can use**: a user-only folder plus a mutual handshake over a user-only key. The browser UI uses HTTP on 127.0.0.1 with a token and Host and Origin checks. No open TCP API for agents. |
 | R14 | Brief | The text an agent session starts with is **short and points to the task**. It never embeds the task's content. |
 | R15 | Multiple machines | **One authority per space** for now, with replicas and authority epochs later. An open sync protocol keeps self-hosting free. |
-| R16 | Trust | Tasks never writes another app's trust settings silently. |
+| R16 | Trust | TTasks never writes another app's trust settings silently. |
 | R17 | Real machines first | Every launch route and the packaging are qualified **on real machines** (the M0 lab). Code that depends on them is built to the lab's findings, and is not accepted as done on real machines until the lab has qualified them (O). |
-| R18 | Single-user machines (v1) | v1 assumes **one interactive user per machine**: a 127.0.0.1 origin cannot be authenticated against another local user who takes the port while Tasks is stopped. v1 ships no service worker, serves no UI and revokes UI tokens while another user holds its port (agents and the CLI keep working), expires UI tokens after 7 days unused and 30 days at most, and `tasks doctor` warns on multi-user machines. An **authenticated UI origin is a hard gate for the public release** (M10). |
+| R18 | Single-user machines (v1) | v1 assumes **one interactive user per machine**: a 127.0.0.1 origin cannot be authenticated against another local user who takes the port while TTasks is stopped. v1 ships no service worker, serves no UI and revokes UI tokens while another user holds its port (agents and the CLI keep working), expires UI tokens after 7 days unused and 30 days at most, and `ttasks doctor` warns on multi-user machines. An **authenticated UI origin is a hard gate for the public release** (M10). |
 | R19 | Staged requests | Inside the writer transaction a request is first resolved into a staged plan (references, actual targets, dedupe, every operation). Preconditions are checked against the state at its start, and autonomy against the actual targets. Every outcome, no-ops included, gets a durable receipt. |
 | R20 | Authority incarnation | Each space carries an **authority incarnation ID** next to its epoch. Reads, writes, cursors and receipts carry both, so two offline claims of one backup are detected, never silently merged. |
 
@@ -110,9 +110,9 @@ Tasks get in by quick capture (the search-or-add field), by agents through `add_
 ```
  Browser tab (React UI) ──HTTP + WebSocket, 127.0.0.1:7713, bearer token──┐
                                                                            │
- Agent app ── stdio ── tasks mcp (bridge) ──┐                             ▼
- CLI (tasks …) ─────────────────────────────┼── socket / named pipe ──►  Tasks service (one per OS user)
- tasks shim (in a terminal) ────────────────┘   tasks-local/1, HMAC     ├─ hub: transports, auth, MCP, supervision
+ Agent app ── stdio ── ttasks mcp (bridge) ──┐                             ▼
+ CLI (tasks …) ─────────────────────────────┼── socket / named pipe ──►  TTasks service (one per OS user)
+ ttasks shim (in a terminal) ────────────────┘   ttasks-local/1, HMAC     ├─ hub: transports, auth, MCP, supervision
                                                                          ├─ one worker per space: SQLite writer + readers
                                                                          ├─ launch adapters (T3, CLIs, apps, Copy)
                                                                          ├─ run supervisor and routines (scheduler off)
@@ -128,13 +128,13 @@ Tasks get in by quick capture (the search-or-add field), by agents through `add_
 
 ## F. The space (A1)
 
-A space is a folder, by default `~/.tasks/spaces/<slug>/`, holding `space.json` (marker `tasks_space`, identity, epoch, incarnation, schema version), `space.db` (the only truth: WAL, `synchronous=FULL`, STRICT tables), `attachments/`, `view/` (projection), `exchange/` (import working copies), `backups/` and `exports/`. Machine-local state (instances, keys, UI state) lives in `~/.tasks/` and never in a space. The folders of projects and tasks are space data (D28).
+A space is a folder, by default `~/.ttasks/spaces/<slug>/`, holding `space.json` (marker `tasks_space`, identity, epoch, incarnation, schema version), `space.db` (the only truth: WAL, `synchronous=FULL`, STRICT tables), `attachments/`, `view/` (projection), `exchange/` (import working copies), `backups/` and `exports/`. Machine-local state (instances, keys, UI state) lives in `~/.ttasks/` and never in a space. The folders of projects and tasks are space data (D28).
 
-Core rules: IDs are a type prefix plus 128 random bits in Crockford base32, with never-reused short references like `M-14`. Every write carries `base`, and a field changed since is a conflict. Undo, redo and revert follow each field's lineage and stop at another actor's change. Labels and source links are versioned rows. Wrap-up only adds, deletion is a restorable tombstone, and only a human-only `redact` destroys data. A copied or restored space opens read-only until claimed, transferred or forked. A space in a synced folder opens read-only until confirmed on that machine, a folder whose sync status cannot be checked counts as synced, and a network filesystem is never writable. Such a space leaves its folder by `tasks space open <folder> --excluded`, once the person confirms the folder is excluded from sync, or by a verified backup restored into a new folder and claimed. The old folder stays as it was. A move command comes later, built on transfer and claim (A7 section 6). No operation deletes a person's data or a backup as a side effect: it reuses what exists, retires and keeps what it replaces, and says where it is. Removal outside the backup retention policy is the person's explicit act. Migrations run in one transaction, each attempt behind a verified backup of its own, and are additive within a major version after 1.0. A failed migration leaves the space at its old schema and read-only, and the same build does not try again on an unchanged database: another build, a restore or `tasks space open <folder> --retry-migration` does. Schemas 0.1 and 0.2 are frozen. Backups: 7 daily, 4 weekly, plus one before every migration and restore. Scale target: 5,000 open and 50,000 completed tasks per space, 10 concurrent agent sessions.
+Core rules: IDs are a type prefix plus 128 random bits in Crockford base32, with never-reused short references like `M-14`. Every write carries `base`, and a field changed since is a conflict. Undo, redo and revert follow each field's lineage and stop at another actor's change. Labels and source links are versioned rows. Wrap-up only adds, deletion is a restorable tombstone, and only a human-only `redact` destroys data. A copied or restored space opens read-only until claimed, transferred or forked. A space in a synced folder opens read-only until confirmed on that machine, a folder whose sync status cannot be checked counts as synced, and a network filesystem is never writable. Such a space leaves its folder by `ttasks space open <folder> --excluded`, once the person confirms the folder is excluded from sync, or by a verified backup restored into a new folder and claimed. The old folder stays as it was. A move command comes later, built on transfer and claim (A7 section 6). No operation deletes a person's data or a backup as a side effect: it reuses what exists, retires and keeps what it replaces, and says where it is. Removal outside the backup retention policy is the person's explicit act. Migrations run in one transaction, each attempt behind a verified backup of its own, and are additive within a major version after 1.0. A failed migration leaves the space at its old schema and read-only, and the same build does not try again on an unchanged database: another build, a restore or `ttasks space open <folder> --retry-migration` does. Schemas 0.1 and 0.2 are frozen. Backups: 7 daily, 4 weekly, plus one before every migration and restore. Scale target: 5,000 open and 50,000 completed tasks per space, 10 concurrent agent sessions.
 
 ## G. The agent interface (A3)
 
-One MCP server named `tasks`, registered once per agent home. Its name is a separate constant in `packages/brand`: if agents confuse it with an agent app's own task tools, only that name changes, to `tt-tasks`. Every connection sees the same 11 tools, online or offline: `status`, `search`, `get_task`, `add_tasks`, `update_task`, `add_entry`, `complete_task`, `reopen_task`, `organize`, `preferences` and `run_report` (accepted only from runs and routines). Permissions are checked per call.
+One MCP server named `ttasks`, registered once per agent home. Its name is a separate constant in `packages/brand`: if agents confuse it with an agent app's own task tools, only that name changes, to `tt-tasks`. Every connection sees the same 11 tools, online or offline: `status`, `search`, `get_task`, `add_tasks`, `update_task`, `add_entry`, `complete_task`, `reopen_task`, `organize`, `preferences` and `run_report` (accepted only from runs and routines). Permissions are checked per call.
 
 - Every write needs a `request_id`, and a retry returns the stored result.
 - Task content, source text and every editable name reach agents framed as data. Only notes the user addressed to agents are instructions.
@@ -142,8 +142,8 @@ One MCP server named `tasks`, registered once per agent home. Its name is a sepa
 - A session binds by credential first (a ticket, or a preset native session ID), else by the launch reference in the brief at the first `get_task`, or by an explicit choice. A folder only suggests candidates. A binding never changes space. A CLI call or a browser tab cannot hold a binding: it resolves a launch reference for that call only, so it never uses up the reference the agent needs.
 - Server instructions: about 2 KB, at most 3,500 bytes, with the start rule self-contained in the first 240 characters, because Codex CLI shows its model only about that much. Guidance Codex needs beyond it is repeated in the tool descriptions.
 - Tool definitions are measured and reported, not capped (D23). Every result is fitted to its budget, and a cut says what it left out and how to get the rest.
-- Every brief names TT Tasks.
-- `tasks setup agents` registers the server in each agent home through the app's own command. Its preview shows the exact command and diff, apply does exactly what the preview showed (a plan token binds the two), and remove takes back only an entry that is still exactly the one setup wrote. The backup is an entry-level record, never a copy of the app's file. Setup never writes trust settings (R16).
+- Every brief names TTasks.
+- `ttasks setup agents` registers the server in each agent home through the app's own command. Its preview shows the exact command and diff, apply does exactly what the preview showed (a plan token binds the two), and remove takes back only an entry that is still exactly the one setup wrote. The backup is an entry-level record, never a copy of the app's file. Setup never writes trust settings (R16).
 - An agent home's calls reach only the spaces its registration names (the grant gate, M2.04b).
 
 ## H. Launching and runs (A4)
@@ -151,34 +151,34 @@ One MCP server named `tasks`, registered once per agent home. Its name is a sepa
 | Target | Primary route | Fallback | v1 |
 |---|---|---|---|
 | T3 Code | Paired once as an MCP client of T3: an idle thread in a project rooted exactly at the task folder, opened by link with the brief as an unsent draft | `t3 thread start` with the brief sent | Native |
-| Claude Code CLI | A terminal runs `tasks shim <ticket>`, which fetches argv and environment over the socket. Preset `--session-id`. Brief sent: "read the task, then wait" | `claude-cli://` link with the brief prefilled | Native |
+| Claude Code CLI | A terminal runs `ttasks shim <ticket>`, which fetches argv and environment over the socket. Preset `--session-id`. Brief sent: "read the task, then wait" | `claude-cli://` link with the brief prefilled | Native |
 | Codex CLI (work, personal) | The same shim route, per-account `CODEX_HOME`, ticket to the bridge through `env_vars` | Assisted prefill | Native |
 | Claude Desktop, Codex app | Deep link | Copy | Best effort |
 | Any other app | Copy the brief or a context pack | – | Copy |
 
-- The folder a launch resolves (R11) must equal the target's working folder. A task with no folder of its own or its project's anywhere opens or runs in a **Tasks work folder** for that space on that machine, so any task can go to an agent.
+- The folder a launch resolves (R11) must equal the target's working folder. A task with no folder of its own or its project's anywhere opens or runs in a **TTasks work folder** for that space on that machine, so any task can go to an agent.
 - Terminals and runs run in their own process scope with the environment of a login-shell snapshot.
 - The brief is about 400 characters: task ID, title and launch reference. Composer text replaces the "wait" line.
-- **Runs** use `claude -p` and `codex exec` in v1 (a T3 run adapter after v1). Each has a parser, log, timeout and cancellation. Windows cancellation uses a small console-attach helper (M6.04h) with a forced kill after 10 seconds. Limits: 3 runs per machine, 2 per instance, 1 per task, 1 per folder. A run starts in the folder its task resolves to, or a routine's work folder: Tasks sets no limit on where agents work (D28).
+- **Runs** use `claude -p` and `codex exec` in v1 (a T3 run adapter after v1). Each has a parser, log, timeout and cancellation. Windows cancellation uses a small console-attach helper (M6.04h) with a forced kill after 10 seconds. Limits: 3 runs per machine, 2 per instance, 1 per task, 1 per folder. A run starts in the folder its task resolves to, or a routine's work folder: TTasks sets no limit on where agents work (D28).
 - **Routines**: Refresh from sources (a run on the chosen agent instance that reads mail, calendar, documents, tickets and chat through the agent's own connectors and tools, and adds or updates tasks by source key) and Wrap-up. Both start on request. Each routine stores a schedule for M9. Agents cannot create, edit or start routines.
 
 ## I. Search (A1, A3)
 
-One FTS5 table (`unicode61`, prefix indexes) over tasks, notes, log, learnings, projects and areas, updated in every commit. Hits roll up to their task. Tasks indexes what it stores and never fetches URLs or mail bodies. Rows are compact and cursors freeze the result at a snapshot. A trigram index stays off behind a flag. Targets on 10,000 open and 100,000 completed tasks: search p95 under 150 ms on Windows and 300 ms on Linux, `get_task` p95 under 50 ms. Broad queries miss the Windows target with plain bm25 ranking, so M3.16 adds a query design and re-measures on Windows and Linux.
+One FTS5 table (`unicode61`, prefix indexes) over tasks, notes, log, learnings, projects and areas, updated in every commit. Hits roll up to their task. TTasks indexes what it stores and never fetches URLs or mail bodies. Rows are compact and cursors freeze the result at a snapshot. A trigram index stays off behind a flag. Targets on 10,000 open and 100,000 completed tasks: search p95 under 150 ms on Windows and 300 ms on Linux, `get_task` p95 under 50 ms. Broad queries miss the Windows target with plain bm25 ranking, so M3.16 adds a query design and re-measures on Windows and Linux.
 
 ## J. UI (A5)
 
-A React app served on 127.0.0.1, for Firefox and Chromium. The mockup is `appendix/A5-mockup.html`. A sidebar with views, areas and the only task counts. One search-or-add field and a Refresh button. Today opens with a seven-day strip (the only place the date appears), then Focus, This week, Next and Changes, each task at most once. Rows expand in place. A composer strip holds Note, Open per pinned instance, Run and Copy. Agent changes show as a dot and on Today, with an Agents view that reverts. Live updates never move the focused row. Sumi (dark, default) and Washi (light) meet WCAG AA. Keyboard-first, screen-reader friendly, reduced motion respected. First run says where the person's data lives (`~/.tasks`). No service worker in v1 (R18).
+A React app served on 127.0.0.1, for Firefox and Chromium. The mockup is `appendix/A5-mockup.html`. A sidebar with views, areas and the only task counts. One search-or-add field and a Refresh button. Today opens with a seven-day strip (the only place the date appears), then Focus, This week, Next and Changes, each task at most once. Rows expand in place. A composer strip holds Note, Open per pinned instance, Run and Copy. Agent changes show as a dot and on Today, with an Agents view that reverts. Live updates never move the focused row. Sumi (dark, default) and Washi (light) meet WCAG AA. Keyboard-first, screen-reader friendly, reduced motion respected. First run says where the person's data lives (`~/.ttasks`). No service worker in v1 (R18).
 
 ## K. Multiple machines, sync and phone (A6)
 
 v1 is local only. Each space has one authority machine, nothing listens beyond loopback, and spaces move by backup, transfer or fork. Every authority change raises the epoch and creates a new incarnation (R20). The foundation carries the hooks for later phases: machine key pairs, one change feed keyed by epoch, incarnation and sequence, an `ExecutionStore` interface, operation records a replica can apply, actors split into principal, binding and machine, scoped grants, and registry flags for operations that may travel.
 
-Later phases, in order: **L1** linked machines (pairing, read-only replicas, signed remote commands that expire within two minutes and are never queued), **L2** a phone web app served by the user's machine, **L3** the open protocol `tasks-sync/1` with a self-hostable relay, **L4** the paid hosted relay (never authority, never plaintext), **L5** teams. A work space never copies to personal devices or the hosted relay by default.
+Later phases, in order: **L1** linked machines (pairing, read-only replicas, signed remote commands that expire within two minutes and are never queued), **L2** a phone web app served by the user's machine, **L3** the open protocol `ttasks-sync/1` with a self-hostable relay, **L4** the paid hosted relay (never authority, never plaintext), **L5** teams. A work space never copies to personal devices or the hosted relay by default.
 
 ## L. Security and privacy (A6)
 
-Other local users cannot reach the socket or pipe (0700 folder, mutual HMAC, no context before the service proves itself); the browser origin is the exception R18 accepts for v1. Web pages cannot drive the local API (bearer token per origin, no cookies, strict Host, Origin and Sec-Fetch-Site checks, no CORS). Injected text reaches agents inside a delimited data block with provenance. Secrets never enter a space. The bundled Node is the official binary, verified. Updates are Ed25519-signed and self-tested, with rollback. Tasks accepts the user's own full-access agents and says "use at your own risk" once, where it matters. Autonomy is a guard rail, not a sandbox. Logs never contain task text, prompts or tokens. Tasks honours managed-machine policy and never works around IT controls.
+Other local users cannot reach the socket or pipe (0700 folder, mutual HMAC, no context before the service proves itself); the browser origin is the exception R18 accepts for v1. Web pages cannot drive the local API (bearer token per origin, no cookies, strict Host, Origin and Sec-Fetch-Site checks, no CORS). Injected text reaches agents inside a delimited data block with provenance. Secrets never enter a space. The bundled Node is the official binary, verified. Updates are Ed25519-signed and self-tested, with rollback. TTasks accepts the user's own full-access agents and says "use at your own risk" once, where it matters. Autonomy is a guard rail, not a sandbox. Logs never contain task text, prompts or tokens. TTasks honours managed-machine policy and never works around IT controls.
 
 ## M. Technology and packaging (A2, A7 3.3)
 
@@ -187,23 +187,23 @@ Other local users cannot reach the socket or pipe (0700 folder, mutual HMAC, no 
 | Runtime | Official Node 26.13.1, bundled per OS and architecture, unmodified and verified |
 | Storage | `node:sqlite` (SQLite 3.54.1 with FTS5) behind a driver interface, `better-sqlite3` 13 as tested fallback with its own SQLite |
 | Contracts | Zod 4 schemas in one registry package |
-| Local protocol | `tasks-local/1`: newline-delimited JSON-RPC 2.0 over a Unix socket or named pipe, mutual HMAC-SHA256 handshake |
+| Local protocol | `ttasks-local/1`: newline-delimited JSON-RPC 2.0 over a Unix socket or named pipe, mutual HMAC-SHA256 handshake |
 | UI | React 19, Vite, TanStack Router, Query and Virtual, React Aria Components, CSS Modules, FormatJS |
 | Bridge | The Node forwarder. A native forwarder (F1–F4) only if the bridge fails its start-time or memory thresholds. |
 
-- **Data and configuration:** `~/.tasks/` (`%USERPROFILE%\.tasks\`) with `config/`, `state/` (logs in `state/logs` on every OS), `cache/` and `spaces/`. `tasks doctor` and the first-run text say where it is. Every file and folder Tasks creates gets its exact mode whatever the umask (folders 0700, files 0600). A configuration file or folder that another user owns, that the group or others can write, or that is a link is refused: the refusal says what is wrong and, except for a link, gives the one command that repairs it. A umask that clears one of the owner's own bits is refused at start.
-- **Program:** `~/.local/share/tasks/` with `versions/` and `current`, the command in `~/.local/bin/` (the same under `%USERPROFILE%` on Windows, with `tasks.exe` and `tasksw.exe`, which find the program at a fixed path from their own folder). Never under `AppData`, where a process started from a packaged app gets its writes redirected.
-- **Removing the program never removes data.** Install, update and uninstall change the program folder, the command and only the records they wrote themselves in `~/.tasks/state`: an install followed by an uninstall leaves `~/.tasks` as it was. No command removes anything under `~/.tasks` unless the person names it.
-- **Install** per user without admin rights: Linux a gzipped tarball and a systemd user unit; Windows a zip, the C launcher `tasks.exe` and an HKCU Run entry for the `tasksw.exe` supervisor; macOS a gzipped tarball and a LaunchAgent. The install scripts verify the signature and the archive before any file from it runs, then hand over to the new version's `tasks install --finish`, which self-tests and only then switches `current`.
-- **`TASKS_HOME`** gives a separate test install with its own service, socket, port and unit, program, command and data under one root.
-- **Updates.** `tasks update --from <archive>` verifies the archive's signature with the installed version's own keys before running any of it, self-tests the candidate, switches `current` atomically under a journal that the next start repairs from, keeps the previous versions and never kills launched sessions. `--rollback` returns to the version before. A hosted update channel comes at M10.
+- **Data and configuration:** `~/.ttasks/` (`%USERPROFILE%\.ttasks\`) with `config/`, `state/` (logs in `state/logs` on every OS), `cache/` and `spaces/`. `ttasks doctor` and the first-run text say where it is. Every file and folder TTasks creates gets its exact mode whatever the umask (folders 0700, files 0600). A configuration file or folder that another user owns, that the group or others can write, or that is a link is refused: the refusal says what is wrong and, except for a link, gives the one command that repairs it. A umask that clears one of the owner's own bits is refused at start.
+- **Program:** `~/.local/share/ttasks/` with `versions/` and `current`, the command in `~/.local/bin/` (the same under `%USERPROFILE%` on Windows, with `ttasks.exe` and `ttasksw.exe`, which find the program at a fixed path from their own folder). Never under `AppData`, where a process started from a packaged app gets its writes redirected.
+- **Removing the program never removes data.** Install, update and uninstall change the program folder, the command and only the records they wrote themselves in `~/.ttasks/state`: an install followed by an uninstall leaves `~/.ttasks` as it was. No command removes anything under `~/.ttasks` unless the person names it.
+- **Install** per user without admin rights: Linux a gzipped tarball and a systemd user unit; Windows a zip, the C launcher `ttasks.exe` and an HKCU Run entry for the `ttasksw.exe` supervisor; macOS a gzipped tarball and a LaunchAgent. The install scripts verify the signature and the archive before any file from it runs, then hand over to the new version's `ttasks install --finish`, which self-tests and only then switches `current`.
+- **`TTASKS_HOME`** gives a separate test install with its own service, socket, port and unit, program, command and data under one root.
+- **Updates.** `ttasks update --from <archive>` verifies the archive's signature with the installed version's own keys before running any of it, self-tests the candidate, switches `current` atomically under a journal that the next start repairs from, keeps the previous versions and never kills launched sessions. `--rollback` returns to the version before. A hosted update channel comes at M10.
 - **Signing.** Release builds sign `SHA256SUMS` with an Ed25519 key only the owner holds. The install scripts verify it with `ssh-keygen -Y verify`, or a fallback verifier, before running candidate code. Tests and CI use a throwaway key. Builds from main are `0.1.0-dev.<commit count>`.
 - **Distribution after v1:** GitHub releases, then winget and other package managers. Windows code signing through SignPath Foundation before a public Windows build. macOS stays "preview" until verified on a Mac.
 - **Licence:** Apache-2.0. `NOTICE` names the copyright holder.
 
 ## N. Quality (A7 3.18)
 
-Every step starts from a failing test and ends with `pnpm verify` and its Verify line. Kinds: unit; property and model-based (field versions, undo guards, session revert, receipts across restarts and epochs, source-key upsert, cursors, a reference model with 3–12 actors); crash injection (5 minutes per pull request, 30 nightly per OS); integration with real databases, sockets, pipes and service processes on Windows and Ubuntu; forwarder conformance; real agent CLIs by hand at M4, M6 and releases; `tasks doctor --live` on a real Windows machine and a real Linux machine; Playwright in Firefox and Chromium with screenshot baselines in both themes, axe and keyboard flows; security (HTTP checks, DNS rebinding, XSS, injection fixtures, export secret scan, burst brake). Performance: Today interactive within 800 ms with 5,000 open tasks on Linux in Firefox, check-off to paint within 50 ms, commit p95 within 10 ms on Windows and 25 ms on Linux, service idle under 120 MB. CI runs Ubuntu 24.04 and Windows on every pull request that is not a draft, plus nightly long runs. macOS is build-only.
+Every step starts from a failing test and ends with `pnpm verify` and its Verify line. Kinds: unit; property and model-based (field versions, undo guards, session revert, receipts across restarts and epochs, source-key upsert, cursors, a reference model with 3–12 actors); crash injection (5 minutes per pull request, 30 nightly per OS); integration with real databases, sockets, pipes and service processes on Windows and Ubuntu; forwarder conformance; real agent CLIs by hand at M4, M6 and releases; `ttasks doctor --live` on a real Windows machine and a real Linux machine; Playwright in Firefox and Chromium with screenshot baselines in both themes, axe and keyboard flows; security (HTTP checks, DNS rebinding, XSS, injection fixtures, export secret scan, burst brake). Performance: Today interactive within 800 ms with 5,000 open tasks on Linux in Firefox, check-off to paint within 50 ms, commit p95 within 10 ms on Windows and 25 ms on Linux, service idle under 120 MB. CI runs Ubuntu 24.04 and Windows on every pull request that is not a draft, plus nightly long runs. macOS is build-only.
 
 ## O. Milestones
 
@@ -217,13 +217,13 @@ v1 is 110 steps across eight milestones (A7). A step starts when the code it bui
 | **M3 Durable space** | History, undo, revert, projection, backups, migrations, authority hooks | M2 (with M4) | A restore drill |
 | **M4 Agent interface** | All tools, binding, autonomy and proposals, setup per app | M2 (with M3) | Setup previews, an eval report |
 | **M5 Planner UI** | Today, the views, the expanded task, the composer, themes | M3, M4 (with M6) | Review every screen, use it daily |
-| **M6 Runs and routines** | Runs, Refresh and Wrap-up, the Tasks work folder, every v1 target | M3, M4 (with M5) | Refresh on a real Linux machine |
+| **M6 Runs and routines** | Runs, Refresh and Wrap-up, the TTasks work folder, every v1 target | M3, M4 (with M5) | Refresh on a real Linux machine |
 | **M7 Switch-over = v1** | Import, rollback, a 10-working-day trial with the prototype read-only, retirement gate | M5, M6 | Rehearsal, cutover, the trial, the gate review |
 
 - **Gates.** G1 has passed. G2 stays open until the lab sessions with the owner have run (the open sessions are listed in `planning/STATUS.md`). Steps behind a G2 predicate are built meanwhile, to the lab's findings, and list in their pull request what waits for a session. M1.15 and M2.15 are not claimed before the sessions. If a session contradicts what was built, the fix comes first.
 - **Gates require working capabilities.** A recorded failure, Copy, an "experimental" label or a visible-session workaround never stands in for T3, Claude Code and Codex Open or background Refresh. Accepting less deviates from D6–D8: only when it still blocks after remediation, stated in the specification and put to the owner.
 - **Conditional steps:** the native forwarder F1–F4 (not called for), the Windows cancel helper M6.04h (called for), the fallback driver as primary (not called for).
-- **Real work use (D19)** typically starts after M3, M4 and the core of M5, with the importer pulled forward. Until M7 the prototype stays the source of truth, and re-imports never lose an edit made in Tasks.
+- **Real work use (D19)** typically starts after M3, M4 and the core of M5, with the importer pulled forward. Until M7 the prototype stays the source of truth, and re-imports never lose an edit made in TTasks.
 - **Backups before real data.** M1 ships verified backup and restore, and migrations refuse to run without one. M3's first migration is drilled on an installed build before real spaces are upgraded.
 - **The importer** reads a frozen copy of the prototype and never runs its code. Dry-run report, one undoable commit, each prototype task its own task, idempotent re-runs. Checked-off tasks become completed with wrap-up pending. No priority imports as P3.
 - **Retirement gate:** 10 working days with five clean days after the last blocking fix, against 11 criteria. Rollback writes a complete prototype-format copy in a new folder with a marker map, so returning later neither duplicates nor loses changes.
@@ -247,7 +247,7 @@ Risks (full register in A7 3.19): a required route fails on a real Linux machine
 | 11 | Native phone apps for self-hosters | Free |
 | 12 | Work data on personal devices or the relay | Never, unless the employer's rules allow it |
 | 13 | A hosted service holding a space's authority | No. A relay never holds authority (K) |
-| 14 | When real work use starts | When Tasks is mature enough (D19) |
+| 14 | When real work use starts | When TTasks is mature enough (D19) |
 
 Smaller UI choices are in A7 section 6. Their defaults stand until M5 settles them.
 
@@ -273,20 +273,19 @@ Every name people, agents and the operating system see comes from `packages/bran
 
 | Term | Meaning |
 |---|---|
-| **TT Tasks** | The product's name, by TumbleToad: briefs, `tasks --version`, the sign-in start entry's label, a desktop entry. |
-| **Tasks** | The name inside the app. |
-| **`tasks`** | The identifier: the command, `TASKS_` variables, `~/.tasks`, the MCP server name, pipe, socket, unit and label names, `tasks_space`, `tasks_backup`, `tasks-local/1`, the install-ID prefix `tasks-install`, package names. |
-| **Space** | One user's planning data in a folder, by default under `~/.tasks/spaces/`. |
+| **TTasks** | The product's name, by TumbleToad: briefs, `ttasks --version`, the sign-in start entry's label, a desktop entry. |
+| **`ttasks`** | The identifier: the command, `TTASKS_` variables, `~/.ttasks`, the MCP server name, pipe, socket, unit and label names, `tasks_space`, `tasks_backup`, `ttasks-local/1`, the install-ID prefix `ttasks-install`, package names. |
+| **Space** | One user's planning data in a folder, by default under `~/.ttasks/spaces/`. |
 | **Area**, **project** | The two grouping levels (renamable per space): lasting responsibilities, and bodies of work inside them. |
 | **Task**, **summary**, **context** | The unit of work; the one line under its title (the next step when there is one); the agent-maintained understanding of it. |
 | **Note**, **log** | An entry addressed to the user or to agents (only the user addresses notes to agents, agents write one only when asked); progress entries written by agents. |
 | **Source**, **source key** | A link to where a task came from, with a meaningful title; its dedupe key. |
 | **Folder** | A project's or a task's working folder on one machine: an absolute path, with the home folder shown as `~`. Areas have none. |
-| **Machine** | A computer that runs Tasks. |
-| **Target**, **instance** | An app Tasks launches into; a target bound to one account or config home ("Codex · work"). |
+| **Machine** | A computer that runs TTasks. |
+| **Target**, **instance** | An app TTasks launches into; a target bound to one account or config home ("Codex · work"). |
 | **Open** | The button verb for starting an interactive session. |
-| **Session**, **native session ID** | An agent conversation Tasks tracks; the agent app's own ID for it, needed for Resume. |
-| **Run**, **routine** | A background execution Tasks owns; a saved run recipe not tied to one task. |
+| **Session**, **native session ID** | An agent conversation TTasks tracks; the agent app's own ID for it, needed for Resume. |
+| **Run**, **routine** | A background execution TTasks owns; a saved run recipe not tied to one task. |
 | **Brief**, **launch reference**, **ticket** | The short text a session starts with; a short code in it (`L7KQ2M`) that ties the session to its launch; a one-time credential in a launched process's environment. |
 | **Task digest** | What `get_task` returns: a bounded view for an agent. |
 | **Launch route**, **network route** | How a target is opened (A4); a path between machines (A6). |
@@ -296,7 +295,7 @@ Every name people, agents and the operating system see comes from `packages/bran
 | **Inbox**, **Completed** | New unsorted tasks; finished tasks (completed or archived) with **outcome** and **learnings**. |
 | **Wrap-up** | The step that writes outcome and learnings. It only adds. |
 | **Autonomy** | What agents may change without approval: **Full**, **Review**, **Suggest**. |
-| **Service**, **bridge** | The background program that owns the spaces; the per-session MCP process (`tasks mcp`). |
+| **Service**, **bridge** | The background program that owns the spaces; the per-session MCP process (`ttasks mcp`). |
 | **Agent home** | One agent app config home where the MCP server is registered. |
 | **Authority**, **epoch**, **incarnation** | The one machine allowed to write a space; the counter raised on every authority change; the ID that tells two claims of one backup apart. |
 | **Replica**, **device**, **principal**, **grant** | Later phases (A6): a read copy, a paired device, the person or agent behind a change, a scoped permission. |

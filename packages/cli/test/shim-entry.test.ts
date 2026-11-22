@@ -1,8 +1,8 @@
-// `tasks shim` is entered before the CLI loads (A4 3.6.3, the way in `tasks mcp` has too):
+// `ttasks shim` is entered before the CLI loads (A4 3.6.3, the way in `ttasks mcp` has too):
 // bin.ts imports the shim only for its verb, and the shim loads only its own modules, the protocol
-// client and discovery of @tasks/bridge, three leaf modules of @tasks/launch (the start time
-// readers, the wire, and places with its Git remote reader for the in-folder check), @tasks/brand
-// and @tasks/files (exit.json's exact mode). A load recorder preloaded into the real process lists every module it resolves,
+// client and discovery of @ttasks/bridge, three leaf modules of @ttasks/launch (the start time
+// readers, the wire, and places with its Git remote reader for the in-folder check), @ttasks/brand
+// and @ttasks/files (exit.json's exact mode). A load recorder preloaded into the real process lists every module it resolves,
 // dynamic imports included.
 import { spawn } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
@@ -65,15 +65,15 @@ function run(args: readonly string[]): Promise<{
   stderr: string;
   log: string;
 }> {
-  const temp = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-shim-entry-")));
+  const temp = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-shim-entry-")));
   temps.push(temp);
   const log = join(temp, "loaded.txt");
   const env: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(process.env)) {
-    if (!/^(TASKS_|CLAUDE|CODEX_|T3CODE_)/i.test(name)) env[name] = value;
+    if (!/^(TTASKS_|CLAUDE|CODEX_|T3CODE_)/i.test(name)) env[name] = value;
   }
   const child = spawn(process.execPath, ["--import", RECORDER, CLI_BIN, "shim", ...args], {
-    env: { ...env, TASKS_HOME: join(temp, "home"), KF_LOAD_LOG: log },
+    env: { ...env, TTASKS_HOME: join(temp, "home"), KF_LOAD_LOG: log },
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -117,7 +117,7 @@ function dynamicLoads(source: string): string[] {
   return [...source.matchAll(loader)].map((match) => match[0]);
 }
 
-describe("[A4.5.shim.entry] tasks shim through the CLI's entry", () => {
+describe("[A4.5.shim.entry] ttasks shim through the CLI's entry", () => {
   test(
     "loads only the shim's own path, and a bad argument exits 2 with a usage line that never repeats it",
     { timeout: 120_000 },
@@ -125,7 +125,7 @@ describe("[A4.5.shim.entry] tasks shim through the CLI's entry", () => {
       const result = await run(["not-a-ticket"]);
       expect(result.code).toBe(2);
       expect(result.stdout).toBe("");
-      expect(result.stderr).toBe("tasks shim: usage: tasks shim <ticket>\n");
+      expect(result.stderr).toBe("ttasks shim: usage: ttasks shim <ticket>\n");
 
       const { builtins, files, other } = loaded(result.log);
       expect(other).toEqual([]);
@@ -161,7 +161,7 @@ describe("[A4.5.shim.entry] tasks shim through the CLI's entry", () => {
     }
     // Both entries (bin.ts from source, entry.ts in a version folder) route `shim` after `mcp`
     // and before they load the CLI; the route (shim.ts) imports nothing and loads the shim with
-    // one dynamic import, so `tasks mcp` loads nothing of the shim.
+    // one dynamic import, so `ttasks mcp` loads nothing of the shim.
     for (const file of [CLI_BIN, CLI_ENTRY]) {
       const entry = readFileSync(file, "utf8");
       const route = entry.indexOf('if (argv[0] === "shim")');

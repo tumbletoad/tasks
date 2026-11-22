@@ -1,4 +1,4 @@
-// `tasks setup instances` through the CLI and a real service (A4 3.2 "Detection proposes, the
+// `ttasks setup instances` through the CLI and a real service (A4 3.2 "Detection proposes, the
 // user confirms"; A2 3.2.4): the preview shows what detection found and the exact entries and
 // writes nothing, only the person applies, the service writes machine.toml through its editor and
 // Open offers the instances at once, doctor says what is still missing, and remove takes back only
@@ -10,11 +10,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { configOf, stateOf } from "@tasks/service/test/harness";
-import { httpWorld, openFeed, signIn, type HttpWorld } from "@tasks/service/test/http-world";
-import { installFakeAgents, type FakeAgents } from "@tasks/testkit/fake-agents";
+import { configOf, stateOf } from "@ttasks/service/test/harness";
+import { httpWorld, openFeed, signIn, type HttpWorld } from "@ttasks/service/test/http-world";
+import { installFakeAgents, type FakeAgents } from "@ttasks/testkit/fake-agents";
 import type { AgentsSetupOptions } from "../src/setup-agents.ts";
-import { distinctLabels, type Offer } from "@tasks/service/setup";
+import { distinctLabels, type Offer } from "@ttasks/service/setup";
 import { runMain } from "./cli-harness.ts";
 
 const SLOW = 300_000;
@@ -41,7 +41,7 @@ beforeAll(async () => {
   writeFileSync(join(user, ".codex", "config.toml"), 'model = "m"\n');
   // The install's stable command, which setup agents' entries run.
   mkdirSync(join(w.home, "bin"), { recursive: true });
-  writeFileSync(join(w.home, "bin", windows ? "tasks.exe" : "tasks"), "");
+  writeFileSync(join(w.home, "bin", windows ? "ttasks.exe" : "ttasks"), "");
   // Every folder an app's configuration may be looked for in is the test's own.
   const scratch = windows
     ? { LOCALAPPDATA: join(w.root, "local"), APPDATA: join(w.root, "roaming") }
@@ -59,7 +59,7 @@ afterAll(async () => {
 
 const machineToml = () => join(configOf(w.home), "machine.toml");
 
-/** `tasks <argv>` as a person at a terminal (tty), a script, or an agent's shell. */
+/** `ttasks <argv>` as a person at a terminal (tty), a script, or an agent's shell. */
 const run = (argv: string[], tty = true, env: Record<string, string> = {}) =>
   runMain(argv, { home: w.home, tty, env, main: { agents: options } });
 
@@ -100,7 +100,7 @@ const doctorRow = async (id: string) => {
   return report.checks.find((c) => c.id === id);
 };
 
-describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the service", () => {
+describe("[A4.3.2.setup.instances] ttasks setup instances through the CLI and the service", () => {
   /** machine.toml before setup instances: the world's space, which `space create` recorded. */
   let before = "";
 
@@ -111,7 +111,7 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
       expect(before).not.toContain("[[instance]]");
       expect(await doctorRow("instances")).toMatchObject({
         status: "warn",
-        detail: expect.stringContaining("Run: tasks setup instances") as unknown,
+        detail: expect.stringContaining("Run: ttasks setup instances") as unknown,
       });
       const shown = await preview();
       // Detection ran only each command's --version, and read no agent home.
@@ -134,7 +134,7 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
         remote_allowed: false,
       });
       expect(shown.apply?.slice(0, 5)).toEqual([
-        "tasks",
+        "ttasks",
         "setup",
         "instances",
         "--apply",
@@ -155,7 +155,7 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
 
       const applied = await run(apply.slice(1));
       expect(applied.code, applied.stderr).toBe(0);
-      expect(applied.stdout).toContain("tasks setup agents");
+      expect(applied.stdout).toContain("ttasks setup agents");
       const written = readFileSync(machineToml(), "utf8");
       expect(written.match(/^\[\[instance\]\]$/gmu)).toHaveLength(2);
       expect(existsSync(join(stateOf(w.home), "instances.json"))).toBe(true);
@@ -183,7 +183,7 @@ describe("[A4.3.2.setup.instances] tasks setup instances through the CLI and the
     async () => {
       expect(await doctorRow("instances")).toMatchObject({
         status: "warn",
-        detail: expect.stringContaining("Run: tasks setup agents") as unknown,
+        detail: expect.stringContaining("Run: ttasks setup agents") as unknown,
       });
       const planned = JSON.parse((await run(["setup", "agents", "--json"], false)).stdout) as {
         apply: string[];

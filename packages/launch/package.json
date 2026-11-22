@@ -1,5 +1,5 @@
 {
-  "name": "@tasks/launch",
+  "name": "@ttasks/launch",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,12 +16,12 @@
     "./memory-store": "./test/memory-store.ts"
   },
   "dependencies": {
-    "@tasks/brand": "workspace:*",
-    "@tasks/contracts": "workspace:*",
-    "@tasks/files": "workspace:*"
+    "@ttasks/brand": "workspace:*",
+    "@ttasks/contracts": "workspace:*",
+    "@ttasks/files": "workspace:*"
   },
   "devDependencies": {
-    "@tasks/testkit": "workspace:*",
+    "@ttasks/testkit": "workspace:*",
     "fast-check": "4.10.2",
     "vitest": "5.1.0"
   }

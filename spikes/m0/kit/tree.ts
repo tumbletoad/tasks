@@ -71,7 +71,7 @@ export function buildTree(base: string): ScratchTree {
   const nested = join(exactRoot, "packages", "web", "src");
   mkdirSync(nested, { recursive: true });
   repo(exactRoot, {
-    "README.md": "# Mira portal\n\nFixture repository for the Tasks M0 lab.\n",
+    "README.md": "# Mira portal\n\nFixture repository for the TTasks M0 lab.\n",
     [join("packages", "web", "src", "index.ts")]: 'export const fixture = "M-14";\n',
   });
 

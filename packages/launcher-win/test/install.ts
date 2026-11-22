@@ -1,6 +1,6 @@
 // Install layouts for the launcher tests (A2 3.12.2), in fresh temporary folders. A version folder
 // gets the launchers under test, the Node that runs the tests as its runtime (hard-linked from one
-// copy per test file), the stub entry test/stub/tasks.mjs and a manifest. Nothing is downloaded
+// copy per test file), the stub entry test/stub/ttasks.mjs and a manifest. Nothing is downloaded
 // and nothing outside the temporary folders is touched.
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import {
@@ -21,7 +21,7 @@ import type { Launchers } from "../src/build.ts";
 
 export const windows = process.platform === "win32";
 
-const stubEntry = join(dirname(fileURLToPath(import.meta.url)), "stub", "tasks.mjs");
+const stubEntry = join(dirname(fileURLToPath(import.meta.url)), "stub", "ttasks.mjs");
 
 /**
  * Arguments that break naive quoting: spaces, quotes, backslashes before quotes and at the end,
@@ -69,7 +69,7 @@ export const HOSTILE_ARGS: readonly string[] = [
  * temporary folder is often given with 8.3 names (C:\Users\RUNNER~1\…).
  */
 export function tempDir(label: string): string {
-  return realpathSync.native(mkdtempSync(join(tmpdir(), `tasks-${label}-`)));
+  return realpathSync.native(mkdtempSync(join(tmpdir(), `ttasks-${label}-`)));
 }
 
 export function removeDir(dir: string): void {
@@ -102,22 +102,22 @@ export function addVersion(root: string, version: string, launchers: Launchers):
   if (runtime === undefined) throw new Error("call prepareRuntime(work) first");
   const dir = join(root, "versions", version);
   for (const sub of ["bin", "runtime", "lib"]) mkdirSync(join(dir, sub), { recursive: true });
-  copyFileSync(launchers.tasks, join(dir, "bin", "tasks.exe"));
-  copyFileSync(launchers.tasksw, join(dir, "bin", "tasksw.exe"));
+  copyFileSync(launchers.ttasks, join(dir, "bin", "ttasks.exe"));
+  copyFileSync(launchers.ttasksw, join(dir, "bin", "ttasksw.exe"));
   linkOrCopy(runtime, join(dir, "runtime", "node.exe"));
-  copyFileSync(stubEntry, join(dir, "lib", "tasks.mjs"));
+  copyFileSync(stubEntry, join(dir, "lib", "ttasks.mjs"));
   writeFileSync(join(dir, "manifest.json"), `${JSON.stringify({ version })}\n`);
   return dir;
 }
 
 /**
  * The folder of the stable launchers for the install root `root`, as the launchers find the root
- * from it: `<root>\bin` when the root holds home.marker (a TASKS_HOME install), else the daily
- * install's command folder beside share, `<base>\bin` for the root `<base>\share\tasks`.
+ * from it: `<root>\bin` when the root holds home.marker (a TTASKS_HOME install), else the daily
+ * install's command folder beside share, `<base>\bin` for the root `<base>\share\ttasks`.
  */
 export function commandFolder(root: string): string {
   if (existsSync(join(root, "home.marker"))) return join(root, "bin");
-  if (!/\\share\\tasks$/i.test(root)) throw new Error(`not a daily install root: ${root}`);
+  if (!/\\share\\ttasks$/i.test(root)) throw new Error(`not a daily install root: ${root}`);
   return join(root, "..", "..", "bin");
 }
 
@@ -126,16 +126,16 @@ export function makeStable(root: string, version: string, launchers: Launchers):
   writeFileSync(join(root, "current"), version);
   const bin = commandFolder(root);
   mkdirSync(bin, { recursive: true });
-  copyFileSync(launchers.tasks, join(bin, "tasks.exe"));
-  copyFileSync(launchers.tasksw, join(bin, "tasksw.exe"));
+  copyFileSync(launchers.ttasks, join(bin, "ttasks.exe"));
+  copyFileSync(launchers.ttasksw, join(bin, "ttasksw.exe"));
 }
 
 export function stable(root: string, gui = false): string {
-  return join(commandFolder(root), gui ? "tasksw.exe" : "tasks.exe");
+  return join(commandFolder(root), gui ? "ttasksw.exe" : "ttasks.exe");
 }
 
 export function versionLocal(root: string, version: string, gui = false): string {
-  return join(root, "versions", version, "bin", gui ? "tasksw.exe" : "tasks.exe");
+  return join(root, "versions", version, "bin", gui ? "ttasksw.exe" : "ttasks.exe");
 }
 
 export type Env = Record<string, string | undefined>;

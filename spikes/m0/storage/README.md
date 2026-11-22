@@ -12,7 +12,7 @@ pnpm exec node spikes/m0/storage/run.ts --scale <n> --out <folder> [--work <fold
 |---|---|
 | `--scale` | 1 = full scale (the lab), 0.01 = CI. Counts scale with it. R03 keeps at least 50 patches, R05 at least 50 queries |
 | `--out` | Folder for the result files: a new or empty folder per run, created if missing. The bench refuses a folder that already holds files, so a failed rerun can never leave an earlier run's complete results behind |
-| `--work` | An existing folder. The bench creates a temporary `tasks-storage-bench-*` folder inside it for the databases and removes it at the end. It never creates `--work` itself. Default: inside `--out` |
+| `--work` | An existing folder. The bench creates a temporary `ttasks-storage-bench-*` folder inside it for the databases and removes it at the end. It never creates `--work` itself. Default: inside `--out` |
 | `--machine` | Which R03 and R05 thresholds apply. Default: `windows` on Windows, `linux` elsewhere |
 | `--seed` | Seed of the generators. Default `mira`. The same seed gives the same corpus on every machine |
 | `--text` | Text profile: `default` (the calibrated corpus of the first runs) or `heavy` (longer and more notes and log entries, see below) |

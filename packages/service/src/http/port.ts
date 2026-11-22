@@ -6,7 +6,7 @@
 //      foreign-holder check is persisted.
 //   3. The foreign-holder check runs before the persisted port is bound, and again whenever its
 //      bind fails. Every sighting is recorded; a recorded one counts until the user resolves it
-//      (`tasks service port`). A sighting blocks at once, whether or not its record is written.
+//      (`ttasks service port`). A sighting blocks at once, whether or not its record is written.
 //   4. Another user holds or recently held the persisted port: no fallback. The service serves no
 //      UI (no listener at all), revokes every UI token, and keeps the socket or pipe.
 //   5. The persisted port is taken by this user's own process (or a Windows excluded range, whose

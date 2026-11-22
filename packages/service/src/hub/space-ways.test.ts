@@ -1,4 +1,4 @@
-import { CLI_NAME } from "@tasks/brand";
+import { CLI_NAME } from "@ttasks/brand";
 import { describe, expect, test } from "vitest";
 import { SPACE_REASONS } from "./log.ts";
 import { wayOutOf } from "./space-ways.ts";

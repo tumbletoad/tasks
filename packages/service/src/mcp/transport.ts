@@ -30,7 +30,7 @@
 //   dropped: the client already has one. Lines that arrive meanwhile wait, in order and bounded.
 //
 // Nothing a message carries reaches a report: events name a fixed reason and nothing else.
-import { MAX_IN_FLIGHT, MAX_LINE_BYTES } from "@tasks/bridge/protocol";
+import { MAX_IN_FLIGHT, MAX_LINE_BYTES } from "@ttasks/bridge/protocol";
 import {
   deserializeMessage,
   type JSONRPCMessage,

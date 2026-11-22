@@ -7,7 +7,7 @@
 // is handed to a browser only after that (auth.ts), so a token that works never vanishes in a
 // restart. A revocation's in-memory effect never waits for the disk.
 //
-// UI tokens are `tasks_u_` plus 43 base64url characters (256 bits, A2 3.8.4). Only their SHA-256
+// UI tokens are `ttasks_u_` plus 43 base64url characters (256 bits, A2 3.8.4). Only their SHA-256
 // is kept. A lookup hashes the presented text and compares it with every row's hash in constant
 // time, so the time does not depend on which row matches. A `ui` row expires 7 days after its last
 // use and 30 days after creation at most. A use is recorded in memory at once and written at most
@@ -28,9 +28,9 @@ import {
 import type { ServiceDb } from "./service-db.ts";
 
 /** A2 3.8.4: a UI token's prefix. */
-export const UI_TOKEN_PREFIX = "tasks_u_";
+export const UI_TOKEN_PREFIX = "ttasks_u_";
 /** A UI token's shape: the prefix and 256 bits as base64url. Anything else is never a token. */
-export const UI_TOKEN = /^tasks_u_[A-Za-z0-9_-]{43}$/;
+export const UI_TOKEN = /^ttasks_u_[A-Za-z0-9_-]{43}$/;
 /** A row's last use is written at most this often (it is exact in memory). */
 export const USE_WRITE_MS = 60_000;
 

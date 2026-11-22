@@ -32,13 +32,13 @@ Some checks need the owner at a real machine, on Windows 11 or on Ubuntu 24.04 w
 |---|---|---|---|
 | Lab session 1 | Windows | Launch routes opening the exact folder with the brief, agent apps, the UI in Firefox | L01–L09, L12, A03–A06, U02–U04, U06, S05 (M0.07 to M0.10) |
 | Lab session 2 | Linux | The same, plus the Claude Code parts | L01–L09, L11, L12, A03–A06, U01, U03, U04, U06, S11, and the Claude Code parts of A01, A06, E02 and N01 (M0.07 to M0.11) |
-| Lab session 3 | Both | Boot and sign-in start through the product's own `tasks service install`, cold bridge starts after a reboot, the unattended Refresh path | S01, S02, S03, B01, B06, B07, E01's boot and sign-in halves, N04 |
+| Lab session 3 | Both | Boot and sign-in start through the product's own `ttasks service install`, cold bridge starts after a reboot, the unattended Refresh path | S01, S02, S03, B01, B06, B07, E01's boot and sign-in halves, N04 |
 | Acceptance | Both | The `RM` steps once their code exists | M1.15, M2.15, M3.16, M4.08, M5.13, M6.14, M6.15, M7.09, M7.10 |
 
 Gate G2 stays open until lab sessions 1 to 3 have run. Steps behind a G2 predicate are built meanwhile, to the lab's recorded findings, and their pull requests list what waits for a session. M1.15 and M2.15 are not claimed before the sessions.
 
 Merged steps left these checks for a session:
-- `tasks setup agents`, then `--apply`, then `--remove` in the real agent homes on a real Windows and a real Linux machine: the apps' own `mcp add` commands write the entry exactly as asked, `codex mcp remove` drops the patched keys with the table, and Codex loads `startup_timeout_sec` and `env_vars` (M2.15).
+- `ttasks setup agents`, then `--apply`, then `--remove` in the real agent homes on a real Windows and a real Linux machine: the apps' own `mcp add` commands write the entry exactly as asked, `codex mcp remove` drops the patched keys with the table, and Codex loads `startup_timeout_sec` and `env_vars` (M2.15).
 - The installed-build migration drill (`pnpm accept m3 --part migration --installed <folder>`) against the Linux build on a real Ubuntu 24.04 machine, before a build with schema 0.2 opens real spaces on it.
 - The modes T3 Code gives its runtime file and `userdata` folder under umask 002, when the session that observes T3 runs (L05).
 
@@ -75,7 +75,7 @@ Merged steps left these checks for a session:
 | M1.06 | Migration runner and minimal backups | M1.03 | M | done |
 | M1.07 | Crash harness v1 | M1.05, M1.06 | S | done |
 | M1.08 | Service hub | M1.05 | M | done |
-| M1.09 | `tasks-local/1` protocol | M1.08 | M | done |
+| M1.09 | `ttasks-local/1` protocol | M1.08 | M | done |
 | M1.10 | CLI | M1.01, M1.09 | M | done |
 | M1.11 | Windows launchers | M0.03 | S | done |
 | M1.12 | Service install | M1.08, M1.11 | S | done |
@@ -179,7 +179,7 @@ M4.05b and M4.01b are not in the base count.
 | M6.05 | Stream parsers | M0.11 | S | done |
 | M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | doing |
 | M6.07 | Routines: Refresh and Wrap-up | M6.06, M4.07 | M | todo |
-| M6.08 | The Tasks work folder | M6.06, M2.11 | S | todo |
+| M6.08 | The TTasks work folder | M6.06, M2.11 | S | todo |
 | M6.09 | Run and Refresh UI | M5.07, M6.07, M6.08 | M | todo |
 | M6.10 | T3 CLI fallback route | M2.11 | S | done |
 | M6.11 | Best-effort targets, context pack | M2.10 | S | done |

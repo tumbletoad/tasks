@@ -3,7 +3,7 @@
 // ends it. What a driver decides is the work's result; what the container says afterwards is the
 // cleanup's, which the host adds and which never changes the work's.
 import type { Readable, Writable } from "node:stream";
-import type { AppToolsState, OutcomeReason, RunEvent, Usage } from "@tasks/contracts/runs";
+import type { AppToolsState, OutcomeReason, RunEvent, Usage } from "@ttasks/contracts/runs";
 import type { AgentExit } from "../container/index.ts";
 
 /** The work's result, as the driver judged it from the protocol. */
@@ -20,7 +20,7 @@ export interface Work {
   /** The agent's own words about what went wrong (≤ TEXT_CAP_BYTES). */
   readonly error: string | null;
   readonly usage: Usage | null;
-  /** Whether Tasks' own tools were connected for the agent. */
+  /** Whether TTasks's own tools were connected for the agent. */
   readonly appTools: AppToolsState | null;
   /** Requests of the agent that its permission declined. */
   readonly declined: number;

@@ -131,7 +131,7 @@ describe("[A4.5.parsers.recordings] every recording parses to the outcome its re
     expect(last).toEqual({ kind: "finished", ok: outcome.ok, reason: outcome.reason });
   });
 
-  test("Claude's init reports the working folder and the Tasks tools", () => {
+  test("Claude's init reports the working folder and the TTasks tools", () => {
     const claude = parseStream(
       "claude-print",
       fixtureBytes("claude-print/windows-success-tool-call.jsonl"),
@@ -148,7 +148,7 @@ describe("[A4.5.parsers.recordings] every recording parses to the outcome its re
     expect(noTools.outcome.session?.appTools).toBe("absent");
   });
 
-  test("the probe call is labelled as a Tasks tool call", () => {
+  test("the probe call is labelled as a TTasks tool call", () => {
     for (const file of ["claude-print/windows-success-tool-call.jsonl"]) {
       const entry = fixtureEntry(file);
       const { events } = parseStream(entry.cli, fixtureBytes(file), { code: 0, signal: null });

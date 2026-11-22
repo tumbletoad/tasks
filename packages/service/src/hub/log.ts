@@ -10,7 +10,7 @@
 // Names that look like code are not trusted for their shape: JavaScript names a function or a
 // class after the computed key it is stored under, and any code can set an error's `code`. So an
 // error's code and class are words from closed lists (libuv's error names, the Node codes below,
-// storage's codes; the built-in and Tasks error classes), never "anything shaped like one".
+// storage's codes; the built-in and TTasks error classes), never "anything shaped like one".
 //
 // Several processes may append (a second start logs why it exits). Only the process that holds
 // service.lock rotates, so a second start never moves the running service's file. The holder
@@ -19,7 +19,7 @@
 import { existsSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { getSystemErrorMap } from "node:util";
-import { CLIENT_KINDS, MODES } from "@tasks/bridge/protocol";
+import { CLIENT_KINDS, MODES } from "@ttasks/bridge/protocol";
 import {
   ATTEMPT_RESULTS,
   HOST_REFUSALS,
@@ -29,9 +29,9 @@ import {
   SNAPSHOT_OUTCOMES,
   TERMINAL_APPS,
   TERMINAL_SOURCES,
-} from "@tasks/launch";
-import { RUN_ADAPTERS, RUN_REASONS, RUN_STATES } from "@tasks/contracts/runs";
-import { ID_ALPHABET, STORAGE_ERROR_CODES } from "@tasks/storage";
+} from "@ttasks/launch";
+import { RUN_ADAPTERS, RUN_REASONS, RUN_STATES } from "@ttasks/contracts/runs";
+import { ID_ALPHABET, STORAGE_ERROR_CODES } from "@ttasks/storage";
 import { SECTIONS } from "../config/section-names.ts";
 import { UNAVAILABLE_REASONS } from "../launch/open.ts";
 import {
@@ -95,10 +95,10 @@ interface Spec {
   readonly fields: Readonly<Record<string, FieldKind>>;
 }
 
-/** tasks-local/1's words (M1.09): each a closed list of the library's. */
+/** ttasks-local/1's words (M1.09): each a closed list of the library's. */
 const RPC_METHOD_NAMES: readonly string[] = Object.keys(RPC_METHODS);
 
-export const MANAGERS = ["systemd", "launchd", "tasksw", "manual"] as const;
+export const MANAGERS = ["systemd", "launchd", "ttasksw", "manual"] as const;
 export type Manager = (typeof MANAGERS)[number];
 
 /** Why a space is unavailable or read-only (A2 3.1, and A1 3.18's read-only states). */
@@ -125,7 +125,7 @@ export type SpaceReason = (typeof SPACE_REASONS)[number];
 /** The terminal adapters' names (machine.toml's apps without `auto`). */
 const TERMINAL_ADAPTERS: readonly string[] = TERMINAL_APPS.filter((app) => app !== "auto");
 
-/** Why a pairing with T3 did not finish (tasks setup t3, hub/t3.ts): a closed list. */
+/** Why a pairing with T3 did not finish (ttasks setup t3, hub/t3.ts): a closed list. */
 export const T3_PAIR_FAILURES = [
   "t3_not_running",
   "denied",
@@ -250,9 +250,9 @@ export const EVENTS = {
     c: "hub",
     fields: { present: "bool", spaces: "int", instances: "int", problems: "int" },
   },
-  // `tasks setup instances`: [[instance]] entries written or taken out. Counts only, never an ID.
+  // `ttasks setup instances`: [[instance]] entries written or taken out. Counts only, never an ID.
   "config.instances_changed": { lvl: "info", c: "hub", fields: { added: "int", removed: "int" } },
-  // Make default or `tasks space use` (M5.01): the machine's default space changed. No ID.
+  // Make default or `ttasks space use` (M5.01): the machine's default space changed. No ID.
   "config.default_space_set": { lvl: "info", c: "hub", fields: { source: ["ui", "cli"] } },
   // Settings (M5.11): a machine preference or Open's terminal changed. The key or adapter word only.
   "config.preference_set": {
@@ -263,7 +263,7 @@ export const EVENTS = {
   "config.terminal_set": { lvl: "info", c: "hub", fields: { app: ["auto", ...TERMINAL_ADAPTERS] } },
   // A space verb recorded what it did in [[spaces]] (space-records.ts), or could not. No ID, no path.
   "config.spaces_changed": { lvl: "info", c: "hub", fields: { enabled: "bool", edits: "int" } },
-  // `tasks space forget` took a space's entry out of [[spaces]]. No ID, no path.
+  // `ttasks space forget` took a space's entry out of [[spaces]]. No ID, no path.
   "config.space_forgotten": { lvl: "info", c: "hub", fields: {} },
   "config.spaces_failed": {
     lvl: "warn",
@@ -284,10 +284,10 @@ export const EVENTS = {
       code: "error_code",
     },
   },
-  // `tasks setup t3` (M2.11): a pairing kept, or why it was not. Never a token, URL or ID.
+  // `ttasks setup t3` (M2.11): a pairing kept, or why it was not. Never a token, URL or ID.
   "setup.paired": { lvl: "info", c: "hub", fields: { replaced: "bool" } },
   "setup.pair_failed": { lvl: "warn", c: "hub", fields: { reason: T3_PAIR_FAILURES } },
-  // `tasks setup agents` (M2.14): an agent-home row made (replacing an earlier one of the home) or
+  // `ttasks setup agents` (M2.14): an agent-home row made (replacing an earlier one of the home) or
   // rows revoked. Never a path, an instance or an account.
   "setup.home_granted": { lvl: "info", c: "hub", fields: { app: AGENT_APPS, replaced: "bool" } },
   "setup.home_revoked": { lvl: "info", c: "hub", fields: { count: "int" } },
@@ -429,7 +429,7 @@ export const EVENTS = {
     c: "space",
     fields: { entry: "int", space: "space", code: "error_code" },
   },
-  // tasks-local/1's events (A2 3.13), as the library reports them.
+  // ttasks-local/1's events (A2 3.13), as the library reports them.
   "local.handshake_failed": {
     lvl: "info",
     c: "local",
@@ -710,7 +710,7 @@ const PATTERNS: Readonly<Record<string, RegExp>> = {
 };
 
 /**
- * The error classes a diagnostic may name: JavaScript's own and Tasks's. Another class is named by
+ * The error classes a diagnostic may name: JavaScript's own and TTasks's. Another class is named by
  * the nearest of these it extends (crash.ts errorType).
  */
 export const ERROR_TYPES: readonly string[] = [

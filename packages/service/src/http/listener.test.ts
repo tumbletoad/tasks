@@ -125,7 +125,7 @@ describe("[A2.3.8.http.listener] the UI listener", () => {
       expect(n2).not.toBe(n1);
       expect(first.body).toContain(`<meta name="csp-nonce" content="${n1 ?? ""}">`);
       expect(first.body).toContain(`<style nonce="${n1 ?? ""}">`);
-      expect(first.body).not.toContain("__TASKS_NONCE__");
+      expect(first.body).not.toContain("__TTASKS_NONCE__");
       expect(first.headers["cache-control"]).toBe("no-store");
       expect(first.headers["content-type"]).toBe("text/html; charset=utf-8");
       // No inline script: every script is a file with an integrity hash that matches it.
@@ -156,7 +156,7 @@ describe("[A2.3.8.http.listener] the UI listener", () => {
       const replies = [
         await send(s.port, { path: "/" }),
         await send(s.port, { path: "/healthz" }),
-        await send(s.port, { path: "/.well-known/tasks" }),
+        await send(s.port, { path: "/.well-known/ttasks" }),
         await send(s.port, { path: "/nothing" }),
         await send(s.port, { path: "/", headers: { host: "attacker.example:7713" } }),
         await send(s.port, { method: "OPTIONS", path: "/api/v1/op/task.get" }),
@@ -197,8 +197,8 @@ describe("[A2.3.8.http.listener] the UI listener", () => {
       const bad = await raw(s.port, "NOT A REQUEST\r\n\r\n");
       expect(bad).toMatch(/^HTTP\/1\.1 400/);
       expect(bad).toContain("worker-src 'none'");
-      expect(JSON.parse((await send(s.port, { path: "/.well-known/tasks" })).body)).toEqual({
-        app: "tasks",
+      expect(JSON.parse((await send(s.port, { path: "/.well-known/ttasks" })).body)).toEqual({
+        app: "ttasks",
         protocol: 1,
       });
     },
@@ -294,7 +294,7 @@ describe("[A2.3.8.http.listener] the UI listener", () => {
         "Host: attacker.example",
         `Origin: ${origin}`,
         "Content-Type: text/plain",
-        "Authorization: Bearer tasks_u_x",
+        "Authorization: Bearer ttasks_u_x",
         "Sec-Fetch-Site: cross-site\r\nSec-Fetch-Site: same-origin",
       ]) {
         const reply = await ask([...good, extra]);
@@ -481,7 +481,7 @@ describe("[A2.3.8.http.listener] the UI listener", () => {
     SLOW,
     async () => {
       const s = await serve();
-      // The probe answers without an Origin (tasks open is Node), with the HMAC over its port.
+      // The probe answers without an Origin (ttasks open is Node), with the HMAC over its port.
       const probe = await post(
         s.port,
         "/api/v1/auth/probe",
@@ -524,7 +524,7 @@ describe("[A2.3.8.http.listener] the UI listener", () => {
       const redeemed = await post(s.port, "/api/v1/auth/redeem", { code });
       expect(redeemed.status).toBe(200);
       const body = JSON.parse(redeemed.body) as { token: string; session_id: string };
-      expect(body.token).toMatch(/^tasks_u_[A-Za-z0-9_-]{43}$/);
+      expect(body.token).toMatch(/^ttasks_u_[A-Za-z0-9_-]{43}$/);
       expect(body.session_id).toMatch(/^gr_/);
       expect((await post(s.port, "/api/v1/auth/redeem", { code })).status).toBe(401);
       const late = s.app.mintCode();
@@ -548,7 +548,7 @@ describe("[A2.3.8.http.listener] the UI listener", () => {
         s.port,
         "/api/v1/ws-ticket",
         {},
-        { token: body.token, headers: { "tasks-build": "older" } },
+        { token: body.token, headers: { "ttasks-build": "older" } },
       );
       expect(stale.status).toBe(409);
       expect(JSON.parse(stale.body)).toMatchObject({ error: { data: { reason: "build" } } });

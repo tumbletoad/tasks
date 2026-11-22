@@ -1,19 +1,19 @@
-// `tasks doctor`'s rows about the version folder it runs from (A2 3.13): integrity against
+// `ttasks doctor`'s rows about the version folder it runs from (A2 3.13): integrity against
 // manifest.json, and the runtime gate of A2 3.12.1 against the manifest's pins. From source both
 // are skipped. Fixture files in a temporary folder.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import type { GateFacts } from "@tasks/service/runtime-gate";
-import { writeVersionManifest } from "@tasks/service/version-folder";
+import type { GateFacts } from "@ttasks/service/runtime-gate";
+import { writeVersionManifest } from "@ttasks/service/version-folder";
 import { versionChecks } from "../src/doctor.ts";
 import type { Io } from "../src/io.ts";
 import { runMain } from "./cli-harness.ts";
 
 let work: string;
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-doctor-version-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-doctor-version-"));
 });
 afterAll(() => {
   rmSync(work, { recursive: true, force: true });
@@ -34,7 +34,7 @@ function versionFolder(): string {
   const root = join(work, `install-${String(count)}`);
   const folder = join(root, "versions", "0.1.0");
   mkdirSync(join(folder, "lib"), { recursive: true });
-  writeFileSync(join(folder, "lib", "tasks.mjs"), "// fixture entry\n");
+  writeFileSync(join(folder, "lib", "ttasks.mjs"), "// fixture entry\n");
   writeFileSync(join(folder, "LICENSE"), "fixture\n");
   writeVersionManifest(folder, {
     version: "0.1.0",
@@ -70,13 +70,13 @@ describe("[A2.3.13.cli.doctor-version] doctor checks the version folder it runs 
 
   test("a changed or extra file, a bad current, a missing manifest and a bare Node fail", async () => {
     const folder = versionFolder();
-    writeFileSync(join(folder, "lib", "tasks.mjs"), "// changed\n");
+    writeFileSync(join(folder, "lib", "ttasks.mjs"), "// changed\n");
     writeFileSync(join(folder, "lib", "extra.mjs"), "");
     writeFileSync(join(folder, "..", "..", "current"), "0.9.9");
     const changed = await versionChecks(io, folder, launched);
     expect(row(changed, "integrity")?.status).toBe("fail");
     expect(row(changed, "integrity")?.detail).toBe(
-      "changed: lib/tasks.mjs; not in manifest.json: lib/extra.mjs; current names 0.9.9, which is not installed.",
+      "changed: lib/ttasks.mjs; not in manifest.json: lib/extra.mjs; current names 0.9.9, which is not installed.",
     );
     const bare = await versionChecks(io, versionFolder(), { ...launched, execArgv: [] });
     expect(row(bare, "runtime")?.status).toBe("fail");

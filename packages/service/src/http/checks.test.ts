@@ -58,7 +58,7 @@ const PATHS = {
   index: "/index.html",
   asset: "/assets/boot-0123abcd.js",
   healthz: "/healthz",
-  wellKnown: "/.well-known/tasks",
+  wellKnown: "/.well-known/ttasks",
   probe: "/api/v1/auth/probe",
   redeem: "/api/v1/auth/redeem",
   ticket: "/api/v1/ws-ticket",

@@ -3,8 +3,8 @@
 // inherit those rights, and it refuses package identity, because a packaged parent may virtualise
 // its writes and so create a second service.
 //
-// - Package identity: tasks.exe and tasksw.exe pass GetCurrentPackageFullName to Node as
-//   TASKS_PACKAGE (A2 3.5 rule 2). Any non-empty value is a package.
+// - Package identity: ttasks.exe and ttasksw.exe pass GetCurrentPackageFullName to Node as
+//   TTASKS_PACKAGE (A2 3.5 rule 2). Any non-empty value is a package.
 // - Root: UID or effective UID 0 on Linux and macOS.
 // - Elevated: Windows has no Node API for the token, so the service reads its own token's
 //   mandatory label with System32's whoami.exe, by SID, which no locale changes. High (12288) and
@@ -14,9 +14,9 @@
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { win32 } from "node:path";
-import { envVar } from "@tasks/brand";
+import { envVar } from "@ttasks/brand";
 
-export const TASKS_PACKAGE = envVar("PACKAGE");
+export const TTASKS_PACKAGE = envVar("PACKAGE");
 
 export interface Identity {
   /** UID or effective UID 0 (Linux, macOS). */
@@ -29,7 +29,7 @@ export interface Identity {
 
 /** The package identity the launcher passed, or null. */
 export function packageIdentity(env: Readonly<Record<string, string | undefined>>): string | null {
-  const value = env[TASKS_PACKAGE];
+  const value = env[TTASKS_PACKAGE];
   return value === undefined || value.trim() === "" ? null : value;
 }
 
@@ -61,7 +61,7 @@ let found: string | undefined;
 
 /**
  * The System32 folder as a drive path, or undefined when it cannot be told (and on every other
- * OS). Every System32 tool Tasks runs (whoami.exe, reg.exe, tasklist.exe, powershell.exe) comes
+ * OS). Every System32 tool TTasks runs (whoami.exe, reg.exe, tasklist.exe, powershell.exe) comes
  * from here. Not from Node's diagnostic report: one taken while a worker thread runs corrupts the
  * heap and ends the process without a word.
  */

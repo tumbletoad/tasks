@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest";
 import {
-  APP_NAME,
   CLI_NAME,
   ENV_PREFIX,
   MCP_SERVER_KEY,
@@ -11,11 +10,9 @@ import {
 } from "./index.ts";
 
 describe("[A7.3.2.brand.names] product names derive from one constant", () => {
-  test("the identifier is a safe lowercase name; the product's name ends in the app's name", () => {
+  test("the identifier is a safe lowercase name, the product's name in lower case", () => {
     expect(PRODUCT_ID).toMatch(/^[a-z][a-z0-9-]*$/);
-    // TT Tasks, called Tasks inside the app, by TumbleToad (PLAN.md Q).
-    expect(PRODUCT_NAME.endsWith(` ${APP_NAME}`)).toBe(true);
-    expect(APP_NAME.toLowerCase()).toBe(PRODUCT_ID);
+    expect(PRODUCT_NAME.toLowerCase()).toBe(PRODUCT_ID);
     expect(PUBLISHER).toMatch(/^\S+$/);
   });
 

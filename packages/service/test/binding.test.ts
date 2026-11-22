@@ -2,14 +2,14 @@
 // connection is bound exactly as the local endpoint binds an mcp mode connection: its bind context
 // goes to the service's binding (`bindings.bridge`, the bind hook's call), and its tool calls go to
 // the request path with the slot that came of it, the endpoint's caller. One test drives the same
-// through real tasks-local/1 connections. Launches are the world's: opened, dispatched and claimed
+// through real ttasks-local/1 connections. Launches are the world's: opened, dispatched and claimed
 // in this process as a shim claims them. Fixture text and temporary folders only.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import type { JsonObject } from "@tasks/bridge/protocol";
-import { AppError, type ErrorBody } from "@tasks/contracts";
-import { SHIM_METHODS } from "@tasks/launch";
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import { AppError, type ErrorBody } from "@ttasks/contracts";
+import { SHIM_METHODS } from "@ttasks/launch";
 import { bridgePrincipal, clientOf } from "../src/mcp/index.ts";
 import { opCall, type Caller, type OpsHost, type Slot } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld, type WorldLaunch } from "./contract/suite.ts";
@@ -128,7 +128,7 @@ describe("[A3.3.7.binding.ticket] the ticket binds at the bind frame, once per r
     { timeout: LONG },
     async () => {
       const launch = await w.launch("M-1");
-      const agent = await connect({ env: { TASKS_TICKET: launch.ticket } });
+      const agent = await connect({ env: { TTASKS_TICKET: launch.ticket } });
       expect(agent.binding).toMatchObject({ state: "bound", space: w.space });
       expect(String(agent.binding["handle"])).toMatch(/^bh_[A-Za-z0-9_-]{22}$/);
       expect(await sessionOf(agent)).toMatchObject({ state: "bound", task: "M-1" });
@@ -174,7 +174,7 @@ describe("[A3.3.7.binding.ticket] the ticket binds at the bind frame, once per r
           "0123456789ABCDEFGHJKMNPQ", // its form, issued by no one
           "not a ticket",
         ]) {
-          const agent = await connect({ env: { TASKS_TICKET: ticket } });
+          const agent = await connect({ env: { TTASKS_TICKET: ticket } });
           expect(agent.binding["state"], ticket).toBe("unbound");
           expect((await sessionOf(agent))["state"]).toBe("unbound");
           agent.close();
@@ -187,12 +187,12 @@ describe("[A3.3.7.binding.ticket] the ticket binds at the bind frame, once per r
       const launch = await w.launch("M-2");
       const elsewhere = await connect({
         space: "sp_0000000000000000000000000z",
-        env: { TASKS_TICKET: launch.ticket },
+        env: { TTASKS_TICKET: launch.ticket },
       });
       expect(elsewhere.binding).toMatchObject({ state: "unbound" });
       elsewhere.close();
       // Not spent by any of that: the right connection binds with it.
-      const right = await connect({ env: { TASKS_TICKET: launch.ticket } });
+      const right = await connect({ env: { TTASKS_TICKET: launch.ticket } });
       expect(right.binding["state"]).toBe("bound");
       right.close();
     },
@@ -205,19 +205,19 @@ describe("[A3.3.7.binding.ticket] the ticket binds at the bind frame, once per r
       const launch = await w.launch("M-3");
       const NATIVE = "11111111-2222-4333-8444-555555555555";
       const first = await connect({
-        env: { TASKS_TICKET: launch.ticket, CLAUDE_CODE_SESSION_ID: NATIVE },
+        env: { TTASKS_TICKET: launch.ticket, CLAUDE_CODE_SESSION_ID: NATIVE },
       });
       expect(first.binding["state"]).toBe("bound");
       const session = first.slot.session?.id;
 
       // A terminal opened from the launched one keeps the ticket: its bridge binds nothing.
-      const lingering = await connect({ env: { TASKS_TICKET: launch.ticket } });
+      const lingering = await connect({ env: { TTASKS_TICKET: launch.ticket } });
       expect(lingering.binding["state"]).toBe("unbound");
       lingering.close();
 
       // The agent app's MCP server again, with the native ID the session holds.
       const restarted = await connect({
-        env: { TASKS_TICKET: launch.ticket, CLAUDE_CODE_SESSION_ID: NATIVE },
+        env: { TTASKS_TICKET: launch.ticket, CLAUDE_CODE_SESSION_ID: NATIVE },
       });
       expect(restarted.binding["state"]).toBe("bound");
       expect(restarted.slot.session?.id).toBe(session);
@@ -225,7 +225,7 @@ describe("[A3.3.7.binding.ticket] the ticket binds at the bind frame, once per r
 
       // No other connection of the session open, and the agent runs: honoured.
       first.close();
-      const again = await connect({ env: { TASKS_TICKET: launch.ticket } });
+      const again = await connect({ env: { TTASKS_TICKET: launch.ticket } });
       expect(again.binding["state"]).toBe("bound");
       expect(again.slot.session?.id).toBe(session);
       again.close();
@@ -242,7 +242,7 @@ describe("[A3.3.7.binding.ticket] the ticket binds at the bind frame, once per r
       });
       expect(ended.kind).toBe("applied");
       const late = await connect({
-        env: { TASKS_TICKET: launch.ticket, CLAUDE_CODE_SESSION_ID: NATIVE },
+        env: { TTASKS_TICKET: launch.ticket, CLAUDE_CODE_SESSION_ID: NATIVE },
       });
       expect(late.binding["state"]).toBe("unbound");
       late.close();
@@ -254,14 +254,14 @@ describe("[A3.3.7.binding.ticket] the ticket binds at the bind frame, once per r
     { timeout: LONG },
     async () => {
       const early = await w.launch("M-1", { started: false });
-      const before = await connect({ env: { TASKS_TICKET: early.ticket } });
+      const before = await connect({ env: { TTASKS_TICKET: early.ticket } });
       expect(before.binding["state"]).toBe("unbound");
       before.close();
 
       const late = await w.launch("M-2");
       skew = 15 * 60_000 + 1_000;
       try {
-        const after = await connect({ env: { TASKS_TICKET: late.ticket } });
+        const after = await connect({ env: { TTASKS_TICKET: late.ticket } });
         expect(after.binding["state"]).toBe("unbound");
         after.close();
       } finally {
@@ -477,7 +477,7 @@ describe("[A3.3.7.binding.explicit] an explicit task choice binds an ad-hoc sess
 
 describe("[A3.3.7.binding.folder] a working folder, a hint or an argument never binds", () => {
   test(
-    "the bind frame's cwd, TASKS_TASK and TASKS_SPACE, status with one exact match, and a tool argument naming a session bind nothing",
+    "the bind frame's cwd, TTASKS_TASK and TTASKS_SPACE, status with one exact match, and a tool argument naming a session bind nothing",
     { timeout: LONG },
     async () => {
       const task = await user("task.get", { task: "M-4", sections: ["history"] });
@@ -491,7 +491,7 @@ describe("[A3.3.7.binding.folder] a working folder, a hint or an argument never 
       });
       const agent = await connect({
         cwd: w.portal,
-        env: { TASKS_TASK: taskId, TASKS_SPACE: "sp_0000000000000000000000000z" },
+        env: { TTASKS_TASK: taskId, TTASKS_SPACE: "sp_0000000000000000000000000z" },
       });
       expect(agent.binding["state"]).toBe("unbound");
       const status = await agent.call("space.status", { cwd: w.portal });
@@ -575,7 +575,7 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
     { timeout: LONG },
     async () => {
       const launch = await w.launch("M-3");
-      const cli = await classSession(w.home, w.path, "cli-agent", { TASKS_TICKET: launch.ticket });
+      const cli = await classSession(w.home, w.path, "cli-agent", { TTASKS_TICKET: launch.ticket });
       const early = rid();
       const earlyInput = {
         task: "M-3",
@@ -596,12 +596,12 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
       } finally {
         cli.close();
       }
-      const bridge = await connect({ env: { TASKS_TICKET: launch.ticket } });
+      const bridge = await connect({ env: { TTASKS_TICKET: launch.ticket } });
       expect(bridge.binding["state"]).toBe("bound");
       const session = bridge.slot.session?.id ?? "";
 
       const mapped = await classSession(w.home, w.path, "cli-agent", {
-        TASKS_TICKET: launch.ticket,
+        TTASKS_TICKET: launch.ticket,
       });
       try {
         // The shell's retry of its unmapped write, once mapped: its first result, not a second
@@ -691,7 +691,7 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
             };
           }),
       };
-      const env = { TASKS_TICKET: launch.ticket };
+      const env = { TTASKS_TICKET: launch.ticket };
       const input = {
         task: "M-4",
         kind: "progress",
@@ -706,7 +706,7 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
       );
       await atGate;
 
-      const bridge = await connect({ env: { TASKS_TICKET: launch.ticket } });
+      const bridge = await connect({ env: { TTASKS_TICKET: launch.ticket } });
       expect(bridge.binding["state"]).toBe("bound");
       const mapped = w.service.bindings.mapped(env);
       if (mapped === undefined) throw new Error("the ticket maps to no session");
@@ -726,7 +726,7 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
   );
 });
 
-describe("[A3.3.7.binding.wire] the same over real tasks-local/1 mcp mode connections", () => {
+describe("[A3.3.7.binding.wire] the same over real ttasks-local/1 mcp mode connections", () => {
   test(
     "the bind result carries the binding; status, a launch_used refusal and the session line read the same as text",
     { timeout: LONG },

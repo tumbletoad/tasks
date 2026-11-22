@@ -8,7 +8,7 @@
 import { createHash, createPublicKey, verify, type KeyObject } from "node:crypto";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { ED25519_KEY_LINE, RELEASE_KEY_PLACEHOLDER } from "./release-keys.ts";
 
 // ---------------------------------------------------------------------------------------------
@@ -26,7 +26,7 @@ export function osOf(platform: Platform): "linux" | "win32" | "darwin" {
   return platform === "win-x64" ? "win32" : platform === "darwin-arm64" ? "darwin" : "linux";
 }
 
-/** The platform of this machine, if Tasks builds for it. */
+/** The platform of this machine, if TTasks builds for it. */
 export function hostPlatform(
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,
@@ -35,7 +35,7 @@ export function hostPlatform(
   return isPlatform(name) ? name : undefined;
 }
 
-/** `tasks-<version>-<platform>.tar.gz`, or `.zip` for Windows (A2 3.12.4). */
+/** `ttasks-<version>-<platform>.tar.gz`, or `.zip` for Windows (A2 3.12.4). */
 export function archiveName(version: string, platform: Platform): string {
   return `${PRODUCT_ID}-${version}-${platform}.${platform === "win-x64" ? "zip" : "tar.gz"}`;
 }

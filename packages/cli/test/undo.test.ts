@@ -1,10 +1,10 @@
-// `tasks undo` and `tasks redo` as a person reads them (A1 3.10.1, A2 3.10.2, 3.10.3; A7 3.10
+// `ttasks undo` and `ttasks redo` as a person reads them (A1 3.10.1, A2 3.10.2, 3.10.3; A7 3.10
 // M3.02): the change taken back and redone, named with its tasks and the space, the part a partial
 // undo kept, and the exit codes of the user-only rule and of nothing to redo. The CLI in this
 // process against a service in this process; fixture text and temporary folders only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { EXIT_CODES } from "@tasks/contracts";
-import { contractWorld, type ContractWorld } from "@tasks/service/test/contract";
+import { EXIT_CODES } from "@ttasks/contracts";
+import { contractWorld, type ContractWorld } from "@ttasks/service/test/contract";
 import { runMain, type Ran } from "./cli-harness.ts";
 
 let w: ContractWorld & { root: string };
@@ -17,11 +17,11 @@ afterAll(async () => {
   await w.close();
 }, LONG);
 
-/** `tasks <args>` from a terminal (the person), or from a script. */
+/** `ttasks <args>` from a terminal (the person), or from a script. */
 const tasks = (args: readonly string[], terminal = true): Promise<Ran> =>
   runMain(args, { home: w.home, tty: terminal });
 
-describe("[A3.3.2.3.history] tasks undo and tasks redo", () => {
+describe("[A3.3.2.3.history] ttasks undo and ttasks redo", () => {
   test(
     "the person undoes and redoes; a script is refused; nothing to redo is not found",
     async () => {
@@ -42,7 +42,7 @@ describe("[A3.3.2.3.history] tasks undo and tasks redo", () => {
       const stopped = await tasks(["undo", "--yes"]);
       expect(stopped.code).toBe(EXIT_CODES.conflict);
       expect(stopped.stderr).toMatch(
-        /^error conflict: .*Undo the rest with tasks undo --partial, or set the value again\.$/m,
+        /^error conflict: .*Undo the rest with ttasks undo --partial, or set the value again\.$/m,
       );
       const partial = await tasks(["undo", "--partial", "--yes"]);
       expect(partial.stdout).toMatch(

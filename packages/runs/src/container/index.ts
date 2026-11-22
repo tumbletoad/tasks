@@ -1,5 +1,5 @@
 // Run containers: the processes of one background run, ended together and confirmed empty where
-// a process group can hold them, and ended as far as Tasks can find them where none can.
+// a process group can hold them, and ended as far as TTasks can find them where none can.
 import { LinuxContainers, type LinuxOptions } from "./linux.ts";
 import { unavailableMessage } from "./placement.ts";
 import {
@@ -22,7 +22,7 @@ export { jobName, WindowsContainers, type WindowsOptions } from "./windows.ts";
 
 export interface ContainersOptions {
   readonly platform?: NodeJS.Platform;
-  /** Windows: the absolute path of tasks-run.exe. */
+  /** Windows: the absolute path of ttasks-run.exe. */
   readonly runHelper?: string;
   readonly linux?: LinuxOptions;
   readonly ungrouped?: UngroupedOptions;
@@ -52,7 +52,7 @@ export function containers(options: ContainersOptions = {}): Containers {
 
 /**
  * A run starts in a process group when the probe says one can be made, and otherwise anyway, in
- * the agent's process tree as Tasks can find it. A run keeps what it started in. After a restart,
+ * the agent's process tree as TTasks can find it. A run keeps what it started in. After a restart,
  * a run is recovered as the probe says now.
  */
 export class FallbackContainers implements Containers {

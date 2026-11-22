@@ -53,7 +53,7 @@ afterEach(() => {
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 const tempDir = () => {
-  const dir = mkdtempSync(join(tmpdir(), "tasks-config-"));
+  const dir = mkdtempSync(join(tmpdir(), "ttasks-config-"));
   temps.push(dir);
   return dir;
 };
@@ -145,7 +145,7 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
     // On Linux they are two variables, and only CODEX_HOME selects the home.
     expect(read(`CODEX_HOME = "/a", codex_home = "b"`, "linux").config.instances).toHaveLength(1);
     // A relative or empty home resolves against the task's folder in the agent, and elsewhere in
-    // Tasks; on Windows the variable counts in any case.
+    // TTasks; on Windows the variable counts in any case.
     for (const [env, os, name] of [
       [`CODEX_HOME = "codex-home"`, "linux", "CODEX_HOME"],
       [`CODEX_HOME = ""`, "linux", "CODEX_HOME"],
@@ -294,7 +294,7 @@ describe("[A2.3.2.4.config.golden] machine.toml read strictly into typed values 
   );
 
   test.skipIf(process.platform === "win32")(
-    "Linux and macOS: a file or folder others can write is not used, since it names commands Tasks runs",
+    "Linux and macOS: a file or folder others can write is not used, since it names commands TTasks runs",
     () => {
       const dir = tempDir();
       const file = join(dir, MACHINE_TOML);

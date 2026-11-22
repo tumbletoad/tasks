@@ -1,12 +1,12 @@
 // The probe MCP server (stdio) for rows A01-A06, A09 and S05 (P-1 to P-3):
 //   node probe.mjs --log-dir <folder> [--scratch-root <kit tree container>] [--markers]
-// The scratch root may also come from TASKS_M0_SCRATCH_ROOT. The probe answers MCP in both eras
+// The scratch root may also come from TTASKS_M0_SCRATCH_ROOT. The probe answers MCP in both eras
 // and appends JSON lines to probe-<pid>-<time>.jsonl in the log folder. Every record is closed,
 // structured data (probe-log.ts): environment names, allow-listed identifier values, path facts
 // instead of paths (cwd, scratch homes, profile folders), the parent's PID and executable name,
 // package identity through a strict class, and for every MCP request its method, era, protocol
 // version and client as known labels or `[other:<sha256 prefix> length n]`. It never logs a
-// command line, a tool argument or a raw path, and logs TASKS_TICKET only as a hash. Before a
+// command line, a tool argument or a raw path, and logs TTASKS_TICKET only as a hash. Before a
 // record is written, a redactor removes any environment value outside the allow-list; the `end`
 // record says how often it fired (zero in normal use).
 import { execFile } from "node:child_process";
@@ -74,7 +74,7 @@ const log = (record: JsonObject) => {
 };
 
 const scratch = loadScratchRoot(
-  option(args, "--scratch-root") ?? process.env["TASKS_M0_SCRATCH_ROOT"],
+  option(args, "--scratch-root") ?? process.env["TTASKS_M0_SCRATCH_ROOT"],
 );
 const environment = environmentFacts(process.env, scratch);
 
@@ -97,7 +97,7 @@ function packageHints(): JsonObject {
     snap: packageName(process.env["SNAP_NAME"]),
     flatpak:
       packageName(process.env["FLATPAK_ID"]) ?? (existsSync("/.flatpak-info") ? "unknown" : null),
-    tasks_package: packageName(process.env["TASKS_PACKAGE"]),
+    ttasks_package: packageName(process.env["TTASKS_PACKAGE"]),
   };
 }
 
@@ -162,9 +162,9 @@ if (process.platform === "win32") {
 if (args.includes("--markers")) {
   const written: Json[] = [];
   const targets: [string, string][] = [
-    ["APPDATA", "tasks-m0"],
-    ["LOCALAPPDATA", "tasks-m0"],
-    ["USERPROFILE", ".tasks-m0"],
+    ["APPDATA", "ttasks-m0"],
+    ["LOCALAPPDATA", "ttasks-m0"],
+    ["USERPROFILE", ".ttasks-m0"],
     ["TEMP", ""],
   ];
   for (const [name, sub] of targets) {
@@ -173,13 +173,13 @@ if (args.includes("--markers")) {
     const dir = join(base, sub);
     mkdirSync(dir, { recursive: true });
     writeFileSync(
-      join(dir, `tasks-m0-marker-${String(process.pid)}.txt`),
-      `Tasks M0 marker from probe ${String(process.pid)}\n`,
+      join(dir, `ttasks-m0-marker-${String(process.pid)}.txt`),
+      `TTasks M0 marker from probe ${String(process.pid)}\n`,
     );
     written.push(name);
   }
   const profile = process.env["USERPROFILE"];
-  const pre = profile === undefined ? undefined : join(profile, ".tasks-m0", "pre-marker.txt");
+  const pre = profile === undefined ? undefined : join(profile, ".ttasks-m0", "pre-marker.txt");
   const preMarker =
     pre !== undefined && existsSync(pre)
       ? `sha256:${sha256Hex(readFileSync(pre, "utf8").trim()).slice(0, 12)}`
@@ -189,7 +189,7 @@ if (args.includes("--markers")) {
 
 let era: string | null = null;
 const respond = createMcpResponder({
-  name: "tasks-probe",
+  name: "ttasks-probe",
   instructions: INSTRUCTIONS,
   tools: [
     {

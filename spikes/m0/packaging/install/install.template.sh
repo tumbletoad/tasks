@@ -4,9 +4,9 @@
 # below are what this script trusts.
 #
 # Usage: sh install-@@VERSION@@.sh --source <folder> [--root <folder>]
-#   --source  folder with tasks-@@VERSION@@-linux-x64.tar.gz, SHA256SUMS and SHA256SUMS.sshsig
-#   --root    install root. Defaults to $TASKS_HOME. The spike installs only into a folder that
-#             is named this way, never into ~/.local/share/tasks.
+#   --source  folder with ttasks-@@VERSION@@-linux-x64.tar.gz, SHA256SUMS and SHA256SUMS.sshsig
+#   --root    install root. Defaults to $TTASKS_HOME. The spike installs only into a folder that
+#             is named this way, never into ~/.local/share/ttasks.
 #
 # Order of trust: the Ed25519 signature of SHA256SUMS must verify with ssh-keygen against a key
 # pinned below, and the archive's SHA-256 must match SHA256SUMS, before the archive is unpacked.
@@ -19,8 +19,8 @@ set -eu
 umask 077
 
 VERSION='@@VERSION@@'
-ARCHIVE="tasks-$VERSION-linux-x64.tar.gz"
-NAMESPACE='tasks-release'
+ARCHIVE="ttasks-$VERSION-linux-x64.tar.gz"
+NAMESPACE='ttasks-release'
 # Pinned release keys, one per line: the current key and, during a rotation, the next one.
 RELEASE_KEYS='@@RELEASE_KEYS@@'
 
@@ -36,7 +36,7 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT TERM
 
 fail() {
-  printf 'tasks install: %s\n' "$1" >&2
+  printf 'ttasks install: %s\n' "$1" >&2
   cleanup
   exit 1
 }
@@ -46,7 +46,7 @@ cannot_verify() {
 }
 
 source_dir=''
-root=${TASKS_HOME:-}
+root=${TTASKS_HOME:-}
 while [ $# -gt 0 ]; do
   case $1 in
     --source)
@@ -63,7 +63,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$source_dir" ] || fail '--source <folder> is required'
-[ -n "$root" ] || fail 'Set TASKS_HOME or pass --root: the spike installs only into a folder you name.'
+[ -n "$root" ] || fail 'Set TTASKS_HOME or pass --root: the spike installs only into a folder you name.'
 
 [ "$(uname -s)" = Linux ] || fail 'this installer is for Linux'
 [ "$(uname -m)" = x86_64 ] || fail 'this installer is for x86-64'
@@ -133,7 +133,7 @@ if [ -e "$target" ] || [ -L "$target" ]; then
   # The same version is already there. It runs only if it is exactly this signed release: a plain
   # folder, its manifest.json byte for byte the staged one (which the signature covers), and every
   # file checked against the staged manifest. Otherwise stop and leave it as it is: it may be the
-  # version a running Tasks uses.
+  # version a running TTasks uses.
   if [ -L "$target" ] || [ ! -d "$target" ]; then
     problem='it is a link or not a folder'
   elif ! cmp -s "$staging/manifest.json" "$target/manifest.json" 2>/dev/null; then
@@ -143,7 +143,7 @@ if [ -e "$target" ] || [ -L "$target" ]; then
   else
     problem=''
   fi
-  [ -z "$problem" ] || fail "versions/$VERSION already exists but is not this signed release: $problem. It was left as it is and nothing in it ran. Stop Tasks if it runs from that folder, move the folder out of $versions, and run the installer again."
+  [ -z "$problem" ] || fail "versions/$VERSION already exists but is not this signed release: $problem. It was left as it is and nothing in it ran. Stop TTasks if it runs from that folder, move the folder out of $versions, and run the installer again."
   rm -rf -- "$staging"
 else
   mv -T -- "$staging" "$target"
@@ -152,9 +152,9 @@ staging=''
 rm -rf -- "$work"
 work=''
 
-# 5. A separate install (TASKS_HOME) is marked, so the launcher exports TASKS_HOME (A2 3.12.3).
+# 5. A separate install (TTASKS_HOME) is marked, so the launcher exports TTASKS_HOME (A2 3.12.3).
 : > "$root/home.marker"
 
-# 6. Hand over to the verified version through its own launcher: self-test, current, bin/tasks.
-"$target/bin/tasks" install --finish || fail 'the new version failed its self-test'
-printf 'The stable command is %s/bin/tasks\n' "$root"
+# 6. Hand over to the verified version through its own launcher: self-test, current, bin/ttasks.
+"$target/bin/ttasks" install --finish || fail 'the new version failed its self-test'
+printf 'The stable command is %s/bin/ttasks\n' "$root"

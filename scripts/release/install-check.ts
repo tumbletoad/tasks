@@ -1,7 +1,7 @@
 // The check of a signed release on a fresh machine, before it is published: the release's own
 // install script for this system installs it into a new root, and, with a previous signed release,
 // installs that one first and upgrades it to this one. Then the installed product verifies the
-// archive itself with `tasks update --from`, its signature and hashes against the keys the
+// archive itself with `ttasks update --from`, its signature and hashes against the keys the
 // product carries. A release must pass (and is current already). A rehearsal must be refused:
 // no product trusts its key, so nothing a rehearsal made can pass for a release.
 //
@@ -44,7 +44,7 @@ function signedRelease(dist: string, work: string): { release: Release; rehearsa
   };
 }
 
-/** The installed product's own check of the archive: `tasks update --from <archive> --yes`. */
+/** The installed product's own check of the archive: `ttasks update --from <archive> --yes`. */
 function productVerifies(root: string, release: Release, rehearsal: boolean): string {
   const ran = runProgram(stableCommand(root), [
     "update",

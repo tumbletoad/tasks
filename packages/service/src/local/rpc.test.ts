@@ -14,9 +14,9 @@ import {
   openRpc,
   type Connected,
   type JsonObject,
-} from "@tasks/bridge/protocol";
-import { clientInfo, endpointRoot, firstLines, sleep, until } from "@tasks/bridge/test/endpoint";
-import { AppError } from "@tasks/contracts";
+} from "@ttasks/bridge/protocol";
+import { clientInfo, endpointRoot, firstLines, sleep, until } from "@ttasks/bridge/test/endpoint";
+import { AppError } from "@ttasks/contracts";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { testClock } from "../../test/clock.ts";
 import { startServer } from "../../test/local.ts";

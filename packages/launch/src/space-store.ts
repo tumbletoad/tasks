@@ -34,7 +34,7 @@ import {
   type RunResult,
   type RunState,
   type Usage,
-} from "@tasks/contracts/runs";
+} from "@ttasks/contracts/runs";
 import {
   checkNewIntent,
   checkNewRun,

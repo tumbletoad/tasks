@@ -1,4 +1,4 @@
-// `tasks service install|uninstall|start|stop|restart|status` (A2 3.3.5) as functions over a
+// `ttasks service install|uninstall|start|stop|restart|status` (A2 3.3.5) as functions over a
 // ServiceContext.
 //
 // install and uninstall first make a plan: the exact steps, which the entry shows as the preview
@@ -13,7 +13,7 @@
 // before it acts, with nothing else read in between, and reads it again afterwards (applyPlan).
 // What that prevents and what it only detects is the decision's "guarantee".
 //
-// start goes through the OS (A2 3.3.5, 3.5 rule 5) and never runs `tasks serve` in this process's
+// start goes through the OS (A2 3.3.5, 3.5 rule 5) and never runs `ttasks serve` in this process's
 // tree, except where nothing else can start it: Linux without this install's unit (no user manager,
 // or no unit installed: setsid), and Windows without Explorer in this session (detached). Both wait
 // for a ready service that completes a handshake. A Linux install takes over a service started by
@@ -35,7 +35,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import type { ServiceStatus } from "../hub/endpoint.ts";
 import {
   atomicWrite,
@@ -227,7 +227,7 @@ const valueText = (value: RegValue | undefined): string =>
 /**
  * The drop-ins systemd would apply to `unit` from the user's unit folder (systemd.unit(5)): the
  * `.conf` files in `<unit>.d/` and, for a name with dashes, in each prefix folder such as
- * `tasks-.service.d/`, each with its exact bytes. Empty when there are none. The type-wide
+ * `ttasks-.service.d/`, each with its exact bytes. Empty when there are none. The type-wide
  * `service.d/` is the person's setting for every service and is left out; so are drop-ins in
  * system folders.
  */
@@ -703,7 +703,7 @@ export async function userManager(ctx: ServiceContext, call: Runner = ctx.run): 
   return result.code === 0;
 }
 
-/** loginctl's Linger for this user: read only. Tasks never enables it (A2 3.3.3). */
+/** loginctl's Linger for this user: read only. TTasks never enables it (A2 3.3.3). */
 export async function linger(ctx: ServiceContext): Promise<"yes" | "no" | "unknown"> {
   if (ctx.uid === undefined) return "unknown";
   const result = await ctx.run(LOGINCTL, [
@@ -736,7 +736,7 @@ const STARTUP_OFF_NOTE = `${PRODUCT_NAME} is turned off in Startup apps (Task Ma
 const createdNote = (ctx: ServiceContext) =>
   `The folders and keys this creates are noted in ${createdPath(ctx)}, so ${verbFor("uninstall")} removes them again when they are empty.`;
 
-/** The steps of `tasks service install`. Reads only; nothing is written until applyPlan. */
+/** The steps of `ttasks service install`. Reads only; nothing is written until applyPlan. */
 export async function planInstall(ctx: ServiceContext): Promise<Plan> {
   refuseIdentity(ctx, "install", { operator: true, entry: true });
   // Install creates folders and files in this process: a umask that takes away the person's own
@@ -848,7 +848,7 @@ export async function planInstall(ctx: ServiceContext): Promise<Plan> {
  * Linux: this install's unit as an earlier version wrote it, without `Delegate=yes`, gets that
  * line, and systemd reads it again; the service's next start runs with it, and background runs can
  * be contained. A unit that is not this install's, that says something about delegation, or that
- * drop-ins change is left as it is. True when it changed. `tasks update` calls it right before it
+ * drop-ins change is left as it is. True when it changed. `ttasks update` calls it right before it
  * restarts the service.
  */
 export async function delegateUnit(ctx: ServiceContext): Promise<boolean> {
@@ -875,7 +875,7 @@ export async function delegateUnit(ctx: ServiceContext): Promise<boolean> {
 }
 
 /**
- * The steps of `tasks service uninstall`: this install's entry, Task Manager's record of it, and
+ * The steps of `ttasks service uninstall`: this install's entry, Task Manager's record of it, and
  * what install noted it created, each folder or key only when empty, deepest first.
  */
 export async function planUninstall(ctx: ServiceContext): Promise<Plan> {
@@ -1026,7 +1026,7 @@ async function checkWithin(
 
 /** An entry file (a unit, a plist): 0644, as its manager expects, whatever the umask. */
 const ENTRY_FILE_MODE = 0o644;
-/** A service manager's folder Tasks creates for its entry. */
+/** A service manager's folder TTasks creates for its entry. */
 const ENTRY_FOLDER_MODE = 0o755;
 
 /**
@@ -1234,7 +1234,7 @@ export interface StartOutcome {
   readonly status: ServiceStatus;
 }
 
-/** What `tasks service start` and `tasks open` say after a start by hand where a unit could do it. */
+/** What `ttasks service start` and `ttasks open` say after a start by hand where a unit could do it. */
 export const NO_UNIT_LINE = `It does not start by itself when you sign in. To have it start by itself, run: ${CLI_NAME} service install`;
 
 export interface StopOutcome {
@@ -1442,7 +1442,7 @@ function stillRunning(ctx: ServiceContext, what: string): ServiceCommandError {
 }
 
 /**
- * `tasks service start` (A2 3.3.5): through the OS, then up to 15 s (20 s on Windows) for a ready
+ * `ttasks service start` (A2 3.3.5): through the OS, then up to 15 s (20 s on Windows) for a ready
  * service that completes a handshake. It succeeds only with a ready service. One of this install
  * that is already ready is left as it is, one that is starting is waited for, and one that is
  * stopping is let end first, so a second service never starts only to exit 73.
@@ -1583,7 +1583,7 @@ export async function startService(ctx: ServiceContext, guard?: EntryGuard): Pro
 const SYSTEMD_RUNNING = new Set(["active", "activating", "reloading", "deactivating"]);
 
 /**
- * `tasks service stop` (A2 3.3.5): through the manager where one runs it (systemctl stop,
+ * `ttasks service stop` (A2 3.3.5): through the manager where one runs it (systemctl stop,
  * launchctl kill TERM), else `service/shutdown {restart: false}` over the endpoint, which every
  * manager treats as a clean stop that it does not restart. A service still starting is waited for
  * until it can be asked (A2 3.3.6). Then it waits until the service's process has ended, not only
@@ -1677,7 +1677,7 @@ export interface RestartOutcome {
 }
 
 /**
- * `tasks service restart`: stop, then start, as a person would run them, so the service comes up
+ * `ttasks service restart`: stop, then start, as a person would run them, so the service comes up
  * on what `current` names now, under the supervisor `<root>/bin` holds now. Who may run it is
  * stop's rule: not an agent's shell.
  */
@@ -1806,8 +1806,8 @@ export type ServiceAnswer =
 
 export interface StatusReport {
   readonly install_id: string;
-  /** TASKS_HOME of a separate install, else null. */
-  readonly tasks_home: string | null;
+  /** TTASKS_HOME of a separate install, else null. */
+  readonly ttasks_home: string | null;
   readonly platform: string;
   readonly program: string;
   readonly program_present: boolean;
@@ -1841,7 +1841,7 @@ const word = (text: string): string | null => {
   return /^[a-z-]{1,32}$/.test(line) ? line : null;
 };
 
-/** `tasks service status`: reads and reports, and changes nothing. */
+/** `ttasks service status`: reads and reports, and changes nothing. */
 export async function serviceStatus(ctx: ServiceContext): Promise<StatusReport> {
   const wanted = await readEntry(ctx);
   let autostart: Autostart;
@@ -1868,7 +1868,7 @@ export async function serviceStatus(ctx: ServiceContext): Promise<StatusReport> 
   }
   return {
     install_id: ctx.installId,
-    tasks_home: ctx.layout.home ?? null,
+    ttasks_home: ctx.layout.home ?? null,
     platform: ctx.platform,
     program: ctx.program,
     program_present: existsSync(ctx.program),

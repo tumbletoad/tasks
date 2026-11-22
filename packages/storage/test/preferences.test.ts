@@ -1,7 +1,7 @@
 // pref.set through the write path, and the writer's own reads of preferences (A1 3.16, 3.5, 3.7;
 // A3 3.8.3; A7 3.10 M3.11). The registry itself is tested in packages/contracts. Fixture text only.
 import { join } from "node:path";
-import { ReceiptGetResult, receiptResult } from "@tasks/contracts";
+import { ReceiptGetResult, receiptResult } from "@ttasks/contracts";
 import { afterAll, afterEach, beforeEach, describe, expect, expectTypeOf, test } from "vitest";
 import { newId } from "../src/ids.ts";
 import { openWriter } from "../src/open.ts";

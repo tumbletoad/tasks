@@ -16,7 +16,7 @@ const count = option(args, "--count");
 function build(): McpServer {
   if (count !== undefined) appendFileSync(count, "instance\n");
   const server = new McpServer(
-    { name: "tasks-a07", version: "0.0.0" },
+    { name: "ttasks-a07", version: "0.0.0" },
     { capabilities: { tools: {} }, instructions: "Tasks A07 stand-in. One tool: status." },
   );
   server.registerTool(

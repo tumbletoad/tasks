@@ -1,23 +1,23 @@
-// `tasks run` (runs/*): a background run of a task, with the agent working in the task's folder
+// `ttasks run` (runs/*): a background run of a task, with the agent working in the task's folder
 // on its own, and what a person needs beside it at the command line.
 //
-//   tasks run <task> [--instance <id>] [--wait] [<request> | -]
-//   tasks run list [<task>]
-//   tasks run show <run>
-//   tasks run stop <run>
+//   ttasks run <task> [--instance <id>] [--wait] [<request> | -]
+//   ttasks run list [<task>]
+//   ttasks run show <run>
+//   ttasks run stop <run>
 //
 // The request is the person's own words for the agent: typed on their own command line (like
-// `tasks add`), or read from stdin with `-`. Without one, the agent works on the task. It reaches
-// the agent over its protocol, never on a command line Tasks starts. Only the person starts a run,
+// `ttasks add`), or read from stdin with `-`. Without one, the agent works on the task. It reaches
+// the agent over its protocol, never on a command line TTasks starts. Only the person starts a run,
 // from an interactive command: a run may change anything their agent setup allows, without asking.
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
 import { asAppError, newRequestId } from "./verbs.ts";
 
-/** `tasks run --help` and `tasks help run`. */
+/** `ttasks run --help` and `ttasks help run`. */
 export const RUN_HELP = `Usage: ${CLI_NAME} run <task> [--instance <id>] [--wait] [<request> | -]
        ${CLI_NAME} run list [<task>]
        ${CLI_NAME} run show <run>

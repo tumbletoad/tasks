@@ -1,4 +1,4 @@
-// `tasks doctor`'s agent checks and `tasks setup agents` for the remaining apps, through the CLI
+// `ttasks doctor`'s agent checks and `ttasks setup agents` for the remaining apps, through the CLI
 // and a real service (A3 3.13, 3.14; A7 3.11 M4.05): doctor checks pass against fakes, each fault
 // gives a row with the command that fixes it, `--live` asks fake apps for a headless call and the
 // service must see it, and apply then remove leaves every file as it was.
@@ -18,11 +18,11 @@ import {
 } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { MCP_SERVER_KEY } from "@tasks/brand";
-import { startService, type RunningService } from "@tasks/service/hub";
-import { removeRuntimeDir, serviceEnv, stateOf, tempRoot } from "@tasks/service/test/harness";
-import { classSession } from "@tasks/service/test/ops-helpers";
-import { installFakeAgents, type FakeAgents } from "@tasks/testkit/fake-agents";
+import { MCP_SERVER_KEY } from "@ttasks/brand";
+import { startService, type RunningService } from "@ttasks/service/hub";
+import { removeRuntimeDir, serviceEnv, stateOf, tempRoot } from "@ttasks/service/test/harness";
+import { classSession } from "@ttasks/service/test/ops-helpers";
+import { installFakeAgents, type FakeAgents } from "@ttasks/testkit/fake-agents";
 import type { AgentsSetupOptions } from "../src/setup-agents.ts";
 import { BIN, runMain } from "./cli-harness.ts";
 
@@ -78,7 +78,7 @@ beforeAll(async () => {
     session.close();
   }
   // The install's stable command, which every entry runs: here it stands for the CLI from source.
-  tasks = join(home, "bin", windows ? "tasks.exe" : "tasks");
+  tasks = join(home, "bin", windows ? "ttasks.exe" : "ttasks");
   mkdirSync(join(home, "bin"), { recursive: true });
   writeFileSync(tasks, "");
   // Claude Code's default home with another server, a Codex home, Claude Desktop's file.
@@ -150,7 +150,7 @@ function agents(env: Record<string, string> = {}, engineArgv?: string[]): Agents
     env: {
       ...fakes.env,
       ...desktopEnv,
-      TASKS_HOME: home,
+      TTASKS_HOME: home,
       FAKE_AGENT_TASKS: JSON.stringify({ path: tasks, argv: [process.execPath, BIN] }),
       ...env,
     },
@@ -208,7 +208,7 @@ async function applyAll(argv: string[] = [], options = agents()): Promise<string
   return applied.stdout;
 }
 
-describe("[A3.3.14.doctor.agents] tasks doctor's agent checks against fakes", () => {
+describe("[A3.3.14.doctor.agents] ttasks doctor's agent checks against fakes", () => {
   test(
     "before setup: one row says to run setup, and no agent home is read",
     async () => {
@@ -537,7 +537,7 @@ describe("[A3.3.14.doctor.agents] tasks doctor's agent checks against fakes", ()
   );
 });
 
-describe("[A3.3.14.doctor.manual] tasks doctor on an entry setup did not write", () => {
+describe("[A3.3.14.doctor.manual] ttasks doctor on an entry setup did not write", () => {
   test(
     "an entry without --instance is named for what it reaches, one with an instance for its refusal, each with how to take it out",
     async () => {
@@ -595,7 +595,7 @@ describe("[A3.3.14.doctor.manual] tasks doctor on an entry setup did not write",
   );
 });
 
-describe("[A3.3.14.doctor.live] tasks doctor --live against fake apps", () => {
+describe("[A3.3.14.doctor.live] ttasks doctor --live against fake apps", () => {
   test(
     "a headless call through each app reaches the service from that home; without --live nothing runs",
     async () => {

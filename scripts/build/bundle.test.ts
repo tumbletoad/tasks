@@ -37,7 +37,7 @@ const identity = { version: "0.1.0-dev.42", build: "fixture0b0d1" };
 let work: string;
 let first: BundleResult;
 beforeAll(async () => {
-  work = mkdtempSync(join(tmpdir(), "tasks-bundle-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-bundle-"));
   first = await bundle({ root: repoRoot, out: join(work, "one"), identity });
 }, 120_000);
 afterAll(() => {
@@ -82,7 +82,7 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
 
   test("the output may load only built-ins and files of lib/, each named by a literal", () => {
     const lib = new Set([
-      "lib/tasks.mjs",
+      "lib/ttasks.mjs",
       "lib/chunks/cli.mjs",
       "lib/chunks/x.mjs",
       "lib/bridge.mjs",
@@ -165,7 +165,7 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
       expect(chunks, name).toContain(`lib/chunks/${name}.mjs`);
     }
     for (const file of [
-      "lib/tasks.mjs",
+      "lib/ttasks.mjs",
       "lib/bridge.mjs",
       "lib/mcp-offline.json",
       "lib/shim.mjs",
@@ -188,7 +188,7 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
     }
     // The entry imports no chunk statically, so the compile cache is on before any loads; it
     // reaches the CLI and the bridge only through dynamic imports of their own files.
-    const entry = read("lib/tasks.mjs");
+    const entry = read("lib/ttasks.mjs");
     expect(entry).not.toMatch(/^import .* from "\.\.?\//m);
     expect(entry).toContain('import("./chunks/cli.mjs")');
     expect(entry).toContain('import("./bridge.mjs")');
@@ -247,16 +247,16 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
   test("the bundled entry runs the CLI and turns on the compile cache under the install's cache", () => {
     const home = join(work, "home");
     const env = Object.fromEntries(
-      Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("TASKS_")),
+      Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("TTASKS_")),
     );
     const ran = spawnSync(
       process.execPath,
-      ["--report-exclude-env", join(work, "one", "lib", "tasks.mjs"), "version"],
-      { env: { ...env, TASKS_HOME: home }, encoding: "utf8", windowsHide: true, timeout: 60_000 },
+      ["--report-exclude-env", join(work, "one", "lib", "ttasks.mjs"), "version"],
+      { env: { ...env, TTASKS_HOME: home }, encoding: "utf8", windowsHide: true, timeout: 60_000 },
     );
     expect(ran.stderr).toBe("");
     expect(ran.stdout.replaceAll("\r\n", "\n")).toBe(
-      `TT Tasks ${identity.version} (${identity.build})\n`,
+      `TTasks ${identity.version} (${identity.build})\n`,
     );
     expect(readdirSync(join(home, "cache", "compile")).length).toBeGreaterThan(0);
   });
@@ -307,11 +307,11 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
     expect(ran.stdout.trim()).toBe("hello over the bundle");
   });
 
-  test("tasks mcp through the bundled entry is the bridge, answering from lib/mcp-offline.json", () => {
+  test("ttasks mcp through the bundled entry is the bridge, answering from lib/mcp-offline.json", () => {
     const env = Object.fromEntries(
-      Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("TASKS_")),
+      Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("TTASKS_")),
     );
-    // No service runs in this TASKS_HOME, so the bridge answers initialize from its offline file.
+    // No service runs in this TTASKS_HOME, so the bridge answers initialize from its offline file.
     const initialize = {
       jsonrpc: "2.0",
       id: 1,
@@ -324,9 +324,9 @@ describe("[A2.3.12.2.build.bundle] the esbuild bundles of lib/", () => {
     };
     const ran = spawnSync(
       process.execPath,
-      ["--report-exclude-env", join(work, "one", "lib", "tasks.mjs"), "mcp"],
+      ["--report-exclude-env", join(work, "one", "lib", "ttasks.mjs"), "mcp"],
       {
-        env: { ...env, TASKS_HOME: join(work, "mcp-home") },
+        env: { ...env, TTASKS_HOME: join(work, "mcp-home") },
         input: `${JSON.stringify(initialize)}\n`,
         encoding: "utf8",
         windowsHide: true,

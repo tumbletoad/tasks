@@ -1,7 +1,7 @@
-// `tasks view` (A1 3.13, M3.10): the space's generated view, `view/`. The service carries it out
+// `ttasks view` (A1 3.13, M3.10): the space's generated view, `view/`. The service carries it out
 // through its `view/rebuild` method (hub/space-verbs.ts); the CLI opens no space database.
 //
-//   tasks view rebuild [<space>]
+//   ttasks view rebuild [<space>]
 //
 // A rebuild looks at every file the projection placed and queues every task to render again. It
 // removes nothing the projection cannot prove it wrote: a file a person changed or added stays, or
@@ -14,8 +14,8 @@ import { bodyOf, printError, printUsage } from "./output.ts";
 import { whichSpace } from "./space.ts";
 import { asAppError } from "./verbs.ts";
 
-/** `tasks view --help` and `tasks help view`. */
-export const VIEW_HELP = `Usage: tasks view <command> [arguments] [--json]
+/** `ttasks view --help` and `ttasks help view`. */
+export const VIEW_HELP = `Usage: ttasks view <command> [arguments] [--json]
 
   rebuild [<space>]    Check every file of the space's view/ and render every task again
 
@@ -42,9 +42,9 @@ export async function viewCommand(
     })) as Record<string, unknown>;
   };
   try {
-    if (sub !== "rebuild") throw new UsageError("tasks view has rebuild");
+    if (sub !== "rebuild") throw new UsageError("ttasks view has rebuild");
     if (rest.some((token) => token.startsWith("--")) || rest.length > 1) {
-      throw new UsageError("tasks view rebuild takes at most one <space>");
+      throw new UsageError("ttasks view rebuild takes at most one <space>");
     }
     const result = await call("view/rebuild", {
       space: await whichSpace(io, globals, rest[0], call),

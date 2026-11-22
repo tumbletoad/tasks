@@ -225,6 +225,9 @@ async function main(
           }
           if (problems.length === 0) console.log(`A tag v${version} on main would be released.`);
         }
+        if (plan.freshOnly !== undefined) {
+          console.log(`::notice title=Fresh installs only::${plan.freshOnly}`);
+        }
       } else {
         throw new Refusal(USAGE);
       }

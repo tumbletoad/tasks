@@ -3,14 +3,14 @@
 // that names its space, a bridge, a shim and a bound CLI call never look at it.
 //
 // Only an explicit act of the person changes it: "Make default" in the UI (`POST
-// /api/v1/space/default`, the UI's grant is the person) or `tasks space use <space>` (`space/use`,
+// /api/v1/space/default`, the UI's grant is the person) or `ttasks space use <space>` (`space/use`,
 // the user's classes only). Both come here. The edit goes through `prepareEdit`/`commitEdit`
 // (A2 3.2.4): one key set in `[service]`, every other byte of the file kept, written only if
 // the file is still the one checked. The service holds the value it read at start and each value it
 // wrote since (reloading the whole file on change is not built, A2 3.2.4).
-import type { JsonObject } from "@tasks/bridge/protocol";
-import { AppError } from "@tasks/contracts";
-import { isId, type Id } from "@tasks/storage";
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import { AppError } from "@ttasks/contracts";
+import { isId, type Id } from "@ttasks/storage";
 import { commitEdit, prepareEdit, type EditRefusal } from "../config/edit.ts";
 import type { ConnectionClass } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
@@ -32,7 +32,7 @@ export interface DefaultSpaceOptions {
   readonly known: () => readonly KnownSpace[];
 }
 
-/** Who asked: the UI's Make default, or `tasks space use`. Logged as a word, nothing else. */
+/** Who asked: the UI's Make default, or `ttasks space use`. Logged as a word, nothing else. */
 export type DefaultSource = "ui" | "cli";
 
 function refused(reason: EditRefusal): AppError {
@@ -48,7 +48,7 @@ function refused(reason: EditRefusal): AppError {
       return new AppError({
         code: "invalid_input",
         message: "machine.toml cannot be read as it is, so nothing was changed.",
-        hint: "Run tasks doctor, then fix machine.toml.",
+        hint: "Run ttasks doctor, then fix machine.toml.",
       });
     case "unsupported_layout":
       return new AppError({
@@ -67,7 +67,7 @@ function refused(reason: EditRefusal): AppError {
 type Verb = (params: JsonObject, cls: ConnectionClass) => Promise<unknown>;
 
 /**
- * `space/use {space}` (`tasks space use <space>`): the user only. The method table already lets
+ * `space/use {space}` (`ttasks space use <space>`): the user only. The method table already lets
  * only `cli-interactive` call it; the class is checked again, so another transport refuses agents
  * too. `space` is the space's ID (the CLI resolves a name or a folder through `space/list`).
  */
@@ -151,7 +151,7 @@ export class DefaultSpace {
       throw new AppError({
         code: "not_found",
         message: "This machine has no space with that ID.",
-        hint: "Run tasks space list.",
+        hint: "Run ttasks space list.",
       });
     }
     if (this.#current === id) return { default: id };

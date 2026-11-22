@@ -15,8 +15,8 @@
 // or a path. It is replaced atomically (0600) after every change that must outlive a restart.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { isId } from "@tasks/storage";
-import { INSTANCE_ID } from "@tasks/launch";
+import { isId } from "@ttasks/storage";
+import { INSTANCE_ID } from "@ttasks/launch";
 import { atomicWrite } from "../hub/files.ts";
 import { NATIVE_ID, NATIVE_SOURCES, type NativeSource } from "../ops/index.ts";
 

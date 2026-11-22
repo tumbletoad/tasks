@@ -5,16 +5,16 @@
 // batch rendered (and the watermark back) and queueing tasks to render again. Everything that
 // crosses is counts, codes and task IDs, never a task's text.
 //
-// `tasks view rebuild` asks the worker for a full reconciliation (rebuild): the answer is what the
+// `ttasks view rebuild` asks the worker for a full reconciliation (rebuild): the answer is what the
 // reconciliation found, as soon as it ran (before the worker's next batch), whatever that batch
 // does next.
 //
 // Stopping asks the worker to end after the batch in progress, and stops the thread when it has
 // not ended within the bound: a batch cut off is a kill, which the next start recovers from
-// (@tasks/projection). A rebuild still waiting then fails with `STORAGE_WORKER_FAILED`.
+// (@ttasks/projection). A rebuild still waiting then fails with `STORAGE_WORKER_FAILED`.
 import { Worker } from "node:worker_threads";
-import type { Reconciled, Rescued, StartReport, StateFile, StepReport } from "@tasks/projection";
-import type { ProjectedBatch, SpaceWriterHandle } from "@tasks/storage";
+import type { Reconciled, Rescued, StartReport, StateFile, StepReport } from "@ttasks/projection";
+import type { ProjectedBatch, SpaceWriterHandle } from "@ttasks/storage";
 import { within } from "./wait.ts";
 
 /** What a projection worker is given. */
@@ -175,7 +175,7 @@ export class ProjectionRunner {
   }
 
   /**
-   * A full rebuild (`tasks view rebuild`, A1 3.13 rule 5): every file of the record is looked at,
+   * A full rebuild (`ttasks view rebuild`, A1 3.13 rule 5): every file of the record is looked at,
    * and every task queued. Resolves with what the reconciliation found.
    */
   rebuild(): Promise<Reconciled> {

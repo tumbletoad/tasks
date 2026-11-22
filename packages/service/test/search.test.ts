@@ -9,8 +9,13 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { AppError, SEARCH_IDS, SEARCH_SCOPES, TaskSearchResult } from "@tasks/contracts";
-import { indexChanges, rebuildSearchIndex, type Operation, type WriteResult } from "@tasks/storage";
+import { AppError, SEARCH_IDS, SEARCH_SCOPES, TaskSearchResult } from "@ttasks/contracts";
+import {
+  indexChanges,
+  rebuildSearchIndex,
+  type Operation,
+  type WriteResult,
+} from "@ttasks/storage";
 import {
   addLearning,
   changeAuthority,
@@ -19,9 +24,9 @@ import {
   redactTask,
   redactText,
   tombstone,
-} from "@tasks/storage/search-helpers";
-import { STEPS_0_3 } from "@tasks/storage/revisions";
-import { MACHINE, writeFixture, type Fixture } from "@tasks/storage/write-helpers";
+} from "@ttasks/storage/search-helpers";
+import { STEPS_0_3 } from "@ttasks/storage/revisions";
+import { MACHINE, writeFixture, type Fixture } from "@ttasks/storage/write-helpers";
 import type { Caller } from "../src/ops/caller.ts";
 import { opCall, type OpsHost } from "../src/ops/index.ts";
 import { SearchCursors, CURSOR_LIMITS } from "../src/search/cursors.ts";

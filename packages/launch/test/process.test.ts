@@ -69,7 +69,7 @@ describe("[A4.5.shim.process-identity] start times as the OS records them", () =
         `${String(pid)} (${comm}) ${fields.join(" ")}\n`,
       );
     };
-    stat(10, "tasks shim", "S");
+    stat(10, "ttasks shim", "S");
     stat(11, "a) (b", "R");
     stat(12, "ended", "Z");
     expect(linuxStartTime(10, proc)).toBe("linux:0f0e0d0c-0b0a-4908-8706-050403020100:98765");

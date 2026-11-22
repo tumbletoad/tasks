@@ -1,29 +1,29 @@
-// `tasks doctor`, the agent side (A3 3.14; M4.05). Doctor reads and probes: it never launches an
+// `ttasks doctor`, the agent side (A3 3.14; M4.05). Doctor reads and probes: it never launches an
 // interactive agent app, opens a deep link or starts a login, and it writes into no agent home.
 // What it reads is setup's own record (`<state>/setup/agents.json`), the homes' files through the
-// reader setup uses (@tasks/service/setup), and the service's agent-home rows (`setup/homes`).
+// reader setup uses (@ttasks/service/setup), and the service's agent-home rows (`setup/homes`).
 // Until setup has registered a home, it reads no home at all: the one row then says to run setup.
 //
 //   claude.env            CLAUDE_CODE_MCP_ALLOWLIST_ENV=1 in the agent environment (warn)
 //   agents                no home registered yet, or setup's record cannot be read
-//   instances             machine.toml names no instance Open can start (run `tasks setup
+//   instances             machine.toml names no instance Open can start (run `ttasks setup
 //                         instances`), or a Claude Code or Codex instance's home has no entry of
-//                         setup's (run `tasks setup agents`); reads machine.toml and the record only
+//                         setup's (run `ttasks setup agents`); reads machine.toml and the record only
 //   mcp.<instance>        the entry setup wrote: still there by the file and by the app's own
 //                         `mcp get`, running this install's command, its --space and --instance
 //                         the same as its grant row
 //   codex.engines.<inst>  each engine that reads a Codex home (the CLI, the Codex app's bundled
-//                         engine) reads Tasks's entry with its own `mcp get --json`
+//                         engine) reads TTasks's entry with its own `mcp get --json`
 //   bridge.<instance>     the entry's command as a synthetic stdio client: initialize and
 //                         server/discover (both eras), tools/list names this build's tools, and a
 //                         `status` round trip to the service in under 2 seconds
 //   desktop.restart       Claude Desktop started before setup changed its configuration
 //   grants                a registered home without its row, or a row without an entry
-//   t3.homes              a T3 provider instance runs in a home without Tasks's entry
+//   t3.homes              a T3 provider instance runs in a home without TTasks's entry
 //   live (--live only)    a headless call through the app (`claude -p`, `codex exec`) in a
 //                         temporary folder asks the model to call `status`, and the service must
 //                         have seen that call from the home's instance. It spends tokens.
-//   manual                an entry of Tasks's name that setup did not write: without --instance it
+//   manual                an entry of TTasks's name that setup did not write: without --instance it
 //                         is a hand-made entry (print's), which reaches only the default space; with
 //                         one, the grant gate refuses it until setup registers that instance
 //   block                 each instruction block setup wrote is there and current (A3 3.12):
@@ -39,9 +39,9 @@ import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { uptime } from "node:os";
 import { join, win32 } from "node:path";
-import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@tasks/brand";
-import generatedTools from "@tasks/contracts/generated/mcp-tools.json" with { type: "json" };
-import { makeDir } from "@tasks/files";
+import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
+import generatedTools from "@ttasks/contracts/generated/mcp-tools.json" with { type: "json" };
+import { makeDir } from "@ttasks/files";
 import {
   helperOutput,
   INSTANCE_ID,
@@ -49,9 +49,9 @@ import {
   MANUAL_INSTANCE,
   startHelper,
   type Env,
-} from "@tasks/launch";
-import { loadMachineConfig } from "@tasks/service/config";
-import { homeFolder, hostFacts, resolveLayout } from "@tasks/service/paths";
+} from "@ttasks/launch";
+import { loadMachineConfig } from "@ttasks/service/config";
+import { homeFolder, hostFacts, resolveLayout } from "@ttasks/service/paths";
 import {
   appLabel,
   codexEngines,
@@ -73,7 +73,7 @@ import {
   type T3Skip,
   type HomeView,
   type SetupInput,
-} from "@tasks/service/setup";
+} from "@ttasks/service/setup";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
 import { setupInputOf, type AgentsSetupOptions } from "./setup-agents.ts";
@@ -228,7 +228,7 @@ const SKIPPED_ROWS: readonly Check[] = [
   },
 ];
 
-/** The agent-side rows of `tasks doctor` (A3 3.14). */
+/** The agent-side rows of `ttasks doctor` (A3 3.14). */
 export async function agentChecks(
   io: Io,
   state: string,
@@ -511,7 +511,7 @@ async function mcpCheck(
   };
 }
 
-/** `codex.engines.<instance>`: every engine that reads the home reads Tasks's entry. */
+/** `codex.engines.<instance>`: every engine that reads the home reads TTasks's entry. */
 async function enginesCheck(
   input: SetupInput,
   view: HomeView,
@@ -559,7 +559,7 @@ function readsEntry(out: string | undefined, command: string): boolean {
 
 /**
  * An app's command's stdout in the home's environment, or undefined when it failed: a helper of
- * the runner's (@tasks/launch helpers.ts), like every program doctor starts.
+ * the runner's (@ttasks/launch helpers.ts), like every program doctor starts.
  */
 function output(
   input: SetupInput,
@@ -629,7 +629,7 @@ function grantsCheck(
 }
 
 /**
- * `manual` (A3 3.7.8): an entry of Tasks's name in a home that setup did not write. Without
+ * `manual` (A3 3.7.8): an entry of TTasks's name in a home that setup did not write. Without
  * `--instance` it is a hand-made entry, as `print` writes one: not a mistake, so the row says what
  * it reaches (the machine's default space only). With one, the grant gate refuses its calls until
  * setup registers that instance, whose refusal sends the person to setup, which leaves the home
@@ -683,7 +683,7 @@ const T3_SKIP_TEXT: Readonly<Record<T3Skip, string>> = {
 };
 
 /**
- * `t3.homes`: every home an enabled T3 provider instance runs in has Tasks's entry. An instance
+ * `t3.homes`: every home an enabled T3 provider instance runs in has TTasks's entry. An instance
  * turned off in T3 is named and not checked; an entry setup passed over is named with why, and one
  * whose home cannot be known warns, since that home may lack the entry.
  */
@@ -837,7 +837,7 @@ async function desktopStarted(io: Io): Promise<number | "not_running" | undefine
 // ---------------------------------------------------------------------------------------------
 // Programs doctor starts (the entries' commands for the bridge probe, the apps for --live, the
 // apps' own `mcp get`, Windows PowerShell for desktop.restart) are all helpers of the runner in
-// @tasks/launch (helpers.ts, A3 3.14): it ends each with what it started at its deadline, on stop,
+// @ttasks/launch (helpers.ts, A3 3.14): it ends each with what it started at its deadline, on stop,
 // and when doctor exits, so a headless run never goes on, and spends tokens, after the person
 // stopped doctor. This file imports no child_process (dependency-cruiser checks it).
 

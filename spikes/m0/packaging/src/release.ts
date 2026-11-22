@@ -1,5 +1,5 @@
 // Release files around the archives (A2 3.12.4, 3.12.5): SHA256SUMS, its OpenSSH signature
-// SHA256SUMS.sshsig (namespace tasks-release) and the versioned install scripts, which pin the
+// SHA256SUMS.sshsig (namespace ttasks-release) and the versioned install scripts, which pin the
 // release public keys in their own text.
 //
 // The spike signs only with a throwaway Ed25519 key that a test or CI run generates in a
@@ -10,8 +10,8 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { installTemplates, repoRoot } from "./paths.ts";
 import { archiveName, type Platform, sha256File, VERSION_PATTERN } from "./version-folder.ts";
 
-export const NAMESPACE = "tasks-release";
-export const THROWAWAY_COMMENT = "tasks-spike-throwaway-test-key";
+export const NAMESPACE = "ttasks-release";
+export const THROWAWAY_COMMENT = "ttasks-spike-throwaway-test-key";
 
 /** The ssh-keygen this OS ships: System32\OpenSSH on Windows, ssh-keygen on PATH elsewhere. */
 export function systemSshKeygen(): string {
@@ -67,7 +67,7 @@ export function deleteKey(key: ThrowawayKey): void {
   rmSync(`${key.privateKey}.pub`, { force: true });
 }
 
-const ARCHIVE_NAME = /^tasks-(.+)-(linux-x64\.tar\.gz|win-x64\.zip)$/;
+const ARCHIVE_NAME = /^ttasks-(.+)-(linux-x64\.tar\.gz|win-x64\.zip)$/;
 
 export interface DistArchive {
   file: string;

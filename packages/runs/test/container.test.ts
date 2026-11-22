@@ -1,5 +1,5 @@
 // Run containers on a real container: a cgroup of a delegated systemd user unit on Linux, a job
-// object held by tasks-run.exe on Windows. Each test starts stand-in agents (stand-ins/) through
+// object held by ttasks-run.exe on Windows. Each test starts stand-in agents (stand-ins/) through
 // a stand-in service (stand-ins/harness.ts) and counts what is alive from the operating system,
 // never from the container. Where no real container can be made, the tests say so and skip: a
 // fake would prove nothing.
@@ -36,7 +36,7 @@ const services: Service[] = [];
 const units: string[] = [];
 
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-container-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-container-"));
   if (windows) {
     natives = buildNatives(join(work, "bin"));
     place = { ok: true };
@@ -57,7 +57,7 @@ function need(ctx: TestContext): void {
   if (!place.ok) ctx.skip(place.reason);
 }
 
-/** A new stand-in service: in its own user unit `tasks-test-container-<label>` on Linux. */
+/** A new stand-in service: in its own user unit `ttasks-test-container-<label>` on Linux. */
 async function startService(label: string): Promise<Service> {
   let service: Service;
   if (windows) {
@@ -284,7 +284,7 @@ describe("[A4.3.11.8.container.interrupt] an interrupt reaches the agent, which 
   });
 });
 
-describe("[A4.3.11.8.container.ungrouped] without a process group, a run still starts, reads its stdin, and Stop ends what Tasks can find of its process tree", () => {
+describe("[A4.3.11.8.container.ungrouped] without a process group, a run still starts, reads its stdin, and Stop ends what TTasks can find of its process tree", () => {
   /** A stand-in service whose runs get no process group, on every OS. */
   async function ungrouped(): Promise<Service> {
     const service = await Service.plain("ungrouped");

@@ -9,7 +9,7 @@ import { repoName, repoNameOf } from "./repo.ts";
 
 let base = "";
 beforeAll(() => {
-  base = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-repo-name-")));
+  base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-repo-name-")));
 });
 afterAll(() => {
   if (base !== "") rmSync(base, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });

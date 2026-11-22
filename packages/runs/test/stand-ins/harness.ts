@@ -2,7 +2,7 @@
 // force as a crash would. On Linux it runs as the main process of a transient user unit with
 // Delegate=yes, as the real service runs in its unit; on Windows it is a plain child of the test.
 //
-//   node harness.ts [<tasks-run.exe> | ungrouped]
+//   node harness.ts [<ttasks-run.exe> | ungrouped]
 //
 // It reads one JSON request per line on stdin and answers each on stdout, in order:
 //   {"op":"hello"}                                  -> {"pid":<n>}
@@ -21,7 +21,7 @@
 // Every answer is {"ok":true,"result":…} or {"ok":false,"error":"…","code"?:"…"}.
 //
 // safe-exit comes first: this script loads the product's code and ends through process.exit.
-import "@tasks/bridge/safe-exit";
+import "@ttasks/bridge/safe-exit";
 import { createInterface } from "node:readline";
 import {
   ContainerError,

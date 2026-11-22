@@ -11,7 +11,7 @@
 // `backup.dir` can be shared with other spaces, state folders and machines, so it is listed and
 // kept by retention, never cleaned automatically.
 import { Worker } from "node:worker_threads";
-import type { Id } from "@tasks/storage";
+import type { Id } from "@ttasks/storage";
 
 /** What one run does. Content-free: a folder, an ID, numbers. */
 export interface MaintenanceJob {

@@ -7,16 +7,16 @@
 // text with `textContent` only, so it runs under Trusted Types.
 //
 // The built UI arrives as a folder (`loadUiFolder`): its `index.html` carries the placeholder
-// `__TASKS_NONCE__` wherever the per-response nonce goes, and its files sit under `assets/` with
+// `__TTASKS_NONCE__` wherever the per-response nonce goes, and its files sit under `assets/` with
 // hashed names. Every script and stylesheet the shell loads carries an integrity hash (A2 3.8.3).
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
-import { APP_NAME, CLI_NAME, httpHeader, PRODUCT_ID } from "@tasks/brand";
+import { CLI_NAME, httpHeader, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { metaContent, startTags } from "./tags.ts";
 
 /** Where a built `index.html` takes the per-response style nonce. */
-export const NONCE_PLACEHOLDER = "__TASKS_NONCE__";
+export const NONCE_PLACEHOLDER = "__TTASKS_NONCE__";
 
 /** One file the listener serves at a path of its own. */
 export interface UiFile {
@@ -55,12 +55,12 @@ export function integrity(body: Buffer | string): string {
 // back from localStorage are untrusted (A5 3.24): a token is used only when it has the token shape.
 const BOOT = `"use strict";
 const TOKEN_KEY = ${JSON.stringify(TOKEN_KEY)};
-const TOKEN = /^tasks_u_[A-Za-z0-9_-]{43}$/;
+const TOKEN = /^ttasks_u_[A-Za-z0-9_-]{43}$/;
 const SPACE = /^\\/s\\/(sp_[0-9a-z]{26})(?:\\/|$)/;
 const status = document.getElementById("status");
 const detail = document.getElementById("detail");
 const say = (line, more) => { status.textContent = line; detail.textContent = more || ""; };
-const build = document.querySelector('meta[name="tasks-build"]')?.getAttribute("content") || "";
+const build = document.querySelector('meta[name="ttasks-build"]')?.getAttribute("content") || "";
 const fragment = new URLSearchParams(location.hash.slice(1));
 const code = fragment.get("k");
 const to = fragment.get("to") || "";
@@ -85,8 +85,8 @@ async function start() {
   if (!token) { signedOut(); return; }
   const ticketReply = await post("/api/v1/ws-ticket", {}, token);
   if (ticketReply.status === 401) { signedOut(); return; }
-  if (ticketReply.status === 409) { say("${APP_NAME} was updated. Reload this page."); return; }
-  if (!ticketReply.ok) { say("${APP_NAME}'s service did not answer."); return; }
+  if (ticketReply.status === 409) { say("${PRODUCT_NAME} was updated. Reload this page."); return; }
+  if (!ticketReply.ok) { say("${PRODUCT_NAME}'s service did not answer."); return; }
   const { ticket } = await ticketReply.json();
   const space = SPACE.exec(to)?.[1];
   const ws = new WebSocket("ws://" + location.host + "/api/v1/ws?ticket=" + encodeURIComponent(ticket));
@@ -108,12 +108,12 @@ async function start() {
       document.documentElement.dataset.seq = String(cursor.seq);
       detail.textContent = "As of " + cursor.seq;
     } else if (message.type === "error") {
-      say("${APP_NAME} cannot show this space: " + String(message.code) + ".");
+      say("${PRODUCT_NAME} cannot show this space: " + String(message.code) + ".");
     }
   };
-  ws.onclose = (event) => { if (event.code === 4401) signedOut(); else if (document.documentElement.dataset.state !== "signed-out") say("${APP_NAME}'s service is not running."); };
+  ws.onclose = (event) => { if (event.code === 4401) signedOut(); else if (document.documentElement.dataset.state !== "signed-out") say("${PRODUCT_NAME}'s service is not running."); };
 }
-start().catch(() => say("${APP_NAME}'s service did not answer."));
+start().catch(() => say("${PRODUCT_NAME}'s service did not answer."));
 `;
 
 const STYLE =
@@ -132,13 +132,13 @@ export function builtinUi(build: { version: string; build: string }): UiBundle {
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<meta name="csp-nonce" content="${NONCE_PLACEHOLDER}">`,
-    `<meta name="tasks-build" content="${escapeAttr(build.build)}">`,
-    `<title>${APP_NAME}</title>`,
+    `<meta name="ttasks-build" content="${escapeAttr(build.build)}">`,
+    `<title>${PRODUCT_NAME}</title>`,
     `<style nonce="${NONCE_PLACEHOLDER}">${STYLE}</style>`,
     `<script src="${bootPath}" integrity="${integrity(boot)}" defer></script>`,
     "</head>",
     "<body>",
-    `<main><h1>${APP_NAME}</h1><p id="status">Starting.</p><p id="detail"></p></main>`,
+    `<main><h1>${PRODUCT_NAME}</h1><p id="status">Starting.</p><p id="detail"></p></main>`,
     "</body>",
     "</html>",
     "",
@@ -155,14 +155,14 @@ function escapeAttr(text: string): string {
 
 export class UiFolderInvalid extends Error {}
 
-/** Where a built `index.html` takes the build of the service that serves it (`Tasks-Build`). */
-export const BUILD_PLACEHOLDER = "__TASKS_BUILD__";
+/** Where a built `index.html` takes the build of the service that serves it (`TTasks-Build`). */
+export const BUILD_PLACEHOLDER = "__TTASKS_BUILD__";
 
 /**
  * Where a built `index.html` takes this machine's theme, so the first paint is already in it,
  * in a fresh browser too. Replaced per response: the person may change it at any time.
  */
-export const THEME_PLACEHOLDER = "__TASKS_THEME__";
+export const THEME_PLACEHOLDER = "__TTASKS_THEME__";
 const THEMES: readonly string[] = ["sumi", "washi", "system"];
 
 /** The shell as one response serves it: the nonce and the theme in their places. */
@@ -211,7 +211,7 @@ export function indexProblems(index: string, files: ReadonlyMap<string, UiFile>)
  * Reads a built UI folder once (M2.13): `index.html` with the nonce placeholder, the files under
  * `assets/`, and the plain files at the root. Only regular files of a known type are served. A
  * folder whose `index.html` would load anything without an integrity hash is refused, and its
- * build placeholder becomes this service's build, which the page sends back as `Tasks-Build`.
+ * build placeholder becomes this service's build, which the page sends back as `TTasks-Build`.
  */
 export function loadUiFolder(dir: string, build?: { readonly build: string }): UiBundle {
   const root = realpathSync.native(dir);

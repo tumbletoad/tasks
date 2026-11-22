@@ -1,11 +1,11 @@
-# tasks-local/1
+# ttasks-local/1
 
-The local protocol between the Tasks service and its clients on the same machine: the CLI, the launch shim, the MCP bridge and any native forwarder. A2 3.6 specifies it. This page is the reference an implementer needs. The Node implementation is `@tasks/bridge/protocol` (wire code and client) and `@tasks/service/local` (server).
+The local protocol between the TTasks service and its clients on the same machine: the CLI, the launch shim, the MCP bridge and any native forwarder. A2 3.6 specifies it. This page is the reference an implementer needs. The Node implementation is `@ttasks/bridge/protocol` (wire code and client) and `@ttasks/service/local` (server).
 
 ## Endpoint
 
-- Linux and macOS: a Unix stream socket `tasks.sock` in a folder only its user can enter (0700). On Linux that folder is `/run/user/<uid>/tasks-<install-id>/` when the per-user runtime folder is a private folder of this user (never taken from `XDG_RUNTIME_DIR`), else `<state>/run/`. A socket path holds at most 100 bytes, and both sides refuse a longer one before they try.
-- Windows: a named pipe in byte mode, `\\.\pipe\tasks-<install-id>-<instance>`. The instance ID is new at every start.
+- Linux and macOS: a Unix stream socket `ttasks.sock` in a folder only its user can enter (0700). On Linux that folder is `/run/user/<uid>/ttasks-<install-id>/` when the per-user runtime folder is a private folder of this user (never taken from `XDG_RUNTIME_DIR`), else `<state>/run/`. A socket path holds at most 100 bytes, and both sides refuse a longer one before they try.
+- Windows: a named pipe in byte mode, `\\.\pipe\ttasks-<install-id>-<instance>`. The instance ID is new at every start.
 - The path is `endpoint.path` in `<state>/service.json`. `ENOENT` or `ECONNREFUSED` means the service is not running.
 - The key is `<state>/ipc.key`: 32 random bytes as base64url (43 characters), optionally followed by one line ending. The HMAC key is the 32 decoded bytes. A client reads it for every connection, so a key rotation needs nothing else.
 
@@ -23,23 +23,23 @@ The local protocol between the Tasks service and its clients on the same machine
 ## Handshake
 
 ```
-S → C  {"jsonrpc":"2.0","method":"tasks/challenge","params":{"nonce":Ns,"instance":I,"protocols":[…]}}
-C → S  {"jsonrpc":"2.0","id":0,"method":"tasks/hello","params":{"protocol":P,"mode":M,"nonce":Nc,"proof":Pc}}
+S → C  {"jsonrpc":"2.0","method":"ttasks/challenge","params":{"nonce":Ns,"instance":I,"protocols":[…]}}
+C → S  {"jsonrpc":"2.0","id":0,"method":"ttasks/hello","params":{"protocol":P,"mode":M,"nonce":Nc,"proof":Pc}}
 S → C  {"jsonrpc":"2.0","id":0,"result":{"proof":Ps}}
-C → S  {"jsonrpc":"2.0","id":1,"method":"tasks/bind","params":{"protocol":P,"mode":M,"client":{…},"context":{…},"mac":Mb}}
+C → S  {"jsonrpc":"2.0","id":1,"method":"ttasks/bind","params":{"protocol":P,"mode":M,"client":{…},"context":{…},"mac":Mb}}
 S → C  {"jsonrpc":"2.0","id":1,"result":{…,"mac":Ms}}
 ```
 
 Nonces and proofs are 32 bytes as base64url without padding (43 characters), in their one canonical spelling. `I` is the service's instance ID (`[A-Za-z0-9_.:-]`, at most 128 characters). `P` is the client's own protocol number, an integer from 1. `M` is `rpc` or `mcp`. A challenge lists 1 to 8 distinct protocol numbers. `H` is SHA-256 in lowercase hex and `JCS` is RFC 8785 canonical JSON.
 
 ```
-Pc = b64url(HMAC-SHA256(key, "tasks-local/1 client\n" + I + "\n" + P + "\n" + M + "\n" + Ns + "\n" + Nc))
-Ps = b64url(HMAC-SHA256(key, "tasks-local/1 server\n" + I + "\n" + P + "\n" + M + "\n" + Nc + "\n" + Ns))
-Ks = HMAC-SHA256(key, "tasks-local/1 session\n" + I + "\n" + Ns + "\n" + Nc)
-T  = H("tasks-local/1 transcript\n" + I + "\n" + Ns + "\n" + Nc + "\n" + JCS(challenge protocols)
+Pc = b64url(HMAC-SHA256(key, "ttasks-local/1 client\n" + I + "\n" + P + "\n" + M + "\n" + Ns + "\n" + Nc))
+Ps = b64url(HMAC-SHA256(key, "ttasks-local/1 server\n" + I + "\n" + P + "\n" + M + "\n" + Nc + "\n" + Ns))
+Ks = HMAC-SHA256(key, "ttasks-local/1 session\n" + I + "\n" + Ns + "\n" + Nc)
+T  = H("ttasks-local/1 transcript\n" + I + "\n" + Ns + "\n" + Nc + "\n" + JCS(challenge protocols)
        + "\n" + JCS({protocol, mode, client, context}))
-Mb = b64url(HMAC-SHA256(Ks, "tasks-local/1 bind\n" + T))
-Ms = b64url(HMAC-SHA256(Ks, "tasks-local/1 bound\n" + T + "\n" + H(JCS(result without mac))))
+Mb = b64url(HMAC-SHA256(Ks, "ttasks-local/1 bind\n" + T))
+Ms = b64url(HMAC-SHA256(Ks, "ttasks-local/1 bound\n" + T + "\n" + H(JCS(result without mac))))
 ```
 
 Each message has exactly the fields shown, no more. Values that canonical JSON covers nest at most 64 levels deep.
@@ -67,8 +67,8 @@ Canonical JSON follows RFC 8785 with I-JSON input. A string or key with a lone s
 
 `context` is an object:
 
-- rpc mode: `{env: {NAME: value}}` with only the agent markers (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, names starting with `CODEX_SANDBOX`, `T3CODE_THREAD_ID`, `TASKS_TICKET`, `TASKS_TASK`) and `TASKS_SPACE`. A3 keeps the marker list.
-- mcp mode: `{space, instance, app, cwd, env, parent: {pid}}`, with `null` for a missing argument, plus `mcp_init` (the client's latest `initialize` or `server/discover`, once answered, at most 64 KiB) and `resume: {handle}` (the handle of the bridge's last bind). `env` holds only `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, `T3CODE_THREAD_ID`, `TASKS_TICKET`, `TASKS_TASK` and `TASKS_SPACE` (`MCP_CONTEXT_ENV`), each at most 256 characters and well-formed. A `cwd` over 4,096 characters or with a lone surrogate is sent as null.
+- rpc mode: `{env: {NAME: value}}` with only the agent markers (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, names starting with `CODEX_SANDBOX`, `T3CODE_THREAD_ID`, `TTASKS_TICKET`, `TTASKS_TASK`) and `TTASKS_SPACE`. A3 keeps the marker list.
+- mcp mode: `{space, instance, app, cwd, env, parent: {pid}}`, with `null` for a missing argument, plus `mcp_init` (the client's latest `initialize` or `server/discover`, once answered, at most 64 KiB) and `resume: {handle}` (the handle of the bridge's last bind). `env` holds only `CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, `T3CODE_THREAD_ID`, `TTASKS_TICKET`, `TTASKS_TASK` and `TTASKS_SPACE` (`MCP_CONTEXT_ENV`), each at most 256 characters and well-formed. A `cwd` over 4,096 characters or with a lone surrogate is sent as null.
 
 The result is `{protocol, service: {version, build, instance}, capabilities, spaces, binding, mac}`:
 
@@ -102,12 +102,12 @@ The service accepts the protocols it lists in the challenge (`[current - 1, curr
 
 **mcp** (bridge, forwarder): after the bind result, every line in both directions is an unchanged MCP message. A line that is not UTF-8 is dropped. The service may send the first lines right behind the bind result, in the same chunk. The Node client keeps them until its line handler is set and reports the close only after them. A consumer whose own output is backed up calls `pause()`, which stops reading the socket and holds what was already read, and `resume()` once it can take lines again.
 
-## The forwarder (`tasks mcp`)
+## The forwarder (`ttasks mcp`)
 
-The Node bridge is `@tasks/bridge/mcp` (A2 3.7). A native forwarder implements the same contract and passes the conformance suite: `TASKS_BRIDGE_BIN=<binary> pnpm exec vitest run --project product tests/forwarder`. In short:
+The Node bridge is `@ttasks/bridge/mcp` (A2 3.7). A native forwarder implements the same contract and passes the conformance suite: `TTASKS_BRIDGE_BIN=<binary> pnpm exec vitest run --project product tests/forwarder`. In short:
 
 - Arguments `--space`, `--instance`, `--app`, each optional, as `--name value` or `--name=value`. Anything else exits 2. stdout carries MCP messages only. Diagnostics go to stderr without content.
-- Discovery per attempt: `endpoint.path` from `<state>/service.json`, and `<state>/ipc.key`. `<state>` and `<cache>` are `$TASKS_HOME/state` and `$TASKS_HOME/cache` when `TASKS_HOME` is set (it must be absolute), else `~/.tasks/state` and `~/.tasks/cache` (A2 3.2.1). The home folder comes from the account (`USERPROFILE` on Windows), never from `XDG_*` variables. Connect timeout 2 s.
+- Discovery per attempt: `endpoint.path` from `<state>/service.json`, and `<state>/ipc.key`. `<state>` and `<cache>` are `$TTASKS_HOME/state` and `$TTASKS_HOME/cache` when `TTASKS_HOME` is set (it must be absolute), else `~/.ttasks/state` and `~/.ttasks/cache` (A2 3.2.1). The home folder comes from the account (`USERPROFILE` on Windows), never from `XDG_*` variables. Connect timeout 2 s.
 - Reconnect after 0.5, 1, 2, 5, then every 10 s. After a loss, requests in flight are answered at once (a tool call with the `connection_lost` text), and new requests wait up to 10 s for the new connection before the offline answer. That covers a service restart: a drain of up to 5 s and a new start. Lines waiting for a connection hold at most 8 MiB, past which stdin waits.
 - Offline answers come from `<cache>/mcp-offline.json` when it parses and names the forwarder's build, else from the build's `lib/mcp-offline.json`. Either file is at most 1 MiB. Format 1: `build`, `initialize` and `discover` (each a `result` and its `supported_versions`), `tools_list` (`result` and `modern_result`), `modern_result_fields`, and seven `texts`: `service_down`, `starting`, `unreachable`, `untrusted_endpoint`, `restart_session`, `service_too_old`, `connection_lost`. A3 owns every result in it. A 2026-07-28 request's version is checked first: none is `-32602`, an unsupported one `-32022`. After a `server/discover`, every later request is 2026-07-28, also one without 2026-07-28 fields, until an `initialize` (a client falling back to the legacy era).
 - Backpressure both ways: stdin is read only while the socket takes lines, service lines only while stdout takes them, and the forwarder's own replies (offline, at a loss, past the cap) only while stdout takes them. A stdin line over 8 MiB is dropped and reading goes on. A service line over 8 MiB ends that connection. At most 1,024 requests holding at most 8 MiB (IDs and methods) are in flight. One more gets `-32000` with `data: {retryable: true}` at once and is not sent, and stdin keeps being read, so cancellations and the end of the session still arrive.

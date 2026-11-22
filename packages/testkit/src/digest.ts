@@ -11,7 +11,7 @@ import {
   openSpace,
   type CheckedDriver,
   type Connection,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 
 const IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 

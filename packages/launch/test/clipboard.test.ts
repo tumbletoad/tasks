@@ -1,4 +1,4 @@
-// The clipboard tools of `tasks brief --copy` (A4 3.4.6): which tool runs on each OS and session,
+// The clipboard tools of `ttasks brief --copy` (A4 3.4.6): which tool runs on each OS and session,
 // that the text reaches it through standard input byte for byte and never through its argv, that
 // only an exit 0 is a copy, that the next tool runs when one fails, that a tool that does not
 // finish is ended, and that the selection holder a Linux tool forks is left to serve. The tools
@@ -10,7 +10,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { FAKE_CLIPBOARD } from "@tasks/testkit";
+import { FAKE_CLIPBOARD } from "@ttasks/testkit";
 import {
   CLIPBOARD_ARGS,
   clipboardProgram,
@@ -21,13 +21,13 @@ import {
 } from "../src/clipboard.ts";
 import { powershellPath } from "../src/process.ts";
 
-const TEXT = "TT Tasks task M-14 (launch L7KQ2M).\nCafé 😀 — line two\n";
+const TEXT = "TTasks task M-14 (launch L7KQ2M).\nCafé 😀 — line two\n";
 
 let dir = "";
 /** PIDs of selection holders a fake started: each is stopped by its recorded PID. */
 const holders: number[] = [];
 beforeAll(() => {
-  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-clipboard-")));
+  dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-clipboard-")));
 });
 afterAll(() => {
   for (const pid of holders) {
@@ -73,7 +73,7 @@ const fakes = (seen: ClipboardTool[], only?: readonly ClipboardTool[]) => (tool:
   return [process.execPath, FAKE_CLIPBOARD];
 };
 
-describe("[A4.5.clipboard.tools] tasks brief --copy: the OS's clipboard tool through standard input, never a copy that did not happen", () => {
+describe("[A4.5.clipboard.tools] ttasks brief --copy: the OS's clipboard tool through standard input, never a copy that did not happen", () => {
   test("the tools per OS and session, in A4's order", () => {
     expect(clipboardTools("win32", {})).toEqual(["set-clipboard"]);
     expect(clipboardTools("darwin", {})).toEqual(["pbcopy"]);

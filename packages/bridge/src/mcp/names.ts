@@ -4,17 +4,17 @@
 // native forwarder hard-codes the same values. A test in packages/service checks each one against
 // the product's names and the hub's layout, so a rename that misses this file fails verify.
 
-/** The product's folder name (A2 3.2.1): the data folder `~/.tasks` and the program's folder. */
-export const INSTALL_NAME = "tasks";
+/** The product's folder name (A2 3.2.1): the data folder `~/.ttasks` and the program's folder. */
+export const INSTALL_NAME = "ttasks";
 
 /** The product's name in the bridge's own texts: packages/brand's PRODUCT_NAME. */
-export const PRODUCT_NAME = "TT Tasks";
+export const PRODUCT_NAME = "TTasks";
 
 /** A separate install's root (A2 3.2.2 rule 3, D18). */
-export const HOME_VAR = "TASKS_HOME";
+export const HOME_VAR = "TTASKS_HOME";
 
 /** The package identity the Windows launcher passes (A2 3.5). */
-export const PACKAGE_VAR = "TASKS_PACKAGE";
+export const PACKAGE_VAR = "TTASKS_PACKAGE";
 
 /** `<state>/service.json` and `<state>/ipc.key` (A2 3.2.3). */
 export const SERVICE_FILE = "service.json";

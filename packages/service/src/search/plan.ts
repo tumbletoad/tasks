@@ -18,10 +18,10 @@
 //   the effort scale's order before either, tasks without an effort last.
 // - Agents see documents with audience `all` only, in matches, negations, snippets and `has:notes`.
 // - Filters are SQL over the task, each wrapped so a NULL is false and a negation is exact.
-import type { FolderOs, SqlValue } from "@tasks/storage";
-import { normaliseSourceKey, separatorOf, SOURCE_KINDS } from "@tasks/storage";
-import { CLI_NAME } from "@tasks/brand";
-import { AppError, SEARCH_IDS, type SEARCH_SCOPES } from "@tasks/contracts";
+import type { FolderOs, SqlValue } from "@ttasks/storage";
+import { normaliseSourceKey, separatorOf, SOURCE_KINDS } from "@ttasks/storage";
+import { CLI_NAME } from "@ttasks/brand";
+import { AppError, SEARCH_IDS, type SEARCH_SCOPES } from "@ttasks/contracts";
 import { addDays } from "../ops/dates.ts";
 import {
   isCalendarDate,

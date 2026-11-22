@@ -282,7 +282,7 @@ export function productTables(
  * The exact-schema rule (see the header): `schema` (schemaObjects of a database at `userVersion`)
  * must be exactly what `steps` make at that revision. SPACE_SCHEMA_FOREIGN otherwise, whose message
  * names no object: a foreign definition, such as a cascading key or a generated column, would act
- * on Tasks' own writes, and its name is the database's, not the product's.
+ * on TTasks's own writes, and its name is the database's, not the product's.
  */
 export function requireOwnSchema(
   checked: CheckedDriver,
@@ -303,7 +303,7 @@ export function requireOwnSchema(
   }
 }
 
-/** A table name Tasks can quote safely: the names its schema steps create. */
+/** A table name TTasks can quote safely: the names its schema steps create. */
 const TABLE_NAME = /^[a-z_][a-z0-9_]{0,63}$/;
 
 /**

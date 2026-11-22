@@ -24,7 +24,7 @@ let service: RunningService;
 let origin: string;
 
 beforeAll(async () => {
-  work = mkdtempSync(join(tmpdir(), "tasks-ui-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-ui-"));
   dist = (await buildUi(join(work, "dist"))).out;
   service = await startService({ state: join(work, "state"), ui: dist, socketDir: "state" });
   origin = `http://127.0.0.1:${String(service.info.http.port)}`;

@@ -5,9 +5,9 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
-import type { RunEvent } from "@tasks/contracts/runs";
-import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
-import { nodeDetectHost, resolveProgram } from "@tasks/launch";
+import type { RunEvent } from "@ttasks/contracts/runs";
+import { MemoryDurable, MemoryExecutionStore } from "@ttasks/launch/memory-store";
+import { nodeDetectHost, resolveProgram } from "@ttasks/launch";
 import { afterAll, beforeAll, describe, expect, test, type TestContext } from "vitest";
 import {
   CODEX_ARGS,
@@ -72,7 +72,7 @@ function installFake(prefix: string): string {
 }
 
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-codex-run-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-codex-run-"));
   if (windows) natives = buildNatives(join(work, "bin"));
   const prefix = join(work, "npm");
   mkdirSync(prefix);
@@ -218,7 +218,7 @@ describe("[A4.3.11.codex.run] a Codex run in the run host: the program resolved 
     });
 
     test(`${kind}: a process the agent left behind is ended, and the cleanup says so beside the work's answer`, async (ctx: TestContext) => {
-      if (!grouped) ctx.skip("a detached process is beyond what Tasks can find without a group");
+      if (!grouped) ctx.skip("a detached process is beyond what TTasks can find without a group");
       const token = newToken();
       const b = bench(make());
       const id = await startRun(

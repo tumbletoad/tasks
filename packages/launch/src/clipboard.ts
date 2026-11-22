@@ -1,4 +1,4 @@
-// The clipboard tools of `tasks brief --copy` (A4 3.4.6): the OS's own program puts the text on the
+// The clipboard tools of `ttasks brief --copy` (A4 3.4.6): the OS's own program puts the text on the
 // person's clipboard, because a CLI has no clipboard of its own. The text goes to the tool through
 // its standard input, never as an argument or in a file: a command line is readable by other local
 // users, and a script on disk outlives the copy.
@@ -6,13 +6,13 @@
 // - Linux: `wl-copy` in a Wayland session, then `xclip`, then `xsel` in an X11 one (WAYLAND_DISPLAY
 //   and DISPLAY say which). Each is found on the PATH by name and started without a shell. macOS:
 //   `pbcopy`. Windows: Windows PowerShell 5.1 by its full path under the system folder (as every
-//   other PowerShell call of Tasks), running one fixed script that reads standard input as UTF-8
+//   other PowerShell call of TTasks), running one fixed script that reads standard input as UTF-8
 //   and calls `Set-Clipboard`. The script is a plain `-Command` argument with no text of the
 //   person's in it, never an encoded command line.
 // - A tool is a helper of the runner (helpers.ts), with a deadline, recorded and waited for. On
 //   Linux `wl-copy`, `xclip` and `xsel` fork a process that holds the selection and exit: that
 //   process is the tool's own and stays until another program takes the clipboard, exactly as when
-//   the person runs the tool in a shell (the runner's `serves`). Tasks waits for the tool it started
+//   the person runs the tool in a shell (the runner's `serves`). TTasks waits for the tool it started
 //   and ends it at the deadline, never what the tool forked.
 // - A tool that fails or does not finish makes the next one run; when none copied, the result says
 //   why and the caller prints the text instead. A copy is reported only when a tool exited 0.

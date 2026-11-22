@@ -11,8 +11,8 @@
 // sends that read's `as_of`.
 import { randomBytes } from "node:crypto";
 import { isAbsolute, join, resolve } from "node:path";
-import { LocalError } from "@tasks/bridge/protocol";
-import type { ErrorBody } from "@tasks/contracts";
+import { LocalError } from "@ttasks/bridge/protocol";
+import type { ErrorBody } from "@ttasks/contracts";
 import {
   isRequestId,
   parseVerb,
@@ -64,7 +64,7 @@ const namesItself = (value: string): boolean =>
 
 /**
  * A folder given relative to the working folder (`--folder .`, `folder=../portal`) made absolute
- * here, as `tasks space` does with its folders: the service never reads a relative path against its
+ * here, as `ttasks space` does with its folders: the service never reads a relative path against its
  * own working folder. Every folder field of the input: organize's `folder`, a task update's
  * `set.folder`, a draft's or a follow-up's `folder`.
  */
@@ -113,7 +113,7 @@ function spaceName(session: Session, globals: Globals, result: Record<string, un
     );
     if (found?.name !== undefined) return found.name;
   }
-  // `tasks` lists created tasks (`tasks add`) or, for an undo or redo, their references.
+  // `tasks` lists created tasks (`ttasks add`) or, for an undo or redo, their references.
   const first = (result["tasks"] as unknown[] | undefined)?.[0];
   const listed = typeof first === "string" ? first : (first as { ref?: string } | undefined)?.ref;
   const ref = (typeof result["task"] === "string" ? result["task"] : listed) ?? "";
@@ -150,7 +150,7 @@ export function baseRead(
   return { op: verb.entry, input: { [actions.field]: read } };
 }
 
-/** What a verb adds to the generic path: `tasks undo`'s check and question. */
+/** What a verb adds to the generic path: `ttasks undo`'s check and question. */
 export interface VerbHooks {
   /** Fills fields of the input that the verb's arguments do not give. */
   readonly input?: (input: Record<string, unknown>) => void;
@@ -195,7 +195,7 @@ export async function runVerb(
     if (error instanceof UsageError) return printUsage(io, globals.json, error.message);
     throw error;
   }
-  // A mixed verb's read action (`tasks area list`) is a read: no request ID, no base (A3 3.2.3).
+  // A mixed verb's read action (`ttasks area list`) is a read: no request ID, no base (A3 3.2.3).
   const write = writes(verb, input);
   if (verb.auto.includes("cwd") && input["cwd"] === undefined) input["cwd"] = io.cwd;
   absoluteFolders(input, io.cwd);
@@ -252,7 +252,7 @@ export async function runVerb(
         : !globals.quiet || !write
           ? render(verb.entry, result, spaceName(open, globals, result))
           : "";
-      // A verb with its own output (`tasks brief --copy`) is given the result and what it would
+      // A verb with its own output (`ttasks brief --copy`) is given the result and what it would
       // print.
       if (present !== undefined) await present(result, printed);
       else io.stdout(printed);

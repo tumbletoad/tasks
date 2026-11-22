@@ -40,7 +40,7 @@ export interface LauncherChange {
 
 export interface Journal {
   readonly format: typeof JOURNAL_FORMAT;
-  /** An update from an archive, or `tasks update --rollback`. */
+  /** An update from an archive, or `ttasks update --rollback`. */
   readonly kind: "update" | "rollback";
   /** The version current named when it began. */
   readonly from: string;

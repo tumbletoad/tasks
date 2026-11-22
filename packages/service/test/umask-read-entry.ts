@@ -8,7 +8,7 @@
 //          Prints how many files got a bit the umask takes away: a read that sets the process-wide
 //          mask, even for a moment, would let the worker's files through unmasked.
 // First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
-import "@tasks/bridge/safe-exit";
+import "@ttasks/bridge/safe-exit";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";

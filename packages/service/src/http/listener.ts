@@ -5,7 +5,7 @@
 // this user, A2 3.8.4), then the caps (A2 3.8.1: 64 connections that have not authenticated, all
 // connections). Then the bounds while it lives: its headers within 10 s of acceptance (the `idle`
 // timer, then Node's headers deadline), a whole request within 30 s, 5 s of keep-alive, 16 KiB of
-// headers. `::1` is never bound: `tasks open` uses the 127.0.0.1 origin only.
+// headers. `::1` is never bound: `ttasks open` uses the 127.0.0.1 origin only.
 import {
   createServer as createHttpServer,
   type IncomingMessage,

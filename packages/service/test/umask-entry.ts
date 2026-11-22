@@ -10,7 +10,7 @@
 //   writer.lock and writer.json, the database's sidecars), the per-user runtime folder and socket
 //   (under `<root>/run/<uid>`, which the test made), a crash file (the crash writer);
 // - a pairing with a fake T3 server, whose token goes to `<state>/t3/pairing.json` (M2.11);
-// - a terminal launch of a task without a place through `tasks shim` with a fake agent (M2.08):
+// - a terminal launch of a task without a place through `ttasks shim` with a fake agent (M2.08):
 //   the launch root and the launch's folder with launch.json, the space's work folder; with the
 //   service stopped at the agent's end, the shim's exit.json;
 // - an install's own writes into `<root>/inst` (M1.14), on a fixture version folder the test makes
@@ -24,15 +24,15 @@
 // mode, and what the second start could do. A first start the service refuses (a umask that takes
 // away the person's own bits) prints the refusal and whether anything was made.
 // First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
-import "@tasks/bridge/safe-exit";
+import "@ttasks/bridge/safe-exit";
 import { spawn } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { PRODUCT_ID } from "@tasks/brand";
-import type { LaunchIntent, SpawnPlan } from "@tasks/launch";
-import { fakeAgentCommand } from "@tasks/runs/fake-agents";
-import { backupsFolder, listBackups, type Id } from "@tasks/storage";
-import { FakeT3 } from "@tasks/testkit/fake-t3";
+import { PRODUCT_ID } from "@ttasks/brand";
+import type { LaunchIntent, SpawnPlan } from "@ttasks/launch";
+import { fakeAgentCommand } from "@ttasks/runs/fake-agents";
+import { backupsFolder, listBackups, type Id } from "@ttasks/storage";
+import { FakeT3 } from "@ttasks/testkit/fake-t3";
 import { editMachineToml } from "../src/config/edit.ts";
 import { writeCrashFile } from "../src/hub/crash.ts";
 import { ServiceExit } from "../src/hub/exit.ts";
@@ -90,7 +90,7 @@ function walk(top: string, into: Map<string, Entry>): void {
 // Every shim this run started, stopped by PID when the run ends early.
 const shims: Child[] = [];
 const terminal: NonNullable<LaunchOptions["terminal"]> = ({ ticket, folder: cwd }) => {
-  // As a terminal starts it (A4 3.3): `tasks shim <ticket>` in the folder the service
+  // As a terminal starts it (A4 3.3): `ttasks shim <ticket>` in the folder the service
   // resolved, with this run's umask.
   const child = spawn(process.execPath, [CLI_BIN, "shim", ticket], {
     cwd,
@@ -259,7 +259,7 @@ try {
   writeFileSync(join(inst, "home.marker"), "");
   const facts: HostFacts = {
     platform: process.platform,
-    env: { TASKS_HOME: inst },
+    env: { TTASKS_HOME: inst },
     accountHome: root,
     uid: process.getuid?.(),
   };

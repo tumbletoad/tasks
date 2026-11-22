@@ -109,7 +109,7 @@ export interface InstallRun {
 
 /**
  * Runs the rendered install script for `platform` from `source` into `root`. Without `root`, the
- * script falls back to TASKS_HOME from `env`. Windows PowerShell 5.1 runs the Windows script,
+ * script falls back to TTASKS_HOME from `env`. Windows PowerShell 5.1 runs the Windows script,
  * with a process-only execution policy, so no machine or user setting changes.
  */
 export function runInstaller(
@@ -171,17 +171,17 @@ export function pwshExe(): string {
 const PS7_WRAPPER = [
   "$ErrorActionPreference = 'Stop'",
   "$chcp = [IO.Path]::Combine($env:SystemRoot, 'System32', 'chcp.com')",
-  "$null = & $chcp $env:TASKS_TEST_CODE_PAGE",
-  'if ((& $chcp) -notmatch "\\b$($env:TASKS_TEST_CODE_PAGE)\\b") {',
+  "$null = & $chcp $env:TTASKS_TEST_CODE_PAGE",
+  'if ((& $chcp) -notmatch "\\b$($env:TTASKS_TEST_CODE_PAGE)\\b") {',
   "  [Console]::Error.WriteLine('the console code page did not change'); exit 97",
   "}",
-  "$psi = [Diagnostics.ProcessStartInfo]::new($env:TASKS_TEST_POWERSHELL)",
+  "$psi = [Diagnostics.ProcessStartInfo]::new($env:TTASKS_TEST_POWERSHELL)",
   "$psi.UseShellExecute = $false",
   "$fixed = @('-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File')",
-  "foreach ($a in $fixed + @($env:TASKS_TEST_SCRIPT) + $env:TASKS_TEST_ARGS.Split([char]10)) {",
+  "foreach ($a in $fixed + @($env:TTASKS_TEST_SCRIPT) + $env:TTASKS_TEST_ARGS.Split([char]10)) {",
   "  $psi.ArgumentList.Add($a)",
   "}",
-  "if ($env:TASKS_TEST_KEEP_MODULE_PATH -ne '1') { [void]$psi.Environment.Remove('PSModulePath') }",
+  "if ($env:TTASKS_TEST_KEEP_MODULE_PATH -ne '1') { [void]$psi.Environment.Remove('PSModulePath') }",
   "$child = [Diagnostics.Process]::Start($psi)",
   "$child.WaitForExit()",
   "exit $child.ExitCode",
@@ -210,11 +210,11 @@ export function runFromPowerShell7(
     ],
     {
       PSModulePath: undefined,
-      TASKS_TEST_CODE_PAGE: condition === "utf8-console" ? "65001" : "437",
-      TASKS_TEST_KEEP_MODULE_PATH: condition === "pwsh-module-path" ? "1" : "0",
-      TASKS_TEST_POWERSHELL: powershellExe(),
-      TASKS_TEST_SCRIPT: script,
-      TASKS_TEST_ARGS: args.join("\n"),
+      TTASKS_TEST_CODE_PAGE: condition === "utf8-console" ? "65001" : "437",
+      TTASKS_TEST_KEEP_MODULE_PATH: condition === "pwsh-module-path" ? "1" : "0",
+      TTASKS_TEST_POWERSHELL: powershellExe(),
+      TTASKS_TEST_SCRIPT: script,
+      TTASKS_TEST_ARGS: args.join("\n"),
     },
   );
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -231,8 +231,8 @@ export function runInstallerFromPowerShell7(
 }
 
 export function stableLauncher(root: string, platform: Platform, gui = false): string {
-  if (platform === "win-x64") return join(root, "bin", gui ? "tasksw.exe" : "tasks.exe");
-  return join(root, "bin", "tasks");
+  if (platform === "win-x64") return join(root, "bin", gui ? "ttasksw.exe" : "ttasks.exe");
+  return join(root, "bin", "ttasks");
 }
 
 export function versionLauncher(
@@ -257,7 +257,7 @@ export function assertInstalled(
   assert.ok(existsSync(stableLauncher(root, platform)), "no stable command");
   if (platform === "win-x64") {
     assert.equal(readFileSync(join(root, "current"), "utf8"), version);
-    assert.ok(existsSync(stableLauncher(root, platform, true)), "no stable tasksw.exe");
+    assert.ok(existsSync(stableLauncher(root, platform, true)), "no stable ttasksw.exe");
   }
   const info = JSON.parse(readFileSync(join(root, "install.json"), "utf8")) as { version: string };
   assert.equal(info.version, version);
@@ -287,7 +287,7 @@ export function prepareCanary(work: string, platform: Platform): Canary {
   const wrapper = join(build, "canary.c");
   writeFileSync(
     wrapper,
-    `#define TASKS_CANARY_DIR L"${literal}"\n#include "${canarySource.replaceAll("\\", "/")}"\n`,
+    `#define TTASKS_CANARY_DIR L"${literal}"\n#include "${canarySource.replaceAll("\\", "/")}"\n`,
   );
   return { dir, exe: compileExe(wrapper, build, "canary") };
 }
@@ -431,7 +431,7 @@ export function assertReinstallChecksExistingVersion(
     [
       "changed",
       (folder) => {
-        appendFileSync(join(folder, "lib", "tasks.mjs"), "// changed\n");
+        appendFileSync(join(folder, "lib", "ttasks.mjs"), "// changed\n");
       },
       /its files do not match the signed manifest/,
     ],
@@ -595,7 +595,7 @@ export function assertArgvVerbatim(launcher: string, mode: "stable" | "version" 
   assert.deepEqual(all.execArgv, ["--report-exclude-env"]);
   assert.equal(all.env["NODE_OPTIONS"], false, "NODE_OPTIONS reached Node");
   assert.equal(all.env["NODE_PATH"], false, "NODE_PATH reached Node");
-  if (mode !== "posix") assert.equal(all.env["TASKS_LAUNCH_MODE"], mode);
+  if (mode !== "posix") assert.equal(all.env["TTASKS_LAUNCH_MODE"], mode);
   for (const arg of HOSTILE_ARGS) {
     assert.deepEqual(
       launchArgv(launcher, [arg]).args,

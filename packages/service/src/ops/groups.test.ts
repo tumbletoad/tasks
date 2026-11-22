@@ -1,5 +1,5 @@
 // Areas and projects by name, and possible duplicates by title (A3 3.4.5): the pure rules.
-import { AppError } from "@tasks/contracts";
+import { AppError } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import { editDistance, resolveGroup } from "./groups.ts";
 import type { GroupNames } from "./read.ts";

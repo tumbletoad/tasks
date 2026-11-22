@@ -32,7 +32,7 @@
 // receiver returns. So a failure tells again, never less.
 //
 // **Reconciliation** (rule 5), file by file: at start, after a batch with a failure or one that
-// found a folder of the tree missing or not real, and when asked (`tasks view rebuild`, which also
+// found a folder of the tree missing or not real, and when asked (`ttasks view rebuild`, which also
 // queues every task). Each file of the record is looked at on disk: a task's file that is missing,
 // or whose size or hash differs, is queued for rendering again (through the writer, from commit 1,
 // so the watermark the writer answers stays below it); a root file so is placed again at the next
@@ -54,8 +54,8 @@
 // record and journal are this folder's alone (the service keys them by folder), so one made for
 // another identity of the space (a restore in place, a claim) still says what was placed in this
 // `view/`: its files stay the proof, by their bytes, and every task is queued with W from 0.
-import type { Connection, ProjectedBatch } from "@tasks/storage";
-import { PROJECTION_ALL, PROJECTION_BATCH, PROJECTION_QUEUE_KEYS } from "@tasks/storage";
+import type { Connection, ProjectedBatch } from "@ttasks/storage";
+import { PROJECTION_ALL, PROJECTION_BATCH, PROJECTION_QUEUE_KEYS } from "@ttasks/storage";
 import { missingTasks, readBatch, readPending, type BatchRead } from "./read.ts";
 import {
   catalogText,
@@ -111,7 +111,7 @@ export interface ProjectorOptions {
   /** Tests only: runs before every act on disk; throwing is a kill (tree.ts). */
   readonly at?: Hook;
   readonly platform?: NodeJS.Platform;
-  /** Each reconciliation, as soon as it has run: `tasks view rebuild` is answered by a full one. */
+  /** Each reconciliation, as soon as it has run: `ttasks view rebuild` is answered by a full one. */
   readonly onReconciled?: (reconciled: Reconciled) => void;
   /**
    * Each batch's rescues (rule 3), for the record of rescues the UI shows (A1 3.13): once per stem
@@ -188,7 +188,7 @@ export interface StartReport {
 /**
  * A1 3.13 rule 7: a task whose file could not be placed waits a pause of its own before it is read
  * again, doubling from this up to RETRY_MAX_MS, so tasks that cannot be placed never fill every
- * batch. A full reconciliation (`tasks view rebuild`) ends every pause.
+ * batch. A full reconciliation (`ttasks view rebuild`) ends every pause.
  */
 export const RETRY_FIRST_MS = 500;
 export const RETRY_MAX_MS = 30_000;
@@ -266,7 +266,7 @@ export class Projector {
     return this.#record;
   }
 
-  /** Asks for a full rebuild (`tasks view rebuild`): the next step reconciles with every task queued. */
+  /** Asks for a full rebuild (`ttasks view rebuild`): the next step reconciles with every task queued. */
   rebuild(): void {
     this.#reconcile = "full";
   }

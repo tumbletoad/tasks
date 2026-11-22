@@ -23,7 +23,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { makeDir } from "@tasks/files";
+import { makeDir } from "@ttasks/files";
 import { MAIN_CGROUP, placement, unavailableMessage } from "./placement.ts";
 import {
   checkName,

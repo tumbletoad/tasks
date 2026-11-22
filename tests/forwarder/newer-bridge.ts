@@ -1,6 +1,6 @@
 // A test's forwarder that names the protocol after this build's: "a bridge newer than the
 // service" (A2 3.6.6, A7 3.9 M2.02). The real Node bridge, with the protocol it names raised by
-// one; its arguments are `tasks mcp`'s.
+// one; its arguments are `ttasks mcp`'s.
 // First, as in the product's entries: this script ends through process.exit (A2 3.12.1).
 import "../../packages/bridge/src/safe-exit.ts";
 import { runMcp } from "../../packages/bridge/src/mcp/run.ts";

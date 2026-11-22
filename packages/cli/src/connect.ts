@@ -1,11 +1,11 @@
 // Finding the service (A2 3.6.1, 3.10.4, 3.3.6): `<state>/service.json` names the endpoint, the
 // key is `<state>/ipc.key`, read for every connection. One attempt with a 2 s connect timeout,
 // except while service.json says `starting` for a live PID: then the CLI waits up to 10 s. The CLI
-// never starts the service here: only `tasks service start` and `tasks open` do (A2 S6). Every
+// never starts the service here: only `ttasks service start` and `ttasks open` do (A2 S6). Every
 // failure is A3's `service_unavailable` with its reason.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import {
   LocalError,
   openRpc,
@@ -13,9 +13,15 @@ import {
   rpcContextEnv,
   type RpcSession,
   type TransportReason,
-} from "@tasks/bridge/protocol";
-import { AppError } from "@tasks/contracts";
-import { hostFacts, IPC_KEY, LayoutError, resolveLayout, SERVICE_JSON } from "@tasks/service/paths";
+} from "@ttasks/bridge/protocol";
+import { AppError } from "@ttasks/contracts";
+import {
+  hostFacts,
+  IPC_KEY,
+  LayoutError,
+  resolveLayout,
+  SERVICE_JSON,
+} from "@ttasks/service/paths";
 import type { Io } from "./io.ts";
 import { RESTART_HINT } from "./output.ts";
 
@@ -37,7 +43,7 @@ export interface ServiceRecord {
   readonly endpoint?: { readonly kind?: unknown; readonly path?: unknown } | null;
 }
 
-/** The state folder of this install (A2 3.2.2), from the account's home or TASKS_HOME. */
+/** The state folder of this install (A2 3.2.2), from the account's home or TTASKS_HOME. */
 export function stateDir(io: Pick<Io, "env" | "platform">): string {
   try {
     return resolveLayout(hostFacts(io.env, io.platform)).state;
@@ -46,7 +52,7 @@ export function stateDir(io: Pick<Io, "env" | "platform">): string {
       throw new AppError({
         code: "invalid_input",
         message: `${PRODUCT_NAME}'s folders cannot be found: ${error.message}.`,
-        data: { issues: [{ path: "TASKS_HOME", message: "Invalid" }] },
+        data: { issues: [{ path: "TTASKS_HOME", message: "Invalid" }] },
       });
     }
     throw error;
@@ -87,15 +93,15 @@ const TEXT: Record<TransportReason | "starting", { message: string; hint?: strin
   },
   untrusted_endpoint: {
     message: `Something other than ${PRODUCT_NAME}'s service answers at its endpoint. Nothing was sent.`,
-    hint: "Run: tasks doctor",
+    hint: "Run: ttasks doctor",
   },
   connection_lost: {
     message: `The connection to ${PRODUCT_NAME}'s service was lost. The call may or may not have applied.`,
     hint: "Run the same command again with the same --request-id.",
   },
   restart_session: {
-    message: `The running ${PRODUCT_NAME} service is newer than this tasks command.`,
-    hint: "Run the tasks command of the current install.",
+    message: `The running ${PRODUCT_NAME} service is newer than this ttasks command.`,
+    hint: "Run the ttasks command of the current install.",
   },
   service_too_old: {
     message: `A newer ${PRODUCT_NAME} is installed than the running service.`,
@@ -159,11 +165,11 @@ export async function connectService(io: Io, options: ConnectOptions = {}): Prom
     throw new AppError({
       code: "service_unavailable",
       message: `${PRODUCT_NAME}'s key cannot be read.`,
-      hint: "Run: tasks doctor",
+      hint: "Run: ttasks doctor",
       data: { reason: "unreachable", retryable: false, detail: "key" },
     });
   }
-  const pkg = io.env["TASKS_PACKAGE"];
+  const pkg = io.env["TTASKS_PACKAGE"];
   let session: Session;
   try {
     session = await openRpc({

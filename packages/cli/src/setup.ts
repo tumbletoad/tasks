@@ -1,11 +1,11 @@
-// `tasks setup` (A2 3.10, A3 3.13, A4 3.4.1): connecting this machine's agent apps. M2.11 brought
-// `tasks setup t3`, the pairing with T3 Code; M2.14 `tasks setup agents` (setup-agents.ts, loaded
-// only for that command), Tasks's MCP server entry in each Claude Code and Codex home; `tasks setup
+// `ttasks setup` (A2 3.10, A3 3.13, A4 3.4.1): connecting this machine's agent apps. M2.11 brought
+// `ttasks setup t3`, the pairing with T3 Code; M2.14 `ttasks setup agents` (setup-agents.ts, loaded
+// only for that command), TTasks's MCP server entry in each Claude Code and Codex home; `ttasks setup
 // instances` (setup-instances.ts) the [[instance]] entries Open starts an agent with.
 //
-//   tasks setup agents [--preview|--apply --plan <token>|--remove|--status]   the agent homes' MCP entries
-//   tasks setup t3 [--no-browser]   pair with T3 Code: approve on T3's page in the browser
-//   tasks setup t3 --status         whether T3 can be used: paired, running, Reconnect T3
+//   ttasks setup agents [--preview|--apply --plan <token>|--remove|--status]   the agent homes' MCP entries
+//   ttasks setup t3 [--no-browser]   pair with T3 Code: approve on T3's page in the browser
+//   ttasks setup t3 --status         whether T3 can be used: paired, running, Reconnect T3
 //
 // The service runs the pairing (hub/t3.ts) and keeps the token in its machine state; the CLI only
 // hands T3's approval page to the person's browser, because the CLI runs in their desktop session
@@ -16,7 +16,7 @@
 // service. Only the user pairs, from an interactive terminal; the status works everywhere.
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { CLI_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { UsageError, type Globals } from "./args.ts";
 import { connectService, type ConnectOptions, type Session } from "./connect.ts";
 import type { Io } from "./io.ts";
@@ -24,14 +24,14 @@ import { bodyOf, printError, printUsage } from "./output.ts";
 import type { AgentsSetupOptions } from "./setup-agents.ts";
 import { asAppError } from "./verbs.ts";
 
-/** `tasks setup --help` and `tasks help setup`. */
+/** `ttasks setup --help` and `ttasks help setup`. */
 export const SETUP_HELP = `Usage: ${CLI_NAME} setup <app> [options] [--json]
 
   agents [--preview]  What registering ${CLI_NAME} in each agent home would change (Claude Code,
                       Codex and the Codex app, the homes T3 Code uses, Claude Desktop): the exact
                       command or entry and the diff per home, and the apply command. Writes nothing
   agents --apply --plan <token>
-                      Carry out that preview: register ${CLI_NAME}'s MCP server in each home that
+                      Carry out that preview: register ${PRODUCT_NAME}'s MCP server in each home that
                       has no entry yet, or change nothing when the homes changed since
   agents --remove     Take out every entry setup wrote that is still exactly as it wrote it
   agents --status     Each home: registered or not, and its grant row
@@ -51,15 +51,15 @@ export const SETUP_HELP = `Usage: ${CLI_NAME} setup <app> [options] [--json]
                       Add exactly those entries; Open offers them at once
   instances --remove  Take out every entry it added that is still exactly as it wrote it
     [--instance <id>]
-  t3 [--no-browser]   Pair with T3 Code: approve ${CLI_NAME} on T3's page in your browser
+  t3 [--no-browser]   Pair with T3 Code: approve ${PRODUCT_NAME} on T3's page in your browser
   t3 --status         Whether T3 Code can be used: paired, running, or Reconnect T3
 
-Setup changes only ${CLI_NAME}'s own entry, never trust, approval or other servers' settings:
+Setup changes only ${PRODUCT_NAME}'s own entry, never trust, approval or other servers' settings:
 --parts approve-tools shows the approval change for you to make by hand. T3 Code's own settings are
 only read. --parts block adds the optional instruction block to Claude Code's CLAUDE.md and Codex's
 AGENTS.md, changing nothing else in them; --remove --parts block takes it out again.
 setup instances makes an agent home a place Open starts the agent in; setup agents registers
-${CLI_NAME}'s tools in it, so the agent can read and update tasks. Run both.
+${PRODUCT_NAME}'s tools in it, so the agent can read and update tasks. Run both.
 --apply, --remove and pairing run only from an interactive terminal. --no-browser prints the page
 to open instead of opening it. Pairing again replaces the earlier pairing: a T3 launch still
 waiting on the earlier one is then shown as unknown, never repeated.
@@ -71,7 +71,7 @@ const WAIT_MARGIN_MS = 30_000;
 export interface SetupOptions extends ConnectOptions {
   /** Opens an http(s) URL in the person's browser. The default is the OS's opener (A4 3.6.5). */
   readonly openUrl?: (url: string, io: Io) => Promise<boolean>;
-  /** Tests only: the agent environment and home `tasks setup agents` works in. */
+  /** Tests only: the agent environment and home `ttasks setup agents` works in. */
   readonly agents?: AgentsSetupOptions;
 }
 

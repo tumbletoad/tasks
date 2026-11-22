@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import {
   acceptTerminal,
   ADAPTER_KIND,
@@ -303,7 +303,7 @@ describe("[A4.5.terminal.command-lines] every terminal runs the product's shim a
     expect(windowsCommandLine(["end \\"])).toBe('"end \\\\"');
     if (process.platform !== "win32") return;
     // A real process parses the line back: Node's own runtime, as the shim's would.
-    const dir = mkdtempSync(join(tmpdir(), "tasks-cmdline-"));
+    const dir = mkdtempSync(join(tmpdir(), "ttasks-cmdline-"));
     try {
       const script = join(dir, "argv.cjs");
       writeFileSync(script, "process.stdout.write(JSON.stringify(process.argv.slice(2)));");
@@ -840,7 +840,7 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
       undefined,
     ],
     [
-      "another terminal Tasks has no adapter for",
+      "another terminal TTasks has no adapter for",
       OTHER,
       OTHER,
       true,
@@ -895,7 +895,7 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
   });
 
   test("the real file reader over fixture folders: the lists, kdeglobals and desktop entries", async () => {
-    const root = mkdtempSync(join(tmpdir(), "tasks-term-default-"));
+    const root = mkdtempSync(join(tmpdir(), "ttasks-term-default-"));
     try {
       const at = (...parts: string[]) => join(root, ...parts);
       mkdirSync(at("config"), { recursive: true });
@@ -1118,7 +1118,7 @@ describe("[A4.5.terminal.default] auto opens the operating system's default term
   });
 
   test("the probe reads the real file system: a program, a missing one and a link", async () => {
-    const root = mkdtempSync(join(tmpdir(), "tasks-term-probe-"));
+    const root = mkdtempSync(join(tmpdir(), "ttasks-term-probe-"));
     try {
       const program = join(root, "program");
       writeFileSync(program, "", { mode: 0o755 });

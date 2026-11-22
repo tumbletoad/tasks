@@ -20,7 +20,7 @@ const exit0 = { code: 0, signal: null };
 /** A minimal successful stream of each CLI. */
 const OK: Record<StreamKind, string[]> = {
   "claude-print": [
-    '{"type":"system","subtype":"init","session_id":"00000000-0000-4000-8000-000000000001","cwd":"/w","mcp_servers":[{"name":"tasks","status":"connected"}]}',
+    '{"type":"system","subtype":"init","session_id":"00000000-0000-4000-8000-000000000001","cwd":"/w","mcp_servers":[{"name":"ttasks","status":"connected"}]}',
     '{"type":"assistant","message":{"content":[{"type":"text","text":"a"}]}}',
     '{"type":"result","subtype":"success","is_error":false,"result":"b","usage":{"input_tokens":1,"output_tokens":2}}',
   ],

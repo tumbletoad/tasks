@@ -1,5 +1,5 @@
-// Windows containers: each run is a named job object `Local\tasks-run-<name>`, created and held by
-// tasks-run.exe (packages/launcher-win/src/run.c), which starts the agent already inside it.
+// Windows containers: each run is a named job object `Local\ttasks-run-<name>`, created and held by
+// ttasks-run.exe (packages/launcher-win/src/run.c), which starts the agent already inside it.
 // Nothing in the job can break away, detached processes included. The helper holds the only
 // handle to the job, and the job ends every process when its last handle closes: so the run ends
 // when the helper ends, and the helper ends with the service (Node starts it as a plain child, in
@@ -14,7 +14,7 @@ import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 import { windowsCommandLine } from "./command-line.ts";
 import { unavailableMessage } from "./placement.ts";
 import {
@@ -38,7 +38,7 @@ const POLL_MS = 50;
 export const jobName = (name: string): string => `${PRODUCT_ID}-run-${name}`;
 
 export interface WindowsOptions {
-  /** The absolute path of tasks-run.exe. */
+  /** The absolute path of ttasks-run.exe. */
   readonly helper: string;
 }
 
@@ -54,7 +54,7 @@ interface Live {
   readonly helperEnded: Promise<void>;
 }
 
-/** What `tasks-run.exe confirm|end` reported. */
+/** What `ttasks-run.exe confirm|end` reported. */
 type Reading =
   | { readonly state: "empty" }
   | { readonly state: "occupied"; readonly detail: string }
@@ -278,7 +278,7 @@ export class WindowsContainers implements Containers {
     this.live.delete(name);
   }
 
-  /** Runs `tasks-run.exe confirm|end <job>` and reads its answer. */
+  /** Runs `ttasks-run.exe confirm|end <job>` and reads its answer. */
   private read(mode: "confirm" | "end", name: string): Promise<Reading> {
     return new Promise((resolve) => {
       execFile(

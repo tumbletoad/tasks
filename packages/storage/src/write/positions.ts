@@ -122,7 +122,7 @@ function decrement(integer: string): string | undefined {
 /**
  * A position strictly between `before` and `after`: undefined `before` means the start of the
  * group, undefined `after` its end. Throws STORAGE_MISUSE for an invalid position or when
- * `before` does not sort below `after`. Positions Tasks reads from a space are checked by the
+ * `before` does not sort below `after`. Positions TTasks reads from a space are checked by the
  * caller first, which reports a bad stored value as SPACE_INVALID.
  */
 export function positionBetween(before: string | undefined, after: string | undefined): string {

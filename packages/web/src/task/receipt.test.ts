@@ -2,7 +2,7 @@
 // own words from its catalogue. Fixture receipts only.
 import { createIntl } from "react-intl";
 import { describe, expect, test } from "vitest";
-import { APP_NAME, CLI_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import type { Receipt } from "../api.ts";
 import en from "../i18n/en.json" with { type: "json" };
 import type { MessageId, Values } from "../i18n/intl.tsx";
@@ -16,7 +16,7 @@ const intl = createIntl({
   },
 });
 const t = (id: MessageId, values?: Values) =>
-  intl.formatMessage({ id }, { product: APP_NAME, cli: CLI_NAME, ...values });
+  intl.formatMessage({ id }, { product: PRODUCT_NAME, cli: CLI_NAME, ...values });
 
 const receipt = (over: Partial<Receipt>): Receipt => ({
   id: "la_00r5mfcw5rfzxb9enb2vg50z3g",

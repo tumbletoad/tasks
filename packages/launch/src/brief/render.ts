@@ -14,7 +14,7 @@
 // hidden characters never reach it (sanitise.ts), so no path or label can add a line or hide text.
 // The renderer checks its own output against the template's shape before it returns it.
 import { createHash } from "node:crypto";
-import { PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
+import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { isLaunchRef } from "../intents.ts";
 import { SPACE_ID } from "../shim/records.ts";
 import { isBriefSafe, sanitiseComposer, sanitisePath } from "./sanitise.ts";
@@ -29,11 +29,11 @@ export const BRIEF_KINDS: readonly BriefKind[] = ["sent", "prefilled", "pointer"
 
 /** The tool and command names the brief names, from the registry (A4 3.15.1). */
 export interface BriefNames {
-  /** The MCP server's key: "the tasks tool get_task". */
+  /** The MCP server's key: "the ttasks tool get_task". */
   readonly server: string;
   /** The task read tool: `get_task`. */
   readonly tool: string;
-  /** The CLI command and its verb for the same read: `tasks show`. */
+  /** The CLI command and its verb for the same read: `ttasks show`. */
   readonly command: string;
 }
 
@@ -41,7 +41,7 @@ export interface BriefNames {
 export type BriefFolder =
   /** The task's or its project's folder here, the home as `~`, and whether it is there now. */
   | { readonly kind: "folder"; readonly path: string; readonly found: boolean }
-  /** The space's Tasks work folder on this machine (A4 3.3). */
+  /** The space's TTasks work folder on this machine (A4 3.3). */
   | { readonly kind: "work_folder"; readonly absolute: string | undefined }
   /** A folder on another machine only, by that machine's name. */
   | { readonly kind: "elsewhere"; readonly machine: string };
@@ -52,7 +52,7 @@ export interface BriefInput {
   readonly task: string;
   /**
    * The space's ID: the command's fallback names it, since an agent's shell outside a launched
-   * terminal has no TASKS_SPACE and an agent's command never takes the default space.
+   * terminal has no TTASKS_SPACE and an agent's command never takes the default space.
    */
   readonly space: string;
   /** The launch reference, such as `L7KQ2M`, or REFERENCE_SLOT for the hash. */

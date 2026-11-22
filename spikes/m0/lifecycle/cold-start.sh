@@ -7,10 +7,10 @@
 #
 #   sh cold-start.sh <lab install root> <results .jsonl> <label> [offline|online|shim|all] [state]
 #
-# offline  bin/tasks mcp with the service not running: spawn to the reply line of an MCP
+# offline  bin/ttasks mcp with the service not running: spawn to the reply line of an MCP
 #          initialize (the offline first launch after a reboot). Refuses if the service runs.
 # online   the same with the service running (the runtime is then already warm from the service).
-# shim     mints a ticket through bin/tasks ticket (Node), then times bin/tasks shim from spawn to
+# shim     mints a ticket through bin/ttasks ticket (Node), then times bin/ttasks shim from spawn to
 #          its claim (the service's claim event). Needs the service.
 # all      offline, then starts the service if it is not running, then online and shim, each
 #          labelled. It stops the service again if it started it.
@@ -37,7 +37,7 @@
 # answer to `offline` likewise.
 #
 # "The service runs" means more than a live PID: service.json names a process whose arguments are
-# the runtime, its options, this install's versions/<v>/lib/tasks.mjs and then `service`, and
+# the runtime, its options, this install's versions/<v>/lib/ttasks.mjs and then `service`, and
 # which started no later than service.json was written. After a reboot a stale service.json may
 # name any process. None of these checks runs Node.
 #
@@ -56,8 +56,8 @@ label=$3
 metric=${4:-all}
 state=${5:-$1/state/service}
 limit=${COLD_START_LIMIT_S:-20}
-tasks=$root/bin/tasks
-init='{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tasks-cold-start","version":"1"}}}'
+tasks=$root/bin/ttasks
+init='{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ttasks-cold-start","version":"1"}}}'
 status_call='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"status","arguments":{}}}'
 # The validator: node -e "$validator" <initialize reply file> <status reply file> <instance or "">
 # prints "invalid", "valid service", "valid offline" or "valid unknown". Run only after the timed
@@ -235,11 +235,11 @@ running() {
     awk 'NR == 1 { next } e == "" && /^--/ { next } e == "" { e = $0; next } { print e; print $0; exit }')
   entry=$(printf '%s\n' "$args" | sed -n 1p)
   [ "$(printf '%s\n' "$args" | sed -n 2p)" = service ] || return 1
-  # The entry is versions/<v>/lib/tasks.mjs of this install, <v> one folder name.
+  # The entry is versions/<v>/lib/ttasks.mjs of this install, <v> one folder name.
   v=${entry#"$realroot"/versions/}
-  v=${v%/lib/tasks.mjs}
+  v=${v%/lib/ttasks.mjs}
   case $v in '' | */*) return 1 ;; esac
-  [ "$entry" = "$realroot/versions/$v/lib/tasks.mjs" ] || return 1
+  [ "$entry" = "$realroot/versions/$v/lib/ttasks.mjs" ] || return 1
   # A reused PID started after service.json was written.
   startup=$(awk -v tck="$(getconf CLK_TCK)" -v bt="$(awk '/^btime/ { print $2 }' /proc/stat)" \
     '{ sub(/.*\) /, ""); print int(bt + $20 / tck) }' "/proc/$service_pid/stat" 2>/dev/null)

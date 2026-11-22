@@ -2,7 +2,7 @@
 //            [--sign test] [--check-reproducible] [--no-gate] [--level 0-9]
 //
 // The version folder and archive of one platform in dist/ (A7 3.3, A2 3.12.8): dist/<platform>/
-// <version>/, dist/tasks-<version>-<platform>.tar.gz or .zip, and dist/SHA256SUMS. scripts/build/
+// <version>/, dist/ttasks-<version>-<platform>.tar.gz or .zip, and dist/SHA256SUMS. scripts/build/
 // build.ts lists the steps. The platform defaults to this machine's; win-x64 builds on Windows only.
 // The version defaults to `<package.json version>-dev.<commits>`, the build label to the commit.
 // `--sign test` signs SHA256SUMS with a throwaway key made for this run (CI); a release is signed

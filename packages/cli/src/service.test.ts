@@ -1,4 +1,4 @@
-// `tasks service` through the CLI (A2 3.10.1, M1.12's entries). Only routes that end
+// `ttasks service` through the CLI (A2 3.10.1, M1.12's entries). Only routes that end
 // before anything is read are run here: a usage error, and an agent's shell, which install,
 // uninstall and stop refuse first. No test of the CLI reaches the real Run key, a unit folder or a
 // service manager; the commands themselves are tested in packages/service with stand-ins.
@@ -30,8 +30,8 @@ function recorder(argv: readonly string[], env: Record<string, string>) {
   return io;
 }
 
-describe("[A2.3.3.5.service-install.commands] tasks service through the CLI", () => {
-  test("tasks service is routed to the service install: its verbs and flags, usage errors that quote nothing, an agent's shell refused", async () => {
+describe("[A2.3.3.5.service-install.commands] ttasks service through the CLI", () => {
+  test("ttasks service is routed to the service install: its verbs and flags, usage errors that quote nothing, an agent's shell refused", async () => {
     expect(SLOTS.service).toBeDefined();
     const home = mkdtempSync(join(tmpdir(), "kc-svc-"));
     try {
@@ -41,20 +41,20 @@ describe("[A2.3.3.5.service-install.commands] tasks service through the CLI", ()
         ["service", "install", "--force-me"],
         ["service", "status", "secret-value"],
       ]) {
-        const io = recorder(argv, { TASKS_HOME: home });
+        const io = recorder(argv, { TTASKS_HOME: home });
         expect(await main(io)).toBe(2);
         expect(io.err).toContain(
-          "tasks service takes one of install, uninstall, start, stop, restart, status",
+          "ttasks service takes one of install, uninstall, start, stop, restart, status",
         );
         expect(io.err).not.toMatch(/force-me|secret-value/);
       }
       // An agent's shell may not install, uninstall, stop or restart: refused before anything is
       // read.
-      const agent = { TASKS_HOME: home, CODEX_THREAD_ID: "t1" };
+      const agent = { TTASKS_HOME: home, CODEX_THREAD_ID: "t1" };
       for (const verb of ["stop", "restart"]) {
         const refused = recorder(["service", verb], agent);
         expect(await main(refused)).toBe(5);
-        expect(refused.err).toContain(`tasks service ${verb} is not run from an agent's shell`);
+        expect(refused.err).toContain(`ttasks service ${verb} is not run from an agent's shell`);
       }
       // --json is the CLI's global flag, and the entry prints one JSON document.
       const install = recorder(["--json", "service", "install", "--yes"], agent);
@@ -63,7 +63,7 @@ describe("[A2.3.3.5.service-install.commands] tasks service through the CLI", ()
         error: { code: "agent_shell", class: "forbidden" },
       });
       // Help names the command.
-      const help = recorder(["help"], { TASKS_HOME: home });
+      const help = recorder(["help"], { TTASKS_HOME: home });
       expect(await main(help)).toBe(0);
       expect(help.out).toMatch(
         /\n {2}service +Install, uninstall, start, stop, restart or show the service/,

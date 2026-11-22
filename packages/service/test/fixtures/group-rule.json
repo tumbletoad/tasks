@@ -1,5 +1,5 @@
 {
-  "about": "Who else can write a folder Tasks trusts (A2 3.2.2 rule 5): the one table of cases that the service's rule (hub/permissions.ts) and the install script's (scripts/install/install.sh, the block between `# rule: begin` and `# rule: end`) both run through, in group-rule.test.ts. A case gives the folder's owner, group and mode, and the person's UID, primary group ID, user name and primary group's name (\"\" when it cannot be read). `whose`: `mine`, a folder the install or the service uses, which must be the person's own; `above`, a folder above the install root, which may be root's too and may be open to all when it is sticky (the install script only). `verdict` is what is wrong (`ok` when nothing), and `chmod` the change that fixes the write bits (null for none).",
+  "about": "Who else can write a folder TTasks trusts (A2 3.2.2 rule 5): the one table of cases that the service's rule (hub/permissions.ts) and the install script's (scripts/install/install.sh, the block between `# rule: begin` and `# rule: end`) both run through, in group-rule.test.ts. A case gives the folder's owner, group and mode, and the person's UID, primary group ID, user name and primary group's name (\"\" when it cannot be read). `whose`: `mine`, a folder the install or the service uses, which must be the person's own; `above`, a folder above the install root, which may be root's too and may be open to all when it is sticky (the install script only). `verdict` is what is wrong (`ok` when nothing), and `chmod` the change that fixes the write bits (null for none).",
   "cases": [
     {
       "title": "umask 002 under a private group: the person's own group may write",
@@ -54,7 +54,7 @@
       "chmod": null
     },
     {
-      "title": "user-only, as Tasks makes its folders",
+      "title": "user-only, as TTasks makes its folders",
       "whose": "mine",
       "owner": 1000,
       "group": 1000,

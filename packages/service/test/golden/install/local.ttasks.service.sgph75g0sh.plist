@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- TT Tasks's service, written by `tasks service install`. Remove it with `tasks service uninstall`. -->
+<!-- TTasks's service, written by `ttasks service install`. Remove it with `ttasks service uninstall`. -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>local.tasks.service.287e9rz8p1</string>
+  <string>local.ttasks.service.sgph75g0sh</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/mira/tasks-test/current/bin/tasks-launchd</string>
+    <string>/Users/mira/ttasks-test/current/bin/ttasks-launchd</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>TASKS_SERVICE_MANAGER</key>
+    <key>TTASKS_SERVICE_MANAGER</key>
     <string>launchd</string>
   </dict>
   <key>WorkingDirectory</key>
@@ -32,8 +32,8 @@
   <key>AbandonProcessGroup</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/Users/mira/tasks-test/state/logs/service.stdout.log</string>
+  <string>/Users/mira/ttasks-test/state/logs/service.stdout.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/mira/tasks-test/state/logs/service.stderr.log</string>
+  <string>/Users/mira/ttasks-test/state/logs/service.stderr.log</string>
 </dict>
 </plist>

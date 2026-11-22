@@ -93,7 +93,7 @@ export const RESOLVE_REASONS = [
    */
   "folder_changed",
   /**
-   * A folder Tasks makes and owns (the space's work folder, A4 3.3) is not one it may work
+   * A folder TTasks makes and owns (the space's work folder, A4 3.3) is not one it may work
    * in: a link, a junction or another reparse point, another user's, open to other users (POSIX),
    * or not inside its parent by identity.
    */
@@ -134,7 +134,7 @@ export const UNKNOWN_REASONS = [
   "no_answer",
   /** The service lost track: a restart, or a claimed shim that is gone without a report. */
   "lost",
-  /** T3: Tasks re-paired before the launch settled, so a repeat would make a second thread. */
+  /** T3: TTasks re-paired before the launch settled, so a repeat would make a second thread. */
   "regranted",
 ] as const;
 export type UnknownReason = (typeof UNKNOWN_REASONS)[number];
@@ -165,7 +165,7 @@ export type EvidenceKind = "id" | "instant" | "count" | "flag";
 export const EVIDENCE_FIELDS = {
   /** The resolved folder's file identity: device and inode, or the Windows volume and file ID. */
   folder_id: "id",
-  /** The native session ID Tasks preset (Claude Code's `--session-id`). */
+  /** The native session ID TTasks preset (Claude Code's `--session-id`). */
   preset: "id",
   /** T3: the grant the launch was dispatched under (added at Dispatching, A4 3.9.1). */
   grant: "id",

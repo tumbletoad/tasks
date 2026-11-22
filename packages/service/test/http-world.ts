@@ -5,7 +5,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { WebSocket } from "ws";
-import type { RpcSession } from "@tasks/bridge/protocol";
+import type { RpcSession } from "@ttasks/bridge/protocol";
 import type { HttpStart } from "../src/http/index.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import type { LaunchOptions } from "../src/launch/index.ts";

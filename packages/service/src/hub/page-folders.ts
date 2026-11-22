@@ -1,8 +1,8 @@
 // The page's folder chooser and a project's folder line: the folders in a folder on this machine,
 // a new folder, and where a project's folders are. Only the person reaches these: the page's
 // sign-in, or a person at a terminal. An agent's tools and a script get no way to list a person's
-// disk through Tasks. The paths travel in request bodies only, never in a URL or a log line.
-import { AppError } from "@tasks/contracts";
+// disk through TTasks. The paths travel in request bodies only, never in a URL or a log line.
+import { AppError } from "@ttasks/contracts";
 import type { ConnectionClass } from "../local/index.ts";
 import { isUserClass } from "../ops/caller.ts";
 import { findSpace, isAmbiguity } from "../ops/copies.ts";

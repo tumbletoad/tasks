@@ -12,7 +12,7 @@ Small scripts for the rows of lab run R (A7 3.7) that have no other spike: R07, 
 
 - `sync-detect.ts --defaults` computes `~/Tasks` and the A2 3.2.1 folders of the OS and never creates them. `--provider-roots` judges every sync root it found (environment, registry, client files) with listing off, so nothing inside a sync folder is read.
 - `driver-smoke.ts` expects the package installed beforehand in a scratch folder outside the workspace, for example `npm install better-sqlite3@13.0.3 --ignore-scripts` with `npm_config_cache` inside that folder.
-- On Windows the scripts read the registry through Windows PowerShell 5.1 by absolute path, with fixed scripts and inputs passed in `TASKS_LAB_*` variables.
+- On Windows the scripts read the registry through Windows PowerShell 5.1 by absolute path, with fixed scripts and inputs passed in `TTASKS_LAB_*` variables.
 - `owner-only.ts` reuses the spike kit's permission code (`../kit/perms.ts`, Node built-ins only): `setUserOnlyAcl` gives the secrets folder a protected DACL with exactly the user, removing inheritance and every other explicit allow entry, and `readAcls` reads each ACL as SDDL by SID and refuses conditional entries.
 
 `checks.test.ts` (manifest ID `A7.3.7.lab-checks.self-test`) runs the detector on fixture trees, the owner-only check in a temporary folder, and the identifier and Smart App Control classifiers. It reads no real home, sync or state folder and no identifier.

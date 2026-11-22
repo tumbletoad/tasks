@@ -7,7 +7,7 @@ import { checkGenerated, writeGenerated, type Generator } from "./generated.ts";
 describe("[A7.3.3.gen.freshness] the generated-file freshness check", () => {
   let root = "";
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "tasks-gen-"));
+    root = await mkdtemp(join(tmpdir(), "ttasks-gen-"));
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });

@@ -8,7 +8,7 @@
 //
 //   node claude-fake.ts [claude's arguments]     the scenario as JSON in FAKE_CLAUDE_SCENARIO
 //
-// As a program it listens on the named pipe `tasks-test-standin-<token>-<pid>` on Windows and
+// As a program it listens on the named pipe `ttasks-test-standin-<token>-<pid>` on Windows and
 // carries `--token=<token>` in its arguments elsewhere, so the stand-in census counts it.
 import { spawn } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
@@ -55,8 +55,8 @@ export interface FakeClaudeScenario {
   /** Program mode: the first command leaves an idle stand-in behind, with the token. */
   readonly leave?: "detached" | "in-group";
   /**
-   * Program mode: at the recorded call of Tasks' tools, these tools of the server the
-   * `--mcp-config` file names under `tasks` are called for real, in order, on one connection, with
+   * Program mode: at the recorded call of TTasks's tools, these tools of the server the
+   * `--mcp-config` file names under `ttasks` are called for real, in order, on one connection, with
    * `home` as the install's home. Each answer goes to the log as `{"tool": …, "tool_result": …}`.
    */
   readonly callTool?: { readonly calls: readonly ToolCall[]; readonly home: string };
@@ -93,7 +93,7 @@ const isInterrupt = (message: Json): boolean =>
   isObject(message["request"]) &&
   message["request"]["subtype"] === "interrupt";
 
-/** Tool calls of Tasks' tools in an assistant line. */
+/** Tool calls of TTasks's tools in an assistant line. */
 const callsTasks = (message: Json): boolean => {
   const content = isObject(message["message"]) ? message["message"]["content"] : undefined;
   return (
@@ -103,7 +103,7 @@ const callsTasks = (message: Json): boolean => {
         isObject(b) &&
         b["type"] === "tool_use" &&
         typeof b["name"] === "string" &&
-        b["name"].startsWith("mcp__tasks__"),
+        b["name"].startsWith("mcp__ttasks__"),
     )
   );
 };
@@ -407,7 +407,7 @@ function leave(token: string, how: "detached" | "in-group"): void {
   }).unref();
 }
 
-/** Tasks' server as the `--mcp-config` file among `args` names it. */
+/** TTasks's server as the `--mcp-config` file among `args` names it. */
 function tasksServerOf(args: readonly string[]): Json | undefined {
   const at = args.indexOf("--mcp-config");
   const file = at === -1 ? undefined : args[at + 1];
@@ -415,7 +415,7 @@ function tasksServerOf(args: readonly string[]): Json | undefined {
   try {
     const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
     const servers = isObject(parsed) ? parsed["mcpServers"] : undefined;
-    const tasks = isObject(servers) ? servers["tasks"] : undefined;
+    const tasks = isObject(servers) ? servers["ttasks"] : undefined;
     return isObject(tasks) ? tasks : undefined;
   } catch {
     return undefined;
@@ -427,7 +427,7 @@ async function main(): Promise<void> {
   const scenario = JSON.parse(process.env["FAKE_CLAUDE_SCENARIO"] ?? "{}") as FakeClaudeScenario;
   if (scenario.token !== undefined && process.platform === "win32") {
     createServer()
-      .listen(`\\\\.\\pipe\\tasks-test-standin-${scenario.token}-${String(process.pid)}`)
+      .listen(`\\\\.\\pipe\\ttasks-test-standin-${scenario.token}-${String(process.pid)}`)
       .unref()
       .on("error", () => undefined);
   }

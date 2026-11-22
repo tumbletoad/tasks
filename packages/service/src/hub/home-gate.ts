@@ -1,6 +1,6 @@
 // The grant gate's answer from the grants table (ops/grant.ts, A3 3.7.4, 3.7.8): an agent home may
 // use a space when the live agent-home row of its instance names it. Setup keeps one live row per
-// home (hub/agent-homes.ts) and one home per instance: a row revoked by `tasks setup agents
+// home (hub/agent-homes.ts) and one home per instance: a row revoked by `ttasks setup agents
 // --remove`, or replaced by another answer, names nothing from that moment, so the next call of
 // every connection of the home sees it.
 //
@@ -15,7 +15,7 @@
 // (`service.default_space`, else the one space served). The configured default counts whether or
 // not it is served now, so a call on it hears `space_unavailable` (or `ambiguous`) from the request
 // path rather than a grant refusal. An entry that names an instance with no live row is refused:
-// setup never wrote such an entry and kept no row, or the row was revoked or lost, and `tasks setup
+// setup never wrote such an entry and kept no row, or the row was revoked or lost, and `ttasks setup
 // agents` is what registers the home again.
 import { isLive, type GrantStore } from "../local/index.ts";
 import { MANUAL_INSTANCE, type HomeGate } from "../ops/index.ts";

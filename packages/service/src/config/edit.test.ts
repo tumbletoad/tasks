@@ -91,7 +91,7 @@ afterEach(() => {
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 const tempDir = () => {
-  const dir = mkdtempSync(join(tmpdir(), "tasks-edit-"));
+  const dir = mkdtempSync(join(tmpdir(), "ttasks-edit-"));
   temps.push(dir);
   return dir;
 };

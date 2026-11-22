@@ -17,7 +17,7 @@ const part = (on: boolean, change: "add" | "remove" | null, plan = "0123456789ab
   on,
   change,
   file: "~/.claude.json",
-  detail: ['+ mcpServers.tasks.command = "tasks"'],
+  detail: ['+ mcpServers.ttasks.command = "ttasks"'],
   plan,
 });
 

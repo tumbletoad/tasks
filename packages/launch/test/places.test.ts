@@ -55,7 +55,7 @@ afterEach(() => {
 
 /** A temporary folder of this test's own, as its real path. */
 function tempDir(): string {
-  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-places-")));
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-places-")));
   temps.push(dir);
   return dir;
 }
@@ -285,7 +285,7 @@ describe("[A1.3.15.places.resolve] resolve(): one folder or a reason, never anot
           same ? resolved(greek, "work") : expect.objectContaining({ reason: "path_missing" }),
         ]);
       }
-      // Two spellings of one root folder are one folder: `tasks roots add` finds it named, and
+      // Two spellings of one root folder are one folder: `ttasks roots add` finds it named, and
       // two such roots written by hand leave the folder no one place.
       const loud = join(base.toUpperCase(), "WORK");
       expect(await rootNaming(loud, roots)).toEqual({ status: "named", root: "work" });
@@ -327,9 +327,9 @@ describe("[A1.3.15.places.resolve] resolve(): one folder or a reason, never anot
           "-NoProfile",
           "-NonInteractive",
           "-Command",
-          "(New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:TASKS_TEST_FOLDER).ShortName",
+          "(New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:TTASKS_TEST_FOLDER).ShortName",
         ],
-        { env: { ...process.env, TASKS_TEST_FOLDER: long }, encoding: "utf8" },
+        { env: { ...process.env, TTASKS_TEST_FOLDER: long }, encoding: "utf8" },
       ).trim();
       // A volume with 8.3 names turned off gives the long name back: nothing to test there.
       if (short === "" || short === "Lumen Health Portal") context.skip();

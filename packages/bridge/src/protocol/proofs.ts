@@ -2,13 +2,13 @@
 // proofs and the session key, SHA-256 for the transcript hash, the OS random source for nonces
 // and timingSafeEqual for every comparison of a proof.
 //
-//   Pc = b64url(HMAC(key, "tasks-local/1 client\n" + I + "\n" + P + "\n" + M + "\n" + Ns + "\n" + Nc))
-//   Ps = b64url(HMAC(key, "tasks-local/1 server\n" + I + "\n" + P + "\n" + M + "\n" + Nc + "\n" + Ns))
-//   Ks = HMAC(key, "tasks-local/1 session\n" + I + "\n" + Ns + "\n" + Nc)
-//   T  = hex(SHA-256("tasks-local/1 transcript\n" + I + "\n" + Ns + "\n" + Nc + "\n"
+//   Pc = b64url(HMAC(key, "ttasks-local/1 client\n" + I + "\n" + P + "\n" + M + "\n" + Ns + "\n" + Nc))
+//   Ps = b64url(HMAC(key, "ttasks-local/1 server\n" + I + "\n" + P + "\n" + M + "\n" + Nc + "\n" + Ns))
+//   Ks = HMAC(key, "ttasks-local/1 session\n" + I + "\n" + Ns + "\n" + Nc)
+//   T  = hex(SHA-256("ttasks-local/1 transcript\n" + I + "\n" + Ns + "\n" + Nc + "\n"
 //                    + JCS(challenge protocols) + "\n" + JCS({protocol, mode, client, context})))
-//   Mb = b64url(HMAC(Ks, "tasks-local/1 bind\n" + T))
-//   Ms = b64url(HMAC(Ks, "tasks-local/1 bound\n" + T + "\n" + hex(SHA-256(JCS(result without mac)))))
+//   Mb = b64url(HMAC(Ks, "ttasks-local/1 bind\n" + T))
+//   Ms = b64url(HMAC(Ks, "ttasks-local/1 bound\n" + T + "\n" + hex(SHA-256(JCS(result without mac)))))
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { KEY_BYTES, NONCE_BYTES, type Mode } from "./constants.ts";
 import { canonicalJson } from "./jcs.ts";
@@ -81,7 +81,7 @@ export function checkKey(key: Uint8Array): void {
 function proofText(label: "client" | "server", ids: HandshakeIds): string {
   const [first, second] =
     label === "client" ? [ids.serverNonce, ids.clientNonce] : [ids.clientNonce, ids.serverNonce];
-  return `tasks-local/1 ${label}\n${ids.instance}\n${String(ids.protocol)}\n${ids.mode}\n${first}\n${second}`;
+  return `ttasks-local/1 ${label}\n${ids.instance}\n${String(ids.protocol)}\n${ids.mode}\n${first}\n${second}`;
 }
 
 /** `Pc` as raw bytes. */
@@ -98,7 +98,7 @@ export function serverProof(key: Uint8Array, ids: HandshakeIds): Buffer {
 export function sessionKey(key: Uint8Array, ids: HandshakeIds): Buffer {
   return hmac(
     key,
-    `tasks-local/1 session\n${ids.instance}\n${ids.serverNonce}\n${ids.clientNonce}`,
+    `ttasks-local/1 session\n${ids.instance}\n${ids.serverNonce}\n${ids.clientNonce}`,
   );
 }
 
@@ -118,19 +118,19 @@ export function transcriptHash(
     context: body.context,
   };
   return sha256Hex(
-    `tasks-local/1 transcript\n${ids.instance}\n${ids.serverNonce}\n${ids.clientNonce}\n` +
+    `ttasks-local/1 transcript\n${ids.instance}\n${ids.serverNonce}\n${ids.clientNonce}\n` +
       `${canonicalJson(protocols)}\n${canonicalJson(covered)}`,
   );
 }
 
 /** `Mb` as raw bytes. */
 export function bindProof(ks: Uint8Array, transcript: string): Buffer {
-  return hmac(ks, `tasks-local/1 bind\n${transcript}`);
+  return hmac(ks, `ttasks-local/1 bind\n${transcript}`);
 }
 
 /** `Ms` as raw bytes, over the bind result without its `mac`. */
 export function boundProof(ks: Uint8Array, transcript: string, result: unknown): Buffer {
-  return hmac(ks, `tasks-local/1 bound\n${transcript}\n${sha256Hex(canonicalJson(result))}`);
+  return hmac(ks, `ttasks-local/1 bound\n${transcript}\n${sha256Hex(canonicalJson(result))}`);
 }
 
 /** A proof as it travels: base64url without padding. */

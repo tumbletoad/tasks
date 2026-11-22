@@ -1,25 +1,25 @@
 // The stable launchers through an interrupted update, with real builds (A7 3.13 M6.13's Verify line:
-// "Crash injection between the rename and the copy of tasks.exe and of tasksw.exe: the next start
+// "Crash injection between the rename and the copy of ttasks.exe and of ttasksw.exe: the next start
 // repairs to a complete version"). Windows only: on Linux and macOS the stable command is a link
-// to `current/bin/tasks` that no update replaces, and a journal lists no launcher.
+// to `current/bin/ttasks` that no update replaces, and a journal lists no launcher.
 //
 // Two versions built as the install scripts' tests build them, the second one's launchers made to
 // differ from the first's (tests/update/installed.ts), so an update swaps both. Each round:
-//   1. the install is one complete version, its service runs under the supervisor (bin\tasksw.exe,
-//      started as the Run value starts it) and an agent's bridge runs from bin\tasks.exe, so both
+//   1. the install is one complete version, its service runs under the supervisor (bin\ttasksw.exe,
+//      started as the Run value starts it) and an agent's bridge runs from bin\ttasks.exe, so both
 //      stable launchers run and Windows refuses to replace either: each swap takes two renames;
 //   2. the updater child goes to the other version and stops at one step of one launcher: its copy
 //      staged (`staged`), the old one renamed aside with the new one not yet renamed in (`aside`,
 //      the stable path missing), or the new one renamed in (`placed`); there the bridge and the
 //      service are stopped (so no running service repairs it first), and the updater is killed;
-//   3. the next start goes through the stable command (`tasks.exe serve`) or through the
-//      supervisor (`tasksw.exe`), whichever the round names. When that one is the launcher the
+//   3. the next start goes through the stable command (`ttasks.exe serve`) or through the
+//      supervisor (`ttasksw.exe`), whichever the round names. When that one is the launcher the
 //      kill left missing, it cannot start: the other one runs first, for an ordinary command, and
 //      its sibling repair puts it back from the version current names (launcher.c);
 //   4. the install must be one complete version: current names it, its folder matches its manifest,
 //      both stable launchers are that version's, no journal, staged copy or staging folder is left,
 //      the service runs it and the stable command runs. Before the switch that is the old version,
-//      from it on the new one. A supervisor that started from the old tasksw.exe hands over to the
+//      from it on the new one. A supervisor that started from the old ttasksw.exe hands over to the
 //      new one.
 // The candidate's self-test is M6.12's and runs in installed.test.ts; here a stand-in passes it.
 //
@@ -70,7 +70,7 @@ describe.runIf(windows && !runsElevated())(
       }
     };
 
-    /** An agent's MCP bridge from the stable command: bin\tasks.exe runs while it lives. */
+    /** An agent's MCP bridge from the stable command: bin\ttasks.exe runs while it lives. */
     const startBridge = (): ChildProcess => {
       const bridge = spawn(w.stable, ["mcp"], {
         env: w.env(),
@@ -181,8 +181,8 @@ describe.runIf(windows && !runsElevated())(
               expect(now, label).toBe(point === "staged" ? from : to);
               expect(readFileSync(join(w.root, "current"), "utf8"), `${label}: current`).toBe(now);
               outcomes.push(`${label}: ${now === from ? "old" : "new"}`);
-              // A supervisor that started from the old tasksw.exe (the update was cut off at
-              // tasks.exe's swap, after the switch) is replaced by the service's repair: it hands its
+              // A supervisor that started from the old ttasksw.exe (the update was cut off at
+              // ttasks.exe's swap, after the switch) is replaced by the service's repair: it hands its
               // service over to the new one and ends. Any other keeps supervising.
               if (next !== undefined) {
                 if (name === CONSOLE && point !== "staged") {

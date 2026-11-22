@@ -5,7 +5,7 @@
 // Node of either machine.
 //
 // `assembleLabFolder(stage, out, version)` copies a version folder that the packaging spike built
-// (`scripts/build.ts`, A2 3.12.2) and turns it into a lab release of `version`: `lib/tasks.mjs`
+// (`scripts/build.ts`, A2 3.12.2) and turns it into a lab release of `version`: `lib/ttasks.mjs`
 // becomes the lab entry (`entry.ts`), `lib/supervisor.mjs` and the built kit (`lib/kit/*.mjs`) are
 // added, and `manifest.json` is written again for the new file set and version. The launchers, the
 // Node runtime, `gate.mjs` and `install.mjs` stay byte for byte as built.
@@ -67,7 +67,7 @@ export function assembleLabFolder(
   if (existsSync(out)) throw new Error(`${out} already exists`);
   cpSync(stage, out, { recursive: true });
   rmSync(join(out, "manifest.json"));
-  writeFileSync(join(out, "lib", "tasks.mjs"), readFileSync(join(lab.lifecycle, "entry.mjs")));
+  writeFileSync(join(out, "lib", "ttasks.mjs"), readFileSync(join(lab.lifecycle, "entry.mjs")));
   writeFileSync(
     join(out, "lib", "supervisor.mjs"),
     readFileSync(join(lab.lifecycle, "supervisor.mjs")),

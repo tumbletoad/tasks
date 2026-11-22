@@ -9,7 +9,7 @@
 //   names the account each PID runs as, read from its token. Another account's process counts, and
 //   so does one whose account this user cannot read (A2: "a process this user cannot open counts
 //   as another user"). Being able to open a process proves nothing: its owner may have opened it
-//   to everyone. A2 names `tasks.exe --port-owner`, which reads the same table and token natively:
+//   to everyone. A2 names `ttasks.exe --port-owner`, which reads the same table and token natively:
 //   until that launcher mode exists, netstat and tasklist stand in (A2 3.8.2).
 //   Both run without blocking the service.
 // - macOS: `lsof -nP -iTCP:<port> -F pu`. A non-root lsof may not see another user's socket, so a

@@ -1,5 +1,5 @@
 // `setup/seen` (A3 3.14 `live`; M4.05): the calls the service carried out per instance, and per
-// working folder, so `tasks doctor --live` tells its own run's call from another session's.
+// working folder, so `ttasks doctor --live` tells its own run's call from another session's.
 import { describe, expect, test } from "vitest";
 import { SeenCalls } from "./agent-homes.ts";
 

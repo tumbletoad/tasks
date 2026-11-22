@@ -22,7 +22,7 @@ const shasums = readFileSync(join(fixtures, "SHASUMS256.txt"), "utf8");
 
 let work: string;
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-node-runtime-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-node-runtime-"));
 });
 afterAll(() => {
   rmSync(work, { recursive: true, force: true });

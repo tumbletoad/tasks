@@ -1,4 +1,4 @@
-// Test helpers for `tasks-local/1`: endpoint names in a temporary folder or a unique pipe name,
+// Test helpers for `ttasks-local/1`: endpoint names in a temporary folder or a unique pipe name,
 // raw connections that record every byte, and a listener whose behaviour each test scripts.
 // Tests only: nothing outside tests imports this file.
 import { randomBytes } from "node:crypto";
@@ -21,7 +21,7 @@ export function endpointRoot(): { path(name: string): string; remove(): void } {
       count += 1;
       const unique = `${name}${String(count)}`;
       return dir === undefined
-        ? `\\\\.\\pipe\\tasks-test-${tag}-${unique}`
+        ? `\\\\.\\pipe\\ttasks-test-${tag}-${unique}`
         : join(dir, `${unique}.sock`);
     },
     remove(): void {

@@ -4,7 +4,7 @@
 // body of a note or log entry, no context, outcome or other long text is in it: only what a row
 // shows of the task's children, its first three sources, where it opens on the machine that
 // serves it, and whether its newest background run works or needs the person.
-import { isOpenRun, OPEN_RUN_STATES, type RunState } from "@tasks/contracts/runs";
+import { isOpenRun, OPEN_RUN_STATES, type RunState } from "@ttasks/contracts/runs";
 import {
   decideLaunchFolder,
   FINISHED_AT_SQL,
@@ -12,7 +12,7 @@ import {
   type Id,
   type Row,
   type WorkerConnection,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 import { folderState } from "./folders.ts";
 import { hasFolderTable } from "./read.ts";
 

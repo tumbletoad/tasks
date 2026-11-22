@@ -19,8 +19,8 @@
 //   verbatim into a fenced block that no line of it can close (fenced). Emphasis, code spans and a
 //   GFM viewer's link on a bare URL, which shows its own target, may still render. The catalogue
 //   holds every text exactly.
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
-import { formatEntryRef, formatTaskRef } from "@tasks/storage";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { formatEntryRef, formatTaskRef } from "@ttasks/storage";
 
 /** The projection's format (A1 3.17 keeps it apart from the schema). A new one rebuilds the tree. */
 export const FORMAT = 1;

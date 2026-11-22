@@ -733,7 +733,7 @@ export type RootNaming =
   | { readonly status: "unavailable" };
 
 /**
- * Two roots that name one folder (by identity), for `tasks roots add`: whether a root among
+ * Two roots that name one folder (by identity), for `ttasks roots add`: whether a root among
  * `roots` names the directory `folder` names.
  */
 export async function rootNaming(

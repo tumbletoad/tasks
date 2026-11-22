@@ -5,7 +5,7 @@
 // connection (A1 3.9). Content-free replies: an error crosses as its code only, never a message
 // that could name a path.
 import { Worker } from "node:worker_threads";
-import type { Id } from "@tasks/storage";
+import type { Id } from "@ttasks/storage";
 
 export type AdminJob =
   | {

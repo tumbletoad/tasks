@@ -1,10 +1,10 @@
-// `tasks space open` of a space that is unavailable tries it again in one step, and a space whose
+// `ttasks space open` of a space that is unavailable tries it again in one step, and a space whose
 // worker did not end in time opens again once that worker has ended, never while it still runs.
 // Services run in this process on temporary homes; fixture spaces and stand-in workers only.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createSpace, newId, StorageWorker, type Id } from "@tasks/storage";
-import { checkedDriver } from "@tasks/testkit";
+import { createSpace, newId, StorageWorker, type Id } from "@ttasks/storage";
+import { checkedDriver } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
 import { storageFailureBody } from "../src/hub/space-errors.ts";

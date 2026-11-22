@@ -6,7 +6,7 @@
 // "restored" false: the comparison cannot vouch for it).
 //
 // `entryRecord` is the backup of a registration in a real home (A3 3.13.1): the key paths
-// Tasks's registration adds or changes, each with its previous value or its absence, and the
+// TTasks's registration adds or changes, each with its previous value or its absence, and the
 // file's hash for the concurrency check. No other value of the file is copied.
 //
 // The real homes on Windows are compared by key NAMES only, of exactly two places (rule 4 of
@@ -29,7 +29,7 @@ export const CONFIG_FILES = [
 ] as const;
 
 /** The lab's own marker file (scratch.ts): never part of a home's record. */
-const LAB_MARKER = ".tasks-lab-owner";
+const LAB_MARKER = ".ttasks-lab-owner";
 
 /** Files that are never opened, whatever folder they are in. */
 export const NEVER_OPEN = new Set([".credentials.json", "auth.json"]);
@@ -259,7 +259,7 @@ export interface EntryRecord {
 }
 
 /**
- * The entry-level backup of a registration (A3 3.13.1): only `keyPaths` (Tasks's
+ * The entry-level backup of a registration (A3 3.13.1): only `keyPaths` (TTasks's
  * own keys), each with its value or its absence, and the hash of the whole file. Taken before the
  * change and again after it. The undo restores exactly these entries, and only while the file's
  * hash still equals the "after" hash. Never a copy of the file, never another key's value.

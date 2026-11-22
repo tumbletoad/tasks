@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { FAKE_SHELL, readJsonLines } from "@tasks/testkit";
+import { FAKE_SHELL, readJsonLines } from "@ttasks/testkit";
 import { captureOutput, UserEnvironment, type Capture } from "../src/index.ts";
 
 const temps: string[] = [];
@@ -15,7 +15,7 @@ afterEach(() => {
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
 });
 const temp = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), "tasks-env-check-"));
+  const dir = mkdtempSync(join(tmpdir(), "ttasks-env-check-"));
   temps.push(dir);
   return dir;
 };

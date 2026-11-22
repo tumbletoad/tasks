@@ -38,9 +38,9 @@ export class MemoryT3Files implements T3Files {
   }
 }
 
-/** A paired T3: the grant T3 issued and Tasks's grant ID for it. */
+/** A paired T3: the grant T3 issued and TTasks's grant ID for it. */
 export interface T3Pairing extends Grant {
-  /** Tasks's grant ID: new at every authorization (A4 3.1). */
+  /** TTasks's grant ID: new at every authorization (A4 3.1). */
   readonly grant: string;
   readonly pairedAt: number;
   /** Set when T3 refused the token (401): the instance shows "Reconnect T3" until paired again. */

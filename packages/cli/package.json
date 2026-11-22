@@ -1,5 +1,5 @@
 {
-  "name": "@tasks/cli",
+  "name": "@ttasks/cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,17 +8,17 @@
     "./doctor-http": "./src/doctor-http.ts"
   },
   "dependencies": {
-    "@tasks/brand": "workspace:*",
-    "@tasks/bridge": "workspace:*",
-    "@tasks/contracts": "workspace:*",
-    "@tasks/files": "workspace:*",
-    "@tasks/launch": "workspace:*",
-    "@tasks/service": "workspace:*"
+    "@ttasks/brand": "workspace:*",
+    "@ttasks/bridge": "workspace:*",
+    "@ttasks/contracts": "workspace:*",
+    "@ttasks/files": "workspace:*",
+    "@ttasks/launch": "workspace:*",
+    "@ttasks/service": "workspace:*"
   },
   "devDependencies": {
-    "@tasks/runs": "workspace:*",
-    "@tasks/storage": "workspace:*",
-    "@tasks/testkit": "workspace:*",
+    "@ttasks/runs": "workspace:*",
+    "@ttasks/storage": "workspace:*",
+    "@ttasks/testkit": "workspace:*",
     "typescript": "6.0.3",
     "vitest": "5.1.0"
   }

@@ -1,11 +1,11 @@
 // A version folder (A2 3.12.2), assembled from the verified runtime, the launchers and the bundles:
 //
-//   bin/tasks                     POSIX launcher (Linux, macOS)
-//   bin/tasks-launchd             launchd wrapper (macOS, M1.12's text, A2 3.3.4)
-//   bin/tasks.exe, bin/tasksw.exe C launchers (Windows)
-//   bin/tasks-run.exe             the holder of a background run's job object (Windows)
+//   bin/ttasks                     POSIX launcher (Linux, macOS)
+//   bin/ttasks-launchd             launchd wrapper (macOS, M1.12's text, A2 3.3.4)
+//   bin/ttasks.exe, bin/ttasksw.exe C launchers (Windows)
+//   bin/ttasks-run.exe             the holder of a background run's job object (Windows)
 //   runtime/node | node.exe       the official Node binary, unmodified
-//   lib/tasks.mjs                 entry: compile cache, then the CLI chunk, the bridge or the shim
+//   lib/ttasks.mjs                 entry: compile cache, then the CLI chunk, the bridge or the shim
 //   lib/chunks/*.mjs              the CLI, the three worker entries and their shared chunks
 //   lib/bridge.mjs                the bridge, Node built-ins only (A2 3.7.1)
 //   lib/shim.mjs                  the launch shim, Node built-ins only (A4 3.6.3)
@@ -13,7 +13,7 @@
 //   ui/index.html, ui/assets/*    the page (packages/web, M2.13), which the service serves
 //   ui/manifest.webmanifest, ui/icon*  its web app manifest and icons (M5.01)
 //   licenses/node.txt             Node's licence, from its archive
-//   LICENSE, NOTICE               Tasks's
+//   LICENSE, NOTICE               TTasks's
 //   THIRD_PARTY.txt               the npm packages in lib/ and ui/, with their licences
 //   manifest.json                 the build and the SHA-256 of every other file
 //
@@ -86,11 +86,11 @@ export interface FolderInput {
   };
   /**
    * The launchers: the POSIX script's and the launchd wrapper's text (macOS takes the wrapper),
-   * or the compiled Windows pair and tasks-run.exe.
+   * or the compiled Windows pair and ttasks-run.exe.
    */
   readonly launchers:
     | { readonly posix: string; readonly launchd: string }
-    | { readonly tasks: string; readonly tasksw: string; readonly run: string };
+    | { readonly ttasks: string; readonly ttasksw: string; readonly run: string };
   /** The bundler's output folder, which holds lib/. */
   readonly bundle: { readonly out: string; readonly files: readonly string[] };
   /** The page's build (packages/web): its folder, and its files relative to it. */
@@ -103,10 +103,10 @@ export interface FolderInput {
 export function folderSources(input: FolderInput): Map<string, Source> {
   const sources = new Map<string, Source>();
   const windows = input.platform === "win-x64";
-  if ("tasks" in input.launchers) {
+  if ("ttasks" in input.launchers) {
     if (!windows) throw new Error("only win-x64 takes the C launchers");
-    sources.set(`bin/${PRODUCT_ID}.exe`, { file: input.launchers.tasks });
-    sources.set(`bin/${PRODUCT_ID}w.exe`, { file: input.launchers.tasksw });
+    sources.set(`bin/${PRODUCT_ID}.exe`, { file: input.launchers.ttasks });
+    sources.set(`bin/${PRODUCT_ID}w.exe`, { file: input.launchers.ttasksw });
     sources.set(`bin/${PRODUCT_ID}-run.exe`, { file: input.launchers.run });
   } else {
     if (windows) throw new Error("win-x64 needs the C launchers");
@@ -129,7 +129,7 @@ export function folderSources(input: FolderInput): Map<string, Source> {
 
 /**
  * Writes `bytes` into the new file `to` with exactly `mode`, whatever the umask: created
- * exclusively, its mode set on the open file (@tasks/files), never by its path.
+ * exclusively, its mode set on the open file (@ttasks/files), never by its path.
  */
 function writeNewFile(to: string, bytes: Uint8Array, mode: number): void {
   const fd = createFile(to, mode);

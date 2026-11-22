@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { keepToken, readToken, TOKEN_KEY, type TokenStore } from "./stored.ts";
 
-const TOKEN = `tasks_u_${"A".repeat(40)}b-_`;
+const TOKEN = `ttasks_u_${"A".repeat(40)}b-_`;
 
 /** A store holding whatever another page could have written. */
 function storeWith(value: unknown): TokenStore & { removed: number; set: string[] } {
@@ -48,7 +48,7 @@ describe("[A5.3.26.web.stored-token] values read back from localStorage are untr
     ["JSON", JSON.stringify({ token: TOKEN })],
     ["a longer token", `${TOKEN}A`],
     ["a shorter token", TOKEN.slice(0, -1)],
-    ["another prefix", TOKEN.replace("tasks_u_", "tasks_a_")],
+    ["another prefix", TOKEN.replace("ttasks_u_", "ttasks_a_")],
     ["a newline", `${TOKEN.slice(0, -1)}\n`],
     ["a non-string", 42],
     ["an empty string", ""],

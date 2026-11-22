@@ -19,8 +19,8 @@ import {
   StorageWorker,
   UnexpectedSpace,
   type Id,
-} from "@tasks/storage";
-import { checkedDriver } from "@tasks/testkit";
+} from "@ttasks/storage";
+import { checkedDriver } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { EXIT, ServiceExit } from "../src/hub/exit.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";

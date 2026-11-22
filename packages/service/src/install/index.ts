@@ -1,5 +1,5 @@
-// The service install (A2 3.3): `tasks service install|uninstall|start|stop|status` and what they
-// write: the systemd user unit, the HKCU Run value, the LaunchAgent and the tasks-launchd wrapper,
+// The service install (A2 3.3): `ttasks service install|uninstall|start|stop|status` and what they
+// write: the systemd user unit, the HKCU Run value, the LaunchAgent and the ttasks-launchd wrapper,
 // named with the install ID. The CLI (M1.10) routes the `service` verb group to serviceEntry().
 export {
   isServiceVerb,

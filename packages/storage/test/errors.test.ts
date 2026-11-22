@@ -4,7 +4,7 @@
 // agree on text. Fixture data only.
 import { copyFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { A1_ERRORS, normaliseText } from "@tasks/contracts";
+import { A1_ERRORS, normaliseText } from "@ttasks/contracts";
 import { afterAll, describe, expect, test } from "vitest";
 import { sqliteError, STORAGE_ERROR_CODES, StorageError } from "../src/errors.ts";
 import { normaliseStored, WRITE_ERROR_CODES } from "../src/write/request.ts";

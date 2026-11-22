@@ -1,7 +1,7 @@
 // The two ways out of a space whose database fails its check (A1 3.2), beside the restore of a
 // chosen backup:
 //
-// - restoreLatest: `tasks space restore latest --to <folder>` restores the newest complete backup
+// - restoreLatest: `ttasks space restore latest --to <folder>` restores the newest complete backup
 //   of the space that restores into a new folder, as a read-only copy. The candidates are
 //   restored directly, newest first: a restore checks its backup in full and runs its first write
 //   (restore.ts), so a newer one that does not restore, or that went away before the restore held
@@ -16,7 +16,7 @@
 //   folder `exchange/rescued/.rescue.tmp-<random>`, and only that copy is opened. Every file that
 //   was in the space folder is the same afterwards; the one new file is the rescued one, created
 //   exclusively, and `exchange/` is the folder meant for files people look at (A1 3.1). The scratch
-//   folder is removed by its full name; a crash's is listed by `tasks space list`.
+//   folder is removed by its full name; a crash's is listed by `ttasks space list`.
 //   The rows are read by the product's own tables and columns at the database's revision
 //   (backup/snapshot.ts productTables), so the report names only those: a table that fails partway
 //   keeps the rows read before the failure and is named by its product name.

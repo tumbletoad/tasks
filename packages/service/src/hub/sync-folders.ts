@@ -8,7 +8,7 @@
 //   network   never writable
 //
 // Either way the person can take the space out of the folder with a backup restored into a new
-// local folder (`tasks space backup`, `tasks space restore --to`, then `tasks space claim`); the
+// local folder (`ttasks space backup`, `ttasks space restore --to`, then `ttasks space claim`); the
 // old folder stays where it is (A1 3.2).
 //
 // The signals, one per row of A1 3.2's table (A1 3.2 names where Windows keeps them):

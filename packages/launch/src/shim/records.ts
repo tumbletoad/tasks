@@ -6,14 +6,14 @@
 //   roles, and once claimed the attachment credential's hash with the shim's PID and start time;
 // - `exit.json` (written atomically by the shim when the service cannot be reached, A4 3.6.3 step 9).
 // None of this enters a space: a space holds IDs and codes only (A4 3.9.1). The launch root is
-// A2 3.2.1's: Linux `/run/user/<uid>/tasks-<install>/launch/` (tmpfs, gone at logout, when no shim
+// A2 3.2.1's: Linux `/run/user/<uid>/ttasks-<install>/launch/` (tmpfs, gone at logout, when no shim
 // can be left either), Windows `<state>\launch\`.
 //
 // Folders are named after the launch ID, not its reference: a reference is unique within one space
 // only, and one machine's launch root holds the launches of all its spaces.
 import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWrite, makeDir } from "@tasks/files";
+import { atomicWrite, makeDir } from "@ttasks/files";
 import { isLaunchRef } from "../intents.ts";
 import { RESOLVE_REASONS, type FolderCheck, type ResolveReason } from "../places.ts";
 import { LAUNCH_ID, TASK_ID } from "../store.ts";
@@ -318,7 +318,7 @@ export const EXIT_FILE = "exit.json";
 
 /**
  * The launch root and each launch folder, and the files in them (A2 3.2.1, A4 3.6.3): set on each
- * new folder and file through @tasks/files, so no umask decides them. On Windows the folder's ACL
+ * new folder and file through @ttasks/files, so no umask decides them. On Windows the folder's ACL
  * decides.
  */
 export const LAUNCH_FOLDER_MODE = 0o700;

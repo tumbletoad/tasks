@@ -1,6 +1,6 @@
 // Short references (A1 3.3): `M-14` from the space's prefix and counter, `n2` and `l1` from per-task
 // ordinals, in the same form as the wire patterns of packages/contracts.
-import { patterns } from "@tasks/contracts";
+import { patterns } from "@ttasks/contracts";
 import fc from "fast-check";
 import { afterEach, describe, expect, test } from "vitest";
 import type { Connection } from "../src/driver.ts";
@@ -136,7 +136,7 @@ describe("[A1.5.refs.short] task references and entry ordinals", () => {
     expectCode(() => conn.transaction("immediate", () => takeTaskRef(conn)), "STORAGE_CONSTRAINT");
     conn.exec("UPDATE space SET next_ref = 0");
     expectCode(() => conn.transaction("immediate", () => takeTaskRef(conn)), "SPACE_INVALID");
-    // The reviewer's case: above "used up" is a value Tasks never wrote, so the space is invalid.
+    // The reviewer's case: above "used up" is a value TTasks never wrote, so the space is invalid.
     conn.exec(`UPDATE space SET next_ref = ${String(RANGES.taskRef.max + 2)}`);
     expectCode(() => conn.transaction("immediate", () => takeTaskRef(conn)), "SPACE_INVALID");
     conn.exec("UPDATE space SET next_ref = 1152921504606846976");

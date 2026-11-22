@@ -1,9 +1,9 @@
 // What a person reads for a space that is not open for writing: what happened, in a few words,
 // and the command that gets them out. A state whose open wrote its own message (a synced or
 // network folder, a failed check or migration) keeps that one. `<folder>` stands for the space's
-// folder, which `tasks space list` shows beside it: the message names no path, so it can go
+// folder, which `ttasks space list` shows beside it: the message names no path, so it can go
 // where paths do not.
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import type { SpaceReason } from "./log.ts";
 
 const AGAIN = `${CLI_NAME} space open <folder>`;

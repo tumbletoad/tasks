@@ -2,7 +2,7 @@
 // fact of the folder, not of the space: read from the folder's own Git configuration each time it
 // is shown, never stored, and never by starting git. Only the name is shown: the address can carry
 // a token, and the name is what a person recognises.
-import { readGitRemote, type GitRemote } from "@tasks/launch";
+import { readGitRemote, type GitRemote } from "@ttasks/launch";
 import { bounded } from "./folders.ts";
 
 /** How long the look at one folder's Git configuration may take before the name is left out. */

@@ -44,12 +44,12 @@ export const BASE_NAMES = [
 
 /** The only variables a sub-check may add. Anything else is refused. */
 export const EXTRA_NAMES = [
-  "TASKS_TICKET",
+  "TTASKS_TICKET",
   "CLAUDE_CONFIG_DIR",
   "CODEX_HOME",
   "CLAUDE_CODE_MCP_ALLOWLIST_ENV",
   "ENABLE_TOOL_SEARCH",
-  "TASKS_HOME",
+  "TTASKS_HOME",
 ] as const;
 
 /** Prefixes that must never reach a child unless the sub-check set them itself. */

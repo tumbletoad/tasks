@@ -36,7 +36,7 @@ export const windows = process.platform === "win32";
 
 /** A folder of the test's own, removed by its full name. */
 export function scratch(label: string): { dir: string; remove: () => void } {
-  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), `tasks-upd-${label}-`)));
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), `ttasks-upd-${label}-`)));
   return {
     dir,
     remove: () => {
@@ -102,7 +102,7 @@ export function writeFolder(
 
 export const factsFor = (root: string, os: NodeJS.Platform, home: string): HostFacts => ({
   platform: os,
-  env: { TASKS_HOME: root },
+  env: { TTASKS_HOME: root },
   accountHome: home,
   uid: process.getuid?.(),
 });

@@ -23,7 +23,7 @@ const LINUX: FakeHostSpec = {
     // The fixture user's wrappers (A4 3.2): one per account.
     "/home/mira/.local/bin/codex-work": { kind: "file", executable: true },
     "/home/mira/.local/bin/codex-second": { kind: "file", executable: true },
-    // Not wrappers: not executable, a name Tasks cannot turn into an ID, a folder.
+    // Not wrappers: not executable, a name TTasks cannot turn into an ID, a folder.
     "/home/mira/.local/bin/claude-notes.txt": { kind: "file" },
     "/home/mira/.local/bin/codex-Old_Copy": { kind: "file", executable: true },
     "/home/mira/.local/bin/codex-cache": { kind: "dir" },
@@ -61,7 +61,7 @@ const WINDOWS: FakeHostSpec = {
   },
   entries: {
     "C:\\Users\\mira\\.local\\bin\\claude.exe": { kind: "file" },
-    // npm's global layout: a .cmd shim beside node_modules. Tasks runs the entry with Node.
+    // npm's global layout: a .cmd shim beside node_modules. TTasks runs the entry with Node.
     "C:\\Users\\mira\\npm-global\\codex": { kind: "file" },
     "C:\\Users\\mira\\npm-global\\codex.cmd": { kind: "file" },
     "C:\\Users\\mira\\npm-global\\codex.ps1": { kind: "file" },
@@ -207,7 +207,7 @@ describe("[A4.3.2.detect.golden] instance detection per OS on fixture homes", ()
       ...LINUX.entries,
       "/home/mira/.claude_second/settings.json": { kind: "file" as const },
       "/home/mira/.codex_lab/config.toml": { kind: "file" as const },
-      // Not a home: no suffix after the separator, or one Tasks cannot turn into an ID.
+      // Not a home: no suffix after the separator, or one TTasks cannot turn into an ID.
       "/home/mira/.codex_/x": { kind: "file" as const },
       "/home/mira/.codex_Old_Copy/x": { kind: "file" as const },
     };

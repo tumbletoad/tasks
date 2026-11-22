@@ -1,6 +1,6 @@
 // Reading an export bundle (A1 3.18 "Restore and import of a bundle", steps 1 and 2), the one way
 // for every side: the exporter reads its own archive back with it before publishing it, and a
-// restore or an import unpacks with it. So Tasks never publishes a bundle it would refuse.
+// restore or an import unpacks with it. So TTasks never publishes a bundle it would refuse.
 //
 // 1. The archive passes the ZIP rules (zip.ts: paths, links, overlaps, the entry count).
 // 2. Every file has a path of A1 3.18's layout (bundleEntryKind) and claims at most its kind's

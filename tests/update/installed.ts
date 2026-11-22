@@ -2,7 +2,7 @@
 // launchers.test.ts): two versions built offline as the install scripts' tests build them (the
 // real bundles and launchers, the Node that runs the tests as the runtime), both trusting a
 // throwaway key made here, released and signed with it; the older one installed by its install
-// script into a temporary TASKS_HOME of the caller's own; its service run through the install's
+// script into a temporary TTASKS_HOME of the caller's own; its service run through the install's
 // stable command or its supervisor; and the updater child (child.ts) run against it.
 //
 // Nothing here touches a real install, autostart place, PATH or shell profile, and every process
@@ -137,7 +137,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
   const state = join(root, "state");
   const id = installId(canonicalStatePath(realpathSync.native(state), process.platform));
   const stable = stableCommand(root);
-  /** The supervisor: `<root>\bin\tasksw.exe` (Windows). */
+  /** The supervisor: `<root>\bin\ttasksw.exe` (Windows). */
   const supervisor = join(root, "bin", `${PRODUCT_ID}w.exe`);
   const env = () => installEnv();
 
@@ -245,7 +245,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
   };
 
   /**
-   * Windows: starts the supervisor, `<root>\bin\tasksw.exe` with no arguments, as the Run value
+   * Windows: starts the supervisor, `<root>\bin\ttasksw.exe` with no arguments, as the Run value
    * does at sign-in, and waits until its service is ready. Returns the supervisor's process, which
    * ends when its service stops (exit 0) or when it hands over to a new supervisor (also exit 0,
    * possibly before the service is ready: the new one starts it).
@@ -255,7 +255,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
       env: env(),
       stdio: "ignore",
       windowsHide: true,
-      // eslint-disable-next-line no-restricted-syntax -- tasksw.exe gives the service a hidden console of its own.
+      // eslint-disable-next-line no-restricted-syntax -- ttasksw.exe gives the service a hidden console of its own.
       detached: true,
     });
     started.push(child);
@@ -398,7 +398,7 @@ async function assemble(folders: ReturnType<typeof installsFolder>, options: Ope
     }
     expect(await serviceVersion(), `${label}: the service`).toBe(version);
     const named = runProgram(stable, ["version"]);
-    // `tasks version` prints the product's name, the version and the build in parentheses.
+    // `ttasks version` prints the product's name, the version and the build in parentheses.
     expect(named.stdout.trim().split(" (")[0], `${label}: the stable command`).toBe(
       `${PRODUCT_NAME} ${version}`,
     );

@@ -1,6 +1,6 @@
 // The forwarder conformance suite's harness (A2 3.7.6). The forwarder under test runs as a real
-// child process: the binary in TASKS_BRIDGE_BIN when it is set (a native forwarder takes the
-// same arguments as `tasks mcp`), otherwise the Node bridge from packages/bridge. Services run as
+// child process: the binary in TTASKS_BRIDGE_BIN when it is set (a native forwarder takes the
+// same arguments as `ttasks mcp`), otherwise the Node bridge from packages/bridge. Services run as
 // real child processes too: the scripted peer of peer.ts, or the real hub. Every process a test
 // starts is recorded and stopped by that test, and every folder is removed by its full name.
 // Tests use fixture data and temporary folders only.
@@ -49,7 +49,7 @@ export async function waitFor<T>(check: () => T | undefined, ms: number, what: s
 // Homes and endpoints
 
 /**
- * A TASKS_HOME of its own: `<home>/state` with an ipc.key, and a place for endpoints (a short
+ * A TTASKS_HOME of its own: `<home>/state` with an ipc.key, and a place for endpoints (a short
  * folder on Unix, where socket paths hold about 100 bytes; unique pipe names on Windows).
  */
 export interface Home {
@@ -84,7 +84,7 @@ export function makeHome(label: string): Home {
     endpoint: () => {
       count += 1;
       return process.platform === "win32"
-        ? `\\\\.\\pipe\\tasks-fwd-${tag}-${String(count)}`
+        ? `\\\\.\\pipe\\ttasks-fwd-${tag}-${String(count)}`
         : join(root, `e${String(count)}.sock`);
     },
     writeKey: (k) => {
@@ -183,12 +183,12 @@ export interface Proc {
 }
 
 /**
- * The environment of a process under test: this process's, without any Tasks variable or agent
+ * The environment of a process under test: this process's, without any TTasks variable or agent
  * marker (the suite may itself run inside an agent session), plus `extra`.
  */
 export function cleanEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  const marker = /^(TASKS_|CLAUDE|CODEX_|T3CODE_)/i;
+  const marker = /^(TTASKS_|CLAUDE|CODEX_|T3CODE_)/i;
   for (const [name, value] of Object.entries(process.env)) {
     if (!marker.test(name)) env[name] = value;
   }
@@ -197,7 +197,7 @@ export function cleanEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv 
 
 /** The command that runs the forwarder under test. */
 export function forwarderCommand(args: readonly string[]): { file: string; args: string[] } {
-  const bin = process.env["TASKS_BRIDGE_BIN"];
+  const bin = process.env["TTASKS_BRIDGE_BIN"];
   return bin === undefined || bin === ""
     ? { file: process.execPath, args: [NODE_BRIDGE, ...args] }
     : { file: bin, args: [...args] };
@@ -257,7 +257,7 @@ export class Procs {
     const proc = this.spawn(
       command.file,
       command.args,
-      cleanEnv({ TASKS_HOME: home.root, ...options.env }),
+      cleanEnv({ TTASKS_HOME: home.root, ...options.env }),
       options.cwd,
     );
     return new Bridge(proc);
@@ -284,13 +284,13 @@ export class Procs {
   }
 
   /**
-   * The real hub (`tasks serve` through the service's test entry), in `home`. It hosts the spaces
+   * The real hub (`ttasks serve` through the service's test entry), in `home`. It hosts the spaces
    * of `<home>/config/machine.toml` (A2 3.2.4): `hubSpace` registers one. `stop` on its stdin
    * stops it gracefully.
    */
   hub(home: Home): Proc {
     this.#hubHomes.add(home.root);
-    return this.spawn(process.execPath, [HUB], cleanEnv({ TASKS_HOME: home.root }));
+    return this.spawn(process.execPath, [HUB], cleanEnv({ TTASKS_HOME: home.root }));
   }
 
   /** Hard-kills one process and waits for its exit. */
@@ -302,7 +302,7 @@ export class Procs {
   async stopAll(): Promise<void> {
     await Promise.all(this.#all.map((proc) => this.kill(proc)));
     this.#all.length = 0;
-    // The runtime folder each hub caused (Linux, `/run/user/<uid>/tasks-<install>`), by its full
+    // The runtime folder each hub caused (Linux, `/run/user/<uid>/ttasks-<install>`), by its full
     // name: a hub that was killed or stopped halfway leaves it behind.
     for (const home of this.#hubHomes) removeRuntimeDirOf(home);
     this.#hubHomes.clear();

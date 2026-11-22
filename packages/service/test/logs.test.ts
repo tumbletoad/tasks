@@ -10,9 +10,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import { openRpc } from "@tasks/bridge/protocol";
-import { openSpace } from "@tasks/storage";
-import { checkedDriver, seedMira } from "@tasks/testkit";
+import { openRpc } from "@ttasks/bridge/protocol";
+import { openSpace } from "@ttasks/storage";
+import { checkedDriver, seedMira } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import { EXIT } from "../src/hub/exit.ts";
 import {
@@ -96,11 +96,11 @@ describe("[A2.3.13.hub.logs-content-free] logs and crash files of a running serv
       { mode: 0o600 },
     );
     const env = {
-      TASKS_TICKET: "Q4M8-fixture-ticket-secret",
-      TASKS_TASK: "M-14 fixture task marker",
+      TTASKS_TICKET: "Q4M8-fixture-ticket-secret",
+      TTASKS_TASK: "M-14 fixture task marker",
       CODEX_THREAD_ID: "019a-fixture-thread",
       CLAUDE_CODE_SESSION_ID: "fixture-session-7d2c",
-      TASKS_SPACE: "fixture-space-marker",
+      TTASKS_SPACE: "fixture-space-marker",
     };
     const crashText = texts.find((t) => t.length > 12) ?? "Fix appointment time zones";
 

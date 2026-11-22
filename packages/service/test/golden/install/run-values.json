@@ -2,15 +2,15 @@
   "run_key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
   "startup_approved_key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run",
   "daily": {
-    "install_id": "h72etcfync",
-    "name": "TT Tasks",
+    "install_id": "vpchvv2bsy",
+    "name": "TTasks",
     "type": "REG_SZ",
-    "data": "\"C:\\Users\\mira\\.local\\bin\\tasksw.exe\""
+    "data": "\"C:\\Users\\mira\\.local\\bin\\ttasksw.exe\""
   },
   "separate": {
-    "install_id": "0hcmf8r8rg",
-    "name": "TT Tasks (0hcmf8r8rg)",
+    "install_id": "vnw56jery2",
+    "name": "TTasks (vnw56jery2)",
     "type": "REG_SZ",
-    "data": "\"C:\\Users\\mira\\tasks-test\\bin\\tasksw.exe\""
+    "data": "\"C:\\Users\\mira\\ttasks-test\\bin\\ttasksw.exe\""
   }
 }

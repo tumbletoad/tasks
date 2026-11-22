@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { RpcSession } from "@tasks/bridge/protocol";
+import type { RpcSession } from "@ttasks/bridge/protocol";
 import { afterEach, describe, expect, test } from "vitest";
 import { parseMachineConfig } from "../src/config/machine-toml.ts";
 import { CLAIM_WARNING } from "../src/hub/space-verbs.ts";
@@ -163,7 +163,7 @@ describe("[A2.3.1.hub.spaces-remembered] what a person last did to a space holds
   );
 
   test(
-    "a create where a space is: the answer names tasks space open <folder>, and a space created in a gone space's folder re-points its entry",
+    "a create where a space is: the answer names ttasks space open <folder>, and a space created in a gone space's folder re-points its entry",
     SLOW,
     async () => {
       const w = await world("exists");
@@ -313,7 +313,7 @@ describe("[A2.3.1.hub.spaces-not-remembered] a record machine.toml cannot take i
       // The way to record it names `space open` of the folder, never the create again, which
       // would find a space in that folder.
       expect(made.not_remembered).toMatch(
-        /^The space is open for now, but will not reopen after a restart: machine\.toml cannot be read as it is\. Run tasks doctor: it names the problem\. Then run: tasks space open /,
+        /^The space is open for now, but will not reopen after a restart: machine\.toml cannot be read as it is\. Run ttasks doctor: it names the problem\. Then run: ttasks space open /,
       );
       expect(made.not_remembered).toContain(studioFolder);
       const closed = (await user.call("space/close", { space: studioFolder }, CALL)) as {
@@ -322,7 +322,7 @@ describe("[A2.3.1.hub.spaces-not-remembered] a record machine.toml cannot take i
       };
       expect(closed.remembered).toBe(false);
       expect(closed.not_remembered).toMatch(
-        /^The space is closed for now, but a restart may open it again: machine\.toml cannot be read as it is\..* Then run: tasks space close /,
+        /^The space is closed for now, but a restart may open it again: machine\.toml cannot be read as it is\..* Then run: ttasks space close /,
       );
       // Nothing was written into the person's file.
       expect(tomlOf(w)).toBe(`${good}\n[log\n`);

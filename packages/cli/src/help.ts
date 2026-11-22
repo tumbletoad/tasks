@@ -1,12 +1,12 @@
 // The CLI's help (A2 3.10.1): the list of commands, and the help of each one. Every command of
 // the table below and every generated verb of `cli-spec.json` has its own help, which says what it
-// does in one line, its forms and its flags. `tasks help <command>` and `tasks <command> --help`
+// does in one line, its forms and its flags. `ttasks help <command>` and `ttasks <command> --help`
 // print the same text. A test walks both tables (help.test.ts).
 //
 // The table also says which words a command takes first (`subcommands`). A hint that names a
 // command is checked against it (hints.test.ts), so no message sends a person to a command that
 // does not exist.
-import { CLI_NAME } from "@tasks/brand";
+import { CLI_NAME } from "@ttasks/brand";
 import { CLI_SPEC, takesFolder, verbSpec, type VerbSpec } from "./args.ts";
 import { ROOTS_HELP } from "./roots.ts";
 import { SERVICE_HELP } from "./service.ts";
@@ -21,7 +21,7 @@ export interface LocalCommand {
   readonly summary: string;
   /** Its own help: the forms, the flags, what it does. */
   readonly help: string;
-  /** The words it takes first, when it takes one: `tasks service start`. */
+  /** The words it takes first, when it takes one: `ttasks service start`. */
   readonly subcommands?: readonly string[];
 }
 
@@ -135,7 +135,7 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
   },
   {
     name: "recover",
-    summary: "Play back a space's rollback journal: the same as tasks space recover",
+    summary: "Play back a space's rollback journal: the same as ttasks space recover",
     help: RECOVER_HELP,
   },
   {
@@ -175,7 +175,7 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
   },
   {
     name: "install",
-    summary: "Finish an install: the install scripts run tasks install --finish",
+    summary: "Finish an install: the install scripts run ttasks install --finish",
     help: INSTALL_HELP,
   },
   {
@@ -237,7 +237,7 @@ export function verbHelp(verb: VerbSpec): string {
       `  ${f.short === undefined ? "" : `${f.short}, `}${withValue(f)}${f.repeat ? " (repeatable)" : ""}  ${f.help}${values}${f.required ? " (required)" : ""}`,
     );
   }
-  // `tasks brief --copy` is the CLI's own: the OS's clipboard tool, else the text printed.
+  // `ttasks brief --copy` is the CLI's own: the OS's clipboard tool, else the text printed.
   if (verb.entry === "launch.open") {
     lines.push("  --copy  Put the text on the clipboard instead of printing it");
   }
@@ -248,7 +248,7 @@ export function verbHelp(verb: VerbSpec): string {
       "  --create  Make the folder first when it is not there",
     );
   }
-  // `tasks undo --yes` is the CLI's own: no question when a script's change is newer than yours.
+  // `ttasks undo --yes` is the CLI's own: no question when a script's change is newer than yours.
   if (verb.entry === "history.undo") {
     lines.push(
       "  -y, --yes  Undo your newest change also when a script changed something after it, without asking",

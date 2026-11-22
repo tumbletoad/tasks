@@ -1,5 +1,5 @@
 {
-  "name": "@tasks/m0-agents",
+  "name": "@ttasks/m0-agents",
   "private": true,
   "type": "module",
   "description": "Lab code of M0.09 (lab run A). Never shipped, never imported outside spikes/.",

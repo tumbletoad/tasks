@@ -4,8 +4,8 @@
 // user accounts the machine has. Only codes, counts and ports reach the output: never a token,
 // name or SID.
 import { win32 } from "node:path";
-import { helperOutput } from "@tasks/launch/helpers";
-import { blockedMessage, metaContent, movedMessage } from "@tasks/service/http/shared";
+import { helperOutput } from "@ttasks/launch/helpers";
+import { blockedMessage, metaContent, movedMessage } from "@ttasks/service/http/shared";
 import { countAccounts, type AccountFacts } from "./accounts.ts";
 import { listenerRequest } from "./listener-request.ts";
 
@@ -96,7 +96,7 @@ export function excludedRanges(text: string): [number, number][] {
   return ranges;
 }
 
-/** netsh runs as a helper of the runner (@tasks/launch helpers.ts). */
+/** netsh runs as a helper of the runner (@ttasks/launch helpers.ts). */
 async function windowsExcluded(
   port: number,
   env: Readonly<Record<string, string | undefined>>,

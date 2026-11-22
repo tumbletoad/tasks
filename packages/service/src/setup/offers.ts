@@ -1,7 +1,7 @@
 // The [[instance]] entries setup offers for machine.toml: what Open starts an agent with. The
-// command line's `tasks setup instances` and the page's agent apps show and write the same entries.
+// command line's `ttasks setup instances` and the page's agent apps show and write the same entries.
 import { posix, win32 } from "node:path";
-import type { InstanceValue } from "@tasks/launch";
+import type { InstanceValue } from "@ttasks/launch";
 import { keyText, valueText, type EditValue } from "../config/edit.ts";
 
 /** One proposal setup offers: the entry it writes, keys in their order. */

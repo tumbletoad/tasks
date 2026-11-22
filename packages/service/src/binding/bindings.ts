@@ -1,11 +1,11 @@
 // Session binding (A3 3.7, M2.04): which task and space each agent connection writes to, and as
 // whom. The request path reads a connection's Slot (ops/binding.ts); this service is the only code
 // that changes one, and it decides only from what the connection presented in its authenticated
-// bind frame (A2 3.6.4: the entry's `--space` and `--instance`, `env.TASKS_TICKET`, the native IDs,
+// bind frame (A2 3.6.4: the entry's `--space` and `--instance`, `env.TTASKS_TICKET`, the native IDs,
 // `resume.handle`) and from what the service itself issued (the ticket, the launch reference, the
 // handle). Nothing an agent chooses freely binds: not its working folder (`cwd` only travels to
 // the launch side, which confirms a best-effort app's launch by it, A4 3.4.4), not a tool argument
-// (no tool names a session), not `TASKS_TASK` or `TASKS_SPACE`.
+// (no tool names a session), not `TTASKS_TASK` or `TTASKS_SPACE`.
 //
 // The rules, in A3 3.7.3's order:
 // 1. `resume.handle`: a handle this service issued to a connection of the same instance, used in
@@ -41,10 +41,10 @@
 //   ID its bound session does not hold, A3 3.7.5) is shared, and stays so in its handle: a call
 //   acts as the bound session only when its own ID proves that session, and no call binds it.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import type { JsonObject } from "@tasks/bridge/protocol";
-import { AppError } from "@tasks/contracts";
-import { INSTANCE_ID, MANUAL_INSTANCE, type BridgeTicket, type LaunchIntent } from "@tasks/launch";
-import { isId, newId } from "@tasks/storage";
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import { AppError } from "@ttasks/contracts";
+import { INSTANCE_ID, MANUAL_INSTANCE, type BridgeTicket, type LaunchIntent } from "@ttasks/launch";
+import { isId, newId } from "@ttasks/storage";
 import {
   MAX_PRESENTED,
   NATIVE_ID,
@@ -172,7 +172,7 @@ const unrecorded = (): AppError =>
   new AppError({
     code: "internal",
     message: "The service could not record this session, so the call bound nothing.",
-    hint: "Pass task on each call for now, and ask the user to run tasks doctor.",
+    hint: "Pass task on each call for now, and ask the user to run ttasks doctor.",
   });
 
 const noop = (): void => undefined;
@@ -275,7 +275,7 @@ export class Bindings implements BindingPort {
 
     // Rule 2: the ticket, read from the bind frame only.
     const env = isObject(context["env"]) ? context["env"] : {};
-    const ticket = env["TASKS_TICKET"];
+    const ticket = env["TTASKS_TICKET"];
     if (ticket !== undefined && slot.session === undefined && (await this.#ticket(slot, ticket))) {
       state = "bound";
     }
@@ -799,7 +799,7 @@ export class Bindings implements BindingPort {
    * redeems no role: nothing is spent, and a launch without a session yet maps to nothing.
    */
   mapped(env: Readonly<Record<string, string>>): Slot | undefined {
-    const ticket = env["TASKS_TICKET"];
+    const ticket = env["TTASKS_TICKET"];
     if (ticket === undefined) return undefined;
     const found = this.#options.launches.bridgeTicket(ticket);
     if (found === undefined) return undefined;

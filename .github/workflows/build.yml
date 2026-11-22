@@ -65,7 +65,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Build, test-sign, run the runtime gate and check that the build is reproducible
-        run: pnpm build --platform ${{ matrix.platform }} --sign test --check-reproducible --work "${{ runner.temp }}/tasks-build"
+        run: pnpm build --platform ${{ matrix.platform }} --sign test --check-reproducible --work "${{ runner.temp }}/ttasks-build"
 
       # A2 3.12.4: on macOS the packaged Node must still carry its publisher's Developer ID
       # signature, so Gatekeeper sees an official binary (the launcher is a script).
@@ -82,24 +82,29 @@ jobs:
         if: matrix.accept
         run: pnpm accept m2 --part build --installed dist/${{ matrix.platform }}
 
+      # SHA256SUMS alone would satisfy the upload's own check.
+      - name: The build gave its archive
+        run: ls dist/ttasks-*-${{ matrix.platform }}.*
+        shell: bash
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: tasks-${{ matrix.platform }}
+          name: ttasks-${{ matrix.platform }}
           path: |
-            dist/tasks-*-${{ matrix.platform }}.*
+            dist/ttasks-*-${{ matrix.platform }}.*
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 3
 
   # The smoke job of A2 3.12.8 and A7 3.18.4 (M1.14): the real install script on a build of this
   # runner, test-signed in this job (the build job uploads no signature, and its throwaway key is
-  # gone with it). pnpm smoke installs into a temporary TASKS_HOME through each verifier path of the
+  # gone with it). pnpm smoke installs into a temporary TTASKS_HOME through each verifier path of the
   # OS (ssh-keygen and openssl on Linux, ssh-keygen and the Authenticode-checked node.exe on
   # Windows) and refuses the tampered downloads (a look-alike archive, a rewritten, re-signed or
   # edited SHA256SUMS, a missing signature) before anything from them runs. Then, on Linux, the
   # installed acceptance and M3.01's migration drill against that install. Windows runners are
   # elevated and the service refuses to run elevated (A2 3.3.1), so there both run on a real Windows machine
-  # instead, as for the build job. macOS: the tasks-launchd wrapper's exit mapping runs in
+  # instead, as for the build job. macOS: the ttasks-launchd wrapper's exit mapping runs in
   # check.yml.
   smoke:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
@@ -132,17 +137,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: A test-signed build of this runner's platform
-        run: pnpm build --platform ${{ matrix.platform }} --sign test --work "${{ runner.temp }}/tasks-smoke-build" --dist "${{ runner.temp }}/tasks-smoke-dist"
+        run: pnpm build --platform ${{ matrix.platform }} --sign test --work "${{ runner.temp }}/ttasks-smoke-build" --dist "${{ runner.temp }}/ttasks-smoke-dist"
 
       # The installs go into the runner's home folder: the install script refuses a root below a
       # folder that another account may rename, and runner.temp's drive on Windows runners need not
       # be one that only this account and the administrators can change.
       - name: Install with the real install script, through each verifier path, and refuse the tampered downloads
-        run: pnpm smoke --dist "${{ runner.temp }}/tasks-smoke-dist" --work "$HOME/tasks-smoke"
+        run: pnpm smoke --dist "${{ runner.temp }}/ttasks-smoke-dist" --work "$HOME/ttasks-smoke"
 
       - name: The installed acceptance against that install
         if: matrix.accept
-        run: pnpm accept m1 --installed "$HOME/tasks-smoke/home"
+        run: pnpm accept m1 --installed "$HOME/ttasks-smoke/home"
 
       # M3.01's installed-build migration failure and restore drill (A1 5, MIL-02; A7 3.18.4)
       # against the same install: a populated 0.1 fixture space whose migration to the real 0.2
@@ -151,4 +156,4 @@ jobs:
       # it runs on a real Windows machine, as the acceptance does. Not yet run here (A7 3.18.4).
       - name: The migration failure and restore drill against that install
         if: matrix.accept
-        run: pnpm accept m3 --part migration --installed "$HOME/tasks-smoke/home"
+        run: pnpm accept m3 --part migration --installed "$HOME/ttasks-smoke/home"

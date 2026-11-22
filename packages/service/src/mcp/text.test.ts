@@ -1,6 +1,6 @@
 // Compact text: framing stored text as data (A3 3.10) and fitting a result to its budget (A3
 // 3.2.5, 3.9.6).
-import { BYTES_PER_TOKEN, resultTokens } from "@tasks/contracts";
+import { BYTES_PER_TOKEN, resultTokens } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import {
   DATA_WORD,
@@ -46,7 +46,7 @@ function split(text: string): { inside: string[]; outside: string[] } {
 const data = (...lines: string[]): Part => ({ data: true, units: lines.map((line) => [line]) });
 
 describe("[A3.3.10.mcp.framing] stored text is framed as data", () => {
-  test("data parts sit between the markers and Tasks's own words outside them", () => {
+  test("data parts sit between the markers and TTasks's own words outside them", () => {
     const text = fit(
       {
         parts: [fixed("updated M-14"), data("Title: Fix it", "Area: Client work"), fixed("next")],

@@ -1,7 +1,7 @@
 // One end-to-end world: a real service process (tests/e2e/serve-entry.ts) in a temporary
-// TASKS_HOME, serving the page's build on a loopback port the OS assigns, with three spaces of
+// TTASKS_HOME, serving the page's build on a loopback port the OS assigns, with three spaces of
 // fixture data: the seeded Mira sample (areas, projects, tasks), a "Studio" with one task and a
-// "Quiet" space whose views are empty. Sign-in goes the way `tasks open` goes: a code from
+// "Quiet" space whose views are empty. Sign-in goes the way `ttasks open` goes: a code from
 // `ui/mint_code` over the socket, in the URL's fragment. The fake agent writes through the socket
 // as an agent does (class `cli-agent`).
 // Fixture data only. Tests only.
@@ -86,7 +86,7 @@ export interface World {
   readonly launched: string;
   /** Mira's portal project's folder, as the space stores it: a temporary folder that exists. */
   readonly portal: string;
-  /** The `tasks open` URL of a fresh code, landing on `to`. */
+  /** The `ttasks open` URL of a fresh code, landing on `to`. */
   signInUrl(to: string): Promise<string>;
   /**
    * Sets one of this machine's settings (`ui.theme`, `ui.single_keys`) as the page does, or resets

@@ -14,7 +14,7 @@ import {
   rescueSpace,
   restoreBackup,
   restoreLatest,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 import { makeDir } from "./files.ts";
 import type { AdminJob, AdminReply, AdminResult } from "./space-admin.ts";
 
@@ -26,7 +26,7 @@ async function run(job: AdminJob): Promise<AdminResult> {
   const checked = await CheckedDriver.check(await loadDriver(DEFAULT_DRIVER));
   switch (job.kind) {
     case "create": {
-      // The folder for spaces, such as ~/.tasks/spaces, on the first create: user-only, like the
+      // The folder for spaces, such as ~/.ttasks/spaces, on the first create: user-only, like the
       // spaces in it (A6 3.16.6), whatever the umask. One that is already there keeps its mode.
       makeDir(dirname(job.folder), 0o700);
       const created = createSpace(checked, job.folder, {

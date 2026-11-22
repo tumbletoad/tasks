@@ -28,7 +28,7 @@ import {
   type FileIdentity,
   type FileLock,
   type SqliteDriver,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 
 export { LOCK_SETTLE_MS, type FileIdentity };
 

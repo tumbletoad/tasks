@@ -7,7 +7,7 @@
 // Every access is wrapped: when storage is missing, blocked or full, the text lives as long as the
 // tab. What is read back is untrusted (another page served at this origin could have written it),
 // so each reader checks its shape before it uses it.
-import { PRODUCT_ID } from "@tasks/brand";
+import { PRODUCT_ID } from "@ttasks/brand";
 
 const PREFIX = `${PRODUCT_ID}.`;
 

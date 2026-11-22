@@ -1,11 +1,11 @@
 // The contract suite (contract/suite.ts) over the request path's own faces: the functions
-// in-process, tasks-local/1's `op/call` with real sessions, and HTTP as the UI; and the grant
+// in-process, ttasks-local/1's `op/call` with real sessions, and HTTP as the UI; and the grant
 // gate's refusal on the faces here that carry an agent home's call. MCP and the CLI run both in
 // their own tests.
-import type { RpcSession } from "@tasks/bridge/protocol";
+import type { RpcSession } from "@ttasks/bridge/protocol";
 import { expect } from "vitest";
-import { ERROR_CODES, AppError, routePath, type ErrorBody } from "@tasks/contracts";
-import { httpRoutes } from "@tasks/contracts/generated/http-routes.ts";
+import { ERROR_CODES, AppError, routePath, type ErrorBody } from "@ttasks/contracts";
+import { httpRoutes } from "@ttasks/contracts/generated/http-routes.ts";
 import { bridgePrincipal, clientOf, instanceOf } from "../src/mcp/index.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import {
@@ -79,7 +79,7 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, over HTTP as the UI", a
       }
       const reply = await post(port, routePath(entry), input, {
         token,
-        headers: { "tasks-build": "source" },
+        headers: { "ttasks-build": "source" },
       });
       const body = JSON.parse(reply.body) as { result?: unknown; error?: ErrorBody };
       if (reply.status === 200) return body.result;
@@ -137,11 +137,11 @@ grantSuite("the grant gate, in-process, for an MCP connection of a home no row n
 });
 
 grantSuite(
-  "the grant gate over tasks-local/1, for a CLI call acting as a session of a revoked home",
+  "the grant gate over ttasks-local/1, for a CLI call acting as a session of a revoked home",
   async () => {
     const w = await contractWorld("gr");
     const { ticket } = await revokedSession(w);
-    const agent = await classSession(w.home, w.path, "cli-agent", { TASKS_TICKET: ticket });
+    const agent = await classSession(w.home, w.path, "cli-agent", { TTASKS_TICKET: ticket });
     return {
       refused: (entry, input) =>
         agent.call("op/call", { op: entry, input }, { timeoutMs: 60_000 }).then(
@@ -156,7 +156,7 @@ grantSuite(
   },
 );
 
-contractSuite("[A3.3.2.ops.contract] the contract suite, over tasks-local/1", async () => {
+contractSuite("[A3.3.2.ops.contract] the contract suite, over ttasks-local/1", async () => {
   const w = await contractWorld("cr");
   const sessions = {
     agent: await classSession(w.home, w.path, "cli-script"),

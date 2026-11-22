@@ -1,23 +1,23 @@
 /*
  * Tasks Windows launcher, M0.03 packaging spike (A2 3.12.3). One source builds both launchers:
- *   tasks.exe   console subsystem, Node in a kill-on-close job object. If Windows refuses any
+ *   ttasks.exe   console subsystem, Node in a kill-on-close job object. If Windows refuses any
  *               step of the job setup, Node never runs and the launcher exits 70
- *   tasksw.exe  GUI subsystem (TASKS_GUI defined), no console and no job object
- * TASKS_TEST_HOOKS builds a test-only launcher that can simulate a refused job step. Release
+ *   ttasksw.exe  GUI subsystem (TTASKS_GUI defined), no console and no job object
+ * TTASKS_TEST_HOOKS builds a test-only launcher that can simulate a refused job step. Release
  * builds never define it.
  *
  * In the spike:
  *   1. The mode comes from where the launcher sits. Version-local: the parent P of its folder sits
  *      in a folder named "versions" and P\manifest.json exists, so P is the version folder.
  *      Stable-dispatch: otherwise. P is the install root and <root>\current names the version.
- *   2. runtime\node.exe and lib\tasks.mjs must exist under the version folder, or exit 70.
- *   3. TASKS_ROOT, TASKS_LAUNCHER, TASKS_LAUNCH_MODE, TASKS_PACKAGE and (with home.marker)
- *      TASKS_HOME are set. NODE_OPTIONS and NODE_PATH are removed.
+ *   2. runtime\node.exe and lib\ttasks.mjs must exist under the version folder, or exit 70.
+ *   3. TTASKS_ROOT, TTASKS_LAUNCHER, TTASKS_LAUNCH_MODE, TTASKS_PACKAGE and (with home.marker)
+ *      TTASKS_HOME are set. NODE_OPTIONS and NODE_PATH are removed.
  *   4. The child command line is the quoted Node path, the fixed flags, the quoted entry path and
  *      this launcher's own command-line tail, copied verbatim from GetCommandLineW. Nothing is
  *      re-quoted and no cmd.exe is involved.
  *   5. --package-info and --replace <new> <target> are answered by the launcher itself.
- * Not in the spike: the tasksw.exe supervisor loop, --port-owner and sibling repair (M1, M6).
+ * Not in the spike: the ttasksw.exe supervisor loop, --port-owner and sibling repair (M1, M6).
  */
 #define WIN32_LEAN_AND_MEAN
 #ifndef UNICODE
@@ -50,13 +50,13 @@
  * FILE_RENAME_INFO with Flags in place of ReplaceIfExists. Declared here so the source does not
  * depend on the SDK's target-version macros.
  */
-#define TASKS_FILE_RENAME_INFO_EX ((FILE_INFO_BY_HANDLE_CLASS)22)
+#define TTASKS_FILE_RENAME_INFO_EX ((FILE_INFO_BY_HANDLE_CLASS)22)
 typedef struct {
     DWORD Flags;
     HANDLE RootDirectory;
     DWORD FileNameLength;
     WCHAR FileName[1];
-} TASKS_RENAME_INFO;
+} TTASKS_RENAME_INFO;
 
 /* Writes UTF-8 text to a standard handle, if the launcher has one. */
 static void write_to(DWORD which, const wchar_t *fmt, va_list ap) {
@@ -88,7 +88,7 @@ static void out(const wchar_t *fmt, ...) {
 static wchar_t *new_path(void) {
     wchar_t *p = (wchar_t *)calloc(PATH_CAP, sizeof(wchar_t));
     if (p == NULL) {
-        say(L"tasks: out of memory\n");
+        say(L"ttasks: out of memory\n");
         ExitProcess(EXIT_SOFTWARE);
     }
     return p;
@@ -98,7 +98,7 @@ static wchar_t *new_path(void) {
 static wchar_t *join(const wchar_t *dir, const wchar_t *name) {
     wchar_t *p = new_path();
     if (_snwprintf_s(p, PATH_CAP, _TRUNCATE, L"%s\\%s", dir, name) < 0) {
-        say(L"tasks: path too long\n");
+        say(L"ttasks: path too long\n");
         ExitProcess(EXIT_SOFTWARE);
     }
     return p;
@@ -129,14 +129,14 @@ static int read_current(const wchar_t *root, wchar_t *version) {
     HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) {
-        say(L"tasks: cannot read %s (error %lu)\n", path, GetLastError());
+        say(L"ttasks: cannot read %s (error %lu)\n", path, GetLastError());
         free(path);
         return 0;
     }
     if (!ReadFile(h, buf, 65, &n, NULL)) n = 0;
     CloseHandle(h);
     if (n < 1 || n > 64) {
-        say(L"tasks: %s does not hold a valid version\n", path);
+        say(L"ttasks: %s does not hold a valid version\n", path);
         free(path);
         return 0;
     }
@@ -145,7 +145,7 @@ static int read_current(const wchar_t *root, wchar_t *version) {
         int ok = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
                  c == '.' || c == '+' || c == '-';
         if (!ok) {
-            say(L"tasks: %s does not hold a valid version\n", path);
+            say(L"ttasks: %s does not hold a valid version\n", path);
             free(path);
             return 0;
         }
@@ -155,7 +155,7 @@ static int read_current(const wchar_t *root, wchar_t *version) {
     version[n] = L'\0';
     free(path);
     if (only_dots) {
-        say(L"tasks: current does not hold a valid version\n");
+        say(L"ttasks: current does not hold a valid version\n");
         return 0;
     }
     return 1;
@@ -190,12 +190,12 @@ static int package_info(void) {
         return 0;
     }
     if (rc != ERROR_INSUFFICIENT_BUFFER) {
-        say(L"tasks: GetCurrentPackageFullName failed (%ld)\n", rc);
+        say(L"ttasks: GetCurrentPackageFullName failed (%ld)\n", rc);
         return EXIT_SOFTWARE;
     }
     name = (wchar_t *)calloc(length + 1, sizeof(wchar_t));
     if (name == NULL || GetCurrentPackageFullName(&length, name) != ERROR_SUCCESS) {
-        say(L"tasks: GetCurrentPackageFullName failed\n");
+        say(L"ttasks: GetCurrentPackageFullName failed\n");
         return EXIT_SOFTWARE;
     }
     out(L"%s\n", name);
@@ -203,19 +203,19 @@ static int package_info(void) {
     return 0;
 }
 
-/* Sets TASKS_PACKAGE to the package full name, or removes it outside a package. */
+/* Sets TTASKS_PACKAGE to the package full name, or removes it outside a package. */
 static void set_package_variable(void) {
     UINT32 length = 0;
     wchar_t *name;
     if (GetCurrentPackageFullName(&length, NULL) != ERROR_INSUFFICIENT_BUFFER) {
-        SetEnvironmentVariableW(L"TASKS_PACKAGE", NULL);
+        SetEnvironmentVariableW(L"TTASKS_PACKAGE", NULL);
         return;
     }
     name = (wchar_t *)calloc(length + 1, sizeof(wchar_t));
     if (name != NULL && GetCurrentPackageFullName(&length, name) == ERROR_SUCCESS) {
-        SetEnvironmentVariableW(L"TASKS_PACKAGE", name);
+        SetEnvironmentVariableW(L"TTASKS_PACKAGE", name);
     } else {
-        SetEnvironmentVariableW(L"TASKS_PACKAGE", NULL);
+        SetEnvironmentVariableW(L"TTASKS_PACKAGE", NULL);
     }
     free(name);
 }
@@ -228,22 +228,22 @@ static int replace_file(const wchar_t *source, const wchar_t *target) {
     wchar_t *full = new_path();
     DWORD length = GetFullPathNameW(target, PATH_CAP, full, NULL);
     size_t bytes, size;
-    TASKS_RENAME_INFO *info;
+    TTASKS_RENAME_INFO *info;
     HANDLE h;
     BOOL ok;
     if (length == 0 || length >= PATH_CAP) {
-        say(L"tasks: cannot resolve %s\n", target);
+        say(L"ttasks: cannot resolve %s\n", target);
         return EXIT_SOFTWARE;
     }
     h = CreateFileW(source, DELETE | SYNCHRONIZE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                     NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) {
-        say(L"tasks: cannot open %s (error %lu)\n", source, GetLastError());
+        say(L"ttasks: cannot open %s (error %lu)\n", source, GetLastError());
         return 1;
     }
     bytes = wcslen(full) * sizeof(wchar_t);
-    size = sizeof(TASKS_RENAME_INFO) + bytes;
-    info = (TASKS_RENAME_INFO *)calloc(1, size);
+    size = sizeof(TTASKS_RENAME_INFO) + bytes;
+    info = (TTASKS_RENAME_INFO *)calloc(1, size);
     if (info == NULL) {
         CloseHandle(h);
         return EXIT_SOFTWARE;
@@ -252,15 +252,15 @@ static int replace_file(const wchar_t *source, const wchar_t *target) {
     info->RootDirectory = NULL;
     info->FileNameLength = (DWORD)bytes;
     memcpy(info->FileName, full, bytes);
-    ok = SetFileInformationByHandle(h, TASKS_FILE_RENAME_INFO_EX, info, (DWORD)size);
-    if (!ok) say(L"tasks: Windows refused to replace %s (error %lu)\n", full, GetLastError());
+    ok = SetFileInformationByHandle(h, TTASKS_FILE_RENAME_INFO_EX, info, (DWORD)size);
+    if (!ok) say(L"ttasks: Windows refused to replace %s (error %lu)\n", full, GetLastError());
     CloseHandle(h);
     free(info);
     free(full);
     return ok ? 0 : 1;
 }
 
-#ifndef TASKS_GUI
+#ifndef TTASKS_GUI
 /*
  * Ctrl+C and Ctrl+Break go to the whole console group, so Node receives them too and decides.
  * The launcher only stays alive to report Node's exit code. A handler function is used instead
@@ -270,14 +270,14 @@ static BOOL WINAPI ignore_ctrl(DWORD type) {
     return type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT;
 }
 
-#ifdef TASKS_TEST_HOOKS
+#ifdef TTASKS_TEST_HOOKS
 /*
- * Test builds only, never a release: TASKS_TEST_JOB_FAIL names one step of the job setup
+ * Test builds only, never a release: TTASKS_TEST_JOB_FAIL names one step of the job setup
  * (create, limits, assign, resume) that then fails as if Windows had refused it.
  */
 static int simulated_failure(const wchar_t *step) {
     wchar_t value[16];
-    DWORD n = GetEnvironmentVariableW(L"TASKS_TEST_JOB_FAIL", value, _countof(value));
+    DWORD n = GetEnvironmentVariableW(L"TTASKS_TEST_JOB_FAIL", value, _countof(value));
     if (n == 0 || n >= _countof(value) || wcscmp(value, step) != 0) return 0;
     SetLastError(ERROR_ACCESS_DENIED);
     return 1;
@@ -338,7 +338,7 @@ int wmain(int argc, wchar_t **argv) {
     DWORD flags = CREATE_UNICODE_ENVIRONMENT;
     DWORD code = EXIT_SOFTWARE;
     DWORD length;
-#ifndef TASKS_GUI
+#ifndef TTASKS_GUI
     HANDLE job;
     const wchar_t *step = NULL;
 #endif
@@ -346,7 +346,7 @@ int wmain(int argc, wchar_t **argv) {
     if (argc >= 2 && wcscmp(argv[1], L"--package-info") == 0) return package_info();
     if (argc >= 2 && wcscmp(argv[1], L"--replace") == 0) {
         if (argc != 4) {
-            say(L"usage: tasks --replace <new> <target>\n");
+            say(L"usage: ttasks --replace <new> <target>\n");
             return EXIT_USAGE;
         }
         return replace_file(argv[2], argv[3]);
@@ -354,7 +354,7 @@ int wmain(int argc, wchar_t **argv) {
 
     length = GetModuleFileNameW(NULL, self, PATH_CAP);
     if (length == 0 || length >= PATH_CAP) {
-        say(L"tasks: cannot find the launcher's own path\n");
+        say(L"ttasks: cannot find the launcher's own path\n");
         return EXIT_SOFTWARE;
     }
 
@@ -362,7 +362,7 @@ int wmain(int argc, wchar_t **argv) {
     version_dir = new_path();
     wcscpy_s(version_dir, PATH_CAP, self);
     if (cut_last(version_dir) == NULL || cut_last(version_dir) == NULL) {
-        say(L"tasks: unexpected launcher location %s\n", self);
+        say(L"ttasks: unexpected launcher location %s\n", self);
         return EXIT_SOFTWARE;
     }
     parent = new_path();
@@ -390,24 +390,24 @@ int wmain(int argc, wchar_t **argv) {
     free(marker);
 
     node = join(version_dir, L"runtime\\node.exe");
-    entry = join(version_dir, L"lib\\tasks.mjs");
+    entry = join(version_dir, L"lib\\ttasks.mjs");
     if (!is_file(node)) {
-        say(L"tasks: missing %s\n", node);
+        say(L"ttasks: missing %s\n", node);
         return EXIT_SOFTWARE;
     }
     if (!is_file(entry)) {
-        say(L"tasks: missing %s\n", entry);
+        say(L"ttasks: missing %s\n", entry);
         return EXIT_SOFTWARE;
     }
 
     SetEnvironmentVariableW(L"NODE_OPTIONS", NULL);
     SetEnvironmentVariableW(L"NODE_PATH", NULL);
-    SetEnvironmentVariableW(L"TASKS_ROOT", root);
-    SetEnvironmentVariableW(L"TASKS_LAUNCHER", self);
-    SetEnvironmentVariableW(L"TASKS_LAUNCH_MODE", mode);
+    SetEnvironmentVariableW(L"TTASKS_ROOT", root);
+    SetEnvironmentVariableW(L"TTASKS_LAUNCHER", self);
+    SetEnvironmentVariableW(L"TTASKS_LAUNCH_MODE", mode);
     set_package_variable();
     marker = join(root, L"home.marker");
-    if (is_file(marker)) SetEnvironmentVariableW(L"TASKS_HOME", root);
+    if (is_file(marker)) SetEnvironmentVariableW(L"TTASKS_HOME", root);
     free(marker);
 
     tail = command_tail(GetCommandLineW());
@@ -415,7 +415,7 @@ int wmain(int argc, wchar_t **argv) {
     if (cmdline == NULL) return EXIT_SOFTWARE;
     if (_snwprintf_s(cmdline, CMDLINE_CAP + 1, _TRUNCATE, L"\"%s\" --report-exclude-env \"%s\"%s%s",
                      node, entry, *tail != L'\0' ? L" " : L"", tail) < 0) {
-        say(L"tasks: the command line is too long for Windows\n");
+        say(L"ttasks: the command line is too long for Windows\n");
         return EXIT_SOFTWARE;
     }
 
@@ -430,7 +430,7 @@ int wmain(int argc, wchar_t **argv) {
     inheritable(si.hStdOutput);
     inheritable(si.hStdError);
 
-#ifdef TASKS_GUI
+#ifdef TTASKS_GUI
     flags |= CREATE_NO_WINDOW;
 #else
     /*
@@ -439,7 +439,7 @@ int wmain(int argc, wchar_t **argv) {
      */
     job = new_job(&step);
     if (job == NULL) {
-        say(L"tasks: cannot create the job object for Node (%s, error %lu). Node did not start.\n",
+        say(L"ttasks: cannot create the job object for Node (%s, error %lu). Node did not start.\n",
             step, GetLastError());
         return EXIT_SOFTWARE;
     }
@@ -450,11 +450,11 @@ int wmain(int argc, wchar_t **argv) {
 #endif
 
     if (!CreateProcessW(node, cmdline, NULL, NULL, TRUE, flags, NULL, NULL, &si, &pi)) {
-        say(L"tasks: cannot start %s (error %lu)\n", node, GetLastError());
+        say(L"ttasks: cannot start %s (error %lu)\n", node, GetLastError());
         return EXIT_SOFTWARE;
     }
 
-#ifndef TASKS_GUI
+#ifndef TTASKS_GUI
     step = NULL;
     if (simulated_failure(L"assign") || !AssignProcessToJobObject(job, pi.hProcess)) {
         step = L"AssignProcessToJobObject";
@@ -467,7 +467,7 @@ int wmain(int argc, wchar_t **argv) {
         WaitForSingleObject(pi.hProcess, INFINITE);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
-        say(L"tasks: cannot run Node inside its job object (%s, error %lu). Node was stopped "
+        say(L"ttasks: cannot run Node inside its job object (%s, error %lu). Node was stopped "
             L"before it ran.\n", step, error);
         return EXIT_SOFTWARE;
     }

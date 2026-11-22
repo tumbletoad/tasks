@@ -291,7 +291,7 @@ interface ClaudeCase {
 function claudeMcpConfig(label: string, delayMs: number): string {
   const file = join(mcpDir, `${label}.json`);
   const config = {
-    mcpServers: { tasks: { type: "stdio", command: NODE, args: probeArgs(label, delayMs) } },
+    mcpServers: { ttasks: { type: "stdio", command: NODE, args: probeArgs(label, delayMs) } },
   };
   writeFileSync(file, JSON.stringify(config));
   return file;
@@ -372,13 +372,13 @@ function claudeFacts(r: Recording, sessionId: string | undefined): JsonObject {
             mcp_servers: servers.map((s) => {
               const o = (typeof s === "object" && s !== null ? s : {}) as JsonObject;
               return {
-                name: o["name"] === "tasks" ? "tasks" : "[other]",
+                name: o["name"] === "ttasks" ? "ttasks" : "[other]",
                 status: oneOf(o["status"], VOCAB["mcp-status"]),
               };
             }),
             permission_mode: oneOf(init["permissionMode"], VOCAB["permission-mode"]),
             model: oneOf(init["model"], KNOWN_MODELS),
-            probe_tool_listed: tools.includes("mcp__tasks__probe_echo"),
+            probe_tool_listed: tools.includes("mcp__ttasks__probe_echo"),
             tool_count: tools.length,
           },
     tool_uses: toolUses,
@@ -504,7 +504,7 @@ function codexFacts(r: Recording, lastMessage: string): JsonObject {
         const error = i["error"];
         items.push({
           type,
-          server: i["server"] === "tasks" ? "tasks" : "[other]",
+          server: i["server"] === "ttasks" ? "ttasks" : "[other]",
           tool: oneOf(i["tool"], VOCAB["probe-tool"]),
           status,
           error: error === null || error === undefined ? null : errorClass(JSON.stringify(error)),
@@ -555,12 +555,12 @@ async function codexCase(c: CodexCase): Promise<{ facts: JsonObject; thread: str
   argv.push("-c", 'model_reasoning_effort="low"');
   if (c.model !== undefined) argv.push("-m", c.model);
   if (c.noProbe !== true) {
-    argv.push("-c", `mcp_servers.tasks.command=${tomlLiteral(NODE)}`);
-    argv.push("-c", `mcp_servers.tasks.args=${tomlArray(probeArgs(c.label, c.delayMs ?? 0))}`);
-    argv.push("-c", "mcp_servers.tasks.startup_timeout_sec=20");
-    argv.push("-c", "mcp_servers.tasks.tool_timeout_sec=120");
+    argv.push("-c", `mcp_servers.ttasks.command=${tomlLiteral(NODE)}`);
+    argv.push("-c", `mcp_servers.ttasks.args=${tomlArray(probeArgs(c.label, c.delayMs ?? 0))}`);
+    argv.push("-c", "mcp_servers.ttasks.startup_timeout_sec=20");
+    argv.push("-c", "mcp_servers.ttasks.tool_timeout_sec=120");
     if (c.approve === true) {
-      argv.push("-c", 'mcp_servers.tasks.default_tools_approval_mode="approve"');
+      argv.push("-c", 'mcp_servers.ttasks.default_tools_approval_mode="approve"');
     }
   }
   argv.push("-o", lastMessage, "-");
@@ -698,7 +698,7 @@ async function n01(): Promise<void> {
     row: "N01",
     machine,
     route:
-      'claude.exe -p in the signed-in home: --session-id, --output-format stream-json --verbose, --permission-mode bypassPermissions --permission-prompts none, --max-turns, --model haiku, --mcp-config <scratch file with the probe as "tasks"> --strict-mcp-config --setting-sources project, brief on stdin; empty working folder',
+      'claude.exe -p in the signed-in home: --session-id, --output-format stream-json --verbose, --permission-mode bypassPermissions --permission-prompts none, --max-turns, --model haiku, --mcp-config <scratch file with the probe as "ttasks"> --strict-mcp-config --setting-sources project, brief on stdin; empty working folder',
     runs,
   });
 }
@@ -813,7 +813,7 @@ async function n02(): Promise<void> {
     row: "N02",
     machine,
     route:
-      'node codex.js exec --json -C <empty working folder> --dangerously-bypass-approvals-and-sandbox --ignore-user-config, --ephemeral unless resumable, -c model_reasoning_effort="low", the probe as mcp_servers.tasks through -c, -o <scratch file>, - with the brief on stdin; the account in the default home',
+      'node codex.js exec --json -C <empty working folder> --dangerously-bypass-approvals-and-sandbox --ignore-user-config, --ephemeral unless resumable, -c model_reasoning_effort="low", the probe as mcp_servers.ttasks through -c, -o <scratch file>, - with the brief on stdin; the account in the default home',
     approve_mode_needed_with_full_access: approve,
     runs,
   });
@@ -909,7 +909,7 @@ async function n02Linux(): Promise<void> {
     row: "N02 (reduced)",
     machine,
     route:
-      'codex (from the login-shell PATH) exec --json -C <empty working folder> --skip-git-repo-check --ignore-user-config, --ephemeral unless resumable, -c model_reasoning_effort="low", the probe as mcp_servers.tasks through -c with default_tools_approval_mode="approve", the default sandbox (no full access in this row), -o <scratch file>, - with the brief on stdin; the account of the default home; own process group',
+      'codex (from the login-shell PATH) exec --json -C <empty working folder> --skip-git-repo-check --ignore-user-config, --ephemeral unless resumable, -c model_reasoning_effort="low", the probe as mcp_servers.ttasks through -c with default_tools_approval_mode="approve", the default sandbox (no full access in this row), -o <scratch file>, - with the brief on stdin; the account of the default home; own process group',
     full_access_variant: "session work: needs the owner at the machine",
     // The IDs themselves go to the report only, never into a committed file.
     threads_left_in_work_home: ledger.codex_threads.length,
@@ -1241,11 +1241,11 @@ function keys(): Promise<void> {
   console.log(
     JSON.stringify({
       claude_user_mcp_servers: k.claude_user_mcp_servers?.length ?? null,
-      claude_user_has_tasks: k.claude_user_mcp_servers?.includes("tasks") ?? null,
+      claude_user_has_tasks: k.claude_user_mcp_servers?.includes("ttasks") ?? null,
       claude_project_count: k.claude_project_count,
       claude_project_entry_for_work: k.claude_project_entry_for_work,
       codex_mcp_servers: k.codex_mcp_servers?.length ?? null,
-      codex_has_tasks: k.codex_mcp_servers?.includes("tasks") ?? null,
+      codex_has_tasks: k.codex_mcp_servers?.includes("ttasks") ?? null,
     }),
   );
   return Promise.resolve();

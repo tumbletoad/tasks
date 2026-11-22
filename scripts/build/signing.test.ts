@@ -34,7 +34,7 @@ import {
 
 let work: string;
 beforeAll(() => {
-  work = mkdtempSync(join(tmpdir(), "tasks-signing-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-signing-"));
 });
 afterAll(() => {
   rmSync(work, { recursive: true, force: true });
@@ -87,30 +87,30 @@ describe("[A2.3.12.4.build.signing] SHA256SUMS signed in raw and OpenSSH formats
   test("SHA256SUMS lists each archive once, sorted, as sha256sum writes it", () => {
     const dist = join(work, "dist");
     mkdirSync(dist);
-    writeFileSync(join(dist, "tasks-0.1.0-win-x64.zip"), "zip");
-    writeFileSync(join(dist, "tasks-0.1.0-linux-x64.tar.gz"), "tar");
-    writeFileSync(join(dist, "tasks-0.2.0-linux-x64.tar.gz"), "other version");
+    writeFileSync(join(dist, "ttasks-0.1.0-win-x64.zip"), "zip");
+    writeFileSync(join(dist, "ttasks-0.1.0-linux-x64.tar.gz"), "tar");
+    writeFileSync(join(dist, "ttasks-0.2.0-linux-x64.tar.gz"), "other version");
     writeFileSync(join(dist, "notes.txt"), "not an archive");
     expect(distArchives(dist, "0.1.0")).toEqual([
-      "tasks-0.1.0-linux-x64.tar.gz",
-      "tasks-0.1.0-win-x64.zip",
+      "ttasks-0.1.0-linux-x64.tar.gz",
+      "ttasks-0.1.0-win-x64.zip",
     ]);
     const text = writeSums(dist, distArchives(dist, "0.1.0")).toString();
     expect(text).toBe(
       sumsText([
-        { name: "tasks-0.1.0-win-x64.zip", data: Buffer.from("zip") },
-        { name: "tasks-0.1.0-linux-x64.tar.gz", data: Buffer.from("tar") },
+        { name: "ttasks-0.1.0-win-x64.zip", data: Buffer.from("zip") },
+        { name: "ttasks-0.1.0-linux-x64.tar.gz", data: Buffer.from("tar") },
       ]),
     );
     expect(text).toMatch(
-      /^[0-9a-f]{64} {2}tasks-0\.1\.0-linux-x64\.tar\.gz\n[0-9a-f]{64} {2}tasks-0\.1\.0-win-x64\.zip\n$/,
+      /^[0-9a-f]{64} {2}ttasks-0\.1\.0-linux-x64\.tar\.gz\n[0-9a-f]{64} {2}ttasks-0\.1\.0-win-x64\.zip\n$/,
     );
   });
 
   test("the raw signature is 64 bytes and verifies only the exact file with the key", () => {
     const { privateKey, publicKey } = generateKeyPairSync("ed25519");
     const other = generateKeyPairSync("ed25519").publicKey;
-    const sums = Buffer.from("0".repeat(64) + "  tasks-0.1.0-linux-x64.tar.gz\n");
+    const sums = Buffer.from("0".repeat(64) + "  ttasks-0.1.0-linux-x64.tar.gz\n");
     const signature = rawSignature(sums, privateKey);
     expect(signature).toHaveLength(64);
     expect(verifyRawSignature(sums, signature, publicKey)).toBe(true);
@@ -152,11 +152,15 @@ describe("[A2.3.12.4.build.signing] SHA256SUMS signed in raw and OpenSSH formats
       );
       expect(made.status, made.stderr).toBe(0);
       const key = opensshPrivateKey(readFileSync(keyFile, "utf8"));
-      const sums = Buffer.from(`${"a".repeat(64)}  tasks-0.1.0-win-x64.zip\n`);
-      const theirs = spawnSync(keygen, ["-Y", "sign", "-q", "-f", keyFile, "-n", "tasks-release"], {
-        input: sums,
-        windowsHide: true,
-      });
+      const sums = Buffer.from(`${"a".repeat(64)}  ttasks-0.1.0-win-x64.zip\n`);
+      const theirs = spawnSync(
+        keygen,
+        ["-Y", "sign", "-q", "-f", keyFile, "-n", "ttasks-release"],
+        {
+          input: sums,
+          windowsHide: true,
+        },
+      );
       expect(theirs.status, theirs.stderr.toString()).toBe(0);
       const ours = sshSignature(sums, key);
       expect(ours).toBe(theirs.stdout.toString().replaceAll("\r\n", "\n"));
@@ -221,12 +225,14 @@ describe("[A2.3.12.4.build.signing] SHA256SUMS signed in raw and OpenSSH formats
   test("a test signing makes a key in memory, signs both formats and writes only its public half", () => {
     const dist = join(work, "test-signed");
     mkdirSync(dist);
-    writeFileSync(join(dist, "tasks-0.1.0-linux-x64.tar.gz"), "tar");
+    writeFileSync(join(dist, "ttasks-0.1.0-linux-x64.tar.gz"), "tar");
     writeSums(dist, distArchives(dist));
     const signed = testSignSums(dist, join(work, "test-signing"));
     const sums = readFileSync(join(dist, "SHA256SUMS"));
     const publicKey = parseOpensshPublicKey(readFileSync(join(dist, TEST_KEY_FILE), "utf8"));
-    expect(readFileSync(join(dist, TEST_KEY_FILE), "utf8")).toMatch(/ tasks-throwaway-test-key\n$/);
+    expect(readFileSync(join(dist, TEST_KEY_FILE), "utf8")).toMatch(
+      / ttasks-throwaway-test-key\n$/,
+    );
     expect(signed.fingerprint).toBe(fingerprint(publicKey));
     expect(verifyRawSignature(sums, readFileSync(join(dist, RAW_SIGNATURE)), publicKey)).toBe(true);
     expect(

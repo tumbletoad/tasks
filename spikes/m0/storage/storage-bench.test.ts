@@ -55,7 +55,7 @@ const ONE_PERCENT_DIGESTS = [
 let root = "";
 
 beforeAll(() => {
-  root = mkdtempSync(join(os.tmpdir(), "tasks-storage-bench-"));
+  root = mkdtempSync(join(os.tmpdir(), "ttasks-storage-bench-"));
 });
 
 afterAll(() => {

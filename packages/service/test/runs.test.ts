@@ -5,9 +5,9 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import { buildRunHelper } from "@tasks/launcher-win/build";
-import type { NewRun, RunRecord } from "@tasks/contracts/runs";
-import { newId, type Id } from "@tasks/storage";
+import { buildRunHelper } from "@ttasks/launcher-win/build";
+import type { NewRun, RunRecord } from "@ttasks/contracts/runs";
+import { newId, type Id } from "@ttasks/storage";
 import {
   RunFiles,
   RUNS_FOLDER,
@@ -15,8 +15,8 @@ import {
   type Contained,
   type Containers,
   type ProbeResult,
-} from "@tasks/runs";
-import { seedMira } from "@tasks/testkit";
+} from "@ttasks/runs";
+import { seedMira } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import type { Logger } from "../src/hub/log.ts";
 import { startService, type RunningService, type StartOptions } from "../src/hub/service.ts";
@@ -246,7 +246,7 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
     const service = new RunService({
       containers,
       machine: newId("m"),
-      stateDir: join(tmpdir(), "tasks-runs-unused"),
+      stateDir: join(tmpdir(), "ttasks-runs-unused"),
       platform: process.platform,
       spaces: () => spaces,
       log: { log: () => undefined } as unknown as Logger,
@@ -281,10 +281,10 @@ describe("[A4.3.11.9.run.service] the service probes its containers at start, re
     }
   });
 
-  test("where no process group can hold runs, the probe says why and a run starts anyway: its work is done, and its cleanup says Tasks ended what it could find", async () => {
+  test("where no process group can hold runs, the probe says why and a run starts anyway: its work is done, and its cleanup says TTasks ended what it could find", async () => {
     const { home, spaceId } = await setUp("runs-none");
-    // On Windows without tasks-run.exe; elsewhere a service outside a delegated systemd unit.
-    const runs = windows ? { runHelper: join(home, "missing", "tasks-run.exe") } : undefined;
+    // On Windows without ttasks-run.exe; elsewhere a service outside a delegated systemd unit.
+    const runs = windows ? { runHelper: join(home, "missing", "ttasks-run.exe") } : undefined;
     const service = await start(home, runs);
     const probe = await service.runs.probe();
     expect(probe.available).toBe(false);

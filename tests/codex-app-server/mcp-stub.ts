@@ -1,5 +1,5 @@
 // A stdio MCP server with one tool, `probe_echo`, that the recorder gives a thread in its
-// configuration, as the run driver gives Tasks' own tools: what Codex says around a tool call of a
+// configuration, as the run driver gives TTasks's own tools: what Codex says around a tool call of a
 // server named per thread is then in the recording. It answers `initialize`, `tools/list` and
 // `tools/call`, and ignores notifications. Never shipped.
 import { createInterface } from "node:readline";
@@ -24,7 +24,7 @@ lines.on("line", (line) => {
         result: {
           protocolVersion: message.params?.["protocolVersion"] ?? "2025-06-18",
           capabilities: { tools: {} },
-          serverInfo: { name: "tasks", version: "0.0.0" },
+          serverInfo: { name: "ttasks", version: "0.0.0" },
         },
       });
       return;

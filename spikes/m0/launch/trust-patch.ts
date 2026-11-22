@@ -1,6 +1,6 @@
 // The trust-entry patch and its inverse for lab run L (M0.10, row L10, A4 3.14 and M0-L16).
 //
-// Tasks's later "Trust in Claude Code" and "Trust in Codex" offers add one key for one folder to
+// TTasks's later "Trust in Claude Code" and "Trust in Codex" offers add one key for one folder to
 // another app's configuration file and must be able to take it back exactly. Parse and re-serialise
 // would lose comments, key order, spacing and line endings, so this is a TEXT-LEVEL patch:
 // - a small scanner finds where the key lives (JSON: the member spans of the objects on the way;
@@ -8,8 +8,8 @@
 // - the change is one splice (offset, the text removed, the text inserted), written in the file's
 //   own style (line ending, indentation, colon spacing);
 // - the undo record keeps only that splice and the file hashes. It never holds a copy of the file
-//   or any other key's value: `removed` is the previous value of Tasks's own key (or the blank
-//   inside an empty object), `inserted` is Tasks's own text.
+//   or any other key's value: `removed` is the previous value of TTasks's own key (or the blank
+//   inside an empty object), `inserted` is TTasks's own text.
 // The undo puts the removed text back while the file's hash still equals the hash after the
 // patch, so the bytes come back identical. When the app changed the file since (Claude Code
 // rewrites `.claude.json` often), the undo works on the key alone and keeps the app's changes.
@@ -70,9 +70,9 @@ export function codexTrustKey(folder: string): string {
 export interface Splice {
   /** Offset in the file before the patch. */
   at: number;
-  /** Text the patch removed there (Tasks's key's previous value, or blank space). */
+  /** Text the patch removed there (TTasks's key's previous value, or blank space). */
   removed: string;
-  /** Text the patch inserted there (Tasks's own). */
+  /** Text the patch inserted there (TTasks's own). */
   inserted: string;
 }
 
@@ -105,9 +105,9 @@ export type UndoPath =
   | "nothing to undo"
   | "exact" // the hash matched: splices reversed, bytes identical
   | "file removed" // the patch created the file and nothing changed since
-  | "key-level" // the file changed since: only Tasks's key reverted
-  | "key gone" // the file changed since and Tasks's key is no longer there
-  | "key changed"; // the file changed since and the key no longer holds Tasks's value: left alone
+  | "key-level" // the file changed since: only TTasks's key reverted
+  | "key gone" // the file changed since and TTasks's key is no longer there
+  | "key changed"; // the file changed since and the key no longer holds TTasks's value: left alone
 
 export interface UndoResult {
   /** The file's new text, or null when the file is to be removed. */
@@ -446,7 +446,7 @@ function undoClaudeKeyLevel(text: string, undo: TrustUndo): UndoResult {
   ) {
     return { text, path: "key gone" };
   }
-  // Someone set the key to another value since: that is theirs now, not Tasks's to take back.
+  // Someone set the key to another value since: that is theirs now, not TTasks's to take back.
   if (text.slice(field.valueStart, field.valueEnd) !== "true") return { text, path: "key changed" };
   let splice: Splice;
   if (undo.change === "value") {
@@ -770,7 +770,7 @@ function tomlScan(text: string): TomlScan {
     });
   }
   if (open !== null || stack.length > 0) throw new TrustPatchError("unterminated value");
-  // The same table or the same key twice: not TOML, so the file is not Tasks's to edit.
+  // The same table or the same key twice: not TOML, so the file is not TTasks's to edit.
   // A table below an array of tables belongs to that array's latest element, so the same header
   // under two elements is not a duplicate.
   const tables = new Set<string>();
@@ -929,7 +929,7 @@ function undoCodexKeyLevel(text: string, undo: TrustUndo, fold: boolean): UndoRe
   const { scan, table } = findTomlEntry(text, undo.key, fold);
   const key = table === undefined ? undefined : trustKeyOf(scan, table);
   if (table === undefined || key === undefined) return { text, path: "key gone" };
-  // Someone set the key to another value since: that is theirs now, not Tasks's to take back.
+  // Someone set the key to another value since: that is theirs now, not TTasks's to take back.
   if (tomlStringValue(text.slice(key.valueStart, key.valueEnd)) !== "trusted") {
     return { text, path: "key changed" };
   }
@@ -946,7 +946,7 @@ function undoCodexKeyLevel(text: string, undo: TrustUndo, fold: boolean): UndoRe
   const headerLine = at(scan.lines, at(scan.headers, table).line);
   const nextHeader = scan.headers[table + 1];
   const tableEnd = nextHeader === undefined ? text.length : at(scan.lines, nextHeader.line).start;
-  // Comments or other keys in the table, or a header that is no longer the one Tasks wrote (a
+  // Comments or other keys in the table, or a header that is no longer the one TTasks wrote (a
   // comment on it, another spelling), mean the app or the user wrote there: keep the table.
   const body = text
     .slice(headerLine.end, tableEnd)
@@ -965,7 +965,7 @@ function undoCodexKeyLevel(text: string, undo: TrustUndo, fold: boolean): UndoRe
       path: "key-level",
     };
   }
-  // The table holds only Tasks's key: remove the table and the blank line before it.
+  // The table holds only TTasks's key: remove the table and the blank line before it.
   let start = headerLine.start;
   const before = text.slice(0, start);
   const blank = /\r?\n(\r?\n)$/.exec(before);
@@ -982,7 +982,7 @@ function undoCodexKeyLevel(text: string, undo: TrustUndo, fold: boolean): UndoRe
 /**
  * Undoes a patch on the file's current text (null: the file is gone). While the file's hash equals
  * the hash after the patch, the splices are reversed and the result has exactly the bytes from
- * before (or the file is removed, when the patch created it). Otherwise only Tasks's key reverts.
+ * before (or the file is removed, when the patch created it). Otherwise only TTasks's key reverts.
  */
 export function undoTrust(text: string | null, undo: TrustUndo, fold = false): UndoResult {
   if (undo.change === "none") return { text, path: "nothing to undo" };

@@ -1,13 +1,13 @@
 // Whether `pnpm verify` runs the M0 lab self-tests (the "lab" Vitest project, spikes/).
 //
 // The product tests always run. The lab tests run when
-//   1. `--lab` is given or TASKS_VERIFY_LAB=1 is set,
+//   1. `--lab` is given or TTASKS_VERIFY_LAB=1 is set,
 //   2. the base cannot be determined (fail safe), or
 //   3. a lab file or a file the lab tests depend on changed since the base.
 // Otherwise verify skips them and says so in one line.
 //
 // The base:
-//   - TASKS_VERIFY_BASE, when set: any git revision. Meant for tests and for checking the rule.
+//   - TTASKS_VERIFY_BASE, when set: any git revision. Meant for tests and for checking the rule.
 //   - GitHub Actions, pull_request: the merge commit's first parent, which is the tip of the base
 //     branch the pull request was merged onto for this run (or the event's base SHA when HEAD is
 //     not a merge commit and that commit is present).
@@ -127,8 +127,8 @@ const MAX_LISTED = 5;
 /** The selection rule itself: no I/O, every input passed in. */
 export function decideLab(options: { lab: boolean }, env: Env, base: () => Base): LabDecision {
   if (options.lab) return { run: true, reason: "lab tests run: --lab was given" };
-  if (env["TASKS_VERIFY_LAB"] === "1") {
-    return { run: true, reason: "lab tests run: TASKS_VERIFY_LAB=1 is set" };
+  if (env["TTASKS_VERIFY_LAB"] === "1") {
+    return { run: true, reason: "lab tests run: TTASKS_VERIFY_LAB=1 is set" };
   }
   const b = base();
   if (!b.found) {
@@ -207,15 +207,15 @@ export function findBaseCommit(
   run: Git,
   read: (path: string) => string = (p) => readFileSync(p, "utf8"),
 ): { sha: string; label: string } | { why: string } {
-  const override = env["TASKS_VERIFY_BASE"];
+  const override = env["TTASKS_VERIFY_BASE"];
   if (override !== undefined && override !== "") {
     // The override is for tests and for checking the rule by hand. In CI it could make a run
     // skip the lab tests silently, so it is refused there and the lab tests run.
-    if (inCi(env)) return { why: "TASKS_VERIFY_BASE is set, and CI does not honour it" };
+    if (inCi(env)) return { why: "TTASKS_VERIFY_BASE is set, and CI does not honour it" };
     const sha = commit(run, override);
     return sha === null
-      ? { why: `TASKS_VERIFY_BASE=${override} names no commit here` }
-      : { sha, label: `${override} (${short(sha)}, from TASKS_VERIFY_BASE)` };
+      ? { why: `TTASKS_VERIFY_BASE=${override} names no commit here` }
+      : { sha, label: `${override} (${short(sha)}, from TTASKS_VERIFY_BASE)` };
   }
   if (env["GITHUB_ACTIONS"] === "true") {
     const event = env["GITHUB_EVENT_NAME"] ?? "";

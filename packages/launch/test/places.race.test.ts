@@ -110,7 +110,7 @@ let server: {
 };
 
 beforeAll(() => {
-  const home = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-race-home-")));
+  const home = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-race-home-")));
   const proc = spawn(process.execPath, [CHILD, "serve"], {
     cwd: home,
     stdio: ["pipe", "pipe", "inherit"],
@@ -202,7 +202,7 @@ async function run(
   at: readonly number[],
   seen: Seen,
 ): Promise<number> {
-  const base = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-race-")));
+  const base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-race-")));
   temps.push(base);
   const scene = build(base);
   const steps = [scene.change, scene.undo];
@@ -528,7 +528,7 @@ describe("[A1.3.15.places.race] the remote is read step by step", () => {
     // follows `.git` as it was and reads A as it is: RIGHT, although the folder never held a
     // repository naming RIGHT. A1 3.15 states the remote check as this observation, not as
     // an identity; the directory's identity is the guarantee.
-    const base = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-race-")));
+    const base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-race-")));
     temps.push(base);
     const folder = join(base, "work", "portal");
     const a = join(base, "a");
@@ -556,7 +556,7 @@ describe("[A1.3.15.places.race] the remote is read step by step", () => {
 
 describe("[A1.3.15.places.race] a volume without file numbers fails closed", () => {
   test("round three's finding 3: two folders A and a whose file number is 0 are never one folder", async () => {
-    const base = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-race-")));
+    const base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-race-")));
     temps.push(base);
     const work = join(base, "work");
     const cased = join(work, "cased");

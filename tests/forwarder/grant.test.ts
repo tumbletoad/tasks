@@ -1,4 +1,4 @@
-// The grant gate through real processes (A3 3.7.8; A2 3.2.5): the real hub (`tasks serve` with its
+// The grant gate through real processes (A3 3.7.8; A2 3.2.5): the real hub (`ttasks serve` with its
 // UI listener, so the grants table is service.sqlite's) and real bridges started with the
 // arguments setup writes. An agent home registered for one space reaches it and is refused the
 // other, before and after the service restarts: the rows outlive the process and still decide, for

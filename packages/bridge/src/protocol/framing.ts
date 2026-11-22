@@ -1,4 +1,4 @@
-// Framing of `tasks-local/1` (A2 3.6.2): UTF-8, one JSON message per line, each line ended by
+// Framing of `ttasks-local/1` (A2 3.6.2): UTF-8, one JSON message per line, each line ended by
 // "\n", no BOM, at most `max` bytes per line. The decoder is pull-based, so the reader can change
 // the limit between lines (a short limit before authentication, a longer one after it) and stop
 // reading while it waits.

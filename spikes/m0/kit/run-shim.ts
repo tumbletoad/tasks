@@ -1,4 +1,4 @@
-// Stand-in for the run shim `tasks shim --run <ticket>` (A4 3.11.3, 3.11.8, 3.11.9) at spike
+// Stand-in for the run shim `ttasks shim --run <ticket>` (A4 3.11.3, 3.11.8, 3.11.9) at spike
 // level, for rows S01, S04 and N01-N04:
 //   node run-shim.mjs --state <state> [--run-dir <dir>] [--grace <ms>] [--report-window <ms>] <ticket>
 //   node kit.mjs run-shim --state <state> ... <ticket>          (the same)
@@ -85,7 +85,7 @@ export async function runShim(args: string[]): Promise<number> {
     say(USAGE);
     return 64;
   }
-  process.title = "tasks shim --run";
+  process.title = "ttasks shim --run";
   const startTime = Math.round(Date.now() - process.uptime() * 1000);
 
   let first: Connection | undefined;
@@ -96,7 +96,7 @@ export async function runShim(args: string[]): Promise<number> {
     return 69;
   }
   if (first === undefined) {
-    say("The Tasks service is not running.");
+    say("The TTasks service is not running.");
     return 69;
   }
   const claimer = new RpcClient(first);
@@ -153,7 +153,7 @@ export async function runShim(args: string[]): Promise<number> {
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const childEnv: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(process.env)) {
-    if (!name.toUpperCase().startsWith("TASKS_")) childEnv[name] = value;
+    if (!name.toUpperCase().startsWith("TTASKS_")) childEnv[name] = value;
   }
   for (const [name, value] of Object.entries(env)) childEnv[name] = textOf(value);
 

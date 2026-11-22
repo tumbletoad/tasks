@@ -17,7 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { FAKE_SHELL, readJsonLines } from "@tasks/testkit";
+import { FAKE_SHELL, readJsonLines } from "@ttasks/testkit";
 import {
   agentEnvironment,
   captureOutput,
@@ -55,7 +55,7 @@ afterEach(() => {
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
 });
 const temp = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), "tasks-env-"));
+  const dir = mkdtempSync(join(tmpdir(), "ttasks-env-"));
   temps.push(dir);
   return dir;
 };
@@ -79,11 +79,11 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
       T3CODE_THREAD_ID: "x",
       ELECTRON_RUN_AS_NODE: "1",
       NODE_OPTIONS: "--require /tmp/x.js",
-      TASKS_HOME: "/inherited",
-      TASKS_TICKET: "Z".repeat(24),
+      TTASKS_HOME: "/inherited",
+      TTASKS_TICKET: "Z".repeat(24),
       CODEX_HOME: "/inherited/codex",
     };
-    const additions = { TASKS_TICKET: "T".repeat(24), TASKS_SPACE: SPACE };
+    const additions = { TTASKS_TICKET: "T".repeat(24), TTASKS_SPACE: SPACE };
     const user = agentEnvironment({
       platform: "linux",
       base,
@@ -98,8 +98,8 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
       FIXTURE_PROFILE_EXPORT: "1",
       GOPATH: "/home/mira/go",
       HOME: "/home/mira",
-      TASKS_SPACE: SPACE,
-      TASKS_TICKET: "T".repeat(24),
+      TTASKS_SPACE: SPACE,
+      TTASKS_TICKET: "T".repeat(24),
       // The executable's folder was first already: PATH unchanged.
       PATH: "/home/mira/.nvm/versions/node/v24/bin:/usr/bin",
     });
@@ -110,7 +110,7 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
       additions,
       executable: "/opt/agent/bin/agent",
     });
-    expect(Object.keys(service).sort()).toEqual(["HOME", "PATH", "TASKS_SPACE", "TASKS_TICKET"]);
+    expect(Object.keys(service).sort()).toEqual(["HOME", "PATH", "TTASKS_SPACE", "TTASKS_TICKET"]);
     // The executable's own folder in front of PATH (nvm keeps `node` beside it).
     expect(service["PATH"]).toBe("/opt/agent/bin:/home/mira/.nvm/versions/node/v24/bin:/usr/bin");
   });
@@ -122,7 +122,7 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
         Path: "C:\\Windows",
         ClaudeCode: "1",
         node_options: "x",
-        Tasks_Home: "C:\\k",
+        Ttasks_Home: "C:\\k",
         JAVA_HOME: "C:\\j",
       },
       baseKind: "user",
@@ -133,7 +133,7 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
     expect(env["Path"]).toBe("C:\\Windows");
     expect(Object.keys(env).map((n) => n.toUpperCase())).not.toContain("CLAUDECODE");
     expect(Object.keys(env).map((n) => n.toUpperCase())).not.toContain("NODE_OPTIONS");
-    expect(Object.keys(env).map((n) => n.toUpperCase())).not.toContain("TASKS_HOME");
+    expect(Object.keys(env).map((n) => n.toUpperCase())).not.toContain("TTASKS_HOME");
     expect(env["JAVA_HOME"]).toBe("C:\\j");
     for (const name of SCRUB_NAMES) expect(scrubbed(name.toLowerCase(), "win32"), name).toBe(true);
     expect(scrubbed("claudecode", "linux")).toBe(false);
@@ -143,8 +143,8 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
     const env = terminalEnvironment(
       {
         PATH: "/usr/bin",
-        TASKS_HOME: "/home/mira/tasks-test",
-        TASKS_SERVICE_MANAGER: "systemd",
+        TTASKS_HOME: "/home/mira/ttasks-test",
+        TTASKS_SERVICE_MANAGER: "systemd",
         CLAUDECODE: "1",
         DISPLAY: ":1",
       },
@@ -153,7 +153,7 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
     );
     expect(env).toEqual({
       PATH: "/usr/bin",
-      TASKS_HOME: "/home/mira/tasks-test",
+      TTASKS_HOME: "/home/mira/ttasks-test",
       DISPLAY: ":0",
       WAYLAND_DISPLAY: "wayland-0",
     });
@@ -460,7 +460,7 @@ function environmentWith(
       LANG: "nl_NL.UTF-8",
       SERVICE_SECRET_FIXTURE: "never",
       CLAUDECODE: "1",
-      TASKS_HOME: "/k",
+      TTASKS_HOME: "/k",
     },
     stateDir: state,
     home: state,
@@ -493,7 +493,7 @@ describe("[A4.5.environment.snapshot] the login-shell snapshot: a deadline and a
       // Nothing of the service's own environment, nor what the snapshot's shell had only for itself.
       expect(stored?.env).not.toHaveProperty("SERVICE_SECRET_FIXTURE");
       expect(stored?.env).not.toHaveProperty("CLAUDECODE");
-      expect(stored?.env).not.toHaveProperty("TASKS_HOME");
+      expect(stored?.env).not.toHaveProperty("TTASKS_HOME");
       expect(stored?.env).not.toHaveProperty("TERM");
       expect(stored?.env).not.toHaveProperty(RESOLVING);
       const [run] = readJsonLines(shell.log) as {

@@ -1,13 +1,13 @@
 // A test install around a built version folder (A2 3.12.2's layout), laid out by hand in a
 // temporary folder: the build's runtime gate and `pnpm accept --installed` run the build through
-// its launchers in it, as real processes, with the install root as TASKS_HOME (it holds
-// home.marker, so the launchers set TASKS_HOME to it). Install itself is M1.14's; this is only the
+// its launchers in it, as real processes, with the install root as TTASKS_HOME (it holds
+// home.marker, so the launchers set TTASKS_HOME to it). Install itself is M1.14's; this is only the
 // layout, never the user's install, PATH or registry.
 //
 //   <root>/versions/<v>/   the version folder, its files hard-linked (copied where a link fails)
 //   <root>/current         a symlink to versions/<v> (Linux, macOS), a text file "<v>" (Windows)
-//   <root>/bin/tasks       a symlink to ../current/bin/tasks (Linux, macOS)
-//   <root>/bin/tasks.exe, tasksw.exe   copies of the version's launchers (Windows)
+//   <root>/bin/ttasks       a symlink to ../current/bin/ttasks (Linux, macOS)
+//   <root>/bin/ttasks.exe, ttasksw.exe   copies of the version's launchers (Windows)
 //   <root>/home.marker
 //
 // The version folder's files are hard links: nothing a test runs may write into versions/.
@@ -28,9 +28,9 @@ export interface TestInstall {
   readonly root: string;
   readonly version: string;
   readonly versionFolder: string;
-  /** The stable launcher: `<root>/bin/tasks`, or `<root>\bin\tasks.exe`. */
+  /** The stable launcher: `<root>/bin/ttasks`, or `<root>\bin\ttasks.exe`. */
   readonly launcher: string;
-  /** The version-local launcher: `<root>/versions/<v>/bin/tasks(.exe)`. */
+  /** The version-local launcher: `<root>/versions/<v>/bin/ttasks(.exe)`. */
   readonly versionLauncher: string;
 }
 

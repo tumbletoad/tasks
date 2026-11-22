@@ -92,7 +92,7 @@ export interface RecoverySteps {
    * reports, `exit.json` gives `confirmed` or `failed`, and a shim that is gone is `lost`.
    */
   observe(intent: LaunchIntent): Promise<Observation>;
-  /** T3: the current grant ID, or undefined when Tasks is not paired. */
+  /** T3: the current grant ID, or undefined when TTasks is not paired. */
   grant(): Promise<string | undefined>;
   /**
    * T3: the repeat of the idle-thread create with the intent's key under its grant (A4 L14). It
@@ -520,10 +520,10 @@ export class LaunchMachine {
             return { next: "dispatched" };
           case "clipboard":
             // A4 3.9.2: a clipboard launch is never Unknown. A copy that cannot be confirmed
-            // was not made, as far as Tasks can tell, and nothing starts from a clipboard alone.
+            // was not made, as far as TTasks can tell, and nothing starts from a clipboard alone.
             return { next: "failed", reason: "refused" };
           default:
-            // The launch may have opened, and Tasks cannot tell.
+            // The launch may have opened, and TTasks cannot tell.
             return { next: "unknown", reason: "no_answer" };
         }
     }

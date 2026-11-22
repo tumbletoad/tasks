@@ -20,11 +20,11 @@ import {
   type QueueLimits,
   type RunRecord,
   type RunState,
-} from "@tasks/contracts/runs";
+} from "@ttasks/contracts/runs";
 import type { AgentCommand, RunHost } from "./host.ts";
 import type { RunMachine, StartRefusal } from "./machine.ts";
 
-export { QUEUE_LIMITS, type QueueLimits } from "@tasks/contracts/runs";
+export { QUEUE_LIMITS, type QueueLimits } from "@ttasks/contracts/runs";
 
 /** Why a queued run waits. */
 export type WaitReason =

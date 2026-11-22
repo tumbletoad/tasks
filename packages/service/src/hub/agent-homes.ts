@@ -1,4 +1,4 @@
-// `tasks setup agents` (A3 3.13.1, A3 3.7.4, A2 3.2.5; M2.14): the agent-home rows of the
+// `ttasks setup agents` (A3 3.13.1, A3 3.7.4, A2 3.2.5; M2.14): the agent-home rows of the
 // grants table, as rpc methods registered in the handler table (endpoint.ts), like `t3/*`.
 //
 //   setup/homes         the live agent-home rows                      (every CLI class)
@@ -13,16 +13,16 @@
 // the person's session with the person's environment (setup/agents.ts); the service keeps the row,
 // so the one holder of service.lock is the one writer of the grants table.
 //
-// `setup/seen` is what `tasks doctor --live` asks after its headless call through an agent app
+// `setup/seen` is what `ttasks doctor --live` asks after its headless call through an agent app
 // (A3 3.14): the time this start last carried out a tool call from each instance (the entry's
 // `--instance`), and its `--app`; and, when the caller names the working folder of its own run,
 // the last such call from a bridge in that folder, so another session of the same home cannot
 // stand in for the run. Instance IDs, app words and times only; never a call's content, and a
 // folder only as an answer to the caller's own.
-import { AppError } from "@tasks/contracts";
-import type { JsonObject } from "@tasks/bridge/protocol";
-import { hasControl, INSTANCE_ID, MANUAL_INSTANCE } from "@tasks/launch";
-import { isId } from "@tasks/storage";
+import { AppError } from "@ttasks/contracts";
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import { hasControl, INSTANCE_ID, MANUAL_INSTANCE } from "@ttasks/launch";
+import { isId } from "@ttasks/storage";
 import { isLive, type ConnectionClass, type Grant, type GrantStore } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
 import { HOSTS, samePath } from "../setup/agents.ts";
@@ -140,7 +140,7 @@ function userOnly(cls: ConnectionClass): void {
     throw new AppError({
       code: "forbidden",
       message: "Only the user can register agent homes.",
-      hint: "Ask the user to run: tasks setup agents --apply",
+      hint: "Ask the user to run: ttasks setup agents --apply",
       data: { rule: "user_only" },
     });
   }
@@ -241,7 +241,7 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
         throw new AppError({
           code: "space_unavailable",
           message: "This service does not serve that space.",
-          hint: "Run tasks space list.",
+          hint: "Run ttasks space list.",
           data: { reason: "not_served", retryable: false },
         });
       }

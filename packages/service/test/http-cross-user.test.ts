@@ -75,7 +75,7 @@ describe("[A2.3.8.http.cross-user] another account on the UI's port (CI runners 
       const port = w.port();
       persistPort(w.home, port);
       await w.stop();
-      // The other account binds the port while Tasks is stopped, and keeps it until stdin closes.
+      // The other account binds the port while TTasks is stopped, and keeps it until stdin closes.
       // SO_REUSEADDR, as Node's own listeners set it on Linux: the service closed the sign-in's
       // connections itself, so the port still has TIME_WAIT rows, and a bind without it fails
       // with EADDRINUSE. It never lets a bind share a port that has a listener.

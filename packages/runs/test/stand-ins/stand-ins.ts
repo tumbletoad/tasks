@@ -58,7 +58,7 @@ export function standInSpec(
   };
 }
 
-const PIPE_PREFIX = "tasks-test-standin-";
+const PIPE_PREFIX = "ttasks-test-standin-";
 
 /** The process IDs of the live processes of the stand-in tree marked `token`. */
 export function census(token: string): number[] {

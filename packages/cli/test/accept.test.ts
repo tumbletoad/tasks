@@ -1,16 +1,16 @@
 // `pnpm accept m1 --part cli` (A7 3.8 M1.10): the CLI as child processes against a real service
-// child in a temporary TASKS_HOME. Fixture text only. With `--installed` (M1.13) the same tests
-// run against a built version folder through its launchers, and `tasks mcp` through the launcher
+// child in a temporary TTASKS_HOME. Fixture text only. With `--installed` (M1.13) the same tests
+// run against a built version folder through its launchers, and `ttasks mcp` through the launcher
 // must be the build's own bridge (A2 3.7.1).
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { PRODUCT_NAME } from "@tasks/brand";
-import { TaskAddResult, TaskGetResult, TaskUpdateResult } from "@tasks/contracts";
-import { tempRoot } from "@tasks/service/test/harness";
-import { layoutTestInstall } from "@tasks/testkit";
+import { PRODUCT_NAME } from "@ttasks/brand";
+import { TaskAddResult, TaskGetResult, TaskUpdateResult } from "@ttasks/contracts";
+import { tempRoot } from "@ttasks/service/test/harness";
+import { layoutTestInstall } from "@ttasks/testkit";
 import { BIN, cliEnv, FAULTY, INSTALLED, NEWER, startWorld, type CliWorld } from "./cli-harness.ts";
 
 let world: CliWorld;
@@ -117,7 +117,7 @@ describe("[A2.3.10.cli.accept] the M1 acceptance of the CLI", () => {
     }
   }, 180_000);
 
-  test("tasks mcp through the launcher is the build's bridge: offline answers, MCP frames only", async () => {
+  test("ttasks mcp through the launcher is the build's bridge: offline answers, MCP frames only", async () => {
     // A home of its own with no service: the bridge answers from its offline file (A2 3.7.3), the
     // build's lib/mcp-offline.json beside lib/bridge.mjs, or the source's.
     const temp = tempRoot("cli-mcp");
@@ -162,7 +162,7 @@ describe("[A2.3.10.cli.accept] the M1 acceptance of the CLI", () => {
     }
   }, 180_000);
 
-  test("two parallel tasks add give distinct IDs and references", async () => {
+  test("two parallel ttasks add give distinct IDs and references", async () => {
     const [a, b] = await Promise.all([
       world.tasks(["add", "Fixture task A", "--json"]),
       world.tasks(["add", "Fixture task B", "-p", "2", "--json"]),
@@ -176,7 +176,7 @@ describe("[A2.3.10.cli.accept] the M1 acceptance of the CLI", () => {
     expect(new Set([ta?.ref, tb?.ref])).toEqual(new Set(["M-1", "M-2"]));
   }, 180_000);
 
-  test("tasks show M-1 --json matches its schema", async () => {
+  test("ttasks show M-1 --json matches its schema", async () => {
     const shown = await world.tasks(["show", "M-1", "--json"]);
     expect(shown.code, shown.stderr).toBe(0);
     const result = TaskGetResult.parse(json(shown.stdout));
@@ -210,7 +210,7 @@ describe("[A2.3.10.cli.accept] the M1 acceptance of the CLI", () => {
     // command says how to retry.
     const lost = await world.tasks(args, {
       script: FAULTY,
-      env: { TASKS_TEST_FAULT: "lose-write" },
+      env: { TTASKS_TEST_FAULT: "lose-write" },
     });
     expect(lost.code, lost.stderr).toBe(6);
     expect(errorOf(lost.stdout)).toMatchObject({
@@ -232,7 +232,7 @@ describe("[A2.3.10.cli.accept] the M1 acceptance of the CLI", () => {
 
     // The retry asks for its receipt first and reads no fresh base (A2 3.10.2): the operations
     // it calls are the receipt lookup and the write, which replays.
-    const retry = await world.tasks(args, { script: FAULTY, env: { TASKS_TEST_FAULT: "trace" } });
+    const retry = await world.tasks(args, { script: FAULTY, env: { TTASKS_TEST_FAULT: "trace" } });
     expect(retry.code, retry.stderr).toBe(0);
     expect(retry.stderr.match(/^trace .+$/gm)).toEqual(["trace receipt.get", "trace task.update"]);
     const replayed = TaskUpdateResult.parse(json(retry.stdout));
@@ -269,6 +269,6 @@ describe("[A2.3.10.cli.accept] the M1 acceptance of the CLI", () => {
     });
     const text = await world.tasks(["status"], { script: NEWER });
     expect(text.code).toBe(7);
-    expect(text.stderr).toContain("Restart the service: tasks service restart.");
+    expect(text.stderr).toContain("Restart the service: ttasks service restart.");
   }, 180_000);
 });

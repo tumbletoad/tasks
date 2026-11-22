@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, type Page, type Request } from "@playwright/test";
-import { APP_NAME, PRODUCT_ID } from "../../packages/brand/src/index.ts";
+import { PRODUCT_NAME, PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import { showsSpace, violations, watchViolations } from "./page.ts";
@@ -40,7 +40,7 @@ const stripOf = (page: Page, ref: string) =>
 const OPENED = ':is([data-state="opened"], [data-state="running"], [data-state="ended"])';
 const toast = (page: Page) => page.locator('[data-part="toast-text"]');
 /** What the page says when an Open got no answer. */
-const unanswered = `${APP_NAME} did not answer, so ${FAKE_INSTANCE.label} may be opening. Press Open again to be sure: it does not open twice.`;
+const unanswered = `${PRODUCT_NAME} did not answer, so ${FAKE_INSTANCE.label} may be opening. Press Open again to be sure: it does not open twice.`;
 const notes = (page: Page, ref: string) =>
   rowOf(page, ref).locator('[data-entry="note"] [data-part="entry-text"]');
 /** What the person asked a session's agent, in its entry of the thread. */

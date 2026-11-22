@@ -136,7 +136,7 @@ function styleNonce(): void {
   // The served document carries the nonce only in its meta tag and header, never twice.
   record(
     "nonce meta filled",
-    meta.content.length >= 16 && !meta.content.includes("TASKS") ? "ok" : "fail",
+    meta.content.length >= 16 && !meta.content.includes("TTASKS") ? "ok" : "fail",
   );
 }
 
@@ -229,7 +229,7 @@ async function serviceWorker(): Promise<void> {
   const tt = (window as unknown as { trustedTypes?: TrustedFactory }).trustedTypes;
   if (tt === undefined) return;
   try {
-    const policy = tt.createPolicy("tasks-sw-probe", { createScriptURL: (url: string) => url });
+    const policy = tt.createPolicy("ttasks-sw-probe", { createScriptURL: (url: string) => url });
     await navigator.serviceWorker.register(policy.createScriptURL("/sw-probe.js") as string, {
       scope: "/",
     });

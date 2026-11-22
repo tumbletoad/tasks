@@ -1,4 +1,4 @@
-// Fake `claude` and `codex` commands for the tests of `tasks setup agents` (A3 3.13, M2.14): small
+// Fake `claude` and `codex` commands for the tests of `ttasks setup agents` (A3 3.13, M2.14): small
 // Node scripts laid out as npm installs, so detection finds them on a scratch PATH and runs them as
 // `node <entry>` on every OS (A4 3.2), and setup runs them as real processes.
 //

@@ -7,7 +7,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AppError } from "@tasks/contracts";
+import { AppError } from "@ttasks/contracts";
 import { Refused, type Api, type Busy, type Instance, type Opened, type Run } from "../api.ts";
 import { ToastContext } from "../app/frame.ts";
 import { Session } from "../context.ts";

@@ -1,4 +1,4 @@
-// `tasks serve` as a process (A2 3.3.1, 3.13): runs the service until it stops and returns the exit
+// `ttasks serve` as a process (A2 3.3.1, 3.13): runs the service until it stops and returns the exit
 // code. This is the one place that touches process-wide state: the crash handlers, the signal
 // handlers and Node's fatal-error reports. startService() itself stays free of them, so tests can
 // run it in-process.
@@ -7,7 +7,7 @@
 //   and exit 0. On Windows a stop comes as `service/shutdown` over the pipe (A2 3.3.5).
 // - An uncaught exception or an unhandled rejection writes a content-free crash file and exits 70
 //   at once: the locks are released by the OS, and the next start recovers the rest.
-import { PRODUCT_NAME } from "@tasks/brand";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import { BUILD, startService, type StartOptions } from "./service.ts";
 import {
   crashRecord,
@@ -26,7 +26,7 @@ const SIGNALS: readonly NodeJS.Signals[] =
     ? ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]
     : ["SIGINT", "SIGTERM", "SIGHUP"];
 
-/** Runs `tasks serve` in this process and resolves with its exit code. */
+/** Runs `ttasks serve` in this process and resolves with its exit code. */
 export async function runServe(options: StartOptions = {}): Promise<ExitCode> {
   const context: CrashContext = { ...BUILD, startedAt: Date.now() };
   let attached: { log: Logger; crashDir: string } | undefined;
@@ -68,7 +68,7 @@ export async function runServe(options: StartOptions = {}): Promise<ExitCode> {
   try {
     const service = await startService({
       ...options,
-      // `tasks serve` always runs the UI's listener with the product's settings (A2 3.8).
+      // `ttasks serve` always runs the UI's listener with the product's settings (A2 3.8).
       http: options.http ?? {},
       attach: (value) => {
         attached = value;

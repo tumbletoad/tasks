@@ -1,4 +1,4 @@
-// Framing of tasks-local/1 (A2 3.6.2, A2 5 "Framing: split and merged chunks, 8 MiB limit,
+// Framing of ttasks-local/1 (A2 3.6.2, A2 5 "Framing: split and merged chunks, 8 MiB limit,
 // invalid UTF-8, lines without a terminator at close").
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";

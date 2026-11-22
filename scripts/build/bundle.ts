@@ -1,8 +1,8 @@
 // The bundles of a version folder's lib/ (A2 3.12.2), made with esbuild. Four builds:
 //
-//   lib/tasks.mjs       packages/cli/src/entry.ts on its own, no code splitting: it turns on the
+//   lib/ttasks.mjs       packages/cli/src/entry.ts on its own, no code splitting: it turns on the
 //                       compile cache before it imports a chunk. Its import of ./run.ts becomes
-//                       ./chunks/cli.mjs, of @tasks/bridge/mcp ./bridge.mjs, and of the shim's
+//                       ./chunks/cli.mjs, of @ttasks/bridge/mcp ./bridge.mjs, and of the shim's
 //                       ./shim/run.ts ./shim.mjs.
 //   lib/chunks/*.mjs    the CLI (cli.mjs, from packages/cli/src/run.ts) and the four worker threads
 //                       the service starts from their own module files, each an entry of its own
@@ -14,7 +14,7 @@
 //                       The CLI's own route to the bridge (mcp.ts) imports ../bridge.mjs.
 //   lib/bridge.mjs      the bridge (A2 3.7.1): one file of the Node built-ins it is
 //                       allowed, shared with no chunk, with lib/mcp-offline.json beside it.
-//   lib/shim.mjs        the launch shim (A4 3.6.3): `tasks shim <ticket>`, one file
+//   lib/shim.mjs        the launch shim (A4 3.6.3): `ttasks shim <ticket>`, one file
 //                       of the built-ins it is allowed, shared with no chunk, so the shim loads
 //                       nothing of the CLI or the service.
 //
@@ -52,13 +52,13 @@ export interface SourceEdit {
   readonly replace: string;
 }
 
-/** The entry of lib/tasks.mjs. */
+/** The entry of lib/ttasks.mjs. */
 export const ENTRY_SOURCE = "packages/cli/src/entry.ts";
 /** The CLI, as the chunk lib/chunks/cli.mjs that the entry imports. */
 export const CLI_SOURCE = "packages/cli/src/run.ts";
 
 /** The bridge (M2.01) and its offline answers, which `pnpm gen` writes. */
-export const BRIDGE_MODULE = "@tasks/bridge/mcp";
+export const BRIDGE_MODULE = "@ttasks/bridge/mcp";
 export const BRIDGE_RUN = "packages/bridge/src/mcp/run.ts";
 export const BRIDGE_NAMES = "packages/bridge/src/mcp/names.ts";
 export const BRIDGE_OFFLINE = "packages/bridge/lib/mcp-offline.json";
@@ -257,7 +257,7 @@ const LOADER_PROPERTIES = new Set(["createRequire", "getBuiltinModule", "dlopen"
  *   - nothing calls require, or reads __dirname or __filename.
  * esbuild keeps a load it cannot analyse as it stands (a computed import(), a require through
  * createRequire) and its metafile does not list it, so this check reads what ships, dependencies
- * included. `entry` marks lib/tasks.mjs.
+ * included. `entry` marks lib/ttasks.mjs.
  */
 export function outputLoadProblems(
   file: string,
@@ -620,7 +620,7 @@ export function thirdPartyText(
 
 /**
  * lib/bridge.mjs's own entry: the bridge's runMcp, with the offline answers beside it (A2 3.7.3).
- * The entry and the CLI call it as they call @tasks/bridge/mcp's runMcp from source.
+ * The entry and the CLI call it as they call @ttasks/bridge/mcp's runMcp from source.
  */
 const BRIDGE_GLUE = `import { fileURLToPath } from "node:url";
 import { runMcp as run } from "./${BRIDGE_RUN}";
@@ -704,7 +704,7 @@ export async function bundle(options: BundleOptions): Promise<BundleResult> {
     },
     bridgeEdits(identity),
   );
-  // The shim on its own: the entry's `tasks shim` route imports it, nothing else does.
+  // The shim on its own: the entry's `ttasks shim` route imports it, nothing else does.
   const shim = await run(
     "the shim's build",
     root,

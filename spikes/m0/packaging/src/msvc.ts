@@ -1,4 +1,4 @@
-// Builds tasks.exe and tasksw.exe with MSVC (A2 3.12.3), on the Windows runner and on a desktop
+// Builds ttasks.exe and ttasksw.exe with MSVC (A2 3.12.3), on the Windows runner and on a desktop
 // with the Visual Studio Build Tools. It finds cl.exe through vswhere and the Windows SDK by its
 // default folder, and passes INCLUDE, LIB and PATH to cl.exe itself, so no vcvars .bat file runs.
 import { spawnSync } from "node:child_process";
@@ -98,12 +98,12 @@ export function findMsvc(): Msvc {
 }
 
 export interface Launchers {
-  tasks: string;
-  tasksw: string;
+  ttasks: string;
+  ttasksw: string;
 }
 
 export interface CompileOptions {
-  /** GUI subsystem (tasksw.exe) instead of console. */
+  /** GUI subsystem (ttasksw.exe) instead of console. */
   gui?: boolean;
   /** Extra preprocessor names, defined without a value. */
   defines?: readonly string[];
@@ -136,7 +136,7 @@ export function compileExe(
       "/Brepro",
       "/DUNICODE",
       "/D_UNICODE",
-      ...(gui ? ["/DTASKS_GUI"] : []),
+      ...(gui ? ["/DTTASKS_GUI"] : []),
       ...(options.defines ?? []).map((d) => `/D${d}`),
       `/Fo${objDir}\\`,
       `/Fe${exe}`,
@@ -159,7 +159,7 @@ export function compileExe(
 
 /**
  * Compiles both launchers into `outDir`. Returns their paths. `defines` is for test builds only
- * (TASKS_TEST_HOOKS): release builds never pass any.
+ * (TTASKS_TEST_HOOKS): release builds never pass any.
  */
 export function compileLaunchers(
   outDir: string,
@@ -167,7 +167,7 @@ export function compileLaunchers(
   defines: readonly string[] = [],
 ): Launchers {
   return {
-    tasks: compileExe(launcherSource, outDir, "tasks", { defines }, msvc),
-    tasksw: compileExe(launcherSource, outDir, "tasksw", { gui: true, defines }, msvc),
+    ttasks: compileExe(launcherSource, outDir, "ttasks", { defines }, msvc),
+    ttasksw: compileExe(launcherSource, outDir, "ttasksw", { gui: true, defines }, msvc),
   };
 }

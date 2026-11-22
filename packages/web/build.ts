@@ -12,8 +12,8 @@
 // - the theme's custom properties come from the theme data (src/theme, `virtual:theme-tokens.css`),
 //   so the stylesheet and the contrast test read the same values;
 // - a web app manifest and its icons at the root, and no service worker (A5 3.24 `PWA`);
-// - `index.html` keeps the service's two placeholders: `__TASKS_NONCE__` (the per-response style
-//   nonce, in `<meta name="csp-nonce">`) and `__TASKS_BUILD__` (the serving build, sent back as
+// - `index.html` keeps the service's two placeholders: `__TTASKS_NONCE__` (the per-response style
+//   nonce, in `<meta name="csp-nonce">`) and `__TTASKS_BUILD__` (the serving build, sent back as
 //   the build header).
 //
 //   pnpm build:web [<out>]        default out: packages/web/dist
@@ -23,11 +23,11 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build, type Plugin, type Rolldown } from "vite";
-import { APP_NAME, PRODUCT_NAME } from "@tasks/brand";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import { SUMI, shippedThemeCss } from "./src/theme/themes.ts";
 
 export const WEB_DIR = dirname(fileURLToPath(import.meta.url));
-/** Where `pnpm build:web` writes, and where `tasks serve` from source looks (cli/src/bin.ts). */
+/** Where `pnpm build:web` writes, and where `ttasks serve` from source looks (cli/src/bin.ts). */
 export const WEB_DIST = join(WEB_DIR, "dist");
 
 /** `sha384-<base64>` of a file's bytes. */
@@ -54,12 +54,12 @@ export function addIntegrity(out: string): string[] {
   return covered;
 }
 
-/** The name inside the app in the page's title, from packages/brand (PLAN.md Q). */
+/** The product's name in the page's title, from packages/brand. */
 const brandTitle: Plugin = {
   name: "brand-title",
   transformIndexHtml: {
     order: "pre",
-    handler: (html) => html.replaceAll("%APP_NAME%", APP_NAME),
+    handler: (html) => html.replaceAll("%PRODUCT_NAME%", PRODUCT_NAME),
   },
 };
 

@@ -1,8 +1,8 @@
 // The expanded task's detail on the real service: the request a session names is in the thread
 // whole, whatever the task holds after it.
 import { afterEach, describe, expect, test } from "vitest";
-import type { Client } from "@tasks/contracts/generated/client.ts";
-import { httpWorld, type HttpWorld } from "@tasks/service/test/http-world";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
+import { httpWorld, type HttpWorld } from "@ttasks/service/test/http-world";
 import { readDetail } from "../src/task/detail.ts";
 
 const worlds: HttpWorld[] = [];

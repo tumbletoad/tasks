@@ -6,12 +6,12 @@
 // exactly 32 bytes in canonical base64url, or (on Linux and macOS) is not a regular file of this
 // user that only this user can read, because another user may then have read it.
 //
-// The key is read the way every client reads it: tasks-local/1's parseKey (M1.09), so the service
+// The key is read the way every client reads it: ttasks-local/1's parseKey (M1.09), so the service
 // and its clients agree on which texts are a key.
 import { randomBytes } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { KEY_BYTES, parseKey } from "@tasks/bridge/protocol";
+import { KEY_BYTES, parseKey } from "@ttasks/bridge/protocol";
 import { atomicWrite } from "./files.ts";
 
 export { KEY_BYTES };

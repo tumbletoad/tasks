@@ -20,7 +20,7 @@ import { KitError } from "./wire.ts";
 let work: string;
 
 beforeAll(() => {
-  work = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-bridge-")));
+  work = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-bridge-")));
 });
 
 afterAll(() => {
@@ -104,7 +104,7 @@ describe("[A7.3.7.m0-bridge-bench.self-test] the M0 bridge harness", () => {
           .update(realpathSync.native(state), "utf8")
           .digest("hex")
           .slice(0, 16);
-        expect(existsSync(`/run/user/${String(uid)}/tasks-${install}`), state).toBe(false);
+        expect(existsSync(`/run/user/${String(uid)}/ttasks-${install}`), state).toBe(false);
       }
     }
   }, 180_000);

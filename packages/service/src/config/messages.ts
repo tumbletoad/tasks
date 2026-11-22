@@ -1,7 +1,7 @@
 // What a person reads when machine.toml stops the service: on stderr when it refuses to start, and
-// in `tasks doctor`. The log gets codes only (service.ts).
-import { PRODUCT_NAME } from "@tasks/brand";
-import type { ConfigProblem } from "@tasks/launch";
+// in `ttasks doctor`. The log gets codes only (service.ts).
+import { PRODUCT_NAME } from "@ttasks/brand";
+import type { ConfigProblem } from "@ttasks/launch";
 import { unsafeMessage, type Person } from "../hub/permissions.ts";
 import { MACHINE_TOML, type UnsafeConfig } from "./machine-toml.ts";
 

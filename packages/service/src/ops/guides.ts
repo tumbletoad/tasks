@@ -3,8 +3,8 @@
 // nothing until asked for and work in every app. This build has the guides to working a task,
 // to sorting the Inbox and to shaping areas and projects; the others name tools of a later step and
 // arrive with it (`GUIDE_STEPS`).
-import { PRODUCT_NAME } from "@tasks/brand";
-import { findEntry } from "@tasks/contracts";
+import { PRODUCT_NAME } from "@ttasks/brand";
+import { findEntry } from "@ttasks/contracts";
 
 /** A3 3.2.5: a guide's budget, in estimated tokens. */
 export const GUIDE_TOKENS = 900;

@@ -1,4 +1,4 @@
-// `tasks setup agents print --app <name>` (A3 3.13.1, 3.13.7) and the `approve-tools` part: what
+// `ttasks setup agents print --app <name>` (A3 3.13.1, 3.13.7) and the `approve-tools` part: what
 // a person adds by hand, and where. Nothing here reads a home or writes anything: a snippet is the
 // entry this machine would run, and the file it belongs in.
 //
@@ -13,7 +13,7 @@
 // reaches the machine's default space, which an entry without `--space` uses, so it keeps working
 // when the person changes that default.
 //
-// `approve-tools` (A3 3.13.2, 3.13.4) would approve Tasks's tools in the app's settings. Setup never
+// `approve-tools` (A3 3.13.2, 3.13.4) would approve TTasks's tools in the app's settings. Setup never
 // changes another app's approval settings (A3 3.13.1), so the part is only ever shown as a change
 // to make by hand: it writes nothing.
 //
@@ -23,8 +23,8 @@
 // makes the line too long to paste, gets no line:
 // PrintRefused.
 import { posix, win32 } from "node:path";
-import { CLI_NAME, envVar, MCP_SERVER_KEY } from "@tasks/brand";
-import { envValue, pasteShell, shellLine, type Env } from "@tasks/launch";
+import { CLI_NAME, envVar, MCP_SERVER_KEY } from "@ttasks/brand";
+import { envValue, pasteShell, shellLine, type Env } from "@ttasks/launch";
 import { keyText, valueText } from "../config/edit.ts";
 import { CODEX_STARTUP_TIMEOUT_SEC } from "./agents.ts";
 import { claudeDesktopFolders, DESKTOP_FILE } from "./hosts.ts";
@@ -60,7 +60,7 @@ export interface PrintInput {
   readonly platform: NodeJS.Platform;
   readonly userHome: string;
   readonly env: Env;
-  /** Tasks's stable command (A2 3.12). */
+  /** TTasks's stable command (A2 3.12). */
   readonly tasks: string;
 }
 
@@ -108,7 +108,7 @@ const appData = (input: PrintInput): string => {
 
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
-/** The entry's argv for an app: Tasks's stable command as a hand-made entry (see above). */
+/** The entry's argv for an app: TTasks's stable command as a hand-made entry (see above). */
 export function printArgv(input: PrintInput, app: PrintApp): string[] {
   return [input.tasks, "mcp", "--app", app];
 }

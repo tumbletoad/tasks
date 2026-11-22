@@ -1,6 +1,6 @@
-// A stand-in for the supervisor loop of `tasksw.exe` (A2 3.3.2) for lab row S03 (M0.07). The
+// A stand-in for the supervisor loop of `ttasksw.exe` (A2 3.3.2) for lab row S03 (M0.07). The
 // spike's C launcher has no supervisor loop (M0.03 left it to M1), so in the lab release
-// `tasksw.exe` with no arguments runs this loop in Node: it starts the service from
+// `ttasksw.exe` with no arguments runs this loop in Node: it starts the service from
 // `<root>\versions\<current>\` with no window, waits, and applies A2 3.3.1's exit-code table:
 //   0, 64, 73   stop
 //   75          start again at once, re-reading `current`
@@ -85,7 +85,7 @@ export async function supervise(io: SupervisorIO): Promise<number> {
   }
 }
 
-/** The real loop, for `tasksw.exe` with no arguments in the lab release. */
+/** The real loop, for `ttasksw.exe` with no arguments in the lab release. */
 export async function runSupervisor(root: string, state: string): Promise<number> {
   const logFile = join(dirname(state), "supervisor.jsonl");
   mkdirSync(dirname(state), { recursive: true });
@@ -104,12 +104,12 @@ export async function runSupervisor(root: string, state: string): Promise<number
       const stderr = openSync(join(dirname(state), "service-stderr.log"), "a");
       const child = spawn(
         node,
-        ["--report-exclude-env", join(version, "lib", "tasks.mjs"), "service", "--state", state],
+        ["--report-exclude-env", join(version, "lib", "ttasks.mjs"), "service", "--state", state],
         {
           stdio: ["ignore", "ignore", stderr],
           windowsHide: true,
           shell: false,
-          env: { ...process.env, TASKS_SERVICE_MANAGER: "tasksw-lab" },
+          env: { ...process.env, TTASKS_SERVICE_MANAGER: "ttasksw-lab" },
         },
       );
       closeSync(stderr);

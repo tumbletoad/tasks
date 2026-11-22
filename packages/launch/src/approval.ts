@@ -19,7 +19,6 @@
 // Approving is a user-only operation (A4 3.2 step 4): the UI session or an interactive CLI writes
 // the verdict through the service's machine.toml editor. Nothing here writes.
 import { createHash } from "node:crypto";
-import { PRODUCT_ID } from "@tasks/brand";
 import { APPROVAL_KEY, type Verdict } from "./sections.ts";
 
 export const APPROVAL_KINDS = ["custom_target", "routine"] as const;
@@ -102,7 +101,9 @@ export function approvalContent(kind: ApprovalKind, definition: unknown): unknow
   );
 }
 
-const DOMAIN = `${PRODUCT_ID}-approval/1`;
+// Fixed, not the product's identifier: machine.toml pins approvals by this hash, so a new domain
+// would disable every approved definition.
+const DOMAIN = "tasks-approval/1";
 
 /** The approval key of a definition: `sha256-<64 hex>`, as `[approvals]` stores it. */
 export function approvalHash(kind: ApprovalKind, definition: unknown): string {

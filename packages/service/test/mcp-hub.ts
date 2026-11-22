@@ -4,8 +4,8 @@
 // drive the MCP endpoint through real bridge processes. Tests only.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createSpace, newId } from "@tasks/storage";
-import { checkedDriver } from "@tasks/testkit";
+import { createSpace, newId } from "@ttasks/storage";
+import { checkedDriver } from "@ttasks/testkit";
 import { READY_MS, readLog, readServiceJson, registerSpaces, stateOf, waitFor } from "./harness.ts";
 import { grantHome } from "./ops-helpers.ts";
 
@@ -36,7 +36,7 @@ export async function hubSpace(
 }
 
 /**
- * Registers an agent home for `space` with the running service of `home`, as `tasks setup agents
+ * Registers an agent home for `space` with the running service of `home`, as `ttasks setup agents
  * --apply` does (ops-helpers.ts `grantHome`), so a bridge whose entry names `instance` passes the
  * grant gate. A service run with its UI listener keeps the row in service.sqlite across restarts.
  */

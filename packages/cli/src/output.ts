@@ -2,8 +2,8 @@
 // document: the operation's result, or `{"error": {code, class, message, hint, data}}`. Without
 // it, stdout holds plain text for a person and every write names its space. Diagnostics go to
 // stderr. The exit code follows the error's class.
-import { CLI_NAME } from "@tasks/brand";
-import { RpcError } from "@tasks/bridge/protocol";
+import { CLI_NAME } from "@ttasks/brand";
+import { RpcError } from "@ttasks/bridge/protocol";
 import {
   errorClass,
   EXIT_CODES,
@@ -12,7 +12,7 @@ import {
   AppError,
   type ErrorBody,
   type ErrorClass,
-} from "@tasks/contracts";
+} from "@ttasks/contracts";
 import type { Io } from "./io.ts";
 
 /** A scalar as text; anything else as nothing. */
@@ -39,7 +39,7 @@ export function bodyOf(error: unknown): ErrorBody {
       };
     }
   }
-  return { code: "internal", message: "Something went wrong.", hint: "Run: tasks doctor" };
+  return { code: "internal", message: "Something went wrong.", hint: "Run: ttasks doctor" };
 }
 
 /** A2 3.10.3's class of an error body: `service_unavailable` for a version is class `version`. */
@@ -86,7 +86,7 @@ export function printUsage(io: Io, json: boolean, message: string): number {
   return printError(io, json, {
     code: "invalid_input",
     message,
-    hint: "Run tasks help for the commands.",
+    hint: "Run ttasks help for the commands.",
   });
 }
 
@@ -221,7 +221,7 @@ const SCRIPT_VERBS: Readonly<Record<string, string>> = {
 };
 
 /** Plain text for a person, per entry. `space` names the space a write went to (A2 3.10.2). */
-/** What `tasks area` says a write did, by its result. */
+/** What `ttasks area` says a write did, by its result. */
 const GROUP_DONE: Readonly<Record<string, string>> = {
   created: "Created",
   exists: "Another project has this folder:",
@@ -428,7 +428,7 @@ export function render(entry: string, result: Result, space: string): string {
       lines.push(...searchLines(result));
       break;
     case "group.manage": {
-      // `tasks area list` (A3 3.4.10): each area with its active tasks, its projects below it. A
+      // `ttasks area list` (A3 3.4.10): each area with its active tasks, its projects below it. A
       // write says what it did to which group first.
       const group = result["group"] as Result | undefined;
       if (typeof result["result"] === "string" && group !== undefined) {
@@ -452,7 +452,7 @@ export function render(entry: string, result: Result, space: string): string {
       break;
     }
     case "prefs.manage":
-      // `tasks prefs` (A3 3.4.11): one key a line, its value or what it takes.
+      // `ttasks prefs` (A3 3.4.11): one key a line, its value or what it takes.
       for (const pref of (result["prefs"] as Result[] | undefined) ?? []) {
         const shown =
           result["action"] === "describe"
@@ -462,7 +462,7 @@ export function render(entry: string, result: Result, space: string): string {
       }
       break;
     case "launch.open": {
-      // `tasks brief`: the pointer brief itself, ready to paste, or how the launch stands.
+      // `ttasks brief`: the pointer brief itself, ready to paste, or how the launch stands.
       const launch = (result["launch"] ?? {}) as Result;
       const copy = result["copy"];
       if (typeof copy === "string") lines.push(copy);

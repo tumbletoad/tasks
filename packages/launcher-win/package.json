@@ -1,5 +1,5 @@
 {
-  "name": "@tasks/launcher-win",
+  "name": "@ttasks/launcher-win",
   "version": "0.0.0",
   "private": true,
   "type": "module",

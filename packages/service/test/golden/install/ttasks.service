@@ -1,14 +1,14 @@
-# TT Tasks's service, written by `tasks service install`. Remove it with `tasks service uninstall`.
+# TTasks's service, written by `ttasks service install`. Remove it with `ttasks service uninstall`.
 [Unit]
-Description=TT Tasks service
+Description=TTasks service
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
 [Service]
 Type=exec
-ExecStart=/home/mira/.local/share/tasks/current/bin/tasks serve
+ExecStart=/home/mira/.local/share/ttasks/current/bin/ttasks serve
 WorkingDirectory=%h
-Environment=TASKS_SERVICE_MANAGER=systemd
+Environment=TTASKS_SERVICE_MANAGER=systemd
 Restart=on-failure
 RestartSec=2
 RestartPreventExitStatus=64 73

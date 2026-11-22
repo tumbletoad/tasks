@@ -1,7 +1,7 @@
-// `tasks update --from <archive> | --rollback | --repair [--yes] [--stop-runs]`: the
+// `ttasks update --from <archive> | --rollback | --repair [--yes] [--stop-runs]`: the
 // installed version replaces itself from a local release archive, goes back to the version before
 // the last switch, or finishes an update that was cut off. The updater is the service's
-// (`@tasks/service/version-update`), loaded only for this command; it verifies the archive with
+// (`@ttasks/service/version-update`), loaded only for this command; it verifies the archive with
 // the release keys this build carries (UPDATE_KEYS) before anything of it runs.
 //
 // It runs only through the install's own command, which runs the version current names: an
@@ -12,9 +12,9 @@
 // for them, then asks whether to stop them; `--stop-runs` answers for a script, and without a
 // terminal and without it the update is given up with nothing changed (exit 2).
 import { resolve } from "node:path";
-import { PRODUCT_NAME } from "@tasks/brand";
-import { hostFacts } from "@tasks/service/paths";
-import type { UpdateResult } from "@tasks/service/version-update";
+import { PRODUCT_NAME } from "@ttasks/brand";
+import { hostFacts } from "@ttasks/service/paths";
+import type { UpdateResult } from "@ttasks/service/version-update";
 import type { Globals } from "./args.ts";
 import { readServiceRecord, stateDir } from "./connect.ts";
 import type { Io } from "./io.ts";
@@ -22,7 +22,7 @@ import { migrationLines } from "./migrations.ts";
 import { printUsage } from "./output.ts";
 
 export const UPDATE_USAGE =
-  "tasks update --from <archive> [--yes] [--stop-runs], tasks update --rollback [--yes] [--stop-runs] or tasks update --repair [--stop-runs]";
+  "ttasks update --from <archive> [--yes] [--stop-runs], ttasks update --rollback [--yes] [--stop-runs] or ttasks update --repair [--stop-runs]";
 
 interface Answers {
   readonly yes: boolean;
@@ -69,12 +69,12 @@ export async function updateCommand(
     return printUsage(
       io,
       globals.json,
-      "tasks update runs in an installed version, through the install's own command. From source there is nothing to update.",
+      "ttasks update runs in an installed version, through the install's own command. From source there is nothing to update.",
     );
   }
-  const install = await import("@tasks/service/install");
-  const update = await import("@tasks/service/version-update");
-  const { UPDATE_KEYS } = await import("@tasks/service/release-keys");
+  const install = await import("@ttasks/service/install");
+  const update = await import("@ttasks/service/version-update");
+  const { UPDATE_KEYS } = await import("@ttasks/service/release-keys");
   const fail = (message: string, code: number): number => {
     if (globals.json) io.stdout(`${JSON.stringify({ ok: false, error: message })}\n`);
     io.stderr(`${message}\n`);

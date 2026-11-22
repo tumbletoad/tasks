@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { buildWeb } from "../../packages/web/build.ts";
 
 export default async function globalSetup(): Promise<() => void> {
-  const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-e2e-ui-")));
+  const folder = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-e2e-ui-")));
   await buildWeb(join(folder, "ui"));
   process.env["E2E_UI_BUILD"] = join(folder, "ui");
   return () => {

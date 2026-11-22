@@ -5,8 +5,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { ERROR_CODES, EXIT_CODES, messageWithHint, type ErrorCode } from "@tasks/contracts";
-import { RpcError, LocalError } from "@tasks/bridge/protocol";
+import { ERROR_CODES, EXIT_CODES, messageWithHint, type ErrorCode } from "@ttasks/contracts";
+import { RpcError, LocalError } from "@ttasks/bridge/protocol";
 import { SLOTS, main, type Io } from "./main.ts";
 import { bodyOf, exitCodeOf, printError, render } from "./output.ts";
 import { asAppError } from "./verbs.ts";
@@ -97,7 +97,7 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     expect(bodyOf(new Error("Fixture secret text"))).toEqual({
       code: "internal",
       message: "Something went wrong.",
-      hint: "Run: tasks doctor",
+      hint: "Run: ttasks doctor",
     });
   });
 
@@ -125,10 +125,10 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     expect(text.err).toBe("error not_found: No task. Check it.\n");
   });
 
-  test("tasks brief prints the pointer brief, ready to paste, or how its launch stands", () => {
+  test("ttasks brief prints the pointer brief, ready to paste, or how its launch stands", () => {
     const launch = { reference: "L7KQ21", state: "dispatched" };
-    expect(render("launch.open", { launch, copy: "TT Tasks task M-14\nFolder: x" }, "Mira")).toBe(
-      "TT Tasks task M-14\nFolder: x\n",
+    expect(render("launch.open", { launch, copy: "TTasks task M-14\nFolder: x" }, "Mira")).toBe(
+      "TTasks task M-14\nFolder: x\n",
     );
     expect(render("launch.open", { launch: { ...launch, state: "prepared" } }, "Mira")).toBe(
       "Launch L7KQ21: prepared\n",
@@ -250,31 +250,31 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
   test("no service: exit 6 with A2 3.3.6's message, and tasks alone still answers", async () => {
     const home = mkdtempSync(join(tmpdir(), "kc-"));
     try {
-      const json = recorder(["status", "--json"], { TASKS_HOME: home });
+      const json = recorder(["status", "--json"], { TTASKS_HOME: home });
       expect(await main(json)).toBe(6);
       expect(JSON.parse(json.out)).toMatchObject({
         error: {
           code: "service_unavailable",
           class: "service",
-          hint: "tasks service start",
+          hint: "ttasks service start",
           data: { reason: "not_running" },
         },
       });
-      const text = recorder(["status"], { TASKS_HOME: home });
+      const text = recorder(["status"], { TTASKS_HOME: home });
       expect(await main(text)).toBe(6);
       // The message and its hint, each said once (A3 3.5).
       expect(text.err).toBe(
-        "error service_unavailable: TT Tasks's service is not running. Run: tasks service start\n",
+        "error service_unavailable: TTasks's service is not running. Run: ttasks service start\n",
       );
-      const bare = recorder([], { TASKS_HOME: home });
+      const bare = recorder([], { TTASKS_HOME: home });
       expect(await main(bare)).toBe(0);
       expect(bare.out).toContain("not running");
-      const unknown = recorder(["frobnicate"], { TASKS_HOME: home });
+      const unknown = recorder(["frobnicate"], { TTASKS_HOME: home });
       expect(await main(unknown)).toBe(2);
       // A slot no step has filled yet is a usage error. `mcp` is filled (the bridge, mcp.test.ts).
       for (const [name, command] of Object.entries(SLOTS)) {
         if (command !== undefined) continue;
-        const slot = recorder([name], { TASKS_HOME: home });
+        const slot = recorder([name], { TTASKS_HOME: home });
         expect(await main(slot), name).toBe(2);
       }
     } finally {
@@ -285,7 +285,7 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
   test("usage errors stay usage errors, as one JSON document, whatever --input holds", async () => {
     const home = mkdtempSync(join(tmpdir(), "kc-"));
     const run = async (argv: string[], stdin = "") => {
-      const io = recorder(argv, { TASKS_HOME: home }, stdin);
+      const io = recorder(argv, { TTASKS_HOME: home }, stdin);
       const code = await main(io);
       return { code, out: io.out, err: io.err };
     };
@@ -330,7 +330,7 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
   });
 });
 
-describe("[A3.5.search.find] tasks find prints a search page", () => {
+describe("[A3.5.search.find] ttasks find prints a search page", () => {
   test("a header, task and learning rows, placeholders, the changed marker and the next page", () => {
     const text = render(
       "task.search",
@@ -410,7 +410,7 @@ describe("[A3.5.search.find] tasks find prints a search page", () => {
       "M-15 · open · due 2026-11-13T09:30:00.000Z (Europe/Lisbon) · Call the clinic",
       "M-22 · deleted since this search",
       "M-9 · redacted since this search",
-      "More: tasks find --cursor c_7m2k9q4w1z8r3c6d",
+      "More: ttasks find --cursor c_7m2k9q4w1z8r3c6d",
       "",
     ]);
     const learnings = render(
@@ -429,7 +429,7 @@ describe("[A3.5.search.find] tasks find prints a search page", () => {
   });
 });
 
-describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs print for a person", () => {
+describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] ttasks area and ttasks prefs print for a person", () => {
   test("areas with their projects and counts, and keys with their values or shapes", () => {
     const groups = render(
       "group.manage",
@@ -558,40 +558,40 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] tasks area and tasks prefs 
 
 describe("[A3.3.5.error-text] a message and its hint, each said once", () => {
   test("a full stop between them, Run: before a bare command, a hint the message says left out", () => {
-    expect(messageWithHint("A field changed after the base: read again", "Read it.", "tasks")).toBe(
-      "A field changed after the base: read again. Read it.",
-    );
-    expect(messageWithHint("The service is not running.", "tasks service start", "tasks")).toBe(
-      "The service is not running. Run: tasks service start",
+    expect(
+      messageWithHint("A field changed after the base: read again", "Read it.", "ttasks"),
+    ).toBe("A field changed after the base: read again. Read it.");
+    expect(messageWithHint("The service is not running.", "ttasks service start", "ttasks")).toBe(
+      "The service is not running. Run: ttasks service start",
     );
     expect(
       messageWithHint(
-        "The service is not running. Start it with: tasks service start",
-        "tasks service start",
-        "tasks",
+        "The service is not running. Start it with: ttasks service start",
+        "ttasks service start",
+        "ttasks",
       ),
-    ).toBe("The service is not running. Start it with: tasks service start.");
-    expect(messageWithHint("Something went wrong!", undefined, "tasks")).toBe(
+    ).toBe("The service is not running. Start it with: ttasks service start.");
+    expect(messageWithHint("Something went wrong!", undefined, "ttasks")).toBe(
       "Something went wrong!",
     );
-    expect(messageWithHint("Gone", "  ", "tasks")).toBe("Gone.");
+    expect(messageWithHint("Gone", "  ", "ttasks")).toBe("Gone.");
     // A message that ends with a colon is finished by its hint, else by a full stop.
-    expect(messageWithHint("Could not start:", "tasks doctor", "tasks")).toBe(
-      "Could not start: tasks doctor",
+    expect(messageWithHint("Could not start:", "ttasks doctor", "ttasks")).toBe(
+      "Could not start: ttasks doctor",
     );
-    expect(messageWithHint("Could not start:", undefined, "tasks")).toBe("Could not start.");
+    expect(messageWithHint("Could not start:", undefined, "ttasks")).toBe("Could not start.");
     // An empty message is its hint alone, with no space before it.
-    expect(messageWithHint("", "tasks doctor", "tasks")).toBe("Run: tasks doctor");
-    expect(messageWithHint(" ", "Read it again.", "tasks")).toBe("Read it again.");
+    expect(messageWithHint("", "ttasks doctor", "ttasks")).toBe("Run: ttasks doctor");
+    expect(messageWithHint(" ", "Read it again.", "ttasks")).toBe("Read it again.");
     // Only a message that ends with the hint says it already: one that names the command for
     // another reason keeps the hint.
-    expect(messageWithHint("tasks doctor failed", "tasks doctor", "tasks")).toBe(
-      "tasks doctor failed. Run: tasks doctor",
+    expect(messageWithHint("ttasks doctor failed", "ttasks doctor", "ttasks")).toBe(
+      "ttasks doctor failed. Run: ttasks doctor",
     );
-    expect(messageWithHint("Run: xtasks doctor", "tasks doctor", "tasks")).toBe(
-      "Run: xtasks doctor. Run: tasks doctor",
+    expect(messageWithHint("Run: xttasks doctor", "ttasks doctor", "ttasks")).toBe(
+      "Run: xttasks doctor. Run: ttasks doctor",
     );
-    expect(messageWithHint("Read it again. Then wait", "Read it again.", "tasks")).toBe(
+    expect(messageWithHint("Read it again. Then wait", "Read it again.", "ttasks")).toBe(
       "Read it again. Then wait. Read it again.",
     );
   });

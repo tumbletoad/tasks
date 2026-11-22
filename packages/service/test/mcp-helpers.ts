@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openLines, type JsonObject, type LineSession } from "@tasks/bridge/protocol";
+import { openLines, type JsonObject, type LineSession } from "@ttasks/bridge/protocol";
 import type { JSONRPCMessage, Transport } from "@modelcontextprotocol/client";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { keyOf, removeRuntimeDir, serviceEnv, tempRoot, within } from "./harness.ts";
@@ -225,4 +225,4 @@ export function textOf(result: unknown): string {
 
 /** A framed text with its markers made fixed, so two renderings of one result compare equal. */
 export const unmarked = (text: string): string =>
-  text.replace(/(<<(?:end )?tasks-data )[0-9A-Z]{4,8}/g, "$1XXXX");
+  text.replace(/(<<(?:end )?ttasks-data )[0-9A-Z]{4,8}/g, "$1XXXX");

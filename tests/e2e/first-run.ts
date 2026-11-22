@@ -1,7 +1,7 @@
 // A fresh install for the first-start tests: a real service process (serve-entry.ts) in a temporary
-// TASKS_HOME with no space and no machine.toml, and a scratch home with a Claude Code and a Codex
+// TTASKS_HOME with no space and no machine.toml, and a scratch home with a Claude Code and a Codex
 // home, whose commands are testkit's fakes (fake-agents.ts): they refuse any file outside that home.
-// Sign-in goes the way `tasks open` goes. Tests only.
+// Sign-in goes the way `ttasks open` goes. Tests only.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,7 +31,7 @@ export interface FreshWorld {
   readonly agentHome: string;
   /** Where a new space goes unless the person picks a folder. */
   readonly spaces: string;
-  /** The `tasks open` URL of a fresh code, landing on `to`. */
+  /** The `ttasks open` URL of a fresh code, landing on `to`. */
   signInUrl(to: string): Promise<string>;
   /** Sets one of this machine's settings as the page does, or resets it with null. */
   machine(key: string, value: unknown): Promise<void>;
@@ -39,7 +39,7 @@ export interface FreshWorld {
   op(space: string, op: string, input: Record<string, unknown>): Promise<unknown>;
   /** Closes and forgets every space, so the page starts from no space again. Their folders stay. */
   forgetSpaces(): Promise<void>;
-  /** Tasks's entry in the scratch Claude Code home, or undefined. */
+  /** TTasks's entry in the scratch Claude Code home, or undefined. */
   claudeEntry(): unknown;
   /** The scratch Codex home's config.toml, or "" when there is none. */
   codexConfig(): string;
@@ -58,7 +58,7 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
   try {
     // The data folder in the scratch home, where an install puts it, so the page shows it as ~.
     const agentHome = join(temp.root, "u");
-    const home = join(agentHome, ".tasks");
+    const home = join(agentHome, ".ttasks");
     mkdirSync(join(agentHome, ".claude"), { recursive: true });
     mkdirSync(join(agentHome, ".codex"), { recursive: true });
     const fakes = installFakeAgents(join(temp.root, "fakes"), agentHome);
@@ -134,7 +134,7 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
         const text = read(join(agentHome, ".claude.json"));
         if (text === "") return undefined;
         const doc = JSON.parse(text) as { mcpServers?: Record<string, unknown> };
-        return doc.mcpServers?.["tasks"];
+        return doc.mcpServers?.["ttasks"];
       },
       codexConfig: () => read(join(agentHome, ".codex", "config.toml")),
       touchCodex: () => {

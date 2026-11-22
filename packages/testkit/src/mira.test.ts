@@ -10,10 +10,10 @@ import {
   readReceipt,
   StorageError,
   type Connection,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 // The registry's receipt.get shape. testkit does not depend on contracts; its tests may reach it.
-import { STEPS_0_1 } from "@tasks/storage/revisions";
+import { STEPS_0_1 } from "@ttasks/storage/revisions";
 import { ReceiptGetResult, receiptResult } from "../../contracts/src/index.ts";
 import { digestDatabase, digestSchema, digestSpace } from "./digest.ts";
 import { FIXED_SAMPLE, FIXED_SAMPLE_0_1, RELEASED_SCHEMAS } from "./known.ts";

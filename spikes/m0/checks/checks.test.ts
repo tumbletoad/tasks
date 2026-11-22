@@ -25,7 +25,7 @@ import {
 
 let tmp = "";
 beforeAll(() => {
-  tmp = mkdtempSync(join(os.tmpdir(), "tasks-lab-checks-"));
+  tmp = mkdtempSync(join(os.tmpdir(), "ttasks-lab-checks-"));
 });
 afterAll(() => {
   rmSync(tmp, { recursive: true, force: true });
@@ -171,14 +171,14 @@ describe("[A7.3.7.lab-checks.self-test] the M0.05 lab checks", () => {
   test("R07: the default targets follow A2 3.2.1 and are only computed", () => {
     const linux = defaultTargets("linux", "/home/m", 1000);
     expect(linux.get("~/Tasks")).toBe(join("/home/m", "Tasks"));
-    expect(linux.get("<state> ~/.local/state/tasks")).toBe(
-      join("/home/m", ".local", "state", "tasks"),
+    expect(linux.get("<state> ~/.local/state/ttasks")).toBe(
+      join("/home/m", ".local", "state", "ttasks"),
     );
     expect(linux.get("socket dir /run/user/<uid>")).toBe("/run/user/1000");
     const win = defaultTargets("win32", "C:\\Users\\M", -1);
     expect([...win.keys()]).toEqual([
       "~/Tasks",
-      "<root> %USERPROFILE%\\.tasks",
+      "<root> %USERPROFILE%\\.ttasks",
       "<config>",
       "<state>",
       "<cache>",

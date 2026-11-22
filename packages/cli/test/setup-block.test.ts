@@ -1,12 +1,12 @@
-// `tasks setup agents --parts block` and `print-block` through the CLI (A3 3.12, 3.13.1, 3.14;
+// `ttasks setup agents --parts block` and `print-block` through the CLI (A3 3.12, 3.13.1, 3.14;
 // A7 3.11 M4.04): the block part names no space and needs no service, so this runs the CLI in this
 // process with no service at all, on scratch homes in a temporary folder. No test reads or changes
 // a real agent home: detection looks only in the scratch user folder, with an empty PATH.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { CLI_NAME } from "@tasks/brand";
-import { stateOf, tempRoot } from "@tasks/service/test/harness";
+import { CLI_NAME } from "@ttasks/brand";
+import { stateOf, tempRoot } from "@ttasks/service/test/harness";
 import type { AgentsSetupOptions } from "../src/setup-agents.ts";
 import { runMain } from "./cli-harness.ts";
 
@@ -37,12 +37,12 @@ const blocksRecord = () => join(stateOf(home), "setup", "blocks.json");
 
 /** The scratch user folder, an empty PATH (no app's command, no git), no other home variable. */
 const agents = (): AgentsSetupOptions => ({
-  env: { PATH: "", TASKS_HOME: home },
+  env: { PATH: "", TTASKS_HOME: home },
   home: user,
   systemApplications: join(root, "Applications"),
 });
 
-/** `tasks <argv>` as a person at a terminal (tty), or a script. */
+/** `ttasks <argv>` as a person at a terminal (tty), or a script. */
 const run = (argv: string[], tty = true) =>
   runMain(argv, { home, tty, main: { agents: agents() } });
 
@@ -79,9 +79,9 @@ describe("[A3.3.12.setup.block-cli] the instruction block through the CLI", () =
       expect(printed.code, printed.stderr).toBe(0);
       expect(printed.stdout).toContain(join(user, ".claude", "CLAUDE.md"));
       expect(printed.stdout).toContain(
-        "<!-- tasks:begin v1 (from tasks setup agents print-block; remove it by hand) -->",
+        "<!-- ttasks:begin v1 (from ttasks setup agents print-block; remove it by hand) -->",
       );
-      expect(printed.stdout).toContain("<!-- tasks:end -->\nNothing was changed.\n");
+      expect(printed.stdout).toContain("<!-- ttasks:end -->\nNothing was changed.\n");
       const json = await run(
         ["setup", "agents", "print-block", "--for", "agents", "--json"],
         false,
@@ -104,7 +104,7 @@ describe("[A3.3.12.setup.block-cli] the instruction block through the CLI", () =
       expect(text.stdout).toContain("adds the block at the end of the file:");
       expect(text.stdout).toContain("creates the file with the block:");
       expect(text.stdout).toContain(`--- ${claudeMd()}`);
-      expect(text.stdout).toContain("+<!-- tasks:begin v1 (added by tasks setup;");
+      expect(text.stdout).toContain("+<!-- ttasks:begin v1 (added by ttasks setup;");
       const preview = await run(["setup", "agents", "--parts", "block", "--json"], false);
       const planned = JSON.parse(preview.stdout) as {
         plan: string;
@@ -142,9 +142,9 @@ describe("[A3.3.12.setup.block-cli] the instruction block through the CLI", () =
       expect(applied.code, applied.stdout + applied.stderr).toBe(0);
       expect(applied.stdout).toContain("instruction block added");
       const withBlock = readFileSync(claudeMd(), "utf8");
-      expect(withBlock.startsWith(`${mine}\r\n<!-- tasks:begin v1 `)).toBe(true);
-      expect(withBlock.endsWith("<!-- tasks:end -->\r\n")).toBe(true);
-      expect(readFileSync(agentsMd(), "utf8")).toMatch(/^<!-- tasks:begin v1 [^\r]*\n/u);
+      expect(withBlock.startsWith(`${mine}\r\n<!-- ttasks:begin v1 `)).toBe(true);
+      expect(withBlock.endsWith("<!-- ttasks:end -->\r\n")).toBe(true);
+      expect(readFileSync(agentsMd(), "utf8")).toMatch(/^<!-- ttasks:begin v1 [^\r]*\n/u);
       expect((await blockRow())?.status).toBe("ok");
 
       // A second preview has nothing to do.

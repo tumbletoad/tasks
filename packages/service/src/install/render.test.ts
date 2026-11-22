@@ -33,11 +33,11 @@ const golden = (name: string): string =>
 
 /** Launcher paths with what systemd quotes, escapes or expands: spaces, quotes, %, $, \, non-ASCII. */
 const HOSTILE_PATHS = [
-  "/home/m ira/100%/$HOME/a;b&c(d)[e]=f/current/bin/tasks",
-  "/home/Mïra 日本/tasks-s3/current/bin/tasks",
-  "/tmp/%h %%/x$$y ${HOME}/current/bin/tasks",
+  "/home/m ira/100%/$HOME/a;b&c(d)[e]=f/current/bin/ttasks",
+  "/home/Mïra 日本/ttasks-s3/current/bin/ttasks",
+  "/tmp/%h %%/x$$y ${HOME}/current/bin/ttasks",
   // About 300 characters, in folders within the file system's 255-byte name limit.
-  `/home/m/${Array.from({ length: 16 }, (_, n) => `long folder ${String(n)}`).join("/")}/current/bin/tasks`,
+  `/home/m/${Array.from({ length: 16 }, (_, n) => `long folder ${String(n)}`).join("/")}/current/bin/ttasks`,
 ];
 
 /** systemd-analyze, where systemd is installed: it reads unit files and starts nothing. */
@@ -45,18 +45,18 @@ const systemdAnalyze =
   process.platform === "linux" &&
   spawnSync("systemd-analyze", ["--version"], { encoding: "utf8" }).status === 0;
 
-/** Mira's machines (fixture names), the daily install and a TASKS_HOME test install on each. */
+/** Mira's machines (fixture names), the daily install and a TTASKS_HOME test install on each. */
 const HOMES = { linux: "/home/mira", darwin: "/Users/mira", win32: "C:\\Users\\mira" } as const;
 const TEST_HOMES = {
-  linux: "/home/mira/tasks-test",
-  darwin: "/Users/mira/tasks-test",
-  win32: "C:\\Users\\mira\\tasks-test",
+  linux: "/home/mira/ttasks-test",
+  darwin: "/Users/mira/ttasks-test",
+  win32: "C:\\Users\\mira\\ttasks-test",
 } as const;
 
 function install(platform: ServicePlatform, separate: boolean) {
   const env: Record<string, string> =
     platform === "win32" ? { USERPROFILE: HOMES.win32 } : { HOME: "/tmp/sandbox" };
-  if (separate) env["TASKS_HOME"] = TEST_HOMES[platform];
+  if (separate) env["TTASKS_HOME"] = TEST_HOMES[platform];
   const facts: HostFacts = {
     platform,
     env,
@@ -74,17 +74,17 @@ function install(platform: ServicePlatform, separate: boolean) {
 }
 
 describe("[A2.3.3.service-install.golden] the OS entries per install ID, against golden files", () => {
-  test("Linux: the systemd user unit of A2 3.3.3, plain for the daily install, tasks-<id> for a test install", () => {
+  test("Linux: the systemd user unit of A2 3.3.3, plain for the daily install, ttasks-<id> for a test install", () => {
     const daily = install("linux", false);
-    expect(daily.id).toBe("98d3jrngrq");
-    expect(daily.names.unit).toBe("tasks.service");
-    expect(renderUnit({ program: daily.program })).toBe(golden("tasks.service"));
+    expect(daily.id).toBe("7yj6swwdz7");
+    expect(daily.names.unit).toBe("ttasks.service");
+    expect(renderUnit({ program: daily.program })).toBe(golden("ttasks.service"));
 
     const test = install("linux", true);
-    expect(test.id).toBe("4zxtv3adxy");
-    expect(test.names.unit).toBe("tasks-4zxtv3adxy.service");
+    expect(test.id).toBe("0rsmfcnh8j");
+    expect(test.names.unit).toBe("ttasks-0rsmfcnh8j.service");
     expect(renderUnit({ program: test.program, tasksHome: test.layout.home })).toBe(
-      golden("tasks-4zxtv3adxy.service"),
+      golden("ttasks-0rsmfcnh8j.service"),
     );
   });
 
@@ -103,9 +103,9 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
     }
   });
 
-  test("macOS: the LaunchAgent of A2 3.3.4 with the tasks-launchd wrapper, local.tasks.service[.<id>]", () => {
+  test("macOS: the LaunchAgent of A2 3.3.4 with the ttasks-launchd wrapper, local.ttasks.service[.<id>]", () => {
     const daily = install("darwin", false);
-    expect(daily.names.label).toBe("local.tasks.service");
+    expect(daily.names.label).toBe("local.ttasks.service");
     expect(
       renderPlist({
         label: daily.names.label,
@@ -113,11 +113,11 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
         home: HOMES.darwin,
         logs: daily.layout.logs,
       }),
-    ).toBe(golden("local.tasks.service.plist"));
+    ).toBe(golden("local.ttasks.service.plist"));
 
     const test = install("darwin", true);
-    expect(test.id).toBe("287e9rz8p1");
-    expect(test.names.label).toBe("local.tasks.service.287e9rz8p1");
+    expect(test.id).toBe("sgph75g0sh");
+    expect(test.names.label).toBe("local.ttasks.service.sgph75g0sh");
     expect(
       renderPlist({
         label: test.names.label,
@@ -125,28 +125,28 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
         home: HOMES.darwin,
         logs: test.layout.logs,
       }),
-    ).toBe(golden("local.tasks.service.287e9rz8p1.plist"));
+    ).toBe(golden("local.ttasks.service.sgph75g0sh.plist"));
   });
 
   test("two test installs whose folders end in the same name get different unit, Run value and label names (SL-03)", () => {
     const named = (home: string) => {
       const layout = resolveLayout({
         platform: "linux",
-        env: { TASKS_HOME: home },
+        env: { TTASKS_HOME: home },
         accountHome: "/home/mira",
         uid: 1000,
       });
       return serviceNames(installId(canonicalStatePath(layout.state, "linux")), true);
     };
-    const a = named("/home/mira/a/tasks-test");
-    const b = named("/home/mira/b/tasks-test");
+    const a = named("/home/mira/a/ttasks-test");
+    const b = named("/home/mira/b/ttasks-test");
     expect(a.unit).not.toBe(b.unit);
     expect(a.runValue).not.toBe(b.runValue);
     expect(a.label).not.toBe(b.label);
     expect(serviceNames("pk6sg0pfd5", true)).toEqual({
-      unit: "tasks-pk6sg0pfd5.service",
-      runValue: "TT Tasks (pk6sg0pfd5)",
-      label: "local.tasks.service.pk6sg0pfd5",
+      unit: "ttasks-pk6sg0pfd5.service",
+      runValue: "TTasks (pk6sg0pfd5)",
+      label: "local.ttasks.service.pk6sg0pfd5",
     });
     expect(() => serviceNames("../../etc", true)).toThrow(TypeError);
   });
@@ -154,18 +154,18 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
   test("paths that systemd, the registry or a plist would read differently are quoted or refused", () => {
     // systemd: quotes, C escapes and %% for specifiers. No $$: systemd never expands variables in
     // the path it executes, so a $ there stays a $.
-    expect(execPath("/home/mira/.local/share/tasks/current/bin/tasks")).toBe(
-      "/home/mira/.local/share/tasks/current/bin/tasks",
+    expect(execPath("/home/mira/.local/share/ttasks/current/bin/ttasks")).toBe(
+      "/home/mira/.local/share/ttasks/current/bin/ttasks",
     );
     expect(execPath('/home/m ira/100%/$HOME/a"b\\c/tasks')).toBe(
       '"/home/m ira/100%%/$HOME/a\\"b\\\\c/tasks"',
     );
     const unit = renderUnit({
-      program: "/home/m ira/100%/tasks/current/bin/tasks",
+      program: "/home/m ira/100%/ttasks/current/bin/ttasks",
       tasksHome: "/home/m ira/100%/tasks",
     });
-    expect(unit).toContain('ExecStart="/home/m ira/100%%/tasks/current/bin/tasks" serve\n');
-    expect(unit).toContain("Description=TT Tasks service (TASKS_HOME=/home/m ira/100%%/tasks)\n");
+    expect(unit).toContain('ExecStart="/home/m ira/100%%/ttasks/current/bin/ttasks" serve\n');
+    expect(unit).toContain("Description=TTasks service (TTASKS_HOME=/home/m ira/100%%/tasks)\n");
     expect(isOwnUnit(unit)).toBe(true);
     // The words install writes come back as the path it was given.
     for (const path of HOSTILE_PATHS) {
@@ -174,42 +174,42 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
     }
     // A plist escapes XML's three characters.
     const plist = renderPlist({
-      label: "local.tasks.service",
-      program: "/Users/a&b/<x>/current/bin/tasks-launchd",
+      label: "local.ttasks.service",
+      program: "/Users/a&b/<x>/current/bin/ttasks-launchd",
       home: "/Users/a&b",
       logs: "/Users/a&b/logs",
     });
-    expect(plist).toContain("<string>/Users/a&amp;b/&lt;x&gt;/current/bin/tasks-launchd</string>");
+    expect(plist).toContain("<string>/Users/a&amp;b/&lt;x&gt;/current/bin/ttasks-launchd</string>");
     // Relative paths and control characters are refused everywhere, and systemd takes no quote,
     // apostrophe or backslash in a program path, escaped or not.
     for (const bad of [
-      "relative/tasks",
+      "relative/ttasks",
       "/home/mira/new\nline/tasks",
       "/home/x\u0000/tasks",
-      '/home/a"b/current/bin/tasks',
-      "/home/O'Neil/current/bin/tasks",
-      "/home/a\\b/current/bin/tasks",
+      '/home/a"b/current/bin/ttasks',
+      "/home/O'Neil/current/bin/ttasks",
+      "/home/a\\b/current/bin/ttasks",
     ]) {
       expect(() => renderUnit({ program: bad })).toThrow(EntryPathError);
     }
-    expect(() => renderRunValue("Tasks", "bin\\tasksw.exe")).toThrow(EntryPathError);
-    expect(() => renderRunValue("Tasks", "C:\\a\r\nb\\tasksw.exe")).toThrow(EntryPathError);
+    expect(() => renderRunValue("TTasks", "bin\\ttasksw.exe")).toThrow(EntryPathError);
+    expect(() => renderRunValue("TTasks", "C:\\a\r\nb\\ttasksw.exe")).toThrow(EntryPathError);
     expect(() =>
-      renderPlist({ label: "x", program: "tasks-launchd", home: "/Users/m", logs: "/Users/m" }),
+      renderPlist({ label: "x", program: "ttasks-launchd", home: "/Users/m", logs: "/Users/m" }),
     ).toThrow(EntryPathError);
   });
 
   test.skipIf(!systemdAnalyze)(
     "systemd itself finds the launcher at each hostile path in the unit install writes",
     () => {
-      const dir = mkdtempSync(join(tmpdir(), "tasks-unit-"));
+      const dir = mkdtempSync(join(tmpdir(), "ttasks-unit-"));
       try {
         for (const [n, path] of HOSTILE_PATHS.entries()) {
           const program = `${dir}${path}`;
           mkdirSync(dirname(program), { recursive: true });
           writeFileSync(program, "#!/bin/sh\nexit 0\n");
           chmodSync(program, 0o755);
-          const unit = join(dir, `tasks-verify${String(n)}.service`);
+          const unit = join(dir, `ttasks-verify${String(n)}.service`);
           writeFileSync(unit, renderUnit({ program }));
           // `verify` loads the unit offline and fails when its ExecStart is not an executable file.
           const result = spawnSync("systemd-analyze", ["verify", "--man=no", unit], {
@@ -217,7 +217,7 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
           });
           const ours = `${result.stdout}${result.stderr}`
             .split("\n")
-            .filter((line) => line.includes(`tasks-verify${String(n)}`));
+            .filter((line) => line.includes(`ttasks-verify${String(n)}`));
           expect(ours).toEqual([]);
           expect(result.status).toBe(0);
         }
@@ -227,14 +227,14 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
     },
   );
 
-  test("an entry at the install's name is ours only when it starts a Tasks launcher", () => {
-    expect(isOwnUnit(golden("tasks.service"))).toBe(true);
-    expect(isOwnUnit("[Service]\nExecStart=/opt/other/bin/tasks serve\n")).toBe(true);
-    expect(isOwnUnit('[Service]\nExecStart="/opt/o t/bin/tasks" serve\n')).toBe(true);
+  test("an entry at the install's name is ours only when it starts a TTasks launcher", () => {
+    expect(isOwnUnit(golden("ttasks.service"))).toBe(true);
+    expect(isOwnUnit("[Service]\nExecStart=/opt/other/bin/ttasks serve\n")).toBe(true);
+    expect(isOwnUnit('[Service]\nExecStart="/opt/o t/bin/ttasks" serve\n')).toBe(true);
     expect(isOwnUnit("[Service]\nExecStart=/usr/bin/other-daemon\n")).toBe(false);
-    expect(isOwnUnit("[Service]\nExecStart=/usr/bin/tasks-fake serve\n")).toBe(false);
+    expect(isOwnUnit("[Service]\nExecStart=/usr/bin/ttasks-fake serve\n")).toBe(false);
     // Decided on what the unit makes systemd do, never on the comment install writes.
-    const ours = golden("tasks.service");
+    const ours = golden("ttasks.service");
     const header = `# ${WRITTEN_BY}\n`;
     expect(ours.startsWith(header)).toBe(true);
     expect(unitNotOurs(ours.replace(/^ExecStart=.*$/m, "ExecStart=/usr/bin/other-daemon"))).toBe(
@@ -246,22 +246,22 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
       "not_ours",
     );
     expect(
-      unitNotOurs("[Service]\nExecStart=\nExecStart=/home/m/kh/current/bin/tasks serve\n"),
+      unitNotOurs("[Service]\nExecStart=\nExecStart=/home/m/kh/current/bin/ttasks serve\n"),
     ).toBeUndefined();
     // An ExecStart in another section does not run.
     expect(
       unitNotOurs(
-        "[Unit]\nExecStart=/home/m/kh/current/bin/tasks serve\n[Service]\nExecStart=/usr/bin/other\n",
+        "[Unit]\nExecStart=/home/m/kh/current/bin/ttasks serve\n[Service]\nExecStart=/usr/bin/other\n",
       ),
     ).toBe("not_ours");
     // A comment line, a prefix or a third word is not the form install writes.
-    expect(unitNotOurs("[Service]\n# ExecStart=/x/tasks serve\nExecStart=/usr/bin/x\n")).toBe(
+    expect(unitNotOurs("[Service]\n# ExecStart=/x/ttasks serve\nExecStart=/usr/bin/x\n")).toBe(
       "not_ours",
     );
-    expect(unitNotOurs("[Service]\nExecStart=-/x/tasks serve\n")).toBe("not_ours");
-    expect(unitNotOurs("[Service]\nExecStart=/x/tasks serve --other\n")).toBe("not_ours");
+    expect(unitNotOurs("[Service]\nExecStart=-/x/ttasks serve\n")).toBe("not_ours");
+    expect(unitNotOurs("[Service]\nExecStart=/x/ttasks serve --other\n")).toBe("not_ours");
     // A continued line is one directive.
-    expect(unitNotOurs("[Service]\nExecStart=/x/tasks \\\n  serve\n")).toBeUndefined();
+    expect(unitNotOurs("[Service]\nExecStart=/x/ttasks \\\n  serve\n")).toBeUndefined();
     // A continuation still open at the end of the file is read, as systemd reads it.
     expect(unitNotOurs(`${ours.trimEnd()}\nAlso=backup.service\\`)).toBe("names_other_units");
     // Words end at ASCII whitespace only: a no-break space is part of the program's name.
@@ -276,7 +276,7 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
       "[Service]\nExecStop=/usr/bin/other",
       "[Service]\nEnvironment=LD_PRELOAD=/tmp/x.so",
       "[Service]\nEnvironmentFile=/tmp/env",
-      '[Service]\nEnvironment="TASKS_SERVICE_MANAGER=systemd" "LD_PRELOAD=/tmp/x.so"',
+      '[Service]\nEnvironment="TTASKS_SERVICE_MANAGER=systemd" "LD_PRELOAD=/tmp/x.so"',
       "[Timer]\nOnBootSec=1",
       ".include /etc/other.service",
       "[Install]\nRequiredBy=other.target\n[Unit\n",
@@ -297,17 +297,20 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
         ours.replace("WantedBy=default.target", "WantedBy=default.target\nAlso=backup.service"),
       ),
     ).toBe("names_other_units");
-    expect(isOwnRunData('"C:\\Users\\mira\\.local\\bin\\tasksw.exe"')).toBe(true);
-    expect(isOwnRunData('"D:\\Other\\TASKSW.EXE"')).toBe(true);
+    expect(isOwnRunData('"C:\\Users\\mira\\.local\\bin\\ttasksw.exe"')).toBe(true);
+    expect(isOwnRunData('"D:\\Other\\TTASKSW.EXE"')).toBe(true);
     expect(isOwnRunData('"C:\\Program Files\\Other\\other.exe" --tasks')).toBe(false);
-    expect(isOwnRunData("C:\\Users\\mira\\.local\\bin\\tasksw.exe")).toBe(false);
-    expect(isOwnRunData('"C:\\x\\tasksw.exe" --flag')).toBe(false);
-    const plist = golden("local.tasks.service.plist");
-    expect(isOwnPlist(plist, "local.tasks.service")).toBe(true);
+    expect(isOwnRunData("C:\\Users\\mira\\.local\\bin\\ttasksw.exe")).toBe(false);
+    expect(isOwnRunData('"C:\\x\\ttasksw.exe" --flag')).toBe(false);
+    const plist = golden("local.ttasks.service.plist");
+    expect(isOwnPlist(plist, "local.ttasks.service")).toBe(true);
     // The comment does not make a plist ours: its label and program must be.
-    expect(isOwnPlist(plist, "local.tasks.service.other")).toBe(false);
+    expect(isOwnPlist(plist, "local.ttasks.service.other")).toBe(false);
     expect(
-      isOwnPlist(plist.replace("/current/bin/tasks-launchd", "/bin/other"), "local.tasks.service"),
+      isOwnPlist(
+        plist.replace("/current/bin/ttasks-launchd", "/bin/other"),
+        "local.ttasks.service",
+      ),
     ).toBe(false);
     // launchd runs Program instead of ProgramArguments' first string.
     expect(
@@ -316,7 +319,7 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
           "<key>RunAtLoad</key>",
           "<key>Program</key>\n  <string>/bin/other</string>\n  <key>RunAtLoad</key>",
         ),
-        "local.tasks.service",
+        "local.ttasks.service",
       ),
     ).toBe(false);
     expect(
@@ -325,13 +328,13 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
           "</string>\n  </array>",
           "</string>\n    <string>--other</string>\n  </array>",
         ),
-        "local.tasks.service",
+        "local.ttasks.service",
       ),
     ).toBe(false);
     expect(
       isOwnPlist(
-        "<dict><key>Label</key><string>local.tasks.service</string><key>ProgramArguments</key><array><string>/bin/other</string></array></dict>",
-        "local.tasks.service",
+        "<dict><key>Label</key><string>local.ttasks.service</string><key>ProgramArguments</key><array><string>/bin/other</string></array></dict>",
+        "local.ttasks.service",
       ),
     ).toBe(false);
     // XML can spell a key another way: anything but install's plain spelling is not ours.
@@ -346,17 +349,17 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
       "<key >Program</key>",
       "<key><![CDATA[Program]]></key>",
     ]) {
-      expect(plistNotOurs(withKey(key), "local.tasks.service")).toBe("not_ours");
+      expect(plistNotOurs(withKey(key), "local.ttasks.service")).toBe("not_ours");
     }
     expect(
       plistNotOurs(
         plist.replace("<plist", '<!DOCTYPE x [<!ENTITY p "Program">]>\n<plist'),
-        "local.tasks.service",
+        "local.ttasks.service",
       ),
     ).toBe("not_ours");
     // A second Label, another key or another variable.
-    expect(plistNotOurs(withKey("<key>Label</key>"), "local.tasks.service")).toBe("not_ours");
-    expect(plistNotOurs(withKey("<key>WatchPaths</key>"), "local.tasks.service")).toBe(
+    expect(plistNotOurs(withKey("<key>Label</key>"), "local.ttasks.service")).toBe("not_ours");
+    expect(plistNotOurs(withKey("<key>WatchPaths</key>"), "local.ttasks.service")).toBe(
       "other_settings",
     );
     expect(
@@ -365,22 +368,22 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
           "<string>launchd</string>",
           "<string>launchd</string>\n    <key>DYLD_INSERT_LIBRARIES</key>\n    <string>/tmp/x.dylib</string>",
         ),
-        "local.tasks.service",
+        "local.ttasks.service",
       ),
     ).toBe("other_settings");
     // Install's own escapes read back.
     const amp = renderPlist({
-      label: "local.tasks.service",
-      program: "/Users/a&b/<x>/current/bin/tasks-launchd",
+      label: "local.ttasks.service",
+      program: "/Users/a&b/<x>/current/bin/ttasks-launchd",
       home: "/Users/a&b",
       logs: "/Users/a&b/logs",
     });
-    expect(plistNotOurs(amp, "local.tasks.service")).toBeUndefined();
+    expect(plistNotOurs(amp, "local.ttasks.service")).toBeUndefined();
     expect(readPlist(amp)).toMatchObject({ kind: "dict" });
   });
 
   test("a unit, plist or Run value holding text install never writes is someone else's: a control character, a misplaced byte order mark, a size systemd would not load, an unknown section", () => {
-    const ours = golden("tasks.service");
+    const ours = golden("ttasks.service");
     // Round 3's probe: systemd ends a line at NUL, so this adds an ExecStartPre= that a reader
     // splitting at line feeds only took for part of a comment.
     expect(unitNotOurs(`${ours}# comment\u0000[Service]\u0000ExecStartPre=/usr/bin/other\n`)).toBe(
@@ -408,27 +411,27 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
     // In ExecStart= a backslash, an apostrophe or a specifier other than %% is something install
     // never writes there, and systemd would read a path other than the one these words spell.
     for (const exec of [
-      "/opt/x\\x20/tasks serve",
-      "/opt/%h/tasks serve",
-      "'/opt/x/tasks' serve",
+      "/opt/x\\x20/ttasks serve",
+      "/opt/%h/ttasks serve",
+      "'/opt/x/ttasks' serve",
       "/opt/x/tasks se\\rve",
     ]) {
       expect(unitNotOurs(ours.replace(/^ExecStart=.*$/m, `ExecStart=${exec}`))).toBe("not_ours");
     }
-    expect(unitNotOurs(ours.replace(/^ExecStart=.*$/m, 'ExecStart="/opt/1%%/tasks" serve'))).toBe(
+    expect(unitNotOurs(ours.replace(/^ExecStart=.*$/m, 'ExecStart="/opt/1%%/ttasks" serve'))).toBe(
       undefined,
     );
     // A plist and a Run value the same way.
-    const plist = golden("local.tasks.service.plist");
-    const label = "local.tasks.service";
+    const plist = golden("local.ttasks.service.plist");
+    const label = "local.ttasks.service";
     expect(plistNotOurs(`${plist}\u0000`, label)).toBe("unusual_text");
     expect(plistNotOurs(plist.replaceAll("\n", "\r\n"), label)).toBe("unusual_text");
     expect(plistNotOurs(plist.replace("<dict>", "<dict>\t"), label)).toBe("unusual_text");
     expect(plistNotOurs(`\uFEFF${plist}`, label)).toBe("unusual_text");
-    expect(runDataNotOurs('"C:\\Users\\mira\\.local\\bin\\tasksw.exe"')).toBeUndefined();
-    expect(runDataNotOurs('"C:\\x\\tasksw.exe"\u0000 --other')).toBe("unusual_text");
-    expect(runDataNotOurs('"C:\\x\\tasksw.exe"\r\n')).toBe("unusual_text");
-    expect(runDataNotOurs(' "C:\\x\\tasksw.exe"')).toBe("not_ours");
+    expect(runDataNotOurs('"C:\\Users\\mira\\.local\\bin\\ttasksw.exe"')).toBeUndefined();
+    expect(runDataNotOurs('"C:\\x\\ttasksw.exe"\u0000 --other')).toBe("unusual_text");
+    expect(runDataNotOurs('"C:\\x\\ttasksw.exe"\r\n')).toBe("unusual_text");
+    expect(runDataNotOurs(' "C:\\x\\ttasksw.exe"')).toBe("not_ours");
   });
 
   test("Task Manager's StartupApproved record: an odd first byte is off, an even one on, none is not set", () => {
@@ -440,10 +443,10 @@ describe("[A2.3.3.service-install.golden] the OS entries per install ID, against
     expect(startupApproved(new Uint8Array(0))).toBe("not_set");
   });
 
-  test("the tasks-launchd wrapper is A2 3.3.4's script with its three additions", () => {
+  test("the ttasks-launchd wrapper is A2 3.3.4's script with its three additions", () => {
     const lines = LAUNCHD_WRAPPER.split("\n");
     expect(lines[0]).toBe("#!/bin/sh");
-    expect(LAUNCHD_WRAPPER).toContain("tasks=${0%/*}/tasks");
+    expect(LAUNCHD_WRAPPER).toContain("ttasks=${0%/*}/ttasks");
     expect(LAUNCHD_WRAPPER).toContain("0|64|73) exit 0 ;;");
     expect(LAUNCHD_WRAPPER).toContain('*) exit "$code" ;;');
     expect(LAUNCHD_WRAPPER.endsWith("exit 0\n")).toBe(true);

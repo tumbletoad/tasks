@@ -8,8 +8,8 @@
 //   Codex's (its session record with the folder `-C` named, then the prompt after `--` as the
 //   user's first message), for the reference match.
 // - FAKE_CLI_TASKS: `{"argv": [...], "home": "..."}`, the product's command and the install's home
-//   (TASKS_HOME): it reads the task as its brief says when the tools are missing, the brief's
-//   command with `--json` and without the launch's TASKS_SPACE, and its report holds the request it
+//   (TTASKS_HOME): it reads the task as its brief says when the tools are missing, the brief's
+//   command with `--json` and without the launch's TTASKS_SPACE, and its report holds the request it
 //   got, in hex, with the note that holds them.
 // - FAKE_CLI_HOLD_MS (default 4000), FAKE_CLI_RELEASE (a file whose existence ends it),
 //   FAKE_CLI_MAX_MS (default 120000) and FAKE_CLI_EXIT (default 0).
@@ -78,11 +78,11 @@ function readTask(spec: string): CliAgentReport["read"] {
   const { argv: command, home } = JSON.parse(spec) as { argv: string[]; home: string };
   const [file, ...rest] = command;
   if (file === undefined) return { code: null, error: "no_command" };
-  // The brief's command alone: without the launch's TASKS_SPACE, as in an app opened by a link.
+  // The brief's command alone: without the launch's TTASKS_SPACE, as in an app opened by a link.
   const outside = { ...env };
-  delete outside["TASKS_SPACE"];
+  delete outside["TTASKS_SPACE"];
   const ran = spawnSync(file, [...rest, ...brief.command, "--json"], {
-    env: { ...outside, TASKS_HOME: home },
+    env: { ...outside, TTASKS_HOME: home },
     encoding: "utf8",
     windowsHide: true,
     timeout: 60_000,

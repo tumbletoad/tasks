@@ -1,4 +1,4 @@
-// `tasks setup t3` (A4 3.4.1 "Pairing", A2 3.10; M2.11): the service's side, as rpc methods
+// `ttasks setup t3` (A4 3.4.1 "Pairing", A2 3.10; M2.11): the service's side, as rpc methods
 // registered in the handler table (endpoint.ts), like `roots/*`.
 //
 //   t3/status      whether T3 can be used: paired, running, "Reconnect T3"   (every CLI class)
@@ -13,13 +13,13 @@
 // change is refused before a token is written into it.
 //
 // T3's home is T3's own: `T3CODE_HOME` when the service's environment names an absolute one, else
-// `~/.t3` (A4 3.4.1). Tasks reads only `userdata/server-runtime.json` there, for T3's origin.
+// `~/.t3` (A4 3.4.1). TTasks reads only `userdata/server-runtime.json` there, for T3's origin.
 import { randomBytes } from "node:crypto";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { posix, win32 } from "node:path";
-import { CLI_NAME, PRODUCT_NAME } from "@tasks/brand";
-import type { JsonObject } from "@tasks/bridge/protocol";
-import { AppError } from "@tasks/contracts";
+import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import type { JsonObject } from "@ttasks/bridge/protocol";
+import { AppError } from "@ttasks/contracts";
 import {
   chooseT3Route,
   PairingError,
@@ -33,7 +33,7 @@ import {
   type PairingAttempt,
   type T3FileName,
   type T3Files,
-} from "@tasks/launch";
+} from "@ttasks/launch";
 import type { ConnectionClass } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
 import { atomicWrite, ensurePrivateDir, type Judged } from "./files.ts";

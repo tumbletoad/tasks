@@ -19,7 +19,7 @@ const SYNTHETIC_ID =
   /^(?:00000000-0000-4000-8000-\d{12}|exec-00000000-0000-4000-8000-\d{12}|call_fixture\d{1,4}|fixture-id-\d{1,4})$/;
 const VERSION = /^\d{1,3}\.\d{1,4}\.\d{1,4}(?:-[a-z0-9.]{1,20})?$/;
 /** The recorder's client name and version, which the user agent repeats. */
-const USER_AGENT = /^tasks_lab\/\d{1,3}\.\d{1,4}\.\d{1,4} \(fixture\)$/;
+const USER_AGENT = /^ttasks_lab\/\d{1,3}\.\d{1,4}\.\d{1,4} \(fixture\)$/;
 const FIXTURE_NAMES = /^fixture-(?:server|model|plan|host|key)(?:-\d{1,3})?$/;
 
 /** The protocol's words that a fixture keeps as they were recorded. */
@@ -31,7 +31,7 @@ export const VOCAB: ReadonlySet<string> = new Set([
   "mark",
   "exit",
   // initialize, the client's name and the platform.
-  "tasks_lab",
+  "ttasks_lab",
   "windows",
   "linux",
   "macos",
@@ -122,7 +122,7 @@ export const VOCAB: ReadonlySet<string> = new Set([
   "cancel",
   "omnimod",
   // The probe server and its tool, as the recorder named them.
-  "tasks",
+  "ttasks",
   "probe_echo",
 ]);
 
@@ -250,8 +250,8 @@ function cleanString(key: string, value: string, r: Replacer, inConfig: boolean)
   if (key === "method" && /^[A-Za-z]+(?:\/[A-Za-z]+)*$/.test(value)) return value;
   if (VOCAB.has(value) && !PATH_KEYS.has(key) && !(key in NAME_KEYS)) return value;
   if (key === "userAgent") {
-    const head = /^tasks_lab\/(\d{1,3}\.\d{1,4}\.\d{1,4})/.exec(value);
-    return head === null ? UNKNOWN_VALUE : `tasks_lab/${head[1] ?? ""} (fixture)`;
+    const head = /^ttasks_lab\/(\d{1,3}\.\d{1,4}\.\d{1,4})/.exec(value);
+    return head === null ? UNKNOWN_VALUE : `ttasks_lab/${head[1] ?? ""} (fixture)`;
   }
   if (key === "cliVersion" || key === "version") return VERSION.test(value) ? value : "0.0.0";
   if (ID_KEYS.has(key)) return r.id(value);
@@ -261,7 +261,7 @@ function cleanString(key: string, value: string, r: Replacer, inConfig: boolean)
   const named = NAME_KEYS[key];
   if (named !== undefined) return r.name(named, value);
   if (key === "name") return r.name("server", value);
-  if (key === "TASKS_TICKET") return "LABTICKET0000000000000000";
+  if (key === "TTASKS_TICKET") return "LABTICKET0000000000000000";
   return value === "" ? "" : FIXTURE_TEXT;
 }
 

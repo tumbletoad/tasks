@@ -1,4 +1,4 @@
-// T3 Code's primary route, `t3-mcp` (A4 3.4.1, L6, L14): Tasks as a paired MCP client of the local
+// T3 Code's primary route, `t3-mcp` (A4 3.4.1, L6, L14): TTasks as a paired MCP client of the local
 // T3 server. A launch binds the task's exact folder to a T3 project (t3-binding.ts), creates an
 // idle thread with `t3_thread_launch` and no message, keyed by the launch ID as `clientRequestId`
 // under the grant recorded on the intent, checks the thread's folder, and opens the thread link
@@ -18,7 +18,7 @@
 //
 // Machine state (t3-state.ts) holds the pairing, the "Not now" answers and each launch's plan; the
 // plan is written before Dispatching, so the repeat after a restart sends the same call.
-import { PRODUCT_NAME, CLI_NAME } from "@tasks/brand";
+import { PRODUCT_NAME, CLI_NAME } from "@ttasks/brand";
 import type { Permission } from "./catalogue.ts";
 import { EVIDENCE_ID } from "./intents.ts";
 import type { DispatchOutcome, Observation } from "./machine.ts";
@@ -53,7 +53,7 @@ import {
 
 /** Why the T3 route cannot open a task now. Each has a line for people (T3_TEXT). */
 export type T3Unavailable =
-  /** Tasks is not paired with this machine's T3. */
+  /** TTasks is not paired with this machine's T3. */
   | "not_paired"
   /** No T3 server answers: the desktop app is closed, or the service is down. */
   | "not_running"
@@ -72,7 +72,7 @@ export type T3Unavailable =
   | "invalid_instance"
   /** Not paired, and the instance names no `t3` command (`exec`). */
   | "no_cli"
-  /** The instance's `t3` command cannot be run as Tasks runs it (its `.cmd` shim, its home). */
+  /** The instance's `t3` command cannot be run as TTasks runs it (its `.cmd` shim, its home). */
   | "cli_unusable"
   /** The folder is an existing worktree: only the paired route attaches one. */
   | "worktree_needs_pairing"
@@ -219,7 +219,7 @@ export class T3Route {
   }
 
   // -------------------------------------------------------------------------------------------
-  // Pairing (`tasks setup t3`)
+  // Pairing (`ttasks setup t3`)
 
   /** Starts a pairing attempt with this machine's T3: its URL goes to the person's browser. */
   async beginPairing(): Promise<PairingAttempt> {

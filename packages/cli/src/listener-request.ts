@@ -1,4 +1,4 @@
-// One request of the CLI to the UI listener's port (`tasks open`'s probe, doctor's self-test),
+// One request of the CLI to the UI listener's port (`ttasks open`'s probe, doctor's self-test),
 // bounded the same way every time: one deadline for the whole exchange, from the connect to the
 // last byte, and a cap on the bytes read back. Whatever answers on the port may be a squatter,
 // so neither a slow trickle of bytes nor an endless body keeps the CLI waiting. Node's own

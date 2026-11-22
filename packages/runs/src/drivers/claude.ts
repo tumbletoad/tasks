@@ -24,15 +24,15 @@ import {
   TEXT_CAP_BYTES,
   type ProcessExit,
   type RunPermission,
-} from "@tasks/contracts/runs";
-import { MCP_SERVER_KEY, PRODUCT_ID } from "@tasks/brand";
+} from "@ttasks/contracts/runs";
+import { MCP_SERVER_KEY, PRODUCT_ID } from "@ttasks/brand";
 import { createClaudePrintParser, startsTurn } from "../streams/claude-print.ts";
 import { LineSplitter } from "../streams/lines.ts";
 import { array, capText, record, string, type Json } from "../streams/values.ts";
 import { workOf } from "./print.ts";
 import type { OpenDriver, Work } from "./types.ts";
 
-/** Tasks' own MCP server for the run: the bridge, with the run's ticket in its environment. */
+/** TTasks's own MCP server for the run: the bridge, with the run's ticket in its environment. */
 export interface ClaudeTools {
   readonly command: string;
   readonly args: readonly string[];
@@ -46,7 +46,7 @@ export interface ClaudeSession {
 
 /**
  * How each permission runs Claude Code, in its own modes, with the person's own tools and rules.
- * Tasks' own tools are allowed in every mode: they are how the run reports its work, and a
+ * TTasks's own tools are allowed in every mode: they are how the run reports its work, and a
  * read-only run reads its own task through them.
  */
 const MODES: Readonly<Record<RunPermission, readonly string[]>> = {
@@ -74,7 +74,7 @@ export function claudeArgs(permission: RunPermission, toolsFile?: string): strin
 }
 
 /**
- * The tools file's text: Tasks' tools under their own name. A server of that name in the person's
+ * The tools file's text: TTasks's tools under their own name. A server of that name in the person's
  * own configuration gives way to it for the run; their other servers stay.
  */
 export function claudeToolsFile(tools: ClaudeTools): string {

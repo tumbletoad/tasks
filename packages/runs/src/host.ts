@@ -5,7 +5,7 @@
 // - The work's, from the driver: done with its answer, needs the person, failed, stopped. It is
 //   saved to the run's folder first, before anything of the run is closed or ended.
 // - The cleanup's, from the container: nothing was left, what was left had to be ended, or (with
-//   no process group) Tasks ended what it could find. It never changes the work's.
+//   no process group) TTasks ended what it could find. It never changes the work's.
 //
 // What the person can count on, and how this keeps it:
 // - The run is settled when its work is, not when its first turn ends or its process exits: the
@@ -26,8 +26,8 @@
 //
 // Every limit runs on the monotonic clock: the start time, the run's wall and idle times, the
 // stop's grace, the close, the confirmation and the drain of the output.
-import type { RunCleanup, RunEvent, RunRecord, RunResult } from "@tasks/contracts/runs";
-import { SIGNAL_NAME, TEXT_CAP_BYTES } from "@tasks/contracts/runs";
+import type { RunCleanup, RunEvent, RunRecord, RunResult } from "@ttasks/contracts/runs";
+import { SIGNAL_NAME, TEXT_CAP_BYTES } from "@ttasks/contracts/runs";
 import type {
   AgentExit,
   Confirmation,

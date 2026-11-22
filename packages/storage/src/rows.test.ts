@@ -1,6 +1,6 @@
 // The integer domain and the row decoders (A1 3.4): a stored value
 // outside its column's domain is refused as SPACE_INVALID, naming the column and never the value.
-import { patterns } from "@tasks/contracts";
+import { patterns } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import { StorageError } from "./errors.ts";
 import { decodeLineage, decodeSpaceRow, inRange, RANGES, RowReader } from "./rows.ts";

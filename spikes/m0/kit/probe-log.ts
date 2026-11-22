@@ -18,8 +18,8 @@ import { asObject, sha256Hex, type Json, type JsonObject } from "./wire.ts";
  * meets that a row needs shows up in `env_names` and is added here by hand, never by pattern.
  */
 export const VALUE_NAMES: ReadonlyMap<string, string> = new Map([
-  ["TASKS_TASK", "A01-A05: A3's binding input (task)"],
-  ["TASKS_SPACE", "A01-A05: A3's binding input (space)"],
+  ["TTASKS_TASK", "A01-A05: A3's binding input (task)"],
+  ["TTASKS_SPACE", "A01-A05: A3's binding input (space)"],
   ["CLAUDE_CODE_SESSION_ID", "A01, A03, A04: Claude's session identifier, for the binding"],
   ["CODEX_THREAD_ID", "A02, A05: Codex's thread identifier, for the binding"],
   ["T3CODE_THREAD_ID", "A03: T3 Code's thread identifier, for the binding"],
@@ -42,13 +42,13 @@ export const PATH_NAMES: ReadonlyMap<string, string> = new Map([
 
 /** Package identity variables (S05): logged through `packageName`, a strict class and cap. */
 export const PACKAGE_NAMES: ReadonlyMap<string, string> = new Map([
-  ["TASKS_PACKAGE", "S05: set by the M0.03 launcher inside a package"],
+  ["TTASKS_PACKAGE", "S05: set by the M0.03 launcher inside a package"],
   ["SNAP_NAME", "S05: the snap the probe runs in"],
   ["FLATPAK_ID", "S05: the flatpak the probe runs in"],
 ]);
 
 /** Logged as a 12-hex SHA-256 prefix, so a lab run can match it against the ticket it issued. */
-export const HASHED_NAMES = new Set(["TASKS_TICKET"]);
+export const HASHED_NAMES = new Set(["TTASKS_TICKET"]);
 
 /**
  * Variables the redactor leaves alone: their values are common words or machine facts, not

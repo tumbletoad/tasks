@@ -54,7 +54,7 @@ async function withManifest(
 }
 
 describe("[A1.5.space.manifest] reading space.json", () => {
-  test("a manifest Tasks wrote is whole: every safety field, not damaged", async () => {
+  test("a manifest TTasks wrote is whole: every safety field, not damaged", async () => {
     const { folder, original } = await withManifest(() => undefined);
     const read = readManifest(folder);
     expect(read).toMatchObject({

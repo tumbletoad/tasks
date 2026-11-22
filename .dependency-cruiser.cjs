@@ -104,7 +104,7 @@ module.exports = {
       name: "helpers-through-the-runner",
       comment:
         "setup, detection and doctor start a program only as a helper of the runner in " +
-        "@tasks/launch (helpers.ts), which ends it with what it started at its deadline and when " +
+        "@ttasks/launch (helpers.ts), which ends it with what it started at its deadline and when " +
         "the process exits (A3 3.14). Their modules import no child_process; type-only imports " +
         "are erased and do not count.",
       severity: "error",

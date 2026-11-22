@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
-import { REGISTRY_READS } from "@tasks/launch";
+import { REGISTRY_READS } from "@ttasks/launch";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { system32 } from "../src/hub/identity.ts";
 import { CHECK_TIMEOUT_MS, type WindowsSyncFacts } from "../src/hub/sync-folders.ts";
@@ -136,7 +136,7 @@ describe("[A1.5.sync.windows-facts] the Windows facts run: .NET only, shared whi
     expect(code).not.toMatch(/[\w)\]]\.[A-Za-z_]\w*(?![\w(])/);
   });
 
-  // The reads both helper scripts share (@tasks/launch windows-reads.ts), on fake keys that answer
+  // The reads both helper scripts share (@ttasks/launch windows-reads.ts), on fake keys that answer
   // the methods the reads call: no registry is read or written.
   test.runIf(process.platform === "win32")(
     "Windows: the registry reads take absence only from a listing, and a listed key or value that reads as nothing throws",

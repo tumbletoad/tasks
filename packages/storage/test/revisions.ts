@@ -3,7 +3,7 @@
 // revision is BUILT, never checked in as a database file: its chain of steps is the released one,
 // and the steps of a released revision are frozen (migrations/0001-schema-0.1.ts), so the builder
 // produces what that release produced. testkit's seedMira builds its sample with these, and the
-// known 0.1 sample's digest pins the result. Exported as @tasks/storage/revisions for testkit and
+// known 0.1 sample's digest pins the result. Exported as @ttasks/storage/revisions for testkit and
 // other packages' tests. Plain functions without vitest, so a worker thread can use them too.
 import { step0001 } from "../migrations/0001-schema-0.1.ts";
 import { step0002 } from "../migrations/0002-schema-0.2.ts";

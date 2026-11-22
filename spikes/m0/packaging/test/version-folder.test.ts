@@ -21,7 +21,7 @@ const fakes: Record<string, string> = {};
 
 beforeAll(() => {
   work = tempDir("version-folder");
-  for (const name of ["node", "license", "tasks", "tasksw"]) {
+  for (const name of ["node", "license", "ttasks", "ttasksw"]) {
     fakes[name] = join(work, `fake-${name}`);
     writeFileSync(fakes[name], `fake ${name}\n`);
   }
@@ -43,7 +43,7 @@ function assemble(platform: Platform, label: string): { dir: string; manifest: M
       binary: fakes["node"] ?? "",
       license: fakes["license"] ?? "",
     },
-    launchers: { tasks: fakes["tasks"] ?? "", tasksw: fakes["tasksw"] ?? "" },
+    launchers: { ttasks: fakes["ttasks"] ?? "", ttasksw: fakes["ttasksw"] ?? "" },
   });
   return { dir, manifest };
 }
@@ -54,10 +54,10 @@ describe("[A2.3.12.2.spike.version-folder] the version folder, its manifest and 
     expect(Object.keys(manifest.files)).toEqual([
       "LICENSE",
       "NOTICE",
-      "bin/tasks",
+      "bin/ttasks",
       "lib/gate.mjs",
       "lib/install.mjs",
-      "lib/tasks.mjs",
+      "lib/ttasks.mjs",
       "licenses/node.txt",
       "runtime/node",
     ]);
@@ -76,11 +76,11 @@ describe("[A2.3.12.2.spike.version-folder] the version folder, its manifest and 
     expect(Object.keys(manifest.files)).toEqual([
       "LICENSE",
       "NOTICE",
-      "bin/tasks.exe",
-      "bin/tasksw.exe",
+      "bin/ttasks.exe",
+      "bin/ttasksw.exe",
       "lib/gate.mjs",
       "lib/install.mjs",
-      "lib/tasks.mjs",
+      "lib/ttasks.mjs",
       "licenses/node.txt",
       "runtime/node.exe",
     ]);
@@ -89,11 +89,11 @@ describe("[A2.3.12.2.spike.version-folder] the version folder, its manifest and 
 
   test("the manifest check finds a changed, a missing and an extra file", () => {
     const { dir } = assemble("linux-x64", "tampered");
-    appendFileSync(join(dir, "lib", "tasks.mjs"), "// changed\n");
+    appendFileSync(join(dir, "lib", "ttasks.mjs"), "// changed\n");
     writeFileSync(join(dir, "lib", "extra.mjs"), "");
     removeDir(join(dir, "licenses"));
     expect(verifyVersionFolder(dir).sort()).toEqual([
-      "changed: lib/tasks.mjs",
+      "changed: lib/ttasks.mjs",
       "missing: licenses/node.txt",
       "not in manifest: lib/extra.mjs",
     ]);
@@ -120,9 +120,9 @@ describe("[A2.3.12.2.spike.version-folder] the version folder, its manifest and 
     );
     expect(modes).toMatchObject({
       bin: "directory:755",
-      "bin/tasks": "file:755",
+      "bin/ttasks": "file:755",
       "runtime/node": "file:755",
-      "lib/tasks.mjs": "file:644",
+      "lib/ttasks.mjs": "file:644",
       "manifest.json": "file:644",
     });
     const node = entries.find((e) => e.path === "runtime/node");
@@ -145,8 +145,8 @@ describe("[A2.3.12.2.spike.version-folder] the version folder, its manifest and 
   });
 
   test("archive names follow A2 3.12.4 and the writers refuse unsafe paths", () => {
-    expect(archiveName("0.3.0", "linux-x64")).toBe("tasks-0.3.0-linux-x64.tar.gz");
-    expect(archiveName("0.3.0", "win-x64")).toBe("tasks-0.3.0-win-x64.zip");
+    expect(archiveName("0.3.0", "linux-x64")).toBe("ttasks-0.3.0-linux-x64.tar.gz");
+    expect(archiveName("0.3.0", "win-x64")).toBe("ttasks-0.3.0-win-x64.zip");
     for (const path of ["../x", "/abs", "a/../b", "a//b", "a/", "sp ace", "back\\slash"]) {
       const entries = [{ path, data: Buffer.alloc(0), mode: 0o644 }];
       expect(() => writeTar(entries), path).toThrow(/unsafe archive path/);

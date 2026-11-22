@@ -62,11 +62,11 @@ afterAll(() => {
 
 describe("[A2.3.12.4.spike.install-verify] install verifies the signature and the hash first", () => {
   test(
-    "installs into a temporary TASKS_HOME, and the gate passes in the packaged runtime",
+    "installs into a temporary TTASKS_HOME, and the gate passes in the packaged runtime",
     () => {
       const root = join(work, "home");
       const run = runInstaller(platform, release.installer, release.dist, undefined, {
-        TASKS_HOME: root,
+        TTASKS_HOME: root,
       });
       assertInstalled(root, VERSION, platform, run);
       const gate = runGateVia(stableLauncher(root, platform), join(work, "gate-scratch"));
@@ -114,12 +114,12 @@ describe("[A2.3.12.4.spike.install-verify] install verifies the signature and th
     SLOW,
   );
 
-  test("without TASKS_HOME or a root parameter the spike installs nowhere", () => {
+  test("without TTASKS_HOME or a root parameter the spike installs nowhere", () => {
     const run = runInstaller(platform, release.installer, release.dist, undefined, {
-      TASKS_HOME: undefined,
+      TTASKS_HOME: undefined,
     });
     expect(run.status).not.toBe(0);
-    expect(run.stderr).toMatch(/Set TASKS_HOME or pass -?-[Rr]oot/);
+    expect(run.stderr).toMatch(/Set TTASKS_HOME or pass -?-[Rr]oot/);
   });
 
   // Lab row R09 (A2 3.12.4): started from a PowerShell 7 window, Windows PowerShell 5.1 fed
@@ -231,12 +231,12 @@ describe("[A2.3.12.3.spike.launcher-argv] launchers pass hostile argv to Node by
     mkdirSync(join(root, "bin"), { recursive: true });
     if (windows) {
       writeFileSync(join(root, "current"), VERSION);
-      for (const name of ["tasks.exe", "tasksw.exe"]) {
+      for (const name of ["ttasks.exe", "ttasksw.exe"]) {
         cpSync(join(root, "versions", VERSION, "bin", name), join(root, "bin", name));
       }
     } else {
       symlinkSync(`versions/${VERSION}`, join(root, "current"));
-      symlinkSync("../current/bin/tasks", join(root, "bin", "tasks"));
+      symlinkSync("../current/bin/ttasks", join(root, "bin", "ttasks"));
     }
   });
 
@@ -269,27 +269,27 @@ describe("[A2.3.12.3.spike.launcher-argv] launchers pass hostile argv to Node by
     SLOW,
   );
 
-  test("the launcher marks a separate install with TASKS_HOME", () => {
+  test("the launcher marks a separate install with TTASKS_HOME", () => {
     const same = (a: unknown, b: string) => String(a).toLowerCase() === b.toLowerCase();
     for (const [launcher, mode] of launchers()) {
       const { env } = launchArgv(launcher, []);
-      expect(same(env["TASKS_HOME"], root), `${launcher}: TASKS_HOME`).toBe(true);
+      expect(same(env["TTASKS_HOME"], root), `${launcher}: TTASKS_HOME`).toBe(true);
       if (mode !== "posix") {
-        expect(same(env["TASKS_ROOT"], root), `${launcher}: TASKS_ROOT`).toBe(true);
-        expect(same(env["TASKS_LAUNCHER"], launcher), `${launcher}: TASKS_LAUNCHER`).toBe(true);
-        expect(env["TASKS_PACKAGE"]).toBeNull();
+        expect(same(env["TTASKS_ROOT"], root), `${launcher}: TTASKS_ROOT`).toBe(true);
+        expect(same(env["TTASKS_LAUNCHER"], launcher), `${launcher}: TTASKS_LAUNCHER`).toBe(true);
+        expect(env["TTASKS_PACKAGE"]).toBeNull();
       }
     }
   });
 
   test.runIf(windows)(
-    "tasks.exe copies a raw command-line tail verbatim, so Node parses it as if called directly",
+    "ttasks.exe copies a raw command-line tail verbatim, so Node parses it as if called directly",
     () => {
       // Raw text, not produced by any quoting library: unbalanced quotes, backslash runs before
       // quotes, empty quoted strings, percent signs and cmd.exe metacharacters.
       const tail = String.raw`argv a"b c"d \"x\" "y\\" z\\\" "" "" %PATH% ^& "un terminated`;
       const node = join(root, "versions", VERSION, "runtime", "node.exe");
-      const entry = join(root, "versions", VERSION, "lib", "tasks.mjs");
+      const entry = join(root, "versions", VERSION, "lib", "ttasks.mjs");
       const raw = (exe: string, argv0: string, rest: string) =>
         spawnSync(exe, [rest], {
           argv0,
@@ -305,7 +305,7 @@ describe("[A2.3.12.3.spike.launcher-argv] launchers pass hostile argv to Node by
         if (mode === "posix") continue;
         // argv[0] with a quote in the middle and a space inside it: the launcher must still find
         // where the tail starts, by the C runtime's rule for argv[0].
-        for (const argv0 of [`"${exe}"`, `C:\\fake"dir with space"\\tasks.exe`]) {
+        for (const argv0 of [`"${exe}"`, `C:\\fake"dir with space"\\ttasks.exe`]) {
           const run = raw(exe, argv0, tail);
           expect(run.status, run.stderr).toBe(0);
           expect((JSON.parse(run.stdout) as { args: string[] }).args, `${exe} ${argv0}`).toEqual(
@@ -316,7 +316,7 @@ describe("[A2.3.12.3.spike.launcher-argv] launchers pass hostile argv to Node by
     },
   );
 
-  test.runIf(windows)("tasks.exe answers --package-info and --replace itself", () => {
+  test.runIf(windows)("ttasks.exe answers --package-info and --replace itself", () => {
     const exe = stableLauncher(root, platform);
     const info = spawnSync(exe, ["--package-info"], { encoding: "utf8", windowsHide: true });
     expect([info.status, info.stdout]).toEqual([0, "none\n"]);
@@ -335,19 +335,19 @@ describe("[A2.3.12.3.spike.launcher-argv] launchers pass hostile argv to Node by
   });
 
   test.runIf(windows)(
-    "tasks.exe stops before Node runs when Windows refuses any step of its job object",
+    "ttasks.exe stops before Node runs when Windows refuses any step of its job object",
     () => {
-      // A test build (TASKS_TEST_HOOKS) simulates each refusal. Release builds have no hook.
+      // A test build (TTASKS_TEST_HOOKS) simulates each refusal. Release builds have no hook.
       const hooks = compileLaunchers(join(work, "launchers-hooks"), undefined, [
-        "TASKS_TEST_HOOKS",
+        "TTASKS_TEST_HOOKS",
       ]);
-      const exe = join(root, "bin", "tasks-hooks.exe");
-      cpSync(hooks.tasks, exe);
+      const exe = join(root, "bin", "ttasks-hooks.exe");
+      cpSync(hooks.ttasks, exe);
       const run = (fail: string | undefined, launcher = exe) =>
         spawnSync(launcher, ["argv", "x"], {
           encoding: "utf8",
           windowsHide: true,
-          env: { ...process.env, TASKS_TEST_JOB_FAIL: fail },
+          env: { ...process.env, TTASKS_TEST_JOB_FAIL: fail },
         });
       const normal = run(undefined);
       expect([normal.status, normal.stderr]).toEqual([0, ""]);
@@ -363,7 +363,7 @@ describe("[A2.3.12.3.spike.launcher-argv] launchers pass hostile argv to Node by
     SLOW,
   );
 
-  test.runIf(windows)("killing tasks.exe kills Node, through the job object", async () => {
+  test.runIf(windows)("killing ttasks.exe kills Node, through the job object", async () => {
     const alive = (pid: number) => {
       try {
         process.kill(pid, 0);
@@ -383,7 +383,7 @@ describe("[A2.3.12.3.spike.launcher-argv] launchers pass hostile argv to Node by
           if (line) resolve(Number(line[1]));
         });
         child.on("exit", (code) => {
-          reject(new Error(`tasks.exe exited early (${String(code)})`));
+          reject(new Error(`ttasks.exe exited early (${String(code)})`));
         });
       });
       expect(alive(pid)).toBe(true);

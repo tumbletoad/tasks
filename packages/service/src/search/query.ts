@@ -1,4 +1,4 @@
-// The query language (A3 3.9.2): one language for `search`, `tasks find` and the page's search box.
+// The query language (A3 3.9.2): one language for `search`, `ttasks find` and the page's search box.
 //
 //   timezone "time zone" OR dst status:open,waiting area:client-work p<=2 due<7d -is:inbox
 //
@@ -30,7 +30,7 @@ import {
   QUERY_KEYS,
   type QueryKey,
   type QueryOp,
-} from "@tasks/contracts";
+} from "@ttasks/contracts";
 import { unsupported } from "../ops/errors.ts";
 
 export const QUERY_LIMITS = { length: 500, terms: 20 } as const;
@@ -134,7 +134,7 @@ export function queryProblem(message: string, hint?: string, suggestions?: strin
   return new AppError({
     code: "invalid_input",
     message: `${message}.`,
-    hint: hint ?? "Run tasks help find for the query language.",
+    hint: hint ?? "Run ttasks help find for the query language.",
     data: {
       issues: [{ path: "q", message }],
       ...(suggestions === undefined || suggestions.length === 0 ? {} : { suggestions }),
@@ -439,7 +439,7 @@ export function sortOf(query: Query): Sort | undefined {
 
 /**
  * Whether the query asks for completed or archived tasks itself: then a call without a scope
- * searches every lifecycle (A3 3.9.2), so `tasks find is:completed` finds them.
+ * searches every lifecycle (A3 3.9.2), so `ttasks find is:completed` finds them.
  */
 export function namesLifecycle(query: Query): boolean {
   return termsOf(query).some(

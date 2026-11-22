@@ -12,7 +12,7 @@
 //    the root of its file system, with no level limit, setup notes whether any folder holds an
 //    entry named `.git`, of any kind. It reads nothing inside one, and an error while looking
 //    counts as one being there. With none, the file is in no repository git can find from it.
-// 2. The question: git, run in that folder as a helper of the runner (@tasks/launch helpers.ts,
+// 2. The question: git, run in that folder as a helper of the runner (@ttasks/launch helpers.ts,
 //    GIT_MS each, its output bounded), lists the file if it tracks it (`ls-files -z`, the name as a
 //    literal pathspec, without case on Windows and macOS). Exit 0 with nothing listed is git's "a
 //    repository, and not tracked": the file is not managed. Something listed is tracked, and then
@@ -32,7 +32,7 @@
 // `.git` above the file, so setup cannot see it: rule 4 lists such files.
 import { lstatSync, realpathSync } from "node:fs";
 import { posix, win32 } from "node:path";
-import { helperOutput, nodeDetectHost, onPath, type Env } from "@tasks/launch";
+import { helperOutput, nodeDetectHost, onPath, type Env } from "@ttasks/launch";
 
 const pathOf = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
 

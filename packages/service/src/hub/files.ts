@@ -1,11 +1,11 @@
 // Files of `<state>` (A2 3.2.2 rule 5, 3.2.3): files and folders created with exactly the mode the
 // plan names, atomic replacement, and the leftovers a crash can leave, which the next start removes.
 //
-// Creation itself is @tasks/files, the one implementation every package creates through: the mode
+// Creation itself is @ttasks/files, the one implementation every package creates through: the mode
 // is set on the new object by descriptor, which follows no link and ignores the umask, and a file
 // or folder that was already there keeps its mode (A2 3.2.2 rule 5). This module adds the service's
 // rule for who else may change a folder it writes in (permissions.ts).
-import { makeDir } from "@tasks/files";
+import { makeDir } from "@ttasks/files";
 import { currentPerson, factsOf, judgePath, problemOf, type Judged } from "./permissions.ts";
 
 export {
@@ -17,7 +17,7 @@ export {
   setModeOf,
   writeAll,
   type MakeDirOptions,
-} from "@tasks/files";
+} from "@ttasks/files";
 export { judgePath, type Judged };
 
 /** An error with an errno code, as Node's own file system errors carry one, and no path. */

@@ -245,7 +245,7 @@ export function emit(message: ChildMessage): void {
 }
 
 /** The environment variable that hands the arm to the child's storage worker thread. */
-export const ARM_VARIABLE = "TASKS_CRASH_ARM";
+export const ARM_VARIABLE = "TTASKS_CRASH_ARM";
 
 /** How long a child waits at its point for the kill before it gives up. */
 export const KILL_WAIT_MS = 60_000;

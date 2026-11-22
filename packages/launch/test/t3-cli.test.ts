@@ -21,8 +21,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { CLI_NAME } from "@tasks/brand";
-import { FAKE_T3_CLI, FakeT3, type FakeT3CliRecord } from "@tasks/testkit/fake-t3";
+import { CLI_NAME } from "@ttasks/brand";
+import { FAKE_T3_CLI, FakeT3, type FakeT3CliRecord } from "@ttasks/testkit/fake-t3";
 import { LaunchMachine } from "../src/machine.ts";
 import { identityOf, resolvePlace, type RootFolder } from "../src/places.ts";
 import type { LaunchIntent } from "../src/store.ts";
@@ -91,7 +91,7 @@ function cliRoute(options: { run?: T3CliRun; timeoutMs?: number } = {}): T3CliRo
             T3CODE_THREAD_ID: "thread-of-the-session",
             T3CODE_HOME: join(base, "another-t3-home"),
             ELECTRON_RUN_AS_NODE: "0",
-            TASKS_TICKET: "TICKETTICKETTICKET",
+            TTASKS_TICKET: "TICKETTICKETTICKET",
             FAKE_T3_CLI_LOG: log,
           },
         }),
@@ -194,7 +194,7 @@ function expectOnlyProjectIds(): void {
 }
 
 beforeEach(async () => {
-  base = realpathSync.native(mkdtempSync(join(tmpdir(), "tasks-t3cli-")));
+  base = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-t3cli-")));
   fake = await FakeT3.start(join(base, "t3home"));
   files = new MemoryT3Files();
   log = join(base, "cli.log");
@@ -251,7 +251,7 @@ describe("[A4.5.t3.cli-route] the T3 CLI route serves exact roots only (fake T3)
       expect(start?.home).toBe(fake.home);
       expect(start?.electron).toBeNull();
       expect(start?.envNames).not.toContain("T3CODE_THREAD_ID");
-      expect(start?.envNames).not.toContain("TASKS_TICKET");
+      expect(start?.envNames).not.toContain("TTASKS_TICKET");
       expect(start?.cwd).toBe(realpathSync.native(fake.home));
       for (const run of runs) {
         for (const arg of run.args) expect(arg.includes("Fixture task"), arg).toBe(false);

@@ -1,7 +1,7 @@
 // A home's agent-home row in the service's grants table (hub/agent-homes.ts) and its entry go
 // together: the row is asked for first, the entry written after, and a row made for an entry that
 // was not written is taken back. The command line and the page both register a home this way.
-import { AppError } from "@tasks/contracts";
+import { AppError } from "@ttasks/contracts";
 import { applyHome, type Outcome, type PlanItem, type SetupInput } from "./agents.ts";
 
 /** One of the service's `setup/*` verbs. It throws an AppError when the service refuses. */

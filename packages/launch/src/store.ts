@@ -7,7 +7,7 @@
 //
 // The interface has a launch part (M2.05) and a run part (M6.01), and `openWork` returns runs beside
 // intents. Each state machine takes only its part: LaunchMachine a LaunchStore, the run machine
-// (@tasks/runs) a RunStore. Sessions (`upsertSession`, with the session move of A4 3.10) and
+// (@ttasks/runs) a RunStore. Sessions (`upsertSession`, with the session move of A4 3.10) and
 // occurrences (`decideOccurrence`, M9) join it with the steps that write those records.
 import {
   ANSWER_CAP_BYTES,
@@ -40,7 +40,7 @@ import {
   type RunResult,
   type RunState,
   type Usage,
-} from "@tasks/contracts/runs";
+} from "@ttasks/contracts/runs";
 import {
   cleanEvidence,
   evidenceProblem,
@@ -66,7 +66,7 @@ export interface NewIntent {
   /** The instance's key in this machine's `machine.toml`. */
   instance: string;
   route: Route;
-  /** The place the folder resolved from (`pl_` ID), or null for the Tasks work folder (A4 3.3). */
+  /** The place the folder resolved from (`pl_` ID), or null for the TTasks work folder (A4 3.3). */
   place: string | null;
   /** The task's version when the person clicked. */
   taskVersion: number;
@@ -90,7 +90,7 @@ export interface LaunchIntent {
   instance: string;
   route: Route;
   place: string | null;
-  /** `place` when the folder came from a place, else the space's Tasks work folder. */
+  /** `place` when the folder came from a place, else the space's TTasks work folder. */
   folderKind: "place" | "work_folder";
   taskVersion: number | null;
   briefHash: string | null;

@@ -15,11 +15,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { APP_NAME, PRODUCT_NAME } from "@tasks/brand";
-import { selfTest } from "@tasks/cli/doctor-http";
-import { indexProblems, loadUiFolder, UiFolderInvalid } from "@tasks/service/http";
-import { send } from "@tasks/service/test/http-client";
-import { httpWorld, type HttpWorld } from "@tasks/service/test/http-world";
+import { PRODUCT_NAME } from "@ttasks/brand";
+import { selfTest } from "@ttasks/cli/doctor-http";
+import { indexProblems, loadUiFolder, UiFolderInvalid } from "@ttasks/service/http";
+import { send } from "@ttasks/service/test/http-client";
+import { httpWorld, type HttpWorld } from "@ttasks/service/test/http-world";
 import { thirdPartyText } from "../../../scripts/build/bundle.ts";
 import { buildWeb, sriOf, type BuiltWeb } from "../build.ts";
 import { SUMI, WASHI } from "../src/theme/themes.ts";
@@ -32,7 +32,7 @@ let built: BuiltWeb;
 let world: HttpWorld | undefined;
 
 beforeAll(async () => {
-  work = mkdtempSync(join(tmpdir(), "tasks-web-build-"));
+  work = mkdtempSync(join(tmpdir(), "ttasks-web-build-"));
   built = await buildWeb(join(work, "ui"));
 }, 240_000);
 
@@ -61,22 +61,14 @@ describe("[A7.3.9.m2-13.web.build] the built page under SRI and the strict CSP",
       loading.map((t) => /\s(?:src|href)="([^"]+)"/.exec(t)?.[1]).sort(),
     );
     // No inline script or style, the nonce and build placeholders the service fills, the title
-    // from packages/brand: the name inside the app (PLAN.md Q).
+    // from packages/brand.
     expect(index).not.toMatch(/<script(?![^>]*\ssrc=)[^>]*>/);
     expect(index).not.toMatch(/<style\b/);
     expect(index).not.toMatch(/\sstyle="/);
-    expect(index).toContain('<meta name="csp-nonce" content="__TASKS_NONCE__"');
-    expect(index).toContain('<meta name="app-build" content="__TASKS_BUILD__"');
-    expect(index).toContain(`<title>${APP_NAME}</title>`);
+    expect(index).toContain('<meta name="csp-nonce" content="__TTASKS_NONCE__"');
+    expect(index).toContain('<meta name="app-build" content="__TTASKS_BUILD__"');
+    expect(index).toContain(`<title>${PRODUCT_NAME}</title>`);
     expect(index).not.toMatch(/%[A-Z_]+%/);
-  });
-
-  test("inside the app the product is called by the app's name, never the full product name", () => {
-    // PLAN.md Q: TT Tasks outside the app, Tasks inside it. The page's words are in its bundle.
-    expect(PRODUCT_NAME).not.toBe(APP_NAME);
-    for (const file of readdirSync(join(built.out, "assets"))) {
-      expect(read(`assets/${file}`).toString("utf8"), file).not.toContain(PRODUCT_NAME);
-    }
   });
 
   test("no service worker, no eval, no remote URL, and the initial JavaScript fits A5's budget", () => {
@@ -164,7 +156,7 @@ describe("[A7.3.9.m2-13.web.build] the built page under SRI and the strict CSP",
       }
       expect(csp).not.toMatch(/unsafe-inline|unsafe-eval/);
       expect(first.body).toMatch(/<meta name="app-build" content="[A-Za-z0-9._-]+"/);
-      expect(first.body).not.toContain("__TASKS_");
+      expect(first.body).not.toContain("__TTASKS_");
       for (const file of built.files.filter((f) => f.startsWith("assets/"))) {
         const asset = await send(port, { path: `/${file}` });
         expect(asset.status, file).toBe(200);

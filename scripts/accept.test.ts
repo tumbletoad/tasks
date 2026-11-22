@@ -72,7 +72,7 @@ describe("[A7.3.18.6.accept.parts] pnpm accept m<N> [--part <name>]", () => {
   });
 
   test("--installed names a version folder, or the one version folder inside a folder", () => {
-    const dir = mkdtempSync(join(tmpdir(), "tasks-accept-"));
+    const dir = mkdtempSync(join(tmpdir(), "ttasks-accept-"));
     try {
       const version = join(dir, "linux-x64", "0.1.0");
       mkdirSync(version, { recursive: true });
@@ -89,7 +89,7 @@ describe("[A7.3.18.6.accept.parts] pnpm accept m<N> [--part <name>]", () => {
   });
 
   test("--installed names an install root by the version folder its current names (M1.14)", () => {
-    const dir = mkdtempSync(join(tmpdir(), "tasks-accept-root-"));
+    const dir = mkdtempSync(join(tmpdir(), "ttasks-accept-root-"));
     try {
       const root = join(dir, "home");
       const version = join(root, "versions", "0.1.0");

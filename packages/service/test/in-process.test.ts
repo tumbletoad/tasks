@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } 
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
-import type { StorageWorker } from "@tasks/storage";
+import type { StorageWorker } from "@ttasks/storage";
 import { EXIT, ServiceExit } from "../src/hub/exit.ts";
 import type { Identity } from "../src/hub/identity.ts";
 import { acquireLock, LockBusy, watchOwnership, type FileIdentity } from "../src/hub/lock.ts";
@@ -118,7 +118,7 @@ describe("[A2.3.3.hub.refusals] refusals before anything is written", () => {
     expect(lines[0]).not.toContain(h);
   });
 
-  test("a relative TASKS_HOME is invalid configuration: 64", async () => {
+  test("a relative TTASKS_HOME is invalid configuration: 64", async () => {
     const exit = await refusal(
       startService({ env: serviceEnv("relative/home"), identity: () => PLAIN, ...quiet }),
     );
@@ -127,7 +127,7 @@ describe("[A2.3.3.hub.refusals] refusals before anything is written", () => {
 });
 
 describe("[A2.3.3.hub.exit-codes] stop and restart in this process", () => {
-  test("service/shutdown over tasks-local/1: the caller gets its reply, then the service drains and exits 75 with restart, 0 without", async () => {
+  test("service/shutdown over ttasks-local/1: the caller gets its reply, then the service drains and exits 75 with restart, 0 without", async () => {
     for (const restart of [true, false]) {
       const h = home("restart");
       const service = await startService({ env: serviceEnv(h), identity: () => PLAIN, ...quiet });

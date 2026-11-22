@@ -9,7 +9,7 @@
 //
 // The checks at bind, each cheap and each about a person's work:
 // - the folder exists and is a folder (a link to one counts);
-// - it is not inside Tasks' own data: the Tasks home or a space folder this machine registers, or
+// - it is not inside TTasks's own data: the TTasks home or a space folder this machine registers, or
 //   one of those folders itself. Judged by what the folders are on disk: each folder from the
 //   candidate's real path up to its root is compared by identity with each of them;
 // - it is not another live project's folder on this machine, compared by identity, so two
@@ -24,8 +24,8 @@
 // answers keeps busy until the OS gives up.
 import { realpath, stat } from "node:fs/promises";
 import { posix, win32 } from "node:path";
-import { PRODUCT_NAME } from "@tasks/brand";
-import { AppError } from "@tasks/contracts";
+import { PRODUCT_NAME } from "@ttasks/brand";
+import { AppError } from "@ttasks/contracts";
 import {
   carriedTo,
   FOLDER_PATH_MAX,
@@ -33,7 +33,7 @@ import {
   rebased,
   segmentsOf,
   type FolderOs,
-} from "@tasks/storage";
+} from "@ttasks/storage";
 
 /** Why a folder is not bound. */
 export type FolderReason =
@@ -259,7 +259,7 @@ export interface ProjectFolder {
 export interface BindFacts {
   readonly home: string;
   readonly platform: NodeJS.Platform;
-  /** Tasks' own data: the Tasks home and the folder of each space this machine registers. */
+  /** TTasks's own data: the TTasks home and the folder of each space this machine registers. */
   readonly reserved: readonly string[];
   /** The live projects' folders on this machine, but the one the folder is bound to. */
   readonly projects?: readonly ProjectFolder[];
@@ -412,7 +412,7 @@ export async function moveOf(
 }
 
 /**
- * Whether the folder at `absolute` is Tasks' own data or inside it, by identity: undefined when it
+ * Whether the folder at `absolute` is TTasks's own data or inside it, by identity: undefined when it
  * is not or is not there, `folder_reserved` when it is.
  */
 export async function reservedBy(

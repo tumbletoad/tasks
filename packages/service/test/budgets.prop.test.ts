@@ -7,7 +7,7 @@
 // overlap, and each page fits its budget whole. Fixture text and temporary folders only.
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { normaliseText, resultTokens } from "@tasks/contracts";
+import { normaliseText, resultTokens } from "@ttasks/contracts";
 import { bridgePrincipal, toolCaller } from "../src/mcp/index.ts";
 import { DATA_WORD, closeMarker, openMarker } from "../src/mcp/text.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
@@ -116,7 +116,7 @@ function checkFraming(text: string, what: string): void {
   const lines = text.split("\n");
   const marker = lines.map((line) => OPEN.exec(line)?.[1]).find((m) => m !== undefined);
   if (marker === undefined) {
-    expect(text.includes(`<<${DATA_WORD} `) && /<<tasks-data [0-9A-Z]{4,8}:/.test(text)).toBe(
+    expect(text.includes(`<<${DATA_WORD} `) && /<<ttasks-data [0-9A-Z]{4,8}:/.test(text)).toBe(
       false,
     );
     return;

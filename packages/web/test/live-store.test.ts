@@ -4,9 +4,9 @@
 // read in batches of one to three commits, the core holds exactly the service's own snapshot.
 // A batch capped before the head withholds rows; the core then takes a fresh snapshot.
 import { afterEach, describe, expect, test } from "vitest";
-import { readBatch, readSnapshot } from "@tasks/service/http";
-import { httpWorld, type HttpWorld } from "@tasks/service/test/http-world";
-import { TASK_FIELDS } from "@tasks/storage";
+import { readBatch, readSnapshot } from "@ttasks/service/http";
+import { httpWorld, type HttpWorld } from "@ttasks/service/test/http-world";
+import { TASK_FIELDS } from "@ttasks/storage";
 import { LiveCore, type Outcome } from "../src/store/core.ts";
 import { parseMessage, TASK_FIELD_COLUMNS, withTaskRow } from "../src/store/rows.ts";
 

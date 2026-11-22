@@ -1,9 +1,9 @@
 // The page's API calls (A2 3.8.3, 3.8.4): each carries the build the page was served with and the
 // tab's space, in the header names the service reads. The names derive from the identifier: a
 // display name with a space is no header name, and fetch refuses the whole request (the rename to
-// "TT Tasks" did that once). Node's Headers checks names as a browser's does.
+// "TTasks" did that once). Node's Headers checks names as a browser's does.
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { BUILD_HEADER, SPACE_HEADER } from "@tasks/service/http";
+import { BUILD_HEADER, SPACE_HEADER } from "@ttasks/service/http";
 import { Api } from "../src/api.ts";
 
 afterEach(() => {

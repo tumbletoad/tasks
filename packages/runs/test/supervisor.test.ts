@@ -4,9 +4,9 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RunRecord } from "@tasks/contracts/runs";
-import { MemoryDurable, MemoryExecutionStore } from "@tasks/launch/memory-store";
-import { RunRefused, seenRun, type RunStore } from "@tasks/launch/execution-store";
+import type { RunRecord } from "@ttasks/contracts/runs";
+import { MemoryDurable, MemoryExecutionStore } from "@ttasks/launch/memory-store";
+import { RunRefused, seenRun, type RunStore } from "@ttasks/launch/execution-store";
 import { describe, expect, test } from "vitest";
 import {
   RunFiles,
@@ -287,7 +287,7 @@ describe("[A4.5.run.supervisor] the supervisor's rules: a start whose record lan
     const b = bench();
     const run = await b.queue();
     await failedWithoutAnswer(b.store, run);
-    const root = mkdtempSync(join(tmpdir(), "tasks-retain-"));
+    const root = mkdtempSync(join(tmpdir(), "ttasks-retain-"));
     try {
       const files = new RunFiles(root);
       files.prepare(run.id);

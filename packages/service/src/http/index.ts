@@ -1,4 +1,4 @@
-// HTTP and WebSocket for the browser UI (A2 3.8, 3.9; A7 3.9 M2.12): `@tasks/service/http`.
+// HTTP and WebSocket for the browser UI (A2 3.8, 3.9; A7 3.9 M2.12): `@ttasks/service/http`.
 export {
   agentLabel,
   BUILD_HEADER,

@@ -9,16 +9,16 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { MCP_SERVER_KEY } from "@tasks/brand";
-import { MAX_LINE_BYTES, pasteShell, shellLine, shellWord } from "@tasks/launch";
+import { MCP_SERVER_KEY } from "@ttasks/brand";
+import { MAX_LINE_BYTES, pasteShell, shellLine, shellWord } from "@ttasks/launch";
 import { PrintRefused, snippetFor } from "../src/setup/index.ts";
 
 const windows = process.platform === "win32";
 const SLOW = 180_000;
 /** A variable the shell has: a line that expands anything shows its value. */
-const SENTINEL = "TASKS_PRINT_SENTINEL";
+const SENTINEL = "TTASKS_PRINT_SENTINEL";
 /** The variable a line sets for its command. */
-const SET = "TASKS_LINE_TEST";
+const SET = "TTASKS_LINE_TEST";
 /** The byte order mark that makes Windows PowerShell 5.1 read a script as UTF-8. */
 const UTF8_BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
@@ -27,7 +27,7 @@ let base = "";
 const stubs: { kind: string; dir: string; file: string }[] = [];
 
 beforeAll(() => {
-  base = mkdtempSync(join(tmpdir(), "tasks-print-quoting-"));
+  base = mkdtempSync(join(tmpdir(), "ttasks-print-quoting-"));
   const report = `process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), set: process.env[${JSON.stringify(SET)}] ?? null }) + "\\n");\n`;
   const node = process.execPath;
   const stub = (kind: string, name: string, text: string) => {
@@ -158,7 +158,7 @@ const WORDS = [
   "caf\u00e9",
   "",
   ...(windows
-    ? ["C:\\Program Files (x86)\\x", "C:\\a\\tasks.exe"]
+    ? ["C:\\Program Files (x86)\\x", "C:\\a\\ttasks.exe"]
     : [
         "back\\slash",
         '"dq"',
@@ -180,8 +180,8 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
     expect(shellWord("linux", "/opt/tasks")).toBe("/opt/tasks");
     expect(shellWord("linux", "it's")).toBe(`'it'\\''s'`);
     expect(shellWord("linux", "$HOME")).toBe(`'$HOME'`);
-    expect(shellWord("win32", "C:\\x\\tasks.exe")).toBe("C:\\x\\tasks.exe");
-    expect(shellWord("win32", "C:\\$NAME\\tasks.exe")).toBe(`'C:\\$NAME\\tasks.exe'`);
+    expect(shellWord("win32", "C:\\x\\ttasks.exe")).toBe("C:\\x\\ttasks.exe");
+    expect(shellWord("win32", "C:\\$NAME\\ttasks.exe")).toBe(`'C:\\$NAME\\ttasks.exe'`);
     expect(shellWord("win32", "it's \u2018q\u2019")).toBe(`'it''s \u2018\u2018q\u2019\u2019'`);
     expect(shellWord("win32", "--")).toBe(`'--'`);
     expect(shellWord("win32", "--scope")).toBe("--scope");
@@ -286,7 +286,7 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
             userHome: base,
             env: {},
             tasks: windows
-              ? `C:\\${"x".repeat(9000)}\\tasks.exe`
+              ? `C:\\${"x".repeat(9000)}\\ttasks.exe`
               : `/opt/${"x".repeat(9000)}/tasks`,
           },
           "claude-code",
@@ -300,8 +300,8 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
     "print's Claude Code command registers exactly the install's path, whatever it holds",
     () => {
       const tasks = windows
-        ? `C:\\Fixture\\it's $${SENTINEL} (x86)\\tasks.exe`
-        : `/opt/it's $${SENTINEL} \`x\`/bin/tasks`;
+        ? `C:\\Fixture\\it's $${SENTINEL} (x86)\\ttasks.exe`
+        : `/opt/it's $${SENTINEL} \`x\`/bin/ttasks`;
       const snippet = snippetFor(
         { platform: process.platform, userHome: base, env: {}, tasks },
         "claude-code",
@@ -335,7 +335,7 @@ describe("[A3.3.13.setup.print-quoting] a line printed for a person to paste giv
             platform: process.platform,
             userHome: base,
             env: {},
-            tasks: windows ? "C:\\a%PATH%\\tasks.exe" : "/opt/a\rb/tasks",
+            tasks: windows ? "C:\\a%PATH%\\ttasks.exe" : "/opt/a\rb/tasks",
           },
           "claude-code",
         ),

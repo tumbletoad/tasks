@@ -4,7 +4,7 @@
 // reads, from what a real app server said (fixtures/codex-app-server).
 //
 // - Start: `initialize`, `initialized`, `thread/start` with the permission's approval policy and
-//   sandbox and Tasks' own tools in the thread's configuration (the person's other tools stay as
+//   sandbox and TTasks's own tools in the thread's configuration (the person's other tools stay as
 //   they are), then `turn/start` with the request. The request goes over the protocol, never on a
 //   command line. The thread works in the server's own folder, the run's: a `cwd` in
 //   `thread/start` makes Codex record a git folder as trusted in the person's own settings when
@@ -31,9 +31,9 @@ import {
   type ProgressLabel,
   type RunPermission,
   type Usage,
-} from "@tasks/contracts/runs";
+} from "@ttasks/contracts/runs";
 import { realpath } from "node:fs/promises";
-import { MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@tasks/brand";
+import { MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import { capText, count, nativeId, record, string, type Json } from "../streams/values.ts";
 import { LineRpc, NO_ANSWER, RPC_ERRORS, RpcClosed, RpcError } from "./json-rpc.ts";
 import type { DriverSession, OpenDriver, Work } from "./types.ts";
@@ -64,7 +64,7 @@ export function sameFolder(
   };
 }
 
-/** Tasks' own MCP server for the thread: the bridge, with the run's ticket in its environment. */
+/** TTasks's own MCP server for the thread: the bridge, with the run's ticket in its environment. */
 export interface CodexTools {
   readonly command: string;
   readonly args: readonly string[];
@@ -95,7 +95,7 @@ const POLICY: Readonly<Record<RunPermission, { approvalPolicy: string; sandbox: 
   "read-only": { approvalPolicy: "never", sandbox: "read-only" },
 };
 
-/** The thread's configuration: Tasks' tools under their own name, beside the person's. */
+/** The thread's configuration: TTasks's tools under their own name, beside the person's. */
 export function threadConfig(tools: CodexTools | undefined): Json | undefined {
   if (tools === undefined) return undefined;
   return {

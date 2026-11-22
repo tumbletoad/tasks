@@ -33,13 +33,13 @@ export type Os = "windows" | "linux";
 // ---------------------------------------------------------------------------------------------
 // Vocabularies.
 export const VOCAB = {
-  server: ["tasks"],
-  "server-label": ["tasks", "tasks-probe"],
+  server: ["ttasks"],
+  "server-label": ["ttasks", "ttasks-probe"],
   tool: [
     "ToolSearch",
-    "mcp__tasks__probe_echo",
-    "mcp__tasks__probe_marked",
-    "mcp__tasks__probe_plain",
+    "mcp__ttasks__probe_echo",
+    "mcp__ttasks__probe_marked",
+    "mcp__ttasks__probe_plain",
   ],
   "probe-tool": ["probe_echo", "probe_marked", "probe_plain"],
   "mcp-status": ["connected", "failed", "pending", "needs-auth", "disabled"],
@@ -242,7 +242,7 @@ export type ListName =
   | "plugins"
   | "directories"
   | "none";
-const PROBE_TOOLS = VOCAB.tool.filter((t) => t.startsWith("mcp__tasks__"));
+const PROBE_TOOLS = VOCAB.tool.filter((t) => t.startsWith("mcp__ttasks__"));
 /** Field names of list elements that are objects; the inventory shows any other as a placeholder. */
 export const LIST_ELEMENT_FIELDS: Partial<Record<ListName, readonly string[]>> = {
   plugins: ["name", "path", "source"],
@@ -884,7 +884,7 @@ function check(spec: Spec, v: unknown, path: string, os: Os, out: string[]): voi
     }
     for (const x of v) {
       check(spec.arr, x, `${path}[]`, os, out);
-      if (spec.probeOnly === true && !(isObject(x) && x["name"] === "tasks")) {
+      if (spec.probeOnly === true && !(isObject(x) && x["name"] === "ttasks")) {
         out.push(`${path}[]: only the probe server may be listed`);
       }
     }

@@ -16,8 +16,8 @@ import {
   type Challenge,
   type HandshakeIds,
   type Mode,
-} from "@tasks/bridge/protocol";
-import { firstLines, rawConnect } from "@tasks/bridge/test/endpoint";
+} from "@ttasks/bridge/protocol";
+import { firstLines, rawConnect } from "@ttasks/bridge/test/endpoint";
 
 export interface RawSession {
   readonly socket: net.Socket;
