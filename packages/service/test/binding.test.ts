@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { SHIM_METHODS } from "@ttasks/launch";
 import { opCall, type OpsHost } from "../src/ops/index.ts";
-import { bridge, launchContext, shell, written, type Agent } from "./agents.ts";
+import { bridge, launchContext, onHost, shell, written, type Agent } from "./agents.ts";
 import { contractWorld, type ContractWorld, type WorldLaunch } from "./contract/suite.ts";
 import { stateOf } from "./harness.ts";
 import { bridgeContext, openMcp, RawMcp, textOf } from "./mcp-helpers.ts";
@@ -270,7 +270,7 @@ describe("[A3.3.7.binding.reference] get_task with a launch reference binds once
       // A reconnect with its handle is the same connection: the same binding.
       await agent.close();
       const resumed = await connect({
-        resume: { handle: agent.binding?.["handle"] } as JsonObject,
+        resume: { handle: agent.binding?.["handle"] },
       });
       expect(resumed.binding).toMatchObject({ state: "bound", handle: agent.binding?.["handle"] });
       expect(await resumed.call("task.get", { launch: launch.reference })).toContain(BOUND);
@@ -340,18 +340,14 @@ describe("[A3.3.7.binding.reference] get_task with a launch reference binds once
         "launch_expired",
       );
 
-      // More than 24 hours after its click. The request path's clock is the process's, so the
-      // later read is the request path's own, for a caller that holds no binding.
-      const later: OpsHost = { ...w.service.ops, now: () => Date.now() + 25 * 60 * 60_000 };
-      const old = await opCall(
-        later,
-        { class: "cli-script", env: {} },
-        { op: "task.get", input: { launch: fresh.reference } },
-      ).then(
-        () => undefined,
-        (error: unknown) => error as { code?: string; data?: Json },
+      // More than 24 hours after its click.
+      const later = await agent.refusal(
+        "task.get",
+        { launch: fresh.reference },
+        { host: () => ({ now: () => Date.now() + 25 * 60 * 60_000 }) },
       );
-      expect(old).toMatchObject({ code: "launch_expired", data: { task: "M-4" } });
+      expect(later.code).toBe("launch_expired");
+      expect(later.text).toContain("Pass task M-4 instead.");
 
       // The session was bound by none of them, and the fresh launch still binds.
       expect(await sessionLine(agent)).toContain("Session: not bound");
@@ -513,7 +509,7 @@ describe("[A3.3.7.binding.space] a session is pinned to its space", () => {
       const resumed = await launched(
         launch,
         {},
-        { space: life, resume: { handle: agent.binding?.["handle"] } as JsonObject },
+        { space: life, resume: { handle: agent.binding?.["handle"] } },
       );
       expect(resumed.binding).toMatchObject({ state: "bound", space: w.space });
       const status = await resumed.call("space.status");
@@ -618,10 +614,10 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
         reached = resolve;
       });
       // The space's writer, holding the shell's first write until the gate opens.
-      const held: OpsHost = {
-        ...w.service.ops,
+      let holding = true;
+      const held = (own: OpsHost): Partial<OpsHost> => ({
         spaces: () =>
-          w.service.ops.spaces().map((s) => {
+          own.spaces().map((s) => {
             const writer = s.writer;
             if (writer === undefined) return s;
             return {
@@ -630,7 +626,8 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
                 get(target, key) {
                   if (key === "submit") {
                     return async (request_: { readonly request_id: string }) => {
-                      if (request_.request_id === request) {
+                      if (holding && request_.request_id === request) {
+                        holding = false;
                         reached();
                         await gate;
                       }
@@ -645,7 +642,7 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
               }),
             };
           }),
-      };
+      });
       const env = { TTASKS_TICKET: launch.ticket };
       const input = {
         task: "M-4",
@@ -653,27 +650,27 @@ describe("[A3.3.7.binding.cli] a cli-agent call's ticket maps to its live sessio
         text: "Fixture progress held in flight.",
         request_id: request,
       };
-      // No session for the launch yet: the shell's write is agent:unknown's. It is held in the
-      // writer, so it is made on the request path in this process with the held writer.
-      const original = opCall(
-        held,
-        { class: "cli-agent", env },
-        { space: w.space, op: "entry.add", input },
-      );
-      await atGate;
-
-      const agent = await launched(launch);
-      expect(agent.binding?.["state"]).toBe("bound");
+      // No session for the launch yet: the shell's write is agent:unknown's, held in the writer
+      // while the session appears and the retry comes.
+      const first = await shell(w, env);
       const mapped = await shell(w, env);
-      const retry = mapped.call("entry.add", input);
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      open();
-      const [first, second] = await Promise.all([original, retry]);
-      expect(second).toMatchObject({ ...(first as Json), replayed: true });
+      let agent: Agent<string> | undefined;
+      const [original, retry] = await onHost(w, held, async () => {
+        const original = first.call("entry.add", input, { space: w.space });
+        await atGate;
+        agent = await launched(launch);
+        expect(agent.binding?.["state"]).toBe("bound");
+        const retry = mapped.call("entry.add", input);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        open();
+        return Promise.all([original, retry]);
+      });
+      expect(retry).toMatchObject({ ...original, replayed: true });
       const log = JSON.stringify(await logOf("M-4"));
       expect(log.split(input.text).length - 1).toBe(1);
+      await first.close();
       await mapped.close();
-      await agent.close();
+      await agent?.close();
     },
   );
 

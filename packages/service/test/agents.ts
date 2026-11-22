@@ -8,6 +8,7 @@ import type { JsonObject } from "@ttasks/bridge/protocol";
 import type { ErrorBody } from "@ttasks/contracts";
 import type { RunningService } from "../src/hub/service.ts";
 import { toolOf } from "../src/mcp/index.ts";
+import type { OpsHost } from "../src/ops/index.ts";
 import type { WorldLaunch } from "./contract/suite.ts";
 import { bridgeContext, openMcp, RawMcp, textOf, type Json } from "./mcp-helpers.ts";
 import { classSession, errorOf } from "./ops-helpers.ts";
@@ -39,17 +40,58 @@ export class Refused extends Error {
   }
 }
 
+/**
+ * What a call's request path reads in place of the service's own host: built from the host as it
+ * is (`own`), such as a space whose reader is a trap, a later clock, or a gate that changes its
+ * answer.
+ */
+export type HostPatch = (own: OpsHost) => Partial<OpsHost>;
+
+/** How a test makes one call. */
+export interface CallOptions {
+  /** Only a shell can name a space: no tool takes one. */
+  readonly space?: string;
+  readonly host?: HostPatch;
+}
+
+/**
+ * Runs `body` while the service's request path, the endpoint's own, reads `patch` over its host,
+ * and puts the host back after. Calls are one at a time in a test file, so no other call sees it.
+ */
+export async function onHost<T>(
+  world: Served,
+  patch: HostPatch | undefined,
+  body: () => Promise<T>,
+): Promise<T> {
+  if (patch === undefined) return body();
+  const host = world.service.ops as unknown as Record<string, unknown>;
+  const own = { ...world.service.ops };
+  const changed = patch(own) as Record<string, unknown>;
+  const saved = Object.keys(changed).map(
+    (key) => [key, Object.getOwnPropertyDescriptor(host, key)] as const,
+  );
+  Object.assign(host, changed);
+  try {
+    return await body();
+  } finally {
+    for (const [key, descriptor] of saved) {
+      if (descriptor === undefined) Reflect.deleteProperty(host, key);
+      else Object.defineProperty(host, key, descriptor);
+    }
+  }
+}
+
 /** One agent connection. A bridge's answers are its tools' texts; a shell's, `op/call`'s results. */
 export interface Agent<Answer> {
   /** The bind answer: what the bind frame resolved for a bridge. A shell has none: null. */
   readonly binding: Json | null;
   /**
    * One registry operation as this connection's agent calls it: its MCP tool, or `op/call`.
-   * Rejects with `Refused`. Only a shell can name a space: no tool takes one.
+   * Rejects with `Refused`.
    */
-  call(op: string, input?: Json, options?: { readonly space?: string }): Promise<Answer>;
+  call(op: string, input?: Json, options?: CallOptions): Promise<Answer>;
   /** The refusal of a call that must be refused. */
-  refusal(op: string, input?: Json, options?: { readonly space?: string }): Promise<Refusal>;
+  refusal(op: string, input?: Json, options?: CallOptions): Promise<Refusal>;
   /** Ends the connection; resolves once the service saw it end. */
   close(): Promise<void>;
 }
@@ -68,13 +110,13 @@ async function openBridges(world: Served): Promise<number | undefined> {
 }
 
 const refusalOf = async <A>(call: Promise<A>, op: string): Promise<Refusal> => {
-  const outcome = await call.then(
-    () => undefined,
-    (error: unknown) => error,
-  );
-  if (outcome instanceof Refused) return outcome.refusal;
-  if (outcome === undefined) throw new Error(`${op} was not refused`);
-  throw outcome;
+  try {
+    await call;
+  } catch (error) {
+    if (error instanceof Refused) return error.refusal;
+    throw error;
+  }
+  throw new Error(`${op} was not refused`);
 };
 
 /** A tool's error text, `error <code> (<reason>): …`, as its refusal. */
@@ -89,7 +131,9 @@ export async function bridge(world: Served, context: JsonObject): Promise<Agent<
   await mcp.initialize();
   const call: Agent<string>["call"] = async (op, input = {}, options = {}) => {
     if (options.space !== undefined) throw new Error("No tool takes a space: a bridge names none");
-    const reply = await mcp.request("tools/call", { name: toolOf(op), arguments: input });
+    const reply = await onHost(world, options.host, () =>
+      mcp.request("tools/call", { name: toolOf(op), arguments: input }),
+    );
     const result = reply.message["result"] as { isError?: boolean } | undefined;
     if (result === undefined) throw new Error(`${op}: ${JSON.stringify(reply.error)}`);
     const text = textOf(result);
@@ -124,10 +168,12 @@ export async function shell(world: Served, env: Record<string, string>): Promise
   const session = await classSession(world.home, world.path, "cli-agent", env);
   const call: Agent<Json>["call"] = async (op, input = {}, options = {}) => {
     try {
-      return (await session.call(
-        "op/call",
-        { op, input, ...(options.space === undefined ? {} : { space: options.space }) },
-        { timeoutMs: 60_000 },
+      return (await onHost(world, options.host, () =>
+        session.call(
+          "op/call",
+          { op, input, ...(options.space === undefined ? {} : { space: options.space }) },
+          { timeoutMs: 60_000 },
+        ),
       )) as Json;
     } catch (error) {
       const body = errorOf(error);
@@ -168,7 +214,7 @@ export function launchContext(
     space,
     instance: options.present === "other-instance" ? OTHER_INSTANCE : launch.instance,
     app: launch.app ?? null,
-    env: { TTASKS_TICKET: launch.ticket, ...options.env } as JsonObject,
+    env: { TTASKS_TICKET: launch.ticket, ...options.env },
   });
 }
 

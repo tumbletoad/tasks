@@ -28,6 +28,7 @@ import { startService, type RunningService, type StartOptions } from "../../src/
 import { renderError } from "../../src/mcp/index.ts";
 import { opCall } from "../../src/ops/index.ts";
 import { removeRuntimeDir, serviceEnv, tempRoot } from "../harness.ts";
+import { bridge, launchContext } from "../agents.ts";
 import { agentHomeOf, classSession, grantHome, revokeHome } from "../ops-helpers.ts";
 
 /** The request IDs of the registry's examples (contracts' entries/fixture.ts). */
@@ -109,6 +110,8 @@ export interface WorldLaunch {
   readonly instance: string;
   readonly app: string | undefined;
   readonly home: string | undefined;
+  /** The agent-home row the world registered for its home, revoked for `revoked`. */
+  readonly row: string | undefined;
 }
 
 /**
@@ -225,10 +228,12 @@ export async function contractWorld(
     const instance = `contract-agent-${String(launches)}`;
     const agent = agentHomeOf(home, instance);
     const kind = launchOptions.home ?? "registered";
-    if (kind === "registered") await grantHome(home, path, { instance, space });
-    if (kind === "other-space") await grantHome(home, path, { instance, space: await other() });
+    let row: string | undefined;
+    if (kind === "registered") row = await grantHome(home, path, { instance, space });
+    if (kind === "other-space")
+      row = await grantHome(home, path, { instance, space: await other() });
     if (kind === "revoked") {
-      const row = await grantHome(home, path, { instance, space });
+      row = await grantHome(home, path, { instance, space });
       if ((await revokeHome(home, path, [row])) !== 1) throw new Error("the row was not revoked");
     }
     const given = kind === "no-app" ? { home: agent.home } : agent;
@@ -246,7 +251,12 @@ export async function contractWorld(
       WORLD_PLAN,
       given,
     );
-    const made = { instance, app: kind === "no-app" ? undefined : agent.app, home: agent.home };
+    const made = {
+      instance,
+      app: kind === "no-app" ? undefined : agent.app,
+      home: agent.home,
+      row,
+    };
     await service.launches.dispatch(space, intent.id);
     const ticket = tickets.get(intent.id);
     if (ticket === undefined) throw new Error("the launch was not dispatched to its terminal");
@@ -686,9 +696,10 @@ export function grantSuite(name: string, open: () => Promise<GrantTransport>): v
 
 /**
  * A launched agent's session in the world's space whose agent home's row was revoked (A3 3.7.8):
- * the home registered as setup does, the agent's bridge bound by its ticket, then the row revoked
- * as `ttasks setup agents --remove` does. A CLI call carrying the ticket acts as that session, so
- * every one of them is refused with rule grant. The world gets a task M-1 if it has none.
+ * a world launch on its home registered as setup does, its bridge bound by its ticket through the
+ * local endpoint, then the row revoked as `ttasks setup agents --remove` does. A CLI call carrying
+ * the ticket acts as that session, so every one of them is refused with rule grant. The world gets
+ * a task M-1 if it has none.
  */
 export async function revokedSession(world: ContractWorld): Promise<{ readonly ticket: string }> {
   const added = (await opCall(
@@ -701,25 +712,14 @@ export async function revokedSession(world: ContractWorld): Promise<{ readonly t
     },
   )) as { tasks: { ref: string }[] };
   const task = added.tasks[0]?.ref ?? "M-1";
-  const instance = "revoked-agent";
-  const row = await grantHome(world.home, world.path, { instance, space: world.space });
   const launch = await world.launch(task);
-  const connection = {
-    context: {
-      space: world.space,
-      instance,
-      app: "test",
-      cwd: null,
-      env: { TTASKS_TICKET: launch.ticket },
-      parent: { pid: process.pid },
-    },
-  };
-  const bound = await world.service.bindings.bridge(connection);
-  if (bound["state"] !== "bound") throw new Error("the agent's bridge did not bind by its ticket");
+  const agent = await bridge(world, launchContext(world.space, launch));
+  if (agent.binding?.["state"] !== "bound") {
+    throw new Error("the agent's bridge did not bind by its ticket");
+  }
   // The bridge goes; its session lives on while the agent runs, and its ticket maps to it.
-  const slot = world.service.bindings.attach(connection);
-  if (slot !== undefined) world.service.bindings.closed(slot);
-  if ((await revokeHome(world.home, world.path, [row])) !== 1) {
+  await agent.close();
+  if ((await revokeHome(world.home, world.path, [launch.row ?? ""])) !== 1) {
     throw new Error("the home's row was not revoked");
   }
   return { ticket: launch.ticket };
