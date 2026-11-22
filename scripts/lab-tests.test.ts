@@ -134,7 +134,7 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
   test("a lab or shared-file change runs them and names the files", () => {
     const d = decideLab(
       { lab: false },
-      {},
+      { GITHUB_ACTIONS: "true" },
       base(["packages/brand/src/index.ts", "spikes/m0/kit/kit.ts", "package.json"]),
     );
     expect(d.run).toBe(true);
@@ -144,6 +144,26 @@ describe("[A7.3.3.verify.lab-selection] pnpm verify's choice to run the lab test
     );
     const many = Array.from({ length: 8 }, (_, i) => `spikes/f${String(i)}.ts`);
     expect(decideLab({ lab: false }, {}, base(many)).reason).toMatch(/: 8 lab file.* and 3 more$/);
+  });
+
+  test("locally only lab code and what it imports run them: a shared file alone is left to CI", () => {
+    for (const p of ["spikes/m0/kit/kit.ts", "packages/testkit/stand-ins/systemd-run"]) {
+      expect(decideLab({ lab: false }, {}, base([p])).run, p).toBe(true);
+    }
+    for (const p of ["tests/stream-content.ts", "tests/stream-schema.ts"]) {
+      expect(isLabPath(p, false), p).toBe(true);
+      expect(decideLab({ lab: false }, {}, base([p])).run, p).toBe(true);
+    }
+    const shared = ["pnpm-lock.yaml", "package.json", "vitest.config.ts"];
+    for (const p of shared) expect(isLabPath(p, false), p).toBe(false);
+    expect(decideLab({ lab: false }, {}, base(shared))).toEqual({
+      run: false,
+      reason:
+        "lab tests skipped: no lab code changed since origin/main (merge base abc); " +
+        "CI runs them for the 3 shared file(s) that did",
+    });
+    expect(decideLab({ lab: false }, { CI: "1" }, base(shared)).run).toBe(true);
+    expect(decideLab({ lab: false }, { GITHUB_ACTIONS: "true" }, base(shared)).run).toBe(true);
   });
 
   test("an unknown base runs them (fail safe) and says why", () => {
