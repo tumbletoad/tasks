@@ -677,19 +677,26 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     // Made before the endpoint listens (its handler table takes the shim's methods), once the
     // socket folder, which holds the launch folders on Linux, has been checked below.
     const launching: { service?: LaunchService } = {};
-    // The registered spaces as a bind reads them: the space manager's, or before it exists the
-    // enabled ones of the configuration, still opening. So a bind during startup settles the default
-    // and the only space by registered ID.
-    const knownSpaces = () =>
-      made.spaces?.served() ??
-      config.spaces
-        .filter((space) => space.enabled)
-        .map((space) => ({
-          id: undefined,
-          registered: space.id,
-          name: undefined,
-          state: "opening" as const,
-        }));
+    // The registered spaces as a bind reads them: the space manager's once the configuration's are
+    // handed to it, and until then those of the configuration, opening, beside any the manager has
+    // already. So a bind during startup settles the default and the only space by registered ID.
+    const spacesHanded = { done: false };
+    const knownSpaces = () => {
+      const served = made.spaces?.served() ?? [];
+      if (spacesHanded.done) return served;
+      const has = new Set(served.map((space) => space.id ?? space.registered));
+      return [
+        ...served,
+        ...config.spaces
+          .filter((space) => space.enabled && !has.has(space.id))
+          .map((space) => ({
+            id: undefined,
+            registered: space.id,
+            name: undefined,
+            state: "opening" as const,
+          })),
+      ];
+    };
     // The grant gate: an agent home's calls reach only the spaces its live agent-home rows name,
     // read from the grants table at each call.
     const homes = homeGate({
@@ -1308,6 +1315,8 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         enabled: space.enabled,
       })),
     );
+    // openAll put the entries in the manager before its first wait: it answers for them now.
+    spacesHanded.done = true;
 
     // Once the registered spaces have settled, each open one gets its launch machine and its
     // recovery (A4 3.9.3), and the sweep and the PID check run every 30 s, and so do the runs'
