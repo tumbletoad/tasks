@@ -1,5 +1,5 @@
 // The install scripts' tests' shared part (install-*.test.ts): each file's own folder of test
-// installs, the run's release in it (runVersions: built once per test run, read-only, so what a
+// installs, the run's release in it (runVersion: built once per test run, read-only, so what a
 // test changes it copies into `work` first), the canary kit, and the checks of a good install and
 // of a refused download.
 import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
@@ -15,7 +15,7 @@ import {
   prepareCanary,
   present,
   runInstaller,
-  runVersions,
+  runVersion,
   stableCommand,
   windows,
   type Canary,
@@ -42,7 +42,7 @@ export function useInstallFolder(label: string): void {
     homes = join(work, "h");
     // User-only, whatever the umask: the installer refuses a root below a folder others can change.
     mkdirSync(homes, { mode: 0o700 });
-    ({ folder: base, release } = (await runVersions()).first);
+    ({ folder: base, release } = await runVersion("first"));
     canary = prepareCanary(join(work, "canary-kit"));
   }, SLOW);
 

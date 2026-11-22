@@ -23,9 +23,11 @@ import { openSpace } from "../src/space.ts";
 import { folderKey, type FolderOs } from "../src/write/folders.ts";
 import type { Credential, Operation, WriteResult } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
-import { checkHistory, writeFixture, type Fixture } from "./write-helpers.ts";
+import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("folders-model");
+// Each run gets its own copy of one fixture space, made once.
+const fixture = fixtureCopies(temp.make, { flush: false });
 afterAll(temp.cleanup);
 
 const PATHS: Readonly<Record<FolderOs, readonly string[]>> = {
@@ -212,7 +214,7 @@ interface World {
 }
 
 async function world(): Promise<World> {
-  const fx = await writeFixture(temp.make(), { flush: false });
+  const fx = await fixture();
   const second = newId("m");
   fx.writer.close();
   const conn = openSpace(await checkedDriver(), fx.folder, { role: "writer" }).conn;

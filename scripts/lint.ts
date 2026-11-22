@@ -26,5 +26,9 @@ try {
 }
 const report = await (await eslint.loadFormatter("stylish")).format(results);
 if (report !== "") console.log(report);
-const problems = results.reduce((n, r) => n + r.errorCount + r.warningCount, 0);
-process.exitCode = problems === 0 ? 0 : 1;
+const errors = results.reduce((n, r) => n + r.errorCount, 0);
+const warnings = results.reduce((n, r) => n + r.warningCount, 0);
+if (errors === 0 && warnings > 0) {
+  console.log(`lint fails on warnings as on errors: ${String(warnings)} to fix`);
+}
+process.exitCode = errors + warnings === 0 ? 0 : 1;

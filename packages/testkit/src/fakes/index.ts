@@ -58,6 +58,7 @@ export class FakeSpawner {
   readonly records: SpawnRecord[] = [];
   readonly #options: FakeSpawnerOptions;
   readonly #seen = new Map<number, Promise<string | undefined>>();
+  readonly #exits = new Map<number, Promise<{ code: number | null; signal: string | null }>>();
 
   constructor(options: FakeSpawnerOptions) {
     this.#options = options;
@@ -138,6 +139,7 @@ export class FakeSpawner {
           return;
         }
         this.track(pid);
+        this.#exits.set(pid, exited);
         child.unref();
         // The fake itself, while it has not ended (its PID still names it).
         const stop = (): void => {
@@ -149,6 +151,13 @@ export class FakeSpawner {
   };
 
   /** Every PID in the fakes' logs (handoff servers, the commands they ran), tracked. */
+  /** The exit of a fake this spawner started, as the service's spawner reports it. */
+  exited(pid: number): Promise<{ code: number | null; signal: string | null }> {
+    const exit = this.#exits.get(pid);
+    if (exit === undefined) throw new Error(`no fake started with PID ${String(pid)}`);
+    return exit;
+  }
+
   trackLogs(logs: readonly string[]): void {
     for (const line of logs.flatMap(readJsonLines)) {
       const entry = line as { pid?: unknown; server?: unknown; child?: unknown };

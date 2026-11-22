@@ -23,9 +23,11 @@ import { newId, type Id } from "../src/ids.ts";
 import { openWriter } from "../src/open.ts";
 import type { Credential, Operation } from "../src/write/request.ts";
 import { checkedDriver, tempFolders } from "./space-helpers.ts";
-import { checkHistory, writeFixture, type Fixture } from "./write-helpers.ts";
+import { checkHistory, fixtureCopies, type Fixture } from "./write-helpers.ts";
 
 const temp = tempFolders("undo-model");
+// Each run gets its own copy of one fixture space, made once.
+const fixture = fixtureCopies(temp.make, { flush: false });
 afterAll(temp.cleanup);
 
 const FIELDS = ["summary", "priority", "status", "due", "lifecycle", "wrap", "deleted"] as const;
@@ -504,7 +506,7 @@ const property = (seen: Seen) =>
   fc.asyncProperty(fc.array(step, { minLength: 10, maxLength: 50 }), async (generated) => {
     const steps = generated.flatMap(expand);
     // 80 fresh spaces and thousands of commits: which writes apply does not depend on a flush.
-    const fx = await writeFixture(temp.make(), { flush: false });
+    const fx = await fixture();
     try {
       const actors: Credential[] = [fx.human, fx.codex, fx.claude, await secondHuman(fx)];
       const as = (n: number): Credential => actors[n] ?? fx.codex;

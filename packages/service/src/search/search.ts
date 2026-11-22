@@ -81,6 +81,8 @@ export interface SearchEnv {
   readonly updateFailed?: boolean;
   /** Whether the caller's face shows this page whole (Caller.shows). Absent: it shows every row. */
   readonly shows?: (page: SearchResult) => boolean;
+  /** How many IDs a search keeps: SEARCH_IDS. A test of the cap passes fewer. */
+  readonly keep?: number;
 }
 
 /** The structured result: `TaskSearchResult`. */
@@ -88,7 +90,7 @@ export interface SearchResult {
   as_of: string;
   scope: Scope;
   parsed: string;
-  total: number | "10000+";
+  total: number | `${number}+`;
   first: number;
   rows: Record<string, unknown>[];
   cursor?: string;
@@ -237,6 +239,7 @@ export async function runSearch(
   const query = parseQuery(input.q ?? "");
   const scope: Scope = input.scope ?? (namesLifecycle(query) ? "all" : "active");
   const cwd = input.cwd !== undefined && needsHere(query, scope) ? input.cwd : undefined;
+  const keep = env.keep ?? SEARCH_IDS;
   const live = termsOf(query).some((t) => t.type === "filter" && t.key === "is") ? env.live() : [];
   // The plan names the space's values (a status, an area's ID) and what `cwd` relates to (tasks
   // and projects by their folders), so it is made from reads before the query and checked against
@@ -264,6 +267,7 @@ export async function runSearch(
       timeZone: env.timeZone,
       machine: env.machine,
       folders,
+      keep,
       ...(env.boundTask === undefined ? {} : { boundTask: env.boundTask }),
       ...(here === undefined ? {} : { here }),
       live,
@@ -288,7 +292,7 @@ export async function runSearch(
   if (settled === undefined) throw vocabularyChanging();
   const { space, plan } = settled;
   const found = rows(settled.ranked);
-  const items: FrozenItem[] = found.slice(0, SEARCH_IDS).map((row) => ({
+  const items: FrozenItem[] = found.slice(0, keep).map((row) => ({
     id: str(row["id"]),
     ref: formatTaskRef(space.refPrefix, Number(row["ref"])),
     doc: typeof row["doc"] === "number" ? row["doc"] : null,
@@ -307,7 +311,7 @@ export async function runSearch(
     match: plan.match,
     limit: input.limit ?? DEFAULT_LIMIT,
     items,
-    total: found.length > SEARCH_IDS ? "10000+" : found.length,
+    total: found.length > keep ? (`${String(keep)}+` as `${number}+`) : found.length,
   };
   return page(reader, search, 0, env);
 }

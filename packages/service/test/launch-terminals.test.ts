@@ -4,6 +4,7 @@
 // testkit's fake interactive agent. Nothing starts a real terminal, agent or systemd-run. Fixture
 // data and temporary folders only.
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -70,6 +71,8 @@ interface Rig {
   /** The fake terminals' log (JSON lines). */
   readonly terminalLog: string;
   readonly systemdLog: string;
+  /** With `held`: the file whose making lets a handoff terminal's server start its command. */
+  readonly terminalRelease: string;
 }
 
 /**
@@ -84,6 +87,8 @@ async function rig(
     serviceEnv?: Record<string, string>;
     missing?: string[];
     environment?: EnvironmentSource;
+    /** A handoff terminal's server starts its command only once `terminalRelease` exists. */
+    held?: boolean;
   } = {},
 ): Promise<Rig> {
   const made: { lab?: ShimLab; spawner?: FakeSpawner } = {};
@@ -139,9 +144,14 @@ async function rig(
   labs.push(lab);
   const terminalLog = join(lab.root, "terminals.jsonl");
   const systemdLog = join(lab.root, "systemd.jsonl");
+  const terminalRelease = join(lab.root, "terminal-release");
   const envFor: Record<string, Record<string, string>> = {};
   for (const [program, env] of Object.entries(terminals)) {
-    envFor[program] = { FAKE_TERMINAL_PRODUCT_LENGTH: String(lab.product.length), ...env };
+    envFor[program] = {
+      FAKE_TERMINAL_PRODUCT_LENGTH: String(lab.product.length),
+      ...(options.held === true ? { FAKE_TERMINAL_RELEASE: terminalRelease } : {}),
+      ...env,
+    };
   }
   const spawner = new FakeSpawner({
     programs,
@@ -155,7 +165,7 @@ async function rig(
     identify: (pids) => startTimes(pids),
   });
   made.spawner = spawner;
-  const result: Rig = { lab, spawner, terminalLog, systemdLog };
+  const result: Rig = { lab, spawner, terminalLog, systemdLog, terminalRelease };
   rigs.push(result);
   return result;
 }
@@ -188,6 +198,20 @@ function agentPlan(
 /** The terminals the service started (the scope probe left out), as the spawner recorded them. */
 const terminalsStarted = (r: Rig) => r.spawner.records.filter((rec) => !rec.argv.includes(TRUE));
 
+/** Until a handoff terminal's server has started; when held, it then waits for its release. */
+const serverStarted = (r: Rig) =>
+  waitFor(
+    () =>
+      existsSync(r.terminalLog) &&
+      (readJsonLines(r.terminalLog) as { role: string; event: string }[]).some(
+        (e) => e.role === "server" && e.event === "start",
+      )
+        ? true
+        : undefined,
+    LONG_MS,
+    "the terminal's server",
+  );
+
 /** The ticket a terminal's argv carries: its last element. */
 const ticketOf = (argv: readonly string[]): string => argv.at(-1) ?? "";
 
@@ -214,19 +238,16 @@ function identityOf(path: string): string {
 
 describe("[A4.5.terminal.service] the service's terminal adapters, with fake terminals and a real shim", () => {
   test(
-    "the fake terminal receives only ttasks shim <ticket>; a client that exits 0 at once and whose shim claims after 5 s gives one window and Confirmed",
+    "the fake terminal receives only ttasks shim <ticket>; a client that exits 0 at once and whose shim claims later gives one window and Confirmed",
     { timeout: 300_000 },
     async () => {
       const r = await rig(
         "handoff-late",
         {
-          [HANDOFF]: {
-            FAKE_TERMINAL_MODE: "handoff",
-            FAKE_TERMINAL_EXIT: "0",
-            FAKE_TERMINAL_DELAY_MS: "5000",
-          },
+          [HANDOFF]: { FAKE_TERMINAL_MODE: "handoff", FAKE_TERMINAL_EXIT: "0" },
         },
         {
+          held: true,
           serviceEnv: {
             CLAUDECODE: "1",
             CLAUDE_CODE_ENTRYPOINT: "cli",
@@ -238,12 +259,10 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
       const { lab } = r;
       const report = join(lab.work, "agent-report.json");
       const release = join(lab.work, "release");
-      const t0 = performance.now();
       const intent = await lab.open(agentPlan(lab, report, { release }));
       const dispatched = await lab.running.launches.dispatch(lab.spaceId, intent.id);
-      // Dispatched at once: the client exited 0 long before its shim's claim.
+      // Dispatched once the client exited 0, before its server started the shim.
       expect(dispatched?.state).toBe("dispatched");
-      expect(performance.now() - t0).toBeLessThan(5_000);
       // The receipt's words: this fake machine has no default set, so Windows decides
       // (Windows Terminal), and on Linux the first installed is GNOME Terminal.
       expect(dispatched?.evidence).toMatchObject(
@@ -252,6 +271,12 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
           : { terminal: "gnome-terminal", terminal_source: "installed" },
       );
 
+      // The server waits with the shim unstarted: still Dispatched, and one terminal.
+      await serverStarted(r);
+      expect((await lab.running.launches.read(lab.spaceId, intent.id))?.state).toBe("dispatched");
+      expect(terminalsStarted(r)).toHaveLength(1);
+      writeFileSync(r.terminalRelease, "");
+
       const confirmed = await lab.waitIntent(
         intent.id,
         (i) => i.state === "confirmed",
@@ -259,9 +284,6 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
       );
       r.spawner.trackLogs([r.terminalLog]); // its shim and terminal, alive now
       expect(confirmed.evidence.claim).toMatch(/^claim-/);
-      // The claim came after the 5 s.
-      const claimedAt = confirmed.evidence.claimed_at ?? 0;
-      expect(claimedAt - (dispatched?.at.dispatching ?? claimedAt)).toBeGreaterThanOrEqual(4_900);
 
       // One terminal, one window: exactly one terminal started, one client and one server.
       const started = terminalsStarted(r);
@@ -336,17 +358,20 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
     "a handoff client that exits non-zero is ambiguous: still one window, and its shim's claim confirms",
     { timeout: 300_000 },
     async () => {
-      const r = await rig("handoff-nonzero", {
-        [HANDOFF]: {
-          FAKE_TERMINAL_MODE: "handoff",
-          FAKE_TERMINAL_EXIT: "1",
-          FAKE_TERMINAL_DELAY_MS: "1000",
-        },
-      });
+      const r = await rig(
+        "handoff-nonzero",
+        { [HANDOFF]: { FAKE_TERMINAL_MODE: "handoff", FAKE_TERMINAL_EXIT: "1" } },
+        { held: true },
+      );
       const { lab } = r;
       const report = join(lab.work, "agent-report.json");
       const release = join(lab.work, "release");
+      // The client exits 1 before its server starts the shim.
       const intent = await lab.launch(agentPlan(lab, report, { release }));
+      const client = terminalsStarted(r)[0]?.pid;
+      if (client === undefined) throw new Error("no terminal started");
+      expect(await r.spawner.exited(client)).toMatchObject({ code: 1 });
+      writeFileSync(r.terminalRelease, "");
       await lab.waitIntent(intent.id, (i) => i.state === "confirmed", "Confirmed");
       r.spawner.trackLogs([r.terminalLog]); // its shim and terminal, alive now
       expect(terminalsStarted(r)).toHaveLength(1);
@@ -360,7 +385,7 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
     async () => {
       const r = await rig("direct-dies", {
         [GHOSTTY]: { FAKE_TERMINAL_MODE: "exit", FAKE_TERMINAL_EXIT: "1" },
-        [GNOME]: { FAKE_TERMINAL_MODE: "handoff", FAKE_TERMINAL_DELAY_MS: "0" },
+        [GNOME]: { FAKE_TERMINAL_MODE: "handoff" },
       });
       const { lab } = r;
       const report = join(lab.work, "agent-report.json");
@@ -412,7 +437,7 @@ describe("[A4.5.terminal.service] the service's terminal adapters, with fake ter
     async () => {
       const r = await rig(
         "no-scope",
-        { [GNOME]: { FAKE_TERMINAL_MODE: "handoff", FAKE_TERMINAL_DELAY_MS: "0" } },
+        { [GNOME]: { FAKE_TERMINAL_MODE: "handoff" } },
         { scopeFails: true },
       );
       const { lab } = r;
@@ -537,7 +562,7 @@ describe("[A4.5.terminal.hostile] hostile titles and folders reach the fake agen
     { timeout: 300_000 },
     async () => {
       const r = await rig("hostile-titles", {
-        [HANDOFF]: { FAKE_TERMINAL_MODE: "handoff", FAKE_TERMINAL_DELAY_MS: "0" },
+        [HANDOFF]: { FAKE_TERMINAL_MODE: "handoff" },
       });
       const { lab } = r;
       const runs: [LaunchIntent, string, readonly string[]][] = [];
@@ -589,37 +614,58 @@ describe("[A4.5.terminal.hostile] hostile titles and folders reach the fake agen
     { timeout: 300_000 },
     async () => {
       const r = await rig("hostile-folders", {
-        [HANDOFF]: { FAKE_TERMINAL_MODE: "handoff", FAKE_TERMINAL_DELAY_MS: "0" },
+        [HANDOFF]: { FAKE_TERMINAL_MODE: "handoff" },
       });
       const { lab } = r;
+      // Every folder is launched before any outcome is read: each launch has its own instance,
+      // report and folder. The outcomes are then read in the folders' order.
       const outcomes: string[] = [];
+      const launched: (
+        | { readonly outcome: string }
+        | {
+            readonly name: string;
+            readonly folder: string;
+            readonly report: string;
+            readonly intent: LaunchIntent;
+          }
+      )[] = [];
       for (const [i, name] of HOSTILE_FOLDERS.entries()) {
         let folder: string;
         try {
           mkdirSync(join(lab.work, name));
           folder = realpathSync.native(join(lab.work, name));
         } catch {
-          outcomes.push(`${String(i)}:cannot-exist`);
+          launched.push({ outcome: `${String(i)}:cannot-exist` });
           continue;
         }
         const report = join(lab.root, `folder-${String(i)}.json`);
         const path = join(lab.work, name);
         const plan = agentPlan(lab, report, { folder: { stored: path, path }, argv: [name] });
-        let intent: LaunchIntent;
         try {
-          intent = await lab.launch(plan, `folder-${String(i)}`);
+          launched.push({
+            name,
+            folder,
+            report,
+            intent: await lab.launch(plan, `folder-${String(i)}`),
+          });
         } catch (error) {
           // Refused at the click: the plan's folder holds a control character (the plan check),
           // or the folder cannot be used on this machine. Nothing was made, nothing started.
           if (error instanceof LaunchFolderUnavailable) {
-            outcomes.push(`${String(i)}:refused-${error.reason}`);
+            launched.push({ outcome: `${String(i)}:refused-${error.reason}` });
           } else {
             expect(String(error)).toContain("The spawn plan is not one the shim can start");
-            outcomes.push(`${String(i)}:refused-plan`);
+            launched.push({ outcome: `${String(i)}:refused-plan` });
           }
           expect(() => statSync(report)).toThrow();
+        }
+      }
+      for (const [i, launch] of launched.entries()) {
+        if ("outcome" in launch) {
+          outcomes.push(launch.outcome);
           continue;
         }
+        const { name, folder, report, intent } = launch;
         const settled = await lab.waitIntent(
           intent.id,
           (x) => x.state === "failed" || x.evidence.pid !== undefined,
@@ -745,11 +791,11 @@ describe("[A4.5.environment.login-shell] via_login_shell: a fresh snapshot in th
     { timeout: 300_000 },
     async () => {
       const { environment, asked } = folderEnvironment();
-      // The terminal's server starts the shim 4 s after its client returned.
+      // The terminal's server starts the shim only once the test lets it.
       const r = await rig(
         "login-restart",
-        { [GNOME]: { FAKE_TERMINAL_MODE: "handoff", FAKE_TERMINAL_DELAY_MS: "4000" } },
-        { environment },
+        { [GNOME]: { FAKE_TERMINAL_MODE: "handoff" } },
+        { environment, held: true },
       );
       const { lab } = r;
       const report = join(lab.work, "agent-report.json");
@@ -759,6 +805,7 @@ describe("[A4.5.environment.login-shell] via_login_shell: a fresh snapshot in th
       // The service restarts before the shim claims: what the dispatch took is gone with it.
       await lab.stopService();
       await lab.start();
+      writeFileSync(r.terminalRelease, "");
       await lab.waitIntent(intent.id, (i) => i.state === "confirmed", "Confirmed");
       r.spawner.trackLogs([r.terminalLog]); // its shim and terminal, alive now
       const seen = await reportOf(report);
