@@ -173,6 +173,39 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     expect(await violations(page)).toEqual([]);
   });
 
+  test("the strip shows once, where the thread leaves it: a press begun as soon as Copy can be seen is a click on Copy", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, { title: `Read the meter (${tag})`, area: "home" });
+    for (const n of [1, 2, 3, 4]) {
+      await world.op(world.mira.id, "entry.add", {
+        task: ref,
+        kind: "note",
+        text: `Reading ${String(n)}: ${String(4000 + n)} kWh`,
+      });
+    }
+    // The card's own read answers late: its thread, four notes high, comes in above the strip.
+    await page.route("**/api/v1/op/task.get", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      await route.continue();
+    });
+    await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
+    await showsSpace(page, world.mira.name);
+    const copied = await catchClipboard(page);
+    const copy = stripOf(page, ref).locator('[data-part="copy"]');
+    await expect(copy).toBeVisible({ timeout: SLOW_MS });
+    const box = await copy.boundingBox();
+    if (box === null) throw new Error("Copy has no box");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await expect(notes(page, ref)).toHaveCount(4, { timeout: SLOW_MS });
+    await page.mouse.up();
+    await expect.poll(async () => (await copied()).length).toBe(1);
+    await page.unrouteAll({ behavior: "wait" });
+  });
+
   test("Open without text opens as the tile does, a launch that is not recorded keeps the text, and while a session runs the strip opens another only when asked @one-browser", async ({
     page,
     world,
@@ -612,6 +645,8 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
 
     await page.reload();
     await expect(composer).toHaveValue(`Buy a new latch (${tag})`, { timeout: SLOW_MS });
+    // The composer shows, and takes focus, once the card's thread is read.
+    await expect(composer).toBeVisible({ timeout: SLOW_MS });
     await composer.focus();
     await page.keyboard.press("Enter");
     await expect(composer).toHaveValue("", { timeout: SLOW_MS });

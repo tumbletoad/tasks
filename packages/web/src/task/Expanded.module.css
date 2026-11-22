@@ -661,6 +661,10 @@ a + .muted,
   margin-top: 18px;
 }
 
+.composer[data-waiting] {
+  visibility: hidden;
+}
+
 .input {
   display: block;
   width: 100%;
