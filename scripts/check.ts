@@ -504,7 +504,7 @@ notRun.push(
     ? `browser tests in Firefox, and ${plural(others, "other end-to-end file")}${over} (pnpm e2e)`
     : `browser tests (pnpm e2e): ${ciSized && browser.over.length > 0 ? "a CI-sized change" : browser.why}`,
 );
-const lab = changed.filter(isLabPath);
+const lab = changed.filter((p) => isLabPath(p));
 notRun.push(
   lab.length > 0 ? `lab tests: ${plural(lab.length, "lab file")} changed` : "lab tests (spikes/)",
 );
