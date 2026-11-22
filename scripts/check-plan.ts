@@ -117,13 +117,6 @@ export const READS: readonly { changed: string; tests: readonly string[] }[] = [
  * or when a changed file lies under their `home`: there they are the test of what changed.
  */
 export const SLOW: readonly { test: string; home?: string }[] = [
-  { test: "tests/update/installed.test.ts", home: "tests/update/" },
-  { test: "tests/update/launchers.test.ts", home: "tests/update/" },
-  { test: "scripts/install/install.test.ts", home: "scripts/install/" },
-  { test: "packages/projection/test/model.test.ts" },
-  { test: "packages/cli/test/doctor-agents.test.ts" },
-  { test: "packages/storage/test/bundle.test.ts" },
-  { test: "packages/launch/test/machine.prop.test.ts" },
   { test: "packages/service/test/launch-shim.test.ts" },
 ];
 
