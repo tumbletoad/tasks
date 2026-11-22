@@ -507,7 +507,11 @@ describe("[A4.5.routes.request] what a person types before Open is on the task a
       expect(second.text).toBe("note");
       expect(second.note).not.toBe(first.note);
       const retried = await open(r, { task: task.ref, instance: "claude", text: other }, secondId);
-      expect(retried).toMatchObject({ launch: { id: first.launch.id }, text: "note", note: second.note });
+      expect(retried).toMatchObject({
+        launch: { id: first.launch.id },
+        text: "note",
+        note: second.note,
+      });
       const report = await reportAt(r.report("claude"));
       expect(report.read).toEqual({
         code: 0,
