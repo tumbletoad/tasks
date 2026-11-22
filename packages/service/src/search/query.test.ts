@@ -180,11 +180,15 @@ describe("[A3.5.search.parser] the query language", () => {
     expect(refusal(() => parseQuery("& OR status:open")).code).toBe("invalid_input");
   });
 
-  test("is:new and is:changed are refused naming the step that brings their data", () => {
+  test("is:new and is:changed are refused as not supported yet, never as an unknown value", () => {
+    const unknown = refusal(() => parseQuery("is:nosuch"));
     for (const later of ["is:new", "is:changed"]) {
       const error = refusal(() => parseQuery(later));
       expect(error.code).toBe("invalid_input");
-      expect(error.hint).toMatch(/M5\.09/);
+      expect(error.data["issues"]).toEqual([
+        { path: "q", message: expect.not.stringMatching(/unknown/i) as unknown },
+      ]);
+      expect(error.message).not.toBe(unknown.message);
     }
   });
 
