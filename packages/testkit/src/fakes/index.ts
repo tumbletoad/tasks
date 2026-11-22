@@ -114,6 +114,7 @@ export class FakeSpawner {
       const child = spawn(argv[0] ?? "", argv.slice(1), {
         cwd: request.cwd,
         env,
+        // eslint-disable-next-line no-restricted-syntax -- the product's own choice, false on Windows.
         detached: request.detached,
         stdio: "ignore",
         windowsHide: true,
