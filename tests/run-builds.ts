@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inject } from "vitest";
+import { alive } from "./run-builds-setup.ts";
 
 declare module "vitest" {
   export interface ProvidedContext {
@@ -20,15 +21,6 @@ const WAIT_MS = 900_000;
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const alive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-};
-
 /**
  * What `build` made, built once per test run under `name`. `build` gets an empty folder of its
  * own and returns a description of what it made, which must survive JSON. Callers in other
@@ -41,14 +33,32 @@ export async function builtOnce<T>(
 ): Promise<T> {
   const run = inject("runBuilds") as string | undefined;
   if (run === undefined) throw new Error("no run folder: run the tests through vitest.config.ts");
+  return builtOnceIn(run, name, build);
+}
+
+/**
+ * builtOnce in the run folder `run`. `seams.looked` runs after a look that found no result and
+ * before the lock is tried, so a test can let another caller finish in between.
+ */
+export async function builtOnceIn<T>(
+  run: string,
+  name: string,
+  build: (dir: string) => Promise<T> | T,
+  seams: { readonly looked?: () => Promise<void> } = {},
+): Promise<T> {
   const dir = join(run, name);
   const result = join(dir, "built.json");
   const lock = `${dir}.lock`;
+  const read = () => JSON.parse(readFileSync(result, "utf8")) as T;
   const end = Date.now() + WAIT_MS;
   for (;;) {
-    if (existsSync(result)) return JSON.parse(readFileSync(result, "utf8")) as T;
+    if (existsSync(result)) return read();
+    await seams.looked?.();
     if (take(lock, name)) {
       try {
+        // The builder before may have published and let go between the look and the lock: its
+        // folder is in use, and is never built again.
+        if (existsSync(result)) return read();
         // What a failed build left.
         rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
         mkdirSync(dir);

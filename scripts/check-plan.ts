@@ -101,6 +101,17 @@ export const READS: readonly { changed: string; tests: readonly string[] }[] = [
   { changed: ".dependency-cruiser.cjs", tests: ["scripts/dependency-rules.test.ts"] },
   { changed: "packages/launcher-win/src/**", tests: ["packages/launcher-win/test/*.test.ts"] },
   { changed: "scripts/install/**", tests: ["scripts/install/*.test.ts"] },
+  // The run's shared builds: vitest.config.ts names the setup as a string, and every file that
+  // takes a build reaches it only through a kit.
+  {
+    changed: "tests/run-builds*.ts",
+    tests: [
+      "tests/run-builds.test.ts",
+      "tests/update/*.test.ts",
+      "scripts/install/*.test.ts",
+      "packages/launcher-win/test/*.test.ts",
+    ],
+  },
   {
     changed: "fixtures/streams/**",
     tests: [
