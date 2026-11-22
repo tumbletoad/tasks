@@ -339,6 +339,10 @@ export class RunService {
     if (agents === undefined || served?.reader === undefined || hosted === undefined) {
       throw refusal("not_served", "The space is not open on this machine.");
     }
+    // A repeat is given its run as it is now, before the task is read again: a rename since, or
+    // the run's end, would build another request under the same ID.
+    const replayed = await hosted.machine.replayed(asked.requestId);
+    if (replayed !== undefined) return replayed;
     let task: Awaited<ReturnType<typeof readLaunchTask>>;
     try {
       task = await readLaunchTask(served.reader, asked.task, this.#options.machine);

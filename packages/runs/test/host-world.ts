@@ -189,6 +189,7 @@ export class World {
       life.dead ? Promise.reject(new Crash()) : call();
     return {
       createRun: (input, id) => this.#boundary(life, () => store.createRun(input, id)),
+      replayedRun: (id) => alive(() => store.replayedRun(id)),
       transitionRun: (id, expect, next, patch) =>
         this.#boundary(life, () => store.transitionRun(id, expect, next, patch)),
       readRun: (id) => alive(() => store.readRun(id)),

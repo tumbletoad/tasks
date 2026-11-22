@@ -151,6 +151,49 @@ test.describe("[M6.page.run-once] A Run pressed again after a reload is the same
     await expect(stateOf(runsOf(page, ref).first())).toContainText("Done.", { timeout: SLOW_MS });
     await expect(runsOf(page, ref)).toHaveCount(1);
   });
+
+  test("a Run whose answer was lost, pressed again after its run ended and the task was renamed, gives that run back, and the next press starts another", async ({
+    page,
+    runs: world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, "Check the printer queue");
+    await openTask(page, world, ref);
+    const composer = composerOf(page, ref);
+    // The Run reaches the service only after the page reloaded: its answer is lost.
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/v1/launch/run", async (route) => {
+      await released;
+      const response = await route.fetch();
+      await route.fulfill({ response }).catch(() => undefined);
+    });
+    const words = `Only the office printer (${tag})`;
+    await composer.fill(words);
+    await runButton(page, ref).click();
+    await page.reload();
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+    await expect(stateOf(runsOf(page, ref).first())).toContainText("Done.", { timeout: SLOW_MS });
+    const { as_of } = (await world.op(world.mira.id, "task.get", { task: ref })) as {
+      as_of: string;
+    };
+    await world.op(world.mira.id, "task.update", {
+      task: ref,
+      set: { title: `Check both printer queues (${tag})` },
+      base: as_of,
+    });
+    await expect(composer).toHaveValue(words);
+    await runButton(page, ref).click();
+    await expect(composer).toHaveValue("", { timeout: SLOW_MS });
+    await expect(runsOf(page, ref)).toHaveCount(1);
+    // Pressed again on purpose, it is a second run.
+    await composer.fill(words);
+    await runButton(page, ref).click();
+    await expect(runsOf(page, ref)).toHaveCount(2, { timeout: SLOW_MS });
+  });
 });
 
 test.describe("[M6.page.e2e.stop] A run while it works: the row, a reload, a second tab and Stop", () => {

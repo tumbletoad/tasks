@@ -394,6 +394,9 @@ export function runStoreContract(
       expect(await store.createRun(input, id)).toEqual(run);
       const reused = await refusal(store.createRun({ ...input, request: "Something else" }, id));
       expect(reused.code).toBe("request_id_reused");
+      // A request's run is found by its ID alone, as it is now, without its input built again.
+      expect(await store.replayedRun(id)).toEqual(run);
+      expect(await store.replayedRun(requestId())).toBeUndefined();
       // A routine's run has no task, and a run takes exactly one of them.
       const routine = await store.createRun(
         await runInput({ task: null, routine: ROUTINE, request: null }),
