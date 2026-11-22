@@ -1722,25 +1722,32 @@ describe("[A1.5.bundle.stress] the largest stress-corpus bundle passes the share
     600_000,
   );
 
-  test("a projection-sized archive, a file per task, reads under the policy with ZIP64's count", async () => {
-    // With export.json, 65,535 entries: the least count the writer must mark for ZIP64 (zip.ts:
-    // from 0xffff on), and the one count where the reader requires the mark, so an off-by-one on
-    // either side fails here. The deep job writes a projection of the whole stress corpus.
-    const views = DEEP ? 110_001 : 0xffff - 1;
-    const src = folders.make();
-    const zip = join(src, "view.zip");
-    const writer = ZipWriter.create(zip, Date.UTC(2026, 10, 14));
-    const files: Record<string, { size: number; sha256: string }> = {};
-    for (let i = 0; i < views; i += 1) {
-      const entry = writer.addBytes(
-        `view/tasks/M-${String(i)}.md`,
-        Buffer.from(`# M-${String(i)}\n`),
-      );
-      files[entry.name] = { size: entry.size, sha256: entry.sha256 };
-    }
-    writer.addBytes("export.json", exportJson(files));
-    writer.finish();
-    const read = await readBundle(zip, BUNDLE_POLICY);
-    expect(Object.keys(read.manifest.files)).toHaveLength(views);
-  }, 600_000);
+  // Each count is the archive's entries, export.json included. 65,535 is the least count the
+  // writer must mark for ZIP64 (zip.ts: from 0xffff on) and the one count where the reader requires
+  // the mark: an off-by-one on either side fails it. At 65,535 the 16-bit field still holds the
+  // true count, so only a count above it shows that the reader takes the ZIP64 record's count and
+  // that the writer puts the true count there. The deep job writes the whole stress corpus.
+  test.each(DEEP ? [0xffff, 0xffff + 2, 110_002] : [0xffff, 0xffff + 2])(
+    "a projection-sized archive, a file per task, reads under the policy with ZIP64's count: %i entries",
+    async (entries) => {
+      const views = entries - 1;
+      const src = folders.make();
+      const zip = join(src, "view.zip");
+      const writer = ZipWriter.create(zip, Date.UTC(2026, 10, 14));
+      const files: Record<string, { size: number; sha256: string }> = {};
+      for (let i = 0; i < views; i += 1) {
+        const entry = writer.addBytes(
+          `view/tasks/M-${String(i)}.md`,
+          Buffer.from(`# M-${String(i)}
+`),
+        );
+        files[entry.name] = { size: entry.size, sha256: entry.sha256 };
+      }
+      writer.addBytes("export.json", exportJson(files));
+      writer.finish();
+      const read = await readBundle(zip, BUNDLE_POLICY);
+      expect(Object.keys(read.manifest.files)).toHaveLength(views);
+    },
+    600_000,
+  );
 });
