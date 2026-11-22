@@ -7,8 +7,8 @@
 // - A ticket is issued once per intent, when its dispatch starts (A4 3.6.3: the window runs
 //   from Dispatching), and stored as a hash bound to its launch (secrets.ts). Its shim role is
 //   claimed once, within 120 s of issue, by a process that is alive with exactly the start time
-//   the claim names. Its bridge role (M2.04) is redeemed once, within 15 minutes of the agent's
-//   start. A ticket can only ever name its own launch.
+//   the claim names. From the claim until the launch is released it names that live launch for
+//   the agent's tools and shell (`liveByTicket`). A ticket can only ever name its own launch.
 // - The claim goes through `LaunchMachine.claim`, so it is committed (a fresh random claim ID)
 //   before anything leaves for the shim, and refused for a second claim, after the window, on any
 //   other route or state. The reply is the claim's injected step: inside the claim's section it

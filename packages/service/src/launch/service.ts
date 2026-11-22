@@ -1349,12 +1349,12 @@ ${instance}`;
   }
 
   /**
-   * What the bridge's binding tells about a launch (A4 3.9.2): Confirmed, except for a best-effort
-   * app's link (A4 3.4.4, 3.4.5), whose session may have started in another folder than the link
-   * named. That one is Confirmed only when the bridge's working folder has the identity the link's
-   * folder had at its dispatch; otherwise the binding is recorded as evidence and the launch stays
-   * Dispatched ("Opened · not confirmed"). It is decided in the launch's section on the record as
-   * it is then (`here` is the bridge folder's identity key, read before), so a binding that arrives
+   * What an agent's read by the reference tells about a launch (A4 3.9.2): Confirmed, except for a
+   * best-effort app's link (A4 3.4.4, 3.4.5), whose session may have started in another folder than
+   * the link named. That one is Confirmed only when the bridge's working folder has the identity the
+   * link's folder had at its dispatch; otherwise the read is recorded as evidence and the launch
+   * stays Dispatched ("Opened · not confirmed"). It is decided in the launch's section on the record
+   * as it is then (`here` is the bridge folder's identity key, read before), so a read that arrives
    * while the opener still runs is decided after the dispatch recorded the folder. A link launch is
    * checked when its record holds a folder identity (only a best-effort app's link records one,
    * whatever its instance has become in machine.toml since), when its instance's route asks for
@@ -1593,7 +1593,7 @@ ${instance}`;
         return this.#dispatchLink(intent);
       case "clipboard":
         // Copy (A4 3.4.6): the page copies the pointer brief in the person's click. The launch is
-        // Dispatched at once and Confirmed if an agent redeems its reference (M2.04).
+        // Dispatched at once and Confirmed once an agent reads its task by its reference.
         return { kind: "accepted" };
       default:
         return { kind: "refused" };

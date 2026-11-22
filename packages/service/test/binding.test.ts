@@ -134,7 +134,7 @@ describe("[A3.3.7.binding.ticket] a launched agent's bridge is its session by th
         { scope: `session:${session}`, status: "applied" },
       ]);
       expect((await logOf("M-1"))[0]?.["author"]).toBe(`agent:${launch.instance}:${session}`);
-      // A bind writes nothing: the launch\'s Connected comes from its terminal, not from its bridge.
+      // A bind writes nothing: the launch's Connected comes from its terminal, not from its bridge.
       expect((await w.service.launches.read(w.space, launch.id))?.evidence["bound_at"]).toBe(
         undefined,
       );
@@ -488,6 +488,54 @@ describe("[A3.3.7.binding.cli] an agent's shell is the session when a live value
         await sh.close();
         await agent.close();
       }
+    },
+  );
+
+  test(
+    "accepted, as the limits say: a change sent by tools that got no value and repeated through the shell, or repeated after setup changed who the agent connects as, is written twice",
+    { timeout: LONG },
+    async () => {
+      // The agent's tools got no value (a desktop app's): its change is the app's; the shell that
+      // repeats it is the launch's session, another scope.
+      const launch = await w.launch("M-1");
+      const tools = await connect();
+      const input = {
+        task: "M-1",
+        kind: "progress",
+        text: "Fixture progress sent twice by two tools.",
+        request_id: rid(),
+      };
+      await tools.call("entry.add", input);
+      await tools.close();
+      const sh = await shell(w, { TTASKS_TICKET: launch.ticket });
+      expect(await sh.call("entry.add", input)).not.toHaveProperty("replayed");
+      await sh.close();
+      expect((await written(w, w.space, input.request_id)).map((r) => r.scope)).toEqual([
+        `bridge:test-agent:${w.service.ops.machine.id}`,
+        `session:${sessionOfLaunch(launch)}`,
+      ]);
+
+      // A hand-made entry without --app inside a launched agent is its app's, as `manual`; setup
+      // then gives the agent its app's entry, which is the launch's session: another scope.
+      const handMade = await w.launch("M-1", { home: "no-row" });
+      const before = await launched(handMade, {}, { instance: null, app: null });
+      expect(before.binding?.["state"]).toBe("unbound");
+      const again = {
+        task: "M-1",
+        kind: "progress",
+        text: "Fixture progress sent twice across setup.",
+        request_id: rid(),
+      };
+      await before.call("entry.add", again);
+      await before.close();
+      const after = await launched(handMade, {}, { instance: null });
+      expect(after.binding?.["state"]).toBe("bound");
+      expect(await after.call("entry.add", again)).not.toContain("(replayed)");
+      await after.close();
+      expect((await written(w, w.space, again.request_id)).map((r) => r.scope)).toEqual([
+        `bridge:manual:${w.service.ops.machine.id}`,
+        `session:${sessionOfLaunch(handMade)}`,
+      ]);
     },
   );
 });
