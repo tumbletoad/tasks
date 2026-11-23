@@ -19,11 +19,13 @@ import { MAX_CONFIG_BYTES } from "./toml.ts";
 
 /**
  * A rename that fails once with EBUSY (a Windows sharing failure), running a callback first; and
- * writes that each write at most `shortWrites` bytes, as a disk filling up may.
+ * writes that each write at most `shortWrites` bytes, as a disk filling up may; and a volume that
+ * makes no hard links, whose link answers `noLinks.code` after running `noLinks.first`.
  */
 const renameFaults = vi.hoisted(() => ({
   busyOnce: undefined as undefined | (() => void),
   shortWrites: undefined as undefined | number,
+  noLinks: undefined as undefined | { readonly code: string; first?: (() => void) | undefined },
 }));
 vi.mock("node:fs", async (importOriginal) => {
   const fs = await importOriginal<typeof import("node:fs")>();
@@ -49,6 +51,15 @@ vi.mock("node:fs", async (importOriginal) => {
         throw Object.assign(new Error("busy"), { code: "EBUSY" });
       }
       fs.renameSync(from, to);
+    },
+    linkSync: (from: string, to: string) => {
+      const fault = renameFaults.noLinks;
+      if (fault !== undefined) {
+        fault.first?.();
+        fault.first = undefined;
+        throw Object.assign(new Error("no hard links here"), { code: fault.code });
+      }
+      fs.linkSync(from, to);
     },
   };
 });
@@ -384,6 +395,40 @@ describe("[A2.3.2.4.config.edit] edits to machine.toml keep every other byte", (
     ).toEqual({ ok: false, reason: "unsafe" });
     expect(lstatSync(join(config, MACHINE_TOML)).isSymbolicLink()).toBe(true);
     expect(readFileSync(join(real, MACHINE_TOML), "utf8")).toBe(text);
+  });
+
+  test("on a volume without hard links (FAT, exFAT, a share) a new machine.toml is still made whole, and one that appeared meanwhile is kept", () => {
+    const edit: Edit[] = [{ op: "set", table: ["http"], key: "port", value: 7713 }];
+    // Linux's FAT, macOS and shares, Windows' FAT driver as Node reports it.
+    for (const code of ["EPERM", "ENOTSUP", "EISDIR"]) {
+      const dir = tempDir();
+      renameFaults.noLinks = { code };
+      try {
+        expect(editMachineToml(dir, edit), code).toEqual({
+          ok: true,
+          text: "[http]\nport = 7713\n",
+        });
+      } finally {
+        renameFaults.noLinks = undefined;
+      }
+      expect(readFileSync(join(dir, MACHINE_TOML), "utf8"), code).toBe("[http]\nport = 7713\n");
+      expect(readdirSync(dir), code).toEqual([MACHINE_TOML]);
+    }
+    const dir = tempDir();
+    const theirs = "# made meanwhile\n";
+    renameFaults.noLinks = {
+      code: "ENOTSUP",
+      first: () => {
+        writeFileSync(join(dir, MACHINE_TOML), theirs);
+      },
+    };
+    try {
+      expect(editMachineToml(dir, edit)).toEqual({ ok: false, reason: "changed_meanwhile" });
+    } finally {
+      renameFaults.noLinks = undefined;
+    }
+    expect(readFileSync(join(dir, MACHINE_TOML), "utf8")).toBe(theirs);
+    expect(readdirSync(dir)).toEqual([MACHINE_TOML]);
   });
 
   test("the scanner finds headers and keys, never text inside strings, arrays or comments", () => {

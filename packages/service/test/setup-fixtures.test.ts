@@ -894,6 +894,36 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
   );
 
   test(
+    "on a volume without hard links (FAT, exFAT, a share) setup still creates a missing file whole, and removes it again",
+    async () => {
+      const real = fs.linkSync;
+      // Windows' FAT driver as Node reports it, then Linux's.
+      for (const code of ["EISDIR", "EPERM"]) {
+        fs.linkSync = () => {
+          throw Object.assign(new Error("no link"), { code });
+        };
+        syncBuiltinESMExports();
+        try {
+          for (const a of ADAPTERS.filter((x) => x.needsFile !== true)) {
+            const w = await world();
+            const file = a.file(w);
+            const what = `${a.app}: ${code}`;
+            expect(await apply(w, a), what).toMatchObject({ result: "applied", access: "on" });
+            expect(readdirSync(dirname(file)), what).toEqual([basename(file)]);
+            expect(accessOf(w, a, file), what).toBe(true);
+            expect(await remove(w, a), what).toMatchObject({ result: "removed", access: "off" });
+            expect(existsSync(file), what).toBe(false);
+          }
+        } finally {
+          fs.linkSync = real;
+          syncBuiltinESMExports();
+        }
+      }
+    },
+    SLOW,
+  );
+
+  test(
     "the bytes around the entry: after a removal every line the person wrote is a line of its own, with the bytes they gave it",
     async () => {
       const toml: readonly [string, string, (text: string) => string, string][] = [

@@ -416,6 +416,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   replacement is lost. For that read and the replacement setup holds Claude Code's own lock, for
   milliseconds: a Claude Code session that saves then waits, but Claude Code's start-up stops
   waiting after about 1.5 seconds, and for it only that last read protects the file.
+- A file TTasks creates (its own `machine.toml`, an agent app's settings file) never replaces one
+  that another program made meanwhile, except on a drive without hard links (FAT, exFAT, some
+  network shares): there a file that appears in the instant before TTasks puts its own in place is
+  replaced.
 - On a machine that several people sign in to, another person could serve a page at TTasks's
   address while TTasks is stopped.
 - Words you typed and did not send for a task in the Trash, or for one the space does not have now,

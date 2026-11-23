@@ -18,6 +18,7 @@ import {
   fstatSync,
   fsyncSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -225,6 +226,24 @@ const busyCode = (error: unknown): boolean => {
   return code === "EPERM" || code === "EBUSY" || code === "EACCES";
 };
 
+/**
+ * What a hard link answers on a volume that makes none: EPERM (Linux's FAT and exFAT), ENOTSUP or
+ * EOPNOTSUPP (macOS, network shares), ENOSYS, and on Windows EISDIR and EINVAL, which is how Node
+ * reports the FAT driver's ERROR_INVALID_FUNCTION and a share's ERROR_INVALID_PARAMETER.
+ */
+const NO_HARD_LINKS = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EISDIR", "EINVAL"]);
+
+/** Whether anything, a dangling link included, is at `path`. */
+function present(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if (codeOf(error) === "ENOENT") return false;
+    throw error;
+  }
+}
+
 /** A new file, written whole and flushed under a temporary name beside the file it is for. */
 export interface StagedFile {
   /**
@@ -235,7 +254,9 @@ export interface StagedFile {
   replace(beforeRename?: () => void): void;
   /**
    * Puts it in place only when no file is there: a hard link, so a file another program made
-   * meanwhile is never replaced (false, and the staged file removed).
+   * meanwhile is never replaced (false, and the staged file removed). Where the volume makes no
+   * hard links (FAT, exFAT, some network shares), it is renamed into place once nothing is seen
+   * there: a file that appears in the instant between that look and the rename is replaced.
    */
   create(): boolean;
   /** Removes the staged file. */
@@ -267,6 +288,27 @@ export function stageFile(path: string, text: string | Uint8Array, mode = 0o600)
   const discard = () => {
     rmSync(temp, { force: true });
   };
+  const renameIfAbsent = (): boolean => {
+    try {
+      for (let attempt = 1; ; attempt += 1) {
+        // Before every attempt: a retry's pause is time in which a file can appear.
+        if (present(path)) {
+          discard();
+          return false;
+        }
+        try {
+          renameSync(temp, path);
+          return true;
+        } catch (error) {
+          if (!busyCode(error) || attempt >= RENAME_TRIES) throw error;
+          pause(RENAME_PAUSE_MS);
+        }
+      }
+    } catch (error) {
+      discard();
+      throw error;
+    }
+  };
   return {
     replace(beforeRename) {
       try {
@@ -290,6 +332,7 @@ export function stageFile(path: string, text: string | Uint8Array, mode = 0o600)
       try {
         linkSync(temp, path);
       } catch (error) {
+        if (NO_HARD_LINKS.has(String(codeOf(error)))) return renameIfAbsent();
         discard();
         if (codeOf(error) === "EEXIST") return false;
         throw error;

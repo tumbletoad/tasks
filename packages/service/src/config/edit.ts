@@ -794,8 +794,8 @@ export interface CommitOptions {
  * alone (`changed_meanwhile`). What remains is the rename itself: a save in that instant is not
  * seen. TTasks's own edits are synchronous, so two in one process never interleave. The write keeps
  * the file's mode exactly, whatever the umask (it is the person's choice); a missing file is
- * created 0600 and linked into place exclusively, so one that appeared meanwhile is never replaced,
- * and missing folders are made 0700. The folder and the file are judged again first, as the service
+ * created 0600 and put in place only where nothing is (StagedFile.create, which says what a volume
+ * without hard links loses), and missing folders are made 0700. The folder and the file are judged again first, as the service
  * judges them: machine.toml is never written into a folder that fails the rule, and never through a
  * link (A2 3.2.4; the reader refuses one, so a link that appeared meanwhile is a change). A caller
  * that edits another file with the same editor (the instruction block, setup/block.ts) passes its own
