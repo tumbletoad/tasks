@@ -384,6 +384,102 @@ test.describe("[A7.3.12.e2e.equals-filter] A filter written with = is read as th
   });
 });
 
+test.describe("[A5.3.13.e2e.search-now] A search result changes the task as it shows it", () => {
+  test("a checked-off result someone dropped while the page heard nothing: its card says it is read again and offers nothing, then shows Dropped", async ({
+    page,
+    world,
+  }) => {
+    const word = wordOf("ledger");
+    const [ref] = await addTasks(world, [{ title: `Close the ${word} ledger`, inbox: true }]);
+    if (ref === undefined) throw new Error("the task was not added");
+    await world.op(world.mira.id, "task.finish", {
+      task: ref,
+      base: (await read(world, ref)).as_of,
+    });
+    // The page's feed through the test: while it is deaf, the page hears no change.
+    let deaf = false;
+    let missed = 0;
+    await page.routeWebSocket(/\/api\/v1\/ws/, (ws) => {
+      const server = ws.connectToServer();
+      server.onMessage((message) => {
+        const batch = JSON.parse(String(message)) as { type?: unknown; events?: unknown[] };
+        if (deaf && batch.type === "batch" && (batch.events?.length ?? 0) > 0) missed += 1;
+        else ws.send(message);
+      });
+    });
+    /** Changes the page does not hear, then one it does: it asks for a fresh snapshot. */
+    const away = async (changes: () => Promise<unknown>) => {
+      const before = missed;
+      deaf = true;
+      await changes();
+      await expect.poll(() => missed, { timeout: SLOW_MS }).toBeGreaterThan(before);
+      deaf = false;
+      await addTasks(world, [{ title: `Sweep the porch ${String(missed)}`, inbox: true }]);
+    };
+    await openSearch(page, world, word);
+    const row = page.locator(`main li[data-task="${ref}"]`);
+    await row.locator('[data-part="title"]').click();
+    await expect(row.locator('[data-part="lifecycle"]')).toHaveText("Checked off");
+
+    // The page's read of the task waits, then fails once.
+    let answer: () => void = () => undefined;
+    const waiting = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    let failing = true;
+    await page.route("**/api/v1/op/task.get", async (route) => {
+      await waiting;
+      if (failing) await route.abort();
+      else await route.continue();
+    });
+    // Another window reopens the task and drops it while the page hears nothing.
+    await away(async () => {
+      const reopened = (await world.op(world.mira.id, "task.reopen", {
+        task: ref,
+        reason: "Not closed after all",
+        base: (await read(world, ref)).as_of,
+      })) as { as_of: string };
+      await world.op(world.mira.id, "task.finish", {
+        task: ref,
+        status: "dropped",
+        outcome: "Not needed.",
+        base: reopened.as_of,
+      });
+    });
+    const unresolved = row.locator('[data-part="unresolved"]');
+    await expect(unresolved).toHaveText(
+      "This task changed while the page was away. Reading it again.",
+      { timeout: SLOW_MS },
+    );
+    await expect(row.locator('[data-part="reopen"]')).toBeHidden();
+    await expect(row.locator('[data-part="check"]')).toBeDisabled();
+    await picture(page, "search-reading-again-1440.png");
+    await page.setViewportSize({ width: 390, height: 900 });
+    await picture(page, "search-reading-again-390.png");
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    answer();
+    await expect(unresolved).toContainText("could not be read again", { timeout: SLOW_MS });
+    await expect(row.locator('[data-part="reopen"]')).toBeHidden();
+    await picture(page, "search-read-failed-1440.png");
+    await page.setViewportSize({ width: 390, height: 900 });
+    await picture(page, "search-read-failed-390.png");
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    // The next fresh snapshot reads it again: the result shows it dropped, in its place.
+    failing = false;
+    await away(() => addTasks(world, [{ title: "Sweep the yard", inbox: true }]));
+    await expect(unresolved).toHaveCount(0, { timeout: SLOW_MS });
+    await expect(row.locator('[data-part="lifecycle"]')).toHaveText("Dropped");
+    await expect(row.locator('[data-part="reopen"]')).toBeVisible();
+    // Nothing the stale card offered went out: the task is as the other person left it.
+    expect((await read(world, ref)).task).toMatchObject({ lifecycle: "archived" });
+    await picture(page, "search-dropped-1440.png");
+    await page.setViewportSize({ width: 390, height: 900 });
+    await picture(page, "search-dropped-390.png");
+  });
+});
+
 test.describe("[A7.3.12.m5-10.e2e.keyboard] Both modes by keyboard alone", () => {
   test("/ and typing, Enter to the first result, arrows and Enter in the list, / back, Escape out; the lens carries the draft", async ({
     page,

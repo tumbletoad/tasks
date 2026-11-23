@@ -60,6 +60,7 @@ export {
 } from "./entries/prefs-manage.ts";
 export { runReport, RunReportInput, RunReportResult } from "./entries/run-report.ts";
 export {
+  newerWorkJson,
   receiptGet,
   ReceiptGetInput,
   ReceiptGetResult,

@@ -490,3 +490,40 @@ describe("[A5.3.22.web.list-keys] the list's keyboard and focus", () => {
     ]);
   });
 });
+
+describe("[A5.3.11.web.row-base] a row's action goes with the base of the task as its row shows it", () => {
+  const INBOX = (t: TaskRow) => t.inbox && t.lifecycle === "active";
+
+  test("an Inbox row held under focus after an agent moved it to Waiting sends Move to Open against what it shows, so the service sees the change", () => {
+    const tasks = [task(1, { inbox: true, version: 4 }), task(2, { inbox: true, version: 6 })];
+    mount(<TaskList view="inbox" filter={INBOX} empty="" />);
+    apply(snapshot(tasks));
+    const id = tasks[0]?.id ?? "";
+    act(() => {
+      titleOf(id)?.focus();
+    });
+    // The agent's triage: Waiting, out of the Inbox, at sequence 11.
+    apply(
+      batch(
+        [{ ...task(1), status: "waiting", inbox: false, version: 11 }],
+        ["status", "inbox"],
+        "agent",
+      ),
+    );
+    const move = container.querySelector<HTMLButtonElement>(
+      `li[data-key="${id}"] [data-part="move"]`,
+    );
+    // Held under focus, the row still shows the Inbox task it was, with its Move to Open.
+    expect(move).not.toBeNull();
+    act(() => {
+      move?.click();
+    });
+    expect(updates).toEqual([
+      expect.objectContaining({
+        task: id,
+        set: { status: "open", inbox: false },
+        base: "1.4.01234567",
+      }),
+    ]);
+  });
+});

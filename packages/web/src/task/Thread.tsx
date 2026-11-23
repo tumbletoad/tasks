@@ -198,6 +198,8 @@ export interface ThreadProps {
   readonly removed?: readonly DetailNote[];
   /** The person's Remove of a note: none in a card that only reads. */
   readonly onRemove?: ((note: DetailNote) => void) | undefined;
+  /** The last read of the runs failed: what shows of them may be out of date. */
+  readonly runsFailed?: boolean;
   /** The person's Stop of a run. */
   readonly onStop?: (run: Run) => void;
 }
@@ -215,6 +217,7 @@ export function Thread({
   onOpenAgain,
   removed = [],
   onRemove,
+  runsFailed = false,
   onStop,
 }: ThreadProps) {
   const t = useT();
@@ -373,10 +376,19 @@ export function Thread({
     if (document.activeElement === document.body) entry.focus({ preventScroll: true });
   });
   const older = hidden === 0 && partial && onOlder !== undefined;
-  // A thread whose first pages held no entry has older ones: it is not empty.
-  if (items.length === 0 && !older) return <p className={styles.line}>{t("thread.empty")}</p>;
+  // A thread whose first pages held no entry has older ones: it is not empty. Nor is one whose runs
+  // could not be read: it may have some.
+  const failedRuns = (
+    <p className={styles.line} role="status" data-part="runs-failed">
+      {t("thread.runsFailed")}
+    </p>
+  );
+  if (items.length === 0 && !older) {
+    return runsFailed ? failedRuns : <p className={styles.line}>{t("thread.empty")}</p>;
+  }
   return (
     <>
+      {runsFailed ? failedRuns : null}
       {older && olderFailed ? (
         <p className={styles.line} role="status">
           {t("thread.olderFailed")}

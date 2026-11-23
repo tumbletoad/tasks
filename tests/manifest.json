@@ -2218,7 +2218,7 @@
     },
     {
       "id": "A1.5.history.property",
-      "title": "ABA property test against a reference model: the human and two agents edit, complete, reopen, undo and redo random fields of a few tasks, and the human runs some of them (a run's commits never join a stack or end a redo, and a run keeps its task's create); undo and redo never change a field whose provenance moved, undo then redo restores the values the commit wrote, physical versions only grow, every field holds its provenance commit's after-value, and fv and fp name the latest change row. With source keys: drafts of overlapping keys in every dedupe mode, check-offs, reopens, explicit links of one or two tasks, creates of several tasks with one key, archives, wrap-ups that add and remove learnings, deletes and restores, retries, jumps past the window, and two humans' undo and redo interleaved with agents' reopens; an inversion changes only fields that held the write it inverts and sets back their before-values, a key gains a second active holder only by a lifecycle or an explicit link or restore, a draft matches as A1 3.6 says with a finish taken from the lifecycle's provenance, a refusal writes nothing, no request ends in a storage error, and the search index equals a fresh rebuild",
+      "title": "ABA property test against a reference model: two humans and two agents edit, complete, reopen, remove, restore, note, link to sources and create areas and projects, undo and redo, and the human runs some tasks (a run's commits never join a stack or end a redo, and a run keeps its task's create); undo takes the step applied last, redo redoes the oldest undone step its guards and the rules across rows let through and passes over and keeps the others (newer work on a task it would hide, a key or slug taken, a row or owner out of sight), undo and redo never change a field whose provenance moved, undo then redo restores the values the commit wrote, physical versions only grow, every field holds its provenance commit's after-value, and fv and fp name the latest change row. With source keys: drafts of overlapping keys in every dedupe mode, check-offs, reopens, explicit links of one or two tasks, creates of several tasks with one key, archives, wrap-ups that add and remove learnings, deletes and restores, retries, jumps past the window, and two humans' undo and redo interleaved with agents' reopens; an inversion changes only fields that held the write it inverts and sets back their before-values, a key gains a second active holder only by a lifecycle or an explicit link or restore, a draft matches as A1 3.6 says with a finish taken from the lifecycle's provenance, a refusal writes nothing, no request ends in a storage error, and the search index equals a fresh rebuild",
       "source": "A1 3.5, A1 3.6, A1 3.10, A1 3.10.1, A1 5, A7 3.10 M3.02",
       "owner": "M3",
       "kind": "ci",
@@ -2747,7 +2747,7 @@
     },
     {
       "id": "M6.page.run-follow",
-      "title": "The page shows a run as the service has it: a read keeps a newer state and a run queued after the read began; a Stop on its way shows as stopping, and one that did not reach the service leaves the run with its Stop; the row's marker says working or needs you by the instance's label; Run is offered by what the service says an instance can do; a refusal's words come from the service's reason",
+      "title": "The page shows a run as the service has it: a read keeps a newer state and a run queued after the read began; a Stop on its way shows as stopping, a queued one too, and the service's answer says how it ended; one whose answer was lost says it may have stopped and leaves the run as the service last said, with its Stop, and one whose answer never comes is offered again once a read since finds the run waiting or working; a failed read of the runs says so in the thread and is read again with the minute's read while its card is open; a tab whose copy of the space is gone offers no Stop; the row's marker says working or needs you by the instance's label; Run is offered by what the service says an instance can do; a refusal's words come from the service's reason",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -2796,7 +2796,7 @@
     },
     {
       "id": "M6.page.e2e.stop",
-      "title": "In the browser: a working run shows in the thread and on the row, the same after a reload and in a second tab; Stop answers at once and then says what was ended; a queued run says why it waits and starts once the other stopped",
+      "title": "In the browser: a working run shows in the thread and on the row, the same after a reload and in a second tab; Stop answers at once and then says what was ended; a queued run says why it waits and starts once the other stopped; a queued run's Stop held on its way says Stopping, and the answer Stopped before it started; a read of the runs that failed says so in the thread",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4827,6 +4827,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.13.e2e.search-now",
+      "title": "In Chromium and Firefox against the real service: a checked-off search result someone reopened and dropped while the page heard nothing; after the fresh snapshot its card says it is read again and offers no Reopen, says so when that read fails, and shows Dropped with Reopen once the next snapshot's read goes through",
+      "source": "A5 3.11, A5 3.13, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-10.e2e.keyboard",
       "title": "In Chromium and Firefox: both modes by keyboard alone (/ and typing, Enter to the first result, the list's arrows and Enter and Escape, / back to the field, Escape out to add mode), the lens and the plus switching with the text carried, and Tab taking the area type-ahead's first suggestion",
       "source": "A5 3.13, A7 3.12 M5.10",
@@ -5146,7 +5154,7 @@
     },
     {
       "id": "A5.3.15.web.expanded-state",
-      "title": "The expanded task's state holds: a lookup of the URL's task that answers after the person chose another row, or a frame that renders with the old URL, changes nothing; an injected row leaves when another task expands and shows a cut title as cut; a fresh snapshot reads the detail again; the title editor saves against the cursor it opened at; Collapse focuses the title; a focused thread entry stays shown while entries arrive",
+      "title": "The expanded task's state holds: a lookup of the URL's task that answers after the person chose another row, or a frame that renders with the old URL, changes nothing; an injected row leaves when another task expands and shows a cut title as cut; a fresh snapshot reads the detail again, and one that leaves the expanded task out shows it as a read says it is now (finished: no star, Reopen) or closes its card when it no longer exists; until that read answers its card says so and offers nothing, a failed read is tried again with the minute's read, and an answer the feed outdated while it was on its way changes nothing; the title editor saves against the cursor it opened at; Collapse focuses the title; a focused thread entry stays shown while entries arrive",
       "source": "A5 3.3, A5 3.7, A5 3.15, A7 3.12 M5.06",
       "owner": "M5",
       "kind": "ci",
@@ -5172,6 +5180,14 @@
       "id": "A5.3.22.web.list-keys",
       "title": "The list's keyboard in a DOM: one row title in the tab order, j and k and the arrows, Home and End, [ and ] move it, Escape collapses the expanded row and focuses its title, rows carry aria-posinset and aria-setsize, and a focused row keeps its element and its place until focus leaves: when it leaves the view, moves to another group, is re-sorted inside its list, or is the view's last row, and a held row stays the current row for the tab order and the keys",
       "source": "A5 3.22, A5 3.21, A5 3.15, A7 3.12 M5.03",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.11.web.row-base",
+      "title": "A row's action goes with the base of the task as its row shows it: an Inbox row held under focus after an agent moved the task to Waiting sends Move to Open against the version it shows, so the service refuses it as a conflict instead of overwriting the agent's change",
+      "source": "A5 3.11, A5 3.15",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5249,6 +5265,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.11.e2e.row-base",
+      "title": "In Chromium and Firefox against the real service: an Inbox row held under focus after an agent moved the task to Waiting and out of the Inbox; Move to Open overwrites nothing and the toast says who changed it",
+      "source": "A5 3.11, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.11.e2e.new-area",
       "title": "In Chromium and Firefox against the real service: the area picker offers a name no area has as a new area, never one an area has in another case; a live area close to a typo comes first and Enter takes it, a new name close to an area is the next choice down, and an archived area comes last, marked, and is never what Enter takes; Enter makes a new area and moves the task into it with Undo, and Ctrl+Z takes back the move, then the area; a filing made elsewhere meanwhile stays, and the toast says the area was added and the task stayed",
       "source": "A5 3.7, A5 3.11",
@@ -5289,6 +5313,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.13.web.search-now",
+      "title": "A search result's controls change the task as the result shows it: Reopen goes with the base of the read that showed the result, not the screen's now; a result whose task a read after a reconnect finds otherwise shows it as the read says, in its place and after its card closes, with the controls that fit it, and Reopen goes with that read's version",
+      "source": "A5 3.11, A5 3.13, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.13.web.search-finished",
       "title": "A search's Completed group draws its rows as Completed does: when each task was completed or dropped, and no priority, effort or age; its To do rows keep theirs",
       "source": "A5 3.13, A5 3.5",
@@ -5298,7 +5330,7 @@
     },
     {
       "id": "A5.3.12.web.undo",
-      "title": "A check-off holds its row checked for 4 s, collapses and leaves, and a click on its box during the hold undoes it by its commit, the row unchecked at once and kept until the feed brings it back; an undo that conflicts on every field offers Restore mine (a partial undo, then the person's value with a fresh base), one that conflicts on some offers Undo the rest, a value no hand edit can set offers no Restore mine, and nothing to undo, a newer change first and an unknown commit each change nothing; Reopen sends its base and its toast's Undo names its commit, and a refused Reopen says so with no action",
+      "title": "A check-off holds its row checked for 4 s, collapses and leaves, and a click on its box during the hold undoes it by its commit, the row unchecked at once and kept until the feed brings it back; an undo or redo refused because someone changed it since says who changed which tasks and offers no action, except Undo the rest for the tab's own step where only some fields conflict (never on a page that does not know the step, nor for a commit the refusal does not name), and nothing to undo, a newer change first and an unknown commit each change nothing; Reopen sends its base and its toast's Undo names its commit, and a refused Reopen says so with no action",
       "source": "A5 3.12, A1 3.10.1, A7 3.12 M5.08",
       "owner": "M5",
       "kind": "ci",
@@ -5314,8 +5346,16 @@
     },
     {
       "id": "A7.3.12.m5-08.e2e.conflict",
-      "title": "In Chromium and Firefox against the real service: an undo of a due date an agent changed since says who and when and changes nothing until Restore mine puts back the date from before the person's edit; an agent's change while the date popover is open shows there, and the person's pick then keeps their value under the field until Apply mine saves it",
+      "title": "In Chromium and Firefox against the real service: an undo of a due date an agent changed since is refused, says who changed the task, offers no action and leaves the agent's date; an agent's change while the date popover is open shows there, and the person's pick then keeps their value under the field until Apply mine saves it",
       "source": "A5 3.11, A5 3.12, A5 3.15, A7 3.12 M5.08",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.12.e2e.redo-passed-over",
+      "title": "In Chromium and Firefox against the real service: a Redo that would move a task to the Trash after an agent added a note to it passes over that change and redoes the edit behind it, and its toast says who changed which task; the task keeps its note, and the next Redo is refused, naming the same, with no action",
+      "source": "A1 3.10.1, A5 3.12",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

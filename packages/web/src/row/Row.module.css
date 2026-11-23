@@ -59,6 +59,11 @@
   background: var(--k-raised);
 }
 
+.unresolved {
+  margin: 0;
+  color: var(--k-muted);
+}
+
 /*
  * Marker: at most one, the changed dot, the needs-input ring, a run's quiet working ring or the
  * draft's pencil (A5 3.6). The column keeps its width, so a run that starts or ends moves nothing.
