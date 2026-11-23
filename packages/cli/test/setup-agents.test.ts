@@ -598,7 +598,9 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
     "setup's own record unreadable: remove turns every home's access off by its row, says where the record is, and changes no file",
     async () => {
       const before = read();
-      const planned = JSON.parse((await run(["setup", "agents", "--json"], false)).stdout) as {
+      const shown = await run(["setup", "agents", "--space", space, "--json"], false);
+      expect(shown.code, shown.stdout + shown.stderr).toBe(0);
+      const planned = JSON.parse(shown.stdout) as {
         apply: string[];
       };
       expect((await run([...planned.apply.slice(1), "--json"])).code).toBe(0);
@@ -614,7 +616,8 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
         expect(preview.stdout).toContain("cannot read its own record of the agent homes");
         expect(preview.stdout).toContain("Nothing was changed.");
         const removed = await run(["setup", "agents", "--remove"]);
-        expect(removed.code, removed.stdout + removed.stderr).toBe(0);
+        // Not complete: each entry stays in its file.
+        expect(removed.code, removed.stdout + removed.stderr).toBe(10);
         expect(removed.stdout).toContain(recordFile());
         expect(removed.stdout).toContain("Access is off.");
         expect(await rows()).toEqual([]);
