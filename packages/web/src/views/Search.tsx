@@ -28,7 +28,7 @@ import {
 import css from "./Search.module.css";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
 
-const styles = classes(css, ["line", "status", "action", "foot"]);
+const styles = classes(css, ["line", "status", "action", "foot", "offer"]);
 
 /** Spaces this tab found without the word index: their searches leave the words out at once. */
 const unindexedSpaces = new Set<string>();
@@ -56,6 +56,20 @@ export function SearchPage({ q, task, onExpand }: SearchPageProps) {
   const asked = unindexed ? filtersOnly(query) : query;
   return (
     <>
+      {/* First, so that nothing the search answers later moves it from under the pointer. */}
+      {title === "" ? null : (
+        <p className={styles.offer}>
+          <button
+            type="button"
+            className={styles.action}
+            onClick={() => {
+              askField({ kind: "add", text: title });
+            }}
+          >
+            <span dir="auto">{t("search.addInstead", { text: title })}</span>
+          </button>
+        </p>
+      )}
       {unindexed && words ? (
         <p className={styles.line} role="status">
           {asked === "" ? t("search.noIndex") : t("search.noIndexFilters", { filters: asked })}
@@ -70,19 +84,6 @@ export function SearchPage({ q, task, onExpand }: SearchPageProps) {
           onExpand={onExpand}
           onUnindexed={onUnindexed}
         />
-      )}
-      {title === "" ? null : (
-        <p className={styles.foot}>
-          <button
-            type="button"
-            className={styles.action}
-            onClick={() => {
-              askField({ kind: "add", text: title });
-            }}
-          >
-            <span dir="auto">{t("search.addInstead", { text: title })}</span>
-          </button>
-        </p>
       )}
     </>
   );

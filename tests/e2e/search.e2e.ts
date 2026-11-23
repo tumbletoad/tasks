@@ -258,9 +258,25 @@ test.describe("[A7.3.12.m5-10.e2e.search] Search results are a list like any oth
     await expect(page.locator(`main li[data-task="${done ?? ""}"]`)).not.toContainText("In trays");
     await expect(page.locator(`main li[data-task="${dropped ?? ""}"]`)).not.toContainText("rack");
 
-    // Only the words go into the new task: the search's filters and its sort stay behind.
+    // The offer shows before the search answers, and the answer does not move it from under the
+    // pointer.
+    let answer: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    await page.route("**/api/v1/op/task.search", async (route) => {
+      await answered;
+      await route.continue().catch(() => undefined);
+    });
     await searching(page).fill(`${word} pesto p1 status:open sort:effort`);
-    await page.getByRole("button", { name: `Add “${word} pesto p1” as a task` }).click();
+    const add = page.getByRole("button", { name: `Add “${word} pesto p1” as a task` });
+    await expect(add).toBeVisible();
+    const offered = await add.boundingBox();
+    answer();
+    await expect(page.locator("main")).toContainText("Nothing matches.");
+    expect(await add.boundingBox()).toEqual(offered);
+    // Only the words go into the new task: the search's filters and its sort stay behind.
+    await add.click();
     await expect(adding(page)).toHaveValue(`${word} pesto p1`);
     await expect(adding(page)).toBeFocused();
     await expect(panel(page).getByRole("listitem")).toHaveText(["P1"]);
