@@ -277,7 +277,10 @@ test.describe("[A5.trash.e2e.screens] The Trash in both themes", () => {
         await world.machine("ui.theme", theme);
         await signIn(shot, world, `/s/${space}/trash`);
         await showsSpace(shot, world.mira.name);
-        await expect(shot.locator("main li[data-task]")).toHaveCount(3, { timeout: SLOW_MS });
+        // The worker's other tests leave tasks of their own in the Trash: these three are counted.
+        await expect(
+          shot.locator("main li[data-task]").filter({ hasText: "Screens: " }),
+        ).toHaveCount(3, { timeout: SLOW_MS });
         await picture(shot, `trash-${theme}-1440.png`);
         if (pictures()) expect(await axeFound(shot, ["main"]), `axe in ${theme}`).toEqual([]);
         await shot.setViewportSize({ width: 390, height: 900 });
