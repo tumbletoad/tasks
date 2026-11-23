@@ -78,7 +78,7 @@ export const TaskUpdateInput = z.strictObject({
 export const TaskUpdateResult = z.strictObject({
   result: z
     .enum(["updated", "no_change", "review", "proposed"])
-    .describe("updated, nothing changed, applied with a review mark, or proposed"),
+    .describe("updated, or nothing changed"),
   task: TaskRef,
   fields: z.array(z.string()).describe("The fields the call changed"),
   as_of: AsOf,
@@ -131,8 +131,8 @@ export const taskUpdate = defineEntry({
       title: "Update a task",
       description:
         "Use to change a task's fields, summary, context, group or sources. Pass base: the " +
-        "as_of of the last answer that showed you the task (a search row too): no read is " +
-        "needed; a context append needs none. Set focus or priority only " +
+        "as_of of the last answer that showed you the fields you change, or of your own write " +
+        "of them; a context append needs none. Set focus or priority only " +
         "when the user asks. Use complete_task to finish.",
     },
   },

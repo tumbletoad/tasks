@@ -82,7 +82,9 @@ describe("[A3.5.search.parser] the query language", () => {
     expect(refusal(() => parseQuery("aera:home")).hint).toBe("Did you mean area?");
     expect(refusal(() => parseQuery("-projects:portal")).hint).toBe("Did you mean project?");
     expect(refusal(() => parseQuery("stat:open")).hint).toBe("Did you mean status?");
-    expect(refusal(() => parseQuery("is:inbx")).hint).toBe("Did you mean inbox?");
+    expect(refusal(() => parseQuery("is:inbx")).hint).toBe(
+      "Did you mean inbox? is: takes inbox, focus, overdue, proposed, bound, completed, archived, unwrapped.",
+    );
   });
 
   test("ordinary text that looks like a filter is words, and an alias is its key", () => {

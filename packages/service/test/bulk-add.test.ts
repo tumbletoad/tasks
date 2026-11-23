@@ -500,7 +500,7 @@ describe("[A3.bulk.small] the counts and warnings an agent checks its work by", 
       request_id: rid(),
     });
     expect(added["warnings"]).toEqual([
-      "New area for tasks.0.area: no area had this name.",
+      "Made 1 new area for names that matched none (a project, none in its area): tasks.0.area.",
       "tasks.1: possible duplicate of tasks.0 (same area, similar title)",
     ]);
   });

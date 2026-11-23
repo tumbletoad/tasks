@@ -13,8 +13,9 @@ import {
 import { StorageError, type WriteResult } from "@ttasks/storage";
 
 /**
- * Refuses a call that uses what a later step builds (contracts' later.ts), naming the step. The
- * list is the only source of this refusal, so nothing an agent is shown offers what it refuses.
+ * Refuses a call that uses what a later step builds (contracts' later.ts), naming the step, on
+ * every face. The same list keeps it out of the MCP tool list and docs/agents/tools.md; the
+ * command line's help still offers it.
  */
 export function refuseLater(entry: string, input: Readonly<Record<string, unknown>>): void {
   const row = laterIn(entry, input);

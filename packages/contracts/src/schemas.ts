@@ -92,7 +92,7 @@ export const RequestId = z
 export const Base = z
   .string()
   .max(40)
-  .describe("The as_of of the last answer that showed it to you, verbatim; no read needed");
+  .describe("as_of of the last answer that showed you the field, or of your own write of it");
 
 /** Each entry that takes it gives it the default `"apply"` in its `defaults`. */
 export const Mode = z

@@ -79,9 +79,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
   });
 
   test("A3's example results: the write results read as A3 shows them", () => {
-    expect(renderResult("entry.add", example("entry.add", 0))).toBe(
-      "logged l3 on M-14 (evidence) · as_of 1.1047.5n0w8k3q",
-    );
+    expect(renderResult("entry.add", example("entry.add", 0))).toBe("logged l3 on M-14 (evidence)");
     expect(renderResult("task.update", example("task.update", 0))).toBe(
       "updated M-14: summary, context · as_of 1.1047.5n0w8k3q",
     );

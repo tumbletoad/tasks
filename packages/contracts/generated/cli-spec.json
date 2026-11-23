@@ -432,7 +432,7 @@
         {
           "field": "outcome",
           "flag": "--outcome",
-          "help": "What changed and the evidence; agents must give it, at most 600 characters",
+          "help": "What changed and the evidence; agents must give it, in at most 600 characters",
           "repeat": false,
           "required": false,
           "type": "string"
@@ -440,7 +440,7 @@
         {
           "field": "learnings",
           "flag": "--learning",
-          "help": "Lessons reusable beyond this task; a task keeps 20 at most",
+          "help": "Lessons reusable beyond this task; a task keeps 20 in all",
           "repeat": true,
           "required": false,
           "type": "string"

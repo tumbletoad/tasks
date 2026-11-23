@@ -3,7 +3,7 @@
 // the CLI verb, the HTTP route, the typed client and the docs.
 import { z } from "zod";
 import type { ErrorCode } from "./errors.ts";
-import { laterFields } from "./later.ts";
+import { LATER_RESULTS, laterFields } from "./later.ts";
 
 /** "read": a query. "write": one A1 operation kind, or a fixed bundle of them, as one request. */
 export const ENTRY_KINDS = ["read", "write"] as const;
@@ -444,6 +444,43 @@ export function shownSchemaFor(
     Object.entries(shape).filter(([key]) => writes || (key !== "request_id" && key !== "base")),
   );
   return (found[audience] = rebuild(full, { shape: offered }));
+}
+
+/** The output the docs show: without the results a later step brings (`LATER_RESULTS`). */
+export function shownOutputFor(entry: Pick<AnyEntry, "name" | "output">): z.ZodType {
+  let schema = entry.output;
+  for (const row of LATER_RESULTS) {
+    if (row.entry === entry.name) schema = withoutAt(schema, pathSteps(row.path) ?? [], row.value);
+  }
+  return schema;
+}
+
+/** `schema` without the field at `steps`, or without `value` of the enum field there. */
+function withoutAt(
+  schema: z.ZodType,
+  steps: readonly string[],
+  value: string | undefined,
+): z.ZodType {
+  const [step, ...rest] = steps;
+  const all = layers(schema);
+  const core = all[all.length - 1] ?? schema;
+  const def = defOf(core);
+  let next: z.ZodType;
+  if (step === "[]" && def.type === "array") {
+    next = rebuild(core, { element: withoutAt(def["element"] as z.ZodType, rest, value) });
+  } else if (step !== undefined && def.type === "object") {
+    const shape: Record<string, z.ZodType> = {};
+    for (const [key, field] of Object.entries(def["shape"] as Record<string, z.ZodType>)) {
+      if (key !== step) shape[key] = field;
+      else if (rest.length > 0) shape[key] = withoutAt(field, rest, value);
+      else if (value !== undefined) shape[key] = without(field, value) ?? field;
+    }
+    next = rebuild(core, { shape });
+  } else {
+    return schema;
+  }
+  for (const layer of all.slice(0, -1).reverse()) next = rebuild(layer, { innerType: next });
+  return next;
 }
 
 /** The kind an entry is shown as: a mixed entry whose every shown action reads is a read. */

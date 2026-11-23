@@ -415,7 +415,7 @@ describe("[A3.3.3.mcp.calls] a tool call on the request path, as the connection'
       };
       const logged = await a.request("tools/call", { name: "add_entry", arguments: args });
       const text = textOf(JSON.parse(logged.result ?? "{}"));
-      expect(text).toMatch(/^logged l1 on M-1 \(evidence\) · as_of /);
+      expect(text).toBe("logged l1 on M-1 (evidence)");
 
       // The history names the instance's actor.
       const read = (await user.call("op/call", {

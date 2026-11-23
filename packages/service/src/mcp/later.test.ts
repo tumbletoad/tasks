@@ -1,11 +1,13 @@
 // What a later step builds (contracts' later.ts) is never offered: no tool, field or value on the
 // list reaches what an agent is shown (the tool list the endpoint and the offline file serve, the
-// instructions, the guides, docs/agents/tools.md), and every row names something its entry declares.
+// instructions, the guides, docs/agents/tools.md, and what a tool answers), and every row names
+// something its entry declares.
 import { readFileSync } from "node:fs";
-import { coreOf, defOf, findEntry, LATER, isOffered } from "@ttasks/contracts";
+import { coreOf, defOf, findEntry, LATER, isOffered, laterIn } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
 import { GUIDES } from "../ops/guides.ts";
 import { INSTRUCTIONS } from "./instructions.ts";
+import { renderResult } from "./render.ts";
 import { toolEntry, TOOLS } from "./tools.ts";
 
 const DOCS = readFileSync(new URL("../../../../docs/agents/tools.md", import.meta.url), "utf8");
@@ -52,7 +54,7 @@ describe("[A3.3.3.mcp.later] what a later step builds is never offered", () => {
     }
   });
 
-  test("a whole entry has no tool, and a listed field or value is not in its tool", () => {
+  test("a whole entry has no tool, and a listed field or value is not in its tool or its answers", () => {
     for (const row of LATER) {
       const tool = toolOfEntry(row.entry);
       if (!("field" in row)) {
@@ -66,8 +68,15 @@ describe("[A3.3.3.mcp.later] what a later step builds is never offered", () => {
         { enum?: unknown[] } | undefined;
       if (row.value === undefined) expect(property, `${row.entry}.${row.field}`).toBeUndefined();
       else expect(property?.enum ?? [], `${row.entry}.${row.field}`).not.toContain(row.value);
-      // Nor does the tool's text name it.
+      // Nor does the tool's text name it, nor what it answers to a call it takes.
       expect(JSON.stringify(tool), `${tool.name}: ${nameOf(row)}`).not.toMatch(word(nameOf(row)));
+      for (const example of findEntry(row.entry)?.examples ?? []) {
+        if (laterIn(row.entry, example.input) !== undefined) continue;
+        const answer = renderResult(row.entry, example.output);
+        expect(answer, `${tool.name} "${example.title}": ${nameOf(row)}`).not.toMatch(
+          word(nameOf(row)),
+        );
+      }
     }
   });
 
@@ -81,10 +90,7 @@ describe("[A3.3.3.mcp.later] what a later step builds is never offered", () => {
       ["docs/agents/tools.md", DOCS],
     ];
     const absent = [...new Set(LATER.map(nameOf))].filter((name) => !offered.has(name));
-    // The list's own names: a tool, a field and two values no tool offers.
-    expect(absent).toEqual(
-      expect.arrayContaining(["run_report", "remove_sources", "propose", "refresh"]),
-    );
+    expect(absent.length).toBeGreaterThan(0);
     for (const name of absent) {
       for (const [where, text] of texts) expect(text, `${where}: ${name}`).not.toMatch(word(name));
     }

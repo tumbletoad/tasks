@@ -9,6 +9,7 @@ import {
   descriptionOf,
   isAgentAllowed,
   shownKind,
+  shownOutputFor,
   shownSchemaFor,
   type AgentRules,
   type AnyEntry,
@@ -200,7 +201,7 @@ function entrySection(entry: AnyEntry, names: DocNames): string[] {
   const agent = { schema: shownSchemaFor(entry, "agent"), rules: entry.agent ?? {} };
   const input = fieldTable(shownSchemaFor(entry, "user"), "input", agent);
   lines.push("", "### Input", "", ...input, "");
-  lines.push("### Output", "", ...outputTables(entry.output), "");
+  lines.push("### Output", "", ...outputTables(shownOutputFor(entry)), "");
   lines.push("### Examples", "");
   // An example of what a later step builds shows what this build refuses.
   const shownExamples = entry.examples.filter(

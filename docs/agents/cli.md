@@ -97,8 +97,8 @@ Usage: `ttasks done [<task>] [flags]`
 |---|---|---|---|
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--status` | `status` | "done" \| "dropped" | dropped: abandoned |
-| `--outcome` | `outcome` | string | What changed and the evidence; agents must give it, at most 600 characters |
-| `--learning` | `learnings` | string | Lessons reusable beyond this task; a task keeps 20 at most (repeatable) |
+| `--outcome` | `outcome` | string | What changed and the evidence; agents must give it, in at most 600 characters |
+| `--learning` | `learnings` | string | Lessons reusable beyond this task; a task keeps 20 in all (repeatable) |
 | `--finished` | `finished` | string | When it was done, only for work done before it was recorded: ISO date or instant |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
 

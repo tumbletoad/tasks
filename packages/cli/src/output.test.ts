@@ -159,6 +159,10 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     expect(
       render("entry.add", { kind: "evidence", entry: "l3", task: "M-14", replayed: true }, "Mira"),
     ).toBe("Logged l3 on M-14 in Mira (replayed)\n");
+    // A warning is part of what happened, so a person reads it too.
+    expect(
+      render("task.add", { tasks: [{ ref: "M-31" }], warnings: ["Made 1 new area."] }, "Mira"),
+    ).toBe("Added M-31 to Mira\nWarning: Made 1 new area.\n");
   });
 
   test("a task shows the one state a person says, and no as-of token", () => {

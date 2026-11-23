@@ -106,9 +106,9 @@ export const prefsManage = defineEntry({
     cli: { verb: "prefs", positional: ["action"] },
     mcp: {
       tool: "preferences",
-      title: "Read or change settings",
+      title: "Read settings",
       description:
-        "Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Changing them is not built yet: tell the user. Autonomy and other policy stay the user's.",
+        "Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Changing them is not built yet: tell the user. Policy stays the user's.",
     },
   },
   budget: { typical: 600, max: 2000 },
@@ -126,7 +126,7 @@ export const prefsManage = defineEntry({
             value: ["open", "waiting", "review", "backlog"],
             default: ["open", "waiting", "review", "backlog"],
             is_default: true,
-            writable: true,
+            writable: false,
           },
         ],
       },

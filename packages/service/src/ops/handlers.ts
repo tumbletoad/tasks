@@ -18,6 +18,8 @@ import {
   FINISHED_CURSOR,
   GROUP_LIMITS,
   isKeyList,
+  laterIn,
+  LATER_PREFERENCES,
   mayWrite,
   opSpec,
   parseInput,
@@ -364,7 +366,11 @@ function checkActionFields(entry: AnyEntry, input: Record<string, unknown>): voi
   }
   const guarded = entry.ops.every((op) => opSpec(op)?.base === true);
   if (guarded && input["base"] === undefined) {
-    throw invalid("base", `Required to ${action}`, "Pass base: the as_of of your last read.");
+    throw invalid(
+      "base",
+      `Required to ${action}`,
+      "Pass base: the as_of of the last answer that showed you what you change.",
+    );
   }
 }
 
@@ -1567,7 +1573,7 @@ interface ResolvedDrafts {
   readonly list: Record<string, unknown>[];
   /** `area.create` and `project.create` for each new name, once per name, in first-named order. */
   readonly groups: Operation[];
-  /** One warning per group a name created, so the caller learns of a name that matched nothing. */
+  /** One warning that names the groups the names made, so a name that matched nothing is seen. */
   readonly made: string[];
 }
 
@@ -1606,8 +1612,8 @@ async function resolvedDrafts(
     throw storageFailure(error);
   }
   const groups: Operation[] = [];
-  // Not "<path>: ...": a draft that matched an existing task drops those, and its group was made.
-  const news: string[] = [];
+  /** The input paths of the names that made a group, by kind. */
+  const news = { area: [] as string[], project: [] as string[] };
   const face = call.principal.origin;
   // The groups an earlier draft makes join the names, with the slugs the writer will give them, so
   // a later draft resolves them by the same rules as the space's own: one call answers as its
@@ -1637,7 +1643,7 @@ async function resolvedDrafts(
             area: null,
           });
           groups.push({ kind: "area.create", id: created, title: area.trim() });
-          news.push(`New area for ${at}.area: no area had this name.`);
+          news.area.push(`${at}.area`);
           id = created;
         }
         out["area"] = id;
@@ -1669,19 +1675,40 @@ async function resolvedDrafts(
             title: project.trim(),
             ...(within === undefined ? {} : { area: within }),
           });
-          news.push(`New project for ${at}.project: no project had this name.`);
+          news.project.push(`${at}.project`);
           id = created;
         }
         out["project"] = id;
       }
       return out;
     });
-    return { list: resolved, groups, made: news };
+    return { list: resolved, groups, made: madeWarning(news.area, news.project) };
   } catch (error) {
     // A retry racing its first call: the request may have been decided meanwhile.
     if (error instanceof AppError && (await applied(call))) return standIns();
     throw error;
   }
+}
+
+/** At most this many paths of the names that made a group, then how many more. */
+const MADE_SHOWN = 5;
+
+/**
+ * The one warning for the groups a call's names made, whatever their number, so it fits the
+ * answer. Not "<path>: ...": a draft that matched an existing task drops those, and its group was
+ * made all the same. A project's name matched none in its area, which another area may have.
+ */
+function madeWarning(areas: readonly string[], projects: readonly string[]): string[] {
+  const paths = [...areas, ...projects];
+  if (paths.length === 0) return [];
+  const count = (n: number, one: string) =>
+    n === 0 ? [] : [`${String(n)} ${one}${n === 1 ? "" : "s"}`];
+  const what = [...count(areas.length, "new area"), ...count(projects.length, "new project")];
+  const more = paths.length - MADE_SHOWN;
+  const at = `${paths.slice(0, MADE_SHOWN).join(", ")}${more > 0 ? ` and ${String(more)} more` : ""}`;
+  return [
+    `Made ${what.join(" and ")} for names that matched none (a project, none in its area): ${at}.`,
+  ];
 }
 
 /**
@@ -2571,7 +2598,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         throw invalid("path", `Required to ${action}`, "Name the area, or the area/project.");
       }
       if (action !== "create" && input["base"] === undefined) {
-        throw invalid("base", `Required to ${action}`, "Pass base: the as_of of your last read.");
+        throw invalid(
+          "base",
+          `Required to ${action}`,
+          "Pass base: the as_of of the last answer that showed you what you change.",
+        );
       }
       return groupWrite(call, action);
     }
@@ -3205,11 +3236,13 @@ function groupList(read: GroupsHere, only: string | undefined): Record<string, u
  * The keys the `preferences` tool shows (A3 3.4.11), sorted: the registry's space keys whose value
  * is one of the tool's kinds, a word, a whole number, true or false, or a list of keys. An object
  * or a map (`grouping.names`, `autonomy.overrides`, `autonomy.areas`) has no form in the schema
- * grammar's outputs yet, and a machine key lives in machine.toml (A1 3.16).
+ * grammar's outputs yet, and a machine key lives in machine.toml (A1 3.16). A key this build does
+ * not act on yet (`LATER_PREFERENCES`) is left out.
  */
 const TOOL_PREFERENCES: readonly PreferenceSpec[] = PREFERENCES.filter(
   (p) =>
     p.scope === "space" &&
+    !LATER_PREFERENCES.some((later) => later.key === p.key) &&
     (p.shape.type === "enum" ||
       p.shape.type === "boolean" ||
       p.shape.type === "integer" ||
@@ -3250,8 +3283,12 @@ function unknownPref(path: string, key: string): AppError {
   );
 }
 
+/** No caller changes a key while the tool's set is a later step's. */
+const PREFS_SET = laterIn("prefs.manage", { action: "set" }) === undefined;
+
 /** Whether `actor` may set the key here (A1 3.16): never a policy key, else by its writers. */
-const prefWritable = (p: PreferenceSpec, actor: string): boolean => !p.policy && mayWrite(p, actor);
+const prefWritable = (p: PreferenceSpec, actor: string): boolean =>
+  PREFS_SET && !p.policy && mayWrite(p, actor);
 
 /** A stored or default value as the tool shows it: a list of `{key}` objects as its keys. */
 function shownValue(p: PreferenceSpec, value: PrefValue | null): PrefValue | null {

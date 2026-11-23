@@ -651,10 +651,13 @@ function heldLines(rows: readonly { held?: Held }[], at: string): string[][] {
  */
 function addRendered(result: OutputOf<"task.add">): Rendered {
   const created = result.tasks.filter((t) => t.result !== "exists").length;
+  // An existing task's line shows only its reference: with no task written, the answer offers no
+  // base for changing one.
+  const asOf = created === 0 ? "" : ` · as_of ${result.as_of}`;
   return {
     parts: [
       fixed(
-        `${join(`${String(created)} created`, `${String(result.tasks.length - created)} existing`, result.proposal !== undefined && `proposal ${result.proposal}`)} · as_of ${result.as_of}${replayed(result)}`,
+        `${join(`${String(created)} created`, `${String(result.tasks.length - created)} existing`, result.proposal !== undefined && `proposal ${result.proposal}`)}${asOf}${replayed(result)}`,
         ...result.tasks.map((row, k) => draftLine(row, `tasks.${String(k)}`)),
       ),
       { units: heldLines(result.tasks, "tasks") },
@@ -744,12 +747,13 @@ function prefsRendered(result: Prefs): Rendered {
   ]);
   return {
     parts: [
+      // No as_of: the answer shows no task's or group's field, so it is no base for changing one.
       fixed(
         `${join(
           result.result,
           result.proposal !== undefined && `proposal ${result.proposal}`,
           `${String(result.prefs.length)} key${result.prefs.length === 1 ? "" : "s"}`,
-        )} · as_of ${result.as_of}${replayed(result)}`,
+        )}${replayed(result)}`,
       ),
       { data: true, units: [...changed, ...result.prefs.map(row)] },
     ],
@@ -805,7 +809,8 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
   "entry.add": (result: OutputOf<"entry.add">) => ({
     parts: [
       fixed(
-        `${result.kind === "note" ? `noted ${result.entry}` : `logged ${result.entry}`} on ${result.task}${result.kind === "note" ? "" : ` (${result.kind})`} · as_of ${result.as_of}${replayed(result)}`,
+        // No as_of: the answer shows none of the task's fields, so it is no base for changing one.
+        `${result.kind === "note" ? `noted ${result.entry}` : `logged ${result.entry}`} on ${result.task}${result.kind === "note" ? "" : ` (${result.kind})`}${replayed(result)}`,
       ),
     ],
     more: "",

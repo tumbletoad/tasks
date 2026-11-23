@@ -12,6 +12,7 @@ import {
   AppError,
   GroupManageResult,
   opSpec,
+  LATER_PREFERENCES,
   PREFERENCES,
   PrefsManageResult,
   registry,
@@ -602,14 +603,9 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
     const described = PrefsManageResult.parse(
       await call(fx, script, "prefs.manage", { action: "describe" }),
     );
-    // The registry's space keys whose value is one of the tool's kinds, sorted (A3 3.4.11). An
-    // object, a map and a machine key are not shown.
+    // The registry's space keys whose value is one of the tool's kinds and that this build acts
+    // on, sorted (A3 3.4.11). An object, a map, a machine key and a key nothing reads are not shown.
     expect(described.prefs.map((p) => p.key)).toEqual([
-      "autonomy.agent_tasks_to_inbox",
-      "autonomy.level",
-      "features.search_trigram",
-      "projection.enabled",
-      "targets.default",
       "tasks.dedupe_window_days",
       "tasks.effort_scale",
       "tasks.statuses",
@@ -621,33 +617,51 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       ["ui.theme", "machine", "enum"],
       ["ui.single_keys", "machine", "boolean"],
       ["grouping.names", "space", "object"],
+      ["autonomy.level", "space", "enum"],
+      ["autonomy.agent_tasks_to_inbox", "space", "boolean"],
       ["autonomy.overrides", "space", "map"],
       ["autonomy.areas", "space", "map"],
+      ["targets.default", "space", "text"],
+      ["projection.enabled", "space", "boolean"],
       ["projection.dir", "machine", "path"],
+      ["features.search_trigram", "space", "boolean"],
     ]);
-    expect(described.prefs.filter((p) => p.writable).map((p) => p.key)).toEqual(["tasks.statuses"]);
-    expect(described.prefs.find((p) => p.key === "targets.default")).toMatchObject({
-      policy: true,
-      writable: false,
-      default: null,
-    });
-    expect(described.prefs.find((p) => p.key === "autonomy.level")).toMatchObject({
-      policy: true,
-      writable: false,
-      shape: "one of full, review, suggest",
-    });
+    for (const later of LATER_PREFERENCES) expect(shown.has(later.key), later.key).toBe(false);
+    // No caller may change a key while the tool's set is a later step's.
+    expect(described.prefs.filter((p) => p.writable)).toEqual([]);
     const got = PrefsManageResult.parse(
       await call(fx, user, "prefs.manage", { action: "get", keys: ["tasks.*"] }),
     );
     expect(got.prefs.map((p) => [p.key, p.value, p.is_default, p.writable])).toEqual([
-      ["tasks.dedupe_window_days", 30, true, true],
-      ["tasks.effort_scale", ["S", "M", "L"], true, true],
-      ["tasks.statuses", ["open", "waiting", "review", "backlog"], true, true],
+      ["tasks.dedupe_window_days", 30, true, false],
+      ["tasks.effort_scale", ["S", "M", "L"], true, false],
+      ["tasks.statuses", ["open", "waiting", "review", "backlog"], true, false],
     ]);
+    expect(
+      await refusal(call(fx, user, "prefs.manage", { action: "get", keys: ["autonomy.*"] })),
+    ).toMatchObject({ code: "invalid_input" });
     const unknown = await refusal(
       call(fx, script, "prefs.manage", { action: "get", keys: ["tasks.statuss"] }),
     );
     expect(unknown).toMatchObject({ code: "invalid_input", hint: "Did you mean tasks.statuses?" });
+  });
+
+  test("status answers autonomy full whatever autonomy.level holds: no change waits for the user", async () => {
+    const level = (value: string | null) => {
+      const ops = [{ kind: "pref.set" as const, key: "autonomy.level", value }];
+      expect(fx.writer.submit(fx.request(fx.human, ops, { base: fx.base() })).status).toBe(
+        "applied",
+      );
+    };
+    try {
+      for (const value of ["suggest", "review"]) {
+        level(value);
+        const status = await call(fx, script, "space.status", {});
+        expect((status as { autonomy: string }).autonomy, value).toBe("full");
+      }
+    } finally {
+      level(null);
+    }
   });
 
   test("a stored value its key's schema refuses reads as the default; a list in either stored form", async () => {

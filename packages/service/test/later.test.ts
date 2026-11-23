@@ -1,9 +1,11 @@
 // What an agent's call meets for what a later step builds (contracts' later.ts): each row on a
-// field is refused naming its step and writes nothing, whatever else the call holds. And a name
-// that matched no area or project says that it made one. A service in this process.
+// field is refused naming its step and writes nothing, whatever else the call holds. What an
+// agent takes its base from never hides a person's change it was not shown. And a name that
+// matched no area or project says that it made one. A service in this process.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, LATER, type ErrorBody } from "@ttasks/contracts";
-import { opCall, type Caller } from "../src/ops/index.ts";
+import { toolCaller } from "../src/mcp/index.ts";
+import { opCall, type Binding, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
 type Json = Record<string, unknown>;
@@ -25,6 +27,23 @@ const rid = () => `fixture-later-${String((n += 1)).padStart(6, "0")}`;
 const call = async (op: string, input: Json): Promise<Json> =>
   (await opCall(w.service.ops, AGENT, { op, input })) as Json;
 const asOf = async () => (await call("space.status", {}))["as_of"] as string;
+
+/** The person at a terminal. */
+const PERSON: Caller = { class: "cli-interactive", env: {} };
+
+/** What an agent reads back from a tool, as a bridge of no launch in the world's space. */
+async function tool(name: string, args: Json): Promise<string> {
+  const binding: Binding = { kind: "none", space: w.space, named: false };
+  const result = await toolCaller({
+    ops: w.service.ops,
+    context: { space: null },
+    conn: 1,
+    binding,
+  })(name, args);
+  return result.content[0].text;
+}
+
+const AS_OF = /as_of ([0-9]+\.[0-9]+\.[0-9a-z]{8})/u;
 
 async function refusal(op: string, input: Json): Promise<ErrorBody> {
   const error = await call(op, input).then(
@@ -77,14 +96,91 @@ describe("[A3.3.3.mcp.later] what a later step builds", () => {
     },
   );
 
-  test("add_tasks says when a name made a new area or project, and not for a name it found", async () => {
+  test("an empty list for a listed field asks nothing of it, and the call is applied", async () => {
+    const added = await call("task.add", {
+      tasks: [{ title: "Fixture empty" }],
+      request_id: rid(),
+    });
+    const ref = ((added["tasks"] as Json[])[0] ?? {})["ref"] as string;
+    const updated = await call("task.update", {
+      task: ref,
+      set: { summary: "Fixture next step" },
+      remove_sources: [],
+      base: await asOf(),
+      request_id: rid(),
+    });
+    expect(updated["result"]).toBe("updated");
+  });
+
+  test("a person's change after the agent's read conflicts, and an answer that showed no field offers no base", async () => {
+    const added = await tool("add_tasks", {
+      tasks: [
+        { title: "Fixture overwrite", sources: [{ kind: "ticket", title: "T", key: "fix:OW-1" }] },
+      ],
+      request_id: rid(),
+    });
+    const ref = /created ([A-Z]+-[0-9]+)/u.exec(added)?.[1] ?? "";
+    const read = await tool("get_task", { task: ref });
+    const base = AS_OF.exec(read)?.[1] ?? "";
+    expect(base).not.toBe("");
+    await opCall(w.service.ops, PERSON, {
+      op: "task.update",
+      input: {
+        task: ref,
+        set: { summary: "The person's summary" },
+        base: await asOf(),
+        request_id: rid(),
+      },
+    });
+    // Logging shows none of the task's fields: no as_of to take a base from.
+    const logged = await tool("add_entry", {
+      task: ref,
+      kind: "progress",
+      text: "Fixture milestone.",
+      request_id: rid(),
+    });
+    expect(logged).toMatch(/^logged l[0-9]+ on /u);
+    expect(logged).not.toMatch(AS_OF);
+    // Nor does an add_tasks that only found the task again.
+    const again = await tool("add_tasks", {
+      tasks: [
+        { title: "Fixture overwrite", sources: [{ kind: "ticket", title: "T", key: "fix:OW-1" }] },
+      ],
+      request_id: rid(),
+    });
+    expect(again).toMatch(/^0 created · 1 existing/u);
+    expect(again).not.toMatch(AS_OF);
+    // The base of the last answer that showed the summary: the person's change is a conflict.
+    const write = await tool("update_task", {
+      task: ref,
+      set: { summary: "The agent's summary" },
+      base,
+      request_id: rid(),
+    });
+    expect(write).toMatch(/^error conflict/u);
+    const task = (await call("task.get", { task: ref }))["task"] as Json;
+    expect(task["summary"]).toBe("The person's summary");
+  });
+
+  test("add_tasks says in one line which names made a new area or project, and nothing for a name it found", async () => {
     const made = await call("task.add", {
       tasks: [{ title: "Fixture filed task", area: "Fixture Harbor", project: "Fixture Quay" }],
       request_id: rid(),
     });
     expect(made["warnings"]).toEqual([
-      "New area for tasks.0.area: no area had this name.",
-      "New project for tasks.0.project: no project had this name.",
+      "Made 1 new area and 1 new project for names that matched none (a project, none in its area): tasks.0.area, tasks.0.project.",
+    ]);
+    const many = await call("task.add", {
+      tasks: [
+        ["Lantern", "Marble"],
+        ["Pebble", "Nimbus"],
+        ["Falcon", "Oxbow"],
+        ["Juniper", "Pylon"],
+      ].map(([area, project]) => ({ title: `Fixture in ${String(area)}`, area, project })),
+      request_id: rid(),
+    });
+    expect(many["warnings"]).toEqual([
+      "Made 4 new areas and 4 new projects for names that matched none (a project, none in its area): tasks.0.area, tasks.1.area, tasks.2.area, tasks.3.area, tasks.0.project and 3 more.",
     ]);
     const found = await call("task.add", {
       tasks: [{ title: "Fixture second task", area: "fixture harbor", project: "Fixture Quay" }],
