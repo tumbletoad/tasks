@@ -1,4 +1,4 @@
-// Claude Code's own lock on `.claude.json`, which setup takes for its splice (A3 3.13.2). Claude
+// Claude Code's own lock on `.claude.json`, which setup takes for its splice. Claude
 // Code rewrites that file while a session runs, and its writers take `<file>.lock` (a folder, made
 // exclusively), read the file again under it and write it whole: a session that saves while setup
 // holds the lock waits, then keeps setup's entry. The holder refreshes the folder's time while it

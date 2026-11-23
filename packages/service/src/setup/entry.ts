@@ -1,4 +1,4 @@
-// TTasks's own entry in an agent app's file (A3 3.13.2-3.13.4): the one member of `mcpServers`
+// TTasks's own entry in an agent app's file: the one member of `mcpServers`
 // (JSON) or the one `[mcp_servers.<key>]` table (TOML) that TTasks writes, exactly as it intends
 // it, spliced into the file's own text and taken out again; every other byte stays. Pure: the
 // caller reads and writes the file (agents.ts).
@@ -16,12 +16,12 @@ import { parseStrictJson } from "./json.ts";
 
 export type EntryFormat = "json" | "toml";
 
-/** A3 3.13.4: Codex waits 10 s for a server by default; 20 covers a cold bridge start on Windows. */
+/** Codex waits 10 s for a server by default; 20 covers a cold bridge start on Windows. */
 export const CODEX_STARTUP_TIMEOUT_SEC = 20;
 
 /**
  * The entry TTasks writes to run `argv`: its command and arguments, and for Codex the ticket's
- * variable, which Codex passes on only when an entry names it (A3 3.7.2), and the cold-start
+ * variable, which Codex passes on only when an entry names it, and the cold-start
  * allowance. Claude Code reads an entry without `type` as stdio.
  */
 export function intendedEntry(

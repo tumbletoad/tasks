@@ -53,6 +53,16 @@ async function flip(page: Page, name: string, on: boolean): Promise<void> {
   else await expect(toggle(page, name)).not.toBeChecked();
 }
 
+/** The agent apps as they are, at 1,440 and at 390 px. */
+async function widths(page: Page, name: string): Promise<void> {
+  const apps = page.locator("section", { has: appsHeading(page) });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await picture(apps, `${name}-${String(width)}.png`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+}
+
 /** The space a tab shows, from its route. */
 const spaceOf = (page: Page): string => /\/s\/([^/]+)\//u.exec(page.url())?.[1] ?? "";
 
@@ -183,12 +193,13 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await page.reload();
     await expect(appsHeading(page)).toBeVisible();
     await expect(page.getByText("Changed by hand since.")).toBeVisible();
+    await widths(page, "settings-apps-edited");
     await flip(page, toolsFor("Codex"), false);
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText(
       `Codex no longer has the ${PRODUCT_NAME} tools. Your changed entry is still in ~`,
     );
-    await picture(page, "settings-apps-kept-1440.png");
+    await widths(page, "settings-apps-kept");
     expect(fresh.codexConfig()).toBe(edited);
     await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
     // The person takes it out.
