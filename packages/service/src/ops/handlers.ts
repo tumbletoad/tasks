@@ -13,8 +13,6 @@
 // the same request ID gives the same result (A3 3.4.1), marked `replayed`.
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import {
-  editDistance,
-  fold,
   findEntry,
   AppError,
   FINISHED_CURSOR,
@@ -124,7 +122,7 @@ import type { FolderMarkers } from "./marker.ts";
 import { repoName } from "./repo.ts";
 import { SearchCursors } from "../search/cursors.ts";
 import { runSearch, type SearchInput } from "../search/search.ts";
-import { resolveGroup } from "./groups.ts";
+import { editDistance, fold, resolveGroup } from "./groups.ts";
 import {
   readCommit,
   readCommitTasks,
@@ -3589,7 +3587,9 @@ function prefsAsked(keys: unknown, shown: readonly PreferenceSpec[]): Preference
  * one may stand in the hint.
  */
 function unknownPref(path: string, key: string, shown: readonly PreferenceSpec[]): AppError {
-  const close = shown.map((p) => p.key).find((name) => editDistance(name, key.toLowerCase()) <= 3);
+  const close = shown
+    .map((p) => p.key)
+    .find((name) => editDistance(name, key.toLowerCase(), 3) <= 3);
   return invalid(
     path,
     "No preference has this key",

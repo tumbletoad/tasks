@@ -5,7 +5,7 @@
 // takes, and a typo should land in the area meant, as it does when an agent files by name. Escape
 // closes, and focus returns to the pill. A task leaves its area only for another one: `task.update`
 // moves a task into an area or project, never out of every area.
-import { closeName, sameName } from "@ttasks/contracts/group-names";
+import { closeName, sameName } from "./areaNames.ts";
 import { useContext, useMemo, useState } from "react";
 import {
   Autocomplete,

@@ -8,7 +8,6 @@ export * from "./later.ts";
 export * from "./operations.ts";
 export * from "./preferences.ts";
 export * from "./query-terms.ts";
-export * from "./group-names.ts";
 export * from "./day.ts";
 export * from "./registry.ts";
 export type * from "./remote.ts";

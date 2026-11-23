@@ -1,7 +1,7 @@
 // Areas and projects by name, and possible duplicates by title (A3 3.4.5): the pure rules.
-import { AppError, closeName, sameName } from "@ttasks/contracts";
+import { AppError } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
-import { resolveGroup } from "./groups.ts";
+import { editDistance, resolveGroup } from "./groups.ts";
 import type { GroupNames } from "./read.ts";
 import { duplicateWarning, similarTitles } from "./similar.ts";
 
@@ -29,8 +29,8 @@ function failure(fn: () => unknown): AppError {
 }
 
 describe("[A3.3.4.add.names] names, typos and similar titles", () => {
-  test("a name matches by ID, slug, name ignoring case, accents and spaces, or an old slug", () => {
-    for (const name of ["a_1", "client-work", "CLIENT  WORK", "Client work", "Clïent wörk"]) {
+  test("a name matches by ID, slug, name ignoring case and spaces, or an old slug", () => {
+    for (const name of ["a_1", "client-work", "CLIENT  WORK", "Client work"]) {
       expect(resolveGroup(names, "area", name, "p")).toBe("a_1");
     }
     expect(resolveGroup(names, "area", "old-home", "p")).toBe("a_2");
@@ -72,16 +72,62 @@ describe("[A3.3.4.add.names] names, typos and similar titles", () => {
     // A lookup of an unknown name is not_found, with any close name.
     const lookup = failure(() => resolveGroup(names, "area", "Hme", "path", { lookup: true }));
     expect(lookup).toMatchObject({ code: "not_found", data: { suggestions: ["Home"] } });
+    expect(editDistance("kitten", "sitting", 5)).toBe(3);
+    expect(editDistance("a", "abcdef", 2)).toBe(3);
   });
 
-  test("the page and the service share one rule: the same name, or one close to it", () => {
-    expect(sameName("Projects", "projécts")).toBe(true);
-    expect(sameName("Client work", " Client   Work ")).toBe(true);
-    expect(sameName("Projects", "Projcts")).toBe(false);
-    expect(closeName("Projects", "Projcts")).toBe(true);
-    expect(closeName("Projects", "PROJECTS")).toBe(false);
-    expect(closeName("QA", "UX")).toBe(false);
-    expect(closeName("Garden", "Projects")).toBe(false);
+  test("a task filed by name lands where it did before lists came in pages", () => {
+    // Areas as [title, slug], the name an agent files under, and the answer: the area's ID, a new
+    // area, or a refusal with the close names. Each answer is what the resolver of the release
+    // before gave for the same input.
+    const home: [string, string][] = [["Home", "home"]];
+    const resumes: [string, string][] = [
+      ["Resume", "resume"],
+      ["Résumé", "resume-2"],
+    ];
+    const work: [string, string][] = [["Client work", "client-work"]];
+    const cafe: [string, string][] = [["Café", "cafe"]];
+    const typo = (...suggestions: string[]) => ({ code: "invalid_input", suggestions });
+    const table: [[string, string][], string, unknown][] = [
+      [home, "Hoem", "new"],
+      [home, "Hmoe", "new"],
+      [home, "HOME", "a_1"],
+      [resumes, "resume", "a_1"],
+      [resumes, "résumé", "a_2"],
+      [resumes, "Resume", "a_1"],
+      [resumes, "Résumé", "a_2"],
+      [resumes, "RÉSUMÉ", "a_2"],
+      [[["Résumé", "resume"]], "Resume", "a_1"],
+      [[["Resume", "resume"]], "Résumé", typo("Resume")],
+      [[["Dev", "dev"]], "Dew", typo("Dev")],
+      [[["2025", "2025"]], "2026", typo("2025")],
+      [[["Q1", "q1"]], "Q2", "new"],
+      [work, "Client   work", "a_1"],
+      [work, "  client WORK ", "a_1"],
+      [work, "Client wrok", typo("Client work")],
+      [cafe, "Cafe", "a_1"],
+      [cafe, "CAFÉ", "a_1"],
+      [[["Projects", "projects"]], "Projcts", typo("Projects")],
+      [[["Projects", "projects"]], "Porjects", typo("Projects")],
+      [[["QA", "qa"]], "UX", "new"],
+    ];
+    for (const [areas, name, expected] of table) {
+      const groups: GroupNames = {
+        areas: areas.map(([title, slug], k) => ({ id: `a_${String(k + 1)}`, slug, title, area: null })),
+        projects: [],
+        aliases: [],
+      };
+      let answer: unknown;
+      try {
+        answer = resolveGroup(groups, "area", name, "p") ?? "new";
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error;
+        answer = { code: error.code, suggestions: error.data?.["suggestions"] };
+      }
+      expect(answer, `${name} beside ${areas.map(([title]) => title).join(", ")}`).toEqual(
+        expected,
+      );
+    }
   });
 
   test("of several groups a name matches, the one named exactly wins, then a live one", () => {
