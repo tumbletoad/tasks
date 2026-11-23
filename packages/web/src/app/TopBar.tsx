@@ -4,7 +4,10 @@
 // Adding is the field's own mode and the fast path: click it, type, Enter. The text's shortcuts
 // (a date, p1 to p3, #area/project, @person, *) show under the field as what they became, each
 // with a cross that keeps its words as text, and the title they leave. In an area's view the task
-// lands in that area unless the person turns that off. `n` (outside a text field) comes here to add.
+// lands in that area unless the person turns that off. An archived area or project takes no new
+// task here: `#` does not offer it, a `#name` of one says it is archived and leaves its words in
+// the title (an area's name never falls through to a live project of that name), and an archived
+// area's own view adds to no area. `n` (outside a text field) comes here to add.
 // Searching is a page state, the search route: `/` (outside a text field), Ctrl+K or the lens at
 // the field's start enter it, and the field then
 // says so in its icon, its name and its placeholder, before anything is pressed. Typing there
@@ -31,6 +34,7 @@ import {
 } from "../capture/parse.ts";
 import { requestId } from "../api.ts";
 import { Session } from "../context.ts";
+import { liveGroups } from "../groups.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { tabKept } from "../kept.ts";
 import { formatDay } from "../row/dates.ts";
@@ -312,18 +316,39 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
     [],
   );
 
-  const areas = useMemo(() => [...state.areas.values()], [state.areas]);
-  const projects = useMemo(() => [...state.projects.values()], [state.projects]);
-  const inArea = location.pathname.startsWith(`/s/${space}/area/`);
-  const hereArea = inArea ? params.area : undefined;
-  const hereProject = inArea ? params.project : undefined;
+  // New work goes to live groups only: an archived one is neither suggested nor taken, and its name
+  // is said to be archived rather than read as another group's.
+  const { areas, projects, archived } = useMemo(() => {
+    const open = liveGroups(state.areas.values(), state.projects.values());
+    const liveIds = new Set([...open.areas, ...open.projects].map((g) => g.id));
+    return {
+      ...open,
+      archived: {
+        areas: [...state.areas.values()].filter((a) => !liveIds.has(a.id)),
+        projects: [...state.projects.values()].filter((p) => !liveIds.has(p.id)),
+      },
+    };
+  }, [state.areas, state.projects]);
+  // Only an area's and a project's routes have these. On a project's page a capture goes where the
+  // project is now, whatever area its address names.
+  const hereProject = params.project;
+  const hereArea =
+    hereProject === undefined ? params.area : state.projects.get(hereProject)?.area_id;
   const capture = useMemo(() => {
     const here =
       hereArea === undefined
         ? undefined
         : { area: hereArea, ...(hereProject === undefined ? {} : { project: hereProject }) };
-    return parseCapture(text, { today: clock.today, areas, projects, here, kept });
-  }, [text, clock.today, areas, projects, hereArea, hereProject, kept]);
+    return parseCapture(text, { today: clock.today, areas, projects, archived, here, kept });
+  }, [text, clock.today, areas, projects, archived, hereArea, hereProject, kept]);
+  // On a group's page a capture usually lands in that group: one that goes to the Inbox instead (a
+  // project without an area, an archived group, the page's chip taken off) says so.
+  const toInbox =
+    (params.area !== undefined || params.project !== undefined) &&
+    capture.archived === undefined &&
+    !capture.chips.some((chip) => chip.kind === "area" || chip.kind === "waiting");
+  // What the text's shortcuts became, an archived group a `#name` named instead, or the Inbox.
+  const read = capture.chips.length > 0 || capture.archived !== undefined || toInbox;
   const typed = searching ? undefined : groupTyped(text, caret);
   const suggestions = typed === undefined ? [] : groupSuggestions(typed.typed, areas, projects);
 
@@ -388,11 +413,7 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
 
   const value = searching ? query : text;
   const label = searching ? t("top.search") : t("top.newTask");
-  const showPanel =
-    within &&
-    !searching &&
-    text.trim() !== "" &&
-    (capture.chips.length > 0 || suggestions.length > 0);
+  const showPanel = within && !searching && text.trim() !== "" && (read || suggestions.length > 0);
 
   return (
     <div className={styles.bar}>
@@ -506,7 +527,7 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
                 ))}
               </div>
             )}
-            {capture.chips.length === 0 ? null : (
+            {!read ? null : (
               <ul className={styles.chips}>
                 {capture.chips.map((chip) => {
                   const shown = chipLabel(t, chip, clock.locale);
@@ -539,9 +560,19 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
                     </li>
                   );
                 })}
+                {toInbox ? (
+                  <li className={styles.chip} data-kind="inbox">
+                    <span>{t("capture.inbox")}</span>
+                  </li>
+                ) : null}
+                {capture.archived === undefined ? null : (
+                  <li className={styles.chip} data-kind="archived">
+                    <span dir="auto">{t("capture.archived", { name: capture.archived })}</span>
+                  </li>
+                )}
               </ul>
             )}
-            {capture.chips.length === 0 ? null : (
+            {!read ? null : (
               <p className={styles.title}>
                 {capture.draft === undefined ? (
                   t("top.needsTitle")

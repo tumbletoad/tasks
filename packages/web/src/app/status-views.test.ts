@@ -9,7 +9,7 @@ import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 import type { Changes } from "../store/store.ts";
 import { ChangeLog } from "./changes.ts";
 import {
-  areaFilter,
+  projectFilter,
   COUNTED,
   countedViewOf,
   recentOf,
@@ -138,13 +138,11 @@ describe("[A5.3.5.web.view-groups] each view's grouping", () => {
       "s:pj_portal",
     ]);
     const project = projectGroups(
-      tasks.filter(areaFilter("ar_lumen", "pj_portal")),
+      tasks.filter(projectFilter("pj_portal")),
       [lumen],
       [portal, sync],
     );
-    expect(shape(project)).toEqual([
-      ["flat", "Lumen Health", [[undefined, ["Fix zones", "Someday"]]]],
-    ]);
+    expect(shape(project)).toEqual([["flat", undefined, [[undefined, ["Fix zones", "Someday"]]]]]);
   });
 
   test("Agents: a task an agent finished stays in Recent with its finished row, until it is deleted", () => {

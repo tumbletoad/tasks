@@ -3,6 +3,7 @@ import type { TaskRow } from "../live.ts";
 import { landingSpace, notOpen, type SpaceList } from "./spaces.ts";
 import {
   areaFilter,
+  projectFilter,
   COUNTED,
   countedViewOf,
   groupCounts,
@@ -80,16 +81,13 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
       "open",
       "backlog",
     ]);
-    expect(TASKS.filter(areaFilter("ar_a", "pj_1")).map((t) => t.status)).toEqual([
-      "open",
-      "backlog",
-    ]);
+    expect(TASKS.filter(projectFilter("pj_1")).map((t) => t.status)).toEqual(["open", "backlog"]);
   });
 
   test("an area counts what its view lists, its projects' tasks included; a project its own", () => {
     const counts = groupCounts(TASKS);
     expect(counts.get("ar_a")).toBe(TASKS.filter(areaFilter("ar_a")).length);
-    expect(counts.get("pj_1")).toBe(TASKS.filter(areaFilter("ar_a", "pj_1")).length);
+    expect(counts.get("pj_1")).toBe(TASKS.filter(projectFilter("pj_1")).length);
     expect(counts.get("ar_b")).toBe(1);
     expect(counts.get("ar_none")).toBeUndefined();
   });

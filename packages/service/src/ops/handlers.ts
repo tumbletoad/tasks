@@ -1155,6 +1155,21 @@ async function afterWrite<T>(
   }
 }
 
+/**
+ * Where a project is after a write that made or named it: its area, and whether that area is
+ * archived. Read after the write, so the answer says where the project went however its area's name
+ * was resolved, and also when the area was archived meanwhile.
+ */
+async function areaOf(call: Call, project: string): Promise<{ area?: Record<string, unknown> }> {
+  const names = await afterWrite(call, readGroupNames);
+  const id = names?.projects.find((p) => p.id === project)?.area;
+  const area = id === null ? undefined : names?.areas.find((a) => a.id === id);
+  if (area === undefined) return {};
+  return {
+    area: { id: area.id, name: area.title, ...(area.archived === true ? { archived: true } : {}) },
+  };
+}
+
 /** What the commit `seq` of a write did to the task of `op`, from history (read.ts). */
 function commitOf(call: Call, op: OpResult, seq: number): Promise<CommitFacts | undefined> {
   return afterWrite(call, (reader) => readCommit(reader, op.task ?? op.id, seq));
@@ -3281,7 +3296,12 @@ async function folderWrite(
         return {
           action,
           result: "exists",
-          owner: { kind: "project", id: taken.project, name: taken.name },
+          owner: {
+            kind: "project",
+            id: taken.project,
+            name: taken.name,
+            ...(await areaOf(call, taken.project)),
+          },
           folder: taken.stored,
           as_of: read.space.asOf,
         };
@@ -3308,11 +3328,11 @@ async function folderWrite(
     );
     const result = await submit(call, ops);
     await markersAfter(call, ops, result);
-    const project = result.results.find((r) => isId(r.id, "p"));
+    const project = result.results.find((r) => isId(r.id, "p"))?.id ?? projectId;
     return {
       action,
       result: result.status === "applied" ? "created" : "no_change",
-      owner: { kind: "project", id: project?.id ?? projectId, name },
+      owner: { kind: "project", id: project, name, ...(await areaOf(call, project)) },
       folder: folder.stored,
       as_of: result.as_of,
       ...replayed(result),
@@ -3535,6 +3555,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
         id: id ?? "",
         name: action === "rename" ? (to ?? "") : (path.project ?? path.area),
         ...(folder === undefined ? {} : { folder: folder.stored }),
+        ...(kind === "project" && id !== undefined ? await areaOf(call, id) : {}),
       },
       ...replayed(result),
     });
@@ -3605,7 +3626,13 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
               action,
               as_of: read.space.asOf,
               result: "exists",
-              group: { kind: "project", id: taken.project, name: taken.name, folder: taken.stored },
+              group: {
+                kind: "project",
+                id: taken.project,
+                name: taken.name,
+                folder: taken.stored,
+                ...(await areaOf(call, taken.project)),
+              },
             });
           }
           ops.push({ kind: "project.folder_set", project, path: folder.stored });
@@ -3685,7 +3712,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
     action,
     as_of: asOf ?? read.space.asOf,
     result: outcome,
-    group,
+    group: group.kind === "project" ? { ...group, ...(await areaOf(call, group.id)) } : group,
     ...(outcome !== "no_change" && !replay ? moveAnswer(move) : {}),
     ...(replay ? { replayed: true } : {}),
   });

@@ -13,6 +13,7 @@ import {
   idPattern,
   InsideFolders,
   Mode,
+  ProjectArea,
   ProposalId,
   Replayed,
   RequestId,
@@ -137,6 +138,7 @@ export const GroupManageResult = z.strictObject({
       id: z.string().regex(idPattern("[ap]")).describe("Its ID"),
       name: z.string().describe("Its name now"),
       folder: Folder.optional(),
+      area: ProjectArea.optional(),
     })
     .describe("A write: the group it changed")
     .optional(),

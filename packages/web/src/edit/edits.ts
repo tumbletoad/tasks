@@ -1075,7 +1075,8 @@ export class Edits {
       if (this.#gate === turn) this.#gate = undefined;
     });
     return sent.answer.then((value) => {
-      const text = said(value);
+      // A write that changed nothing has nothing to undo.
+      const text = WROTE_NOTHING.has(String(value.result)) ? undefined : said(value);
       if (text !== undefined) {
         this.#toast({
           kind: "undo",

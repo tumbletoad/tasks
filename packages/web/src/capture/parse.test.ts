@@ -194,4 +194,31 @@ describe("[A5.3.13.web.capture] a quick capture reads its shortcuts and leaves t
     ]);
     expect(groupSuggestions("#ga", AREAS, PROJECTS).map((s) => s.insert)).toEqual(["#home/garden"]);
   });
+
+  test("an archived group's name means it and files nothing there: never a live project of the same name; #area/project still picks the live one", () => {
+    const garden = { id: "a_garden", title: "Garden" };
+    const shed = { id: "p_shed", title: "Shed", area_id: "a_home" };
+    const archived = { areas: [garden], projects: [shed] };
+    const live = read("Weed the beds #garden", { areas: [...AREAS, garden] });
+    expect(live.chips).toMatchObject([{ kind: "area", area: garden }]);
+
+    const after = read("Weed the beds #garden", { archived });
+    expect(after.chips).toEqual([]);
+    expect(after.archived).toBe("Garden");
+    expect(after.title).toBe("Weed the beds #garden");
+    expect(after.draft).toEqual({ title: "Weed the beds #garden", inbox: true });
+
+    expect(read("Weed #home/garden", { archived }).draft).toMatchObject({
+      area: "Home",
+      project: "Garden",
+    });
+    expect(read("Weed #home/garden", { archived }).archived).toBeUndefined();
+    expect(read("Paint #shed", { archived })).toMatchObject({ chips: [], archived: "Shed" });
+    expect(read("Paint #home/shed", { archived })).toMatchObject({ chips: [], archived: "Shed" });
+    expect(read("Paint #garden/beds", { archived })).toMatchObject({ archived: "Garden" });
+    // A live area of the name wins over an archived one.
+    expect(
+      read("Weed #home", { archived: { areas: [{ id: "a_old", title: "Home" }], projects: [] } }),
+    ).toMatchObject({ chips: [{ kind: "area", area: { id: "a_home" } }] });
+  });
 });

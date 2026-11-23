@@ -9,6 +9,7 @@
 //                                           completed, agents
 //   /s/:space/area/:area                    an area
 //   /s/:space/area/:area/project/:project   a project of it
+//   /s/:space/project/:project              a project without an area
 //   /s/:space/search?q=                     search results of the top field (`?task=` too)
 //   /s/:space/task/:id                      a task link: resolved to its host view (host.ts)
 //   /s/:space/settings                    Settings (an older `settings/:section` link lands there)
@@ -28,7 +29,7 @@ import {
 } from "@tanstack/react-router";
 import { SPACE_ID, SEGMENT } from "../route.ts";
 import { Landing } from "./Landing.tsx";
-import { AreaPage, SearchPage, TaskPage, ViewPage } from "./pages.tsx";
+import { AreaPage, ProjectPage, SearchPage, TaskPage, ViewPage } from "./pages.tsx";
 import { SettingsPage } from "./Settings.tsx";
 import { SpaceSession } from "./session.tsx";
 import { Shell } from "./Shell.tsx";
@@ -108,9 +109,20 @@ const projectRoute = createRoute({
   path: "area/$area/project/$project",
   validateSearch: taskSearch,
   component: function ProjectRoute() {
-    const { area, project } = projectRoute.useParams();
+    const { space, area, project } = projectRoute.useParams();
     const { task } = projectRoute.useSearch();
-    return <AreaPage area={area} project={project} task={task} />;
+    return <ProjectPage space={space} area={area} project={project} task={task} />;
+  },
+});
+
+const looseProjectRoute = createRoute({
+  getParentRoute: () => spaceRoute,
+  path: "project/$project",
+  validateSearch: taskSearch,
+  component: function LooseProjectRoute() {
+    const { space, project } = looseProjectRoute.useParams();
+    const { task } = looseProjectRoute.useSearch();
+    return <ProjectPage space={space} project={project} task={task} />;
   },
 });
 
@@ -161,6 +173,7 @@ const routeTree = rootRoute.addChildren([
     viewRoute,
     areaRoute,
     projectRoute,
+    looseProjectRoute,
     searchRoute,
     taskRoute,
     settingsRoute,

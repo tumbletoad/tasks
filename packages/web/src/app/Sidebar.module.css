@@ -165,6 +165,48 @@ button.fold:hover {
   font-size: 0.8125rem;
 }
 
+/* Archived, after the areas: one quiet line that opens the archived groups. */
+.shelf {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-block-start: 12px;
+}
+
+button.item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.shelf > .item {
+  color: var(--k-muted);
+}
+
+.shelf > .item svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+  transition: transform var(--k-fast) var(--k-ease);
+}
+
+.shelf[data-folded="true"] > .item svg {
+  transform: rotate(-90deg);
+}
+
+[dir="rtl"] .shelf[data-folded="true"] > .item svg {
+  transform: rotate(90deg);
+}
+
+/* Folded, Archived holds the page on screen: the way back to it. */
+.shelf > .item[data-within="true"] {
+  background: var(--k-hover);
+  color: var(--k-text);
+}
+
 .foot {
   display: flex;
   gap: 4px;
@@ -205,7 +247,7 @@ button.fold:hover {
 }
 
 @media (hover: hover) {
-  .area:hover > .item .count,
+  .area:has(> .add):hover > .item .count,
   .area:has(> .add[data-focus-visible]) > .item .count {
     visibility: hidden;
   }
