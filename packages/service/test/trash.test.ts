@@ -295,6 +295,18 @@ describe("[A3.trash] the Trash through real requests", () => {
     expect(refs((await trash({ q: "Fixture stale removal" })).rows)).toEqual([]);
   });
 
+  test("the same request ID answers what the first answer said, whatever happened since", async () => {
+    const a = await add({ title: "Fixture replayed restore" });
+    await remove([a]);
+    const input = { tasks: [a], restore: true, base: await asOf(), request_id: rid() };
+    const first = await call("task.delete", input);
+    expect(first["restored"]).toMatchObject([{ ref: a, lifecycle: "active" }]);
+    await call("task.finish", { task: a, base: await asOf(), request_id: rid() });
+    const again = await call("task.delete", input);
+    expect(again["restored"]).toEqual(first["restored"]);
+    expect(again).toMatchObject({ replayed: true, result: "restored", moved: [a] });
+  });
+
   test("a removed task whose agent was opened in a terminal is among the ones still worked on", async () => {
     const a = await add({ title: "Fixture agent still on it" });
     const quiet = await add({ title: "Fixture nobody on it" });

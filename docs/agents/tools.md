@@ -1519,21 +1519,11 @@ Move tasks to the Trash, or restore them. Nothing is deleted for good.
 | `restored` | object[], max 100 items | no | Where each is back |
 | `restored[].id` | string | yes | Task ID |
 | `restored[].ref` | string | yes | Task reference |
-| `restored[].title` | string | yes | Title |
 | `restored[].lifecycle` | "active" \| "completed" \| "archived" | yes | Lifecycle |
 | `restored[].status` | string | yes | Status key |
 | `restored[].inbox` | boolean | yes | In the Inbox |
-| `restored[].priority` | integer, 1 to 4 | yes | 1 highest, 4 none |
-| `restored[].effort` | string | no | Effort |
-| `restored[].due` | string \| object | no | Due date, or a due time with its zone |
-| `restored[].due.at` | string | yes | Due time, in UTC |
-| `restored[].due.tz` | string | yes | IANA time zone of the commitment |
 | `restored[].area` | string | no | Area name |
 | `restored[].project` | string | no | Project name |
-| `restored[].deleted` | object | no | In the Trash: who moved it there. Tell the user; never add it again |
-| `restored[].deleted.at` | string | yes | When |
-| `restored[].deleted.by` | string | yes | Who: user, import or the actor's label |
-| `restored[].deleted.change` | string | no | The change that moved it |
 | `restored[].regrouped` | "area" \| "inbox" | no | Its project or area was gone: it went to the area, or to the Inbox |
 | `restored[].held` | object[], max 50 items | no | Its links that stayed removed |
 | `restored[].held[].source` | string | yes | Source ID |
@@ -1600,11 +1590,9 @@ Result:
     {
       "id": "t_9b3d7f1h5k9m3p7r1t5w9y3a7c",
       "ref": "M-12",
-      "title": "Call the clinic about the invoice",
       "lifecycle": "active",
       "status": "open",
-      "inbox": false,
-      "priority": 4
+      "inbox": false
     }
   ],
   "commit": "op_6m0p4r8t2w6y0b4d8f2h6k0m4p",

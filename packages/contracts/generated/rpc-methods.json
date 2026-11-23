@@ -3257,63 +3257,6 @@
                   "description": "Area name",
                   "type": "string"
                 },
-                "deleted": {
-                  "additionalProperties": false,
-                  "description": "In the Trash: who moved it there. Tell the user; never add it again",
-                  "properties": {
-                    "at": {
-                      "description": "When",
-                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
-                      "type": "string"
-                    },
-                    "by": {
-                      "description": "Who: user, import or the actor's label",
-                      "type": "string"
-                    },
-                    "change": {
-                      "description": "The change that moved it",
-                      "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "at",
-                    "by"
-                  ],
-                  "type": "object"
-                },
-                "due": {
-                  "anyOf": [
-                    {
-                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
-                      "type": "string"
-                    },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "at": {
-                          "description": "Due time, in UTC",
-                          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
-                          "type": "string"
-                        },
-                        "tz": {
-                          "description": "IANA time zone of the commitment",
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "at",
-                        "tz"
-                      ],
-                      "type": "object"
-                    }
-                  ],
-                  "description": "Due date, or a due time with its zone"
-                },
-                "effort": {
-                  "description": "Effort",
-                  "type": "string"
-                },
                 "held": {
                   "description": "Its links that stayed removed",
                   "items": {
@@ -3357,12 +3300,6 @@
                   ],
                   "type": "string"
                 },
-                "priority": {
-                  "description": "1 highest, 4 none",
-                  "maximum": 4,
-                  "minimum": 1,
-                  "type": "integer"
-                },
                 "project": {
                   "description": "Project name",
                   "type": "string"
@@ -3383,20 +3320,14 @@
                 "status": {
                   "description": "Status key",
                   "type": "string"
-                },
-                "title": {
-                  "description": "Title",
-                  "type": "string"
                 }
               },
               "required": [
                 "id",
                 "ref",
-                "title",
                 "lifecycle",
                 "status",
-                "inbox",
-                "priority"
+                "inbox"
               ],
               "type": "object"
             },

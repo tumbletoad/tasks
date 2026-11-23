@@ -615,6 +615,11 @@ const SQL = {
     "WHERE ts.task_id = $task AND s.source_key IS NOT NULL AND s.deleted_at IS NULL " +
     "ORDER BY ts.position, ts.source_id",
   projectGroup: "SELECT area_id, deleted_at FROM projects WHERE id = $id",
+  /** Where a restored task is back: its list and the names of its area and project. */
+  backIn:
+    "SELECT t.status, t.inbox, a.title AS area, p.title AS project FROM tasks t " +
+    "LEFT JOIN areas a ON a.id = t.area_id LEFT JOIN projects p ON p.id = t.project_id " +
+    "WHERE t.id = $id",
   areaGone: "SELECT 1 AS found FROM areas WHERE id = $id AND deleted_at IS NOT NULL",
   sharedWith:
     "SELECT t.ref FROM task_sources ts JOIN tasks t ON t.id = ts.task_id " +
@@ -2828,6 +2833,10 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
         );
         const regrouped = fields.has("inbox") ? "inbox" : fields.has("grouping") ? "area" : null;
         const held = staged.held ?? [];
+        const back =
+          op.kind === "task.restore" && staged.skip !== true
+            ? conn.prepare(SQL.backIn).get({ id: task.id })
+            : undefined;
         return {
           i,
           status,
@@ -2839,6 +2848,17 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
             ? {}
             : { held_links: held.map(({ source, by }) => ({ source, by: refOf(by) })) }),
           ...(regrouped === null ? {} : { regrouped }),
+          ...(back === undefined
+            ? {}
+            : {
+                back: {
+                  lifecycle: task.lifecycle,
+                  status: String(back["status"]),
+                  inbox: back["inbox"] === 1,
+                  ...(typeof back["area"] === "string" ? { area: back["area"] } : {}),
+                  ...(typeof back["project"] === "string" ? { project: back["project"] } : {}),
+                },
+              }),
         };
       }
       case "place.set": {

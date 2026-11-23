@@ -37,8 +37,19 @@ export const TaskDeleteInput = z.strictObject({
   request_id: RequestId,
 });
 
-/** A task back from the Trash, where it is now, and what of it stayed as it was. */
-export const RestoredTask = TaskRow.extend({
+/**
+ * A task back from the Trash: where it is back, as its change left it (a retry says the same,
+ * whatever happened since), and what of it stayed removed.
+ */
+export const RestoredTask = TaskRow.pick({
+  id: true,
+  ref: true,
+  lifecycle: true,
+  status: true,
+  inbox: true,
+  area: true,
+  project: true,
+}).extend({
   regrouped: z
     .enum(["area", "inbox"])
     .describe("Its project or area was gone: it went to the area, or to the Inbox")
@@ -113,11 +124,9 @@ export const taskDelete = defineEntry({
           {
             id: "t_9b3d7f1h5k9m3p7r1t5w9y3a7c",
             ref: "M-12",
-            title: "Call the clinic about the invoice",
             lifecycle: "active",
             status: "open",
             inbox: false,
-            priority: 4,
           },
         ],
         commit: "op_6m0p4r8t2w6y0b4d8f2h6k0m4p",

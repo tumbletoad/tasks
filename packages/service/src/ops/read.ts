@@ -623,36 +623,6 @@ export async function readRemoval(
   return { ref: formatTaskRef(spaceFacts(space).refPrefix, Number(task["ref"])), removal };
 }
 
-/**
- * The tasks `ids` name as a list shows them, with their area's and project's names, a deleted
- * one's too, in the order given.
- */
-export async function readTaskRows(
-  reader: WorkerConnection,
-  ids: readonly string[],
-): Promise<Record<string, unknown>[]> {
-  const [space, rows] = await snapshot(
-    reader,
-    [
-      SPACE,
-      {
-        sql:
-          "SELECT t.*, a.title AS area_title, p.title AS project_title FROM tasks t " +
-          "LEFT JOIN areas a ON a.id = t.area_id LEFT JOIN projects p ON p.id = t.project_id " +
-          "WHERE t.id IN (SELECT value FROM json_each($ids))",
-        mode: "all",
-      },
-    ],
-    { ids: JSON.stringify(ids) },
-  );
-  const prefix = spaceFacts(space).refPrefix;
-  const byId = new Map((rows as Row[]).map((row) => [String(row["id"]), row]));
-  return ids.flatMap((id) => {
-    const row = byId.get(id);
-    return row === undefined ? [] : [taskRow(row, prefix)];
-  });
-}
-
 /** A task's live links, then those detached from it, as its read lists them. */
 export async function readTaskLinks(reader: WorkerConnection, ref: string): Promise<Row[]> {
   const { id, ref: number, alias } = taskKey(ref);

@@ -252,6 +252,17 @@ export interface OpResult {
    * with no live area left, to the Inbox.
    */
   regrouped?: "area" | "inbox";
+  /**
+   * `task.restore` that brought the task back: where it is back, as its change left it, with its
+   * area's and project's names. A replay says the same, whatever changed since.
+   */
+  back?: {
+    lifecycle: TaskLifecycle;
+    status: string;
+    inbox: boolean;
+    area?: string;
+    project?: string;
+  };
   /** A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). */
   matched_by?: "source_key";
   lifecycle?: TaskLifecycle;

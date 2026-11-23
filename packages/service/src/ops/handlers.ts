@@ -153,7 +153,6 @@ import {
   readKeyHolders,
   readTaskKeys,
   readTaskRef,
-  readTaskRows,
   readTaskTitles,
   logOf,
   noteOf,
@@ -2751,25 +2750,21 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const moved = result.results.filter((r) => r.status === "updated");
     const already = result.results.filter((r) => r.status === "unchanged");
     const refs = (list: readonly OpResult[]) => [...new Set(list.map(refOf))];
-    // Where each restored task is now, as a list shows it: read after the write, it never turns
-    // an applied answer into an error (afterWrite).
-    const rows =
-      !restore || moved.length === 0
+    // Where each restored task is back, as its change left it: the writer's answer, which a replay
+    // gives again whatever happened since.
+    const restored = moved.flatMap((op) =>
+      op.back === undefined
         ? []
-        : ((await afterWrite(call, (reader) =>
-            readTaskRows(
-              reader,
-              moved.map((r) => r.id),
-            ),
-          )) ?? []);
-    const restored = rows.map((row) => {
-      const op = moved.find((r) => r.id === row["id"]);
-      return {
-        ...row,
-        ...(op?.regrouped === undefined ? {} : { regrouped: op.regrouped }),
-        ...(op?.held_links === undefined ? {} : { held: op.held_links }),
-      };
-    });
+        : [
+            {
+              id: op.id,
+              ref: refOf(op),
+              ...op.back,
+              ...(op.regrouped === undefined ? {} : { regrouped: op.regrouped }),
+              ...(op.held_links === undefined ? {} : { held: op.held_links }),
+            },
+          ],
+    );
     return {
       result: moved.length === 0 ? "no_change" : restore ? "restored" : "moved",
       moved: refs(moved),
