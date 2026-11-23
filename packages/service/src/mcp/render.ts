@@ -452,8 +452,10 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
     },
     {
       data: true,
-      title: (_kept, total) => (total === 0 ? undefined : "Learnings"),
-      units: task.learnings.slice(0, 3).map((learning) => [`- ${clip(learning, 200)}`]),
+      total: task.learnings.length + more.learnings,
+      title: (kept, total) =>
+        total === 0 ? undefined : `Learnings (${String(kept)} of ${String(total)})`,
+      units: task.learnings.map((learning) => [`- ${learning}`]),
     },
     ...(task.outcome === undefined
       ? []

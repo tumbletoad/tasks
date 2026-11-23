@@ -44,6 +44,9 @@ export const DIGEST_LIMITS = {
   sourceTitle: 100,
   /** Not in A3's table: the agent's limit of an outcome (A3 3.4.8). */
   outcome: 600,
+  /** The first learnings, each whole up to the length an agent may write one. */
+  learnings: 3,
+  learningChars: 300,
 } as const;
 
 /** `text` cut to `max` code points, with how many were left out. */
@@ -51,6 +54,24 @@ function clipped(value: string, max: number): { text: string; cut?: number } {
   const chars = Array.from(value);
   if (chars.length <= max) return { text: value };
   return { text: chars.slice(0, max).join(""), cut: chars.length - max };
+}
+
+/**
+ * The first `count` of a list that are each at most `chars` long, in order: it stops at the first
+ * longer one, so every text shown is whole and the rest are counted, never cut.
+ */
+function wholeUpTo<T>(
+  list: readonly T[],
+  textOf: (item: T) => string,
+  count: number,
+  chars: number,
+): T[] {
+  const kept: T[] = [];
+  for (const item of list) {
+    if (kept.length === count || Array.from(textOf(item)).length > chars) break;
+    kept.push(item);
+  }
+  return kept;
 }
 
 /**
@@ -95,11 +116,18 @@ export function digestOf(
     return c.text;
   };
   // Newest first, each whole, at most five: the digest stops at the first longer one (A3 3.9.6).
-  const instructions: Row[] = [];
-  for (const note of read.instructions) {
-    if (Array.from(text(note["body"])).length > DIGEST_LIMITS.instructionChars) break;
-    instructions.push(note);
-  }
+  const instructions = wholeUpTo(
+    read.instructions,
+    (note) => text(note["body"]),
+    DIGEST_LIMITS.instructions,
+    DIGEST_LIMITS.instructionChars,
+  );
+  const learnings = wholeUpTo(
+    read.learnings.map((learning) => learning.text),
+    (learning) => learning,
+    DIGEST_LIMITS.learnings,
+    DIGEST_LIMITS.learningChars,
+  );
   const item = <T extends { text: string }>(value: T, max: number): T & { cut?: number } => {
     const c = clipped(value.text, max);
     return { ...value, text: c.text, ...(c.cut === undefined ? {} : { cut: c.cut }) };
@@ -123,7 +151,7 @@ export function digestOf(
     ...(folder === undefined ? {} : { folder }),
     ...present("wrap_state", row["wrap_state"]),
     ...(outcome === "" ? {} : { outcome: field("outcome", outcome, DIGEST_LIMITS.outcome) }),
-    learnings: [],
+    learnings,
     instructions: instructions.map(noteOf),
     notes: read.notes.map((note) => item(noteOf(note), DIGEST_LIMITS.noteChars)),
     log: read.log.map((entry) => item(logOf(entry), DIGEST_LIMITS.logChars)),
@@ -133,6 +161,7 @@ export function digestOf(
       notes: counts.notes - read.notes.length,
       log: counts.log - read.log.length,
       sources: counts.sources - sources.length,
+      learnings: read.learnings.length - learnings.length,
     },
     version: Number(row["version"]),
   };

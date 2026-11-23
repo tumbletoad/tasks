@@ -1824,7 +1824,7 @@ When `view` is `"digest"`:
 | `task.folder.machine` | string | yes | The machine its folder is on: it opens there |
 | `task.wrap_state` | "pending" \| "wrapped" | no | Wrap-up state |
 | `task.outcome` | string | no | Outcome of the last completion |
-| `task.learnings` | string[] | yes | Learnings |
+| `task.learnings` | string[], max 3 items | yes | Its first learnings: up to 3, each whole, up to 300 characters |
 | `task.instructions` | object[], max 5 items | yes | Notes from the user to agents, newest first: up to 5, each whole |
 | `task.instructions[].ref` | string | yes | Note ordinal, such as n2 |
 | `task.instructions[].author` | string | yes | Actor that wrote it, from history |
@@ -1877,6 +1877,7 @@ When `view` is `"digest"`:
 | `task.more.notes` | integer, 0 to 9007199254740991 | yes | Other notes not here |
 | `task.more.log` | integer, 0 to 9007199254740991 | yes | Log entries not here |
 | `task.more.sources` | integer, 0 to 9007199254740991 | yes | Sources not here |
+| `task.more.learnings` | integer, 0 to 9007199254740991 | yes | Learnings not here |
 | `task.cut` | object | no | Characters left out of the task's own texts |
 | `task.cut.title` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
 | `task.cut.summary` | integer, 0 to 9007199254740991 | no | Characters left out; a sections read has them |
@@ -2103,7 +2104,8 @@ Result:
       "instructions": 0,
       "notes": 0,
       "log": 0,
-      "sources": 0
+      "sources": 0,
+      "learnings": 0
     },
     "version": 1040
   },

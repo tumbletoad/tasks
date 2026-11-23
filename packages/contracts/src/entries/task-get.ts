@@ -162,7 +162,10 @@ export const TaskDetail = TaskRow.extend({
   ).optional(),
   wrap_state: WrapState.optional(),
   outcome: z.string().describe("Outcome of the last completion").optional(),
-  learnings: Learnings,
+  learnings: z
+    .array(z.string())
+    .max(3)
+    .describe("Its first learnings: up to 3, each whole, up to 300 characters"),
   instructions: z
     .array(NoteOutput)
     .max(5)
@@ -176,6 +179,7 @@ export const TaskDetail = TaskRow.extend({
       notes: Count.describe("Other notes not here"),
       log: Count.describe("Log entries not here"),
       sources: Count.describe("Sources not here"),
+      learnings: Count.describe("Learnings not here"),
     })
     .describe("What the digest left out: read it with sections"),
   cut: z
@@ -375,7 +379,7 @@ export const taskGet = defineEntry({
           ],
           log: [evidence],
           sources: [ticket],
-          more: { instructions: 0, notes: 0, log: 0, sources: 0 },
+          more: { instructions: 0, notes: 0, log: 0, sources: 0, learnings: 0 },
           version: 1040,
         },
         skills: [

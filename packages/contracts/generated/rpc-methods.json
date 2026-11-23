@@ -4238,10 +4238,11 @@
                     "type": "array"
                   },
                   "learnings": {
-                    "description": "Learnings",
+                    "description": "Its first learnings: up to 3, each whole, up to 300 characters",
                     "items": {
                       "type": "string"
                     },
+                    "maxItems": 3,
                     "type": "array"
                   },
                   "lifecycle": {
@@ -4346,6 +4347,12 @@
                         "minimum": 0,
                         "type": "integer"
                       },
+                      "learnings": {
+                        "description": "Learnings not here",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
                       "log": {
                         "description": "Log entries not here",
                         "maximum": 9007199254740991,
@@ -4369,7 +4376,8 @@
                       "instructions",
                       "notes",
                       "log",
-                      "sources"
+                      "sources",
+                      "learnings"
                     ],
                     "type": "object"
                   },

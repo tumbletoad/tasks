@@ -574,7 +574,13 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
       ]);
       expect((digest["log"] as Json[]).map((x) => x["ref"])).toEqual(["l10", "l9", "l8"]);
       expect((digest["sources"] as Json[]).map((x) => x["cut"])).toEqual([51, 51, 51, 51, 51]);
-      expect(digest["more"]).toEqual({ instructions: 2, notes: 2, log: 7, sources: 3 });
+      expect(digest["more"]).toEqual({
+        instructions: 2,
+        notes: 2,
+        log: 7,
+        sources: 3,
+        learnings: 0,
+      });
 
       // A note for agents over 1,000 characters stops the digest's notes for agents there.
       await call(
@@ -588,6 +594,32 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
     },
     LONG,
   );
+
+  test("the digest shows a task's first learnings, each whole, and counts the rest", async () => {
+    const finished = async (title: string, learnings: string[]) => {
+      const [task] = await add(title);
+      const ref = task ?? "";
+      await call(
+        "task.finish",
+        {
+          task: ref,
+          outcome: "Fixture outcome.",
+          learnings,
+          base: await asOf(),
+          request_id: rid(),
+        },
+        USER,
+      );
+      return (await call("task.get", { task: ref }))["task"] as Json;
+    };
+    const five = await finished("Fixture task with five lessons", ["A.", "B.", "C.", "D.", "E."]);
+    expect(five["learnings"]).toEqual(["A.", "B.", "C."]);
+    expect((five["more"] as Json)["learnings"]).toBe(2);
+    // A lesson longer than the digest holds stops the preview there: none is shown cut.
+    const long = await finished("Fixture task with a long lesson", ["A.", "L".repeat(301), "C."]);
+    expect(long["learnings"]).toEqual(["A."]);
+    expect((long["more"] as Json)["learnings"]).toBe(2);
+  });
 
   test("[A3.3.4.here.folders] the digest says where the task opens here: its own folder, its project's, missing, or the work folder", async () => {
     const shop = folder("work", "shop");
