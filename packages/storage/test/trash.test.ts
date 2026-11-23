@@ -33,6 +33,9 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
         ...extra,
       }),
     );
+  /** A request without a base, as a restore of one change is sent. */
+  const unbased = (ops: Operation[]): WriteResult =>
+    fx.writer.submit(fx.request(fx.human, ops, { undoable: true }));
   const applied = (result: WriteResult): WriteResult => {
     expectStatus(result, "applied");
     return result;
@@ -72,10 +75,15 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
       { kind: "source.add", task: id, source: ticket(key) },
     ]);
     expect(["applied", "unchanged"]).toContain(result.status);
-    return (result.results[0]?.task ?? id) as Id<"t">;
+    return result.results[0]?.task ?? id;
   };
   const remove = (...ids: string[]) =>
-    applied(send("human", ids.map((id): Operation => ({ kind: "task.delete", task: id }))));
+    applied(
+      send(
+        "human",
+        ids.map((id): Operation => ({ kind: "task.delete", task: id })),
+      ),
+    );
   const restore = (...ids: string[]) =>
     send(
       "human",
@@ -127,18 +135,12 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     remove(b);
     applied(restore(c));
     const result = applied(
-      send(
-        "human",
-        [a, b, c].map((id): Operation => ({ kind: "task.restore", task: id, change })),
-        { base: undefined },
-      ),
+      unbased([a, b, c].map((id): Operation => ({ kind: "task.restore", task: id, change }))),
     );
     expect(result.results.map((r) => r.status)).toEqual(["updated", "unchanged", "unchanged"]);
     expect([deleted(a), deleted(b), deleted(c)]).toEqual([false, true, false]);
     // A change the space does not have (a backup restored since) moves nothing.
-    const gone = send("human", [{ kind: "task.restore", task: b, change: newId("op") }], {
-      base: undefined,
-    });
+    const gone = unbased([{ kind: "task.restore", task: b, change: newId("op") }]);
     expectStatus(gone, "rejected");
     expect(gone.error).toMatchObject({ code: "NOT_FOUND", field: "change" });
     expect(deleted(b)).toBe(true);
@@ -151,9 +153,7 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     expect(deleted(a)).toBe(false);
     applied(fx.writer.submit(fx.request(fx.human, [{ kind: "redo" }])));
     expect(deleted(a)).toBe(true);
-    const back = applied(
-      send("human", [{ kind: "task.restore", task: a, change }], { base: undefined }),
-    );
+    const back = applied(unbased([{ kind: "task.restore", task: a, change }]));
     expect(back.results[0]?.status).toBe("updated");
   });
 
