@@ -58,6 +58,18 @@ const FLAGS: Readonly<Record<string, keyof ServiceFlags>> = {
   "--json": "json",
 };
 
+// A flag a verb does not act on is refused, never ignored: `stop --dry-run` would stop the service.
+const CHANGE_FLAGS: ReadonlySet<keyof ServiceFlags> = new Set(["json", "yes", "dryRun"]);
+const JSON_ONLY: ReadonlySet<keyof ServiceFlags> = new Set(["json"]);
+const VERB_FLAGS: Readonly<Record<ServiceVerb, ReadonlySet<keyof ServiceFlags>>> = {
+  install: CHANGE_FLAGS,
+  uninstall: CHANGE_FLAGS,
+  start: JSON_ONLY,
+  stop: JSON_ONLY,
+  restart: JSON_ONLY,
+  status: JSON_ONLY,
+};
+
 /** The verb and flags of `ttasks service <verb> [flags]`, or undefined when they are not valid. */
 export function parseServiceArgs(
   args: readonly string[],
@@ -67,7 +79,7 @@ export function parseServiceArgs(
   const flags: { -readonly [K in keyof ServiceFlags]: boolean } = {};
   for (const arg of rest) {
     const flag = Object.hasOwn(FLAGS, arg) ? FLAGS[arg] : undefined;
-    if (flag === undefined) return undefined;
+    if (flag === undefined || !VERB_FLAGS[verb].has(flag)) return undefined;
     flags[flag] = true;
   }
   return { verb, flags };

@@ -36,7 +36,7 @@ export async function serviceCommand(
     return printUsage(
       io,
       globals.json,
-      "ttasks service takes one of install, uninstall, start, stop, restart, status, and the flags --yes and --dry-run",
+      "ttasks service takes one of install, uninstall, start, stop, restart, status; --yes and --dry-run go only with install and uninstall",
     );
   }
   // A question only in a terminal: the entry reads the answer from it.

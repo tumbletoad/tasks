@@ -51,6 +51,13 @@ describe("[A2.3.3.5.service-install.commands] ttasks service through the CLI", (
       // An agent's shell may not install, uninstall, stop or restart: refused before anything is
       // read.
       const agent = { TTASKS_HOME: home, CODEX_THREAD_ID: "t1" };
+      // A preview of a verb that has none is a usage error, before the agent's-shell check: it
+      // never reaches the service.
+      for (const verb of ["start", "stop", "restart", "status"]) {
+        const preview = recorder(["service", verb, "--dry-run"], agent);
+        expect(await main(preview)).toBe(2);
+        expect(preview.err).toContain("--yes and --dry-run go only with install and uninstall");
+      }
       for (const verb of ["stop", "restart"]) {
         const refused = recorder(["service", verb], agent);
         expect(await main(refused)).toBe(5);
