@@ -3,6 +3,7 @@
 // removed line after a reload with who took it back, Show and Put back by keyboard, the note back in
 // its place. Screenshots at 1,440 and 390 px in both themes, axe clean.
 import { expect, type Page } from "@playwright/test";
+import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import {
   axeFound,
@@ -94,7 +95,7 @@ test.describe("[A5.note.retract.e2e] A note is taken back from the thread and pu
 });
 
 test.describe("[A5.note.retract.e2e.screens] A note taken back, in both themes", () => {
-  test("the thread's Remove and the removed line at 1,440 px and 390 px in Sumi and Washi, axe clean, nothing wider than the screen", async ({
+  test("the thread's Remove, a session whose request was taken back, and the removed line at 1,440 px and 390 px in Sumi and Washi, axe clean, nothing wider than the screen", async ({
     browser,
     world,
   }) => {
@@ -105,8 +106,17 @@ test.describe("[A5.note.retract.e2e.screens] A note taken back, in both themes",
     const ref = await noted(world, `Screens: answer the clinic (${tag})`, wrong);
     const removing = `Ask about the parking permit (${tag}).`;
     await world.op(space, "entry.add", { task: ref, kind: "note", text: removing });
-    const status = (await world.op(space, "space.status", {})) as { as_of: string };
-    await world.op(space, "note.remove", { task: ref, remove: "3", base: status.as_of });
+    // A request the person opened an agent with (n5), then took back.
+    const launched = (await world.op(space, "launch.open", {
+      task: ref,
+      instance: FAKE_INSTANCE.key,
+      text: `Draft the reply to Ana (${tag}).`,
+    })) as { note?: string };
+    expect(launched.note).toBe("n5");
+    for (const note of ["3", "5"]) {
+      const status = (await world.op(space, "space.status", {})) as { as_of: string };
+      await world.op(space, "note.remove", { task: ref, remove: note, base: status.as_of });
+    }
     for (const theme of themes()) {
       const context = await browser.newContext({
         bypassCSP: true,
@@ -121,7 +131,12 @@ test.describe("[A5.note.retract.e2e.screens] A note taken back, in both themes",
         const body = shot.locator(`li[data-task="${ref}"]`).locator('[data-part="expanded"]');
         const removedLine = body.locator('[data-part="removed"]');
         await removedLine.getByRole("button", { name: "Show" }).click({ timeout: SLOW_MS });
-        await expect(body.locator('[data-part="removed-note"]')).toContainText(wrong);
+        await expect(body.locator('[data-part="removed-note"]')).toHaveCount(2);
+        await expect(body.locator('[data-part="removed-note"]').last()).toContainText(wrong);
+        await expect(removedLine).toContainText("2 notes removed");
+        // The session whose request was taken back says so, without its words.
+        await expect(body.locator('[data-part="asked-removed"]')).toHaveText("Request removed");
+        await expect(body.locator('[data-entry="session"]')).not.toContainText("Draft the reply");
         await body.locator('[data-entry="note"]').filter({ hasText: removing }).hover();
         await picture(shot, `notes-${theme}-1440.png`);
         if (pictures()) expect(await axeFound(shot, ["main"]), `axe in ${theme}`).toEqual([]);

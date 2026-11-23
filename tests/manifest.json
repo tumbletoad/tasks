@@ -2179,7 +2179,7 @@
     },
     {
       "id": "A5.note.retract.e2e.screens",
-      "title": "The thread's Remove and the removed line with a note at 1,440 and 390 px in Sumi and Washi: axe clean, and nothing wider than the screen at 390 px",
+      "title": "The thread's Remove, a session whose request was taken back saying so without its words, and the removed line with two notes at 1,440 and 390 px in Sumi and Washi: axe clean, and nothing wider than the screen at 390 px",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
