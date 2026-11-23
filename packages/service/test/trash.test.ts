@@ -67,7 +67,9 @@ describe("[A3.trash] the Trash through real requests", () => {
       await add({ title: "Fixture trash one" }),
       await add({ title: "Fixture trash two" }),
     ];
-    const moved = await remove([a, b], { reason: "Duplicates of the clinic thread" });
+    // A task named twice is moved once and named once.
+    const moved = await remove([a, b, a], { reason: "Duplicates of the clinic thread" });
+    expect(moved["already"]).toBeUndefined();
     expect(moved).toMatchObject({ result: "moved", moved: [a, b] });
     expect(moved["commit"]).toMatch(/^op_/u);
     const again = await remove([a]);

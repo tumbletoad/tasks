@@ -148,21 +148,28 @@ test.describe("[A5.trash.e2e] A task taken away and brought back in the page", (
 });
 
 test.describe("[A5.trash.e2e.runs] Work on a removed task stays in sight", () => {
-  test("a run working on a task moved to the Trash stays on Agents after a cold reload, marked, with Stop in its card @one-browser", async ({
+  test("a run working on a task moved to the Trash stays on Agents after a cold reload, marked, with Stop in its card; the run queued behind it says it did not start @one-browser", async ({
     page,
     runs: world,
   }) => {
     const tag = test.info().project.name;
     const space = world.mira.id;
     const ref = await addTask(world, { title: `Watch the nightly export (${tag})`, area: "home" });
-    world.codex(ref, ["hold"]);
+    world.codex(ref, ["hold", "answer"]);
     await openTask(page, world, ref);
     const row = rowOf(page, ref);
-    await row.getByRole("button", { name: `Run with ${CODEX_INSTANCE.label}` }).click();
+    const run = row.getByRole("button", { name: `Run with ${CODEX_INSTANCE.label}` });
+    await run.click();
     const entry = row.locator('[data-entry="run"]').first();
     await expect(entry.locator('[data-part="run-state"]')).toContainText("is working on it", {
       timeout: SLOW_MS,
     });
+    // A second run waits behind the first.
+    await row.locator('[data-part="composer"]').fill("Then check the results");
+    await run.click();
+    await expect(
+      row.locator('[data-entry="run"]').nth(1).locator('[data-part="run-state"]'),
+    ).toContainText("Waiting to start", { timeout: SLOW_MS });
     await row.locator('[data-part="move-to-trash"]').click();
     await expect(toast(page)).toHaveText(`Moved ${ref} to the Trash. Its run is still working`);
 
@@ -179,8 +186,12 @@ test.describe("[A5.trash.e2e.runs] Work on a removed task stays in sight", () =>
       .first()
       .getByRole("button", { name: /^Stop/u });
     await stop.click({ timeout: SLOW_MS });
-    await expect(
-      listed.locator('[data-entry="run"]').first().locator('[data-part="run-state"]'),
-    ).toContainText(/^Stopped\./u, { timeout: SLOW_MS });
+    const runs = listed.locator('[data-entry="run"] [data-part="run-state"]');
+    await expect(runs.first()).toContainText(/^Stopped\./u, { timeout: SLOW_MS });
+    // The queued run's check before it starts finds the task in the Trash: it says so.
+    await expect(runs.nth(1)).toContainText(
+      "Did not start: the task was finished or moved to the Trash first.",
+      { timeout: SLOW_MS },
+    );
   });
 });

@@ -205,6 +205,24 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     }
   });
 
+  test("a project moved to another area while its task was in the Trash carries it: the task comes back there", () => {
+    const project = newId("p");
+    applied(
+      send("human", [{ kind: "project.create", id: project, title: "Portal", area: "lumen" }]),
+    );
+    const id = newId("t");
+    applied(send("human", [{ kind: "task.create", id, title: "Fix the login page", project }]));
+    remove(id);
+    applied(send("human", [{ kind: "project.move", project, area: "home" }]));
+    const back = applied(restore(id));
+    expect(back.results[0]?.regrouped).toBeUndefined();
+    expect(row(id)).toMatchObject({
+      project_id: project,
+      area_id: fx.areas.home,
+      deleted_at: null,
+    });
+  });
+
   test("a task whose area is gone comes back in the Inbox", () => {
     // The area's creation is undone after an agent's task in it was moved to the Trash: the
     // area goes, as nothing live is in it.

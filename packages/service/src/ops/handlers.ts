@@ -2689,7 +2689,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { input } = call;
     const restore = input["restore"] === true;
     const change = typeof input["change"] === "string" ? input["change"] : undefined;
-    const named = Array.isArray(input["tasks"]) ? (input["tasks"] as string[]) : [];
+    // A task named twice is one task: the answer never calls it both moved and there already.
+    const named = Array.isArray(input["tasks"]) ? [...new Set(input["tasks"] as string[])] : [];
     if (change !== undefined && !restore) {
       throw invalid(
         "change",
@@ -2771,9 +2772,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       after = { seq: Number(cursor.slice(0, dot)), ref: Number(cursor.slice(dot + 1)) };
     }
     const q = typeof input["q"] === "string" ? input["q"].trim() : "";
-    // A reference finds its task, by number, whatever its prefix; anything else is title words.
+    // Title words, all of them, or a reference: its task by number, whatever its prefix.
     const ref = /^(?:[A-Za-z]{1,6}-)?([1-9][0-9]{0,9})$/u.exec(q);
-    const words = ref === null && q !== "" ? q.toLowerCase().split(/\s+/u) : [];
+    const words = q === "" ? [] : q.toLowerCase().split(/\s+/u);
     let read;
     try {
       read = await readTrash(
