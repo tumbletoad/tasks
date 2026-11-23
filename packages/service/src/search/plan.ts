@@ -6,10 +6,13 @@
 // quoted strings with their quotes doubled and their control characters removed (an FTS5 string
 // ends at a NUL), joined by this module's AND and OR, so no input is ever FTS5 syntax.
 //
-// - Positive words and phrases are one MATCH expression: groups ANDed, a group's terms ORed. The
-//   last term gets FTS5's prefix `*` when it is an unquoted word of at least two characters, the
-//   shortest prefix the index keeps (`prefix = '2 3'`): a one-letter prefix would rank most of the
-//   space, the broad case A1 3.12 warns about.
+// - Positive words and phrases come in groups, a group's terms ORed. A task matches when each group
+//   matches one of its documents (its own, a note, a log entry, a learning): the words a person
+//   remembers of a task need not stand in one of its texts. A phrase is one FTS5 string, so it
+//   stays within one text. A learning is one text: there the groups are ANDed in one expression.
+//   The last term gets FTS5's prefix `*` when it is an unquoted word of at least two characters,
+//   the shortest prefix the index keeps (`prefix = '2 3'`): a one-letter prefix would rank most of
+//   the space, the broad case A1 3.12 warns about.
 // - Negated words exclude every task (or learning) with a matching document: a NOT IN over its
 //   own MATCH, so `-word` works alone, where FTS5's binary NOT cannot.
 // - With text, a task's score is its best document's `-bm25(10, 3, 2)` (×1.2 for the task's own
@@ -96,7 +99,10 @@ export interface SearchPlan {
    */
   readonly sql: string;
   readonly params: Readonly<Record<string, SqlValue>>;
-  /** The positive text as one FTS5 expression, for the snippets of a page; null without it. */
+  /**
+   * The positive text as one FTS5 expression, for the snippets of a page: for tasks, any of its
+   * groups, since each may match another document; null without it.
+   */
   readonly match: string | null;
 }
 
@@ -152,16 +158,15 @@ function prefixes(term: TextTerm): boolean {
   return (last.match(/[\p{L}\p{N}\p{Co}]/gu)?.length ?? 0) >= 2;
 }
 
-function positiveMatch(query: Query): string | null {
+/** Each positive group as one FTS5 expression, its terms ORed. */
+function positiveGroups(query: Query): string[] {
   const groups = query.groups.filter((g) => g[0]?.type === "text" && !g[0].negated);
-  if (groups.length === 0) return null;
   const terms = termsOf(query).filter((t): t is TextTerm => t.type === "text");
   const last = terms.at(-1);
-  const parts = groups.map((group) => {
+  return groups.map((group) => {
     const strings = (group as TextTerm[]).map((t) => ftsString(t, t === last && prefixes(t)));
     return strings.length === 1 ? (strings[0] ?? "") : `(${strings.join(" OR ")})`;
   });
-  return parts.join(" AND ");
 }
 
 function negativeMatch(query: Query): string | null {
@@ -611,9 +616,9 @@ const BM25 = "-bm25(search_fts, 10.0, 3.0, 2.0)";
 /** Plans `query` as the ranked list of the search's first page (A3 3.9.3). */
 export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
   const b = new Binder();
-  const match = positiveMatch(query);
+  const groups = positiveGroups(query);
   const negative = negativeMatch(query);
-  if ((match !== null || negative !== null) && !ctx.indexed) {
+  if ((groups.length > 0 || negative !== null) && !ctx.indexed) {
     throw notIndexed(ctx.unindexed ?? { revision: "?", updateFailed: false });
   }
   const audience = ctx.audience === "agent" ? " AND d.audience = 'all'" : "";
@@ -623,6 +628,7 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
   const limit = b.bind(ctx.keep + 1);
 
   if (ctx.scope === "learnings") {
+    const match = groups.length === 0 ? null : groups.join(" AND ");
     where.push("l.deleted_at IS NULL");
     if (negative !== null) {
       where.push(
@@ -651,13 +657,13 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
         `AND d.kind IN ${TASK_TEXT}${audience})`,
     );
   }
-  if (match === null) {
+  if (groups.length === 0) {
     if (lifecycles !== null) where.push(`t.lifecycle IN ${lifecycles}`);
     const sql =
       "SELECT t.id AS id, t.ref AS ref, NULL AS doc, NULL AS entity FROM tasks t " +
       `WHERE ${where.join(" AND ")} ` +
       `ORDER BY ${order}${DUE} IS NULL, ${DUE}, t.priority, t.touched DESC, t.id LIMIT ${limit}`;
-    return { kind: "tasks", sql, params: b.params, match };
+    return { kind: "tasks", sql, params: b.params, match: null };
   }
 
   // A3 3.9.3's boosts. A change in the last 7 days: commit instants never go back (A1 3.9), so
@@ -678,6 +684,19 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
     );
   }
   const scoped = lifecycles === null ? "" : ` AND d.lifecycle IN ${lifecycles}`;
+  const match = groups.join(" OR ");
+  // With two groups or more, only the tasks where each group matches a document of their own.
+  const everyGroup =
+    groups.length < 2
+      ? ""
+      : groups
+          .map(
+            (group) =>
+              " AND d.task_id IN (SELECT g.task_id FROM search_fts JOIN search_docs g " +
+              `ON g.doc = search_fts.rowid WHERE search_fts MATCH ${b.bind(group)} ` +
+              `AND g.kind IN ${TASK_TEXT}${ctx.audience === "agent" ? " AND g.audience = 'all'" : ""})`,
+          )
+          .join("");
   // bm25() runs only in the FTS query itself, never inside an aggregate or a window, so each
   // matching document's score is materialized first. A task's best document is then the first by
   // score and, among equal scores, by entity ID: neither the order of writing nor a rebuild's
@@ -686,7 +705,7 @@ export function planSearch(query: Query, ctx: PlanContext): SearchPlan {
     "WITH scored AS MATERIALIZED (SELECT d.task_id AS task_id, d.doc AS doc, " +
     `d.entity_id AS entity, ${BM25} * CASE WHEN d.kind = 'task' THEN 1.2 ELSE 1.0 END AS score ` +
     "FROM search_fts JOIN search_docs d ON d.doc = search_fts.rowid " +
-    `WHERE search_fts MATCH ${b.bind(match)} AND d.kind IN ${TASK_TEXT}${audience}${scoped}), ` +
+    `WHERE search_fts MATCH ${b.bind(match)} AND d.kind IN ${TASK_TEXT}${audience}${scoped}${everyGroup}), ` +
     "ranked AS (SELECT task_id, doc, entity, score, row_number() OVER " +
     "(PARTITION BY task_id ORDER BY score DESC, entity) AS n FROM scored), " +
     "hit AS (SELECT task_id, doc, entity, score FROM ranked WHERE n = 1) " +

@@ -1,10 +1,10 @@
 // One member added to or taken out of a JSON object, as a splice in the file's own text: the JSON
-// counterpart of machine.toml's editor (config/edit.ts applyEdits), for an agent app that has no
-// command of its own (Claude Desktop's `claude_desktop_config.json`, A3 3.13.3). Everything else
-// stays byte for byte: other members, their order, the file's indentation and line endings (the
-// caller keeps a byte order mark, and config/edit.ts commitEdit writes the file with its mode,
-// refusing a file that changed meanwhile). One exception keeps every key: whitespace inside an
-// object that was empty (`{ }`) is not kept by add then remove, which gives `{}` back.
+// counterpart of machine.toml's editor (config/edit.ts applyEdits), for TTasks's entry in Claude
+// Code's and Claude Desktop's files (A3 3.13.2, 3.13.3). Everything else stays byte for byte: other
+// members, their order, the file's indentation and line endings (the caller keeps a byte order
+// mark, and config/edit.ts commitEdit writes the file with its mode, refusing a file that changed
+// meanwhile). An insertion into an empty object replaces the whitespace inside it, which addEntry
+// returns (`inner`) so that removeEntry can give it back.
 //
 // The text is valid JSON already (setup reads it strictly, json.ts), so the locator only needs to
 // tell strings, brackets, colons and commas apart. Every result is checked: it must parse to exactly
@@ -169,12 +169,15 @@ function insertMember(text: string, object: ObjectSpan, key: string, value: unkn
   return `${before}{${eol}${indent}${member}${eol}${parent}}${after}`;
 }
 
-/** The text without the member at `index` of `object`: the inverse of insertMember. */
-function deleteMember(text: string, object: ObjectSpan, index: number): string {
+/**
+ * The text without the member at `index` of `object`: the inverse of insertMember. An object left
+ * empty gets `inner` between its braces, the whitespace the insertion replaced.
+ */
+function deleteMember(text: string, object: ObjectSpan, index: number, inner = ""): string {
   const member = object.members[index];
   if (member === undefined) throw new Unexpected();
   if (object.members.length === 1) {
-    return `${text.slice(0, object.open + 1)}${text.slice(object.close)}`;
+    return `${text.slice(0, object.open + 1)}${inner}${text.slice(object.close)}`;
   }
   const previous = object.members[index - 1];
   if (previous !== undefined) {
@@ -186,7 +189,12 @@ function deleteMember(text: string, object: ObjectSpan, index: number): string {
 }
 
 export type JsonEdit =
-  | { readonly ok: true; readonly text: string }
+  | {
+      readonly ok: true;
+      readonly text: string;
+      /** addEntry into an empty object: the whitespace that was inside it; else null. */
+      readonly inner: string | null;
+    }
   | { readonly ok: false; readonly reason: "unsupported_layout" | "invalid_file" };
 
 type Doc = Record<string, unknown>;
@@ -201,12 +209,16 @@ function docOf(text: string): Doc | undefined {
 }
 
 /** Whether `text` parses to exactly `intended`; the edit is refused otherwise. */
-function checked(text: string, intended: Doc): JsonEdit {
+function checked(text: string, intended: Doc, inner: string | null = null): JsonEdit {
   const after = docOf(text);
   return after !== undefined && isDeepStrictEqual(after, intended)
-    ? { ok: true, text }
+    ? { ok: true, text, inner }
     : { ok: false, reason: "unsupported_layout" };
 }
+
+/** The whitespace inside an object that has no member, else null. */
+const innerOf = (text: string, object: ObjectSpan): string | null =>
+  object.members.length === 0 ? text.slice(object.open + 1, object.close) : null;
 
 /**
  * Adds `key` with `value` to the object `parent` holds at the top level (`mcpServers`), creating
@@ -220,11 +232,19 @@ export function addEntry(text: string, parent: string, key: string, value: unkno
     return { ok: false, reason: "unsupported_layout" };
   }
   try {
+    const into =
+      servers === undefined
+        ? objectAt(text, skipSpace(text, 0))
+        : (objectPath(text, [parent]) ?? fail());
     const next =
       servers === undefined
-        ? insertMember(text, objectAt(text, skipSpace(text, 0)), parent, { [key]: value })
-        : insertMember(text, objectPath(text, [parent]) ?? fail(), key, value);
-    return checked(next, { ...doc, [parent]: { ...(servers ?? {}), [key]: value } });
+        ? insertMember(text, into, parent, { [key]: value })
+        : insertMember(text, into, key, value);
+    return checked(
+      next,
+      { ...doc, [parent]: { ...(servers ?? {}), [key]: value } },
+      innerOf(text, into),
+    );
   } catch (error) {
     if (error instanceof Unexpected) return { ok: false, reason: "unsupported_layout" };
     throw error;
@@ -233,13 +253,15 @@ export function addEntry(text: string, parent: string, key: string, value: unkno
 
 /**
  * Takes `key` out of the top-level object `parent`, and `parent` itself when `dropEmptyParent` and
- * nothing else is left in it (setup created it): the inverse of addEntry.
+ * nothing else is left in it (setup created it): the inverse of addEntry. An object left empty gets
+ * `inner` back, the whitespace addEntry replaced in it.
  */
 export function removeEntry(
   text: string,
   parent: string,
   key: string,
   dropEmptyParent: boolean,
+  inner: string | null = null,
 ): JsonEdit {
   const doc = docOf(text);
   if (doc === undefined) return { ok: false, reason: "invalid_file" };
@@ -257,6 +279,7 @@ export function removeEntry(
         text,
         top,
         top.members.findIndex((m) => m.key === parent),
+        inner ?? "",
       );
     } else {
       const object = objectPath(text, [parent]) ?? fail();
@@ -264,6 +287,7 @@ export function removeEntry(
         text,
         object,
         object.members.findIndex((m) => m.key === key),
+        inner ?? "",
       );
     }
     const intended = dropParent

@@ -5,7 +5,7 @@
 // injected facts; no account is made or named.
 import { createServer } from "node:http";
 import { afterEach, describe, expect, test } from "vitest";
-import { blockedMessage, movedMessage } from "@ttasks/service/http/shared";
+import { blockedMessage, movedMessage, unsavedMessage } from "@ttasks/service/http/shared";
 import { httpWorld, persistPort, type HttpWorld } from "@ttasks/service/test/http-world";
 import {
   countAccounts,
@@ -123,7 +123,7 @@ describe("[A2.3.13.cli.doctor-http] doctor's accounts and HTTP rows", () => {
   );
 
   test(
-    "a moved port warns with A2's line; a listener without the policy fails its self-test",
+    "a moved port warns with A2's line, and so does a port that could not be saved; a listener without the policy fails its self-test",
     SLOW,
     async () => {
       expect(
@@ -149,6 +149,13 @@ describe("[A2.3.13.cli.doctor-http] doctor's accounts and HTTP rows", () => {
         );
         expect(check.status).toBe("fail");
         expect(check.detail).toContain(movedMessage(7713, port));
+        // A first start whose port could not be saved: said, whatever else the row finds.
+        const unsaved = await httpCheck(
+          { port, persisted: null, moved: false, blocked: null },
+          "linux",
+          {},
+        );
+        expect(unsaved.detail).toContain(unsavedMessage(port));
       } finally {
         await new Promise((resolve) => plain.close(resolve));
       }

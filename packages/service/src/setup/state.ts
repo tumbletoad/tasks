@@ -1,15 +1,15 @@
 // Setup's record of what it did in each agent home (A3 3.13.1): `<state>/setup/agents.json`,
 // 0600 in a 0700 folder, replaced atomically. Per home: the app, the home and its file, the
-// instance, account and space the entry names, the app's command and its undo (arguments only: the
-// app's executable is found again when it runs), the variables they ran with, whether the file and
-// its servers' table existed, the file's hash before and after, the entry as written, TTasks's
-// single-key patches with their before and after values, and the agent-home grant.
+// instance, account and space the entry names, the entry TTasks writes there, what its write made
+// beside it (the file, the servers' table, the bytes around the entry), and the agent-home grant.
 //
 // No copy of a file and no other key's value: these files hold other servers' secrets, and A3 3.13.1
-// step 5 forbids whole-file backups. What the record holds is TTasks's own entry, which `--remove`
-// compares with the file to take back only what is still exactly TTasks's.
+// step 5 forbids whole-file backups. What the record holds is TTasks's own entry as it intended to
+// write it, which `--remove` compares with the file to take back only what is still exactly
+// TTasks's. An earlier build's records (format 1) are read in place.
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
+import { envVar } from "@ttasks/brand";
 import { atomicWrite, ensurePrivateDir } from "../hub/files.ts";
 
 /**
@@ -25,7 +25,7 @@ export const isAgentApp = (value: unknown): value is AgentApp =>
 export const SETUP_DIR = "setup";
 export const SETUP_FILE = "agents.json";
 export const SETUP_LOCK = "agents.lock";
-export const SETUP_FORMAT = 1;
+export const SETUP_FORMAT = 2;
 
 /** The record is read back whole; it holds a few entries, so this bound is generous. */
 const MAX_STATE_BYTES = 4 * 1024 * 1024;
@@ -38,26 +38,25 @@ export interface HomeRecord {
   readonly instance: string;
   readonly account: string;
   readonly space: string;
-  /** `applying` is written before the app's command runs, `applied` once the entry is in place. */
-  readonly state: "applying" | "applied";
-  readonly file_existed: boolean;
-  readonly parent_existed: boolean;
-  readonly sha256_before: string | null;
-  readonly sha256_after: string | null;
-  /** The app's command (`mcp add …`) and its undo (`mcp remove …`), after the executable. */
-  readonly args: readonly string[];
-  readonly undo: readonly string[];
-  /** The argv the entry runs: TTasks's command and the bridge's arguments. */
-  readonly entry_argv: readonly string[];
-  /** The variables set for both commands (the home's own variable). */
-  readonly env: Readonly<Record<string, string>>;
-  /** The entry as written; null while applying. */
-  readonly entry: unknown;
-  readonly patches: readonly {
-    readonly key: string;
-    readonly before: unknown;
-    readonly after: unknown;
-  }[];
+  /**
+   * `applying`: written before anything changes in the home. `applied`: the entry was found in
+   * place, then the home got its access (`grant`). `removing`: setup decided to take it back (the
+   * person turned it off, or an apply failed), and the entry may still wait to come out. A record
+   * that is not `applied` when setup takes its lock was left by a run that ended midway, and is
+   * finished as a removal.
+   */
+  readonly state: "applying" | "applied" | "removing";
+  /** The entry TTasks writes there, as it intended it: never what it read back. */
+  readonly entry: Readonly<Record<string, unknown>>;
+  /** Other entries that are TTasks's own there: what an earlier build's writers left midway. */
+  readonly also: readonly unknown[];
+  /** What the write made beside the entry, which its removal gives back (entry.ts `Made`). */
+  readonly made: {
+    /** TTasks created the file: it goes when nothing else is left in it. */
+    readonly file: boolean;
+    readonly parent: boolean;
+    readonly spacing: string | null;
+  };
   /** The agent-home row in the service's grants table (A2 3.2.5), when the service made one. */
   readonly grant: string | null;
   readonly at: string;
@@ -71,6 +70,14 @@ export class SetupStateInvalid extends Error {
   }
 }
 
+/** A record that setup could not read back is never written: the one before it stays. */
+export class SetupStateTooLarge extends Error {
+  override readonly name = "SetupStateTooLarge";
+  constructor() {
+    super("Setup's record of the agent homes would be larger than it can read back");
+  }
+}
+
 /** The folder for setup's record can be changed by other users: nothing is written into it. */
 export class SetupStateUnsafe extends Error {
   override readonly name = "SetupStateUnsafe";
@@ -80,13 +87,16 @@ export class SetupStateUnsafe extends Error {
 }
 
 export const setupDir = (stateDir: string): string => join(stateDir, SETUP_DIR);
+/** Setup's record of the agent homes: the file a person is told of when it cannot be read. */
+export const recordFile = (stateDir: string): string => join(setupDir(stateDir), SETUP_FILE);
 
 const text = (value: unknown): value is string => typeof value === "string";
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every(text);
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
-function isRecord(value: unknown): value is HomeRecord {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const r = value as Record<string, unknown>;
+/** The fields every format's record has. */
+function isHome(r: Record<string, unknown>): boolean {
   return (
     isAgentApp(r["app"]) &&
     text(r["home"]) &&
@@ -95,31 +105,94 @@ function isRecord(value: unknown): value is HomeRecord {
     text(r["instance"]) &&
     text(r["account"]) &&
     text(r["space"]) &&
-    (r["state"] === "applying" || r["state"] === "applied") &&
-    typeof r["file_existed"] === "boolean" &&
-    typeof r["parent_existed"] === "boolean" &&
-    (r["sha256_before"] === null || text(r["sha256_before"])) &&
-    (r["sha256_after"] === null || text(r["sha256_after"])) &&
-    strings(r["args"]) &&
-    strings(r["undo"]) &&
-    strings(r["entry_argv"]) &&
-    typeof r["env"] === "object" &&
-    r["env"] !== null &&
-    Array.isArray(r["patches"]) &&
     (r["grant"] === null || text(r["grant"])) &&
     text(r["at"])
   );
 }
 
-/** The records of every home setup changed. A missing file is none; a damaged one throws. */
+function isRecord(value: unknown): value is HomeRecord {
+  if (!isObject(value) || !isHome(value)) return false;
+  const made = value["made"];
+  return (
+    (value["state"] === "applying" ||
+      value["state"] === "applied" ||
+      value["state"] === "removing") &&
+    isObject(value["entry"]) &&
+    Array.isArray(value["also"]) &&
+    isObject(made) &&
+    typeof made["file"] === "boolean" &&
+    typeof made["parent"] === "boolean" &&
+    (made["spacing"] === null || text(made["spacing"]))
+  );
+}
+
+/**
+ * A record of the earlier build (format 1), as this one reads it. That build ran Claude Code's and
+ * Codex's own `mcp add` and recorded what it read back: here its entry is what those writers left
+ * (Claude Code's `type` and empty `env`, Codex's table with TTasks's two keys), and an apply it left
+ * midway also owns Codex's table before those keys. Its bytes around the entry are not known.
+ */
+function fromFormat1(value: unknown): HomeRecord | undefined {
+  if (!isObject(value) || !isHome(value)) return undefined;
+  const r = value;
+  const argv = r["entry_argv"];
+  const patches = r["patches"];
+  if (
+    (r["state"] !== "applying" && r["state"] !== "applied" && r["state"] !== "removing") ||
+    !strings(argv) ||
+    typeof r["file_existed"] !== "boolean" ||
+    typeof r["parent_existed"] !== "boolean" ||
+    !Array.isArray(patches)
+  ) {
+    return undefined;
+  }
+  const app = r["app"] as AgentApp;
+  const ran = { command: argv[0] ?? "", args: argv.slice(1) };
+  const patched = patches.filter(isObject).filter((p) => text(p["key"]));
+  const codexKeys =
+    patched.length > 0
+      ? Object.fromEntries(patched.map((p) => [p["key"] as string, p["after"]]))
+      : // The two keys that build patched in, as it wrote them.
+        { env_vars: [envVar("TICKET")], startup_timeout_sec: 20 };
+  const entry =
+    app === "claude-code"
+      ? { type: "stdio", ...ran, env: {} }
+      : app === "codex"
+        ? { ...ran, ...codexKeys }
+        : ran;
+  return {
+    app,
+    home: r["home"] as string,
+    file: r["file"] as string,
+    is_default: r["is_default"] as boolean,
+    instance: r["instance"] as string,
+    account: r["account"] as string,
+    space: r["space"] as string,
+    state: r["state"],
+    entry,
+    also: app === "codex" && r["state"] !== "applied" ? [ran] : [],
+    made: { file: !r["file_existed"], parent: !r["parent_existed"], spacing: null },
+    grant: r["grant"] as string | null,
+    at: r["at"] as string,
+  };
+}
+
+/**
+ * The records of every home setup changed, an earlier build's read in place. A missing file is
+ * none; a damaged one throws.
+ */
 export function readRecords(stateDir: string): HomeRecord[] {
-  const doc = readStateFile(join(setupDir(stateDir), SETUP_FILE));
+  const doc = readStateFile(recordFile(stateDir));
   if (doc === undefined) return [];
   const homes = stateField(doc, "homes");
-  if (stateField(doc, "format") !== SETUP_FORMAT || !Array.isArray(homes)) {
-    throw new SetupStateInvalid();
+  const format = stateField(doc, "format");
+  if (!Array.isArray(homes)) throw new SetupStateInvalid();
+  if (format === 1) {
+    const read = homes.map(fromFormat1);
+    if (!read.every((r): r is HomeRecord => r !== undefined)) throw new SetupStateInvalid();
+    return read;
   }
-  if (!homes.every(isRecord)) throw new SetupStateInvalid();
+  if (format !== SETUP_FORMAT || !homes.every(isRecord)) throw new SetupStateInvalid();
   return homes;
 }
 
@@ -171,7 +244,9 @@ export function writeRecords(stateDir: string, records: readonly HomeRecord[]): 
 
 /** Replaces one of setup's record files, 0600 in its user-only folder. */
 export function writeStateFile(stateDir: string, file: string, doc: unknown): void {
+  const text = `${JSON.stringify(doc, null, 2)}\n`;
+  if (Buffer.byteLength(text, "utf8") > MAX_STATE_BYTES) throw new SetupStateTooLarge();
   const dir = setupDir(stateDir);
   if (ensurePrivateDir(dir) !== undefined) throw new SetupStateUnsafe();
-  atomicWrite(join(dir, file), `${JSON.stringify(doc, null, 2)}\n`, 0o600);
+  atomicWrite(join(dir, file), text, 0o600);
 }

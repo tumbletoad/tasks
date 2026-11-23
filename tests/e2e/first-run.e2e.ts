@@ -53,6 +53,16 @@ async function flip(page: Page, name: string, on: boolean): Promise<void> {
   else await expect(toggle(page, name)).not.toBeChecked();
 }
 
+/** The agent apps as they are, at 1,440 and at 390 px. */
+async function widths(page: Page, name: string): Promise<void> {
+  const apps = page.locator("section", { has: appsHeading(page) });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await picture(apps, `${name}-${String(width)}.png`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+}
+
 /** The space a tab shows, from its route. */
 const spaceOf = (page: Page): string => /\/s\/([^/]+)\//u.exec(page.url())?.[1] ?? "";
 
@@ -111,7 +121,8 @@ test.describe("[A7.3.12.m5-12.e2e.first-start] The first start: a space, two app
     await page.getByRole("button", { name: "Show exactly what is written" }).click();
     const detail = changes(page).locator("pre");
     await expect(detail).toContainText("[[instance]]");
-    await expect(detail).toContainText("mcp add");
+    await expect(detail).toContainText("mcpServers.ttasks.command");
+    await expect(detail).not.toContainText("mcp add");
 
     await page.getByRole("button", { name: "Apply" }).click();
     await showsSpace(page, "Studio");
@@ -167,17 +178,114 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("alert")).toContainText("Something changed on this machine");
     await picture(page, "settings-apps-changed-1440.png");
-    expect(fresh.codexConfig()).not.toContain("[mcp_servers.ttasks]");
+    const bare = fresh.codexConfig();
+    expect(bare).not.toContain("[mcp_servers.ttasks]");
     // The choice stays, against the new view: one more press applies it.
     await expect(toggle(page, toolsFor("Codex"))).toBeChecked();
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
     expect(fresh.codexConfig()).toContain("[mcp_servers.ttasks]");
 
+    // Changed by hand: the switch still turns the tools off, and the person's entry stays, said
+    // apart from the tools.
+    fresh.editCodexEntry();
+    const edited = fresh.codexConfig();
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
+    await expect(page.getByText("Changed by hand since.")).toBeVisible();
+    await widths(page, "settings-apps-edited");
+    await flip(page, toolsFor("Codex"), false);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText(
+      `Codex no longer has the ${PRODUCT_NAME} tools. Your changed entry is still in ~`,
+    );
+    await widths(page, "settings-apps-kept");
+    expect(fresh.codexConfig()).toBe(edited);
+    await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
+    // The person takes it out.
+    fresh.writeCodex(bare);
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
+
+    // A file setup cannot read while its tools are on: the switch shows the access, and turns off.
+    await flip(page, toolsFor("Codex"), true);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    const withEntry = fresh.codexConfig();
+    const broken = `${withEntry}[broken\n`;
+    fresh.writeCodex(broken);
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
+    await expect(toggle(page, toolsFor("Codex"))).toBeChecked();
+    await expect(toggle(page, toolsFor("Codex"))).toBeEnabled();
+    await expect(page.getByText(`${PRODUCT_NAME} cannot read ~`)).toBeVisible();
+    await widths(page, "settings-apps-unreadable");
+    await flip(page, toolsFor("Codex"), false);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText(
+      `Codex no longer has the ${PRODUCT_NAME} tools. Its entry is still in ~`,
+    );
+    await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
+    expect(fresh.codexConfig()).toBe(broken);
+    // Mended: the tools are off and the entry is still there, said beside the switch.
+    fresh.writeCodex(withEntry);
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
+    await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
+    await expect(page.getByText("The tools are off. Its entry is still in ~")).toBeVisible();
+    await widths(page, "settings-apps-entry-left");
+    // Turning it on finishes the removal first, then adds the entry again.
+    await flip(page, toolsFor("Codex"), true);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    await expect(toggle(page, toolsFor("Codex"))).toBeChecked();
+    expect(fresh.codexConfig()).toBe(withEntry);
+    await flip(page, toolsFor("Codex"), false);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    expect(fresh.codexConfig()).toBe(bare);
+
+    // Setup's own record cannot be read: the page names it, the tools still turn off, nothing
+    // turns on, and no file changes.
+    await flip(page, toolsFor("Codex"), true);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    const registered = fresh.codexConfig();
+    const restore = fresh.damageRecord();
+    try {
+      await page.reload();
+      await expect(appsHeading(page)).toBeVisible();
+      await expect(page.locator('[data-part="record"]')).toContainText(
+        `${PRODUCT_NAME} cannot read its own record of the agent apps, ~`,
+      );
+      await expect(toggle(page, toolsFor("Codex"))).toBeChecked();
+      await expect(toggle(page, toolsFor("Codex"))).toBeEnabled();
+      await widths(page, "settings-apps-record-unreadable");
+      await flip(page, toolsFor("Codex"), false);
+      await page.getByRole("button", { name: "Apply" }).click();
+      await expect(page.getByRole("status")).toContainText("Done.");
+      await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
+      await expect(toggle(page, toolsFor("Codex"))).toBeDisabled();
+      expect(fresh.codexConfig()).toBe(registered);
+    } finally {
+      restore();
+    }
+    // Readable again: the entry is in place with its access off, and the switch gives it back.
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
+    await expect(page.locator('[data-part="record"]')).toHaveCount(0);
+    await flip(page, toolsFor("Codex"), true);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    expect(fresh.codexConfig()).toBe(registered);
+    await flip(page, toolsFor("Codex"), false);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    expect(fresh.codexConfig()).toBe(bare);
+
     // Everything out again, from the same place.
     await flip(page, openIn("Claude Code"), false);
     await flip(page, toolsFor("Claude Code"), false);
-    await flip(page, toolsFor("Codex"), false);
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
     expect(fresh.claudeEntry()).toBeUndefined();
