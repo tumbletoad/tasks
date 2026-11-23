@@ -17,6 +17,7 @@ import {
   fchmodSync,
   fstatSync,
   fsyncSync,
+  linkSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -218,21 +219,35 @@ function pause(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+/** Windows refuses a rename or a removal for a moment while another process has the file open. */
+const busyCode = (error: unknown): boolean => {
+  const code = codeOf(error);
+  return code === "EPERM" || code === "EBUSY" || code === "EACCES";
+};
+
+/** A new file, written whole and flushed under a temporary name beside the file it is for. */
+export interface StagedFile {
+  /**
+   * Renames it over the file: readers see the old file or the new one, never a part. `beforeRename`
+   * runs just before each attempt, and throws to give up (a caller's last check that the file is
+   * still the one it read). Given up or failed, the staged file is removed and the error thrown.
+   */
+  replace(beforeRename?: () => void): void;
+  /**
+   * Puts it in place only when no file is there: a hard link, so a file another program made
+   * meanwhile is never replaced (false, and the staged file removed).
+   */
+  create(): boolean;
+  /** Removes the staged file. */
+  discard(): void;
+}
+
 /**
- * Replaces `path` with `text` atomically: a new temporary file beside it
- * (`.<name>.<pid>.<random>.tmp`, exactly `mode`), written whole (writeAll) and flushed, then renamed
- * over it. Readers see the old file or the new one, never a part. On Windows a rename over a file that
- * another process has open without delete sharing fails for a moment, so it is tried a few times.
- * A failed write leaves no temporary file. `beforeRename` runs once the new file is written and
- * flushed, just before each rename attempt: it throws to give up, and the temporary file is removed
- * (a caller's last check that the file is still the one it read).
+ * Writes `text` whole (writeAll) and flushed into a new temporary file beside `path`
+ * (`.<name>.<pid>.<random>.tmp`, exactly `mode`), and leaves it there to be put in place. A failed
+ * write leaves no temporary file and nothing at `path`.
  */
-export function atomicWrite(
-  path: string,
-  text: string,
-  mode = 0o600,
-  beforeRename?: () => void,
-): void {
+export function stageFile(path: string, text: string | Uint8Array, mode = 0o600): StagedFile {
   const temp = join(
     dirname(path),
     `${tempPrefix(basename(path))}${String(process.pid)}.${randomBytes(4).toString("hex")}${TEMP_SUFFIX}`,
@@ -245,23 +260,68 @@ export function atomicWrite(
     } finally {
       closeSync(fd);
     }
-    for (let attempt = 1; ; attempt += 1) {
-      // Before every attempt: a retry's pause is time in which the file can change.
-      beforeRename?.();
-      try {
-        renameSync(temp, path);
-        return;
-      } catch (error) {
-        const code = codeOf(error);
-        const busy = code === "EPERM" || code === "EBUSY" || code === "EACCES";
-        if (!busy || attempt >= RENAME_TRIES) throw error;
-        pause(RENAME_PAUSE_MS);
-      }
-    }
   } catch (error) {
     rmSync(temp, { force: true });
     throw error;
   }
+  const discard = () => {
+    rmSync(temp, { force: true });
+  };
+  return {
+    replace(beforeRename) {
+      try {
+        for (let attempt = 1; ; attempt += 1) {
+          // Before every attempt: a retry's pause is time in which the file can change.
+          beforeRename?.();
+          try {
+            renameSync(temp, path);
+            return;
+          } catch (error) {
+            if (!busyCode(error) || attempt >= RENAME_TRIES) throw error;
+            pause(RENAME_PAUSE_MS);
+          }
+        }
+      } catch (error) {
+        discard();
+        throw error;
+      }
+    },
+    create() {
+      try {
+        linkSync(temp, path);
+      } catch (error) {
+        discard();
+        if (codeOf(error) === "EEXIST") return false;
+        throw error;
+      }
+      // The file is in place; its temporary name only goes. One a scanner holds for longer stays
+      // behind, a second name for the same bytes.
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          rmSync(temp, { force: true });
+          return true;
+        } catch (error) {
+          if (!busyCode(error) || attempt >= RENAME_TRIES) return true;
+          pause(RENAME_PAUSE_MS);
+        }
+      }
+    },
+    discard,
+  };
+}
+
+/**
+ * Replaces `path` with `text` atomically: stageFile, then its replace. On Windows a rename over a
+ * file that another process has open without delete sharing fails for a moment, so it is tried a
+ * few times.
+ */
+export function atomicWrite(
+  path: string,
+  text: string,
+  mode = 0o600,
+  beforeRename?: () => void,
+): void {
+  stageFile(path, text, mode).replace(beforeRename);
 }
 
 // The same writes for a person's own folders, which may be on a volume that stops answering (a
