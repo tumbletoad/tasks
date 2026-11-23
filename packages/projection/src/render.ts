@@ -326,7 +326,9 @@ export function renderTask(
   const done = task.lifecycle !== "active";
   const now = task.lifecycle === "completed" && task.wrapped;
   const ending = [
-    ...(task.lifecycle === "archived" ? section(2, "Why it was dropped", [block(task.dropped ?? "")]) : []),
+    ...(task.lifecycle === "archived"
+      ? section(2, "Why it was dropped", [block(task.dropped ?? "")])
+      : []),
     ...section(2, now ? "Outcome" : "Earlier outcome", [block(task.outcome ?? "")]),
     ...section(
       2,

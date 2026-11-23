@@ -255,7 +255,11 @@ describe("[A1.5.projection.render] what a task's file shows", () => {
 
   test("an outcome that is not this finish's is said as earlier: after a reopen it follows the context; a dropped task says why first", () => {
     const earlier = { outcome: "Shipped in 2.3.", learnings: ["Store UTC plus the zone ID."] };
-    const reopened = renderTask(SPACE, task({ ...earlier, notes: [], log: [], sources: [] }), "UTC");
+    const reopened = renderTask(
+      SPACE,
+      task({ ...earlier, notes: [], log: [], sources: [] }),
+      "UTC",
+    );
     expect(reopened.content.slice(reopened.content.indexOf("## "))).toBe(
       [
         "## Context",
@@ -505,10 +509,14 @@ describe("[A1.5.projection.escape] task text in the view is shown, never run: on
 
   test("index.md escapes the titles of tasks, areas and projects", () => {
     const { entry } = renderTask(SPACE, hostile, "UTC");
-    const text = indexText([entry], {
-      areas: [{ slug: "lumen", title: "<b>Lumen</b>" }],
-      projects: [{ slug: "lumen-portal", title: "[Portal](javascript:x)", area: "lumen" }],
-    }, "UTC");
+    const text = indexText(
+      [entry],
+      {
+        areas: [{ slug: "lumen", title: "<b>Lumen</b>" }],
+        projects: [{ slug: "lumen-portal", title: "[Portal](javascript:x)", area: "lumen" }],
+      },
+      "UTC",
+    );
     const lines = text.split("\n");
     const own = `[${entry.ref}](${entry.path})`;
     for (const line of lines.map((l) => unescaped(l.replace(own, "")))) {

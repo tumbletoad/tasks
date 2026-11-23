@@ -15,7 +15,15 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
-import { catalogOf, checkWatermark, frontMatter, inTree, settle, world, type World } from "./helpers.ts";
+import {
+  catalogOf,
+  checkWatermark,
+  frontMatter,
+  inTree,
+  settle,
+  world,
+  type World,
+} from "./helpers.ts";
 
 let root: string;
 beforeAll(() => {
@@ -95,7 +103,9 @@ describe("[A1.5.projection.render] a task's file says what the task is now", () 
 
   test("a waiting task names what it waits on, and the file names the folder Open uses on each machine", async () => {
     const task = activeTask();
-    w.submit([{ kind: "task.patch", task, set: { status: "waiting", waiting_on: "Tomas's review" } }]);
+    w.submit([
+      { kind: "task.patch", task, set: { status: "waiting", waiting_on: "Tomas's review" } },
+    ]);
     w.submit([{ kind: "task.folder_set", task, path: "/srv/fixture/portal" }]);
     await project();
     const front = frontMatter(fileOf(task));
@@ -130,7 +140,10 @@ describe("[A1.5.projection.render] index.md gives a timed deadline the local day
     const at = Date.UTC(2026, 10, 17, 23, 30);
     w.submit([{ kind: "task.patch", task, set: { due: { at, tz: "Europe/Amsterdam" } } }]);
     await project("Europe/Amsterdam");
-    const ref = catalogOf(w.dir).find((l) => l.id === task)?.path.split("/")[1]?.split("-");
+    const ref = catalogOf(w.dir)
+      .find((l) => l.id === task)
+      ?.path.split("/")[1]
+      ?.split("-");
     const line = readFileSync(join(w.dir, "index.md"), "utf8")
       .split("\n")
       .find((l) => l.startsWith(`- [${ref?.[0] ?? ""}-${ref?.[1] ?? ""}]`));
@@ -147,7 +160,9 @@ describe("[A1.5.projection.recovery] files an earlier build made say what this o
     const line = catalogOf(w.dir).find((l) => l.id === task);
     if (line === undefined) throw new Error("the task is in the catalogue");
     const abs = join(w.dir, ...line.path.split("/"));
-    const old = readFileSync(abs, "utf8").replace(/\nwaiting_on: .*\n/, "\n").replace("\nfolder:", "\nplace:");
+    const old = readFileSync(abs, "utf8")
+      .replace(/\nwaiting_on: .*\n/, "\n")
+      .replace("\nfolder:", "\nplace:");
     chmodSync(abs, 0o600);
     writeFileSync(abs, old);
     chmodSync(abs, 0o444);

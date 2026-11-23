@@ -435,7 +435,9 @@ export class Projector {
     this.#sweptAt = this.#now();
     const record = this.#rec;
     const named = [...record.files]
-      .filter(([path, file]) => file.task === undefined || record.entries.get(file.task)?.path === path)
+      .filter(
+        ([path, file]) => file.task === undefined || record.entries.get(file.task)?.path === path,
+      )
       .map(([path]) => path);
     const folders = new Map<string, boolean>();
     for (const path of this.#tree.absent(named)) {
