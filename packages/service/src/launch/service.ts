@@ -16,7 +16,7 @@ import { PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
 import {
-  accountVariables,
+  agentSetup,
   checkPlan,
   CLAIM_WINDOW_MS,
   PREPARED_TTL_MS,
@@ -811,7 +811,7 @@ export class LaunchService {
           : undefined;
       const entry = codexHome === undefined ? undefined : codexEntryOf(codexHome);
       const toolEnv = entry?.kind === "lacks_env_vars" ? codexToolEnv(entry.names) : [];
-      const unset = accountVariables(chosen, this.#options.home, platform);
+      const setup = agentSetup(chosen, this.#options.home, platform);
       const title = sanitiseTitle(task.title);
       planFor = (reference) => {
         const text = brief(reference);
@@ -825,8 +825,8 @@ export class LaunchService {
         return {
           argv: built.argv,
           folder,
-          env: chosen.env,
-          ...(unset.length === 0 ? {} : { unset }),
+          env: setup.env,
+          ...(setup.ownHome === undefined ? {} : { ownHome: setup.ownHome }),
           title: `${task.ref} ${title}`,
           afterExit: this.terminals.settings.afterExit,
           ...(chosen.viaLoginShell && platform !== "win32" ? { loginShell: true } : {}),

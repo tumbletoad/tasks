@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { FAKE_SHELL, readJsonLines } from "@ttasks/testkit";
 import {
-  accountVariables,
+  agentSetup,
   agentEnvironment,
   captureOutput,
   expandWindows,
@@ -118,70 +118,89 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
     expect(service["PATH"]).toBe("/opt/agent/bin:/home/mira/.nvm/versions/node/v24/bin:/usr/bin");
   });
 
-  test("the variables that choose an account: the person's for the default home, none of them for a home of the instance's own, whose env still sets them", () => {
+  test("which account: the default home inherits the person's variables whole; a Claude Code home of its own inherits none that says which account or endpoint, and its own env wins", () => {
+    // Inert stand-ins: no value here is a credential.
     const inert = "inert-stand-in";
-    const base = {
-      PATH: "/usr/bin",
-      ANTHROPIC_API_KEY: inert,
-      ANTHROPIC_AUTH_TOKEN: inert,
-      CLAUDE_CODE_OAUTH_TOKEN: inert,
-      CLAUDE_CODE_USE_VERTEX: "1",
-      CLAUDE_CODE_ENTRYPOINT: "cli",
+    // variable, reaches the default home's agent, reaches the agent of a home of its own.
+    const table = [
+      // Claude Code's authentication precedence: cloud providers, bearer token, API key, OAuth
+      // token, a named profile and the federation pair, all above a home's own sign-in.
+      ["CLAUDE_CODE_USE_BEDROCK", true, false],
+      ["CLAUDE_CODE_USE_VERTEX", true, false],
+      ["CLAUDE_CODE_USE_FOUNDRY", true, false],
+      ["CLAUDE_CODE_USE_ANTHROPIC_AWS", true, false],
+      ["CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD", true, false],
+      ["CLAUDE_CODE_USE_MANTLE", true, false],
+      ["ANTHROPIC_AUTH_TOKEN", true, false],
+      ["ANTHROPIC_API_KEY", true, false],
+      ["CLAUDE_CODE_OAUTH_TOKEN", true, false],
+      ["CLAUDE_CODE_OAUTH_REFRESH_TOKEN", true, false],
+      ["ANTHROPIC_PROFILE", true, false],
+      ["ANTHROPIC_FEDERATION_RULE_ID", true, false],
+      ["ANTHROPIC_ORGANIZATION_ID", true, false],
+      // The endpoint, its headers and that account's models.
+      ["ANTHROPIC_BASE_URL", true, false],
+      ["ANTHROPIC_CUSTOM_HEADERS", true, false],
+      ["ANTHROPIC_MODEL", true, false],
+      // Everything else of the person's.
+      ["AWS_PROFILE", true, true],
+      ["OPENAI_API_KEY", true, true],
+      ["GOPATH", true, true],
+      // A Claude session's own leftover, scrubbed for every home (A4 3.8).
+      ["CLAUDE_CODE_ENTRYPOINT", false, false],
+    ] as const;
+    const base = Object.fromEntries([["PATH", "/usr/bin"], ...table.map(([n]) => [n, inert])]);
+    const agentOf = (instance: Parameters<typeof agentSetup>[0], platform: NodeJS.Platform) => {
+      const setup = agentSetup(instance, "/home/mira", platform);
+      return agentEnvironment({
+        platform,
+        base,
+        baseKind: "user",
+        instance: setup.env,
+        ...(setup.ownHome === undefined ? {} : { ownHome: setup.ownHome }),
+        additions: {},
+      });
     };
-    const names = (instance: Record<string, string>, unset?: readonly string[]) =>
-      Object.keys(
-        agentEnvironment({
-          platform: "linux",
-          base,
-          baseKind: "user",
-          instance,
-          ...(unset === undefined ? {} : { unset }),
-          additions: {},
-        }),
-      ).sort();
-    // The default home: what the person's setup gives, but a Claude session's own leftovers.
-    expect(names({})).toEqual([
-      "ANTHROPIC_API_KEY",
-      "ANTHROPIC_AUTH_TOKEN",
-      "CLAUDE_CODE_OAUTH_TOKEN",
-      "CLAUDE_CODE_USE_VERTEX",
-      "PATH",
-    ]);
-    const own = { platform: "linux" as const };
-    const claude = {
-      target: "claude-cli" as const,
-      configHome: undefined,
-      env: { CLAUDE_CONFIG_DIR: "/home/mira/.claude-work", CLAUDE_CODE_USE_BEDROCK: "1" },
-    };
-    const unset = accountVariables(claude, "/home/mira", own.platform);
-    expect(names(claude.env, unset)).toEqual([
-      "CLAUDE_CODE_USE_BEDROCK",
-      "CLAUDE_CONFIG_DIR",
-      "PATH",
-    ]);
-    // The default home, named or not, and a Codex home of its own take nothing away.
-    expect(accountVariables({ ...claude, env: {} }, "/home/mira", "linux")).toEqual([]);
-    expect(
-      accountVariables(
-        {
-          target: "codex-cli",
-          configHome: undefined,
-          env: { CODEX_HOME: "/home/mira/.codex-work" },
-        },
-        "/home/mira",
-        "linux",
-      ),
-    ).toEqual([]);
-    // On Windows in any case.
+    const claude = { target: "claude-cli", configHome: undefined, env: {} } as const;
+    const usual = agentOf(claude, "linux");
+    const own = agentOf({ ...claude, configHome: "/home/mira/.claude-work" }, "linux");
+    for (const [name, inDefault, inOwn] of table) {
+      expect([name, name in usual, name in own]).toEqual([name, inDefault, inOwn]);
+    }
+    // The home it records reaches the program, and what the instance's env sets always wins.
+    expect(own["CLAUDE_CONFIG_DIR"]).toBe("/home/mira/.claude-work");
+    expect(usual).not.toHaveProperty("CLAUDE_CONFIG_DIR");
+    const chosen = agentOf(
+      {
+        ...claude,
+        env: { CLAUDE_CONFIG_DIR: "/home/mira/.claude-lab", CLAUDE_CODE_USE_BEDROCK: "1" },
+      },
+      "linux",
+    );
+    expect(chosen["CLAUDE_CONFIG_DIR"]).toBe("/home/mira/.claude-lab");
+    expect(chosen["CLAUDE_CODE_USE_BEDROCK"]).toBe("1");
+    expect(chosen).not.toHaveProperty("ANTHROPIC_API_KEY");
+    // A Codex home of its own keeps the person's variables: an exported key does not outrank the
+    // login stored in the home.
+    const codex = agentOf(
+      { target: "codex-cli", configHome: "/home/mira/.codex-work", env: {} },
+      "linux",
+    );
+    expect(codex["CODEX_HOME"]).toBe("/home/mira/.codex-work");
+    expect(codex["OPENAI_API_KEY"]).toBe(inert);
+    expect(codex["ANTHROPIC_API_KEY"]).toBe(inert);
+    // On Windows, in any case.
     const windows = agentEnvironment({
       platform: "win32",
-      base: { Path: "C:\\Windows", Anthropic_Api_Key: inert },
+      base: { Path: "C:\\Windows", Anthropic_Api_Key: inert, claude_code_use_vertex: "1" },
       baseKind: "user",
       instance: {},
-      unset: ["ANTHROPIC_API_KEY"],
+      ownHome: "claude-cli",
       additions: {},
     });
-    expect(Object.keys(windows).map((n) => n.toUpperCase())).not.toContain("ANTHROPIC_API_KEY");
+    const upper = Object.keys(windows).map((n) => n.toUpperCase());
+    expect(upper).not.toContain("ANTHROPIC_API_KEY");
+    expect(upper).not.toContain("CLAUDE_CODE_USE_VERTEX");
   });
 
   test("Windows names are scrubbed whatever their case, and PATH is left as the layers gave it", () => {

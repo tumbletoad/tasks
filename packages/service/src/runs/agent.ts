@@ -10,7 +10,7 @@ import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/bran
 import { findEntry, cliFaces } from "@ttasks/contracts";
 import type { RunAdapterId, RunPermission, RunRecord } from "@ttasks/contracts/runs";
 import {
-  accountVariables,
+  agentSetup,
   ADDED,
   agentEnvironment,
   instanceHome,
@@ -186,12 +186,13 @@ export async function buildRun(
   const command = agents.command();
   if (command === undefined || command.length === 0) return "spawn_failed";
   const base = await agents.base();
+  const setup = agentSetup(instance, agents.home, agents.platform);
   const env = agentEnvironment({
     platform: agents.platform,
     base: base?.env ?? {},
     baseKind: base?.kind ?? "service",
-    instance: instance.env,
-    unset: accountVariables(instance, agents.home, agents.platform),
+    instance: setup.env,
+    ...(setup.ownHome === undefined ? {} : { ownHome: setup.ownHome }),
     additions: { [ADDED.ticket]: ticket, [ADDED.task]: task.ref, [ADDED.space]: space },
     executable: instance.exec,
   });

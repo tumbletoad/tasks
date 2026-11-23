@@ -207,19 +207,30 @@ export function settingsOf(
 }
 
 /**
- * The variables of the person's own environment an instance's agent does not get: with a home of
- * its own, its account is the one signed in there, and a credential or provider choice exported
- * for the default home would win over it. The instance's own `env` may still set them.
+ * What an agent TTasks starts itself (in a terminal, or a run) gets on top of the person's own
+ * environment. `env`: the instance's `env`, and for a home of its own that `env` does not name,
+ * the app's home variable set to it, so the program uses the home TTasks records. `ownHome`: the
+ * app whose account variables (accountVariable) the person's environment does not give it, since
+ * a home of its own works with the account signed in there; its `env` may still set them. The
+ * default home gets both as the person's setup has them.
  */
-export function accountVariables(
+export function agentSetup(
   instance: Pick<Instance, "target" | "env" | "configHome">,
   userHome: string | undefined,
   platform: NodeJS.Platform,
-): readonly string[] {
-  if (!isBuiltInTarget(instance.target)) return [];
+): { readonly env: Readonly<Record<string, string>>; readonly ownHome?: BuiltInTargetId } {
   const home = instanceHome(instance, userHome, platform);
-  if (home === undefined || home.isDefault) return [];
-  return targetDef(instance.target).detect.homes?.account ?? [];
+  const target = isBuiltInTarget(instance.target) ? instance.target : undefined;
+  const variable = target === undefined ? undefined : targetDef(target).detect.homes?.env;
+  if (target === undefined || variable === undefined || home === undefined || home.isDefault) {
+    return { env: instance.env };
+  }
+  const named = envValue(instance.env, variable, platform) !== undefined;
+  return {
+    env:
+      named || home.path === undefined ? instance.env : { ...instance.env, [variable]: home.path },
+    ownHome: target,
+  };
 }
 
 /** Folders on the PATH, in order, absolute ones only. */

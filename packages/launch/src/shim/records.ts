@@ -23,6 +23,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, makeDir } from "@ttasks/files";
+import { isBuiltInTarget, type BuiltInTargetId } from "../catalogue.ts";
 import { isLaunchRef } from "../intents.ts";
 import { RESOLVE_REASONS, type FolderCheck, type ResolveReason } from "../places.ts";
 import { LAUNCH_ID, SESSION_ID, SESSION_UUID, TASK_ID } from "../store.ts";
@@ -70,10 +71,10 @@ export interface SpawnPlan {
   /** The instance's `env` (A4 3.8 layer 3). */
   readonly env: Readonly<Record<string, string>>;
   /**
-   * The names the person's environment does not give the agent: the account variables of an
-   * instance with a home of its own (accountVariables). Absent: none.
+   * The app whose home the instance has of its own: the person's variables that say which account
+   * it uses are not given (agentSetup). Absent: the default home, which gets them all.
    */
-  readonly unset?: readonly string[];
+  readonly ownHome?: BuiltInTargetId;
   /** For the terminal title and the announce line. */
   readonly title: string;
   readonly afterExit: AfterExit;
@@ -200,7 +201,7 @@ export function checkPlanFolder(value: unknown): PlanFolder | null | undefined {
 /** The plan, checked: a plan that is not one starts nothing. */
 export function checkPlan(value: unknown): SpawnPlan | undefined {
   if (!isObject(value)) return undefined;
-  const { argv, env, title, afterExit, loginShell, folderArgs, match, unset } = value;
+  const { argv, env, title, afterExit, loginShell, folderArgs, match, ownHome } = value;
   if (!Array.isArray(argv) || argv.length === 0 || argv.length > REPLY_BOUNDS.argv) {
     return undefined;
   }
@@ -209,12 +210,7 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
   if (folder === undefined || !isEnv(env) || !isText(title, REPLY_BOUNDS.title)) return undefined;
   if (!(AFTER_EXIT_MODES as readonly unknown[]).includes(afterExit)) return undefined;
   if (loginShell !== undefined && typeof loginShell !== "boolean") return undefined;
-  if (
-    unset !== undefined &&
-    (!Array.isArray(unset) ||
-      unset.length > 64 ||
-      !unset.every((name): name is string => typeof name === "string" && AGENT_ENV_NAME.test(name)))
-  ) {
+  if (ownHome !== undefined && (typeof ownHome !== "string" || !isBuiltInTarget(ownHome))) {
     return undefined;
   }
   // The folder's elements: distinct indices of empty elements after the executable.
@@ -243,7 +239,7 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
       ? {}
       : { folderArgs: folderArgs as number[] }),
     ...(match === undefined ? {} : { match: { home: (match as { home: string }).home } }),
-    ...(unset === undefined || unset.length === 0 ? {} : { unset }),
+    ...(ownHome === undefined ? {} : { ownHome }),
   };
   return Buffer.byteLength(JSON.stringify(plan), "utf8") <= PLAN_MAX_BYTES ? plan : undefined;
 }

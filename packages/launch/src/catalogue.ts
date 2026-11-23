@@ -80,9 +80,9 @@ export interface DetectRule {
   /** User wrapper scripts in `~/.local/bin`: names that start with this prefix (Linux, macOS). */
   readonly wrapperPrefix?: string;
   /**
-   * Config homes in the user's home folder: the default folder, and `<default>-<suffix>`. `account`
-   * names the variables that choose the app's account or provider over the home's sign-in: an
-   * instance with a home of its own does not inherit them (accountVariables).
+   * Config homes in the user's home folder: the default folder, and `<default>-<suffix>`.
+   * `account`: the prefixes of the variables that say which account or endpoint the app uses over
+   * its home's sign-in. An instance with a home of its own does not inherit them (accountVariable).
    */
   readonly homes?: {
     readonly folder: string;
@@ -254,15 +254,12 @@ export const CATALOGUE: readonly TargetDef[] = [
       homes: {
         folder: ".claude",
         env: "CLAUDE_CONFIG_DIR",
-        // Claude Code takes a provider, a token or a key from these before the home's sign-in.
-        account: [
-          "ANTHROPIC_API_KEY",
-          "ANTHROPIC_AUTH_TOKEN",
-          "CLAUDE_CODE_OAUTH_TOKEN",
-          "CLAUDE_CODE_USE_BEDROCK",
-          "CLAUDE_CODE_USE_FOUNDRY",
-          "CLAUDE_CODE_USE_VERTEX",
-        ],
+        // Claude Code's documented authentication precedence puts each of these families above the
+        // home's own sign-in: the provider switches (`CLAUDE_CODE_USE_BEDROCK` and the rest), the
+        // OAuth token, and the `ANTHROPIC_` key, token, profile and federation selectors; its
+        // environment variables add the endpoint and headers (`ANTHROPIC_BASE_URL`,
+        // `ANTHROPIC_CUSTOM_HEADERS`) and the models of that account.
+        account: ["ANTHROPIC_", "CLAUDE_CODE_USE_", "CLAUDE_CODE_OAUTH_"],
       },
       urlScheme: "claude-cli",
     },
@@ -440,12 +437,19 @@ export function targetDef(id: BuiltInTargetId): TargetDef {
 }
 
 /**
- * The variables any target's `account` names. The scrub of the person's environment (A4 3.8)
- * leaves them, so an instance of the default home keeps the account the person's setup gives it.
+ * Whether `name` says which account or endpoint `target`'s app uses (its `account` prefixes), or
+ * any target's when none is given (Windows names compared without case). The scrub of the
+ * person's environment (A4 3.8) leaves these, so the default home keeps the person's setup whole.
  */
-export const ACCOUNT_VARIABLES: readonly string[] = [
-  ...new Set(CATALOGUE.flatMap((def) => def.detect.homes?.account ?? [])),
-].sort();
+export function accountVariable(
+  name: string,
+  platform: NodeJS.Platform,
+  target?: BuiltInTargetId,
+): boolean {
+  const key = platform === "win32" ? name.toUpperCase() : name;
+  const defs = target === undefined ? CATALOGUE : [targetDef(target)];
+  return defs.some((def) => def.detect.homes?.account.some((p) => key.startsWith(p)) === true);
+}
 
 /**
  * The variables that select an agent's config home (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`). A home is

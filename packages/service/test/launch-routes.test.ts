@@ -1106,32 +1106,46 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
       const inert = "inert-stand-in";
       const home = tempRoot("chosen-home");
       cleanups.push(home.cleanup);
+      // What says which account or endpoint, and one variable of the person's that does not.
+      const account = [
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_PROFILE",
+        "ANTHROPIC_FEDERATION_RULE_ID",
+        "ANTHROPIC_ORGANIZATION_ID",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_CUSTOM_HEADERS",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_MANTLE",
+      ];
       const r = await rig("chosen-account", 0, {
-        person: {
-          ANTHROPIC_AUTH_TOKEN: inert,
-          ANTHROPIC_API_KEY: inert,
-          CLAUDE_CODE_USE_VERTEX: "1",
-        },
+        person: { ...Object.fromEntries(account.map((n) => [n, inert])), FIXTURE_PERSON: "1" },
         instances: [
           {
             id: "claude-own",
             env: { CLAUDE_CONFIG_DIR: join(home.root, "claude"), CLAUDE_CODE_USE_BEDROCK: "1" },
           },
+          // A home of its own by `config_home` alone: the program is told it.
+          { id: "claude-config", config_home: join(home.root, "claude-config") },
         ],
       });
       const task = await addTask(r, "Fixture account");
       await open(r, { task: task.ref, instance: "claude-own" });
+      await open(r, { task: task.ref, instance: "claude-config" });
       await open(r, { task: task.ref, instance: "claude", another: true });
-      const own = (await reportAt(r.report("claude-own"))).envNames.map((n) => n.toUpperCase());
+      const names = async (id: string) =>
+        (await reportAt(r.report(id))).envNames.map((n) => n.toUpperCase());
+      const own = await names("claude-own");
       expect(own).toContain("CLAUDE_CONFIG_DIR");
       expect(own).toContain("CLAUDE_CODE_USE_BEDROCK");
-      for (const name of ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_VERTEX"]) {
-        expect(own, name).not.toContain(name);
-      }
-      const usual = (await reportAt(r.report("claude"))).envNames.map((n) => n.toUpperCase());
-      for (const name of ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_VERTEX"]) {
-        expect(usual, name).toContain(name);
-      }
+      expect(own).toContain("FIXTURE_PERSON");
+      for (const name of account) expect(own, name).not.toContain(name);
+      const configured = await names("claude-config");
+      expect(configured).toContain("CLAUDE_CONFIG_DIR");
+      for (const name of account) expect(configured, name).not.toContain(name);
+      const usual = await names("claude");
+      expect(usual).not.toContain("CLAUDE_CONFIG_DIR");
+      for (const name of [...account, "FIXTURE_PERSON"]) expect(usual, name).toContain(name);
     },
   );
 
