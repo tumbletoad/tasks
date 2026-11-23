@@ -1,6 +1,6 @@
 // The line at the top of an archived area's or project's page: it says the group is archived and
-// brings it back. A project in an archived area is archived with it, so Unarchive there brings back
-// the area.
+// brings it back. A project in an archived area is archived with it, so the line there brings back
+// the area, and says so.
 import { useContext } from "react";
 import { Button } from "react-aria-components";
 import { Session } from "../context.ts";
@@ -8,6 +8,8 @@ import { useEdits } from "../edit/useEdits.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
 import { archivedGroup } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
+import type { AreaRow, ProjectRow } from "../live.ts";
+import type { Msg } from "../row/model.ts";
 import { useLive } from "../store/hooks.ts";
 import css from "./Archived.module.css";
 import { classes } from "./css.ts";
@@ -15,53 +17,74 @@ import { useToast } from "./frame.ts";
 
 const styles = classes(css, ["act", "line", "words"]);
 
-export function ArchivedLine({
-  area,
-  project,
-}: {
-  readonly area: string;
-  readonly project?: string | undefined;
-}) {
+/**
+ * Unarchive a group, with an Undo toast: the group is back in the sidebar, or, for a project whose
+ * area stays archived, it is unarchived and stays under Archived with that area. Resolves true once
+ * the service has the group live; a refusal is said in a toast.
+ */
+export function useUnarchive(): (group: AreaRow | ProjectRow, area?: AreaRow) => Promise<boolean> {
   const t = useT();
   const say = useToast();
   const { api, live } = useContext(Session);
   const edits = useEdits();
-  const state = useLive();
-  const areaRow = state.areas.get(area);
-  const projectRow = project === undefined ? undefined : state.projects.get(project);
-  const shelved = archivedGroup(areaRow, projectRow);
-  if (shelved === undefined) return null;
-  const name = shelved.row.title;
-  const words =
-    shelved.kind === "area" && project !== undefined
-      ? t("archived.inArea", { area: name })
-      : t("archived.line");
-
-  const unarchive = () => {
-    edits
+  return (group, area) => {
+    const name = group.title;
+    const back: Msg =
+      area?.lifecycle === "archived"
+        ? { id: "archived.backInArea", values: { name, area: area.title } }
+        : { id: "archived.back", values: { name } };
+    return edits
       .write(
         (request, base) =>
           api.client.group.manage({
             action: "unarchive",
-            path: shelved.row.id,
+            path: group.id,
             mode: "apply",
             request_id: request,
             ...(base === undefined ? {} : { base }),
           }),
-        () => ({ id: "archived.back", values: { name } }),
+        () => back,
       )
-      .catch((failed: unknown) => {
-        if (!live.failed(failed)) say(refusalText(failed, t("archived.notBack")));
-      });
+      .then(
+        () => true,
+        (failed: unknown) => {
+          if (!live.failed(failed)) say(refusalText(failed, t("archived.notBack")));
+          return false;
+        },
+      );
   };
+}
+
+export function ArchivedLine({
+  area,
+  project,
+}: {
+  readonly area?: string | undefined;
+  readonly project?: string | undefined;
+}) {
+  const t = useT();
+  const unarchive = useUnarchive();
+  const state = useLive();
+  const areaRow = area === undefined ? undefined : state.areas.get(area);
+  const projectRow = project === undefined ? undefined : state.projects.get(project);
+  const shelved = archivedGroup(areaRow, projectRow);
+  if (shelved === undefined) return null;
+  const name = shelved.row.title;
+  // On a live project's page, the area is what keeps it archived: the button names it.
+  const byArea = shelved.kind === "area" && project !== undefined;
 
   return (
     <div className={styles.line} data-part="archived-line">
       <span className={styles.words} dir="auto">
-        {words}
+        {byArea ? t("archived.inArea", { area: name }) : t("archived.line")}
       </span>
-      <Button className={styles.act} onPress={unarchive}>
-        {t("archived.unarchive")}
+      <Button
+        className={styles.act}
+        onPress={() => {
+          void unarchive(shelved.row, shelved.kind === "project" ? areaRow : undefined);
+        }}
+      >
+        {byArea ? t("archived.unarchiveArea", { area: name }) : t("archived.unarchive")}
       </Button>
     </div>
   );
