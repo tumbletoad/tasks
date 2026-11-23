@@ -189,6 +189,11 @@ describe("[A3.3.4.prefs.set] the person changes a space's settings, and everythi
       code: "invalid_input",
       message: "This build does not act on this key yet, so it is not changed.",
     });
+    // A machine key nothing reads yet answers the same, not as a key no declaration has.
+    expect(await refusal(set(person, "projection.dir", "/srv/view"))).toMatchObject({
+      code: "invalid_input",
+      message: "This build does not act on this key yet, so it is not changed.",
+    });
     expect(await refusal(set(person, "tasks.statuss", "open"))).toMatchObject({
       code: "invalid_input",
       hint: "Did you mean tasks.statuses?",
