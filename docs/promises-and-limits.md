@@ -90,6 +90,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   step on that machine. When the old folder is still there, nothing else moves, and you are told
   which folders stayed. TTasks itself never moves files.
 - An archived project keeps its folder, and a deleted one frees it.
+- Archiving an area or a project keeps its tasks open and in your views. The page then lists it
+  under Archived in the sidebar, with its open tasks counted, and offers it for no new work; its
+  own page brings it back with Unarchive. A new project whose area turns out to be archived is
+  added there, and the page says so and offers that area's Unarchive.
 - A project made for a folder is named after it unless you name it. The Git repository in a
   project's folder is shown by name only, never by its address.
 - TTasks leaves a small `.ttasks-marker` folder in each project's and task's folder, holding only

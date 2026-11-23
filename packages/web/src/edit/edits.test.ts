@@ -1797,7 +1797,7 @@ describe("[A7.3.12.m5-14.web-write] a folder or project write: in turn, its toas
     });
   });
 
-  test("a refusal reaches the caller and shows no toast; a write that changed nothing shows none", async () => {
+  test("a refusal reaches the caller and shows no toast; a write that changed nothing offers no Undo, whatever its caller would say", async () => {
     const w = new World([task(1)]);
     const refused = w.edits.write(
       () => Promise.reject(appError("conflict", { reason: "folder_taken" })),
@@ -1805,10 +1805,12 @@ describe("[A7.3.12.m5-14.web-write] a folder or project write: in turn, its toas
     );
     await expect(refused).rejects.toMatchObject({ code: "conflict" });
     expect(w.toasts).toEqual([]);
-    await w.edits.write(
-      () => Promise.resolve({ result: "no_change", as_of: w.asOf(10) }),
-      () => undefined,
-    );
+    for (const result of ["no_change", "exists"]) {
+      await w.edits.write(
+        () => Promise.resolve({ result, as_of: w.asOf(10) }),
+        () => ({ id: "archived.back", values: { name: "Loft" } }),
+      );
+    }
     expect(w.toasts).toEqual([]);
   });
 

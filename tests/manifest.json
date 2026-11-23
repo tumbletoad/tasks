@@ -5592,6 +5592,55 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.archived.e2e.sidebar",
+      "title": "In Chromium and Firefox against the real service: an area and a project archived while the page is open leave the sidebar's areas at once and after a reload; Archived opens on them with their open tasks counted; their tasks stay in Open; the archived area's page says it is archived, its top field adds to no area and New project does not offer it; a task's card says its area is archived; Unarchive brings the area back with an Undo that archives it again; an old link to an archived project's page shows it archived with Archived marked as the way to it; a project without an area is listed after the areas, leaves them for Archived when archived, its page has Unarchive and its task's card names it; Unarchive of a project whose area stays archived says it stays under Archived with that area, with an Undo, and the line then offers the area's Unarchive; at 390 px closing and reopening the drawer keeps Archived open or folded; pictures of the sidebar before and after and of Archived open at 1,440 and 390 px in Sumi and Washi, axe clean, no sideways scroll (Washi, axe and the pictures in Chromium only)",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.archived.e2e.new-work",
+      "title": "In Chromium and Firefox against the real service: New project saves to the area its list shows, also when the area it opened on is archived meanwhile; a new area's name that an archived area has is said in the dialog, adds nothing, and its Unarchive brings that area back and selects it, with no second area of the name; a submitted capture with #name of an archived area, beside a live project of the same name, shows that the area is archived and lands in the Inbox with its words in the title",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.archived.e2e.added-where",
+      "title": "In Chromium and Firefox against the real service: New project with a new area's name that is an archived area's slug, and New project into a live area archived while its request is held, both end in a toast that names the archived area the project is in, whose Unarchive brings that area back with the project in the sidebar",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.archived.e2e.address",
+      "title": "In Chromium and Firefox against the real service: a project without an area, moved into an area and the move undone while its page is open, and old links to either address, each show the project's open task, take the project's present address without a step for Back, and the top field says where a plain capture goes (the Inbox without an area, the area and project with one) and files it there",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.archived.service.where",
+      "title": "group.manage create and folder.manage add_project answer with the new project's area and whether it is archived, for a name that resolves to an archived area by slug, by an old slug and by exact case beside another case; a live area is named without",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.archived.service.feed",
+      "title": "Archiving an area and a project reaches a page open meanwhile in its batch and a page opened after in its snapshot, each marked archived, with every task of theirs still open; Unarchive by the group's ID from the page's base applies, and one undo archives it again",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.archived.web.groups",
+      "title": "The sidebar lists each live area with its live projects, and under Archived each archived area with all its projects and each archived project of a live area, in the space's order; archiving recolours no other area; new work is offered only live groups; an archived group's page knows which group keeps it archived; a project without an area is listed after the areas, or under Archived after the areas' groups; a project's view is one list, open first, with or without an area",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.while-away.service.recent",
       "title": "A page's snapshot holds the tasks an agent or a routine changed in the last seven days, newest first, each with the agent that changed it last and when, the row of a finished one with it; not the person's own changes, a deleted task or a change older than a week",
       "owner": "M5",

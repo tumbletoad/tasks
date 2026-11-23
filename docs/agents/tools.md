@@ -182,6 +182,10 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | `owner.id` | string | yes | Its ID |
 | `owner.name` | string | no | A project's name |
 | `owner.ref` | string | no | Task reference |
+| `owner.area` | object | no | A project's area as of the write; absent: it has none |
+| `owner.area.id` | string | yes | Area ID |
+| `owner.area.name` | string | yes | Its name |
+| `owner.area.archived` | true | no | Archived, and the project with it |
 | `folder` | string, max 4096 | no | The folder here as stored, the home as ~; absent once cleared |
 | `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved |
 | `followed` | object[], max 20 items | no | The first of them |
@@ -305,6 +309,10 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | `group.id` | string | yes | Its ID |
 | `group.name` | string | yes | Its name now |
 | `group.folder` | string | no | Its folder on this machine, the home as ~ |
+| `group.area` | object | no | A project's area as of the write; absent: it has none |
+| `group.area.id` | string | yes | Area ID |
+| `group.area.name` | string | yes | Its name |
+| `group.area.archived` | true | no | Archived, and the project with it |
 | `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved |
 | `followed` | object[], max 20 items | no | The first of them |
 | `followed[].kind` | "project" \| "task" | yes | Whose folder it is |
