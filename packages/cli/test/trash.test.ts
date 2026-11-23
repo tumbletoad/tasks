@@ -40,7 +40,7 @@ describe("[A3.trash.cli] ttasks delete, restore and trash", () => {
       expect(listed.code).toBe(0);
       expect(listed.stdout).toMatch(
         new RegExp(
-          `^You moved 2 tasks here, \\S+ · (op_[0-9a-z]{26})\\n  ${a}  Fixture trash first\\n  ${b}  Fixture trash second\\n$`,
+          `^2 tasks here from your change, \\S+ · (op_[0-9a-z]{26})\\n  ${a}  Fixture trash first\\n  ${b}  Fixture trash second\\n$`,
           "u",
         ),
       );
@@ -57,9 +57,7 @@ describe("[A3.trash.cli] ttasks delete, restore and trash", () => {
       expect(back.stdout).toBe(`${a} is back in Open\n`);
       const change = /op_[0-9a-z]{26}/u.exec(listed.stdout)?.[0] ?? "";
       const rest = await person(["restore", "--change", change]);
-      expect(rest.stdout).toBe(
-        `${b} is back in Open\n${a} was back already, or moved to the Trash again since\n`,
-      );
+      expect(rest.stdout).toBe(`${b} is back in Open\n${a} was back already\n`);
       expect((await person(["trash"])).stdout).toBe("Nothing in the Trash in Mira\n");
     },
     LONG,
@@ -77,6 +75,17 @@ describe("[A3.trash.cli] ttasks delete, restore and trash", () => {
       expect(refused.code).toBe(EXIT_CODES.forbidden);
       expect(refused.stderr).toContain("agents cannot remove tasks yet");
       expect((await person(["show", a])).stdout).not.toContain("In the Trash");
+      // Removed by the person, the task reads to an agent's shell as the agent's tools say it.
+      expect((await person(["delete", a])).code).toBe(0);
+      const shown = await runMain(["show", a, "--space", w.space], {
+        home: w.home,
+        tty: true,
+        env: { CLAUDECODE: "1" },
+      });
+      expect(shown.stdout).toMatch(
+        /\nIn the Trash: the user moved it there at \S+\. Tell the user; do not add it again or restore it\.\n/u,
+      );
+      expect(shown.stdout).not.toContain("ttasks restore");
     },
     LONG,
   );

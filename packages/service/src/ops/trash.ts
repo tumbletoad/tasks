@@ -10,6 +10,8 @@ export interface TrashRequest {
   /** Words of a title, all of them, or a reference's number. */
   readonly words: readonly string[];
   readonly ref?: number | undefined;
+  /** The prefix the reference was typed with, in capitals: another space's finds nothing. */
+  readonly prefix?: string | undefined;
   /**
    * The tasks the Agents page places as it places a live task: with `working`, those whose row
    * shows a run (one that may hold processes, or a newest that asks the person); with `tasks`,
@@ -45,7 +47,15 @@ export interface TrashEntry {
  */
 function trashSql(request: TrashRequest, folders: boolean): string {
   const find: string[] = [];
-  if (request.ref !== undefined) find.push("t.ref = $ref");
+  if (request.ref !== undefined) {
+    find.push(
+      request.prefix === undefined
+        ? "t.ref = $ref"
+        : "(t.ref = $ref AND ($prefix = (SELECT upper(ref_prefix) FROM space WHERE one = 1) OR " +
+            "EXISTS (SELECT 1 FROM aliases WHERE namespace = 'ref_prefix' AND entity_kind = 'space' " +
+            "AND upper(alias) = $prefix)))",
+    );
+  }
   if (request.words.length > 0) {
     find.push(
       "NOT EXISTS (SELECT 1 FROM json_each($words) w WHERE instr(lower(t.title), w.value) = 0)",
@@ -117,6 +127,9 @@ export async function readTrash(
         limit: request.limit + 1,
         ...(request.words.length === 0 ? {} : { words: JSON.stringify(request.words) }),
         ...(request.ref === undefined ? {} : { ref: request.ref }),
+        ...(request.ref === undefined || request.prefix === undefined
+          ? {}
+          : { prefix: request.prefix }),
         ...(request.tasks === undefined ? {} : { tasks: JSON.stringify(request.tasks) }),
         ...(request.after === undefined
           ? {}

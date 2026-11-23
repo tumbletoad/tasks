@@ -1515,7 +1515,8 @@ Move tasks to the Trash, or restore them. Nothing is deleted for good.
 |---|---|---|---|
 | `result` | "moved" \| "restored" \| "no_change" | yes | moved to the Trash, restored from it, or every task was there already |
 | `moved` | string[], max 100 items | yes | The tasks this moved |
-| `already` | string[], max 100 items | no | Tasks that were there already, or that a later change moved again |
+| `already` | string[], max 100 items | no | Tasks that were where you asked already: in the Trash, or back |
+| `later` | string[], max 100 items | no | Tasks of the change in the Trash from a later change, which restores them |
 | `restored` | object[], max 100 items | no | Where each is back |
 | `restored[].id` | string | yes | Task ID |
 | `restored[].ref` | string | yes | Task reference |
@@ -2674,7 +2675,8 @@ What is in the Trash, newest change first, a page at a time.
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `q` | string, max 200 | no | Words of a title, or a reference such as M-14 |
-| `working` | boolean | no | Only tasks an agent may still work on: an open run, or a terminal agent |
+| `working` | boolean | no | Only tasks whose row shows a run: one working, or one that asks you something |
+| `tasks` | (string, max 40)[], max 200 items | no | Only these tasks, such as those the Agent Monitor links an agent to |
 | `limit` | integer, 1 to 200 | no, default `50` | Rows per page; default 50 |
 | `cursor` | string, max 60 | no | Next page: the last page's cursor |
 

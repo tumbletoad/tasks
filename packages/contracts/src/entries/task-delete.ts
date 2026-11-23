@@ -74,7 +74,12 @@ export const TaskDeleteResult = z.strictObject({
   already: z
     .array(TaskRef)
     .max(DELETE_MAX)
-    .describe("Tasks that were there already, or that a later change moved again")
+    .describe("Tasks that were where you asked already: in the Trash, or back")
+    .optional(),
+  later: z
+    .array(TaskRef)
+    .max(DELETE_MAX)
+    .describe("Tasks of the change in the Trash from a later change, which restores them")
     .optional(),
   restored: z.array(RestoredTask).max(DELETE_MAX).describe("Where each is back").optional(),
   commit: CommitId.describe("The change, which Undo names").optional(),

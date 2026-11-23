@@ -82,11 +82,11 @@ test.describe("[A5.trash.e2e] A task taken away and brought back in the page", (
     await page.goto(`${world.origin}/s/${space}/trash`);
     await showsSpace(page, world.mira.name);
     const groups = page.locator('main [role="group"]');
-    const change = groups.filter({ hasText: "You moved 2 tasks here" });
+    const change = groups.filter({ hasText: "2 tasks here from your change" });
     await expect(change).toBeVisible({ timeout: SLOW_MS });
     await expect(change.locator("li[data-task]")).toHaveCount(2);
     await expect(groups.filter({ has: page.locator(`li[data-task="${one}"]`) })).toContainText(
-      "You moved 1 task here",
+      "1 task here from your change",
     );
     await expect(rowOf(page, one).locator('[data-part="trash-where"]')).toContainText("Home");
     await both(page, "trash");

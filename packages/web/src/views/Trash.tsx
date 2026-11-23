@@ -138,14 +138,21 @@ function TrashList({ q, task, onExpand }: TrashProps & { readonly q: string }) {
           (value) => {
             if (!("moved" in value)) return { id: "toast.restoredSome" };
             const already = value.already?.length ?? 0;
+            const later = value.later?.length ?? 0;
             return value.moved.length === 0
               ? undefined
-              : { id: "toast.restoredChange", values: { count: value.moved.length, already } };
+              : {
+                  id: "toast.restoredChange",
+                  values: { count: value.moved.length, already, later },
+                };
           },
         )
         .then(
           (value) => {
-            if ("moved" in value && value.moved.length === 0) say(t("toast.restoredNone"));
+            if (!("moved" in value) || value.moved.length > 0) return;
+            const already = value.already?.length ?? 0;
+            const later = value.later?.length ?? 0;
+            say(t("toast.restoredNone", { already, later }));
           },
           (error: unknown) => {
             if (live.failed(error)) return;

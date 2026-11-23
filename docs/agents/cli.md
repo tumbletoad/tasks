@@ -289,7 +289,6 @@ Usage: `ttasks trash [<q>] [flags]`
 | Argument | Field | Type | Description |
 |---|---|---|---|
 | `<q>` | `q` | string | Words of a title, or a reference such as M-14 |
-| `--working` | `working` | boolean | Only tasks an agent may still work on: an open run, or a terminal agent |
 | `--limit` | `limit` | integer | Rows per page; default 50 |
 | `--cursor` | `cursor` | string | Next page: the last page's cursor |
 

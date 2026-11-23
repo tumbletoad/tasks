@@ -173,9 +173,14 @@ function deleteLines(result: Result, space: string, restore: boolean): string[] 
     const was = already.length === 1 ? "was" : "were";
     lines.push(
       restore
-        ? `${listed(already)} ${was} back already, or moved to the Trash again since`
+        ? `${listed(already)} ${was} back already`
         : `${listed(already)} ${was} in the Trash already`,
     );
+  }
+  const later = ((result["later"] as unknown[] | undefined) ?? []).map(str);
+  if (later.length > 0) {
+    const is = later.length === 1 ? "is" : "are";
+    lines.push(`${listed(later)} ${is} in the Trash from a later change: restore that one`);
   }
   if (lines.length === 0) lines.push(`Nothing moved in ${space}${replay(result)}`);
   return lines;
@@ -196,8 +201,10 @@ function trashLines(result: Result, space: string): string[] {
       change = str(removed["id"]);
       const count = Number(removed["count"]);
       const why = typeof removed["reason"] === "string" ? ` · ${removed["reason"]}` : "";
+      // How many of the change's tasks are here now: some may be back, or with a later change.
+      const whose = removed["by"] === "user" ? "your change" : `${str(removed["by"])}'s change`;
       lines.push(
-        `${mover(removed["by"])} moved ${String(count)} ${count === 1 ? "task" : "tasks"} here, ${str(removed["at"])}${why} · ${change}`,
+        `${String(count)} ${count === 1 ? "task" : "tasks"} here from ${whose}, ${str(removed["at"])}${why} · ${change}`,
       );
     }
     const group = [row["area"], row["project"]].filter((name) => typeof name === "string");
@@ -362,6 +369,11 @@ export interface Asked {
   readonly archived?: boolean;
   /** `ttasks restore`, not `ttasks delete`. */
   readonly restore?: boolean;
+  /**
+   * A person at a terminal (personAtTerminal), not an agent's shell or a script: a task in the Trash
+   * tells a person how to restore it, and an agent to tell the person and not to.
+   */
+  readonly person?: boolean;
   readonly platform?: NodeJS.Platform;
 }
 
@@ -451,8 +463,12 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       lines.push(taskLine(task));
       const trashed = task["deleted"] as Result | undefined;
       if (trashed !== undefined) {
+        const at = str(trashed["at"]);
+        // A person is told how to bring it back; an agent's shell or a script, to tell the person.
         lines.push(
-          `In the Trash: ${mover(trashed["by"])} moved it there at ${str(trashed["at"])}. Restore it with ttasks restore ${str(task["ref"])}`,
+          asked.person === true
+            ? `In the Trash: ${mover(trashed["by"])} moved it there at ${at}. Restore it with ttasks restore ${str(task["ref"])}`
+            : `In the Trash: ${trashed["by"] === "user" ? "the user" : str(trashed["by"])} moved it there at ${at}. Tell the user; do not add it again or restore it.`,
         );
       }
       // The user's request for the launch named: each line as typed after an indent.

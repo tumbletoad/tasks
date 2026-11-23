@@ -222,7 +222,13 @@ describe("[A3.trash] the Trash through real requests", () => {
     const later = (await remove([two]))["commit"];
     await restore({ tasks: [three] });
     const result = await call("task.delete", { restore: true, change, request_id: rid() });
-    expect(result).toMatchObject({ result: "restored", moved: [one], already: [two, three] });
+    // Two was restored and moved to the Trash again: it is there, with the later change.
+    expect(result).toMatchObject({
+      result: "restored",
+      moved: [one],
+      already: [three],
+      later: [two],
+    });
     expect((await trash({ q: two })).rows[0]?.removed.id).toBe(later);
     const gone = await refusal("task.delete", {
       restore: true,
@@ -380,6 +386,29 @@ describe("[A3.trash] the Trash through real requests", () => {
     const again = await call("task.delete", input);
     expect(again["restored"]).toEqual(first["restored"]);
     expect(again).toMatchObject({ replayed: true, result: "restored", moved: [a] });
+  });
+
+  test("a reference and its ID in one request are one task; a later change's removal is not 'back already'; Find honours the prefix", async () => {
+    const tasks = [
+      await add({ title: "Fixture counted one" }),
+      await add({ title: "Fixture counted two" }),
+    ];
+    const [one, two] = tasks as [string, string];
+    const id = ((await call("task.get", { task: one }))["task"] as Json)["id"] as string;
+    const moved = await remove([one, id]);
+    expect(moved).toMatchObject({ result: "moved", moved: [one] });
+    expect(moved["already"]).toBeUndefined();
+    await remove([two]);
+    const change = moved["commit"] as string;
+    await restore({ tasks: [one] });
+    await remove([one]);
+    // Every task of the change is in the Trash from a later one now: none was back already.
+    const result = await call("task.delete", { restore: true, change, request_id: rid() });
+    expect(result).toMatchObject({ result: "no_change", moved: [], later: [one] });
+    expect(result["already"]).toBeUndefined();
+    const number = one.slice(one.indexOf("-") + 1);
+    expect(refs((await trash({ q: `M-${number}` })).rows)).toEqual([one]);
+    expect(refs((await trash({ q: `Z-${number}` })).rows)).toEqual([]);
   });
 
   test("the Agents page reads a removed task as it places a live one: by the run its row shows, and by the agents the monitor links, with no cut of its own", async () => {

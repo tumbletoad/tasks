@@ -2744,8 +2744,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       }
     }
     const result = await submit(call, ops);
+    // A task named twice (its reference and its ID) is one task: the operation that moved it
+    // says so, and the one that then found it moved says nothing.
     const moved = result.results.filter((r) => r.status === "updated");
-    const already = result.results.filter((r) => r.status === "unchanged");
+    const movedIds = new Set(moved.map((r) => r.id));
+    const skipped = result.results.filter((r) => r.status === "unchanged" && !movedIds.has(r.id));
+    // A task of the change restored and moved to the Trash again since is there, with that later
+    // change: not back already.
+    const later = skipped.filter((r) => r.later === true);
+    const already = skipped.filter((r) => r.later !== true);
     const refs = (list: readonly OpResult[]) => [...new Set(list.map(refOf))];
     // Where each restored task is back, as its change left it: the writer's answer, which a replay
     // gives again whatever happened since.
@@ -2766,6 +2773,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       result: moved.length === 0 ? "no_change" : restore ? "restored" : "moved",
       moved: refs(moved),
       ...(already.length === 0 ? {} : { already: refs(already) }),
+      ...(later.length === 0 ? {} : { later: refs(later) }),
       ...(restored.length === 0 ? {} : { restored }),
       ...(result.commit === undefined ? {} : { commit: result.commit }),
       as_of: result.as_of,
@@ -2785,8 +2793,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       after = { seq: Number(cursor.slice(0, dot)), ref: Number(cursor.slice(dot + 1)) };
     }
     const q = typeof input["q"] === "string" ? input["q"].trim() : "";
-    // Title words, all of them, or a reference: its task by number, whatever its prefix.
-    const ref = /^(?:[A-Za-z]{1,6}-)?([1-9][0-9]{0,9})$/u.exec(q);
+    // Title words, all of them, or a reference: its task by number, with this space's prefix.
+    const ref = /^(?:([A-Za-z]{1,6})-)?([1-9][0-9]{0,9})$/u.exec(q);
     const words = q === "" ? [] : q.toLowerCase().split(/\s+/u);
     let read;
     try {
@@ -2794,7 +2802,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         readerOf(call.space),
         {
           words,
-          ref: ref === null ? undefined : Number(ref[1]),
+          ref: ref === null ? undefined : Number(ref[2]),
+          prefix: ref?.[1]?.toUpperCase(),
           working: input["working"] === true,
           ...(Array.isArray(input["tasks"]) ? { tasks: input["tasks"] as string[] } : {}),
           limit: Number(input["limit"]),

@@ -23,7 +23,7 @@ import {
   type VerbSpec,
 } from "./args.ts";
 import { connectService, transportError, type ConnectOptions, type Session } from "./connect.ts";
-import type { Io } from "./io.ts";
+import { personAtTerminal, type Io } from "./io.ts";
 import { bodyOf, printError, printUsage, render } from "./output.ts";
 
 /** A new request ID: 128 random bits, 22 characters from A3 3.4.1's alphabet. */
@@ -258,6 +258,7 @@ export async function runVerb(
               space: globals.space,
               archived: sent["archived"] === true,
               restore: sent["restore"] === true,
+              person: personAtTerminal(io),
               platform: io.platform,
             })
           : "";

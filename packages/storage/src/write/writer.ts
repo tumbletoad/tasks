@@ -408,6 +408,8 @@ interface StagedOp {
    * `task.restore` that finds the task as it asks.
    */
   skip?: true;
+  /** A skipped `task.restore` of a change: the task is in the Trash from a later change. */
+  later?: true;
   /** A folder operation: the request's machine and its OS, whose case rule compares paths. */
   folder?: { machine: Id<"m">; os: FolderOs };
   /** `area.create` and `project.create`: the slug the new group takes. */
@@ -1701,7 +1703,8 @@ export class SpaceWriter {
           // a base, says so, so a task restored and removed again since stays with the later change.
           if (from !== undefined) {
             if (tombstones.has(target) || start === undefined) return skip;
-            if (provenanceOf(start, "deleted") !== from) return skip;
+            // In the Trash from a later change: it stays there, with that change.
+            if (provenanceOf(start, "deleted") !== from) return { ...skip, later: true };
           }
           if (deleting) affected.add(target);
           tombstones.set(target, deleting);
@@ -2848,6 +2851,7 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
             ? {}
             : { held_links: held.map(({ source, by }) => ({ source, by: refOf(by) })) }),
           ...(regrouped === null ? {} : { regrouped }),
+          ...(staged.later === true ? { later: true } : {}),
           ...(back === undefined
             ? {}
             : {

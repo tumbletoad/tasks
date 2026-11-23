@@ -253,6 +253,11 @@ export interface OpResult {
    */
   regrouped?: "area" | "inbox";
   /**
+   * `task.restore` of a change, unchanged: the task was restored and moved to the Trash again since,
+   * and belongs to that later change.
+   */
+  later?: true;
+  /**
    * `task.restore` that brought the task back: where it is back, as its change left it, with its
    * area's and project's names. A replay says the same, whatever changed since.
    */
