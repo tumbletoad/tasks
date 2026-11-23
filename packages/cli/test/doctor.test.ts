@@ -7,7 +7,9 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { RpcError } from "@ttasks/bridge/protocol";
 import { endpointRoot, listen } from "@ttasks/bridge/test/endpoint";
+import { serviceEntry } from "@ttasks/service/install";
 import { tempRoot } from "@ttasks/service/test/harness";
+import { captureIO, fakeContext, MemoryRegistry } from "@ttasks/service/test/install-fakes";
 import { CLI_SPEC } from "../src/args.ts";
 import type { Session } from "../src/connect.ts";
 import { requestCheck } from "../src/doctor.ts";
@@ -68,6 +70,40 @@ describe("[A2.3.13.cli.doctor] ttasks doctor --self-test", () => {
       expect(status(report, "sessions")).toBe("skip");
       const text = await runMain(["doctor"], { home: join(temp.root, "h") });
       expect(text.stdout).toMatch(/^fail {2}paths:/m);
+    } finally {
+      temp.cleanup();
+    }
+  });
+
+  test("the autostart row is service status's answer: off without this install's entry, with what to run", async () => {
+    const temp = tempRoot("da");
+    try {
+      // Windows's flow on every OS: an in-memory registry, never a real Run value.
+      const fake = fakeContext({ platform: "win32", dir: temp.root, registry: new MemoryRegistry() });
+      const main = { serviceContext: () => fake.ctx };
+      const row = async () => {
+        const ran = await runMain(["doctor", "--json"], { home: join(temp.root, "h"), main });
+        return (JSON.parse(ran.stdout) as Report).checks.find((c) => c.id === "autostart");
+      };
+      const statusLine = async () => {
+        const ran = await runMain(["service", "status"], { home: join(temp.root, "h"), main });
+        return /^ {2}Autostart: (.*)$/m.exec(ran.stdout)?.[1];
+      };
+      expect(await row()).toEqual({
+        id: "autostart",
+        status: "warn",
+        detail:
+          "off: this install has no entry, so Windows does not start the service at sign-in. To have it start by itself: ttasks service install",
+      });
+      expect(await statusLine()).toBe((await row())?.detail);
+      const io = captureIO();
+      expect(await serviceEntry("install", { yes: true }, io.io, () => fake.ctx)).toBe(0);
+      expect(await row()).toEqual({
+        id: "autostart",
+        status: "ok",
+        detail: "on: Windows starts the service when you sign in",
+      });
+      expect(await statusLine()).toBe((await row())?.detail);
     } finally {
       temp.cleanup();
     }
