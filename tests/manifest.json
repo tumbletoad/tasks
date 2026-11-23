@@ -4725,6 +4725,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.13.e2e.search-now",
+      "title": "In Chromium and Firefox against the real service: a checked-off search result someone reopened and dropped while the page heard nothing; after the fresh snapshot its card says it is read again and offers no Reopen, says so when that read fails, and shows Dropped with Reopen once the next snapshot's read goes through",
+      "source": "A5 3.11, A5 3.13, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A7.3.12.m5-10.e2e.keyboard",
       "title": "In Chromium and Firefox: both modes by keyboard alone (/ and typing, Enter to the first result, the list's arrows and Enter and Escape, / back to the field, Escape out to add mode), the lens and the plus switching with the text carried, and Tab taking the area type-ahead's first suggestion",
       "source": "A5 3.13, A7 3.12 M5.10",
