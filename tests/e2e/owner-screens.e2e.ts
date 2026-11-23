@@ -6,7 +6,7 @@
 // review. Fixture data only.
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn } from "./page.ts";
+import { picture, showsSpace, signIn, themes } from "./page.ts";
 import { SLOW_MS, startWorld, type World } from "./world.ts";
 
 const WIDTHS = [1280, 1440, 1920, 390] as const;
@@ -60,7 +60,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
     if (client === undefined || project === undefined)
       throw new Error("the large space has no areas");
     const project_path = `area/${client.id}/project/${project.id}`;
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       const context = await browser.newContext({ reducedMotion: "reduce" });
       try {
         const page = await context.newPage();
@@ -78,8 +78,7 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
               timeout: SLOW_MS,
             });
             expect(await sideways(page), `${name} at ${String(width)} px`).toBeLessThanOrEqual(0);
-            await page.screenshot({
-              path: test.info().outputPath(`owner-${name}-${theme}-${String(width)}.png`),
+            await picture(page, `owner-${name}-${theme}-${String(width)}.png`, {
               fullPage: name !== "open",
             });
           }
@@ -89,17 +88,13 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
           await first.locator('[data-part="title"]').click();
           await expect(first.locator("dl")).toBeVisible({ timeout: SLOW_MS });
           expect(await sideways(page), `expanded at ${String(width)} px`).toBeLessThanOrEqual(0);
-          await first.screenshot({
-            path: test.info().outputPath(`owner-expanded-${theme}-${String(width)}.png`),
-          });
+          await picture(first, `owner-expanded-${theme}-${String(width)}.png`);
           // Narrow, the menu is a drawer with the same entries.
           if (width === 390) {
             await page.getByRole("button", { name: "Menu" }).click();
             const drawer = page.getByRole("dialog", { name: "Views and areas" });
             await expect(drawer.getByRole("button", { name: "Fold Client work" })).toBeVisible();
-            await page.screenshot({
-              path: test.info().outputPath(`owner-drawer-${theme}-390.png`),
-            });
+            await picture(page, `owner-drawer-${theme}-390.png`);
             await page.keyboard.press("Escape");
           } else {
             await expect(
@@ -121,7 +116,6 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
     const ui = process.env["E2E_UI_BUILD"];
     if (ui === undefined) throw new Error("global-setup.ts did not build the page");
     await page.setViewportSize({ width: 1440, height: 1000 });
-    // No tool sets a space's statuses yet: each scale is a space of its own, set before it opens.
     const scales = [
       { statuses: ["open", "backlog"], efforts: ["S", "L"] },
       { statuses: ["open", "waiting", "review", "backlog"], efforts: ["S", "M", "L", "XL"] },
@@ -135,47 +129,67 @@ test.describe("[A5.3.3.e2e.owner-screens] a space the size of one in use, at eve
         efforts: ["S", "M", "L"],
       },
     ];
-    for (const scale of scales) {
-      const world = await startWorld(ui, { scales: scale });
-      try {
-        await signIn(page, world, `/s/${world.mira.id}/open`);
-        await showsSpace(page, world.mira.name);
-        const first = page.locator("main li[data-key]").first();
-        await first.locator('[data-part="title"]').click();
-        const facts = first.locator("dl");
-        const statuses = facts.getByRole("radiogroup", { name: "Status" });
-        const priority = facts.getByRole("radiogroup", { name: "Priority" });
-        const effort = facts.getByRole("radiogroup", { name: "Effort" });
-        await expect(statuses.getByRole("radio")).toHaveCount(scale.statuses.length, {
-          timeout: SLOW_MS,
-        });
-        await expect(effort.getByRole("radio")).toHaveCount(scale.efforts.length);
-        // Statuses in one row up to four, else in even rows of three: never one left alone.
-        expect(await rows(statuses)).toBe(scale.statuses.length <= 4 ? 1 : 2);
-        // No option's name is cut.
-        const cut = await statuses
-          .getByRole("radio")
-          .evaluateAll((cells) =>
-            cells
-              .filter((c) => c.scrollWidth > c.clientWidth || c.scrollHeight > c.clientHeight)
-              .map((c) => c.textContent),
+    // No tool sets a space's statuses yet: one service, with a space of its own per scale, each
+    // set before the service opens it.
+    const world = await startWorld(ui, { scales });
+    try {
+      for (const [at, scale] of scales.entries()) {
+        const name = `statuses ${scale.statuses.join(", ")}; effort ${scale.efforts.join(", ")}`;
+        await test.step(name, async () => {
+          const space = world.scaled[at];
+          if (space === undefined) throw new Error("the world has no space for this scale");
+          // A task of the test's own, with no effort: the sample's tasks may hold a key the scale
+          // leaves out, which the facts then show as well.
+          const added = (await world.op(space.id, "task.add", {
+            tasks: [{ title: "Book the hall for the spring fair", inbox: true }],
+          })) as { tasks: { ref: string }[] };
+          const ref = added.tasks[0]?.ref;
+          if (ref === undefined) throw new Error("the task was not added");
+          const to = `/s/${space.id}/task/${ref}`;
+          if (at === 0) await signIn(page, world, to);
+          else await page.goto(`${world.origin}${to}`);
+          await showsSpace(page, space.name);
+          const row = page.locator(`main li[data-task="${ref}"]`);
+          await expect(row.locator('[data-part="title"]')).toHaveAttribute(
+            "aria-expanded",
+            "true",
+            {
+              timeout: SLOW_MS,
+            },
           );
-        expect(cut).toEqual([]);
-        // Priority's options sit over effort's.
-        const p = await edges(priority);
-        const e = await edges(effort);
-        for (let i = 0; i < Math.min(p.length, e.length); i += 1) {
-          expect(
-            Math.abs((p[i] ?? 0) - (e[i] ?? 0)),
-            `option ${String(i + 1)}`,
-          ).toBeLessThanOrEqual(1);
-        }
-        await facts.screenshot({
-          path: test.info().outputPath(`owner-facts-${scale.statuses.join("-")}.png`),
+          const facts = row.locator("dl");
+          const statuses = facts.getByRole("radiogroup", { name: "Status" });
+          const priority = facts.getByRole("radiogroup", { name: "Priority" });
+          const effort = facts.getByRole("radiogroup", { name: "Effort" });
+          await expect(statuses.getByRole("radio")).toHaveCount(scale.statuses.length, {
+            timeout: SLOW_MS,
+          });
+          await expect(effort.getByRole("radio")).toHaveCount(scale.efforts.length);
+          // Statuses in one row up to four, else in even rows of three: never one left alone.
+          expect(await rows(statuses)).toBe(scale.statuses.length <= 4 ? 1 : 2);
+          // No option's name is cut.
+          const cut = await statuses
+            .getByRole("radio")
+            .evaluateAll((cells) =>
+              cells
+                .filter((c) => c.scrollWidth > c.clientWidth || c.scrollHeight > c.clientHeight)
+                .map((c) => c.textContent),
+            );
+          expect(cut).toEqual([]);
+          // Priority's options sit over effort's.
+          const p = await edges(priority);
+          const e = await edges(effort);
+          for (let i = 0; i < Math.min(p.length, e.length); i += 1) {
+            expect(
+              Math.abs((p[i] ?? 0) - (e[i] ?? 0)),
+              `option ${String(i + 1)}`,
+            ).toBeLessThanOrEqual(1);
+          }
+          await picture(facts, `owner-facts-${scale.statuses.join("-")}.png`);
         });
-      } finally {
-        await world.close();
       }
+    } finally {
+      await world.close();
     }
   });
 });

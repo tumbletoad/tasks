@@ -9,27 +9,20 @@
 // Sumi and Washi at 1,440 and 390 px for review. The seeded space and the world's other tests add
 // tasks of their own, so the assertions name this test's tasks and the rules, never a whole list.
 // Dates are relative to the day the test runs, as the service's star is (it stars for its today).
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { expect, type Locator, type Page } from "@playwright/test";
+import { day, onOneDay } from "./days.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import {
+  axeFound,
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  themes,
+  violations,
+  watchViolations,
+} from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
-
-/** The local calendar day `days` from today: its date and the names the page shows. */
-function day(days: number) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const name = (options: Intl.DateTimeFormatOptions) => date.toLocaleDateString("en", options);
-  return {
-    iso: `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
-    /** Today's date as the page shows it: "Thursday 12 November". */
-    full: `${name({ weekday: "long" })} ${String(date.getDate())} ${name({ month: "long" })}`,
-    /** A date in a row or a fact: "12 Nov". */
-    short: `${String(date.getDate())} ${name({ month: "short" })}`,
-  };
-}
 
 interface Added {
   readonly tasks: readonly { readonly id: string; readonly ref: string }[];
@@ -98,6 +91,19 @@ async function openToday(page: Page, world: World): Promise<void> {
 const countIn = async (link: Locator): Promise<number> =>
   Number(/: ([\d,]+)/.exec((await link.getAttribute("aria-label")) ?? "")?.[1]?.replace(",", ""));
 
+const dateOf = (page: Page) => page.locator('[data-part="date"]');
+
+async function finish(world: World, ref: string): Promise<void> {
+  await world.op(world.mira.id, "task.finish", { task: ref, base: await asOf(world, ref) });
+}
+
+async function addTask(world: World, draft: Record<string, unknown>): Promise<string> {
+  const added = (await world.op(world.mira.id, "task.add", { tasks: [draft] })) as Added;
+  const ref = added.tasks[0]?.ref;
+  if (ref === undefined) throw new Error("the task was not added");
+  return ref;
+}
+
 test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its sections", () => {
   test("no task in two sections, the date once, the numbers live and linked, the expanded task held, Changes", async ({
     page,
@@ -109,10 +115,11 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
     await openToday(page, world);
 
     // Today's date, once on the screen.
-    const today = day(0);
-    await expect(page.locator('[data-part="date"]')).toHaveText(today.full);
     await expect(row(page, tasks.star)).toBeVisible({ timeout: SLOW_MS });
-    expect((await shownText(page)).split(today.full)).toHaveLength(2);
+    await onOneDay(async (today) => {
+      await expect(dateOf(page)).toHaveText(today.full);
+      expect((await shownText(page)).split(today.full)).toHaveLength(2);
+    });
     // No heading above the sections: the sidebar and the tab's title name the view.
     await expect(page.locator("main h1")).toHaveCount(0);
 
@@ -123,25 +130,27 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
     await expect(numbers.getByRole("link")).toHaveCount(4);
     await expect(done).toHaveAttribute("aria-label", /^Done this week: \d/, { timeout: SLOW_MS });
     expect(await countIn(late)).toBeGreaterThanOrEqual(1);
-    const places = await numbers
-      .getByRole("link")
-      .evaluateAll((links) => links.map((l) => Math.round(l.getBoundingClientRect().left)));
-    const before = await countIn(done);
-    // A task is finished while the page is open: the count follows, and nothing moves.
-    await world.op(world.mira.id, "task.finish", {
-      task: tasks.renew,
-      base: await asOf(world, tasks.renew),
-    });
-    await expect(done).toHaveAttribute(
-      "aria-label",
-      new RegExp(`^Done this week: ${String(before + 1)}, \\d+ today$`),
-      { timeout: SLOW_MS },
-    );
-    expect(
-      await numbers
+    const places = () =>
+      numbers
         .getByRole("link")
-        .evaluateAll((links) => links.map((l) => Math.round(l.getBoundingClientRect().left))),
-    ).toEqual(places);
+        .evaluateAll((links) => links.map((l) => Math.round(l.getBoundingClientRect().left)));
+    // A task is finished while the page is open: the count follows, and nothing moves.
+    await onOneDay(async (today, attempt) => {
+      await expect(dateOf(page)).toHaveText(today.full);
+      await expect(done).toHaveAttribute("aria-label", /^Done this week: \d/, { timeout: SLOW_MS });
+      const before = await countIn(done);
+      const where = await places();
+      await finish(
+        world,
+        await addTask(world, { title: `Return the books (${tag} ${String(attempt)})` }),
+      );
+      await expect(done).toHaveAttribute(
+        "aria-label",
+        new RegExp(`^Done this week: ${String(before + 1)}, \\d+ today$`),
+        { timeout: SLOW_MS },
+      );
+      expect(await places()).toEqual(where);
+    });
     // Each task in the first section that selects it, and in no other.
     await expect(section(page, "Focus").locator(`li[data-task="${tasks.star}"]`)).toHaveCount(1);
     await expect(section(page, "This week").locator(`li[data-task="${tasks.lease}"]`)).toHaveCount(
@@ -188,39 +197,48 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
       section(page, "Changes").locator(`li[data-task="${tasks.review.ref}"]`),
     ).toBeVisible({ timeout: SLOW_MS });
 
-    await page.screenshot({ path: test.info().outputPath("today-flow.png"), fullPage: true });
+    await picture(page, "today-flow.png", { fullPage: true });
     expect(await violations(page)).toEqual([]);
 
     // A number leads to what it counts: Late to the search for what is overdue.
-    const overdue = await countIn(late);
-    await late.click();
-    await expect(page).toHaveURL(/\/search\?q=is%3Aoverdue$/);
-    await expect(page.locator("main li[data-key]")).toHaveCount(overdue, { timeout: SLOW_MS });
-    await page.goBack();
+    const todayView = `${world.origin}/s/${world.mira.id}/today`;
+    await onOneDay(async (today, attempt) => {
+      if (attempt > 1) await page.goto(todayView);
+      await expect(dateOf(page)).toHaveText(today.full);
+      const overdue = await countIn(late);
+      await late.click();
+      await expect(page).toHaveURL(/\/search\?q=is%3Aoverdue$/);
+      await expect(page.locator("main li[data-key]")).toHaveCount(overdue, { timeout: SLOW_MS });
+      await page.goBack();
+    });
     // Due today to what is open and due today: a task finished today is not counted, nor listed.
     const due = numbers.getByRole("link", { name: /^Due today: / });
-    const dueToday = await countIn(due);
-    const paid = (await world.op(world.mira.id, "task.add", {
-      tasks: [{ title: `Pay the deposit (${tag})`, area: "home", due: today.iso }],
-    })) as Added;
-    const deposit = paid.tasks[0]?.ref ?? "";
-    await world.op(world.mira.id, "task.finish", {
-      task: deposit,
-      base: await asOf(world, deposit),
+    await onOneDay(async (today, attempt) => {
+      if (attempt > 1) await page.goto(todayView);
+      await expect(dateOf(page)).toHaveText(today.full);
+      await expect(done).toHaveAttribute("aria-label", /^Done this week: \d/, { timeout: SLOW_MS });
+      const before = await countIn(done);
+      const dueToday = await countIn(due);
+      const deposit = await addTask(world, {
+        title: `Pay the deposit (${tag} ${String(attempt)})`,
+        area: "home",
+        due: today.iso,
+      });
+      await finish(world, deposit);
+      // The page has heard of both once Done this week counts the deposit: the page may hear of
+      // the add before the finish, and Due today then says one more for a moment.
+      await expect(done).toHaveAttribute(
+        "aria-label",
+        new RegExp(`^Done this week: ${String(before + 1)}, \\d+ today$`),
+        { timeout: SLOW_MS },
+      );
+      await expect(due).toHaveAttribute("aria-label", `Due today: ${String(dueToday)}`);
+      await due.click();
+      await expect(page).toHaveURL(/\/search\?q=due%3Atoday/);
+      await expect(page.locator("main li[data-key]")).toHaveCount(dueToday, { timeout: SLOW_MS });
+      await expect(row(page, deposit)).toHaveCount(0);
+      await page.goBack();
     });
-    // The page has heard of both once Done this week counts the deposit: the page may hear of
-    // the add before the finish, and Due today then says one more for a moment.
-    await expect(done).toHaveAttribute(
-      "aria-label",
-      new RegExp(`^Done this week: ${String(before + 2)}, \\d+ today$`),
-      { timeout: SLOW_MS },
-    );
-    await expect(due).toHaveAttribute("aria-label", `Due today: ${String(dueToday)}`);
-    await due.click();
-    await expect(page).toHaveURL(/\/search\?q=due%3Atoday/);
-    await expect(page.locator("main li[data-key]")).toHaveCount(dueToday, { timeout: SLOW_MS });
-    await expect(row(page, deposit)).toHaveCount(0);
-    await page.goBack();
     await numbers.getByRole("link", { name: /^Waiting on others: / }).click();
     await expect(page).toHaveURL(/\/waiting$/);
   });
@@ -231,8 +249,7 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
   }) => {
     const tag = `${test.info().project.name}-screens`;
     const tasks = await seed(world, tag);
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       // axe runs its own script in the page: a context of its own without the page's CSP.
       const context = await browser.newContext({
         bypassCSP: true,
@@ -244,39 +261,16 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
         await world.machine("ui.theme", theme);
         await openToday(page, world);
         await expect(row(page, tasks.star)).toBeVisible({ timeout: SLOW_MS });
-        await page.screenshot({
-          path: test.info().outputPath(`today-${theme}-1440.png`),
-          fullPage: true,
-        });
+        await picture(page, `today-${theme}-1440.png`, { fullPage: true });
         // The mockup's moment: a Focus task expanded in place.
         await row(page, tasks.star).locator('[data-part="title"]').click();
         await expect(row(page, tasks.star).locator('[data-part="collapse"]')).toBeVisible({
           timeout: SLOW_MS,
         });
         await expect(row(page, tasks.star).locator("dl")).toBeVisible({ timeout: SLOW_MS });
-        await page.screenshot({
-          path: test.info().outputPath(`today-${theme}-1440-expanded.png`),
-          fullPage: true,
-        });
+        await picture(page, `today-${theme}-1440-expanded.png`, { fullPage: true });
 
-        await page.evaluate(axe);
-        const found = await page.evaluate(async () => {
-          const run = (
-            window as unknown as {
-              axe: {
-                run: (
-                  context: unknown,
-                  options: unknown,
-                ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-              };
-            }
-          ).axe.run;
-          const result = await run({ include: ["main"] }, { resultTypes: ["violations"] });
-          return result.violations.map(
-            (v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`,
-          );
-        });
-        expect(found, `axe in ${theme}`).toEqual([]);
+        if (pictures()) expect(await axeFound(page, ["main"]), `axe in ${theme}`).toEqual([]);
 
         await page.setViewportSize({ width: 390, height: 900 });
         await page.evaluate(() => {
@@ -286,10 +280,7 @@ test.describe("[A7.3.12.m5-04.e2e.today] Today: its date, its numbers and its se
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
         );
         expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
-        await page.screenshot({
-          path: test.info().outputPath(`today-${theme}-390.png`),
-          fullPage: true,
-        });
+        await picture(page, `today-${theme}-390.png`, { fullPage: true });
       } finally {
         await context.close();
       }

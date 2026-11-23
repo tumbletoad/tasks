@@ -463,6 +463,19 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
     for (const name of named) expect(DEFAULTS.has(name), name).toBe(true);
   });
 
+  test("a listed name that is no skill's name can be asked for, and says why beside the rest", async () => {
+    writeSkill("Case-Test", "A rule.");
+    const listed = named((await call("space.status", {}))["skills"], "Case-Test");
+    expect(String(listed?.["problem"])).toContain("no skill name");
+    const read = await call("space.status", { skills: ["Case-Test", "sizing-effort", "No Such"] });
+    expect(named(read["asked"], "Case-Test")).toEqual({
+      name: "Case-Test",
+      problem: expect.stringContaining("no skill name") as unknown,
+    });
+    expect(String(named(read["asked"], "sizing-effort")?.["text"])).toContain(DEFAULT_SIZING);
+    expect(read["missing"]).toEqual(["No Such"]);
+  });
+
   test("a skill of the user's own is served as written, with no part of TTasks'", async () => {
     const body = "# Ticket export\n\nOne ticket per task. Effort: S is 1 point, M is 3, L is 8.";
     writeSkill(

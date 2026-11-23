@@ -119,7 +119,7 @@ function skillTexts(result: Status): string[] {
   );
   if (result.missing !== undefined) {
     blocks.push(
-      `No skill is named ${result.missing.join(", ")}. ${toolOf("space.status")} without skills lists them.`,
+      `No skill is named ${result.missing.map(oneLine).join(", ")}. ${toolOf("space.status")} without skills lists them.`,
     );
   }
   return blocks;

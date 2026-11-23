@@ -4,7 +4,7 @@
 // world's other tests add tasks of their own, so the counts are read before and after.
 import { expect, type Locator, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn, violations, watchViolations } from "./page.ts";
+import { picture, showsSpace, signIn, violations, watchViolations } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const sidebar = (page: Page) => page.getByRole("navigation", { name: "Views and areas" });
@@ -57,7 +57,7 @@ test.describe("[A5.3.3.e2e.sidebar-folds] an area folds in the side menu and cou
     await expect(portal).toHaveCount(0);
     // Folded, the area still says how many tasks it holds.
     expect(await countOf(page, "Lumen")).toBe(lumen);
-    await page.screenshot({ path: test.info().outputPath("sidebar-folded.png") });
+    await picture(page, "sidebar-folded.png");
 
     // This browser remembers it.
     await page.reload();
@@ -184,7 +184,7 @@ test.describe("[A5.3.3.e2e.sidebar-folds] an area folds in the side menu and cou
       const shown = await line(drawer);
       expect(shown.countShown).toBe(true);
       expect(overlap(shown.count, shown.add)).toBe(false);
-      await phone.screenshot({ path: test.info().outputPath("sidebar-touch-390.png") });
+      await picture(phone, "sidebar-touch-390.png");
     } finally {
       await touch.close();
     }

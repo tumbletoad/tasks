@@ -4,11 +4,10 @@
 // with check-off and undo, a result that changes while the list is open, the keyboard through
 // both modes, a space without the word index, and the screenshots in both themes at 1,440 and
 // 390 px. Each test makes tasks with words of its own: the tests of one worker share its world.
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { expect, type Page } from "@playwright/test";
+import { day, onOneDay } from "./days.ts";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn } from "./page.ts";
+import { axeFound, picture, pictures, showsSpace, signIn, themes } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
 
 const adding = (page: Page) => page.getByRole("textbox", { name: "New task" });
@@ -18,14 +17,6 @@ const toast = (page: Page) => page.locator('[data-part="toast-text"]');
 const toastAction = (page: Page) => page.locator('[data-part="toast-action"]');
 const group = (page: Page, name: string) => page.locator(`main section[aria-label="${name}"]`);
 const titles = (page: Page, name: string) => group(page, name).locator('[data-part="title"]');
-
-/** The local calendar day `days` from today, YYYY-MM-DD. */
-function day(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
 
 /** A word no other test uses, so each test's search finds only its own tasks. */
 const wordOf = (stem: string) =>
@@ -89,33 +80,37 @@ test.describe("[A7.3.12.m5-10.e2e.capture] A capture shows its shortcuts before 
     page,
     world,
   }) => {
-    const word = wordOf("larkspur");
-    await open(page, world, "/inbox");
-    const field = adding(page);
-    await expect(field).toBeEnabled();
-    await field.fill(`Order the ${word} paint tomorrow p2 #home/garden *`);
-    const chips = panel(page).getByRole("listitem");
-    await expect(chips).toHaveText([/^Due /, "P2", "Home › Garden", "Starred"]);
-    await expect(panel(page)).toContainText(`Title: Order the ${word} paint`);
+    await onOneDay(async (today, attempt) => {
+      // Tomorrow is the page's tomorrow when Enter adds it: one day, so the step runs on one.
+      // Each attempt adds a task of its own.
+      const word = `${wordOf("larkspur")}${String(attempt)}`;
+      await open(page, world, "/inbox");
+      const field = adding(page);
+      await expect(field).toBeEnabled();
+      await field.fill(`Order the ${word} paint tomorrow p2 #home/garden *`);
+      const chips = panel(page).getByRole("listitem");
+      await expect(chips).toHaveText([/^Due /, "P2", "Home › Garden", "Starred"]);
+      await expect(panel(page)).toContainText(`Title: Order the ${word} paint`);
 
-    // The person keeps "p2" as text: it goes back into the title, and the field keeps focus.
-    await panel(page).getByRole("button", { name: "Keep p2 as text" }).click();
-    await expect(chips).toHaveText([/^Due /, "Home › Garden", "Starred"]);
-    await expect(panel(page)).toContainText(`Title: Order the ${word} paint p2`);
-    await expect(field).toBeFocused();
+      // The person keeps "p2" as text: it goes back into the title, and the field keeps focus.
+      await panel(page).getByRole("button", { name: "Keep p2 as text" }).click();
+      await expect(chips).toHaveText([/^Due /, "Home › Garden", "Starred"]);
+      await expect(panel(page)).toContainText(`Title: Order the ${word} paint p2`);
+      await expect(field).toBeFocused();
 
-    await field.press("Enter");
-    await expect(toast(page)).toHaveText("Added to Home › Garden");
-    await expect(field).toHaveValue("");
-    // Enter in the add mode never searched.
-    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/inbox$`));
-    const task = await taskTitled(world, word, `Order the ${word} paint p2`);
-    expect(task).toMatchObject({
-      priority: 4,
-      due: day(1),
-      area: "Home",
-      project: "Garden",
-      focus: true,
+      await field.press("Enter");
+      await expect(toast(page)).toHaveText("Added to Home › Garden");
+      await expect(field).toHaveValue("");
+      // Enter in the add mode never searched.
+      await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/inbox$`));
+      const task = await taskTitled(world, word, `Order the ${word} paint p2`);
+      expect(task).toMatchObject({
+        priority: 4,
+        due: day(1, today.start).iso,
+        area: "Home",
+        project: "Garden",
+        focus: true,
+      });
     });
   });
 
@@ -292,7 +287,7 @@ test.describe("[A7.3.12.e2e.effort-sort] A search sorted by effort shows quick w
     ).toEqual(["Effort S", "Effort M", "Effort L", "No effort set"]);
     await expect(titles(page, "Effort S")).toHaveText([`Oil the ${word} gate`]);
     await expect(titles(page, "No effort set")).toHaveText([`Think about ${word} paths`]);
-    await page.screenshot({ path: test.info().outputPath("search-effort-1440.png") });
+    await picture(page, "search-effort-1440.png");
 
     await searching(page).fill(`${word} sort:-effort`);
     await expect(headings.first()).toHaveAttribute("aria-label", "Effort L");
@@ -476,14 +471,13 @@ test.describe("[A7.3.12.m5-10.e2e.screens] The capture and the search in both th
     world,
   }) => {
     const word = wordOf("damson");
-    const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
     await addTasks(world, [
       {
         title: `Bottle the ${word} gin`,
         area: "home",
         project: "garden",
         priority: 1,
-        due: day(2),
+        due: day(2).iso,
       },
       {
         title: `Ask about ${word} rootstock`,
@@ -503,7 +497,7 @@ test.describe("[A7.3.12.m5-10.e2e.screens] The capture and the search in both th
       outcome: "Eleven kilos, most of it for jam.",
       base: (await read(world, picked ?? "")).as_of,
     });
-    for (const theme of ["sumi", "washi"] as const) {
+    for (const theme of themes()) {
       const context = await browser.newContext({
         bypassCSP: true,
         viewport: { width: 1440, height: 900 },
@@ -515,10 +509,16 @@ test.describe("[A7.3.12.m5-10.e2e.screens] The capture and the search in both th
         await open(page, world, "/today");
         await adding(page).fill(`Order ${word} netting by fri p1 #home/garden * @Jonas`);
         await expect(panel(page).getByRole("listitem")).toHaveCount(5);
-        await page.screenshot({ path: test.info().outputPath(`capture-${theme}-1440.png`) });
-        expect(await axeFound(page, axe), `axe on the capture in ${theme}`).toEqual([]);
+        await picture(page, `capture-${theme}-1440.png`);
+        // The bar with the capture's panel, and the results: the page has no heading by design.
+        if (pictures()) {
+          expect(
+            await axeFound(page, ["header", "main"]),
+            `axe on the capture in ${theme}`,
+          ).toEqual([]);
+        }
         await page.setViewportSize({ width: 390, height: 900 });
-        await page.screenshot({ path: test.info().outputPath(`capture-${theme}-390.png`) });
+        await picture(page, `capture-${theme}-390.png`);
         await expectNoSideScroll(page);
 
         await page.setViewportSize({ width: 1440, height: 900 });
@@ -537,13 +537,15 @@ test.describe("[A7.3.12.m5-10.e2e.screens] The capture and the search in both th
         await expect(
           page.getByRole("status").filter({ hasText: "Results changed." }),
         ).toBeVisible();
-        await page.screenshot({ path: test.info().outputPath(`search-${theme}-1440.png`) });
-        expect(await axeFound(page, axe), `axe on the results in ${theme}`).toEqual([]);
+        await picture(page, `search-${theme}-1440.png`);
+        if (pictures()) {
+          expect(
+            await axeFound(page, ["header", "main"]),
+            `axe on the results in ${theme}`,
+          ).toEqual([]);
+        }
         await page.setViewportSize({ width: 390, height: 900 });
-        await page.screenshot({
-          path: test.info().outputPath(`search-${theme}-390.png`),
-          fullPage: true,
-        });
+        await picture(page, `search-${theme}-390.png`, { fullPage: true });
         await expectNoSideScroll(page);
       } finally {
         await context.close();
@@ -559,23 +561,4 @@ async function expectNoSideScroll(page: Page): Promise<void> {
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(scroll, "horizontal scroll").toBeLessThanOrEqual(0);
-}
-
-async function axeFound(page: Page, axe: string): Promise<string[]> {
-  await page.evaluate(axe);
-  return page.evaluate(async () => {
-    const run = (
-      window as unknown as {
-        axe: {
-          run: (
-            context: unknown,
-            options: unknown,
-          ) => Promise<{ violations: { id: string; nodes: { target: unknown }[] }[] }>;
-        };
-      }
-    ).axe.run;
-    // The bar with the capture's panel, and the results: the page has no heading by design.
-    const result = await run({ include: ["header", "main"] }, { resultTypes: ["violations"] });
-    return result.violations.map((v) => `${v.id}: ${JSON.stringify(v.nodes.map((n) => n.target))}`);
-  });
 }

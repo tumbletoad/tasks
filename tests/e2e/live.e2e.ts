@@ -4,11 +4,9 @@
 //
 // Verify line, second sentence, in the Inbox: a task that starts to match the open view (added, or
 // reopened) appears without a reload, and one that leaves it (completed) goes.
-// Completed and search have no read path in the service yet: their invalidation is tested in
-// packages/web/src/store/queries.test.ts against the store, and here once those views exist.
 import { expect } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { showsSpace, signIn } from "./page.ts";
+import { picture, showsSpace, signIn } from "./page.ts";
 import { SLOW_MS } from "./world.ts";
 
 interface Added {
@@ -68,7 +66,7 @@ test.describe("[A7.3.12.m5-02.e2e.live] The live store in the page", () => {
     await expect(row.locator('[data-part="title"]')).toHaveText(`${title}, online`, {
       timeout: SLOW_MS,
     });
-    await page.screenshot({ path: test.info().outputPath("live-store.png") });
+    await picture(page, "live-store.png");
   });
 
   test("a task added in the page clears its field when the feed confirms it", async ({
