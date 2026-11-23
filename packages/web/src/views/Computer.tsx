@@ -277,7 +277,7 @@ export function TaskAgents({
         agent.session === null ? (
           <li key={agent.key} className={styles.agent} data-part="agent" data-state={agent.state}>
             <div className={styles.top}>
-              <span className={styles.title}>{t("agents.kind", { started: agent.started })}</span>
+              <span className={styles.title}>{t("agents.kind", { kind: agent.started })}</span>
               <span className={styles.state} data-state={agent.state}>
                 {t("computer.state", { state: agent.state })}
               </span>
