@@ -131,6 +131,11 @@ export class MemoryExecutionStore implements ExecutionStore {
     return Promise.resolve().then(() => this.#createRun(input, requestId));
   }
 
+  replayedRun(requestId: string): Promise<RunRecord | undefined> {
+    const prior = this.durable.runReceipts.get(requestId);
+    return this.readRun(prior?.id ?? "");
+  }
+
   transitionRun(
     id: string,
     expect: RunExpected,

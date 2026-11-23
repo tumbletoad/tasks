@@ -124,6 +124,9 @@ test.describe("[M6.page.run-once] A Run pressed again after a reload is the same
   }) => {
     const tag = test.info().project.name;
     const ref = await addTask(world, "Check the guest wifi");
+    // The run works until it is stopped: the press again is answered with a run still working.
+    // A run that already ended is answered otherwise (the test after this one).
+    world.codex(ref, ["hold"]);
     await openTask(page, world, ref);
     const composer = composerOf(page, ref);
     // Each Run reaches the service late: the first one is still on its way when the page reloads.
@@ -148,8 +151,59 @@ test.describe("[M6.page.run-once] A Run pressed again after a reload is the same
     expect(sent).toHaveLength(2);
     expect(sent[1]).toBe(sent[0]);
     await page.reload();
-    await expect(stateOf(runsOf(page, ref).first())).toContainText("Done.", { timeout: SLOW_MS });
+    const entry = runsOf(page, ref).first();
+    await expect(stateOf(entry)).toContainText("is working on it", { timeout: SLOW_MS });
     await expect(runsOf(page, ref)).toHaveCount(1);
+    await entry.getByRole("button", { name: /^Stop/u }).click();
+    await expect(stateOf(entry)).toContainText(/^Stopped\./u, { timeout: SLOW_MS });
+  });
+
+  test("a Run whose answer was lost, pressed again after its run ended and the task was renamed, gives that run back and says so, and the next press starts another", async ({
+    page,
+    runs: world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, "Check the printer queue");
+    await openTask(page, world, ref);
+    const composer = composerOf(page, ref);
+    // The Run reaches the service only after the page reloaded: its answer is lost.
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/v1/launch/run", async (route) => {
+      await released;
+      const response = await route.fetch();
+      await route.fulfill({ response }).catch(() => undefined);
+    });
+    const words = `Only the office printer (${tag})`;
+    await composer.fill(words);
+    await runButton(page, ref).click();
+    await page.reload();
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+    await expect(stateOf(runsOf(page, ref).first())).toContainText("Done.", { timeout: SLOW_MS });
+    const { as_of } = (await world.op(world.mira.id, "task.get", { task: ref })) as {
+      as_of: string;
+    };
+    await world.op(world.mira.id, "task.update", {
+      task: ref,
+      set: { title: `Check both printer queues (${tag})` },
+      base: as_of,
+    });
+    await expect(composer).toHaveValue(words);
+    await runButton(page, ref).click();
+    // That request was taken before: the page says so, and the words stay for the next press.
+    await expect(toast(page)).toHaveText(
+      "This request was already taken: its run is in the thread. Press Run again to start a new one.",
+      { timeout: SLOW_MS },
+    );
+    await expect(composer).toHaveValue(words);
+    await expect(runsOf(page, ref)).toHaveCount(1);
+    // Pressed again on purpose, it is a second run.
+    await runButton(page, ref).click();
+    await expect(composer).toHaveValue("", { timeout: SLOW_MS });
+    await expect(runsOf(page, ref)).toHaveCount(2, { timeout: SLOW_MS });
   });
 });
 

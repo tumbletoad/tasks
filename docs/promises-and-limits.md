@@ -176,7 +176,13 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 ## The page
 
-- An edit that failed or conflicted stays visible until you decide what to do with it.
+- A field edit that failed or conflicted stays visible until you decide what to do with it, also
+  after a reload, and so does one still waiting behind your previous edit when the page closed. Try
+  again sends it against what you saw when you made it, so a change made since is shown to you
+  first.
+- Pressing Note or Run again after its answer was lost, also after a reload, makes one note or
+  run. For Note this holds in the same browser under the same sign-in; for Run in the same browser
+  within a day of the first press, also after signing in again.
 - What you are typing in a field stays when an agent changes that field or finishes the task.
 - Task text cannot run scripts or load remote images.
 - A website you visit cannot read or change your tasks through the page.
@@ -259,7 +265,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   afterwards, writes its own list of spaces back, and the next start follows that list.
 - On a machine that several people sign in to, another person could serve a page at TTasks's
   address while TTasks is stopped.
-- An edit that could not be saved is kept in the open page. Reloading the page loses it.
+- A field edit that could not be saved is kept in this browser. Another browser does not have it,
+  clearing the browser's data for the page loses it, and a browser whose storage is blocked or full
+  keeps it only until the page is reloaded or closed. When two tabs hold different unsaved values
+  for the same field of a task, the browser keeps one of them.
 - Undo, redo and restore compare folders by the text they were given in, not by what is on disk.
   One folder reached by two spellings, such as through a link, can end up on two projects that
   way.
