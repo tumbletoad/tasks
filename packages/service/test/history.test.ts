@@ -273,13 +273,20 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
       await call("entry.add", asked, SCRIPT);
       const refused = await refusal("history.redo", { request_id: rid() });
       const conflicts = (refused.data?.["conflicts"] ?? []) as Json[];
-      const count = (entity: string) =>
-        conflicts
+      const count = (named: Json[], entity: string) =>
+        named
           .filter((c) => c["entity"] === entity)
           .reduce((sum, c) => sum + 1 + Number(c["more"] ?? 0), 0);
-      expect([count("notes"), count("log_entries")]).toEqual([100, 1]);
+      expect([count(conflicts, "notes"), count(conflicts, "log_entries")]).toEqual([100, 1]);
       expect(conflicts.length).toBeLessThanOrEqual(4);
       expect(conflicts.every((c) => c["by"] === "script")).toBe(true);
+      // The removal is set aside: the next undo reaches the task's creation, which the notes keep,
+      // and what it leaves is counted the same way.
+      const undone = await call("history.undo", { partial: true, request_id: rid() });
+      const unresolved = undone["unresolved"] as Json[];
+      expect(undone["result"]).toBe("partial");
+      expect([count(unresolved, "notes"), count(unresolved, "log_entries")]).toEqual([100, 1]);
+      expect(unresolved.length).toBeLessThanOrEqual(4);
     },
     LONG,
   );

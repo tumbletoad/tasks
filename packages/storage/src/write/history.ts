@@ -1500,8 +1500,8 @@ export function brokenIn(
  * project.
  *
  * A break whose every side the plan set back (`seq`) or is older than the step's latest
- * application (`since`) is as it was before it: the plan brings back what a person had, also a break that an
- * earlier version let in. Only a side written since by another makes it the plan's.
+ * application (`since`) is as it was before it: the plan brings back what a person had, also a
+ * break that an earlier version let in. Only a side written since by another makes it the plan's.
  */
 function groupRules(
   conn: Connection,

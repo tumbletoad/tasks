@@ -4422,6 +4422,7 @@ async function historyResult(
             field: c.field,
             by: byOf(c.by),
             at: new Date(c.at).toISOString(),
+            ...(c.more === undefined ? {} : { more: c.more }),
           })),
         }
       : {}),

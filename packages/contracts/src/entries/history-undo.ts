@@ -33,6 +33,12 @@ export const Unresolved = z.strictObject({
     .describe("Logical field; deleted or removed for a child row, state for a run"),
   by: z.string().describe("Who changed it since: user, import or the actor's label"),
   at: z.string().regex(patterns.instant).describe("When"),
+  more: z
+    .int()
+    .min(1)
+    .max(1_000_000)
+    .describe("How many more such rows by this author on this task are left too")
+    .optional(),
 });
 
 /** What an undo and a redo return besides their outcome. */
