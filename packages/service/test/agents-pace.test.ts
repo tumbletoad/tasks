@@ -369,7 +369,7 @@ describe("[A5.agents.pace] a tab that stops watching gets nothing more", () => {
     };
     const views = () => sent.filter((m) => m["type"] === "agents");
     const view = (n: number) => ({
-      picture: { ageMs: n, settling: false, sessions: [], accounts: [] },
+      picture: { ageMs: n, settling: false, sessions: [], unseen: [], accounts: [] },
       trouble: null,
     });
     message({ type: "watch", ...LOOKED });

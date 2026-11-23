@@ -7,7 +7,15 @@
 // The row is memoised: it renders again only when its own task, its area or project, its receipts,
 // what busies its agent apps, its place in the list or its state (expanded, current, fresh) changes. Every prop it takes is a
 // value the list keeps by identity, so a store update that touches one task renders one row.
-import { memo, useContext, useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  memo,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { flushSync } from "react-dom";
 import type { Instance, Receipt, Run } from "../api.ts";
 import { Session } from "../context.ts";
@@ -44,6 +52,7 @@ import css from "./Row.module.css";
 const styles = classes(css, [
   "row",
   "line",
+  "beneath",
   "marker",
   "check",
   "box",
@@ -101,6 +110,10 @@ export interface RowProps {
   readonly leaving?: Leaving | undefined;
   /** Its last Open, refused on its folder: the expanded task says so at once. */
   readonly refused?: FolderRefusal | undefined;
+  /** Its place in the view comes from what an agent did when the page last heard: shown muted. */
+  readonly muted?: boolean;
+  /** What the view shows beneath the row's line, such as the agents that work on the task. */
+  readonly beneath?: ReactNode;
   /** In a virtual list: the item's index and its offset from the list's top, in px. */
   readonly index?: number;
   readonly start?: number;
@@ -425,6 +438,8 @@ function RowView({
   actions,
   leaving,
   refused,
+  muted = false,
+  beneath,
   index,
   start,
   measure,
@@ -498,6 +513,7 @@ function RowView({
       data-current={current}
       data-fresh={fresh || undefined}
       data-done={leaving?.done === true || undefined}
+      data-muted={muted || undefined}
       data-leaving={leaving === undefined ? undefined : leaving.out ? "out" : "hold"}
       aria-posinset={posinset}
       aria-setsize={setsize}
@@ -652,6 +668,7 @@ function RowView({
           )}
         </span>
       </div>
+      {beneath === undefined ? null : <div className={styles.beneath}>{beneath}</div>}
       {expanded ? (
         <div className={styles.body} id={body} role="region" aria-label={task.title}>
           <Expanded

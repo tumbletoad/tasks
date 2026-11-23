@@ -68,7 +68,7 @@ describe("[M6.page.run-row] a row says when its newest run works or needs the pe
     id: "t_run",
     ref: 2,
     title: "run",
-    x_run: JSON.stringify({ state, reason, instance: "codex-work" }),
+    x_run: JSON.stringify({ id: "ru_1", state, reason, instance: "codex-work" }),
   });
   test("queued to stopping, and not confirmed ended, is working; a question is needs_you; the rest nothing", async () => {
     const rows = await taskRows(
@@ -85,13 +85,13 @@ describe("[M6.page.run-row] a row says when its newest run works or needs the pe
       ],
       "M",
     );
-    const working = { state: "working", instance: "codex-work" };
+    const working = { id: "ru_1", state: "working", instance: "codex-work" };
     expect(rows.map((r) => r["run"])).toEqual([
       working,
       working,
       working,
       working,
-      { state: "needs_you", instance: "codex-work" },
+      { id: "ru_1", state: "needs_you", instance: "codex-work" },
       undefined,
       undefined,
       undefined,
@@ -102,7 +102,7 @@ describe("[M6.page.run-row] a row says when its newest run works or needs the pe
 
   test("a newer run's question shows over an older run that may still work; an ended follow-up does not hide it", async () => {
     const json = (state: string, reason: string | null = null) =>
-      JSON.stringify({ state, reason, instance: "codex-work" });
+      JSON.stringify({ id: `ru_${state}`, state, reason, instance: "codex-work" });
     const rows = await taskRows(
       [
         {
@@ -123,8 +123,8 @@ describe("[M6.page.run-row] a row says when its newest run works or needs the pe
       "M",
     );
     expect(rows.map((r) => r["run"])).toEqual([
-      { state: "needs_you", instance: "codex-work" },
-      { state: "working", instance: "codex-work" },
+      { id: "ru_failed", state: "needs_you", instance: "codex-work" },
+      { id: "ru_running", state: "working", instance: "codex-work" },
     ]);
     expect(rows[0]).not.toHaveProperty("x_run_open");
   });

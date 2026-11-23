@@ -28,6 +28,10 @@
 // --control=<file> holds the mode instead: read when it starts and again for each request it
 // serves, so a test changes how a running fake answers. A file that cannot be read is no mode.
 //
+// --agents=<file> holds more of the snapshot, `{"homes": [...], "agents": [...]}` in TTAM's own
+// shape (ttamAgent builds an agent): read again for each request, and added to the recording's
+// homes and agents, so a test makes an agent whose session TTasks started appear and go.
+//
 // --log=<file> gets a JSON line with its PID at the start, so a test can see that it is gone, and
 // one with each `get`'s ID and usage. Fixture data only. No fake outlives its test: it ends after --max-ms (default 120 s) whatever it does.
 import { appendFileSync, readFileSync } from "node:fs";
@@ -42,6 +46,7 @@ const options = new Map(
     }),
 );
 const control = options.get("control");
+const extra = options.get("agents");
 /** The mode now: what --control's file says, else --mode. */
 function modeNow(): string {
   if (control === undefined) return options.get("mode") ?? "";
@@ -114,15 +119,38 @@ let served = 0;
 let busyOnce = mode === "busy";
 let ended = false;
 
+/** What --agents' file adds now: none when it cannot be read. */
+function added(): { homes: unknown[]; agents: unknown[] } {
+  if (extra === undefined) return { homes: [], agents: [] };
+  try {
+    const value = JSON.parse(readFileSync(extra, "utf8")) as { homes?: unknown; agents?: unknown };
+    return {
+      homes: Array.isArray(value.homes) ? value.homes : [],
+      agents: Array.isArray(value.agents) ? value.agents : [],
+    };
+  } catch {
+    return { homes: [], agents: [] };
+  }
+}
+
 function answer(id: number, usage: "cached" | "live", now = mode): Record<string, unknown> {
   const recorded =
     (now === "settling" ? snapshots[0] : snapshots[Math.min(served, snapshots.length - 1)]) ?? {};
   served += 1;
   const line: Record<string, unknown> = { ...recorded, id, usage: usageOff ? "cached" : usage };
+  const more = added();
+  if (more.homes.length > 0 || more.agents.length > 0) {
+    const snapshot = recorded["snapshot"] as { homes: unknown[]; agents: unknown[] };
+    line["snapshot"] = {
+      ...snapshot,
+      homes: [...snapshot.homes, ...more.homes],
+      agents: [...snapshot.agents, ...more.agents],
+    };
+  }
   if (now === "bad_shape") {
-    line["snapshot"] = { ...(recorded["snapshot"] as object), agents: {} };
+    line["snapshot"] = { ...(line["snapshot"] as object), agents: {} };
   } else if (now === "no_agents") {
-    line["snapshot"] = { ...(recorded["snapshot"] as object), agents: [] };
+    line["snapshot"] = { ...(line["snapshot"] as object), agents: [] };
   }
   return line;
 }

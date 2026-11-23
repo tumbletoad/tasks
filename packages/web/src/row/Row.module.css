@@ -44,6 +44,15 @@
   background: var(--k-raised);
 }
 
+/* What the view shows beneath the line, aligned with the title, such as the task's agents. */
+.beneath {
+  padding: 0 10px 8px 40px;
+}
+
+.row[data-expanded="true"] .beneath {
+  background: var(--k-raised);
+}
+
 .body {
   padding: 0 20px 16px 40px;
   border-radius: 0 0 12px 12px;
@@ -164,6 +173,12 @@
 .row[data-done="true"] .summary {
   color: var(--k-muted);
   text-decoration: line-through;
+}
+
+/* A row an agent's state placed, from a picture that is not current: as Computer's muted parts. */
+.row[data-muted] .title,
+.row[data-muted] .summary {
+  color: var(--k-muted);
 }
 
 /* After the hold the row leaves: it fades in 180 ms, at once under reduced motion (A5 3.12). */

@@ -16,7 +16,8 @@
 // - FAKE_CLI_HOLDS: a folder. On a task whose reference names a file there, it runs until that
 //   file is gone (10 minutes at most) instead, or ends at once when the file says `exit <code>`,
 //   and it adds its PID as a line to `<ref>.pids` there, so a test can end it as a closed window
-//   would.
+//   would, and the session ID its `--session-id` names to `<ref>.sessions`, so a test can make
+//   the Agent Monitor report that session.
 // Its stdin is never read. No real agent, account or home is touched. Tests only.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -115,6 +116,10 @@ function heldBy(): string | undefined {
   const file = join(folder, task);
   if (!existsSync(file)) return undefined;
   appendFileSync(join(folder, `${task}.pids`), `${String(process.pid)}\n`);
+  const session = argv[argv.indexOf("--session-id") + 1];
+  if (argv.includes("--session-id") && session !== undefined) {
+    appendFileSync(join(folder, `${task}.sessions`), `${session}\n`);
+  }
   // `exit <code>` in the file: the agent ends at once, as one that cannot start.
   const at = /^exit (\d{1,3})$/u.exec(readFileSync(file, "utf8").trim());
   if (at !== null) process.exit(Number(at[1]));

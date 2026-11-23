@@ -3641,6 +3641,10 @@
                   "additionalProperties": false,
                   "description": "Its newest background run, while it works or needs the person",
                   "properties": {
+                    "id": {
+                      "description": "The run's ID",
+                      "type": "string"
+                    },
                     "instance": {
                       "description": "The run's agent instance",
                       "type": "string"
@@ -3655,6 +3659,7 @@
                     }
                   },
                   "required": [
+                    "id",
                     "state",
                     "instance"
                   ],
