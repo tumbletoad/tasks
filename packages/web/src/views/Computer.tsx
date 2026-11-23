@@ -89,7 +89,7 @@ function noteOf(view: AgentsView, t: Translate): string | undefined {
   if (trouble.kind === "not_installed") {
     return t("computer.notInstalled", { why: trouble.reason });
   }
-  if (trouble.kind === "does_not_fit") return t("computer.doesNotFit", { update: trouble.update });
+  if (trouble.kind === "does_not_fit") return t("computer.doesNotFit", { side: trouble.monitor });
   return undefined;
 }
 

@@ -369,7 +369,7 @@ export function monitorCheck(answer: unknown): Check {
       };
     case "does_not_fit":
       return warn(
-        `${named(problem["found"])} does not fit this ${PRODUCT_NAME}. Update ${problem["update"] === "ttasks" ? PRODUCT_NAME : MONITOR_NAME}.`,
+        `${named(problem["found"])} does not fit this ${PRODUCT_NAME}. Update ${problem["monitor"] === "newer" ? PRODUCT_NAME : MONITOR_NAME}.`,
       );
     default:
       if (problem["reason"] === "not_ending") {

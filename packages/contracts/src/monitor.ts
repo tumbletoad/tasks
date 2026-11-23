@@ -157,13 +157,15 @@ export type MonitorFailure = (typeof MONITOR_FAILURES)[number];
 
 /**
  * Why there is no snapshot. `not_installed`: no `ttam` on the PATH, only a script by that name
- * (TTasks runs no script), or a build without `ttam query`. `does_not_fit`: the side to update.
+ * (TTasks runs no script), or a build without `ttam query`. `does_not_fit`: TTAM's versions are
+ * newer or older than TTasks reads, or they are the ones it reads and its snapshot has another
+ * shape. Only a newer one asks for a newer TTasks.
  */
 export type MonitorProblem =
   | { readonly kind: "not_installed"; readonly reason: "not_found" | "script" | "no_query" }
   | {
       readonly kind: "does_not_fit";
-      readonly update: "ttasks" | "monitor";
+      readonly monitor: "newer" | "older" | "other_shape";
       readonly found: MonitorBuild | null;
     }
   | { readonly kind: "failed"; readonly reason: MonitorFailure };

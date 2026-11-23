@@ -100,9 +100,10 @@ function troubleOf(v: unknown): AgentsView["trouble"] | undefined {
     }
     case "does_not_fit": {
       const found = v["found"];
+      const monitor = v["monitor"];
       return {
         kind: "does_not_fit",
-        update: v["update"] === "ttasks" ? "ttasks" : "monitor",
+        monitor: monitor === "newer" || monitor === "older" ? monitor : "other_shape",
         found: isObj(found)
           ? { version: text(found["version"]), build: textOrNull(found["build"]) }
           : null,

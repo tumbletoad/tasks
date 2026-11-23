@@ -200,20 +200,20 @@ describe("[A5.agents.monitor] the monitor module speaks TTAM's line protocol", (
     expect(old.pids()).toHaveLength(2);
   });
 
-  test("a hello with other versions does not fit, and names the side to update", async () => {
+  test("a hello with other versions does not fit, and says whether TTAM is newer or older", async () => {
     const cases = [
-      ["version=5,1", "ttasks"],
-      ["version=4,2", "ttasks"],
-      ["version=3,1", "monitor"],
-      ["version=4,0", "monitor"],
+      ["version=5,1", "newer"],
+      ["version=4,2", "newer"],
+      ["version=3,1", "older"],
+      ["version=4,0", "older"],
     ] as const;
-    for (const [mode, update] of cases) {
+    for (const [mode, side] of cases) {
       const { monitor, pids } = setup({ mode });
       expect(await monitor.ask()).toEqual({
         ok: false,
         problem: {
           kind: "does_not_fit",
-          update,
+          monitor: side,
           found: { version: "0.1.0", build: "0123456789ab" },
         },
       });
@@ -227,7 +227,7 @@ describe("[A5.agents.monitor] the monitor module speaks TTAM's line protocol", (
     const { monitor } = setup({ mode: "bad_shape" });
     expect(await monitor.ask()).toMatchObject({
       ok: false,
-      problem: { kind: "does_not_fit", update: "monitor" },
+      problem: { kind: "does_not_fit", monitor: "other_shape" },
     });
   });
 
@@ -506,7 +506,7 @@ describe("[A3.3.14.doctor.monitor] where ttam comes from, and whether it fits", 
     ).toEqual([]);
     expect(await monitor.probe(command("version=5,1"))).toMatchObject({
       fits: false,
-      problem: { kind: "does_not_fit", update: "ttasks" },
+      problem: { kind: "does_not_fit", monitor: "newer" },
     });
     expect(await monitor.probe(command("no_query"))).toEqual({
       fits: false,

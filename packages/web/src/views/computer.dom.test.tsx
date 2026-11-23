@@ -233,13 +233,18 @@ describe("[A5.agents.web-page] the Agents page shows the monitor's every state i
     );
   });
 
-  test("a monitor that does not fit names the side to update", async () => {
+  test("a monitor that does not fit names the side to update, and older or newer only when known", async () => {
     await mount();
     const found = { version: "0.9.0", build: null };
-    show({ picture: null, trouble: { kind: "does_not_fit", update: "ttasks", found } });
-    expect(text("monitor-note")).toContain("Update TTasks");
-    show({ picture: null, trouble: { kind: "does_not_fit", update: "monitor", found } });
+    show({ picture: null, trouble: { kind: "does_not_fit", monitor: "newer", found } });
+    expect(text("monitor-note")).toContain("newer than TTasks can read. Update TTasks");
+    show({ picture: null, trouble: { kind: "does_not_fit", monitor: "older", found } });
     expect(text("monitor-note")).toContain("older than TTasks can read. Update TTAM");
+    // The versions fit, the snapshot does not: neither older nor newer.
+    show({ picture: null, trouble: { kind: "does_not_fit", monitor: "other_shape", found } });
+    expect(text("monitor-note")).toBe(
+      "This TTAM does not fit TTasks. Update TTAM to see the agents on this computer.",
+    );
   });
 
   test("looking, settling, no agents at all", async () => {

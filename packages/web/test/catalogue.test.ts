@@ -110,9 +110,8 @@ const SAMPLE = {
   minutes: 5,
   app: "claude",
   state: "working",
-  update: "monitor",
+  side: "older",
   percent: 40,
-  stale: "yes",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

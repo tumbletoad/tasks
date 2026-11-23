@@ -133,7 +133,7 @@ export function verdictOf(
   const newer =
     (typeof schema === "number" && schema > MONITOR_SCHEMA_VERSION) ||
     (typeof query === "number" && query > MONITOR_QUERY_VERSION);
-  return { kind: "does_not_fit", update: newer ? "ttasks" : "monitor", found: build };
+  return { kind: "does_not_fit", monitor: newer ? "newer" : "older", found: build };
 }
 
 /** Splits a child's output into lines; bytes after the last line end are no line. */
@@ -459,7 +459,7 @@ export class Monitor {
     try {
       snapshot = readSnapshot(line.line, MONITOR_SCHEMA_VERSION);
     } catch {
-      this.#setVerdict({ kind: "does_not_fit", update: "monitor", found: child.build });
+      this.#setVerdict({ kind: "does_not_fit", monitor: "other_shape", found: child.build });
       return;
     }
     for (const timer of sent.timers) clearTimeout(timer);
