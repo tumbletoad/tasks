@@ -5,8 +5,9 @@
 //
 // - The limits are guidelines a person sets in machine.toml (QUEUE_LIMITS by default): runs at once
 //   on this machine, per agent instance and per task. A lower limit stops nothing that runs; it only
-//   holds back what waits. A run counts from `starting` until its container is confirmed empty, so
-//   a run whose end could not be confirmed (`unknown`) no longer holds a place.
+//   holds back what waits. A run counts from `starting` until its container is confirmed empty: one
+//   whose end could not be confirmed (`unknown`) still holds its place, so no second agent works in
+//   its task's folder while it may.
 // - The oldest queued run its limits allow starts first. One held back by its own instance or task
 //   holds back no younger run of another, so no run waits while there is room for it.
 // - Right before a queued run starts, what it needs is checked again (`prepare`): one that can no
@@ -137,6 +138,13 @@ const ACTIVE: ReadonlySet<RunState> = new Set([
 ]);
 
 const FINAL: ReadonlySet<RunState> = new Set(FINAL_RUN_STATES);
+
+/**
+ * Whether a run may still run: its container may hold processes, its end is not confirmed, or a
+ * host works on it whatever its record says. Such a run holds its place, and an update waits for it.
+ */
+const mayRun = (run: RunRecord, hosted: ReadonlySet<string>): boolean =>
+  ACTIVE.has(run.state) || awaitsConfirmation(run) || hosted.has(run.id);
 
 const taskKey = (slot: { space: string; task: string | null }): string | undefined =>
   slot.task === null ? undefined : `${slot.space}\n${slot.task}`;
@@ -352,8 +360,7 @@ export class Supervisor {
       const runs = this.#records.get(space) ?? [];
       const hosted = new Set(lanes.get(space)?.host.hosted() ?? []);
       for (const run of runs) {
-        const listed = ACTIVE.has(run.state) || awaitsConfirmation(run);
-        if (listed || hosted.has(run.id)) {
+        if (mayRun(run, hosted)) {
           out.push({
             space,
             run: run.id,
@@ -412,22 +419,20 @@ export class Supervisor {
     const active: Slot[] = [];
     for (const { lane, runs } of read) {
       if (runs === undefined) {
-        // Its store did not answer: what this host runs there still holds a place, and its queue
-        // waits for the next round.
+        // Its store did not answer: what may still run there holds its place, and its queue waits
+        // for the next round.
         const known = this.#records.get(lane.space) ?? [];
+        const hosted = new Set(lane.host.hosted());
         records.set(lane.space, known);
-        for (const run of known) {
-          if (ACTIVE.has(run.state) || lane.host.hosted().includes(run.id)) {
-            active.push(slotOf(lane.space, run));
-          }
-        }
+        for (const run of known) if (mayRun(run, hosted)) active.push(slotOf(lane.space, run));
         continue;
       }
       const fresh = await this.#fresh(lane, runs);
+      const hosted = new Set(lane.host.hosted());
       records.set(lane.space, fresh);
       for (const run of fresh) {
         if (run.state === "queued") queued.push(slotOf(lane.space, run));
-        else if (ACTIVE.has(run.state)) active.push(slotOf(lane.space, run));
+        else if (mayRun(run, hosted)) active.push(slotOf(lane.space, run));
       }
     }
     this.#records = records;

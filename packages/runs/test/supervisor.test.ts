@@ -13,6 +13,7 @@ import {
   RunHost,
   RunMachine,
   Supervisor,
+  type Confirmation,
   type Containers,
   type Lane,
   type Prepared,
@@ -90,6 +91,7 @@ function bench(
     prepareMs?: number;
     updating?: () => boolean;
     limits?: QueueLimits;
+    containers?: Containers;
   } = {},
 ) {
   let now = Date.UTC(2026, 10, 16, 9, 0, 0);
@@ -101,7 +103,7 @@ function bench(
     ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
   });
   const { kept, files } = folders(() => now);
-  const host = new RunHost({ machine, containers: hanging, files });
+  const host = new RunHost({ machine, containers: options.containers ?? hanging, files });
   const lane: Lane = { space: "sp_0000000000000000000000000a", machine, host };
   let refuse = false;
   const supervisor = new Supervisor({
@@ -217,6 +219,38 @@ describe("[A4.5.run.supervisor] the supervisor's rules: a start whose record lan
       reason: "folder_gone",
     });
     expect(b.host.hosted()).toEqual([first.id]);
+    b.supervisor.close();
+    await b.host.close();
+  });
+
+  test("a run whose Stop could not be confirmed holds its task's place: the task's next run waits until that end is confirmed", async () => {
+    let left = true;
+    const confirm = (): Promise<Confirmation> =>
+      Promise.resolve(left ? { state: "occupied", detail: "left" } : { state: "empty" });
+    const b = bench({ containers: { ...hanging, confirmEmpty: confirm, recover: confirm } });
+    const first = await b.queue();
+    const starting = await b.store.transitionRun(
+      first.id,
+      { state: "queued", version: first.version },
+      "starting",
+    );
+    const running = await b.store.transitionRun(first.id, seenRun(starting), "running", {
+      evidence: { pid: 7 },
+    });
+    const cancelling = await b.store.transitionRun(first.id, seenRun(running), "cancelling");
+    await b.store.transitionRun(first.id, seenRun(cancelling), "unknown", {
+      reason: "stop_timed_out",
+    });
+    await b.host.recover();
+    expect(b.host.hosted()).toEqual([first.id]);
+    const second = await b.queue();
+    await b.supervisor.round();
+    expect((await b.store.readRun(second.id))?.state).toBe("queued");
+    expect(b.supervisor.waiting(second.id)).toBe("task_limit");
+    left = false;
+    expect(await b.host.forceEnd(first.id)).toMatchObject({ state: "cancelled" });
+    await b.supervisor.round();
+    expect((await b.store.readRun(second.id))?.state).toBe("starting");
     b.supervisor.close();
     await b.host.close();
   });
