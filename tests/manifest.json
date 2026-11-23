@@ -5204,6 +5204,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.12.e2e.redo-set-aside",
+      "title": "In Chromium and Firefox against the real service: a Redo that would move a task to the Trash after an agent added a note to it says who added what and offers Move to Trash anyway; the task keeps its note, and the next Redo brings back the change behind it",
+      "source": "A1 3.10.1, A5 3.12",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.8.web.leftovers",
       "title": "When a space opens, kept text under a key that has no task's shape is forgotten; a task that is gone, in the Trash, finished or that the service could not answer for keeps its own",
       "source": "A5 3.8, A7 3.12 M5.07",

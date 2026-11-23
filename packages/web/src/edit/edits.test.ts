@@ -96,6 +96,7 @@ class World {
         update: call("task.update"),
         finish: call("task.finish"),
         reopen: call("task.reopen"),
+        delete: call("task.delete"),
       },
       history: { undo: call("history.undo"), redo: call("history.redo") },
       receipt: { get: call("receipt.get") },
@@ -1355,6 +1356,103 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     expect(w.lastToast()?.text).toEqual({ id: "toast.undoneRest" });
     // A due time cannot be set by hand: no Restore mine.
     expect(restoreChange("due", conflict.restore)).toBeUndefined();
+  });
+
+  /** A row another added to M-1 since: a note, a log entry, a run. */
+  const added = (entity: string, by: string, extra: Record<string, unknown> = {}) => ({
+    task: "M-1",
+    entity,
+    id: `${entity}-1`,
+    field: entity === "runs" ? "state" : "deleted",
+    value: null,
+    version: 12,
+    by,
+    at: "2026-11-12T10:42:00.000Z",
+    ...extra,
+  });
+
+  test("a refused redo says what kind of work others did and who, each apart, and that Redo goes on; Move to Trash anyway moves the task", async () => {
+    const w = new World([task(1)]);
+    w.answer("history.redo", () => {
+      throw appError("conflict", {
+        cause: "UNDO_CONFLICT",
+        commit: `op_${"11".padStart(26, "0")}`,
+        trash: ["M-1"],
+        conflicts: [
+          added("notes", "Codex"),
+          added("notes", "Codex"),
+          added("notes", "Codex", { more: 97 }),
+          added("log_entries", "Claude"),
+          // A run writes with the person's credential: it is a run, not the person elsewhere.
+          added("runs", "user", { value: { state: "running" } }),
+        ],
+      });
+    });
+    await w.edits.redo();
+    const shown = w.lastToast();
+    const name = (by: string) => ({ id: "toast.who", values: { who: "other", by } });
+    expect(shown?.text).toEqual({
+      id: "toast.redoSetAside",
+      values: {
+        later: 0,
+        work: {
+          id: "toast.workMore",
+          values: {
+            first: {
+              id: "toast.workNotes",
+              values: { name: name("Codex"), act: "added", count: 100, ref: "M-1" },
+            },
+            second: {
+              id: "toast.workLog",
+              values: { name: name("Claude"), act: "added", count: 1, ref: "M-1" },
+            },
+            count: 1,
+          },
+        },
+      },
+    });
+    expect(shown?.action?.label).toEqual({ id: "toast.trashAnyway" });
+    w.answer("task.delete", () => ({ result: "deleted", tasks: ["M-1"], as_of: w.asOf(12) }));
+    shown?.action?.run();
+    await flush();
+    expect(w.calls.at(-1)).toMatchObject({ name: "task.delete", input: { tasks: ["t_00001"] } });
+  });
+
+  test("a run's progress is said as the run's, at its time; an undo of a restore offers Move to Trash anyway after a partial undo", async () => {
+    const w = new World([task(1)]);
+    const mine = `op_${"11".padStart(26, "0")}`;
+    w.answer("history.undo", () => {
+      throw appError("conflict", {
+        cause: "UNDO_CONFLICT",
+        commit: mine,
+        trash: ["M-1"],
+        conflicts: [added("runs", "user", { value: { state: "running" } })],
+      });
+    });
+    await w.edits.undo();
+    const shown = w.lastToast();
+    expect(shown?.text).toEqual({
+      id: "toast.work",
+      values: {
+        work: { id: "toast.workRuns", values: { count: 1, ref: "M-1" } },
+        at: Date.parse("2026-11-12T10:42:00.000Z"),
+      },
+    });
+    w.answer("history.undo", () => ({
+      result: "partial",
+      commit: mine,
+      tasks: [],
+      task_count: 0,
+      as_of: w.asOf(13),
+      unresolved: [],
+    }));
+    w.answer("task.delete", () => ({ result: "deleted", tasks: ["M-1"], as_of: w.asOf(14) }));
+    shown?.action?.run();
+    await flush();
+    expect(w.calls.slice(-2)).toMatchObject([
+      { name: "history.undo", input: { partial: true, commit: mine } },
+      { name: "task.delete", input: { tasks: ["t_00001"] } },
+    ]);
     expect(restoreChange("lifecycle", { lifecycle: "active" })).toBeUndefined();
     expect(restoreChange("priority", null)?.set).toEqual({ priority: 4 });
   });

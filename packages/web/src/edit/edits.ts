@@ -181,8 +181,11 @@ function receiptError(found: Found): Error {
         version: c.version,
         by: byOf(c.by),
         at: c.at,
+        ...(c.more === undefined ? {} : { more: c.more }),
       })),
       ...(found.target === undefined ? {} : { commit: found.target }),
+      ...(found.set_aside === undefined ? {} : { set_aside: found.set_aside }),
+      ...(found.trash === undefined ? {} : { trash: found.trash }),
     },
   });
 }
@@ -219,6 +222,8 @@ interface Conflict {
   readonly restore?: unknown;
   readonly by: string;
   readonly at: string;
+  /** An undo's or redo's: how many more such rows of this author on this task it leaves out. */
+  readonly more?: number;
 }
 
 interface Problem {
@@ -227,6 +232,10 @@ interface Problem {
   readonly conflicts: readonly Conflict[];
   /** The commit an undo or redo meant, which its UNDO_CONFLICT names (A1 3.10.1). */
   readonly commit?: string;
+  /** A refused redo's later changes, set aside with it. */
+  readonly setAside: number;
+  /** The tasks a refused undo or redo would move to the Trash: removing them does it anyway. */
+  readonly trash: readonly string[];
 }
 
 /**
@@ -281,11 +290,15 @@ function problemOf(error: unknown): Problem | undefined {
       typeof (c as Conflict).at === "string",
   );
   const commit = record["commit"];
+  const setAside = record["set_aside"];
+  const trash = record["trash"];
   return {
     code,
     cause: typeof record["cause"] === "string" ? record["cause"] : "",
     conflicts,
     ...(typeof commit === "string" && commit !== "" ? { commit } : {}),
+    setAside: Array.isArray(setAside) ? setAside.length : 0,
+    trash: Array.isArray(trash) ? trash.filter((t): t is string => typeof t === "string") : [],
   };
 }
 
@@ -405,27 +418,86 @@ export const whoOf = (by: string): { who: string; by: string } => ({
   by,
 });
 
+/** What another did on a task, by the table of the row: a note added, a source linked. */
+const WORK: Readonly<Record<string, Msg["id"]>> = {
+  notes: "toast.workNotes",
+  log_entries: "toast.workLog",
+  learnings: "toast.workLearnings",
+  task_sources: "toast.workSources",
+  folders: "toast.workFolder",
+  places: "toast.workFolder",
+};
+
+/** One kind of work and who did it: the conflicts of one table by one author, counted. */
+interface Work {
+  readonly first: Conflict;
+  count: number;
+  readonly fields: Set<string>;
+  at: number;
+}
+
 /**
- * What an undo or redo conflict says (A5 3.12): who changed which field and when, and for one field
- * whose values read as words and that Restore mine can put back, what the person's change wrote,
- * what is there now and what Restore mine would put back. A title's values stay out: a long title
- * does not fit a toast.
+ * The conflicts as kinds of work, in the order they are named: a task's fields together, each
+ * other table apart, each author apart. A run's commits carry the person's own credential, so
+ * runs are one kind, never "you changed it elsewhere".
  */
-function conflictText(
-  conflicts: readonly Conflict[],
-  fields: ReadonlySet<string>,
-  restorable: boolean,
-): Msg {
-  const first = conflicts[0];
-  if (first === undefined) return { id: "toast.undoFailed" };
+function worksOf(conflicts: readonly Conflict[]): Work[] {
+  const works = new Map<string, Work>();
+  for (const c of conflicts) {
+    const table = c.entity ?? "tasks";
+    const key = table === "runs" ? table : `${table}\u0000${c.by}`;
+    const at = Date.parse(c.at);
+    const work = works.get(key) ?? { first: c, count: 0, fields: new Set<string>(), at };
+    work.count += 1 + (c.more ?? 0);
+    work.fields.add(c.field);
+    work.at = Math.max(work.at, at);
+    works.set(key, work);
+  }
+  return [...works.values()];
+}
+
+/** What one kind of work says: "Codex added 3 notes on M-1", "A run made progress on M-1". */
+function workText({ first, count, fields }: Work): Msg {
+  const table = first.entity ?? "tasks";
+  const name: Msg = { id: "toast.who", values: whoOf(first.by) };
+  const ref = first.task ?? "none";
+  if (table === "runs") return { id: "toast.workRuns", values: { count, ref } };
+  if (table === "tasks") {
+    const words = fields.size === 1 ? FIELD_WORDS[first.field] : undefined;
+    return words === undefined
+      ? { id: "toast.workFields", values: { ...whoOf(first.by), count: fields.size } }
+      : { id: "toast.workField", values: { ...whoOf(first.by), field: { id: words } } };
+  }
+  const id = WORK[table];
+  if (id === undefined) return { id: "toast.workOther", values: { name, ref } };
+  // A row's tombstone: clear when someone added it, set when someone removed it. A receipt
+  // keeps no value.
+  const act = !Object.hasOwn(first, "value") ? "other" : first.value === null ? "added" : "removed";
+  return { id, values: { name, act, count, ref } };
+}
+
+/**
+ * What an undo or redo conflict says (A5 3.12): what kind of work others did since, who did it and
+ * when, each author and each kind apart. For one field whose values read as words and that Restore
+ * mine can put back, what the person's change wrote, what is there now and what Restore mine would
+ * put back. A title's values stay out: a long title does not fit a toast.
+ */
+function conflictText(conflicts: readonly Conflict[], restorable: boolean): Msg {
+  const [one, two, ...rest] = worksOf(conflicts);
+  if (one === undefined) return { id: "toast.undoFailed" };
+  if (two !== undefined) {
+    const first = workText(one);
+    const second = workText(two);
+    return rest.length === 0
+      ? { id: "toast.workTwo", values: { first, second } }
+      : { id: "toast.workMore", values: { first, second, count: rest.length } };
+  }
+  const first = one.first;
   const words = FIELD_WORDS[first.field];
-  const values = {
-    ...whoOf(first.by),
-    field: { id: words ?? "field.other" } as Msg,
-    count: fields.size,
-    at: Date.parse(first.at),
-  };
-  if (fields.size !== 1 || words === undefined) return { id: "toast.conflictMany", values };
+  if ((first.entity ?? "tasks") !== "tasks" || one.fields.size !== 1 || words === undefined) {
+    return { id: "toast.work", values: { work: workText(one), at: one.at } };
+  }
+  const values = { ...whoOf(first.by), field: { id: words } as Msg, at: one.at };
   const shown = (key: "value" | "wrote" | "restore") =>
     Object.hasOwn(first, key) ? restoreChange(first.field, first[key])?.shown : undefined;
   const now = shown("value");
@@ -1314,9 +1386,10 @@ export class Edits {
   }
 
   /**
-   * An undo or redo the service refused. A conflict says who changed what and offers the one
-   * action that fits: "Restore mine" when every field of the change conflicts, "Undo the rest"
-   * when only some do (A5 3.12). A redo has no partial form.
+   * An undo or redo the service refused. A conflict says what others did and offers the one action
+   * that fits: "Move to Trash anyway" when the change would move a task there, "Restore mine" when
+   * every field of the change conflicts, "Undo the rest" when only some do (A5 3.12). A redo has
+   * no partial form: its refusal sets the change aside, and the next Redo goes on.
    */
   #historyFailed(
     kind: "undo" | "redo",
@@ -1367,7 +1440,28 @@ export class Edits {
     const known = commit === undefined ? undefined : this.#fieldsOf.get(commit);
     // Only some of the change's fields conflict: the rest can be undone and the others kept.
     const some = kind === "undo" && known !== undefined && known.some((f) => !fields.has(f));
-    const text = conflictText(conflicts, fields, !some && restore !== undefined);
+    const said = conflictText(conflicts, !some && restore !== undefined);
+    // A refused redo is set aside: the next Redo reaches the change after it (history.redo).
+    const text: Msg =
+      kind === "redo"
+        ? { id: "toast.redoSetAside", values: { work: said, later: problem.setAside } }
+        : said;
+    // The change would move a task to the Trash: moving it there now does it anyway.
+    const [only, ...others] = problem.trash;
+    const row = only === undefined || others.length > 0 ? undefined : this.#deps.rowOf(only);
+    if (row !== undefined) {
+      say({
+        kind: "error",
+        text,
+        action: {
+          label: { id: "toast.trashAnyway" },
+          run: () => {
+            void this.#trashAnyway(kind, row, commit);
+          },
+        },
+      });
+      return;
+    }
     // Undo the rest, for a commit the page can name: the fields that pass are undone, the others
     // stay as the other actor set them.
     const undoRest =
@@ -1395,6 +1489,23 @@ export class Edits {
           void this.#restore(kind, restore, commit);
         },
       },
+    });
+  }
+
+  /**
+   * "Move to Trash anyway": the task to the Trash as a new change of the person's, with a fresh
+   * base. After an undo, the change is first undone as far as it can be, as Restore mine does, so
+   * the next Ctrl+Z reaches the change below. A redo's refusal set its change aside already.
+   */
+  #trashAnyway(kind: "undo" | "redo", row: TaskRow, commit: string | undefined): Promise<void> {
+    if (kind !== "undo" || commit === undefined) {
+      this.trash(row);
+      return Promise.resolve();
+    }
+    const { answer, call } = this.#history("undo", commit, true);
+    return this.#outcome(answer, call, (decision, say) => {
+      if (decision.ok) this.trash(this.#deps.rowOf(row.ref) ?? row);
+      else this.#historyFailed("undo", decision.error, commit, say);
     });
   }
 

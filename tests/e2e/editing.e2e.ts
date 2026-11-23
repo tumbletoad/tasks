@@ -32,6 +32,8 @@ interface Digest {
     readonly priority: number;
     readonly effort?: string;
     readonly due?: string;
+    /** Present while the task is in the Trash. */
+    readonly deleted?: unknown;
   };
 }
 
@@ -281,6 +283,62 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
         .toBe(day(7, today.start).iso);
       await expect(unsaved).toHaveCount(0);
     });
+  });
+});
+
+test.describe("[A5.3.12.e2e.redo-set-aside] A refused Redo says what an agent added and steps aside", () => {
+  test("Redo of a removal after an agent's note offers Move to Trash anyway; the next Redo brings back the edit behind it", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const [removed, edited] = await addTasks(world, [
+      { title: `Return the library books (${tag})`, area: "home" },
+      { title: `Order the printer ink (${tag})`, area: "home" },
+    ]);
+    if (removed === undefined || edited === undefined) throw new Error("the tasks were not added");
+    // The person, at a terminal: the same undo stack as the page's.
+    await world.op(world.mira.id, "task.delete", {
+      tasks: [removed],
+      base: (await read(world, removed)).as_of,
+    });
+    await world.op(world.mira.id, "task.update", {
+      task: edited,
+      set: { priority: 1 },
+      base: (await read(world, edited)).as_of,
+    });
+    await signIn(page, world, `/s/${world.mira.id}/task/${edited}`);
+    await showsSpace(page, world.mira.name);
+    await expect(rowOf(page, edited)).toBeVisible({ timeout: SLOW_MS });
+    await page.locator("main").focus();
+    await page.keyboard.press("Control+z");
+    await expect.poll(async () => (await read(world, edited)).task.priority).not.toBe(1);
+    await page.keyboard.press("Control+z");
+    await expect.poll(async () => (await read(world, removed)).task.deleted).toBeUndefined();
+    await world.op(
+      world.mira.id,
+      "entry.add",
+      { task: removed, kind: "note", text: "Fixture note: renewed online instead." },
+      "agent",
+    );
+
+    // Redo would move the task, note and all, to the Trash: it says who added what, and stays.
+    await page.keyboard.press("Control+Shift+z");
+    await expect(toast(page)).toContainText(`added a note on ${removed} at`);
+    await expect(toast(page)).toContainText("Redo goes on to your next change");
+    await expect(toastAction(page)).toHaveText("Move to Trash anyway");
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await picture(page, `redo-set-aside-${String(width)}.png`);
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    // The next Redo reaches the edit behind it; the task stays where the note is seen.
+    await page.locator("main").focus();
+    await page.keyboard.press("Control+Shift+z");
+    await expect(toast(page)).toHaveText("Redone");
+    await expect.poll(async () => (await read(world, edited)).task.priority).toBe(1);
+    expect((await read(world, removed)).task.deleted).toBeUndefined();
   });
 });
 
