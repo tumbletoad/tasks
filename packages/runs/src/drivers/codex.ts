@@ -15,6 +15,9 @@
 //   and no agent it started still works: what goes on in the background ends later, and the run
 //   waits for it.
 // - The answer is the message the protocol marks as the final answer, never just the last text.
+//   Its words count as they stream in: a turn, a Stop or a server that ends before the message is
+//   whole keeps them as an unfinished answer, and the turn's summary completes an answer whose own
+//   message comes after it.
 // - The server's requests are answered as the run's permission says, while reading goes on. A
 //   question for the person is never answered for them: a blocking one interrupts the turn, one
 //   the turn ends with is kept, and the work ends as needing the person, with the question as its
@@ -34,7 +37,7 @@ import {
 } from "@ttasks/contracts/runs";
 import { realpath } from "node:fs/promises";
 import { MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
-import { capText, count, nativeId, record, string, type Json } from "../streams/values.ts";
+import { array, capText, count, nativeId, record, string, type Json } from "../streams/values.ts";
 import { LineRpc, NO_ANSWER, RPC_ERRORS, RpcClosed, RpcError } from "./json-rpc.ts";
 import type { DriverSession, OpenDriver, Work } from "./types.ts";
 
@@ -153,6 +156,10 @@ function questionText(params: Json): string {
   return lines.join("\n").trim();
 }
 
+/** A message that is an answer: the final one, or any of a server that marks none. */
+const answers = (item: Json): boolean =>
+  item["phase"] === "final_answer" || item["phase"] === null || item["phase"] === undefined;
+
 /** A message the turn ends with that asks the person, rather than answers: its questions. */
 const asksPerson = (item: Json): boolean =>
   item["delivery"] === "async" &&
@@ -232,7 +239,8 @@ export function codexDriver(session: CodexSession): OpenDriver {
       turnStatus: string | null;
       turnError: string | null;
       lastError: string | null;
-      answer: { text: string; cut: boolean } | null;
+      /** The latest answer: `whole` once its message completed, else the words streamed so far. */
+      answer: { text: string; cut: boolean; whole: boolean } | null;
       final: boolean;
       heard: boolean;
       usage: Usage | null;
@@ -269,6 +277,10 @@ export function codexDriver(session: CodexSession): OpenDriver {
     };
     /** Threads of agents the run's agent started that are working. */
     const children = new Set<string>();
+    /** The run's answer messages that are streaming in, by item: their words so far. */
+    const streaming = new Map<string, { text: string; bytes: number; cut: boolean }>();
+    /** The run's messages of the current turn that completed, by item. */
+    const completed = new Set<string>();
     /** Whether a message is about the run's own thread, not one of an agent it started. */
     const ours = (params: Json): boolean => {
       const thread = string(params["threadId"]);
@@ -289,11 +301,34 @@ export function codexDriver(session: CodexSession): OpenDriver {
      */
     const said = (): { text: string; cut: boolean; final: boolean } | null => {
       if (state.question !== null) return { ...state.question, final: false };
-      return state.answer === null ? null : { ...state.answer, final: state.final };
+      if (state.answer === null) return null;
+      return { text: state.answer.text, cut: state.answer.cut, final: state.final };
     };
     const keep = (): void => {
       const told = said();
       if (told !== null) report({ kind: "answer", ...told });
+    };
+    /** A message of the run's own thread, whole: its question, its answer, or what it reports. */
+    const heard = (item: Json): void => {
+      const id = string(item["id"]);
+      if (id !== undefined) {
+        completed.add(id);
+        streaming.delete(id);
+      }
+      const text = string(item["text"]) ?? "";
+      if (asksPerson(item)) {
+        ask(
+          [text.trim(), questionText({ questions: item["questions"] })]
+            .filter((part) => part !== "")
+            .join("\n"),
+        );
+      } else if (text !== "" && answers(item)) {
+        const capped = capText(text, ANSWER_CAP_BYTES);
+        state.answer = { text: capped.text, cut: capped.capped, whole: true };
+        if (state.question === null) keep();
+      } else if (text !== "") {
+        report({ kind: "message", text: capText(text).text });
+      }
     };
     const finish = (outcome: OutcomeReason, error: string | null = null): void => {
       if (done) return;
@@ -320,7 +355,7 @@ export function codexDriver(session: CodexSession): OpenDriver {
       if (state.turnStatus === "completed" && state.question !== null) {
         finish("needs_input");
       } else if (state.turnStatus === "completed") {
-        state.final = state.answer !== null;
+        state.final = state.answer?.whole === true;
         keep();
         finish("success");
       } else if (state.turnStatus === "interrupted") {
@@ -413,6 +448,7 @@ export function codexDriver(session: CodexSession): OpenDriver {
             return;
           }
           // A turn the server starts by itself after background work is the work going on.
+          completed.clear();
           state.turn = id;
           state.turnDone = false;
           state.turnStatus = null;
@@ -430,6 +466,14 @@ export function codexDriver(session: CodexSession): OpenDriver {
               });
             }
           }
+          if (
+            item["type"] === "agentMessage" &&
+            id !== undefined &&
+            ours(params) &&
+            answers(item)
+          ) {
+            streaming.set(id, { text: "", bytes: 0, cut: false });
+          }
           const label = labelOf(item);
           if (label !== undefined) report({ kind: "progress", label });
           return;
@@ -440,27 +484,25 @@ export function codexDriver(session: CodexSession): OpenDriver {
           const id = string(item["id"]);
           if (id !== undefined) running.delete(id);
           if (item["status"] === "declined") state.declined += 1;
-          if (item["type"] === "agentMessage" && ours(params)) {
-            const text = string(item["text"]) ?? "";
-            const phase = item["phase"];
-            if (asksPerson(item)) {
-              ask(
-                [text.trim(), questionText({ questions: item["questions"] })]
-                  .filter((part) => part !== "")
-                  .join("\n"),
-              );
-            } else if (
-              text !== "" &&
-              (phase === "final_answer" || phase === null || phase === undefined)
-            ) {
-              const capped = capText(text, ANSWER_CAP_BYTES);
-              state.answer = { text: capped.text, cut: capped.capped };
-              if (state.question === null) keep();
-            } else if (text !== "") {
-              report({ kind: "message", text: capText(text).text });
-            }
-          }
+          if (item["type"] === "agentMessage" && ours(params)) heard(item);
           check();
+          return;
+        }
+        case "item/agentMessage/delta": {
+          if (!ours(params)) return;
+          const words = streaming.get(string(params["itemId"]) ?? "");
+          const delta = string(params["delta"]) ?? "";
+          if (words === undefined || words.cut || delta === "") return;
+          // Words past the answer's cap are not kept.
+          const bytes = Buffer.byteLength(delta, "utf8");
+          if (words.bytes + bytes > ANSWER_CAP_BYTES) {
+            words.text = capText(words.text + delta, ANSWER_CAP_BYTES).text;
+            words.cut = true;
+          } else {
+            words.text += delta;
+            words.bytes += bytes;
+          }
+          state.answer = { text: words.text, cut: words.cut, whole: false };
           return;
         }
         case "turn/completed": {
@@ -479,6 +521,14 @@ export function codexDriver(session: CodexSession): OpenDriver {
           state.turnDone = true;
           state.turnStatus = string(turn["status"]) ?? "failed";
           state.turnError = string(record(turn["error"])?.["message"]) ?? null;
+          // The summary holds the turn's messages whole, also one whose own message is still to
+          // come: anything said after the work settled no longer counts.
+          for (const summarised of array(turn["items"]) ?? []) {
+            const message = record(summarised);
+            if (message?.["type"] !== "agentMessage") continue;
+            if (!completed.has(string(message["id"]) ?? "")) heard(message);
+          }
+          streaming.clear();
           if (state.turnStatus !== "completed") {
             // The work ended with the turn: what it left going has no end of its own to wait for.
             running.clear();
