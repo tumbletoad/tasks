@@ -376,7 +376,7 @@ class Model {
     const write = (rows: readonly ModelChange[]) => {
       for (const r of rows) {
         written.add(key(r.task, r.field));
-        if (r.field === "deleted") written.add(`${r.task}|*`);
+        if (r.field === "deleted") written.add(`${String(r.task)}|*`);
       }
     };
     write(this.commits.get(step.undoneBy ?? 0)?.rows ?? []);
@@ -386,7 +386,9 @@ class Model {
       .sort((a, b) => a.seq - b.seq);
     for (const c of later) {
       const rows = this.commits.get(c.undoneBy ?? 0)?.rows ?? [];
-      if (!rows.some((r) => written.has(key(r.task, r.field)) || written.has(`${r.task}|*`))) {
+      if (
+        !rows.some((r) => written.has(key(r.task, r.field)) || written.has(`${String(r.task)}|*`))
+      ) {
         continue;
       }
       write(rows);
