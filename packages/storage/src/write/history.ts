@@ -25,8 +25,8 @@
 //   again, a step the person decided before anything done to the row since. Another's change to
 //   the row after the step was last applied (its commit, or a redo of it since), and for a task to
 //   anything on it (a field, a note, a log entry, a link, a run, a folder), keeps it in sight, as a
-//   conflict that names that change. The principal's own steps (its undoable writes, undos and
-//   redos) do not count: the person made them.
+//   conflict that names the newest such change. The principal's own steps (its undoable writes,
+//   undos and redos) do not count: the person made them.
 // - Clearing a tombstone (a redo of a create's undo, or the undo of a delete) brings a row back. A
 //   source whose key, or a place whose owner and machine, another live row holds now stays
 //   tombstoned, and that row is the conflict: the unique indexes allow one live row each.
@@ -639,6 +639,8 @@ export interface InversionPlan {
   conflicts: FieldConflict[];
   /** PlanOptions.applied: what the rules across rows count from too (applyInversions). */
   applied: number;
+  /** Every task the inversion would move to the Trash, guard or not: removing it does it anyway. */
+  trash: { task: Id<"t">; ref: string }[];
 }
 
 export interface PlanOptions {
@@ -670,33 +672,38 @@ const parsed = (json: string): unknown => {
 /** Where a conflict is: what a guard knows. The namer adds who wrote it, when, and the reference. */
 type Where = Omit<FieldConflict, "op" | "ref" | "by" | "at" | "version">;
 
+/** A task's reference, such as `M-14`, read once per task. */
+function refsOf(conn: Connection, refPrefix: string): (task: Id<"t">) => string {
+  const refs = new Map<string, string>();
+  return (task) => {
+    let ref = refs.get(task);
+    if (ref === undefined) {
+      const found = conn.prepare(SQL.taskRef).get({ id: task });
+      if (found === undefined) throw invalidValue("changes", "task_id");
+      ref = formatTaskRef(refPrefix, new RowReader("tasks", found).int("ref", "taskRef"));
+      refs.set(task, ref);
+    }
+    return ref;
+  };
+}
+
 /**
  * Names conflicts for operation `op`: a conflict on `where`, with the commit at `version` (who
  * wrote the field, and when) and its task's reference.
  */
 function namer(
   conn: Connection,
-  options: { refPrefix: string; op: number },
+  options: { op: number },
+  refOf: (task: Id<"t">) => string,
 ): (where: Where, version: number) => FieldConflict {
-  const refs = new Map<string, string>();
   return (where, version) => {
     const by = conn.prepare(SQL.author).get({ seq: version });
     if (by === undefined) throw invalidValue(where.entity, "fv");
     const r = new RowReader("commits", by);
-    let ref: string | undefined;
-    if (where.task !== undefined) {
-      ref = refs.get(where.task);
-      if (ref === undefined) {
-        const found = conn.prepare(SQL.taskRef).get({ id: where.task });
-        if (found === undefined) throw invalidValue("changes", "task_id");
-        ref = formatTaskRef(options.refPrefix, new RowReader("tasks", found).int("ref", "taskRef"));
-        refs.set(where.task, ref);
-      }
-    }
     return {
       op: options.op,
       ...where,
-      ...(ref === undefined ? {} : { ref }),
+      ...(where.task === undefined ? {} : { ref: refOf(where.task) }),
       version,
       by: {
         actor: r.id("actor", "ac"),
@@ -719,7 +726,13 @@ export function planInversions(
   changes: readonly StoredChange[],
   options: PlanOptions,
 ): InversionPlan {
-  const plan: InversionPlan = { inversions: [], conflicts: [], applied: options.applied };
+  const plan: InversionPlan = {
+    inversions: [],
+    conflicts: [],
+    applied: options.applied,
+    trash: [],
+  };
+  const refOf = refsOf(conn, options.refPrefix);
   const rows = new Map<string, RowState>();
   const kids = liveChildren(conn, changes);
   /**
@@ -750,7 +763,7 @@ export function planInversions(
     return row;
   };
   /** A conflict on `where`, named with the commit at `version`: who wrote it and when. */
-  const conflict = namer(conn, options);
+  const conflict = namer(conn, options, refOf);
   /** A field of a row that does not hold the write an inversion needs. */
   const fieldConflict = (
     entity: InvertibleEntity,
@@ -790,6 +803,9 @@ export function planInversions(
       const field = change.field ?? "";
       if (!hasField(entity, field)) throw invalidValue("changes", "field");
       const restore = change.before ?? "null";
+      if (entity === "tasks" && field === table.tombstone && !isLive(parsed(restore))) {
+        plan.trash.push({ task: id as Id<"t">, ref: refOf(id as Id<"t">) });
+      }
       if (provenanceOf(row, field) !== change.afterProv) {
         blocked(
           fieldConflict(entity, id, change.taskId, field, {
@@ -920,8 +936,9 @@ function rowNow(
 
 /**
  * Others' changes to a row after commit `since`, and for a task to anything of it (the header):
- * each row and field once, named with its newest change. A row created since is named by its
- * tombstone, as a create's guard names another's child row.
+ * each row and field once, with its value now and its newest change. A row created since is named
+ * by its tombstone, as a create's guard names another's child row, so its creation and a later
+ * change of that field are one: a folder set and cleared since is named by its clearing.
  */
 function newerWork(
   conn: Connection,
@@ -938,25 +955,58 @@ function newerWork(
     id,
     task: entity === "tasks" ? id : null,
   });
-  return found.map((row) => {
+  const work = new Map<string, { where: Where; version: number }>();
+  for (const row of found) {
     const r = new RowReader("changes", row);
     const changed = r.text("entity");
     const rowId = r.text("id");
     const task = r.optText("task", (v) => isId(v, "t")) as Id<"t"> | null;
-    const set = r.optText("field");
     const now = rowNow(conn, changed, rowId);
     if (now.row === undefined) throw invalidValue("changes", "entity_id");
-    return {
+    const field = r.optText("field") ?? now.field;
+    const version = r.int("version", "seq");
+    const key = `${changed}|${rowId}|${field}`;
+    const earlier = work.get(key);
+    if (earlier !== undefined) {
+      earlier.version = Math.max(earlier.version, version);
+      continue;
+    }
+    work.set(key, {
       where: {
         entity: changed as ConflictEntity,
         id: rowId,
         ...(task === null ? {} : { task }),
-        field: set ?? now.field,
-        value: set === null ? null : columnsValue(now.row, now.fields[set] ?? []),
+        field,
+        value: columnsValue(now.row, now.fields[field] ?? []),
       },
-      version: r.int("version", "seq"),
-    };
-  });
+      version,
+    });
+  }
+  return [...work.values()];
+}
+
+/** How many rows of one table and field by one author on one task an answer names. */
+const NAMED = 3;
+
+/**
+ * The conflicts an undo or redo answers with: of the rows of each table and field that one author
+ * changed on one task, the first three, the third with how many more it leaves out. A task's own
+ * field is one row, so each stays named, and each author keeps a name of their own.
+ */
+export function namedConflicts(conflicts: readonly FieldConflict[]): FieldConflict[] {
+  const kind = (c: FieldConflict): string => `${c.entity}|${c.field}|${c.task ?? ""}|${c.by.actor}`;
+  const counts = new Map<string, number>();
+  for (const c of conflicts) counts.set(kind(c), (counts.get(kind(c)) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  const named: FieldConflict[] = [];
+  for (const c of conflicts) {
+    const n = (seen.get(kind(c)) ?? 0) + 1;
+    seen.set(kind(c), n);
+    if (n > NAMED) continue;
+    const more = (counts.get(kind(c)) ?? 0) - NAMED;
+    named.push(n === NAMED && more > 0 ? { ...c, more } : c);
+  }
+  return named;
 }
 
 /** Whether a tombstone field's value says the row is live: every column null. */
@@ -1239,6 +1289,7 @@ export function applyInversions(
     restoresOf(inversions).size > 0 || inversions.some(inGroupRules);
   if (!checked(plan.inversions)) return writeInversions(conn, plan.inversions, options);
   const since = plan.applied;
+  const refOf = refsOf(conn, options.refPrefix);
   for (;;) {
     conn.exec("SAVEPOINT restores");
     const applied = writeInversions(conn, plan.inversions, options);
@@ -1253,7 +1304,7 @@ export function applyInversions(
       return applied;
     }
     conn.exec("ROLLBACK TO restores");
-    const conflict = namer(conn, options);
+    const conflict = namer(conn, options, refOf);
     const named = new Set(plan.conflicts.map((c) => `${c.entity}|${c.id}|${c.field}`));
     for (const n of broken.named) {
       if (named.has(`${n.entity}|${n.id}|${n.field}`)) continue;

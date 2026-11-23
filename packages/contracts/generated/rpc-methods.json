@@ -1996,6 +1996,12 @@
                       ],
                       "description": "The row, task_id|source_id (task_id|label_id) for a link, or a preference's key"
                     },
+                    "more": {
+                      "description": "An undo's or redo's: how many more such rows by this author on this task",
+                      "maximum": 1000000,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
                     "op": {
                       "description": "Index of the operation in the request",
                       "maximum": 999999,
@@ -2221,6 +2227,15 @@
                 "description": "An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo",
                 "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
                 "type": "string"
+              },
+              "trash": {
+                "description": "An undo or redo's UNDO_CONFLICT: the tasks it would move to the Trash",
+                "items": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                },
+                "type": "array"
               },
               "warnings": {
                 "description": "Warnings, one sentence each",

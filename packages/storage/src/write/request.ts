@@ -211,6 +211,11 @@ export interface FieldConflict {
    */
   by: { actor: Id<"ac">; kind: string; label: string; origin?: string };
   at: number;
+  /**
+   * An undo or redo names a few rows of each table and field by each author on each task (a
+   * hundred notes are three): the last one named says how many more of them it leaves out.
+   */
+  more?: number;
 }
 
 export interface OpResult {
@@ -302,6 +307,11 @@ export interface WriteResult {
    * steps set aside with it because they build on it (history.ts, setAside).
    */
   setAside?: Id<"op">[];
+  /**
+   * An undo or redo refused with UNDO_CONFLICT that would move tasks to the Trash: each of them,
+   * with its reference. Removing them again does it anyway.
+   */
+  trash?: { task: Id<"t">; ref: string }[];
   /** One per operation, for `applied` and `unchanged`. */
   results: OpResult[];
   /**

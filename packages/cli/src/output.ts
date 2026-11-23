@@ -69,13 +69,17 @@ export function printError(io: Io, json: boolean, body: ErrorBody): number {
         io.stderr(`  ${str(issue.path)}: ${str(issue.message)}\n`);
       }
     }
-    // A conflict names its task and field, and who wrote it when (A3 3.5), never the value.
+    // A conflict names its task, the row's table when it is not the task, and the field, and who
+    // wrote it when (A3 3.5), never the value. An undo's names a few rows of a kind: the rest count.
     const conflicts = body.data?.["conflicts"];
     if (Array.isArray(conflicts)) {
       for (const c of conflicts.slice(0, 5) as Record<string, unknown>[]) {
-        const what = [str(c["task"]), str(c["field"])].filter((part) => part !== "").join(" ");
+        const what = [str(c["task"]), str(c["entity"]), str(c["field"])]
+          .filter((part) => part !== "")
+          .join(" ");
         const who = str(c["by"]) === "" ? "" : `: ${str(c["by"])} at ${str(c["at"])}`;
-        io.stderr(`  ${what}${who}\n`);
+        const more = typeof c["more"] === "number" ? `, and ${String(c["more"])} more` : "";
+        io.stderr(`  ${what}${who}${more}\n`);
       }
     }
   }

@@ -76,6 +76,7 @@ import {
   brokenIn,
   groupBreaks,
   lastApplied,
+  namedConflicts,
   planInversions,
   readChanges,
   redoTarget,
@@ -2719,10 +2720,11 @@ export class SpaceWriter {
                 ? "Someone changed it since: it is set aside, and Redo goes on to your next change"
                 : "Someone changed it since: it is set aside with your later changes that build on it, and Redo goes on to the next",
           },
-          plan.conflicts,
+          namedConflicts(plan.conflicts),
         ),
         target: target.id,
         ...(later.length === 0 ? {} : { setAside: later }),
+        ...(plan.trash.length === 0 ? {} : { trash: plan.trash }),
       };
     };
     if (plan.conflicts.length > 0 && !partial) return conflict();
@@ -2792,7 +2794,7 @@ export class SpaceWriter {
       commit: commitId,
       results: [{ i: 0, status: "updated", id: target.id, version: seq }],
       // What a partial undo left as others set it (WriteResult.conflicts).
-      conflicts: plan.conflicts,
+      conflicts: namedConflicts(plan.conflicts),
     };
   }
 

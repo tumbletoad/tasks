@@ -231,6 +231,60 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
   );
 
   test(
+    "a refused redo is set aside and says how to do it anyway; the next redo reaches the change behind it",
+    async () => {
+      const a = await add("Fixture task removed first");
+      const b = await add("Fixture task edited after");
+      await call("task.delete", { tasks: [a], base: await asOf(), request_id: rid() });
+      await set(b, { summary: "Fixture summary after" });
+      await call("history.undo", { request_id: rid() });
+      await call("history.undo", { request_id: rid() });
+      await call(
+        "entry.add",
+        { task: a, kind: "note", text: "Fixture note since.", request_id: rid() },
+        SCRIPT,
+      );
+      expect(await refusal("history.redo", { request_id: rid() })).toMatchObject({
+        code: "conflict",
+        hint: `To move ${a} to the Trash anyway, remove it again: ttasks delete ${a}.`,
+        data: { cause: "UNDO_CONFLICT", trash: [a] },
+      });
+      expect(await call("history.redo", { request_id: rid() })).toMatchObject({
+        result: "redone",
+        tasks: [b],
+      });
+      expect((await show(b))["summary"]).toBe("Fixture summary after");
+      expect((await show(a))["ref"]).toBe(a);
+    },
+    LONG,
+  );
+
+  test(
+    "a refusal over a hundred notes and a question names a few of each and counts the rest",
+    async () => {
+      const task = await add("Fixture task with many notes");
+      await call("task.delete", { tasks: [task], base: await asOf(), request_id: rid() });
+      await call("history.undo", { request_id: rid() });
+      for (let i = 0; i < 100; i += 1) {
+        const text = `Fixture note ${String(i)}.`;
+        await call("entry.add", { task, kind: "note", text, request_id: rid() }, SCRIPT);
+      }
+      const asked = { task, kind: "question", text: "Fixture question?", request_id: rid() };
+      await call("entry.add", asked, SCRIPT);
+      const refused = await refusal("history.redo", { request_id: rid() });
+      const conflicts = (refused.data?.["conflicts"] ?? []) as Json[];
+      const count = (entity: string) =>
+        conflicts
+          .filter((c) => c["entity"] === entity)
+          .reduce((sum, c) => sum + 1 + Number(c["more"] ?? 0), 0);
+      expect([count("notes"), count("log_entries")]).toEqual([100, 1]);
+      expect(conflicts.length).toBeLessThanOrEqual(4);
+      expect(conflicts.every((c) => c["by"] === "script")).toBe(true);
+    },
+    LONG,
+  );
+
+  test(
     "a folder set from a base before Undo brought the cleared one back is a conflict, and the restored folder stays",
     async () => {
       const task = await add("Fixture task with a folder");

@@ -104,6 +104,12 @@ const ReceiptConflict = z.strictObject({
     })
     .describe("Who wrote that version"),
   at: Instant.describe("When"),
+  more: z
+    .int()
+    .min(1)
+    .max(1_000_000)
+    .describe("An undo's or redo's: how many more such rows by this author on this task")
+    .optional(),
 });
 
 export const ReceiptGetResult = z.union([
@@ -131,6 +137,10 @@ export const ReceiptGetResult = z.union([
     set_aside: z
       .array(z.string().regex(idPattern("op")))
       .describe("A refused redo's: the later changes set aside with it, which build on it")
+      .optional(),
+    trash: z
+      .array(TaskRef)
+      .describe("An undo or redo's UNDO_CONFLICT: the tasks it would move to the Trash")
       .optional(),
     results: z
       .array(ReceiptOpResult)
@@ -170,6 +180,7 @@ export interface StoredReceiptLike {
     commit?: string;
     target?: string;
     setAside?: readonly string[];
+    trash?: readonly { ref: string }[];
     results: readonly object[];
     conflicts: readonly { at: number }[];
     error?: { code: string; message: string; op?: number; field?: string };
@@ -199,6 +210,7 @@ export function receiptResult(
     ...(result.commit === undefined ? {} : { commit: result.commit }),
     ...(result.target === undefined ? {} : { target: result.target }),
     ...(result.setAside === undefined ? {} : { set_aside: [...result.setAside] }),
+    ...(result.trash === undefined ? {} : { trash: result.trash.map((t) => t.ref) }),
     // A request or an import holds more operations than a reply shows: the first 50.
     results: result.results.slice(0, 50) as z.input<typeof ReceiptOpResult>[],
     ...(result.results.length > 50 ? { results_more: result.results.length - 50 } : {}),

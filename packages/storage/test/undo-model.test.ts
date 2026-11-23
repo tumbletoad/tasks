@@ -516,16 +516,21 @@ async function secondHuman(fx: Fixture): Promise<Credential> {
   return { ...fx.human, principal_id: id, scope_id: "cli:partner" };
 }
 
-/** The keys of the conflicts a result names, by task index: a run by its task's, as `runs`. */
+/**
+ * The keys of the conflicts a result names, by task index: a run by its task's, as `runs`. A
+ * conflict that counts more rows (`more`) stands for each of them.
+ */
 const named = (
   ids: readonly Id<"t">[],
-  conflicts: readonly { entity: string; id: string; task?: string; field: string }[],
+  conflicts: readonly { entity: string; id: string; task?: string; field: string; more?: number }[],
 ) =>
   conflicts
-    .map((c) =>
-      c.entity === "runs"
-        ? `${String(ids.indexOf(c.task as Id<"t">))}|runs`
-        : `${String(ids.indexOf(c.id as Id<"t">))}|${c.field}`,
+    .flatMap((c) =>
+      Array.from({ length: 1 + (c.more ?? 0) }, () =>
+        c.entity === "runs"
+          ? `${String(ids.indexOf(c.task as Id<"t">))}|runs`
+          : `${String(ids.indexOf(c.id as Id<"t">))}|${c.field}`,
+      ),
     )
     .sort();
 

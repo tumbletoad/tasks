@@ -963,6 +963,7 @@ When `found` is `true`:
 | `commit` | string | no | The commit it wrote |
 | `target` | string | no | An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo |
 | `set_aside` | string[] | no | A refused redo's: the later changes set aside with it, which build on it |
+| `trash` | string[] | no | An undo or redo's UNDO_CONFLICT: the tasks it would move to the Trash |
 | `results` | object[], max 50 items | yes | One result per operation, the first 50 of an import's |
 | `results[].i` | integer, 0 to 999999 | yes | Index of the operation in the request |
 | `results[].status` | "created" \| "updated" \| "unchanged" \| "existing" \| "proposed" | yes | What the operation did |
@@ -990,6 +991,7 @@ When `found` is `true`:
 | `conflicts[].by.label` | string | yes | Actor label |
 | `conflicts[].by.origin` | "ui" \| "cli" \| "mcp" \| "http" \| "import" \| "system" \| "migration" | no | Where the commit came from; import: the user applied an import |
 | `conflicts[].at` | string | yes | When |
+| `conflicts[].more` | integer, 1 to 1000000 | no | An undo's or redo's: how many more such rows by this author on this task |
 | `error` | object | no | Why it was refused |
 | `error.cause` | string, max 40 | yes | A1's error code |
 | `error.message` | string | yes | What was refused, in one sentence |

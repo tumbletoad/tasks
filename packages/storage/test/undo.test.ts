@@ -739,14 +739,17 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     expect(undo().conflicts.map((c) => c.field)).toEqual(["wrap"]);
     expect(lastSeq()).toBe(seq);
     // A partial undo would bring the removed learning back as a 21st: it stays removed, named
-    // with the 20 that hold the place, and the change leaves the stack.
+    // with the 20 that hold the place (a few of each author's, and how many more), and the change
+    // leaves the stack.
     const u = applied(undo({ partial: true }));
     expect(changesAt(u.seq)).toEqual([]);
     expect(u.conflicts[0]).toMatchObject({ entity: "tasks", field: "wrap", version: theirs.seq });
     const named = u.conflicts.slice(1);
-    expect(named.map((c) => [c.entity, c.id, c.field, c.task]).sort()).toEqual(
-      held.map((l) => ["learnings", l, "deleted", id]).sort(),
-    );
+    for (const c of named) {
+      expect([c.entity, c.field, c.task]).toEqual(["learnings", "deleted", id]);
+      expect(held).toContain(c.id);
+    }
+    expect(named.reduce((n, c) => n + 1 + (c.more ?? 0), 0)).toBe(held.length);
     expect(named.find((c) => c.version === theirs.seq)).toMatchObject({ by: { kind: "agent" } });
     expect(learnings(id)).toEqual(held);
     expect(commitAt(mine.seq)["undo_status"]).toBe("undone");

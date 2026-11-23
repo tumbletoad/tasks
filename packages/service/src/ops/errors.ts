@@ -317,11 +317,17 @@ export function resultFailure(
   // writer holds the wrap-up whatever the base, so a fresh read changes nothing. The message says
   // what happened, `reason` names it for a script, and the hint says what the person can do.
   const wrapped = heldWrapUp(result, wrapUp);
+  const trash = result.trash?.map((t) => t.ref) ?? [];
   const hint = wrapped
     ? wrappedHint(face, result.conflicts[0]?.ref)
     : problem === undefined
       ? undefined
-      : (hints[problem.code] ?? hintOf(problem.code, face));
+      : trash.length > 0
+        ? said(
+            `To move ${trash.join(", ")} to the Trash anyway, remove ${trash.length === 1 ? "it" : "them"} again`,
+            way(face, "task.delete", trash.join(" ")),
+          )
+        : (hints[problem.code] ?? hintOf(problem.code, face));
   const path = op === undefined ? undefined : pathOf?.(op, problem?.field);
   let base: ErrorBody =
     problem === undefined
@@ -355,6 +361,7 @@ export function resultFailure(
     version: c.version,
     by: byOf(c.by),
     at: new Date(c.at).toISOString(),
+    ...(c.more === undefined ? {} : { more: c.more }),
   }));
   return new AppError({
     ...base,
@@ -366,8 +373,9 @@ export function resultFailure(
       // An undo or redo's UNDO_CONFLICT names the commit it met: a caller that named none (Ctrl+Z)
       // passes it to Undo the rest or Restore mine, so they never reach a newer change instead.
       ...(result.target === undefined ? {} : { commit: result.target }),
-      // A refused redo's later changes, set aside with it because they build on it.
+      // A refused redo's later changes set aside with it, and what removing again would move.
       ...(result.setAside === undefined ? {} : { set_aside: result.setAside }),
+      ...(trash.length === 0 ? {} : { trash }),
       conflicts,
       ...(result.replayed === true ? { replayed: true } : {}),
     },

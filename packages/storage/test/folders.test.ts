@@ -401,6 +401,30 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expect(live()).toEqual({ [`task:${task}`]: "~/work/a" });
   });
 
+  test("Redo of a removal names the newest change to a folder set and cleared since: who cleared it, when, and that it is cleared", () => {
+    const task = newTask("Set and cleared since");
+    expectStatus(submit([{ kind: "task.delete", task }]), "applied");
+    expectStatus(undo(), "applied");
+    expectStatus(
+      submit([{ kind: "task.folder_set", task, path: "~/work/a" }], fx.codex),
+      "applied",
+    );
+    const cleared = submit([{ kind: "task.folder_clear", task }], fx.claude);
+    expectStatus(cleared, "applied");
+    const late = redo();
+    expectStatus(late, "conflict");
+    expect(late.conflicts).toEqual([
+      expect.objectContaining({
+        entity: "folders",
+        field: "deleted",
+        task,
+        version: cleared.seq,
+        by: expect.objectContaining({ actor: fx.claude.principal_id }) as unknown,
+        value: expect.any(Number) as unknown,
+      }),
+    ]);
+  });
+
   test("Redo of a clear after someone changed the folder is a conflict, and their folder stays", () => {
     const task = newTask("Moved since", undefined, "~/work/a");
     expectStatus(submit([{ kind: "task.folder_clear", task }]), "applied");
