@@ -33,7 +33,7 @@ import {
 import type { RunFolderFound } from "../launch/index.ts";
 import type { ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
-import { homeDigest } from "../setup/agents.ts";
+import { homeDigest, physicalHome } from "../setup/agents.ts";
 
 /** What building a run needs of the service. */
 export interface RunAgents {
@@ -200,7 +200,10 @@ export async function buildRun(
   const request = runBrief(task.ref, task.title, run.request);
   // The home the app keeps the run's session in, as the link to the monitor's agents reads it.
   const home = instanceHome(instance, agents.home, agents.platform)?.path;
-  const evidence = home === undefined ? {} : { home: homeDigest(agents.platform, home) };
+  const evidence =
+    home === undefined
+      ? {}
+      : { home: homeDigest(agents.platform, await physicalHome(agents.platform, home)) };
   const tools = (app: string) => ({
     command: command[0] ?? "",
     args: [...command.slice(1), "mcp", "--space", space, "--instance", instance.id, "--app", app],

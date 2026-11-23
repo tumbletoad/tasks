@@ -32,6 +32,7 @@ export {
   TTAM_CONVERSATIONS,
   ttamAgent,
   ttamHome,
+  ttamPath,
   type FakeSpawnerOptions,
   type FakeSpawnRequest,
   type CliAgentReport,

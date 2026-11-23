@@ -5,7 +5,7 @@
 // process it starts is recorded by PID with the start time first seen, so a test stops only its
 // own. Fixture data and temporary folders only.
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export type { InteractiveAgentReport } from "./agent.ts";
@@ -87,6 +87,15 @@ export function ttamAgent(agent: {
   };
 }
 
+/** `path` as TTAM reports a home's: the folder it really is when it exists, else as given. */
+export function ttamPath(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return path;
+  }
+}
+
 /** A home as TTAM's snapshot holds one, for the fake's `--agents` file. */
 export function ttamHome(home: {
   readonly id: string;
@@ -97,7 +106,7 @@ export function ttamHome(home: {
     id: home.id,
     provider: home.provider,
     label: home.provider,
-    path: home.path,
+    path: ttamPath(home.path),
     present: true,
   };
 }

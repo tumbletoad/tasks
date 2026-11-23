@@ -16,7 +16,7 @@ import { join } from "node:path";
 import type { AgentsPicture, AgentsSession } from "@ttasks/contracts/monitor";
 import { RUN_LIMITS } from "@ttasks/contracts/runs";
 import { SpaceExecutionStore } from "@ttasks/launch";
-import { fakeTtam, ttamAgent, ttamHome } from "@ttasks/testkit";
+import { fakeTtam, ttamAgent, ttamHome, ttamPath } from "@ttasks/testkit";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { HttpTimerKind } from "../src/http/index.ts";
 import { testClock } from "./clock.ts";
@@ -117,7 +117,7 @@ async function launch(
       briefHash: HASH,
       evidence: {
         ...(evidence.preset === undefined ? {} : { preset: evidence.preset }),
-        ...(home === null ? {} : { home: homeDigest(process.platform, home) }),
+        ...(home === null ? {} : { home: homeDigest(process.platform, ttamPath(home)) }),
       },
     },
     rid(),
@@ -206,7 +206,9 @@ async function run(title: string, nativeId: string): Promise<string> {
     starting.id,
     { state: "starting", version: starting.version },
     "running",
-    { evidence: { native_id: nativeId, home: homeDigest(process.platform, homes.codex) } },
+    {
+      evidence: { native_id: nativeId, home: homeDigest(process.platform, ttamPath(homes.codex)) },
+    },
   );
   await store.transitionRun(
     running.id,

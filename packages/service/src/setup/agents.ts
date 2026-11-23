@@ -38,7 +38,8 @@
 // Every path, variable and file read goes through the injected input, so tests run on scratch
 // homes with fake commands of their own (testkit's fake-agents.ts).
 import { createHash } from "node:crypto";
-import { lstatSync, realpathSync, rmSync, statSync } from "node:fs";
+import { lstatSync, rmSync, statSync } from "node:fs";
+import { realpath } from "node:fs/promises";
 import { posix, win32 } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
@@ -317,13 +318,31 @@ export function samePath(platform: NodeJS.Platform, a: string, b: string): boole
     : x === y;
 }
 
-/** `path` with its links resolved, when it exists on this machine; else as it is. */
-function physical(platform: NodeJS.Platform, path: string): string {
-  if (platform !== process.platform) return path;
+/** How long a click or a run's start waits for a home's folder to say what it really is. */
+const PHYSICAL_HOME_MS = 1_000;
+
+/**
+ * An agent home with its links resolved, as TTAM reports a home: the folder it really is when it
+ * exists and answers in time, else as it is spelled. Asked off the service's thread and bounded,
+ * because a home may be on a share that answers slowly or not at all.
+ */
+export async function physicalHome(
+  platform: NodeJS.Platform,
+  home: string,
+  withinMs: number = PHYSICAL_HOME_MS,
+): Promise<string> {
+  if (platform !== process.platform) return home;
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<string>((done) => {
+    timer = setTimeout(() => {
+      done(home);
+    }, withinMs);
+    timer.unref();
+  });
   try {
-    return realpathSync.native(path);
-  } catch {
-    return path;
+    return await Promise.race([realpath(home).catch(() => home), late]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -331,12 +350,12 @@ const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes)
 
 /**
  * An agent home as a launch or a run records it, and as the link to TTAM's homes compares it: a
- * digest of the folder it really is, its links resolved as TTAM resolves them before it reports a
- * home, then compared as `samePath` compares paths. A home that does not exist is taken as it is
- * spelled. A space never holds the path.
+ * digest of the folder it really is, compared as `samePath` compares paths. `home` is that
+ * folder already: `physicalHome` of a home from TTasks' settings, or the path TTAM reports, which
+ * it resolves itself. No file is touched here. A space never holds the path.
  */
 export function homeDigest(platform: NodeJS.Platform, home: string): string {
-  const path = pathOf(platform).resolve(physical(platform, home));
+  const path = pathOf(platform).resolve(home);
   const folded = platform === "win32" || platform === "darwin" ? path.toLowerCase() : path;
   return createHash("sha256").update(`agent-home\0${folded}`).digest("hex");
 }

@@ -104,7 +104,7 @@ import type { ServedSpace } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
 import type { TaskFolder } from "../ops/read.ts";
-import { agentHomeOf, homeDigest } from "../setup/agents.ts";
+import { agentHomeOf, homeDigest, physicalHome } from "../setup/agents.ts";
 import {
   briefNames,
   chooseRoute,
@@ -815,7 +815,9 @@ export class LaunchService {
     const note = await this.#saveWords(request, probe);
     const evidence = {
       ...(session === undefined ? {} : { preset: session }),
-      ...(sessionHome === undefined ? {} : { home: homeDigest(platform, sessionHome) }),
+      ...(sessionHome === undefined
+        ? {}
+        : { home: homeDigest(platform, await physicalHome(platform, sessionHome)) }),
       ...(probe.composer === "request" && note !== undefined ? { request: note } : {}),
     };
     const click: Omit<NewIntent, "machine"> = {
