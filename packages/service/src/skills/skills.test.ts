@@ -339,6 +339,14 @@ describe("[A3.3.6.mcp.skills] the user's skills folder", () => {
     expect(lists).toBe(1);
   });
 
+  test("a full list of folders and a loose file leaves no folder unread", async () => {
+    for (let n = 0; n < SKILL_FOLDERS; n += 1) {
+      write(root, `own-${String(n).padStart(3, "0")}`, "A skill.\n");
+    }
+    writeFileSync(join(root, "sample.md"), "A loose file.\n");
+    expect((await listSkills(root)).unread).toBe(0);
+  });
+
   test("the listing decides a name for the list and for a read by name alike", async () => {
     write(root, "Case-Test", "A rule.\n");
     writeFileSync(join(root, "sample.md"), "A loose file.\n");
@@ -392,9 +400,18 @@ describe("[A3.3.6.mcp.skills] the user's skills folder", () => {
     for (let n = 0; n < SKILL_FOLDERS + 3; n += 1) {
       write(root, `own-${String(n).padStart(3, "0")}`, "A skill.\n");
     }
+    // Past the first folders by name: a default's folder and a loose file are still listed.
+    write(root, "sizing-effort", "The user's sizing.\n");
+    writeFileSync(join(root, "zz-loose.md"), "A loose file.\n");
     const catalog = await listSkills(root);
     expect(catalog.unread).toBe(3);
-    expect(catalog.skills.filter((skill) => skill.origin === "own")).toHaveLength(SKILL_FOLDERS);
+    const own = catalog.skills.filter((skill) => skill.origin === "own");
+    expect(own).toHaveLength(SKILL_FOLDERS + 1);
+    expect(own.at(-1)?.problem).toContain("a skill is a folder");
+    const listed = catalog.skills.find((skill) => skill.name === "sizing-effort");
+    const named = (await readSkills(root, ["sizing-effort"])).skills[0];
+    expect(listed?.origin).toBe("edited");
+    expect(listed?.body).toBe(named?.body);
     // A read by name still finds one past the cap.
     const late = `own-${String(SKILL_FOLDERS + 2).padStart(3, "0")}`;
     expect((await readSkills(root, [late])).skills[0]?.body).toBe("A skill.");
