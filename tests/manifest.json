@@ -5605,14 +5605,14 @@
     },
     {
       "id": "A5.while-away.e2e.recent",
-      "title": "In Chromium and Firefox: an agent's change made before the page opened is under Today on the Agents page and in Today's Changes, also after a reload, and a space without one says no agent changed anything in the last 7 days; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "title": "In Chromium and Firefox: an agent's change made before the page opened is under the day of its own date (Today, on one day) on the Agents page and in Today's Changes, also after a reload, and a space without one says no agent changed anything in the last 7 days; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     },
     {
       "id": "A5.while-away.e2e.question",
-      "title": "In Chromium and Firefox: an agent's question puts its task under Needs you with its words; Dismiss takes it out and the toast's Undo brings it back; the person's note after it answers it, also after a reload; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "title": "In Chromium and Firefox: an agent's question puts its task under Needs you with its words; Dismiss takes it out and the toast's Undo brings it back; the person's note after it answers it, also after a reload; two questions on a task finished since both wait, newest first, after a reload, and one Dismiss sets them aside; the day the task is grouped under is the change's own; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

@@ -1,10 +1,11 @@
 // What a person finds when they come back, end to end in Chromium and Firefox against the real
 // service process: the agents' changes of the last seven days on Agents and Today, also after a
-// reload; an agent's question under "Needs you" until the person answers or dismisses it, which
-// Undo takes back; a long thread read back to its first entry; and a title still being typed back
-// in its editor after a reload, unsent, in the tab that typed it alone. At 1,440 and 390 px in
-// both themes. Fixture data only.
+// reload; an agent's questions under "Needs you" until the person answers or dismisses them,
+// which Undo takes back, also once the task is finished; a long thread read back to its first
+// entry; and a title still being typed back in its editor after a reload, unsent, in the tab that
+// typed it alone. At 1,440 and 390 px in both themes. Fixture data only.
 import { expect, type Locator, type Page } from "@playwright/test";
+import { onOneDay } from "./days.ts";
 import { test } from "./fixture.ts";
 import { axeFound, openTask, picture, pictures, showsSpace, signIn, themes } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
@@ -74,25 +75,27 @@ test.describe("[A5.while-away.e2e.recent] agents' changes are read from the serv
     page,
     world,
   }) => {
-    const ref = await newTask(world, "Collect the clinic exports");
-    await world.op(
-      world.mira.id,
-      "entry.add",
-      { task: ref, text: "Pulled the three exports." },
-      "agent",
-    );
+    // The change is made in the step, so its own date is the step's day: Today.
+    await onOneDay(async () => {
+      const ref = await newTask(world, "Collect the clinic exports");
+      await world.op(
+        world.mira.id,
+        "entry.add",
+        { task: ref, text: "Pulled the three exports." },
+        "agent",
+      );
+      // A page opened after the change has it: the service gives the recent changes with the rows.
+      await openAgents(page, world);
+      await expect(rowIn(page, "Today", ref)).toBeVisible({ timeout: SLOW_MS });
+      await page.reload();
+      await expect(rowIn(page, "Today", ref)).toBeVisible({ timeout: SLOW_MS });
+      await shots(page, world, "recent");
 
-    // A page opened after the change has it: the service gives the recent changes with the rows.
-    await openAgents(page, world);
-    await expect(rowIn(page, "Today", ref)).toBeVisible({ timeout: SLOW_MS });
-    await page.reload();
-    await expect(rowIn(page, "Today", ref)).toBeVisible({ timeout: SLOW_MS });
-    await shots(page, world, "recent");
-
-    await signIn(page, world, `/s/${world.mira.id}/today`);
-    await expect(
-      page.locator('main section[aria-label="Changes"]').locator(`li[data-task="${ref}"]`),
-    ).toBeVisible({ timeout: SLOW_MS });
+      await signIn(page, world, `/s/${world.mira.id}/today`);
+      await expect(
+        page.locator('main section[aria-label="Changes"]').locator(`li[data-task="${ref}"]`),
+      ).toBeVisible({ timeout: SLOW_MS });
+    });
 
     await signIn(page, world, `/s/${world.quiet.id}/agents`);
     await expect(page.getByRole("main")).toContainText("No agent changes in the last 7 days.", {
@@ -101,42 +104,66 @@ test.describe("[A5.while-away.e2e.recent] agents' changes are read from the serv
   });
 });
 
-test.describe("[A5.while-away.e2e.question] an agent's question waits under Needs you", () => {
-  test("it shows with its words until the person dismisses it, Undo brings it back, and a note answers it", async ({
+test.describe("[A5.while-away.e2e.question] an agent's questions wait under Needs you", () => {
+  test("they show with their words until the person dismisses them, Undo brings them back, a note answers them, and they wait on a finished task too", async ({
     page,
     world,
   }) => {
-    const ref = await newTask(world, "Choose the export format");
-    const question = "Should the export keep the old column order?";
-    await world.op(
-      world.mira.id,
-      "entry.add",
-      { task: ref, kind: "question", text: question },
-      "agent",
-    );
-    await openAgents(page, world);
+    const ask = (ref: string, text: string) =>
+      world.op(world.mira.id, "entry.add", { task: ref, kind: "question", text }, "agent");
+    // Once dismissed, the task is under the day of its change: the step's, Today.
+    await onOneDay(async () => {
+      const ref = await newTask(world, "Choose the export format");
+      const question = "Should the export keep the old column order?";
+      await ask(ref, question);
+      await openAgents(page, world);
+      const waiting = rowIn(page, "Needs you", ref);
+      await expect(waiting).toBeVisible({ timeout: SLOW_MS });
+      await expect(waiting.locator('[data-part="question"]')).toContainText(question);
+      await shots(page, world, "question");
+
+      // Dismissed: it leaves Needs you, and Undo puts it back.
+      await waiting.getByRole("button", { name: "Dismiss" }).click();
+      await expect(waiting).toHaveCount(0, { timeout: SLOW_MS });
+      await expect(rowIn(page, "Today", ref)).toBeVisible();
+      await page.locator('[data-part="toast-action"]').click();
+      await expect(waiting).toBeVisible({ timeout: SLOW_MS });
+
+      // The person's note after the question answers it.
+      await world.op(world.mira.id, "entry.add", {
+        task: ref,
+        kind: "note",
+        text: "Keep the old order until the clinic confirms.",
+      });
+      await expect(waiting).toHaveCount(0, { timeout: SLOW_MS });
+      await page.reload();
+      await expect(rowIn(page, "Today", ref)).toBeVisible({ timeout: SLOW_MS });
+      await expect(waiting).toHaveCount(0);
+    });
+
+    // Two questions on a task that is then finished: both wait, newest first, after a reload too.
+    const ref = await newTask(world, "Send the export to the clinic");
+    await ask(ref, "Which address should it go to?");
+    await ask(ref, "Should it be encrypted?");
+    await world.op(world.mira.id, "task.finish", {
+      task: ref,
+      base: (await read(world, ref)).as_of,
+    });
+    await page.reload();
     const waiting = rowIn(page, "Needs you", ref);
     await expect(waiting).toBeVisible({ timeout: SLOW_MS });
-    await expect(waiting.locator('[data-part="question"]')).toContainText(question);
-    await shots(page, world, "question");
-
-    // Dismissed: it leaves Needs you, and Undo puts it back.
-    await waiting.getByRole("button", { name: "Dismiss" }).click();
-    await expect(waiting).toHaveCount(0, { timeout: SLOW_MS });
-    await expect(rowIn(page, "Today", ref)).toBeVisible();
-    await page.locator('[data-part="toast-action"]').click();
-    await expect(waiting).toBeVisible({ timeout: SLOW_MS });
-
-    // The person's note after the question answers it.
-    await world.op(world.mira.id, "entry.add", {
-      task: ref,
-      kind: "note",
-      text: "Keep the old order until the clinic confirms.",
-    });
+    const asked = waiting.locator('[data-part="question"]');
+    await expect(asked).toContainText("2 questions wait");
+    await expect(asked.locator("li")).toHaveText([
+      /Should it be encrypted\?/u,
+      /Which address should it go to\?/u,
+    ]);
+    await shots(page, world, "questions", "main", waiting);
+    await waiting.getByRole("button", { name: "Dismiss the 2 questions" }).click();
     await expect(waiting).toHaveCount(0, { timeout: SLOW_MS });
     await page.reload();
-    await expect(rowIn(page, "Today", ref)).toBeVisible({ timeout: SLOW_MS });
-    await expect(waiting).toHaveCount(0);
+    await showsSpace(page, world.mira.name);
+    await expect(waiting).toHaveCount(0, { timeout: SLOW_MS });
   });
 });
 
