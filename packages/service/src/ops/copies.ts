@@ -123,7 +123,7 @@ export function spaceChanged(): AppError {
   return new AppError({
     code: "space_unavailable",
     message: "This space was closed, restored or claimed since this page loaded it.",
-    hint: "Load it again to see it as it is now. Nothing more is saved from this page.",
+    hint: "Load it again to see it as it is now. No more changes are saved to this space from this page.",
     data: { reason: "replaced", retryable: false },
   });
 }
