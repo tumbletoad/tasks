@@ -127,9 +127,11 @@ export function verbSpec(entry: AnyEntry, face: CliFace) {
     actors: entry.actors,
     positionals: positional.map((name) => {
       const info = fields.get(name);
+      const readInto = face.readInto?.[name];
       return {
         name,
         field: info?.path ?? name,
+        ...(readInto === undefined ? {} : { readInto }),
         type: info?.scalar,
         required: info?.required ?? false,
         help: info?.description ?? "",

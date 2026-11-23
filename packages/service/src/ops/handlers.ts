@@ -3399,8 +3399,7 @@ const prefWritable = (p: PreferenceSpec, principal: Principal): boolean =>
  * keys separated by commas, a number its digits and a switch true or false. Undefined when it does
  * not fit the key.
  */
-function prefValueOf(p: PreferenceSpec, given: unknown): PrefValue | null | undefined {
-  if (given === null) return null;
+function prefValueOf(p: PreferenceSpec, given: unknown): PrefValue | undefined {
   let value: unknown = given;
   const { shape } = p;
   if (typeof given === "string") {
@@ -3432,7 +3431,7 @@ interface PrefChange {
  * the undo stack: setting the earlier value again changes a key back. The answer says what changed.
  */
 async function prefsSet(call: Call): Promise<unknown> {
-  const items = (call.input["set"] ?? []) as { key: string; value: unknown }[];
+  const items = (call.input["set"] ?? []) as { key: string; value?: unknown; reset?: boolean }[];
   if (items.length === 0) throw invalid("set", "Required to set", "Give a key and its new value.");
   const changes = items.map((item, k): PrefChange => {
     const path = `set.${String(k)}`;
@@ -3457,9 +3456,23 @@ async function prefsSet(call: Call): Promise<unknown> {
     if (!prefWritable(p, call.principal)) {
       throw invalid(`${path}.key`, "Not a key this caller changes");
     }
+    const reset = item.reset === true;
+    if (reset === (item.value !== undefined)) {
+      throw invalid(
+        `${path}.value`,
+        reset ? "Give a value or reset, not both" : "Required to set",
+        "Give the new value, or reset to put the key back to its default.",
+      );
+    }
+    if (reset) return { p, value: null, path };
     const value = prefValueOf(p, item.value);
     if (value === undefined) {
-      throw invalid(`${path}.value`, "Not a value of this key", `It takes ${shapeText(p.shape)}.`);
+      const meantReset = String(item.value).trim().toLowerCase() === "null";
+      throw invalid(
+        `${path}.value`,
+        "Not a value of this key",
+        `It takes ${shapeText(p.shape)}.${meantReset ? " reset puts it back to its default." : ""}`,
+      );
     }
     return { p, value, path };
   });

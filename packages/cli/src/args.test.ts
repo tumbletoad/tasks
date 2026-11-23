@@ -90,12 +90,24 @@ describe("[A2.3.10.cli.parse] arguments from cli-spec.json", () => {
     expect(sections.input).toEqual({ task: "M-14", sections: ["log", "history"] });
   });
 
-  test("[A3.3.4.prefs.set] ttasks prefs set takes a key and its value; get and describe take neither", async () => {
+  test("[A3.3.4.prefs.set] ttasks prefs set takes a key and its value or --reset; get and describe take a key to read", async () => {
     expect((await parse("prefs", ["set", "tasks.effort_scale", "XS,S,M,L,XL"])).input).toEqual({
       action: "set",
       set: [{ key: "tasks.effort_scale", value: "XS,S,M,L,XL" }],
     });
+    expect((await parse("prefs", ["set", "tasks.effort_scale", "--reset"])).input).toEqual({
+      action: "set",
+      set: [{ key: "tasks.effort_scale", reset: true }],
+    });
     expect((await parse("prefs", ["get"])).input).toEqual({ action: "get" });
+    expect((await parse("prefs", ["get", "tasks.statuses"])).input).toEqual({
+      action: "get",
+      keys: ["tasks.statuses"],
+    });
+    expect((await parse("prefs", ["describe", "tasks.*"])).input).toEqual({
+      action: "describe",
+      keys: ["tasks.*"],
+    });
     expect((await parse("prefs", ["get", "--keys", "tasks.*"])).input).toEqual({
       action: "get",
       keys: ["tasks.*"],

@@ -683,7 +683,7 @@
             "additionalProperties": false,
             "properties": {
               "action": {
-                "description": "describe: the keys; get: their values",
+                "description": "describe: the keys; get: their values; set: change them",
                 "enum": [
                   "describe",
                   "get"
@@ -1702,7 +1702,7 @@
             "additionalProperties": false,
             "properties": {
               "action": {
-                "description": "describe: the keys; get: their values",
+                "description": "describe: the keys; get: their values; set: change them",
                 "enum": [
                   "describe",
                   "get"

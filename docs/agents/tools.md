@@ -662,18 +662,19 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | A1 operations | `pref.set` |
 | Faces | MCP `preferences`, CLI `ttasks prefs`, UI |
 | Errors | `invalid_input`, `forbidden`, `conflict`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 359, reported |
+| Definition, estimated tokens | 368, reported |
 | Result budget, estimated tokens | typical 600, max 2000 |
 
 ### Input
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `action` | "describe" \| "get" \| "set"; agents: "describe" \| "get" | yes | describe: the keys; get: their values |
+| `action` | "describe" \| "get" \| "set"; agents: "describe" \| "get" | yes | describe: the keys; get: their values; set: change them |
 | `keys` | (string, max 64)[], max 20 items | no | Keys, or prefixes ending in ".*"; default every key |
 | `set` | object[], 1 to 10 items | no | set: the keys and their new values |
 | `set[].key` | string, max 64 | yes | A key describe lists |
-| `set[].value` | string, max 1024 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64)[], max 20 items \| null | yes | The new value, a list as keys separated by commas; null resets it to its default |
+| `set[].value` | string, max 1024 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64)[], max 20 items | no | The new value, a list as keys separated by commas |
+| `set[].reset` | boolean | no | Put the key back to its default, instead of a value |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 

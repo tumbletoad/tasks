@@ -157,11 +157,12 @@ Usage: `ttasks prefs <action> [<key>] [<value>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `<action>` | `action` | string | describe: the keys; get: their values |
-| `<key>` | `set[].key` | string | A key describe lists |
-| `<value>` | `set[].value` | string | The new value, a list as keys separated by commas; null resets it to its default |
+| `<action>` | `action` | string | describe: the keys; get: their values; set: change them |
+| `<key>` | `set[].key`; `keys` for describe, get | string | A key describe lists |
+| `<value>` | `set[].value` | string | The new value, a list as keys separated by commas |
 | `--keys` | `keys` | string | Keys, or prefixes ending in ".*"; default every key (repeatable) |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
+| `--reset` | `set[].reset` | boolean | Put the key back to its default, instead of a value |
 
 ## `ttasks receipt`
 

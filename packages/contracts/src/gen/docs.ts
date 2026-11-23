@@ -291,9 +291,11 @@ export function cliMd(entries: readonly AnyEntry[], names: DocNames): string {
     }
     lines.push("| Argument | Field | Type | Description |", "|---|---|---|---|");
     for (const p of v.positionals) {
-      lines.push(
-        `| ${code(`<${p.name}>`)} | ${code(p.field)} | ${p.type ?? ""} | ${cell(p.help)} |`,
-      );
+      const field =
+        p.readInto === undefined
+          ? code(p.field)
+          : `${code(p.field)}; ${code(p.readInto)} for ${(v.actions?.reads ?? []).join(", ")}`;
+      lines.push(`| ${code(`<${p.name}>`)} | ${field} | ${p.type ?? ""} | ${cell(p.help)} |`);
     }
     for (const f of v.flags) {
       const flag = f.short === undefined ? code(f.flag) : `${code(f.short)}, ${code(f.flag)}`;

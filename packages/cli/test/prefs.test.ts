@@ -33,6 +33,24 @@ describe("[A3.3.4.prefs.tool] ttasks prefs", () => {
 });
 
 describe("[A3.3.4.prefs.set] ttasks prefs set", () => {
+  test("--reset puts a setting back to its default; a size called null is refused; get <key> reads that key", async () => {
+    expect((await tasks(["prefs", "set", "tasks.effort_scale", "S,M,L,XL"])).code).toBe(0);
+    const typed = await tasks(["prefs", "set", "tasks.effort_scale", "null"]);
+    expect(typed.code).toBe(EXIT_CODES.usage);
+    expect(typed.stderr).toContain("reset puts it back to its default");
+    const got = await tasks(["prefs", "get", "tasks.effort_scale"]);
+    expect(got.code).toBe(0);
+    expect(got.stdout).toBe('tasks.effort_scale: ["S","M","L","XL"]\n');
+    const reset = await tasks(["prefs", "set", "tasks.effort_scale", "--reset"]);
+    expect(reset.code).toBe(0);
+    expect(reset.stdout).toBe('tasks.effort_scale: ["S","M","L","XL"] → ["S","M","L"]\n');
+    expect((await tasks(["prefs", "get", "tasks.effort_scale"])).stdout).toBe(
+      'tasks.effort_scale: ["S","M","L"] (default)\n',
+    );
+    const both = await tasks(["prefs", "set", "tasks.effort_scale", "S,M", "--reset"]);
+    expect(both.code).toBe(EXIT_CODES.usage);
+  });
+
   test("a person sets the effort scale, reads it back and uses a new size at once; a script and an agent's shell are refused", async () => {
     const scale = ["prefs", "set", "tasks.effort_scale", "XS,S,M,L,XL"];
     for (const refused of [

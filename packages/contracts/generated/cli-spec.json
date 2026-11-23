@@ -674,6 +674,14 @@
             "apply",
             "propose"
           ]
+        },
+        {
+          "field": "set[].reset",
+          "flag": "--reset",
+          "help": "Put the key back to its default, instead of a value",
+          "repeat": false,
+          "required": false,
+          "type": "boolean"
         }
       ],
       "inputOnly": [],
@@ -682,7 +690,7 @@
       "positionals": [
         {
           "field": "action",
-          "help": "describe: the keys; get: their values",
+          "help": "describe: the keys; get: their values; set: change them",
           "name": "action",
           "required": true,
           "type": "string",
@@ -696,12 +704,13 @@
           "field": "set[].key",
           "help": "A key describe lists",
           "name": "key",
+          "readInto": "keys",
           "required": false,
           "type": "string"
         },
         {
           "field": "set[].value",
-          "help": "The new value, a list as keys separated by commas; null resets it to its default",
+          "help": "The new value, a list as keys separated by commas",
           "name": "value",
           "required": false,
           "type": "string"

@@ -1324,7 +1324,7 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "describe: the keys; get: their values",
+            "description": "describe: the keys; get: their values; set: change them",
             "enum": [
               "describe",
               "get",
@@ -1371,6 +1371,10 @@
                   "maxLength": 64,
                   "type": "string"
                 },
+                "reset": {
+                  "description": "Put the key back to its default, instead of a value",
+                  "type": "boolean"
+                },
                 "value": {
                   "anyOf": [
                     {
@@ -1392,17 +1396,13 @@
                       },
                       "maxItems": 20,
                       "type": "array"
-                    },
-                    {
-                      "type": "null"
                     }
                   ],
-                  "description": "The new value, a list as keys separated by commas; null resets it to its default"
+                  "description": "The new value, a list as keys separated by commas"
                 }
               },
               "required": [
-                "key",
-                "value"
+                "key"
               ],
               "type": "object"
             },

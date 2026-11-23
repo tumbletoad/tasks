@@ -13,16 +13,16 @@ const LIST_MAX = 20;
 const LIST_TEXT_MAX = 1_024;
 
 /**
- * A preference value in the tool's input: one option per JSON type the tool's keys take, and
- * null, as the schema grammar requires of an input union (A3 3.2.1). The handler then checks the
- * value against its key's own shape in the registry (preferences.ts), never an unrestricted value.
+ * A preference value in the tool's input: one option per JSON type the tool's keys take. The
+ * handler then checks the value against its key's own shape in the registry (preferences.ts),
+ * never an unrestricted value. A reset is `reset`, never a value: on a command line, any word
+ * that meant "the default" would also be a text a key could take.
  */
 const PrefValue = z.union([
   z.string().max(LIST_TEXT_MAX),
   z.int().min(-1_000_000).max(1_000_000),
   z.boolean(),
   z.array(z.string().max(STRING_MAX)).max(LIST_MAX),
-  z.null(),
 ]);
 
 /** A stored or default value in a result: null is a default of none. */
@@ -37,7 +37,9 @@ const PrefValueOutput = z.union([
 export const PREFS_ACTIONS = ["describe", "get", "set"] as const;
 
 export const PrefsManageInput = z.strictObject({
-  action: z.enum(PREFS_ACTIONS).describe("describe: the keys; get: their values"),
+  action: z
+    .enum(PREFS_ACTIONS)
+    .describe("describe: the keys; get: their values; set: change them"),
   keys: z
     .array(z.string().max(64))
     .max(20)
@@ -47,9 +49,8 @@ export const PrefsManageInput = z.strictObject({
     .array(
       z.strictObject({
         key: z.string().max(64).describe("A key describe lists"),
-        value: PrefValue.describe(
-          "The new value, a list as keys separated by commas; null resets it to its default",
-        ),
+        value: PrefValue.describe("The new value, a list as keys separated by commas").optional(),
+        reset: z.boolean().describe("Put the key back to its default, instead of a value").optional(),
       }),
     )
     .min(1)
@@ -106,7 +107,12 @@ export const prefsManage = defineEntry({
   output: PrefsManageResult,
   faces: {
     ui: true,
-    cli: { verb: "prefs", positional: ["action", "key", "value"], item: "set" },
+    cli: {
+      verb: "prefs",
+      positional: ["action", "key", "value"],
+      item: "set",
+      readInto: { key: "keys" },
+    },
     mcp: {
       tool: "preferences",
       title: "Read settings",
