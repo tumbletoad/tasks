@@ -111,6 +111,10 @@ export interface HttpOptions extends HttpStart {
   readonly runs?: UiRunPort;
   /** The Agent Monitor behind the Agents page (monitor/). Default: none, and no such part. */
   readonly monitor?: AppOptions["monitor"];
+  /** The agent sessions TTasks holds, for the monitor's links to tasks. Default: none. */
+  readonly held?: AppOptions["held"];
+  /** How long a running agent must be missed before it is not seen. Default: UNSEEN_MS. */
+  readonly unseenMs?: number;
 }
 
 export interface RunningHttp {
@@ -182,6 +186,8 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
     ...(options.apps === undefined ? {} : { apps: options.apps }),
     ...(options.folders === undefined ? {} : { folders: options.folders }),
     ...(options.monitor === undefined ? {} : { monitor: options.monitor }),
+    ...(options.held === undefined ? {} : { held: options.held }),
+    ...(options.unseenMs === undefined ? {} : { unseenMs: options.unseenMs }),
     ...(options.steady === undefined ? {} : { steady: options.steady }),
   });
   const os = OS_WORD[process.platform] ?? "linux";

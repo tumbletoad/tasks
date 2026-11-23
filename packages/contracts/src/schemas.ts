@@ -419,6 +419,7 @@ export const CompactTaskRow = z.strictObject({
     .optional(),
   run: z
     .strictObject({
+      id: z.string().describe("The run's ID"),
       state: z
         .enum(["working", "needs_you"])
         .describe("Its newest background run works, or ended asking the person"),

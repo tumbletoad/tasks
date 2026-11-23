@@ -31,6 +31,7 @@ import {
   REQUEST_LAUNCHES,
   type PreferenceRead,
 } from "@ttasks/contracts";
+import { sessionRecord } from "@ttasks/launch";
 import type { FoldersHere } from "./here.ts";
 
 /** One statement of a read. Only the parameters the statement names are bound. */
@@ -601,6 +602,111 @@ export async function readTaskRef(
   const [space, row] = await snapshot(reader, [SPACE, BOUND], { bound: id });
   const ref = isPlain(row) ? row["ref"] : undefined;
   return typeof ref === "number" ? formatTaskRef(spaceFacts(space).refPrefix, ref) : undefined;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Agent sessions this machine started
+
+const AGENT_LAUNCHES: Statement = {
+  sql:
+    "SELECT l.id, l.task_id, l.detail, t.ref AS task_ref FROM launches l " +
+    "JOIN tasks t ON t.id = l.task_id AND t.deleted_at IS NULL " +
+    "WHERE l.machine_id = $machine AND l.route = 'terminal' " +
+    "AND (l.updated_at >= $since OR l.id IN (SELECT value FROM json_each($running)))",
+  mode: "all",
+};
+const AGENT_RUNS: Statement = {
+  sql:
+    "SELECT r.id, r.task_id, r.adapter, r.detail, r.ended_at, t.ref AS task_ref FROM runs r " +
+    "JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL " +
+    "WHERE r.machine_id = $machine AND r.started_at IS NOT NULL " +
+    "AND (r.ended_at IS NULL OR r.ended_at >= $since)",
+  mode: "all",
+};
+
+/**
+ * A terminal launch or a background run of this machine, with its agent app, the home it started
+ * the app in and the app's session ID, all as its record holds them.
+ */
+export interface AgentSessionRow {
+  readonly started: "terminal" | "run";
+  /** The `la_` or `ru_` ID. */
+  readonly id: string;
+  readonly task: string;
+  readonly ref: string;
+  readonly provider: "claude" | "codex";
+  /** The agent home's digest, as the click or the run's start recorded it (`homeDigest`). */
+  readonly home: string;
+  /** Claude Code's preset session or Codex's thread for a launch, the reported one for a run. */
+  readonly sessionId: string;
+  /** A launch whose record says its agent ended. */
+  readonly ended: boolean;
+}
+
+const evidenceOf = (detail: unknown): Readonly<Record<string, unknown>> => {
+  try {
+    const parsed: unknown = JSON.parse(String(detail));
+    const evidence = isPlain(parsed) ? parsed["evidence"] : undefined;
+    return isPlain(evidence) ? evidence : {};
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * The terminal launches and background runs of `machine` whose record holds the agent app, its
+ * home and its session ID: those that changed or ended since `since`, and the launches `running`
+ * names whatever their age. A record without its home is left out.
+ */
+export async function readAgentSessions(
+  reader: WorkerConnection,
+  query: { readonly machine: string; readonly since: number; readonly running: readonly string[] },
+): Promise<{ space: SpaceFacts; rows: AgentSessionRow[] }> {
+  const [space, launches, runs] = await snapshot(reader, [SPACE, AGENT_LAUNCHES, AGENT_RUNS], {
+    machine: query.machine,
+    since: query.since,
+    running: JSON.stringify(query.running),
+  });
+  const facts = spaceFacts(space);
+  const rows: AgentSessionRow[] = [];
+  const add = (
+    row: Row,
+    held: Pick<AgentSessionRow, "started" | "provider" | "ended">,
+    evidence: Readonly<Record<string, unknown>>,
+    sessionId: unknown,
+  ): void => {
+    const home = evidence["home"];
+    if (typeof sessionId !== "string" || sessionId === "") return;
+    if (typeof home !== "string" || home === "") return;
+    rows.push({
+      ...held,
+      id: text(row["id"]),
+      task: text(row["task_id"]),
+      ref: formatTaskRef(facts.refPrefix, Number(row["task_ref"])),
+      home,
+      sessionId,
+    });
+  };
+  for (const row of launches as Row[]) {
+    const evidence = evidenceOf(row["detail"]);
+    const ended = sessionRecord(evidence) !== "open";
+    // A terminal launch's session ID says which app it started: the click presets Claude Code's,
+    // and Codex's thread is found in its session files.
+    const preset = evidence["preset"];
+    const thread = evidence["thread"];
+    if (preset !== undefined) {
+      add(row, { started: "terminal", provider: "claude", ended }, evidence, preset);
+    } else if (thread !== undefined) {
+      add(row, { started: "terminal", provider: "codex", ended }, evidence, thread);
+    }
+  }
+  for (const row of runs as Row[]) {
+    const evidence = evidenceOf(row["detail"]);
+    const provider = row["adapter"] === "claude-print" ? "claude" : "codex";
+    const ended = row["ended_at"] !== null;
+    add(row, { started: "run", provider, ended }, evidence, evidence["native_id"]);
+  }
+  return { space: facts, rows };
 }
 
 // ---------------------------------------------------------------------------------------------

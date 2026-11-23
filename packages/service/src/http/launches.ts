@@ -108,6 +108,8 @@ export interface UiRunPort {
   stop(space: string, run: string): Promise<RunRecord | undefined>;
   /** What the run's record cannot say now (RunService.live). */
   live(run: RunRecord): UiRunLive;
+  /** Hears each run a person queues or stops, here or with `ttasks run`. */
+  onChange?(listener: (space: string) => void): () => void;
 }
 
 /** Why a queued run waits, since when a running one is quiet, and what a started one said so far. */
@@ -339,13 +341,16 @@ export interface UiLaunchesOptions {
 /** The page's tiles, receipts and runs, over the hub's launch service and runs. */
 export class UiLaunches {
   readonly #options: UiLaunchesOptions;
-  readonly #unlisten: (() => void) | undefined;
+  readonly #unlisten: readonly (() => void)[];
 
   constructor(options: UiLaunchesOptions) {
     this.#options = options;
-    this.#unlisten = options.port?.onChange?.((space) => {
+    const changed = (space: string): void => {
       options.changed(space);
-    });
+    };
+    this.#unlisten = [options.port?.onChange?.(changed), options.runs?.onChange?.(changed)].filter(
+      (off) => off !== undefined,
+    );
   }
 
   /**
@@ -366,7 +371,7 @@ export class UiLaunches {
   }
 
   close(): void {
-    this.#unlisten?.();
+    for (const off of this.#unlisten) off();
   }
 
   /**
@@ -482,7 +487,6 @@ export class UiLaunches {
       request: words,
       requestId,
     });
-    this.#options.changed(space);
     return uiRun(queued, runs.live(queued));
   }
 
@@ -512,7 +516,6 @@ export class UiLaunches {
     if (after === undefined) {
       throw new AppError({ code: "not_found", message: "No run has this ID in this space." });
     }
-    this.#options.changed(space);
     return uiRun(after);
   }
 

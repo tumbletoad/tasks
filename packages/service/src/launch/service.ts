@@ -57,6 +57,7 @@ import {
   resolveLaunchFolder,
   routeOf,
   sanitiseComposer,
+  instanceHome,
   sanitiseTitle,
   sessionRecord,
   SHIM_METHODS,
@@ -103,7 +104,7 @@ import type { ServedSpace } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
 import type { TaskFolder } from "../ops/read.ts";
-import { agentHomeOf } from "../setup/agents.ts";
+import { agentHomeOf, homeDigest, physicalHome } from "../setup/agents.ts";
 import {
   briefNames,
   chooseRoute,
@@ -761,6 +762,12 @@ export class LaunchService {
         : undefined;
     let planFor: ((reference: string) => SpawnPlan) | undefined;
     let given: ClickGiven = {};
+    // The home the app keeps this launch's session in, as the link to the monitor's agents reads
+    // it later, whatever the instance is configured as by then.
+    const sessionHome =
+      choice.route === "terminal" && instance !== undefined
+        ? instanceHome(instance, this.#options.home, platform)?.path
+        : undefined;
     if (choice.route === "terminal" && instance !== undefined) {
       const chosen = instance;
       const agent = agentHomeOf(chosen, this.#options.home, platform);
@@ -808,6 +815,9 @@ export class LaunchService {
     const note = await this.#saveWords(request, probe);
     const evidence = {
       ...(session === undefined ? {} : { preset: session }),
+      ...(sessionHome === undefined
+        ? {}
+        : { home: homeDigest(platform, await physicalHome(platform, sessionHome)) }),
       ...(probe.composer === "request" && note !== undefined ? { request: note } : {}),
     };
     const click: Omit<NewIntent, "machine"> = {

@@ -11,12 +11,13 @@ import {
   type AgentsNested,
   type AgentsPicture,
   type AgentsSession,
+  type AgentsTask,
   type AgentsView,
   type MonitorFailure,
   type MonitorWindow,
 } from "@ttasks/contracts/monitor";
 
-export type { AgentsAccount, AgentsNested, AgentsSession, AgentsView, MonitorWindow };
+export type { AgentsAccount, AgentsNested, AgentsSession, AgentsTask, AgentsView, MonitorWindow };
 
 type Obj = Readonly<Record<string, unknown>>;
 
@@ -41,9 +42,31 @@ function nestedOf(o: Obj): AgentsNested {
   };
 }
 
+/** A task as the service names it; null for one of another shape, which then links nothing. */
+function taskOf(v: unknown): AgentsTask | null {
+  if (!isObj(v)) return null;
+  const started = v["started"];
+  const fields = [v["space"], v["spaceName"], v["id"], v["ref"], v["of"]];
+  if (
+    !fields.every((f) => typeof f === "string") ||
+    (started !== "run" && started !== "terminal")
+  ) {
+    return null;
+  }
+  return {
+    space: text(v["space"]),
+    spaceName: text(v["spaceName"]),
+    id: text(v["id"]),
+    ref: text(v["ref"]),
+    started,
+    of: text(v["of"]),
+  };
+}
+
 function sessionOf(o: Obj): AgentsSession {
   return {
     key: text(o["key"]),
+    task: taskOf(o["task"]),
     app: word(MONITOR_PROVIDERS, o["app"]),
     appName: text(o["appName"]),
     account: text(o["account"]),
@@ -134,6 +157,7 @@ export function parseAgents(message: Obj): AgentsView | undefined {
           ageMs: Math.max(0, num(p["ageMs"])),
           settling: p["settling"] === true,
           sessions: list(p["sessions"], sessionOf),
+          unseen: list(p["unseen"], (o) => taskOf(o)).filter((t) => t !== null),
           accounts: list(p["accounts"], accountOf),
         };
   return { picture, trouble };

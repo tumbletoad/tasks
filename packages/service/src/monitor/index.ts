@@ -20,3 +20,5 @@ export {
   type Watcher,
 } from "./pace.ts";
 export { pictureOf } from "./picture.ts";
+export { heldSessions, HELD_MS, type HeldSources } from "./held.ts";
+export { linksOf, Unseen, UNSEEN_ANSWERS, UNSEEN_MS, type HeldSession } from "./links.ts";

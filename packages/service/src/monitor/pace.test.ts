@@ -1,10 +1,13 @@
 // The pace's rules that need answers the recorded conversations do not hold: several settling
 // answers in a row, launches that come while an answer is on its way, answers that come after
 // the last tab left, a steady clock that moves on while timers wait (a machine that slept), and a
-// monitor that is slow. The monitor here answers when the test says, and the clock is virtual.
+// monitor that is slow, and an agent TTasks holds that TTAM stops seeing. The monitor here answers
+// when the test says, and the clock is virtual.
 import type { AgentsView, MonitorSnapshot } from "@ttasks/contracts/monitor";
 import { describe, expect, test } from "vitest";
 import { testClock } from "../../test/clock.ts";
+import { homeDigest } from "../setup/agents.ts";
+import type { HeldSession } from "./links.ts";
 import type { MonitorAnswer, MonitorStatus } from "./monitor.ts";
 import { MonitorPace, PACE, type PaceTimerKind } from "./pace.ts";
 
@@ -12,17 +15,37 @@ const LOOKED = { agents: true, visible: true, focused: true };
 const VISIBLE = { agents: true, visible: true, focused: false };
 const GONE = { agents: false, visible: true, focused: true };
 
-const snapshot = (settling: boolean, generation = 1): MonitorSnapshot => ({
+const HOME = process.platform === "win32" ? "C:\\fixture\\claude" : "/fixture/claude";
+const SESSION = "aaaaaaaa-1111-4111-8111-000000000001";
+const TASK = {
+  space: "sp_fixture",
+  spaceName: "Fixture",
+  id: "t_fixture",
+  ref: "F-1",
+  started: "terminal" as const,
+  of: "la_fixture",
+};
+
+const snapshot = (settling: boolean, generation = 1, present = true): MonitorSnapshot => ({
   settling,
   usage: "live",
   generation,
   collectionMs: 500,
-  homes: [],
+  homes: [
+    {
+      id: "claude-test",
+      provider: "claude",
+      providerName: "claude",
+      label: "claude",
+      path: HOME,
+      present,
+    },
+  ],
   agents: [],
   accounts: [],
 });
 
-function setup() {
+function setup(held: () => readonly HeldSession[] = () => [], present = true) {
   const clock = testClock<PaceTimerKind>({ virtual: "all" });
   /** How far the steady clock moved on without any timer firing. */
   let slept = 0;
@@ -44,6 +67,8 @@ function setup() {
     },
     timers: clock.timers,
     now: () => clock.now + slept,
+    held: () => Promise.resolve(held()),
+    platform: process.platform,
   });
   /** A tab: the views it was sent. */
   const tab = () => {
@@ -53,9 +78,15 @@ function setup() {
   const watcher = tab();
   pace.watch(watcher, LOOKED);
   /** Answers the newest request and lets its continuation run. */
-  const reply = async (settling: boolean, generation = 1) => {
-    asks.at(-1)?.resolve({ ok: true, snapshot: snapshot(settling, generation) });
-    await Promise.resolve();
+  const reply = async (
+    settling: boolean,
+    generation = 1,
+    agents: MonitorSnapshot["agents"] = [],
+  ) => {
+    asks
+      .at(-1)
+      ?.resolve({ ok: true, snapshot: { ...snapshot(settling, generation, present), agents } });
+    await new Promise((resolve) => setImmediate(resolve));
   };
   const due = () => {
     const [next] = clock.live({ kind: "monitor_ask" });
@@ -221,5 +252,102 @@ describe("[A5.agents.pace] the slow flag goes with the next answer, never before
     await Promise.resolve();
     expect(s.views.map((v) => v.trouble?.kind ?? null)).toEqual([null, null, "slow", "failed"]);
     expect(s.views.at(-1)?.picture).not.toBeNull();
+  });
+});
+
+describe("[A5.agents.unseen] an agent TTasks holds as running that the monitor does not see", () => {
+  const held = (running = true): HeldSession[] => [
+    {
+      task: TASK,
+      provider: "claude",
+      home: homeDigest(process.platform, HOME),
+      sessionId: SESSION,
+      running,
+    },
+  ];
+  const seen: MonitorSnapshot["agents"] = [
+    {
+      rowId: "row-1",
+      parentRowId: null,
+      kind: "session",
+      provider: "claude",
+      providerName: "claude",
+      homeId: "claude-test",
+      profile: "claude",
+      sessionId: SESSION,
+      childId: null,
+      liveness: "confirmed",
+      name: "Fixture agent",
+      folder: null,
+      activity: "idle",
+      ageMs: null,
+      quietMs: null,
+    },
+  ];
+  const unseen = (s: ReturnType<typeof setup>) => s.views.at(-1)?.picture?.unseen ?? [];
+
+  test("is not seen after two complete answers that miss it over 10 s; a settling one counts neither way", async () => {
+    let running = true;
+    const s = setup(() => held(running));
+    await s.reply(false);
+    expect(unseen(s)).toEqual([]);
+    // Two answers a second apart: an agent that just started may not have written its session.
+    s.clock.advance(s.due() ?? 0);
+    await s.reply(false);
+    expect(unseen(s)).toEqual([]);
+    s.clock.advance(8_000);
+    await s.reply(true);
+    expect(unseen(s)).toEqual([]);
+    s.clock.advance(s.due() ?? 0);
+    await s.reply(false);
+    expect(unseen(s)).toEqual([TASK]);
+    // Seen again, it is linked and no longer unseen; it counts from the start the next time.
+    s.clock.advance(s.due() ?? 0);
+    await s.reply(false, 1, seen);
+    expect(unseen(s)).toEqual([]);
+    expect(s.views.at(-1)?.picture?.sessions[0]?.task).toEqual(TASK);
+    s.clock.advance(20_000);
+    await s.reply(false);
+    expect(unseen(s)).toEqual([]);
+    // An agent TTasks no longer holds as running is never unseen.
+    running = false;
+    s.clock.advance(20_000);
+    await s.reply(false);
+    s.clock.advance(20_000);
+    await s.reply(false);
+    expect(unseen(s)).toEqual([]);
+  });
+
+  test("an agent in a home the monitor does not list, or a background run, is never unseen", async () => {
+    const s = setup(() => [
+      {
+        task: TASK,
+        provider: "claude",
+        home: homeDigest(process.platform, `${HOME}-elsewhere`),
+        sessionId: SESSION,
+        running: true,
+      },
+      {
+        task: { ...TASK, id: "t_run", started: "run", of: "ru_fixture" },
+        provider: "claude",
+        home: homeDigest(process.platform, HOME),
+        sessionId: SESSION,
+        running: true,
+      },
+    ]);
+    for (let i = 0; i < 4; i += 1) {
+      await s.reply(false);
+      s.clock.advance(20_000);
+    }
+    expect(unseen(s)).toEqual([]);
+  });
+
+  test("an agent in a home the monitor reports as not present is never unseen", async () => {
+    const s = setup(() => held(), false);
+    for (let i = 0; i < 4; i += 1) {
+      await s.reply(false);
+      s.clock.advance(20_000);
+    }
+    expect(unseen(s)).toEqual([]);
   });
 });
