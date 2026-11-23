@@ -576,12 +576,11 @@ export class Edits {
    * control showed: what the person saw of them. While an edit of theirs is on its way its value
    * shows, and a newer one behind it does not, so it is what that edit was made against. A row
    * that is the store's row of the task shows it as of the screen's now. A row that is not (held
-   * under focus, kept by an expanded card, read apart from the feed) shows the task as of its own
-   * version: nothing changed it between that version and when the row was read. A row without a
-   * version (a search's) is taken as of the screen's now.
+   * under focus, kept by an expanded card, read apart from the feed, a search's) shows the task as
+   * of its own version: nothing changed it between that version and when the row was read.
    */
   seen(
-    task: Pick<TaskRow, "id" | "ref"> & Partial<Pick<TaskRow, "version">>,
+    task: Pick<TaskRow, "id" | "ref" | "version">,
     fields: readonly string[],
   ): string | undefined {
     for (const field of fields) {
@@ -590,11 +589,8 @@ export class Edits {
     }
     const now = this.#deps.asOf();
     const parts = now === undefined ? null : AS_OF.exec(now);
-    const version = task.version ?? 0;
-    if (parts === null || version <= 0 || this.#deps.rowOf(task.ref)?.version === version) {
-      return now;
-    }
-    return `${String(parts[1])}.${String(version)}.${String(parts[3])}`;
+    if (parts === null || this.#deps.rowOf(task.ref)?.version === task.version) return now;
+    return `${String(parts[1])}.${String(task.version)}.${String(parts[3])}`;
   }
 
   /** Whether a write of the task's is on its way from this tab. */
@@ -924,7 +920,7 @@ export class Edits {
    * Restore from the Trash: one action, with a base, and an Undo that moves it back by its own
    * commit. The toast names where it is back, once the service said.
    */
-  restore(task: Pick<TaskRow, "id" | "ref">): void {
+  restore(task: Pick<TaskRow, "id" | "ref" | "version">): void {
     const sent = this.#sendWith(
       task.id,
       ["deleted"],

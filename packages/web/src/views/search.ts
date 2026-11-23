@@ -11,6 +11,7 @@ import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { filterOf } from "@ttasks/contracts/query-terms";
 import type { Group } from "../groups.ts";
 import type { MessageId } from "../i18n/intl.tsx";
+import { landedOf } from "../store/pending.ts";
 import type { Page, PageSource } from "../store/queries.ts";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
 import type { HeldRow } from "./TaskList.tsx";
@@ -34,15 +35,18 @@ export type FoundRow = TaskRow & { readonly found: Found; readonly foundEffort?:
 
 /**
  * A search row as a task row: its area and project found by name among the live ones, because a
- * search row names them and carries no IDs. It has no creation time or version either, so it is
- * older than any feed row and the feed's row replaces it. A task deleted or redacted since the
- * search ran keeps its place in the service's list, but has nothing to show.
+ * search row names them and carries no IDs. It carries no version of its own: `read`, the space's
+ * position its page was read at, stands for it. The task did not change between its version and
+ * that read, so a change based on the row conflicts with any change since, and a feed row newer
+ * than the read replaces it. A task deleted or redacted since the search ran keeps its place in the
+ * service's list, but has nothing to show.
  */
 export function rowOfFound(
   row: SearchRow,
   found: Found,
   areas: ReadonlyMap<string, AreaRow>,
   projects: ReadonlyMap<string, ProjectRow>,
+  read: number,
 ): FoundRow | undefined {
   if (row.kind !== "task") return undefined;
   const area = [...areas.values()].find((a) => a.title === row.area);
@@ -73,7 +77,7 @@ export function rowOfFound(
     position: "",
     ...(row.completed === undefined ? {} : { completed_on: row.completed }),
     created_at: 0,
-    version: 0,
+    version: read,
     found,
     ...(row.effort === undefined ? {} : { foundEffort: row.effort }),
   };
@@ -83,7 +87,8 @@ export interface SourceOptions {
   readonly search: Search;
   readonly q: string;
   readonly found: Found;
-  readonly rowOf: (row: SearchRow, found: Found) => FoundRow | undefined;
+  /** A row of a page read at `read`, the space's position. */
+  readonly rowOf: (row: SearchRow, found: Found, read: number) => FoundRow | undefined;
   /** Read every page at once (the open tasks), else one page per call. */
   readonly all?: boolean;
 }
@@ -104,8 +109,10 @@ export function searchSource(options: SourceOptions): PageSource<FoundRow> {
         : await search({ cursor: cursor });
       first = false;
       cursor = page.cursor;
+      // A page whose position the page cannot read stands for nothing seen: any change conflicts.
+      const read = landedOf(page)?.seq ?? 0;
       for (const row of page.rows) {
-        const shown = rowOf(row, found);
+        const shown = rowOf(row, found, read);
         if (shown !== undefined) rows.push(shown);
       }
       if (options.all !== true && rows.length >= limit) break;

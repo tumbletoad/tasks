@@ -86,6 +86,7 @@ const styles = classes(css, [
   "icon",
   "tile",
   "body",
+  "unresolved",
   "edit",
   "remote",
   "move",
@@ -107,6 +108,11 @@ export interface RowProps {
   readonly read?: boolean;
   /** The last read of its runs failed: the thread says so until a read goes through. */
   readonly runsFailed?: boolean;
+  /**
+   * How the task is now is not known (a fresh snapshot left it out): it is being read again, or
+   * that read failed. The row shows what it last knew and offers nothing that changes the task.
+   */
+  readonly unresolved?: "reading" | "failed";
   readonly ctx: RowContext;
   readonly expanded: boolean;
   /** The row in the tab order (the roving tabindex). */
@@ -138,6 +144,7 @@ function Slots({
   task,
   tab,
   expanded,
+  still,
   actions,
   t,
 }: {
@@ -145,6 +152,8 @@ function Slots({
   readonly task: TaskRow;
   readonly tab: number;
   readonly expanded: boolean;
+  /** The row offers nothing that changes the task, nor a launch. */
+  readonly still: boolean;
   readonly actions: RowActions;
   readonly t: Translate;
 }) {
@@ -234,11 +243,11 @@ function Slots({
           aria-pressed={model.starred}
           // A finished task takes no edit (A5 3.11), nor one in the Trash: its star would only be
           // refused.
-          aria-disabled={task.lifecycle !== "active" || task.deleted_at !== undefined || undefined}
+          aria-disabled={still || task.lifecycle !== "active" || undefined}
           data-tip={t("row.star")}
           tabIndex={tab}
           onClick={() => {
-            if (task.lifecycle === "active") actions.star(task, !model.starred);
+            if (!still && task.lifecycle === "active") actions.star(task, !model.starred);
           }}
         >
           <StarIcon />
@@ -268,7 +277,7 @@ function Slots({
         </span>
       ) : null}
       <span className={`${styles.slot} ${styles.launch}`}>
-        {launch.state === "none" ? null : (
+        {launch.state === "none" || still ? null : (
           <button
             type="button"
             className={styles.tile}
@@ -504,6 +513,7 @@ function RowView({
   runs,
   read = true,
   runsFailed = false,
+  unresolved,
   ctx,
   expanded,
   current,
@@ -521,10 +531,11 @@ function RowView({
 }: RowProps) {
   const t = useT();
   const intl = useIntl();
-  // A task in the Trash is for reading until it is restored: its row and its card get only the
-  // actions that read (actions.ts).
+  // A task in the Trash is for reading until it is restored, and one whose state is not known
+  // until it is read again: its row gets only the actions that read (actions.ts).
   const trashed = task.deleted_at !== undefined;
-  const actions = trashed ? readOnly(given) : given;
+  const still = trashed || unresolved !== undefined;
+  const actions = still ? readOnly(given) : given;
   const place = placeFact(task.place);
   const marker = agentMarker(task.run, instances, task.questions?.[0]);
   const { live } = useContext(Session);
@@ -552,7 +563,7 @@ function RowView({
   // and during this tab's own hold, its undo.
   const active = task.lifecycle === "active";
   const checked = leaving === undefined ? !active : leaving.done;
-  const checkable = !trashed && (leaving === undefined ? active : leaving.by === undefined);
+  const checkable = !still && (leaving === undefined ? active : leaving.by === undefined);
   const completedTip =
     leaving?.by === undefined
       ? undefined
@@ -569,7 +580,7 @@ function RowView({
   // service changes. Editing expands the row, so the card is what is being edited.
   const [editing, setEditing] = useState(false);
   // In the Trash the title is read, never edited: a kept one waits there with Copy and Discard.
-  const editable = active && !trashed;
+  const editable = active && !still;
   // The row the person moved out of the view (A5 3.5): while focus holds it there with the data it
   // had (3.15 item 6), its move is done, so the button goes. Newer data (an undo) brings it back.
   const [movedFrom, setMovedFrom] = useState<TaskRow | undefined>(undefined);
@@ -767,7 +778,15 @@ function RowView({
             />
           ) : null}
         </div>
-        <Slots model={model} task={task} tab={tab} expanded={expanded} actions={actions} t={t} />
+        <Slots
+          model={model}
+          task={task}
+          tab={tab}
+          expanded={expanded}
+          still={still}
+          actions={actions}
+          t={t}
+        />
         <span id={described} hidden>
           {intl.formatList(
             model.description.map((m) => sayMsg(t, m)),
@@ -778,6 +797,13 @@ function RowView({
       {beneath === undefined ? null : <div className={styles.beneath}>{beneath}</div>}
       {expanded ? (
         <div className={styles.body} id={body} role="region" aria-label={task.title}>
+          {unresolved === undefined ? null : (
+            <p className={styles.unresolved} role="status" data-part="unresolved">
+              {t(unresolved === "reading" ? "task.rereading" : "task.rereadFailed")}
+            </p>
+          )}
+          {/* Kept while hidden: what the person typed and the thread read stay for when it is
+              known again. */}
           <Expanded
             task={task}
             receipts={receipts}
@@ -785,6 +811,7 @@ function RowView({
             runs={runs}
             read={read}
             runsFailed={runsFailed}
+            hidden={unresolved !== undefined}
             instances={instances}
             actions={actions}
             refused={refused}

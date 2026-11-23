@@ -348,6 +348,8 @@
   "task.learning": "Learning",
   "task.stale": "This task could not be read again. What shows may be out of date.",
   "task.gone": "This task no longer exists.",
+  "task.rereading": "This task changed while the page was away. Reading it again.",
+  "task.rereadFailed": "This task changed while the page was away, and it could not be read again. It is read again in a minute.",
   "task.collapse": "Collapse",
   "task.title": "Title",
 
