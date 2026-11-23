@@ -289,6 +289,11 @@ export const RUN_REASONS = {
      * service ("Interrupted because TTasks restarted"). The record keeps the last saved answer.
      */
     "service_ended",
+    /**
+     * The space was claimed or restored in place from a backup that held the run open: it belongs to
+     * the space as it was, so it is neither started nor resumed. The record keeps what it had.
+     */
+    "restored",
     // The outcome's reasons other than `success` (OUTCOME_REASONS).
     "agent_error",
     "interrupted",

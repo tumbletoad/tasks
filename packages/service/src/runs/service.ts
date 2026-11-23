@@ -2,7 +2,8 @@
 // it is also when the service moves itself into its unit's `main` cgroup), which decides only how a
 // run's processes are ended: in a process group where one can be made, else as far as TTasks can
 // find them. Then for each space open as this machine's a run host over its execution store, whose
-// recovery settles the space's open runs before any of them is hosted again; and over all of them
+// recovery settles the space's open runs before any of them is hosted again (and those a claim or a
+// restore in place brought back from a backup for good, never to start or go on); and over all of them
 // one supervisor, which starts queued runs within machine.toml's `[runs]` limits, holds new starts
 // while an update waits, and removes old run folders.
 import { dirname, join } from "node:path";
@@ -45,7 +46,13 @@ import { DEFAULT_RUN_SETTINGS, type RunSettings } from "../config/machine-toml.t
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
 import type { ServedSpace } from "../ops/index.ts";
-import { readLaunchTask, readRunRows, readTaskRef, type TaskFolder } from "../ops/read.ts";
+import {
+  readLaunchTask,
+  readRestoredRuns,
+  readRunRows,
+  readTaskRef,
+  type TaskFolder,
+} from "../ops/read.ts";
 import {
   buildRun,
   runAdapter,
@@ -832,7 +839,9 @@ export class RunService {
     await this.probe();
     const closed = (): boolean => life.closed;
     if (closed()) throw new Error("The space's host was closed");
-    await host.recover();
+    const reader = served.reader;
+    if (reader === undefined) throw new Error("The space has no reader");
+    await host.recover(await readRestoredRuns(reader, id));
     if (closed()) throw new Error("The space's host was closed");
     this.#lanes.set(space, { space, machine, host });
     return { host, machine };
