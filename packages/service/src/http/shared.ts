@@ -4,5 +4,5 @@
 // service's check of a built page. It loads no storage: the CLI never imports storage (A2 3.10.4).
 export { PROBE_NONCE, probeProof, verifyProbe } from "./auth.ts";
 export { PROBE_PATH, hostsOf, originsOf } from "./checks.ts";
-export { blockedMessage, movedMessage } from "./messages.ts";
+export { blockedMessage, movedMessage, portUnsaved, unsavedMessage } from "./messages.ts";
 export { metaContent, startTags, tagsNamed, type StartTag } from "./tags.ts";

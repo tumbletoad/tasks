@@ -7,7 +7,7 @@
 // run that cannot ask (no terminal, or `--json`) and has neither flag changes nothing and exits 2.
 import { createInterface } from "node:readline/promises";
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
-import { blockedMessage, movedMessage } from "../http/messages.ts";
+import { blockedMessage, movedMessage, portUnsaved, unsavedMessage } from "../http/messages.ts";
 import {
   autostartLine,
   applyPlan,
@@ -227,7 +227,15 @@ function runningText(outcome: StartOutcome, plain = false): string {
     outcome.outcome === "already_running" && !plain
       ? `${PRODUCT_NAME}'s service already runs`
       : `${PRODUCT_NAME}'s service runs`;
-  return `${head}: ${s.state}, PID ${String(s.pid)}, version ${s.version} (${s.build}), started by ${s.manager}.\n`;
+  return `${head}: ${s.state}, PID ${String(s.pid)}, version ${s.version} (${s.build}), started by ${s.manager}.\n${portText(s)}`;
+}
+
+/** After a start: the line that the UI's port could not be saved, when it could not. */
+function portText(s: StartOutcome["status"]): string {
+  const http = s.http;
+  return http !== null && http !== undefined && http.port !== null && portUnsaved(http)
+    ? `${unsavedMessage(http.port)}\n`
+    : "";
 }
 
 function restartedText(outcome: RestartOutcome): string {
@@ -238,7 +246,7 @@ function restartedText(outcome: RestartOutcome): string {
       : outcome.was !== null && outcome.was !== s.version
         ? `${PRODUCT_NAME}'s service restarted on version ${s.version} (it ran ${outcome.was} before)`
         : `${PRODUCT_NAME}'s service restarted on version ${s.version}`;
-  return `${head}: ${s.state}, PID ${String(s.pid)}, build ${s.build}, started by ${s.manager}.\n`;
+  return `${head}: ${s.state}, PID ${String(s.pid)}, build ${s.build}, started by ${s.manager}.\n${portText(s)}`;
 }
 
 /** Status's line when the running service is not the version `current` names. */
@@ -273,7 +281,6 @@ function spacesText(spaces: readonly { readonly state: string }[]): string {
     : listed;
 }
 
-/** The UI line of status: the listener's address, or A2 3.8.2's moved line or blocked message. */
 /** Whether background runs can be contained here; nothing for a service that hosts none. */
 function runsText(runs: Extract<ServiceAnswer, { answers: true }>["runs"]): string | undefined {
   if (runs === null) return undefined;
@@ -283,12 +290,17 @@ function runsText(runs: Extract<ServiceAnswer, { answers: true }>["runs"]): stri
     : `without a process group, so Stop ends what ${PRODUCT_NAME} can find. ${runs.message}`;
 }
 
+/**
+ * The UI line of status: the listener's address, or A2 3.8.2's moved line or blocked message, and
+ * the address with the line that its port could not be saved.
+ */
 function uiText(http: Extract<ServiceAnswer, { answers: true }>["http"]): string {
   if (http === null) return "no listener";
   if (http.blocked !== null) return blockedMessage(http.port);
   if (http.port === null) return "no listener";
   if (http.moved && http.persisted !== null) return movedMessage(http.persisted, http.port);
-  return `http://127.0.0.1:${String(http.port)}`;
+  const address = `http://127.0.0.1:${String(http.port)}`;
+  return portUnsaved(http) ? `${address}. ${unsavedMessage(http.port)}` : address;
 }
 
 /** `ttasks service status` for people. */

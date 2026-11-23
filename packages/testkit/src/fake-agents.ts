@@ -1,17 +1,8 @@
-// Fake `claude` and `codex` commands for the tests of `ttasks setup agents` (A3 3.13, M2.14): small
-// Node scripts laid out as npm installs, so detection finds them on a scratch PATH and runs them as
-// `node <entry>` on every OS (A4 3.2), and setup runs them as real processes.
-//
-// They do what the real CLIs did in lab run A (A7 3.7, rows A01 and A02), and only in a
-// scratch user home:
-// - `claude mcp add --scope user <name> -- <command> [args…]` sets `mcpServers.<name>` to
-//   `{type: "stdio", command, args, env: {}}` in `.claude.json` (in CLAUDE_CONFIG_DIR, else the user
-//   home) and rewrites the whole file as two-space JSON, as Claude Code does. `claude mcp remove
-//   <name> --scope user` deletes the key and keeps `mcpServers`, empty or not.
-// - `codex mcp add <name> -- <command> [args…]` appends `[mcp_servers.<name>]` with `command` and
-//   `args` to `$CODEX_HOME/config.toml` (made when missing) and keeps every other byte, as Codex's
-//   format-keeping editor does; `codex mcp remove <name>` cuts that table with its keys and the
-//   blank line before it, and leaves a file that add made empty, as lab run A saw.
+// Fake `claude` and `codex` commands for the tests of detection and `ttasks doctor` (A3 3.14, M4.05):
+// small Node scripts laid out as npm installs, so detection finds them on a scratch PATH and runs
+// them as `node <entry>` on every OS (A4 3.2), and doctor runs them as real processes. They read the
+// entries setup wrote (`.claude.json` in CLAUDE_CONFIG_DIR, else the user home, and
+// `$CODEX_HOME/config.toml`), and only in a scratch user home:
 // - `--version` prints a version in each tool's form.
 // - `claude mcp get <name>` and `codex mcp get <name> --json` exit 0 and describe the entry when it
 //   is there, 1 when it is not (doctor's `mcp` and `codex.engines` checks, M4.05).
@@ -25,8 +16,8 @@
 // A fake refuses to run unless FAKE_AGENT_HOME names the scratch user home, and refuses a file
 // outside it, so a test can never reach a real home. Each run appends one JSON line to
 // FAKE_AGENT_LOG: the tool, its arguments and the home variables it saw. FAKE_AGENT_FAIL=<tool>
-// makes that tool's `mcp` commands exit 1 before writing; `<tool>:add-after` makes its `mcp add`
-// write, then exit 1; `<tool>:get` makes its `mcp get` fail as an engine that rejects the file.
+// makes that tool's `mcp` commands exit 1; `<tool>:get` makes its `mcp get` fail as an engine that
+// rejects the file.
 import {
   chmodSync,
   existsSync,
@@ -55,18 +46,6 @@ const log = (tool) => {
   fs.appendFileSync(out, JSON.stringify({ tool, args, env }) + "\n");
 };
 const failModes = (process.env.FAKE_AGENT_FAIL ?? "").split(",");
-const nameAndCommand = (from) => {
-  const sep = args.indexOf("--");
-  const head = args.slice(from, sep === -1 ? args.length : sep);
-  const tail = sep === -1 ? [] : args.slice(sep + 1);
-  let scope = "local";
-  const names = [];
-  for (let i = 0; i < head.length; i += 1) {
-    if (head[i] === "--scope" || head[i] === "-s") scope = head[(i += 1)];
-    else names.push(head[i]);
-  }
-  return { scope, names, tail };
-};
 const readStdin = () => {
   try { return fs.readFileSync(0, "utf8"); } catch { return ""; }
 };
@@ -146,23 +125,7 @@ if (args[1] === "get") {
   process.stdout.write(args[2] + ":\n  Type: stdio\n");
   process.exit(0);
 }
-const write = (doc) => fs.writeFileSync(file, JSON.stringify(doc, null, 2));
-const { scope, names, tail } = nameAndCommand(2);
-if (scope !== "user" || names.length !== 1) process.exit(2);
-const name = names[0];
-const doc = read();
-if (args[1] === "add") {
-  if (tail.length === 0) process.exit(2);
-  doc.mcpServers ??= {};
-  if (Object.hasOwn(doc.mcpServers, name)) process.exit(1);
-  doc.mcpServers[name] = { type: "stdio", command: tail[0], args: tail.slice(1), env: {} };
-  write(doc);
-} else if (args[1] === "remove") {
-  if (!doc.mcpServers || !Object.hasOwn(doc.mcpServers, name)) process.exit(1);
-  delete doc.mcpServers[name];
-  write(doc);
-} else process.exit(2);
-process.exit(args[1] === "add" && modes.includes("claude:add-after") ? 1 : 0);
+process.exit(2);
 `;
 
 const CODEX = String.raw`${COMMON}
@@ -172,17 +135,20 @@ const home = process.env.CODEX_HOME || path.join(base, ".codex");
 const file = path.join(home, "config.toml");
 if (!inside(file)) process.exit(98);
 const modes = failModes.filter((f) => f.startsWith("codex"));
-// The keys of one server's table, read the way this fake writes it (JSON-compatible values).
+// The keys of one server's table, as setup writes them: JSON-compatible values, and a literal
+// string ('…', what TOML editors write for a Windows path) as its text.
 const tableOf = (name) => {
   if (!fs.existsSync(file)) return undefined;
-  const all = fs.readFileSync(file, "utf8").split(/\r?\n/);
+  const all = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "").split(/\r?\n/);
   const at = all.findIndex((line) => line.trim() === "[mcp_servers." + name + "]");
   if (at === -1) return undefined;
   const table = {};
   for (let i = at + 1; i < all.length && !all[i].trimStart().startsWith("["); i += 1) {
     const kv = /^\s*([A-Za-z0-9_]+)\s*=\s*(.+?)\s*$/.exec(all[i]);
     if (!kv) continue;
-    try { table[kv[1]] = JSON.parse(kv[2]); } catch { table[kv[1]] = kv[2]; }
+    const raw = kv[2];
+    if (/^'[^']*'$/.test(raw)) { table[kv[1]] = raw.slice(1, -1); continue; }
+    try { table[kv[1]] = JSON.parse(raw); } catch { table[kv[1]] = raw; }
   }
   return table;
 };
@@ -207,31 +173,7 @@ if (args[1] === "get") {
     transport: { type: "stdio", command, args: serverArgs ?? [] }, ...rest }) + "\n");
   process.exit(0);
 }
-const { names, tail } = nameAndCommand(2);
-if (names.length !== 1) process.exit(2);
-const header = "[mcp_servers." + names[0] + "]";
-const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
-const lines = text === null ? [] : text.split(/(?<=\n)/);
-const at = lines.findIndex((line) => line.trim() === header);
-if (args[1] === "add") {
-  if (tail.length === 0) process.exit(2);
-  if (at !== -1) process.exit(1);
-  const eol = text !== null && text.includes("\r\n") ? "\r\n" : "\n";
-  const q = (s) => JSON.stringify(s);
-  const block = header + eol + "command = " + q(tail[0]) + eol +
-    "args = [" + tail.slice(1).map(q).join(", ") + "]" + eol;
-  const next = text === null || text === "" ? block : text + (text.endsWith("\n") ? "" : eol) + eol + block;
-  fs.mkdirSync(home, { recursive: true });
-  fs.writeFileSync(file, next);
-} else if (args[1] === "remove") {
-  if (at === -1) process.exit(1);
-  let end = at + 1;
-  while (end < lines.length && !lines[end].trimStart().startsWith("[")) end += 1;
-  const start = at > 0 && lines[at - 1].trim() === "" ? at - 1 : at;
-  lines.splice(start, end - start);
-  fs.writeFileSync(file, lines.join(""));
-} else process.exit(2);
-process.exit(args[1] === "add" && modes.includes("codex:add-after") ? 1 : 0);
+process.exit(2);
 `;
 
 export interface FakeAgentCall {

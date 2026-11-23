@@ -15,8 +15,10 @@ export {
   makeDir,
   removeStaleTemps,
   setModeOf,
+  stageFile,
   writeAll,
   type MakeDirOptions,
+  type StagedFile,
 } from "@ttasks/files";
 export { isPrivateDir, judgePath, type Judged };
 
