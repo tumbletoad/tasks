@@ -858,7 +858,16 @@ async function preview(
     io.stdout(`${String(n)}. ${title(view)}\n`);
     const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
     io.stdout(`   ${view.home.file} (${hash})\n`);
-    if (change === undefined) {
+    const rowless =
+      view.state === "registered" &&
+      input.rows !== undefined &&
+      !input.rows.some(
+        (r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home),
+      );
+    if (rowless) {
+      changes += 1;
+      io.stdout(`   registered, and its access is off: apply gives it its access again.\n`);
+    } else if (change === undefined) {
       const reason = view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home)}`;
       io.stdout(`   ${STATE_TEXT[view.state]}${reason}. Nothing to do.\n`);
     } else if (typeof change === "string") {

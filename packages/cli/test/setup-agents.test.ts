@@ -217,6 +217,29 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
       ).toEqual(["unchanged", "unchanged"]);
       expect((await rows()).map((r) => r.grant).sort()).toEqual(granted.map((r) => r.grant).sort());
 
+      // A registered home whose access went: the preview says that its apply gives it again.
+      const person = await classSession(home, service.endpoint.path, "cli-interactive");
+      try {
+        const codexRow = granted.find((r) => r.app === "codex");
+        await person.call(
+          "setup/home_revoke",
+          { grants: [codexRow?.grant] },
+          { timeoutMs: 30_000 },
+        );
+      } finally {
+        person.close();
+      }
+      const off = await run(["setup", "agents"], false);
+      expect(off.stdout).toContain(
+        "registered, and its access is off: apply gives it its access again.",
+      );
+      expect(off.stdout).toContain("To make this change, run:");
+      const back = JSON.parse((await run(["setup", "agents", "--json"], false)).stdout) as {
+        apply: string[];
+      };
+      expect((await run([...back.apply.slice(1), "--json"])).code).toBe(0);
+      expect((await rows()).map((r) => r.app).sort()).toEqual(["claude-code", "codex"]);
+
       // Remove: refused for a script, then the user's takes back entries and rows.
       expect((await run(["setup", "agents", "--remove", "--json"], false)).code).toBe(5);
       const removed = await run(["setup", "agents", "--remove"]);
