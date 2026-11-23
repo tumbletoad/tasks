@@ -960,7 +960,7 @@ function linksNamed(
     throw new AppError({
       code: "not_found",
       message: "No source of the task has this ID, key or URL.",
-      hint: "ttasks show <task> --section sources lists them with their IDs.",
+      hint: "Read the task's sources for their IDs (ttasks show <task> --section sources).",
       data: { issues: [{ path: at, message: "Names no source of the task" }] },
     });
   });
