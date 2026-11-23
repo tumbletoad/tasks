@@ -296,6 +296,18 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(after.result?.text).toBe("answer 1");
   });
 
+  test("End by force after what was left ended by itself: nothing was ended, and the cleanup says so", async () => {
+    const { run, read } = await oneRun();
+    await run(start(), say(true), { kind: "fork", pick: 0 }, { kind: "stick", pick: 0 });
+    await run({ kind: "exit", pick: 0, code: 0 }, tick(18_000));
+    expect(await read()).toMatchObject({ state: "unknown", reason: "stop_timed_out" });
+    await run({ kind: "leave", pick: 0 }, { kind: "forceEnd", pick: 0 }, tick(1_000));
+    expect(await read()).toMatchObject({
+      state: "succeeded",
+      result: { text: "answer 1", cleanup: "confirmed" },
+    });
+  });
+
   test("a start that gives no PID within 60 s: what it makes later is ended, and the run fails", async () => {
     const { run, read, world, history } = await oneRun();
     await run(start("hang"), tick(59_000));

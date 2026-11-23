@@ -414,17 +414,17 @@ export class RunHost {
   }
 
   /**
-   * End by force, for an `unknown` run: ends whatever is left in its container by its name and
-   * settles the run once the container is confirmed empty, or with no process group once its agent
-   * is gone, and records how its processes ended. A run whose container may still be starting
-   * cannot be confirmed yet and stays `unknown`.
+   * End by force, for an `unknown` run: looks whether anything is left in its container, ends
+   * what is, and settles the run once the container is confirmed empty, or with no process group
+   * once its agent is gone. The record says whether anything had to be ended. A run whose container
+   * may still be starting cannot be confirmed yet and stays `unknown`.
    */
   async forceEnd(id: string): Promise<RunRecord | undefined> {
     const run = await this.#machine.read(id);
     if (run?.state !== "unknown") return run;
     const flow = this.#flows.get(id);
     if (flow?.startPending === true) return run;
-    const cleanup = endedBy(await this.#recoverContainer(id, kindOf(run)));
+    const { cleanup } = await this.#endLeft(run);
     if (cleanup === undefined) return run;
     const end =
       flow?.pending === undefined

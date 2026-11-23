@@ -70,6 +70,8 @@ export type Event =
   | { kind: "stop"; pick: number }
   | { kind: "stick"; pick: number }
   | { kind: "release"; pick: number }
+  /** What the agent started ends by itself, a stuck process too. */
+  | { kind: "leave"; pick: number }
   | { kind: "forceEnd"; pick: number }
   | { kind: "tick"; ms: number }
   | { kind: "arm"; after: number; late: boolean }
@@ -451,6 +453,13 @@ export class World {
         break;
       case "release":
         if (box !== undefined) box.stuck = false;
+        break;
+      case "leave":
+        if (box !== undefined) {
+          box.stuck = false;
+          box.procs = box.agentAlive ? 1 : 0;
+          this.#maybeEnd(box);
+        }
         break;
       case "forceEnd":
         if (id !== undefined) quiet(host.forceEnd(id));
