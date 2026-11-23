@@ -19,9 +19,10 @@
 // - The answer is kept whole up to 1 MiB, also after megabytes of other output, and each answer
 //   is saved to the run's folder as it comes, so a crash of the service keeps the last one.
 // - When the service ends, its runs' processes end with it (the container's own guarantee). A
-//   service that closes saves what each agent said so far first, the words of an answer still
-//   being written included. The next start settles each open run from its saved work: its own
-//   result when the work had settled, else `service_ended` with the last saved answer.
+//   service that closes saves each agent's work first: its own end when it had settled, else what
+//   it said so far, the words of an answer still being written included. The next start settles
+//   each open run from its saved work: its own result when the work had settled, else
+//   `service_ended` with the last saved answer.
 // - A late PID, exit or event never revives a stopped run: the record's rules (machine.ts) refuse
 //   it, and a container that starts after its run gave up on it is killed.
 //
@@ -426,19 +427,24 @@ export class RunHost {
     );
   }
 
-  /** Saves what a working agent said so far: its output ends here, and its driver settles with it. */
+  /**
+   * Saves what a working agent said: the work's own end when it settled, else what it said so far,
+   * since its output ends here and its driver settles with that. A run whose end is being recorded
+   * saved it already.
+   */
   async #keepSaid(flow: Flow): Promise<void> {
     const session = flow.session;
-    // Settled work is the run's own to save, with its outcome.
-    if (session === undefined || (await settledNow(session)) !== undefined) return;
-    session.ended({ code: null, signal: null });
-    const work = await settledNow(session);
-    if (work === undefined || work.text === null) return;
+    if (session === undefined || flow.settling) return;
+    const own = await settledNow(session);
+    if (own === undefined) session.ended({ code: null, signal: null });
+    const work = own ?? (await settledNow(session));
+    if (work === undefined || (own === undefined && work.text === null)) return;
     try {
       this.#files.saveAnswer(flow.id, {
         text: work.text,
         final: work.textFinal,
         cut: work.textCut,
+        ...(own === undefined ? {} : { outcome: own.outcome, error: own.error }),
       });
     } catch (error) {
       this.#failed("answer", error);
