@@ -250,6 +250,8 @@ export interface StartOptions {
     readonly command: () => Promise<MonitorCommand>;
     /** Its deadlines, for tests that hold it in a state. Default: MONITOR_TIMES. */
     readonly times?: Partial<MonitorTimes>;
+    /** How long a running agent must be missed before it is not seen. Default: UNSEEN_MS. */
+    readonly unseenMs?: number;
   };
 }
 
@@ -1150,6 +1152,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         },
         monitor,
         held,
+        ...(options.monitor?.unseenMs === undefined ? {} : { unseenMs: options.monitor.unseenMs }),
         db: grantsDb.db,
         grants: grantsDb.grants,
         log: httpLog,

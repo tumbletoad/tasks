@@ -5497,6 +5497,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.agents.e2e.links",
+      "title": "In Chromium and Firefox, against the fake ttam reporting the sessions of four tasks the person opened in the fake agent: each task shows once as its row, in Needs you, Working or With an agent under Idle by its agent's state, the one the monitor does not report under Not seen by TTAM, the agent of no task alone under On this computer; a picture that is not current mutes those rows where they are; the second space lists them with a link that opens the task in its own space; each in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.agents.privacy",
       "title": "Nothing the Agent Monitor reports leaves the page and the service: none of a session's title, folder, account, plan, session ID or process in the service's log while a tab watches, and no session ID, home path or process in what the page is sent",
       "owner": "M6",

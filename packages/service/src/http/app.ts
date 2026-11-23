@@ -119,6 +119,8 @@ export interface AppOptions {
   readonly monitor?: Pick<Monitor, "ask" | "recheck" | "status">;
   /** The agent sessions TTasks holds, which link the monitor's agents to tasks. Default: none. */
   readonly held?: () => Promise<readonly HeldSession[]>;
+  /** How long a running agent must be missed before it is not seen. Default: UNSEEN_MS. */
+  readonly unseenMs?: number;
   /** A steady clock in ms, for the monitor's pace and ages. Default: performance.now(). */
   readonly steady?: () => number;
 }
@@ -297,6 +299,7 @@ export class HttpApp {
             now: options.steady ?? (() => performance.now()),
             platform: options.ops.platform ?? process.platform,
             ...(options.held === undefined ? {} : { held: options.held }),
+            ...(options.unseenMs === undefined ? {} : { unseenMs: options.unseenMs }),
           });
     this.feed = new FeedHub({
       host: options.ops,

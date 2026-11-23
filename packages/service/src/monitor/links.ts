@@ -90,6 +90,11 @@ export const UNSEEN_MS = 10_000;
 export class Unseen {
   /** Per join: the complete answers in a row that missed it, and when the first of them came. */
   #missed = new Map<string, { readonly count: number; readonly since: number }>();
+  readonly #ms: number;
+
+  constructor(ms: number = UNSEEN_MS) {
+    this.#ms = ms;
+  }
 
   /** The agents not seen now, `snapshot` the newest answer, `now` on the steady clock. */
   next(
@@ -114,7 +119,7 @@ export class Unseen {
       }
       const miss = { count: (before?.count ?? 0) + 1, since: before?.since ?? now };
       missed.set(key, miss);
-      const gone = miss.count >= UNSEEN_ANSWERS && now - miss.since >= UNSEEN_MS;
+      const gone = miss.count >= UNSEEN_ANSWERS && now - miss.since >= this.#ms;
       if (gone && !out.some((t) => sameTask(t, h.task))) out.push(h.task);
     }
     this.#missed = missed;

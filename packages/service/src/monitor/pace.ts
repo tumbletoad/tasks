@@ -80,6 +80,8 @@ export interface PaceOptions {
   readonly held?: () => Promise<readonly HeldSession[]>;
   /** Whose path rules join TTasks' agent homes to TTAM's. */
   readonly platform: NodeJS.Platform;
+  /** How long a running agent must be missed before it is not seen. Default: UNSEEN_MS. */
+  readonly unseenMs?: number;
 }
 
 /** The newest answer, with the tasks its agents work on. */
@@ -94,7 +96,7 @@ export class MonitorPace {
   readonly #options: PaceOptions;
   readonly #watching = new Map<Watcher, Watching>();
   #newest: Newest | undefined;
-  readonly #unseen = new Unseen();
+  readonly #unseen: Unseen;
   #problem: MonitorProblem | undefined;
   /** When the last answer came, of either kind: the rest counts from it. */
   #answeredAt: number | undefined;
@@ -111,6 +113,7 @@ export class MonitorPace {
 
   constructor(options: PaceOptions) {
     this.#options = options;
+    this.#unseen = new Unseen(options.unseenMs);
   }
 
   /** A tab's facts, as it sent them. */
