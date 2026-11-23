@@ -1236,6 +1236,35 @@ describe("[A4.5.terminal.windows-default] Windows' Default terminal application,
     expect(reads).toBe(2);
   });
 
+  test("a launch can start a terminal only where one of its chain has its program here", async () => {
+    const startable = (platform: NodeJS.Platform, host: TerminalHost) =>
+      new TerminalLauncher({
+        platform,
+        settings: settings(),
+        install: "0123456789",
+        shimCommand: [platform === "win32" ? WIN_TASKS : LINUX_TASKS],
+        host: () => Promise.resolve(host),
+        systemdRun: undefined,
+        spawn: recorder({}).spawn,
+        sleep: instant,
+      }).startable({});
+    // A Linux desktop whose terminal has no adapter, and none that has one.
+    const alacritty = "/usr/bin/alacritty";
+    expect(
+      await startable("linux", fakeHost("linux", [alacritty], { terminalVar: alacritty })),
+    ).toBe(false);
+    expect(
+      await startable("linux", fakeHost("linux", [alacritty, GNOME], { terminalVar: alacritty })),
+    ).toBe(true);
+    // Windows: the console's PowerShell, when it is there.
+    expect(
+      await startable("win32", fakeHost("win32", [POWERSHELL], { powershell: POWERSHELL })),
+    ).toBe(true);
+    expect(await startable("win32", fakeHost("win32", [], { powershell: POWERSHELL }))).toBe(false);
+    // macOS: no adapter yet.
+    expect(await startable("darwin", fakeHost("darwin", []))).toBe(false);
+  });
+
   test("a terminal chosen while the service runs is the one the next launch starts", async () => {
     const wt = "C:\\Apps\\wt.exe";
     const spawned = recorder({ [POWERSHELL]: { exit: 0 }, [wt]: { exit: 0 } });

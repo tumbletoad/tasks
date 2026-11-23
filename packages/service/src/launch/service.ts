@@ -734,7 +734,7 @@ export class LaunchService {
       instance = this.#instances().find((i) => i.id === request.instance);
       if (instance === undefined) throw this.#unavailable("not_set_up");
       try {
-        choice = this.#route(instance, space);
+        choice = await this.#routeNow(instance, space);
       } catch (error) {
         if (error instanceof LaunchUnavailable) this.#log("launch.unavailable", error.reason);
         throw error;
@@ -1095,13 +1095,25 @@ ${instance}`;
   }
 
   /** The route an instance takes for a task of `space` here now (chooseRoute). */
-  #route(instance: Instance, space: string): Choice {
+  #route(instance: Instance, space: string, terminal = this.#terminalReady()): Choice {
     return chooseRoute(instance, {
-      terminal: this.#terminalReady(),
+      terminal,
       home: this.#options.home,
       platform: this.#options.platform,
       space: this.#spaceOf(space),
     });
+  }
+
+  /**
+   * The route an Open takes: #route, where a terminal counts only when one of the launch's chain
+   * can start here now. The tiles do not look, since that reads the desktop.
+   */
+  async #routeNow(instance: Instance, space: string): Promise<Choice> {
+    const choice = this.#route(instance, space);
+    if (choice.route !== "terminal" || this.#options.terminal !== undefined) return choice;
+    const session = await this.environment.session().catch(() => ({}));
+    const found = await this.terminals.startable(session).catch(() => false);
+    return found ? choice : this.#route(instance, space, false);
   }
 
   /** The space as an instance's `spaces` name it: its ID, and its name when it is served. */
@@ -1203,7 +1215,7 @@ ${instance}`;
     if (request.instance !== undefined) {
       const instance = this.#instances().find((i) => i.id === request.instance);
       try {
-        choice = instance === undefined ? undefined : this.#route(instance, space);
+        choice = instance === undefined ? undefined : await this.#routeNow(instance, space);
       } catch {
         choice = undefined;
       }

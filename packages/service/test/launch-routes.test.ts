@@ -131,7 +131,26 @@ interface RigMore {
   }[];
   /** The person's own environment as the agent's base (a `user` base), on top of the test's. */
   readonly person?: Readonly<Record<string, string>>;
+  /**
+   * The terminal adapters over a desktop where none can start: on Linux the default terminal has
+   * no adapter (Alacritty) and no other is installed; on Windows neither console nor Windows
+   * Terminal is there.
+   */
+  readonly noTerminal?: boolean;
 }
+
+/** The desktop of RigMore's `noTerminal`: only a terminal TTasks has no adapter for. */
+const ALACRITTY = "/usr/bin/alacritty";
+const noTerminalHost = (_session: unknown, path: readonly string[]) => ({
+  platform: process.platform,
+  path,
+  terminalVar: WINDOWS ? undefined : ALACRITTY,
+  home: WINDOWS ? "C:\\Users\\mira" : "/home/mira",
+  windowsApps: undefined,
+  executable: (program: string) => program === ALACRITTY,
+  readText: () => undefined,
+  realpath: (program: string) => program,
+});
 
 /**
  * A lab whose machine.toml has the fake Claude Code and Codex as instances: Claude Code with full
@@ -155,7 +174,17 @@ async function rig(label: string, opener: number | "hang" = 0, more: RigMore = {
     writeFileSync(join(bin.root, "gio"), "#!/bin/sh\nexit 0\n");
     chmodSync(join(bin.root, "gio"), 0o755);
   }
+  const terminals = {
+    spawn: recordingSpawner(opener),
+    systemdRun: SYSTEMD_RUN,
+    // The recording spawner's hang never ends: what is proved is the answer once the
+    // deadline passes, not the deadline's length (opener.test.ts covers that).
+    ...(opener === "hang" ? { openerMs: 200 } : {}),
+    ...(more.noTerminal === true ? { host: noTerminalHost } : {}),
+  };
   const lab = await ShimLab.create(label, {
+    // The real adapters in place of the lab's terminal, which always starts the shim.
+    ...(more.noTerminal === true ? { adapters: terminals } : {}),
     toml: (root) => {
       codexHome = join(root, "codex-home");
       const withReport = (name: string, extra: Record<string, string> = {}) => {
@@ -211,13 +240,7 @@ async function rig(label: string, opener: number | "hang" = 0, more: RigMore = {
       ...(more.person === undefined
         ? {}
         : { environment: new FixedEnvironment({ kind: "user", env: testEnv(more.person) }) }),
-      terminals: {
-        spawn: recordingSpawner(opener),
-        systemdRun: SYSTEMD_RUN,
-        // The recording spawner's hang never ends: what is proved is the answer once the
-        // deadline passes, not the deadline's length (opener.test.ts covers that).
-        ...(opener === "hang" ? { openerMs: 200 } : {}),
-      },
+      terminals,
     },
     ...(WINDOWS
       ? {}
@@ -1095,6 +1118,26 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
         data: { field: "instance", reason: "not_for_space" },
       });
       expect(r.lab.folders.size).toBe(started);
+    },
+  );
+
+  test(
+    "through the service: where no terminal of the launch's chain can start, a permission opens through the link with the prompt unsent and is named",
+    { timeout: 300_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("chosen-no-terminal", 0, {
+        noTerminal: true,
+        instances: [{ id: "claude-plan", prompt: "prefill", open_permission: "read-only" }],
+      });
+      const task = await addTask(r, "Fixture no terminal");
+      const { result } = await open(r, { task: task.ref, instance: "claude-plan" });
+      // The rig gives every instance its fake's env: the link cannot carry that either.
+      expect(result.launch).toMatchObject({
+        route: "link",
+        left_out: ["read-only", "environment"],
+      });
+      await waitFor(() => (opened.length > 0 ? true : undefined), LONG_MS, "the link's opener");
     },
   );
 
