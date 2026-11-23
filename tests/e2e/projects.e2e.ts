@@ -2,7 +2,7 @@
 // already, a project's folder changed with the folders inside it following, a task's own folder
 // set and cleared, and Open refused on its folder with the way on in place. Every change is undone
 // from its toast or with Ctrl+Z. Scratch folders of this run only.
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
@@ -440,6 +440,59 @@ test.describe("[A7.3.12.m5-14.e2e.screens] New project, the chooser and the fold
       }
       expect(await violations(page)).toEqual([]);
     }
+  });
+});
+
+test.describe("[A7.3.12.e2e.pictures-hide-machine] Pictures for review hide this machine's folders and drives", () => {
+  test("a picture of the open New project dialog has its folder field and list masked, and the rest shown", async ({
+    page,
+    world,
+  }) => {
+    test.skip(!pictures(), "this browser takes no pictures");
+    await signedIn(page, world, `/s/${world.mira.id}/today`);
+    await newProject(page).click();
+    const dialog = page.getByRole("dialog", { name: "New project" });
+    await expect(dialog.getByRole("option", { name: "Home (~)" })).toBeVisible();
+    const centre = async (part: Locator) => {
+      const box = await part.boundingBox();
+      if (box === null) throw new Error("the part is not shown");
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    };
+    const points = {
+      list: await centre(dialog.getByRole("listbox")),
+      field: await centre(folderField(dialog)),
+      heading: await centre(dialog.getByRole("heading", { name: "New project" })),
+    };
+    await picture(page, "masked.png");
+    const png = readFileSync(test.info().outputPath("masked.png")).toString("base64");
+    // The picture is read back in a page of its own, without the product's CSP.
+    const reader = await page.context().newPage();
+    const colours = await reader.evaluate(
+      async ({ png, points, scale }) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${png}`;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext("2d");
+        if (context === null) throw new Error("no canvas");
+        context.drawImage(image, 0, 0);
+        return Object.fromEntries(
+          Object.entries(points).map(([name, p]) => {
+            const [r, g, b] = context.getImageData(p.x * scale, p.y * scale, 1, 1).data;
+            return [name, [r, g, b]];
+          }),
+        );
+      },
+      { png, points, scale: await page.evaluate(() => devicePixelRatio) },
+    );
+    await reader.close();
+    // Playwright paints a mask in magenta.
+    const masked = [255, 0, 255];
+    expect(colours["list"]).toEqual(masked);
+    expect(colours["field"]).toEqual(masked);
+    expect(colours["heading"]).not.toEqual(masked);
   });
 });
 

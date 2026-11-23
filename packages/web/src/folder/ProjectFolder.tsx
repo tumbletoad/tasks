@@ -82,6 +82,7 @@ export function ProjectFolder({ project }: { readonly project: string }) {
         <span className={styles.words} title={here.folder}>
           <span
             className={`${styles.path} ${here.state === "missing" ? styles.muted : ""}`}
+            data-machine=""
             dir="ltr"
           >
             {here.folder}
@@ -96,7 +97,11 @@ export function ProjectFolder({ project }: { readonly project: string }) {
           ) : null}
         </span>
       ) : (
-        <span className={`${styles.words} ${styles.muted}`} dir="auto">
+        <span
+          className={`${styles.words} ${styles.muted}`}
+          data-machine={elsewhere.length > 0 ? "" : undefined}
+          dir="auto"
+        >
           {elsewhere.length > 0
             ? t("folder.onlyElsewhere", { machine: elsewhere.join(", ") })
             : t("folder.noneHere")}

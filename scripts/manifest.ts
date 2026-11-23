@@ -337,6 +337,56 @@ export function collectE2e(root: string = repoRoot): Collection {
   return { tests, files: [...new Set(tests.map((t) => t.file))].sort(), errors };
 }
 
+/**
+ * The tests whose titles carry an ID in their source text, listed without loading any file:
+ * Vitest's static listing reads the repository in seconds, where loading every file to collect it
+ * takes minutes on CI. A title built as its file runs is not seen here.
+ */
+export async function taggedTestsInSource(root: string = repoRoot): Promise<CollectedTest[]> {
+  const vitest = await createVitest({
+    root,
+    watch: false,
+    reporters: [],
+    includeTaskLocation: true,
+  });
+  try {
+    const { testModules } = await vitest.collect(undefined, { staticParse: true });
+    return testModules.flatMap((module) =>
+      [...module.children.allTests()]
+        .filter((test) => idsInTitle(test.fullName).length > 0)
+        .map((test) => ({
+          name: test.fullName,
+          file: relative(root, module.moduleId).replaceAll("\\", "/"),
+          ...(test.location ? { line: test.location.line } : {}),
+        })),
+    );
+  } finally {
+    await vitest.close();
+  }
+}
+
+/**
+ * The ID check `pnpm check` can make in a few seconds: every test it ran, and every other test
+ * whose ID is in its source and every end-to-end test, carries IDs the manifest holds. A merge can
+ * keep a test whose entry the branch took out, in a file the change does not reach.
+ */
+export async function checkIdsQuickly(
+  ran: readonly CollectedTest[],
+  root: string = repoRoot,
+): Promise<{ errors: string[]; tests: number }> {
+  const manifest = parseManifest(
+    JSON.parse(readFileSync(join(root, "tests", "manifest.json"), "utf8")),
+  );
+  const ranFiles = new Set(ran.map((t) => t.file));
+  const others = (await taggedTestsInSource(root)).filter((t) => !ranFiles.has(t.file));
+  const e2e = collectE2e(root);
+  const tests = [...ran, ...others, ...e2e.tests];
+  return {
+    errors: [...manifest.errors, ...e2e.errors, ...checkIds(manifest.entries, tests)],
+    tests: tests.length,
+  };
+}
+
 /** Reads tests/manifest.json and checks every test and test file against it. */
 export async function verifyManifest(
   root: string = repoRoot,
