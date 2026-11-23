@@ -1,21 +1,21 @@
 // The skeleton page when answers arrive late (A7 3.9 M2.13; A5 3.6, 3.9, 3.13), in Chromium and
 // Firefox against the real service process. Each held answer is the service's real answer, given to
-// the page only later, the way a slow connection would.
+// the page only later, the way a slow connection would; where the test needs it to be an answer
+// read EARLIER than something, it makes it one, and never counts on the machine being fast or slow.
 import { expect, type Route } from "@playwright/test";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import { signIn } from "./page.ts";
 import { SLOW_MS } from "./world.ts";
 
-/** Holds the service's answer to the first request a route sees, until `release`. */
-function holdFirst() {
+/**
+ * Holds the service's answer to the first request a route sees, until `release`, and gives it as
+ * `earlier` makes it: the answer as the service read it a moment before.
+ */
+function holdFirst(earlier: (body: string) => string) {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
-  });
-  let caught!: (body: string) => void;
-  const held = new Promise<string>((resolve) => {
-    caught = resolve;
   });
   let delivered!: () => void;
   const given = new Promise<void>((resolve) => {
@@ -29,12 +29,12 @@ function holdFirst() {
     }
     first = false;
     const response = await route.fetch();
-    caught(await response.text());
+    const body = earlier(await response.text());
     await gate;
-    await route.fulfill({ response });
+    await route.fulfill({ response, body });
     delivered();
   };
-  return { handler, held, release, given };
+  return { handler, release, given };
 }
 
 test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () => {
@@ -54,22 +54,25 @@ test.describe("[A7.3.9.m2-13.e2e.races] Late answers and repeated clicks", () =>
     await Promise.all([page.waitForResponse("**/api/v1/launch/list"), main.click()]);
     await expect(main).toHaveAttribute("aria-expanded", "true");
 
-    // The first receipt list after the click answers only after the session runs.
-    const list = holdFirst();
+    // The first receipt list after the click answers only after the session runs, and as the
+    // service read it before this launch's session ran: an answer read after that would change
+    // nothing when it comes late, and which of the two the service gives depends on how fast the
+    // machine is. The seeded space holds no running session, so a running one is this launch's.
+    const list = holdFirst((body) => {
+      const read = JSON.parse(body) as {
+        result: { receipts: { instance: string; session?: string }[] };
+      };
+      read.result.receipts = read.result.receipts.filter(
+        (r) => !(r.instance === FAKE_INSTANCE.key && r.session === "running"),
+      );
+      return JSON.stringify(read);
+    });
     await page.route("**/api/v1/launch/list", list.handler);
     const before = world.terminal().length;
     const strip = row
       .getByRole("toolbar")
       .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` });
     await strip.click();
-    // The held answer was read before the fake shim confirmed: it shows this launch in an earlier
-    // state. The seeded space may hold older receipts of the task, Confirmed ones included, from
-    // other instances (testkit's seedMira), so only the fake instance's receipts count.
-    const held = JSON.parse(await list.held) as {
-      result: { receipts: { instance: string; state: string }[] };
-    };
-    const ours = held.result.receipts.filter((r) => r.instance === FAKE_INSTANCE.key);
-    expect(ours.map((r) => r.state)).not.toContain("confirmed");
     // This launch's entry: the seeded space holds no running session.
     const running = row.locator('[data-entry][data-state="running"]');
     await expect(running).toBeVisible({ timeout: SLOW_MS });
