@@ -262,10 +262,11 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
     await expect.poll(async () => (await read(world, ref)).task.due).toBe(agents);
 
     // Undo: the field is the agent's now, so nothing is overwritten unseen. The toast says who
-    // changed which task.
+    // changed it, and what Restore mine would write over what.
     await page.locator("main").focus();
     await page.keyboard.press("Control+z");
-    await expect(toast(page)).toHaveText(new RegExp(`^Not undone: .+ changed ${ref} since$`, "u"));
+    await expect(toast(page)).toContainText("changed the due date at");
+    await expect(toast(page)).toContainText("Restore mine puts back");
     await expect(toastAction(page)).toHaveText("Restore mine");
     await bothWidths(page, "undo-restore-mine");
     expect((await read(world, ref)).task.due).toBe(agents);

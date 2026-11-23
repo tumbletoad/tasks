@@ -242,6 +242,8 @@ interface Problem {
   readonly commit?: string;
   /** An undo's or a redo's: who changed which task since. */
   readonly newer: readonly NewerWorkEntry[];
+  /** A refused redo's: every change it tried. */
+  readonly passed: readonly string[];
 }
 
 /**
@@ -302,6 +304,7 @@ function problemOf(error: unknown): Problem | undefined {
     conflicts,
     ...(typeof commit === "string" && commit !== "" ? { commit } : {}),
     newer: newerOf(record["newer_work"]),
+    passed: Array.isArray(record["passed_over"]) ? record["passed_over"].map(String) : [],
   };
 }
 
@@ -441,6 +444,33 @@ export const whoOf = (by: string): { who: string; by: string } => ({
 function listText({ shown, more }: ShortList, name: (item: string) => string | Msg): Msg {
   const [a = "", b = "", c = ""] = shown.map(name);
   return { id: "toast.list", values: { count: shown.length + more, a, b, c, rest: more } };
+}
+
+/**
+ * What Restore mine writes over, as its toast says it (A5 3.12): who changed the one field and
+ * when, and for a field whose values read as words, what the person's change wrote, what is there
+ * now and what Restore mine puts back. A title's values stay out: a long title does not fit a toast.
+ */
+function restoreText(conflict: Conflict): Msg {
+  const values = {
+    ...whoOf(conflict.by),
+    field: { id: fieldWords(conflict.field) } as Msg,
+    at: Date.parse(conflict.at),
+  };
+  const shown = (key: "value" | "wrote" | "restore") =>
+    Object.hasOwn(conflict, key) ? restoreChange(conflict.field, conflict[key])?.shown : undefined;
+  const now = shown("value");
+  const wrote = shown("wrote");
+  const back = shown("restore");
+  if (
+    conflict.field === "title" ||
+    now === undefined ||
+    wrote === undefined ||
+    back === undefined
+  ) {
+    return { id: "toast.conflict", values };
+  }
+  return { id: "toast.conflictValues", values: { ...values, now, wrote, restore: back } };
 }
 
 /**
@@ -1379,8 +1409,10 @@ export class Edits {
 
   /**
    * An undo or redo the service refused. A conflict says who changed which tasks since and offers
-   * the one action that fits: "Restore mine" when every field of the change conflicts, "Undo the
-   * rest" when only some do (A5 3.12). A redo has no partial form.
+   * the one action that fits (A5 3.12): "Restore mine" when it would write one field of one
+   * change, which its toast names with the values, "Undo the rest" when only some of an undo's
+   * fields conflict. Anything wider the person settles on the task: one click never writes over
+   * several changes of others. A redo has no partial form.
    */
   #historyFailed(
     kind: "undo" | "redo",
@@ -1427,7 +1459,8 @@ export class Edits {
       return;
     }
     const fields = new Set(conflicts.map((c) => c.field));
-    const restore = this.#restoreOf(conflicts);
+    const one = conflicts.length === 1 && problem.passed.length <= 1;
+    const restore = one ? this.#restoreOf(conflicts) : undefined;
     const known = commit === undefined ? undefined : this.#fieldsOf.get(commit);
     // Only some of the change's fields conflict: the rest can be undone and the others kept.
     const some = kind === "undo" && known !== undefined && known.some((f) => !fields.has(f));
@@ -1456,7 +1489,7 @@ export class Edits {
     }
     say({
       kind: "error",
-      text,
+      text: restoreText(first),
       action: {
         label: { id: "toast.restoreMine" },
         run: () => {

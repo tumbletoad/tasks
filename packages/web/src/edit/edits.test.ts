@@ -1169,16 +1169,17 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     });
     await w.edits.undo();
     const shown = w.lastToast();
-    // Which task and who: the person looks at the task.
+    // The one field Restore mine writes: who changed it, what the person set, what is there now
+    // and what Restore mine puts back.
     expect(shown?.text).toMatchObject({
-      id: "toast.notDone",
+      id: "toast.conflictValues",
       values: {
-        kind: "undo",
-        who: {
-          id: "toast.list",
-          values: { count: 1, a: { id: "toast.whoName", values: { by: "Codex" } } },
-        },
-        tasks: { id: "toast.list", values: { count: 1, a: "M-1" } },
+        who: "other",
+        by: "Codex",
+        field: { id: "field.due" },
+        wrote: "2026-11-13",
+        now: "2026-11-22",
+        restore: "2026-11-17",
       },
     });
     expect(shown?.action?.label).toEqual({ id: "toast.restoreMine" });
@@ -1426,6 +1427,100 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     });
     await w.edits.undo();
     expect(said(w.lastToast()?.text)).toBe("Not undone: the import changed it since");
+  });
+
+  test("a refused redo over two steps offers nothing: one click never writes over two changes", async () => {
+    const w = new World([task(1), task(2, { priority: 2 })]);
+    const by = { by: "Codex · work", at: "2026-11-12T10:42:00.000Z" };
+    w.answer("history.redo", () => {
+      throw appError("conflict", {
+        cause: "UNDO_CONFLICT",
+        commit: `op_${"11".padStart(26, "0")}`,
+        passed_over: [`op_${"11".padStart(26, "0")}`, `op_${"12".padStart(26, "0")}`],
+        conflicts: [
+          { task: "M-1", field: "title", value: "Theirs", wrote: "Mine", restore: "Mine", ...by },
+          { task: "M-2", field: "priority", value: 3, wrote: 1, restore: 1, ...by },
+        ],
+        newer_work: [work("M-1", "Codex · work"), work("M-2", "Codex · work")],
+      });
+    });
+    await w.edits.redo();
+    const shown = w.lastToast();
+    expect(said(shown?.text)).toBe("Not redone: Codex · work changed M-1 and M-2 since");
+    expect(shown?.action).toBeUndefined();
+  });
+
+  test("a refused redo of one change with one field shows that field, their value and the person's, and Restore mine writes only that", async () => {
+    const w = new World([task(1, { priority: 3 })]);
+    w.answer("history.redo", () => {
+      throw appError("conflict", {
+        cause: "UNDO_CONFLICT",
+        commit: `op_${"11".padStart(26, "0")}`,
+        passed_over: [`op_${"11".padStart(26, "0")}`],
+        conflicts: [
+          {
+            task: "M-1",
+            field: "priority",
+            value: 3,
+            wrote: 1,
+            restore: 1,
+            version: 12,
+            by: "Codex · work",
+            at: "2026-11-12T10:42:00.000Z",
+          },
+        ],
+        newer_work: [work("M-1", "Codex · work")],
+      });
+    });
+    await w.edits.redo();
+    const shown = w.lastToast();
+    expect(said(shown?.text)).toMatch(
+      /^Codex · work changed the priority at .+: you set P1, it is now P3\. Restore mine puts back P1\.$/,
+    );
+    expect(shown?.action?.label).toEqual({ id: "toast.restoreMine" });
+    w.answer("task.update", () => ({
+      result: "updated",
+      task: "M-1",
+      fields: ["priority"],
+      as_of: w.asOf(11),
+      warnings: [],
+    }));
+    const before = w.calls.length;
+    shown?.action?.run();
+    await flush();
+    expect(w.calls.slice(before)).toEqual([
+      expect.objectContaining({
+        name: "task.update",
+        input: expect.objectContaining({ task: "t_00001", set: { priority: 1 } }) as unknown,
+      }),
+    ]);
+  });
+
+  test("an undo whose two fields an agent changed since offers no Restore mine: the toast cannot show what it would write", async () => {
+    const w = new World([task(1)]);
+    const by = { by: "Codex · work", at: "2026-11-12T10:42:00.000Z" };
+    w.answer("history.undo", () => {
+      throw appError("conflict", {
+        cause: "UNDO_CONFLICT",
+        commit: `op_${"11".padStart(26, "0")}`,
+        conflicts: [
+          { task: "M-1", field: "priority", value: 3, wrote: 1, restore: 4, ...by },
+          {
+            task: "M-1",
+            field: "due",
+            value: { due_date: "2026-11-22", due_at: null, due_tz: null },
+            wrote: { due_date: "2026-11-13", due_at: null, due_tz: null },
+            restore: { due_date: "2026-11-17", due_at: null, due_tz: null },
+            ...by,
+          },
+        ],
+        newer_work: [work("M-1", "Codex · work")],
+      });
+    });
+    await w.edits.undo();
+    const shown = w.lastToast();
+    expect(said(shown?.text)).toBe("Not undone: Codex · work changed M-1 since");
+    expect(shown?.action?.label).not.toEqual({ id: "toast.restoreMine" });
   });
 
   test("a redo that passed over older changes says who changed which tasks, beside Redone, and its Undo takes back the change redone", async () => {
