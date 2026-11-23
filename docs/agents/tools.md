@@ -673,7 +673,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `keys` | (string, max 64)[], max 20 items | no | Keys, or prefixes ending in ".*"; default every key |
 | `set` | object[], 1 to 10 items | no | set: the keys and their new values |
 | `set[].key` | string, max 64 | yes | A key describe lists |
-| `set[].value` | string, max 64 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64)[], max 20 items \| null | yes | The new value, a list as keys separated by commas; null resets it to its default |
+| `set[].value` | string, max 1024 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64)[], max 20 items \| null | yes | The new value, a list as keys separated by commas; null resets it to its default |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 
