@@ -66,7 +66,7 @@ export interface FolderWrites {
   clearTask(task: { readonly ref: string }, base?: string): Promise<Written>;
   setProject(project: string, folder: string, base?: string): Promise<Written>;
   clearProject(project: string, base?: string): Promise<Written>;
-  /** A project for `folder` (none: a project without a folder) in the area named `area`. */
+  /** A project for `folder` (none: a project without a folder) in `area`: an area's ID, or a new area's name. */
   addProject(input: {
     readonly folder?: string;
     readonly name: string;

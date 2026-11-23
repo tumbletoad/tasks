@@ -699,6 +699,7 @@
   "project.newArea": "New area",
   "project.newAreaName": "New area's name",
   "project.areaPlaceholder": "Client work",
+  "project.areaArchived": "An archived area is named {area}. Unarchive it to add the project there, or name another area.",
   "project.add": "Add project",
   "project.noFolder": "Without a folder",
   "project.open": "Open {project}",

@@ -5,12 +5,14 @@ import { useNavigate } from "@tanstack/react-router";
 import { useContext, useId, useMemo, useState, type SyntheticEvent } from "react";
 import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { classes } from "../app/css.ts";
+import { useUnarchive } from "../app/Archived.tsx";
 import { useToast } from "../app/frame.ts";
 import setup from "../app/Setup.module.css";
 import { Session } from "../context.ts";
 import { liveGroups } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
+import { sameName } from "../task/areaNames.ts";
 import type { Live } from "../live.ts";
 import { chosenFolder } from "./chooser.ts";
 import { FolderFacts, refusalText } from "./FolderDialog.tsx";
@@ -88,18 +90,29 @@ export function AddProject({
   const [text, setText] = useState("");
   const [look, setLook] = useState<FolderLook>();
   const [name, setName] = useState<string>();
-  const [area, setArea] = useState(
-    (areas.some((a) => a.id === preset) ? preset : undefined) ?? areas[0]?.id ?? NEW_AREA,
-  );
+  const [area, setArea] = useState(preset ?? areas[0]?.id ?? NEW_AREA);
   const [newArea, setNewArea] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const unarchive = useUnarchive();
 
   const folder = chosenFolder(text);
   const exact = look?.text === text ? look.exact : undefined;
   const named = name ?? exact?.name ?? "";
-  const areaName =
-    area === NEW_AREA ? newArea.trim() : (state.areas.get(area)?.title ?? newArea.trim());
+  // The area the list shows is the one the project goes in: the one chosen while it is live, else
+  // the first live one. The request names it by its ID, so no other area of its name is meant.
+  const shown =
+    area === NEW_AREA || areas.some((a) => a.id === area) ? area : (areas[0]?.id ?? NEW_AREA);
+  const typed = newArea.trim();
+  const sent = shown === NEW_AREA ? typed : shown;
+  // A new area's name that an archived area has would put the project in that area, out of sight:
+  // the dialog says so and adds nothing there until the person brings the area back.
+  const shelved =
+    shown !== NEW_AREA || typed === "" || areas.some((a) => sameName(a.title, typed))
+      ? undefined
+      : [...state.areas.values()].find(
+          (a) => a.lifecycle === "archived" && sameName(a.title, typed),
+        );
 
   const open = (project: string, areaOf: string | undefined) => {
     onClose();
@@ -111,9 +124,9 @@ export function AddProject({
   };
 
   const add = (withFolder: boolean) => {
-    if (busy) return;
+    if (busy || shelved !== undefined) return;
     if (withFolder && folder === undefined) return;
-    if (areaName === "") {
+    if (sent === "") {
       setError(t("project.needsArea"));
       return;
     }
@@ -127,7 +140,7 @@ export function AddProject({
       .addProject({
         ...(withFolder && folder !== undefined ? { folder } : {}),
         name: named,
-        area: areaName,
+        area: sent,
       })
       .then(
         async (written) => {
@@ -187,9 +200,17 @@ export function AddProject({
                   className={sheet.quiet}
                   onPress={() => {
                     const project = exact.project;
-                    if (project !== undefined) {
-                      open(project.id, live.getState().projects.get(project.id)?.area_id);
+                    if (project === undefined) return;
+                    const areaOf = live.getState().projects.get(project.id)?.area_id;
+                    if (areaOf !== undefined) {
+                      open(project.id, areaOf);
+                      return;
                     }
+                    onClose();
+                    void navigate({
+                      to: "/s/$space/project/$project",
+                      params: { space, project: project.id },
+                    });
                   }}
                 >
                   {t("project.open", { project: exact.project.name })}
@@ -221,7 +242,7 @@ export function AddProject({
                 <select
                   id={areaId}
                   className={sheet.input}
-                  value={area}
+                  value={shown}
                   onChange={(event) => {
                     setArea(event.target.value);
                     setError(undefined);
@@ -235,7 +256,7 @@ export function AddProject({
                   <option value={NEW_AREA}>{t("project.newArea")}</option>
                 </select>
               )}
-              {area === NEW_AREA || areas.length === 0 ? (
+              {shown === NEW_AREA ? (
                 <input
                   type="text"
                   className={sheet.input}
@@ -252,6 +273,26 @@ export function AddProject({
                   }}
                 />
               ) : null}
+              {shelved === undefined ? null : (
+                <p className={sheet.note} data-part="area-archived" role="status">
+                  {t("project.areaArchived", { area: shelved.title })}
+                  <Button
+                    className={sheet.quiet}
+                    isDisabled={busy}
+                    onPress={() => {
+                      setBusy(true);
+                      void unarchive(shelved).then((back) => {
+                        setBusy(false);
+                        if (!back) return;
+                        setArea(shelved.id);
+                        setNewArea("");
+                      });
+                    }}
+                  >
+                    {t("archived.unarchiveArea", { area: shelved.title })}
+                  </Button>
+                </p>
+              )}
             </div>
             {error === undefined ? null : (
               <p className={sheet.error} role="alert">
@@ -262,13 +303,13 @@ export function AddProject({
               <Button
                 type="submit"
                 className={sheet.primary}
-                isDisabled={busy || folder === undefined}
+                isDisabled={busy || shelved !== undefined || folder === undefined}
               >
                 {t("project.add")}
               </Button>
               <Button
                 className={sheet.quiet}
-                isDisabled={busy}
+                isDisabled={busy || shelved !== undefined}
                 onPress={() => {
                   add(false);
                 }}
