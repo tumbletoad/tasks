@@ -14,7 +14,7 @@ import { lstat, open, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import shipped from "../../generated/skills.json" with { type: "json" };
-import { BASED_ON, isSkillName, kib, parseSkill, SKILL_BYTES, SKILL_FILE } from "./format.ts";
+import { isSkillName, kib, parseSkill, SKILL_BYTES, SKILL_FILE } from "./format.ts";
 import { TTASKS_PARTS, type SpaceFacts } from "./ttasks-part.ts";
 
 export { isSkillName, SKILL_BYTES, SKILL_FILE } from "./format.ts";
@@ -32,55 +32,21 @@ const FRESH_MS = 1_500;
 /** A default as it ships: its whole file, which `copy` writes for a person to start from. */
 interface Default {
   readonly name: string;
-  /** This build's version of it: its ID and its file. */
-  readonly id: string;
   readonly file: string;
   readonly description: string;
   readonly body: string;
-  /** Every version it shipped with, by ID, this one included. */
-  readonly versions: ReadonlyMap<string, string>;
-  /**
-   * The version a copy that names none was made from: the first, which every copy made before
-   * copies named their version came from.
-   */
-  readonly first: string;
 }
 
 /** The defaults, in the generated file's order (by name). A broken one fails at load. */
 export const DEFAULTS: ReadonlyMap<string, Default> = new Map(
-  shipped.skills.map(({ name, versions }) => {
-    const current = versions.at(-1);
-    const parsed =
-      current === undefined ? undefined : parseSkill(new TextEncoder().encode(current.file));
-    if (
-      current === undefined ||
-      parsed?.ok !== true ||
-      parsed.description === undefined ||
-      TTASKS_PARTS[name] === undefined
-    ) {
+  shipped.skills.map(({ name, file }) => {
+    const parsed = parseSkill(new TextEncoder().encode(file));
+    if (!parsed.ok || parsed.description === undefined || TTASKS_PARTS[name] === undefined) {
       throw new Error(`the default skill ${name} is not a skill this build can serve`);
     }
-    const skill: Default = {
-      name,
-      id: current.id,
-      file: current.file,
-      description: parsed.description,
-      body: parsed.body,
-      versions: new Map(versions.map((version) => [version.id, version.file])),
-      first: versions[0]?.id ?? current.id,
-    };
-    return [name, skill];
+    return [name, { name, file, description: parsed.description, body: parsed.body }];
   }),
 );
-
-/** A default's file as `copy` writes it: with the version it is made from in its metadata. */
-export function copyText(skill: Default): string {
-  const lines = skill.file.split("\n");
-  const end = lines.indexOf("---", 1);
-  return [...lines.slice(0, end), "metadata:", `  ${BASED_ON}: ${skill.id}`, ...lines.slice(end)].join(
-    "\n",
-  );
-}
 
 /**
  * One skill as an agent may read it. `default`: TTasks' text; `edited`: the person's copy of a
@@ -97,8 +63,6 @@ export interface Skill {
   readonly path: string | undefined;
   /** Why the person's file is not used, when it is not. */
   readonly problem: string | undefined;
-  /** An edited copy: the default version it was made from. */
-  readonly basedOn?: string;
 }
 
 /** Every skill one list found. */
@@ -109,12 +73,7 @@ export interface Catalog {
 }
 
 type Found = { readonly path: string } & (
-  | {
-      readonly ok: true;
-      readonly description: string | undefined;
-      readonly basedOn: string | undefined;
-      readonly body: string;
-    }
+  | { readonly ok: true; readonly description: string | undefined; readonly body: string }
   | { readonly ok: false; readonly problem: string }
 );
 
@@ -287,7 +246,6 @@ function defaultSkill(skill: Default, file: Found | undefined): Skill {
       body: file.body,
       path: file.path,
       problem: undefined,
-      basedOn: file.basedOn ?? skill.first,
     };
   }
   return {
@@ -481,32 +439,4 @@ export function servedText(skill: Skill, space: SpaceFacts): string | undefined 
   if (part === undefined) return skill.body;
   const served = part(space, skill.body, skill.origin === "edited");
   return [TTASKS_LABEL, ...served.ttasks, "", USER_LABEL, "", served.body].join("\n");
-}
-
-/**
- * How an edited copy stands to its default: `current` when it was made from this build's version,
- * `changed` with both texts when from an older one, `unknown` when it names a version this build
- * never shipped. Undefined for a skill that is no edited copy.
- */
-export function defaultChange(
-  skill: Skill,
-):
-  | { readonly state: "current" }
-  | {
-      readonly state: "changed";
-      readonly before: string;
-      readonly after: string;
-      readonly id: string;
-    }
-  | { readonly state: "unknown"; readonly after: string; readonly id: string }
-  | undefined {
-  const shipped = DEFAULTS.get(skill.name);
-  if (skill.origin !== "edited" || shipped === undefined || skill.basedOn === undefined) {
-    return undefined;
-  }
-  if (skill.basedOn === shipped.id) return { state: "current" };
-  const before = shipped.versions.get(skill.basedOn);
-  return before === undefined
-    ? { state: "unknown", after: shipped.file, id: shipped.id }
-    : { state: "changed", before, after: shipped.file, id: shipped.id };
 }
