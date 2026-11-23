@@ -10,7 +10,8 @@
 //   ttasks setup agents --apply --plan <token>
 //                                   carries out that preview: registers TTasks in each home without
 //                                   an entry yet, or refuses when the plan is not the same any more
-//   ttasks setup agents --remove     takes back each entry setup wrote that is still exactly its own
+//   ttasks setup agents --remove     turns each home's access off, then takes back each entry setup
+//                                   wrote that is still exactly its own
 //   ttasks setup agents --status     each home, registered or not, and its agent-home row (reads only)
 //   ttasks setup agents print --app <name>
 //                                   the entry and the file it belongs in, for an app setup does not
@@ -41,21 +42,14 @@ import { statSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
-import {
-  detect,
-  MAX_LINE_BYTES,
-  nodeDetectHost,
-  pasteShell,
-  shellLine,
-  type Env,
-} from "@ttasks/launch";
+import { detect, nodeDetectHost, shellLine, type Env } from "@ttasks/launch";
 import { loadMachineConfig } from "@ttasks/service/config";
 import { homeFolder, hostFacts, resolveLayout } from "@ttasks/service/paths";
 import {
   AGENT_APPS,
   appLabel,
   applyBlock,
-  applyWithRow,
+  applyHome,
   approveToolsHint,
   BLOCK_FORS,
   blockCanonical,
@@ -71,26 +65,27 @@ import {
   type BlockOutcome,
   type BlockReason,
   type BlockView,
-  handRemoval,
+  manualRemoval,
   HOSTS,
   isPrintApp,
   LockBusy,
   planOf,
   planToken,
-  PrintRefused,
   PRINT_APPS,
+  PRINT_HOMES,
   PRINT_LABELS,
+  recordFile,
   removeHome,
+  rowAccess,
   runCommand,
   samePath,
-  SERVERS_KEY,
   SetupStateInvalid,
   SetupStateUnsafe,
+  settleHomes,
   snippetFor,
   survey,
   withSetupLock,
   type AgentApp,
-  type Change,
   type Host,
   type HomeView,
   type Outcome,
@@ -243,6 +238,9 @@ function parse(input: readonly string[]): Parsed {
     if (apps?.length !== 1 || !isPrintApp(apps[0])) {
       throw new UsageError(`print takes --app and one of ${PRINT_APPS.join(", ")}`);
     }
+    if (home !== undefined && !(PRINT_HOMES as readonly string[]).includes(apps[0])) {
+      throw new UsageError(`print takes --home for ${PRINT_HOMES.join(" and ")} only`);
+    }
   } else if (apps !== undefined && !apps.every(isAppWord)) {
     throw new UsageError(`--app takes ${APP_WORDS.join(", ")}`);
   }
@@ -257,14 +255,6 @@ const forbidden = (): AppError =>
     data: { rule: "user_only" },
   });
 
-/**
- * The app's command as the person would run it, its variables first, as one line for PowerShell on
- * Windows and a POSIX shell elsewhere (launch's shell-line.ts, A3 3.13.7). Undefined when a word
- * holds a character no quoting keeps literal there, or the line is too long to paste.
- */
-const commandLine = (platform: NodeJS.Platform, change: Change): string | undefined =>
-  shellLine(platform, [...change.exec, ...change.args], change.set);
-
 const REASON: Readonly<Record<OutcomeReason, string>> = {
   unreadable: "its file cannot be read",
   too_large: "its file is too large",
@@ -275,49 +265,60 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
   unsafe: "its file or folder belongs to another user, or anyone can change it",
   wrong_type: "its servers are not a table",
   unsupported_layout:
-    "its MCP servers are written in a layout setup cannot keep (inline, dotted keys, or JSON it cannot splice)",
+    "its MCP servers are written in a layout setup cannot keep (inline, dotted keys, or JSON it cannot splice), or the entry's command cannot be written there",
   foreign_entry: `it has an entry named ${MCP_SERVER_KEY} that setup did not write`,
-  no_command: "the app's command was not found on this PATH",
   not_set_up:
     "Claude Desktop has not made its configuration file yet: open its Settings, then Developer, once, and run setup again",
   ambiguous: `there are several Claude Desktop configuration files: pass --home <folder> for the one the app uses`,
   edited: "the entry was changed after setup wrote it",
-  interrupted: `an earlier apply did not finish: run ${CLI_NAME} setup agents --remove`,
+  interrupted: `an earlier setup did not finish there: the next ${CLI_NAME} setup agents --apply or --remove settles it first`,
   missing: "the entry setup wrote is gone",
   not_registered: "setup has not registered it",
   changed_meanwhile: "its file changed while setup was working",
-  command_failed: "the app's command failed; run the command from the preview to see why",
-  unexpected_entry: "the app's command did not write the entry setup asked for",
+  unexpected_entry: "the entry is not there as setup wrote it",
+  busy: "Claude Code kept its settings file locked while setup waited: try again in a moment",
   other_space: `it names another space: run ${CLI_NAME} setup agents --remove first`,
-  grant_failed: `${PRODUCT_NAME}'s service did not keep its grant row, so nothing was changed there`,
-  instance_taken: `another agent home is registered as this instance, so nothing was changed there: run ${CLI_NAME} setup agents again for a free one, or give this home an instance of its own in machine.toml`,
+  grant_failed: `${PRODUCT_NAME}'s service did not give it its grant row, so its entry was taken out again`,
+  instance_taken: `another agent home is registered as this instance, so its entry was taken out again: run ${CLI_NAME} setup agents again for a free one, or give this home an instance of its own in machine.toml`,
+  record_unreadable: `${PRODUCT_NAME} cannot read its own record of the agent homes, so it changes no file there: ${CLI_NAME} setup agents --remove still turns access off`,
+  revoke_failed: `${PRODUCT_NAME}'s service did not take its access back, so nothing was changed: run ${CLI_NAME} setup agents --remove again while the service runs`,
+  unwritable:
+    "its file could not be written: it is read-only, another program holds it, or the disk is full",
+  state_unwritable: `setup could not write its own record of it (a full disk?), so its file was left as it was: run ${CLI_NAME} setup agents --remove again once it can`,
 };
 
 /**
- * Why a home was left, for people. An entry of TTasks's name that setup did not write (one added by
- * hand) also says how to take it out with the app's own command, so the next setup can register
- * the home (A3 3.7.8: the grant gate's refusal of such an entry sends the person here).
+ * The home's access after the action, said apart from its file: an entry that stayed is named
+ * with its file, so the person knows what is left there and that it no longer works.
  */
-function reasonText(
-  reason: OutcomeReason,
-  home: HomeView["home"],
-  platform: NodeJS.Platform,
-): string {
+function accessText(outcome: Outcome): string | undefined {
+  if (outcome.access === undefined) return undefined;
+  if (outcome.access === "on") {
+    return outcome.result === "failed" ? "Access is still on." : "Access is on.";
+  }
+  if (outcome.access === "unknown") {
+    return `Access could not be confirmed off: run ${CLI_NAME} setup agents --remove again while ${PRODUCT_NAME}'s service runs.`;
+  }
+  if (outcome.kept === "edited") {
+    return `Access is off. Your edited entry is still in ${outcome.home.file}.`;
+  }
+  if (outcome.kept === "own") return `Access is off. The entry is still in ${outcome.home.file}.`;
+  return "Access is off.";
+}
+
+/**
+ * Why a home was left, for people. An entry of TTasks's name that setup did not write (one added by
+ * hand) also says what to take out of which file, so the next setup can register the home (A3
+ * 3.7.8: the grant gate's refusal of such an entry sends the person here).
+ */
+function reasonText(reason: OutcomeReason, home: HomeView["home"]): string {
   if (reason !== "foreign_entry") return REASON[reason];
-  const removal = handRemoval(home, platform);
-  const line = removal === undefined ? undefined : shellLine(platform, removal.argv, removal.set);
-  const how =
-    home.app === "claude-desktop"
-      ? `take the ${MCP_SERVER_KEY} member out of mcpServers in that file`
-      : line === undefined
-        ? `take it out with the app's own ${removal?.argv.join(" ") ?? "mcp remove"} for this home`
-        : `take it out with: ${line}`;
-  return `${REASON.foreign_entry} (one added by hand). For setup to register this home, ${how}; then run ${CLI_NAME} setup agents again`;
+  const removal = manualRemoval(home);
+  return `${REASON.foreign_entry} (one added by hand). For setup to register this home, take ${removal.what} out of ${removal.file}; then run ${CLI_NAME} setup agents again`;
 }
 
 const NOTE: Readonly<Record<string, string>> = {
-  empty_parent_kept: `Claude Code keeps an empty ${SERVERS_KEY["claude-code"]} object after its own remove. ${PRODUCT_NAME} never edits that file.`,
-  undo_failed: `The entry may still be there: run ${CLI_NAME} setup agents --remove.`,
+  undo_failed: `The entry may still be there: the next ${CLI_NAME} setup agents --apply or --remove takes it out.`,
   entry_left:
     "The entry there is not exactly the one setup asked for, so it was left as it is: take it out by hand if it is not wanted.",
 };
@@ -327,7 +328,7 @@ const STATE_TEXT: Readonly<Record<HomeView["state"], string>> = {
   registered: "registered",
   edited: "registered, then changed by hand",
   missing: "registered, entry gone",
-  interrupted: "an apply that did not finish",
+  interrupted: "a setup that did not finish",
   refused: "left alone",
 };
 
@@ -362,6 +363,8 @@ const outcomeJson = (outcome: Outcome) => ({
   instance: outcome.home.instance,
   result: outcome.result,
   ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
+  ...(outcome.access === undefined ? {} : { access: outcome.access }),
+  ...(outcome.kept === undefined ? {} : { kept: outcome.kept }),
   ...(outcome.notes === undefined ? {} : { notes: outcome.notes }),
 });
 
@@ -518,6 +521,7 @@ export async function agentsCommand(
           input,
           parsed.apps?.[0] as PrintApp,
           await printSpace(call, defaultSpace),
+          parsed.home,
         );
       case "apply": {
         if (mcp && (!isFolder(root) || !exists(input.tasks))) {
@@ -528,7 +532,10 @@ export async function agentsCommand(
             data: { issues: [{ path: "command", message: "Not installed" }] },
           });
         }
+        const access = rowAccess(rowCall(call));
         const { outcomes, blocks } = await withSetupLock(input.stateDir, async () => {
+          // What a run that ended midway left is settled first, and said.
+          const settled = mcp ? await settleHomes(await rowsOf(), access) : [];
           // The preview again, under the lock: apply goes on only when it is the plan the
           // person saw (`--plan`), whatever changed in the homes, machine.toml or the spaces.
           const all = (await survey(await rowsOf())).filter(selected);
@@ -544,27 +551,49 @@ export async function agentsCommand(
           if (token !== parsed.plan) {
             throw new AppError({
               code: "conflict",
-              message: "The agent homes changed since the preview, so nothing was changed.",
+              message:
+                settled.length === 0
+                  ? "The agent homes changed since the preview, so nothing was changed."
+                  : "A setup that did not finish was settled first, so the agent homes are not as the preview showed. Nothing else was changed.",
               hint: `Run ${CLI_NAME} setup agents again and use the command it prints.`,
+              ...(settled.length === 0 ? {} : { data: { settled: settled.map(outcomeJson) } }),
             });
           }
-          const done: Outcome[] = [];
-          for (const item of items)
-            done.push(await applyWithRow(input, item, space, rowCall(call)));
+          const done: Outcome[] = [...settled];
+          for (const item of items) {
+            done.push(await applyHome(input, item.view, space, access, item.change));
+          }
           return { outcomes: done, blocks: (planned ?? []).map((b) => applyBlock(input, b)) };
         });
         return report(io, globals, "apply", outcomes, [], blocks);
       }
       case "remove": {
+        const access = rowAccess(rowCall(call));
         const { outcomes, notes, blocks } = await withSetupLock(input.stateDir, async () => {
-          const surveyed = await survey(input);
-          const done: Outcome[] = [];
+          const done: Outcome[] = mcp ? await settleHomes(input, access) : [];
+          let surveyed = await survey(input);
           const said: string[] = [];
-          if (mcp) {
+          const unrecorded = surveyed.some((view) => view.refusal === "record_unreadable");
+          if (mcp && unrecorded) {
+            // Without its record setup reaches a home by its live row: the access goes, and no
+            // file changes.
+            const live = await withRows(input, call);
+            surveyed = await survey(live);
+            const rowed = (view: HomeView) =>
+              (live.rows ?? []).some(
+                (row) =>
+                  row.app === view.home.app && samePath(input.platform, row.home, view.home.home),
+              );
+            for (const view of surveyed.filter((v) => selected(v) && rowed(v))) {
+              done.push(await removeHome(input, view, access));
+            }
+            said.push(...(await revokeLeftRows(input, selected, call)));
+            said.push(recordUnreadableText(input.stateDir));
+          } else if (mcp) {
             const views = surveyed.filter((view) => selected(view) && view.record !== undefined);
             // Reverse order (A3 3.13.1): the latest apply first.
             views.sort((a, b) => (b.record?.at ?? "").localeCompare(a.record?.at ?? ""));
-            for (const view of views) done.push(await removeHome(input, view));
+            for (const view of views) done.push(await removeHome(input, view, access));
             // Under the same lock: an apply that runs right after must not lose its row to this.
             said.push(...(await revokeLeftRows(input, selected, call)));
           }
@@ -751,8 +780,7 @@ async function status(
   if (views.length === 0) io.stdout("No agent home was found.\n");
   for (const view of views) {
     const row = rowOf(view);
-    const reason =
-      view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home, input.platform)}`;
+    const reason = view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home)}`;
     const space = view.record === undefined ? "" : `, space ${view.record.space}`;
     const grant =
       rows === undefined ? "" : row === undefined ? ", no grant row" : `, grant row ${row.grant}`;
@@ -771,6 +799,14 @@ function approvals(views: readonly HomeView[], platform: NodeJS.Platform) {
     return hint === undefined ? [] : [{ view, ...hint }];
   });
 }
+
+/** A registered home without its live row: its entry is in place, and apply gives it its access again. */
+const givesAccessBack = (input: SetupInput, view: HomeView): boolean =>
+  view.state === "registered" &&
+  input.rows !== undefined &&
+  !input.rows.some(
+    (r) => r.app === view.home.app && samePath(input.platform, r.home, view.home.home),
+  );
 
 async function preview(
   io: Io,
@@ -818,18 +854,13 @@ async function preview(
         homes: items.map(({ view, change }) => ({
           ...viewJson(view),
           ...(change === undefined
-            ? {}
+            ? givesAccessBack(input, view)
+              ? { change: { access: "on" } }
+              : {}
             : typeof change === "string"
               ? { state: "refused", reason: change }
               : {
-                  change: {
-                    writer: change.writer,
-                    exec: change.exec,
-                    args: change.args,
-                    env: change.set,
-                    unset: change.unset,
-                    diff: change.diff,
-                  },
+                  change: { entry: change.entry, diff: change.diff },
                 }),
         })),
         ...(parsed.parts.includes("approve-tools")
@@ -855,31 +886,17 @@ async function preview(
     io.stdout(`${String(n)}. ${title(view)}\n`);
     const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
     io.stdout(`   ${view.home.file} (${hash})\n`);
-    if (change === undefined) {
-      const reason =
-        view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home, io.platform)}`;
+    if (givesAccessBack(input, view)) {
+      changes += 1;
+      io.stdout(`   registered, and its access is off: apply gives it its access again.\n`);
+    } else if (change === undefined) {
+      const reason = view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home)}`;
       io.stdout(`   ${STATE_TEXT[view.state]}${reason}. Nothing to do.\n`);
     } else if (typeof change === "string") {
-      io.stdout(`   left alone: ${reasonText(change, view.home, io.platform)}.\n`);
+      io.stdout(`   left alone: ${reasonText(change, view.home)}.\n`);
     } else {
       changes += 1;
-      if (change.writer === "edit") {
-        io.stdout(`   writes one entry into this file (the app has no command for it)\n`);
-      } else {
-        io.stdout(
-          `   runs: ${commandLine(io.platform, change) ?? `the app's own command, whose words no line for ${pasteShell(io.platform)} keeps as they are (--json lists them)`}\n`,
-        );
-        if (change.unset.length > 0) {
-          io.stdout(`   without ${change.unset.join(", ")} from your environment\n`);
-        }
-      }
-      const by =
-        view.home.app === "codex"
-          ? `the command writes the table; ${PRODUCT_NAME} adds the last ${String(change.patches.length)} keys`
-          : change.writer === "edit"
-            ? `${PRODUCT_NAME} writes these keys`
-            : "the command writes these keys";
-      io.stdout(`   diff (${by}):\n`);
+      io.stdout(`   ${PRODUCT_NAME} writes one entry into this file, and nothing else there:\n`);
       for (const line of change.diff) io.stdout(`     ${line}\n`);
     }
   }
@@ -934,6 +951,10 @@ async function blockPlan(
   );
   return planBlocks(views.filter(selected));
 }
+
+/** What a remove says when setup's own record cannot be read: the access went, nothing else. */
+const recordUnreadableText = (stateDir: string): string =>
+  `${PRODUCT_NAME} cannot read its own record of the agent homes, ${recordFile(stateDir)}, so a remove only takes the access away and changes no file: the record and each app's entry stay as they are. ${CLI_NAME} doctor says how to clean them up.`;
 
 /** A remove of the entries leaves the blocks: they are a part of their own. */
 const BLOCKS_STAY = `The instruction blocks setup wrote stay: ${CLI_NAME} setup agents --remove --parts block takes them out.`;
@@ -1118,28 +1139,16 @@ function printCommand(
   input: SetupInput,
   app: PrintApp,
   space: string,
+  home: string | undefined,
 ): number {
-  let snippet;
-  try {
-    snippet = snippetFor(input, app, space);
-  } catch (error) {
-    if (!(error instanceof PrintRefused)) throw error;
-    throw new AppError({
-      code: "invalid_input",
-      message: `${PRODUCT_NAME}'s command path cannot be pasted into ${error.runIn} as it is: it holds a control character (on Windows also % ! ^ & | < > "), or makes the line longer than ${String(MAX_LINE_BYTES)} bytes. So no command is printed.`,
-      hint: `Run ${CLI_NAME} setup agents: it runs the app's own command without a shell.`,
-      data: { issues: [{ path: "command", message: "Cannot be pasted into a shell as it is" }] },
-    });
-  }
+  const snippet = snippetFor(input, app, space, home);
   if (globals.json) {
     io.stdout(`${JSON.stringify(snippet)}\n`);
     return 0;
   }
   const where = snippet.files.length === 1 ? "in" : "in one of";
   io.stdout(
-    snippet.format === "command"
-      ? `${PRINT_LABELS[app]}: run this in ${snippet.runIn ?? pasteShell(io.platform)}; it writes the entry ${where} ${snippet.files.join(", ")}\n`
-      : `${PRINT_LABELS[app]}: add this ${where} ${snippet.files.join(", ")}, keeping what is there\n`,
+    `${PRINT_LABELS[app]}: add this ${where} ${snippet.files.join(", ")}, keeping what is there\n`,
   );
   io.stdout(snippet.text);
   io.stdout("Nothing was changed.\n");
@@ -1198,9 +1207,11 @@ function report(
       const reason =
         outcome.reason === undefined || outcome.result === "removed"
           ? ""
-          : `: ${reasonText(outcome.reason, outcome.home, io.platform)}`;
+          : `: ${reasonText(outcome.reason, outcome.home)}`;
       io.stdout(`${title(outcome)}\n  ${verb[outcome.result]}${reason}\n`);
       for (const note of outcome.notes ?? []) io.stdout(`  ${NOTE[note] ?? note}\n`);
+      const access = accessText(outcome);
+      if (access !== undefined) io.stdout(`  ${access}\n`);
     }
     for (const note of notes) io.stdout(`${note}\n`);
     const changed = outcomes.filter((o) => o.result === "applied" || o.result === "removed");

@@ -4,12 +4,14 @@
 // and the change feed over WebSocket with snapshot, batches, coverage and the cursor (A1 3.7).
 // Foreign holders are injected identities: no account is ever made. Ports are the OS's choice or
 // ports the test holds itself; the listener's own timers are virtual (clock.ts).
-import { readFileSync } from "node:fs";
+import fs, { readFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { createServer, type Server } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { blockedMessage, ServiceDb, type HttpTimerKind } from "../src/http/index.ts";
 import { readBatch, readHead } from "../src/http/feed.ts";
+import { portUnsaved } from "../src/http/messages.ts";
 import { DEFAULT_HTTP_LIMITS } from "../src/http/limits.ts";
 import { FeedHub } from "../src/http/ws.ts";
 import { testClock } from "./clock.ts";
@@ -114,6 +116,43 @@ describe("[A2.3.8.http.hub] the listener in the service", () => {
         data: { reason: "ui_unavailable" },
       });
       expect(await user.call("service/status", {})).toHaveProperty("state", "ready");
+    },
+  );
+
+  test(
+    "a first start on a volume without hard links saves its port; a port that cannot be saved at all keeps the page and says so",
+    SLOW,
+    async () => {
+      const real = fs.linkSync;
+      const failLinks = (code: string) => {
+        fs.linkSync = () => {
+          throw Object.assign(new Error("no link"), { code });
+        };
+        syncBuiltinESMExports();
+      };
+      try {
+        // Windows' FAT driver, as Node reports it: machine.toml is renamed into place instead.
+        failLinks("EISDIR");
+        const fat = await world("hf", { persist: true }, { space: false });
+        expect(fat.service.status().http).toMatchObject({ persisted: fat.port(), moved: false });
+        expect(readFileSync(join(configOf(fat.home), "machine.toml"), "utf8")).toBe(
+          `[http]\nport = ${String(fat.port())}\n`,
+        );
+        // A failure no fallback covers: the listener stays, the port is not claimed as saved.
+        failLinks("EIO");
+        const broken = await world("hu", { persist: true }, { space: false });
+        const http = broken.service.status().http;
+        expect(http).toMatchObject({ persisted: null, moved: false, blocked: null });
+        expect(http?.port).toBe(broken.port());
+        expect((await send(broken.port(), { path: "/healthz" })).body).toBe("ok");
+        expect(portUnsaved(http ?? {})).toBe(true);
+        expect(readLog(broken.home)).toContainEqual(
+          expect.objectContaining({ ev: "http.port_write_failed", stage: "persist" }),
+        );
+      } finally {
+        fs.linkSync = real;
+        syncBuiltinESMExports();
+      }
     },
   );
 

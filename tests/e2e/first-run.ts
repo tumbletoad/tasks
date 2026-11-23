@@ -11,6 +11,7 @@ import {
   configOf,
   removeRuntimeDir,
   Services,
+  stateOf,
   tempRoot,
   waitReady,
   within,
@@ -45,6 +46,12 @@ export interface FreshWorld {
   codexConfig(): string;
   /** Another program changes the Codex home's config.toml. */
   touchCodex(): void;
+  /** The person changes one key of TTasks's entry in the Codex home's config.toml. */
+  editCodexEntry(): void;
+  /** The person writes the Codex home's config.toml as `text`. */
+  writeCodex(text: string): void;
+  /** Setup's record of the agent homes is damaged; the call gives back how to put it back. */
+  damageRecord(): () => void;
   /** machine.toml's text, or "" when there is none. */
   machineToml(): string;
   close(): Promise<void>;
@@ -139,6 +146,24 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
       codexConfig: () => read(join(agentHome, ".codex", "config.toml")),
       touchCodex: () => {
         appendFileSync(join(agentHome, ".codex", "config.toml"), '\nmodel = "o4"\n');
+      },
+      editCodexEntry: () => {
+        const file = join(agentHome, ".codex", "config.toml");
+        const text = read(file);
+        const edited = text.replace("startup_timeout_sec = 20", "startup_timeout_sec = 45");
+        if (edited === text) throw new Error("no entry of TTasks's to change");
+        writeFileSync(file, edited);
+      },
+      writeCodex: (text) => {
+        writeFileSync(join(agentHome, ".codex", "config.toml"), text);
+      },
+      damageRecord: () => {
+        const file = join(stateOf(home), "setup", "agents.json");
+        const kept = readFileSync(file);
+        writeFileSync(file, '{"format": 2, "homes": [');
+        return () => {
+          writeFileSync(file, kept);
+        };
       },
       machineToml: () => read(join(configOf(home), "machine.toml")),
       close: async () => {

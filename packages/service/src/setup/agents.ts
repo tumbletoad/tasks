@@ -1,48 +1,50 @@
 // `ttasks setup agents` (A3 3.13; M2.14, M4.05): TTasks's MCP server entry in each agent home of this
-// machine, put there with the app's own command or, for an app without one, as one entry spliced
-// into its file, and taken back exactly.
+// machine, which setup writes itself, one entry spliced into the app's file, and takes back
+// exactly. Never through the app's own `mcp add` or `mcp remove`: Codex's rewrites every other
+// server's table (losing comments, unknown keys and servers another program added meanwhile), and
+// what a command wrote can only be read back, which would make a change the person made at that
+// moment TTasks's own.
 //
 // The agent-home table (APPS below) has one row per app: its catalogue target, its file's format,
-// the servers' table, the file's bound, and how the entry is written:
-// - Claude Code (A3 3.13.2): `claude mcp add --scope user <key> -- <tasks> mcp …`, and `claude mcp
-//   remove` to undo. `.claude.json` is never edited by TTasks: Claude Code rewrites it while it runs.
-// - Codex (A3 3.13.4): `codex mcp add <key> -- <tasks> mcp …`, then two single-key patches in the
-//   entry's own table (`env_vars`, `startup_timeout_sec`) through the format-keeping editor of
-//   machine.toml (config/edit.ts), and `codex mcp remove` to undo, which drops the table.
-// - Claude Desktop (A3 3.13.3): no command of its own, so `mcpServers.<key>` is spliced into
-//   `claude_desktop_config.json` as one member (json-edit.ts) and written with machine.toml's
-//   editor (commitEdit: atomic, the file's mode, refused when the file changed meanwhile); undo
-//   splices it out again. Setup never creates that file: the app makes it the first time its
-//   developer settings are opened.
-// The Codex app and T3 Code have no entry of their own (A3 3.13.5, 3.13.6): they read the homes of
-// the CLIs, so they are hosts of those homes (hosts.ts). T3's settings are read, never written.
+// the servers' table, the file's bound, and whether the app's own lock guards the file:
+// - Claude Code (A3 3.13.2): `mcpServers.<key>` in `.claude.json` (entry.ts, json-edit.ts). Claude
+//   Code rewrites that file while a session runs, under a lock of its own, which setup takes for
+//   the last step of its write (app-lock.ts).
+// - Codex (A3 3.13.4): one `[mcp_servers.<key>]` table in `config.toml` with the ticket's variable
+//   and the cold-start allowance, through machine.toml's format-keeping editor (config/edit.ts).
+// - Claude Desktop (A3 3.13.3): `mcpServers.<key>` in `claude_desktop_config.json`. Setup never
+//   creates that file: the app makes it the first time its developer settings are opened.
+// Every write is a new file written and flushed beside the old one, then the file read again and
+// compared just before the new one is renamed over it, with its mode; a file that changed
+// meanwhile is left alone, and one that was not there is linked into place exclusively. The Codex
+// app and T3 Code have no entry of their own (A3 3.13.5, 3.13.6): they read the homes of the CLIs,
+// so they are hosts of those homes (hosts.ts). T3's settings are read, never written.
 //
 // What setup changes, and only that: the entry named after the product (brand's MCP_SERVER_KEY).
 // Never a trust or approval setting, a permission, a hook, another server's entry, a managed file
 // or a key setup did not write; never a sign-in file or a token (A3 3.13.1).
 //
-// - The app's command runs as an argv array without a shell, in the person's environment with the
-//   home variables (CLAUDE_CONFIG_DIR, CODEX_HOME) taken out, and the home's own variable put in
-//   for every home but Claude Code's default one (whose `.claude.json` sits in the user's home).
 // - Before anything is written, the home's record is written ("applying"): the app, the home, the
-//   command and its undo, whether the file and its servers' table existed, and the file's hash. It
-//   holds no copy of the file and no other key's value (A3 3.13.1: these files hold other servers'
-//   secrets). After the change the record holds the entry as written. `--remove` takes back only an
-//   entry that is still exactly that one; an entry the person changed since is left.
-// - A home whose file setup does not understand is refused with a reason and nothing runs there:
-//   a file that is not UTF-8 JSON or TOML, a duplicate key, a managed file (a link, a file marked
-//   as generated, one machine.toml lists, one another git repository tracks), servers written in a
-//   layout the patch cannot keep (Codex), an entry of the same name that setup did not write, or
-//   no usable command of the app.
+//   entry exactly as setup intends it and what the write makes beside it. It holds no copy of the
+//   file and no other key's value (A3 3.13.1: these files hold other servers' secrets). `--remove`
+//   takes back only an entry that is still exactly that one; one the person changed is theirs.
+// - A home gets its access (its agent-home row, Access) only once its entry is in place, and only
+//   from the apply the person asked for. Turning it off asks for the revoke first, before anything
+//   else is written; the file is cleaned only after the service confirmed it. A record a run left
+//   midway is finished by the next setup as a removal (settleHomes).
+// - A home whose file setup does not understand is refused with a reason and nothing is written
+//   there: a file that is not UTF-8 JSON or TOML, a duplicate key, a managed file (a link, a file
+//   marked as generated, one machine.toml lists, one another git repository tracks), servers
+//   written in a layout the editor cannot keep (Codex), or an entry of the same name that setup did
+//   not write.
 //
 // Every path, variable and file read goes through the injected input, so tests run on scratch
-// homes with fake commands of their own (testkit's fake-agents.ts).
+// homes.
 import { createHash } from "node:crypto";
 import { lstatSync, rmSync, statSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { posix, win32 } from "node:path";
-import { isDeepStrictEqual } from "node:util";
-import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
+import { MCP_SERVER_KEY } from "@ttasks/brand";
 // The bridge's own parser by its own path: the bridge's index would bring its runner into bundles.
 import { parseArgs } from "@ttasks/bridge/mcp/args";
 import {
@@ -59,9 +61,19 @@ import {
   type Env,
   type Instance,
 } from "@ttasks/launch";
-import { applyEdits, commitEdit, keyText, valueText, type EditValue } from "../config/edit.ts";
+import { keyText, valueText, type EditValue } from "../config/edit.ts";
 import { scanToml, ScanError } from "../config/scan.ts";
 import { BOM, MAX_CONFIG_BYTES, parseToml, readConfigFile } from "../config/toml.ts";
+import { stageFile, type StagedFile } from "../hub/files.ts";
+import { withAppLock } from "./app-lock.ts";
+import {
+  addOwnEntry,
+  holdsNothing,
+  intendedEntry,
+  removeOwnEntry,
+  whoseEntry,
+  type EntryFormat,
+} from "./entry.ts";
 import {
   claudeDesktopFolders,
   codexAppEngines,
@@ -77,27 +89,33 @@ import {
   type T3Settings,
 } from "./hosts.ts";
 import { markedAsGenerated } from "./generated.ts";
-import { addEntry, removeEntry } from "./json-edit.ts";
 import { parseStrictJson } from "./json.ts";
 import { listedAsManaged, trackedByAnotherRepository } from "./managed.ts";
-import { AGENT_APPS, readRecords, writeRecords, type AgentApp, type HomeRecord } from "./state.ts";
+import {
+  AGENT_APPS,
+  isAgentApp,
+  readRecords,
+  SetupStateInvalid,
+  SetupStateTooLarge,
+  SetupStateUnsafe,
+  writeRecords,
+  type AgentApp,
+  type HomeRecord,
+} from "./state.ts";
+
+export { CODEX_STARTUP_TIMEOUT_SEC } from "./entry.ts";
 
 /** One row of the agent-home table: how setup reads and writes an app's entry. */
 interface AppRow {
   /** The app's catalogue target (A4 3.2): its label, its home folders and their variable. */
   readonly target: BuiltInTargetId;
-  readonly format: "json" | "toml";
+  readonly format: EntryFormat;
   /** The servers' table in the app's file. */
   readonly servers: string;
   /** The file's bound: a larger file is refused unread. */
   readonly maxBytes: number;
-  /** `command`: the app's own `mcp add` and `mcp remove`. `edit`: one entry spliced in by setup. */
-  readonly writer: "command" | "edit";
-  /**
-   * The keys the app's `mcp add` writes by itself beside `command` and `args`, with their values
-   * (lab run A: Claude Code adds `type` and an empty `env`, Codex nothing).
-   */
-  readonly appKeys: Readonly<Record<string, unknown>>;
+  /** The app's own writers take `<file>.lock` (app-lock.ts), and so does setup. */
+  readonly locked: boolean;
 }
 
 const APPS: Readonly<Record<AgentApp, AppRow>> = {
@@ -108,24 +126,21 @@ const APPS: Readonly<Record<AgentApp, AppRow>> = {
     // `.claude.json` keeps every project's history, so it can be far larger than a configuration
     // file: machine.toml's 1 MiB bound would refuse it.
     maxBytes: 64 * 1024 * 1024,
-    writer: "command",
-    appKeys: { type: "stdio", env: {} },
+    locked: true,
   },
   codex: {
     target: "codex-cli",
     format: "toml",
     servers: "mcp_servers",
     maxBytes: MAX_CONFIG_BYTES,
-    writer: "command",
-    appKeys: {},
+    locked: false,
   },
   "claude-desktop": {
     target: "claude-desktop",
     format: "json",
     servers: "mcpServers",
     maxBytes: 4 * 1024 * 1024,
-    writer: "edit",
-    appKeys: {},
+    locked: false,
   },
 };
 
@@ -133,20 +148,8 @@ const APPS: Readonly<Record<AgentApp, AppRow>> = {
 const CLAUDE_FILE = ".claude.json";
 /** Codex's configuration file in a Codex home. */
 const CODEX_FILE = "config.toml";
-/** The servers' table in each app's file. */
-export const SERVERS_KEY = Object.fromEntries(
-  AGENT_APPS.map((app) => [app, APPS[app].servers]),
-) as Readonly<Record<AgentApp, string>>;
-
-/** A3 3.13.4: Codex waits 10 s for a server by default; 20 covers a cold bridge start on Windows. */
-export const CODEX_STARTUP_TIMEOUT_SEC = 20;
-
 /** The label of each app, from the catalogue. */
 export const appLabel = (app: AgentApp): string => targetDef(APPS[app].target).label;
-
-/** Whether setup writes the app's entry itself (no command of the app's own). */
-export const editsFile = (app: AgentApp): boolean => APPS[app].writer === "edit";
-
 /** Other apps that read a home's entry (A3 3.13.5, 3.13.6): attribution can say "via T3". */
 export const HOSTS = ["codex-app", "t3"] as const;
 export type Host = (typeof HOSTS)[number];
@@ -194,11 +197,15 @@ export type Refusal =
   | "foreign_entry"
   /** Linux and macOS: the file or its folder belongs to another user, or anyone can change it. */
   | "unsafe"
-  | "no_command"
   /** Claude Desktop's file is not there yet: the app makes it in its developer settings. */
   | "not_set_up"
   /** Several Claude Desktop configuration files: `--home` names the one the app uses. */
-  | "ambiguous";
+  | "ambiguous"
+  /**
+   * Setup's own record cannot be read: a home's access can still be turned off, and no file, the
+   * record included, is changed until it can be read.
+   */
+  | "record_unreadable";
 
 export type HomeState =
   /** No entry of TTasks's name, and setup can add one. */
@@ -209,7 +216,7 @@ export type HomeState =
   | "edited"
   /** Setup wrote an entry that is gone now. */
   | "missing"
-  /** An apply that did not finish (a crash, a failed undo): `--remove` settles it. */
+  /** A setup that did not finish (a crash, a failed undo): the next setup settles it first. */
   | "interrupted"
   | "refused";
 
@@ -227,24 +234,11 @@ export interface HomeView {
   readonly record?: HomeRecord;
 }
 
-/** What setup runs and writes for one home. */
+/** What setup writes for one home. */
 export interface Change {
-  /** `command`: the app's command below runs. `edit`: setup splices `entry` into the file. */
-  readonly writer: "command" | "edit";
-  /** The app's command (`[file]`, or `[node, entry]` for an npm install); empty for `edit`. */
-  readonly exec: readonly string[];
-  /** Its arguments: `mcp add …`. */
-  readonly args: readonly string[];
-  /** The undo's arguments: `mcp remove …`. */
-  readonly undo: readonly string[];
-  /** The entry's own argv: TTasks's command and its arguments. */
-  readonly entry: readonly string[];
-  /** Variables set for the command, and home variables taken out of the person's environment. */
-  readonly set: Readonly<Record<string, string>>;
-  readonly unset: readonly string[];
-  /** Codex: TTasks's single-key patches in the entry's table, in order. */
-  readonly patches: readonly { readonly key: string; readonly value: EditValue }[];
-  /** The key-level diff, one line per key, as `+ key = value`. */
+  /** The entry setup writes, exactly: its keys and values. */
+  readonly entry: Readonly<Record<string, EditValue>>;
+  /** The entry as the lines its file gains: for JSON, its servers' table first when it is new. */
   readonly diff: readonly string[];
 }
 
@@ -255,29 +249,68 @@ export type OutcomeReason =
   | "missing"
   | "not_registered"
   | "changed_meanwhile"
-  | "command_failed"
   | "unexpected_entry"
   | "other_space"
-  /** The service did not keep the home's agent-home row: nothing was changed in the home. */
+  /** Claude Code kept its own lock on the file through every pause: another writer is busy. */
+  | "busy"
+  /** The service did not give the home its agent-home row, so its entry was taken out again. */
   | "grant_failed"
   /** The service refused the row: another home's live row holds this instance (A3 3.7.8). */
-  | "instance_taken";
+  | "instance_taken"
+  /** The service did not confirm that it took the home's access back: nothing else was changed. */
+  | "revoke_failed"
+  /** The OS refused to write the file: it is read-only, another program holds it, or the disk is full. */
+  | "unwritable"
+  /** Setup's own record of the home could not be written, so its file was left as it was. */
+  | "state_unwritable";
 
 /** What happened to one home. */
 export interface Outcome {
   readonly home: AgentHome;
   readonly result: "applied" | "removed" | "unchanged" | "left" | "failed";
   readonly reason?: OutcomeReason;
-  /** Facts the person should know: `empty_parent_kept` (Claude Code keeps an empty table). */
+  /**
+   * The home's access as this action left it, apart from its file: `on` once its row was given, or
+   * when turning it off failed and nothing was changed; `off` when none was given or it was taken
+   * back; `unknown` when a row may have been made and taking it back failed. Absent when the action
+   * did not touch it.
+   */
+  readonly access?: "on" | "off" | "unknown";
+  /** A removal that left an entry in the file: TTasks's own (`reason` says why), or one the person changed. */
+  readonly kept?: "own" | "edited";
+  /** Facts the person should know: `undo_failed`, `entry_left`. */
   readonly notes?: readonly string[];
 }
 
-/** What setup reads and runs, injected so tests use scratch homes and fake commands. */
+/** The service refused a home's row: `instance_taken`, or `grant_failed` for any other reason. */
+export class GrantRefused extends Error {
+  override readonly name = "GrantRefused";
+  readonly reason: "instance_taken" | "grant_failed";
+  constructor(reason: "instance_taken" | "grant_failed") {
+    super(`The service refused the agent home's row: ${reason}`);
+    this.reason = reason;
+  }
+}
+
+/**
+ * A home's access to TTasks: its agent-home row in the service's grants table, which the grant gate
+ * reads at every call (hub/agent-homes.ts). Setup gives it only once the home's entry is in place,
+ * and takes it back before it touches the file, so an entry that failed or a file that cannot be
+ * written never leaves a home with access it should not have.
+ */
+export interface Access {
+  /** Gives the home its row for `space`, or keeps the one it has: the row's ID. Throws when refused. */
+  grant(home: AgentHome, space: string): Promise<string>;
+  /** Takes back every live row of the home. Throws when that could not be done. */
+  revoke(home: AgentHome): Promise<void>;
+}
+
+/** What setup reads, injected so tests use scratch homes (and doctor's probes fake commands). */
 export interface SetupInput {
   readonly platform: NodeJS.Platform;
   /** The user's home folder: Claude Code's default `.claude.json` is here. */
   readonly userHome: string;
-  /** The agent environment the apps' commands run in: the person's own. */
+  /** The person's environment, in which detection and doctor's probes run the apps' commands. */
   readonly env: Env;
   /** `<state>`: setup's record lives in `<state>/setup/`. */
   readonly stateDir: string;
@@ -302,8 +335,10 @@ export interface SetupInput {
   /** macOS: the system's Applications folder (the Codex app's engine). Default: /Applications. */
   readonly systemApplications?: string;
   isFolder(path: string): boolean;
-  /** Runs `argv` without a shell in `env`; true when it exits 0 within its bound. */
+  /** Runs `argv` without a shell in `env`; true when it exits 0 within its bound (doctor's probes). */
   run(argv: readonly string[], env: Env): Promise<boolean>;
+  /** Waits `ms` while another writer holds an app's lock. Default: a timer. */
+  readonly wait?: (ms: number) => Promise<void>;
 }
 
 const pathOf = (platform: NodeJS.Platform) => (platform === "win32" ? win32 : posix);
@@ -595,11 +630,12 @@ export function commandOf(detection: Detection, app: AgentApp): readonly string[
 }
 
 /**
- * The command setup runs in a home: the app's own as detection found it, else, for the home the
- * Codex app reads, the app's bundled engine (A3 3.13.5). Undefined for an app setup edits itself.
+ * The app's command that reads a home, which doctor asks (`mcp get`): the app's own as detection
+ * found it, else, for the home the Codex app reads, the app's bundled engine (A3 3.13.5).
+ * Undefined for Claude Desktop, which has none.
  */
 export function commandFor(input: SetupInput, home: AgentHome): readonly string[] | undefined {
-  if (editsFile(home.app)) return undefined;
+  if (home.app === "claude-desktop") return undefined;
   const found = commandOf(input.detection, home.app);
   if (found !== undefined) return found;
   if (home.app !== "codex" || !home.hosts.includes("codex-app")) return undefined;
@@ -684,6 +720,15 @@ function folderUnsafe(path: string): boolean {
   }
 }
 
+/** Why the file's place is refused before it is read: a link there, or a folder others can change. */
+function placeRefusal(file: string, home: string): "managed" | "unsafe" | undefined {
+  const folder = pathOf(process.platform).dirname(file);
+  if (isLink(file) || (samePath(process.platform, folder, home) && isLink(folder))) {
+    return "managed";
+  }
+  return folderUnsafe(folder) ? "unsafe" : undefined;
+}
+
 /**
  * Reads an agent app's file as text and judges it. Never writes, never opens anything else. The file
  * and the folder that holds it are checked on every read, so apply and remove check them again right
@@ -693,11 +738,8 @@ function folderUnsafe(path: string): boolean {
  * systems) and are not. The instruction block reads its file through this too (block.ts).
  */
 export function readText(file: string, home: string, maxBytes: number): TextRead {
-  const folder = pathOf(process.platform).dirname(file);
-  if (isLink(file) || (samePath(process.platform, folder, home) && isLink(folder))) {
-    return refused("managed");
-  }
-  if (folderUnsafe(folder)) return refused("unsafe");
+  const place = placeRefusal(file, home);
+  if (place !== undefined) return refused(place);
   const read = readConfigFile(file, maxBytes);
   if (read.kind === "missing") return { kind: "missing" };
   if (read.kind === "problem") {
@@ -751,8 +793,7 @@ function readToml(text: string): { parent: boolean; entry: unknown } | Refusal {
     throw error;
   }
   // Each server must be a table of its own, `[mcp_servers.<name>]`: a server written inline or
-  // with dotted keys from above its table is a layout the single-key patch cannot keep, and the
-  // app's own command might write TTasks's entry the same way.
+  // with dotted keys from above its table is a layout the editor cannot place TTasks's table beside.
   const servers = APPS.codex.servers;
   let table: readonly string[] = [];
   for (const line of lines) {
@@ -815,82 +856,27 @@ export function t3SettingsOf(input: HostsInput): T3Settings | undefined {
 
 const entryOf = (read: FileRead): unknown => (read.kind === "read" ? read.entry : undefined);
 
-class NotJson extends Error {}
-
-/** `value` as plain JSON data: plain objects and arrays, strings, finite numbers, booleans, null. */
-function plain(value: unknown): unknown {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new NotJson();
-    return value;
-  }
-  if (Array.isArray(value)) return (value as unknown[]).map(plain);
-  // A TOML date, a bigint, undefined: JSON cannot hold them exactly.
-  if (typeof value !== "object" || value instanceof Date) throw new NotJson();
-  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, plain(v)]));
+/** The argv a record's entry runs: its command and its arguments. */
+export function recordArgv(record: HomeRecord): string[] {
+  const { command, args } = record.entry;
+  return [
+    typeof command === "string" ? command : "",
+    ...(Array.isArray(args) ? args.filter((a): a is string => typeof a === "string") : []),
+  ];
 }
 
-/** A plain JSON copy of an entry, or undefined when JSON cannot hold it exactly. */
-function jsonCopy(value: unknown): unknown {
-  try {
-    return value === undefined ? undefined : plain(value);
-  } catch (error) {
-    if (error instanceof NotJson) return undefined;
-    throw error;
-  }
-}
-
-/** Whether an entry is exactly the one recorded: the same keys, in any order, and values. */
-const sameEntry = (entry: unknown, recorded: unknown): boolean => {
-  const copy = jsonCopy(entry);
-  return copy !== undefined && isDeepStrictEqual(copy, recorded);
-};
-
-/** Whether an entry runs exactly `argv`: its command and its arguments. */
-export function runs(entry: unknown, argv: readonly string[]): boolean {
-  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
-  const { command, args } = entry as { command?: unknown; args?: unknown };
-  return command === argv[0] && isDeepStrictEqual(jsonCopy(args), argv.slice(1));
-}
-
-/** The entry with TTasks's patches applied: what apply leaves once its patches are written. */
-function patched(entry: unknown, patches: HomeRecord["patches"]): unknown {
-  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return entry;
-  return { ...entry, ...Object.fromEntries(patches.map((p) => [p.key, p.after])) };
-}
+/** The entries that are TTasks's own in a home: the one it intends, and an earlier build's shapes. */
+const ownShapes = (record: HomeRecord): readonly unknown[] => [record.entry, ...record.also];
 
 /**
- * Whether an entry is exactly what setup asked for, when no entry was recorded yet (the app's command
- * was running): the asked command and arguments, and besides them only the keys the app adds by
- * itself and TTasks's own patches, each with its fixed value. Any other key or value is the person's.
+ * The one rule before every take-back: whether the entry in the file as just read is exactly what
+ * TTasks wrote there (entry.ts whoseEntry), compared with what it intended, never with what it read
+ * back. An entry the person changed, a comment included, is theirs.
  */
-function asAsked(entry: unknown, app: AgentApp, argv: readonly string[]): boolean {
-  const copy = jsonCopy(entry);
-  if (!runs(copy, argv)) return false;
-  const fixed: Record<string, unknown> = {
-    ...APPS[app].appKeys,
-    ...(app === "codex" ? Object.fromEntries(codexPatches().map((p) => [p.key, p.value])) : {}),
-  };
-  return Object.entries(copy as Record<string, unknown>).every(
-    ([key, value]) =>
-      key === "command" ||
-      key === "args" ||
-      (Object.hasOwn(fixed, key) && isDeepStrictEqual(value, fixed[key])),
-  );
-}
-
-/**
- * The one rule before every take-back (the app's own `mcp remove`, or setup's splice for an app it
- * edits itself): the entry as read just now is provably setup's own. Applied: exactly the recorded
- * entry. An apply that did not finish: the entry the command wrote (recorded as soon as it was
- * checked, or before the write when setup writes it), the same with TTasks's patches, or, when the
- * command was still running, exactly what setup asked for. An entry the person changed is never.
- */
-export function ownEntry(entry: unknown, record: HomeRecord): boolean {
-  if (entry === undefined) return false;
-  if (record.state === "applied") return sameEntry(entry, record.entry);
-  if (record.entry === null) return asAsked(entry, record.app, record.entry_argv);
-  return sameEntry(entry, record.entry) || sameEntry(entry, patched(record.entry, record.patches));
+function whoseIn(home: AgentHome, read: FileRead, record: HomeRecord): "own" | "edited" | "absent" {
+  if (read.kind !== "read" || read.entry === undefined) return "absent";
+  const { format, servers } = APPS[home.app];
+  return whoseEntry(format, servers, read.text, ownShapes(record), read.entry);
 }
 
 /** A home as it is now, judged against setup's record of it. */
@@ -904,17 +890,16 @@ export function inspectHome(home: AgentHome, record: HomeRecord | undefined): Ho
     ...(record === undefined ? {} : { record }),
   };
   if (read.kind === "refused") return { ...base, state: "refused", refusal: read.refusal };
-  const entry = entryOf(read);
   if (record === undefined) {
-    return entry === undefined
+    return entryOf(read) === undefined
       ? { ...base, state: "not_registered" }
       : { ...base, state: "refused", refusal: "foreign_entry" };
   }
-  if (record.state === "applying") return { ...base, state: "interrupted" };
-  if (entry === undefined) return { ...base, state: "missing" };
-  return { ...base, state: sameEntry(entry, record.entry) ? "registered" : "edited" };
+  if (record.state !== "applied") return { ...base, state: "interrupted" };
+  const whose = whoseIn(home, read, record);
+  if (whose === "absent") return { ...base, state: "missing" };
+  return { ...base, state: whose === "own" ? "registered" : "edited" };
 }
-
 /** A home rebuilt from its record, for a home that detection no longer finds. */
 async function homeOfRecord(
   input: SetupInput,
@@ -945,7 +930,13 @@ const recordOf = (records: readonly HomeRecord[], home: AgentHome, platform: Nod
  * home otherwise. Remove, then apply, moves an entry to what the machine says now.
  */
 export async function survey(input: SetupInput): Promise<HomeView[]> {
-  const records = readRecords(input.stateDir);
+  let records: HomeRecord[];
+  try {
+    records = readRecords(input.stateDir);
+  } catch (error) {
+    if (!(error instanceof SetupStateInvalid)) throw error;
+    return unrecorded(input);
+  }
   const found = discover(input);
   const homes = await agentHomes(input, found);
   for (const record of records) {
@@ -961,6 +952,45 @@ export async function survey(input: SetupInput): Promise<HomeView[]> {
     );
   }
   return views;
+}
+
+/**
+ * Every home while setup's own record cannot be read: the homes found, and the homes the service's
+ * live rows (`input.rows`) name, each with its row's instance and refused as `record_unreadable`.
+ * Turning one off revokes its access and nothing else (removeHome); no app's settings file is
+ * opened, and nothing can be turned on.
+ */
+async function unrecorded(input: SetupInput): Promise<HomeView[]> {
+  const found = discover(input);
+  const homes = await agentHomes(input, found);
+  const rows = input.rows ?? [];
+  for (const row of rows) {
+    if (!isAgentApp(row.app)) continue;
+    if (homes.some((h) => h.app === row.app && samePath(input.platform, h.home, row.home))) {
+      continue;
+    }
+    homes.push({
+      app: row.app,
+      home: row.home,
+      file: fileOf(input, row.app, row.home, false),
+      isDefault: false,
+      variable: targetDef(APPS[row.app].target).detect.homes?.env ?? "",
+      instance: row.instance,
+      account: "",
+      hosts: hostsOf(input, found, row.app, row.home, false),
+      managed: false,
+    });
+  }
+  return homes.map((home) => {
+    const row = rows.find((r) => r.app === home.app && samePath(input.platform, r.home, home.home));
+    return {
+      home: row === undefined ? home : { ...home, instance: row.instance },
+      state: "refused",
+      refusal: "record_unreadable",
+      sha256: null,
+      parent: false,
+    };
+  });
 }
 
 /**
@@ -1028,7 +1058,7 @@ function freeInstances(
  */
 export function entryInstance(entry: unknown): string | null | undefined {
   if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return undefined;
-  const args = jsonCopy((entry as { args?: unknown }).args);
+  const args = (entry as { args?: unknown }).args;
   if (!Array.isArray(args) || args[0] !== "mcp" || !args.every((a) => typeof a === "string")) {
     return undefined;
   }
@@ -1037,20 +1067,51 @@ export function entryInstance(entry: unknown): string | null | undefined {
 }
 
 /**
- * The app's own command that takes an entry of TTasks's name out of a home, as a person runs it: the
- * app's word on the PATH, its `mcp remove`, and the home's variable for a home that is not the
- * default (A3 3.7.8: how to take out an entry added by hand). Claude Desktop has no command: its
- * entry is a member of its file.
+ * What a person takes out of a home's file by hand to remove an entry of TTasks's name (A3 3.7.8):
+ * the one table or member, in the home's own file. Never a command: a pasted command runs in
+ * whatever shell and account it is pasted into, which can be another home's.
  */
-export function handRemoval(
-  home: AgentHome,
-  platform: NodeJS.Platform,
-): { argv: string[]; set: Record<string, string> } | undefined {
-  if (home.app === "claude-desktop") return undefined;
+export function manualRemoval(home: AgentHome): { readonly file: string; readonly what: string } {
+  const servers = APPS[home.app].servers;
   return {
-    argv: [home.app === "codex" ? "codex" : "claude", ...removeArgs(home.app)],
-    set: commandEnv({ env: {}, platform }, home).set,
+    file: home.file,
+    what:
+      APPS[home.app].format === "toml"
+        ? `the [${servers}.${keyText(MCP_SERVER_KEY)}] table`
+        : `the ${JSON.stringify(MCP_SERVER_KEY)} member of ${JSON.stringify(servers)}`,
   };
+}
+
+/**
+ * An entry as the lines a preview shows, each with `sign` (`+` added, `-` taken out): a TOML
+ * table's header and its keys, or a JSON member's keys under their path. An entry that is not a
+ * table shows as its path alone.
+ */
+export function entryLines(app: AgentApp, entry: unknown, sign: "+" | "-"): string[] {
+  const { servers, format } = APPS[app];
+  const fields =
+    typeof entry === "object" && entry !== null && !Array.isArray(entry)
+      ? Object.entries(entry as Record<string, unknown>)
+      : undefined;
+  if (format === "toml") {
+    const header = `${sign} [${servers}.${keyText(MCP_SERVER_KEY)}]`;
+    return [
+      header,
+      ...(fields ?? []).map(([key, value]) => `${sign} ${keyText(key)} = ${tomlText(value)}`),
+    ];
+  }
+  const at = `${servers}.${MCP_SERVER_KEY}`;
+  if (fields === undefined) return [`${sign} ${at}`];
+  return fields.map(([key, value]) => `${sign} ${at}.${key} = ${JSON.stringify(value)}`);
+}
+
+/** A value of a TOML entry as TOML text, or as JSON for one the editor does not write. */
+function tomlText(value: unknown): string {
+  try {
+    return valueText(value as EditValue);
+  } catch {
+    return JSON.stringify(value);
+  }
 }
 
 /** The homes T3's enabled provider instances use (A3 3.13.6), for doctor's `t3.homes`. */
@@ -1090,76 +1151,27 @@ export function entryArgv(tasks: string, home: AgentHome, space: string): string
   return [tasks, "mcp", "--space", space, "--instance", home.instance, "--app", home.app];
 }
 
-/** Claude Desktop's entry as setup writes it (A3 3.13.3): only the command and its arguments. */
-export const desktopEntry = (argv: readonly string[]) => ({
-  command: argv[0] ?? "",
-  args: argv.slice(1),
-});
-
-function addArgs(app: AgentApp, entry: readonly string[]): string[] {
-  if (app === "claude-code")
-    return ["mcp", "add", "--scope", "user", MCP_SERVER_KEY, "--", ...entry];
-  if (app === "codex") return ["mcp", "add", MCP_SERVER_KEY, "--", ...entry];
-  return [];
-}
-
-function removeArgs(app: AgentApp): string[] {
-  if (app === "claude-code") return ["mcp", "remove", MCP_SERVER_KEY, "--scope", "user"];
-  if (app === "codex") return ["mcp", "remove", MCP_SERVER_KEY];
-  return [];
-}
-
-/** Codex: the keys TTasks patches into its own table (A3 3.13.4, 3.7.2). */
-function codexPatches(): { key: string; value: EditValue }[] {
+/** The lines a home's file gains, as the preview shows them: JSON's servers' table first when new. */
+function diffOf(
+  app: AgentApp,
+  entry: Readonly<Record<string, EditValue>>,
+  parent: boolean,
+): string[] {
+  const { format, servers } = APPS[app];
   return [
-    // Codex passes the agent only an allow-list of variables: the ticket must be named (3.7.2).
-    { key: "env_vars", value: [envVar("TICKET")] },
-    { key: "startup_timeout_sec", value: CODEX_STARTUP_TIMEOUT_SEC },
+    ...(format === "json" && !parent ? [`+ ${servers} = {}`] : []),
+    ...entryLines(app, entry, "+"),
   ];
 }
 
-/** The key-level diff of a change, as the preview shows it. */
-function diffOf(app: AgentApp, entry: readonly string[], parent: boolean): string[] {
-  if (app !== "codex") {
-    const servers = APPS[app].servers;
-    const at = `${servers}.${MCP_SERVER_KEY}`;
-    return [
-      ...(parent ? [] : [`+ ${servers} = {}`]),
-      `+ ${at}.command = ${JSON.stringify(entry[0])}`,
-      `+ ${at}.args = ${JSON.stringify(entry.slice(1))}`,
-    ];
-  }
-  return [
-    `+ [${APPS.codex.servers}.${keyText(MCP_SERVER_KEY)}]`,
-    `+ command = ${valueText(entry[0] ?? "")}`,
-    `+ args = ${valueText(entry.slice(1))}`,
-    ...codexPatches().map((p) => `+ ${keyText(p.key)} = ${valueText(p.value)}`),
-  ];
-}
-
-/** What applying a home would run and write, or why it cannot. Reads nothing more. */
+/** What applying a home would write, or why it cannot. Reads nothing more. */
 export function planChange(input: SetupInput, view: HomeView, space: string): Change | Refusal {
   const { home } = view;
-  const writer = APPS[home.app].writer;
   // Claude Desktop makes its file in its developer settings; setup never creates it.
-  if (writer === "edit" && view.sha256 === null) return "not_set_up";
-  const exec = writer === "edit" ? [] : commandFor(input, home);
-  if (exec === undefined) return "no_command";
-  const entry = entryArgv(input.tasks, home, space);
-  const { set, unset } = writer === "edit" ? { set: {}, unset: [] } : commandEnv(input, home);
-  return {
-    writer,
-    exec,
-    args: addArgs(home.app, entry),
-    undo: removeArgs(home.app),
-    entry,
-    set,
-    unset,
-    patches: home.app === "codex" ? codexPatches() : [],
-    diff: diffOf(home.app, entry, view.parent),
-  };
+  if (home.app === "claude-desktop" && view.sha256 === null) return "not_set_up";
+  const entry = intendedEntry(APPS[home.app].format, entryArgv(input.tasks, home, space));
+  return { entry, diff: diffOf(home.app, entry, view.parent) };
 }
-
 /** One selected home in a plan: as found, and the change apply would make there. */
 export interface PlanItem {
   readonly view: HomeView;
@@ -1205,11 +1217,11 @@ export function planOf(input: SetupInput, views: readonly HomeView[], space: str
  * homes, which the preview prints and `--apply --plan` checks again under the lock, so apply does
  * exactly what the preview showed or refuses. It covers the space, each home with its file,
  * instance, account, hosts and state (everything the home's row names) and, for a change, the
- * exact command, its environment and the diff, and the hash of a file TTasks writes into (a Codex
- * file, which TTasks's patches are spliced into, and Claude Desktop's). Claude Code's `.claude.json`
- * is covered by its state and diff but not its hash: Claude Code rewrites it while it runs, and
- * TTasks never edits it (the app's own command does). `blocks` is the instruction block's part of
- * the plan (block.ts `blockCanonical`), when the plan holds that part.
+ * exact entry, and the hash of the file it goes into (a Codex file and Claude Desktop's). Claude
+ * Code's `.claude.json` is covered by its state and entry but not its hash: Claude Code rewrites it
+ * while a session runs, and apply splices the entry into it as it is then. `blocks` is the
+ * instruction block's part of the plan (block.ts `blockCanonical`), when the
+ * plan holds that part.
  */
 export function planToken(space: string, items: readonly PlanItem[], blocks?: unknown): string {
   const canonical = items.map(({ view, change }) => [
@@ -1227,14 +1239,7 @@ export function planToken(space: string, items: readonly PlanItem[], blocks?: un
       ? null
       : typeof change === "string"
         ? change
-        : [
-            change.exec,
-            change.args,
-            Object.entries(change.set),
-            change.unset,
-            change.diff,
-            view.home.app === "claude-code" ? null : view.sha256,
-          ],
+        : [change.entry, change.diff, view.home.app === "claude-code" ? null : view.sha256],
   ]);
   return createHash("sha256")
     .update(JSON.stringify(blocks === undefined ? [space, canonical] : [space, canonical, blocks]))
@@ -1244,6 +1249,10 @@ export function planToken(space: string, items: readonly PlanItem[], blocks?: un
 
 // ---------------------------------------------------------------------------------------------
 // Apply and remove
+//
+// A record that is not `applied` is finished by the next setup run as a removal, whatever it was:
+// only an apply the person asked for gives a home access, right after its own write, and a later
+// run only ever takes access away.
 
 function putRecord(stateDir: string, platform: NodeJS.Platform, record: HomeRecord): void {
   const others = readRecords(stateDir).filter(
@@ -1252,84 +1261,229 @@ function putRecord(stateDir: string, platform: NodeJS.Platform, record: HomeReco
   writeRecords(stateDir, [...others, record]);
 }
 
-function dropRecord(stateDir: string, platform: NodeJS.Platform, home: AgentHome): void {
-  const records = readRecords(stateDir);
-  const kept = records.filter(
-    (r) => !(r.app === home.app && samePath(platform, r.home, home.home)),
+/** Drops a home's record. One that cannot be written stays, and the next run finishes it. */
+function forget(input: SetupInput, home: AgentHome): void {
+  try {
+    const records = readRecords(input.stateDir);
+    const kept = records.filter(
+      (r) => !(r.app === home.app && samePath(input.platform, r.home, home.home)),
+    );
+    if (kept.length !== records.length) writeRecords(input.stateDir, kept);
+  } catch {
+    // Kept: a removal the next run finishes.
+  }
+}
+
+/** Why the service refused a home's row, in setup's words. */
+const grantReason = (error: unknown): OutcomeReason =>
+  error instanceof GrantRefused ? error.reason : "grant_failed";
+
+/** Whether the service confirmed that the home has no access now. */
+const revoked = (access: Access, home: AgentHome): Promise<boolean> =>
+  access.revoke(home).then(
+    () => true,
+    () => false,
   );
-  if (kept.length !== records.length) writeRecords(stateDir, kept);
-}
 
-/** A Codex file that apply created and that the undo left empty: removed, as before the apply. */
-function removeEmptyFile(home: AgentHome, record: Pick<HomeRecord, "file_existed">): boolean {
-  if (home.app !== "codex" || record.file_existed) return false;
-  const read = readHomeFile(home);
-  if (read.kind !== "read" || read.bytes.length !== 0) return false;
-  rmSync(home.file, { force: true });
-  return true;
-}
-
-/** Writes `text` over the bytes `before` setup read, with the home's own rule for the file. */
-function writeHomeFile(home: AgentHome, before: Buffer, bom: boolean, text: string): boolean {
-  const whole = `${bom ? BOM : ""}${text}`;
-  if (Buffer.byteLength(whole, "utf8") > APPS[home.app].maxBytes) return false;
-  // The home's own rule, not machine.toml's: readHomeFile judged the file and its folder just
-  // before, and judges them again here.
-  return commitEdit(
-    { path: home.file, before, text: whole },
-    { unsafe: () => readHomeFile(home).kind === "refused", maxBytes: APPS[home.app].maxBytes },
-  ).ok;
-}
+const timer = (ms: number): Promise<void> =>
+  new Promise((done) => {
+    setTimeout(done, ms);
+  });
 
 /**
- * Takes setup's entry out of a home whose file `read` was just read and shows an entry that
- * ownEntry accepts: the app's own remove, or for an app setup edits itself the splice that undoes
- * its own (with the servers' table when setup made it and nothing else is left in it). True when
- * the take-back ran; the caller reads the file again to see that the entry is gone.
+ * Runs `work` under the app's own lock on the home's file (Claude Code's), or at once for an app
+ * that has none. `busy` when another writer keeps the lock through every pause, `unwritable` when
+ * the lock cannot be made beside the file.
  */
-async function takeBack(
+async function underAppLock<T>(
   input: SetupInput,
   home: AgentHome,
-  record: HomeRecord,
-  read: Extract<FileRead, { kind: "read" }>,
-): Promise<boolean> {
-  if (editsFile(home.app)) {
-    const edited = removeEntry(
-      read.text,
-      APPS[home.app].servers,
-      MCP_SERVER_KEY,
-      !record.parent_existed,
-    );
-    return edited.ok && writeHomeFile(home, read.bytes, read.bom, edited.text);
-  }
-  const exec = commandFor(input, home);
-  if (exec === undefined) return false;
-  const { env } = commandEnv(input, home);
-  return input.run([...exec, ...record.undo], env);
+  work: () => T,
+): Promise<T | "busy" | "unwritable"> {
+  if (!APPS[home.app].locked) return work();
+  const ran = await withAppLock(home.file, input.wait ?? timer, work);
+  return ran.held ? ran.value : ran.why;
+}
+
+/** How often a change is worked out again when another program saved the file in between. */
+const TRIES = 3;
+
+type Written = "done" | "too_large" | "changed_meanwhile" | "unwritable" | "busy";
+
+class ChangedMeanwhile extends Error {}
+
+/**
+ * Whether the home's file is still exactly `before` (undefined: still no file), in a place setup
+ * may write. A stat or two and one read: what runs under the app's lock.
+ */
+function stillAsRead(home: AgentHome, before: Buffer | undefined): boolean {
+  if (placeRefusal(home.file, home.home) !== undefined) return false;
+  const again = readConfigFile(home.file, APPS[home.app].maxBytes);
+  if (again.kind === "missing") return before === undefined;
+  return (
+    again.kind === "bytes" &&
+    before !== undefined &&
+    !unsafe(again.stat) &&
+    before.equals(again.bytes)
+  );
 }
 
 /**
- * Registers TTasks in one home that has no entry yet. The record is written before anything is
- * written to the home; a failure after it takes the entry back when it is provably setup's, so
- * nothing is left half done. `grant` is the agent-home row the service keeps for this home (A2
- * 3.2.5). `planned` is the change the plan holds for it (planOf), when the caller has one.
+ * Puts `whole` in place of the bytes `before` setup read (undefined: no file yet), with the file's
+ * own mode. The new file is written and flushed beside the old one first; under the app's own lock
+ * the file is only compared once more and the new one renamed over it, or, where there was no
+ * file, put in place only where nothing is (StagedFile.create). A file the OS will not let setup
+ * write (read-only, held by another program, a full disk) is `unwritable`.
+ */
+async function writeHomeFile(
+  input: SetupInput,
+  home: AgentHome,
+  before: Buffer | undefined,
+  whole: string,
+): Promise<Written> {
+  if (Buffer.byteLength(whole, "utf8") > APPS[home.app].maxBytes) return "too_large";
+  let mode = 0o600;
+  if (before !== undefined) {
+    try {
+      mode = lstatSync(home.file).mode & 0o777;
+    } catch {
+      return "changed_meanwhile";
+    }
+  }
+  let staged: StagedFile;
+  try {
+    staged = stageFile(home.file, whole, mode);
+  } catch {
+    return "unwritable";
+  }
+  try {
+    return await underAppLock(input, home, (): Written => {
+      if (before === undefined) {
+        return placeRefusal(home.file, home.home) === undefined && staged.create()
+          ? "done"
+          : "changed_meanwhile";
+      }
+      staged.replace(() => {
+        if (!stillAsRead(home, before)) throw new ChangedMeanwhile();
+      });
+      return "done";
+    });
+  } catch (error) {
+    return error instanceof ChangedMeanwhile ? "changed_meanwhile" : "unwritable";
+  } finally {
+    // Once in place it has no temporary name left; otherwise it goes.
+    staged.discard();
+  }
+}
+
+/** Deletes a file setup created, when it is still exactly the bytes `before` setup read. */
+async function deleteHomeFile(
+  input: SetupInput,
+  home: AgentHome,
+  before: Buffer,
+): Promise<Written> {
+  try {
+    return await underAppLock(input, home, (): Written => {
+      if (!stillAsRead(home, before)) return "changed_meanwhile";
+      rmSync(home.file);
+      return "done";
+    });
+  } catch {
+    return "unwritable";
+  }
+}
+
+/** A JSON file that is not there yet starts as the empty document setup adds its entry to. */
+const EMPTY_JSON = "{}\n";
+
+interface NotWritten {
+  readonly result: "left" | "failed";
+  readonly reason: OutcomeReason;
+}
+
+/**
+ * Writes the home's record (`applying`, with the entry as setup intends it), then the entry into the
+ * file as it is now: the record and the splice outside the app's lock, before the file changes. A
+ * file that changed since the plan is left alone, except Claude Code's: the app's own state, which a
+ * running session saves while setup works, so it is read and worked out again, a few times. When
+ * nothing was written the record goes again.
+ */
+async function writeEntry(
+  input: SetupInput,
+  view: HomeView,
+  space: string,
+  change: Change,
+): Promise<HomeRecord | NotWritten> {
+  const { home } = view;
+  const { format, servers, locked } = APPS[home.app];
+  const failed = (reason: OutcomeReason): NotWritten => ({ result: "failed", reason });
+  for (let attempt = 1; ; attempt += 1) {
+    const now = readHomeFile(home);
+    if (now.kind === "refused" || entryOf(now) !== undefined) return failed("changed_meanwhile");
+    if (!locked && (now.kind === "read" ? now.sha256 : null) !== view.sha256) {
+      return failed("changed_meanwhile");
+    }
+    const text = now.kind === "read" ? now.text : format === "json" ? EMPTY_JSON : "";
+    const edited = addOwnEntry(format, servers, text, change.entry);
+    if (!edited.ok) {
+      return failed(edited.reason === "invalid_file" ? "invalid_file" : "unsupported_layout");
+    }
+    const record: HomeRecord = {
+      app: home.app,
+      home: home.home,
+      file: home.file,
+      is_default: home.isDefault,
+      instance: home.instance,
+      account: home.account,
+      space,
+      state: "applying",
+      entry: change.entry,
+      also: [],
+      made: { file: now.kind === "missing", ...edited.made },
+      grant: null,
+      at: new Date().toISOString(),
+    };
+    try {
+      putRecord(input.stateDir, input.platform, record);
+    } catch (error) {
+      // What setup's reader could not read back (millions of line breaks inside an empty servers
+      // object, which the record keeps to give them back) is a layout setup cannot keep.
+      if (error instanceof SetupStateTooLarge)
+        return { result: "left", reason: "unsupported_layout" };
+      if (error instanceof SetupStateInvalid || error instanceof SetupStateUnsafe) throw error;
+      return failed("state_unwritable");
+    }
+    const before = now.kind === "read" ? now.bytes : undefined;
+    const bom = now.kind === "read" && now.bom ? BOM : "";
+    const wrote = await writeHomeFile(input, home, before, `${bom}${edited.text}`);
+    if (wrote === "done") return record;
+    forget(input, home);
+    if (!(wrote === "changed_meanwhile" && locked && attempt < TRIES)) return failed(wrote);
+  }
+}
+
+/**
+ * Registers TTasks in one home that has no entry yet, and gives the home its access once the entry
+ * is in place (giveAccess). The record is written before the file (writeEntry). A registered home
+ * gets its row, or keeps it, for the space its entry names (`space` is empty when the apply
+ * registers no new home), through the same checks of its entry. `planned` is the change the plan
+ * holds for it (planOf), when the caller has one.
  */
 export async function applyHome(
   input: SetupInput,
   view: HomeView,
   space: string,
-  grant: string | null,
+  access: Access,
   planned?: Change | Refusal,
 ): Promise<Outcome> {
   const { home } = view;
   if (view.state === "registered") {
-    if (view.record !== undefined && view.record.space !== space) {
-      return { home, result: "left", reason: "other_space" };
-    }
-    if (view.record !== undefined && view.record.grant !== grant) {
-      putRecord(input.stateDir, input.platform, { ...view.record, grant });
-    }
-    return { home, result: "unchanged" };
+    // A registered home has its record (inspectHome).
+    const record = view.record;
+    if (record === undefined) return { home, result: "left", reason: "missing" };
+    const target = space === "" ? record.space : space;
+    if (record.space !== target) return { home, result: "left", reason: "other_space" };
+    return giveAccess(input, home, record, target, access, true);
   }
   if (view.state === "refused")
     return { home, result: "left", reason: view.refusal ?? "unreadable" };
@@ -1337,199 +1491,229 @@ export async function applyHome(
   const change = planned ?? planChange(input, view, space);
   if (typeof change === "string") return { home, result: "left", reason: change };
 
-  // A3 3.13.1: re-read the target and stop when it moved since the plan read it.
-  const now = readHomeFile(home);
-  const nowHash = now.kind === "read" ? now.sha256 : null;
-  if (now.kind === "refused" || nowHash !== view.sha256 || entryOf(now) !== undefined) {
-    return { home, result: "failed", reason: "changed_meanwhile" };
-  }
-  const editing = change.writer === "edit";
-  const record: HomeRecord = {
-    app: home.app,
-    home: home.home,
-    file: home.file,
-    is_default: home.isDefault,
-    instance: home.instance,
-    account: home.account,
-    space,
-    state: "applying",
-    file_existed: view.sha256 !== null,
-    parent_existed: view.parent,
-    sha256_before: view.sha256,
-    sha256_after: null,
-    args: change.args,
-    undo: change.undo,
-    entry_argv: change.entry,
-    env: change.set,
-    // Setup writes this entry itself: it is known, and recorded, before the write.
-    entry: editing ? desktopEntry(change.entry) : null,
-    patches: [],
-    grant,
-    at: new Date().toISOString(),
-  };
-  putRecord(input.stateDir, input.platform, record);
-  /** The record as last written: after the command's entry is checked, it holds that entry. */
-  let known: HomeRecord = record;
-
-  /**
-   * Takes the change back as far as it went, then reports the failure. The take-back removes
-   * whatever entry of TTasks's name is there, so it runs only after a fresh read shows a file setup
-   * accepts and an entry that is setup's (ownEntry: before the checkpoint one exactly as asked,
-   * after it the checkpoint's entry, with or without TTasks's patches). Otherwise nothing runs and
-   * the `applying` record stays for `--remove`, with one exception: when the command failed, an
-   * entry that is not exactly as asked is not the command's (another one appeared meanwhile and the
-   * app refused to overwrite it), so it is left and the record goes.
-   */
-  const fail = async (reason: OutcomeReason, commandFailed = false): Promise<Outcome> => {
-    const current = readHomeFile(home);
-    const entry = entryOf(current);
-    const kept = (note: string): Outcome => ({ home, result: "failed", reason, notes: [note] });
-    if (current.kind === "refused") return kept("undo_failed");
-    if (entry !== undefined && !ownEntry(entry, known)) {
-      if (!commandFailed) return kept("entry_left");
-      dropRecord(input.stateDir, input.platform, home);
-      return { home, result: "failed", reason: "changed_meanwhile" };
-    }
-    if (entry !== undefined && current.kind === "read") {
-      const undone = await takeBack(input, home, known, current);
-      const again = readHomeFile(home);
-      if (!undone || again.kind === "refused" || entryOf(again) !== undefined) {
-        // The entry may still be there: the record stays, so `--remove` can take it back.
-        return kept("undo_failed");
-      }
-    }
-    removeEmptyFile(home, record);
-    dropRecord(input.stateDir, input.platform, home);
-    return { home, result: "failed", reason };
-  };
-
-  if (editing) {
-    // One entry spliced into the file as read just now; the write is refused when the file changed
-    // since that read, and then nothing was written.
-    if (now.kind !== "read") return fail("changed_meanwhile");
-    const edited = addEntry(now.text, APPS[home.app].servers, MCP_SERVER_KEY, record.entry);
-    if (!edited.ok)
-      return fail(edited.reason === "invalid_file" ? "invalid_file" : "unsupported_layout");
-    if (!writeHomeFile(home, now.bytes, now.bom, edited.text)) return fail("changed_meanwhile");
-    const written = readHomeFile(home);
-    if (written.kind !== "read" || !sameEntry(written.entry, record.entry)) {
-      return fail("unexpected_entry");
-    }
-    putRecord(input.stateDir, input.platform, {
-      ...record,
-      state: "applied",
-      sha256_after: written.sha256,
-    });
-    return { home, result: "applied" };
-  }
-
-  const { env } = commandEnv(input, home);
-  if (!(await input.run([...change.exec, ...change.args], env))) {
-    return fail("command_failed", true);
-  }
-  const added = readHomeFile(home);
-  const written = added.kind === "read" ? jsonCopy(added.entry) : undefined;
-  if (added.kind !== "read" || written === undefined || !runs(written, change.entry)) {
-    return fail("unexpected_entry");
-  }
-  // The checkpoint: the entry as the command wrote it, and the patches about to be written. From
-  // here an interrupted apply takes back only these (ownEntry).
-  const addedEntry = written as Record<string, unknown>;
-  const patches = change.patches.map((patch) => ({
-    key: patch.key,
-    before: addedEntry[patch.key] ?? null,
-    after: patch.value,
-  }));
-  known = { ...record, entry: written, patches };
-  putRecord(input.stateDir, input.platform, known);
-
-  let final = added;
-  if (patches.length > 0) {
-    const edited = applyEdits(
-      added.text,
-      change.patches.map((patch) => ({
-        op: "set" as const,
-        table: [APPS.codex.servers, MCP_SERVER_KEY],
-        key: patch.key,
-        value: patch.value,
-      })),
-    );
-    if (!edited.ok) {
-      return fail(
-        edited.reason === "unsupported_layout" ? "unsupported_layout" : "unexpected_entry",
-      );
-    }
-    if (Buffer.byteLength(`${added.bom ? BOM : ""}${edited.text}`, "utf8") > MAX_CONFIG_BYTES) {
-      return fail("too_large");
-    }
-    if (!writeHomeFile(home, added.bytes, added.bom, edited.text)) {
-      return fail("changed_meanwhile");
-    }
-    const reread = readHomeFile(home);
-    if (reread.kind !== "read") return fail("unexpected_entry");
-    final = reread;
-  }
-  // What is there now is exactly the command's entry with TTasks's patches, or the apply is undone.
-  const entry = jsonCopy(final.entry);
-  if (entry === undefined || !isDeepStrictEqual(entry, patched(written, patches))) {
-    return fail("unexpected_entry");
-  }
-  putRecord(input.stateDir, input.platform, {
-    ...known,
-    state: "applied",
-    sha256_after: final.sha256,
-    entry,
-  });
-  return { home, result: "applied" };
+  const written = await writeEntry(input, view, space, change);
+  if (!("entry" in written)) return { home, ...written, access: "off" };
+  return giveAccess(input, home, written, space, access, false);
 }
 
 /**
- * Takes TTasks's entry out of one home, when the entry is still exactly the one setup wrote
- * (ownEntry): with the app's own command, or for an app setup edits itself with the splice that
- * undoes its own. An entry the person changed since is left alone and reported. The home is read
- * again right before: the view may be older than the entry.
+ * Gives a home whose entry is in its file its access, for a new install and a registered home
+ * alike: the entry is read and must be the one setup intended, the access is asked for, the file is
+ * read once more after the service's answer, and the record says `applied` with the row. Anything
+ * else takes it all back (undo). `registered`: the home was registered before this apply, so it may
+ * have access already, and a row the service refuses leaves that as it was.
  */
-export async function removeHome(input: SetupInput, view: HomeView): Promise<Outcome> {
-  const { home, record } = view;
-  if (record === undefined) return { home, result: "unchanged", reason: "not_registered" };
-  const now = inspectHome(home, record);
-  if (now.state === "refused") {
-    return { home, result: "left", reason: now.refusal ?? "unreadable" };
+async function giveAccess(
+  input: SetupInput,
+  home: AgentHome,
+  record: HomeRecord,
+  space: string,
+  access: Access,
+  registered: boolean,
+): Promise<Outcome> {
+  // The entry as setup intended it, read back from its place: anything else there is not its own.
+  const placed = entryNow(home, record);
+  if (placed.whose !== "own") {
+    return undo(input, home, record, access, placed.reason, {
+      given: registered,
+      readable: placed.whose !== "unchecked",
+    });
   }
-  if (now.entry === undefined) {
-    removeEmptyFile(home, record);
-    dropRecord(input.stateDir, input.platform, home);
-    return { home, result: "removed", reason: "missing" };
+  let grant: string;
+  try {
+    grant = await access.grant(home, space);
+  } catch (error) {
+    if (registered) return { home, result: "failed", reason: grantReason(error) };
+    // A row the service made before its answer was lost is taken back too.
+    return undo(input, home, record, access, grantReason(error));
   }
-  if (!ownEntry(now.entry, record)) return { home, result: "left", reason: "edited" };
-  if (!editsFile(home.app) && commandFor(input, home) === undefined) {
-    return { home, result: "left", reason: "no_command" };
+  const after = entryNow(home, record);
+  if (after.whose !== "own") {
+    return undo(input, home, record, access, after.reason, {
+      readable: after.whose !== "unchecked",
+    });
   }
+  if (record.state !== "applied" || record.grant !== grant) {
+    try {
+      putRecord(input.stateDir, input.platform, { ...record, state: "applied", grant });
+    } catch {
+      return undo(input, home, record, access, "state_unwritable");
+    }
+  }
+  return { home, result: registered ? "unchanged" : "applied", access: "on" };
+}
+
+/**
+ * Setup's entry in the home's file as a read right now finds it. A read that fails cannot tell what
+ * is there (`unchecked`): only a read that succeeds decides that the entry is gone or not setup's.
+ */
+function entryNow(
+  home: AgentHome,
+  record: HomeRecord,
+):
+  | { readonly whose: "own" }
+  | { readonly whose: "edited" | "absent" | "unchecked"; readonly reason: OutcomeReason } {
   const read = readHomeFile(home);
-  if (read.kind !== "read" || !ownEntry(read.entry, record)) {
-    return { home, result: "failed", reason: "changed_meanwhile" };
+  if (read.kind === "refused") return { whose: "unchecked", reason: read.refusal };
+  const whose = whoseIn(home, read, record);
+  return whose === "own" ? { whose } : { whose, reason: "changed_meanwhile" };
+}
+
+/**
+ * Takes back an apply that cannot stand. The decision is recorded first (`removing`), then the
+ * access goes (when it may have been given), then the entry when a read shows it is still setup's
+ * own. After a read that failed (`readable` false) the file is not touched: the record stays
+ * `removing`, and the next run takes the entry out. A record that cannot be written stays as it
+ * was: an unfinished one the next run finishes as a removal all the same, a registered home's stays
+ * registered with its access off until the person asks again.
+ */
+async function undo(
+  input: SetupInput,
+  home: AgentHome,
+  record: HomeRecord,
+  access: Access,
+  reason: OutcomeReason,
+  { given = true, readable = true }: { readonly given?: boolean; readonly readable?: boolean } = {},
+): Promise<Outcome> {
+  const removing = { ...record, state: "removing" as const };
+  try {
+    putRecord(input.stateDir, input.platform, removing);
+  } catch {
+    // Left as it was: see above.
   }
-  const ran = await takeBack(input, home, record, read);
-  const after = readHomeFile(home);
-  if (!ran || after.kind === "refused" || entryOf(after) !== undefined) {
+  const off = given ? await revoked(access, home) : true;
+  if (!readable) {
     return {
       home,
       result: "failed",
-      reason: editsFile(home.app) ? "changed_meanwhile" : "command_failed",
+      reason,
+      access: off ? "off" : "unknown",
+      notes: ["undo_failed"],
     };
   }
-  const notes: string[] = [];
-  removeEmptyFile(home, record);
-  if (
-    home.app === "claude-code" &&
-    !record.parent_existed &&
-    after.kind === "read" &&
-    after.parent
-  ) {
-    // `claude mcp remove` keeps the `mcpServers` object it made, empty (lab run A, row A01), and
-    // `.claude.json` is never edited by TTasks.
-    notes.push("empty_parent_kept");
+  const out = await takeOut(input, home, removing, off);
+  const note =
+    out.kept === "own" ? "undo_failed" : out.kept === "edited" ? "entry_left" : undefined;
+  return {
+    home,
+    result: "failed",
+    reason,
+    access: off ? "off" : "unknown",
+    ...(note === undefined ? {} : { notes: [note] }),
+  };
+}
+
+/**
+ * Turns a home's access off, then takes TTasks's entry out of its file when it is still exactly the
+ * one setup wrote. The revoke is asked for first and alone: when the service does not confirm it,
+ * nothing else changes, and the access is as it was. Once the access is off, the record says
+ * `removing` before the file is touched, so a run that ends midway is finished by the next one; a
+ * record that cannot be written leaves the entry in its file, and the access off all the same.
+ */
+export async function removeHome(
+  input: SetupInput,
+  view: HomeView,
+  access: Access,
+): Promise<Outcome> {
+  const { home, record } = view;
+  if (!(await revoked(access, home))) {
+    return {
+      home,
+      result: "failed",
+      reason: "revoke_failed",
+      access: record === undefined || record.state === "applied" ? "on" : "unknown",
+    };
   }
-  dropRecord(input.stateDir, input.platform, home);
-  return { home, result: "removed", ...(notes.length === 0 ? {} : { notes }) };
+  if (record === undefined) {
+    // Without its record setup changes no file: the access is what turning off reaches.
+    if (view.refusal === "record_unreadable") {
+      return { home, result: "left", reason: "record_unreadable", access: "off" };
+    }
+    return { home, result: "unchanged", reason: "not_registered", access: "off" };
+  }
+  const removing = { ...record, state: "removing" as const };
+  if (record.state !== "removing") {
+    try {
+      putRecord(input.stateDir, input.platform, removing);
+    } catch {
+      const whose = whoseIn(home, readHomeFile(home), record);
+      return {
+        home,
+        result: "failed",
+        reason: "state_unwritable",
+        access: "off",
+        ...(whose === "absent" ? {} : { kept: whose }),
+      };
+    }
+  }
+  return { ...(await takeOut(input, home, removing, true)), access: "off" };
+}
+
+/**
+ * The file's part of a removal: TTasks's entry out when it is still its own, with what its add made
+ * (the servers' table, the bytes around it, the file itself when nothing else is left in it). No
+ * file is no entry, so a home whose folder is gone is done. The record goes once nothing of
+ * TTasks's is left there and its access is off. An entry the person changed stays, and is theirs
+ * from then on. An entry of TTasks's that could not be taken out keeps its record, so the next setup
+ * tries again.
+ */
+async function takeOut(
+  input: SetupInput,
+  home: AgentHome,
+  record: HomeRecord,
+  off: boolean,
+): Promise<Outcome> {
+  const { format, servers } = APPS[home.app];
+  const done = (outcome: Outcome): Outcome => {
+    if (off) forget(input, home);
+    return outcome;
+  };
+  for (let attempt = 1; ; attempt += 1) {
+    const read = readHomeFile(home);
+    if (read.kind === "refused") {
+      return { home, result: "left", reason: read.refusal, kept: "own" };
+    }
+    const whose = whoseIn(home, read, record);
+    if (whose === "absent" || read.kind !== "read") {
+      return done({ home, result: "removed", reason: "missing" });
+    }
+    if (whose === "edited") return done({ home, result: "left", reason: "edited", kept: "edited" });
+    const edited = removeOwnEntry(format, servers, read.text, record.made);
+    if (!edited.ok) {
+      const reason = edited.reason === "invalid_file" ? "invalid_file" : "unsupported_layout";
+      return { home, result: "failed", reason, kept: "own" };
+    }
+    const wrote =
+      record.made.file && holdsNothing(format, edited.text)
+        ? await deleteHomeFile(input, home, read.bytes)
+        : await writeHomeFile(input, home, read.bytes, `${read.bom ? BOM : ""}${edited.text}`);
+    if (wrote === "done") return done({ home, result: "removed" });
+    if (wrote !== "changed_meanwhile" || attempt >= TRIES) {
+      return { home, result: "failed", reason: wrote, kept: "own" };
+    }
+  }
+}
+
+/**
+ * Settles what a setup run left midway (a crash, a closed terminal, an undo that could not finish):
+ * run first by every setup that changes the homes, under the setup lock, so a record that is not
+ * `applied` then is no other run's. Each is finished as a removal (removeHome), whatever it was.
+ * A record that cannot be read leaves nothing to settle: survey says so for each home.
+ */
+export async function settleHomes(input: SetupInput, access: Access): Promise<Outcome[]> {
+  let records: HomeRecord[];
+  try {
+    records = readRecords(input.stateDir).filter((r) => r.state !== "applied");
+  } catch (error) {
+    if (error instanceof SetupStateInvalid) return [];
+    throw error;
+  }
+  if (records.length === 0) return [];
+  const found = discover(input);
+  const outcomes: Outcome[] = [];
+  for (const record of records) {
+    const home = await homeOfRecord(input, found, record);
+    outcomes.push(await removeHome(input, inspectHome(home, record), access));
+  }
+  return outcomes;
 }

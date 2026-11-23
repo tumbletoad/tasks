@@ -125,6 +125,11 @@ describe("[A7.3.12.m5-12.web-apps] The agent apps' switches in the page", () => 
 
   test("an answer of another shape is refused, and an applied one is read with its outcomes", () => {
     expect(() => viewOf({ rows: "no" })).toThrow();
+    // Setup's own record that cannot be read is named once, for the whole page.
+    expect(viewOf({ space: "sp_one", rows: [], record: "~/state/setup/agents.json" }).record).toBe(
+      "~/state/setup/agents.json",
+    );
+    expect(viewOf({ space: "sp_one", rows: [] }).record).toBeUndefined();
     const applied = appliedOf({
       applied: true,
       view: VIEW,

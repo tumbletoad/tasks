@@ -34,7 +34,7 @@ export interface PortFacts {
   recorded(port: number): Promise<number>;
   /** Records a sighting. */
   record(port: number, holders: readonly ForeignHolder[]): Promise<void>;
-  /** Writes `[http] port` to machine.toml. False when the file could not take it. */
+  /** Writes `[http] port` to machine.toml. False, or a throw, when the file could not take it. */
   persist(port: number): boolean;
   /** The check could not run (the OS gave no answer): logged, and the port is treated as free. */
   checkFailed?(): void;
@@ -140,8 +140,15 @@ export async function choosePort(
       continue;
     }
     // The listener's own port: the same as `port`, except for 0 (tests), the OS's choice. Only a
-    // port that is in machine.toml is reported as persisted.
-    if (facts.persist(listener.port)) {
+    // port that is in machine.toml is reported as persisted. A save that fails, however it fails,
+    // keeps the listener: the page works this run.
+    let saved: boolean;
+    try {
+      saved = facts.persist(listener.port);
+    } catch {
+      saved = false;
+    }
+    if (saved) {
       return { kind: "bound", listener, persisted: listener.port, first: true };
     }
     facts.writeFailed?.("persist");

@@ -3449,7 +3449,7 @@
     },
     {
       "id": "A3.3.13.setup.exact",
-      "title": "ttasks setup agents on scratch homes with fake commands: the preview gives the exact argv, environment and key-level diff and writes nothing; apply registers the entry with each app's own command (Codex's two keys by a single-key patch that keeps CRLF, the byte order mark and the mode); remove leaves every file key-identical, and byte-identical here; the record holds no other server's value",
+      "title": "ttasks setup agents on scratch homes, no app's command run: the preview gives the exact entry and the lines its file gains and writes nothing; apply writes each entry itself (Codex's table keeps CRLF, the byte order mark and the mode); remove gives back every file byte for byte and deletes a file setup created when nothing else is in it; the homes the shell's variables name are never touched; the record holds no other server's value",
       "source": "A3 3.13.1, A3 3.13.2, A3 3.13.4, A7 3.9 M2.14",
       "owner": "M2",
       "kind": "ci",
@@ -3457,7 +3457,7 @@
     },
     {
       "id": "A3.3.13.setup.refuse",
-      "title": "ttasks setup agents refuses a home it does not understand and runs nothing there (not UTF-8, invalid JSON or TOML, a duplicate key, a link or a generated file, servers inline or as dotted keys, an entry it did not write, no usable command), leaves an entry changed by hand alone, forgets one removed by hand, and takes back a command that failed",
+      "title": "ttasks setup agents refuses a home it does not understand and writes nothing there (not UTF-8, invalid JSON or TOML, a duplicate key, a link or a generated file, servers inline or as dotted keys, an entry it did not write), registers a home whose app's command is not on the PATH, leaves an entry changed by hand alone with its access taken away, and forgets one removed by hand",
       "source": "A3 3.13.1, A3 3.12, A7 3.9 M2.14",
       "owner": "M2",
       "kind": "ci",
@@ -3481,8 +3481,16 @@
     },
     {
       "id": "A3.3.13.setup.json-edit",
-      "title": "One entry spliced into and out of a JSON file (two spaces, four, tabs, CRLF, one line, an empty or a missing servers table): the document gains exactly the entry and the removal gives back every byte; not JSON, servers that are not an object or an entry already there are refused",
+      "title": "One entry spliced into and out of a JSON file (two spaces, four, tabs, CRLF, one line, an empty or a missing servers table): the document gains exactly the entry and the removal gives back every byte, whitespace inside an empty object included; not JSON, servers that are not an object or an entry already there are refused",
       "source": "A3 3.13.1, A3 3.13.3, A7 3.11 M4.05",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.3.13.setup.fixtures",
+      "title": "Agent setup's fixture table, run through the production planner, writer and grants for Claude Code, Codex and Claude Desktop with the raw bytes, the access and the other home compared after each action: add then remove gives back every byte (a byte order mark, CRLF, four spaces, tabs, one line, unknown keys, an empty servers object with spaces inside, comments, no final newline, an empty file, no file, which setup creates and deletes again except Claude Desktop's); access is given once the entry is in place and taken back before it comes out; a file setup does not accept stays as it was; an entry changed by hand, a comment in or above its table included, and a change made while setup gives the access stay and lose their access; a file changed since the plan is not written while Claude Code's file takes the entry as it is then; a Claude Code session that saves during setup keeps its save under its own lock, one that keeps the lock leaves nothing written, and a left lock is taken over; a file that cannot be written gives no access and its entry comes out at the next setup; a run that ended midway is finished or undone once; a refused row takes the entry back and a failed revoke is done again; a read that fails right after the write keeps the record to take the entry out; giving a registered home its access back checks its entry as a new install does; with setup's own record unreadable every home with access still turns off and nothing turns on; a volume without hard links still gets a new file; an earlier build's records are read in place",
+      "source": "A3 3.13.1, A3 3.7.4",
       "owner": "M4",
       "kind": "ci",
       "profiles": ["v1"]
@@ -3521,7 +3529,7 @@
     },
     {
       "id": "A3.3.13.setup.apps",
-      "title": "ttasks setup agents on scratch homes for the remaining apps: Claude Desktop's entry is spliced in and taken out leaving the file byte-identical (CRLF, byte order mark, mode, other servers), never in a file the app has not made, and several of its files ask for --home; the Codex app is a host of the default Codex home and its engine the command when no CLI is there; T3's provider instances' homes are offered and marked as read by T3 while T3's settings are only read; a managed home is left alone, also a Claude Desktop file a repository tracks through linked git metadata, by apply and by remove",
+      "title": "ttasks setup agents on scratch homes for the remaining apps: Claude Desktop's entry is spliced in and taken out leaving the file byte-identical (CRLF, byte order mark, mode, other servers), never in a file the app has not made, and several of its files ask for --home; the Codex app is a host of the default Codex home, whose engine doctor asks when no CLI is there; T3's provider instances' homes are offered and marked as read by T3 while T3's settings are only read; a managed home is left alone, also a Claude Desktop file a repository tracks through linked git metadata, by apply and by remove",
       "source": "A3 3.13.3, A3 3.13.5, A3 3.13.6, A3 3.12, A7 3.11 M4.05",
       "owner": "M4",
       "kind": "ci",
@@ -3537,7 +3545,7 @@
     },
     {
       "id": "A3.3.13.setup.print-quoting",
-      "title": "A command line setup and doctor print for a person to paste gives the command exactly its words: fed to the real shell (PowerShell 7 and Windows PowerShell 5.1 through an npm-style .ps1 and .cmd shim on Windows, /bin/sh elsewhere) with a stub that reports its argv, no word or variable is expanded, split, joined or dropped, print's Claude Code command registers the install's path as it is, and a word no quoting keeps literal (a control character other than a newline in a POSIX line; on Windows any control character and % ! ^ & | < > \") gets no line, nor does a line past 4,095 bytes of UTF-8, while one at that bound reaches the command through every shell and shim",
+      "title": "A command line of TTasks's own printed for a person to paste gives the command exactly its words: fed to the real shell (PowerShell 7 and Windows PowerShell 5.1 through an npm-style .ps1 and .cmd shim on Windows, /bin/sh elsewhere) with a stub that reports its argv, no word is expanded, split, joined or dropped, also with the command given by its path, and a word no quoting keeps literal (a control character other than a newline in a POSIX line; on Windows any control character and % ! ^ & | < > \") gets no line, nor does a line past 4,095 bytes of UTF-8, while one at that bound reaches the command through every shell and shim",
       "source": "A3 3.13.7, A3 3.13.1, A7 3.11 M4.05",
       "owner": "M4",
       "kind": "ci",
@@ -4944,7 +4952,7 @@
     },
     {
       "id": "A7.3.12.m5-12.e2e.settings",
-      "title": "In Chromium: Settings shows the agent apps as they stand, takes one app's tools out, refuses a home that changed between the view and the click with the new view and the choice kept, and takes everything out again",
+      "title": "In Chromium: Settings shows the agent apps as they stand, takes one app's tools out, refuses a home that changed between the view and the click with the new view and the choice kept, turns off the tools of an entry changed by hand and says apart that the entry stays in its file, turns the tools off while setup's own record cannot be read and says where it is, and takes everything out again",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
