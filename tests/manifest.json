@@ -1625,6 +1625,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A4.3.11.run.requests",
+      "title": "ttasks run sends what the person gave it: --input <file> and --input - carry the task, the request and the instance, an argument sets its field over the JSON, an --input that cannot be read or holds a field the run does not take starts nothing, a command that reads no --input refuses it before it does anything, and the space from --space, TTASKS_SPACE or the default is resolved once and sent on the start and on every look of --wait, so a default that changes during the wait loses nothing",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.3.11.run.answer-cut",
+      "title": "ttasks run show of an answer the run's record marks as cut says so: answer_cut in its JSON and in the heading a person reads, for a run that ended as for one that is still working",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A4.3.11.codex.driver",
       "title": "The codex driver against a fake app server that speaks exactly the recorded exchanges: the request goes over the protocol, the final answer is the work's, a narrower mode runs in Codex's own sandbox, each server request kind is answered as the permission says while the turn goes on, a blocking question ends the run as needing the person with the question kept, and so does a question the turn ends with, and is kept when the wait for background work is stopped, the thread of an agent the run's agent started is never the run's own and holds the run while it works or until it is closed, a thread the server says works in another folder than the run's is given no work, a server that ends during background work leaves the work unfinished, an unknown request kind gets the protocol's error, Stop during start-up and during a turn, a server that stops answering, background work after the turn, a whole answer after megabytes of other output, an answer that streams in kept up to its cap while commentary and a helper's words never are, a question in the turn's summary before its own message, and a request that comes after the work settled hears no one answered and changes nothing",
       "owner": "M6",

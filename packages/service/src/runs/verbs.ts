@@ -7,7 +7,7 @@ import { AppError, RequestId } from "@ttasks/contracts";
 import { RECORDED, RUN_REQUEST_MAX_BYTES, type RunRecord } from "@ttasks/contracts/runs";
 import type { ConnectionClass } from "../local/index.ts";
 import type { UsableSpace } from "../ops/index.ts";
-import type { RunLive, RunService } from "./service.ts";
+import { runAnswer, type RunLive, type RunService } from "./service.ts";
 
 export interface RunVerbsHost {
   readonly runs: RunService;
@@ -102,11 +102,16 @@ export function runVerbs(
         requestId,
       });
       const shown = await host.runs.show(served.id, run.id);
-      return runView(
-        shown?.run ?? run,
-        shown?.task ?? null,
-        host.runs.live(shown?.run ?? run, served),
-      );
+      // The space it was queued in, by its ID: what a caller sends to find the run again, whatever
+      // the default is by then.
+      return {
+        space: served.id,
+        ...runView(
+          shown?.run ?? run,
+          shown?.task ?? null,
+          host.runs.live(shown?.run ?? run, served),
+        ),
+      };
     },
     "runs/list": async (params) => {
       const served = host.space(text(params, "space"));
@@ -119,11 +124,8 @@ export function runVerbs(
       const served = host.space(text(params, "space"));
       const shown = await host.runs.show(served.id, runId(params));
       if (shown === undefined) throw noRun();
-      return {
-        ...runView(shown.run, shown.task, host.runs.live(shown.run, served)),
-        answer: shown.answer,
-        answer_final: shown.run.result?.textFinal === true,
-      };
+      const live = host.runs.live(shown.run, served);
+      return { ...runView(shown.run, shown.task, live), ...runAnswer(shown.run, live.said) };
     },
     "runs/stop": async (params) => {
       const served = host.space(text(params, "space"));
