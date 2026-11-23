@@ -2,7 +2,7 @@
 
 One row per step of `planning/appendix/A7-milestones.md` (sections 3.7 to 3.14). The step's work, its Verify line and the sections it cites live there. This file only tracks state.
 
-**Done so far:** 79 of 101, and M2.04b, M4.01b, M4.05b and M6.04h outside the base count. The rows were checked against the code on 2026-11-22.
+**Done so far:** 80 of 101, and M2.04b, M4.01b, M4.05b and M6.04h outside the base count. The rows were checked against the code on 2026-11-22.
 
 **Base steps per milestone:** M0 12 · M1 15 · M2 15 · M3 16 · M4 11 · M5 14 · M6 16 · M7 2 · total 101. Plus the gates G1 and G2, the grant gate M2.04b, the rows that hold what a merged step left (an ID that ends in `b`, `t` or `r`), and the conditional steps listed apart.
 
@@ -108,7 +108,7 @@ The session plans for lab sessions 1 to 3 were written before background runs an
 | M2.12 | HTTP and WebSocket | M1.09 | M | done |
 | M2.13 | Skeleton page | M2.12, M2.05 | M | done |
 | M2.14 | Setup v0 | M2.03 | S | done |
-| M2.10t | T3 Open from the page and the questions before dispatch, the part of M2.10 not built | M2.10, M2.11, M4.06 | M | todo |
+| M2.10t | T3 Open from the page and the questions before dispatch, the part of M2.10 not built | M2.10, M2.11, M4.06 | M | ready |
 | M2.15 | Real-machine acceptance | all | S RM | todo |
 
 M2.04b and M2.10t are not in the base count. Until M2.10t lands, Open on a T3 instance answers `no_route`. M2.07's places were replaced by folders (M4.09, M4.10, M6.16), and M4.11 retires what is left of them. M2.04's binding is replaced under M4.06.
@@ -147,14 +147,14 @@ M3.13 relies on a CI job that the local checks do not cover. M3.05's search tabl
 | M4.04 | Final server instructions | M4.01 | S | done |
 | M4.05 | Setup for remaining apps, doctor | M2.14 | M | done |
 | M4.05b | What M4.05 left: doctor's launch rows and sessions row, a free instance ID in setup | M4.05, M2.04b | S | done |
-| M4.06 | Binding complete | M2.04, M2.04b | M | review |
+| M4.06 | Binding complete | M2.04, M2.04b | M | done |
 | M4.07 | Source ingestion | M4.01 | S | ready |
 | M4.08 | Interactive agent evals | M4.01–M4.07 | S RM | todo |
 | M4.09 | Folders in the space: storage and operations | M4.01b | M | done |
 | M4.10 | Agent and command-line fields for folders | M4.09 | M | done |
 | M4.11 | Folder follow-ups, the old places retired | M4.10, M6.16, M3.10 | S | todo |
 
-M4.05b and M4.01b are not in the base count. M4.06 is built as a redesign in slices and not as the plan's step: a connection is a launch's session or none. Pull requests 118 and 120 are merged, 121 is open, and one slice follows it. Of M4.03 the framing, the budgets and the user's notes kept whole are built. Notes and log entries name their writer, and the summary, the context, the outcome and the sources carry no such label yet. Related learnings and the secret warning on a write are not built. Until M4.02 lands every agent change is applied in full, and no route changes the autonomy level.
+M4.05b and M4.01b are not in the base count. M4.06 was built as a redesign in four slices (pull requests 118, 120, 121 and 124) and not as the plan's step: a connection is a launch's or a run's session, or none, decided from the value TTasks issued for it. What stays for the build before the switch (an older bridge's handle, `bridgeUsed` in a launch file) goes once the owner's install is moved. Of M4.03 the framing, the budgets and the user's notes kept whole are built. Notes and log entries name their writer, and the summary, the context, the outcome and the sources carry no such label yet. Related learnings and the secret warning on a write are not built. Until M4.02 lands every agent change is applied in full, and no route changes the autonomy level.
 
 ## M5: the planner UI (parallel with M6)
 
@@ -188,7 +188,7 @@ M5.14b is not in the base count. M5.12 merged as a first space and an agent-apps
 | M6.04 | Cancellation | M6.03 | M | done |
 | M6.05 | Stream parsers | M0.11 | S | done |
 | M6.06 | Run adapters | M6.04, M6.05, M4.01 | M | done |
-| M6.06b | What M6.06 left: `run_report` on a run's connection, and asking the person about an approval in Codex's narrower modes, where the driver answers each request itself today | M6.06, M4.06 | S | todo |
+| M6.06b | What M6.06 left: `run_report` on a run's connection, and asking the person about an approval in Codex's narrower modes, where the driver answers each request itself today | M6.06, M4.06 | S | ready |
 | M6.07 | Routines: Refresh and Wrap-up | M6.06, M4.07 | M | todo |
 | M6.08 | The TTasks work folder | M6.06, M2.11 | S | done |
 | M6.09 | Run and Refresh UI | M5.07, M6.07, M6.08 | M | done |

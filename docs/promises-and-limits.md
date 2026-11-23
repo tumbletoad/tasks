@@ -228,8 +228,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   restart of TTasks it can take the default space of that moment: restart agent apps after this
   update.
 - When another program, such as a virus scanner, holds the file of an agent TTasks opened for more
-  than a few seconds as TTasks starts, that agent is no longer its task's session: a change it
-  repeats after a lost reply can be written twice.
+  than a few seconds as TTasks starts, that agent is not its task's session until TTasks starts
+  again: a change it repeats after a lost reply can be written twice.
 - A change retried after TTasks recorded its agent's end is a new change. A program the agent left
   running that connects after that, or a shell command, is recorded as the agent app or as an
   unknown agent, and has to name its task.
@@ -246,8 +246,6 @@ the behaviour it describes, and keep each one to a sentence or two.
 - An entry without a space uses the default space when its bridge process starts. If that process
   restarts after you change the default, the same task reference can mean a different task.
 - A change retried after a restore that removed its earlier result is a new change.
-- For a day after an agent that TTasks opened in a terminal ends, this machine keeps a hash of the
-  ticket that agent was given, with its space, task and session. The ticket itself is never kept.
 - What you typed before Open is a note on the task: every agent that loads the task later reads it,
   marked as the request of that launch, and backups and exports hold it. Undo takes it back while
   it is your newest change; the page has no way yet to remove an older note.

@@ -149,6 +149,7 @@ export function mcpEndpoint(options: McpEndpointOptions): (channel: McpChannel) 
     const binding = bridges?.attach(channel.connection) ?? {
       kind: "none",
       space: spaceOf(context),
+      named: spaceOf(context) !== undefined,
     };
     const transport = new ChannelTransport(channel, {
       init: context["mcp_init"],

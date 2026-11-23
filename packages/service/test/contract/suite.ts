@@ -346,21 +346,17 @@ const LATER: Readonly<Record<string, Later>> = {
     why: "here lists the tasks placed at the working folder, and the world's tasks have folders",
     now: { result: "schema" },
   },
+  "space.status 1": {
+    owner: "a world in which only M-14 changed since the example's time",
+    why: "every task of the world was made after the example's since, so all of them changed",
+    now: { result: "schema" },
+  },
   "launch.open 0": {
     owner: "the step that makes Open use folders",
     why: "the brief's folder line names the task's place, and the world's tasks have folders",
     now: { result: "schema" },
   },
-  "space.status 1": {
-    owner: "M6 (routines)",
-    why: "a routine's session",
-    now: { result: "schema" },
-  },
-  "task.get 3": {
-    owner: "M6 (a routine's launch reference binds the space)",
-    why: "a routine's launch reference",
-    now: { error: "launch_unknown" },
-  },
+
   "task.add 0": {
     owner: "a world whose M-14 holds the ticket jira:LUM-212 and sits in Lumen Health",
     why:

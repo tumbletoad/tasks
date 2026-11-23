@@ -210,7 +210,7 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
         },
       },
       "t3/status": { state: "not_paired" },
-      "doctor/sessions": { open: 2, shared: [], dropped: 0 },
+      "doctor/sessions": { open: 2, sessions: { launch: 1, run: 0 } },
     };
     const rows = await launchChecks(session(answers), false, NOW);
     expect(rows.map((r) => [r.id, r.status])).toEqual([
@@ -235,46 +235,28 @@ describe("[A3.3.14.doctor.launch] doctor's launch rows against fakes", () => {
 });
 
 describe("[A3.3.14.doctor.sessions] doctor's sessions row against fakes", () => {
-  test("no dropped record and no shared connection passes; either warns, by instance only", () => {
-    const ok = sessionsCheck({ open: 3, shared: [], dropped: 0 });
+  test("the row says how many agent connections are open and how many are a launch's or a run's session; it never warns", () => {
+    const ok = sessionsCheck({ open: 3, sessions: { launch: 1, run: 1 } });
     expect(ok).toMatchObject({ id: "sessions", status: "ok" });
     expect(ok.detail).toContain("3 agent connections open");
-    const dropped = sessionsCheck({ open: 0, shared: [], dropped: 2 });
-    expect(dropped.status).toBe("warn");
-    expect(dropped.detail).toContain("2 session records were damaged and dropped");
-    const shared = sessionsCheck({
-      open: 3,
-      shared: [
-        { instance: "codex", count: 2 },
-        // Anything but an instance ID never reaches the row.
-        { instance: "/home/x\u001b[31m", count: 1 },
-      ],
-      dropped: 0,
-    });
-    expect(shared.status).toBe("warn");
-    expect(shared.detail).toContain(
-      "2 agent connections of codex carry more than one conversation",
-    );
-    expect(shared.detail).not.toContain("/home/x");
-    expect(shared.detail).not.toContain("\u001b");
-    // Shared connections the row cannot name still warn, unnamed.
-    const unnamed = sessionsCheck({
-      open: 1,
-      shared: [{ instance: "/home/x", count: 1 }],
-      dropped: 0,
-    });
-    expect(unnamed.status).toBe("warn");
-    expect(unnamed.detail).toContain("shared mode");
-    expect(unnamed.detail).not.toContain("/home/x");
+    expect(ok.detail).toContain("1 is a task's session through an agent");
+    expect(ok.detail).toContain("1 through a background run");
+    // It counts connections: one agent with a helper is two connections of one session.
+    const many = sessionsCheck({ open: 5, sessions: { launch: 2, run: 3 } });
+    expect(many.detail).toContain("2 are a task's session through an agent");
+    expect(many.detail).toContain("3 through a background run");
+    expect(sessionsCheck({ open: 0, sessions: { launch: 0, run: 0 } }).status).toBe("ok");
     expect(sessionsCheck(null).status).toBe("skip");
-    // Facts the service did not give, or gave in another shape, are never a pass.
+    // Facts the service did not give, gave in another shape, or that cannot be true, are never
+    // a pass. The shape of the build before is one of them.
     for (const facts of [
       {},
-      { open: 1, shared: [] },
-      { open: 1, dropped: 0 },
-      { open: "1", shared: [], dropped: 0 },
-      { open: 1, shared: [], dropped: -1 },
-      { open: 1, shared: {}, dropped: 0 },
+      { open: 1 },
+      { open: 1, shared: [], dropped: 0 },
+      { open: 1, sessions: { launch: 1 } },
+      { open: "1", sessions: { launch: 0, run: 0 } },
+      { open: 1, sessions: { launch: -1, run: 0 } },
+      { open: 1, sessions: { launch: 1, run: 1 } },
     ]) {
       expect([facts, sessionsCheck(facts).status]).toEqual([facts, "skip"]);
     }

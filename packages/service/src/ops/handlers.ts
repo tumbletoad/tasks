@@ -59,7 +59,13 @@ import {
 } from "./caller.ts";
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
-import { ExecutionRefused, isLaunchRef, PACK_LOG, type LaunchIntent } from "@ttasks/launch";
+import {
+  ExecutionRefused,
+  isLaunchRef,
+  MANUAL_INSTANCE,
+  PACK_LOG,
+  type LaunchIntent,
+} from "@ttasks/launch";
 import {
   ambiguousError,
   copyOf,
@@ -78,7 +84,7 @@ import {
   type PackContent,
 } from "../launch/open.ts";
 import type { Session, SessionPort } from "./binding.ts";
-import { checkGrant, standingOf, type HomeGate } from "./grant.ts";
+import { checkGrant, grantRefused, standingOf, type HomeGate } from "./grant.ts";
 import { addDays, dateIn, dueDate, localTimeZone, pastInstant } from "./dates.ts";
 import { GUIDE_STEPS, GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
@@ -404,7 +410,7 @@ async function callWith(
   // space: such calls go one at a time per space, from that read to the writer's answer, so two
   // never both create one name or bind one folder by two spellings.
   const result = await (decidesOnNames(entry.name, call.input)
-    ? oneAtATime(space.id ?? "", () => handler(call))
+    ? oneAtATime(space.id, () => handler(call))
     : handler(call));
   const checked = entry.output.safeParse(result);
   if (!checked.success) {
@@ -450,21 +456,35 @@ export function defaultOf<S extends Copy>(
   return copyOf(live, defaultId) ?? "not_served";
 }
 
-function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): ServedSpace {
+function pickSpace(host: OpsHost, caller: Caller, named: string | undefined): UsableSpace {
   const binding = caller.binding;
   if (binding?.kind === "session") return heldSpace(host, caller, binding.session.space, named);
   if (caller.class === "bridge") {
     // A bridge never picks a space on a call: its bind settled one for its life, or none.
     const held = binding?.space;
-    if (held === undefined) throw noSpace();
+    // Read only for a refusal: the one space its home's live row names, for a hand-made entry the
+    // machine's default.
+    const entry = (): EntryFacts => ({
+      named: binding?.named === true,
+      manual: caller.home === undefined || caller.home === MANUAL_INSTANCE,
+      mayUse: host.homes?.spaceOf(caller.home ?? ""),
+    });
+    if (held === undefined) {
+      const facts = entry();
+      // An instance whose home has no one live row (revoked, never registered, or two): the
+      // grant refusal's command registers the home and rewrites its entry in one step.
+      if (!facts.manual && facts.mayUse === undefined) throw grantRefused();
+      throw noSpace(host, facts);
+    }
     try {
       return heldSpace(host, caller, held, named);
     } catch (error) {
-      // Its home may use another space now: it says which, and that the agent app's restart moves
-      // it there. The held space is kept, never replaced, while it is denied.
-      const denied = error instanceof AppError && error.data["rule"] === "grant";
-      const now = denied ? host.homes?.spaceOf(caller.home ?? "") : undefined;
-      throw now !== undefined && now !== held ? grantedElsewhere(host, now) : error;
+      // Its home may use another space now: it says which, and what moves the agent there. The
+      // held space is kept, never replaced, while it is denied.
+      if (!(error instanceof AppError) || error.data["rule"] !== "grant") throw error;
+      const facts = entry();
+      if (facts.mayUse === undefined || facts.mayUse === held) throw error;
+      throw grantedElsewhere(host, facts.mayUse, facts);
     }
   }
   return pickByRule(host, caller, named);
@@ -481,12 +501,18 @@ function heldSpace(
   caller: Caller,
   held: string,
   named: string | undefined,
-): ServedSpace {
+): UsableSpace {
   checkGrant(host, caller, held);
   const live = host.spaces().filter((s) => s.state !== "closed");
   if (named !== undefined && named !== held) {
     const other = findSpace(live, named);
-    if (other === undefined || isAmbiguity(other) || other.id !== held) {
+    // A name is not known until its space opens: while the held space opens, it may be its own.
+    // Another ID, or another space's folder, is never its own, opening or not.
+    const ownOpening = live.some((s) => s.state === "opening" && s.registered === held);
+    const name = !isId(named, "sp") && !isAbsolute(named);
+    if (other === undefined && name && ownOpening) throw spaceUnavailable("opening", true);
+    // A copy that is still opening is known by the ID its entry names.
+    if (other === undefined || isAmbiguity(other) || (other.id ?? other.registered) !== held) {
       throw new AppError({
         code: "forbidden",
         message: "This session is bound to another space.",
@@ -495,47 +521,129 @@ function heldSpace(
       });
     }
     // A folder names its copy, which a session of the space may use.
-    if (isAbsolute(named)) return other;
+    if (isAbsolute(named)) return answerFor(live, other, named);
   }
   const found = copyOf(live, held);
   if (isAmbiguity(found)) throw ambiguousError(found);
-  if (found !== undefined) return found;
-  // A space that is still opening has no ID of its own yet, only the one its entry names.
-  if (live.some((s) => s.state === "opening" && s.registered === held)) {
-    throw spaceUnavailable("opening", true);
+  return answerFor(live, found, held);
+}
+
+/** A space a call may go on with: open or read-only, so served, with its ID. */
+export type UsableSpace = ServedSpace & { readonly id: string };
+
+/**
+ * The one answer for the space a call means, which every call's path ends in (`pickSpace` for a
+ * person, an agent's shell, a session and a bridge, and `personSpace` for the run verbs): its copy
+ * when it is open or read-only; `opening`, to retry, while it is still opening; else `not_served`,
+ * with the copy's reason. A copy found by its folder or its registered ID while it opens has no
+ * ID yet, so nothing past here meets one.
+ */
+function answerFor(
+  live: readonly ServedSpace[],
+  found: ServedSpace | undefined,
+  wanted: string | undefined,
+): UsableSpace {
+  if (found === undefined) {
+    throw wanted === undefined ? spaceUnavailable("not_served", false) : unserved(live, wanted);
   }
-  throw spaceUnavailable("not_served", false);
+  if (found.state === "opening") throw spaceUnavailable("opening", true);
+  if (found.id === undefined || (found.state !== "open" && found.state !== "read_only")) {
+    throw spaceUnavailable("not_served", false, found.reason ?? found.state, found.message);
+  }
+  return found as UsableSpace;
+}
+
+/**
+ * Why no copy answers for the space `wanted` means: `opening`, to retry, while a space that may be
+ * it is still opening, else `not_served`. An opening space has no ID of its own yet, only the one
+ * its entry names, and no name until it opens.
+ */
+function unserved(live: readonly ServedSpace[], wanted: string): AppError {
+  const opening = live.filter((s) => s.state === "opening");
+  const may = isId(wanted, "sp")
+    ? opening.some((s) => s.registered === wanted)
+    : !isAbsolute(wanted) && opening.length > 0;
+  return may ? spaceUnavailable("opening", true) : spaceUnavailable("not_served", false);
+}
+
+/**
+ * What a bridge's refusal knows of its entry, so its hint says what helps that entry: whether it
+ * named a space, whether it is hand-made (no instance, so only the machine's default), and the one
+ * space its home may use now. Setup's own entry always names the space its home is registered for,
+ * so a registered home's entry that names none, or a name that is no space, was edited by hand,
+ * and the default does not help it: naming its space does.
+ */
+interface EntryFacts {
+  readonly named: boolean;
+  readonly manual: boolean;
+  readonly mayUse: string | undefined;
+}
+
+const ENTRY = `the agent's ${PRODUCT_NAME} entry`;
+
+/** A space as a hint names it: by name when it is open, else by ID. */
+function spaceWords(host: OpsHost, space: string): string {
+  const name = host.spaces().find((s) => s.id === space)?.name;
+  return name === undefined ? space : `the space ${name}`;
 }
 
 /**
  * A bridge whose bind found no space it can be sure of: refused on every call, saying what settles
- * it. Its process started with no space to choose, or an older bridge reconnected without one.
+ * it. Its entry named a space that is no one space here; or it named none, and its process
+ * started with no default to take, or an older bridge reconnected without its space. It serves
+ * two entries: a registered home with one space it may use, told to name that space, and a
+ * hand-made entry, told what the default needs. A registered home with no such space gets the
+ * grant refusal instead (pickSpace).
  */
-const noSpace = (): AppError =>
-  new AppError({
+function noSpace(host: OpsHost, entry: EntryFacts): AppError {
+  const unknown = entry.named
+    ? `The agent's ${PRODUCT_NAME} entry names a space this machine has none of, or two of (${CLI_NAME} space list). `
+    : "";
+  let fix: string;
+  if (!entry.manual && entry.mayUse !== undefined) {
+    fix = `It may use ${spaceWords(host, entry.mayUse)}: ask the user to name it in ${ENTRY} (--space ${entry.mayUse}), then to restart the agent app.`;
+  } else if (entry.named) {
+    fix =
+      "Ask the user to take the space out of the entry, which then uses the default space, or to correct it, then restart the agent app.";
+  } else if (host.defaultSpace?.() !== undefined) {
+    fix = "Ask the user to restart the agent app: it then works in the default space.";
+  } else {
+    fix = `Ask the user to set a default space (${CLI_NAME} space use, after ${CLI_NAME} space create if there is none), then restart the agent app.`;
+  }
+  return new AppError({
     code: "space_unavailable",
     message: "This connection has no space it can work in.",
-    hint: `Ask the user to set a default space (${CLI_NAME} space use) or name the space in the agent's ${PRODUCT_NAME} entry, creating one first if there is none (${CLI_NAME} space create), then restart the agent app.`,
+    hint: `${unknown}${fix}`,
     data: { reason: "no_space", retryable: false },
   });
+}
 
-/** The grant refusal of a bridge whose home may use another space now, which it names. */
-function grantedElsewhere(host: OpsHost, space: string): AppError {
-  const name = host.spaces().find((s) => s.id === space)?.name;
+/**
+ * The grant refusal of a bridge whose home may use another space now, which it names, with what
+ * moves it there. A hand-made entry: a restart, which takes the default, after taking out a space
+ * it names. A registered home: a restart with that space named in its entry, as setup writes it.
+ */
+function grantedElsewhere(host: OpsHost, space: string, entry: EntryFacts): AppError {
+  const there = spaceWords(host, space);
+  const hint = !entry.manual
+    ? `It may use ${there} now: ask the user to check that ${ENTRY} names it (--space ${space}), then to restart the agent app.`
+    : entry.named
+      ? `It may use ${there} now: ask the user to take the space out of ${ENTRY}, then to restart the agent app.`
+      : `It may use ${there} now: ask the user to restart the agent app to work there.`;
   return new AppError({
     code: "forbidden",
     message: "This agent is not registered for this space.",
-    hint: `It may use ${name === undefined ? space : `the space ${name}`} now: ask the user to restart the agent app to work there.`,
+    hint,
     data: { rule: "grant", space },
   });
 }
 
 /** The space a person's own command means: the one it names, else the machine's default. */
-export function personSpace(host: OpsHost, named: string | undefined): ServedSpace {
+export function personSpace(host: OpsHost, named: string | undefined): UsableSpace {
   return pickByRule(host, { class: "cli-interactive", env: {} }, named);
 }
 
-function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): ServedSpace {
+function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): UsableSpace {
   const live = host.spaces().filter((s) => s.state !== "closed");
   // A bridge's environment is not passed (A3 3.7.2: TTASKS_SPACE never chooses its space).
   const fromEnv = caller.binding === undefined ? caller.env["TTASKS_SPACE"] : undefined;
@@ -543,18 +651,19 @@ function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): S
   if (wanted !== undefined) {
     const found = findSpace(live, wanted);
     if (isAmbiguity(found)) throw ambiguousError(found);
-    if (found === undefined) throw spaceUnavailable("not_served", false);
-    return found;
+    return answerFor(live, found, wanted);
   }
   if (caller.class === "cli-agent") {
     throw invalid("space", "Name the space", "Pass --space, or set TTASKS_SPACE.");
   }
-  const fallback = defaultOf(live, host.defaultSpace?.());
-  if (fallback === "not_served") throw spaceUnavailable("not_served", false);
-  if (isAmbiguity(fallback)) throw ambiguousError(fallback);
-  if (fallback !== undefined) return fallback;
+  const defaultId = host.defaultSpace?.();
+  if (defaultId !== undefined) {
+    const fallback = copyOf(live, defaultId);
+    if (isAmbiguity(fallback)) throw ambiguousError(fallback);
+    return answerFor(live, fallback, defaultId);
+  }
   const only = onlySpace(live);
-  if (only === undefined) throw spaceUnavailable("not_served", false);
+  if (only === undefined) return answerFor(live, undefined, undefined);
   if (only === "several") {
     throw invalid(
       "space",
@@ -563,7 +672,7 @@ function pickByRule(host: OpsHost, caller: Caller, named: string | undefined): S
     );
   }
   if (isAmbiguity(only)) throw ambiguousError(only);
-  return only;
+  return answerFor(live, only, undefined);
 }
 
 function readerOf(space: ServedSpace): WorkerConnection {

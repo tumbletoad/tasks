@@ -29,8 +29,11 @@ export interface Session {
 /** A bridge's binding, fixed at its bind. A shell that is no session has none. */
 export type Binding =
   | { readonly kind: "session"; readonly session: Session }
-  /** The bridge's own identity, in the one space its bind settled, or none for its life. */
-  | { readonly kind: "none"; readonly space: string | undefined };
+  /**
+   * The bridge's own identity, in the one space its bind settled, or none for its life. `named`:
+   * its entry's `--space` named a space, which then decided alone. Its refusals say what helps.
+   */
+  | { readonly kind: "none"; readonly space: string | undefined; readonly named: boolean };
 
 /** What a connection presented: a bridge its entry's words and its environment, a shell its environment. */
 export type Presented =

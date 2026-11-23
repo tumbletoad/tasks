@@ -6,13 +6,16 @@ import { RPC_ERROR, RpcError, type JsonObject } from "@ttasks/bridge/protocol";
 import { AppError, RequestId } from "@ttasks/contracts";
 import { RUN_REQUEST_MAX_BYTES, type RunRecord } from "@ttasks/contracts/runs";
 import type { ConnectionClass } from "../local/index.ts";
-import type { ServedSpace } from "../ops/index.ts";
+import type { UsableSpace } from "../ops/index.ts";
 import type { RunLive, RunService } from "./service.ts";
 
 export interface RunVerbsHost {
   readonly runs: RunService;
-  /** The space a person's call means: the one it names, else the machine's default. */
-  space(named: string | undefined): ServedSpace;
+  /**
+   * The space a person's call means, the one it names, else the machine's default: served, or
+   * refused as opening or not served before a verb reads or changes a run.
+   */
+  space(named: string | undefined): UsableSpace;
 }
 
 /**
@@ -92,25 +95,25 @@ export function runVerbs(
         });
       }
       const instance = text(params, "instance");
-      const run = await host.runs.queueTask(served.id ?? "", {
+      const run = await host.runs.queueTask(served.id, {
         task,
         ...(instance === undefined ? {} : { instance }),
         request,
         requestId,
       });
-      const shown = await host.runs.show(served.id ?? "", run.id);
+      const shown = await host.runs.show(served.id, run.id);
       return runView(shown?.run ?? run, shown?.task ?? null, host.runs.live(shown?.run ?? run));
     },
     "runs/list": async (params) => {
       const served = host.space(text(params, "space"));
-      const listed = await host.runs.list(served.id ?? "", text(params, "task"));
+      const listed = await host.runs.list(served.id, text(params, "task"));
       return {
         runs: listed.map(({ run, task }) => runView(run, task, host.runs.live(run))),
       };
     },
     "runs/show": async (params) => {
       const served = host.space(text(params, "space"));
-      const shown = await host.runs.show(served.id ?? "", runId(params));
+      const shown = await host.runs.show(served.id, runId(params));
       if (shown === undefined) throw noRun();
       return {
         ...runView(shown.run, shown.task, host.runs.live(shown.run)),
@@ -121,9 +124,9 @@ export function runVerbs(
     "runs/stop": async (params) => {
       const served = host.space(text(params, "space"));
       const id = runId(params);
-      const after = await host.runs.stop(served.id ?? "", id);
+      const after = await host.runs.stop(served.id, id);
       if (after === undefined) throw noRun();
-      const shown = await host.runs.show(served.id ?? "", id);
+      const shown = await host.runs.show(served.id, id);
       return runView(shown?.run ?? after, shown?.task ?? null);
     },
   };

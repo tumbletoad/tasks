@@ -4,6 +4,7 @@
 // other, before and after the service restarts: the rows outlive the process and still decide, for
 // the bridges that reconnect and for new ones. Fixture text and temporary folders only.
 import { readFileSync } from "node:fs";
+import { PRODUCT_NAME } from "../../packages/brand/src/index.ts";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { hubGrant, hubSpace, spaceOpen } from "../../packages/service/test/mcp-hub.ts";
@@ -30,10 +31,11 @@ afterEach(async () => {
 
 /**
  * A3 3.5's text form of the refusal for a bridge whose entry names a space its home may not use:
- * it names the space the home may use, which a restart of the agent app moves it to.
+ * it names the space the home may use, and that the entry has to name it for a restart to move
+ * the agent there.
  */
-const REFUSED =
-  "error forbidden: This agent is not registered for this space. It may use the space Mira now: ask the user to restart the agent app to work there.";
+const refused = (mira: string): string =>
+  `error forbidden: This agent is not registered for this space. It may use the space Mira now: ask the user to check that the agent's ${PRODUCT_NAME} entry names it (--space ${mira}), then to restart the agent app.`;
 
 async function startHub(home: Home): Promise<{ hub: Proc; path: string }> {
   const hub = procs.hub(home);
@@ -100,7 +102,7 @@ describe("[A3.3.7.grant.space] the rows decide across a restart of the real serv
       await own.initialize();
       await other.initialize();
       expect(await status(own, answered)).toContain("Space: Mira (M)");
-      expect(await status(other, answered)).toBe(REFUSED);
+      expect(await status(other, answered)).toBe(refused(mira));
 
       // A graceful stop, then a new start of the same install: the rows are service.sqlite's.
       first.hub.child.stdin?.write("stop\n");
@@ -109,10 +111,10 @@ describe("[A3.3.7.grant.space] the rows decide across a restart of the real serv
       expect(await status(own, (text) => text.includes("Space: Mira (M)"))).toContain(
         "Space: Mira (M)",
       );
-      expect(await status(other, answered)).toBe(REFUSED);
+      expect(await status(other, answered)).toBe(refused(mira));
       const fresh = procs.bridge(home, { args: args(life) });
       await fresh.initialize();
-      expect(await status(fresh, answered)).toBe(REFUSED);
+      expect(await status(fresh, answered)).toBe(refused(mira));
       for (const bridge of [own, other, fresh]) {
         expect(bridge.stray).toEqual([]);
         bridge.end();

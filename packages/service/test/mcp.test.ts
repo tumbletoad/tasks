@@ -4,6 +4,7 @@
 // cache, and the contract suite and the grant gate's refusal over MCP for both eras.
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { PRODUCT_NAME } from "@ttasks/brand";
 import { offlineReply, parseOffline } from "@ttasks/bridge/mcp";
 import { LocalError, PROTOCOL } from "@ttasks/bridge/protocol";
 import { findEntry, AppError, readsOnly } from "@ttasks/contracts";
@@ -236,7 +237,7 @@ describe("[A3.3.4.tools.run-report] run_report outside a run or routine binding"
         env: {},
         principal: bridgePrincipal(bridgeContext(), w.service.ops.machine.id),
         home: "test-agent",
-        binding: { kind: "none", space: w.space } as const,
+        binding: { kind: "none", space: w.space, named: false } as const,
       };
       for (const request of ["fixture-request-rr-0002", "fixture-request-rr-0003"]) {
         const receipt = (await opCall(w.service.ops, agent, {
@@ -469,7 +470,7 @@ describe("[A3.3.3.mcp.calls] a tool call on the request path, as the connection'
       expect(textOf(elsewhere)).toBe(
         renderError({
           ...grantRefused().toBody(),
-          hint: "It may use the space Mira now: ask the user to restart the agent app to work there.",
+          hint: `It may use the space Mira now: ask the user to check that the agent's ${PRODUCT_NAME} entry names it (--space ${w.space}), then to restart the agent app.`,
           data: { rule: "grant", space: w.space },
         }),
       );
@@ -540,7 +541,7 @@ const ERROR_TEXT = /^error ([a-z_]+)(?: \([a-z_]+\))?: /;
 function noSession(answer: unknown): Binding {
   const space = (answer as { space?: unknown } | null)?.space;
   if ((answer as { state?: unknown } | null)?.state !== "unbound") throw new Error("a session");
-  return { kind: "none", space: typeof space === "string" ? space : undefined };
+  return { kind: "none", space: typeof space === "string" ? space : undefined, named: false };
 }
 
 function mcpContract(era: "legacy" | "modern"): () => Promise<ContractTransport> {
