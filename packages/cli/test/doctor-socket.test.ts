@@ -2,7 +2,7 @@
 // service removes only a socket nobody answers on, and does not start until the rest moves.
 import { mkdirSync, realpathSync, renameSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   canonicalStatePath,
@@ -94,7 +94,8 @@ describe("[A2.3.4.hub.stale-recovery] ttasks doctor names what is in the way of 
 
       // A socket nobody answers on is stale, and the next start removes it: not named. Node removes
       // its socket on close, so the socket is moved where the service's goes before that.
-      const elsewhere = join(root, "elsewhere.sock");
+      // Beside the path it is moved to: a rename does not cross from one file system to another.
+      const elsewhere = join(dirname(plan.path), "elsewhere.sock");
       const ended = await listening(elsewhere);
       renameSync(elsewhere, plan.path);
       await closed(ended);
