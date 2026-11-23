@@ -24,20 +24,22 @@ const TASK: TaskRow = {
   created_at: Date.UTC(2026, 10, 1),
   version: 1,
 };
-const NAME = `${PRODUCT_ID}.unsaved.${SPACE.id}.${TASK.id}.priority`;
+const PREFIX = `${PRODUCT_ID}.unsaved.${SPACE.id}.${TASK.id}.priority`;
 
 const flush = async () => {
   for (let i = 0; i < 10; i += 1) await Promise.resolve();
 };
 
-/** The priority the browser keeps for the task, as a control made it. */
-const storedLevel = (): unknown => {
-  const value = localStorage.getItem(NAME);
-  if (value === null) return undefined;
-  return (JSON.parse(value) as { source: { level: number } }).source.level;
-};
+/** The priorities the browser keeps for the task, of every tab, as a control made them. */
+const storedLevels = (): number[] =>
+  Object.keys(localStorage)
+    .filter((name) => name.startsWith(PREFIX))
+    .map((name) => JSON.parse(localStorage.getItem(name) ?? "") as { source: { level: number } })
+    .map((kept) => kept.source.level)
+    .sort();
 
 const kept = (level: number): Unsaved => ({
+  id: crypto.randomUUID(),
   task: TASK.id,
   ref: TASK.ref,
   field: "priority",
@@ -65,24 +67,26 @@ const conflictOn = (value: number) =>
     ],
   });
 
-const OUTCOMES: readonly (readonly [string, () => Promise<unknown>])[] = [
+/** Each outcome, and the priorities the browser keeps after it: P1 again when it was refused. */
+const OUTCOMES: readonly (readonly [string, () => Promise<unknown>, readonly number[]])[] = [
   [
     "saved",
     () => Promise.resolve({ result: "updated", task: "M-1", fields: [], as_of: "1.11.01234567" }),
+    [3],
   ],
-  ["already there", () => Promise.reject(conflictOn(1))],
-  ["failed", () => Promise.reject(refusal("internal", {}))],
-  ["a conflict with another value", () => Promise.reject(conflictOn(2))],
+  ["already there", () => Promise.reject(conflictOn(1)), [3]],
+  ["failed", () => Promise.reject(refusal("internal", {})), [1, 3]],
+  ["a conflict with another value", () => Promise.reject(conflictOn(2)), [1, 3]],
 ];
 
 beforeEach(() => {
   localStorage.clear();
 });
 
-describe("[A5.3.11.web.kept-edits] Try again never writes over or takes away another tab's newer value", () => {
+describe("[A5.3.11.web.kept-edits] Try again never writes over or takes away another tab's value", () => {
   test.each(OUTCOMES)(
     "tab A retries P1 while tab B kept P3 for the field: P3 stays in the browser, during and after an answer that it was %s",
-    async (_, outcome) => {
+    async (_, outcome, after) => {
       unsavedKeeper(SPACE.id).save(new Map([[`${TASK.id}\u0000priority`, kept(1)]]));
       const store = new LiveStore({
         space: SPACE.id,
@@ -119,14 +123,14 @@ describe("[A5.3.11.web.kept-edits] Try again never writes over or takes away ano
       });
       // Tab B keeps a newer value for the same field, then closes.
       unsavedKeeper(SPACE.id).save(new Map([[`${TASK.id}\u0000priority`, kept(3)]]));
-      expect(storedLevel()).toBe(3);
+      expect(storedLevels()).toEqual([1, 3]);
 
-      edits.apply(TASK.id, "priority");
+      edits.apply(edits.unsaved(TASK.id, "priority") ?? kept(0));
       await flush();
-      expect(storedLevel()).toBe(3);
+      expect(storedLevels()).toEqual([1, 3]);
       answer();
       await flush();
-      expect(storedLevel()).toBe(3);
+      expect(storedLevels()).toEqual(after);
     },
   );
 });

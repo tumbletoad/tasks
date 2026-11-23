@@ -15,6 +15,7 @@ import {
   titleChange,
   triageChange,
   waitingChange,
+  type Field,
 } from "./change.ts";
 import { ASK_MS } from "./calls.ts";
 import {
@@ -179,6 +180,13 @@ afterEach(() => {
 const flush = async () => {
   for (let i = 0; i < 5; i += 1) await vi.advanceTimersByTimeAsync(0);
 };
+
+/** The kept edit a field's line shows, for its Try again or Apply mine. */
+function lineOf(edits: Edits, task: string, field: Field): Unsaved {
+  const line = edits.unsaved(task, field);
+  if (line === undefined) throw new Error(`nothing kept for ${task} ${field}`);
+  return line;
+}
 
 describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refusals kept, undo by commit", () => {
   test("an edit shows at once, carries the applied cursor as its base, and its toast's Undo names its commit", async () => {
@@ -550,7 +558,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       as_of: w.asOf(13),
       warnings: [],
     }));
-    w.edits.apply("t_00001", "title");
+    w.edits.apply(lineOf(w.edits, "t_00001", "title"));
     expect(w.edits.unsaved("t_00001", "title")).toBeUndefined();
     await flush();
     expect(w.calls[1]?.input).toMatchObject({ set: { title: "My title" }, base: w.asOf(12) });
@@ -601,7 +609,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       as_of: next.asOf(11),
       warnings: [],
     }));
-    next.edits.apply("t_00001", "effort");
+    next.edits.apply(lineOf(next.edits, "t_00001", "effort"));
     await flush();
     expect(next.calls[0]?.input).toMatchObject({ set: { effort: "M" } });
     expect(next.edits.unsaved("t_00001", "effort")).toBeUndefined();
@@ -688,7 +696,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
         ],
       });
     });
-    next.edits.apply("t_00001", "priority");
+    next.edits.apply(lineOf(next.edits, "t_00001", "priority"));
     await flush();
     expect(next.calls[0]?.input).toMatchObject({ set: { priority: 1 }, base: w.asOf(10) });
     expect(next.row("t_00001")?.priority).toBe(2);
@@ -705,7 +713,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       as_of: next.asOf(13),
       warnings: [],
     }));
-    next.edits.apply("t_00001", "priority");
+    next.edits.apply(lineOf(next.edits, "t_00001", "priority"));
     await flush();
     expect(next.calls[1]?.input).toMatchObject({ set: { priority: 1 }, base: next.asOf(12) });
   });
@@ -727,7 +735,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       as_of: w.asOf(12),
       warnings: [],
     }));
-    w.edits.apply("t_00001", "effort");
+    w.edits.apply(lineOf(w.edits, "t_00001", "effort"));
     await flush();
     expect(w.calls[1]?.input).toMatchObject({ set: { effort: "M" }, base: w.asOf(10) });
     w.feed([task(1, { effort: "M", version: 3 })], String(w.calls[1]?.input["request_id"]), [
@@ -809,6 +817,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
 
   test("a kept edit made against a history the screen no longer shows (a restore since, or no base) is not sent again, and nothing of it is rewritten", async () => {
     const kept = (base: string | undefined): Unsaved => ({
+      id: crypto.randomUUID(),
       task: "t_00001",
       ref: "M-1",
       field: "priority",
@@ -839,7 +848,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     });
     restored.store.flush();
     expect(restored.edits.restored(line)).toBe(true);
-    restored.edits.apply("t_00001", "priority");
+    restored.edits.apply(lineOf(restored.edits, "t_00001", "priority"));
     await flush();
     expect(restored.calls).toEqual([]);
     expect(restored.edits.unsaved("t_00001", "priority")).toBe(line);
@@ -848,13 +857,14 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     const old = new World([task(1)], { load: () => [kept(undefined)], save: () => undefined });
     const none = old.edits.unsaved("t_00001", "priority");
     expect(none === undefined ? undefined : old.edits.restored(none)).toBe(true);
-    old.edits.apply("t_00001", "priority");
+    old.edits.apply(lineOf(old.edits, "t_00001", "priority"));
     await flush();
     expect(old.calls).toEqual([]);
   });
 
   test("Try again on a value that is already there is saved: the conflict that names the person's own value shows no line and no toast", async () => {
     const kept: Unsaved = {
+      id: crypto.randomUUID(),
       task: "t_00001",
       ref: "M-1",
       field: "priority",
@@ -882,7 +892,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
         ],
       });
     });
-    w.edits.apply("t_00001", "priority");
+    w.edits.apply(lineOf(w.edits, "t_00001", "priority"));
     await flush();
     expect(w.edits.unsaved("t_00001", "priority")).toBeUndefined();
     expect(w.toasts.some((t) => t?.text.id === "toast.changedBy")).toBe(false);
@@ -914,6 +924,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
   test("Try again keeps the stored copy until its request is decided: a page that goes before the answer leaves it for the next", async () => {
     let held: readonly Unsaved[] = [];
     const kept: Unsaved = {
+      id: crypto.randomUUID(),
       task: "t_00001",
       ref: "M-1",
       field: "effort",
@@ -929,7 +940,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     });
     let answer: (value: unknown) => void = () => undefined;
     w.answer("task.update", () => new Promise((resolve) => (answer = resolve)));
-    w.edits.apply("t_00001", "effort");
+    w.edits.apply(lineOf(w.edits, "t_00001", "effort"));
     await flush();
     // The row shows the value on its way, and the browser still holds the copy.
     expect(w.row("t_00001")?.effort).toBe("M");
@@ -1513,7 +1524,7 @@ describe("[A5.3.11.web.edit-queue] no request holds the edit queue for ever", ()
     w.answer("history.undo", never);
     w.answer("receipt.get", (input) => applied(w, String(input["request"]), 11));
     w.answer("task.update", () => updated(w, 12));
-    w.edits.apply("t_00002", "effort");
+    w.edits.apply(lineOf(w.edits, "t_00002", "effort"));
     expect(w.row("t_00002")?.effort).toBe("M");
     await flush();
     expect(w.calls.filter((c) => c.name === "receipt.get").at(-1)?.input).toEqual({

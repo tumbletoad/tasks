@@ -33,6 +33,7 @@ const otherTab = (tab: string, typed: string, task = TASK) => {
 
 /** A refused edit of the task, as the edits hand it to the keeper. */
 const refused = (change: ReturnType<typeof titleChange>, task = TASK): Unsaved => ({
+  id: crypto.randomUUID(),
   task,
   ref: "M-1",
   field: change.fields[0] ?? "title",

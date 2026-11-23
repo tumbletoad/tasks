@@ -393,8 +393,8 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     ]);
   });
 
-  test.each([
-    ["without typing", (_field: HTMLInputElement | null) => undefined],
+  test.each<readonly [string, (field: HTMLInputElement | null) => void]>([
+    ["without typing", () => undefined],
     [
       "after typing back what was there",
       (field: HTMLInputElement | null) => {
@@ -662,6 +662,68 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
       expect(updates).toEqual([]);
     } finally {
       localStorage.removeItem(name);
+    }
+  });
+
+  test("this tab's refused edit of a field and another tab's both show under it, each with its value: Discard takes only its own, Try again sends the other tab's", async () => {
+    localStorage.clear();
+    (api.client.task as { update: unknown }).update = (input: Record<string, unknown>) => {
+      updates.push(input);
+      return Promise.reject(Object.assign(new Error("down"), { code: "internal", data: {} }));
+    };
+    const name = `${PRODUCT_ID}.unsaved.${SPACE.id}.t_00001.waiting_on.0b7f7c2e-5f1a-4c1e-9d55-3a8f0e6b9c11`;
+    const theirs = JSON.stringify({
+      id: "0b7f7c2e-5f1a-4c1e-9d55-3a8f0e6b9c11",
+      tab: "othertab",
+      task: "t_00001",
+      ref: "M-1",
+      field: "waiting_on",
+      reason: "failed",
+      base: "1.10.01234567",
+      source: { kind: "waiting", person: "Ben Ito" },
+    });
+    try {
+      mount(<TaskList view="open" filter={OPEN} empty="" />);
+      apply(snapshot([task(1, { status: "waiting" })]));
+      expand("t_00001");
+      const field = waitingField("t_00001");
+      act(() => {
+        field?.focus();
+      });
+      type(field, "Ana Reyes");
+      press(field, "Enter");
+      await settle();
+      // The other tab's refusal lands while this card is open.
+      act(() => {
+        localStorage.setItem(name, theirs);
+        window.dispatchEvent(new StorageEvent("storage", { key: name, newValue: theirs }));
+      });
+      const card = container.querySelector('li[data-key="t_00001"]');
+      const lines = () => [...(card?.querySelectorAll('[data-part="unsaved"]') ?? [])];
+      const valueOf = (line: Element | undefined) =>
+        line?.querySelector('[data-part="unsaved-value"]')?.textContent;
+      expect(lines().map(valueOf)).toEqual(["Ana Reyes", "Ben Ito"]);
+      act(() => {
+        lines()[0]?.querySelector<HTMLElement>('[data-part="keep-theirs"]')?.click();
+      });
+      expect(lines().map(valueOf)).toEqual(["Ben Ito"]);
+      expect(localStorage.getItem(name)).toBe(theirs);
+      act(() => {
+        lines()[0]?.querySelector<HTMLElement>('[data-part="apply-mine"]')?.click();
+      });
+      await settle();
+      expect(updates.at(-1)).toMatchObject({
+        set: { waiting_on: "Ben Ito" },
+        base: "1.10.01234567",
+      });
+      // Refused again, it is kept once, as this tab's own now.
+      expect(lines()).toHaveLength(1);
+      expect(
+        lines()[0]?.querySelector('[data-part="apply-mine"]')?.getAttribute("aria-label"),
+      ).toContain("Ben Ito");
+      expect(localStorage.getItem(name)).toBeNull();
+    } finally {
+      localStorage.clear();
     }
   });
 

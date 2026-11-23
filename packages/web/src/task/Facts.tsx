@@ -17,8 +17,8 @@ import {
   type Field,
 } from "../edit/change.ts";
 import { whoOf } from "../edit/edits.ts";
-import { Unsaved } from "../edit/Unsaved.tsx";
-import { useEditState, useEdits } from "../edit/useEdits.ts";
+import { Unsaved, useUnsaved } from "../edit/Unsaved.tsx";
+import { useEdits } from "../edit/useEdits.ts";
 import { areaSlots } from "../groups.ts";
 import { useT, type MessageId, type Translate } from "../i18n/intl.tsx";
 import { localDate } from "@ttasks/contracts/day";
@@ -140,6 +140,30 @@ function Fact({ label, children }: { readonly label: string; readonly children: 
       <dt>{label}</dt>
       <dd data-fact="">{children}</dd>
     </>
+  );
+}
+
+/**
+ * A value the person chose before the task was finished stays readable under its fact, with Copy
+ * and Discard, until they choose: it is never dropped because someone checked the task off.
+ * Reopened, the task's control offers Try again.
+ */
+function UnsavedFact({
+  task,
+  field,
+  label,
+  trashed,
+}: {
+  readonly task: string;
+  readonly field: Field;
+  readonly label: string;
+  readonly trashed: boolean;
+}) {
+  if (useUnsaved(task, field).length === 0) return null;
+  return (
+    <Fact label={label}>
+      <Unsaved task={task} field={field} finished trashed={trashed} withValue />
+    </Fact>
   );
 }
 
@@ -329,8 +353,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
   const t = useT();
   const state = useLive();
   const edits = useEdits();
-  // Re-rendered when an unsaved value comes or goes.
-  useEditState();
+  const waitingKept = useUnsaved(task.id, "waiting_on").length > 0;
   // Who it waits on stays shown while the person is in it, even when the status moves on.
   const [waitingOpen, setWaitingOpen] = useState(false);
   const area = task.area_id === undefined ? undefined : state.areas.get(task.area_id);
@@ -435,22 +458,15 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
           {task.created_at > 0 ? (
             <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
           ) : null}
-          {/* A value the person chose before the task was finished stays readable here, with Copy
-            and Discard, until they choose: it is never dropped because someone checked the task
-            off. Reopened, the task's control offers Try again. */}
-          {UNSAVED_FACTS.map(([field, label]) => {
-            const unsaved = edits.unsaved(task.id, field);
-            if (unsaved === undefined) return null;
-            const shown = unsaved.change.shown;
-            return (
-              <Fact key={field} label={t(label)}>
-                <span dir="auto" data-part="unsaved-value">
-                  {typeof shown === "string" ? shown : sayMsg(t, shown)}
-                </span>
-                <Unsaved task={task.id} field={field} finished trashed={trashed} />
-              </Fact>
-            );
-          })}
+          {UNSAVED_FACTS.map(([field, label]) => (
+            <UnsavedFact
+              key={field}
+              task={task.id}
+              field={field}
+              label={t(label)}
+              trashed={trashed}
+            />
+          ))}
         </dl>
         {trashed ? null : moveToTrash}
       </>
@@ -494,9 +510,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
           ) : null}
           <Unsaved task={task.id} field="status" />
         </Fact>
-        {task.status === "waiting" ||
-        waitingOpen ||
-        edits.unsaved(task.id, "waiting_on") !== undefined ? (
+        {task.status === "waiting" || waitingOpen || waitingKept ? (
           <Fact label={t("fact.waitingOn")}>
             <WaitingOn task={task} onEditing={setWaitingOpen} />
             <Unsaved task={task.id} field="waiting_on" />
