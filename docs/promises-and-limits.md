@@ -252,7 +252,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   the brief on the clipboard to paste. Where no way of opening here carries them, as a link or a
   desktop app, it opens without them, leaves the prompt for you to send, and says what it left
   out.
-- An instance set for some spaces is offered, and opens, only in those.
+- An instance set for some spaces is offered, opens and runs only in those: a run queued before
+  its spaces changed does not start.
 - TTasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.
 - Restarting or updating TTasks does not end an agent it opened, and the agent stays its task's

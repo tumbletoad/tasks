@@ -65,6 +65,7 @@ export const RUN_REASONS: Readonly<Partial<Record<RunState, readonly string[]>>>
   failed: [
     "task_closed",
     "instance_gone",
+    "not_for_space",
     "folder_gone",
     "spawn_failed",
     "start_timed_out",

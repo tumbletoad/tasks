@@ -18,6 +18,7 @@ import {
   resolveProgram,
   sanitiseComposer,
   sanitiseTitle,
+  servesSpace,
   type AgentBase,
   type Instance,
 } from "@ttasks/launch";
@@ -176,6 +177,8 @@ export async function buildRun(
   const reader = served.reader;
   const space = served.id;
   if (run.task === null || reader === undefined || space === undefined) return "spawn_failed";
+  // Checked again at the start: the instance's spaces may have changed since it was queued.
+  if (!servesSpace(instance, { id: space, name: served.name })) return "not_for_space";
   const task = await readLaunchTask(reader, run.task, machine);
   if (!task.active) return "task_closed";
   const folder = await runFolder(agents, space, task.folder);
