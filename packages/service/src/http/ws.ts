@@ -42,7 +42,7 @@ import type { AgentsView } from "@ttasks/contracts/monitor";
 import type { RawData, WebSocket } from "ws";
 import type { ServerTimer } from "../local/index.ts";
 import type { MonitorPace } from "../monitor/index.ts";
-import { copyOf, findSpace, isAmbiguity, namesCopy, onlySpace } from "../ops/copies.ts";
+import { copyKey, findSpace, isAmbiguity, namesCopy, onlySpace } from "../ops/copies.ts";
 import { defaultOf, type ServedSpace } from "../ops/index.ts";
 import type { HttpLog, WsClose } from "./events.ts";
 import {
@@ -149,7 +149,7 @@ class FeedSocket {
   readonly #conn: number;
   readonly #opened: number;
   #space: string | undefined;
-  /** The copy the page named (a copy's key or a folder), which the feed never leaves for another. */
+  /** The key of the copy the subscription found: the feed reads that copy and never another. */
   #copy: string | undefined;
   /** Why the copy served is read-only, as its last snapshot said; a change sends a new one. */
   #readOnly: string | undefined;
@@ -480,7 +480,11 @@ class FeedSocket {
     this.#readOnly = stringOf(readOnly);
     return this.#send({
       ...snapshot,
-      space: { ...snapshot.space, ...(readOnly === undefined ? {} : { read_only: readOnly }) },
+      space: {
+        ...snapshot.space,
+        copy: copyKey(snapshot.space.id, from.folder),
+        ...(readOnly === undefined ? {} : { read_only: readOnly }),
+      },
       instances,
       ...(reason === undefined ? {} : { reason }),
     });
@@ -494,7 +498,8 @@ class FeedSocket {
       found === undefined ||
       found === "ambiguous" ||
       found === "not_served" ||
-      found.reader === undefined
+      found.reader === undefined ||
+      found.id === undefined
     ) {
       const code =
         found === "ambiguous"
@@ -506,9 +511,18 @@ class FeedSocket {
       return;
     }
     const reader = found.reader;
+    const key = copyKey(found.id, found.folder);
+    // A cursor names no copy, and a restored copy has its original's authority: it resumes only a
+    // subscription that names one copy. An ID may mean another copy now than the cursor was of.
+    const resumes = ref !== undefined && namesCopy(ref);
     try {
       let start: Cursor | undefined = cursor;
-      if (cursor !== undefined) {
+      if (cursor !== undefined && !resumes) {
+        const snapshot = await readSnapshot(reader, this.#hub.here());
+        if (generation !== this.#generation) return;
+        await this.#sendSnapshot(snapshot, found, "epoch");
+        start = snapshot.cursor;
+      } else if (cursor !== undefined) {
         const head = await readHead(reader);
         if (!sameAuthority(cursor, head.cursor) || cursor.seq > head.cursor.seq) {
           start = undefined;
@@ -529,7 +543,7 @@ class FeedSocket {
       }
       if (this.#closed || generation !== this.#generation || start === undefined) return;
       this.#space = found.id;
-      this.#copy = ref !== undefined && namesCopy(ref) ? ref : undefined;
+      this.#copy = key;
       this.#cursor = start;
       this.#hub.watch(this);
       this.pump();
@@ -572,14 +586,13 @@ class FeedSocket {
   async #run(): Promise<void> {
     const generation = this.#generation;
     for (;;) {
-      const spaceId = this.#space;
+      const key = this.#copy;
       const cursor = this.#cursor;
-      if (this.#closed || spaceId === undefined || cursor === undefined) return;
-      // The copy the page named, else the copy the space's ID means now (copies.ts), among the
-      // copies that are served: never a closed original listed before the copy that serves the ID.
+      if (this.#closed || key === undefined || cursor === undefined) return;
+      // The copy the subscription found, while it is served: a copy closed since ends the feed,
+      // and another copy of the space never takes its place.
       const served = this.#hub.options.host.spaces().filter((s) => s.reader !== undefined);
-      const found =
-        this.#copy === undefined ? copyOf(served, spaceId) : findSpace(served, this.#copy);
+      const found = findSpace(served, key);
       const space = isAmbiguity(found) ? undefined : found;
       if (space?.reader === undefined) {
         this.#unsubscribe();

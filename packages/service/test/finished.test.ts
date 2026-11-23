@@ -34,7 +34,14 @@ afterAll(() => {
 const host = (): OpsHost => ({
   machine: { id: MACHINE.id },
   spaces: () => [
-    { id: fx.spaceId, name: "Mira", state: "open", writer: undefined, reader: readerOf(fx.reader) },
+    {
+      id: fx.spaceId,
+      name: "Mira",
+      folder: "/fixture/mira",
+      state: "open",
+      writer: undefined,
+      reader: readerOf(fx.reader),
+    },
   ],
   now: () => clock,
   timeZone: () => "Europe/Lisbon",

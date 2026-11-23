@@ -101,15 +101,6 @@ export function copyKey(
   return `${id}-copy-${digest.slice(0, 12)}`;
 }
 
-/**
- * The key of `copy` itself, whatever state it is in: what a caller names to reach that copy again
- * and no other. Undefined for a copy with no folder or ID yet.
- */
-export function keyOf(copy: Copy): string | undefined {
-  const id = copy.id ?? copy.registered;
-  return id === undefined || copy.folder === undefined ? undefined : copyKey(id, copy.folder);
-}
-
 /** Whether `wanted` names one copy (a folder or a copy's key), not whichever copy an ID means. */
 export const namesCopy = (wanted: string): boolean => isAbsolute(wanted) || COPY_KEY.test(wanted);
 

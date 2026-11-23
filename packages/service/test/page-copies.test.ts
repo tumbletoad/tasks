@@ -39,7 +39,7 @@ const refsOf = (snapshot: Record<string, unknown>) =>
 
 describe("[A2.3.10.5.copies.page] the page shows the copy the person opened", () => {
   test(
-    "Open folder with a restored copy while its original is open: its address, calls and feed reach the copy, and say why it is read-only; the ID still means the original; once claimed the copy's tab takes changes",
+    "Open folder with a restored copy while its original is open: its address, calls and feed reach the copy, and say why it is read-only; the ID still means the original; once claimed, the copy's key reaches that same copy, now writable",
     SLOW,
     async () => {
       const w = await httpWorld("page-copies");
@@ -135,7 +135,7 @@ describe("[A2.3.10.5.copies.page] the page shows the copy the person opened", ()
         feed.ws.close();
       }
 
-      // The original closed and the copy claimed: the copy's tab follows it, now writable.
+      // The original closed and the copy claimed: its key's feed and calls reach it, now writable.
       const again = await openFeed(port, token);
       try {
         again.send({ type: "subscribe", space: address, cursor });
@@ -160,6 +160,75 @@ describe("[A2.3.10.5.copies.page] the page shows the copy the person opened", ()
         address,
       );
       expect(written.result).toBeDefined();
+    },
+  );
+
+  test(
+    "a feed stays on the copy its subscription found: an ID that meant the restored copy is not resumed into the original after it reopens, and the copy's key resumes the copy",
+    SLOW,
+    async () => {
+      const w = await httpWorld("page-copies-feed");
+      worlds.push(w);
+      const user = await w.user();
+      const [mira] = (
+        (await user.call("space/list", {}, CALL)) as { spaces: { id: string; folder: string }[] }
+      ).spaces;
+      if (mira === undefined) throw new Error("no Mira");
+      await add(user, "Before the backup", "page-copies-feed-0001");
+      const backup = (await user.call("space/backup", { space: mira.folder }, CALL)) as {
+        backup: { name: string };
+      };
+      const copyFolder = join(w.root, "s", "mira-copy");
+      await user.call(
+        "space/restore",
+        { backup: backup.backup.name, to: copyFolder, of: mira.folder },
+        CALL,
+      );
+      await user.call("space/open", { path: copyFolder }, CALL);
+      const { token } = await signIn(w);
+      const port = w.port();
+      // The original closed: the space's ID means the restored copy now.
+      await user.call("space/close", { space: mira.folder }, CALL);
+      const first = await openFeed(port, token);
+      let cursor: unknown;
+      let key = "";
+      try {
+        first.send({ type: "subscribe", space: mira.id });
+        const snapshot = await snapshotOf(first);
+        expect(refsOf(snapshot)).toEqual(["M-1"]);
+        expect(snapshot["space"]).toMatchObject({ read_only: { reason: "read_only_copy" } });
+        cursor = snapshot["cursor"];
+        key = (snapshot["space"] as { copy: string }).copy;
+      } finally {
+        first.ws.close();
+      }
+      // The original opens again and takes a change the copy never has.
+      await user.call("space/open", { path: mira.folder }, CALL);
+      await add(user, "Only in the original", "page-copies-feed-0002");
+
+      // What a feed resumes with never carries the original's change under the copy's cursor.
+      const next = (feed: FeedClient) =>
+        feed.next((m) => m["type"] === "snapshot" || m["type"] === "batch", 60_000);
+      const original = await openFeed(port, token);
+      try {
+        original.send({ type: "subscribe", space: mira.id, cursor });
+        const got = await next(original);
+        expect(got["type"]).toBe("snapshot");
+        expect(refsOf(got).sort()).toEqual(["M-1", "M-2"]);
+        expect(got["space"]).not.toHaveProperty("read_only");
+      } finally {
+        original.ws.close();
+      }
+      const copy = await openFeed(port, token);
+      try {
+        copy.send({ type: "subscribe", space: key, cursor });
+        const got = await next(copy);
+        const events = (got["events"] ?? []) as { request_id: string }[];
+        expect(events.map((e) => e.request_id)).not.toContain("page-copies-feed-0002");
+        if (got["type"] === "snapshot") expect(refsOf(got)).toEqual(["M-1"]);
+      } finally {
+        copy.ws.close();
+      }
     },
   );
 

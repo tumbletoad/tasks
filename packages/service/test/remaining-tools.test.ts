@@ -88,7 +88,14 @@ function writerOf(f: Fixture): SpaceWriterHandle {
 const hostOf = (f: Fixture): OpsHost => ({
   machine: { id: MACHINE.id },
   spaces: () => [
-    { id: f.spaceId, name: "Mira", state: "open", writer: writerOf(f), reader: readerOf(f.reader) },
+    {
+      id: f.spaceId,
+      name: "Mira",
+      folder: "/fixture/mira",
+      state: "open",
+      writer: writerOf(f),
+      reader: readerOf(f.reader),
+    },
   ],
   now: () => clock,
   timeZone: () => "Europe/Lisbon",

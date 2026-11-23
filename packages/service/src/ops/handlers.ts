@@ -71,10 +71,10 @@ import {
 } from "@ttasks/launch";
 import {
   ambiguousError,
+  copyKey,
   copyOf,
   findSpace,
   isAmbiguity,
-  keyOf,
   namesCopy,
   onlySpace,
   type Ambiguity,
@@ -199,7 +199,7 @@ export interface ServedSpace {
   /** Set while the space is served: open or read-only. */
   readonly reader: WorkerConnection | undefined;
   /** The space's folder on this machine. */
-  readonly folder?: string;
+  readonly folder: string;
 }
 
 /** What the request path needs from its host. */
@@ -2547,7 +2547,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
             { ...call.caller, principal },
             {
               // The copy the click resolved, by its own key: never the space's ID chosen again.
-              space: keyOf(call.space) ?? call.space.id,
+              space: copyKey(call.space.id, call.space.folder),
               op: "entry.add",
               input: {
                 task: read.id,

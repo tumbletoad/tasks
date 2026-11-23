@@ -368,7 +368,8 @@ describe("[A2.3.8.http.feed] the change feed over WebSocket", () => {
       first.send({ type: "subscribe" });
       const snapshot = await first.next((m) => m["type"] === "snapshot");
       const cursor = snapshot["cursor"] as { epoch: number; incarnation: string; seq: number };
-      const space = (snapshot["space"] as { id: string }).id;
+      // A subscription resumes by the key of the copy the snapshot named.
+      const space = (snapshot["space"] as { copy: string }).copy;
       first.ws.close();
       await post(port, "/api/v1/op/task.add", taskAdd(["While away"], "feed-request-0101"), {
         token,

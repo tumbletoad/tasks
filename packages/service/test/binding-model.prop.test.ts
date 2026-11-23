@@ -61,6 +61,7 @@ const served = (f: Fixture, name: string): ServedSpace => ({
   id: f.spaceId,
   registered: f.spaceId,
   name,
+  folder: `/fixture/${name}`,
   state: "open",
   writer: writerOf(f),
   reader: readerOf(f.reader),

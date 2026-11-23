@@ -31,6 +31,7 @@ const host = (): OpsHost => ({
     {
       id: fx.spaceId,
       name: "Mira",
+      folder: "/fixture/mira",
       state: "open",
       writer: {
         spaceId: fx.spaceId,

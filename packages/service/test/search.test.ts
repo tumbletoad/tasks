@@ -647,6 +647,7 @@ describe("[A3.5.search.find] task.search through the request path", () => {
       {
         id: fx.spaceId,
         name: "Mira",
+        folder: "/fixture/mira",
         state: "open",
         writer: undefined,
         reader: readerOf(fx.reader),

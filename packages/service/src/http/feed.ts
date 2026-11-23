@@ -80,6 +80,8 @@ export interface SnapshotMessage {
     readonly id: string;
     readonly name: string;
     readonly ref_prefix: string;
+    /** The key of the copy it is of, which a subscription resumes by (the feed adds it: ws.ts). */
+    readonly copy?: string;
     /** Set when the copy is read-only (the feed adds it: ws.ts). */
     readonly read_only?: SpaceReadOnly;
   };

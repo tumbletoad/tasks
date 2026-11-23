@@ -184,6 +184,7 @@ describe("[M6.page.run-view] the page's view of a run", () => {
           {
             id: "sp_00r5mfcw5rfzxb9enb2vg50z3k",
             name: "Mira",
+            folder: "/fixture/mira",
             state: "open",
             writer: undefined,
             reader: {} as never,
@@ -239,6 +240,7 @@ describe("[M6.page.run-view] the page's view of a run", () => {
           {
             id: "sp_00r5mfcw5rfzxb9enb2vg50z3k",
             name: "Mira",
+            folder: "/fixture/mira",
             state: "open",
             writer: undefined,
             reader: {} as never,

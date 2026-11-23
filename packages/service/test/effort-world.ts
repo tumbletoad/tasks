@@ -69,6 +69,7 @@ function effortWorld(fx: Fixture): EffortWorld {
       {
         id: fx.spaceId,
         name: "Mira",
+        folder: "/fixture/mira",
         state: "open",
         writer: {
           spaceId: fx.spaceId,

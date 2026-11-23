@@ -42,7 +42,7 @@ import {
 } from "@ttasks/contracts";
 import { hasControl } from "@ttasks/launch";
 import { WebSocketServer } from "ws";
-import { addressOf } from "../ops/copies.ts";
+import { addressOf, copyKey } from "../ops/copies.ts";
 import { opCall, type OpsHost } from "../ops/index.ts";
 import { isLive, type Grant, type GrantStore } from "../local/index.ts";
 import {
@@ -854,7 +854,8 @@ export class HttpApp {
         const reasonOf = (s: { readonly reason?: string }) =>
           s.reason === undefined ? {} : { reason: s.reason };
         // One row per copy, with the address that names it on the page (copies.ts): a restored
-        // copy beside its original is a row of its own, which never leads to the original.
+        // copy beside its original is a row of its own, which never leads to the original. Its
+        // key names that copy whatever happens to the others: what a tab holds on to.
         const spaces = all.flatMap((s) => {
           const address = addressOf(all, s);
           if (s.id === undefined || address === undefined) return [];
@@ -862,6 +863,8 @@ export class HttpApp {
             {
               id: s.id,
               address,
+              copy: copyKey(s.id, s.folder),
+              folder: s.folder,
               name: s.name ?? "",
               state: s.state,
               ...reasonOf(s),
