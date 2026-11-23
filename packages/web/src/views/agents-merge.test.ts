@@ -124,4 +124,19 @@ describe("[A5.trash.web.agents] a task in the Trash on the Agents page", () => {
       mergeAgents(picture([session(1), session(2)]), SPACE, back).tasks.get(removed.id),
     ).toEqual(merged.tasks.get(removed.id));
   });
+
+  test("a removed task whose agent in a terminal TTasks holds open is placed with no monitor at all, once, and not twice when the monitor sees it", () => {
+    const held = numbered(5, { deleted_at: 1, terminals: 1 });
+    const rows = new Map([[held.id, held]]);
+    const alone = mergeAgents(null, SPACE, rows).tasks.get(held.id);
+    expect(alone?.agents.map((a) => [a.started, a.state])).toEqual([["terminal", "unseen"]]);
+    // The monitor links its session: that one agent, in the monitor's state.
+    const seen = mergeAgents(picture([session(5, SPACE, "terminal")]), SPACE, rows);
+    expect(seen.tasks.get(held.id)?.agents.map((a) => [a.started, a.state])).toEqual([
+      ["terminal", "idle"],
+    ]);
+    // Its end recorded, the row read again holds none: nothing places it.
+    const ended = numbered(5, { deleted_at: 1 });
+    expect(mergeAgents(null, SPACE, new Map([[ended.id, ended]])).tasks.has(ended.id)).toBe(false);
+  });
 });

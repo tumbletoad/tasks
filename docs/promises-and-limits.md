@@ -29,9 +29,12 @@ the behaviour it describes, and keep each one to a sentence or two.
   whole.
 - A restored task never takes a source back from a task that took it meanwhile: captures go on
   there, and the restored task lists the source as removed, saying where captures go.
-- A run or an agent working on a task you move to the Trash goes on, and stays on the Agents page
-  as long as it would for any task: a run with its Stop, an agent in a terminal until you stop it
-  there. Only you move tasks to the Trash and back for now: agents cannot.
+- A run working on a task you move to the Trash goes on, and stays on the Agents page with its Stop
+  as long as it would for any task. A run that finishes leaves the page as any task's does: its
+  answer stays in the task's thread, which the Trash opens. An agent in a terminal that TTasks
+  started for the task goes on until you stop it in its terminal, and shows on the Agents page until
+  it ends, with or without the Agent Monitor. Only you move tasks to the Trash and back for now:
+  agents cannot.
 - A task's reference, such as M-14, is not given to another task when the task is deleted or its
   creation is undone, when a backup is restored over the space, or when a restored copy is claimed.
 - Adding work by a source that an open task or a recently finished one already has finds that task

@@ -12,8 +12,10 @@
 // its thread, where its runs, Stop and the changes are; it stays where it was until it collapses.
 // A task in the Trash is placed by the same rule, from its own row read from the Trash: the run it
 // shows, or the agents the monitor links to it. So a cold page shows it too, as long as a live task
-// would be shown, marked with Restore; a run's card holds its Stop and answer, and an agent in a
-// terminal is said to go on until it is stopped there. A row the monitor put in its group is muted
+// would be shown, marked with Restore; a run's card holds its Stop, and a run that ends leaves as a
+// live task's does, its answer in the task's thread. An agent in a terminal that TTasks started for
+// it and holds open is listed with or without the monitor, since the task has no row anywhere else,
+// and said to go on until it is stopped there. A row the monitor put in its group is muted
 // while the monitor's picture is not current. Below them, every other agent on this computer and
 // the plan usage of each account (Computer.tsx).
 // "Routines" and the full history with Revert wait for the service's read of sessions and routines.
@@ -66,7 +68,8 @@ const PAGE = 200;
 
 /**
  * The rows of the tasks in the Trash that the page places as it places a live task: those whose
- * row shows a run, every page of them, and `named`, which the Agent Monitor links an agent to.
+ * row shows a run or that hold an agent in a terminal open, every page of them, and `named`, which
+ * the Agent Monitor links an agent to.
  */
 async function readTrashedWork(
   client: Client,

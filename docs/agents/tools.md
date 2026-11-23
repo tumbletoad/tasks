@@ -2681,7 +2681,7 @@ What is in the Trash, newest change first, a page at a time.
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `q` | string, max 200 | no | Words of a title, or a reference such as M-14 |
-| `working` | boolean | no | Only tasks whose row shows a run: one working, or one that asks you something |
+| `working` | boolean | no | Only tasks an agent works on: a run, or a terminal agent here not ended |
 | `tasks` | (string, max 40)[], max 200 items | no | Only these tasks, such as those the Agent Monitor links an agent to |
 | `limit` | integer, 1 to 200 | no, default `50` | Rows per page; default 50 |
 | `cursor` | string, max 60 | no | Next page: the last page's cursor |
@@ -2743,6 +2743,7 @@ What is in the Trash, newest change first, a page at a time.
 | `rows[].questions_more` | integer, 0 to 9007199254740991 | no | How many more questions wait |
 | `rows[].area` | string | no | Its area's name, a deleted one too |
 | `rows[].project` | string | no | Its project's name, a deleted one too |
+| `rows[].terminals` | integer, 1 to 1000000 | no | Its terminal agents on this computer not ended: stop them there |
 | `rows[].removed` | object | yes | The change that moved it to the Trash |
 | `rows[].removed.id` | string | yes | A change's commit ID |
 | `rows[].removed.at` | string | yes | When |

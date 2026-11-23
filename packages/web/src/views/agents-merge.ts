@@ -4,7 +4,7 @@
 // waits for the person asks as much as an agent that waits. TTasks' record decides what an agent is: a
 // background run's state is TTasks' own, an agent in a terminal's is the monitor's, and a
 // terminal agent TTasks holds as running that the monitor has not seen is shown as such, never
-// as idle.
+// as idle: also one of a task in the Trash, from its launch's record, with no monitor at all.
 import type { AgentsPicture, AgentsSession } from "@ttasks/contracts/monitor";
 import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 
@@ -145,6 +145,18 @@ export function mergeAgents(
         current: false,
       });
     }
+  }
+  // A removed task's terminal agents the monitor does not show: its row is the only place left.
+  for (const row of rows.values()) {
+    const seen = found.get(row.id)?.some((agent) => agent.started === "terminal") ?? false;
+    if (row.terminals === undefined || seen) continue;
+    add(row.id, {
+      key: `held:${row.id}`,
+      state: "unseen",
+      session: null,
+      started: "terminal",
+      current: false,
+    });
   }
   const tasks = new Map<string, Placed>();
   for (const row of rows.values()) {

@@ -2867,6 +2867,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...entry.row,
         ...(entry.area === undefined ? {} : { area: entry.area }),
         ...(entry.project === undefined ? {} : { project: entry.project }),
+        ...(entry.terminals === 0 ? {} : { terminals: entry.terminals }),
         removed: entry.removed,
       })),
       ...(read.more && last !== undefined

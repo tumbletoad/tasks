@@ -20,6 +20,7 @@ import {
   watchViolations,
 } from "./page.ts";
 import { FAKE_QUESTION } from "./codex-cases.ts";
+import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { CODEX_INSTANCE, SLOW_MS, type World } from "./world.ts";
 
 interface Added {
@@ -572,5 +573,40 @@ test.describe("[A5.trash.e2e.answer] A run on a removed task that answers afterw
     await expect(rowOf(page, removed).locator('[data-entry="run"]').first()).toContainText(
       FAKE_QUESTION,
     );
+  });
+});
+
+test.describe("[A5.trash.e2e.terminal] An agent in a terminal on a removed task stays in sight without the monitor", () => {
+  test("an agent in a terminal on a task moved to the Trash, with no monitor: a cold Agents page lists the task once, saying the agent goes on until it is stopped in its terminal; it leaves once the agent ends @one-browser", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const space = world.mira.id;
+    const ref = await addTask(world, { title: `Draft the newsletter (${tag})`, area: "home" });
+    world.hold(ref);
+    await openTask(page, world, ref);
+    const row = rowOf(page, ref);
+    await row
+      .getByRole("toolbar", { name: "Act on this task" })
+      .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
+      .click();
+    await expect(row.locator('[data-entry][data-state="running"]')).toBeVisible({
+      timeout: SLOW_MS,
+    });
+    await removeTasks(world, [ref]);
+
+    // A cold page: the launch's record is all that shows the agent.
+    await page.goto(`${world.origin}/s/${space}/agents`);
+    await page.reload();
+    await showsSpace(page, world.mira.name);
+    await expect(rowOf(page, ref).locator('[data-part="agents-in-trash"]')).toHaveText(
+      /^In the Trash\. Its agent in a terminal goes on until you stop it there/u,
+      { timeout: SLOW_MS },
+    );
+    await expect(rowOf(page, ref)).toHaveCount(1);
+    // The person quits the agent: its end is recorded, and the task leaves the page.
+    world.release(ref);
+    await expect(rowOf(page, ref)).toHaveCount(0, { timeout: SLOW_MS });
   });
 });

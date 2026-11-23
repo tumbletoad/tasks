@@ -1,5 +1,6 @@
 // The Trash: the tasks someone moved there on purpose (storage's trash.ts decides which), read a
 // page at a time, newest change first, each with the change that moved it there.
+import { heldAgentSql } from "@ttasks/launch";
 import { inTrashSql, removalSeqSql, type Row, type WorkerConnection } from "@ttasks/storage";
 import { byOf } from "./errors.ts";
 import { hasFolderTable } from "./read.ts";
@@ -14,8 +15,9 @@ export interface TrashRequest {
   readonly prefix?: string | undefined;
   /**
    * The tasks the Agents page places as it places a live task: with `working`, those whose row
-   * shows a run (one that may hold processes, or a newest that asks the person); with `tasks`,
-   * these, which the Agent Monitor links an agent to. Both: either.
+   * shows a run (one that may hold processes, or a newest that asks the person) and those with an
+   * agent in a terminal TTasks started on this machine and holds open; with `tasks`, these, which
+   * the Agent Monitor links an agent to. Both: either.
    */
   readonly working?: boolean | undefined;
   readonly tasks?: readonly string[] | undefined;
@@ -32,6 +34,8 @@ export interface TrashEntry {
   readonly ref: number;
   readonly area?: string;
   readonly project?: string;
+  /** Its agents in a terminal that TTasks started on this machine and holds open. */
+  readonly terminals: number;
   readonly removed: {
     readonly id: string;
     readonly at: string;
@@ -45,6 +49,11 @@ export interface TrashEntry {
  * The Trash's tasks with their change's seq, and how many of each change are there. The page's
  * keys are chosen first and the rows built only for them, as Completed's are.
  */
+/** The terminal launches of task row `t` on `$machine` whose agent's end is not recorded. */
+const HELD_TERMINALS = (t: string): string =>
+  `SELECT 1 FROM launches l WHERE l.task_id = ${t}.id AND l.route = 'terminal' AND ` +
+  `l.machine_id = $machine AND ${heldAgentSql("l")}`;
+
 function trashSql(request: TrashRequest, folders: boolean): string {
   const find: string[] = [];
   if (request.ref !== undefined) {
@@ -72,6 +81,8 @@ function trashSql(request: TrashRequest, folders: boolean): string {
         "r.task_id = t.id ORDER BY r.queued_at DESC, r.id DESC LIMIT 1)",
     );
   }
+  // An agent in a terminal shows on no other page: the record of its launch says it goes on.
+  if (request.working === true) agents.push(`EXISTS (${HELD_TERMINALS("t")})`);
   if (request.tasks !== undefined) agents.push("t.id IN (SELECT value FROM json_each($tasks))");
   if (request.working === true || request.tasks !== undefined) {
     where.push(agents.length === 0 ? "0" : `(${agents.join(" OR ")})`);
@@ -87,6 +98,7 @@ function trashSql(request: TrashRequest, folders: boolean): string {
     "ORDER BY k.seq DESC, t.ref LIMIT $limit) " +
     `SELECT ${taskColumns(folders)}, page.seq AS x_seq, n.n AS x_count, a.title AS x_area, ` +
     "p.title AS x_project, c.id AS x_change, c.at AS x_at, c.reason AS x_why, " +
+    `(SELECT count(*) FROM (${HELD_TERMINALS("t")})) AS x_terminals, ` +
     "c.origin AS x_origin, x.kind AS x_kind, x.label AS x_label FROM page " +
     "JOIN tasks t ON t.id = page.id JOIN counts n ON n.seq = page.seq " +
     "LEFT JOIN commits c ON c.seq = page.seq LEFT JOIN actors x ON x.id = c.author_id " +
@@ -97,6 +109,7 @@ function trashSql(request: TrashRequest, folders: boolean): string {
 
 const TRASH_OWN = [
   "x_seq",
+  "x_terminals",
   "x_count",
   "x_area",
   "x_project",
@@ -125,6 +138,7 @@ export async function readTrash(
       mode: "all",
       params: {
         limit: request.limit + 1,
+        machine: here?.machine ?? "",
         ...(request.words.length === 0 ? {} : { words: JSON.stringify(request.words) }),
         ...(request.ref === undefined ? {} : { ref: request.ref }),
         ...(request.ref === undefined || request.prefix === undefined
@@ -156,6 +170,7 @@ export async function readTrash(
       ref: Number(found[i]?.["ref"]),
       ...(typeof x["x_area"] === "string" ? { area: x["x_area"] } : {}),
       ...(typeof x["x_project"] === "string" ? { project: x["x_project"] } : {}),
+      terminals: Number(x["x_terminals"] ?? 0),
       removed: {
         id: String(x["x_change"]),
         at: new Date(at).toISOString(),

@@ -18,7 +18,7 @@ export const TaskTrashInput = z.strictObject({
   q: safeLine(200).describe("Words of a title, or a reference such as M-14").optional(),
   working: z
     .boolean()
-    .describe("Only tasks whose row shows a run: one working, or one that asks you something")
+    .describe("Only tasks an agent works on: a run, or a terminal agent here not ended")
     .optional(),
   tasks: z
     .array(TaskId.max(40))
@@ -42,6 +42,12 @@ export const TrashChange = z.strictObject({
 export const TrashRow = CompactTaskRow.extend({
   area: z.string().describe("Its area's name, a deleted one too").optional(),
   project: z.string().describe("Its project's name, a deleted one too").optional(),
+  terminals: z
+    .int()
+    .min(1)
+    .max(1_000_000)
+    .describe("Its terminal agents on this computer not ended: stop them there")
+    .optional(),
   removed: TrashChange.describe("The change that moved it to the Trash"),
 });
 

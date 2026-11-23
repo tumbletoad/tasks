@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
 import { RUN_LIMITS } from "@ttasks/contracts/runs";
-import { SpaceExecutionStore } from "@ttasks/launch";
+import { SHIM_METHODS, SpaceExecutionStore } from "@ttasks/launch";
 import { renderResult } from "../src/mcp/index.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
@@ -17,6 +17,7 @@ interface Row {
   title: string;
   area?: string;
   project?: string;
+  terminals?: number;
   removed: { id: string; by: string; count: number; at: string; reason?: string };
 }
 
@@ -427,7 +428,7 @@ describe("[A3.trash] the Trash through real requests", () => {
     expect(refs((await trash({ q: `Z-${number}` })).rows)).toEqual([]);
   });
 
-  test("the Agents page reads a removed task as it places a live one: by the run its row shows, and by the agents the monitor links, with no cut of its own", async () => {
+  test("the Agents page reads a removed task as it places a live one: by the run its row shows, by an agent in a terminal held open with no monitor until its end, and by the agents the monitor links, with no cut of its own", async () => {
     const a = await add({ title: "Fixture run goes on" });
     const terminal = await add({ title: "Fixture agent in a terminal" });
     const quiet = await add({ title: "Fixture nobody on it" });
@@ -437,15 +438,31 @@ describe("[A3.trash] the Trash through real requests", () => {
       ids.set(ref, ((await call("task.get", { task: ref }))["task"] as Json)["id"] as string);
     }
     const run = await startRun(ids.get(a) ?? "");
-    await w.launch(terminal);
+    const launch = await w.launch(terminal);
     await remove([a, terminal, quiet]);
-    // A working run shows on the row, as on a live task's.
+    // A working run shows on the row, as on a live task's; an agent in a terminal TTasks holds
+    // open shows from its launch's record, with no monitor, since no other page shows the task.
     const working = await trash({ working: true });
-    expect(refs(working.rows)).toEqual([a]);
-    expect(working.rows[0]).toMatchObject({ run: { state: "working" } });
+    expect(working.rows.map((r) => [r.ref, r.terminals]).sort()).toEqual(
+      [
+        [a, undefined],
+        [terminal, 1],
+      ].sort(),
+    );
+    expect(working.rows.find((r) => r.ref === a)).toMatchObject({ run: { state: "working" } });
     // Once it ended with its answer the row shows no run, as a live task's does not; the monitor's
     // link to its session reads it still, as it reads the terminal agent's, marked as removed.
     await run.end();
+    expect(refs((await trash({ working: true })).rows)).toEqual([terminal]);
+    // The terminal agent's end is recorded: its task leaves too.
+    if (launch.attachment === undefined) throw new Error("the launch was not claimed");
+    const ended = await w.service.launches.host.report(launch.attachment, SHIM_METHODS.exited, {
+      code: 0,
+      signal: null,
+      ran_ms: 5_000,
+      settled: true,
+    });
+    expect(ended.kind).toBe("applied");
     expect(refs((await trash({ working: true })).rows)).toEqual([]);
     const named = await trash({ tasks: [ids.get(a), ids.get(terminal), ids.get(live)] });
     expect(refs(named.rows).sort()).toEqual([a, terminal].sort());

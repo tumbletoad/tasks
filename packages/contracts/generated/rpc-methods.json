@@ -6423,7 +6423,7 @@
             "type": "array"
           },
           "working": {
-            "description": "Only tasks whose row shows a run: one working, or one that asks you something",
+            "description": "Only tasks an agent works on: a run, or a terminal agent here not ended",
             "type": "boolean"
           }
         },
@@ -6753,6 +6753,12 @@
                 "summary": {
                   "description": "One line: the next step",
                   "type": "string"
+                },
+                "terminals": {
+                  "description": "Its terminal agents on this computer not ended: stop them there",
+                  "maximum": 1000000,
+                  "minimum": 1,
+                  "type": "integer"
                 },
                 "title": {
                   "description": "Title",
