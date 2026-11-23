@@ -171,7 +171,16 @@ describe.each(STREAM_KINDS)(
       const parser = createStreamParser(kind);
       const chunk = new Uint8Array(64 * 1024).fill(0x61);
       let most = 0;
-      for (let i = 0; i < LONG_LINE_CAP_BYTES / chunk.length + 64; i += 1) {
+      for (let i = 0; i < LONG_LINE_CAP_BYTES / chunk.length; i += 1) {
+        parser.push(chunk);
+        most = Math.max(most, parser.held().bufferCapacity);
+      }
+      expect(parser.held().bufferedBytes).toBe(LONG_LINE_CAP_BYTES);
+      // The first byte past the bound loses the line: a program that then says nothing more is
+      // not waited for with the whole line held.
+      parser.push(chunk.subarray(0, 1));
+      expect([parser.held().bufferedBytes, parser.counts().oversized]).toEqual([0, 1]);
+      for (let i = 0; i < 64; i += 1) {
         parser.push(chunk);
         most = Math.max(most, parser.held().bufferCapacity);
       }
