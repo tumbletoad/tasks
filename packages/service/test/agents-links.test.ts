@@ -24,6 +24,7 @@ const ID = {
   terminal: "aaaaaaaa-1111-4111-8111-000000000001",
   thread: "019a0000-0000-7000-8000-00000000000b",
   run: "019a0000-0000-7000-8000-00000000000c",
+  rerun: "019a0000-0000-7000-8000-00000000000d",
   missing: "aaaaaaaa-1111-4111-8111-000000000004",
   shared: "aaaaaaaa-1111-4111-8111-000000000005",
   twin: "aaaaaaaa-1111-4111-8111-000000000006",
@@ -46,6 +47,8 @@ const homeOfInstance = (instance: string): string =>
     "codex-work": homes.codex,
   })[instance] ?? "";
 const tasks = new Map<string, { id: string; ref: string; space: string }>();
+/** The IDs of the two background runs of the task "Run", the earlier first. */
+let runIds: string[] = [];
 let n = 0;
 const rid = () => `fixture-links-${String((n += 1)).padStart(6, "0")}`;
 
@@ -160,8 +163,8 @@ async function trashAfterRestore(title: string): Promise<void> {
   if (result.status !== "applied") throw new Error(JSON.stringify(result));
 }
 
-/** A background run of `title`'s task that reported `nativeId` and has ended. */
-async function run(title: string, nativeId: string): Promise<void> {
+/** A background run of `title`'s task that reported `nativeId` and has ended; its ID. */
+async function run(title: string, nativeId: string): Promise<string> {
   const task = tasks.get(title);
   if (task === undefined) throw new Error(`no task ${title}`);
   const store = await storeOf(task.space);
@@ -215,6 +218,7 @@ async function run(title: string, nativeId: string): Promise<void> {
     },
   );
   hold.release();
+  return running.id;
 }
 
 beforeAll(async () => {
@@ -289,7 +293,7 @@ beforeAll(async () => {
   await launch("Shared too", "claude-work", { preset: ID.shared });
   await launch("Twin", "claude-twin", { preset: ID.twin });
   await launch("Ended", "claude-work", { preset: ID.ended }, true);
-  await run("Run", ID.run);
+  runIds = [await run("Run", ID.run), await run("Run", ID.rerun)];
   await launch("Trashed", "claude-work", { preset: ID.trashed });
   await trashAfterRestore("Trashed");
   // Started in a home the instance named then; machine.toml names another one now.
@@ -323,6 +327,7 @@ beforeAll(async () => {
         }),
         agent("b-thread", "codex", "codex-test", ID.thread, "Fixture thread agent"),
         agent("c-run", "codex", "codex-test", ID.run, "Fixture run agent"),
+        agent("c-rerun", "codex", "codex-test", ID.rerun, "Fixture next run agent"),
         agent("d-missing", "claude", "claude-test", ID.missing, "Fixture missing home"),
         agent("e-shared", "claude", "claude-test", ID.shared, "Fixture shared session"),
         agent("f-twin", "claude", "twin-a", ID.twin, "Fixture twin home"),
@@ -375,6 +380,7 @@ describe("[A5.agents.links] each agent of the monitor is shown with the task TTa
       spaceName: "Mira",
       ...linked("Terminal"),
       started: "terminal",
+      of: expect.stringMatching(/^la_/) as unknown,
     });
     expect(byTitle(p, "Fixture terminal agent")?.nested.map((a) => a.title)).toEqual([
       "Fixture agent inside",
@@ -384,13 +390,20 @@ describe("[A5.agents.links] each agent of the monitor is shown with the task TTa
       ...linked("Thread"),
       started: "terminal",
     });
-    // A background run in the other space, by the session ID it reported.
+    // A background run in the other space, by the session ID it reported. Each run of a task
+    // names its own run: an earlier run's conversation resumed by hand is not the current run.
     expect(byTitle(p, "Fixture run agent")?.task).toEqual({
       space: studio,
       spaceName: "Studio",
       ...linked("Run"),
       started: "run",
+      of: runIds[0],
     });
+    expect(byTitle(p, "Fixture next run agent")?.task).toMatchObject({
+      ...linked("Run"),
+      of: runIds[1],
+    });
+    expect(runIds[0]).not.toBe(runIds[1]);
     // A launch whose agent ended still links its session: the person may have resumed it.
     expect(byTitle(p, "Fixture ended launch")?.task).toMatchObject(linked("Ended") ?? {});
     // A home TTAM does not list, one two of its homes could be, a session two tasks hold, the

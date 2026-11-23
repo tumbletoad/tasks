@@ -220,15 +220,15 @@ describe("[M6.page.run-follow] the page shows a run as the service has it", () =
       },
       { key: "claude", label: "Claude", glyph: "Cl", ring: 2, route: "terminal" },
     ];
-    expect(runMarker({ state: "needs_you", instance: "codex-work" }, instances)).toEqual({
+    expect(runMarker({ id: "ru_1", state: "needs_you", instance: "codex-work" }, instances)).toEqual({
       kind: "needs_input",
       by: "Codex · work",
     });
-    expect(runMarker({ state: "working", instance: "gone" }, instances)).toEqual({
+    expect(runMarker({ id: "ru_1", state: "working", instance: "gone" }, instances)).toEqual({
       kind: "working",
       by: "gone",
     });
-    expect(runMarker({ state: "later", instance: "codex-work" }, instances)).toBeUndefined();
+    expect(runMarker({ id: "ru_1", state: "later", instance: "codex-work" }, instances)).toBeUndefined();
     expect(runMarker(undefined, instances)).toBeUndefined();
     // Run is offered by what the service says an instance can do, never by its name.
     expect(runners(instances).map((i) => i.key)).toEqual(["codex-work"]);

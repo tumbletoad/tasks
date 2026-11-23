@@ -50,6 +50,7 @@ export async function heldSessions(sources: HeldSources): Promise<HeldSession[]>
           id: row.task,
           ref: row.ref,
           started: row.started,
+          of: row.id,
         },
         provider: row.provider,
         home: row.home,

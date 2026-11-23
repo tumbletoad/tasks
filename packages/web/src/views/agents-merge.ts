@@ -27,6 +27,8 @@ export interface TaskAgent {
   /** The monitor's session, with the agents inside it; null for one the monitor does not show. */
   readonly session: AgentsSession | null;
   readonly started: "run" | "terminal";
+  /** The agent of the task's current background run, in TTasks' own state. */
+  readonly current: boolean;
 }
 
 /** A task with agents: where it is placed, and its agents. */
@@ -37,7 +39,7 @@ export interface Placed {
   readonly own: boolean;
   /** How long before the picture its oldest agent the monitor sees started; null: none known. */
   readonly ageMs: number | null;
-  /** Every agent of the task: its run first, then the monitor's as they started. */
+  /** Every agent of the task: its current run first, then the others as they started. */
   readonly agents: readonly TaskAgent[];
 }
 
@@ -68,7 +70,12 @@ const byStart = (a: TaskAgent, b: TaskAgent): number =>
   (b.session?.ageMs ?? -1) - (a.session?.ageMs ?? -1) ||
   (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
-/** The agents of each task of `space` the page holds as `rows`, from the monitor's `picture`. */
+/**
+ * The agents of each task of `space` the page holds as `rows`, from the monitor's `picture`. The
+ * agent of the task's current run is the session matched to that run, in TTasks' state; any other
+ * session, one of an earlier run or launch resumed by hand among them, is an agent of its own in
+ * the monitor's state.
+ */
 export function mergeAgents(
   picture: AgentsPicture | null,
   space: string | undefined,
@@ -88,21 +95,23 @@ export function mergeAgents(
       const row = rows.get(task.id);
       if (row === undefined) continue;
       shown.add(session.key);
-      const own = task.started === "run" ? runState(row) : undefined;
+      const run = task.of === row.run?.id ? runState(row) : undefined;
       add(task.id, {
         key: session.key,
-        state: own ?? stateOf(session.activity),
+        state: run ?? stateOf(session.activity),
         session,
         started: task.started,
+        current: run !== undefined,
       });
     }
     for (const task of picture.unseen) {
       if (task.space !== space || !rows.has(task.id)) continue;
       add(task.id, {
-        key: `unseen:${task.id}`,
+        key: `unseen:${task.of}`,
         state: "unseen",
         session: null,
         started: "terminal",
+        current: false,
       });
     }
   }
@@ -111,14 +120,13 @@ export function mergeAgents(
     const run = runState(row);
     const agents = (found.get(row.id) ?? []).sort(byStart);
     if (run === undefined && agents.length === 0) continue;
+    const others = agents.filter((a) => !a.current);
     // TTasks' own run is one of the task's agents, also when the monitor does not see it.
-    const runs = agents.filter((a) => a.started === "run");
-    const listed: TaskAgent[] = [
-      ...(run !== undefined && agents.length > 0 && runs.length === 0
-        ? [{ key: `run:${row.id}`, state: run, session: null, started: "run" as const }]
-        : runs),
-      ...agents.filter((a) => a.started !== "run"),
-    ];
+    const current =
+      agents.find((a) => a.current) ??
+      (run !== undefined && others.length > 0
+        ? { key: `run:${row.id}`, state: run, session: null, started: "run" as const, current: true }
+        : undefined);
     // An agent inside a conversation that waits for the person asks as much as its parent would.
     const states = [
       ...(run === undefined ? [] : [run]),
@@ -135,7 +143,7 @@ export function mergeAgents(
       state: AGENT_STATES[best] ?? "unknown",
       own: run !== undefined && rank(run) === best,
       ageMs: ages.length === 0 ? null : Math.max(...ages),
-      agents: listed,
+      agents: current === undefined ? others : [current, ...others],
     });
   }
   return { tasks, shown };

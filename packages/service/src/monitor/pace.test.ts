@@ -23,6 +23,7 @@ const TASK = {
   id: "t_fixture",
   ref: "F-1",
   started: "terminal" as const,
+  of: "la_fixture",
 };
 
 const snapshot = (settling: boolean, generation = 1, present = true): MonitorSnapshot => ({
@@ -327,7 +328,7 @@ describe("[A5.agents.unseen] an agent TTasks holds as running that the monitor d
         running: true,
       },
       {
-        task: { ...TASK, id: "t_run", started: "run" },
+        task: { ...TASK, id: "t_run", started: "run", of: "ru_fixture" },
         provider: "claude",
         home: homeDigest(process.platform, HOME),
         sessionId: SESSION,

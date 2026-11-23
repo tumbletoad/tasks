@@ -42,6 +42,8 @@ export type CompactPlace =
  * not confirmed ended), or ended asking the person something. Absent otherwise.
  */
 export interface CompactRun {
+  /** The run's ID: the Agents page pairs it with the agent the Agent Monitor sees for it. */
+  readonly id: string;
   readonly state: "working" | "needs_you";
   /** The run's agent instance: machine.toml's key. */
   readonly instance: string;
@@ -74,9 +76,9 @@ const OPEN_RUN =
   `(r.state IN (${OPEN_RUN_STATES.map((s) => `'${s}'`).join(", ")}) OR ` +
   "(r.state = 'unknown' AND r.reason = 'stop_timed_out'))";
 
-/** The task's newest run, of those `where` admits, as JSON: its state, reason and instance. */
+/** The task's newest run, of those `where` admits, as JSON: its ID, state, reason and instance. */
 const newestRun = (where: string) =>
-  "(SELECT json_object('state', r.state, 'reason', r.reason, 'instance', r.instance_id) " +
+  "(SELECT json_object('id', r.id, 'state', r.state, 'reason', r.reason, 'instance', r.instance_id) " +
   `FROM runs r WHERE r.task_id = t.id${where} ORDER BY r.queued_at DESC, r.id DESC LIMIT 1)`;
 
 /**
@@ -184,15 +186,17 @@ function sourcesOf(value: unknown): CompactSource[] {
 /** A run of `x_run` or `x_run_open` as the row shows it on its own, or nothing. */
 function rowRun(value: unknown): CompactRun | undefined {
   const run = parsed(value);
-  if (!isPlain(run) || typeof run["instance"] !== "string") return undefined;
-  const { state, reason, instance } = run;
+  if (!isPlain(run) || typeof run["instance"] !== "string" || typeof run["id"] !== "string") {
+    return undefined;
+  }
+  const { id, state, reason, instance } = run;
   if (
     typeof state === "string" &&
     isOpenRun({ state: state as RunState, reason: typeof reason === "string" ? reason : null })
   ) {
-    return { state: "working", instance };
+    return { id, state: "working", instance };
   }
-  if (state === "failed" && reason === "needs_input") return { state: "needs_you", instance };
+  if (state === "failed" && reason === "needs_input") return { id, state: "needs_you", instance };
   return undefined;
 }
 

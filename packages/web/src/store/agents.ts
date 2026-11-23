@@ -46,7 +46,7 @@ function nestedOf(o: Obj): AgentsNested {
 function taskOf(v: unknown): AgentsTask | null {
   if (!isObj(v)) return null;
   const started = v["started"];
-  const fields = [v["space"], v["spaceName"], v["id"], v["ref"]];
+  const fields = [v["space"], v["spaceName"], v["id"], v["ref"], v["of"]];
   if (
     !fields.every((f) => typeof f === "string") ||
     (started !== "run" && started !== "terminal")
@@ -59,6 +59,7 @@ function taskOf(v: unknown): AgentsTask | null {
     id: text(v["id"]),
     ref: text(v["ref"]),
     started,
+    of: text(v["of"]),
   };
 }
 

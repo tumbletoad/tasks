@@ -198,6 +198,11 @@ export interface AgentsTask {
   /** The task's reference, such as `MIRA-12`. */
   readonly ref: string;
   readonly started: "run" | "terminal";
+  /**
+   * The ID of the terminal launch or background run the agent was matched to: an agent of an
+   * earlier run of the task is not its current run.
+   */
+  readonly of: string;
 }
 
 /** One conversation's own agent, with the agents inside it. */

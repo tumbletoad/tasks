@@ -42,7 +42,7 @@ const working: TaskRow = {
   position: "p1",
   created_at: 0,
   version: 1,
-  run: { state: "working", instance: "fake-agent" },
+  run: { id: "ru_1", state: "working", instance: "fake-agent" },
 };
 
 function snapshot(tasks: readonly TaskRow[]): SnapshotMessage {
@@ -523,13 +523,21 @@ const task = (n: number): TaskRow => ({
   version: 1,
 });
 
-/** The task `row` as the service links a session to it. */
-const linkTo = (row: TaskRow, started: AgentsTask["started"] = "terminal"): AgentsTask => ({
+/**
+ * The task `row` as the service links a session to it: by default to its current run, or to a
+ * terminal launch of its own.
+ */
+const linkTo = (
+  row: TaskRow,
+  started: AgentsTask["started"] = "terminal",
+  of = started === "run" ? (row.run?.id ?? "ru_ended") : `la_${row.id}`,
+): AgentsTask => ({
   space: SPACE.id,
   spaceName: SPACE.name,
   id: row.id,
   ref: row.ref,
   started,
+  of,
 });
 
 /** TTasks' own groups and labels with their rows' references, in order. */
@@ -590,7 +598,7 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
   test("a task with one, two or three agents is one row, with each of its agents beneath it", async () => {
     const [one, two, three] = [2, 3, 4].map((n) => task(n));
     if (!one || !two || !three) throw new Error("no rows");
-    const ran: TaskRow = { ...three, run: { state: "working", instance: "fake-agent" } };
+    const ran: TaskRow = { ...three, run: { id: "ru_3", state: "working", instance: "fake-agent" } };
     await mount([one, two, ran]);
     const nested = (n: number, activity: AgentsSession["activity"]) => ({
       key: `n${String(n)}`,
@@ -654,7 +662,7 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
   });
 
   test("a background run the monitor does not see is listed beside the task's other agents", async () => {
-    const ran: TaskRow = { ...working, run: { state: "needs_you", instance: "fake-agent" } };
+    const ran: TaskRow = { ...working, run: { id: "ru_1", state: "needs_you", instance: "fake-agent" } };
     const gone = task(2);
     await mount([ran, gone]);
     show({
@@ -676,6 +684,37 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
       );
     expect(states("M-1")[0]).toBe("Background runNeeds you");
     expect(states("M-2")).toEqual(["Agent in a terminalNot seen by TTAM"]);
+  });
+
+  test("a conversation of an earlier run resumed by hand is an agent of its own beside the current run", async () => {
+    const ran: TaskRow = { ...working, run: { id: "ru_new", state: "working", instance: "x" } };
+    await mount([ran]);
+    const earlier = session(1, {
+      task: linkTo(ran, "run", "ru_old"),
+      activity: "waiting",
+      title: "Earlier conversation",
+    });
+    const agents = () =>
+      [...container.querySelectorAll('li[data-task="M-1"] [data-part="agent"]')].map((li) => [
+        li.querySelector("span")?.textContent,
+        li.querySelector("[data-state]:not(li)")?.textContent,
+      ]);
+    // The monitor does not see the current run: TTasks' own line, and the earlier conversation.
+    show({ picture: picture([earlier], []), trouble: null });
+    expect(layout()).toEqual(["H2:Needs you", "M-1"]);
+    expect(agents()).toEqual([
+      ["Background run", "Working"],
+      ["Earlier conversation", "Needs you"],
+    ]);
+    // It sees both: each its own line, the current run in TTasks' state.
+    const current = session(2, { task: linkTo(ran, "run"), activity: "idle", title: "Current run" });
+    show({ picture: picture([earlier, current], []), trouble: null });
+    expect(layout()).toEqual(["H2:Needs you", "M-1"]);
+    expect(agents()).toEqual([
+      ["Current run", "Working"],
+      ["Earlier conversation", "Needs you"],
+    ]);
+    expect(sessions()).toEqual([]);
   });
 
   test("TTasks' own rows come first; the monitor's follow as their agents started; only what changed moves", async () => {
@@ -798,6 +837,7 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
             id: "t_studio",
             ref: "S-4",
             started: "terminal",
+            of: "la_studio",
           },
           title: "Agent of Studio",
         }),
