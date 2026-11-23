@@ -9,6 +9,7 @@
 // no real agent home is read. Fixture data and temporary folders only.
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -17,7 +18,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { envVar, FOLDER_MARKER, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import {
@@ -37,6 +38,9 @@ import { homeDigest, physicalHome } from "../src/setup/agents.ts";
 import { instanceToml, readLog, stateOf, tempRoot, waitFor } from "./harness.ts";
 import { errorOf, classSession } from "./ops-helpers.ts";
 import { LONG_MS, ShimLab } from "./shim-harness.ts";
+import { holdNextWrite } from "./slow-marker.ts";
+
+vi.mock("@ttasks/files", async () => (await import("./slow-marker.ts")).slowFiles());
 
 const WINDOWS = process.platform === "win32";
 
@@ -958,8 +962,10 @@ describe("[A4.5.routes.markers] a launch reads its folder's marker before an age
       const ours = (await open(r, { task: billing.ref, instance: "claude" })).result.launch;
       await waitFor(() => r.lab.folders.get(ours.id), LONG_MS, "the terminal's folder");
 
-      // A task's own folder whose marker names another project of the space.
+      // A task's own folder replaced by one whose marker names another project of the space.
       const own = await addTask(r, "Fixture own folder", "shared-folder");
+      renameSync(join(r.lab.work, "shared-folder"), join(r.lab.work, "shared-aside"));
+      mkdirSync(join(r.lab.work, "shared-folder", FOLDER_MARKER), { recursive: true });
       writeFileSync(
         join(r.lab.work, "shared-folder", FOLDER_MARKER, "owners.json"),
         readFileSync(join(r.lab.work, "billing", FOLDER_MARKER, "owners.json"), "utf8"),
@@ -982,6 +988,32 @@ describe("[A4.5.routes.markers] a launch reads its folder's marker before an age
       await waitFor(() => r.lab.folders.get(free.id), LONG_MS, "the terminal's folder");
       const events = readLog(r.lab.home).filter((e) => e["ev"] === "launch.folder_unmarked");
       expect(events.map((e) => e["reason"])).toEqual(["marker_missing", "marker_other"]);
+    },
+  );
+
+  test(
+    "a folder whose marker was written after the bound, replaced at its path, opens nothing",
+    { timeout: 300_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("routes-markers-late");
+      // The set answers once the bound passed; the marker's write lands after that.
+      const held = holdNextWrite();
+      const late = await addTask(r, "Fixture late marker", "late-checkout");
+      expect(await held.land()).toBeUndefined();
+      expect(existsSync(join(r.lab.work, "late-checkout", FOLDER_MARKER, "owners.json"))).toBe(
+        true,
+      );
+
+      renameSync(join(r.lab.work, "late-checkout"), join(r.lab.work, "late-aside"));
+      mkdirSync(join(r.lab.work, "late-checkout"));
+      const started = r.lab.folders.size;
+      const missing = errorOf(
+        await open(r, { task: late.ref, instance: "claude" }).catch((e: unknown) => e),
+      );
+      expect(missing).toMatchObject({ data: { reason: "marker_missing", of: "task" } });
+      expect(r.lab.folders.size).toBe(started);
+      expect(opened).toHaveLength(0);
     },
   );
 });

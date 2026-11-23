@@ -1,7 +1,7 @@
 // The marker in a project's or a task's folder (marker.ts): what it holds, what a launch's look at
 // it finds (the right marker, another's, a marker gone, a folder that takes none, an old folder
-// without one), how a clear and a move change it, and that a checkout's `git status` stays clean
-// with it. Temporary folders of this test, fixture IDs. git runs only where it is installed, as
+// without one, a marker written after its bound or never), how a clear and a move change it, and
+// that a checkout's `git status` stays clean with it. Temporary folders of this test, fixture IDs. git runs only where it is installed, as
 // the oracle of what a checkout shows.
 import { spawnSync } from "node:child_process";
 import {
@@ -20,7 +20,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { FOLDER_MARKER } from "@ttasks/brand";
 import {
   FolderMarkers,
@@ -29,6 +29,7 @@ import {
   readMarker,
   type MarkerOwner,
 } from "./marker.ts";
+import { holdNextWrite, type HeldWrite } from "../../test/slow-marker.ts";
 
 let base = "";
 beforeAll(() => {
@@ -61,6 +62,29 @@ const elsewhere: MarkerOwner = {
   kind: "project",
   id: "p_0000000000000000000000000b",
 };
+
+vi.mock("@ttasks/files", async () => (await import("../../test/slow-marker.ts")).slowFiles());
+
+/**
+ * Marks while the owners file's write is held past the bound (slow-marker.ts): the mark answers
+ * false, and `land` lets the write go on.
+ */
+async function markSlowly(
+  markers: FolderMarkers,
+  owner: MarkerOwner,
+  folder: string,
+): Promise<{ answered: boolean; land: HeldWrite["land"] }> {
+  const held = holdNextWrite();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    const marking = markers.mark(owner, folder);
+    await held.reached;
+    await vi.advanceTimersByTimeAsync(60_000);
+    return { answered: await marking, land: held.land };
+  } finally {
+    vi.useRealTimers();
+  }
+}
 
 const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8" }).status === 0;
 
@@ -160,6 +184,42 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
     renameSync(folder, `${folder}-aside`);
     mkdirSync(folder);
     expect(await markers.check(project, folder)).toEqual({ kind: "missing" });
+  });
+
+  test("a marker written too slowly still keeps the folder: a folder made again at the path asks", async () => {
+    // The write lands after the bound, and the checkout is then replaced at its path.
+    const late = fresh();
+    const slowly = await markSlowly(late.markers, project, late.folder);
+    expect(slowly.answered).toBe(false);
+    expect(await slowly.land()).toBeUndefined();
+    expect(await readMarker(late.folder)).toEqual({ state: "owners", owners: [project] });
+    renameSync(late.folder, `${late.folder}-aside`);
+    mkdirSync(late.folder);
+    expect(await late.markers.check(project, late.folder)).toEqual({ kind: "missing" });
+
+    // The write has not landed when the checkout is replaced: it fails, and the new one asks.
+    const never = fresh();
+    const held = await markSlowly(never.markers, project, never.folder);
+    renameSync(never.folder, `${never.folder}-aside`);
+    mkdirSync(never.folder);
+    expect(await held.land()).toMatchObject({ code: "ENOENT" });
+    expect(await never.markers.check(project, never.folder)).toEqual({ kind: "missing" });
+
+    // The very folder whose write never landed takes its marker at the next look.
+    const same = fresh();
+    await (await markSlowly(same.markers, task, same.folder)).land(new Error("held by a scanner"));
+    expect(await readMarker(same.folder)).toEqual({ state: "none" });
+    expect(await same.markers.check(task, same.folder)).toEqual({ kind: "ok" });
+    expect(await readMarker(same.folder)).toEqual({ state: "owners", owners: [task] });
+  });
+
+  test("a folder shared with another owner, where this owner's slow write never landed, opens and names both", async () => {
+    const { folder, markers } = fresh();
+    await markers.mark(project, folder);
+    await (await markSlowly(markers, task, folder)).land(new Error("held by a scanner"));
+    expect(await readMarker(folder)).toEqual({ state: "owners", owners: [project] });
+    expect(await markers.check(task, folder)).toEqual({ kind: "ok" });
+    expect(await readMarker(folder)).toEqual({ state: "owners", owners: [project, task] });
   });
 
   test("a file system that keeps no creation time or no usable file number gives no identity, so a gone marker still asks", () => {
