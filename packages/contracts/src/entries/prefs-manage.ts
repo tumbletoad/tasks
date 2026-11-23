@@ -1,7 +1,6 @@
-// prefs.manage: read and change the space's non-policy preferences, so a user can ask any agent
-// to change a setting (A3 3.4.11). `describe` and `get` read; `set` writes through A1's `pref.set`,
-// which M3.11 brings with the rest of the preferences registry. The keys and their value schemas
-// are contracts' declarations (preferences.ts).
+// prefs.manage: read and change the space's non-policy preferences (A3 3.4.11). `describe` and
+// `get` read; `set` writes through A1's `pref.set`, for the user only until agents get it
+// (later.ts). The keys and their value schemas are contracts' declarations (preferences.ts).
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { AsOf, Base, Mode, ProposalId, Replayed, RequestId } from "../schemas.ts";
@@ -46,7 +45,9 @@ export const PrefsManageInput = z.strictObject({
     .array(
       z.strictObject({
         key: z.string().max(64).describe("A key describe lists"),
-        value: PrefValue.describe("The new value; null resets it to its default"),
+        value: PrefValue.describe(
+          "The new value, a list as keys separated by commas; null resets it to its default",
+        ),
       }),
     )
     .min(1)
@@ -103,12 +104,12 @@ export const prefsManage = defineEntry({
   output: PrefsManageResult,
   faces: {
     ui: true,
-    cli: { verb: "prefs", positional: ["action"] },
+    cli: { verb: "prefs", positional: ["action", "key", "value"], item: "set" },
     mcp: {
       tool: "preferences",
       title: "Read settings",
       description:
-        "Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Changing them is not built yet: tell the user. Policy stays the user's.",
+        "Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. Policy stays the user's.",
     },
   },
   budget: { typical: 600, max: 2000 },
@@ -132,7 +133,8 @@ export const prefsManage = defineEntry({
       },
     },
     {
-      title: "Add a status the user asked for",
+      title: "The user adds a status",
+      actor: "user",
       input: {
         action: "set",
         set: [{ key: "tasks.statuses", value: ["open", "waiting", "review", "backlog", "parked"] }],

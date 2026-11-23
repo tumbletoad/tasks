@@ -121,7 +121,7 @@ function pairsFor(
   if (
     actor === "agent" &&
     isAgentAllowed(entry) &&
-    laterIn(entry.name, example as Record<string, unknown>) === undefined
+    laterIn(entry.name, example as Record<string, unknown>, "agent") === undefined
   ) {
     input.push({
       label: "agent input",

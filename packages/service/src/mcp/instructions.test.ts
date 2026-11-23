@@ -121,7 +121,7 @@ describe("[A3.3.6.mcp.instructions] the server instructions", () => {
       expect(valuesOf("status", "guide"), guide).toContain(guide);
     }
     // Every guide the tool offers is one this build has.
-    const later = laterFields("space.status").flatMap((row) =>
+    const later = laterFields("space.status", "agent").flatMap((row) =>
       row.field === "guide" && row.value !== undefined ? [row.value] : [],
     );
     const offered = valuesOf("status", "guide").filter((guide) => !later.includes(guide));

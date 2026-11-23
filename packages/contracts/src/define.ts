@@ -429,7 +429,7 @@ export function shownSchemaFor(
   }
   if (found[audience] !== undefined) return found[audience];
   const full = inputSchemaFor(entry, audience);
-  const rows = laterFields(entry.name);
+  const rows = laterFields(entry.name, audience);
   const shape: Record<string, z.ZodType> = {};
   for (const [key, field] of Object.entries(defOf(full)["shape"] as Record<string, z.ZodType>)) {
     let kept: z.ZodType | undefined = field;

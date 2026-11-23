@@ -627,7 +627,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Changing them is not built yet: tell the user. Policy stays the user's.",
+      "description": "Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. Policy stays the user's.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

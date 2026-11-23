@@ -71,7 +71,7 @@ describe("[A3.3.3.mcp.later] what a later step builds is never offered", () => {
       // Nor does the tool's text name it, nor what it answers to a call it takes.
       expect(JSON.stringify(tool), `${tool.name}: ${nameOf(row)}`).not.toMatch(word(nameOf(row)));
       for (const example of findEntry(row.entry)?.examples ?? []) {
-        if (laterIn(row.entry, example.input) !== undefined) continue;
+        if (laterIn(row.entry, example.input, "agent") !== undefined) continue;
         const answer = renderResult(row.entry, example.output);
         expect(answer, `${tool.name} "${example.title}": ${nameOf(row)}`).not.toMatch(
           word(nameOf(row)),

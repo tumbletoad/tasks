@@ -452,7 +452,17 @@ export function render(entry: string, result: Result, space: string): string {
       break;
     }
     case "prefs.manage":
-      // `ttasks prefs` (A3 3.4.11): one key a line, its value or what it takes.
+      // `ttasks prefs` (A3 3.4.11): one key a line, its value or what it takes; a set says what
+      // it changed from and to, or that the value was so already.
+      if (result["action"] === "set" && Array.isArray(result["changed"])) {
+        for (const change of result["changed"] as Result[]) {
+          lines.push(
+            `${str(change["key"])}: ${JSON.stringify(change["from"])} → ${JSON.stringify(change["to"])}`,
+          );
+        }
+        if (result["changed"].length > 0) break;
+        lines.push("Nothing changed: the value was so already.");
+      }
       for (const pref of (result["prefs"] as Result[] | undefined) ?? []) {
         const shown =
           result["action"] === "describe"

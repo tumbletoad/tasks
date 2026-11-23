@@ -650,7 +650,7 @@ Result:
 
 Read and change the space's preferences that are not policy.
 
-MCP tool `preferences`, "Read settings": Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Changing them is not built yet: tell the user. Policy stays the user's.
+MCP tool `preferences`, "Read settings": Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. Policy stays the user's.
 
 | Property | Value |
 |---|---|
@@ -662,15 +662,20 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | A1 operations | `pref.set` |
 | Faces | MCP `preferences`, CLI `ttasks prefs`, UI |
 | Errors | `invalid_input`, `forbidden`, `conflict`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 353, reported |
+| Definition, estimated tokens | 359, reported |
 | Result budget, estimated tokens | typical 600, max 2000 |
 
 ### Input
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `action` | "describe" \| "get" | yes | describe: the keys; get: their values |
+| `action` | "describe" \| "get" \| "set"; agents: "describe" \| "get" | yes | describe: the keys; get: their values |
 | `keys` | (string, max 64)[], max 20 items | no | Keys, or prefixes ending in ".*"; default every key |
+| `set` | object[], 1 to 10 items | no | set: the keys and their new values |
+| `set[].key` | string, max 64 | yes | A key describe lists |
+| `set[].value` | string, max 64 \| integer, -1000000 to 1000000 \| boolean \| (string, max 64)[], max 20 items \| null | yes | The new value, a list as keys separated by commas; null resets it to its default |
+| `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
+| `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 
 ### Output
 
@@ -732,6 +737,78 @@ Result:
       ],
       "is_default": true,
       "writable": false
+    }
+  ]
+}
+```
+
+#### The user adds a status
+
+Called by the user.
+
+```json
+{
+  "action": "set",
+  "set": [
+    {
+      "key": "tasks.statuses",
+      "value": [
+        "open",
+        "waiting",
+        "review",
+        "backlog",
+        "parked"
+      ]
+    }
+  ],
+  "base": "1.1046.5n0w8k3q",
+  "request_id": "7f3c2a10-5d4e-4b8a-9c61-2e0f3a7b0015"
+}
+```
+
+Result:
+
+```json
+{
+  "action": "set",
+  "as_of": "1.1047.5n0w8k3q",
+  "prefs": [
+    {
+      "key": "tasks.statuses",
+      "value": [
+        "open",
+        "waiting",
+        "review",
+        "backlog",
+        "parked"
+      ],
+      "default": [
+        "open",
+        "waiting",
+        "review",
+        "backlog"
+      ],
+      "is_default": false,
+      "writable": true
+    }
+  ],
+  "result": "updated",
+  "changed": [
+    {
+      "key": "tasks.statuses",
+      "from": [
+        "open",
+        "waiting",
+        "review",
+        "backlog"
+      ],
+      "to": [
+        "open",
+        "waiting",
+        "review",
+        "backlog",
+        "parked"
+      ]
     }
   ]
 }

@@ -1,7 +1,11 @@
 // What an entry declares and this build always refuses: one list, read by both sides. The MCP tool
 // list and docs/agents/tools.md leave every row out, and the request path refuses a call that uses
 // one, naming its step. The step that builds a row deletes it. The command line's help still lists
-// them: a person who uses one gets the same refusal.
+// them: a person who uses one gets the same refusal. A row for agents only is built for the person
+// already: agents, and the scripts and agent shells that call as agents, are refused it.
+
+/** Who a call is for, as the request path sets it (A3 3.2.1). */
+export type LaterAudience = "user" | "agent";
 
 /** A whole entry, a top-level input field, or one value of an enum field, and the step that brings it. */
 export type Later =
@@ -11,15 +15,23 @@ export type Later =
       readonly field: string;
       readonly value?: string;
       readonly step: string;
+      /** Refused to agents only: the person has it in this build. */
+      readonly audience?: "agent";
     };
 
 const PROPOSALS = "M4.02 (autonomy and proposals)";
-const SET_PREFERENCES = "M3.11 (changing preferences)";
+const SET_PREFERENCES = "M3.11 (agents changing preferences)";
 
 export const LATER: readonly Later[] = [
   { entry: "run.report", step: "M6.06 (run and routine bindings)" },
-  { entry: "prefs.manage", field: "action", value: "set", step: SET_PREFERENCES },
-  { entry: "prefs.manage", field: "set", step: SET_PREFERENCES },
+  {
+    entry: "prefs.manage",
+    field: "action",
+    value: "set",
+    step: SET_PREFERENCES,
+    audience: "agent",
+  },
+  { entry: "prefs.manage", field: "set", step: SET_PREFERENCES, audience: "agent" },
   { entry: "task.update", field: "remove_sources", step: "M3's source.unlink operation" },
   { entry: "space.status", field: "guide", value: "refresh", step: "M4.07 (the refresh guide)" },
   ...["task.add", "task.update", "task.finish", "task.reopen", "group.manage", "prefs.manage"].map(
@@ -67,10 +79,16 @@ export function isOffered(entry: string): boolean {
   return !LATER.some((row) => row.entry === entry && !("field" in row));
 }
 
-/** The rows on an entry's fields. */
-export function laterFields(entry: string): readonly Extract<Later, { field: string }>[] {
+/** The rows on an entry's fields that `audience` meets. */
+export function laterFields(
+  entry: string,
+  audience: LaterAudience,
+): readonly Extract<Later, { field: string }>[] {
   return LATER.filter(
-    (row): row is Extract<Later, { field: string }> => row.entry === entry && "field" in row,
+    (row): row is Extract<Later, { field: string }> =>
+      row.entry === entry &&
+      "field" in row &&
+      (row.audience === undefined || row.audience === audience),
   );
 }
 
@@ -81,8 +99,9 @@ export function laterFields(entry: string): readonly Extract<Later, { field: str
 export function laterIn(
   entry: string,
   input: Readonly<Record<string, unknown>>,
+  audience: LaterAudience,
 ): Extract<Later, { field: string }> | undefined {
-  return laterFields(entry).find((row) =>
+  return laterFields(entry, audience).find((row) =>
     row.value === undefined ? asks(input[row.field]) : input[row.field] === row.value,
   );
 }
