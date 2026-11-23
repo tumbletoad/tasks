@@ -388,6 +388,10 @@ const SQL = {
   oldestUndone:
     `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
     "AND undo_status = 'undone' AND seq > $after ORDER BY seq LIMIT 1",
+  laterUndone:
+    `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
+    "AND undo_status = 'undone' AND seq > $seq ORDER BY seq",
+  setAside: "UPDATE commits SET undo_status = 'dead' WHERE seq = $seq",
   author:
     "SELECT k.at AS at, k.author_id AS actor, a.kind AS kind, a.label AS label, " +
     "k.origin AS origin FROM commits k JOIN actors a ON a.id = k.author_id WHERE k.seq = $seq",
@@ -540,6 +544,53 @@ export function undoTarget(conn: Connection, principal: Id<"ac">): StackCommit |
 export function redoTarget(conn: Connection, principal: Id<"ac">): StackCommit | undefined {
   const after = undoTarget(conn, principal)?.seq ?? 0;
   return decodeStackCommit(conn.prepare(SQL.oldestUndone).get({ principal, after }));
+}
+
+/**
+ * Sets a refused redo's step aside, so that Redo reaches the step after it: the step is never
+ * redone (its rows are `undone`'s rows, `changes`), and neither is a later undone step that builds
+ * on it: one whose redo writes a field the step's redo writes, or anything of a row, or of a task,
+ * whose tombstone the step's redo sets or clears. Without the step, such a redo would write a row
+ * out of sight or name the person's own undo as another's change. Returns those later steps.
+ */
+export function setAside(
+  conn: Connection,
+  principal: Id<"ac">,
+  step: StackCommit,
+  changes: readonly StoredChange[],
+): Id<"op">[] {
+  const written = new Set<string>();
+  const write = (rows: readonly StoredChange[]): void => {
+    for (const c of rows) {
+      written.add(`${c.entity}|${c.entityId}|${c.field ?? ""}`);
+      if (isInvertible(c.entity) && c.field === TABLES[c.entity].tombstone) {
+        written.add(`${c.entity}|${c.entityId}`);
+        if (c.entity === "tasks") written.add(`task|${c.entityId}`);
+      }
+    }
+  };
+  const buildsOn = (rows: readonly StoredChange[]): boolean =>
+    rows.some(
+      (c) =>
+        written.has(`${c.entity}|${c.entityId}|${c.field ?? ""}`) ||
+        written.has(`${c.entity}|${c.entityId}`) ||
+        (c.taskId !== null && written.has(`task|${c.taskId}`)),
+    );
+  write(changes);
+  conn.prepare(SQL.setAside).run({ seq: step.seq });
+  const later: Id<"op">[] = [];
+  for (const row of conn.prepare(SQL.laterUndone).all({ principal, seq: step.seq })) {
+    // An undone commit names its undo (decodeStackCommit).
+    const undone = decodeStackCommit(row);
+    const undo = undone?.undoneBy;
+    if (undone === undefined || undo === null || undo === undefined) continue;
+    const rows = readChanges(conn, undo);
+    if (!buildsOn(rows)) continue;
+    write(rows);
+    conn.prepare(SQL.setAside).run({ seq: undone.seq });
+    later.push(undone.id);
+  }
+  return later;
 }
 
 // ---------------------------------------------------------------------------------------------

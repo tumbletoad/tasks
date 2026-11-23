@@ -297,6 +297,11 @@ export interface WriteResult {
    * (Ctrl+Z) can name it in what it does next (A1 3.10.1).
    */
   target?: Id<"op">;
+  /**
+   * A redo refused with UNDO_CONFLICT is set aside, so that Redo reaches the next step: the later
+   * steps set aside with it because they build on it (history.ts, setAside).
+   */
+  setAside?: Id<"op">[];
   /** One per operation, for `applied` and `unchanged`. */
   results: OpResult[];
   /**

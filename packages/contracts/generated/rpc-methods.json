@@ -2198,6 +2198,14 @@
                 "minimum": 1,
                 "type": "integer"
               },
+              "set_aside": {
+                "description": "A refused redo's: the later changes set aside with it, which build on it",
+                "items": {
+                  "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "status": {
                 "description": "The overall outcome",
                 "enum": [

@@ -366,6 +366,8 @@ export function resultFailure(
       // An undo or redo's UNDO_CONFLICT names the commit it met: a caller that named none (Ctrl+Z)
       // passes it to Undo the rest or Restore mine, so they never reach a newer change instead.
       ...(result.target === undefined ? {} : { commit: result.target }),
+      // A refused redo's later changes, set aside with it because they build on it.
+      ...(result.setAside === undefined ? {} : { set_aside: result.setAside }),
       conflicts,
       ...(result.replayed === true ? { replayed: true } : {}),
     },

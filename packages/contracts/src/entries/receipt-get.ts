@@ -128,6 +128,10 @@ export const ReceiptGetResult = z.union([
       .regex(idPattern("op"))
       .describe("An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo")
       .optional(),
+    set_aside: z
+      .array(z.string().regex(idPattern("op")))
+      .describe("A refused redo's: the later changes set aside with it, which build on it")
+      .optional(),
     results: z
       .array(ReceiptOpResult)
       .max(50)
@@ -165,6 +169,7 @@ export interface StoredReceiptLike {
     as_of: string;
     commit?: string;
     target?: string;
+    setAside?: readonly string[];
     results: readonly object[];
     conflicts: readonly { at: number }[];
     error?: { code: string; message: string; op?: number; field?: string };
@@ -193,6 +198,7 @@ export function receiptResult(
     incarnation: stored.incarnation,
     ...(result.commit === undefined ? {} : { commit: result.commit }),
     ...(result.target === undefined ? {} : { target: result.target }),
+    ...(result.setAside === undefined ? {} : { set_aside: [...result.setAside] }),
     // A request or an import holds more operations than a reply shows: the first 50.
     results: result.results.slice(0, 50) as z.input<typeof ReceiptOpResult>[],
     ...(result.results.length > 50 ? { results_more: result.results.length - 50 } : {}),

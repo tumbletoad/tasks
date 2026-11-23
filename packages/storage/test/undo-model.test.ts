@@ -367,6 +367,33 @@ class Model {
     return { failed, named };
   }
 
+  /**
+   * A refused redo's step is set aside, and with it each later undone step of its owner whose redo
+   * writes a field the step's redo writes, or anything of a task whose tombstone it writes.
+   */
+  setAside(step: ModelCommit): void {
+    const written = new Set<string>();
+    const write = (rows: readonly ModelChange[]) => {
+      for (const r of rows) {
+        written.add(key(r.task, r.field));
+        if (r.field === "deleted") written.add(`${r.task}|*`);
+      }
+    };
+    write(this.commits.get(step.undoneBy ?? 0)?.rows ?? []);
+    step.status = "dead";
+    const later = [...this.commits.values()]
+      .filter((c) => c.owner === step.owner && c.status === "undone" && c.seq > step.seq)
+      .sort((a, b) => a.seq - b.seq);
+    for (const c of later) {
+      const rows = this.commits.get(c.undoneBy ?? 0)?.rows ?? [];
+      if (!rows.some((r) => written.has(key(r.task, r.field)) || written.has(`${r.task}|*`))) {
+        continue;
+      }
+      write(rows);
+      c.status = "dead";
+    }
+  }
+
   /** Inverts `rows` but `skip` as commit lastSeq + 1 (A1 3.10): a create by its tombstone. */
   invert(rows: readonly ModelChange[], skip: ReadonlySet<ModelChange>): ModelCommit {
     const seq = this.lastSeq + 1;
@@ -716,6 +743,7 @@ const property = (seen: Seen) =>
               expect(result.status).toBe("conflict");
               expect(result.error?.code).toBe("UNDO_CONFLICT");
               expect(named(ids, result.conflicts)).toEqual([...guard.named].sort());
+              model.setAside(target);
               count(seen, "redo conflict");
             } else {
               expect(result.status, JSON.stringify(result.error)).toBe("applied");

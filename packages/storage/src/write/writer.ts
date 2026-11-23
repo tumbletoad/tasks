@@ -78,6 +78,7 @@ import {
   planInversions,
   readChanges,
   redoTarget,
+  setAside,
   undoTarget,
   type GroupTouch,
   type Inversion,
@@ -2691,28 +2692,36 @@ export class SpaceWriter {
       problem("UNDO_BEFORE_FLOOR", "The change is older than the space's last format change", 0);
     }
     const partial = op.kind === "undo" && op.partial === true;
-    const plan = planInversions(conn, readChanges(conn, inverted), {
+    const changes = readChanges(conn, inverted);
+    const plan = planInversions(conn, changes, {
       creating: new Set([target.seq]),
       refPrefix: space.refPrefix,
       partial,
       op: 0,
       principal,
     });
-    const conflict = (): WriteResult => ({
-      ...refused(
-        "conflict",
-        asOf,
-        {
-          code: "UNDO_CONFLICT",
-          // A redo is all or nothing (A1 3.10.1): it offers no partial form.
-          message: undo
-            ? "Someone changed it since: undo the rest, or keep theirs"
-            : "Someone changed it since: a redo is all or nothing",
-        },
-        plan.conflicts,
-      ),
-      target: target.id,
-    });
+    const conflict = (): WriteResult => {
+      // A redo is all or nothing (A1 3.10.1), so a refused one is set aside: the next reaches the
+      // step after it, as a partial undo reaches the step below.
+      const later = undo ? [] : setAside(conn, principal, target, changes);
+      return {
+        ...refused(
+          "conflict",
+          asOf,
+          {
+            code: "UNDO_CONFLICT",
+            message: undo
+              ? "Someone changed it since: undo the rest, or keep theirs"
+              : later.length === 0
+                ? "Someone changed it since: it is set aside, and Redo goes on to your next change"
+                : "Someone changed it since: it is set aside with your later changes that build on it, and Redo goes on to the next",
+          },
+          plan.conflicts,
+        ),
+        target: target.id,
+        ...(later.length === 0 ? {} : { setAside: later }),
+      };
+    };
     if (plan.conflicts.length > 0 && !partial) return conflict();
     const seq = nextSeq(space);
     const commitId = newId("op", this.#random);

@@ -1,7 +1,8 @@
 // history.redo: redo the change the user undid last (A1 3.10.1, A5 3.12). The user's only (A3
 // 3.2.3). It brings back exactly what the undo set back, with the change's own provenance, and is
-// all or nothing: a field another actor changed since the undo makes it a conflict. A new change
-// of the user's ends what can be redone.
+// all or nothing: a field another actor changed since the undo makes it a conflict, which sets the
+// change aside, with the later ones that build on it, so the next redo reaches the one after it. A
+// new change of the user's ends what can be redone.
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { RequestId } from "../schemas.ts";
