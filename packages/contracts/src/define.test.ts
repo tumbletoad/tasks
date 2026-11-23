@@ -50,7 +50,7 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
     expect(outcome?.["description"]).toMatch(/^What changed and the evidence; agents must give it/);
   });
 
-  test("the tools that create a task ask the agent to estimate its effort on the default scale", () => {
+  test("the tools that create or change a task send the agent to the sizing skill for effort, never to a time", () => {
     const effortOf = (schema: unknown): unknown[] => {
       if (typeof schema !== "object" || schema === null) return [];
       const here = (schema as Record<string, unknown>)["properties"] as
@@ -60,11 +60,12 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
         ...Object.values(schema).flatMap(effortOf),
       ];
     };
-    for (const entry of [taskAdd, taskFinish]) {
+    for (const entry of [taskAdd, taskFinish, taskUpdate]) {
       const said = effortOf(agentInputJsonSchema(entry));
       expect(said, entry.name).not.toEqual([]);
       for (const text of said) {
-        expect(text, entry.name).toMatch(/time and difficulty.*S under 30 min.*half a day/);
+        expect(text, entry.name).toMatch(/\bskill sizing-effort\b/u);
+        expect(text, entry.name).not.toMatch(/\b(?:min|minutes|hours?|day)\b/u);
       }
     }
   });

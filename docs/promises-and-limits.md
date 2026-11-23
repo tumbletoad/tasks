@@ -113,6 +113,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   granted it.
 - A change by an agent or a script is never recorded as yours.
 - Every note is visible to agents.
+- Your skills, the files in `skills/` of TTasks's folder, are your instructions to every agent that
+  uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, an
+  empty one, one that cannot be read or a link is not used at all, and agents and `ttasks skills`
+  say why.
 
 ## Opening a task in an agent app
 
@@ -209,6 +213,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   on your own machine that works against it on purpose.
 - An agent with a shell can reach every space through the command line, also spaces outside its
   grant.
+- An agent with a shell can edit your skill files, and every agent then follows the change.
 - TTasks cannot make an agent ignore instructions hidden in a task, a mail or another source it
   reads.
 - Undo does not unsend a mail, reverse a commit or undo anything done outside TTasks.

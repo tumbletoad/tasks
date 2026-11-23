@@ -21,7 +21,7 @@ import { createHash } from "node:crypto";
 import { userInfo } from "node:os";
 import { posix, win32 } from "node:path";
 import { MAX_SOCKET_PATH_BYTES } from "@ttasks/bridge/protocol";
-import { DATA_FOLDER, envVar, PRODUCT_ID, SPACES_FOLDER } from "@ttasks/brand";
+import { DATA_FOLDER, envVar, PRODUCT_ID, SKILLS_FOLDER, SPACES_FOLDER } from "@ttasks/brand";
 /**
  * A1's ID alphabet (Crockford's base32, lower case): storage's ID_ALPHABET, which paths.test.ts
  * holds this equal to. Kept here so the CLI finds the service without loading storage.
@@ -75,6 +75,8 @@ export interface Layout {
   readonly workdirs: string;
   /** The folder a new space goes into by default: `<data>/spaces/<slug>`. */
   readonly spaces: string;
+  /** The person's skills: `<data>/skills/<name>/SKILL.md`. */
+  readonly skills: string;
   /** TTASKS_HOME when this is a separate install, else undefined. */
   readonly home: string | undefined;
 }
@@ -148,6 +150,7 @@ export function resolveLayout(facts: HostFacts): Layout {
     tmp: path.join(state, "tmp"),
     workdirs: path.join(state, "workdirs"),
     spaces: path.join(data, SPACES_FOLDER),
+    skills: path.join(data, SKILLS_FOLDER),
     home: separate === undefined ? undefined : root,
   };
 }

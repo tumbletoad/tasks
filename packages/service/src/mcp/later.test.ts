@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { coreOf, defOf, findEntry, LATER, isOffered, laterIn } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
-import { GUIDES } from "../ops/guides.ts";
+import { listSkills, servedText } from "../skills/index.ts";
 import { INSTRUCTIONS } from "./instructions.ts";
 import { renderResult } from "./render.ts";
 import { toolEntry, TOOLS } from "./tools.ts";
@@ -80,12 +80,16 @@ describe("[A3.3.3.mcp.later] what a later step builds is never offered", () => {
     }
   });
 
-  test("a name no tool offers appears nowhere an agent reads", () => {
+  test("a name no tool offers appears nowhere an agent reads", async () => {
+    const skills = (await listSkills(undefined)).skills.map((skill): [string, string] => [
+      `skill ${skill.name}`,
+      servedText(skill, { efforts: ["S", "M", "L"] }) ?? "",
+    ]);
     const offered = new Set(TOOLS.map((t) => t.name));
     for (const tool of TOOLS) names(tool.inputSchema, offered);
     const texts: [string, string][] = [
       ["the instructions", INSTRUCTIONS],
-      ...Object.entries(GUIDES).map(([name, text]): [string, string] => [`guide ${name}`, text]),
+      ...skills,
       ...TOOLS.map((t): [string, string] => [t.name, JSON.stringify(t)]),
       ["docs/agents/tools.md", DOCS],
     ];

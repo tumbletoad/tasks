@@ -48,6 +48,7 @@ describe("[A2.3.2.hub.paths] state folders per OS", () => {
       tmp: "/home/mira/.ttasks/state/tmp",
       workdirs: "/home/mira/.ttasks/state/workdirs",
       spaces: "/home/mira/.ttasks/spaces",
+      skills: "/home/mira/.ttasks/skills",
       home: undefined,
     });
     // An account with no entry in the user database falls back to HOME.

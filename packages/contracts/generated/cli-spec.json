@@ -172,7 +172,7 @@
         {
           "field": "tasks[].effort",
           "flag": "--effort",
-          "help": "Estimate time and difficulty; default scale S under 30 min, M half a day, L more",
+          "help": "A size of the space: read skill sizing-effort first",
           "repeat": false,
           "required": false,
           "type": "string"
@@ -912,7 +912,7 @@
           },
           {
             "field": "set.effort",
-            "help": "Effort",
+            "help": "A size of the space: read skill sizing-effort first",
             "key": "effort",
             "type": "string"
           },
@@ -1071,18 +1071,12 @@
           "type": "string"
         },
         {
-          "field": "guide",
-          "flag": "--guide",
-          "help": "Return this workflow guide instead",
-          "repeat": false,
+          "field": "skills",
+          "flag": "--skill",
+          "help": "Return these skills' text instead",
+          "repeat": true,
           "required": false,
-          "type": "string",
-          "values": [
-            "work",
-            "refresh",
-            "triage",
-            "organize"
-          ]
+          "type": "string"
         }
       ],
       "inputOnly": [],

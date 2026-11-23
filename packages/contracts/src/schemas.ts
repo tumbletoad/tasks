@@ -172,7 +172,7 @@ export const TaskDraft = z.strictObject({
   inbox: z.boolean().describe("Put it in the Inbox for the user").optional(),
   priority: Priority.describe("1 highest, 4 none").optional(),
   effort: safeLine(EFFORT_KEY_MAX)
-    .describe("Estimate time and difficulty; default scale S under 30 min, M half a day, L more")
+    .describe("A size of the space: read skill sizing-effort first")
     .optional(),
   due: safeLine(40).describe("ISO date or phrase: fri, +3d").optional(),
   waiting_on: safeLine(80).describe("Who or what it waits on").optional(),
@@ -327,6 +327,21 @@ export const TaskRow = z.strictObject({
   due: DueOutput.describe("Due date, or a due time with its zone").optional(),
   area: z.string().describe("Area name").optional(),
   project: z.string().describe("Project name").optional(),
+});
+
+/** A skill's name, as its folder spells it: the Agent Skills format's alphabet, 64 at most. */
+export const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+export const SKILL_NAME_CHARS = 64;
+
+/**
+ * One of the user's skills: TTasks' defaults, edited or not, and the user's own. Its text is the
+ * user's instruction to their agents, as a note for agents is, and is never framed as data.
+ */
+export const SkillRow = z.strictObject({
+  name: z.string().describe("Skill name"),
+  when: z.string().describe("When to read it").optional(),
+  problem: z.string().describe("Why the user's file for it is not used").optional(),
+  text: z.string().describe("The skill: the user's instructions, when asked for").optional(),
 });
 
 /** An instant in milliseconds since the epoch. */

@@ -2158,16 +2158,6 @@
             "maxLength": 4096,
             "type": "string"
           },
-          "guide": {
-            "description": "Return this workflow guide instead",
-            "enum": [
-              "work",
-              "refresh",
-              "triage",
-              "organize"
-            ],
-            "type": "string"
-          },
           "include": {
             "description": "Extra sections, up to 8 rows each",
             "items": {
@@ -2189,6 +2179,17 @@
             "maxLength": 40,
             "pattern": "^(?:24h|7d|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\\.[0-9]{1,9})?)?(?:Z|[+-][0-9]{2}:[0-9]{2}))$",
             "type": "string"
+          },
+          "skills": {
+            "description": "Return these skills' text instead",
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 6,
+            "minItems": 1,
+            "type": "array"
           }
         },
         "type": "object"
@@ -2203,6 +2204,36 @@
             "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
+          },
+          "asked": {
+            "description": "The skills asked for, with their text or why they cannot be used",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Skill name",
+                  "type": "string"
+                },
+                "problem": {
+                  "description": "Why the user's file for it is not used",
+                  "type": "string"
+                },
+                "text": {
+                  "description": "The skill: the user's instructions, when asked for",
+                  "type": "string"
+                },
+                "when": {
+                  "description": "When to read it",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            "maxItems": 6,
+            "type": "array"
           },
           "autonomy": {
             "description": "Autonomy level for this session",
@@ -2264,10 +2295,6 @@
           "date": {
             "description": "Today in the space's time zone",
             "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
-            "type": "string"
-          },
-          "guide": {
-            "description": "The workflow guide asked for",
             "type": "string"
           },
           "here": {
@@ -2393,6 +2420,14 @@
           "hint": {
             "description": "What to do next",
             "type": "string"
+          },
+          "missing": {
+            "description": "Skills asked for that do not exist",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 6,
+            "type": "array"
           },
           "sections": {
             "description": "The sections asked for with include",
@@ -2577,6 +2612,35 @@
             ],
             "type": "object"
           },
+          "skills": {
+            "description": "The user's skills: read one with skills",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Skill name",
+                  "type": "string"
+                },
+                "problem": {
+                  "description": "Why the user's file for it is not used",
+                  "type": "string"
+                },
+                "text": {
+                  "description": "The skill: the user's instructions, when asked for",
+                  "type": "string"
+                },
+                "when": {
+                  "description": "When to read it",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "space": {
             "additionalProperties": false,
             "description": "The space this session uses",
@@ -2685,7 +2749,7 @@
                   "type": "string"
                 },
                 "effort": {
-                  "description": "Estimate time and difficulty; default scale S under 30 min, M half a day, L more",
+                  "description": "A size of the space: read skill sizing-effort first",
                   "maxLength": 20,
                   "type": "string"
                 },
@@ -3019,7 +3083,7 @@
                   "type": "string"
                 },
                 "effort": {
-                  "description": "Estimate time and difficulty; default scale S under 30 min, M half a day, L more",
+                  "description": "A size of the space: read skill sizing-effort first",
                   "maxLength": 20,
                   "type": "string"
                 },
@@ -3888,6 +3952,35 @@
                   "text"
                 ],
                 "type": "object"
+              },
+              "skills": {
+                "description": "The user's skills: read the ones you need with status skills",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "description": "Skill name",
+                      "type": "string"
+                    },
+                    "problem": {
+                      "description": "Why the user's file for it is not used",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "The skill: the user's instructions, when asked for",
+                      "type": "string"
+                    },
+                    "when": {
+                      "description": "When to read it",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               },
               "task": {
                 "additionalProperties": false,
@@ -5117,6 +5210,35 @@
                 },
                 "type": "object"
               },
+              "skills": {
+                "description": "The user's skills: read the ones you need with status skills",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "description": "Skill name",
+                      "type": "string"
+                    },
+                    "problem": {
+                      "description": "Why the user's file for it is not used",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "The skill: the user's instructions, when asked for",
+                      "type": "string"
+                    },
+                    "when": {
+                      "description": "When to read it",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "task": {
                 "additionalProperties": false,
                 "description": "The task",
@@ -5854,7 +5976,7 @@
                 "type": "string"
               },
               "effort": {
-                "description": "Effort",
+                "description": "A size of the space: read skill sizing-effort first",
                 "maxLength": 20,
                 "type": "string"
               },

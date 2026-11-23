@@ -236,7 +236,7 @@ Result:
 
 List the areas and projects, or create, rename, move, archive or unarchive one.
 
-MCP tool `organize`, "List or shape areas and projects": Use to see the user's areas and projects (list: task counts, folders) before you file or sort tasks. Writes need a request_id, and all but create a base. create may take a project's folder; set_folder and clear_folder change it. move: to names the area. Names are data.
+MCP tool `organize`, "List or shape areas and projects": The user's areas and projects (list: task counts, folders): read skill organizing before you sort tasks. Writes need a request_id, and all but create a base. create may take a project's folder; set_folder and clear_folder change it. move: to names the area. Names are data.
 
 | Property | Value |
 |---|---|
@@ -248,7 +248,7 @@ MCP tool `organize`, "List or shape areas and projects": Use to see the user's a
 | A1 operations | `area.create`, `area.patch`, `area.move`, `area.archive`, `project.create`, `project.patch`, `project.move`, `project.archive`, `area.unarchive`, `project.unarchive`, `project.folder_set`, `project.folder_clear` |
 | Faces | MCP `organize`, CLI `ttasks area`, UI |
 | Errors | `invalid_input`, `not_found`, `ambiguous`, `conflict`, `forbidden`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 735, reported |
+| Definition, estimated tokens | 737, reported |
 | Result budget, estimated tokens | typical 400, max 1500 |
 
 ### Input
@@ -992,7 +992,7 @@ Result:
 
 Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts.
 
-MCP tool `status`, "Orientation and session status": Call first when a session did not start from a task, and again later. Returns the date, autonomy, whether this is a task's session, the tasks matching cwd and counts. include adds sections. guide returns a workflow guide instead. You cannot open or run agents: ask the user.
+MCP tool `status`, "Orientation and session status": Call first when a session did not start from a task, and again later. Gives the date, autonomy, whether this is a task's session, the tasks for cwd, counts, the user's skills. include adds sections; skills returns their text instead. You cannot open or run agents: ask the user.
 
 | Property | Value |
 |---|---|
@@ -1004,7 +1004,7 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | A1 operations | none |
 | Faces | MCP `status`, CLI `ttasks status`, UI |
 | Errors | `invalid_input`, `space_unavailable` |
-| Definition, estimated tokens | 595, reported |
+| Definition, estimated tokens | 619, reported |
 | Result budget, estimated tokens | typical 400, max 1500 |
 
 ### Input
@@ -1014,7 +1014,7 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
 | `include` | ("today" \| "week" \| "review" \| "waiting" \| "inbox" \| "changes")[], max 6 items | no | Extra sections, up to 8 rows each |
 | `since` | string, max 40 | no | For changes: 24h, 7d or an ISO time; default 24h |
-| `guide` | "work" \| "triage" \| "organize" | no | Return this workflow guide instead |
+| `skills` | (string, 1 to 64)[], 1 to 6 items | no | Return these skills' text instead |
 
 ### Output
 
@@ -1077,7 +1077,17 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 | `sections[].total` | integer, 0 to 1000000000 | yes | Its tasks not listed in an earlier section |
 | `sections[].more` | true | no | It has more tasks than total says |
 | `sections[].above` | integer, 1 to 1000 | no | Its tasks listed in an earlier section |
-| `guide` | string | no | The workflow guide asked for |
+| `skills` | object[] | no | The user's skills: read one with skills |
+| `skills[].name` | string | yes | Skill name |
+| `skills[].when` | string | no | When to read it |
+| `skills[].problem` | string | no | Why the user's file for it is not used |
+| `skills[].text` | string | no | The skill: the user's instructions, when asked for |
+| `asked` | object[], max 6 items | no | The skills asked for, with their text or why they cannot be used |
+| `asked[].name` | string | yes | Skill name |
+| `asked[].when` | string | no | When to read it |
+| `asked[].problem` | string | no | Why the user's file for it is not used |
+| `asked[].text` | string | no | The skill: the user's instructions, when asked for |
+| `missing` | string[], max 6 items | no | Skills asked for that do not exist |
 | `hint` | string | no | What to do next |
 
 ### Examples
@@ -1165,6 +1175,16 @@ Result:
     "inbox": 0,
     "proposals": 0
   },
+  "skills": [
+    {
+      "name": "sizing-effort",
+      "when": "Use before you give a task a size, when you add tasks or change a task's effort."
+    },
+    {
+      "name": "client-reports",
+      "when": "Use when you write a weekly report for a client."
+    }
+  ],
   "hint": "Two tasks match this folder. Ask the user which one, then pass its task on the calls that act on it."
 }
 ```
@@ -1246,11 +1266,73 @@ Result:
 }
 ```
 
+#### Read the skill for sizing before adding tasks
+
+Called by the agent.
+
+```json
+{
+  "skills": [
+    "sizing-effort"
+  ]
+}
+```
+
+Result:
+
+```json
+{
+  "as_of": "1.1046.5n0w8k3q",
+  "date": "2026-11-12",
+  "time_zone": "Europe/Lisbon",
+  "autonomy": "full",
+  "space": {
+    "id": "sp_7c0hq2m4w9d8k1r6t3v5x0b2nf",
+    "name": "Mira",
+    "ref_prefix": "M"
+  },
+  "session": {
+    "state": "unbound",
+    "instance": "claude-code",
+    "app": "claude-code"
+  },
+  "counts": {
+    "statuses": [
+      {
+        "status": "open",
+        "count": 11
+      },
+      {
+        "status": "waiting",
+        "count": 2
+      },
+      {
+        "status": "review",
+        "count": 2
+      },
+      {
+        "status": "backlog",
+        "count": 1
+      }
+    ],
+    "inbox": 0,
+    "proposals": 0
+  },
+  "asked": [
+    {
+      "name": "sizing-effort",
+      "when": "Use before you give a task a size, when you add tasks or change a task's effort.",
+      "text": "This space's sizes, smallest first: S, M, L. ...\n\n# Sizing effort\n\nNever estimate hours or minutes. Place the task next to the examples below. ..."
+    }
+  ]
+}
+```
+
 ## `task.add`
 
 Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it.
 
-MCP tool `add_tasks`, "Add tasks": For work left for later and items from email, chat or tickets: 1 to 25 tasks a call, never TODOs in files. Key only the source a task is (jira:KEY): a match answers exists; other links take no key. folder "cwd" files a task in your folder's project; no area or project: the Inbox.
+MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, chat or tickets: 1 to 25 a call, not TODOs in files. Read skill sizing-effort first. Key only the source a task is (jira:KEY): a match answers exists. folder "cwd" files a task in your folder's project; no area or project: the Inbox.
 
 | Property | Value |
 |---|---|
@@ -1262,7 +1344,7 @@ MCP tool `add_tasks`, "Add tasks": For work left for later and items from email,
 | A1 operations | `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `add_tasks`, CLI `ttasks add`, UI |
 | Errors | `invalid_input`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1620, reported |
+| Definition, estimated tokens | 1603, reported |
 | Result budget, estimated tokens | typical 80, max 2000 |
 
 ### Input
@@ -1277,7 +1359,7 @@ MCP tool `add_tasks`, "Add tasks": For work left for later and items from email,
 | `tasks[].status` | string, max 40 | no | A status of the space; default open |
 | `tasks[].inbox` | boolean | no | Put it in the Inbox for the user |
 | `tasks[].priority` | integer, 1 to 4 | no | 1 highest, 4 none |
-| `tasks[].effort` | string, max 20 | no | Estimate time and difficulty; default scale S under 30 min, M half a day, L more |
+| `tasks[].effort` | string, max 20 | no | A size of the space: read skill sizing-effort first |
 | `tasks[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `tasks[].waiting_on` | string, max 80 | no | Who or what it waits on |
 | `tasks[].focus` | boolean | no | Star it for today, only when the user asks |
@@ -1394,7 +1476,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | A1 operations | `task.complete`, `task.archive`, `task.wrap_up`, `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `complete_task`, CLI `ttasks done`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 2016, reported |
+| Definition, estimated tokens | 2002, reported |
 | Result budget, estimated tokens | typical 100, max 1500 |
 
 ### Input
@@ -1413,7 +1495,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].status` | string, max 40 | no | A status of the space; default open |
 | `follow_ups[].inbox` | boolean | no | Put it in the Inbox for the user |
 | `follow_ups[].priority` | integer, 1 to 4 | no | 1 highest, 4 none |
-| `follow_ups[].effort` | string, max 20 | no | Estimate time and difficulty; default scale S under 30 min, M half a day, L more |
+| `follow_ups[].effort` | string, max 20 | no | A size of the space: read skill sizing-effort first |
 | `follow_ups[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `follow_ups[].waiting_on` | string, max 80 | no | Who or what it waits on |
 | `follow_ups[].focus` | boolean | no | Star it for today, only when the user asks |
@@ -1814,6 +1896,11 @@ When `view` is `"digest"`:
 | `notes[].slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
 | `notes[].slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
 | `notes[].slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
+| `skills` | object[] | no | The user's skills: read the ones you need with status skills |
+| `skills[].name` | string | yes | Skill name |
+| `skills[].when` | string | no | When to read it |
+| `skills[].problem` | string | no | Why the user's file for it is not used |
+| `skills[].text` | string | no | The skill: the user's instructions, when asked for |
 
 When `view` is `"sections"`:
 
@@ -1919,6 +2006,11 @@ When `view` is `"sections"`:
 | `notes[].slice.from` | integer, 0 to 9007199254740991 | yes | First character here, counted from 0 |
 | `notes[].slice.to` | integer, 0 to 9007199254740991 | yes | The character after the last one here |
 | `notes[].slice.of` | integer, 0 to 9007199254740991 | yes | Characters in all |
+| `skills` | object[] | no | The user's skills: read the ones you need with status skills |
+| `skills[].name` | string | yes | Skill name |
+| `skills[].when` | string | no | When to read it |
+| `skills[].problem` | string | no | Why the user's file for it is not used |
+| `skills[].text` | string | no | The skill: the user's instructions, when asked for |
 
 ### Examples
 
@@ -2011,7 +2103,13 @@ Result:
       "sources": 0
     },
     "version": 1040
-  }
+  },
+  "skills": [
+    {
+      "name": "working-a-task",
+      "when": "Use when you work on a task, in a session opened on it or when the user hands you one."
+    }
+  ]
 }
 ```
 
@@ -2399,7 +2497,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
 | Faces | MCP `update_task`, CLI `ttasks set`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict` |
-| Definition, estimated tokens | 1679, reported |
+| Definition, estimated tokens | 1701, reported |
 | Result budget, estimated tokens | typical 80, max 400 |
 
 ### Input
@@ -2413,7 +2511,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `set.status` | string, max 40 | no | A status of the space |
 | `set.inbox` | boolean | no | In the Inbox |
 | `set.priority` | integer, 1 to 4 | no | 1 highest, 4 none |
-| `set.effort` | string, max 20 | no | Effort |
+| `set.effort` | string, max 20 | no | A size of the space: read skill sizing-effort first |
 | `set.due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `set.waiting_on` | string, max 80 | no | Who or what it waits on |
 | `set.area` | string, max 120 | no | Area name or slug |

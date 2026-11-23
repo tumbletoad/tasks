@@ -8,14 +8,14 @@
       "tokens": 701
     },
     {
-      "bytes": 3240,
+      "bytes": 3206,
       "name": "add_tasks",
-      "tokens": 1620
+      "tokens": 1603
     },
     {
-      "bytes": 4032,
+      "bytes": 4003,
       "name": "complete_task",
-      "tokens": 2016
+      "tokens": 2002
     },
     {
       "bytes": 1302,
@@ -23,9 +23,9 @@
       "tokens": 651
     },
     {
-      "bytes": 1469,
+      "bytes": 1473,
       "name": "organize",
-      "tokens": 735
+      "tokens": 737
     },
     {
       "bytes": 718,
@@ -43,19 +43,19 @@
       "tokens": 540
     },
     {
-      "bytes": 1190,
+      "bytes": 1238,
       "name": "status",
-      "tokens": 595
+      "tokens": 619
     },
     {
-      "bytes": 3357,
+      "bytes": 3402,
       "name": "update_task",
-      "tokens": 1679
+      "tokens": 1701
     }
   ],
   "total": {
-    "bytes": 18831,
-    "tokens": 9417,
+    "bytes": 18865,
+    "tokens": 9434,
     "tools": 10
   }
 }
