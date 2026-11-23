@@ -2,6 +2,8 @@
 // Stop before the agent's PID, while it runs and after it exited, the start time, the run's limits,
 // a container that refuses to empty and End by force, and the next start after a crash.
 import { spawn, type ChildProcess } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { RunLimits, RunRecord } from "@ttasks/contracts/runs";
@@ -12,8 +14,10 @@ import {
   claudeDriver,
   RunHost,
   RunMachine,
+  UngroupedContainers,
   type AgentCommand,
   type AgentExit,
+  type Confirmation,
   type Containers,
   type OpenDriver,
   type RunFolders,
@@ -23,6 +27,7 @@ import {
 } from "../src/index.ts";
 import { endMove } from "../src/machine.ts";
 import { MODEL_LIMITS, World, type Event } from "./host-world.ts";
+import { census, newToken, standInSpec, waitForCensus } from "./stand-ins/stand-ins.ts";
 
 const MACHINE = "m_3q7k9d2xw8f4r6t1c5v0b2n8a7";
 
@@ -141,6 +146,11 @@ const refusing: Containers = {
   confirmEmpty: () => Promise.resolve({ state: "empty" }),
   recover: () => Promise.resolve({ state: "empty" }),
 };
+
+/** Resolves once `ok` holds, asked again after each turn of the event loop. */
+async function waitUntil(ok: () => Promise<boolean>): Promise<void> {
+  while (!(await ok())) await new Promise((resolve) => setImmediate(resolve));
+}
 
 /** A command that is never ready, as an adapter's preparation that hangs. */
 const never = (): Promise<AgentCommand> => new Promise<AgentCommand>(() => undefined);
@@ -506,6 +516,93 @@ describe("[A4.5.run.host] the run host's rules", () => {
     const after = await read();
     expect(after.state).toBe("cancelled");
     expect(after.result?.text).toBe("answer 1");
+  });
+
+  test("without a process group, Stop ends the agent even when its tree cannot be walked, and the run is called ended only once the agent is gone", async () => {
+    const containers = new UngroupedContainers({ taskkill: join(tmpdir(), "no-taskkill.exe") });
+    const { host, id, machine } = await bareHost({
+      containers,
+      times: { stopGraceMs: 200, closeMs: 200, settleMs: 0, drainMs: 200 },
+    });
+    const token = newToken();
+    try {
+      void host.start(id, () => standInSpec(id, "ignore-stop", token));
+      await waitForCensus(token, (pids) => pids.length === 2);
+      const agent = (await machine.read(id))?.evidence.pid;
+      await host.stop(id);
+      const after = await host.ended(id);
+      expect(after).toMatchObject({ state: "cancelled", result: { cleanup: "ended_found" } });
+      expect(census(token)).not.toContain(agent);
+    } finally {
+      // What nothing could find of its tree: this test's own stand-in.
+      for (const left of census(token)) {
+        try {
+          process.kill(left);
+        } catch {
+          // Gone meanwhile.
+        }
+      }
+    }
+  });
+
+  test("without a process group, an agent that outlives its Stop leaves the run unknown, never ended; once it is gone, End by force settles it and says so", async () => {
+    let alive = true;
+    let ends = false;
+    let exit: (exit: AgentExit) => void = () => undefined;
+    const exited = new Promise<AgentExit>((resolve) => {
+      exit = resolve;
+    });
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const end = (): void => {
+      if (!alive || !ends) return;
+      alive = false;
+      stdout.end();
+      stderr.end();
+      exit({ code: null, signal: "SIGKILL" });
+    };
+    const confirm = (): Promise<Confirmation> =>
+      Promise.resolve(
+        alive ? { state: "occupied", detail: "the agent still runs" } : { state: "unconfirmable" },
+      );
+    const tree: Containers = {
+      probe: () => Promise.resolve({ available: true, kind: "tree" }),
+      start: (spec) =>
+        Promise.resolve({
+          name: spec.name,
+          pid: 4242,
+          stdin: new PassThrough(),
+          stdout,
+          stderr,
+          exited,
+        }),
+      interrupt: () => Promise.resolve(false),
+      kill: () => {
+        end();
+        return Promise.resolve();
+      },
+      confirmEmpty: confirm,
+      recover: () => {
+        end();
+        return confirm();
+      },
+    };
+    const { host, id, machine } = await bareHost({
+      containers: tree,
+      times: { stopGraceMs: 10, closeMs: 10, settleMs: 0, confirmMs: 10, drainMs: 10 },
+    });
+    void host.start(id, () => ({ command: "agent", args: [], cwd: ".", env: {} }));
+    await waitUntil(async () => (await machine.read(id))?.state === "running");
+    await host.stop(id);
+    expect(await host.ended(id)).toMatchObject({ state: "unknown", reason: "stop_timed_out" });
+    expect(host.hosted()).toEqual([id]);
+    expect(await host.forceEnd(id)).toMatchObject({ state: "unknown" });
+    ends = true;
+    expect(await host.forceEnd(id)).toMatchObject({
+      state: "cancelled",
+      result: { cleanup: "ended_found" },
+    });
+    expect(host.hosted()).toEqual([]);
   });
 
   test("a crash while a process refuses to end: unknown at the next start, settled once it ends", async () => {

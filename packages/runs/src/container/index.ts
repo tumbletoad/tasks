@@ -52,14 +52,16 @@ export function containers(options: ContainersOptions = {}): Containers {
 
 /**
  * A run starts in a process group when the probe says one can be made, and otherwise anyway, in
- * the agent's process tree as TTasks can find it. A run keeps what it started in. After a restart,
- * a run is recovered as the probe says now.
+ * the agent's process tree as TTasks can find it. A run keeps what it started in until its end is
+ * confirmed: an empty container, or, without a group, its agent gone after a kill. After a
+ * restart, a run is recovered as the probe says now.
  */
 export class FallbackContainers implements Containers {
   readonly #grouped: Containers;
   readonly #ungrouped: Containers;
   readonly #available: () => Promise<boolean>;
-  readonly #started = new Map<string, Containers>();
+  /** What each run started in, and whether it was killed since. */
+  readonly #started = new Map<string, { readonly box: Containers; killed: boolean }>();
 
   constructor(grouped: Containers, ungrouped: Containers, available: () => Promise<boolean>) {
     this.#grouped = grouped;
@@ -73,7 +75,7 @@ export class FallbackContainers implements Containers {
 
   async start(spec: ContainerSpec): Promise<Contained> {
     const box = (await this.#now()) ? this.#grouped : this.#ungrouped;
-    this.#started.set(spec.name, box);
+    this.#started.set(spec.name, { box, killed: false });
     try {
       return await box.start(spec);
     } catch (error) {
@@ -87,24 +89,36 @@ export class FallbackContainers implements Containers {
   }
 
   async kill(name: string): Promise<void> {
-    const box = await this.#of(name);
-    await box.kill(name);
-    // Without a group, the kill is the last thing that can be done for the run.
-    if (box === this.#ungrouped) this.#started.delete(name);
+    await (await this.#of(name)).kill(name);
+    const started = this.#started.get(name);
+    if (started !== undefined) started.killed = true;
   }
 
   async confirmEmpty(name: string, options?: ConfirmOptions): Promise<Confirmation> {
-    const confirmed = await (await this.#of(name)).confirmEmpty(name, options);
-    if (confirmed.state === "empty") this.#started.delete(name);
-    return confirmed;
+    return this.#confirmed(name, await (await this.#of(name)).confirmEmpty(name, options));
   }
 
   async recover(name: string, options?: ConfirmOptions): Promise<Confirmation> {
-    return (await this.#of(name)).recover(name, options);
+    const box = await this.#of(name);
+    const started = this.#started.get(name);
+    if (started !== undefined) started.killed = true;
+    return this.#confirmed(name, await box.recover(name, options));
+  }
+
+  /** A run whose end is confirmed is forgotten: nothing more can be done for it. */
+  #confirmed(name: string, confirmed: Confirmation): Confirmation {
+    const started = this.#started.get(name);
+    if (
+      confirmed.state === "empty" ||
+      (confirmed.state === "unconfirmable" && started?.killed === true)
+    ) {
+      this.#started.delete(name);
+    }
+    return confirmed;
   }
 
   async #of(name: string): Promise<Containers> {
-    return this.#started.get(name) ?? ((await this.#now()) ? this.#grouped : this.#ungrouped);
+    return this.#started.get(name)?.box ?? ((await this.#now()) ? this.#grouped : this.#ungrouped);
   }
 
   async #now(): Promise<boolean> {

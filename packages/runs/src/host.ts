@@ -15,7 +15,8 @@
 //   committed first (`cancelling`), the agent is asked to stop over its protocol (or interrupted
 //   when it has none), and after the grace time the container is killed. A Stop before the
 //   agent's process was there means its driver never opens: nothing of the work reaches it. A
-//   container that is not confirmed empty in time leaves the run `unknown`, with End by force.
+//   container that is not confirmed empty in time, or without a process group an agent still
+//   alive, leaves the run `unknown`, with End by force.
 // - The answer is kept whole up to 1 MiB, also after megabytes of other output, and each answer
 //   is saved to the run's folder as it comes, so a crash of the service keeps the last one.
 // - When the service ends, its runs' processes end with it (the container's own guarantee). A
@@ -142,9 +143,33 @@ function timer(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-/** Whether a run may settle on this confirmation: empty, or nothing can count what is left. */
+/**
+ * Whether a run may settle on this confirmation: empty, or no process group holds it and its agent
+ * is gone, so nothing can count what is left.
+ */
 const settles = (confirmed: Confirmation): boolean =>
   confirmed.state === "empty" || confirmed.state === "unconfirmable";
+
+/** How the run's processes ended, once they had to be ended: undefined while that is not known. */
+const endedBy = (confirmed: Confirmation): RunCleanup | undefined =>
+  confirmed.state === "empty"
+    ? "ended_leftovers"
+    : confirmed.state === "unconfirmable"
+      ? "ended_found"
+      : undefined;
+
+/** `end` with how the run's processes ended, when it keeps a result. */
+function withCleanup(end: RunEnd, cleanup: RunCleanup): RunEnd {
+  switch (end.kind) {
+    case "exited":
+    case "timed_out":
+      return { ...end, result: { ...end.result, cleanup } };
+    case "service_ended":
+      return end.result === null ? end : { ...end, result: { ...end.result, cleanup } };
+    default:
+      return end;
+  }
+}
 
 /** The work, when the session settled already. */
 async function settledNow(session: DriverSession): Promise<Work | undefined> {
@@ -364,17 +389,21 @@ export class RunHost {
 
   /**
    * End by force, for an `unknown` run: ends whatever is left in its container by its name and
-   * settles the run once the container is confirmed empty. A run whose container may still be
-   * starting cannot be confirmed yet and stays `unknown`.
+   * settles the run once the container is confirmed empty, or with no process group once its agent
+   * is gone, and records how its processes ended. A run whose container may still be starting
+   * cannot be confirmed yet and stays `unknown`.
    */
   async forceEnd(id: string): Promise<RunRecord | undefined> {
     const run = await this.#machine.read(id);
     if (run?.state !== "unknown") return run;
     const flow = this.#flows.get(id);
     if (flow?.startPending === true) return run;
-    const confirmed = await this.#recoverContainer(id);
-    if (confirmed.state !== "empty") return run;
-    const end = flow?.pending ?? this.#serviceEnded(run);
+    const cleanup = endedBy(await this.#recoverContainer(id));
+    if (cleanup === undefined) return run;
+    const end =
+      flow?.pending === undefined
+        ? this.#serviceEnded(run, cleanup)
+        : withCleanup(flow.pending, cleanup);
     const after = await this.#settle(id, end);
     if (flow !== undefined && after?.state !== "unknown") this.#flows.delete(id);
     return after;
@@ -392,7 +421,7 @@ export class RunHost {
     if (run?.state !== "starting" || this.#flows.has(id)) return run;
     const end: RunEnd = { kind: "start_failed", reason: "start_timed_out" };
     const confirmed = await this.#recoverContainer(containerName(id));
-    if (confirmed.state === "empty") return this.#settle(id, end);
+    if (settles(confirmed)) return this.#settle(id, end);
     const flow = this.#flows.get(id) ?? this.#flow(id);
     flow.pending = end;
     return this.#settle(id, { kind: "not_confirmed" });
@@ -591,7 +620,7 @@ export class RunHost {
       void starting
         .then(async () => {
           const confirmed = await this.#endContainer(name);
-          if (confirmed.state === "empty" && flow.pending !== undefined) {
+          if (settles(confirmed) && flow.pending !== undefined) {
             await this.#settle(flow.id, flow.pending);
             flow.pending = undefined;
             if (this.#flows.get(flow.id) === flow) this.#flows.delete(flow.id);
@@ -738,7 +767,7 @@ export class RunHost {
       name,
       ended && agent.exit !== undefined && !flow.stopping() ? this.#times.settleMs : 0,
     );
-    if (confirmed.state === "empty" || confirmed.state === "unconfirmable") {
+    if (settles(confirmed)) {
       // Nothing holds the pipes any more: the rest of the output arrives.
       await this.#within(flow, drained, this.#times.drainMs);
     }
@@ -758,7 +787,8 @@ export class RunHost {
 
   /**
    * The cleanup's result: whether anything was left after `waitMs` for it to end by itself, and
-   * once what was left was ended, whether the container is confirmed empty.
+   * once what was left was ended, whether the container is confirmed empty, or, with no process
+   * group, whether the agent is gone.
    */
   async #cleanUp(
     name: string,
@@ -771,15 +801,8 @@ export class RunHost {
       first = { state: "unknown", detail: error instanceof Error ? error.name : "error" };
     }
     if (first.state === "empty") return { confirmed: first, cleanup: "confirmed" };
-    if (first.state === "unconfirmable") {
-      await this.#containers.kill(name).catch(() => undefined);
-      return { confirmed: first, cleanup: "ended_found" };
-    }
     const confirmed = await this.#endContainer(name);
-    return {
-      confirmed,
-      cleanup: confirmed.state === "empty" ? "ended_leftovers" : undefined,
-    };
+    return { confirmed, cleanup: endedBy(confirmed) };
   }
 
   /**
@@ -890,15 +913,7 @@ export class RunHost {
       left = { state: "unknown", detail: error instanceof Error ? error.name : "error" };
     }
     const confirmed = left.state === "empty" ? left : await this.#recoverContainer(name);
-    const cleanup: RunCleanup | undefined =
-      left.state === "empty"
-        ? "confirmed"
-        : confirmed.state === "unconfirmable"
-          ? "ended_found"
-          : confirmed.state === "empty"
-            ? "ended_leftovers"
-            : undefined;
-    const end = this.#serviceEnded(run, cleanup);
+    const end = this.#serviceEnded(run, left.state === "empty" ? "confirmed" : endedBy(confirmed));
     if (settles(confirmed)) return this.#settle(run.id, end);
     const flow = this.#flows.get(run.id) ?? this.#flow(run.id);
     flow.pending = end;

@@ -466,7 +466,8 @@ export const RUN_LIMIT_BOUNDS = {
  * - `ended_leftovers`: processes the agent started, or the agent itself, had to be ended; the
  *   operating system then confirmed none is left.
  * - `ended_found`: no process group could hold the run, so TTasks ended the agent's processes it
- *   could find, and nothing confirms that none is left.
+ *   could find: the agent itself is gone, and nothing confirms that none of what it started is
+ *   left.
  */
 export const RUN_CLEANUPS = ["confirmed", "ended_leftovers", "ended_found"] as const;
 export type RunCleanup = (typeof RUN_CLEANUPS)[number];

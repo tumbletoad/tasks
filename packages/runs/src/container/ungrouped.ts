@@ -1,12 +1,15 @@
 // Runs where no process group can hold them (Linux without systemd or a delegated unit, Windows
 // without ttasks-run.exe): the agent is the service's own child, and its processes are what TTasks
-// can find of its tree. Nothing confirms that none is left, so every confirmation is
-// `unconfirmable`: the run settles, and its cleanup says that TTasks ended what it could find.
+// can find of its tree. The agent itself is known: while it lives, a confirmation says `occupied`,
+// as a group's with processes left, so the run is never called ended. Once it is gone nothing
+// counts what it started, so the confirmation is `unconfirmable`: the run settles, and its cleanup
+// says that TTasks ended what it could find.
 //
 // What is found: on Linux the agent's process group (its own, from the start) and every process
 // whose parents lead back to the agent, read from /proc at the kill; on Windows the agent's tree as
-// `taskkill /T` walks it while the agent lives. A process that left the group and lost its parent
-// (a daemon) is not found. When the service ends, the agent's stdin ends, which ends an agent that
+// `taskkill /T` walks it while the agent lives, and then the agent itself by its own handle, which
+// ends it also when taskkill could not. A process that left the group and lost its parent (a
+// daemon) is not found. When the service ends, the agent's stdin ends, which ends an agent that
 // reads its protocol from there; on Windows the agent itself ends with the service too (Node holds
 // its own children in a job), but what the agent started does not.
 import { execFile, spawn, type ChildProcess } from "node:child_process";
@@ -16,6 +19,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import {
   checkName,
   ContainerError,
+  DEFAULT_RECOVER_WAIT_MS,
   type AgentExit,
   type ConfirmOptions,
   type Confirmation,
@@ -175,6 +179,11 @@ export class UngroupedContainers implements Containers {
     });
     if (this.platform === "win32") {
       if (!live.done) await this.taskkillTree(live.pid);
+      try {
+        if (!live.done) live.child.kill("SIGKILL");
+      } catch {
+        // Its confirmation says whether it is still there.
+      }
       return;
     }
     const found = descendants(parentTable(this.proc), live.pid);
@@ -188,22 +197,29 @@ export class UngroupedContainers implements Containers {
   }
 
   /**
-   * Waits up to `waitMs` for the agent to end; what else is left cannot be counted. The run stays
-   * known for the kill that follows: what the agent left in its group is found from it.
+   * Waits up to `waitMs` for the agent to end: `occupied` while it lives, else `unconfirmable`,
+   * since what else is left cannot be counted. The run stays known for the kill that follows: what
+   * the agent left in its group is found from it.
    */
   async confirmEmpty(name: string, options: ConfirmOptions = {}): Promise<Confirmation> {
     checkName(name);
     const live = this.live.get(name);
-    if (live !== undefined && !live.done && (options.waitMs ?? 0) > 0) {
-      await Promise.race([live.exited, sleep(options.waitMs)]);
-    }
-    return UNCONFIRMABLE;
+    if (live === undefined || live.done) return UNCONFIRMABLE;
+    const waitMs = options.waitMs ?? 0;
+    const ended =
+      waitMs > 0 && (await Promise.race([live.exited.then(() => true), sleep(waitMs, false)]));
+    return ended ? UNCONFIRMABLE : { state: "occupied", detail: "the agent still runs" };
   }
 
-  /** After a restart nothing of the run is known: what it left cannot be found by its name. */
-  recover(name: string): Promise<Confirmation> {
+  /**
+   * Ends what can be found of a run this service started, as kill does, and confirms it. After a
+   * restart nothing of the run is known: what it left cannot be found by its name.
+   */
+  async recover(name: string, options: ConfirmOptions = {}): Promise<Confirmation> {
     checkName(name);
-    return Promise.resolve(UNCONFIRMABLE);
+    if (!this.live.has(name)) return UNCONFIRMABLE;
+    await this.kill(name);
+    return this.confirmEmpty(name, { waitMs: options.waitMs ?? DEFAULT_RECOVER_WAIT_MS });
   }
 
   private taskkillTree(pid: number): Promise<void> {

@@ -273,7 +273,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   from a helper the agent started does not reach you: that helper hears that no one answered.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
-  ends what TTasks could find of it: a process the agent detached from it may live on.
+  ends what TTasks could find of it: the run is called ended once the agent itself is gone, and a
+  process the agent started that TTasks could not find may live on.
 - What a run's agent changes through TTasks's own tools is recorded as that run's.
 - A Claude Code run gets TTasks's tools in a file in the run's folder. The file holds the run's
   ticket, which opens your space only while the run runs.
