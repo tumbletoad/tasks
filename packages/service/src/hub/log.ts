@@ -553,6 +553,7 @@ export const EVENTS = {
     c: "launch",
     fields: { launch: "launch", code: "error_code" },
   },
+  "launch.folder_removed": { lvl: "info", c: "launch", fields: { launch: "launch" } },
   "launch.attached": { lvl: "info", c: "launch", fields: {} },
   "launch.refused": {
     lvl: "warn",

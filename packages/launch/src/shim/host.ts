@@ -31,6 +31,7 @@ import { SESSION_UUID, type LaunchIntent } from "../store.ts";
 import { ADDED, agentEnvironment, type AgentBase } from "./environment.ts";
 import {
   checkPlan,
+  FOLDER_MAX_AGE_MS,
   isFolderReason,
   keptGiven,
   type ClickGiven,
@@ -55,9 +56,6 @@ import {
   type FailedReason,
   type ReportMethod,
 } from "./wire.ts";
-
-/** A4 3.6.3: a launch folder whose shim is gone or that is older than this is removed. */
-export const FOLDER_MAX_AGE_MS = 24 * 60 * 60_000;
 
 /** What a connection holds once it claimed or attached: the launch it may report about. */
 export interface Attachment {

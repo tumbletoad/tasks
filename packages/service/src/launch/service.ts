@@ -392,6 +392,10 @@ export class LaunchService {
           unreadable: (launch, code) => {
             options.log.log("launch.file_unreadable", { launch, code });
           },
+          removed: (launch) => {
+            options.log.log("launch.folder_removed", { launch });
+          },
+          ...(options.now === undefined ? {} : { now: options.now }),
         }),
       probe: options.probe ?? osProbe,
       platform: options.platform,
