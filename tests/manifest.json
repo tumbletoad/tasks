@@ -4262,7 +4262,7 @@
     },
     {
       "id": "A2.3.10.5.copies.recorded",
-      "title": "A backup taken while a run works, another waits and a terminal session is open: in the restored copy opened read-only the rows, runs, receipts and run list say recorded, nothing is busy and no session is held; a claim, a restore in place and a claim on another machine end each as restored, and no session of them is held for the Agents page",
+      "title": "A backup taken while a working and a waiting run are open on an active, a finished and a dropped task, and a terminal session is open: every read of the restored copy opened read-only answers and says recorded, nothing is busy and no session is held; the first reads after a claim and after a restore in place, with no round of recovery between, say restored, as does a claim on another machine, and no session of them is held for the Agents page",
       "source": "A2 3.10.5, A4 3.9.3, A4 3.11.9, A5 Agents",
       "owner": "M3",
       "kind": "ci",

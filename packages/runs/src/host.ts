@@ -21,8 +21,6 @@
 // - When the service ends, its runs' processes end with it (the container's own guarantee). The
 //   next start settles each open run from its saved work: its own result when the work had
 //   settled, else `service_ended` with the last saved answer.
-// - A run a claim or a restore in place brought back open from a backup belongs to the space as it
-//   was: it is never started or resumed, and is settled `restored`.
 // - A late PID, exit or event never revives a stopped run: the record's rules (machine.ts) refuse
 //   it, and a container that starts after its run gave up on it is killed.
 //
@@ -143,9 +141,6 @@ function timer(ms: number, signal: AbortSignal): Promise<void> {
 /** Whether a run may settle on this confirmation: empty, or nothing can count what is left. */
 const settles = (confirmed: Confirmation): boolean =>
   confirmed.state === "empty" || confirmed.state === "unconfirmable";
-
-/** The end of a run a claim or a restore in place brought back open from a backup. */
-const RESTORED: RunEnd = { kind: "restored" };
 
 /** The work, when the session settled already. */
 async function settledNow(session: DriverSession): Promise<Work | undefined> {
@@ -403,32 +398,13 @@ export class RunHost {
    * At the service's start: every open run of this machine that no flow of this host holds, and
    * every `unknown` one, is settled once its container is confirmed empty by its name: `failed`
    * (`service_ended`) with its last saved answer, or `cancelled` after an accepted Stop. One that
-   * cannot be confirmed is `unknown`. Queued runs stay queued.
-   *
-   * `restored`: the open runs a claim or a restore in place brought back from a backup. None of
-   * them starts or goes on: a queued one fails `restored` at once, any other of this machine once
-   * its container is confirmed empty (`cancelled` after an accepted Stop). One another machine
-   * made is settled `restored` at once: nothing of it runs here to stop. Returns the runs it looked
-   * at.
+   * cannot be confirmed is `unknown`. Queued runs stay queued. Returns the runs it looked at.
    */
-  async recover(restored: ReadonlySet<string> = new Set()): Promise<RunRecord[]> {
+  async recover(): Promise<RunRecord[]> {
     const open = await this.#machine.open();
-    const own = new Set(open.map((run) => run.id));
-    const looked = open.filter(
-      (run) => (run.state !== "queued" || restored.has(run.id)) && !this.#flows.has(run.id),
-    );
-    const elsewhere = [...restored].filter((id) => !own.has(id));
-    const settled = await Promise.all([
-      ...looked.map((run) =>
-        !restored.has(run.id)
-          ? this.#reconcile(run)
-          : run.state === "queued"
-            ? this.#settle(run.id, RESTORED)
-            : this.#reconcile(run, RESTORED),
-      ),
-      ...elsewhere.map((id) => this.#settle(id, RESTORED)),
-    ]);
-    this.#log("run.recovered", { runs: looked.length + elsewhere.length });
+    const looked = open.filter((run) => run.state !== "queued" && !this.#flows.has(run.id));
+    const settled = await Promise.all(looked.map((run) => this.#reconcile(run)));
+    this.#log("run.recovered", { runs: looked.length });
     return settled.flatMap((run) => (run === undefined ? [] : [run]));
   }
 
@@ -871,9 +847,9 @@ export class RunHost {
 
   /**
    * Recovery's rule for one run no flow holds: confirm its container by name, ending what is
-   * left, then settle, as `ended` says, else from its saved work (#serviceEnded).
+   * left, then settle.
    */
-  async #reconcile(run: RunRecord, ended?: RunEnd): Promise<RunRecord | undefined> {
+  async #reconcile(run: RunRecord): Promise<RunRecord | undefined> {
     const name = containerName(run.id);
     let left: Confirmation;
     try {
@@ -890,7 +866,7 @@ export class RunHost {
           : confirmed.state === "empty"
             ? "ended_leftovers"
             : undefined;
-    const end = ended ?? this.#serviceEnded(run, cleanup);
+    const end = this.#serviceEnded(run, cleanup);
     if (settles(confirmed)) return this.#settle(run.id, end);
     const flow = this.#flows.get(run.id) ?? this.#flow(run.id);
     flow.pending = end;

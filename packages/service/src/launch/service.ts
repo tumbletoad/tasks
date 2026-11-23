@@ -58,6 +58,7 @@ import {
   routeOf,
   sanitiseComposer,
   instanceHome,
+  isOpenLaunch,
   sanitiseTitle,
   sessionRecord,
   SHIM_METHODS,
@@ -98,6 +99,7 @@ import {
 } from "@ttasks/launch";
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
+import type { OpeningSpace } from "../hub/spaces.ts";
 import type { ConnectionInfo, RpcContext, RpcHandlers } from "../local/index.ts";
 import type { SpaceWriterHandle } from "@ttasks/storage";
 import type { ServedSpace } from "../ops/index.ts";
@@ -1619,7 +1621,22 @@ ${instance}`;
     return made;
   }
 
-  async #make(space: string, served: ServedSpace): Promise<Launching> {
+  /**
+   * Ends every launch the space holds open from before its last claim or restore in place, which a
+   * backup brought back, before the space is served (LaunchMachine.endRestored).
+   */
+  async settleRestored(space: OpeningSpace): Promise<void> {
+    const restored = await readRestoredLaunches(space.reader);
+    if (restored.size === 0) return;
+    const { machine } = await this.#make(space.id, { writer: space.writer });
+    for (const id of restored) {
+      const after = await machine.endRestored(id);
+      if (after !== undefined && isOpenLaunch(after))
+        throw new Error("A restored launch did not end");
+    }
+  }
+
+  async #make(space: string, served: Pick<ServedSpace, "writer" | "copy">): Promise<Launching> {
     const writer = served.writer;
     if (writer === undefined) throw new Error("The space has no writer");
     const { machine: id, now, elapsed } = this.#options;
@@ -1863,9 +1880,7 @@ ${instance}`;
     const t0 = performance.now();
     const writer = served.writer;
     try {
-      const restored =
-        served.reader === undefined ? new Set<string>() : await readRestoredLaunches(served.reader);
-      const left = await machine.recover(restored);
+      const left = await machine.recover();
       this.#options.log.log("launch.recovered", {
         space,
         open: left.length,

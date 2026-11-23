@@ -283,6 +283,19 @@ export interface SpaceManagerOptions {
    * (A1 3.17). Default: BUILD. Tests pass others.
    */
   readonly build?: BuildIdentity;
+  /**
+   * Runs at every open of a space as this machine's, before it is served: ends the runs and
+   * launches the space holds open from before its last claim or restore in place, which a backup
+   * brought back. A failure leaves the space unavailable, so no copy is served writable with them.
+   */
+  readonly settle?: (space: OpeningSpace) => Promise<void>;
+}
+
+/** A space opening as this machine's, its writer and reader open, not served yet. */
+export interface OpeningSpace {
+  readonly id: Id<"sp">;
+  readonly writer: SpaceWriterHandle;
+  readonly reader: WorkerConnection;
 }
 
 /**
@@ -1354,6 +1367,13 @@ export class SpaceManager {
       this.#readOnly(space, "not_authority", undefined, { ms });
       return;
     }
+    try {
+      await this.#options.settle?.({ id: writer.spaceId, writer, reader: space.reader });
+    } catch (error) {
+      await this.#refused(space, error, undefined);
+      return;
+    }
+    if (await this.#stopped(space)) return;
     try {
       recordSeen(this.#options.settingsDir, writer.spaceId, writer.authority);
     } catch {

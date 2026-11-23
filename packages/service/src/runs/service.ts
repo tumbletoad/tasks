@@ -1,10 +1,10 @@
 // Background runs in the service: at start, the probe of this machine's process groups (on Linux
 // it is also when the service moves itself into its unit's `main` cgroup), which decides only how a
 // run's processes are ended: in a process group where one can be made, else as far as TTasks can
-// find them. Then for each space open as this machine's a run host over its execution store, whose
-// recovery settles the space's open runs before any of them is hosted again (and those a claim or a
-// restore in place brought back from a backup for good, never to start or go on); and over all of them
-// one supervisor, which starts queued runs within machine.toml's `[runs]` limits, holds new starts
+// find them. Before a space is served as this machine's, the runs a claim or a restore in place
+// brought back open from a backup are ended for good (settleRestored). Then for each space open as
+// this machine's a run host over its execution store, whose recovery settles the space's open runs
+// before any of them is hosted again; and over all of them one supervisor, which starts queued runs within machine.toml's `[runs]` limits, holds new starts
 // while an update waits, and removes old run folders.
 import { dirname, join } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
@@ -19,7 +19,7 @@ import {
   type RunRecord,
 } from "@ttasks/contracts/runs";
 import { decodeRun, newTicket, RunRefused, sessionOf, SpaceExecutionStore } from "@ttasks/launch";
-import { decodeRunRow } from "@ttasks/storage";
+import { decodeRunRow, type SpaceWriterHandle } from "@ttasks/storage";
 import {
   containers as platformContainers,
   FallbackContainers,
@@ -46,6 +46,7 @@ import {
 import { DEFAULT_RUN_SETTINGS, type RunSettings } from "../config/machine-toml.ts";
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
+import type { OpeningSpace } from "../hub/spaces.ts";
 import type { ServedSpace } from "../ops/index.ts";
 import {
   readLaunchTask,
@@ -864,19 +865,7 @@ export class RunService {
     const writer = served.writer;
     if (writer === undefined) throw new Error("The space has no writer");
     const id = this.#options.machine;
-    const human = await writer.actor("human", "user");
-    const store = new SpaceExecutionStore({
-      writer,
-      spaceId: space,
-      credential: {
-        scope_id: `runs:${id}`,
-        principal_id: human,
-        actor_kind: "human",
-        machine_id: id,
-        origin: "ui",
-      },
-    });
-    const machine = new RunMachine({ store, machine: id });
+    const machine = new RunMachine({ store: await this.#store(space, writer), machine: id });
     const log: RunHostLog = (event, fields) => {
       this.#options.log.log(event, fields);
     };
@@ -892,12 +881,46 @@ export class RunService {
     await this.probe();
     const closed = (): boolean => life.closed;
     if (closed()) throw new Error("The space's host was closed");
-    const reader = served.reader;
-    if (reader === undefined) throw new Error("The space has no reader");
-    await host.recover(await readRestoredRuns(reader));
+    await host.recover();
     if (closed()) throw new Error("The space's host was closed");
     this.#lanes.set(space, { space, machine, host });
     return { host, machine };
+  }
+
+  /**
+   * Ends every run the space holds open from before its last claim or restore in place, which a
+   * backup brought back, before the space is served: whichever machine made it, none starts or goes
+   * on. A queued one fails `restored`, as does one that ran (`cancelled` after an accepted Stop).
+   * No process is asked about: one this machine still ran for that record belonged to the copy it
+   * was started in, whose host ends it when that copy is no longer served.
+   */
+  async settleRestored(space: OpeningSpace): Promise<void> {
+    const restored = await readRestoredRuns(space.reader);
+    if (restored.size === 0) return;
+    const machine = new RunMachine({
+      store: await this.#store(space.id, space.writer),
+      machine: this.#options.machine,
+    });
+    for (const id of restored) {
+      const after = await machine.settle(id, { kind: "restored" });
+      if (after !== undefined && isOpenRun(after)) throw new Error("A restored run did not end");
+    }
+  }
+
+  /** The space's execution store over `writer`, writing as the space's human, in runs' scope. */
+  async #store(space: string, writer: SpaceWriterHandle): Promise<SpaceExecutionStore> {
+    const id = this.#options.machine;
+    return new SpaceExecutionStore({
+      writer,
+      spaceId: space,
+      credential: {
+        scope_id: `runs:${id}`,
+        principal_id: await writer.actor("human", "user"),
+        actor_kind: "human",
+        machine_id: id,
+        origin: "ui",
+      },
+    });
   }
 
   #serves(space: string, writer: unknown): boolean {

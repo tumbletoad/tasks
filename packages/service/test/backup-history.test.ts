@@ -1,7 +1,8 @@
-// What a backup recorded open is history, through the service. A backup is taken while a run
-// works, another waits and a terminal session is open. In the restored copy, opened read-only,
-// every read returns them as `recorded`; a claim, a restore in place and a claim on another
-// machine end them as interrupted by the restore; and none of them is ever joined with the
+// What a backup recorded open is history, through the service. A backup is taken while runs work
+// and wait on active, finished and dropped tasks, and a terminal session is open. In the restored
+// copy, opened read-only, every read answers and returns them as `recorded`; a claim, a restore in
+// place and a claim on another machine end them as interrupted by the restore before the copy is
+// served, so the first read after each already says so; and none of them is ever joined with the
 // machine's live agents. Services run in this process on a temporary home, with containers that
 // hold nothing; fixture data only.
 import { writeFileSync } from "node:fs";
@@ -46,9 +47,21 @@ interface Answer {
   readonly error?: { code: string; message: string };
 }
 
-describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: shown as recorded in a restored copy, ended as restored by a claim or a restore in place, and joined with no live agent", () => {
+type Ending = "active" | "done" | "dropped";
+type Kind = "working" | "waiting";
+const ENDINGS: readonly Ending[] = ["active", "done", "dropped"];
+const KINDS: readonly Kind[] = ["working", "waiting"];
+
+interface Fixture {
+  readonly task: string;
+  readonly ending: Ending;
+  readonly kind: Kind;
+  readonly run: string;
+}
+
+describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: shown as recorded in a restored copy, ended as restored by a claim or a restore in place before either answers, and joined with no live agent", () => {
   test(
-    "a backup with a working run, a waiting run and an open terminal session: the read-only copy's rows, runs, receipts and run list say recorded and nothing is busy; a claim, a restore in place and a claim on another machine end each as restored; no session of them is held for the Agents page",
+    "a backup with a working and a waiting run on an active, a finished and a dropped task, and an open terminal session: every read of the read-only copy answers, and says recorded; the first reads after a claim and after a restore in place say restored; a claim on another machine ends them too; no session of them is held for the Agents page",
     SLOW,
     async () => {
       const w = await httpWorld(
@@ -72,18 +85,34 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
       if (mira === undefined) throw new Error("no Mira");
       let n = 0;
       const rid = () => `backup-history-${String((n += 1)).padStart(6, "0")}`;
+      const op = async (name: string, input: Record<string, unknown>) =>
+        (await user.call("op/call", { op: name, input }, CALL)) as Record<string, unknown>;
       const add = async (title: string) => {
-        const added = (await user.call(
-          "op/call",
-          { op: "task.add", input: { tasks: [{ title }], request_id: rid() } },
-          CALL,
-        )) as { tasks: { id: string }[] };
+        const added = (await op("task.add", { tasks: [{ title }], request_id: rid() })) as {
+          tasks: { id: string }[];
+        };
         const id = added.tasks[0]?.id;
         if (id === undefined) throw new Error("no task");
         return id;
       };
-      const working = await add("Fixture working");
-      const waiting = await add("Fixture waiting");
+
+      // Where the feed of the space stood before any task of the fixture: a batch from here
+      // carries every one of their rows.
+      const { token } = await signIn(w);
+      const first = await openFeed(w.port(), token);
+      let before: unknown;
+      try {
+        first.send({ type: "subscribe", space: mira.id });
+        before = (await first.next((m) => m["type"] === "snapshot", 60_000))["cursor"];
+      } finally {
+        first.ws.close();
+      }
+
+      const titled = new Map<string, { ending: Ending; kind: Kind }>();
+      for (const ending of ENDINGS) {
+        for (const kind of KINDS)
+          titled.set(await add(`Fixture ${kind} ${ending}`), { ending, kind });
+      }
       const terminal = await add("Fixture terminal");
 
       // The records as a run host and a shim would leave them, written through the space's own
@@ -104,8 +133,9 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
           origin: "ui",
         },
       });
-      const newRun = (task: string) =>
-        store.createRun(
+      const fixtures: Fixture[] = [];
+      for (const [task, { ending, kind }] of titled) {
+        const run = await store.createRun(
           {
             task,
             routine: null,
@@ -120,19 +150,34 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
           },
           rid(),
         );
-      const work = await newRun(working);
-      const starting = await store.transitionRun(
-        work.id,
-        { state: "queued", version: work.version },
-        "starting",
-      );
-      await store.transitionRun(
-        work.id,
-        { state: "starting", version: starting.version },
-        "running",
-        { evidence: { native_id: NATIVE, home: HOME } },
-      );
-      const wait = await newRun(waiting);
+        if (kind === "working") {
+          const starting = await store.transitionRun(
+            run.id,
+            { state: "queued", version: run.version },
+            "starting",
+          );
+          await store.transitionRun(
+            run.id,
+            { state: "starting", version: starting.version },
+            "running",
+            { evidence: { native_id: NATIVE, home: HOME } },
+          );
+        }
+        fixtures.push({ task, ending, kind, run: run.id });
+      }
+      // A task finished while its run was open: the run goes on, as a person's Done never stops it.
+      for (const f of fixtures) {
+        if (f.ending === "active") continue;
+        const status = (await op("space.status", {}))["as_of"];
+        await op("task.finish", {
+          task: f.task,
+          status: f.ending,
+          base: status,
+          request_id: rid(),
+        });
+      }
+      const finishedTasks = fixtures.filter((f) => f.ending !== "active").map((f) => f.task);
+      const activeTasks = fixtures.filter((f) => f.ending === "active").map((f) => f.task);
       const prepared = await store.createIntent(
         {
           task: terminal,
@@ -152,6 +197,7 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
       await store.transitionIntent(launch, "dispatched", "confirmed", {
         evidence: { folder_checked: true },
       });
+      const lastRequest = `backup-history-${String(n).padStart(6, "0")}`;
       const backup = (await user.call("space/backup", { space: mira.folder }, CALL)) as {
         backup: { name: string };
       };
@@ -163,24 +209,69 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
           running: (space, copy) => w.service.launches.host.runningIn(space, copy),
           now: Date.now,
         });
-      // In the space itself, both sessions are its agents of today.
-      expect((await held()).map((s) => s.task.id).sort()).toEqual([terminal, working].sort());
+      // In the space itself, the running runs and the session are its agents of today.
+      expect((await held()).map((s) => s.task.id).sort()).toEqual(
+        [terminal, ...fixtures.filter((f) => f.kind === "working").map((f) => f.task)].sort(),
+      );
 
-      const { token } = await signIn(w);
       const page = async (path: string, body: unknown, headers: Record<string, string>) =>
         JSON.parse((await post(w.port(), path, body, { token, headers })).body) as Answer;
+      /** The page's read, which must answer: a contract error fails here with its message. */
+      const read = async (path: string, body: unknown, headers: Record<string, string>) => {
+        const answer = await page(path, body, headers);
+        expect(answer.error, `${path} ${JSON.stringify(body)}`).toBeUndefined();
+        return answer.result ?? {};
+      };
       const runsOf = async (task: string, headers: Record<string, string>) =>
-        (
-          (await page("/api/v1/launch/runs", { task }, headers)).result as {
-            runs: { id: string; state: string; reason: string | null; started_at: number | null }[];
-          }
-        ).runs;
+        (await read("/api/v1/launch/runs", { task }, headers))["runs"] as {
+          id: string;
+          state: string;
+          reason: string | null;
+          started_at: number | null;
+        }[];
       const receiptsOf = async (headers: Record<string, string>) =>
-        (
-          (await page("/api/v1/launch/list", { task: terminal }, headers)).result as {
-            receipts: { id: string; state: string; reason: string | null; session?: string }[];
-          }
-        ).receipts;
+        (await read("/api/v1/launch/list", { task: terminal }, headers))["receipts"] as {
+          id: string;
+          state: string;
+          reason: string | null;
+          session?: string;
+        }[];
+      type RowRun = { id: string; state: string } | undefined;
+      const finishedRows = async (headers: Record<string, string>) =>
+        new Map(
+          (
+            (await read("/api/v1/op/task.finished", {}, headers))["rows"] as {
+              id: string;
+              run?: RowRun;
+            }[]
+          ).map((r) => [r.id, r.run]),
+        );
+      const snapshotRows = async () => {
+        const feed = await openFeed(w.port(), token);
+        try {
+          feed.send({ type: "subscribe", space: mira.id });
+          const snapshot = await feed.next((m) => m["type"] === "snapshot", 60_000);
+          return new Map(
+            (snapshot["tasks"] as { id: string; run?: RowRun }[]).map((r) => [r.id, r.run]),
+          );
+        } finally {
+          feed.ws.close();
+        }
+      };
+      /** The agent's and the page's reads that carry no run: each answers, in every copy. */
+      const answers = async (headers: Record<string, string>) => {
+        await read("/api/v1/op/space.status", {}, headers);
+        for (const f of fixtures) await read("/api/v1/op/task.get", { task: f.task }, headers);
+        await read("/api/v1/op/task.get", { launch: prepared.reference }, headers);
+        await read("/api/v1/op/task.search", { q: "is:bound", scope: "all" }, headers);
+        const all = (await read("/api/v1/op/task.search", { scope: "all", limit: 50 }, headers))[
+          "rows"
+        ] as { id: string }[];
+        expect(all.map((r) => r.id)).toEqual(expect.arrayContaining([terminal, ...titled.keys()]));
+        await read("/api/v1/op/receipt.get", { request: lastRequest }, headers);
+        expect(await read("/api/v1/launch/busy", {}, headers)).toEqual({ busy: [] });
+        expect(await held()).toEqual([]);
+      };
 
       // The backup restored into a folder of its own and opened read-only.
       const copyFolder = join(w.root, "s", "mira-copy");
@@ -198,69 +289,89 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
       await w.service.runs.tick();
       await w.service.launches.tick();
 
-      const workRuns = await runsOf(working, inCopy);
-      expect(workRuns).toHaveLength(1);
-      const [recordedWork] = workRuns;
-      expect(recordedWork).toMatchObject({ id: work.id, state: "recorded" });
-      expect(recordedWork?.started_at).toEqual(expect.any(Number));
-      expect(await runsOf(waiting, inCopy)).toEqual([
-        expect.objectContaining({ id: wait.id, state: "recorded", started_at: null }),
-      ]);
+      for (const f of fixtures) {
+        const runs = await runsOf(f.task, inCopy);
+        expect(runs).toEqual([expect.objectContaining({ id: f.run, state: "recorded" })]);
+        expect(runs[0]?.started_at, f.kind).toEqual(
+          f.kind === "working" ? expect.any(Number) : null,
+        );
+      }
       const recorded = await receiptsOf(inCopy);
       expect(recorded).toEqual([expect.objectContaining({ id: launch, state: "recorded" })]);
       expect(recorded[0]).not.toHaveProperty("session");
-      expect(await page("/api/v1/launch/busy", {}, inCopy)).toEqual({ result: { busy: [] } });
       const listed = (await user.call("runs/list", { space: copyFolder }, CALL)) as {
         runs: { id: string; state: string }[];
       };
       expect(new Map(listed.runs.map((r) => [r.id, r.state]))).toEqual(
-        new Map([
-          [work.id, "recorded"],
-          [wait.id, "recorded"],
-        ]),
+        new Map(fixtures.map((f) => [f.run, "recorded"])),
       );
+      for (const f of fixtures) {
+        expect(await user.call("runs/show", { space: copyFolder, run: f.run }, CALL)).toMatchObject(
+          { id: f.run, state: "recorded" },
+        );
+      }
+      const open = await snapshotRows();
+      for (const task of activeTasks) expect(open.get(task)).toMatchObject({ state: "recorded" });
+      // A batch from before the fixture carries every task's row as the copy holds it now.
       const feed = await openFeed(w.port(), token);
       try {
-        feed.send({ type: "subscribe", space: mira.id });
-        const snapshot = await feed.next((m) => m["type"] === "snapshot", 60_000);
-        const rows = new Map(
-          (snapshot["tasks"] as { id: string; run?: { state: string } }[]).map((r) => [r.id, r]),
-        );
-        expect(rows.get(working)?.run).toMatchObject({ id: work.id, state: "recorded" });
-        expect(rows.get(waiting)?.run).toMatchObject({ id: wait.id, state: "recorded" });
+        feed.send({ type: "subscribe", space: mira.id, cursor: before });
+        const batched = new Map<string, RowRun>();
+        for (;;) {
+          const message = await feed.next(
+            (m) => m["type"] === "batch" || m["type"] === "snapshot" || m["type"] === "error",
+            60_000,
+          );
+          expect(message["type"]).toBe("batch");
+          const events = message["events"] as {
+            entities: { type: string; row?: { id: string; run?: RowRun } }[];
+          }[];
+          for (const event of events) {
+            for (const entity of event.entities) {
+              if (entity.type === "task" && entity.row !== undefined) {
+                batched.set(entity.row.id, entity.row.run);
+              }
+            }
+          }
+          if (fixtures.every((f) => batched.has(f.task))) break;
+        }
+        for (const f of fixtures) expect(batched.get(f.task)).toMatchObject({ state: "recorded" });
       } finally {
         feed.ws.close();
       }
-      expect(await held()).toEqual([]);
+      await answers(inCopy);
 
-      // A claim ends each as interrupted by the restore, and none is held as an agent of today.
-      await user.call("space/claim", { space: copyFolder }, CALL);
-      await w.service.runs.tick();
-      await w.service.runs.tick();
-      await w.service.launches.tick();
+      // What a claim and a restore in place answer with is settled: the first reads, with no
+      // round of the service's recovery in between, say restored, and nothing is busy or held.
       const inSpace = { [SPACE_HEADER]: mira.id };
-      const ended = async () => {
-        expect(await runsOf(working, inSpace)).toEqual([
-          expect.objectContaining({ id: work.id, state: "failed", reason: "restored" }),
-        ]);
-        expect(await runsOf(waiting, inSpace)).toEqual([
-          expect.objectContaining({ id: wait.id, state: "failed", reason: "restored" }),
-        ]);
+      const ended = async (folder: string) => {
+        for (const f of fixtures) {
+          expect(await runsOf(f.task, inSpace)).toEqual([
+            expect.objectContaining({ id: f.run, state: "failed", reason: "restored" }),
+          ]);
+        }
         expect(await receiptsOf(inSpace)).toEqual([
           expect.objectContaining({ id: launch, state: "confirmed", session: "restored" }),
         ]);
-        expect(await page("/api/v1/launch/busy", {}, inSpace)).toEqual({ result: { busy: [] } });
-        expect(await held()).toEqual([]);
+        const runs = (await user.call("runs/list", { space: folder }, CALL)) as {
+          runs: { id: string; state: string }[];
+        };
+        expect(new Map(runs.runs.map((r) => [r.id, r.state]))).toEqual(
+          new Map(fixtures.map((f) => [f.run, "failed"])),
+        );
+        const rows = await finishedRows(inSpace);
+        for (const task of finishedTasks) expect(rows.get(task)).toBeUndefined();
+        const open = await snapshotRows();
+        for (const task of activeTasks) expect(open.get(task)).toBeUndefined();
+        await answers(inSpace);
       };
-      await ended();
+      await user.call("space/claim", { space: copyFolder }, CALL);
+      await ended(copyFolder);
 
       // A restore of the same backup in place does the same. Its file is in the original's folder.
       const file = join(backupsFolder(mira.folder), `${backup.backup.name}.db.gz`);
       await user.call("space/restore", { backup: file, space: copyFolder }, CALL);
-      await w.service.runs.tick();
-      await w.service.runs.tick();
-      await w.service.launches.tick();
-      await ended();
+      await ended(copyFolder);
 
       // The backup claimed by another machine: what the first machine left open ends there too,
       // and nothing of it is asked of a process.
@@ -281,17 +392,12 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
       await w.service.spacesSettled;
       const other = await w.user();
       await other.call("space/claim", { space: otherFolder }, CALL);
-      await w.service.runs.tick();
-      await w.service.runs.tick();
-      await w.service.launches.tick();
-      expect(await w.service.runs.read(mira.id, work.id)).toMatchObject({
-        state: "failed",
-        reason: "restored",
-      });
-      expect(await w.service.runs.read(mira.id, wait.id)).toMatchObject({
-        state: "failed",
-        reason: "restored",
-      });
+      for (const f of fixtures) {
+        expect(await w.service.runs.read(mira.id, f.run)).toMatchObject({
+          state: "failed",
+          reason: "restored",
+        });
+      }
       const elsewhere = await w.service.launches.read(mira.id, launch);
       expect(elsewhere?.state).toBe("confirmed");
       expect(elsewhere?.evidence.restored_at).toEqual(expect.any(Number));

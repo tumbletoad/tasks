@@ -908,7 +908,7 @@ export async function readRestoredRuns(reader: WorkerConnection): Promise<Set<st
 /**
  * The launches that were open (isOpenLaunch) when the backup a claim or a restore in place brought
  * back was made, whichever machine made them: still opening, or a terminal session whose end is not
- * recorded. Launch recovery re-decides each on its record.
+ * recorded. Each is ended before the space is served (LaunchService.settleRestored).
  */
 const LAUNCHES_RESTORED: Statement = {
   sql:

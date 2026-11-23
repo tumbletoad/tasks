@@ -65,7 +65,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   backup was made is shown as working then, never as working now.
 - A restore over a space, or a claim of a restored copy, never starts or resumes a background run
   the backup held open, and never takes an agent session the backup held open for one of today:
-  each is shown as interrupted by the restore.
+  each is shown as interrupted by the restore as soon as the restore or the claim is done.
 - An agent you opened from a task writes only into the copy of the space it was opened in. After a
   restore over the space or a claim of a copy, it is told so and changes nothing: open it again
   from the task.

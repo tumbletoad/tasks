@@ -1081,6 +1081,10 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       onLockLost: () => {
         lockLost();
       },
+      settle: async (space) => {
+        await runs.settleRestored(space);
+        await launches.settleRestored(space);
+      },
     });
     made.spaces = hosted;
 
