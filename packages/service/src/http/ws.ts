@@ -481,7 +481,7 @@ class FeedSocket {
         const head = await readHead(reader);
         if (!sameAuthority(cursor, head.cursor) || cursor.seq > head.cursor.seq) {
           start = undefined;
-          const snapshot = await readSnapshot(reader, this.#hub.here());
+          const snapshot = await readSnapshot(reader, this.#hub.here(), this.#hub.options.now());
           if (generation !== this.#generation) return;
           await this.#sendSnapshot(
             snapshot,
@@ -490,7 +490,7 @@ class FeedSocket {
           start = snapshot.cursor;
         }
       } else {
-        const snapshot = await readSnapshot(reader, this.#hub.here());
+        const snapshot = await readSnapshot(reader, this.#hub.here(), this.#hub.options.now());
         if (generation !== this.#generation) return;
         await this.#sendSnapshot(snapshot);
         start = snapshot.cursor;
@@ -573,7 +573,11 @@ class FeedSocket {
       const { head, batch } = read;
       if (!sameAuthority(cursor, head.cursor)) {
         // An epoch or incarnation change always means a fresh snapshot (A1 3.7).
-        const snapshot = await readSnapshot(space.reader, this.#hub.here());
+        const snapshot = await readSnapshot(
+          space.reader,
+          this.#hub.here(),
+          this.#hub.options.now(),
+        );
         if (generation !== this.#generation) return;
         await this.#sendSnapshot(snapshot, "epoch");
         this.#cursor = snapshot.cursor;

@@ -1,21 +1,18 @@
-// Agents' changes as this tab has seen them (A5 3.4's Changes, as far as the page's data allows).
-// The digest proper is M5.09's: a per-space digest cursor in the service's machine-local UI state,
-// the lines' sentences with Revert, Clear and "More in Agents" (A5 3.14). Until then Changes lists
-// the tasks an agent or a routine changed while this tab followed the space, newest first: the
-// feed names each commit's actor, and a change the tab did not see (before it opened, or behind a
-// fresh snapshot) is not in it. A reload starts it empty, as a cleared digest does.
+// Agents' changes, as Today's Changes and the Agents page's Recent list them: each task an agent
+// or a routine changed, newest change first. Every snapshot brings the service's list of the last
+// seven days, as of its cursor (the service's feed.ts), so the list is the same after a reload and
+// in another tab; the batches after it add the changes agents make while the tab follows the space.
 //
-// One log per live session, kept beside it (`changeLogOf`), so it survives a switch of view and
-// ends with the session's space. Plain code, no React; Today reads it through
+// One log per live session, made with it (`changeLogOf`), so it hears the first snapshot and
+// survives a switch of view. Plain code, no React; the views read it through
 // `useSyncExternalStore`.
-import type { Change } from "../store/core.ts";
 import type { TaskRow } from "../store/rows.ts";
 import type { Changes } from "../store/store.ts";
 import type { TaskChange } from "./views.ts";
 
 /** The actors whose changes Changes lists (A1 `actors.kind`): not the person, the system or an import. */
 const AGENT_KINDS: ReadonlySet<string> = new Set(["agent", "routine"]);
-/** The tasks the log remembers, newest first: far more than Changes shows. */
+/** The tasks the log remembers, newest first, as many as a snapshot brings: far more than Changes shows. */
 const KEPT = 100;
 
 interface Source {
@@ -29,8 +26,8 @@ export class ChangeLog {
 
   constructor(source: Source, now: () => number = Date.now) {
     this.#now = now;
-    source.onChanges(({ changes }) => {
-      this.#apply(changes);
+    source.onChanges((frame) => {
+      this.#apply(frame);
     });
   }
 
@@ -44,7 +41,7 @@ export class ChangeLog {
   /** Each changed task once, its newest change first. Keeps its identity until a change lands. */
   readonly getEntries = (): readonly TaskChange[] => this.#entries;
 
-  #apply(changes: readonly Change[]): void {
+  #apply({ changes, reset, agentChanges }: Changes): void {
     const at = this.#now();
     const fresh = new Map<string, TaskChange>();
     /** Each task's newest row in the frame, whoever changed it. */
@@ -60,9 +57,12 @@ export class ChangeLog {
       fresh.delete(change.task);
       fresh.set(change.task, { task: change.task, actor: change.actor.label, at });
     }
-    const held = this.#entries.filter((e) => !fresh.has(e.task));
-    if (fresh.size === 0 && !held.some((e) => rows.has(e.task))) return;
-    const before = new Map(this.#entries.map((e) => [e.task, e.row]));
+    // A snapshot's list replaces what the log held: the frame's changes come after it.
+    const seeded = reset && agentChanges !== undefined;
+    const base = seeded ? agentChanges : this.#entries;
+    const held = base.filter((e) => !fresh.has(e.task));
+    if (!seeded && fresh.size === 0 && !held.some((e) => rows.has(e.task))) return;
+    const before = new Map(base.map((e) => [e.task, e.row]));
     const withRow = (entry: TaskChange): TaskChange => {
       const row = rows.get(entry.task) ?? before.get(entry.task);
       return row === undefined ? entry : { ...entry, row };

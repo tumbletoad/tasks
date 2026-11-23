@@ -113,7 +113,7 @@
   "view.empty.review": "Nothing to review.",
   "view.empty.backlog": "Backlog is empty.",
   "view.empty.completed": "Nothing completed yet.",
-  "view.empty.agents": "No agent changes since this page opened.",
+  "view.empty.agents": "No agent changes in the last 7 days.",
   "completed.more": "Show more",
   "completed.all": "Everything is shown",
   "completed.failed": "Completed tasks could not be read.",

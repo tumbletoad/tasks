@@ -1,8 +1,8 @@
 // Agents as far as the page's data allows: first "Needs you", the open tasks whose newest
 // background run stopped to ask the person or whose agent in a terminal waits for them, and
 // "Working", those whose run or agent works now; then "With an agent", the tasks whose agents are
-// in any other state; then "Recent", the tasks an agent or a routine changed while this tab
-// followed the space, the ones it finished included, newest first, one small heading per day. The
+// in any other state; then "Recent", the tasks an agent or a routine changed in the last seven
+// days, the ones it finished included, newest first, one small heading per day. The
 // runs' states come from the live rows, the terminal agents' from the Agent Monitor
 // (agents-merge.ts). A task is in one group, by the agent that asks most of the person, and every
 // one of its agents is listed beneath its row in its own state: the lines say what is true now,

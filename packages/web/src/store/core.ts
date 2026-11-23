@@ -25,6 +25,7 @@ import type { Instance } from "../api.ts";
 import {
   DEFAULT_SCALES,
   inWorkingSet,
+  type AgentChange,
   isRowType,
   ROW_OF,
   type AnyRow,
@@ -62,8 +63,8 @@ export type ResnapshotReason = "gap" | "authority" | "withheld" | "unreadable" |
 const SCALE_KEYS: ReadonlySet<string> = new Set(["tasks.statuses", "tasks.effort_scale"]);
 
 export type Outcome =
-  /** A snapshot replaced the working set. */
-  | { readonly kind: "snapshot" }
+  /** A snapshot replaced the working set, with the tasks agents changed lately. */
+  | { readonly kind: "snapshot"; readonly agentChanges: readonly AgentChange[] }
   /**
    * A batch moved the cursor; `changes` and `requests` are those of its new events, and
    * `commits` each request's commit ID where the event named one.
@@ -176,7 +177,7 @@ export class LiveCore {
     this.#awaiting = false;
     this.#dirty.add("task").add("area").add("project");
     this.#published = undefined;
-    return { kind: "snapshot" };
+    return { kind: "snapshot", agentChanges: message.agent_changes ?? [] };
   }
 
   #batch(batch: BatchMessage): Outcome {

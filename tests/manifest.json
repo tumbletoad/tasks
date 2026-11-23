@@ -5553,6 +5553,48 @@
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.service.recent",
+      "title": "A page's snapshot holds the tasks an agent or a routine changed in the last seven days, newest first, each with the agent that changed it last and when, the row of a finished one with it; not the person's own changes, a deleted task or a change older than a week",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.web.recent",
+      "title": "The page's change log takes a snapshot's agents' changes as its list, puts the feed's later agent changes on top once each, and a fresh snapshot replaces it",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.e2e.recent",
+      "title": "In Chromium and Firefox: an agent's change made before the page opened is under Today on the Agents page and in Today's Changes, also after a reload, and a space without one says no agent changed anything in the last 7 days; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.e2e.question",
+      "title": "In Chromium and Firefox: an agent's question puts its task under Needs you with its words; Dismiss takes it out and the toast's Undo brings it back; the person's note after it answers it, also after a reload; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.e2e.older",
+      "title": "In Chromium and Firefox: a thread longer than the first read shows Earlier, then Older entries, which loads the rest with the oldest entry shown before kept in its place, until the first note; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.e2e.title-draft",
+      "title": "In Chromium and Firefox: a title typed and not yet saved is back in its editor after a reload and is not saved by itself; Escape lets it go for good; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
     }
   ]
 }

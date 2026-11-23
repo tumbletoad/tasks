@@ -16,6 +16,7 @@ import { FrameQueue, type FrameClock } from "./frame.ts";
 import { incarnationTag, landedOf, Pending, type Overlay, type Settled } from "./pending.ts";
 import {
   DEFAULT_SCALES,
+  type AgentChange,
   type AreaRow,
   type BatchMessage,
   type Cursor,
@@ -65,6 +66,8 @@ export interface Touched {
 export interface Changes {
   readonly changes: readonly Change[];
   readonly reset: boolean;
+  /** With `reset`: the tasks agents changed lately, as of the snapshot, before `changes`. */
+  readonly agentChanges?: readonly AgentChange[];
 }
 
 /** A message the store applies at the next frame. */
@@ -278,6 +281,7 @@ export class LiveStore {
     let changes: Change[] = [];
     const requests: string[] = [];
     let reset = false;
+    let agentChanges: readonly AgentChange[] | undefined;
     let applied = false;
     let phase: Phase | undefined;
     const before = this.#core.space;
@@ -292,6 +296,7 @@ export class LiveStore {
           // What came before a snapshot is superseded by it.
           changes = [];
           reset = true;
+          agentChanges = outcome.agentChanges;
           applied = true;
           phase = "live";
           break;
@@ -342,7 +347,9 @@ export class LiveStore {
         if (change.type === "launch") launches = true;
       }
       for (const listener of this.#touchListeners) listener({ tasks: touched, launches, reset });
-      for (const listener of this.#changeListeners) listener({ changes, reset });
+      const frame =
+        agentChanges === undefined ? { changes, reset } : { changes, reset, agentChanges };
+      for (const listener of this.#changeListeners) listener(frame);
     }
   }
 

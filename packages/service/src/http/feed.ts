@@ -68,11 +68,28 @@ export interface FeedEvent {
   readonly entities: readonly FeedEntity[];
 }
 
+/**
+ * A task agents changed lately: who changed it last of them, and when. `row` is the row of a task
+ * the snapshot's open tasks do not hold, one an agent finished among them.
+ */
+export interface AgentChange {
+  readonly task: string;
+  readonly actor: string;
+  readonly at: number;
+  readonly row?: CompactRow;
+}
+
 export interface SnapshotMessage {
   readonly type: "snapshot";
   readonly space: { readonly id: string; readonly name: string; readonly ref_prefix: string };
   readonly cursor: Cursor;
   readonly tasks: readonly CompactRow[];
+  /**
+   * The tasks an agent or a routine changed in the last `AGENT_CHANGE_DAYS` days, newest change
+   * first, at most `AGENT_CHANGE_TASKS`: as of the snapshot's cursor, so the batches after it go on
+   * from there.
+   */
+  readonly agent_changes: readonly AgentChange[];
   readonly areas: readonly CompactRow[];
   readonly projects: readonly CompactRow[];
   /**
@@ -128,6 +145,32 @@ const openTasks = (folders: boolean) =>
   `SELECT ${taskColumns(folders)} FROM tasks t WHERE t.lifecycle = 'active' AND t.deleted_at IS NULL ORDER BY t.position, t.id`;
 const LIVE_AREAS = `SELECT ${AREA_COLUMNS} FROM areas a WHERE a.deleted_at IS NULL ORDER BY a.position, a.id`;
 const LIVE_PROJECTS = `SELECT ${PROJECT_COLUMNS} FROM projects p WHERE p.deleted_at IS NULL ORDER BY p.position, p.id`;
+
+/** How far back the agents' changes in a snapshot reach, in days. */
+export const AGENT_CHANGE_DAYS = 7;
+/** At most this many tasks agents changed are in a snapshot. */
+export const AGENT_CHANGE_TASKS = 100;
+/**
+ * The newest commits looked at for them: a bound on the read in a space whose history is long,
+ * far more than a week of agents' work on a hundred tasks takes.
+ */
+const AGENT_CHANGE_COMMITS = 20_000;
+/** Each task's newest commit by an agent or a routine since `$since`, newest first. */
+const AGENT_CHANGED =
+  "WITH recent AS (SELECT c.task_id AS task, max(k.seq) AS seq FROM (SELECT seq, at, actor_kind " +
+  `FROM commits ORDER BY seq DESC LIMIT ${String(AGENT_CHANGE_COMMITS)}) k JOIN changes c ON ` +
+  "c.seq = k.seq WHERE k.at >= $since AND k.actor_kind IN ('agent', 'routine') AND " +
+  "c.task_id IS NOT NULL GROUP BY c.task_id ORDER BY seq DESC " +
+  `LIMIT ${String(AGENT_CHANGE_TASKS)}) `;
+const AGENT_CHANGES =
+  AGENT_CHANGED +
+  "SELECT r.task AS task, k.at AS at, a.label AS actor FROM recent r JOIN commits k ON " +
+  "k.seq = r.seq JOIN actors a ON a.id = k.principal_id JOIN tasks t ON t.id = r.task " +
+  "WHERE t.deleted_at IS NULL ORDER BY r.seq DESC";
+/** The rows of the tasks agents changed that the open tasks do not hold. */
+const agentChangedRows = (folders: boolean) =>
+  `${AGENT_CHANGED}SELECT ${taskColumns(folders)} FROM tasks t WHERE t.id IN ` +
+  "(SELECT task FROM recent) AND t.lifecycle <> 'active' AND t.deleted_at IS NULL";
 
 const IN_BATCH = "seq > $after AND seq <= $upto";
 const COMMITS =
@@ -209,27 +252,47 @@ export async function readHead(reader: WorkerConnection): Promise<SpaceHead> {
 }
 
 /**
- * The open working set (A5 3.15 step 1) with its cursor, in one snapshot. With `here`, each task's
- * row carries its place's state on that machine.
+ * The open working set (A5 3.15 step 1) with its cursor, and the tasks agents changed lately, in
+ * one snapshot. With `here`, each task's row carries its place's state on that machine.
  */
 export async function readSnapshot(
   reader: WorkerConnection,
   here?: FeedHere,
+  now: number = Date.now(),
 ): Promise<SnapshotMessage> {
   const folders = await hasFolderTable(reader);
-  const [space, tasks, areas, projects, preferences] = await reader.transaction("deferred", [
-    { sql: SPACE_SQL, mode: "get" },
-    { sql: openTasks(folders), mode: "all" },
-    { sql: LIVE_AREAS, mode: "all" },
-    { sql: LIVE_PROJECTS, mode: "all" },
-    { sql: PREFERENCE_ROWS, mode: "all" },
-  ]);
+  const since = { since: now - AGENT_CHANGE_DAYS * 86_400_000 };
+  const [space, tasks, areas, projects, preferences, changed, finished] = await reader.transaction(
+    "deferred",
+    [
+      { sql: SPACE_SQL, mode: "get" },
+      { sql: openTasks(folders), mode: "all" },
+      { sql: LIVE_AREAS, mode: "all" },
+      { sql: LIVE_PROJECTS, mode: "all" },
+      { sql: PREFERENCE_ROWS, mode: "all" },
+      { sql: AGENT_CHANGES, mode: "all", params: since },
+      { sql: agentChangedRows(folders), mode: "all", params: since },
+    ],
+  );
   const head = headOf(space);
+  const rows = new Map(
+    (await taskRows(finished as Row[], head.ref_prefix, here)).map((row) => [row["id"], row]),
+  );
   return {
     type: "snapshot",
     space: { id: head.id, name: head.name, ref_prefix: head.ref_prefix },
     cursor: head.cursor,
     tasks: await taskRows(tasks as Row[], head.ref_prefix, here),
+    agent_changes: (changed as Row[]).map((change) => {
+      const task = String(change["task"]);
+      const row = rows.get(task);
+      return {
+        task,
+        actor: typeof change["actor"] === "string" ? change["actor"] : "",
+        at: Number(change["at"]),
+        ...(row === undefined ? {} : { row }),
+      };
+    }),
     areas: (areas as Row[]).map((row) => compact(row)),
     projects: (projects as Row[]).map((row) => compact(row)),
     preferences: spacePreferencesOf(preferences as Row[]),

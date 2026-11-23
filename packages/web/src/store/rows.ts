@@ -208,11 +208,27 @@ export interface FeedEvent {
   readonly entities: readonly FeedEntity[];
 }
 
+/** A task an agent or a routine changed: who of them changed it last, and when. */
+export interface AgentChange {
+  readonly task: string;
+  /** The actor's label ("Codex"). */
+  readonly actor: string;
+  /** When, in milliseconds since 1970. */
+  readonly at: number;
+  /**
+   * The task's newest row the page has, for a task the live rows do not hold: one the agent
+   * finished is still what the person comes back to see.
+   */
+  readonly row?: TaskRow;
+}
+
 export interface SnapshotMessage {
   readonly type: "snapshot";
   readonly space: SpaceHead;
   readonly cursor: Cursor;
   readonly tasks: readonly TaskRow[];
+  /** The tasks agents changed in the service's recent days, newest change first. */
+  readonly agent_changes?: readonly AgentChange[];
   readonly areas: readonly AreaRow[];
   readonly projects: readonly ProjectRow[];
   readonly instances: readonly Instance[];
@@ -515,6 +531,23 @@ function eventOf(value: unknown): FeedEvent | undefined {
   };
 }
 
+/** The snapshot's agents' changes that read: one that does not is left out, as an unread row is. */
+function agentChangesOf(value: unknown): AgentChange[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item: unknown): AgentChange[] => {
+    if (!isRecord(item) || !isString(item["task"]) || !isNumber(item["at"])) return [];
+    const row = item["row"] === undefined ? undefined : taskRow(item["row"]);
+    return [
+      {
+        task: item["task"],
+        actor: isString(item["actor"]) ? item["actor"] : "",
+        at: item["at"],
+        ...(row === undefined ? {} : { row }),
+      },
+    ];
+  });
+}
+
 /**
  * A message from the feed, checked by its shape, or undefined when it is none the page takes. A
  * batch the page cannot read in full is `unreadable`: its coverage may hide a gap, so the store
@@ -574,6 +607,7 @@ export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" 
         },
         cursor,
         tasks: rowsOf(value["tasks"], taskRow),
+        agent_changes: agentChangesOf(value["agent_changes"]),
         areas: rowsOf(value["areas"], areaRow),
         projects: rowsOf(value["projects"], projectRow),
         instances: instancesOf(value["instances"]),

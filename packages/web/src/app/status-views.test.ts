@@ -203,6 +203,64 @@ const arbTask = fc.record({
   created_at: fc.nat(1000),
 });
 
+describe("[A5.while-away.web.recent] the agents' changes a snapshot brings", () => {
+  test("a snapshot's list is the log, the feed's later changes go on top, and the next snapshot replaces it", () => {
+    let emit: (changes: Changes) => void = () => undefined;
+    const NOW = Date.UTC(2026, 10, 12, 9);
+    const log = new ChangeLog(
+      {
+        onChanges: (listener) => {
+          emit = listener;
+          return () => undefined;
+        },
+      },
+      () => NOW,
+    );
+    const [one, two, three] = [
+      task({ title: "One" }),
+      task({ title: "Two" }),
+      task({ title: "Three" }),
+    ];
+    const done: TaskRow = { ...task({ title: "Done" }), lifecycle: "completed" };
+    const live = new Map([one, two, three].map((t) => [t.id, t]));
+    emit({
+      changes: [],
+      reset: true,
+      agentChanges: [
+        { task: done.id, actor: "Codex", at: NOW - 3_600_000, row: done },
+        { task: one.id, actor: "Codex", at: NOW - 86_400_000 },
+      ],
+    });
+    expect(recentOf(log.getEntries(), live, "UTC")).toEqual([
+      { date: "2026-11-12", tasks: [done] },
+      { date: "2026-11-11", tasks: [one] },
+    ]);
+    // An agent changes the oldest task again: it comes first, once.
+    emit({
+      changes: [
+        {
+          type: "log",
+          id: "lg_0001",
+          task: one.id,
+          changed: [],
+          created: true,
+          kind: "ops",
+          actor: { kind: "agent", label: "Claude Code" },
+          request_id: "fixture-1",
+        },
+      ],
+      reset: false,
+    });
+    expect(log.getEntries().map((e) => [e.task, e.actor])).toEqual([
+      [one.id, "Claude Code"],
+      [done.id, "Codex"],
+    ]);
+    // A fresh snapshot is the service's word on it.
+    emit({ changes: [], reset: true, agentChanges: [{ task: two.id, actor: "Codex", at: NOW }] });
+    expect(log.getEntries().map((e) => e.task)).toEqual([two.id]);
+  });
+});
+
 describe("[A5.3.5.web.counts-add-up] property: the counts add up across disjoint views", () => {
   test("each task is in at most one counted view, and each view lists exactly its count", () => {
     fc.assert(
