@@ -1,6 +1,8 @@
 // New project: choose its folder, see the name it gets (the folder's, changeable) and the
 // repository a checkout holds, choose or name its area, done. A folder that is another project's
-// already opens that project instead. A project without a folder is one click away.
+// already opens that project instead. A project without a folder is one click away. Where the
+// project went is what the service's answer says: a name can resolve to an archived area in ways the
+// dialog does not foresee, and an area can be archived before the write lands.
 import { useNavigate } from "@tanstack/react-router";
 import { useContext, useId, useMemo, useState, type SyntheticEvent } from "react";
 import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
@@ -106,7 +108,7 @@ export function AddProject({
   const typed = newArea.trim();
   const sent = shown === NEW_AREA ? typed : shown;
   // A new area's name that an archived area has would put the project in that area, out of sight:
-  // the dialog says so and adds nothing there until the person brings the area back.
+  // the dialog says so before the click. The answer of the write says it for every other way.
   const shelved =
     shown !== NEW_AREA || typed === "" || areas.some((a) => sameName(a.title, typed))
       ? undefined
@@ -149,7 +151,17 @@ export function AddProject({
             onClose();
             return;
           }
+          const area = written.area;
           if (written.result === "exists") say(t("project.exists", { project: project.name }));
+          else if (area?.archived === true) {
+            // The edit history keeps the add: Ctrl+Z still takes it back.
+            say(t("toast.projectAddedArchived", { name: project.name, area: area.name }), {
+              label: { id: "archived.unarchiveArea", values: { area: area.name } },
+              run: () => {
+                void unarchive({ id: area.id, title: area.name });
+              },
+            });
+          }
           open(project.id, await arrival(live, project.id));
         },
         (failed: unknown) => {

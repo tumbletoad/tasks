@@ -3,7 +3,7 @@
 // open tasks in sight, takes no new work, says so on its own page, and Unarchive there brings it
 // back with an Undo. Pictures of the sidebar before and after, and of Archived open, at 1,440 and
 // 390 px in both themes. The worker's other tests share Mira, so the groups here are this test's.
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, type Locator, type Page, type Route } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { axeFound, picture, pictures, showsSpace, signIn, themes } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
@@ -342,6 +342,65 @@ test.describe("[A5.archived.e2e.new-work] new work never lands in an archived gr
     expect(task).toMatchObject({ inbox: true });
     expect(task.area).toBeUndefined();
     expect(task.project).toBeUndefined();
+  });
+});
+
+test.describe("[A5.archived.e2e.added-where] New project says where the project is, from the service's answer", () => {
+  test("a slug of an archived area, and an area archived between the press and the write: the toast names the archived area, and its Unarchive brings the area back with the project", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const amber = `Amber Deck ${tag}`;
+    const bay = `Bay ${tag}`;
+    await world.op(world.mira.id, "group.manage", { action: "create", path: amber });
+    await world.op(world.mira.id, "group.manage", { action: "create", path: bay });
+    await archive(world, amber);
+    const bayId = await areaIdOf(world, bay);
+    await signIn(page, world, `/s/${world.mira.id}/area/${bayId}`);
+    await showsSpace(page, world.mira.name);
+    const areas = areasList(page);
+    const newProject = sidebar(page).getByRole("button", { name: "New project", exact: true });
+    const dialog = page.getByRole("dialog", { name: "New project" });
+    const areaChoice = dialog.getByLabel("Area", { exact: true });
+
+    // The archived area's slug: the service resolves it, and the toast says where the project is.
+    await newProject.click();
+    await areaChoice.selectOption({ label: "New area" });
+    await dialog.getByLabel("New area's name").fill(`amber-deck-${tag}`);
+    const planks = `Planks ${tag}`;
+    await dialog.getByLabel("Name", { exact: true }).fill(planks);
+    await dialog.getByRole("button", { name: "Without a folder" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toHaveText(`Project ${planks} added in ${amber}, which is archived`);
+    await expect(toastAction(page)).toHaveText(`Unarchive ${amber}`);
+    await toastAction(page).click();
+    await expect(linkTo(areas, amber)).toBeVisible();
+    await expect(linkTo(areas, planks)).toBeVisible();
+    expect(await areaOfProject(world, planks)).toBe(amber);
+
+    // Archived after the press, before the write: the answer says so all the same.
+    await newProject.click();
+    await areaChoice.selectOption({ label: bay });
+    const joists = `Joists ${tag}`;
+    await dialog.getByLabel("Name", { exact: true }).fill(joists);
+    const held = new Promise<Route>((resolve) => {
+      void page.route("**/api/v1/op/group.manage", async (route) => {
+        const body = route.request().postDataJSON() as { action?: string };
+        if (body.action === "create") resolve(route);
+        else await route.continue();
+      });
+    });
+    await dialog.getByRole("button", { name: "Without a folder" }).click();
+    const create = await held;
+    await archive(world, bay);
+    await create.continue();
+    await page.unroute("**/api/v1/op/group.manage");
+    await expect(toast(page)).toHaveText(`Project ${joists} added in ${bay}, which is archived`);
+    await toastAction(page).click();
+    await expect(linkTo(areas, bay)).toBeVisible();
+    await expect(linkTo(areas, joists)).toBeVisible();
+    expect(await areaOfProject(world, joists)).toBe(bay);
   });
 });
 

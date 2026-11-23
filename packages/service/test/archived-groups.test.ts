@@ -2,6 +2,7 @@
 // the snapshot and every batch carry a group's archived state, its active tasks stay in the open
 // set, and the page's Unarchive, based on what it shows, applies and is one undo step. A real
 // service in this process, a real ttasks-local/1 session and fixture text.
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { RpcSession } from "@ttasks/bridge/protocol";
@@ -15,6 +16,7 @@ let service: RunningService;
 let cleanup: () => void;
 let user: RpcSession;
 let reader: WorkerConnection;
+let root: string;
 
 let n = 0;
 const rid = () => `fixture-archived-${String((n += 1)).padStart(6, "0")}`;
@@ -24,6 +26,7 @@ const call = async (op: string, input: Record<string, unknown>) =>
 beforeAll(async () => {
   const temp = tempRoot("archived-groups");
   cleanup = temp.cleanup;
+  root = temp.root;
   const home = join(temp.root, "h");
   service = await startService({
     env: serviceEnv(home),
@@ -117,6 +120,83 @@ describe("[A5.archived.service.feed] an archived group reaches the page, keeps i
     await call("history.undo", { request_id: rid() });
     expect(titled((await readSnapshot(reader)).areas, "Attic")).toMatchObject({
       lifecycle: "archived",
+    });
+  });
+});
+
+describe("[A5.archived.service.where] a new project's answer says where it is: its area, and whether that area is archived", () => {
+  test("a name that resolves to an archived area by slug, by an old slug and before another case of it: group.manage and folder.manage name the area and say it is archived; a live area is named without", async () => {
+    const archive = async (path: string) =>
+      call("group.manage", { action: "archive", path, base: await asOfOf(), request_id: rid() });
+    await call("group.manage", { action: "create", path: "Amber Deck", request_id: rid() });
+    await call("group.manage", { action: "create", path: "Old Shed", request_id: rid() });
+    await call("group.manage", {
+      action: "rename",
+      path: "Old Shed",
+      to: "Potting Shed",
+      base: await asOfOf(),
+      request_id: rid(),
+    });
+    await call("group.manage", { action: "create", path: "Loft", request_id: rid() });
+    // A create of "LOFT" would name Loft: a rename gives the second case its own area.
+    await call("group.manage", { action: "create", path: "Garret", request_id: rid() });
+    await call("group.manage", {
+      action: "rename",
+      path: "Garret",
+      to: "LOFT",
+      base: await asOfOf(),
+      request_id: rid(),
+    });
+    const listed = (await call("group.manage", { action: "list", archived: true })) as {
+      areas: { id: string; name: string }[];
+    };
+    const idOf = (name: string) => listed.areas.find((a) => a.name === name)?.id ?? "";
+    await archive(idOf("Amber Deck"));
+    await archive(idOf("Potting Shed"));
+    await archive(idOf("Loft"));
+
+    for (const [given, area] of [
+      ["amber-deck", "Amber Deck"],
+      ["old-shed", "Potting Shed"],
+      ["Loft", "Loft"],
+    ] as const) {
+      const made = await call("group.manage", {
+        action: "create",
+        path: `${given}/Fixture planks ${given}`,
+        mode: "apply",
+        request_id: rid(),
+      });
+      expect(made).toMatchObject({
+        result: "created",
+        group: { kind: "project", area: { id: idOf(area), name: area, archived: true } },
+      });
+    }
+    const live = await call("group.manage", {
+      action: "create",
+      path: "LOFT/Fixture beams",
+      mode: "apply",
+      request_id: rid(),
+    });
+    expect(live).toMatchObject({ group: { area: { id: idOf("LOFT"), name: "LOFT" } } });
+    expect((live["group"] as { area: Record<string, unknown> }).area).not.toHaveProperty(
+      "archived",
+    );
+
+    const folder = join(root, "work", "rafters");
+    mkdirSync(folder, { recursive: true, mode: 0o700 });
+    const added = await call("folder.manage", {
+      action: "add_project",
+      area: "amber-deck",
+      folder,
+      request_id: rid(),
+    });
+    expect(added).toMatchObject({
+      result: "created",
+      owner: {
+        kind: "project",
+        name: "rafters",
+        area: { id: idOf("Amber Deck"), name: "Amber Deck", archived: true },
+      },
     });
   });
 });

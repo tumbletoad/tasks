@@ -5598,6 +5598,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.archived.e2e.added-where",
+      "title": "In Chromium and Firefox against the real service: New project with a new area's name that is an archived area's slug, and New project into a live area archived while its request is held, both end in a toast that names the archived area the project is in, whose Unarchive brings that area back with the project in the sidebar",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.archived.service.where",
+      "title": "group.manage create and folder.manage add_project answer with the new project's area and whether it is archived, for a name that resolves to an archived area by slug, by an old slug and by exact case beside another case; a live area is named without",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.archived.service.feed",
       "title": "Archiving an area and a project reaches a page open meanwhile in its batch and a page opened after in its snapshot, each marked archived, with every task of theirs still open; Unarchive by the group's ID from the page's base applies, and one undo archives it again",
       "owner": "M5",

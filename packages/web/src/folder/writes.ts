@@ -13,13 +13,23 @@ type FolderInput = Omit<Parameters<Client["folder"]["manage"]>[0], "request_id">
 type FolderResult = Awaited<ReturnType<Client["folder"]["manage"]>>;
 type GroupResult = Awaited<ReturnType<Client["group"]["manage"]>>;
 
+/** A project's area as the write's answer gives it. */
+export type WrittenArea = NonNullable<FolderResult["owner"]["area"]>;
+
 /** What a write changed: an existing project of the folder, or the project or folder written. */
 export interface Written {
   /** `exists`: another project has the folder here, and nothing was written. */
   readonly result: string;
   /** The project made or found; none when only the write's receipt answered. */
   readonly project?: { readonly id: string; readonly name: string };
+  /** The project's area as of the write, as the service resolved it. */
+  readonly area?: WrittenArea;
 }
+
+/** A new project in an archived area is out of sight: the caller says so, not an Undo toast. */
+const hidden = (result: FolderResult | GroupResult | WriteReceipt): boolean =>
+  !("receipt" in result) &&
+  ("owner" in result ? result.owner.area : result.group?.area)?.archived === true;
 
 /** At most this many folders that moved along or stayed are named in a toast. */
 const NAMED = 3;
@@ -35,7 +45,9 @@ function namesOf(list: FolderResult["followed"], count: number): string {
  * receipt says only that it was written: the toast then says what was asked.
  */
 function said(input: FolderInput, result: FolderResult | WriteReceipt): Msg | undefined {
-  if (result.result === "no_change" || result.result === "exists") return undefined;
+  if (result.result === "no_change" || result.result === "exists" || hidden(result)) {
+    return undefined;
+  }
   if ("receipt" in result) {
     if (input.action === "clear") return { id: "toast.folderCleared" };
     if (input.action === "add_project") {
@@ -91,7 +103,10 @@ export function folderWrites(client: Client, edits: Pick<Edits, "write">): Folde
         result: result.result,
         ...("receipt" in result || result.owner.kind !== "project"
           ? {}
-          : { project: { id: result.owner.id, name: result.owner.name ?? "" } }),
+          : {
+              project: { id: result.owner.id, name: result.owner.name ?? "" },
+              ...(result.owner.area === undefined ? {} : { area: result.owner.area }),
+            }),
       }));
   return {
     setTask: (task, folder, base) => manage({ action: "set", task: task.ref, folder }, base),
@@ -114,7 +129,7 @@ export function folderWrites(client: Client, edits: Pick<Edits, "write">): Folde
           (request) =>
             client.group.manage({ action: "create", path, mode: "apply", request_id: request }),
           (result: GroupResult | WriteReceipt) =>
-            result.result === "created" || result.result === "updated"
+            !hidden(result) && (result.result === "created" || result.result === "updated")
               ? {
                   id: "toast.projectAdded",
                   values: { name: ("receipt" in result ? undefined : result.group?.name) ?? name },
@@ -125,7 +140,10 @@ export function folderWrites(client: Client, edits: Pick<Edits, "write">): Folde
           result: result.result ?? "",
           ...("receipt" in result || result.group?.kind !== "project"
             ? {}
-            : { project: { id: result.group.id, name: result.group.name } }),
+            : {
+                project: { id: result.group.id, name: result.group.name },
+                ...(result.group.area === undefined ? {} : { area: result.group.area }),
+              }),
         }));
     },
   };

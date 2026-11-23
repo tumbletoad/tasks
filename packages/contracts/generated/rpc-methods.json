@@ -344,6 +344,31 @@
             "additionalProperties": false,
             "description": "Whose folder it is",
             "properties": {
+              "area": {
+                "additionalProperties": false,
+                "description": "A project's area as of the write; absent: it has none",
+                "properties": {
+                  "archived": {
+                    "const": true,
+                    "description": "Archived, and the project with it",
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "description": "Area ID",
+                    "pattern": "^a_[0-9a-hjkmnp-tv-z]{26}$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Its name",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
               "id": {
                 "description": "Its ID",
                 "pattern": "^[pt]_[0-9a-hjkmnp-tv-z]{26}$",
@@ -687,6 +712,31 @@
             "additionalProperties": false,
             "description": "A write: the group it changed",
             "properties": {
+              "area": {
+                "additionalProperties": false,
+                "description": "A project's area as of the write; absent: it has none",
+                "properties": {
+                  "archived": {
+                    "const": true,
+                    "description": "Archived, and the project with it",
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "description": "Area ID",
+                    "pattern": "^a_[0-9a-hjkmnp-tv-z]{26}$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Its name",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
               "folder": {
                 "description": "Its folder on this machine, the home as ~",
                 "type": "string"

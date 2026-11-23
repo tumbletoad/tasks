@@ -22,7 +22,10 @@ const styles = classes(css, ["act", "line", "words"]);
  * area stays archived, it is unarchived and stays under Archived with that area. Resolves true once
  * the service has the group live; a refusal is said in a toast.
  */
-export function useUnarchive(): (group: AreaRow | ProjectRow, area?: AreaRow) => Promise<boolean> {
+export function useUnarchive(): (
+  group: Pick<AreaRow | ProjectRow, "id" | "title">,
+  area?: AreaRow,
+) => Promise<boolean> {
   const t = useT();
   const say = useToast();
   const { api, live } = useContext(Session);

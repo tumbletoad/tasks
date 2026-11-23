@@ -13,6 +13,7 @@ import {
   Base,
   idPattern,
   InsideFolders,
+  ProjectArea,
   Replayed,
   RequestId,
   TaskRef,
@@ -52,6 +53,7 @@ export const FolderManageResult = z.strictObject({
       id: z.string().regex(idPattern("[pt]")).describe("Its ID"),
       name: z.string().describe("A project's name").optional(),
       ref: TaskRef.optional(),
+      area: ProjectArea.optional(),
     })
     .describe("Whose folder it is"),
   folder: z
