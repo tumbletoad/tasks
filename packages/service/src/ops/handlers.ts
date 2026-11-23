@@ -20,6 +20,7 @@ import {
   GROUP_LIMITS,
   isKeyList,
   laterIn,
+  AUTONOMY_IN_FORCE,
   LATER_PREFERENCES,
   LATER_SETS,
   mayWrite,
@@ -1954,8 +1955,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       as_of: status.space.asOf,
       date: call.today,
       time_zone: (call.host.timeZone ?? localTimeZone)(),
-      // Nothing in this build holds an agent's change for the user: every change applies at once.
-      autonomy: "full",
+      autonomy: AUTONOMY_IN_FORCE,
       space: { id: status.space.id, name: status.space.name, ref_prefix: status.space.refPrefix },
       session: sessionOf(call, status.bound),
       ...(here === undefined
@@ -3399,8 +3399,7 @@ const prefWritable = (p: PreferenceSpec, principal: Principal): boolean =>
  * keys separated by commas, a number its digits and a switch true or false. Undefined when it does
  * not fit the key.
  */
-function prefValueOf(p: PreferenceSpec, given: unknown): PrefValue | null | undefined {
-  if (given === null) return null;
+function prefValueOf(p: PreferenceSpec, given: unknown): PrefValue | undefined {
   let value: unknown = given;
   const { shape } = p;
   if (typeof given === "string") {
@@ -3432,7 +3431,7 @@ interface PrefChange {
  * the undo stack: setting the earlier value again changes a key back. The answer says what changed.
  */
 async function prefsSet(call: Call): Promise<unknown> {
-  const items = (call.input["set"] ?? []) as { key: string; value: unknown }[];
+  const items = (call.input["set"] ?? []) as { key: string; value?: unknown; reset?: boolean }[];
   if (items.length === 0) throw invalid("set", "Required to set", "Give a key and its new value.");
   const changes = items.map((item, k): PrefChange => {
     const path = `set.${String(k)}`;
@@ -3450,16 +3449,30 @@ async function prefsSet(call: Call): Promise<unknown> {
     if (setStep !== undefined) {
       throw invalid(
         `${path}.key`,
-        "Changing this setting is not built yet",
-        `It arrives with ${setStep}.`,
+        "This setting is fixed in this build",
+        `Changing it comes with ${setStep}.`,
       );
     }
     if (!prefWritable(p, call.principal)) {
       throw invalid(`${path}.key`, "Not a key this caller changes");
     }
+    const reset = item.reset === true;
+    if (reset === (item.value !== undefined)) {
+      throw invalid(
+        `${path}.value`,
+        reset ? "Give a value or reset, not both" : "Required to set",
+        "Give the new value, or reset to put the key back to its default.",
+      );
+    }
+    if (reset) return { p, value: null, path };
     const value = prefValueOf(p, item.value);
     if (value === undefined) {
-      throw invalid(`${path}.value`, "Not a value of this key", `It takes ${shapeText(p.shape)}.`);
+      const meantReset = String(item.value).trim().toLowerCase() === "null";
+      throw invalid(
+        `${path}.value`,
+        "Not a value of this key",
+        `It takes ${shapeText(p.shape)}.${meantReset ? " reset puts it back to its default." : ""}`,
+      );
     }
     return { p, value, path };
   });
@@ -3574,6 +3587,7 @@ function prefRow(
 ): Record<string, unknown> {
   const value = shownValue(p, read?.value ?? p.default);
   const fallback = shownValue(p, p.default);
+  const later = LATER_PREFERENCES.find((row) => row.key === p.key);
   return {
     key: p.key,
     ...(action === "describe" ? { summary: p.summary, shape: shapeText(p.shape) } : {}),
@@ -3583,6 +3597,8 @@ function prefRow(
     default: fallback,
     writable: prefWritable(p, principal) && read?.state !== "newer",
     ...(p.policy ? { policy: true } : {}),
+    ...(laterSet(p) === undefined ? {} : { fixed: true }),
+    ...(later === undefined ? {} : { in_force: later.inForce }),
   };
 }
 

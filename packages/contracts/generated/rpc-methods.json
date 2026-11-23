@@ -1371,6 +1371,10 @@
                   "maxLength": 64,
                   "type": "string"
                 },
+                "reset": {
+                  "description": "Put the key back to its default, instead of a value",
+                  "type": "boolean"
+                },
                 "value": {
                   "anyOf": [
                     {
@@ -1392,17 +1396,13 @@
                       },
                       "maxItems": 20,
                       "type": "array"
-                    },
-                    {
-                      "type": "null"
                     }
                   ],
-                  "description": "The new value, a list as keys separated by commas; null resets it to its default"
+                  "description": "The new value, a list as keys separated by commas"
                 }
               },
               "required": [
-                "key",
-                "value"
+                "key"
               ],
               "type": "object"
             },
@@ -1536,6 +1536,36 @@
                     }
                   ],
                   "description": "Its default"
+                },
+                "fixed": {
+                  "const": true,
+                  "description": "Fixed in this build: nobody changes it",
+                  "type": "boolean"
+                },
+                "in_force": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "maximum": 1000000,
+                      "minimum": -1000000,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "What this build does whatever the key says: it does not act on the key yet"
                 },
                 "is_default": {
                   "description": "The value is the default (get)",

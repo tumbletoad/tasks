@@ -1,8 +1,8 @@
-// What an entry declares and this build always refuses: one list, read by both sides. The MCP tool
-// list and docs/agents/tools.md leave every row out, and the request path refuses a call that uses
-// one, naming its step. The step that builds a row deletes it. The command line's help still lists
-// them: a person who uses one gets the same refusal. A row for agents only is built for the person
-// already: agents, and the scripts and agent shells that call as agents, are refused it.
+// What an entry declares and this build always refuses: one list, read by every side. The MCP tool
+// list, the command line (cli-spec.json, its help) and docs/agents/ leave every row out, and the
+// request path refuses a call that uses one, naming its step. The step that builds a row deletes
+// it. A row for agents only is built for the person already: the command line offers it, and
+// agents, and the scripts and agent shells that call as agents, are refused it.
 
 /** Who a call is for, as the request path sets it (A3 3.2.1). */
 export type LaterAudience = "user" | "agent";
@@ -47,16 +47,32 @@ export const LATER_SETS: readonly { readonly key: string; readonly step: string 
   { key: "tasks.statuses", step: "the step that lets a space change its statuses" },
 ];
 
+/** The autonomy in force: nothing holds an agent's change for the person, it applies at once. */
+export const AUTONOMY_IN_FORCE = "full";
+
 /**
  * Preference keys this build declares but does not act on: nothing reads them, so `preferences`
- * leaves them out rather than show a setting that changes nothing.
+ * leaves them out rather than show a setting that changes nothing. A person still reads what is
+ * stored, beside `inForce`: what this build does whatever the key says.
  */
-export const LATER_PREFERENCES: readonly { readonly key: string; readonly step: string }[] = [
-  { key: "autonomy.level", step: PROPOSALS },
-  { key: "autonomy.agent_tasks_to_inbox", step: PROPOSALS },
-  { key: "targets.default", step: "the step that makes Open use the default instance" },
-  { key: "projection.enabled", step: "the step that makes the projection read it" },
-  { key: "features.search_trigram", step: "M3.16 (trigram search)" },
+export const LATER_PREFERENCES: readonly {
+  readonly key: string;
+  readonly inForce: string | boolean | null;
+  readonly step: string;
+}[] = [
+  { key: "autonomy.level", inForce: AUTONOMY_IN_FORCE, step: PROPOSALS },
+  {
+    key: "autonomy.agent_tasks_to_inbox",
+    inForce: "only an agent's task without an area or project goes to the Inbox",
+    step: PROPOSALS,
+  },
+  {
+    key: "targets.default",
+    inForce: null,
+    step: "the step that makes Open use the default instance",
+  },
+  { key: "projection.enabled", inForce: true, step: "the step that makes the projection read it" },
+  { key: "features.search_trigram", inForce: false, step: "M3.16 (trigram search)" },
 ];
 
 /**

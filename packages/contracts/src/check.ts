@@ -962,6 +962,13 @@ function checkCliFace(entry: AnyEntry, face: CliFace, say: Say): void {
   for (const name of face.exclude ?? []) {
     if (!known(name)) say(`exclude names unknown field "${name}"`);
   }
+  for (const [name, into] of Object.entries(face.readInto ?? {})) {
+    if (!(face.positional ?? []).includes(name)) say(`readInto names no positional "${name}"`);
+    if (fields.get(into)?.repeatable === undefined) {
+      say(`readInto "${name}" goes to "${into}", not an array input field of scalars`);
+    }
+    if (entry.actions === undefined) say(`readInto needs an entry whose actions include reads`);
+  }
   for (const [name, value] of Object.entries(face.fixed ?? {})) {
     const info = fields.get(name);
     if (info === undefined) say(`fixed names unknown field "${name}"`);

@@ -111,13 +111,12 @@
         {
           "field": "mode",
           "flag": "--mode",
-          "help": "propose: ask the user to decide",
+          "help": "Always apply in this build",
           "repeat": false,
           "required": false,
           "type": "string",
           "values": [
-            "apply",
-            "propose"
+            "apply"
           ]
         },
         {
@@ -290,13 +289,12 @@
         {
           "field": "mode",
           "flag": "--mode",
-          "help": "propose: ask the user to decide",
+          "help": "Always apply in this build",
           "repeat": false,
           "required": false,
           "type": "string",
           "values": [
-            "apply",
-            "propose"
+            "apply"
           ]
         }
       ],
@@ -456,13 +454,12 @@
         {
           "field": "mode",
           "flag": "--mode",
-          "help": "propose: ask the user to decide",
+          "help": "Always apply in this build",
           "repeat": false,
           "required": false,
           "type": "string",
           "values": [
-            "apply",
-            "propose"
+            "apply"
           ]
         }
       ],
@@ -607,14 +604,6 @@
           "required": false,
           "type": "boolean",
           "userOnly": true
-        },
-        {
-          "field": "at",
-          "flag": "--at",
-          "help": "When a log entry was made, only for older work: ISO date or instant",
-          "repeat": false,
-          "required": false,
-          "type": "string"
         }
       ],
       "inputOnly": [
@@ -666,14 +655,21 @@
         {
           "field": "mode",
           "flag": "--mode",
-          "help": "propose: ask the user to decide",
+          "help": "Always apply in this build",
           "repeat": false,
           "required": false,
           "type": "string",
           "values": [
-            "apply",
-            "propose"
+            "apply"
           ]
+        },
+        {
+          "field": "set[].reset",
+          "flag": "--reset",
+          "help": "Put the key back to its default, instead of a value",
+          "repeat": false,
+          "required": false,
+          "type": "boolean"
         }
       ],
       "inputOnly": [],
@@ -696,12 +692,13 @@
           "field": "set[].key",
           "help": "A key describe lists",
           "name": "key",
+          "readInto": "keys",
           "required": false,
           "type": "string"
         },
         {
           "field": "set[].value",
-          "help": "The new value, a list as keys separated by commas; null resets it to its default",
+          "help": "The new value, a list as keys separated by commas",
           "name": "value",
           "required": false,
           "type": "string"
@@ -770,13 +767,12 @@
         {
           "field": "mode",
           "flag": "--mode",
-          "help": "propose: ask the user to decide",
+          "help": "Always apply in this build",
           "repeat": false,
           "required": false,
           "type": "string",
           "values": [
-            "apply",
-            "propose"
+            "apply"
           ]
         }
       ],
@@ -793,30 +789,6 @@
       ],
       "summary": "Reopen a completed or archived task. Its earlier outcome and learnings stay.",
       "verb": "reopen"
-    },
-    {
-      "actors": "run",
-      "auto": [
-        "request_id"
-      ],
-      "entry": "run.report",
-      "flags": [
-        {
-          "field": "summary",
-          "flag": "--summary",
-          "help": "Counts created, updated, unchanged; what was unsure",
-          "repeat": false,
-          "required": false,
-          "type": "string"
-        }
-      ],
-      "inputOnly": [
-        "sources"
-      ],
-      "kind": "write",
-      "positionals": [],
-      "summary": "Report a run's coverage, one row per source: works only in a run or routine.",
-      "verb": "run-report"
     },
     {
       "actors": "agent",
@@ -845,14 +817,6 @@
           ]
         },
         {
-          "field": "remove_sources",
-          "flag": "--remove-source",
-          "help": "Source keys or URLs to unlink",
-          "repeat": true,
-          "required": false,
-          "type": "string"
-        },
-        {
           "field": "reason",
           "flag": "--reason",
           "help": "Why, shown in history",
@@ -863,13 +827,12 @@
         {
           "field": "mode",
           "flag": "--mode",
-          "help": "propose: ask the user to decide",
+          "help": "Always apply in this build",
           "repeat": false,
           "required": false,
           "type": "string",
           "values": [
-            "apply",
-            "propose"
+            "apply"
           ]
         }
       ],

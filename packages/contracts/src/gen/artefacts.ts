@@ -11,6 +11,7 @@ import {
   outputJsonSchema,
   type McpTool,
 } from "../json-schema.ts";
+import { isOffered, laterFields } from "../later.ts";
 import { definitionReport } from "./report.ts";
 import { stableJson } from "./stable-json.ts";
 
@@ -79,6 +80,31 @@ function flagSpec(info: FieldInfo, face: CliFace) {
   };
 }
 
+/**
+ * A field as the command line offers it (later.ts): without the values a later step brings, and
+ * not at all when the field is one of them. A value that stays keeps its field, also when it is
+ * the only one left (`--mode apply`): scripts that spell it out keep working.
+ */
+function offered(entry: AnyEntry, info: FieldInfo): FieldInfo | undefined {
+  const rows = laterFields(entry.name, "user").filter((row) => row.field === info.path);
+  if (rows.length === 0) return info;
+  if (rows.some((row) => row.value === undefined)) return undefined;
+  const values = info.values?.filter((value) => !rows.some((row) => row.value === value));
+  if (values === undefined || values.length === 0) return undefined;
+  // What is left to choose says so itself: the field's own words may be about a value that went.
+  const description =
+    values.length === 1 ? `Always ${String(values[0])} in this build` : info.description;
+  return { ...info, values, description };
+}
+
+/** The operation verbs the command line offers: none of an entry a later step brings. */
+export function offeredVerbs(entries: readonly AnyEntry[]) {
+  return entries
+    .filter((entry) => isOffered(entry.name))
+    .flatMap((entry) => cliFaces(entry).map((face) => verbSpec(entry, face)))
+    .sort((a, b) => (a.verb < b.verb ? -1 : a.verb > b.verb ? 1 : 0));
+}
+
 /** One verb of `cli-spec.json`. */
 export function verbSpec(entry: AnyEntry, face: CliFace) {
   const fields = faceFields(entry, face);
@@ -95,8 +121,9 @@ export function verbSpec(entry: AnyEntry, face: CliFace) {
   ]);
   const flags: ReturnType<typeof flagSpec>[] = [];
   const inputOnly: string[] = [];
-  for (const info of fields.values()) {
-    if (skip.has(info.name)) continue;
+  for (const field of fields.values()) {
+    const info = offered(entry, field);
+    if (skip.has(field.name) || info === undefined) continue;
     if (info.scalar !== undefined || info.repeatable !== undefined)
       flags.push(flagSpec(info, face));
     else inputOnly.push(info.path);
@@ -127,9 +154,11 @@ export function verbSpec(entry: AnyEntry, face: CliFace) {
     actors: entry.actors,
     positionals: positional.map((name) => {
       const info = fields.get(name);
+      const readInto = face.readInto?.[name];
       return {
         name,
         field: info?.path ?? name,
+        ...(readInto === undefined ? {} : { readInto }),
         type: info?.scalar,
         required: info?.required ?? false,
         help: info?.description ?? "",
@@ -150,9 +179,7 @@ export function verbSpec(entry: AnyEntry, face: CliFace) {
 
 /** `cli-spec.json`: the operation verbs for A2's CLI parser, with error classes and exit codes. */
 export function cliSpec(entries: readonly AnyEntry[]) {
-  const verbs = entries
-    .flatMap((entry) => cliFaces(entry).map((face) => verbSpec(entry, face)))
-    .sort((a, b) => (a.verb < b.verb ? -1 : a.verb > b.verb ? 1 : 0));
+  const verbs = offeredVerbs(entries);
   return {
     version: 1,
     common: [

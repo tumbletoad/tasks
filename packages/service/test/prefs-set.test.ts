@@ -135,14 +135,20 @@ describe("[A3.3.4.prefs.set] the person changes a space's settings, and everythi
     expect(await effortOf(large)).toBe("L");
   });
 
-  test("the statuses are not changed yet: the refusal says so, and nothing is written", async () => {
+  test("the statuses are fixed in this build: the refusal and the read say so, and nothing is written", async () => {
     const before = await asOf();
     expect(await refusal(set(person, "tasks.statuses", "open,parked,waiting"))).toMatchObject({
       code: "invalid_input",
-      message: "Changing this setting is not built yet.",
+      message: "This setting is fixed in this build.",
     });
     expect(await asOf()).toBe(before);
     expect(await get("tasks.statuses")).toEqual(["open", "waiting", "review", "backlog"]);
+    for (const who of [person, script]) {
+      const read = PrefsManageResult.parse(
+        await call(who, "prefs.manage", { action: "describe", keys: ["tasks.statuses"] }),
+      );
+      expect(read.prefs[0]).toMatchObject({ writable: false, fixed: true });
+    }
   });
 
   test("a change that drops a size active tasks hold is refused naming them, and nothing changes", async () => {

@@ -20,7 +20,7 @@ import { CLI_BUILD, readServiceRecord, stateDir } from "./connect.ts";
 import { doctor, type DoctorOptions } from "./doctor.ts";
 import { helpText, shortHelp } from "./help.ts";
 import type { Io } from "./io.ts";
-import { MCP_VERB, runBridge } from "./mcp.ts";
+import { isBridge, runBridge } from "./mcp.ts";
 import { openCommand, servicePortCommand, type OpenOptions } from "./open.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
 import { rootsCommand } from "./roots.ts";
@@ -81,7 +81,7 @@ function serviceLine(io: Io): string {
 /** Runs one `ttasks` command and returns its exit code (A2 3.10.3). */
 export async function main(io: Io, options: MainOptions = {}): Promise<number> {
   const mcp = SLOTS.mcp;
-  if (io.argv[0] === MCP_VERB && mcp !== undefined) {
+  if (isBridge(io.argv) && mcp !== undefined) {
     return await mcp(io, splitGlobals([]).globals, io.argv.slice(1), options);
   }
   let split: ReturnType<typeof splitGlobals>;

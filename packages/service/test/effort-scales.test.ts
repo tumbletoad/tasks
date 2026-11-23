@@ -115,7 +115,7 @@ describe("[A1.3.16.prefs.effort-any] every reader takes the names of any stored 
     expect(missing.wrong).toContain(hintFor(["S", "M", "L"]));
     await w.call("prefs.manage", {
       action: "set",
-      set: [{ key: "tasks.effort_scale", value: null }],
+      set: [{ key: "tasks.effort_scale", reset: true }],
       base: await w.base(),
       request_id: w.rid(),
     });
