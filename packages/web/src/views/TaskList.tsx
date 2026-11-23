@@ -918,8 +918,8 @@ export function TaskList({
           });
       },
       // Stop answers at once: the entry says it is stopping until the service answers, and the
-      // record then says what ended. Without an answer the run shows as the service last said,
-      // with its Stop.
+      // record then says what ended. Without an answer the Stop may have arrived: the run shows as
+      // the service last said, with its Stop, and is read again.
       stop: (task, run) => {
         setStops((known) => new Map(known).set(run.id, run.version));
         const answered = () => {
@@ -940,9 +940,11 @@ export function TaskList({
             if (!live.failed(error)) {
               const readOnly = readOnlyReason(error);
               say(
-                readOnly === undefined
-                  ? t("run.stopFailed")
-                  : t("run.stopReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }),
+                readOnly !== undefined
+                  ? t("run.stopReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) })
+                  : refusedBy(error)
+                    ? t("run.stopFailed")
+                    : t("run.stopUnanswered"),
               );
             }
             loadRuns(task.id);

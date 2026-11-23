@@ -217,10 +217,10 @@ describe("[M6.page.run-follow] the page shows a run as the service has it", () =
     const after = withStops(list, new Map());
     expect(after).toBe(list);
     expect(runView(after[0] ?? working, "Codex").stoppable).toBe(true);
-    // A queued run shows stopped at once.
+    // A queued run stops as any other: only the service says it stopped before it started.
     expect(
       withStops([run({ state: "queued", version: 1 })], new Map([[working.id, 1]]))[0]?.state,
-    ).toBe("cancelled");
+    ).toBe("cancelling");
   });
 
   test("the row's marker: working, or needing the person, named by the instance's label", () => {
