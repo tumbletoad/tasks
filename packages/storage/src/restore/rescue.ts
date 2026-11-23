@@ -67,8 +67,8 @@ import { BUNDLE_POLICY, checkFreeSpace, existingFolder, freeBytes } from "../bac
 import { utcStamp } from "../backup/sidecar.ts";
 import { productTables, type ProductTable } from "../backup/snapshot.ts";
 import { writeJsonl, type JsonlReport } from "../bundle/jsonl.ts";
+import { backupFault } from "./fault.ts";
 import {
-  isBackupsOwnFailure,
   restoreBackupWith,
   type RestoredSpace,
   type RestoreOptions,
@@ -77,11 +77,11 @@ import {
 
 /**
  * Restores the newest complete backup of `spaceId` in `backupDir` that restores into the new folder
- * `target` (see the header), and names it. Only a candidate's own failure (restore.ts
- * isBackupsOwnFailure) moves on to the next older one. Any other stops the restore with its own
- * code, and nothing older is tried: the candidate may be whole, and an older one would bring back
- * older work as if it were the newest (BUNDLE_LIMIT_EXCEEDED for the free space or a size limit,
- * DURABILITY_FAILED for a failing disk). BACKUP_INVALID when none restores.
+ * `target` (see the header), and names it. Only a damaged candidate (fault.ts) moves on to the
+ * next older one. Any other failure stops the restore with its own code, and nothing older is
+ * tried: the candidate may be whole, and an older one would bring back older work as if it were
+ * the newest (BUNDLE_LIMIT_EXCEEDED for the free space or a size limit, DURABILITY_FAILED for a
+ * failing disk, STORAGE_SQL for SQLite out of memory). BACKUP_INVALID when none restores.
  */
 export async function restoreLatest(
   checked: CheckedDriver,
@@ -114,7 +114,7 @@ export async function restoreLatest(
         seams,
       );
     } catch (error) {
-      if (!isBackupsOwnFailure(error, backup.file)) throw error;
+      if (backupFault(error, backup.file) !== "damaged") throw error;
       continue;
     }
     return { restored, backup: backup.name };

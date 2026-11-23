@@ -61,6 +61,7 @@ import type { CheckedDriver } from "../startup-check.ts";
 import { BACKUP_TEMP_PREFIX, type BackupSidecar } from "../backup/sidecar.ts";
 import { bundleInvalid } from "../bundle/read.ts";
 import { claimSpace, type Claim } from "./claim.ts";
+import { backupFault } from "./fault.ts";
 import {
   renameFolder,
   swapIntoPlace,
@@ -289,35 +290,15 @@ export async function trialRestore(
   }
 }
 
-/** Codes that say a backup itself does not restore, whatever disk it is restored to. */
-const BACKUPS_OWN: ReadonlySet<string> = new Set([
-  "BACKUP_INVALID",
-  "SPACE_INVALID",
-  "SPACE_TOO_NEW",
-  "SPACE_VERSION_UNKNOWN",
-]);
-
-/**
- * Whether a restore of the backup `file` failed for the backup's own sake: its files or its
- * database are not what a restore takes, or it went away before the restore held it (its `.db.gz`
- * is gone). Any other failure (the disk restored to, its free space, a size limit, a bug) says
- * nothing about the backup.
- */
-export function isBackupsOwnFailure(error: unknown, file: string): boolean {
-  if (!(error instanceof StorageError)) return false;
-  if (error.code === "SPACE_NOT_FOUND") return !fsCall(() => existsSync(file));
-  return BACKUPS_OWN.has(error.code);
-}
-
 /** What a trial restore found. */
 export type TrialVerdict =
   /** The restore ran to its end: the backup restores. */
   | { readonly state: "verified"; readonly sidecar: BackupSidecar }
-  /** The backup does not restore (isBackupsOwnFailure). */
+  /** The backup does not restore: it is damaged (fault.ts). */
   | { readonly state: "failed" }
   /**
-   * The trial stopped for a reason that is not the backup's: too little free space beside it for
-   * the trial (BUNDLE_LIMIT_EXCEEDED), a failing disk, a bug (no code). Nothing is known of it.
+   * The trial could not check the backup (fault.ts): too little free space beside it for the trial
+   * (BUNDLE_LIMIT_EXCEEDED), no memory, a failing disk, a bug (no code). Nothing is known of it.
    */
   | { readonly state: "unchecked"; readonly code?: string };
 
@@ -333,7 +314,7 @@ export async function verifyBackupFile(
       ? { state: "verified", sidecar: source.sidecar }
       : { state: "failed" };
   } catch (error) {
-    if (isBackupsOwnFailure(error, backupFile)) return { state: "failed" };
+    if (backupFault(error, backupFile) === "damaged") return { state: "failed" };
     return error instanceof StorageError
       ? { state: "unchecked", code: error.code }
       : { state: "unchecked" };

@@ -25,7 +25,7 @@ import type { CheckedDriver } from "../startup-check.ts";
 import { ALL_OBJECTS, isDropped } from "../backup/snapshot.ts";
 import { remakeSearchIndex } from "../search/remake.ts";
 import { claimInTransaction } from "./claim.ts";
-import { isContentFailure } from "./unpack.ts";
+import { backupFault } from "./fault.ts";
 
 /** The state `space.transfer` holds for a read-only copy (A6 3.5's `read_only_copy`). */
 export const READ_ONLY_COPY = "restored_copy";
@@ -106,9 +106,9 @@ export function markReadOnlyCopy(
 
 /**
  * A restore's first write `write` on the unpacked copy `db`, which no other connection has open,
- * through its own writer, whose close checkpoints the -wal into the file. A refusal by the copy
- * itself (a definition or a row that fails the write, a mark it did not keep) is the source's
- * fault: `invalid`, with the cause's code. Anything else (a full or failing disk, a file that
+ * through its own writer, whose close checkpoints the -wal into the file. A finding about the
+ * copy's content (fault.ts: corrupt pages, a mark it did not keep) is the source's fault:
+ * `invalid`, with the cause's code. Anything else (no memory, a full or failing disk, a file that
  * cannot be opened, a bug) is not, and passes on as itself.
  */
 export function firstWrite<T>(
@@ -127,8 +127,8 @@ export function firstWrite<T>(
       conn.close();
     }
   } catch (error) {
-    if (!isContentFailure(error)) throw error;
-    throw invalid(`its database refuses the restore's first write (${error.code})`);
+    if (backupFault(error) !== "damaged") throw error;
+    throw invalid(`its database refuses the restore's first write (${(error as StorageError).code})`);
   }
 }
 

@@ -725,7 +725,7 @@ describe("[A1.5.restore.not-the-backup] a trial restore the surroundings stop is
 });
 
 describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran to their first write on a scratch copy", () => {
-  test("a backup whose restore fails at its first write is never verified, and never the reason another backup is removed", async () => {
+  test("a backup whose restore fails at its first write for a reason SQLite does not call damage is never verified, never the reason another backup is removed, and never passed over for older work", async () => {
     const checked = await checkedDriver();
     // A schema whose restore refuses its read-only mark once the space has three commits: the
     // exact-schema rule passes it, since its own steps made it (stand-in-steps.ts).
@@ -753,8 +753,9 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
     const parent = folders.make();
     await unpackBackup(checked, newer.file, join(parent, "unpacked.db"), {}, { steps });
 
-    // Verification, marking and retention together: the plan would remove the older backup, and
-    // only the older one restores, so it is the newest verified one and stays.
+    // Verification, marking and retention together: the plan would remove the older backup. The
+    // newer one's first write fails with SQLITE_ERROR (an integer overflow), which names no damage:
+    // it could not be checked, so nothing is removed and the older one is not taken in its place.
     const listing = listBackups(dir);
     const plan = planRetention(
       listing,
@@ -764,36 +765,40 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
     expect(plan.remove).toEqual([older.name]);
     const [first, second] = listing.backups;
     if (first === undefined || second === undefined) throw new Error("two backups expected");
-    expect(await verifyBackup(checked, first, { steps })).toEqual({ state: "failed" });
+    expect(await verifyBackup(checked, first, { steps })).toEqual({
+      state: "unchecked",
+      code: "STORAGE_SQL",
+    });
     expect(await verifyBackup(checked, second, { steps })).toEqual({
       state: "verified",
       sidecar: older.sidecar,
     });
     const applied = await applyRetention(checked, listing, plan, { steps });
-    expect(applied).toEqual({ removed: [], verified: older.name, unverified: [newer.name] });
+    expect(applied).toEqual({
+      removed: [],
+      verified: undefined,
+      unverified: [],
+      unchecked: { name: newer.name, code: "STORAGE_SQL" },
+    });
     expect(existsSync(older.file) && existsSync(older.sidecarFile)).toBe(true);
     // The trials left nothing beside the backups.
     expect(readdirSync(dir).sort()).toEqual(
       [older.file, older.sidecarFile, newer.file, newer.sidecarFile].map((f) => basename(f)).sort(),
     );
 
-    // A restore refuses the newer one for the same reason, and leaves no folder; the older one
-    // restores, and `restore latest` goes past the newer one to it.
+    // A restore of the newer one stops with SQLite's code and leaves no folder, and so does
+    // `restore latest`, rather than bring back the older work as the newest. The older one
+    // restores when it is named.
     await expectCode(
       () => restoreBackupWith(checked, newer.file, join(parent, "a"), {}, { steps }),
-      "BACKUP_INVALID",
+      "STORAGE_SQL",
     );
-    expect(existsSync(join(parent, "a"))).toBe(false);
+    await expectCode(
+      () => restoreLatest(checked, dir, space.spaceId, join(parent, "c"), {}, { steps }),
+      "STORAGE_SQL",
+    );
+    expect(existsSync(join(parent, "a")) || existsSync(join(parent, "c"))).toBe(false);
     await restoreBackupWith(checked, older.file, join(parent, "b"), {}, { steps });
-    const latest = await restoreLatest(
-      checked,
-      dir,
-      space.spaceId,
-      join(parent, "c"),
-      {},
-      { steps },
-    );
-    expect(latest.backup).toBe(older.name);
   });
 
   test("a backup whose copy refuses a claim is never verified: the mark's transaction runs the claim and takes it back", async () => {

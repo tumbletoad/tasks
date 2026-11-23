@@ -29,7 +29,7 @@ import { EXPORT_MARKER, EXPORT_VERSION, exportText } from "../src/bundle/export-
 import { readBundle } from "../src/bundle/read.ts";
 import { checkEntryName, ZipWriter } from "../src/bundle/zip.ts";
 import { BUNDLE_POLICY, type BundlePolicy } from "../src/backup/policy.ts";
-import { StorageError } from "../src/errors.ts";
+import { sqliteError, StorageError } from "../src/errors.ts";
 import { CheckedDriver } from "../src/startup-check.ts";
 import { NODE_IO } from "../src/files.ts";
 import { newId, osRandom } from "../src/ids.ts";
@@ -1222,7 +1222,8 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
 
   test("an export whose bundle a restore would refuse at its first write is refused, and nothing is published", async () => {
     const checked = await checkedDriver();
-    // A schema whose restore refuses its read-only mark once the space has three commits.
+    // A schema whose restore refuses its read-only mark once the space has three commits, with
+    // SQLITE_ERROR (an integer overflow).
     const steps = STEPS_MARK_GUARD;
     const { folder } = await createFixtureSpace(folders.make(), "mira", {}, steps);
     await writeCommits(folder, 1, "s", steps);
@@ -1230,9 +1231,9 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     await writeCommits(folder, 2, "t", steps);
     const error = await expectCode(
       () => exportBundleWith(checked, folder, { mode: "backup" }, { steps }),
-      "BUNDLE_INVALID",
+      "BACKUP_FAILED",
     );
-    expect(error.message).toContain("first write");
+    expect(error.message).toContain("STORAGE_SQL");
     expect(readdirSync(join(folder, "exports"))).toEqual([first.name]);
   });
 
@@ -1380,24 +1381,96 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
 
 describe("[A1.5.restore.not-the-backup] a failure that is not the backup's is said as itself", () => {
   /**
-   * The checked driver, except that the first open of a database whose path holds `marker` fails
-   * with `code`, as a failing disk would.
+   * The checked driver, except that the `nth` open (default the first) of a database whose path
+   * holds `marker` fails with `error`, as a failing disk or a machine out of memory would.
    */
-  async function failingOnce(marker: string, code: "DURABILITY_FAILED"): Promise<CheckedDriver> {
+  async function failingOnce(
+    marker: string,
+    error: StorageError | "DURABILITY_FAILED",
+    nth = 1,
+  ): Promise<CheckedDriver> {
     const base = (await checkedDriver()).driver;
-    let failed = false;
+    let opens = 0;
     return CheckedDriver.check({
       name: base.name,
       open: (path, opts) => {
-        if (!failed && path.includes(marker)) {
-          failed = true;
-          throw new StorageError(code, "A disk error");
+        if (path.includes(marker) && ++opens === nth) {
+          throw typeof error === "string" ? new StorageError(error, "A disk error") : error;
         }
         return base.open(path, opts);
       },
       backup: (src, dest, opts) => base.backup(src, dest, opts),
     });
   }
+
+  /** What SQLite raises when it runs out of memory: SQLITE_NOMEM, a generic STORAGE_SQL. */
+  const NO_MEMORY = (): StorageError => sqliteError(7);
+
+  test("SQLite running out of memory while the newest backup is checked or first written stops restore latest, and the older backup is not restored", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const at = Date.UTC(2026, 10, 14);
+    await backupSpace(checked, folder, { kind: "manual", now: () => at - 2_000 });
+    await writeCommits(folder, 3);
+    const newest = await backupSpace(checked, folder, { kind: "manual", now: () => at - 1_000 });
+    const parent = folders.make();
+    // The first open of the staged copy is its check, the second the restore's first write.
+    for (const nth of [1, 2]) {
+      const failing = await failingOnce(".mira.restoring-", NO_MEMORY(), nth);
+      await expectCode(
+        () => restoreLatest(failing, dir, space.spaceId, join(parent, "mira")),
+        "STORAGE_SQL",
+      );
+      expect(readdirSync(parent)).toEqual([]);
+    }
+    const { backup } = await restoreLatest(checked, dir, space.spaceId, join(parent, "mira"));
+    expect(backup).toBe(newest.name);
+  });
+
+  test("SQLite running out of memory in a trial restore leaves the backup unchecked, and a restore by name says it as itself", async () => {
+    const { folder } = await createFixtureSpace(folders.make());
+    const checked = await checkedDriver();
+    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const [listed] = listBackups(join(folder, "backups")).backups;
+    if (listed === undefined) throw new Error("a backup expected");
+    for (const nth of [1, 2]) {
+      const failing = await failingOnce(".backup.tmp-", NO_MEMORY(), nth);
+      expect(await verifyBackup(failing, listed)).toEqual({
+        state: "unchecked",
+        code: "STORAGE_SQL",
+      });
+    }
+    const parent = folders.make();
+    await expectCode(
+      async () =>
+        restoreBackup(
+          await failingOnce(".mira.restoring-", NO_MEMORY()),
+          backup.file,
+          join(parent, "mira"),
+        ),
+      "STORAGE_SQL",
+    );
+    expect(readdirSync(parent)).toEqual([]);
+  });
+
+  test("a backup whose database SQLite finds corrupt is damaged: restore latest takes the older one, and its trial restore fails", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const at = Date.UTC(2026, 10, 14);
+    const older = await backupSpace(checked, folder, { kind: "manual", now: () => at - 2_000 });
+    await writeCommits(folder, 3);
+    await backupSpace(checked, folder, { kind: "manual", now: () => at - 1_000 });
+    const parent = folders.make();
+    const corrupt = await failingOnce(".mira.restoring-", sqliteError(11));
+    const { backup } = await restoreLatest(corrupt, dir, space.spaceId, join(parent, "mira"));
+    expect(backup).toBe(older.name);
+    const [newest] = listBackups(dir).backups;
+    if (newest === undefined) throw new Error("a backup expected");
+    const notADatabase = await failingOnce(".backup.tmp-", sqliteError(26));
+    expect(await verifyBackup(notADatabase, newest)).toEqual({ state: "failed" });
+  });
 
   test("an I/O error on the destination while the newest backup is checked stops restore latest, and the older backup is not restored", async () => {
     const checked = await checkedDriver();
