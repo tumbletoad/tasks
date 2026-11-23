@@ -29,19 +29,38 @@ const settled = (page: Page) =>
     ),
   );
 
-/** Each theme of this browser at both widths, the drawer open at 390 px; axe clean in the menu. */
-async function shots(page: Page, world: World, name: string, openShelf = false): Promise<void> {
+/**
+ * Each theme of this browser at both widths, axe clean in the menu, no sideways scroll. `menu`: at
+ * 390 px the drawer opens, with Archived opened in it for `shelf`; `page`: the page itself.
+ */
+async function shots(
+  page: Page,
+  world: World,
+  name: string,
+  menu: "drawer" | "shelf" | "page" = "drawer",
+): Promise<void> {
   for (const theme of themes()) {
     await world.machine("ui.theme", theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme, { timeout: SLOW_MS });
     await settled(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await picture(page, `archived-${name}-${theme}-1440.png`);
-    if (pictures()) expect(await axeFound(page, ["nav"]), `axe in ${theme}`).toEqual([]);
+    const part = menu === "page" ? "main" : "nav";
+    if (pictures()) expect(await axeFound(page, [part]), `axe in ${theme}`).toEqual([]);
     await page.setViewportSize({ width: 390, height: 900 });
+    const scroll = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(scroll, "sideways scroll at 390 px").toBe(0);
+    if (menu === "page") {
+      await settled(page);
+      await picture(page, `archived-${name}-${theme}-390.png`);
+      if (pictures()) expect(await axeFound(page, [part]), `axe in ${theme}`).toEqual([]);
+      continue;
+    }
     await page.getByRole("button", { name: "Menu" }).click();
     const drawer = page.getByRole("dialog", { name: "Views and areas" });
-    if (openShelf) {
+    if (menu === "shelf") {
       await shelf(drawer).click();
       await expect(shelf(drawer)).toHaveAttribute("aria-expanded", "true");
     }
@@ -49,10 +68,6 @@ async function shots(page: Page, world: World, name: string, openShelf = false):
     await picture(page, `archived-${name}-${theme}-390.png`);
     if (pictures())
       expect(await axeFound(page, ['[role="dialog"]']), `axe in ${theme}`).toEqual([]);
-    const scroll = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    );
-    expect(scroll, "sideways scroll at 390 px").toBe(0);
     await page.keyboard.press("Escape");
     await expect(drawer).toHaveCount(0);
   }
@@ -117,7 +132,7 @@ test.describe("[A5.archived.e2e.sidebar] an archived area or project is out of t
     await expect(archived.getByRole("link", { name: `${attic}, 2 tasks` })).toBeVisible();
     await expect(archived.getByRole("link", { name: "Boxes, 1 task" })).toBeVisible();
     await expect(archived.getByRole("link", { name: `${garage} › Bikes, 1 task` })).toBeVisible();
-    await shots(page, world, "shelf", true);
+    await shots(page, world, "shelf", "shelf");
 
     // Its open tasks are still in Open.
     await sidebar(page)
@@ -147,6 +162,7 @@ test.describe("[A5.archived.e2e.sidebar] an archived area or project is out of t
     await expect(row.locator('[data-part="area"]')).toHaveAccessibleName(
       `Area, ${attic}, archived`,
     );
+    await shots(page, world, "page", "page");
 
     // Unarchive brings it back into the areas, in its place; Undo puts it away again.
     await line.getByRole("button", { name: "Unarchive" }).click();

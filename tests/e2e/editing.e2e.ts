@@ -458,6 +458,8 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await page.keyboard.press("Control+z");
     await expect(toast(page)).toHaveText("Undone");
     await expect.poll(areaOf).toBe("Home");
+    // The page has the undo too: its row is drawn again then, which would close a list opened before.
+    await expect(pill).toHaveAccessibleName("Area, Home");
 
     // A new name close to an area: the area comes first, the new one is the next choice down.
     await pill.focus();
