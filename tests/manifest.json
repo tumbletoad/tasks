@@ -5605,6 +5605,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.archived.e2e.address",
+      "title": "In Chromium and Firefox against the real service: a project without an area, moved into an area and the move undone while its page is open, and old links to either address, each show the project's open task, take the project's present address without a step for Back, and the top field says where a plain capture goes (the Inbox without an area, the area and project with one) and files it there",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.archived.service.where",
       "title": "group.manage create and folder.manage add_project answer with the new project's area and whether it is archived, for a name that resolves to an archived area by slug, by an old slug and by exact case beside another case; a live area is named without",
       "owner": "M5",

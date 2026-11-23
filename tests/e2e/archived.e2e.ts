@@ -404,6 +404,102 @@ test.describe("[A5.archived.e2e.added-where] New project says where the project 
   });
 });
 
+test.describe("[A5.archived.e2e.address] a project's page is the project's, whatever its address says", () => {
+  test("a project moved into an area and the move undone: its page on either address lists its open task, takes the present address without a step for Back, and the top field files where the project is now", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const hut = `Hut ${tag}`;
+    const yard = `Yard ${tag}`;
+    const paint = `Paint the hut (${tag})`;
+    await world.op(world.mira.id, "task.add", { tasks: [{ title: paint, project: hut }] });
+    await world.op(world.mira.id, "group.manage", { action: "create", path: yard });
+    const hutId = (await listed(world)).projects.find((p) => p.name === hut)?.id ?? "";
+    expect(hutId).not.toBe("");
+    const yardId = await areaIdOf(world, yard);
+    const loose = `/s/${world.mira.id}/project/${hutId}`;
+    const nested = `/s/${world.mira.id}/area/${yardId}/project/${hutId}`;
+    const listedTask = page.locator("main li[data-task]").filter({ hasText: paint });
+    const chips = capture(page).getByRole("listitem");
+    const steps = () => page.evaluate(() => history.length);
+    const at = (path: string) => expect(page).toHaveURL((url) => url.pathname === path);
+    const move = async () => {
+      const { as_of: base } = (await world.op(world.mira.id, "group.manage", {
+        action: "list",
+      })) as { as_of: string };
+      await world.op(world.mira.id, "group.manage", { action: "move", path: hutId, to: yard, base });
+    };
+
+    await signIn(page, world, loose);
+    await showsSpace(page, world.mira.name);
+    await expect(listedTask).toBeVisible({ timeout: SLOW_MS });
+    // Without an area, a plain capture goes to the Inbox, and the field says so as it is typed.
+    await adding(page).fill(`Sweep the hut (${tag})`);
+    await expect(chips).toHaveText(["Inbox"]);
+    await adding(page).fill("");
+
+    // Moved into an area while the page is open: the page follows it to its present address.
+    const before = await steps();
+    await move();
+    await at(nested);
+    expect(await steps()).toBe(before);
+    await expect(listedTask).toBeVisible();
+    await adding(page).fill(`Fix the door (${tag})`);
+    await expect(chips).toHaveText([`${yard} › ${hut}`]);
+    await adding(page).fill("");
+
+    // The move undone: the page follows it back.
+    await world.op(world.mira.id, "history.undo", {});
+    await at(loose);
+    expect(await steps()).toBe(before);
+    await expect(listedTask).toBeVisible();
+
+    // An old link under the area it left: the project's page, its task, and a capture that goes
+    // where the project is, the Inbox.
+    await page.goto(new URL(nested, page.url()).href);
+    await showsSpace(page, world.mira.name);
+    await at(loose);
+    await expect(listedTask).toBeVisible({ timeout: SLOW_MS });
+    const sweep = `Sweep the hut (${tag})`;
+    await adding(page).fill(sweep);
+    await expect(chips).toHaveText(["Inbox"]);
+    await adding(page).press("Enter");
+    await expect(toast(page)).toHaveText("Added to Inbox");
+    expect(await taskOf(world, sweep)).toMatchObject({ inbox: true });
+
+    // Moved again, an old link without the area: its page under the area, and a capture in it.
+    await move();
+    await page.goto(new URL(loose, page.url()).href);
+    await showsSpace(page, world.mira.name);
+    await at(nested);
+    await expect(listedTask).toBeVisible({ timeout: SLOW_MS });
+    const door = `Fix the door (${tag})`;
+    await adding(page).fill(door);
+    await expect(chips).toHaveText([`${yard} › ${hut}`]);
+    await adding(page).press("Enter");
+    await expect(toast(page)).toHaveText(`Added to ${yard} › ${hut}`);
+    expect(await taskOf(world, door)).toMatchObject({ area: yard, project: hut });
+    await expect(page.locator("main li[data-task]").filter({ hasText: door })).toBeVisible();
+  });
+});
+
+/** The task titled `title`, as task.get gives it. */
+async function taskOf(
+  world: World,
+  title: string,
+): Promise<{ inbox: boolean; area?: string; project?: string }> {
+  const found = (await world.op(world.mira.id, "task.search", {
+    q: title.split(" ")[0] ?? "",
+    scope: "all",
+  })) as { rows: { ref: string; title: string }[] };
+  const ref = found.rows.find((r) => r.title === title)?.ref ?? "";
+  const { task } = (await world.op(world.mira.id, "task.get", { task: ref })) as {
+    task: { inbox: boolean; area?: string; project?: string };
+  };
+  return task;
+}
+
 interface Listed {
   areas: { id: string; name: string; projects: { id: string; name: string }[] }[];
   /** The projects without an area. */

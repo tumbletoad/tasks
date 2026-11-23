@@ -341,8 +341,14 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
         : { area: hereArea, ...(hereProject === undefined ? {} : { project: hereProject }) };
     return parseCapture(text, { today: clock.today, areas, projects, archived, here, kept });
   }, [text, clock.today, areas, projects, archived, hereArea, hereProject, kept]);
-  // What the text's shortcuts became, and an archived group a `#name` named instead.
-  const read = capture.chips.length > 0 || capture.archived !== undefined;
+  // On a group's page a capture usually lands in that group: one that goes to the Inbox instead (a
+  // project without an area, an archived group, the page's chip taken off) says so.
+  const toInbox =
+    (params.area !== undefined || params.project !== undefined) &&
+    capture.archived === undefined &&
+    !capture.chips.some((chip) => chip.kind === "area" || chip.kind === "waiting");
+  // What the text's shortcuts became, an archived group a `#name` named instead, or the Inbox.
+  const read = capture.chips.length > 0 || capture.archived !== undefined || toInbox;
   const typed = searching ? undefined : groupTyped(text, caret);
   const suggestions = typed === undefined ? [] : groupSuggestions(typed.typed, areas, projects);
 
@@ -554,6 +560,11 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
                     </li>
                   );
                 })}
+                {toInbox ? (
+                  <li className={styles.chip} data-kind="inbox">
+                    <span>{t("capture.inbox")}</span>
+                  </li>
+                ) : null}
                 {capture.archived === undefined ? null : (
                   <li className={styles.chip} data-kind="archived">
                     <span dir="auto">{t("capture.archived", { name: capture.archived })}</span>
