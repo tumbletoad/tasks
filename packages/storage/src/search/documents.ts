@@ -145,21 +145,20 @@ const decoded = (text: string): string => {
   }
 };
 
+/** A link's scheme, its user and password, then its address and path up to a query or fragment. */
+const LINK_PARTS = /^(?:[a-z][a-z\d+.-]*:)?(?:\/\/(?:[^/?#]*@)?)?(?<address>[^?#]*)/iu;
+
 /**
- * What a person reads as a link's own words: its host without `www.` and its path, decoded. The
- * scheme and `www` stand in nearly every link, so they would find every linked task; a query is
- * mostly tracking and session values. A link with no host keeps what follows its scheme.
+ * What a person reads as a link's own words: its address as they typed it (a host in its own
+ * script, with its port, without `www.`) and its path, decoded, for any link or text that only
+ * looks like one. The scheme and `www` stand in nearly every link, so they would find every linked
+ * task; a query and a fragment are mostly tracking and session values; a user and password are
+ * not the page's words, and a password must never find a task.
  */
 function linkWords(url: unknown): string | null {
   if (typeof url !== "string" || url === "") return null;
-  let link: URL;
-  try {
-    link = new URL(url);
-  } catch {
-    return url;
-  }
-  if (link.host === "") return decoded(url.slice(link.protocol.length));
-  return `${link.hostname.replace(/^www\./u, "")}${decoded(link.pathname)}`;
+  const address = LINK_PARTS.exec(url)?.groups?.["address"] ?? "";
+  return decoded(address.replace(/^www\./iu, ""));
 }
 
 function taskDocument(

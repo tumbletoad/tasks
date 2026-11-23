@@ -367,6 +367,47 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(ids(await search({ q: "source:issue:sample-42" }))).toEqual([task]);
   });
 
+  test("a link's words are its address and path, whatever its form", async () => {
+    const links = [
+      "mailto:deskword@example.test?subject=marigoldsubject#tulipfrag",
+      "example.test/gardenword?sort=orchidsort#lilyfrag",
+      "https://keeperword:hunterpass@bücherhalle.example:8471/Eintrag?x=asterquery#teilfrag",
+    ];
+    const tasks = created(
+      submit(
+        fx,
+        links.map((_, i) => ({ kind: "task.create", title: `Link form ${String(i)}` })),
+      ),
+    );
+    const added = submit(
+      fx,
+      links.map((url, i) => ({
+        kind: "source.add",
+        task: tasks[i] ?? "",
+        source: { kind: "web", title: "Page", url },
+      })),
+    );
+    expect(added.status).toBe("applied");
+    const [mail, bare, web] = tasks;
+    expect(ids(await search({ q: "deskword" }))).toEqual([mail]);
+    expect(ids(await search({ q: "gardenword" }))).toEqual([bare]);
+    // The host as a person typed it, not its punycode, and its explicit port.
+    expect(ids(await search({ q: "bücherhalle eintrag" }))).toEqual([web]);
+    expect(ids(await search({ q: "8471" }))).toEqual([web]);
+    for (const hidden of [
+      "marigoldsubject",
+      "tulipfrag",
+      "orchidsort",
+      "lilyfrag",
+      "keeperword",
+      "hunterpass",
+      "asterquery",
+      "teilfrag",
+    ]) {
+      expect(ids(await search({ q: hidden })), hidden).toEqual([]);
+    }
+  });
+
   test("filters: an area includes its projects, priority, focus, ids and has:", async () => {
     expect(ids(await search({ q: "rankword area:Lumen" }))).toEqual([lumen]);
     expect(ids(await search({ q: "rankword p<=2" }))).toEqual([starred]);
