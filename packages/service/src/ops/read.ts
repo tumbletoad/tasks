@@ -792,8 +792,8 @@ export async function readHereTasks(
 const storedOf = (row: unknown) => storedPreference(isPlain(row) ? row : undefined);
 
 /**
- * The keys of `tasks.statuses` or `tasks.effort_scale` from its row (`value`, `schema_ver`): the
- * stored list when it fits its declared shape, else the default (A1 3.16).
+ * The keys of `tasks.statuses` or `tasks.effort_scale` from its row (`value`, `schema_ver`), as the
+ * registry reads them (A1 3.16).
  */
 export function keysOf(key: "tasks.statuses" | "tasks.effort_scale", row: unknown): string[] {
   const { value } = readPreference(key, storedOf(row));

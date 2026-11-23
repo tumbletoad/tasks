@@ -61,6 +61,11 @@ export interface PreferenceSpec {
   readonly policy: boolean;
   /** The value shape's version. A stored value with a newer one is read-only here (A1 3.16). */
   readonly schemaVer: number;
+  /**
+   * What a reader still takes from a stored value the shape refuses or a newer build wrote, in the
+   * shape; undefined when nothing can be taken and the default is read.
+   */
+  readonly salvage?: (value: unknown) => PrefValue | undefined;
   /** One line for `describe` (A3 3.4.11). */
   readonly summary: string;
   /** A feature flag (A1 3.16). A graduated flag stays readable and is ignored. */
@@ -78,6 +83,13 @@ const STATUS_KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
 /** The longest effort key: the scale's and every task input's, so each size can be used. */
 export const EFFORT_KEY_MAX = 20;
 const EFFORT_KEY = new RegExp(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,${String(EFFORT_KEY_MAX - 1)}}$`);
+/** The most sizes a space has. */
+export const EFFORT_SCALE_MAX = 10;
+/**
+ * The sizes of a space that stores none. Never changed: an older build on the same space reads
+ * the same sizes.
+ */
+export const EFFORT_FALLBACK: readonly string[] = ["S", "M", "L"];
 /** An instance's key in machine.toml (A4 3.2). */
 const INSTANCE_KEY = /^[a-z0-9][a-z0-9_.-]{0,63}$/;
 /** An area's or project's slug (A1 3.3). */
@@ -149,11 +161,12 @@ export const PREFERENCES: readonly PreferenceSpec[] = [
         fields: { key: { type: "text", max: EFFORT_KEY_MAX, pattern: EFFORT_KEY } },
       },
       min: 1,
-      max: 10,
+      max: EFFORT_SCALE_MAX,
       unique: "key",
     },
-    default: [{ key: "S" }, { key: "M" }, { key: "L" }],
+    default: EFFORT_FALLBACK.map((key) => ({ key })),
     summary: "The effort keys a task may take, smallest first",
+    salvage: (value) => effortKeys(value)?.map((key) => ({ key })),
   }),
   pref("tasks.dedupe_window_days", {
     scope: "space",
@@ -263,6 +276,24 @@ function isLine(value: unknown, max: number): value is string {
     !NOT_ONE_LINE.test(value) &&
     Array.from(value).length <= max
   );
+}
+
+/**
+ * The size names of a stored effort scale of any version: a list of 1 to EFFORT_SCALE_MAX objects
+ * that each have a `key` of one line, whatever their other fields, each name once. Undefined for
+ * anything else. A name a later version allows (a space inside) is taken too, so this build offers
+ * the sizes the space has rather than ones it removed.
+ */
+export function effortKeys(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length < 1 || value.length > EFFORT_SCALE_MAX)
+    return undefined;
+  const keys: string[] = [];
+  for (const item of value) {
+    const key = isRecord(item) ? item["key"] : undefined;
+    if (!isLine(key, EFFORT_KEY_MAX) || key.trim() !== key) return undefined;
+    if (!keys.includes(key)) keys.push(key);
+  }
+  return keys;
 }
 
 const PATH_MAX = 1_024;
@@ -378,6 +409,8 @@ export interface StoredPreference {
  * - `default`: nothing stored, or a value reset with null.
  * - `invalid`: a stored value that does not fit; the default is used.
  * - `newer`: a newer build's value: kept unchanged and read-only here; the default is used.
+ * A declaration's `salvage` reads what it can of a value that does not fit or is newer: `set` or
+ * `newer` then carries what it took instead of the default.
  */
 export interface PreferenceRead {
   readonly key: string;
@@ -396,17 +429,20 @@ export function preferenceValue(
     state,
   });
   if (stored === undefined) return fallback("default");
-  if (stored.schemaVer > spec.schemaVer) return fallback("newer");
   let value: unknown;
   try {
     value = JSON.parse(stored.value) as unknown;
   } catch {
-    return fallback("invalid");
+    value = undefined;
   }
-  if (value === null) return fallback("default");
-  return fitsShape(spec.shape, value)
-    ? { key: spec.key, value: value as PrefValue, state: "set" }
-    : fallback("invalid");
+  const newer = stored.schemaVer > spec.schemaVer;
+  if (value === null && !newer) return fallback("default");
+  if (!newer && fitsShape(spec.shape, value)) {
+    return { key: spec.key, value: value as PrefValue, state: "set" };
+  }
+  const salvaged = spec.salvage?.(value);
+  if (salvaged === undefined) return fallback(newer ? "newer" : "invalid");
+  return { key: spec.key, value: salvaged, state: newer ? "newer" : "set" };
 }
 
 /**

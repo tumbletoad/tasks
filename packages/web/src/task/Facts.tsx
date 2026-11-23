@@ -25,7 +25,7 @@ import { formatDay, formatInstant, localDate, type Clock } from "../row/dates.ts
 import { contextFor, renderRow } from "../row/model.ts";
 import { sayMsg } from "../row/say.ts";
 import { useLive } from "../store/hooks.ts";
-import type { TaskRow } from "../store/rows.ts";
+import { effortOptions, type TaskRow } from "../store/rows.ts";
 import { AreaPicker } from "./AreaPicker.tsx";
 import { DuePicker } from "./DuePicker.tsx";
 import css from "./Expanded.module.css";
@@ -404,10 +404,7 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
 
   const statuses: string[] = [...state.scales.statuses];
   if (!statuses.includes(task.status)) statuses.push(task.status);
-  const efforts: string[] = [...state.scales.efforts];
-  if (task.effort !== undefined && task.effort !== "" && !efforts.includes(task.effort)) {
-    efforts.push(task.effort);
-  }
+  const efforts = effortOptions(state.scales, task.effort);
   // Priority and effort share their columns, so their options sit under each other.
   const shared = Math.max(columnsFor(PRIORITIES.length), columnsFor(efforts.length));
   return (

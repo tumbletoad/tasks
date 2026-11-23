@@ -1,8 +1,9 @@
 // A space's preferences as readers take them (A1 3.16): every stored row through the registry of
 // @ttasks/contracts, so a value that does not fit its declared shape, a reset one and a newer
-// build's all read as the default, and no reader keeps a parsing rule of its own. A stored key this
-// build does not declare is kept in the table and never read (an older build never drops a newer
-// build's settings). Call these inside a read or write transaction.
+// build's read as the declaration says (the default, or what its `salvage` takes), and no reader
+// keeps a parsing rule of its own. A stored key this build does not declare is kept in the table
+// and never read (an older build never drops a newer build's settings). Call these inside a read
+// or write transaction.
 import {
   PREFERENCES,
   preferenceSpec,

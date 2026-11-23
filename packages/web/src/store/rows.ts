@@ -4,6 +4,7 @@
 // message or row the page cannot read is no message or row.
 //
 // Rows are the service's compact rows: a field that is null in the space is absent.
+import { EFFORT_FALLBACK, effortKeys } from "@ttasks/contracts/preferences";
 import type { Instance } from "../api.ts";
 
 export interface TaskRow {
@@ -224,18 +225,24 @@ export interface Scales {
 /** A space's scales until its preferences say otherwise (`tasks.statuses`, `tasks.effort_scale`). */
 export const DEFAULT_SCALES: Scales = {
   statuses: ["open", "waiting", "review", "backlog"],
-  efforts: ["S", "M", "L"],
+  efforts: EFFORT_FALLBACK,
 };
 
-/** A status or effort key as the preference allows it (contracts' `STATUS_KEY`). */
-const SCALE_KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
+/** The sizes a task's card offers: the space's, then the task's own if the scale lost it. */
+export function effortOptions(scales: Scales, effort: string | undefined): string[] {
+  const options = [...scales.efforts];
+  if (effort !== undefined && effort !== "" && !options.includes(effort)) options.push(effort);
+  return options;
+}
 
-/** A list of keys read from a preference's value: undefined unless every item is one. */
-function keysOf(value: unknown, item: (v: unknown) => unknown): string[] | undefined {
+/** A status key as the preference allows it (contracts' `STATUS_KEY`). */
+const STATUS_KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/;
+
+/** The status keys read from a preference's value: undefined unless every item is one. */
+function statusesOf(value: unknown): string[] | undefined {
   if (!Array.isArray(value) || value.length === 0 || value.length > 20) return undefined;
-  const keys = value.map(item);
-  return keys.every((k): k is string => typeof k === "string" && SCALE_KEY.test(k))
-    ? [...new Set(keys)]
+  return value.every((k): k is string => typeof k === "string" && STATUS_KEY.test(k))
+    ? [...new Set(value)]
     : undefined;
 }
 
@@ -246,13 +253,9 @@ export function scalesOf(list: unknown): Scales {
     const found: unknown = list.find((p: unknown) => isRecord(p) && p["key"] === key);
     return isRecord(found) ? found["value"] : undefined;
   };
-  const statuses = keysOf(valueOf("tasks.statuses"), (v) => v);
-  const efforts = keysOf(valueOf("tasks.effort_scale"), (v) =>
-    isRecord(v) ? v["key"] : undefined,
-  );
   return {
-    statuses: statuses ?? DEFAULT_SCALES.statuses,
-    efforts: efforts ?? DEFAULT_SCALES.efforts,
+    statuses: statusesOf(valueOf("tasks.statuses")) ?? DEFAULT_SCALES.statuses,
+    efforts: effortKeys(valueOf("tasks.effort_scale")) ?? DEFAULT_SCALES.efforts,
   };
 }
 

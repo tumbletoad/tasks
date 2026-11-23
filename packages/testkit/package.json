@@ -11,6 +11,7 @@
   "dependencies": {
     "@ttasks/brand": "workspace:*",
     "@ttasks/bridge": "workspace:*",
+    "@ttasks/contracts": "workspace:*",
     "@ttasks/storage": "workspace:*"
   },
   "devDependencies": {

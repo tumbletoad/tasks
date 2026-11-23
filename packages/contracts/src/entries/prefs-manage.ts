@@ -9,6 +9,8 @@ import { AS_OF, AS_OF_NEXT, requestId } from "./fixture.ts";
 /** The longest string and the longest list a value the tool shows has. */
 const STRING_MAX = 64;
 const LIST_MAX = 20;
+/** A list sent as one text of keys and commas: room for the longest list any key takes. */
+const LIST_TEXT_MAX = 1_024;
 
 /**
  * A preference value in the tool's input: one option per JSON type the tool's keys take, and
@@ -16,7 +18,7 @@ const LIST_MAX = 20;
  * value against its key's own shape in the registry (preferences.ts), never an unrestricted value.
  */
 const PrefValue = z.union([
-  z.string().max(STRING_MAX),
+  z.string().max(LIST_TEXT_MAX),
   z.int().min(-1_000_000).max(1_000_000),
   z.boolean(),
   z.array(z.string().max(STRING_MAX)).max(LIST_MAX),

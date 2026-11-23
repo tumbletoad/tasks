@@ -1374,7 +1374,7 @@
                 "value": {
                   "anyOf": [
                     {
-                      "maxLength": 64,
+                      "maxLength": 1024,
                       "type": "string"
                     },
                     {
