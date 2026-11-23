@@ -36,6 +36,7 @@ import type { RowActions } from "./actions.ts";
 import { tileClick, type BusyOf, type FolderRefusal } from "./launch.ts";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
+import { keepTitleDraft, readTitleDraft, TITLE_MAX } from "./title-draft.ts";
 import {
   ChevronUpIcon,
   ClockIcon,
@@ -298,7 +299,9 @@ function Slots({
  * is the person's edit like any other (edits.ts), with the base taken when the editor opened: a
  * title someone else changed while the person typed is a conflict, never overwritten, and the
  * field says so while the person types. Leaving the window is not leaving the field: the editor
- * stays open with what was typed.
+ * stays open with what was typed. What is typed is kept in the browser until then (title-draft.ts):
+ * after a reload the editor opens with it again, and only the person's Enter or leaving the field
+ * saves it.
  */
 function TitleEditor({
   task,
@@ -312,23 +315,32 @@ function TitleEditor({
   const t = useT();
   const edits = useEdits();
   const { live } = useContext(Session);
+  const space = live.spaceId ?? "";
   const field = useRef<HTMLInputElement>(null);
   const done = useRef(false);
-  // Taken once, as the editor opens: the save's base is the title the person began to change.
-  const [opened] = useState(() => ({
-    base: live.store.asOf,
-    mark: edits.mark(),
-    title: task.title,
-  }));
+  // Taken once, as the editor opens: the save's base is the title the person began to change, also
+  // when a reload brought back what they typed.
+  const [opened] = useState(() => {
+    const kept = readTitleDraft(space, task.id);
+    return {
+      base: kept === undefined ? live.store.asOf : kept.base,
+      mark: edits.mark(),
+      title: kept?.title ?? task.title,
+      typed: kept?.typed,
+    };
+  });
   const before = opened.title;
   /** What the person typed, for a save when the editor goes away under them. */
   const typed = useRef<string | undefined>(undefined);
   const latest = useRef(task);
   latest.current = task;
   useEffect(() => {
-    field.current?.focus();
-    field.current?.select();
-  }, []);
+    const input = field.current;
+    input?.focus();
+    // What a reload brought back goes on from its end.
+    if (opened.typed === undefined) input?.select();
+    else input?.setSelectionRange(input.value.length, input.value.length);
+  }, [opened]);
   // The row goes away while the person types (the task leaves the view, the card collapses): what
   // they typed is saved, as leaving the field does, never dropped.
   useEffect(
@@ -336,6 +348,7 @@ function TitleEditor({
       const title = (typed.current ?? "").trim();
       if (done.current || title === "" || title === before) return;
       done.current = true;
+      keepTitleDraft(space, latest.current.id, undefined);
       edits.edit(
         latest.current,
         titleChange(title),
@@ -343,12 +356,13 @@ function TitleEditor({
       );
     },
     // The editor's own values, fixed while it is open.
-    [edits, before, opened],
+    [edits, before, opened, space],
   );
   /** `refocus`: Enter or Escape put focus back on the title; leaving the field keeps its target. */
   const finish = (keep: boolean, refocus: boolean) => {
     if (done.current) return;
     done.current = true;
+    keepTitleDraft(space, task.id, undefined);
     const title = (field.current?.value ?? "").trim();
     const line = field.current?.closest("[data-row-line]");
     // The title is drawn back before focus goes to it, within this key: a key pressed right after
@@ -371,11 +385,23 @@ function TitleEditor({
         ref={field}
         data-part="title-edit"
         aria-label={label}
-        defaultValue={before}
-        maxLength={500}
+        defaultValue={opened.typed ?? before}
+        maxLength={TITLE_MAX}
         dir="auto"
         onInput={(event) => {
-          typed.current = event.currentTarget.value;
+          const value = event.currentTarget.value;
+          typed.current = value;
+          keepTitleDraft(
+            space,
+            task.id,
+            value === before
+              ? undefined
+              : {
+                  typed: value,
+                  title: before,
+                  ...(opened.base === undefined ? {} : { base: opened.base }),
+                },
+          );
         }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
@@ -498,6 +524,13 @@ function RowView({
     if (!expanded) actions.expand(task);
     setEditing(true);
   };
+  // A title the person was typing when the page went away comes back in its editor with the card.
+  const space = live.spaceId ?? "";
+  useEffect(() => {
+    if (expanded && task.lifecycle === "active" && readTitleDraft(space, task.id) !== undefined) {
+      setEditing(true);
+    }
+  }, [expanded, space, task.id, task.lifecycle]);
   // The offset is a custom property set through the CSSOM (React's style object), which the CSP's
   // style-src allows; the stylesheet turns it into a transform. Nothing writes a style attribute.
   const position =

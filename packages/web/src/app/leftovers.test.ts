@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { Api } from "../api.ts";
 import { titleChange } from "../edit/change.ts";
 import { unsavedKeeper, unsavedTasks } from "../edit/keep.ts";
+import { keepTitleDraft, titleDraftTasks } from "../row/title-draft.ts";
 import { draftTasks, keepDraft } from "../task/composer.ts";
 import { forgetGone } from "./leftovers.ts";
 
@@ -38,10 +39,12 @@ beforeEach(() => {
 });
 
 describe("[A5.3.8.web.leftovers] the kept text of a task gone for good is forgotten when its space opens", () => {
-  test("a gone task's draft and waiting edit go; a known, finished or unreachable task keeps its own", async () => {
+  test("a gone task's draft, title being typed and waiting edit go; a known, finished or unreachable task keeps its own", async () => {
     for (const task of ["tk_live", "tk_done", "tk_gone", "tk_down", "nonsense"]) {
       keepDraft(SPACE, task, `Draft of ${task}`);
     }
+    keepTitleDraft(SPACE, "tk_gone", { typed: "Title of a gone task", title: "Gone" });
+    keepTitleDraft(SPACE, "tk_done", { typed: "Title of a done task", title: "Done" });
     unsavedKeeper(SPACE).save(
       new Map([
         [
@@ -72,6 +75,7 @@ describe("[A5.3.8.web.leftovers] the kept text of a task gone for good is forgot
     await forgetGone(SPACE, api, (task) => task === "tk_live");
     expect(asked.sort()).toEqual(["nonsense", "tk_done", "tk_down", "tk_gone"]);
     expect(draftTasks(SPACE).sort()).toEqual(["tk_done", "tk_down", "tk_live"]);
+    expect(titleDraftTasks(SPACE)).toEqual(["tk_done"]);
     expect(unsavedTasks(SPACE)).toEqual([]);
   });
 

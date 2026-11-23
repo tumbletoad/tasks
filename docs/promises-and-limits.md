@@ -218,6 +218,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   run. For Note this holds in the same browser under the same sign-in; for Run in the same browser
   within a day of the first press, also after signing in again.
 - What you are typing in a field stays when an agent changes that field or finishes the task.
+- A title you are typing and have not saved comes back in its editor after a reload or a crash of
+  the tab, in the same browser, and is saved only when you save it.
 - Today's Changes and the Agents page list the tasks agents changed in the last seven days, read
   from the space when the page opens: a reload or another tab shows the same.
 - Task text cannot run scripts or load remote images.
