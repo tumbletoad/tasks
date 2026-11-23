@@ -53,6 +53,8 @@ test.describe("[A7.3.12.m5-11.e2e.theme] The theme is this machine's: every tab 
   }) => {
     try {
       await watchViolations(page);
+      // The theme is the machine's: this test starts from the default, whatever ran before it.
+      await world.machine("ui.theme", null);
       await open(page, world, "/settings");
       await expect(html(page)).toHaveAttribute("data-theme", "sumi");
       const second = await page.context().newPage();
