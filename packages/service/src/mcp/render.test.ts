@@ -135,7 +135,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     const digest = example("task.get", 0);
     const task = digest["task"] as Json;
     task["title"] = cjk(200);
-    task["summary"] = cjk(240);
+    task["summary"] = cjk(400);
     task["context"] = long(800, "context line\n");
     task["instructions"] = Array.from({ length: 5 }, (_, n) => ({
       ref: `n${String(n + 1)}`,
@@ -167,10 +167,10 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
       who: long(120),
       cut: 200,
     }));
-    task["learnings"] = Array.from({ length: 20 }, () => cjk(1_024));
+    task["learnings"] = Array.from({ length: 3 }, () => cjk(300));
     task["outcome"] = long(600);
-    task["more"] = { instructions: 2, notes: 7, log: 47, sources: 5 };
-    task["cut"] = { title: 100, summary: 160, context: 64_736, outcome: 3_496 };
+    task["more"] = { instructions: 2, notes: 7, log: 47, sources: 5, learnings: 17 };
+    task["cut"] = { title: 100, context: 64_736, outcome: 3_496 };
     // get_task with every section.
     const sections = example("task.get", 1);
     sections["sections"] = {
@@ -202,7 +202,11 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
         title: cjk(300),
         who: long(120),
       })),
-      outcome: { outcome: long(4_096), wrap_state: "wrapped", learnings: task["learnings"] },
+      outcome: {
+        outcome: long(4_096),
+        wrap_state: "wrapped",
+        learnings: Array.from({ length: 20 }, () => cjk(1_024)),
+      },
       history: Array.from({ length: 20 }, (_, n) => ({
         seq: 1_000 + n,
         actor: "agent:claude-code",
@@ -309,7 +313,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     }));
     // The request path gives the five newest and counts the rest (task-view.ts).
     task["instructions"] = notes.slice(0, 5);
-    task["more"] = { instructions: 2, notes: 0, log: 0, sources: 0 };
+    task["more"] = { instructions: 2, notes: 0, log: 0, sources: 0, learnings: 0 };
     const text = renderResult("task.get", digest);
     const outside = split(text).outside;
     // A3 3.9.6: newest first, at most 5, and the line says how many there are.
@@ -336,7 +340,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     // The request path stops the digest at the first note over 1,000 characters (task-view.ts).
     Object.assign(digest["task"] as Json, {
       instructions: [],
-      more: { instructions: 2, notes: 0, log: 0, sources: 0 },
+      more: { instructions: 2, notes: 0, log: 0, sources: 0, learnings: 0 },
     });
     const text = renderResult("task.get", digest);
     // A3 3.9.6: each whole up to 1,000 characters or not at all, and the digest stops there.

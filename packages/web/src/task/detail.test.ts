@@ -21,7 +21,7 @@ const FACTS: TaskFacts = {
   notes: [],
   log: [],
   sources: [],
-  more: { instructions: 0, notes: 0, log: 0, sources: 0 },
+  more: { instructions: 0, notes: 0, log: 0, sources: 0, learnings: 0 },
   version: 7,
 };
 

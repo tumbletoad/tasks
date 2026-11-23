@@ -154,16 +154,14 @@ export function rowOfFacts(
   );
   const created = facts.created === undefined ? Number.NaN : Date.parse(facts.created);
   const due = facts.due;
-  // The digest bounds the title and summary (A3 3.9.6): a text it cut ends in an ellipsis, so the
-  // row never passes a shortened text off as the whole.
-  const whole = (text: string, cut: number | undefined) =>
-    cut === undefined || cut <= 0 ? text : `${text}…`;
-  const summary = whole(facts.summary, facts.cut?.summary);
+  // The digest bounds the title (A3 3.9.6): a title it cut ends in an ellipsis, so the row never
+  // passes a shortened text off as the whole.
+  const title = facts.cut?.title === undefined ? facts.title : `${facts.title}…`;
   return {
     id: facts.id,
     ref: facts.ref,
-    title: whole(facts.title, facts.cut?.title),
-    ...(summary === "" ? {} : { summary }),
+    title,
+    ...(facts.summary === "" ? {} : { summary: facts.summary }),
     status: facts.status,
     inbox: facts.inbox,
     lifecycle: facts.lifecycle,

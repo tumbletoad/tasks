@@ -152,17 +152,20 @@ const Learnings = z.array(z.string()).describe("Learnings");
  * and related learnings is M4.03's.
  */
 export const TaskDetail = TaskRow.extend({
-  summary: z.string().describe("One line: the next step"),
+  summary: z.string().describe("One line: the next step, whole"),
   context: z.string().describe("Markdown context: the first 800 characters"),
   waiting_on: z.string().describe("Who or what it waits on").optional(),
-  focus: z.boolean().describe("Starred for today"),
+  focus: z.boolean().describe("Starred: in Today's Focus until the star is cleared"),
   created: z.string().regex(patterns.instant).describe("When it was created").optional(),
   folder: DigestFolder.describe(
     "Where it opens on this machine; none: in the space's work folder",
   ).optional(),
   wrap_state: WrapState.optional(),
   outcome: z.string().describe("Outcome of the last completion").optional(),
-  learnings: Learnings,
+  learnings: z
+    .array(z.string())
+    .max(3)
+    .describe("Its first learnings: up to 3, each whole, up to 300 characters"),
   instructions: z
     .array(NoteOutput)
     .max(5)
@@ -176,12 +179,12 @@ export const TaskDetail = TaskRow.extend({
       notes: Count.describe("Other notes not here"),
       log: Count.describe("Log entries not here"),
       sources: Count.describe("Sources not here"),
+      learnings: Count.describe("Learnings not here"),
     })
     .describe("What the digest left out: read it with sections"),
   cut: z
     .strictObject({
       title: Cut.optional(),
-      summary: Cut.optional(),
       context: Cut.optional(),
       outcome: Cut.optional(),
     })
@@ -375,7 +378,7 @@ export const taskGet = defineEntry({
           ],
           log: [evidence],
           sources: [ticket],
-          more: { instructions: 0, notes: 0, log: 0, sources: 0 },
+          more: { instructions: 0, notes: 0, log: 0, sources: 0, learnings: 0 },
           version: 1040,
         },
         skills: [

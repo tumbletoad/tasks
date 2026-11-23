@@ -53,7 +53,10 @@ export const TaskUpdateInput = z.strictObject({
       area: safeLine(120).describe("Area name or slug").optional(),
       project: safeLine(120).describe("Project name or slug").optional(),
       folder: FolderInput.describe('"cwd", an absolute folder or one under ~').optional(),
-      focus: z.boolean().describe("Star it for today, only when the user asks").optional(),
+      focus: z
+        .boolean()
+        .describe("Star it: on Today until cleared. Only when the user asks")
+        .optional(),
     })
     .describe("Fields to change")
     .optional(),

@@ -5142,6 +5142,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.4.day.one-rule",
+      "title": "One table of cases for the day's rule, run through the page's Today and counts and through an agent's status and digest: the same tasks in Today and in the week in the same order (a backlog task only by its star, a star carried over from an earlier day, a plan, a due time on the viewer's calendar, the week as the six days after today), each active task counted once (the Inbox by its flag, else its status), and the same stars",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.4.web.today-page",
       "title": "Today in a DOM with the real live store: today's date shows once with the day's numbers, each a link to the search or view it counts, done this week from the service's finished tasks (a dash until it answers, read again when a task is finished and only then, dropped tasks left out), a tab shown again on a later day moves on to it, the sections are section elements under their headings with no view heading, an agent's update or completion leaves the expanded task where it is until it is collapsed, and Changes lists a task an agent changed off Today",
       "source": "A5 3.4, A5 3.15, A5 3.22, A7 3.12 M5.04",

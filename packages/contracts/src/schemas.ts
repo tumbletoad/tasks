@@ -176,7 +176,10 @@ export const TaskDraft = z.strictObject({
     .optional(),
   due: safeLine(40).describe("ISO date or phrase: fri, +3d").optional(),
   waiting_on: safeLine(80).describe("Who or what it waits on").optional(),
-  focus: z.boolean().describe("Star it for today, only when the user asks").optional(),
+  focus: z
+    .boolean()
+    .describe("Star it: on Today until cleared. Only when the user asks")
+    .optional(),
   created: PastInput.describe(
     "When it was created, only for work that existed before: ISO date or instant",
   ).optional(),
