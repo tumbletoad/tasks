@@ -291,6 +291,26 @@ const runKeys = (repeat: boolean) => {
 };
 
 describe("[M6.page.run-once] one press is one run, and a Run without an answer is not started twice", () => {
+  test("an instance that can only run here (no terminal opens it) offers its Run and no Open", async () => {
+    const runOnly: Instance = {
+      key: CODEX.key,
+      label: CODEX.label,
+      glyph: CODEX.glyph,
+      ring: CODEX.ring,
+      runs: true,
+    };
+    act(() => {
+      const at = snapshot();
+      live.store.push({ ...at, cursor: { ...at.cursor, seq: 11 }, instances: [runOnly] });
+      live.store.flush();
+    });
+    await settle();
+    expect(runButton()).not.toBeNull();
+    expect(
+      container.querySelector(`li[data-key="${TASK.id}"] button[data-part="open"]`),
+    ).toBeNull();
+  });
+
   test("until the service answers again, the same words carry the same request ID", async () => {
     expect(runButton()).not.toBeNull();
     down = true;

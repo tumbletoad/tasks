@@ -35,7 +35,8 @@ export interface Instance {
   readonly label: string;
   readonly glyph: string;
   readonly ring: number;
-  readonly route: string;
+  /** How Open opens it here; absent when it cannot, and the tile is for Run. */
+  readonly route?: string;
   /** It can work on a task in the background: Run. */
   readonly runs?: true;
 }

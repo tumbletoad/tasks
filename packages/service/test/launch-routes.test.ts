@@ -36,7 +36,9 @@ import {
   type SpawnedProcess,
 } from "@ttasks/launch";
 import { FAKE_CLI_AGENT, testEnv, type CliAgentReport } from "@ttasks/testkit";
+import type { Logger } from "../src/hub/log.ts";
 import { briefNames, chooseRoute, codexEntryOf, LaunchUnavailable } from "../src/launch/open.ts";
+import { LaunchService } from "../src/launch/service.ts";
 import { homeDigest, physicalHome } from "../src/setup/agents.ts";
 import { instanceToml, readLog, stateOf, tempRoot, waitFor } from "./harness.ts";
 import { errorOf, classSession } from "./ops-helpers.ts";
@@ -999,6 +1001,33 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
     expect(
       reason(() => chooseRoute({ ...codex, exec: undefined }, { ...here, terminal: true })),
     ).toBe("not_set_up");
+  });
+
+  test("where no terminal opens (macOS), each instance that can open or run for the space keeps its tile, offering what works", () => {
+    const root = tempRoot("chosen-tiles");
+    cleanups.push(root.cleanup);
+    const service = new LaunchService({
+      machine: "m_7c0hq2m4w9d8k1r6t3v5x0b2nf",
+      root: join(root.root, "launch"),
+      stateDir: join(root.root, "state"),
+      platform: "darwin",
+      env: {},
+      home: "/Users/mira",
+      spaces: () => [],
+      log: { log: () => undefined } as unknown as Logger,
+      instances: [
+        { ...base, id: "claude-plan", openPermission: "read-only" },
+        { ...base, id: "codex-x", target: "codex-cli" },
+        { ...base, id: "claude-elsewhere", spaces: ["Research"] },
+        { ...base, id: "t3-x", target: "t3", exec: undefined },
+        { ...base, id: "claude-off", enabled: false },
+      ],
+    });
+    // Claude Code opens through its link, saying what it left out; Codex only runs here.
+    expect(service.instances(SPACE.id).map((t) => [t.key, t.route ?? "runs only"])).toEqual([
+      ["claude-plan", "link"],
+      ["codex-x", "runs only"],
+    ]);
   });
 
   test("an instance set for some spaces opens only there, named by ID or name in any case", () => {

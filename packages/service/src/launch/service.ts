@@ -57,6 +57,7 @@ import {
   renderContextPack,
   resolveLaunchFolder,
   routeOf,
+  servesSpace,
   sanitiseComposer,
   instanceHome,
   isOpenLaunch,
@@ -107,6 +108,7 @@ import type { ServedSpace } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
 import { readRestoredLaunches, type TaskFolder } from "../ops/read.ts";
+import { runsWith } from "../runs/agent.ts";
 import { agentHomeOf, homeDigest, physicalHome } from "../setup/agents.ts";
 import {
   briefNames,
@@ -146,7 +148,8 @@ export interface LaunchInstance {
   readonly glyph: string;
   /** One of the eight ring slots of A5 3.19. */
   readonly ring: number;
-  readonly route: Route;
+  /** How Open opens it here; absent when it cannot, and it only runs in the background. */
+  readonly route?: Route;
 }
 
 /**
@@ -635,25 +638,27 @@ export class LaunchService {
   }
 
   /**
-   * The instances Open can open a task of `space` in on this machine (A5 3.6's tiles), in
-   * machine.toml's order: the ones that have a route for it here now (chooseRoute). Copy is not an
-   * instance.
+   * The instances that can do something for a task of `space` on this machine (A5 3.6's tiles), in
+   * machine.toml's order: the ones for the space (servesSpace) that Open has a route for here now
+   * (chooseRoute), or that can run in the background. Copy is not an instance.
    */
   instances(space: string): LaunchInstance[] {
     const out: LaunchInstance[] = [];
     for (const instance of this.#instances()) {
-      let choice: Choice;
+      if (!instance.enabled || !servesSpace(instance, this.#spaceOf(space))) continue;
+      let route: Route | undefined;
       try {
-        choice = this.#route(instance, space);
+        route = this.#route(instance, space).route;
       } catch {
-        continue;
+        route = undefined;
       }
+      if (route === undefined && !runsWith(instance)) continue;
       out.push({
         key: instance.id,
         label: instance.label,
         glyph: glyphOf(instance),
         ring: (out.length % 8) + 1,
-        route: choice.route,
+        ...(route === undefined ? {} : { route }),
       });
     }
     return out;
@@ -1095,8 +1100,13 @@ ${instance}`;
       terminal: this.#terminalReady(),
       home: this.#options.home,
       platform: this.#options.platform,
-      space: { id: space, name: this.#options.spaces().find((s) => s.id === space)?.name },
+      space: this.#spaceOf(space),
     });
+  }
+
+  /** The space as an instance's `spaces` name it: its ID, and its name when it is served. */
+  #spaceOf(space: string): { readonly id: string; readonly name: string | undefined } {
+    return { id: space, name: this.#options.spaces().find((s) => s.id === space)?.name };
   }
 
   /**

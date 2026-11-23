@@ -54,7 +54,8 @@ export interface UiInstance {
   readonly glyph: string;
   /** One of the eight ring slots of A5 3.19. */
   readonly ring: number;
-  readonly route: Route;
+  /** How Open opens it here; absent when Open cannot, and the tile is for Run. */
+  readonly route?: Route;
   /** It can work on a task in the background (Run). Absent: it cannot. */
   readonly runs?: true;
 }
@@ -249,7 +250,8 @@ export function checkInstances(list: readonly UiInstance[]): UiInstance[] {
       !Number.isInteger(item.ring) ||
       item.ring < 1 ||
       item.ring > 8 ||
-      !isRoute(item.route)
+      (item.route !== undefined && !isRoute(item.route)) ||
+      (item.route === undefined && item.runs !== true)
     ) {
       continue;
     }
@@ -259,7 +261,7 @@ export function checkInstances(list: readonly UiInstance[]): UiInstance[] {
       label: item.label,
       glyph: item.glyph,
       ring: item.ring,
-      route: item.route,
+      ...(item.route === undefined ? {} : { route: item.route }),
       ...(item.runs === true ? { runs: true } : {}),
     });
   }
