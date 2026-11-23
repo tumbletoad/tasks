@@ -4,7 +4,7 @@
 // and every kind is listed, let go and heard of in one way. Discard takes only the value it was
 // shown, and a change made in another tab is heard as one made here.
 import { PRODUCT_ID } from "@ttasks/brand";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { priorityChange, titleChange } from "./edit/change.ts";
 import type { Unsaved } from "./edit/edits.ts";
 import { browserKept } from "./kept.ts";
@@ -33,6 +33,7 @@ const otherTab = (tab: string, typed: string, task = TASK) => {
 
 /** A refused edit of the task, as the edits hand it to the keeper. */
 const refused = (change: ReturnType<typeof titleChange>, task = TASK): Unsaved => ({
+  id: crypto.randomUUID(),
   task,
   ref: "M-1",
   field: change.fields[0] ?? "title",
@@ -53,6 +54,40 @@ beforeEach(() => {
 });
 
 describe("[A5.while-away.web.title-tabs] each tab keeps the title it types", () => {
+  test("a duplicated tab is a tab of its own: the original's reload finds its title and its refused edit, and a copy of the tab takes neither for its own", async () => {
+    const typed = { typed: "Book the hall", title: "Book" };
+    keepTitleDraft(SPACE, TASK, typed);
+    const line = refused(priorityChange(1));
+    unsavedKeeper(SPACE).save(keyed(line));
+
+    // The tab's own reload: the page leaves, and the next one is the same tab.
+    window.dispatchEvent(new Event("pagehide"));
+    vi.resetModules();
+    const reloaded = await import("./unsent.ts");
+    expect(reloaded.readTitleDraft(SPACE, TASK)).toEqual(typed);
+    expect(
+      reloaded
+        .unsavedKeeper(SPACE)
+        .load()
+        .map((u) => u.id),
+    ).toEqual([line.id]);
+
+    // Duplicated: the browser hands the copy the tab's own storage as it is while the page lives.
+    vi.resetModules();
+    const copy = await import("./unsent.ts");
+    expect(copy.readTitleDraft(SPACE, TASK)).toBeUndefined();
+    expect(copy.keptTitles(SPACE, TASK).map((kept) => kept.mine)).toEqual([false]);
+    expect(copy.unsavedKeeper(SPACE).load()).toEqual([]);
+    // What the copy keeps takes nothing of the original's away.
+    copy.unsavedKeeper(SPACE).save(new Map());
+    expect(
+      reloaded
+        .unsavedKeeper(SPACE)
+        .load()
+        .map((u) => u.id),
+    ).toEqual([line.id]);
+  });
+
   test("this tab reads and lets go of its own words only; another tab's are listed as theirs until the person discards them", () => {
     otherTab("othertab", "Book the hall in April");
     expect(readTitleDraft(SPACE, TASK)).toBeUndefined();

@@ -44,9 +44,9 @@ export function KeptTitles({
                 ? "edit.notSavedTrash"
                 : mine
                   ? "edit.notSavedFinished"
-                  : "title.otherTabFinished",
+                  : "edit.otherTabFinished",
             )
-          : t("title.otherTab")}
+          : t("edit.otherTab")}
       </span>
       <button
         type="button"

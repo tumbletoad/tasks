@@ -70,6 +70,7 @@ describe("[A5.3.8.web.leftovers] the kept text of a space's tasks when the space
         [
           "tk_gone\u0000title",
           {
+            id: crypto.randomUUID(),
             task: "tk_gone",
             ref: "M-9",
             field: "title",

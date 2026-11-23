@@ -269,9 +269,13 @@ the behaviour it describes, and keep each one to a sentence or two.
 ## The page
 
 - A field edit that failed or conflicted stays visible until you decide what to do with it, also
-  after a reload, and so does one still waiting behind your previous edit when the page closed. Try
-  again sends it against what you saw when you made it, so a change made since is shown to you
-  first.
+  after a reload, and so does one still waiting behind your previous edit when the page closed.
+  Each tab's is kept on its own: two tabs' edits of one field both show under it, with their words.
+  Try again sends it against what you saw when you made it, so a change made since is shown to you
+  first. Another tab's edit, or a closed tab's, shows with Copy and Discard: to send its words,
+  copy them into the field.
+- A field sends only what you typed in it. Going in and out of a field without typing sends
+  nothing, and it then shows what is saved, also a change someone made while you were in it.
 - Pressing Note or Run again after its answer was lost, also after a reload, makes one note or
   run. For Note this holds in the same browser under the same sign-in; for Run in the same browser
   within a day of the first press, also after signing in again.
@@ -374,8 +378,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   you discard them.
 - A field edit that could not be saved is kept in this browser. Another browser does not have it,
   clearing the browser's data for the page loses it, and a browser whose storage is blocked or full
-  keeps it only until the page is reloaded or closed. When two tabs hold different unsaved values
-  for the same field of a task, the browser keeps one of them.
+  keeps it only until the page is reloaded or closed.
 - Undo, redo and restore compare folders by the text they were given in, not by what is on disk.
   One folder reached by two spellings, such as through a link, can end up on two projects that
   way.

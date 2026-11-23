@@ -14,7 +14,8 @@ import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
 import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
 import { Thread } from "../task/Thread.tsx";
-import { keepTitleDraft, readTitleDraft } from "../unsent.ts";
+import { keepTitleDraft, readTitleDraft, unsavedKeeper } from "../unsent.ts";
+import { priorityChange, waitingChange } from "../edit/change.ts";
 import type { DetailLog } from "../task/detail.ts";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
@@ -393,6 +394,78 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     ]);
   });
 
+  test.each<readonly [string, (field: HTMLInputElement | null) => void]>([
+    ["without typing", () => undefined],
+    [
+      "after typing back what was there",
+      (field: HTMLInputElement | null) => {
+        type(field, "Ana Reyes!");
+        type(field, "Ana Reyes");
+      },
+    ],
+  ])(
+    "who it waits on, changed by someone else under an open field the person leaves %s: nothing is sent, ever, and the field shows the new value",
+    (_, touch) => {
+      const tasks = [task(1, { status: "waiting", waiting_on: "Ana Reyes" }), task(2)];
+      mount(<TaskList view="open" filter={OPEN} empty="" />);
+      apply(snapshot(tasks));
+      expand("t_00001");
+      const field = waitingField("t_00001");
+      act(() => {
+        field?.focus();
+      });
+      touch(field);
+      apply(
+        batch(
+          11,
+          [task(1, { status: "waiting", waiting_on: "Ben Ito", version: 2 })],
+          ["waiting_on"],
+        ),
+      );
+      act(() => {
+        field?.blur();
+      });
+      expect(field?.value).toBe("Ben Ito");
+      // In and out again, still without typing: Codex's value stays.
+      act(() => {
+        field?.focus();
+      });
+      act(() => {
+        field?.blur();
+      });
+      expect(waitingSets()).toEqual([]);
+      expect(field?.value).toBe("Ben Ito");
+    },
+  );
+
+  test("who it waits on, typed while someone else changes it: the change shows under the field, and leaving sends the typed words against what the person saw", () => {
+    const tasks = [task(1, { status: "waiting", waiting_on: "Ana Reyes" }), task(2)];
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot(tasks));
+    expand("t_00001");
+    const field = waitingField("t_00001");
+    act(() => {
+      field?.focus();
+    });
+    type(field, "Cleo");
+    apply(
+      batch(
+        11,
+        [task(1, { status: "waiting", waiting_on: "Ben Ito", version: 2 })],
+        ["waiting_on"],
+      ),
+    );
+    expect(field?.value).toBe("Cleo");
+    const card = container.querySelector('li[data-key="t_00001"]');
+    expect(card?.querySelector('[data-part="remote"]')?.textContent).toContain("Codex");
+    act(() => {
+      field?.blur();
+    });
+    expect(waitingSets()).toEqual([
+      expect.objectContaining({ set: { waiting_on: "Cleo" }, base: "1.10.01234567" }),
+    ]);
+  });
+
   test("who it waits on stays, with what was typed, when someone else moves the task out of Waiting", () => {
     const tasks = [task(1, { status: "waiting" }), task(2)];
     mount(<TaskList view="open" filter={OPEN} empty="" />);
@@ -557,20 +630,24 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
   });
 
   test("an edit kept from before the space was restored is not sent again: its line says why, shows the value, and offers Copy and Discard", async () => {
-    // Kept by a page of the space's earlier history: another incarnation than the screen's. It is
-    // the only kept edit (earlier tests leave theirs in the browser's storage).
+    // Kept by this tab before a reload, on a page of the space's earlier history: another
+    // incarnation than the screen's. It is the only kept edit.
     localStorage.clear();
-    const name = `${PRODUCT_ID}.unsaved.${SPACE.id}.t_00001.priority`;
-    localStorage.setItem(
-      name,
-      JSON.stringify({
-        task: "t_00001",
-        ref: "M-1",
-        field: "priority",
-        reason: "failed",
-        base: "1.10.zzzzzzzz",
-        source: { kind: "priority", level: 1 },
-      }),
+    unsavedKeeper(SPACE.id).save(
+      new Map([
+        [
+          "t_00001 priority",
+          {
+            id: crypto.randomUUID(),
+            task: "t_00001",
+            ref: "M-1",
+            field: "priority",
+            change: priorityChange(1),
+            reason: "failed",
+            base: "1.10.zzzzzzzz",
+          },
+        ],
+      ]),
     );
     try {
       mount(<TaskList view="open" filter={OPEN} empty="" />);
@@ -586,11 +663,212 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
       act(() => {
         line?.querySelector<HTMLElement>('[data-part="keep-theirs"]')?.click();
       });
-      expect(localStorage.getItem(name)).toBeNull();
+      expect(Object.keys(localStorage).filter((key) => key.includes(".t_00001."))).toEqual([]);
       expect(updates).toEqual([]);
     } finally {
-      localStorage.removeItem(name);
+      localStorage.clear();
     }
+  });
+
+  describe("kept edits of who it waits on", () => {
+    /** Each update waits until the test refuses it: `refuse()` the oldest one still waiting. */
+    const held: ((error: Error) => void)[] = [];
+    const refuse = (error: Error = Object.assign(new Error("down"), { code: "internal" })) => {
+      held.shift()?.(error);
+    };
+    const conflict = () =>
+      Object.assign(new Error("conflict"), {
+        code: "conflict",
+        data: {
+          cause: "VERSION_CONFLICT",
+          conflicts: [
+            {
+              task: "M-1",
+              field: "waiting_on",
+              value: "Ben Ito",
+              version: 2,
+              by: "Codex",
+              at: new Date().toISOString(),
+            },
+          ],
+        },
+      });
+    /** The browser's kept edits of the field: each name with its value. */
+    const keptHere = () =>
+      Object.fromEntries(
+        Object.keys(localStorage)
+          .filter((key) => key.includes(`.${SPACE.id}.t_00001.waiting_on`))
+          .sort()
+          .map((key) => [key, localStorage.getItem(key)]),
+      );
+    const card = () => container.querySelector('li[data-key="t_00001"]');
+    const lines = () => [...(card()?.querySelectorAll('[data-part="unsaved"]') ?? [])];
+    const valueOf = (line: Element | undefined) =>
+      line?.querySelector('[data-part="unsaved-value"]')?.textContent;
+
+    beforeEach(() => {
+      localStorage.clear();
+      held.length = 0;
+      (api.client.task as { update: unknown }).update = (input: Record<string, unknown>) => {
+        updates.push(input);
+        return new Promise((_, reject) => held.push(reject));
+      };
+    });
+    afterEach(() => {
+      localStorage.clear();
+    });
+
+    /** The card of a waiting task, with this tab's edit of who it waits on refused. */
+    const refusedHere = async (words: string) => {
+      mount(<TaskList view="open" filter={OPEN} empty="" />);
+      apply(snapshot([task(1, { status: "waiting", waiting_on: "Dee Park" })]));
+      expand("t_00001");
+      const field = waitingField("t_00001");
+      act(() => {
+        field?.focus();
+      });
+      type(field, words);
+      press(field, "Enter");
+      await settle();
+      refuse();
+      await settle();
+      return field;
+    };
+
+    test("another tab's kept edits show their words, where they came from, Copy and Discard, and nothing that sends them; Try again on this tab's own leaves them as they were, while on its way and refused again", async () => {
+      await refusedHere("Ana Reyes");
+      // Two other tabs' refusals of the same field.
+      act(() => {
+        for (const [n, words] of [
+          [2, "Ben Ito"],
+          [3, "Cleo"],
+        ] as const) {
+          unsavedKeeper(SPACE.id).save(
+            new Map([
+              [
+                "t_00001\u0000waiting_on",
+                {
+                  id: crypto.randomUUID(),
+                  task: "t_00001",
+                  ref: "M-1",
+                  field: "waiting_on",
+                  change: waitingChange(words),
+                  reason: "failed",
+                  base: `1.${String(n)}.01234567`,
+                },
+              ],
+            ]),
+          );
+        }
+      });
+      const values = () => [valueOf(lines()[0]), ...lines().slice(1).map(valueOf).sort()];
+      expect(values()).toEqual(["Ana Reyes", "Ben Ito", "Cleo"]);
+      for (const line of lines().slice(1)) {
+        expect(line.textContent).toContain("Typed in another tab");
+        expect(line.querySelector('[data-part="copy-mine"]')).not.toBeNull();
+        expect(line.querySelector('[data-part="keep-theirs"]')).not.toBeNull();
+      }
+      const before = keptHere();
+      expect(Object.keys(before)).toHaveLength(3);
+      // Every button that sends a line leaves the others' words in the browser.
+      const sending = card()?.querySelectorAll<HTMLElement>('[data-part="apply-mine"]') ?? [];
+      expect(sending).toHaveLength(1);
+      for (const button of sending) {
+        act(() => {
+          button.click();
+        });
+        await settle();
+        expect(keptHere()).toEqual(before);
+      }
+      // Try again sends the base the person made the edit at.
+      expect(updates.at(-1)).toMatchObject({
+        set: { waiting_on: "Ana Reyes" },
+        base: "1.10.01234567",
+      });
+      // Refused again: the same kept edit, once, and the other tabs' as they were.
+      refuse();
+      await settle();
+      expect(keptHere()).toEqual(before);
+      expect(values()).toEqual(["Ana Reyes", "Ben Ito", "Cleo"]);
+      // Discard on another tab's line takes only its words.
+      const gone = valueOf(lines()[2]);
+      act(() => {
+        lines()[2]?.querySelector<HTMLElement>('[data-part="keep-theirs"]')?.click();
+      });
+      expect(values()).toEqual(["Ana Reyes", "Ben Ito", "Cleo"].filter((v) => v !== gone));
+    });
+
+    test("a lone kept edit of this tab, under a field that shows the saved value, shows its words with Copy; its Try again is named by the field", async () => {
+      const field = await refusedHere(
+        "Ana Reyes of the north office, who signs the lease for the new hall",
+      );
+      expect(field?.value).toBe("Dee Park");
+      const [line] = lines();
+      expect(valueOf(line)).toBe(
+        "Ana Reyes of the north office, who signs the lease for the new hall",
+      );
+      expect(line?.querySelector('[data-part="copy-mine"]')).not.toBeNull();
+      expect(line?.querySelector('[data-part="apply-mine"]')?.getAttribute("aria-label")).toBe(
+        "Try again: who it waits on",
+      );
+    });
+
+    test("typed on while the first save is on its way and an agent changes the field: the next edit's base is what the person was looking at", async () => {
+      mount(<TaskList view="open" filter={OPEN} empty="" />);
+      apply(snapshot([task(1, { status: "waiting", waiting_on: "Dee Park" })]));
+      expand("t_00001");
+      const field = waitingField("t_00001");
+      act(() => {
+        field?.focus();
+      });
+      type(field, "Ana");
+      press(field, "Enter");
+      await settle();
+      apply(
+        batch(
+          11,
+          [task(1, { status: "waiting", waiting_on: "Ben Ito", version: 2 })],
+          ["waiting_on"],
+        ),
+      );
+      // The field shows the person's first edit, not Codex's change behind it.
+      expect(field?.value).toBe("Ana");
+      type(field, "Ana Reyes");
+      press(field, "Enter");
+      refuse(conflict());
+      await settle();
+      expect(
+        waitingSets().map((u) => [(u["set"] as { waiting_on: string }).waiting_on, u["base"]]),
+      ).toEqual([
+        ["Ana", "1.10.01234567"],
+        ["Ana Reyes", "1.10.01234567"],
+      ]);
+    });
+
+    test("after a change by someone else shows, typing the old value back and pressing Enter sends it against what the person began from", () => {
+      mount(<TaskList view="open" filter={OPEN} empty="" />);
+      apply(snapshot([task(1, { status: "waiting", waiting_on: "Ana Reyes" })]));
+      expand("t_00001");
+      const field = waitingField("t_00001");
+      act(() => {
+        field?.focus();
+      });
+      type(field, "Ana Reyes!");
+      apply(
+        batch(
+          11,
+          [task(1, { status: "waiting", waiting_on: "Ben Ito", version: 2 })],
+          ["waiting_on"],
+        ),
+      );
+      expect(card()?.querySelector('[data-part="remote"]')?.textContent).toContain("Codex");
+      type(field, "Ana Reyes");
+      press(field, "Enter");
+      expect(field?.value).toBe("Ana Reyes");
+      expect(waitingSets()).toEqual([
+        expect.objectContaining({ set: { waiting_on: "Ana Reyes" }, base: "1.10.01234567" }),
+      ]);
+    });
   });
 
   test("a title a reload brought back whose save was on its way: when the title arrives as those words, the editor closes and lets them go", async () => {
