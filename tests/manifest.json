@@ -5075,6 +5075,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.11.web.row-base",
+      "title": "A row's action goes with the base of the task as its row shows it: an Inbox row held under focus after an agent moved the task to Waiting sends Move to Open against the version it shows, so the service refuses it as a conflict instead of overwriting the agent's change",
+      "source": "A5 3.11, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.15.web.overlay-clear",
       "title": "An own write's overlay can clear a task's fields (unstarring clears focus_on) and the confirmed row comes back when the write settles",
       "source": "A5 3.15, A7 3.12 M5.03",
