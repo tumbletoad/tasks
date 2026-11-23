@@ -185,7 +185,6 @@
   "agents.needsYou": "Needs you",
   "agents.working": "Working",
   "agents.other": "With an agent",
-  "agents.state": "{state, select, idle {Idle} shell {At a shell} suspended {Suspended} unseen {Not seen by {monitor}} other {State unknown}}",
   "agents.of": "{count, plural, one {# agent on this task} other {# agents on this task}}",
   "agents.kind": "{kind, select, run {Background run} other {Agent in a terminal}}",
   "computer.heading": "On this computer",

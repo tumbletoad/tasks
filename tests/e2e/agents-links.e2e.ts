@@ -124,17 +124,13 @@ test.describe("[A5.agents.e2e.links] each agent shows once, with its task and it
       await showsSpace(page, world.mira.name);
       await expect(rowIn(page, "Needs you", refs.asks)).toBeVisible({ timeout: SLOW_MS });
       await expect(rowIn(page, "Working", refs.works)).toBeVisible();
-      await expect(
-        group(page, "With an agent")
-          .getByRole("group", { name: "Idle" })
-          .locator(`li[data-task="${refs.rests}"]`),
-      ).toBeVisible();
+      // The group has no heading per state: each agent's line says its state.
+      const stateOf = (ref: string) =>
+        rowIn(page, "With an agent", ref).locator('[data-part="agent"] [data-state]');
+      await expect(stateOf(refs.rests)).toHaveText("Idle");
       // The agent the monitor does not report is not seen after two of its answers.
-      await expect(
-        group(page, "With an agent")
-          .getByRole("group", { name: "Not seen by TTAM" })
-          .locator(`li[data-task="${refs.gone}"]`),
-      ).toBeVisible({ timeout: SLOW_MS });
+      await expect(stateOf(refs.gone)).toHaveText("Not seen by TTAM", { timeout: SLOW_MS });
+      await expect(group(page, "With an agent").getByRole("group")).toHaveCount(0);
       // Each once: "On this computer" lists the agent of no task, and none of the three.
       const computer = page.locator('[data-part="computer"]');
       await expect(computer).toContainText("Fixture session of no task");

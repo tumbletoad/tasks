@@ -125,7 +125,13 @@ export function mergeAgents(
     const current =
       agents.find((a) => a.current) ??
       (run !== undefined && others.length > 0
-        ? { key: `run:${row.id}`, state: run, session: null, started: "run" as const, current: true }
+        ? {
+            key: `run:${row.id}`,
+            state: run,
+            session: null,
+            started: "run" as const,
+            current: true,
+          }
         : undefined);
     // An agent inside a conversation that waits for the person asks as much as its parent would.
     const states = [

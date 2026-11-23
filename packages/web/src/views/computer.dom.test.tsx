@@ -546,8 +546,14 @@ const layout = () =>
     .filter((e) => e.closest('[data-part="computer"], [data-part="usage"]') === null)
     .map((e) => (e.tagName === "LI" ? e.dataset["task"] : `${e.tagName}:${e.textContent}`));
 
+/** The states the agents beneath the task `ref` say, in order. */
+const statesOf = (ref: string) =>
+  [...container.querySelectorAll(`li[data-task="${ref}"] [data-part="agent"]`)].map(
+    (li) => li.querySelector("[data-state]:not(li)")?.textContent,
+  );
+
 describe("[A5.agents.web-merge] an agent working on a task of this space is shown as the task's row", () => {
-  test("by its state: needs you, working, or under its own state with an agent; never twice", async () => {
+  test("by its state: needs you, working, or with an agent, its line saying which; never twice", async () => {
     const [waits, works, idle, shell, unknown, unseen] = [2, 3, 4, 5, 6, 7].map((n) => task(n));
     if (!waits || !works || !idle || !shell || !unknown || !unseen) throw new Error("no rows");
     await mount([working, waits, works, idle, shell, unknown, unseen]);
@@ -573,14 +579,16 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
       "M-1",
       "M-3",
       "H2:With an agent",
-      "H3:Idle",
       "M-4",
-      "H3:At a shell",
       "M-5",
-      "H3:State unknown",
       "M-6",
-      "H3:Not seen by TTAM",
       "M-7",
+    ]);
+    expect(["M-4", "M-5", "M-6", "M-7"].flatMap(statesOf)).toEqual([
+      "Idle",
+      "At a shell",
+      "State unknown",
+      "Not seen by TTAM",
     ]);
     // "On this computer" lists only the agent no row above shows.
     expect(sessions().map(([title]) => title)).toEqual(["Agent of no task"]);
@@ -598,7 +606,10 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
   test("a task with one, two or three agents is one row, with each of its agents beneath it", async () => {
     const [one, two, three] = [2, 3, 4].map((n) => task(n));
     if (!one || !two || !three) throw new Error("no rows");
-    const ran: TaskRow = { ...three, run: { id: "ru_3", state: "working", instance: "fake-agent" } };
+    const ran: TaskRow = {
+      ...three,
+      run: { id: "ru_3", state: "working", instance: "fake-agent" },
+    };
     await mount([one, two, ran]);
     const nested = (n: number, activity: AgentsSession["activity"]) => ({
       key: `n${String(n)}`,
@@ -636,7 +647,6 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
       "H2:Working",
       "M-4",
       "H2:With an agent",
-      "H3:Idle",
       "M-2",
     ]);
     const beneath = (ref: string) =>
@@ -662,7 +672,10 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
   });
 
   test("a background run the monitor does not see is listed beside the task's other agents", async () => {
-    const ran: TaskRow = { ...working, run: { id: "ru_1", state: "needs_you", instance: "fake-agent" } };
+    const ran: TaskRow = {
+      ...working,
+      run: { id: "ru_1", state: "needs_you", instance: "fake-agent" },
+    };
     const gone = task(2);
     await mount([ran, gone]);
     show({
@@ -671,13 +684,7 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
       }),
       trouble: null,
     });
-    expect(layout()).toEqual([
-      "H2:Needs you",
-      "M-1",
-      "H2:With an agent",
-      "H3:Not seen by TTAM",
-      "M-2",
-    ]);
+    expect(layout()).toEqual(["H2:Needs you", "M-1", "H2:With an agent", "M-2"]);
     const states = (ref: string) =>
       [...container.querySelectorAll(`li[data-task="${ref}"] [data-part="agent"]`)].map(
         (li) => li.textContent,
@@ -707,7 +714,11 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
       ["Earlier conversation", "Needs you"],
     ]);
     // It sees both: each its own line, the current run in TTasks' state.
-    const current = session(2, { task: linkTo(ran, "run"), activity: "idle", title: "Current run" });
+    const current = session(2, {
+      task: linkTo(ran, "run"),
+      activity: "idle",
+      title: "Current run",
+    });
     show({ picture: picture([earlier, current], []), trouble: null });
     expect(layout()).toEqual(["H2:Needs you", "M-1"]);
     expect(agents()).toEqual([
@@ -733,32 +744,16 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
       trouble: null,
     });
     show(at("idle", "working"));
-    expect(layout()).toEqual([
-      "H2:Working",
-      "M-1",
-      "M-3",
-      "M-4",
-      "H2:With an agent",
-      "H3:Idle",
-      "M-2",
-    ]);
+    expect(layout()).toEqual(["H2:Working", "M-1", "M-3", "M-4", "H2:With an agent", "M-2"]);
     // The older agent starts working: it joins Working after TTasks' own run, at its start.
     show(at("working", "working"));
     expect(layout()).toEqual(["H2:Working", "M-1", "M-2", "M-3", "M-4"]);
     // One leaves the group: the others keep their order.
     show(at("working", "idle"));
-    expect(layout()).toEqual([
-      "H2:Working",
-      "M-1",
-      "M-2",
-      "M-4",
-      "H2:With an agent",
-      "H3:Idle",
-      "M-3",
-    ]);
+    expect(layout()).toEqual(["H2:Working", "M-1", "M-2", "M-4", "H2:With an agent", "M-3"]);
   });
 
-  test("an expanded task stays once, in its own section, whatever the next picture says", async () => {
+  test("an expanded task stays once, at its place, whatever the next picture says; its lines say what is true now", async () => {
     const [idle, shell, other] = [2, 3, 4].map((n) => task(n));
     if (!idle || !shell || !other) throw new Error("no rows");
     await mount([idle, shell, other]);
@@ -774,7 +769,7 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
       trouble: null,
     });
     show(at("shell", "idle"));
-    const before = ["H2:With an agent", "H3:Idle", "M-2", "M-4", "H3:At a shell", "M-3"];
+    const before = ["H2:With an agent", "M-2", "M-3", "M-4"];
     expect(layout()).toEqual(before);
     await act(async () => {
       container.querySelector<HTMLElement>('li[data-task="M-3"] [data-part="title"]')?.click();
@@ -783,22 +778,15 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
     expect(container.querySelector('li[data-task="M-3"]')?.getAttribute("data-expanded")).toBe(
       "true",
     );
-    // The same picture again: nothing moves, no heading is lost.
+    // The same picture again: nothing moves.
     show(at("shell", "idle"));
     show(at("shell", "idle"));
     expect(layout()).toEqual(before);
-    // Its agent now works and another task's waits: the expanded task stays where it is, once;
-    // the other moves.
+    // Its agent now works and another task's waits: the expanded task stays where it is, once,
+    // and its line says it works; the other moves.
     show(at("working", "waiting"));
-    expect(layout()).toEqual([
-      "H2:Needs you",
-      "M-4",
-      "H2:With an agent",
-      "H3:Idle",
-      "M-2",
-      "H3:At a shell",
-      "M-3",
-    ]);
+    expect(layout()).toEqual(["H2:Needs you", "M-4", "H2:With an agent", "M-2", "M-3"]);
+    expect(statesOf("M-3")).toEqual(["Working"]);
     // Collapsed, it goes where its agent puts it.
     await act(async () => {
       container.querySelector<HTMLElement>('li[data-task="M-3"] [data-part="title"]')?.click();
@@ -810,9 +798,32 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
       "H2:Working",
       "M-3",
       "H2:With an agent",
-      "H3:Idle",
       "M-2",
     ]);
+  });
+
+  test("an expanded task whose agent was not seen stays at its place when the monitor's word is withdrawn", async () => {
+    const gone = task(2);
+    await mount([working, gone]);
+    show({ picture: picture([], [], { unseen: [linkTo(gone)] }), trouble: null });
+    expect(layout()).toEqual(["H2:Working", "M-1", "H2:With an agent", "M-2"]);
+    await act(async () => {
+      container.querySelector<HTMLElement>('li[data-task="M-2"] [data-part="title"]')?.click();
+      await Promise.resolve();
+    });
+    expect(statesOf("M-2")).toEqual(["Not seen by TTAM"]);
+    // Its home is gone, or the monitor cannot look there: nothing says it is unseen any more.
+    show({ picture: picture([], []), trouble: null });
+    expect(layout()).toEqual(["H2:Working", "M-1", "H2:With an agent", "M-2"]);
+    expect(statesOf("M-2")).toEqual([]);
+    expect(container.textContent).not.toContain("Not seen by TTAM");
+    // The monitor sees it again: its line says what it does.
+    show({
+      picture: picture([session(1, { task: linkTo(gone), activity: "idle" })], []),
+      trouble: null,
+    });
+    expect(layout()).toEqual(["H2:Working", "M-1", "H2:With an agent", "M-2"]);
+    expect(statesOf("M-2")).toEqual(["Idle"]);
   });
 
   test("a background run's row keeps TTasks' own state, and its agent is that row", async () => {
