@@ -30,6 +30,7 @@ import {
   TERMINAL_APPS,
   TERMINAL_SOURCES,
 } from "@ttasks/launch";
+import { MONITOR_FAILURES } from "@ttasks/contracts/monitor";
 import { RUN_ADAPTERS, RUN_REASONS, RUN_STATES } from "@ttasks/contracts/runs";
 import { ID_ALPHABET, STORAGE_ERROR_CODES } from "@ttasks/storage";
 import { SECTIONS } from "../config/section-names.ts";
@@ -197,6 +198,16 @@ export const EVENTS = {
   },
   "service.drain_timeout": { lvl: "warn", c: "hub", fields: { stage: ["endpoint", "spaces"] } },
   "service.stopped": { lvl: "info", c: "hub", fields: { code: "int", ms: "int" } },
+  // The Agent Monitor's child: its start, and why it ended, by fixed words. Nothing TTAM writes.
+  "monitor.started": { lvl: "info", c: "hub", fields: {} },
+  "monitor.ended": {
+    lvl: "info",
+    c: "hub",
+    fields: {
+      why: ["idle", "not_installed", "does_not_fit", ...MONITOR_FAILURES],
+      killed: "bool",
+    },
+  },
   "service.ownership_lost": {
     lvl: "error",
     c: "hub",

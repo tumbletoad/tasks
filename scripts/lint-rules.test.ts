@@ -50,6 +50,19 @@ describe("[A7.3.3.lint.custom-rules] the custom lint rules of A7 3.3", () => {
     ).toEqual([]);
   });
 
+  test("a test that removes TTasks's variables by hand is refused: testEnv() also names no monitor", async () => {
+    const refused = [
+      'export const kept = (names) => names.filter((n) => !n.startsWith("TTASKS_"));\n',
+      'import { ENV_PREFIX } from "@ttasks/brand";\nexport const kept = (names) => names.filter((n) => !n.startsWith(ENV_PREFIX));\n',
+      "export const kept = (names) => names.filter((n) => !/^(TTASKS_|CLAUDE)/i.test(n));\n",
+    ];
+    for (const code of refused) {
+      expect(await messages(code, TEST), code).toEqual([
+        expect.stringMatching(/^no-restricted-syntax: Build a child's environment with testEnv/),
+      ]);
+    }
+  });
+
   test("shell: true is refused everywhere", async () => {
     const code =
       'import { spawn } from "node:child_process";\nspawn("git", ["status"], { shell: true });\n';

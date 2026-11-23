@@ -19,7 +19,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isAgentMarker } from "@ttasks/bridge/protocol";
+import { testEnv } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   restartService,
@@ -84,11 +84,7 @@ function context(userManager = false): ServiceContext {
     `#!/bin/sh\nexport TTASKS_HOME='${root}'\nexec '${process.execPath}' '${MAIN}' "$@"\n`,
   );
   chmodSync(program, 0o755);
-  const env: Record<string, string | undefined> = {};
-  for (const [name, value] of Object.entries(process.env)) {
-    if (!isAgentMarker(name) && !name.toUpperCase().startsWith("TTASKS_")) env[name] = value;
-  }
-  const real = defaultServiceContext({ env: { ...env, TTASKS_HOME: root }, program });
+  const real = defaultServiceContext({ env: testEnv({ TTASKS_HOME: root }), program });
   const tools = new FakeTools(new FakeService(), join(dir, "units"), { userManager });
   // A home folder of the test's own: a service started by hand runs in it.
   const home = join(dir, "home");

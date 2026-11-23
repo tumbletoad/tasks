@@ -116,7 +116,17 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Your skills, the files in `skills/` of TTasks's folder, are your instructions to every agent that
   uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, an
   empty one, one that cannot be read or a link is not used at all, and agents and `ttasks skills`
-  say why.
+  say why. `ttasks skills copy` never replaces a copy you edited.
+- Agents are told to give a task they add the priority your `setting-priority` skill describes,
+  and to change the priority, due date or star of a task that exists only when you ask. It is an
+  instruction, not a lock: TTasks does not refuse such a change.
+
+## Agents on this computer
+
+- TTasks runs the Agent Monitor (TTAM) only while it is asked for what agents run here, and ends it
+  ten minutes after the last question and when TTasks stops.
+- What TTAM reports about your agents, other projects' too, stays in TTasks and your own page: it
+  is not given to agents' tools, not written into a space or a log, and never leaves this machine.
 
 ## Opening a task in an agent app
 

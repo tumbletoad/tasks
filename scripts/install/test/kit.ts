@@ -34,7 +34,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { gzipSync } from "node:zlib";
 import { ENV_PREFIX, PRODUCT_ID, PRODUCT_NAME } from "../../../packages/brand/src/index.ts";
-import { isAgentMarker } from "../../../packages/bridge/src/protocol/index.ts";
+import { testEnv } from "../../../packages/testkit/src/env.ts";
 import {
   assertReleaseBinary,
   buildRunHelper,
@@ -570,30 +570,6 @@ const isInside = (child: string, parent: string): boolean => {
   );
 };
 
-/**
- * The environment of an install script and of the programs it installed: this process's without
- * any TTasks variable or agent marker (a test run inside an agent app must not make every call an
- * agent's), then `extra` (an undefined value removes a name; names compare without case on
- * Windows).
- */
-export function installEnv(extra: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
-  const key = (name: string) => (windows ? name.toUpperCase() : name);
-  const replaced = new Set(Object.keys(extra).map(key));
-  const env: NodeJS.ProcessEnv = {};
-  for (const [name, value] of Object.entries(process.env)) {
-    if (
-      name.toUpperCase().startsWith(ENV_PREFIX) ||
-      isAgentMarker(name) ||
-      replaced.has(key(name))
-    ) {
-      continue;
-    }
-    env[name] = value;
-  }
-  for (const [name, value] of Object.entries(extra)) if (value !== undefined) env[name] = value;
-  return env;
-}
-
 export interface RunOptions {
   /** The root, passed as --root/-Root. */
   readonly root?: string;
@@ -635,7 +611,7 @@ export function runInstaller(release: Release, options: RunOptions): Ran {
   }
   const installer = options.installer ?? release.installer;
   const source = options.source ?? release.dist;
-  const env = installEnv(options.env);
+  const env = testEnv(options.env);
   let result: SpawnSyncReturns<string>;
   if (windows) {
     const args = [
@@ -726,14 +702,14 @@ export async function holdInstallLock(root: string): Promise<{ release: () => Pr
 export const stableCommand = (root: string): string =>
   join(root, "bin", windows ? `${PRODUCT_ID}.exe` : PRODUCT_ID);
 
-/** Runs a program of an install with a clean environment (no TTasks variable). */
+/** Runs a program of an install with a test's clean environment (testEnv). */
 export function runProgram(
   file: string,
   args: readonly string[],
   env: Record<string, string | undefined> = {},
 ): Ran {
   const result = spawnSync(file, args, {
-    env: installEnv(env),
+    env: testEnv(env),
     encoding: "utf8",
     windowsHide: true,
     timeout: 300_000,
@@ -762,7 +738,7 @@ export async function mcpExchange(
   timeoutMs = 120_000,
 ): Promise<McpRun> {
   const child = spawn(file, [...args], {
-    env: installEnv(),
+    env: testEnv(),
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });

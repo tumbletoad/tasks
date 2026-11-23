@@ -45,6 +45,13 @@ export const FOLDER_MARKER = `.${PRODUCT_ID}-marker`;
 export const SPACES_FOLDER = "spaces";
 
 /**
+ * The Agent Monitor, a separate program by the same publisher that the Agents page reads: its name
+ * in text, and the command TTasks finds on the PATH.
+ */
+export const MONITOR_NAME = "TTAM";
+export const MONITOR_COMMAND = "ttam";
+
+/**
  * The folder of the data folder (or of TTASKS_HOME) that holds the person's skills,
  * `skills/<name>/SKILL.md`: the layout of the repository's own `skills/`.
  */

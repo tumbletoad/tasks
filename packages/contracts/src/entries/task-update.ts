@@ -40,7 +40,7 @@ export const TaskUpdateInput = z.strictObject({
   task: SessionTask,
   set: z
     .strictObject({
-      title: TitleInput.describe("Title").optional(),
+      title: TitleInput.describe("Title: read skill writing-tasks first").optional(),
       summary: SummaryInput.describe("One line: the next step").optional(),
       status: safeLine(40).describe("A status of the space").optional(),
       inbox: z.boolean().describe("In the Inbox").optional(),

@@ -83,7 +83,7 @@ describe("[A3.3.3.mcp.later] what a later step builds is never offered", () => {
   test("a name no tool offers appears nowhere an agent reads", async () => {
     const skills = (await listSkills(undefined)).skills.map((skill): [string, string] => [
       `skill ${skill.name}`,
-      servedText(skill, { efforts: ["S", "M", "L"] }) ?? "",
+      servedText(skill, { sizes: [{ key: "S" }, { key: "M" }, { key: "L" }] }) ?? "",
     ]);
     const offered = new Set(TOOLS.map((t) => t.name));
     for (const tool of TOOLS) names(tool.inputSchema, offered);

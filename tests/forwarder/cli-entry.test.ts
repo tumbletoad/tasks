@@ -8,12 +8,12 @@ import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
+import { testEnv } from "../../packages/testkit/src/env.ts";
 import {
   Bridge,
   DEFAULT_ARGS,
   Procs,
   REPO,
-  cleanEnv,
   isOfflineText,
   libOffline,
   makeHome,
@@ -56,7 +56,7 @@ function tasks(where: Home, args: readonly string[], log: string): Bridge {
   const proc = procs.spawn(
     process.execPath,
     ["--import", RECORDER, CLI_BIN, ...args],
-    cleanEnv({ TTASKS_HOME: where.root, KF_LOAD_LOG: log }),
+    testEnv({ TTASKS_HOME: where.root, KF_LOAD_LOG: log }),
   );
   return new Bridge(proc);
 }

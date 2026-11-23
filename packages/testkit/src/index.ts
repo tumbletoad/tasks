@@ -3,6 +3,8 @@
 export { digestDatabase, digestSchema, digestSpace } from "./digest.ts";
 export { FIXED_SAMPLE, FIXED_SAMPLE_0_1, RELEASED_SCHEMAS } from "./known.ts";
 export { CAN_HOLD_FILES, holdFile } from "./hold.ts";
+export { testEnv } from "./env.ts";
+export { NO_MONITOR } from "./no-monitor.ts";
 export { layoutTestInstall, type TestInstall } from "./install.ts";
 export {
   checkedDriver,
@@ -22,9 +24,12 @@ export {
   FAKE_SHELL,
   FAKE_SYSTEMD_RUN,
   FAKE_TERMINAL,
+  FAKE_TTAM,
   FakeSpawner,
+  fakeTtam,
   interactiveAgentArgv,
   readJsonLines,
+  TTAM_CONVERSATIONS,
   type FakeSpawnerOptions,
   type FakeSpawnRequest,
   type CliAgentReport,
