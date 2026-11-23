@@ -178,6 +178,8 @@ export function rowOfFacts(
     ...(facts.wrap_state === undefined ? {} : { wrap_state: facts.wrap_state }),
     created_at: Number.isFinite(created) ? created : 0,
     version: facts.version,
+    // In the Trash: the card offers Restore and takes no other change.
+    ...(facts.deleted === undefined ? {} : { deleted_at: Date.parse(facts.deleted.at) }),
   };
 }
 

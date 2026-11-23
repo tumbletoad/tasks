@@ -2,8 +2,8 @@
 // shows the current value, and this line keeps the person's own value one click away. After a
 // conflict: "Changed by Codex just now · Apply mine · Keep theirs". After a failed call: "Not saved
 // · Try again · Discard". On a finished task, which takes no edit until it is reopened: "Not saved:
-// the task is finished · Copy · Discard", after the value itself where no fact shows it (the
-// title). An edit made against a history the space no longer has (restored since) is not sent
+// the task is finished · Copy · Discard", and on one in the Trash "Not saved: the task is in the
+// Trash · Copy · Discard", after the value itself where no fact shows it (the title). An edit made against a history the space no longer has (restored since) is not sent
 // again: "<value> Not saved: the space was restored since · Copy · Discard". The line stays until
 // the person chooses, whatever the feed brings.
 import { classes } from "../app/css.ts";
@@ -26,12 +26,15 @@ export function Unsaved({
   task,
   field,
   finished = false,
+  trashed = false,
   withValue = false,
 }: {
   readonly task: string;
   readonly field: Field;
   /** The task is finished: the value cannot be saved now, only copied or discarded. */
   readonly finished?: boolean;
+  /** The task is in the Trash: the same, until it is restored. */
+  readonly trashed?: boolean;
   /** On a finished task, the line shows the value itself too: no fact shows it (the title). */
   readonly withValue?: boolean;
 }) {
@@ -43,13 +46,14 @@ export function Unsaved({
   const shown = unsaved.change.shown;
   const mine = typeof shown === "string" ? shown : sayMsg(t, shown);
   const conflict = unsaved.reason === "conflict";
-  const restored = !finished && edits.restored(unsaved);
-  if (finished || restored) {
+  const closed = finished || trashed;
+  const restored = !closed && edits.restored(unsaved);
+  if (closed || restored) {
     return (
       <span
         className={styles.line}
         data-part="unsaved"
-        data-reason={finished ? "finished" : "restored"}
+        data-reason={trashed ? "trash" : finished ? "finished" : "restored"}
         role="status"
       >
         {withValue || restored ? (
@@ -58,7 +62,13 @@ export function Unsaved({
           </span>
         ) : null}
         <span className={styles.why}>
-          {t(finished ? "edit.notSavedFinished" : "edit.notSavedRestored")}
+          {t(
+            trashed
+              ? "edit.notSavedTrash"
+              : finished
+                ? "edit.notSavedFinished"
+                : "edit.notSavedRestored",
+          )}
         </span>
         <button
           type="button"

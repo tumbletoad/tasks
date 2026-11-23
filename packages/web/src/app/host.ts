@@ -7,7 +7,7 @@
 // | Active, with an area                   | The area view                                |
 // | Active, no area, not in Inbox          | Its status view (Open for another status)    |
 // | Completed, or archived (dropped)       | Completed                                    |
-// | Deleted and still restorable           | Settings › Data › Trash (M5.11)              |
+// | In the Trash                           | The Trash, with Restore                      |
 // | Purged or unknown                      | The landing view, with "no longer exists"    |
 import type { View } from "./views.ts";
 
@@ -17,7 +17,7 @@ export interface HostFacts {
   readonly inbox: boolean;
   readonly status: string;
   readonly area_id?: string | undefined;
-  /** A tombstoned task that Trash can still restore. */
+  /** In the Trash: moved there on purpose, so Restore brings it back. */
   readonly deleted?: boolean;
 }
 

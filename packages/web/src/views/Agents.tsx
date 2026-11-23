@@ -8,10 +8,13 @@
 // one of its agents is listed beneath its row in its own state: the lines say what is true now,
 // and no heading can hold a state that is gone. The rows are ordinary rows, so a task expands to
 // its thread, where its runs, Stop and the changes are; it stays where it was until it collapses.
-// A row the monitor put in its group is muted while the monitor's picture is not current. Below
+// A task in the Trash that a run or a terminal agent still works on is placed the same way, read
+// from the Trash (`task.trash` with `working`), so a cold page shows it too, marked with Restore;
+// its card holds the run's Stop and answer. A row the monitor put in its group is muted while the
+// monitor's picture is not current. Below
 // them, every other agent on this computer and the plan usage of each account (Computer.tsx).
 // "Routines" and the full history with Revert wait for the service's read of sessions and routines.
-import { useCallback, useContext, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { changeLogOf } from "../app/changes.ts";
 import { recentOf } from "../app/views.ts";
 import { Session } from "../context.ts";
@@ -19,8 +22,12 @@ import type { Group } from "../groups.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { formatDay, type Clock } from "../row/dates.ts";
 import { useClock } from "../row/useClock.ts";
+import { classes } from "../app/css.ts";
+import { useEdits } from "../edit/useEdits.ts";
+import { Latest } from "../latest.ts";
 import { useLive } from "../store/hooks.ts";
-import type { TaskRow } from "../store/rows.ts";
+import { taskRow, type TaskRow } from "../store/rows.ts";
+import css from "./Trash.module.css";
 import { mergeAgents, type AgentState } from "./agents-merge.ts";
 import { Computer, TaskAgents } from "./Computer.tsx";
 import { TaskList, type GroupsOf, type HeldRow } from "./TaskList.tsx";
@@ -45,6 +52,47 @@ const heldIn = (held: HeldRow): string | undefined =>
 const byRef = (a: TaskRow, b: TaskRow): number =>
   a.ref.localeCompare(b.ref, "en", { numeric: true });
 
+const styles = classes(css, ["where", "restore"]);
+
+/**
+ * The tasks in the Trash that an agent may still work on: read at once, and again whenever the feed
+ * says a run, a launch or a task's place in the Trash changed, or brings a fresh snapshot.
+ */
+function useTrashedWork(): ReadonlyMap<string, TaskRow> {
+  const { api, live } = useContext(Session);
+  const [rows, setRows] = useState<ReadonlyMap<string, TaskRow>>(new Map());
+  useEffect(() => {
+    const reads = new Latest();
+    const read = (): void => {
+      const newest = reads.begin("trash");
+      api.client.task.trash({ working: true, limit: 200 }).then(
+        (page) => {
+          if (!newest()) return;
+          const found = page.rows.flatMap((value) => {
+            const row = taskRow(value);
+            return row === undefined ? [] : [[row.id, row] as const];
+          });
+          setRows(new Map(found));
+        },
+        (error: unknown) => {
+          live.failed(error);
+        },
+      );
+    };
+    read();
+    return live.onChanges(({ changes, reset }) => {
+      const touched = changes.some(
+        (c) =>
+          c.type === "run" ||
+          c.type === "launch" ||
+          (c.type === "task" && (c.changed.length === 0 || c.changed.includes("deleted"))),
+      );
+      if (reset || touched) read();
+    });
+  }, [api, live]);
+  return rows;
+}
+
 export interface AgentsProps {
   readonly task?: string | undefined;
   readonly onExpand: (task: TaskRow | undefined, gone?: boolean) => void;
@@ -56,7 +104,14 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const log = changeLogOf(live);
   const changes = useSyncExternalStore(log.subscribe, log.getEntries);
   const clock = useClock(false);
-  const { tasks: rows } = useLive();
+  const { tasks: liveRows } = useLive();
+  const edits = useEdits();
+  const trashed = useTrashedWork();
+  // A task in the Trash with an agent still on it is placed like any other.
+  const rows = useMemo(
+    () => (trashed.size === 0 ? liveRows : new Map([...trashed, ...liveRows])),
+    [liveRows, trashed],
+  );
   const agents = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
   const picture = agents.view?.picture ?? null;
   const merged = useMemo(
@@ -74,11 +129,30 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const beneath = useCallback(
     (row: TaskRow) => {
       const listed = merged.tasks.get(row.id)?.agents ?? [];
-      return listed.length === 0 ? undefined : (
-        <TaskAgents agents={listed} current={agents.current} />
+      const working =
+        listed.length === 0 ? undefined : <TaskAgents agents={listed} current={agents.current} />;
+      if (row.deleted_at === undefined) return working;
+      return (
+        <>
+          <span className={styles.where} data-part="agents-in-trash">
+            {t("agents.inTrash")}
+            <button
+              type="button"
+              className={styles.restore}
+              data-part="restore"
+              aria-label={t("trash.restoreLabel", { ref: row.ref })}
+              onClick={() => {
+                edits.restore(row);
+              }}
+            >
+              {t("trash.restore")}
+            </button>
+          </span>
+          {working}
+        </>
       );
     },
-    [merged, agents.current],
+    [merged, agents.current, edits, t],
   );
   const groups = useCallback<GroupsOf>(
     (tasks, held) => {
@@ -97,7 +171,10 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
       // the monitor placed as their agents started, a new one last.
       const own = (row: TaskRow) => (merged.tasks.get(row.id)?.own === true ? 0 : 1);
       const age = (row: TaskRow) => merged.tasks.get(row.id)?.ageMs ?? -1;
-      const withAgents = [...tasks.values()]
+      const withAgents = [
+        ...tasks.values(),
+        ...[...trashed.values()].filter((r) => !tasks.has(r.id)),
+      ]
         .filter((row) => merged.tasks.has(row.id))
         .sort((a, b) => own(a) - own(b) || (own(a) === 0 ? 0 : age(b) - age(a) || byRef(a, b)));
       for (const row of withAgents) {
@@ -122,7 +199,7 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
       }
       return groupsOf(sections, t, clock);
     },
-    [changes, clock, t, merged],
+    [changes, clock, t, merged, trashed],
   );
   return (
     <div>

@@ -33,6 +33,7 @@ import { AgentsPage } from "../views/Agents.tsx";
 import { CompletedPage } from "../views/Completed.tsx";
 import { TaskList } from "../views/TaskList.tsx";
 import { TodayPage } from "../views/Today.tsx";
+import { TrashPage } from "../views/Trash.tsx";
 import { classes } from "./css.ts";
 import { SearchPage as SearchResults } from "../views/Search.tsx";
 
@@ -76,6 +77,7 @@ export function ViewPage({
   }
   if (view === "completed") return <CompletedPage task={task} onExpand={onExpand} />;
   if (view === "agents") return <AgentsPage task={task} onExpand={onExpand} />;
+  if (view === "trash") return <TrashPage task={task} onExpand={onExpand} />;
   if (filter === undefined || !isCounted(view)) return null;
   const list = VIEW_LIST[view];
   // Keyed by the view: another view starts at its top with nothing expanded.
@@ -198,12 +200,12 @@ export function TaskPage({ task }: { readonly task: string }) {
               inbox: known.facts.inbox,
               status: known.facts.status,
               area_id: [...state.areas.values()].find((a) => a.title === known.facts.area)?.id,
+              deleted: known.facts.deleted !== undefined,
             });
   const space = state.space?.id;
   const ref = row?.ref ?? (known !== undefined && "facts" in known ? known.facts.ref : task);
   useEffect(() => {
     if (resolved?.kind === "gone") say(t("task.gone"));
-    if (resolved?.kind === "trash") say(t("task.inTrash"));
   }, [resolved?.kind, say, t]);
   if (resolved === undefined || space === undefined) return null;
   switch (resolved.kind) {
@@ -226,6 +228,15 @@ export function TaskPage({ task }: { readonly task: string }) {
         />
       );
     case "trash":
+      // In the Trash: there, expanded, with Restore.
+      return (
+        <Navigate
+          to="/s/$space/$view"
+          params={{ space, view: "trash" }}
+          search={{ task: ref }}
+          replace
+        />
+      );
     case "gone":
     case "error":
       return <Navigate to="/s/$space/$view" params={{ space, view: LANDING }} replace />;

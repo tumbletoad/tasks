@@ -40,6 +40,8 @@ const styles = classes(css, [
   "reopen",
   "waitingField",
   "plain",
+  "trash",
+  "trashButton",
 ]);
 
 const STATUS_LABEL: Readonly<Record<string, MessageId>> = {
@@ -333,73 +335,110 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
   const level = task.priority;
   const priority = level === 1 || level === 2 || level === 3 ? String(level) : undefined;
 
-  // A finished task's facts are read-only (A5 3.5 "Expanded completed task").
-  if (task.lifecycle !== "active") {
+  const trashed = task.deleted_at !== undefined;
+  // At the foot of the facts, for an active or a finished task: one change, with its Undo.
+  const moveToTrash = (
+    <p className={styles.trash}>
+      <button
+        type="button"
+        className={styles.trashButton}
+        data-part="move-to-trash"
+        onClick={() => {
+          edits.trash(task);
+        }}
+      >
+        {t("fact.trash")}
+      </button>
+    </p>
+  );
+  // A finished task's facts are read-only (A5 3.5 "Expanded completed task"), and so are those of
+  // one in the Trash, whose way back is Restore.
+  if (task.lifecycle !== "active" || trashed) {
     return (
-      <dl className={styles.facts} aria-label={t("fact.label")}>
-        <Fact label={t("fact.status")}>
-          <span data-part="lifecycle">{statusOf(task, t)}</span>
-          {task.deleted_at === undefined ? (
-            // Read-only, apart from this: the way back for a task finished by mistake or too soon.
-            <button
-              type="button"
-              className={`${styles.move} ${styles.reopen}`}
-              data-part="reopen"
-              onClick={() => {
-                edits.reopen(task);
-              }}
-            >
-              {t("fact.reopen")}
-            </button>
+      <>
+        <dl className={styles.facts} aria-label={t("fact.label")}>
+          <Fact label={t("fact.status")}>
+            {trashed ? (
+              <>
+                <span data-part="in-trash">{t("fact.inTrash")}</span>
+                <button
+                  type="button"
+                  className={`${styles.move} ${styles.reopen}`}
+                  data-part="restore"
+                  onClick={() => {
+                    edits.restore(task);
+                  }}
+                >
+                  {t("fact.restore")}
+                </button>
+              </>
+            ) : (
+              <>
+                <span data-part="lifecycle">{statusOf(task, t)}</span>
+                {/* Read-only, apart from this: the way back for a task finished by mistake or too
+                    soon. */}
+                <button
+                  type="button"
+                  className={`${styles.move} ${styles.reopen}`}
+                  data-part="reopen"
+                  onClick={() => {
+                    edits.reopen(task);
+                  }}
+                >
+                  {t("fact.reopen")}
+                </button>
+              </>
+            )}
+          </Fact>
+          {priority === undefined ? null : (
+            <Fact label={t("fact.priority")}>{t("row.priority", { level: Number(priority) })}</Fact>
+          )}
+          {task.effort === undefined || task.effort === "" ? null : (
+            <Fact label={t("fact.effort")}>
+              <span dir="auto">{task.effort}</span>
+            </Fact>
+          )}
+          {due === undefined ? null : (
+            <Fact label={t("fact.due")}>
+              <span data-tip={due.tip}>{due.text}</span>
+            </Fact>
+          )}
+          {area === undefined ? null : (
+            <Fact label={t("fact.area")}>
+              <span
+                className={`${styles.dot} slot-${String(slot ?? 1)}`}
+                aria-hidden="true"
+                data-slot={slot}
+              />
+              <span dir="auto">
+                {project === undefined
+                  ? area.title
+                  : t("fact.areaProject", { area: area.title, project: project.title })}
+              </span>
+            </Fact>
+          )}
+          {task.created_at > 0 ? (
+            <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
           ) : null}
-        </Fact>
-        {priority === undefined ? null : (
-          <Fact label={t("fact.priority")}>{t("row.priority", { level: Number(priority) })}</Fact>
-        )}
-        {task.effort === undefined || task.effort === "" ? null : (
-          <Fact label={t("fact.effort")}>
-            <span dir="auto">{task.effort}</span>
-          </Fact>
-        )}
-        {due === undefined ? null : (
-          <Fact label={t("fact.due")}>
-            <span data-tip={due.tip}>{due.text}</span>
-          </Fact>
-        )}
-        {area === undefined ? null : (
-          <Fact label={t("fact.area")}>
-            <span
-              className={`${styles.dot} slot-${String(slot ?? 1)}`}
-              aria-hidden="true"
-              data-slot={slot}
-            />
-            <span dir="auto">
-              {project === undefined
-                ? area.title
-                : t("fact.areaProject", { area: area.title, project: project.title })}
-            </span>
-          </Fact>
-        )}
-        {task.created_at > 0 ? (
-          <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
-        ) : null}
-        {/* A value the person chose before the task was finished stays readable here, with Copy
+          {/* A value the person chose before the task was finished stays readable here, with Copy
             and Discard, until they choose: it is never dropped because someone checked the task
             off. Reopened, the task's control offers Try again. */}
-        {UNSAVED_FACTS.map(([field, label]) => {
-          const unsaved = edits.unsaved(task.id, field);
-          if (unsaved === undefined) return null;
-          const shown = unsaved.change.shown;
-          return (
-            <Fact key={field} label={t(label)}>
-              <span dir="auto" data-part="unsaved-value">
-                {typeof shown === "string" ? shown : sayMsg(t, shown)}
-              </span>
-              <Unsaved task={task.id} field={field} finished />
-            </Fact>
-          );
-        })}
-      </dl>
+          {UNSAVED_FACTS.map(([field, label]) => {
+            const unsaved = edits.unsaved(task.id, field);
+            if (unsaved === undefined) return null;
+            const shown = unsaved.change.shown;
+            return (
+              <Fact key={field} label={t(label)}>
+                <span dir="auto" data-part="unsaved-value">
+                  {typeof shown === "string" ? shown : sayMsg(t, shown)}
+                </span>
+                <Unsaved task={task.id} field={field} finished trashed={trashed} />
+              </Fact>
+            );
+          })}
+        </dl>
+        {trashed ? null : moveToTrash}
+      </>
     );
   }
 
@@ -409,95 +448,98 @@ export function Facts({ task, clock }: { readonly task: TaskRow; readonly clock:
   // Priority and effort share their columns, so their options sit under each other.
   const shared = Math.max(columnsFor(PRIORITIES.length), columnsFor(efforts.length));
   return (
-    <dl className={styles.facts} aria-label={t("fact.label")} data-editable="">
-      <Fact label={t("fact.status")}>
-        <Segmented
-          label={t("fact.status")}
-          part="status"
-          options={statuses.map((key) => {
-            const id = STATUS_LABEL[key];
-            return { key, text: id === undefined ? key : t(id) };
-          })}
-          value={task.status}
-          clearable={false}
-          columns={columnsFor(statuses.length)}
-          onChange={(status) => {
-            if (status !== undefined) edits.edit(task, statusChange(status));
-          }}
-        />
-        {task.inbox ? (
-          <button
-            type="button"
-            className={styles.move}
-            data-part="triage"
-            onClick={() => {
-              edits.edit(task, triageChange());
+    <>
+      <dl className={styles.facts} aria-label={t("fact.label")} data-editable="">
+        <Fact label={t("fact.status")}>
+          <Segmented
+            label={t("fact.status")}
+            part="status"
+            options={statuses.map((key) => {
+              const id = STATUS_LABEL[key];
+              return { key, text: id === undefined ? key : t(id) };
+            })}
+            value={task.status}
+            clearable={false}
+            columns={columnsFor(statuses.length)}
+            onChange={(status) => {
+              if (status !== undefined) edits.edit(task, statusChange(status));
             }}
-          >
-            {t("fact.moveToOpen")}
-          </button>
-        ) : null}
-        <Unsaved task={task.id} field="status" />
-      </Fact>
-      {task.status === "waiting" ||
-      waitingOpen ||
-      edits.unsaved(task.id, "waiting_on") !== undefined ? (
-        <Fact label={t("fact.waitingOn")}>
-          <WaitingOn task={task} onEditing={setWaitingOpen} />
-          <Unsaved task={task.id} field="waiting_on" />
+          />
+          {task.inbox ? (
+            <button
+              type="button"
+              className={styles.move}
+              data-part="triage"
+              onClick={() => {
+                edits.edit(task, triageChange());
+              }}
+            >
+              {t("fact.moveToOpen")}
+            </button>
+          ) : null}
+          <Unsaved task={task.id} field="status" />
         </Fact>
-      ) : null}
-      <Fact label={t("fact.priority")}>
-        <Segmented
-          label={t("fact.priority")}
-          part="priority"
-          options={PRIORITIES.map((n) => ({
-            key: String(n),
-            text: t("row.priority", { level: n }),
-          }))}
-          value={priority}
-          clearable
-          columns={shared}
-          span={Math.min(PRIORITIES.length, shared)}
-          onChange={(next) => {
-            // Choosing the chosen one again sets P4: no priority (A5 3.7).
-            edits.edit(task, priorityChange(next === undefined ? 4 : Number(next)));
-          }}
-        />
-        <Unsaved task={task.id} field="priority" />
-      </Fact>
-      <Fact label={t("fact.effort")}>
-        <Segmented
-          label={t("fact.effort")}
-          part="effort"
-          options={efforts.map((key) => ({ key, text: key }))}
-          value={task.effort === "" ? undefined : task.effort}
-          clearable
-          columns={shared}
-          span={Math.min(efforts.length, shared)}
-          onChange={(next) => {
-            edits.edit(task, effortChange(next));
-          }}
-        />
-        <Unsaved task={task.id} field="effort" />
-      </Fact>
-      <Fact label={t("fact.due")}>
-        <DuePicker
-          task={task}
-          clock={clock}
-          shown={due?.text}
-          tip={due?.tip}
-          shortOf={(date) => shortDate(date, clock, t)}
-        />
-        <Unsaved task={task.id} field="due" />
-      </Fact>
-      <Fact label={t("fact.area")}>
-        <AreaPicker task={task} />
-        <Unsaved task={task.id} field="grouping" />
-      </Fact>
-      {task.created_at > 0 ? (
-        <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
-      ) : null}
-    </dl>
+        {task.status === "waiting" ||
+        waitingOpen ||
+        edits.unsaved(task.id, "waiting_on") !== undefined ? (
+          <Fact label={t("fact.waitingOn")}>
+            <WaitingOn task={task} onEditing={setWaitingOpen} />
+            <Unsaved task={task.id} field="waiting_on" />
+          </Fact>
+        ) : null}
+        <Fact label={t("fact.priority")}>
+          <Segmented
+            label={t("fact.priority")}
+            part="priority"
+            options={PRIORITIES.map((n) => ({
+              key: String(n),
+              text: t("row.priority", { level: n }),
+            }))}
+            value={priority}
+            clearable
+            columns={shared}
+            span={Math.min(PRIORITIES.length, shared)}
+            onChange={(next) => {
+              // Choosing the chosen one again sets P4: no priority (A5 3.7).
+              edits.edit(task, priorityChange(next === undefined ? 4 : Number(next)));
+            }}
+          />
+          <Unsaved task={task.id} field="priority" />
+        </Fact>
+        <Fact label={t("fact.effort")}>
+          <Segmented
+            label={t("fact.effort")}
+            part="effort"
+            options={efforts.map((key) => ({ key, text: key }))}
+            value={task.effort === "" ? undefined : task.effort}
+            clearable
+            columns={shared}
+            span={Math.min(efforts.length, shared)}
+            onChange={(next) => {
+              edits.edit(task, effortChange(next));
+            }}
+          />
+          <Unsaved task={task.id} field="effort" />
+        </Fact>
+        <Fact label={t("fact.due")}>
+          <DuePicker
+            task={task}
+            clock={clock}
+            shown={due?.text}
+            tip={due?.tip}
+            shortOf={(date) => shortDate(date, clock, t)}
+          />
+          <Unsaved task={task.id} field="due" />
+        </Fact>
+        <Fact label={t("fact.area")}>
+          <AreaPicker task={task} />
+          <Unsaved task={task.id} field="grouping" />
+        </Fact>
+        {task.created_at > 0 ? (
+          <Fact label={t("fact.created")}>{createdOf(task, clock, t)}</Fact>
+        ) : null}
+      </dl>
+      {moveToTrash}
+    </>
   );
 }

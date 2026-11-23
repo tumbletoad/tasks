@@ -222,12 +222,15 @@ function Slots({
           data-on={model.starred}
           aria-label={t("row.star")}
           aria-pressed={model.starred}
-          // A finished task takes no edit (A5 3.11): its star would only be refused.
-          aria-disabled={task.lifecycle !== "active" || undefined}
+          // A finished task takes no edit (A5 3.11), nor one in the Trash: its star would only be
+          // refused.
+          aria-disabled={task.lifecycle !== "active" || task.deleted_at !== undefined || undefined}
           data-tip={t("row.star")}
           tabIndex={tab}
           onClick={() => {
-            if (task.lifecycle === "active") actions.star(task, !model.starred);
+            if (task.lifecycle === "active" && task.deleted_at === undefined) {
+              actions.star(task, !model.starred);
+            }
           }}
         >
           <StarIcon />
@@ -472,8 +475,10 @@ function RowView({
   // Checked: completed, or checked off and in its hold. The box takes a check-off of an open task,
   // and during this tab's own hold, its undo.
   const active = task.lifecycle === "active";
+  // A task in the Trash takes no change until it is restored.
+  const trashed = task.deleted_at !== undefined;
   const checked = leaving === undefined ? !active : leaving.done;
-  const checkable = leaving === undefined ? active : leaving.by === undefined;
+  const checkable = !trashed && (leaving === undefined ? active : leaving.by === undefined);
   const completedTip =
     leaving?.by === undefined
       ? undefined
@@ -493,7 +498,7 @@ function RowView({
   // had (3.15 item 6), its move is done, so the button goes. Newer data (an undo) brings it back.
   const [movedFrom, setMovedFrom] = useState<TaskRow | undefined>(undefined);
   const edit = () => {
-    if (task.lifecycle !== "active") return;
+    if (task.lifecycle !== "active" || trashed) return;
     if (!expanded) actions.expand(task);
     setEditing(true);
   };
@@ -534,22 +539,25 @@ function RowView({
           )}
         </span>
         <span className={styles.check} data-tip={completedTip}>
-          {/* Check-off is final at once (D12): the row holds, the toast offers Undo (A5 3.12). */}
-          <input
-            type="checkbox"
-            className={styles.box}
-            data-part="check"
-            data-dropped={(leaving === undefined && task.lifecycle === "archived") || undefined}
-            aria-label={sayMsg(t, model.done)}
-            checked={checked}
-            disabled={!checkable}
-            tabIndex={tab}
-            onChange={(event) => {
-              // Focus moves on at once, so the row that stays for its hold is not in the way.
-              if (!checked) focusAfter(event.currentTarget);
-              actions.check(task);
-            }}
-          />
+          {/* Check-off is final at once (D12): the row holds, the toast offers Undo (A5 3.12). A task
+              in the Trash has no box: Restore is its one action. */}
+          {trashed ? null : (
+            <input
+              type="checkbox"
+              className={styles.box}
+              data-part="check"
+              data-dropped={(leaving === undefined && task.lifecycle === "archived") || undefined}
+              aria-label={sayMsg(t, model.done)}
+              checked={checked}
+              disabled={!checkable}
+              tabIndex={tab}
+              onChange={(event) => {
+                // Focus moves on at once, so the row that stays for its hold is not in the way.
+                if (!checked) focusAfter(event.currentTarget);
+                actions.check(task);
+              }}
+            />
+          )}
         </span>
         <div className={styles.main}>
           <div className={styles.tline}>
@@ -658,7 +666,9 @@ function RowView({
           )}
           {/* A title the person typed while the task was finished stays readable, with Copy and
               Discard; Try again only once the task is active again (A5 3.11). */}
-          {expanded ? <Unsaved task={task.id} field="title" finished={!active} withValue /> : null}
+          {expanded ? (
+            <Unsaved task={task.id} field="title" finished={!active} trashed={trashed} withValue />
+          ) : null}
         </div>
         <Slots model={model} task={task} tab={tab} expanded={expanded} actions={actions} t={t} />
         <span id={described} hidden>

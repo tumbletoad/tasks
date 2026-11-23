@@ -39,7 +39,17 @@ import {
   type SectionItem,
 } from "./items.ts";
 
-const styles = classes(css, ["list", "group", "head", "dot", "section", "label", "name", "rows"]);
+const styles = classes(css, [
+  "list",
+  "group",
+  "head",
+  "dot",
+  "section",
+  "label",
+  "name",
+  "rows",
+  "act",
+]);
 
 /** The list's moves, by the keymap's action. */
 const MOVES: Partial<Record<ActionId, Parameters<typeof moveFrom>[2]>> = {
@@ -412,6 +422,16 @@ export function List({
                 <span className={styles.name} dir="auto">
                   {title}
                 </span>
+                {group.item?.group.action === undefined ? null : (
+                  <button
+                    type="button"
+                    className={styles.act}
+                    data-part="group-action"
+                    onClick={group.item.group.action.run}
+                  >
+                    {group.item.group.action.label}
+                  </button>
+                )}
               </h2>
             )}
             {group.sections.map((section) => (

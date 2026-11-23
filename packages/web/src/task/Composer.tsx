@@ -263,9 +263,11 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const first = instances[0];
   const [runner, ...others] = runners(instances);
   const finished = task.lifecycle !== "active";
-  /** Run's key on a finished task: Reopen, the step before any run. A deleted one has neither. */
+  // A task in the Trash takes no note and opens no agent until it is restored: its draft stays
+  // readable, to copy.
+  const trashed = task.deleted_at !== undefined;
+  /** Run's key on a finished task: Reopen, the step before any run. */
   const runOrReopen = (instance: Instance) => {
-    if (task.deleted_at !== undefined) return;
     if (finished) edits.reopen(task);
     else run(instance);
   };
@@ -275,6 +277,27 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
       label: instance.label,
       words: words === "" ? "task" : "words",
     });
+
+  if (trashed) {
+    return (
+      <>
+        {text === "" ? null : (
+          <textarea
+            className={styles.input}
+            data-part="composer"
+            aria-label={t("composer.label")}
+            readOnly
+            rows={1}
+            dir="auto"
+            value={text}
+          />
+        )}
+        <p className={styles.strip} data-part="strip-trash">
+          {t("composer.inTrash")}
+        </p>
+      </>
+    );
+  }
 
   return (
     <>
@@ -392,7 +415,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
             </button>
           );
         })}
-        {runner === undefined || task.deleted_at !== undefined ? null : finished ? (
+        {runner === undefined ? null : finished ? (
           <button
             type="button"
             className={styles.button}

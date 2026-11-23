@@ -1,7 +1,9 @@
 // What the browser keeps of a space's unsaved text (a composer's draft, a field edit that waits)
-// belongs to a task. A finished or deleted task can come back, so its text stays as long as the
-// service knows the task. Once the task is gone for good, its text is forgotten when the space
-// next opens.
+// belongs to a task. A finished task or one in the Trash can come back, and a task the space does
+// not have now (a backup restored over it, a creation undone) may hold words the person still
+// needs: those stay, listed with Copy and Discard at the foot of the Trash (views/Trash.tsx), until
+// the person discards them. Only text kept under a key of no task's shape is forgotten, when the
+// space next opens.
 import type { Api } from "../api.ts";
 import { forgetUnsaved, unsavedTasks } from "../edit/keep.ts";
 import { draftTasks, keepDraft } from "../task/composer.ts";
@@ -9,14 +11,13 @@ import { draftTasks, keepDraft } from "../task/composer.ts";
 /** The most tasks asked about per opening: the rest wait for the next one. */
 const MAX_ASKED = 20;
 
-/** The service knows no such task: not one any more, or never one of this shape. */
-const gone = (error: unknown): boolean => {
-  const code =
-    typeof error === "object" && error !== null ? (error as { code?: unknown }).code : "";
-  return code === "not_found" || code === "invalid_input";
-};
+/** The service says the key is no task's at all. */
+const notATask = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  (error as { code?: unknown }).code === "invalid_input";
 
-/** Forgets the kept text of the space's tasks that do not exist any more. */
+/** Forgets the kept text of the space's keys that name no task. */
 export async function forgetGone(
   space: string,
   api: Api,
@@ -34,7 +35,7 @@ export async function forgetGone(
     try {
       await api.client.task.get({ task });
     } catch (error) {
-      if (!gone(error)) continue;
+      if (!notATask(error)) continue;
       keepDraft(space, task, "");
       forgetUnsaved(space, task);
     }
