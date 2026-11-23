@@ -88,6 +88,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   cannot work, and never sends it later by itself.
 - A tab whose space was closed, restored or claimed since it loaded says so and saves nothing more;
   what you typed there stays to copy.
+- What you typed for a task and did not send stays in the browser, also when the copy of the space
+  you open does not hold that task, such as an older backup you claimed: TTasks never deletes it
+  because a task is missing.
 
 ## Projects and folders
 

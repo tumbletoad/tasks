@@ -5019,14 +5019,6 @@
       "profiles": ["v1"]
     },
     {
-      "id": "A5.3.8.web.leftovers",
-      "title": "When a space opens, the kept draft and waiting edits of a task the service no longer knows are forgotten; a task in the live rows, a finished one and one the service could not answer for keep theirs",
-      "source": "A5 3.8, A7 3.12 M5.07",
-      "owner": "M5",
-      "kind": "ci",
-      "profiles": ["v1"]
-    },
-    {
       "id": "A5.3.11.web.kept-edits",
       "title": "A field edit the service did not take is kept per space and comes back after a reload as its control made it, ready for Try again; a value no control could make, or kept under another name, never comes back and is removed; a tab removes only what it kept or read; a task gone for good takes its edits along",
       "source": "A5 3.11, A7 3.12 M5.07",

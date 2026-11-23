@@ -12,7 +12,6 @@ import { Api } from "../api.ts";
 import { Session, type SessionValue } from "../context.ts";
 import { Live } from "../live.ts";
 import { changeLogOf } from "./changes.ts";
-import { forgetGone } from "./leftovers.ts";
 import { useMachine } from "./machine.ts";
 import { forgetOpened, openedCopy } from "./opened.ts";
 
@@ -79,17 +78,13 @@ export function SpaceSession({
     // Today's Changes counts from the session's start, whichever view the tab opens on.
     changeLogOf(live);
     setValue({ api, live });
-    // Once the space is live, the kept text of its tasks that are gone for good is forgotten. A
-    // space that takes no change (a restored copy, an older one) is no proof a task is gone: what
-    // it lacks may be in the copy the text was typed in, so nothing is forgotten there.
+    // Once the tab loaded the space, or learned it cannot, the copy the person's Open folder
+    // answered is no longer what the next load asks for.
     const stopWatching = live.subscribe(() => {
       const state = live.getState();
       if (state.phase !== "live" && state.gone === undefined) return;
       stopWatching();
       forgetOpened(space);
-      if (state.gone !== undefined) return;
-      if (state.space?.read_only !== undefined || state.space?.restored !== undefined) return;
-      void forgetGone(space, api, (task) => live.getState().tasks.has(task));
     });
     live.start();
     return () => {
