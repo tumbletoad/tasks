@@ -198,6 +198,27 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     ).toBe("Added M-31 to Mira\nWarning: Made 1 new area.\n");
   });
 
+  test("a new task's source whose key another task holds says which task holds it", () => {
+    const added = render(
+      "task.add",
+      { tasks: [{ result: "created", ref: "M-32", held: [{ source: 1, held_by: "M-14" }] }] },
+      "Mira",
+    );
+    expect(added).toContain("Added M-32 to Mira");
+    expect(added).toContain("M-14");
+    const finished = render(
+      "task.finish",
+      {
+        result: "completed",
+        task: "M-9",
+        lifecycle: "completed",
+        follow_ups: [{ result: "created", ref: "M-33", held: [{ source: 0, held_by: "M-15" }] }],
+      },
+      "Mira",
+    );
+    expect(finished).toContain("M-15");
+  });
+
   test("a task shows the one state a person says, and no as-of token", () => {
     const shown = (lifecycle: string) =>
       render(

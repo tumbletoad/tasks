@@ -341,6 +341,17 @@ function draftLine(task: Result, space: string, its = "its"): string {
   return `Found ${String(task["ref"])}${lifecycle} in ${space} by ${its} source key${logged}`;
 }
 
+/**
+ * The sources of a new task that were linked without their key, because another active task holds
+ * it: which task, so the person knows where captures of the item go.
+ */
+function heldLines(task: Result): string[] {
+  return ((task["held"] as Result[] | undefined) ?? []).map(
+    (held) =>
+      `  Its source ${String(Number(held["source"]) + 1)} is linked without its key: ${str(held["held_by"])} holds the key, and captures of it go there.`,
+  );
+}
+
 /** A change's operation kind as a verb on its task, for the undo's note on a script's change. */
 const SCRIPT_VERBS: Readonly<Record<string, string>> = {
   "task.create": "added",
@@ -449,7 +460,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
   switch (entry) {
     case "task.add":
       for (const task of (result["tasks"] as Result[] | undefined) ?? []) {
-        lines.push(`${draftLine(task, space)}${replay(result)}`);
+        lines.push(`${draftLine(task, space)}${replay(result)}`, ...heldLines(task));
       }
       break;
     case "task.update": {
@@ -488,7 +499,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
           : `${dropped ? "Dropped" : "Completed"} ${String(result["task"])} in ${space}${replay(result)}`,
       );
       for (const f of (result["follow_ups"] as Result[] | undefined) ?? []) {
-        lines.push(draftLine(f, space, "a follow-up's"));
+        lines.push(draftLine(f, space, "a follow-up's"), ...heldLines(f));
       }
       break;
     }
