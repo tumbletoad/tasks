@@ -142,10 +142,15 @@ the behaviour it describes, and keep each one to a sentence or two.
   time zone: the agent's day is the service machine's, the page's day is the browser's. Its stars
   and counts are the ones your page shows, except that a status of the space's own has its own
   count for an agent, while the sidebar counts it in Open.
-- Every note is visible to agents.
+- Every note is visible to agents until you take it back.
+- You can take back any note on a task, in its thread or with `ttasks note <task> --remove <n>`:
+  from then on no agent, search or readable file reads it, a launch it was the request of says the
+  request was taken back, and Put back brings it back as it was. Only you take notes back, and
+  nothing is deleted for good.
 - A question an agent logs on a task waits for you under Needs you on the Agents page, also once
   the task is finished or dropped, until you write a note on the task after it or dismiss it.
-  Dismiss sets aside only the questions you were shown; Undo brings them back.
+  A note you take back answers nothing. Dismiss sets aside only the questions you were shown; Undo
+  brings them back.
 - Your skills, the files in `skills/` of TTasks's folder, are your instructions to every agent that
   uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, an
   empty one, one that cannot be read or a link is not used at all, and agents and `ttasks skills`
@@ -319,8 +324,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   restarts after you change the default, the same task reference can mean a different task.
 - A change retried after a restore that removed its earlier result is a new change.
 - What you typed before Open is a note on the task: every agent that loads the task later reads it,
-  marked as the request of that launch, and backups and exports hold it. Undo takes it back while
-  it is your newest change; the page has no way yet to remove an older note.
+  marked as the request of that launch, and backups and exports hold it.
+- Retracting a note does not reach an agent that already read it, a session that already has it,
+  or what you copied. The history, backups and exports keep it.
 - Backups and exports are not encrypted. Their protection is that of the disk they are on.
 - Backups sit beside the space on the same disk unless you set another folder for them or copy an
   export elsewhere. A lost disk then loses them with the space.

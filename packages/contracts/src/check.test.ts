@@ -1942,6 +1942,28 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
       expect(check(base, other)).toEqual(['fixture.other: verb "fixture-note" is used twice']);
     });
 
+    test("a verb is shared only through when: one face without it, flags of the other's own fields", () => {
+      const input = base.input.extend({ drop: z.string().max(10).describe("Drop it").optional() });
+      const sharing = (when: string[]) =>
+        defineEntry({
+          ...base,
+          name: "fixture.other",
+          input,
+          faces: { ui: true, cli: { verb: "fixture-note", positional: ["task"], when } },
+        });
+      expect(check(base, sharing(["drop"]))).toEqual([]);
+      expect(check(sharing(["drop"]))).toEqual([
+        'fixture.other: verb "fixture-note" with when needs a face without when',
+      ]);
+      expect(check(base, sharing(["task"]))).toEqual([
+        'fixture.other: cli "fixture-note": when "task" is not a flag of a scalar input field',
+        'fixture.other: when "task" is a field of fixture.note too',
+      ]);
+      expect(check(base, sharing(["text"]))).toEqual([
+        'fixture.other: when "text" is a field of fixture.note too',
+      ]);
+    });
+
     test("positionals, flags and short names name existing scalar fields", () => {
       const variant = defineEntry({
         ...base,

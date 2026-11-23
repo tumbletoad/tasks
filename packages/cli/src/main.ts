@@ -163,7 +163,7 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
         return await slot(io, globals, args, options);
       }
       default: {
-        const verb = verbSpec(command);
+        const verb = verbSpec(command, args);
         if (verb === undefined) {
           return printUsage(
             io,

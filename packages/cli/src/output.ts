@@ -399,6 +399,19 @@ export function render(entry: string, result: Result, space: string, asked: Aske
         `${result["kind"] === "note" ? "Noted" : "Logged"} ${String(result["entry"])} on ${String(result["task"])} in ${space}${replay(result)}`,
       );
       break;
+    case "note.remove": {
+      const note = str(result["note"]);
+      const task = str(result["task"]);
+      const number = note.replace(/^n/u, "");
+      lines.push(
+        result["result"] === "removed"
+          ? `Removed note ${note} from ${task} in ${space}: put it back with ttasks note ${task} --put-back ${number}${replay(result)}`
+          : result["result"] === "put_back"
+            ? `Put back note ${note} on ${task} in ${space}${replay(result)}`
+            : `No change to note ${note} on ${task} in ${space}${replay(result)}`,
+      );
+      break;
+    }
     case "task.finish": {
       const dropped = result["lifecycle"] === "archived";
       lines.push(
@@ -473,6 +486,11 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       }
       // The user's request for the launch named: each line as typed after an indent.
       const request = result["request"] as Result | undefined;
+      if (request?.["removed"] === true) {
+        lines.push(
+          `The user took back their request for this launch (note ${str(request["note"])}): do not act on it.`,
+        );
+      }
       if (typeof request?.["text"] === "string") {
         lines.push("Request from the user for this launch:");
         for (const line of request["text"].split(LINE_BREAK)) lines.push(`  ${line}`);
@@ -556,6 +574,17 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       }
       for (const row of (sections["history"] as Result[] | undefined) ?? []) {
         lines.push(`  #${String(row["seq"])} ${String(row["actor"])}: ${String(row["what"])}`);
+      }
+      // Only the person's read lists the notes they took back, with the way to put one back.
+      const removedNotes = (result["removed_notes"] as Result[] | undefined) ?? [];
+      for (const note of removedNotes) {
+        const removed = (note["removed"] ?? {}) as Result;
+        lines.push(
+          `  ${str(note["ref"])} removed ${str(removed["at"]).slice(0, 10)} by ${str(removed["by"])}: ${entryText(note["text"])}`,
+        );
+      }
+      if (removedNotes.length > 0) {
+        lines.push(`Put a note back with ttasks note ${str(task["ref"])} --put-back <number>`);
       }
       if (typeof result["before"] === "string") {
         lines.push(`More: the same command with --before ${result["before"]}`);

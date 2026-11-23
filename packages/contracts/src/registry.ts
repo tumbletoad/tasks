@@ -7,6 +7,7 @@ import { groupManage } from "./entries/group-manage.ts";
 import { historyRedo } from "./entries/history-redo.ts";
 import { historyUndo } from "./entries/history-undo.ts";
 import { launchOpen } from "./entries/launch-open.ts";
+import { noteRemove } from "./entries/note-remove.ts";
 import { prefsManage } from "./entries/prefs-manage.ts";
 import { receiptGet } from "./entries/receipt-get.ts";
 import { runReport } from "./entries/run-report.ts";
@@ -35,6 +36,8 @@ export const registry = [
   groupManage,
   taskUpdate,
   entryAdd,
+  // After the notes entry.add writes: it takes back one of them and puts it back.
+  noteRemove,
   taskFinish,
   taskReopen,
   receiptGet,

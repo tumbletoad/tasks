@@ -1396,6 +1396,108 @@
     },
     {
       "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "none",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "conflict",
+        "forbidden",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "put_back": {
+            "description": "Put back this removed note",
+            "maxLength": 7,
+            "pattern": "^n?[1-9][0-9]{0,5}$",
+            "type": "string"
+          },
+          "remove": {
+            "description": "Take back this note: its number, such as 3 or n3",
+            "maxLength": 7,
+            "pattern": "^n?[1-9][0-9]{0,5}$",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "task": {
+            "description": "Task ref (M-14) or ID",
+            "maxLength": 40,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task",
+          "base",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "note.remove",
+      "ops": [
+        "note.delete",
+        "note.restore"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "description": "The space's position when this answer was made",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "note": {
+            "description": "The note, such as n3",
+            "pattern": "^[nl][1-9][0-9]{0,5}$",
+            "type": "string"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "result": {
+            "description": "removed, put back, or the note was that way already",
+            "enum": [
+              "removed",
+              "put_back",
+              "no_change"
+            ],
+            "type": "string"
+          },
+          "task": {
+            "description": "Task reference",
+            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result",
+          "task",
+          "note",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Take back a note on a task, or put a removed one back. Nothing is deleted for good."
+    },
+    {
+      "actorKinds": [
         "human",
         "agent",
         "routine"
@@ -4371,32 +4473,140 @@
                 "maxItems": 64,
                 "type": "array"
               },
-              "request": {
-                "additionalProperties": false,
-                "description": "The user's request for this launch: do it",
-                "properties": {
-                  "cut": {
-                    "description": "Characters left out; a sections read has them",
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
+              "removed_notes": {
+                "description": "For the user only: notes taken back, newest first, to read and put back",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "description": "When, ISO date and time",
+                      "type": "string"
+                    },
+                    "author": {
+                      "description": "Actor that wrote it, from history",
+                      "type": "string"
+                    },
+                    "for_agents": {
+                      "description": "A note from the user addressed to agents",
+                      "type": "boolean"
+                    },
+                    "ref": {
+                      "description": "Note ordinal, such as n2",
+                      "pattern": "^[nl][1-9][0-9]{0,5}$",
+                      "type": "string"
+                    },
+                    "removed": {
+                      "additionalProperties": false,
+                      "description": "When it was taken back, and by whom",
+                      "properties": {
+                        "at": {
+                          "description": "When, ISO date and time",
+                          "type": "string"
+                        },
+                        "by": {
+                          "description": "Who took it back",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "by"
+                      ],
+                      "type": "object"
+                    },
+                    "request_for": {
+                      "description": "The user's request for these launches, oldest first: history, not yours to do",
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "instance": {
+                            "description": "The agent instance it opened",
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "launch": {
+                            "description": "The launch reference",
+                            "pattern": "^L[0-9A-HJKMNP-TV-Z]{5}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "launch",
+                          "instance"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 20,
+                      "type": "array"
+                    },
+                    "text": {
+                      "description": "Note text",
+                      "type": "string"
+                    }
                   },
-                  "note": {
-                    "description": "The note that holds it",
-                    "pattern": "^[nl][1-9][0-9]{0,5}$",
-                    "type": "string"
-                  },
-                  "text": {
-                    "description": "The request",
-                    "maxLength": 8000,
-                    "type": "string"
-                  }
+                  "required": [
+                    "ref",
+                    "author",
+                    "for_agents",
+                    "at",
+                    "text",
+                    "removed"
+                  ],
+                  "type": "object"
                 },
-                "required": [
-                  "note",
-                  "text"
+                "maxItems": 50,
+                "type": "array"
+              },
+              "request": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cut": {
+                        "description": "Characters left out; a sections read has them",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "note": {
+                        "description": "The note that holds it",
+                        "pattern": "^[nl][1-9][0-9]{0,5}$",
+                        "type": "string"
+                      },
+                      "text": {
+                        "description": "The request",
+                        "maxLength": 8000,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "note",
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "note": {
+                        "description": "The note that held it",
+                        "pattern": "^[nl][1-9][0-9]{0,5}$",
+                        "type": "string"
+                      },
+                      "removed": {
+                        "const": true,
+                        "description": "The user took the request back: do not act on it",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "note",
+                      "removed"
+                    ],
+                    "type": "object"
+                  }
                 ],
-                "type": "object"
+                "description": "The user's request for this launch: do it"
               },
               "skills": {
                 "description": "The user's skills: read the ones you need with status skills",
@@ -5245,31 +5455,55 @@
                 "type": "array"
               },
               "request": {
-                "additionalProperties": false,
-                "description": "The user's request for this launch: do it",
-                "properties": {
-                  "cut": {
-                    "description": "Characters left out; a sections read has them",
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cut": {
+                        "description": "Characters left out; a sections read has them",
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "note": {
+                        "description": "The note that holds it",
+                        "pattern": "^[nl][1-9][0-9]{0,5}$",
+                        "type": "string"
+                      },
+                      "text": {
+                        "description": "The request",
+                        "maxLength": 8000,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "note",
+                      "text"
+                    ],
+                    "type": "object"
                   },
-                  "note": {
-                    "description": "The note that holds it",
-                    "pattern": "^[nl][1-9][0-9]{0,5}$",
-                    "type": "string"
-                  },
-                  "text": {
-                    "description": "The request",
-                    "maxLength": 8000,
-                    "type": "string"
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "note": {
+                        "description": "The note that held it",
+                        "pattern": "^[nl][1-9][0-9]{0,5}$",
+                        "type": "string"
+                      },
+                      "removed": {
+                        "const": true,
+                        "description": "The user took the request back: do not act on it",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "note",
+                      "removed"
+                    ],
+                    "type": "object"
                   }
-                },
-                "required": [
-                  "note",
-                  "text"
                 ],
-                "type": "object"
+                "description": "The user's request for this launch: do it"
               },
               "sections": {
                 "additionalProperties": false,

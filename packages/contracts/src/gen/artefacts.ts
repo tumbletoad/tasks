@@ -102,7 +102,13 @@ export function offeredVerbs(entries: readonly AnyEntry[]) {
   return entries
     .filter((entry) => isOffered(entry.name))
     .flatMap((entry) => cliFaces(entry).map((face) => verbSpec(entry, face)))
-    .sort((a, b) => (a.verb < b.verb ? -1 : a.verb > b.verb ? 1 : 0));
+    .sort(
+      (a, b) =>
+        a.verb.localeCompare(b.verb, "en") ||
+        // A verb's face without `when` first, then the faces that share it, by entry.
+        Number(a.when !== undefined) - Number(b.when !== undefined) ||
+        a.entry.localeCompare(b.entry, "en"),
+    );
 }
 
 /** One verb of `cli-spec.json`. */
@@ -146,8 +152,12 @@ export function verbSpec(entry: AnyEntry, face: CliFace) {
     }
     keyValue = { field: face.keyValue, keys };
   }
+  const when = (face.when ?? []).flatMap(
+    (field) => flags.find((flag) => flag.field === field)?.flag ?? [],
+  );
   return {
     verb: face.verb,
+    ...(when.length === 0 ? {} : { when }),
     entry: entry.name,
     summary: entry.summary,
     kind: entry.kind,

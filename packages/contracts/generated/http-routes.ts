@@ -9,6 +9,7 @@ export const httpRoutes = [
   { entry: "history.redo", method: "POST", path: "/api/v1/op/history.redo" },
   { entry: "history.undo", method: "POST", path: "/api/v1/op/history.undo" },
   { entry: "launch.open", method: "POST", path: "/api/v1/op/launch.open" },
+  { entry: "note.remove", method: "POST", path: "/api/v1/op/note.remove" },
   { entry: "prefs.manage", method: "POST", path: "/api/v1/op/prefs.manage" },
   { entry: "receipt.get", method: "POST", path: "/api/v1/op/receipt.get" },
   { entry: "space.status", method: "POST", path: "/api/v1/op/space.status" },
