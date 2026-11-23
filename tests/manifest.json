@@ -2100,6 +2100,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.source.detach",
+      "title": "In the page, a source's Remove takes it off the task and the toast's Undo brings it back; after a reload the Removed line lists it with who removed it and Put back; put back while another task holds its key brings it back as context with a link to where its captures go",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.source.detach",
+      "title": "Through real requests: every read lists each source's ID, remove_sources takes an ID, or a key or URL that names one link and refuses one that names several with their IDs; put_back_sources brings back the pair and says where captures go when another task holds the key; a finished task takes a detach alone and refuses it mixed with another change; an agent detaches; the command line's set --remove-source and --put-back-source and show",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.source.detach",
       "title": "A source detached from a task, by the writer: the link is removed and the source and every other link stay, so a capture of its key makes new work; put back brings back the same pair with its role and position; an unkeyed, a duplicate-URL and a title-only source by their ID; a stale link version or base is a conflict and a repeat is unchanged; a finished task takes a detach or put back alone and a mixed request is refused whole; put back while another active task holds the key links the source as plain context and leaves the capture there; an agent detaches; undo and redo of both, an undo that would make a second holder refused; a link whose creation was undone is not put back",
       "owner": "M3",

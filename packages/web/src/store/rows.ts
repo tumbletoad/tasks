@@ -74,6 +74,7 @@ export interface RowRun {
 
 /** A source as the row shows it: its kind and its own text, never a label. */
 export interface RowSource {
+  readonly id: string;
   readonly kind: string;
   readonly title: string;
   readonly who?: string;
