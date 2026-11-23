@@ -196,7 +196,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
         if (sending.current === words) sending.current = undefined;
         if (readNote(space, task.id)?.id === id) keepNote(space, task.id, undefined);
         sent(words);
-        if (answers > 1) say(t("composer.noteAnswers", { count: answers }));
+        if (answers > 1) say(t("composer.noteAnswers"));
       },
       (error: unknown) => {
         if (sending.current === words) sending.current = undefined;

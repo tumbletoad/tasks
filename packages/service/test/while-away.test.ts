@@ -233,6 +233,38 @@ describe("[A5.while-away.service.question] the questions agents asked wait on th
     expect(await refs()).toEqual([]);
   });
 
+  test("a question asked after a Dismiss waits even when the clock has not moved since the one dismissed", async () => {
+    const { task, refs, next } = asking();
+    submit(
+      fx.codex,
+      [{ kind: "log.add", task, body: "Fixture one?", log_kind: "question" }],
+      next(),
+    );
+    await call("task.update", { task, set: { reviewed: "l1" }, request_id: rid() });
+    expect(await refs()).toEqual([]);
+    submit(
+      fx.claude,
+      [{ kind: "log.add", task, body: "Fixture two?", log_kind: "question" }],
+      clock,
+    );
+    expect(await refs()).toEqual(["l2"]);
+  });
+
+  test("a Dismiss sent together with another field keeps that field's own check against a newer value", async () => {
+    const { task, ask, refs } = asking();
+    ask(fx.codex, "Fixture which?");
+    const alone = async (set: Record<string, unknown>) =>
+      call("task.update", { task, set, request_id: rid() }).then(
+        () => "updated",
+        (e: unknown) => (e as AppError).toBody().code,
+      );
+    // Whatever a title sent without a base answers, the same title with a Dismiss answers too.
+    const title = await alone({ title: "Fixture renamed without a base" });
+    const both = await alone({ title: "Fixture renamed again", reviewed: "l1" });
+    expect(both).toBe(title);
+    if (both !== "updated") expect(await refs()).toEqual(["l1"]);
+  });
+
   test("on a completed or dropped task they wait too: the snapshot brings its row, and Dismiss works there", async () => {
     for (const end of ["task.complete", "task.archive"] as const) {
       const { task, ask, next } = asking();

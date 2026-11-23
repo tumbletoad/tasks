@@ -99,13 +99,15 @@ export const ROW_QUESTIONS = 10;
  * Whether the log entry `q` is a question that waits for the person on the task `t`, whatever the
  * task's lifecycle: an agent or a routine asked it, no note of the person's came after it, and it
  * arrived after the question the person last dismissed (`reviewed_at` holds that one's arrival,
- * read.ts's `readReviewedMark`). Arrival is the commit's time, which only moves forward; the
- * entry's own `created_at` may be dated back.
+ * read.ts's `readReviewedMark`) or after the dismissal itself. Arrival is the commit's time, which
+ * only moves forward and can stand still, so a question committed after the dismissal waits by
+ * its place in history whatever the clock said; the entry's own `created_at` may be dated back.
  */
 export const WAITS =
   "q.task_id = t.id AND q.kind = 'question' AND q.deleted_at IS NULL AND " +
   "(SELECT kind FROM actors WHERE id = q.author_id) IN ('agent', 'routine') AND " +
-  "(t.reviewed_at IS NULL OR (SELECT at FROM commits WHERE seq = q.created_seq) > t.reviewed_at) " +
+  "(t.reviewed_at IS NULL OR (SELECT at FROM commits WHERE seq = q.created_seq) > t.reviewed_at " +
+  "OR q.created_seq > json_extract(t.fp, '$.reviewed_at')) " +
   "AND NOT EXISTS (SELECT 1 FROM notes n JOIN actors na ON na.id = n.author_id WHERE " +
   "n.task_id = t.id AND n.deleted_at IS NULL AND na.kind = 'human' AND " +
   "n.created_seq > q.created_seq)";

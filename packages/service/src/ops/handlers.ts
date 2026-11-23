@@ -2305,7 +2305,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const date = due(set["due"], today, "set.due");
     if (date !== undefined) values["due"] = date;
     if (typeof set["focus"] === "boolean") values["focus"] = set["focus"] ? today : null;
-    // A dismissal's mark comes from this read, which is its base unless the caller gave one.
+    // A dismissal's mark comes from this read, which is the base of a request that only dismisses.
     let readBase: string | undefined;
     const reviewed = set["reviewed"];
     if (typeof reviewed === "string") {
@@ -2448,11 +2448,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           op.unset === undefined &&
           Object.keys(op.set ?? {}).every((field) => field === "reviewed_at")),
     );
+    // Any other field in the request keeps its own check against the base the caller read.
+    const dismissOnly = ops.every(
+      (op) => op.kind === "task.patch" && Object.keys(op.set ?? {}).join() === "reviewed_at",
+    );
     let submitted: WriteResult;
     try {
       submitted = await submit(call, [...groups, ...ops], {
         active: !anyLifecycle,
-        ...(readBase === undefined ? {} : { base: readBase }),
+        ...(readBase === undefined || !dismissOnly ? {} : { base: readBase }),
         inserted: { at: 0, count: groups.length },
         warnings: made,
         pathOf: (i, field) =>

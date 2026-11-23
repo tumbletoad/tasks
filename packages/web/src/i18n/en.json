@@ -624,7 +624,7 @@
   "composer.noteTip": "Save what you typed as a note on this task",
   "composer.noteEmpty": "Type a note first",
   "composer.noteFailed": "The note was not saved. It is still in the field.",
-  "composer.noteAnswers": "{count, plural, one {Note saved. It answers the question waiting here.} other {Note saved. It answers the # questions waiting here.}}",
+  "composer.noteAnswers": "Note saved. It answers every question that was waiting here.",
   "composer.noAgent": "No agent is set up here. Copy the brief instead.",
   "composer.left": "{left, plural, =0 {Full: a note or request holds {max, number} characters} one {# character left} other {# characters left}}",
   "composer.opening": "{label} is opening",
