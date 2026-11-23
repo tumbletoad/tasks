@@ -25,6 +25,7 @@ import {
 } from "@ttasks/storage";
 import {
   AppError,
+  CAPTURES_TO_MAX,
   dayOf,
   PREFERENCES,
   weekLastDay,
@@ -197,11 +198,43 @@ const LOG_COUNT: Statement = {
   sql: `SELECT count(*) AS n FROM log_entries WHERE task_id = ${MATCH} AND deleted_at IS NULL`,
   mode: "get",
 };
+/**
+ * Where captures of a source's item go when this link does not decide it: for a source linked as
+ * plain context (its key kept as its reference) and for a detached keyed link, every active task a
+ * live link to the key's source joins, the read's own task included when another of its links
+ * holds the key, by reference, as a JSON array. Several make a capture ask which. Read each time,
+ * so it holds after any change of a holder.
+ */
+const CAPTURES_TO =
+  "CASE WHEN ts.removed_at IS NOT NULL OR s.source_key IS NULL THEN (SELECT json_group_array(r) " +
+  "FROM (SELECT (SELECT ref_prefix FROM space WHERE one = 1) || '-' || h.ref AS r FROM sources k " +
+  "JOIN task_sources hl ON hl.source_id = k.id JOIN tasks h ON h.id = hl.task_id " +
+  "WHERE k.source_key = coalesce(s.source_key, s.ref) AND k.deleted_at IS NULL " +
+  "AND hl.removed_at IS NULL AND h.deleted_at IS NULL AND h.lifecycle = 'active' " +
+  "ORDER BY h.ref)) END";
+const SOURCE_COLUMNS =
+  "s.id, s.source_key, s.kind, s.title, s.who, s.url, s.at, s.ref, ts.task_id, ts.version, " +
+  `ts.removed_at, ${CAPTURES_TO} AS captures_to`;
 const SOURCES: Statement = {
   sql:
-    "SELECT s.source_key, s.kind, s.title, s.who, s.url, s.at FROM task_sources ts " +
+    `SELECT ${SOURCE_COLUMNS} FROM task_sources ts ` +
     `JOIN sources s ON s.id = ts.source_id WHERE ts.task_id = ${MATCH} ` +
     "AND ts.removed_at IS NULL AND s.deleted_at IS NULL ORDER BY ts.position",
+  mode: "all",
+};
+/**
+ * The links detached from the task, newest first, with who detached them. A link removed by an
+ * undo of its creation is not one: Redo brings it back with the rest of that change.
+ */
+const REMOVED_SOURCES: Statement = {
+  sql:
+    `SELECT ${SOURCE_COLUMNS}, ` +
+    "CASE WHEN c.origin = 'import' THEN 'import' WHEN x.kind = 'human' THEN 'user' " +
+    "ELSE x.label END AS removed_by FROM task_sources ts JOIN sources s ON s.id = ts.source_id " +
+    "JOIN commits c ON c.seq = json_extract(ts.fp, '$.removed') " +
+    `JOIN actors x ON x.id = c.author_id WHERE ts.task_id = ${MATCH} ` +
+    "AND ts.removed_at IS NOT NULL AND s.deleted_at IS NULL AND c.undo_of IS NULL " +
+    "ORDER BY ts.removed_at DESC, s.id",
   mode: "all",
 };
 /**
@@ -323,13 +356,31 @@ export const logOf = (row: Row) => ({
   text: text(row["body"]),
 });
 
+/** The tasks a read names as holding a source's key, when any do, and how many more there are. */
+function capturesTo(value: unknown): { captures_to?: string[]; captures_more?: number } {
+  if (typeof value !== "string") return {};
+  const refs = (JSON.parse(value) as unknown[]).filter((r): r is string => typeof r === "string");
+  if (refs.length === 0) return {};
+  const more = refs.length - CAPTURES_TO_MAX;
+  return {
+    captures_to: refs.slice(0, CAPTURES_TO_MAX),
+    ...(more > 0 ? { captures_more: more } : {}),
+  };
+}
+
 export const sourceOf = (row: Row) => ({
+  id: text(row["id"]),
   ...present("key", row["source_key"]),
   kind: row["kind"] as string,
   title: text(row["title"]),
   ...present("who", row["who"]),
   ...present("url", row["url"]),
   ...(typeof row["at"] === "number" ? { at: iso(row["at"]) } : {}),
+  ...present("ref", row["ref"]),
+  ...capturesTo(row["captures_to"]),
+  ...(typeof row["removed_at"] === "number"
+    ? { removed: { at: iso(row["removed_at"]), by: text(row["removed_by"]) } }
+    : {}),
 });
 
 /** An entry's ordinal, for paging. */
@@ -372,6 +423,8 @@ export interface TaskRead {
   readonly named: Row[];
   readonly log: Row[];
   readonly sources: Row[];
+  /** The links detached from it, newest first: the card's Removed line. */
+  readonly removedSources: Row[];
   /** Where the task opens on the read's machine. */
   readonly folder: TaskFolder;
   readonly history: Row[];
@@ -429,6 +482,7 @@ export async function readTask(
     log,
     logCount,
     sources,
+    removedSources,
     history,
     learnings,
     named,
@@ -446,6 +500,7 @@ export async function readTask(
       LOG,
       LOG_COUNT,
       SOURCES,
+      REMOVED_SOURCES,
       HISTORY,
       learned ? LEARNINGS : NOTHING,
       options.named === undefined || options.named.length === 0 ? NOTHING : NAMED,
@@ -473,6 +528,7 @@ export async function readTask(
     named: (named ?? []) as Row[],
     log: log as Row[],
     sources: sourceRows,
+    removedSources: removedSources as Row[],
     folder: taskFolderOf((own ?? []) as Row[], (project ?? []) as Row[], options.machine),
     history: history as Row[],
     learnings: ((learnings ?? []) as Row[]).flatMap((learning, k) =>
@@ -485,6 +541,17 @@ export async function readTask(
       sources: sourceRows.length,
     },
   };
+}
+
+/** A task's live links, then those detached from it, as its read lists them. */
+export async function readTaskLinks(reader: WorkerConnection, ref: string): Promise<Row[]> {
+  const { id, ref: number, alias } = taskKey(ref);
+  const [live, removed] = await snapshot(reader, [SOURCES, REMOVED_SOURCES], {
+    id,
+    ref: number,
+    alias,
+  });
+  return [...(live as Row[]), ...(removed as Row[])];
 }
 
 // ---------------------------------------------------------------------------------------------

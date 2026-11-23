@@ -21,6 +21,7 @@ const PREFIX_SQL = "SELECT ref_prefix FROM space WHERE one = 1";
 
 /** A source as a task's row shows it: its kind and its own text, never a label (A5 3.6). */
 export interface CompactSource {
+  readonly id: string;
   readonly kind: string;
   readonly title: string;
   readonly who?: string;
@@ -139,9 +140,10 @@ export function taskColumns(folders: boolean): string {
     "json_extract(t.fp, '$.status') AND c.seq <> t.created_seq), t.created_at) END AS waiting_since, " +
     // What the row shows of the task's children (A5 3.6), turned into `sources`, `sources_more`
     // and `place` by `taskRows`.
-    "(SELECT json_group_array(json_object('p', x.position, 'kind', x.kind, 'title', x.title, " +
-    "'who', x.who, 'ref', x.ref, 'key', x.source_key, 'url', x.url)) FROM (SELECT ts.position, " +
-    "s.kind, s.title, s.who, s.ref, s.source_key, s.url FROM task_sources ts JOIN sources s ON s.id = ts.source_id WHERE ts.task_id = t.id " +
+    "(SELECT json_group_array(json_object('p', x.position, 'id', x.id, 'kind', x.kind, " +
+    "'title', x.title, 'who', x.who, 'ref', x.ref, 'key', x.source_key, 'url', x.url)) FROM " +
+    "(SELECT ts.position, s.id, s.kind, s.title, s.who, s.ref, s.source_key, s.url FROM " +
+    "task_sources ts JOIN sources s ON s.id = ts.source_id WHERE ts.task_id = t.id " +
     `AND ts.removed_at IS NULL AND s.deleted_at IS NULL ORDER BY ts.position LIMIT ${String(ROW_SOURCES)}) x) ` +
     "AS x_sources, " +
     "(SELECT count(*) FROM task_sources ts JOIN sources s ON s.id = ts.source_id WHERE " +
@@ -206,8 +208,15 @@ function sourcesOf(value: unknown): CompactSource[] {
     );
   const out: CompactSource[] = [];
   for (const s of sorted) {
-    if (typeof s["kind"] !== "string" || typeof s["title"] !== "string") continue;
+    if (
+      typeof s["id"] !== "string" ||
+      typeof s["kind"] !== "string" ||
+      typeof s["title"] !== "string"
+    ) {
+      continue;
+    }
     const source: { -readonly [K in keyof CompactSource]: CompactSource[K] } = {
+      id: s["id"],
       kind: s["kind"],
       title: s["title"],
     };

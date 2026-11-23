@@ -313,6 +313,7 @@ const evidence = {
 } as const;
 
 const ticket = {
+  id: "s_0ftqk2b8x3m9r4v7w1c5n6d2ha",
   key: "jira:LUM-212",
   kind: "ticket",
   title: "Appointment times shift by an hour",
@@ -445,7 +446,14 @@ export const taskGet = defineEntry({
               text: "The April reports were regenerated after the fix.",
             },
           ],
-          sources: [{ key: "jira:LUM-187", kind: "ticket", title: "Report times wrong after DST" }],
+          sources: [
+            {
+              id: "s_04hm8q2v6c1x9t3k7w5r0b2nfe",
+              key: "jira:LUM-187",
+              kind: "ticket",
+              title: "Report times wrong after DST",
+            },
+          ],
           outcome: {
             outcome: "Reports convert from UTC with the clinic's zone ID. April matches.",
             wrap_state: "wrapped",
