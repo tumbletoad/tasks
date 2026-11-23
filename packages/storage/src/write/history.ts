@@ -403,17 +403,32 @@ function newerAuthorsSql(runs: string): string {
 const RUNS_OF_TASK =
   " OR (c.entity = 'runs' AND c.entity_id IN (SELECT id FROM runs WHERE task_id = $task))";
 
+/**
+ * The commit that last applied the rows of commit `seq` (an SQL expression): its newest redo, else
+ * the commit itself. Others' changes after it are newer work, and a script's change after it is
+ * one the person may not mean to keep behind an undo.
+ */
+export const appliedSql = (seq: string): string =>
+  `(SELECT coalesce(max(r.seq), ${seq}) FROM commits r WHERE r.seq > ${seq} AND r.redo_of = ${seq})`;
+
+/**
+ * The step an undo of principal `$principal` takes (A1 3.10.1), with `applied`, the commit that
+ * last applied it: of its `done` commits, the one applied last, by its newest redo or else by its
+ * own seq. A redo can apply a step before an older one it passed over, so a step's own seq does
+ * not say which came last: a redo after the newest `done` commit does. The writer and the
+ * service's question before an undo both read it here, so they never mean different steps.
+ */
+export const UNDO_TARGET_SQL =
+  "WITH newest AS (SELECT seq, id, undo_status, undone_by, seq AS applied FROM commits " +
+  "WHERE principal_id = $principal AND undo_status = 'done' ORDER BY seq DESC LIMIT 1) " +
+  "SELECT * FROM (SELECT t.seq AS seq, t.id AS id, t.undo_status AS undo_status, " +
+  "t.undone_by AS undone_by, r.seq AS applied FROM commits r JOIN commits t ON t.seq = r.redo_of " +
+  "WHERE r.seq > (SELECT seq FROM newest) AND r.principal_id = $principal AND r.kind = 'redo' " +
+  "AND t.undo_status = 'done' ORDER BY r.seq DESC LIMIT 1) " +
+  "UNION ALL SELECT * FROM newest ORDER BY applied DESC LIMIT 1";
+
 const SQL = {
   changes: "SELECT * FROM changes WHERE seq = $seq ORDER BY n",
-  newestDone:
-    `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
-    "AND undo_status = 'done' ORDER BY seq DESC LIMIT 1",
-  /** The `done` commit of the principal's newest redo after `$after`, if any. */
-  newestRedone:
-    "SELECT t.seq AS seq, t.id AS id, t.undo_status AS undo_status, t.undone_by AS undone_by " +
-    "FROM commits r JOIN commits t ON t.seq = r.redo_of WHERE r.seq > $after " +
-    "AND r.principal_id = $principal AND r.kind = 'redo' AND t.undo_status = 'done' " +
-    "ORDER BY r.seq DESC LIMIT 1",
   undone:
     `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
     "AND undo_status = 'undone' ORDER BY seq",
@@ -421,8 +436,7 @@ const SQL = {
   ownSteps:
     "SELECT seq FROM commits WHERE seq IN (SELECT value FROM json_each($seqs)) " +
     "AND principal_id = $principal AND (undo_status IS NOT NULL OR kind IN ('undo', 'redo'))",
-  /** The newest redo of commit `$seq`, if any. */
-  lastRedo: "SELECT max(seq) AS seq FROM commits WHERE seq > $seq AND redo_of = $seq",
+  lastApplied: `SELECT ${appliedSql("$seq")} AS seq`,
   author:
     "SELECT k.at AS at, k.author_id AS actor, a.kind AS kind, a.label AS label, " +
     "k.origin AS origin FROM commits k JOIN actors a ON a.id = k.author_id WHERE k.seq = $seq",
@@ -567,15 +581,9 @@ function decodeStackCommit(row: Row | undefined): StackCommit | undefined {
   return { seq: r.int("seq", "seq"), id: r.id("id", "op"), undoneBy };
 }
 
-/**
- * What undo takes (A1 3.10.1): the principal's `done` commit applied last, by its newest redo or
- * else by its own seq. A redo can apply a step before an older one it passed over, so a step's own
- * seq does not say which came last: a redo after the newest `done` commit does.
- */
+/** What undo takes (UNDO_TARGET_SQL). */
 export function undoTarget(conn: Connection, principal: Id<"ac">): StackCommit | undefined {
-  const newest = decodeStackCommit(conn.prepare(SQL.newestDone).get({ principal }));
-  const after = newest?.seq ?? 0;
-  return decodeStackCommit(conn.prepare(SQL.newestRedone).get({ principal, after })) ?? newest;
+  return decodeStackCommit(conn.prepare(UNDO_TARGET_SQL).get({ principal }));
 }
 
 /** What redo tries, in this order: the principal's `undone` commits, oldest first (A1 3.10.1). */
@@ -590,10 +598,12 @@ export function redoSteps(conn: Connection, principal: Id<"ac">): StackCommit[] 
     });
 }
 
-/** The commit that last applied a `done` commit's rows: its newest redo, else the commit itself. */
+/** The commit that last applied a `done` commit's rows (appliedSql). */
 export function lastApplied(conn: Connection, seq: number): number {
-  const redo = conn.prepare(SQL.lastRedo).get({ seq })?.["seq"];
-  return typeof redo === "number" ? redo : seq;
+  return new RowReader("commits", conn.prepare(SQL.lastApplied).get({ seq }) ?? {}).int(
+    "seq",
+    "seq",
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
