@@ -490,6 +490,14 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await page.keyboard.type(typo);
     const shelved = page.getByRole("option", { name: seedlings, exact: true });
     await expect(shelved).toHaveAccessibleDescription("archived");
+    // The archive may have reached the page after the list opened, and a list keeps its highlight
+    // when the order changes under it: now that the page knows, the list opens again.
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await expect(pill).toBeFocused();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type(typo);
+    await expect(shelved).toHaveAccessibleDescription("archived");
     await expect(page.getByRole("option").first()).toHaveText(`New area “${typo}”`);
     await expect(page.getByRole("option").last()).toHaveAccessibleName(seedlings);
     await page.keyboard.press("Enter");
