@@ -49,6 +49,20 @@ async function agentSets(world: World, ref: string, set: Record<string, unknown>
   await world.op(world.mira.id, "task.update", { task: ref, set, base: as_of }, "agent");
 }
 
+/** Stops the page's clock, installed before, where it is now: its timers wait for `resume`. */
+async function stopClock(page: Page): Promise<void> {
+  for (;;) {
+    const now = await page.evaluate(() => Date.now());
+    try {
+      await page.clock.pauseAt(now + 1);
+      return;
+    } catch (error) {
+      // The clock moved on between the read and the pause: read it again.
+      if (!String(error).includes("past")) throw error;
+    }
+  }
+}
+
 const rowOf = (page: Page, ref: string) => page.locator(`main li[data-task="${ref}"]`);
 const toast = (page: Page) => page.locator('[data-part="toast-text"]');
 const toastAction = (page: Page) => page.locator('[data-part="toast-action"]');
@@ -520,7 +534,10 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     const areaOf = async () =>
       ((await world.op(world.mira.id, "task.get", { task: ref })) as { task: { area?: string } })
         .task.area;
-    // The area's creation waits until an agent has filed the task elsewhere.
+    // The area's creation waits until an agent has filed the task elsewhere. The page's clock
+    // stands still meanwhile: the page gives up on a request held for a few seconds, and the
+    // agent's calls may take longer than that.
+    await page.clock.install();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -543,10 +560,12 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await pill.click();
     await expect(page.getByRole("searchbox", { name: "Find an area or project" })).toBeFocused();
     await page.keyboard.type(orchard);
+    await stopClock(page);
     await page.keyboard.press("Enter");
     await sent;
     await agentSets(world, ref, { area: shed });
     release();
+    await page.clock.resume();
     await expect(toast(page)).toHaveText(
       new RegExp(`^Area ${orchard} added, and the task stayed where it was\\. .+ changed the area`),
     );

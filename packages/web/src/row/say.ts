@@ -10,3 +10,14 @@ export function sayMsg(t: Translate, message: Msg): string {
   }
   return t(message.id, values);
 }
+
+/** The values that name a folder, a file or a machine. */
+const MACHINE_VALUES: ReadonlySet<string> = new Set(["folder", "file", "backup", "machine"]);
+
+/** Whether the message names a folder, a file or a machine: the page marks it `data-machine`. */
+export function namesMachine(message: Msg): boolean {
+  return Object.entries(message.values ?? {}).some(
+    ([name, value]) =>
+      MACHINE_VALUES.has(name) || (typeof value === "object" && namesMachine(value)),
+  );
+}

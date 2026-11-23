@@ -67,7 +67,7 @@ export function FolderFacts({
   const exact = look?.text === text ? look.exact : undefined;
   if (exact === undefined) return null;
   return (
-    <p className={sheet.note} data-part="folder-facts">
+    <p className={sheet.note} data-part="folder-facts" data-machine="">
       {exact.project === undefined || exact.project.id === owner
         ? exact.repo === undefined
           ? t("folder.is", { name: exact.name ?? exact.folder })
@@ -145,7 +145,7 @@ export function FolderDialog({
               {title}
             </Heading>
             {lead === undefined ? null : (
-              <p id={leadId} className={sheet.lead}>
+              <p id={leadId} className={sheet.lead} data-machine="">
                 {lead}
               </p>
             )}
@@ -163,7 +163,7 @@ export function FolderDialog({
             />
             <FolderFacts look={look} text={text} owner={owner} />
             {error === undefined ? null : (
-              <p className={sheet.error} role="alert">
+              <p className={sheet.error} role="alert" data-machine="">
                 {error}
               </p>
             )}
