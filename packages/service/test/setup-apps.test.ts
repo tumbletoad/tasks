@@ -42,10 +42,12 @@ import {
   type HomeView,
   type SetupInput,
 } from "../src/setup/index.ts";
+import { keptRows } from "./setup-rows.ts";
 
 const SLOW = 180_000;
 const SPACE = "sp_3z8sm956jp8dajmtsar5kx026c";
-const GRANT = `gr_${"a".repeat(26)}`;
+/** The service's rows, as these tests keep them. */
+const ROWS = keptRows();
 const windows = process.platform === "win32";
 const BOM = "\u{FEFF}";
 /** Another server's secret: it must never leave its file. */
@@ -194,7 +196,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       ]);
       expect(readFileSync(file)).toEqual(before);
 
-      expect(await applyHome(input, view, SPACE, GRANT)).toMatchObject({ result: "applied" });
+      expect(await applyHome(input, view, SPACE, ROWS)).toMatchObject({ result: "applied" });
       const text = readFileSync(file, "utf8");
       expect(text.startsWith(BOM)).toBe(true);
       expect(text.replaceAll("\r\n", "")).not.toContain("\n");
@@ -219,14 +221,14 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         entry: { command: w.tasks, args: argv.slice(1) },
         args: [],
         undo: [],
-        grant: GRANT,
+        grant: ROWS.live.find((row) => row.home === view.home.home)?.grant,
       });
       expect(JSON.stringify(readRecords(w.state))).not.toContain(SENTINEL);
 
       const registered = only(await survey(input), "claude-desktop");
       expect(registered.state).toBe("registered");
-      expect((await applyHome(input, registered, SPACE, GRANT)).result).toBe("unchanged");
-      expect(await removeHome(input, registered)).toMatchObject({ result: "removed" });
+      expect((await applyHome(input, registered, SPACE, ROWS)).result).toBe("unchanged");
+      expect(await removeHome(input, registered, ROWS)).toMatchObject({ result: "removed" });
       expect(readFileSync(file)).toEqual(before);
       expect(readRecords(w.state)).toEqual([]);
       if (!windows) expect(statSync(file).mode & 0o777).toBe(0o640);
@@ -246,7 +248,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       // The app has not made its file yet: setup does not create it.
       const unset = only(await survey(input), "claude-desktop");
       expect(planChange(input, unset, SPACE)).toBe("not_set_up");
-      expect(await applyHome(input, unset, SPACE, null)).toMatchObject({
+      expect(await applyHome(input, unset, SPACE, ROWS)).toMatchObject({
         result: "left",
         reason: "not_set_up",
       });
@@ -258,23 +260,31 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       const view = only(await survey(input), "claude-desktop");
       const change = planChange(input, view, SPACE);
       expect(typeof change !== "string" && change.diff[0]).toBe("+ mcpServers = {}");
-      expect((await applyHome(input, view, SPACE, null)).result).toBe("applied");
-      expect(await removeHome(input, only(await survey(input), "claude-desktop"))).toMatchObject({
+      expect((await applyHome(input, view, SPACE, ROWS)).result).toBe("applied");
+      expect(
+        await removeHome(input, only(await survey(input), "claude-desktop"), ROWS),
+      ).toMatchObject({
         result: "removed",
       });
       expect(readFileSync(file, "utf8")).toBe(bare);
 
-      // Changed by hand after apply: left alone, and its record kept for status.
+      // Changed by hand after apply: turning it off takes the access away and leaves the entry,
+      // the person's from then on.
       expect(
-        (await applyHome(input, only(await survey(input), "claude-desktop"), SPACE, null)).result,
+        (await applyHome(input, only(await survey(input), "claude-desktop"), SPACE, ROWS)).result,
       ).toBe("applied");
       const edited = readFileSync(file, "utf8").replace('"--app"', '"--app-x"');
       writeFileSync(file, edited);
       const changed = only(await survey(input), "claude-desktop");
       expect(changed.state).toBe("edited");
-      expect(await removeHome(input, changed)).toMatchObject({ result: "left", reason: "edited" });
+      expect(await removeHome(input, changed, ROWS)).toMatchObject({
+        result: "left",
+        reason: "edited",
+        access: "off",
+        kept: "edited",
+      });
       expect(readFileSync(file, "utf8")).toBe(edited);
-      expect(readRecords(w.state)).toHaveLength(1);
+      expect(readRecords(w.state)).toEqual([]);
 
       // A file over machine.toml's 1 MiB bound but within Claude Desktop's own: written and taken
       // back under the app's bound, at every read.
@@ -286,11 +296,11 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       writeFileSync(bigFile, large);
       const bigInput = await inputOf(big, bigPlace.env);
       expect(
-        (await applyHome(bigInput, only(await survey(bigInput), "claude-desktop"), SPACE, null))
+        (await applyHome(bigInput, only(await survey(bigInput), "claude-desktop"), SPACE, ROWS))
           .result,
       ).toBe("applied");
       expect(
-        await removeHome(bigInput, only(await survey(bigInput), "claude-desktop")),
+        await removeHome(bigInput, only(await survey(bigInput), "claude-desktop"), ROWS),
       ).toMatchObject({
         result: "removed",
       });
@@ -329,7 +339,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         "ambiguous",
       ]);
       expect(planOf(input, [first], SPACE)[0]?.change).toMatchObject({ writer: "edit" });
-      expect(await applyHome(input, first, SPACE, null, "ambiguous")).toMatchObject({
+      expect(await applyHome(input, first, SPACE, ROWS, "ambiguous")).toMatchObject({
         result: "left",
         reason: "ambiguous",
       });
@@ -423,7 +433,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       expect(work.home.file).toBe(join(w.home, "work-claude", ".claude.json"));
 
       for (const view of views) {
-        expect(await applyHome(input, view, SPACE, null), view.home.instance).toMatchObject({
+        expect(await applyHome(input, view, SPACE, ROWS), view.home.instance).toMatchObject({
           result: "applied",
         });
       }
@@ -440,7 +450,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         ].sort(),
       );
       for (const view of await survey(input)) {
-        expect((await removeHome(input, view)).result, view.home.instance).toBe("removed");
+        expect((await removeHome(input, view, ROWS)).result, view.home.instance).toBe("removed");
       }
       // T3's own file was read, never written, and its values went nowhere.
       expect(readFileSync(settings)).toEqual(before);
@@ -582,11 +592,11 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       const change = planChange(input, view, SPACE);
       expect(typeof change !== "string" && change.exec).toEqual([engine]);
       expect(codexEngines(input, view.home)).toEqual([{ kind: "app", exec: [engine] }]);
-      expect((await applyHome(input, view, SPACE, null)).result).toBe("applied");
+      expect((await applyHome(input, view, SPACE, ROWS)).result).toBe("applied");
       expect(readFileSync(join(w.home, ".codex", "config.toml"), "utf8")).toContain(
         `[mcp_servers.${MCP_SERVER_KEY}]`,
       );
-      expect(await removeHome(input, only(await survey(input), "codex"))).toMatchObject({
+      expect(await removeHome(input, only(await survey(input), "codex"), ROWS)).toMatchObject({
         result: "removed",
       });
       // The file the engine's add made, emptied by its remove, is gone again.
@@ -611,7 +621,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       for (const app of ["codex", "claude-desktop"]) {
         const view = only(await survey(input), app);
         expect([app, view.state, view.refusal]).toEqual([app, "refused", "managed"]);
-        expect(await applyHome(input, view, SPACE, null)).toMatchObject({
+        expect(await applyHome(input, view, SPACE, ROWS)).toMatchObject({
           result: "left",
           reason: "managed",
         });
@@ -640,7 +650,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       repo(["add", pathIn(w.root, file)]);
       const view = only(await survey(input), "claude-desktop");
       expect([view.state, view.refusal]).toEqual(["refused", "managed"]);
-      expect(await applyHome(input, view, SPACE, null)).toMatchObject({
+      expect(await applyHome(input, view, SPACE, ROWS)).toMatchObject({
         result: "left",
         reason: "managed",
       });
@@ -655,13 +665,16 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       writeFileSync(registered, DESKTOP_JSON);
       const later: SetupInput = { ...(await inputOf(r, at.env)), git: gitCommand };
       expect(
-        await applyHome(later, only(await survey(later), "claude-desktop"), SPACE, null),
+        await applyHome(later, only(await survey(later), "claude-desktop"), SPACE, ROWS),
       ).toMatchObject({ result: "applied" });
       const applied = readFileSync(registered);
       linkedRepository(r.root)(["add", pathIn(r.root, registered)]);
       const now = only(await survey(later), "claude-desktop");
       expect([now.state, now.refusal]).toEqual(["refused", "managed"]);
-      expect(await removeHome(later, now)).toMatchObject({ result: "left", reason: "managed" });
+      expect(await removeHome(later, now, ROWS)).toMatchObject({
+        result: "left",
+        reason: "managed",
+      });
       expect(readFileSync(registered)).toEqual(applied);
       expect(readRecords(r.state)).toHaveLength(1);
     },

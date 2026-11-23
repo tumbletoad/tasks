@@ -42,25 +42,29 @@ import type { ConnectionClass, Grant } from "../local/index.ts";
 import { isUserClass } from "../ops/index.ts";
 import {
   appLabel,
-  applyWithRow,
+  applyHome,
   blockOf,
   distinctLabels,
+  entryInstance,
   handRemoval,
   LockBusy,
   planOf,
   planToken,
   removeHome,
+  rowAccess,
   runCommand,
   samePath,
   SERVERS_KEY,
   SetupStateInvalid,
   SetupStateUnsafe,
+  settleHomes,
   survey,
   t3Proposals,
   t3SettingsOf,
   wireOf,
   withSetupLock,
   type AgentApp,
+  type AgentHome,
   type Change,
   type Offer,
   type PlanItem,
@@ -141,6 +145,11 @@ export interface AppsOutcome {
   readonly part: "open" | "tools";
   readonly result: "done" | "failed";
   readonly reason?: string;
+  /**
+   * tools turned off: the app's access is off, and its entry stayed in its file, for `reason`
+   * (`edited`: the person changed it, so it is theirs).
+   */
+  readonly kept?: true;
 }
 
 type Verb = (params: JsonObject, cls: ConnectionClass) => Promise<unknown>;
@@ -273,6 +282,8 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   };
   const installed = isFolder(host.root) && isFile(host.tasks);
   const views = userHome === "" ? [] : await survey(input);
+  const live = (home: AgentHome) =>
+    rows.some((row) => row.app === home.app && samePath(platform, row.home, home.home));
   // Claude Desktop with several settings files (a Windows app installed twice over the years): the
   // engine changes none of them on its own, and here the person picks one with its switch.
   const plan = planOf(input, views, space).map((item): Planned =>
@@ -370,7 +381,7 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
       home: shown(home.home),
       also: home.hosts,
       ...(open === undefined ? {} : { open }),
-      tools: toolsPart(host, space, item, installed, shown),
+      tools: toolsPart(host, space, item, installed, live(home), shown),
     });
   }
 
@@ -423,12 +434,16 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   return { view, input, items, offers: byRow, owners };
 }
 
-/** The tools switch of a home, from setup's own view of it. */
+/**
+ * The tools switch of a home, from setup's own view of it. `live`: the home has a live agent-home
+ * row, so an entry setup did not write but that names its instance has the tools.
+ */
 function toolsPart(
   host: AgentAppsHost,
   space: string,
   { view, change, several }: Planned,
   installed: boolean,
+  live: boolean,
   shown: (path: string) => string,
 ): Part {
   const file = shown(view.home.file);
@@ -466,11 +481,16 @@ function toolsPart(
       return removing(recorded !== undefined && recorded !== space ? "other_space" : undefined);
     case "missing":
     case "interrupted":
-      return removing(view.state);
     case "edited":
-      return { ...fixed(true, "edited"), ...named };
+      // Changed by hand: turning it off takes the access away and leaves the person's entry.
+      return removing(view.state);
     case "refused":
-      return fixed(view.refusal === "foreign_entry", view.refusal ?? "unreadable");
+      // An entry setup did not write has the tools when it names no instance (the hand-made
+      // entry, which reaches the machine's default space) or one of this home's live rows.
+      return fixed(
+        view.refusal === "foreign_entry" && (live || entryInstance(view.entry) === null),
+        view.refusal ?? "unreadable",
+      );
     case "not_registered":
       if (change === undefined || typeof change === "string") {
         return fixed(false, change ?? "unreadable");
@@ -560,7 +580,20 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
   const space = spaceOf(params, host);
   const changes = changesOf(params["changes"]);
   return withSetupLock(host.stateDir, async () => {
-    const now = await look(host, space);
+    const instances = instanceVerbs(host.instances);
+    const homes = agentHomeVerbs(host.homes);
+    const verb = (name: string): Verb => {
+      const found = (name.startsWith("instances/") ? instances : homes)[name];
+      if (found === undefined) throw new Error(`No verb ${name}`);
+      return found;
+    };
+    const access = rowAccess(
+      (method, input) => verb(method)(input, "ui") as Promise<Record<string, unknown>>,
+    );
+    // What a run that ended midway left is settled first; the person then sees what is now.
+    const first = await look(host, space);
+    const now =
+      (await settleHomes(first.input, access)).length === 0 ? first : await look(host, space);
     const partOf = (c: AppsChange) => now.view.rows.find((r) => r.key === c.key)?.[c.part];
     const fits = changes.every((c) => {
       const part = partOf(c);
@@ -579,13 +612,6 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
         result: reason === undefined ? "done" : "failed",
         ...(reason === undefined ? {} : { reason }),
       });
-    };
-    const instances = instanceVerbs(host.instances);
-    const homes = agentHomeVerbs(host.homes);
-    const verb = (name: string): Verb => {
-      const found = (name.startsWith("instances/") ? instances : homes)[name];
-      if (found === undefined) throw new Error(`No verb ${name}`);
-      return found;
     };
 
     // What Open offers first: machine.toml's entries out, then in.
@@ -622,9 +648,10 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
 
     // Then each app's own entry: out, then in, each with its row in the grants table. A home that
     // fails is reported and the others still run, so the answer names every switch's outcome.
-    const rows = (method: string, input: Record<string, unknown>) =>
-      verb(method)(input, "ui") as Promise<Record<string, unknown>>;
-    const each = async (on: boolean, run: (item: PlanItem) => Promise<string | undefined>) => {
+    const each = async (
+      on: boolean,
+      run: (item: PlanItem, c: AppsChange) => Promise<AppsOutcome | string | undefined>,
+    ) => {
       for (const c of changes.filter((change) => change.part === "tools" && change.on === on)) {
         const item = now.items.get(c.key);
         if (item === undefined) {
@@ -632,31 +659,24 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
           continue;
         }
         try {
-          done(c, await run(item));
+          const ran = await run(item, c);
+          if (typeof ran === "object") outcomes.push(ran);
+          else done(c, ran);
         } catch (error) {
           done(c, reasonOf(error));
         }
       }
     };
-    await each(false, async (item) => {
-      const outcome = await removeHome(now.input, item.view);
-      if (outcome.result !== "removed") return outcome.reason ?? outcome.result;
-      const { home } = item.view;
-      const stale = host.homes
-        .grants()
-        .list("agent_home")
-        .filter(
-          (grant) =>
-            grant.revoked_at === null &&
-            grant.attrs["app"] === home.app &&
-            samePath(host.platform, attr(grant, "home"), home.home),
-        )
-        .map((grant) => grant.grant_id);
-      if (stale.length > 0) await rows("setup/home_revoke", { grants: stale });
-      return undefined;
+    // Off is off once the access is taken back; an entry that stayed is said with it.
+    await each(false, async (item, c) => {
+      const outcome = await removeHome(now.input, item.view, access);
+      if (outcome.access !== "off") return "revoke_failed";
+      if (outcome.kept === undefined) return undefined;
+      const reason = outcome.reason ?? outcome.result;
+      return { key: c.key, part: "tools", result: "done", reason, kept: true };
     });
     await each(true, async (item) => {
-      const outcome = await applyWithRow(now.input, item, space, rows);
+      const outcome = await applyHome(now.input, item.view, space, access, item.change);
       return outcome.result === "applied" ? undefined : (outcome.reason ?? outcome.result);
     });
     return { applied: true, outcomes, view: (await look(host, space)).view };

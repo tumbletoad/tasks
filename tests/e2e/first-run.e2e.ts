@@ -167,17 +167,37 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("alert")).toContainText("Something changed on this machine");
     await picture(page, "settings-apps-changed-1440.png");
-    expect(fresh.codexConfig()).not.toContain("[mcp_servers.ttasks]");
+    const bare = fresh.codexConfig();
+    expect(bare).not.toContain("[mcp_servers.ttasks]");
     // The choice stays, against the new view: one more press applies it.
     await expect(toggle(page, toolsFor("Codex"))).toBeChecked();
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
     expect(fresh.codexConfig()).toContain("[mcp_servers.ttasks]");
 
+    // Changed by hand: the switch still turns the tools off, and the person's entry stays, said
+    // apart from the tools.
+    fresh.editCodexEntry();
+    const edited = fresh.codexConfig();
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
+    await expect(page.getByText("Changed by hand since.")).toBeVisible();
+    await flip(page, toolsFor("Codex"), false);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText(
+      `Codex no longer has the ${PRODUCT_NAME} tools. Your changed entry is still in ~`,
+    );
+    await picture(page, "settings-apps-kept-1440.png");
+    expect(fresh.codexConfig()).toBe(edited);
+    await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
+    // The person takes it out.
+    fresh.writeCodex(bare);
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
+
     // Everything out again, from the same place.
     await flip(page, openIn("Claude Code"), false);
     await flip(page, toolsFor("Claude Code"), false);
-    await flip(page, toolsFor("Codex"), false);
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(page.getByRole("status")).toContainText("Done.");
     expect(fresh.claudeEntry()).toBeUndefined();

@@ -10,7 +10,8 @@
 //   ttasks setup agents --apply --plan <token>
 //                                   carries out that preview: registers TTasks in each home without
 //                                   an entry yet, or refuses when the plan is not the same any more
-//   ttasks setup agents --remove     takes back each entry setup wrote that is still exactly its own
+//   ttasks setup agents --remove     turns each home's access off, then takes back each entry setup
+//                                   wrote that is still exactly its own
 //   ttasks setup agents --status     each home, registered or not, and its agent-home row (reads only)
 //   ttasks setup agents print --app <name>
 //                                   the entry and the file it belongs in, for an app setup does not
@@ -55,7 +56,7 @@ import {
   AGENT_APPS,
   appLabel,
   applyBlock,
-  applyWithRow,
+  applyHome,
   approveToolsHint,
   BLOCK_FORS,
   blockCanonical,
@@ -81,11 +82,13 @@ import {
   PRINT_APPS,
   PRINT_LABELS,
   removeHome,
+  rowAccess,
   runCommand,
   samePath,
   SERVERS_KEY,
   SetupStateInvalid,
   SetupStateUnsafe,
+  settleHomes,
   snippetFor,
   survey,
   withSetupLock,
@@ -282,16 +285,35 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
     "Claude Desktop has not made its configuration file yet: open its Settings, then Developer, once, and run setup again",
   ambiguous: `there are several Claude Desktop configuration files: pass --home <folder> for the one the app uses`,
   edited: "the entry was changed after setup wrote it",
-  interrupted: `an earlier apply did not finish: run ${CLI_NAME} setup agents --remove`,
+  interrupted: `an earlier setup did not finish there: the next ${CLI_NAME} setup agents --apply or --remove settles it first`,
   missing: "the entry setup wrote is gone",
   not_registered: "setup has not registered it",
   changed_meanwhile: "its file changed while setup was working",
   command_failed: "the app's command failed; run the command from the preview to see why",
   unexpected_entry: "the app's command did not write the entry setup asked for",
   other_space: `it names another space: run ${CLI_NAME} setup agents --remove first`,
-  grant_failed: `${PRODUCT_NAME}'s service did not keep its grant row, so nothing was changed there`,
-  instance_taken: `another agent home is registered as this instance, so nothing was changed there: run ${CLI_NAME} setup agents again for a free one, or give this home an instance of its own in machine.toml`,
+  grant_failed: `${PRODUCT_NAME}'s service did not give it its grant row, so its entry was taken out again`,
+  instance_taken: `another agent home is registered as this instance, so its entry was taken out again: run ${CLI_NAME} setup agents again for a free one, or give this home an instance of its own in machine.toml`,
+  revoke_failed: `${PRODUCT_NAME}'s service could not take its access back: run ${CLI_NAME} setup agents --remove again while the service runs`,
+  unwritable: "its file could not be written: it is read-only, or another program holds it",
 };
+
+/**
+ * The home's access after the action, said apart from its file: an entry that stayed is named
+ * with its file, so the person knows what is left there and that it no longer works.
+ */
+function accessText(outcome: Outcome): string | undefined {
+  if (outcome.access === undefined) return undefined;
+  if (outcome.access === "on") return "Access is on.";
+  if (outcome.access === "unknown") {
+    return `Access could not be confirmed off: run ${CLI_NAME} setup agents --remove again while ${PRODUCT_NAME}'s service runs.`;
+  }
+  if (outcome.kept === "edited") {
+    return `Access is off. Your edited entry is still in ${outcome.home.file}.`;
+  }
+  if (outcome.kept === "own") return `Access is off. The entry is still in ${outcome.home.file}.`;
+  return "Access is off.";
+}
 
 /**
  * Why a home was left, for people. An entry of TTasks's name that setup did not write (one added by
@@ -317,7 +339,7 @@ function reasonText(
 
 const NOTE: Readonly<Record<string, string>> = {
   empty_parent_kept: `Claude Code keeps an empty ${SERVERS_KEY["claude-code"]} object after its own remove. ${PRODUCT_NAME} never edits that file.`,
-  undo_failed: `The entry may still be there: run ${CLI_NAME} setup agents --remove.`,
+  undo_failed: `The entry may still be there: the next ${CLI_NAME} setup agents --apply or --remove takes it out.`,
   entry_left:
     "The entry there is not exactly the one setup asked for, so it was left as it is: take it out by hand if it is not wanted.",
 };
@@ -327,7 +349,7 @@ const STATE_TEXT: Readonly<Record<HomeView["state"], string>> = {
   registered: "registered",
   edited: "registered, then changed by hand",
   missing: "registered, entry gone",
-  interrupted: "an apply that did not finish",
+  interrupted: "a setup that did not finish",
   refused: "left alone",
 };
 
@@ -362,6 +384,8 @@ const outcomeJson = (outcome: Outcome) => ({
   instance: outcome.home.instance,
   result: outcome.result,
   ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
+  ...(outcome.access === undefined ? {} : { access: outcome.access }),
+  ...(outcome.kept === undefined ? {} : { kept: outcome.kept }),
   ...(outcome.notes === undefined ? {} : { notes: outcome.notes }),
 });
 
@@ -528,7 +552,10 @@ export async function agentsCommand(
             data: { issues: [{ path: "command", message: "Not installed" }] },
           });
         }
+        const access = rowAccess(rowCall(call));
         const { outcomes, blocks } = await withSetupLock(input.stateDir, async () => {
+          // What a run that ended midway left is settled first, and said.
+          const settled = mcp ? await settleHomes(await rowsOf(), access) : [];
           // The preview again, under the lock: apply goes on only when it is the plan the
           // person saw (`--plan`), whatever changed in the homes, machine.toml or the spaces.
           const all = (await survey(await rowsOf())).filter(selected);
@@ -544,27 +571,33 @@ export async function agentsCommand(
           if (token !== parsed.plan) {
             throw new AppError({
               code: "conflict",
-              message: "The agent homes changed since the preview, so nothing was changed.",
+              message:
+                settled.length === 0
+                  ? "The agent homes changed since the preview, so nothing was changed."
+                  : "A setup that did not finish was settled first, so the agent homes are not as the preview showed. Nothing else was changed.",
               hint: `Run ${CLI_NAME} setup agents again and use the command it prints.`,
+              ...(settled.length === 0 ? {} : { data: { settled: settled.map(outcomeJson) } }),
             });
           }
-          const done: Outcome[] = [];
-          for (const item of items)
-            done.push(await applyWithRow(input, item, space, rowCall(call)));
+          const done: Outcome[] = [...settled];
+          for (const item of items) {
+            done.push(await applyHome(input, item.view, space, access, item.change));
+          }
           return { outcomes: done, blocks: (planned ?? []).map((b) => applyBlock(input, b)) };
         });
         return report(io, globals, "apply", outcomes, [], blocks);
       }
       case "remove": {
+        const access = rowAccess(rowCall(call));
         const { outcomes, notes, blocks } = await withSetupLock(input.stateDir, async () => {
+          const done: Outcome[] = mcp ? await settleHomes(input, access) : [];
           const surveyed = await survey(input);
-          const done: Outcome[] = [];
           const said: string[] = [];
           if (mcp) {
             const views = surveyed.filter((view) => selected(view) && view.record !== undefined);
             // Reverse order (A3 3.13.1): the latest apply first.
             views.sort((a, b) => (b.record?.at ?? "").localeCompare(a.record?.at ?? ""));
-            for (const view of views) done.push(await removeHome(input, view));
+            for (const view of views) done.push(await removeHome(input, view, access));
             // Under the same lock: an apply that runs right after must not lose its row to this.
             said.push(...(await revokeLeftRows(input, selected, call)));
           }
@@ -1201,6 +1234,8 @@ function report(
           : `: ${reasonText(outcome.reason, outcome.home, io.platform)}`;
       io.stdout(`${title(outcome)}\n  ${verb[outcome.result]}${reason}\n`);
       for (const note of outcome.notes ?? []) io.stdout(`  ${NOTE[note] ?? note}\n`);
+      const access = accessText(outcome);
+      if (access !== undefined) io.stdout(`  ${access}\n`);
     }
     for (const note of notes) io.stdout(`${note}\n`);
     const changed = outcomes.filter((o) => o.result === "applied" || o.result === "removed");

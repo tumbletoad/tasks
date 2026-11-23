@@ -297,6 +297,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - TTasks installs for your account without administrator rights.
 - Agent setup shows what it will change, changes only its own entry, and removes only what it
   wrote.
+- An agent app gets TTasks's tools only once its entry is in place. Turning them off takes the
+  access away first, also when you changed the entry or its file cannot be written, and says what
+  stays in the file.
 - An update is checked before it runs. A failed update returns to the version before it.
 - An update does not end a background run unasked. It waits up to 15 minutes for running runs,
   then asks whether to stop them or give the update up; without anyone to ask, it gives up.

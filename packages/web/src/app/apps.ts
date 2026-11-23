@@ -40,6 +40,8 @@ export interface Outcome {
   readonly part: PartName;
   readonly result: "done" | "failed";
   readonly reason: string | undefined;
+  /** Tools turned off: the access is off, and the entry stayed in its file (`reason` says why). */
+  readonly kept: boolean;
 }
 
 export type Applied =
@@ -115,6 +117,7 @@ export function appliedOf(value: unknown): Applied {
               result: o["result"] === "done" ? "done" : "failed",
               reason:
                 typeof o["reason"] === "string" && WORD.test(o["reason"]) ? o["reason"] : undefined,
+              kept: o["kept"] === true,
             },
           ]
         : [],

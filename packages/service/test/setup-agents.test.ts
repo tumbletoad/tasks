@@ -22,6 +22,7 @@ import { envVar, MCP_SERVER_KEY } from "@ttasks/brand";
 import { detect, nodeDetectHost, type Instance } from "@ttasks/launch";
 import { installFakeAgents, type FakeAgents } from "@ttasks/testkit/fake-agents";
 import { parseToml } from "../src/config/toml.ts";
+import { keptRows } from "./setup-rows.ts";
 import {
   applyHome,
   planChange,
@@ -43,6 +44,8 @@ const SLOW = 180_000;
 const SPACE = "sp_3z8sm956jp8dajmtsar5kx026c";
 const windows = process.platform === "win32";
 const BOM = "\u{FEFF}";
+/** The service's rows, as these tests keep them. */
+const ROWS = keptRows();
 
 const temps: string[] = [];
 afterEach(() => {
@@ -264,7 +267,7 @@ describe("[A3.3.13.setup.exact] apply then remove leaves every file key-identica
 
       // Apply each home.
       for (const view of views) {
-        const outcome = await applyHome(input, view, SPACE, `gr_${"a".repeat(26)}`);
+        const outcome = await applyHome(input, view, SPACE, ROWS);
         expect(outcome, view.home.home).toMatchObject({ result: "applied" });
       }
       const afterApply = await survey(input);
@@ -332,14 +335,12 @@ describe("[A3.3.13.setup.exact] apply then remove leaves every file key-identica
 
       // Applying again changes nothing.
       for (const view of afterApply) {
-        expect((await applyHome(input, view, SPACE, `gr_${"a".repeat(26)}`)).result).toBe(
-          "unchanged",
-        );
+        expect((await applyHome(input, view, SPACE, ROWS)).result).toBe("unchanged");
       }
 
       // Remove: every file as it was, key for key; here byte for byte too.
       for (const view of await survey(input)) {
-        const outcome = await removeHome(input, view);
+        const outcome = await removeHome(input, view, ROWS);
         expect(outcome, view.home.home).toMatchObject({ result: "removed" });
         expect(outcome.notes).toBeUndefined();
       }
@@ -377,10 +378,10 @@ describe("[A3.3.13.setup.exact] apply then remove leaves every file key-identica
           expect.any(String),
         ],
       });
-      expect((await applyHome(input, view, SPACE, null)).result).toBe("applied");
+      expect((await applyHome(input, view, SPACE, ROWS)).result).toBe("applied");
       const [registered] = await survey(input);
       if (registered === undefined) return;
-      const removed = await removeHome(input, registered);
+      const removed = await removeHome(input, registered, ROWS);
       expect(removed).toMatchObject({ result: "removed", notes: ["empty_parent_kept"] });
       expect(JSON.parse(readFileSync(join(w.home, ".claude-x", ".claude.json"), "utf8"))).toEqual({
         mcpServers: {},
@@ -408,7 +409,7 @@ describe("[A3.3.13.setup.exact] apply then remove leaves every file key-identica
         file: join(folder, ".claude.json"),
       });
       expect(changeOf(input, view).set).toEqual({ CLAUDE_CONFIG_DIR: folder });
-      expect((await applyHome(input, view, SPACE, null)).result).toBe("applied");
+      expect((await applyHome(input, view, SPACE, ROWS)).result).toBe("applied");
       expect(JSON.parse(readFileSync(join(folder, ".claude.json"), "utf8"))).toMatchObject({
         mcpServers: { [MCP_SERVER_KEY]: { command: w.tasks } },
       });
@@ -428,7 +429,7 @@ describe("[A3.3.13.setup.exact] apply then remove leaves every file key-identica
       writeFileSync(defaultFile, "{}");
       const plain = await inputOf(w);
       expect(
-        (await applyHome(plain, byHome(await survey(plain), "claude-code", ".claude"), SPACE, null))
+        (await applyHome(plain, byHome(await survey(plain), "claude-code", ".claude"), SPACE, ROWS))
           .result,
       ).toBe("applied");
 
@@ -440,7 +441,7 @@ describe("[A3.3.13.setup.exact] apply then remove leaves every file key-identica
       const view = byHome(await survey(named), "claude-code", ".claude");
       expect(view.home).toMatchObject({ file: defaultFile, instance: "claude", isDefault: true });
       expect(view.state).toBe("registered");
-      expect(await removeHome(named, view)).toMatchObject({ result: "removed" });
+      expect(await removeHome(named, view, ROWS)).toMatchObject({ result: "removed" });
       expect(JSON.parse(readFileSync(defaultFile, "utf8"))).toEqual({ mcpServers: {} });
       expect(readRecords(w.state)).toEqual([]);
       // Now the home is what the machine says: the instance's own file and ID.
@@ -525,7 +526,7 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
       for (const [folder, , , reason] of cases) {
         const view = byHome(views, folder.startsWith(".codex") ? "codex" : "claude-code", folder);
         expect([folder, view.state, view.refusal]).toEqual([folder, "refused", reason]);
-        expect(await applyHome(input, view, SPACE, null)).toMatchObject({ result: "left", reason });
+        expect(await applyHome(input, view, SPACE, ROWS)).toMatchObject({ result: "left", reason });
       }
       expect(w.fakes.calls().filter((c) => c.args[0] === "mcp")).toEqual([]);
       expect(existsSync(join(setupDir(w.state), SETUP_FILE))).toBe(false);
@@ -534,7 +535,7 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
       const noCommand = { ...input, detection: { ...input.detection, commands: [] } };
       const view = byHome(await survey(noCommand), "codex", ".codex");
       expect(planChange(noCommand, view, SPACE)).toBe("no_command");
-      expect(await applyHome(noCommand, view, SPACE, null)).toMatchObject({
+      expect(await applyHome(noCommand, view, SPACE, ROWS)).toMatchObject({
         result: "left",
         reason: "no_command",
       });
@@ -552,9 +553,10 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
       writeFileSync(file, 'model = "m"\n');
       const input = await inputOf(w);
 
-      // Changed by hand after apply: status says so, remove leaves it and keeps the record.
+      // Changed by hand after apply: status says so; remove takes the access away and leaves the
+      // entry, which is the person's from then on.
       expect(
-        (await applyHome(input, byHome(await survey(input), "codex", ".codex"), SPACE, null))
+        (await applyHome(input, byHome(await survey(input), "codex", ".codex"), SPACE, ROWS))
           .result,
       ).toBe("applied");
       writeFileSync(
@@ -564,23 +566,41 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
       const edited = byHome(await survey(input), "codex", ".codex");
       expect(edited.state).toBe("edited");
       const changed = readFileSync(file, "utf8");
-      expect(await removeHome(input, edited)).toMatchObject({ result: "left", reason: "edited" });
+      expect(await removeHome(input, edited, ROWS)).toMatchObject({
+        result: "left",
+        reason: "edited",
+        access: "off",
+        kept: "edited",
+      });
       expect(readFileSync(file, "utf8")).toBe(changed);
-      expect(readRecords(w.state)).toHaveLength(1);
+      expect(ROWS.live.filter((row) => row.home === edited.home.home)).toEqual([]);
+      expect(readRecords(w.state)).toEqual([]);
+      expect(byHome(await survey(input), "codex", ".codex")).toMatchObject({
+        state: "refused",
+        refusal: "foreign_entry",
+      });
 
       // Removed by hand: the record goes, nothing runs.
+      writeFileSync(file, 'model = "m"\n');
+      expect(
+        (await applyHome(input, byHome(await survey(input), "codex", ".codex"), SPACE, ROWS))
+          .result,
+      ).toBe("applied");
       writeFileSync(file, 'model = "m"\n');
       const gone = byHome(await survey(input), "codex", ".codex");
       expect(gone.state).toBe("missing");
       const runs = w.fakes.calls().length;
-      expect(await removeHome(input, gone)).toMatchObject({ result: "removed", reason: "missing" });
+      expect(await removeHome(input, gone, ROWS)).toMatchObject({
+        result: "removed",
+        reason: "missing",
+      });
       expect(w.fakes.calls().length).toBe(runs);
       expect(readRecords(w.state)).toEqual([]);
 
       // The command fails before writing: nothing to take back, no record.
       const failing = await inputOf(w, { FAKE_AGENT_FAIL: "codex" });
       expect(
-        await applyHome(failing, byHome(await survey(failing), "codex", ".codex"), SPACE, null),
+        await applyHome(failing, byHome(await survey(failing), "codex", ".codex"), SPACE, ROWS),
       ).toMatchObject({ result: "failed", reason: "command_failed" });
       expect(readFileSync(file, "utf8")).toBe('model = "m"\n');
       expect(readRecords(w.state)).toEqual([]);
@@ -588,7 +608,7 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
       // The command writes, then fails: its own undo takes the entry back.
       const half = await inputOf(w, { FAKE_AGENT_FAIL: "codex:add-after" });
       expect(
-        await applyHome(half, byHome(await survey(half), "codex", ".codex"), SPACE, null),
+        await applyHome(half, byHome(await survey(half), "codex", ".codex"), SPACE, ROWS),
       ).toMatchObject({
         result: "failed",
         reason: "command_failed",
@@ -622,7 +642,7 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
         },
       };
       expect(
-        await applyHome(racing, byHome(await survey(racing), "codex", ".codex"), SPACE, null),
+        await applyHome(racing, byHome(await survey(racing), "codex", ".codex"), SPACE, ROWS),
       ).toMatchObject({ result: "failed", reason: "changed_meanwhile" });
       expect(readFileSync(codexFile, "utf8")).toBe(foreign);
       expect(readRecords(w.state)).toEqual([]);
@@ -631,35 +651,40 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
       // An entry changed after remove's survey: remove reads it again and leaves it.
       writeFileSync(codexFile, 'model = "m"\n');
       expect(
-        (await applyHome(base, byHome(await survey(base), "codex", ".codex"), SPACE, null)).result,
+        (await applyHome(base, byHome(await survey(base), "codex", ".codex"), SPACE, ROWS)).result,
       ).toBe("applied");
       const stale = byHome(await survey(base), "codex", ".codex");
       expect(stale.state).toBe("registered");
+      const [applied] = readRecords(w.state);
+      if (applied === undefined) throw new Error("no record");
       const edited = `${readFileSync(codexFile, "utf8")}tool_timeout_sec = 99\n`;
       writeFileSync(codexFile, edited);
-      expect(await removeHome(base, stale)).toMatchObject({ result: "left", reason: "edited" });
+      expect(await removeHome(base, stale, ROWS)).toMatchObject({
+        result: "left",
+        reason: "edited",
+      });
       expect(readFileSync(codexFile, "utf8")).toBe(edited);
-      expect(readRecords(w.state)).toHaveLength(1);
+      expect(readRecords(w.state)).toEqual([]);
       expect(removes()).toBe(0);
 
       // An apply cut off after its patches were written, before its record said so: the checkpoint
       // (the command's entry and the patches) makes the patched entry setup's, and only that one.
-      const [applied] = readRecords(w.state);
-      if (applied === undefined) throw new Error("no record");
       const keys = new Set(applied.patches.map((p) => p.key));
       const commandEntry = Object.fromEntries(
         Object.entries(applied.entry as Record<string, unknown>).filter(([k]) => !keys.has(k)),
       );
-      writeRecords(w.state, [{ ...applied, state: "applying", entry: commandEntry }]);
+      const checkpoint = { ...applied, state: "applying" as const, entry: commandEntry };
+      writeRecords(w.state, [checkpoint]);
       writeFileSync(codexFile, edited);
       const cut = byHome(await survey(base), "codex", ".codex");
       expect(cut.state).toBe("interrupted");
-      expect(await removeHome(base, cut)).toMatchObject({ result: "left", reason: "edited" });
+      expect(await removeHome(base, cut, ROWS)).toMatchObject({ result: "left", reason: "edited" });
       expect(readFileSync(codexFile, "utf8")).toBe(edited);
+      writeRecords(w.state, [checkpoint]);
       writeFileSync(codexFile, edited.replace("tool_timeout_sec = 99\n", ""));
-      expect(await removeHome(base, byHome(await survey(base), "codex", ".codex"))).toMatchObject({
-        result: "removed",
-      });
+      expect(
+        await removeHome(base, byHome(await survey(base), "codex", ".codex"), ROWS),
+      ).toMatchObject({ result: "removed" });
       expect(readFileSync(codexFile, "utf8")).toBe('model = "m"\n');
       expect(readRecords(w.state)).toEqual([]);
 
@@ -679,10 +704,11 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
           crashing,
           byHome(await survey(crashing), "claude-code", ".claude-x"),
           SPACE,
-          null,
+          ROWS,
         ),
       ).rejects.toThrow("cut off");
-      expect(readRecords(w.state).map((r) => [r.state, r.entry])).toEqual([["applying", null]]);
+      const cutOff = readRecords(w.state);
+      expect(cutOff.map((r) => [r.state, r.entry])).toEqual([["applying", null]]);
       const asWritten = readFileSync(claudeFile, "utf8");
       const doc = JSON.parse(asWritten) as { mcpServers: Record<string, { env: unknown }> };
       const entry = doc.mcpServers[MCP_SERVER_KEY];
@@ -691,12 +717,13 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
       const changed = JSON.stringify(doc, null, 2);
       writeFileSync(claudeFile, changed);
       expect(
-        await removeHome(base, byHome(await survey(base), "claude-code", ".claude-x")),
+        await removeHome(base, byHome(await survey(base), "claude-code", ".claude-x"), ROWS),
       ).toMatchObject({ result: "left", reason: "edited" });
       expect(readFileSync(claudeFile, "utf8")).toBe(changed);
+      writeRecords(w.state, cutOff);
       writeFileSync(claudeFile, asWritten);
       expect(
-        await removeHome(base, byHome(await survey(base), "claude-code", ".claude-x")),
+        await removeHome(base, byHome(await survey(base), "claude-code", ".claude-x"), ROWS),
       ).toMatchObject({ result: "removed" });
       expect(readRecords(w.state)).toEqual([]);
     },
@@ -724,36 +751,36 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
       });
 
       // Another entry takes the place of the command's: it is not setup's, so it stays, and so does
-      // the record (`--remove` reports it as changed).
+      // the record until a remove turns the home off and leaves that entry to the person.
       const foreign = `model = "m"\n\n[mcp_servers.${MCP_SERVER_KEY}]\ncommand = "/elsewhere"\n`;
       const replaced = adding(() => {
         writeFileSync(file, foreign);
       });
       expect(
-        await applyHome(replaced, byHome(await survey(replaced), "codex", ".codex"), SPACE, null),
-      ).toMatchObject({ result: "failed", reason: "unexpected_entry", notes: ["entry_left"] });
+        await applyHome(replaced, byHome(await survey(replaced), "codex", ".codex"), SPACE, ROWS),
+      ).toMatchObject({
+        result: "failed",
+        reason: "unexpected_entry",
+        access: "off",
+        notes: ["entry_left"],
+      });
       expect(readFileSync(file, "utf8")).toBe(foreign);
       expect(removes()).toBe(0);
       expect(readRecords(w.state).map((r) => r.state)).toEqual(["applying"]);
-      expect(await removeHome(base, byHome(await survey(base), "codex", ".codex"))).toMatchObject({
-        result: "left",
-        reason: "edited",
-      });
+      expect(
+        await removeHome(base, byHome(await survey(base), "codex", ".codex"), ROWS),
+      ).toMatchObject({ result: "left", reason: "edited", access: "off" });
       expect(readFileSync(file, "utf8")).toBe(foreign);
-      // The person takes it out by hand: the record goes, nothing runs.
-      writeFileSync(file, 'model = "m"\n');
-      expect(await removeHome(base, byHome(await survey(base), "codex", ".codex"))).toMatchObject({
-        result: "removed",
-        reason: "missing",
-      });
       expect(readRecords(w.state)).toEqual([]);
+      expect(removes()).toBe(0);
+      writeFileSync(file, 'model = "m"\n');
 
       // The file turns into one setup does not accept: nothing runs there, the record stays.
       const broken = adding(() => {
         writeFileSync(file, `${readFileSync(file, "utf8")}[[[\n`);
       });
       expect(
-        await applyHome(broken, byHome(await survey(broken), "codex", ".codex"), SPACE, null),
+        await applyHome(broken, byHome(await survey(broken), "codex", ".codex"), SPACE, ROWS),
       ).toMatchObject({ result: "failed", reason: "unexpected_entry", notes: ["undo_failed"] });
       expect(removes()).toBe(0);
       expect(readRecords(w.state).map((r) => r.state)).toEqual(["applying"]);
@@ -787,7 +814,7 @@ describe("[A3.3.13.setup.refuse] a home setup does not understand is refused unt
       for (const [app, folder, reason] of cases) {
         const view = byHome(views, app, folder);
         expect([folder, view.state, view.refusal]).toEqual([folder, "refused", reason]);
-        expect(await applyHome(input, view, SPACE, null)).toMatchObject({ result: "left", reason });
+        expect(await applyHome(input, view, SPACE, ROWS)).toMatchObject({ result: "left", reason });
       }
       expect(w.fakes.calls().filter((c) => c.args[0] === "mcp")).toEqual([]);
       expect(readFileSync(join(kept, "config.toml"), "utf8")).toBe('model = "m"\n');

@@ -38,8 +38,13 @@ export interface HomeRecord {
   readonly instance: string;
   readonly account: string;
   readonly space: string;
-  /** `applying` is written before the app's command runs, `applied` once the entry is in place. */
-  readonly state: "applying" | "applied";
+  /**
+   * `applying`: written before anything changes in the home, and the home has no access yet.
+   * `applied`: the entry was found in place, then the home got its access (`grant`). `removing`:
+   * the access is being taken back, or was, and the entry still waits to come out. A record that is
+   * not `applied` when setup takes its lock was left by a run that ended midway.
+   */
+  readonly state: "applying" | "applied" | "removing";
   readonly file_existed: boolean;
   readonly parent_existed: boolean;
   readonly sha256_before: string | null;
@@ -95,7 +100,7 @@ function isRecord(value: unknown): value is HomeRecord {
     text(r["instance"]) &&
     text(r["account"]) &&
     text(r["space"]) &&
-    (r["state"] === "applying" || r["state"] === "applied") &&
+    (r["state"] === "applying" || r["state"] === "applied" || r["state"] === "removing") &&
     typeof r["file_existed"] === "boolean" &&
     typeof r["parent_existed"] === "boolean" &&
     (r["sha256_before"] === null || text(r["sha256_before"])) &&

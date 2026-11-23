@@ -17,6 +17,7 @@ import {
   switchKey,
   type AppRow,
   type AppsView,
+  type Outcome,
   type Part,
   type PartName,
   type Pending,
@@ -47,10 +48,18 @@ const styles = classes(css, [
 ]);
 const switches = classes(settingsCss, ["switch", "track", "thumb", "name"]);
 
-/** What the last Apply came to, for the line under the list. */
+/** A switch turned off whose entry stayed in its file: the tools are off all the same. */
+interface Kept {
+  readonly label: string;
+  readonly file: string;
+  /** The person changed the entry, so it is theirs. */
+  readonly edited: boolean;
+}
+
+/** What the last Apply came to, for the lines under the list. */
 type Said =
-  | { readonly kind: "done"; readonly desktop: boolean }
-  | { readonly kind: "partly"; readonly labels: readonly string[] }
+  | { readonly kind: "done"; readonly desktop: boolean; readonly kept: readonly Kept[] }
+  | { readonly kind: "partly"; readonly labels: readonly string[]; readonly kept: readonly Kept[] }
   | { readonly kind: "stale" | "failed" | "unknown" | "busy" };
 
 export function AgentApps({
@@ -156,13 +165,19 @@ export function AgentApps({
           setDetails(false);
           const failed = answer.outcomes.filter((o) => o.result === "failed");
           const done = answer.outcomes.filter((o) => o.result === "done");
+          const pendingOf = (o: Outcome) =>
+            pending.find((p) => p.row.key === o.key && p.part === o.part);
+          const kept = done.flatMap((o): Kept[] => {
+            const p = pendingOf(o);
+            return o.kept && p !== undefined
+              ? [{ label: p.row.label, file: p.found.file, edited: o.reason === "edited" }]
+              : [];
+          });
           // A failed one may have changed machine.toml too: the tiles follow either way.
           if (answer.outcomes.some((o) => o.part === "open")) onOpenChanged?.();
           if (failed.length > 0) {
-            const labels = failed.flatMap(
-              (o) => pending.find((p) => p.row.key === o.key && p.part === o.part)?.row.label ?? [],
-            );
-            setSaid({ kind: "partly", labels: [...new Set(labels)] });
+            const labels = failed.flatMap((o) => pendingOf(o)?.row.label ?? []);
+            setSaid({ kind: "partly", labels: [...new Set(labels)], kept });
             return;
           }
           const desktop = done.some(
@@ -170,7 +185,7 @@ export function AgentApps({
               o.part === "tools" &&
               pending.some((p) => p.row.key === o.key && p.row.app === "claude-desktop"),
           );
-          setSaid({ kind: "done", desktop });
+          setSaid({ kind: "done", desktop, kept });
           if (firstStart) onDone?.();
         },
         (error: unknown) => {
@@ -351,19 +366,30 @@ function changeText(t: Translate, p: Pending): string {
   });
 }
 
+/** Each switch turned off whose entry stayed: the tools are off, and where the entry is. */
+function KeptLines({ t, kept }: { readonly t: Translate; readonly kept: readonly Kept[] }) {
+  return kept.map((k) => (
+    <p key={k.label + k.file} className={styles.note} data-part="kept">
+      {t(k.edited ? "apps.keptEdited" : "apps.kept", { label: k.label, file: k.file })}
+    </p>
+  ));
+}
+
 function SaidLine({ t, said }: { readonly t: Translate; readonly said: Said }) {
   switch (said.kind) {
     case "done":
       return (
-        <p className={styles.note} role="status">
-          {t(said.desktop ? "apps.doneDesktop" : "apps.done")}
-        </p>
+        <div role="status">
+          <p className={styles.note}>{t(said.desktop ? "apps.doneDesktop" : "apps.done")}</p>
+          <KeptLines t={t} kept={said.kept} />
+        </div>
       );
     case "partly":
       return (
-        <p className={styles.error} role="alert">
-          {t("apps.partly", { apps: said.labels.join(", ") })}
-        </p>
+        <div role="alert">
+          <p className={styles.error}>{t("apps.partly", { apps: said.labels.join(", ") })}</p>
+          <KeptLines t={t} kept={said.kept} />
+        </div>
       );
     default:
       return (

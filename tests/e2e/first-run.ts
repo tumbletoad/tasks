@@ -45,6 +45,10 @@ export interface FreshWorld {
   codexConfig(): string;
   /** Another program changes the Codex home's config.toml. */
   touchCodex(): void;
+  /** The person changes one key of TTasks's entry in the Codex home's config.toml. */
+  editCodexEntry(): void;
+  /** The person writes the Codex home's config.toml as `text`. */
+  writeCodex(text: string): void;
   /** machine.toml's text, or "" when there is none. */
   machineToml(): string;
   close(): Promise<void>;
@@ -139,6 +143,16 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
       codexConfig: () => read(join(agentHome, ".codex", "config.toml")),
       touchCodex: () => {
         appendFileSync(join(agentHome, ".codex", "config.toml"), '\nmodel = "o4"\n');
+      },
+      editCodexEntry: () => {
+        const file = join(agentHome, ".codex", "config.toml");
+        const text = read(file);
+        const edited = text.replace("startup_timeout_sec = 20", "startup_timeout_sec = 45");
+        if (edited === text) throw new Error("no entry of TTasks's to change");
+        writeFileSync(file, edited);
+      },
+      writeCodex: (text) => {
+        writeFileSync(join(agentHome, ".codex", "config.toml"), text);
       },
       machineToml: () => read(join(configOf(home), "machine.toml")),
       close: async () => {

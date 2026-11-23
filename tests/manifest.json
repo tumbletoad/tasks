@@ -3394,6 +3394,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.13.setup.access",
+      "title": "A home's access follows its entry: its row is given only once the entry is in place and taken back before the entry comes out; a refused row or a file that cannot be written leaves no access and the file as it was; turning off takes the access away from an edited entry, a file that cannot be written and a failed revoke alike and says what stays in the file; a run that ended midway is settled once by the next setup",
+      "source": "A3 3.13.1, A3 3.7.4",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.12.setup.managed",
       "title": "A file another git repository tracks is managed, by git's own answer: through a .git file, git metadata behind a link or junction, a linked folder above the file, a linked worktree and a submodule, past an empty .git folder git skips, 66 folders below its repository and with core.worktree, while a repository's file-system monitor is never started; no clear answer is managed (a .git git refuses, a 16 MiB .git file setup never reads, no git on the PATH, a git that times out or answers otherwise); a repository at the home itself is not, and a path machine.toml lists under [setup.managed] covers the file and the files below it",
       "source": "A3 3.12, A7 3.11 M4.05",
@@ -4842,7 +4850,7 @@
     },
     {
       "id": "A7.3.12.m5-12.e2e.settings",
-      "title": "In Chromium: Settings shows the agent apps as they stand, takes one app's tools out, refuses a home that changed between the view and the click with the new view and the choice kept, and takes everything out again",
+      "title": "In Chromium: Settings shows the agent apps as they stand, takes one app's tools out, refuses a home that changed between the view and the click with the new view and the choice kept, turns off the tools of an entry changed by hand and says apart that the entry stays in its file, and takes everything out again",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

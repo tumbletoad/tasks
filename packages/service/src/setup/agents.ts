@@ -29,6 +29,10 @@
 //   holds no copy of the file and no other key's value (A3 3.13.1: these files hold other servers'
 //   secrets). After the change the record holds the entry as written. `--remove` takes back only an
 //   entry that is still exactly that one; an entry the person changed since is left.
+// - A home gets its access (its agent-home row, Access) only once its entry is in place, and loses
+//   it before a removal touches the file: an entry that failed, a hand edit or a file that cannot
+//   be written never leaves a home with access it should not have. A run that ends midway leaves a
+//   record that is not `applied`, which the next setup settles first (settleHomes).
 // - A home whose file setup does not understand is refused with a reason and nothing runs there:
 //   a file that is not UTF-8 JSON or TOML, a duplicate key, a managed file (a link, a file marked
 //   as generated, one machine.toml lists, one another git repository tracks), servers written in a
@@ -258,18 +262,53 @@ export type OutcomeReason =
   | "command_failed"
   | "unexpected_entry"
   | "other_space"
-  /** The service did not keep the home's agent-home row: nothing was changed in the home. */
+  /** The service did not give the home its agent-home row, so its entry was taken out again. */
   | "grant_failed"
   /** The service refused the row: another home's live row holds this instance (A3 3.7.8). */
-  | "instance_taken";
+  | "instance_taken"
+  /** The service could not take the home's access back. */
+  | "revoke_failed"
+  /** The OS refused to replace the file: it is read-only, or another program holds it. */
+  | "unwritable";
 
 /** What happened to one home. */
 export interface Outcome {
   readonly home: AgentHome;
   readonly result: "applied" | "removed" | "unchanged" | "left" | "failed";
   readonly reason?: OutcomeReason;
+  /**
+   * The home's access as this action left it, apart from its file: `on` once its row was given,
+   * `off` when none was given or it was taken back, `unknown` when taking it back failed. Absent
+   * when the action did not touch it.
+   */
+  readonly access?: "on" | "off" | "unknown";
+  /** A removal that left an entry in the file: TTasks's own (`reason` says why), or one the person changed. */
+  readonly kept?: "own" | "edited";
   /** Facts the person should know: `empty_parent_kept` (Claude Code keeps an empty table). */
   readonly notes?: readonly string[];
+}
+
+/** The service refused a home's row: `instance_taken`, or `grant_failed` for any other reason. */
+export class GrantRefused extends Error {
+  override readonly name = "GrantRefused";
+  readonly reason: "instance_taken" | "grant_failed";
+  constructor(reason: "instance_taken" | "grant_failed") {
+    super(`The service refused the agent home's row: ${reason}`);
+    this.reason = reason;
+  }
+}
+
+/**
+ * A home's access to TTasks: its agent-home row in the service's grants table, which the grant gate
+ * reads at every call (hub/agent-homes.ts). Setup gives it only once the home's entry is in place,
+ * and takes it back before it touches the file, so an entry that failed or a file that cannot be
+ * written never leaves a home with access it should not have.
+ */
+export interface Access {
+  /** Gives the home its row for `space`, or keeps the one it has: the row's ID. Throws when refused. */
+  grant(home: AgentHome, space: string): Promise<string>;
+  /** Takes back every live row of the home. Throws when that could not be done. */
+  revoke(home: AgentHome): Promise<void>;
 }
 
 /** What setup reads and runs, injected so tests use scratch homes and fake commands. */
@@ -910,7 +949,7 @@ export function inspectHome(home: AgentHome, record: HomeRecord | undefined): Ho
       ? { ...base, state: "not_registered" }
       : { ...base, state: "refused", refusal: "foreign_entry" };
   }
-  if (record.state === "applying") return { ...base, state: "interrupted" };
+  if (record.state !== "applied") return { ...base, state: "interrupted" };
   if (entry === undefined) return { ...base, state: "missing" };
   return { ...base, state: sameEntry(entry, record.entry) ? "registered" : "edited" };
 }
@@ -1269,30 +1308,44 @@ function removeEmptyFile(home: AgentHome, record: Pick<HomeRecord, "file_existed
   return true;
 }
 
-/** Writes `text` over the bytes `before` setup read, with the home's own rule for the file. */
-function writeHomeFile(home: AgentHome, before: Buffer, bom: boolean, text: string): boolean {
+/**
+ * Writes `text` over the bytes `before` setup read, with the home's own rule for the file: `done`,
+ * or why nothing was written. A file the OS will not let setup replace (read-only, held by another
+ * program) is `unwritable`.
+ */
+function writeHomeFile(
+  home: AgentHome,
+  before: Buffer,
+  bom: boolean,
+  text: string,
+): "done" | "too_large" | "changed_meanwhile" | "unwritable" {
   const whole = `${bom ? BOM : ""}${text}`;
-  if (Buffer.byteLength(whole, "utf8") > APPS[home.app].maxBytes) return false;
-  // The home's own rule, not machine.toml's: readHomeFile judged the file and its folder just
-  // before, and judges them again here.
-  return commitEdit(
-    { path: home.file, before, text: whole },
-    { unsafe: () => readHomeFile(home).kind === "refused", maxBytes: APPS[home.app].maxBytes },
-  ).ok;
+  if (Buffer.byteLength(whole, "utf8") > APPS[home.app].maxBytes) return "too_large";
+  try {
+    // The home's own rule, not machine.toml's: readHomeFile judged the file and its folder just
+    // before, and judges them again here.
+    const written = commitEdit(
+      { path: home.file, before, text: whole },
+      { unsafe: () => readHomeFile(home).kind === "refused", maxBytes: APPS[home.app].maxBytes },
+    );
+    return written.ok ? "done" : "changed_meanwhile";
+  } catch {
+    return "unwritable";
+  }
 }
 
 /**
  * Takes setup's entry out of a home whose file `read` was just read and shows an entry that
  * ownEntry accepts: the app's own remove, or for an app setup edits itself the splice that undoes
- * its own (with the servers' table when setup made it and nothing else is left in it). True when
- * the take-back ran; the caller reads the file again to see that the entry is gone.
+ * its own (with the servers' table when setup made it and nothing else is left in it). `done` when
+ * the take-back ran, else why not; the caller reads the file again to see that the entry is gone.
  */
 async function takeBack(
   input: SetupInput,
   home: AgentHome,
   record: HomeRecord,
   read: Extract<FileRead, { kind: "read" }>,
-): Promise<boolean> {
+): Promise<"done" | OutcomeReason> {
   if (editsFile(home.app)) {
     const edited = removeEntry(
       read.text,
@@ -1300,36 +1353,49 @@ async function takeBack(
       MCP_SERVER_KEY,
       !record.parent_existed,
     );
-    return edited.ok && writeHomeFile(home, read.bytes, read.bom, edited.text);
+    if (!edited.ok) return edited.reason;
+    return writeHomeFile(home, read.bytes, read.bom, edited.text);
   }
   const exec = commandFor(input, home);
-  if (exec === undefined) return false;
+  if (exec === undefined) return "no_command";
   const { env } = commandEnv(input, home);
-  return input.run([...exec, ...record.undo], env);
+  return (await input.run([...exec, ...record.undo], env)) ? "done" : "command_failed";
 }
 
+/** Why the service refused a home's row, in setup's words. */
+const grantReason = (error: unknown): OutcomeReason =>
+  error instanceof GrantRefused ? error.reason : "grant_failed";
+
 /**
- * Registers TTasks in one home that has no entry yet. The record is written before anything is
- * written to the home; a failure after it takes the entry back when it is provably setup's, so
- * nothing is left half done. `grant` is the agent-home row the service keeps for this home (A2
- * 3.2.5). `planned` is the change the plan holds for it (planOf), when the caller has one.
+ * Registers TTasks in one home that has no entry yet, and gives the home its access once the entry
+ * is in place. The record is written before anything is written to the home; a failure after it,
+ * the service's refusal of the row included, takes the entry back when it is provably setup's, so
+ * a home never has access without its entry. A registered home keeps its row, renewed for the
+ * space its entry names (`space` is empty when the apply registers no new home).
+ * `planned` is the change the plan holds for it (planOf), when the caller has one.
  */
 export async function applyHome(
   input: SetupInput,
   view: HomeView,
   space: string,
-  grant: string | null,
+  access: Access,
   planned?: Change | Refusal,
 ): Promise<Outcome> {
   const { home } = view;
   if (view.state === "registered") {
-    if (view.record !== undefined && view.record.space !== space) {
-      return { home, result: "left", reason: "other_space" };
+    // A registered home has its record (inspectHome).
+    const record = view.record;
+    if (record === undefined) return { home, result: "left", reason: "missing" };
+    const target = space === "" ? record.space : space;
+    if (record.space !== target) return { home, result: "left", reason: "other_space" };
+    let grant: string;
+    try {
+      grant = await access.grant(home, target);
+    } catch (error) {
+      return { home, result: "failed", reason: grantReason(error) };
     }
-    if (view.record !== undefined && view.record.grant !== grant) {
-      putRecord(input.stateDir, input.platform, { ...view.record, grant });
-    }
-    return { home, result: "unchanged" };
+    if (record.grant !== grant) putRecord(input.stateDir, input.platform, { ...record, grant });
+    return { home, result: "unchanged", access: "on" };
   }
   if (view.state === "refused")
     return { home, result: "left", reason: view.refusal ?? "unreadable" };
@@ -1364,7 +1430,7 @@ export async function applyHome(
     // Setup writes this entry itself: it is known, and recorded, before the write.
     entry: editing ? desktopEntry(change.entry) : null,
     patches: [],
-    grant,
+    grant: null,
     at: new Date().toISOString(),
   };
   putRecord(input.stateDir, input.platform, record);
@@ -1372,35 +1438,65 @@ export async function applyHome(
   let known: HomeRecord = record;
 
   /**
-   * Takes the change back as far as it went, then reports the failure. The take-back removes
-   * whatever entry of TTasks's name is there, so it runs only after a fresh read shows a file setup
-   * accepts and an entry that is setup's (ownEntry: before the checkpoint one exactly as asked,
-   * after it the checkpoint's entry, with or without TTasks's patches). Otherwise nothing runs and
-   * the `applying` record stays for `--remove`, with one exception: when the command failed, an
-   * entry that is not exactly as asked is not the command's (another one appeared meanwhile and the
-   * app refused to overwrite it), so it is left and the record goes.
+   * Takes the change back as far as it went, then reports the failure; the home has no access. The
+   * take-back removes whatever entry of TTasks's name is there, so it runs only after a fresh read
+   * shows a file setup accepts and an entry that is setup's (ownEntry: before the checkpoint one
+   * exactly as asked, after it the checkpoint's entry, with or without TTasks's patches). Otherwise
+   * nothing runs and the `applying` record stays for the next setup to settle, with one exception:
+   * when the command failed, an entry that is not exactly as asked is not the command's (another
+   * one appeared meanwhile and the app refused to overwrite it), so it is left and the record goes.
    */
   const fail = async (reason: OutcomeReason, commandFailed = false): Promise<Outcome> => {
     const current = readHomeFile(home);
     const entry = entryOf(current);
-    const kept = (note: string): Outcome => ({ home, result: "failed", reason, notes: [note] });
+    const kept = (note: string): Outcome => ({
+      home,
+      result: "failed",
+      reason,
+      access: "off",
+      notes: [note],
+    });
     if (current.kind === "refused") return kept("undo_failed");
     if (entry !== undefined && !ownEntry(entry, known)) {
       if (!commandFailed) return kept("entry_left");
       dropRecord(input.stateDir, input.platform, home);
-      return { home, result: "failed", reason: "changed_meanwhile" };
+      return { home, result: "failed", reason: "changed_meanwhile", access: "off" };
     }
     if (entry !== undefined && current.kind === "read") {
       const undone = await takeBack(input, home, known, current);
       const again = readHomeFile(home);
-      if (!undone || again.kind === "refused" || entryOf(again) !== undefined) {
-        // The entry may still be there: the record stays, so `--remove` can take it back.
+      if (undone !== "done" || again.kind === "refused" || entryOf(again) !== undefined) {
+        // The entry may still be there: the record stays for the next setup to settle.
         return kept("undo_failed");
       }
     }
     removeEmptyFile(home, record);
     dropRecord(input.stateDir, input.platform, home);
-    return { home, result: "failed", reason };
+    return { home, result: "failed", reason, access: "off" };
+  };
+
+  /**
+   * The entry is in place and checked (`done` holds it): the home gets its access, and only then
+   * does the record say applied. A refused row takes the entry back: no home keeps an entry whose
+   * calls the service would refuse, and none has access without its entry.
+   */
+  const granted = async (done: HomeRecord): Promise<Outcome> => {
+    known = done;
+    putRecord(input.stateDir, input.platform, done);
+    let grant: string;
+    try {
+      grant = await access.grant(home, space);
+    } catch (error) {
+      // A row the service made before its answer was lost is taken back too.
+      const revoked = await access.revoke(home).then(
+        () => true,
+        () => false,
+      );
+      const outcome = await fail(grantReason(error));
+      return revoked ? outcome : { ...outcome, access: "unknown" };
+    }
+    putRecord(input.stateDir, input.platform, { ...done, state: "applied", grant });
+    return { home, result: "applied", access: "on" };
   };
 
   if (editing) {
@@ -1410,17 +1506,13 @@ export async function applyHome(
     const edited = addEntry(now.text, APPS[home.app].servers, MCP_SERVER_KEY, record.entry);
     if (!edited.ok)
       return fail(edited.reason === "invalid_file" ? "invalid_file" : "unsupported_layout");
-    if (!writeHomeFile(home, now.bytes, now.bom, edited.text)) return fail("changed_meanwhile");
+    const wrote = writeHomeFile(home, now.bytes, now.bom, edited.text);
+    if (wrote !== "done") return fail(wrote);
     const written = readHomeFile(home);
     if (written.kind !== "read" || !sameEntry(written.entry, record.entry)) {
       return fail("unexpected_entry");
     }
-    putRecord(input.stateDir, input.platform, {
-      ...record,
-      state: "applied",
-      sha256_after: written.sha256,
-    });
-    return { home, result: "applied" };
+    return granted({ ...record, sha256_after: written.sha256 });
   }
 
   const { env } = commandEnv(input, home);
@@ -1459,12 +1551,8 @@ export async function applyHome(
         edited.reason === "unsupported_layout" ? "unsupported_layout" : "unexpected_entry",
       );
     }
-    if (Buffer.byteLength(`${added.bom ? BOM : ""}${edited.text}`, "utf8") > MAX_CONFIG_BYTES) {
-      return fail("too_large");
-    }
-    if (!writeHomeFile(home, added.bytes, added.bom, edited.text)) {
-      return fail("changed_meanwhile");
-    }
+    const wrote = writeHomeFile(home, added.bytes, added.bom, edited.text);
+    if (wrote !== "done") return fail(wrote);
     const reread = readHomeFile(home);
     if (reread.kind !== "read") return fail("unexpected_entry");
     final = reread;
@@ -1474,48 +1562,80 @@ export async function applyHome(
   if (entry === undefined || !isDeepStrictEqual(entry, patched(written, patches))) {
     return fail("unexpected_entry");
   }
-  putRecord(input.stateDir, input.platform, {
-    ...known,
-    state: "applied",
-    sha256_after: final.sha256,
-    entry,
-  });
-  return { home, result: "applied" };
+  return granted({ ...known, sha256_after: final.sha256, entry });
 }
 
 /**
- * Takes TTasks's entry out of one home, when the entry is still exactly the one setup wrote
- * (ownEntry): with the app's own command, or for an app setup edits itself with the splice that
- * undoes its own. An entry the person changed since is left alone and reported. The home is read
- * again right before: the view may be older than the entry.
+ * Turns a home's access off, and takes TTasks's entry out of it when the entry is still exactly
+ * the one setup wrote (ownEntry). The access goes first, whatever the file holds: an entry the
+ * person changed, a file that cannot be written or an app's command that is missing never keep a
+ * home's access. The record says `removing` before anything changes, so a run that ends midway is
+ * settled by the next one.
  */
-export async function removeHome(input: SetupInput, view: HomeView): Promise<Outcome> {
-  const { home, record } = view;
-  if (record === undefined) return { home, result: "unchanged", reason: "not_registered" };
+export async function removeHome(
+  input: SetupInput,
+  view: HomeView,
+  access: Access,
+): Promise<Outcome> {
+  const { home } = view;
+  const record =
+    view.record === undefined ? undefined : { ...view.record, state: "removing" as const };
+  if (record !== undefined && view.record?.state !== "removing") {
+    putRecord(input.stateDir, input.platform, record);
+  }
+  const off = await access.revoke(home).then(
+    () => true,
+    () => false,
+  );
+  const outcome: Outcome =
+    record === undefined
+      ? { home, result: "unchanged", reason: "not_registered" }
+      : await takeOut(input, home, record, off);
+  return { ...outcome, access: off ? "off" : "unknown" };
+}
+
+/**
+ * The file's part of a removal: TTasks's entry out when it is still its own, the record gone once
+ * nothing of TTasks's is left there and its access is off. An entry the person changed stays, and
+ * is theirs from then on. An entry of TTasks's that could not be taken out keeps its `removing`
+ * record, so the next setup tries again.
+ */
+async function takeOut(
+  input: SetupInput,
+  home: AgentHome,
+  record: HomeRecord,
+  off: boolean,
+): Promise<Outcome> {
+  const done = (outcome: Outcome): Outcome => {
+    if (off) dropRecord(input.stateDir, input.platform, home);
+    return outcome;
+  };
   const now = inspectHome(home, record);
   if (now.state === "refused") {
-    return { home, result: "left", reason: now.refusal ?? "unreadable" };
+    return { home, result: "left", reason: now.refusal ?? "unreadable", kept: "own" };
   }
   if (now.entry === undefined) {
     removeEmptyFile(home, record);
-    dropRecord(input.stateDir, input.platform, home);
-    return { home, result: "removed", reason: "missing" };
+    return done({ home, result: "removed", reason: "missing" });
   }
-  if (!ownEntry(now.entry, record)) return { home, result: "left", reason: "edited" };
+  if (!ownEntry(now.entry, record)) {
+    return done({ home, result: "left", reason: "edited", kept: "edited" });
+  }
   if (!editsFile(home.app) && commandFor(input, home) === undefined) {
-    return { home, result: "left", reason: "no_command" };
+    return { home, result: "left", reason: "no_command", kept: "own" };
   }
   const read = readHomeFile(home);
   if (read.kind !== "read" || !ownEntry(read.entry, record)) {
-    return { home, result: "failed", reason: "changed_meanwhile" };
+    return { home, result: "failed", reason: "changed_meanwhile", kept: "own" };
   }
   const ran = await takeBack(input, home, record, read);
   const after = readHomeFile(home);
-  if (!ran || after.kind === "refused" || entryOf(after) !== undefined) {
+  if (ran !== "done" || after.kind === "refused" || entryOf(after) !== undefined) {
     return {
       home,
       result: "failed",
-      reason: editsFile(home.app) ? "changed_meanwhile" : "command_failed",
+      reason: ran === "done" ? (editsFile(home.app) ? "changed_meanwhile" : "command_failed") : ran,
+      kept: "own",
     };
   }
   const notes: string[] = [];
@@ -1530,6 +1650,22 @@ export async function removeHome(input: SetupInput, view: HomeView): Promise<Out
     // `.claude.json` is never edited by TTasks.
     notes.push("empty_parent_kept");
   }
-  dropRecord(input.stateDir, input.platform, home);
-  return { home, result: "removed", ...(notes.length === 0 ? {} : { notes }) };
+  return done({ home, result: "removed", ...(notes.length === 0 ? {} : { notes }) });
+}
+
+/**
+ * Settles what a setup run left midway (a crash, a closed terminal): run first by every setup that
+ * changes the homes, under the setup lock, so a record that is not `applied` then is no other
+ * run's. Each such home is turned off and its entry taken out when it is still TTasks's, once.
+ */
+export async function settleHomes(input: SetupInput, access: Access): Promise<Outcome[]> {
+  const records = readRecords(input.stateDir).filter((r) => r.state !== "applied");
+  if (records.length === 0) return [];
+  const found = discover(input);
+  const outcomes: Outcome[] = [];
+  for (const record of records) {
+    const home = await homeOfRecord(input, found, record);
+    outcomes.push(await removeHome(input, inspectHome(home, record), access));
+  }
+  return outcomes;
 }
