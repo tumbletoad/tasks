@@ -488,6 +488,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
   // (M2.12), else one in memory for this start.
   let grantStore: GrantStore | undefined;
   const grantsOf = (): GrantStore => (grantStore ??= grantsDb?.grants ?? new MemoryGrants());
+  let ownRuntime: RuntimeNames | undefined;
   try {
     // machine.toml (A2 3.2.4): each problem is logged by section and code; one in the file itself
     // or in [[spaces]] refuses the start (64), naming the key and code but never a value.
@@ -614,6 +615,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       isPrivateDir,
       options.runUserBase ?? RUN_USER_BASE,
     );
+    ownRuntime = runtime;
     let endpoint: { kind: "unix" | "pipe"; path: string } | null = null;
     let state: ServiceStatus["state"] = "starting";
     // The space manager is made once the instance ID is final (a taken pipe name changes it).
@@ -1429,6 +1431,20 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       }
     } catch {
       // It cannot be removed: the next start replaces it.
+    }
+    // The runtime folder goes when it is empty, as at a clean stop, while the lock is this
+    // start's: once it is not, the folder may be another start's, made and not yet bound.
+    try {
+      const now = identityOf(lock.path);
+      if (
+        ownRuntime !== undefined &&
+        now.dev === lock.identity.dev &&
+        now.ino === lock.identity.ino
+      ) {
+        removeIdleRuntime(ownRuntime);
+      }
+    } catch {
+      // The lock is gone: the folder is left alone.
     }
     lock.release();
     if (error instanceof ServiceExit) throw error;
