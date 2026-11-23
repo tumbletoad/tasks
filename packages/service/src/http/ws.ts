@@ -151,6 +151,8 @@ class FeedSocket {
   #space: string | undefined;
   /** The key of the copy the subscription found: the feed reads that copy and never another. */
   #copy: string | undefined;
+  /** The copy is not served now, and the page was told: served again, it gets a fresh snapshot. */
+  #gone = false;
   /** Why the copy served is read-only, as its last snapshot said; a change sends a new one. */
   #readOnly: string | undefined;
   #cursor: Cursor | undefined;
@@ -560,6 +562,7 @@ class FeedSocket {
     this.#space = undefined;
     this.#copy = undefined;
     this.#cursor = undefined;
+    this.#gone = false;
   }
 
   /** Sends the batches after the cursor until it is current. One run at a time. */
@@ -589,13 +592,15 @@ class FeedSocket {
       const key = this.#copy;
       const cursor = this.#cursor;
       if (this.#closed || key === undefined || cursor === undefined) return;
-      // The copy the subscription found, while it is served: a copy closed since ends the feed,
-      // and another copy of the space never takes its place.
+      // The copy the subscription found, and no other: while it is not served (closed, or
+      // closed for a claim or a restore in place) the page is told once, and the same copy
+      // served again comes back with a fresh snapshot. Another copy of the space never does.
       const served = this.#hub.options.host.spaces().filter((s) => s.reader !== undefined);
       const found = findSpace(served, key);
       const space = isAmbiguity(found) ? undefined : found;
       if (space?.reader === undefined) {
-        this.#unsubscribe();
+        if (this.#gone) return;
+        this.#gone = true;
         await this.#send({ type: "error", code: "space_unavailable" }).catch(() => undefined);
         return;
       }
@@ -619,11 +624,12 @@ class FeedSocket {
       const { head, batch } = read;
       const moved = !sameAuthority(cursor, head.cursor);
       // An epoch or incarnation change always means a fresh snapshot (A1 3.7), and so does a copy
-      // that became writable (claimed) or read-only: the page says which it is.
-      if (moved || stringOf(readOnlyOf(space)) !== this.#readOnly) {
+      // that became writable (claimed) or read-only, or is served again: the page says which.
+      if (moved || this.#gone || stringOf(readOnlyOf(space)) !== this.#readOnly) {
         const snapshot = await readSnapshot(space.reader, this.#hub.here());
         if (generation !== this.#generation) return;
         await this.#sendSnapshot(snapshot, space, moved ? "epoch" : undefined);
+        this.#gone = false;
         this.#cursor = snapshot.cursor;
         continue;
       }

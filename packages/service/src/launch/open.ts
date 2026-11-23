@@ -21,7 +21,7 @@ import {
   type Route,
 } from "@ttasks/launch";
 import { decodeConfig, parseToml, readConfigFile } from "../config/toml.ts";
-import type { UsableSpace } from "../ops/handlers.ts";
+import type { UsableSpace } from "../ops/served.ts";
 import type { MarkerOwner } from "../ops/marker.ts";
 import type { TaskFolder } from "../ops/read.ts";
 

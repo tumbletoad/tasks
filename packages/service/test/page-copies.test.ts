@@ -141,16 +141,16 @@ describe("[A2.3.10.5.copies.page] the page shows the copy the person opened", ()
         again.send({ type: "subscribe", space: address, cursor });
         await user.call("space/close", { space: mira.folder }, CALL);
         await user.call("space/claim", { space: copyFolder }, CALL);
-        // A snapshot may come while the claim is under way; the one after it says it writes.
+        // While the claim closes and opens the copy, the feed may say it is away; the snapshot
+        // after it is of the same copy, and says it writes.
         const claimed = await again.next(
           (m) =>
-            m["type"] === "error" ||
-            (m["type"] === "snapshot" &&
-              !Object.hasOwn(m["space"] as Record<string, unknown>, "read_only")),
+            m["type"] === "snapshot" &&
+            !Object.hasOwn(m["space"] as Record<string, unknown>, "read_only"),
           60_000,
         );
-        expect(claimed["type"]).toBe("snapshot");
         expect(refsOf(claimed)).toEqual(["M-1"]);
+        expect(claimed["space"]).toMatchObject({ copy: address });
       } finally {
         again.ws.close();
       }
@@ -187,11 +187,20 @@ describe("[A2.3.10.5.copies.page] the page shows the copy the person opened", ()
       await user.call("space/open", { path: copyFolder }, CALL);
       const { token } = await signIn(w);
       const port = w.port();
-      // The original closed: the space's ID means the restored copy now.
+      // A feed that found the original by the space's ID, as a tab on it does.
+      const held = await openFeed(port, token);
+      held.send({ type: "subscribe", space: mira.id });
+      const found = await snapshotOf(held);
+      expect(refsOf(found)).toEqual(["M-1"]);
+      const originalKey = (found["space"] as { copy: string }).copy;
+      // The original closed: that feed is told, and the space's ID means the restored copy now.
       await user.call("space/close", { space: mira.folder }, CALL);
+      expect(await held.next((m) => m["type"] === "error", 60_000)).toMatchObject({
+        code: "space_unavailable",
+      });
       const first = await openFeed(port, token);
       let cursor: unknown;
-      let key = "";
+      let key: string | undefined;
       try {
         first.send({ type: "subscribe", space: mira.id });
         const snapshot = await snapshotOf(first);
@@ -202,9 +211,19 @@ describe("[A2.3.10.5.copies.page] the page shows the copy the person opened", ()
       } finally {
         first.ws.close();
       }
-      // The original opens again and takes a change the copy never has.
+      // The original opens again and takes a change the copy never has. The feed that found the
+      // original comes back to it, and never showed the copy meanwhile.
       await user.call("space/open", { path: mira.folder }, CALL);
       await add(user, "Only in the original", "page-copies-feed-0002");
+      try {
+        const back = await held.next((m) => m["type"] === "snapshot", 60_000);
+        expect(back["space"]).toMatchObject({ copy: originalKey });
+        expect(back["space"]).not.toHaveProperty("read_only");
+        const shown = held.messages.filter((m) => m["type"] === "snapshot");
+        expect(shown.filter((m) => Object.hasOwn(m["space"] as object, "read_only"))).toEqual([]);
+      } finally {
+        held.ws.close();
+      }
 
       // What a feed resumes with never carries the original's change under the copy's cursor.
       const next = (feed: FeedClient) =>

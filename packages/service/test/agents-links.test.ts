@@ -19,6 +19,7 @@ import { SpaceExecutionStore } from "@ttasks/launch";
 import { fakeTtam, ttamAgent, ttamHome, ttamPath } from "@ttasks/testkit";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { HttpTimerKind } from "../src/http/index.ts";
+import { copyKey } from "../src/ops/copies.ts";
 import { testClock } from "./clock.ts";
 import { instanceToml } from "./harness.ts";
 import { homeDigest } from "../src/setup/agents.ts";
@@ -141,7 +142,7 @@ async function trashAfterRestore(title: string): Promise<void> {
   const task = tasks.get(title);
   const served = w.service.ops.spaces().find((s) => s.name === task?.space);
   const writer = served?.writer;
-  if (task === undefined || served?.id === undefined || served.folder === undefined || !writer) {
+  if (task === undefined || served?.id === undefined || !writer) {
     throw new Error(`no task ${title}`);
   }
   const user = await w.user();
@@ -408,11 +409,20 @@ const linked = (title: string) => {
 describe("[A5.agents.links] each agent of the monitor is shown with the task TTasks started it for", () => {
   test("by app, home and session together, in every open space; nothing that could be two tasks", async () => {
     const p = await picture();
-    const mira = w.service.ops.spaces().find((s) => s.name === "Mira")?.id;
-    const studio = w.service.ops.spaces().find((s) => s.name === "Studio")?.id;
+    const served = (name: string) => w.service.ops.spaces().find((s) => s.name === name);
+    const mira = served("Mira")?.id;
+    // Each copy is named by its key, and opened by the address the space list gives it.
+    const copyOf = (name: string) => {
+      const copy = served(name);
+      return copy?.id === undefined
+        ? {}
+        : { copy: copyKey(copy.id, copy.folder), address: copy.id };
+    };
+    const studio = served("Studio")?.id;
     // A Claude Code terminal launch by the session ID its click preset, with its agent inside.
     expect(byTitle(p, "Fixture terminal agent")?.task).toEqual({
       space: mira,
+      ...copyOf("Mira"),
       spaceName: "Mira",
       ...linked("Terminal"),
       started: "terminal",
@@ -430,6 +440,7 @@ describe("[A5.agents.links] each agent of the monitor is shown with the task TTa
     // names its own run: an earlier run's conversation resumed by hand is not the current run.
     expect(byTitle(p, "Fixture run agent")?.task).toEqual({
       space: studio,
+      ...copyOf("Studio"),
       spaceName: "Studio",
       ...linked("Run"),
       started: "run",

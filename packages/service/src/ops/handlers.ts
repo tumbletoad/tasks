@@ -179,29 +179,9 @@ import {
 import { readFinished } from "./task-rows.ts";
 import { listSkills, readSkills, servedText, type Catalog, type Skill } from "../skills/index.ts";
 
-/** A space as the request path sees it. The hub's space manager provides them. */
-export interface ServedSpace {
-  /** The space's ID as read from its folder, once it is served. */
-  readonly id: string | undefined;
-  /**
-   * The ID its machine.toml entry names, also before it is served (unavailable, opening): it tells
-   * which space an unserved copy is of, so copies of one space count as one (ops/copies.ts).
-   */
-  readonly registered?: string;
-  readonly name: string | undefined;
-  readonly state: "opening" | "open" | "read_only" | "unavailable" | "closing" | "closed";
-  readonly reason?: string;
-  /** Why a read-only space is read-only, in A1 3.2's words (a synced or network folder). */
-  readonly message?: string;
-  /** An open space whose backups are not working: why, in a fixed word (hub/backup-health.ts). */
-  readonly backup?: string;
-  /** Set while the space is open as this machine's. */
-  readonly writer: SpaceWriterHandle | undefined;
-  /** Set while the space is served: open or read-only. */
-  readonly reader: WorkerConnection | undefined;
-  /** The space's folder on this machine. */
-  readonly folder: string;
-}
+import type { ServedSpace, UsableSpace } from "./served.ts";
+
+export type { ServedSpace, UsableSpace };
 
 /** What the request path needs from its host. */
 export interface OpsHost {
@@ -542,9 +522,6 @@ function heldSpace(
   if (isAmbiguity(found)) throw ambiguousError(found);
   return answerFor(live, found, held);
 }
-
-/** A space a call may go on with: open or read-only, so served, with its ID. */
-export type UsableSpace = ServedSpace & { readonly id: string };
 
 /**
  * The one answer for the space a call means, which every call's path ends in (`pickSpace` for a
@@ -998,7 +975,7 @@ async function markConnected(call: Call, launch: FoundLaunch): Promise<void> {
   if (caller.class !== "bridge" && caller.class !== "cli-agent") return;
   if (launch.route !== "link" && launch.route !== "clipboard") return;
   if (launch.state === "failed" || launch.boundAt !== undefined) return;
-  if (space.state !== "open" || space.writer === undefined || space.id === undefined) return;
+  if (space.state !== "open" || space.writer === undefined) return;
   try {
     checkGrant(call.host, caller, space.id);
     await call.host.launches?.connected(
@@ -1218,7 +1195,7 @@ function bindFacts(call: Call): BindFacts & { readonly home: string } {
     platform: host.platform ?? process.platform,
     reserved: [
       ...(host.dataFolder === undefined ? [] : [host.dataFolder]),
-      ...host.spaces().flatMap((s) => (s.folder === undefined ? [] : [s.folder])),
+      ...host.spaces().map((s) => s.folder),
     ],
   };
 }
@@ -1365,7 +1342,7 @@ async function markersAfter(
 ): Promise<void> {
   const markers = call.host.markers;
   const space = call.space.id;
-  if (markers === undefined || space === undefined) return;
+  if (markers === undefined) return;
   if (result.status !== "applied" || result.replayed === true) return;
   for (const [k, op] of ops.entries()) {
     if (op.kind !== "project.folder_set" && op.kind !== "task.folder_set") continue;
@@ -2631,7 +2608,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // A read through the reader (A3 3.9): a read-only space answers too.
     const reader = readerOf(call.space);
     const { host } = call;
-    const space = call.space.id ?? "";
+    const space = call.space.id;
     const boundTask = sessionIn(call)?.task;
     try {
       // The input passed the entry's schema (TaskSearchInput) and its SafeText.

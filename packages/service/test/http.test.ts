@@ -12,6 +12,7 @@ import { blockedMessage, ServiceDb, type HttpTimerKind } from "../src/http/index
 import { readBatch, readHead } from "../src/http/feed.ts";
 import { DEFAULT_HTTP_LIMITS } from "../src/http/limits.ts";
 import { FeedHub } from "../src/http/ws.ts";
+import { copyKey } from "../src/ops/copies.ts";
 import { testClock } from "./clock.ts";
 import { post, send } from "./http-client.ts";
 import { httpWorld, openFeed, persistPort, signIn, type HttpWorld } from "./http-world.ts";
@@ -610,7 +611,7 @@ describe("[A2.3.8.http.feed] a peer that reads nothing or answers nothing", () =
         });
       },
     };
-    const space = { id: head.space_id, name: "Mira", reader };
+    const space = { id: head.space_id, name: "Mira", folder: "/fixture/mira", reader };
     const { hub } = options(DEFAULT_HTTP_LIMITS, { spaces: () => [space] as never[] });
     const sent: Record<string, unknown>[] = [];
     const handlers = new Map<string, (...args: unknown[]) => void>();
@@ -665,7 +666,7 @@ describe("[A2.3.8.http.feed] a peer that reads nothing or answers nothing", () =
       transaction: (_mode: string, statements: unknown[]) =>
         Promise.resolve([{ ...head }, ...statements.slice(1).map(() => [])]),
     };
-    const space = { id: head.space_id, name: "Mira", reader };
+    const space = { id: head.space_id, name: "Mira", folder: "/fixture/mira", reader };
     const instance = { key: "fake", label: "Fake", glyph: "Fk", ring: 1, route: "terminal" };
     const hub = new FeedHub({
       host: { spaces: () => [space] as never[] },
@@ -769,7 +770,7 @@ describe("[A2.3.8.http.feed] a peer that reads nothing or answers nothing", () =
         }),
       transaction: () => Promise.resolve([head, [], [], [], [], [], []]),
     };
-    const space = { id: head.space_id, name: "Mira", reader };
+    const space = { id: head.space_id, name: "Mira", folder: "/fixture/mira", reader };
     const { clock, hub } = options(DEFAULT_HTTP_LIMITS, {
       spaces: () => [space] as never[],
     });
@@ -778,7 +779,7 @@ describe("[A2.3.8.http.feed] a peer that reads nothing or answers nothing", () =
     hub.attach(peer.ws as never, "gr_x", 1);
     peer.message({
       type: "subscribe",
-      space: head.space_id,
+      space: copyKey(head.space_id, space.folder),
       cursor: { epoch: 1, incarnation: "ai_x", seq: 5 },
     });
     expect(release).toBeDefined();

@@ -56,7 +56,7 @@ function described(
     throw new AppError({ code: "internal", message: "The space has no ID." });
   }
   const live = ops.spaces().filter((s) => s.state !== "closed");
-  const copy = live.find((s) => s.folder !== undefined && sameFolder(s.folder, folder));
+  const copy = live.find((s) => sameFolder(s.folder, folder));
   return {
     id: space.id,
     address: (copy === undefined ? undefined : addressOf(live, copy)) ?? space.id,
