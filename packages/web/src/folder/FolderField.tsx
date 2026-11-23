@@ -204,6 +204,7 @@ export function FolderField({
         aria-describedby={[noteId, describedBy].filter((x) => x !== undefined).join(" ")}
         {...(active === undefined ? {} : { "aria-activedescendant": `${id}-c${String(active)}` })}
         className={styles.input}
+        data-machine=""
         value={value}
         spellCheck={false}
         autoCapitalize="off"
@@ -218,7 +219,7 @@ export function FolderField({
         }}
         onKeyDown={onKey}
       />
-      <div className={styles.browse} data-part="folder-browser" aria-busy={making}>
+      <div className={styles.browse} data-part="folder-browser" data-machine="" aria-busy={making}>
         <div className={styles.where}>
           {up === undefined ? null : (
             <Button

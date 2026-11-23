@@ -307,7 +307,7 @@ export function AddProject({
               )}
             </div>
             {error === undefined ? null : (
-              <p className={sheet.error} role="alert">
+              <p className={sheet.error} role="alert" data-machine="">
                 {error}
               </p>
             )}

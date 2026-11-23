@@ -27,7 +27,7 @@ export function SpaceBar({ state }: { readonly state: LiveState }) {
   if (state.gone !== undefined) {
     return (
       <div className={styles.bar} role="status" data-part="gone" dir="auto">
-        <p className={styles.line}>
+        <p className={styles.line} data-machine="">
           {t("space.gone", { why: state.gone.why, name, folder: state.gone.folder ?? folder })}
         </p>
         <button
@@ -48,7 +48,7 @@ export function SpaceBar({ state }: { readonly state: LiveState }) {
   return (
     <div className={styles.bar} role="status" data-part="read-only" dir="auto">
       {restored === undefined ? null : (
-        <p className={styles.line} data-part="restored">
+        <p className={styles.line} data-part="restored" data-machine="">
           {t("space.restoredNote", {
             name,
             at: Date.parse(restored.at),
@@ -63,7 +63,11 @@ export function SpaceBar({ state }: { readonly state: LiveState }) {
       )}
       {readOnly === undefined ||
       (restored !== undefined && readOnly.reason === "read_only_copy") ? null : (
-        <p className={styles.line} data-part="read-only-why">
+        <p
+          className={styles.line}
+          data-part="read-only-why"
+          data-machine={why === readOnly.message ? undefined : ""}
+        >
           {why ?? t("space.readOnlyNote")}
         </p>
       )}

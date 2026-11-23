@@ -303,6 +303,20 @@ export default defineConfig([
     },
   },
   {
+    // The browser tests' pictures go to public pull requests: only `picture` hides this machine.
+    files: ["tests/e2e/**"],
+    ignores: ["tests/e2e/page.ts"],
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        {
+          property: "screenshot",
+          message: "Take a picture with picture() from page.ts: it hides this machine's folders.",
+        },
+      ],
+    },
+  },
+  {
     // The page's words come from its catalogue (A5 3.23): no literal text, aria-label, title,
     // placeholder or alt in JSX. Tests are exempt.
     files: ["packages/web/src/**/*.{tsx,jsx}"],

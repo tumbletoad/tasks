@@ -212,7 +212,7 @@ export function AgentApps({
               <div className={styles.head}>
                 <span className={styles.name}>{row.label}</span>
                 {row.home === null ? null : (
-                  <span className={styles.home} dir="ltr">
+                  <span className={styles.home} data-machine="" dir="ltr">
                     {row.home}
                   </span>
                 )}
