@@ -70,6 +70,88 @@ export function areaSlots(areas: Iterable<AreaRow>): ReadonlyMap<string, number>
   return new Map([...areas].sort(byPosition).map((area, i) => [area.id, slotOf(area, i)]));
 }
 
+/** An archived area or project: kept, with its tasks, but out of the places work is filed into. */
+const archived = (group: { readonly lifecycle?: string }): boolean =>
+  group.lifecycle === "archived";
+
+/**
+ * The group that keeps an area's or project's page archived: the project itself, else its area.
+ * None while both are live.
+ */
+export function archivedGroup(
+  area: AreaRow | undefined,
+  project?: ProjectRow,
+):
+  | { readonly kind: "area"; readonly row: AreaRow }
+  | { readonly kind: "project"; readonly row: ProjectRow }
+  | undefined {
+  if (project !== undefined && archived(project)) return { kind: "project", row: project };
+  if (area !== undefined && archived(area)) return { kind: "area", row: area };
+  return undefined;
+}
+
+/** The areas and projects new work can be filed into: live ones, and no project of an archived area. */
+export function liveGroups(
+  areas: Iterable<AreaRow>,
+  projects: Iterable<ProjectRow>,
+): { readonly areas: AreaRow[]; readonly projects: ProjectRow[] } {
+  const live = [...areas].filter((a) => !archived(a));
+  const ids = new Set(live.map((a) => a.id));
+  return {
+    areas: live,
+    projects: [...projects].filter(
+      (p) => !archived(p) && (p.area_id === undefined || ids.has(p.area_id)),
+    ),
+  };
+}
+
+/** An area as the sidebar lists it, with its colour among all areas and the projects beneath it. */
+export interface ListedArea {
+  readonly kind: "area";
+  readonly area: AreaRow;
+  readonly slot: number;
+  readonly projects: readonly ProjectRow[];
+}
+
+/** An archived project of a live area, listed on its own under Archived. */
+export interface ListedProject {
+  readonly kind: "project";
+  readonly area: AreaRow;
+  readonly slot: number;
+  readonly project: ProjectRow;
+}
+
+/**
+ * The sidebar's areas, in the space's order: each live area with its live projects, and under
+ * Archived each archived area with all its projects and each archived project of a live area. An
+ * area keeps the colour it has among all areas, so archiving one recolours no other.
+ */
+export function sidebarAreas(
+  areas: Iterable<AreaRow>,
+  projects: Iterable<ProjectRow>,
+): {
+  readonly live: readonly ListedArea[];
+  readonly archived: readonly (ListedArea | ListedProject)[];
+} {
+  const all = [...areas].sort(byPosition);
+  const projectList = [...projects].sort(byPosition);
+  const live: ListedArea[] = [];
+  const shelved: (ListedArea | ListedProject)[] = [];
+  all.forEach((area, index) => {
+    const slot = slotOf(area, index);
+    const own = projectList.filter((p) => p.area_id === area.id);
+    if (archived(area)) {
+      shelved.push({ kind: "area", area, slot, projects: own });
+      return;
+    }
+    live.push({ kind: "area", area, slot, projects: own.filter((p) => !archived(p)) });
+    for (const project of own) {
+      if (archived(project)) shelved.push({ kind: "project", area, slot, project });
+    }
+  });
+  return { live, archived: shelved };
+}
+
 export function groupTasks(
   tasks: Iterable<TaskRow>,
   areas: Iterable<AreaRow>,
