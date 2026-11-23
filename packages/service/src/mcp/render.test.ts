@@ -703,6 +703,28 @@ describe("[A3.3.10.mcp.framing] stored text and editable names appear only insid
     for (const line of split(error).outside) expect(line).not.toContain(INJECTION);
   });
 
+  test("a task's folder change names the folders inside it only inside the block, with its counts outside", () => {
+    const inside = (at: string) => [
+      { kind: "project", name: INJECTION, folder: `~/${at}/nested` },
+      { kind: "task", ref: "M-20", folder: `~/${at}/inner` },
+    ];
+    const update = {
+      ...example("task.update", 0),
+      fields: ["folder"],
+      moved: 2,
+      followed: inside("new"),
+      stayed: 2,
+      stayed_because: "not_in_new_folder",
+      kept: inside("old"),
+    };
+    expect(entry("task.update").output.safeParse(update).success).toBe(true);
+    const { inside: data, outside } = split(renderResult("task.update", update));
+    expect(data.join("\n")).toContain(INJECTION);
+    for (const line of outside) expect(line).not.toContain(INJECTION);
+    expect(outside).toContain("Moved along with the old folder: 2");
+    expect(outside).toContain("Stayed where they are, because they are not in the new folder: 2");
+  });
+
   test("only a note the user wrote for agents stands outside the block, as an instruction", () => {
     const digest = example("task.get", 0);
     const task = digest["task"] as Json;

@@ -784,6 +784,35 @@ type Groups = OutputOf<"group.manage">;
 /** The most characters of a folder a list shows. */
 const LIST_FOLDER = 240;
 
+/** What a folder change did to the folders inside the old one (organize, update_task). */
+type Inside = Pick<Groups, "moved" | "followed" | "stayed" | "stayed_because" | "kept">;
+
+/**
+ * The counts and the reason are the product's words and always shown; the folders inside, named
+ * by a project's name or a task's reference, are data.
+ */
+function insideOf(result: Inside): { counts: (string | undefined)[]; lines: string[][] } {
+  const line =
+    (what: string) =>
+    (f: NonNullable<Inside["kept"]>[number]): string[] => [
+      `${what}: ${f.kind === "task" ? (f.ref ?? "") : (f.name ?? "")} ${f.folder}`,
+    ];
+  return {
+    counts: [
+      result.moved === undefined
+        ? undefined
+        : `Moved along with the old folder: ${String(result.moved)}`,
+      result.stayed === undefined || result.stayed_because === undefined
+        ? undefined
+        : `Stayed where they are, because ${stayedWhy(result.stayed_because, result.stayed)}: ${String(result.stayed)}`,
+    ],
+    lines: [
+      ...(result.followed ?? []).map(line("moved")),
+      ...(result.kept ?? []).map(line("stayed")),
+    ],
+  };
+}
+
 function groupsRendered(result: Groups, organize: string): Rendered {
   // A group's facts after its count: archived, and the ID that names it where its name does not.
   const facts = (g: { archived?: true | undefined; ref?: string | undefined }) =>
@@ -791,24 +820,7 @@ function groupsRendered(result: Groups, organize: string): Rendered {
   // A folder is shortened, so the line of any group fits a page and no group is left out of the text.
   const project = (p: Groups["projects"][number]) =>
     `${p.name}${p.repo === undefined ? "" : ` [${p.repo}]`} (${String(p.active)}${facts(p)}${p.folder === undefined ? "" : `, ${clip(p.folder, LIST_FOLDER)}`})`;
-  // The counts and the reason are the product's words and always shown; the folders are data.
-  const insideCounts = [
-    result.moved === undefined
-      ? undefined
-      : `Moved along with the old folder: ${String(result.moved)}`,
-    result.stayed === undefined || result.stayed_because === undefined
-      ? undefined
-      : `Stayed where they are, because ${stayedWhy(result.stayed_because, result.stayed)}: ${String(result.stayed)}`,
-  ];
-  const insideFolder =
-    (what: string) =>
-    (f: NonNullable<Groups["kept"]>[number]): string[] => [
-      `${what}: ${f.kind === "task" ? (f.ref ?? "") : (f.name ?? "")} ${f.folder}`,
-    ];
-  const insideLines = [
-    ...(result.followed ?? []).map(insideFolder("moved")),
-    ...(result.kept ?? []).map(insideFolder("stayed")),
-  ];
+  const { counts: insideCounts, lines: insideLines } = insideOf(result);
   const head = `${String(result.total_areas)} area${result.total_areas === 1 ? "" : "s"} · ${String(result.total_projects)} project${result.total_projects === 1 ? "" : "s"} · as_of ${result.as_of}${replayed(result)}`;
   const done =
     result.result === undefined
@@ -924,12 +936,15 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
     // An append is no base: an answer that only appended offers none. A replace is a set, and is.
     const contextOnly =
       result.context === "appended" && result.fields.every((f) => f === "context");
+    const inside = insideOf(result);
     return {
       parts: [
         fixed(
           `${head}${contextOnly ? "" : ` · as_of ${result.as_of}`}${replayed(result)}`,
+          ...inside.counts,
           ...result.warnings.map((w) => `warning: ${w}`),
         ),
+        ...(inside.lines.length === 0 ? [] : [{ data: true, units: inside.lines }]),
       ],
       more: "",
     };
