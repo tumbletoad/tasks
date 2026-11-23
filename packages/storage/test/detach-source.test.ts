@@ -312,6 +312,34 @@ describe("[A1.source.detach] a source detached from a task, and put back", () =>
     expect(holders("jira:FIX-1")).toEqual([a]);
   });
 
+  test("one request that detaches a key and captures it matches as if the detach had happened", () => {
+    const a = capture([ticket("jira:FIX-1"), ticket("jira:FIX-2")]);
+    const fix1 = sourceOf("jira:FIX-1");
+    const b = newId("t");
+    const result = applied(
+      send(
+        "codex",
+        [
+          { kind: "source.unlink", task: a, source: fix1 },
+          { kind: "task.create", id: b, title: "The right task" },
+          { kind: "source.add", task: b, source: ticket("jira:FIX-1") },
+          { kind: "source.add", task: b, source: ticket("jira:FIX-2") },
+        ],
+        { base: fx.base() },
+      ),
+    );
+    // FIX-1 names no task any more: the draft is new work and holds it; A keeps FIX-2.
+    expect(result.results[1]).toMatchObject({ status: "created" });
+    expect(holders("jira:FIX-1")).toEqual([b]);
+    expect(holders("jira:FIX-2")).toEqual([a]);
+    const next = newId("t");
+    const found = send("codex", [
+      { kind: "task.create", id: next, title: "Answer again" },
+      { kind: "source.add", task: next, source: ticket("jira:FIX-1") },
+    ]);
+    expect(found.results[0]).toMatchObject({ status: "existing", task: b });
+  });
+
   test("an agent detaches a link, and the person puts it back", () => {
     const a = capture([ticket("jira:FIX-1")], "human");
     const fix1 = sourceOf("jira:FIX-1");

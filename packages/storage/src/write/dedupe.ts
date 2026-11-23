@@ -340,12 +340,13 @@ export class Dedupe {
 
   /**
    * The keys `task` has: those its live links hold, and those of its sources linked without
-   * their key (the source's `ref`), at the start and as the request adds them.
+   * their key (the source's `ref`), at the start and as the request adds and removes them.
    */
   #keysHad(task: Id<"t">): Set<string> {
     const keys = new Set<string>();
     for (const row of this.#conn.prepare(SQL.keysOf).all({ task })) {
-      keys.add(new RowReader("sources", row).text("k"));
+      const key = new RowReader("sources", row).text("k");
+      if (this.#unlinked.get(key)?.has(task) !== true) keys.add(key);
     }
     for (const links of [this.#links, this.#plain]) {
       for (const [key, tasks] of links) if (tasks.has(task)) keys.add(key);
