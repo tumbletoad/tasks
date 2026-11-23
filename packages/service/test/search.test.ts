@@ -304,6 +304,110 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     expect(ids(await search({ q: "-rankword", limit: 50 }))).not.toContain(note);
   });
 
+  test("words from different parts of one task find it together; a phrase stays within one text", async () => {
+    const [spread = "", other = ""] = created(
+      submit(fx, [
+        {
+          kind: "task.create",
+          title: "Spread holder",
+          context: "The radarword sits in the context.",
+          area: "lumen",
+        },
+        { kind: "task.create", title: "Radarword only", summary: "Nothing else here." },
+      ]),
+    );
+    submit(fx, [
+      { kind: "log.add", task: spread, body: "violetword in the log" },
+      { kind: "note.add", task: spread, body: "amberword in a note" },
+    ]);
+    expect(ids(await search({ q: "radarword violetword" }))).toEqual([spread]);
+    expect(ids(await search({ q: "violetword amberword radarword" }))).toEqual([spread]);
+    expect(ids(await search({ q: "radarword violetword OR zzznone" }))).toEqual([spread]);
+    expect(ids(await search({ q: "radarword viol" }))).toEqual([spread]);
+    expect(ids(await search({ q: "radarword" })).sort()).toEqual([spread, other].sort());
+    // A phrase is one text's words in order: never across a context and a log.
+    expect(ids(await search({ q: '"radarword violetword"' }))).toEqual([]);
+    expect(ids(await search({ q: '"sits in the context" violetword' }))).toEqual([spread]);
+    // Filters and negations hold as they do for one document.
+    expect(ids(await search({ q: "radarword violetword area:lumen" }))).toEqual([spread]);
+    expect(ids(await search({ q: "radarword violetword -area:lumen" }))).toEqual([]);
+    expect(ids(await search({ q: "radarword violetword -amberword" }))).toEqual([]);
+    // The row's snippet comes from a document that holds one of the words.
+    const row = (await search({ q: "radarword amberword" })).rows[0];
+    expect(String(row?.["snippet"])).toMatch(/radarword|amberword/);
+    // A retracted note no longer lends its words.
+    submit(fx, [{ kind: "note.delete", task: spread, ordinal: 1 }]);
+    expect(ids(await search({ q: "radarword amberword" }))).toEqual([]);
+    expect(ids(await search({ q: "radarword violetword" }))).toEqual([spread]);
+  });
+
+  test("a source's key and the readable parts of its link find its task", async () => {
+    const [task = ""] = created(submit(fx, [{ kind: "task.create", title: "Linked holder" }]));
+    submit(fx, [
+      {
+        kind: "source.add",
+        task,
+        source: {
+          kind: "ticket",
+          title: "Ticket",
+          url: "https://www.tracker.example/harborword/item%20seven?utm_source=mailword",
+          key: "issue:sample-42",
+        },
+      },
+    ]);
+    expect(ids(await search({ q: "harborword" }))).toEqual([task]);
+    expect(ids(await search({ q: "sample-42" }))).toEqual([task]);
+    expect(ids(await search({ q: "issue:sample-42" }))).toEqual([task]);
+    expect(ids(await search({ q: "tracker seven" }))).toEqual([task]);
+    expect(ids(await search({ q: "linked sample" }))).toEqual([task]);
+    // What a person does not read as the link's words: its scheme, www and query.
+    expect(ids(await search({ q: '"https"' }))).not.toContain(task);
+    expect(ids(await search({ q: '"www"' }))).not.toContain(task);
+    expect(ids(await search({ q: "mailword" }))).toEqual([]);
+    expect(ids(await search({ q: "source:issue:sample-42" }))).toEqual([task]);
+  });
+
+  test("a link's words are its address and path, whatever its form", async () => {
+    const links = [
+      "mailto:deskword@example.test?subject=marigoldsubject#tulipfrag",
+      "example.test/gardenword?sort=orchidsort#lilyfrag",
+      "https://keeperword:hunterpass@bücherhalle.example:8471/Eintrag?x=asterquery#teilfrag",
+    ];
+    const tasks = created(
+      submit(
+        fx,
+        links.map((_, i) => ({ kind: "task.create", title: `Link form ${String(i)}` })),
+      ),
+    );
+    const added = submit(
+      fx,
+      links.map((url, i) => ({
+        kind: "source.add",
+        task: tasks[i] ?? "",
+        source: { kind: "web", title: "Page", url },
+      })),
+    );
+    expect(added.status).toBe("applied");
+    const [mail, bare, web] = tasks;
+    expect(ids(await search({ q: "deskword" }))).toEqual([mail]);
+    expect(ids(await search({ q: "gardenword" }))).toEqual([bare]);
+    // The host as a person typed it, not its punycode, and its explicit port.
+    expect(ids(await search({ q: "bücherhalle eintrag" }))).toEqual([web]);
+    expect(ids(await search({ q: "8471" }))).toEqual([web]);
+    for (const hidden of [
+      "marigoldsubject",
+      "tulipfrag",
+      "orchidsort",
+      "lilyfrag",
+      "keeperword",
+      "hunterpass",
+      "asterquery",
+      "teilfrag",
+    ]) {
+      expect(ids(await search({ q: hidden })), hidden).toEqual([]);
+    }
+  });
+
   test("filters: an area includes its projects, priority, focus, ids and has:", async () => {
     expect(ids(await search({ q: "rankword area:Lumen" }))).toEqual([lumen]);
     expect(ids(await search({ q: "rankword p<=2" }))).toEqual([starred]);
@@ -501,6 +605,9 @@ describe("[A3.5.search.ranking] ranking, grouping, filters and rows", () => {
     });
     expect(ids(await search({ q: "privateword" }))).toEqual([hidden]);
     expect(ids(await search({ q: "privateword" }, { audience: "agent" }))).toEqual([]);
+    // Nor through another document of the task that holds the other word.
+    expect(ids(await search({ q: "audience privateword" }))).toEqual([hidden]);
+    expect(ids(await search({ q: "audience privateword" }, { audience: "agent" }))).toEqual([]);
     expect(ids(await search({ q: "audience -privateword" }, { audience: "agent" }))).toEqual([
       hidden,
     ]);
