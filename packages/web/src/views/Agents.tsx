@@ -34,6 +34,9 @@ const AGENT_SECTIONS = AGENT_STATES.map((state) =>
 
 const sectionOf = (state: AgentState): string => AGENT_SECTIONS[AGENT_STATES.indexOf(state)] ?? "";
 
+const byRef = (a: TaskRow, b: TaskRow): number =>
+  a.ref.localeCompare(b.ref, "en", { numeric: true });
+
 /** A section a task can be held in: one of agents' own, or a day of Recent. */
 const isSection = (key: string): boolean =>
   AGENT_SECTIONS.includes(key) || /^d:\d{4}-\d{2}-\d{2}$/.test(key);
@@ -88,6 +91,15 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
       for (const row of tasks.values()) {
         const state = merged.tasks.get(row.id)?.state;
         if (state !== undefined) put(sectionOf(state), row);
+      }
+      // Nothing moves that did not change: TTasks' own rows first, in their order, then the rows
+      // the monitor placed as their agents started, a new one last.
+      const own = (row: TaskRow) => (merged.tasks.get(row.id)?.own === true ? 0 : 1);
+      const age = (row: TaskRow) => merged.tasks.get(row.id)?.ageMs ?? -1;
+      for (const key of AGENT_SECTIONS) {
+        sections
+          .get(key)
+          ?.sort((a, b) => own(a) - own(b) || (own(a) === 0 ? 0 : age(b) - age(a) || byRef(a, b)));
       }
       for (const day of recentOf(changes, tasks, clock.timeZone)) {
         for (const row of day.tasks) put(`d:${day.date}`, row);

@@ -678,6 +678,47 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
     expect(states("M-2")).toEqual(["Agent in a terminalNot seen by TTAM"]);
   });
 
+  test("TTasks' own rows come first; the monitor's follow as their agents started; only what changed moves", async () => {
+    const [older, newer, newest] = [2, 3, 4].map((n) => task(n));
+    if (!older || !newer || !newest) throw new Error("no rows");
+    await mount([working, older, newer, newest]);
+    const at = (olderState: AgentsSession["activity"], newerState: AgentsSession["activity"]) => ({
+      picture: picture(
+        [
+          session(1, { task: linkTo(newest), activity: "working", ageMs: MIN }),
+          session(2, { task: linkTo(newer), activity: newerState, ageMs: 20 * MIN }),
+          session(3, { task: linkTo(older), activity: olderState, ageMs: 40 * MIN }),
+        ],
+        [],
+      ),
+      trouble: null,
+    });
+    show(at("idle", "working"));
+    expect(layout()).toEqual([
+      "H2:Working",
+      "M-1",
+      "M-3",
+      "M-4",
+      "H2:With an agent",
+      "H3:Idle",
+      "M-2",
+    ]);
+    // The older agent starts working: it joins Working after TTasks' own run, at its start.
+    show(at("working", "working"));
+    expect(layout()).toEqual(["H2:Working", "M-1", "M-2", "M-3", "M-4"]);
+    // One leaves the group: the others keep their order.
+    show(at("working", "idle"));
+    expect(layout()).toEqual([
+      "H2:Working",
+      "M-1",
+      "M-2",
+      "M-4",
+      "H2:With an agent",
+      "H3:Idle",
+      "M-3",
+    ]);
+  });
+
   test("an expanded task stays once, in its own section, whatever the next picture says", async () => {
     const [idle, shell, other] = [2, 3, 4].map((n) => task(n));
     if (!idle || !shell || !other) throw new Error("no rows");
