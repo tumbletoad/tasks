@@ -1835,10 +1835,22 @@ export type Autostart =
  */
 export type AutostartAnswer =
   | { readonly on: true; readonly text: string }
-  | { readonly on: false; readonly text: string; readonly fix?: string }
+  | {
+      readonly on: false;
+      readonly text: string;
+      readonly fix?: string;
+      /**
+       * This install's entry is there, so autostart was asked for, and it will not happen. False
+       * when it is off by a choice (Task Manager, systemctl disable) or was never set up.
+       */
+      readonly broken: boolean;
+    }
   | { readonly on: null; readonly text: string };
 
 const INSTALL = `${CLI_NAME} service install`;
+
+/** What `systemctl --user is-enabled` says of a unit a person switched off. */
+const SWITCHED_OFF: ReadonlySet<string> = new Set(["disabled", "masked", "masked-runtime"]);
 
 /** An entry of ours that starts another install's launcher, or one that is gone, starts nothing here. */
 function launcherOff(entry: EntryInfo, when: string): AutostartAnswer | undefined {
@@ -1849,11 +1861,13 @@ function launcherOff(entry: EntryInfo, when: string): AutostartAnswer | undefine
         on: false,
         text: `off: the entry starts another install (${runs.path}), so this install's service does not start ${when}`,
         fix: INSTALL,
+        broken: true,
       }
     : {
         on: false,
         text: `off: the program the entry starts is gone (${runs.path}), so nothing starts the service ${when}`,
         fix: `install ${PRODUCT_NAME} again, then run ${INSTALL}`,
+        broken: true,
       };
 }
 
@@ -1873,12 +1887,14 @@ export function autostartAnswer(entry: EntryInfo, a: Autostart): AutostartAnswer
           on: false,
           text: "off: this install has no entry, so Windows does not start the service at sign-in",
           ...(entry.state === "absent" ? { fix: INSTALL } : {}),
+          broken: false,
         };
       }
       return a.startup_apps === "off"
         ? {
             on: false,
             text: `off: ${PRODUCT_NAME} is turned off in Startup apps (Task Manager), so Windows does not start it at sign-in. Turn it on there to have it start`,
+            broken: false,
           }
         : { on: true, text: "on: Windows starts the service when you sign in" };
     case "systemd":
@@ -1886,6 +1902,7 @@ export function autostartAnswer(entry: EntryInfo, a: Autostart): AutostartAnswer
         return {
           on: false,
           text: "off: this machine has no systemd user manager, so nothing starts the service at sign-in",
+          broken: ours,
         };
       }
       if (!ours) {
@@ -1893,6 +1910,7 @@ export function autostartAnswer(entry: EntryInfo, a: Autostart): AutostartAnswer
           on: false,
           text: "off: this install has no unit, so nothing starts the service at sign-in or boot",
           ...(entry.state === "absent" ? { fix: INSTALL } : {}),
+          broken: false,
         };
       }
       if (a.enabled === null) return { on: null, text: "unknown: systemd did not say" };
@@ -1901,6 +1919,7 @@ export function autostartAnswer(entry: EntryInfo, a: Autostart): AutostartAnswer
           on: false,
           text: `off: systemd has the unit ${a.enabled}, so it does not start the service at sign-in or boot`,
           ...(a.enabled === "masked" ? {} : { fix: INSTALL }),
+          broken: !SWITCHED_OFF.has(a.enabled),
         };
       }
       return a.linger === "yes"
@@ -1918,6 +1937,7 @@ export function autostartAnswer(entry: EntryInfo, a: Autostart): AutostartAnswer
             on: false,
             text: "off: this install has no launch agent, so nothing starts the service at sign-in",
             ...(entry.state === "absent" ? { fix: INSTALL } : {}),
+            broken: false,
           };
   }
 }

@@ -83,7 +83,8 @@ import { bodyOf, printUsage, RESTART_HINT } from "./output.ts";
 import type { AgentsSetupOptions } from "./setup-agents.ts";
 import { asAppError } from "./verbs.ts";
 
-export type CheckStatus = "ok" | "warn" | "fail" | "skip";
+/** `info`: what is so, nothing to fix: a choice the person made, or something never set up. */
+export type CheckStatus = "ok" | "warn" | "fail" | "skip" | "info";
 
 export interface Check {
   readonly id: string;
@@ -740,7 +741,11 @@ export async function candidateRows(
   });
 }
 
-/** Whether the service starts by itself, as `ttasks service status` says it (autostartStatus). */
+/**
+ * Whether the service starts by itself, as `ttasks service status` says it (autostartStatus). Only
+ * an autostart that was asked for and will not happen is a warning: off by choice, or never set
+ * up, is what the person has.
+ */
 async function autostartCheck(io: Io, connect: DoctorOptions): Promise<Check> {
   const install = await import("@ttasks/service/install");
   try {
@@ -750,7 +755,7 @@ async function autostartCheck(io: Io, connect: DoctorOptions): Promise<Check> {
     const { starts } = await install.autostartStatus(ctx);
     return {
       id: "autostart",
-      status: starts.on === true ? "ok" : "warn",
+      status: starts.on === true ? "ok" : starts.on === false && starts.broken ? "warn" : "info",
       detail: install.autostartLine(starts),
     };
   } catch {

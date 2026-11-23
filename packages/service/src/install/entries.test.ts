@@ -291,6 +291,7 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
       on: false,
       text: "off: this install has no entry, so Windows does not start the service at sign-in",
       fix: "ttasks service install",
+      broken: false,
     });
     expect(absent.text).toContain(
       "  Autostart: off: this install has no entry, so Windows does not start the service at sign-in. To have it start by itself: ttasks service install\n",
@@ -318,12 +319,14 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
       on: false,
       text: `off: the entry starts another install (${fake.ctx.program}), so this install's service does not start at sign-in`,
       fix: "ttasks service install",
+      broken: true,
     });
     rmSync(fake.ctx.program);
     expect(await startsOf(fake)).toEqual({
       on: false,
       text: `off: the program the entry starts is gone (${fake.ctx.program}), so nothing starts the service at sign-in`,
       fix: "install TTasks again, then run ttasks service install",
+      broken: true,
     });
   });
 
@@ -343,22 +346,30 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
       text: "on: the service starts when you sign in. To start it at boot: loginctl enable-linger",
     });
     expect(autostartAnswer(unit, systemd("enabled", "yes")).on).toBe(true);
-    // Disabled, linger or not: off, and install enables it again.
+    // Disabled, linger or not: off by the person's choice, and install enables it again.
     for (const linger of ["yes", "no"] as const) {
       expect(autostartAnswer(unit, systemd("disabled", linger))).toEqual({
         on: false,
         text: "off: systemd has the unit disabled, so it does not start the service at sign-in or boot",
         fix: "ttasks service install",
+        broken: false,
       });
     }
+    // A unit systemd does not know as installed was asked for and will not start.
+    expect(autostartAnswer(unit, systemd("not-found", "yes"))).toMatchObject({ broken: true });
     expect(autostartAnswer(unit, systemd(null, "yes")).on).toBeNull();
     expect(autostartAnswer({ ...unit, state: "absent" }, systemd("enabled", "yes"))).toMatchObject({
       on: false,
       fix: "ttasks service install",
+      broken: false,
     });
-    expect(autostartAnswer(unit, { ...systemd("enabled", "yes"), user_manager: false }).on).toBe(
-      false,
-    );
+    // A unit with no user manager to run it was asked for; no unit and no manager was never set up.
+    const noManager = { ...systemd("enabled", "yes"), user_manager: false } as const;
+    expect(autostartAnswer(unit, noManager)).toMatchObject({ on: false, broken: true });
+    expect(autostartAnswer({ ...unit, state: "absent" }, noManager)).toMatchObject({
+      on: false,
+      broken: false,
+    });
     // An enabled unit or a launch agent of another install's launcher starts nothing of this one.
     const another = {
       ...unit,
@@ -368,6 +379,7 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
       on: false,
       text: "off: the entry starts another install (/j/current/bin/ttasks), so this install's service does not start at sign-in or boot",
       fix: "ttasks service install",
+      broken: true,
     });
     const agent = { ...another, kind: "launch-agent" } as const;
     expect(autostartAnswer(agent, { kind: "launchd", loaded: true }).on).toBe(false);
