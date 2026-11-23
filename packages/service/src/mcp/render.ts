@@ -414,12 +414,13 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
           `Status: ${join(task.status, task.effort !== undefined && `Effort: ${task.effort}`, group(task) !== undefined && `Group: ${group(task) ?? ""}`)}`,
         ],
         ...storedFolder(task.folder),
+        // One line with its own limit, and no section holds it: the digest is its only full read.
+        ...(task.summary === "" ? [] : [[`Summary: ${task.summary}`]]),
       ],
     },
     {
       data: true,
       units: [
-        ...(task.summary === "" ? [] : [[`Summary: ${task.summary}`]]),
         ...(task.waiting_on === undefined ? [] : [[`Waiting on: ${clip(task.waiting_on, 80)}`]]),
         ...(task.focus ? [["Focus: today"]] : []),
       ],
@@ -454,8 +455,15 @@ function digestRendered(result: Extract<TaskGet, { view: "digest" }>, getTask: s
       data: true,
       total: task.learnings.length + more.learnings,
       title: (kept, total) =>
-        total === 0 ? undefined : `Learnings (${String(kept)} of ${String(total)})`,
+        kept === 0 ? undefined : `Learnings (${String(kept)} of ${String(total)})`,
       units: task.learnings.map((learning) => [`- ${learning}`]),
+      // With no lesson shown, an agent still learns that there are some and where they are.
+      overflow: (kept, total) =>
+        kept === 0
+          ? [
+              `Learnings: ${String(total)}, read them with ${getTask} task "${task.ref}" sections ["outcome"].`,
+            ]
+          : [],
     },
     ...(task.outcome === undefined
       ? []

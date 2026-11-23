@@ -622,6 +622,52 @@ describe("[A3.3.4.tools.five] get_task: digest v0, its folder, unbound candidate
     expect((long["more"] as Json)["learnings"]).toBe(2);
   });
 
+  test("a crowded digest still shows the whole summary and says the task has learnings", async () => {
+    const [task] = await add("Fixture crowded task");
+    const ref = task ?? "";
+    const summary = "s".repeat(400);
+    await call(
+      "task.update",
+      { task: ref, set: { summary }, base: await asOf(), request_id: rid() },
+      USER,
+    );
+    for (const letter of ["a", "b"]) {
+      await call(
+        "entry.add",
+        {
+          task: ref,
+          kind: "note",
+          text: letter.repeat(1_000),
+          for_agents: true,
+          request_id: rid(),
+        },
+        USER,
+      );
+    }
+    await call(
+      "task.finish",
+      {
+        task: ref,
+        outcome: "Fixture outcome.",
+        learnings: ["L".repeat(300), "M".repeat(300), "N".repeat(300)],
+        base: await asOf(),
+        request_id: rid(),
+      },
+      USER,
+    );
+    const mcp = toolCaller({
+      ops: w.service.ops,
+      context: { space: null },
+      conn: 1,
+      binding: inSpace(),
+    });
+    const text = (await mcp("get_task", { task: ref })).content[0].text;
+    expect(text).toContain(`Summary: ${summary}\n`);
+    expect(text).toContain(
+      `Learnings: 3, read them with get_task task "${ref}" sections ["outcome"].`,
+    );
+  });
+
   test("[A3.3.4.here.folders] the digest says where the task opens here: its own folder, its project's, missing, or the work folder", async () => {
     const shop = folder("work", "shop");
     await project("Shop", shop);
