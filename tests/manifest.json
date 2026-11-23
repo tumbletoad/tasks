@@ -4293,6 +4293,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.10.5.copies.e2e-first-load",
+      "title": "In Chromium and Firefox against the real service: when another window opens the space's own folder again before a tab loads the copy the person's Open folder answered, the tab says another copy was opened, shows nothing of it, and loads the space as it is now when asked",
+      "source": "A2 3.10.5, A5 3.15",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.10.5.copies.feed",
       "title": "After export, close, restore of the bundle into a new folder and claim, the claim answers with A6's warning, machine.toml holds the original disabled and the copy enabled, and the page's feed subscribed by the space's ID sends the next write as a batch, never space_unavailable for the closed original; after a restart only the copy opens and the feed follows it again",
       "source": "A2 3.10.5, A6 3.5, A5 3.3",

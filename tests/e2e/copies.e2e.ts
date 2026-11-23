@@ -72,6 +72,7 @@ test.describe("[A2.3.10.5.copies.e2e] a person looks inside a backup on the page
       timeout: SLOW_MS,
     });
     await expect(gone).toContainText("To open it again, use Open folder in the space list");
+    await pictures(page, "copy-closed");
 
     // Then opens the copy: the tab goes to it, and it says it is a restored copy before anything.
     await page.reload();
@@ -163,6 +164,53 @@ test.describe("[A2.3.10.5.copies.e2e] a person looks inside a backup on the page
 
     // Loaded again, the tab shows the space as it is now, which takes changes.
     await gone.getByRole("button", { name: `Load ${name} as it is now` }).click();
+    await showsSpace(page, name);
+    await expect(gone).toHaveCount(0);
+    await expect(page.locator('[data-part="read-only"]')).toHaveCount(0);
+  });
+});
+
+test.describe("[A2.3.10.5.copies.e2e-first-load] a tab sent to the folder the person opened loads it or nothing", () => {
+  test("the first load after Open folder shows the folder the person opened, or nothing of another copy", async ({
+    page,
+    copies: world,
+  }) => {
+    const { name, id } = world.mira;
+    const listed = (await world.space("list", {})) as {
+      spaces: { id?: string; folder: string }[];
+    };
+    const spaceFolder = listed.spaces.find((s) => s.id === id)?.folder ?? "";
+    const copyFolder = await world.restoreCopy(id);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await signIn(page, world, `/s/${id}/today`);
+    await showsSpace(page, name);
+    await world.space("close", { space: spaceFolder });
+    const gone = page.locator('[data-part="gone"]');
+    await expect(gone).toContainText(`${name} was closed since this page loaded it.`, {
+      timeout: SLOW_MS,
+    });
+
+    // The person opens the copy's folder; before this tab loads it, another window closes the copy
+    // and opens the space's own folder again.
+    await page.route("**/api/v1/space/open", async (route) => {
+      const response = await route.fetch();
+      await world.space("close", { space: copyFolder });
+      await world.space("open", { path: spaceFolder });
+      await route.fulfill({ response });
+    });
+    const opened = await openFolder(page, copyFolder);
+    await expect(opened).toHaveCount(0, { timeout: SLOW_MS });
+    await expect(gone).toContainText(
+      "Another copy of this space was opened before this page could load the folder you opened. Nothing of it was loaded here.",
+      { timeout: SLOW_MS },
+    );
+    await expect(page.locator("main li[data-task]")).toHaveCount(0);
+    await expect(page.locator('[data-part="read-only"]')).toHaveCount(0);
+    await pictures(page, "copy-not-loaded");
+    await page.unroute("**/api/v1/space/open");
+
+    // Loaded again, the tab shows the space as it is now.
+    await gone.getByRole("button", { name: "Load the space as it is now" }).click();
     await showsSpace(page, name);
     await expect(gone).toHaveCount(0);
     await expect(page.locator('[data-part="read-only"]')).toHaveCount(0);
