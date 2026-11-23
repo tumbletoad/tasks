@@ -23,6 +23,7 @@ export const test = base.extend<
     finished: World;
     runs: World;
     restartable: World;
+    copies: World;
     large: World;
     monitored: World;
   }
@@ -42,6 +43,20 @@ export const test = base.extend<
   ],
   // A world of its own for the tests that stop and start its service, so no other test meets it.
   restartable: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      const world = await startWorld(built());
+      try {
+        await use(world);
+      } finally {
+        await world.close();
+      }
+    },
+    { scope: "worker", timeout: 240_000 },
+  ],
+  // A world of its own for the tests that restore a copy of a space beside it: no other test
+  // meets the copy in its space switcher.
+  copies: [
     // eslint-disable-next-line no-empty-pattern
     async ({}, use) => {
       const world = await startWorld(built());

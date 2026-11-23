@@ -165,6 +165,13 @@ export function Shell({ space }: { readonly space: string }) {
                 })}
               </div>
             ) : null}
+            {/* A copy that takes no change says so before the person acts, in the service's words:
+                why, and what would make it writable when something can. */}
+            {state.space?.read_only === undefined ? null : (
+              <div className={styles.bar} role="status" data-part="read-only" dir="auto">
+                {state.space.read_only.message ?? t("space.readOnlyNote")}
+              </div>
+            )}
             <main id="main" tabIndex={-1} className={styles.main}>
               {content}
             </main>

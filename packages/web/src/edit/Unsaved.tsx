@@ -4,14 +4,18 @@
 // · Try again · Discard". On a finished task, which takes no edit until it is reopened: "Not saved:
 // the task is finished · Copy · Discard", after the value itself where no fact shows it (the
 // title). An edit made against a history the space no longer has (restored since) is not sent
-// again: "<value> Not saved: the space was restored since · Copy · Discard". The line stays until
-// the person chooses, whatever the feed brings.
+// again: "<value> Not saved: the space was restored since · Copy · Discard". In a space that takes
+// no change (a restored copy, one another machine owns), nothing can be saved until that changes:
+// "<value> Not saved: this is a restored copy · Copy · Discard". The line stays until the person
+// chooses, whatever the feed brings.
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useT } from "../i18n/intl.tsx";
 import { sayMsg } from "../row/say.ts";
+import { useLive } from "../store/hooks.ts";
 import type { Field } from "./change.ts";
 import { keyOf, whoOf } from "./edits.ts";
+import { readOnlyWhy } from "./read-only.ts";
 import css from "./Unsaved.module.css";
 import { useEditState, useEdits } from "./useEdits.ts";
 
@@ -38,27 +42,28 @@ export function Unsaved({
   const t = useT();
   const say = useToast();
   const edits = useEdits();
+  const readOnly = useLive().space?.read_only;
   const unsaved = useEditState().unsaved.get(keyOf(task, field));
   if (unsaved === undefined) return null;
   const shown = unsaved.change.shown;
   const mine = typeof shown === "string" ? shown : sayMsg(t, shown);
   const conflict = unsaved.reason === "conflict";
-  const restored = !finished && edits.restored(unsaved);
-  if (finished || restored) {
+  const blocked = finished ? "finished" : readOnly !== undefined ? "read_only" : undefined;
+  const why = blocked ?? (edits.restored(unsaved) ? "restored" : undefined);
+  if (why !== undefined) {
     return (
-      <span
-        className={styles.line}
-        data-part="unsaved"
-        data-reason={finished ? "finished" : "restored"}
-        role="status"
-      >
-        {withValue || restored ? (
+      <span className={styles.line} data-part="unsaved" data-reason={why} role="status">
+        {withValue || why !== "finished" ? (
           <span className={styles.value} dir="auto" data-part="unsaved-value">
             {mine}
           </span>
         ) : null}
         <span className={styles.why}>
-          {t(finished ? "edit.notSavedFinished" : "edit.notSavedRestored")}
+          {why === "read_only"
+            ? t("edit.notSavedReadOnly", {
+                why: sayMsg(t, readOnlyWhy(readOnly?.reason ?? "")),
+              })
+            : t(why === "finished" ? "edit.notSavedFinished" : "edit.notSavedRestored")}
         </span>
         <button
           type="button"

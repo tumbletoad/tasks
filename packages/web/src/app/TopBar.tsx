@@ -33,7 +33,9 @@ import { requestId } from "../api.ts";
 import { Session } from "../context.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { tabKept } from "../kept.ts";
+import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { formatDay } from "../row/dates.ts";
+import { sayMsg } from "../row/say.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import { actionOf, ariaKeys, isMac, keysOf } from "../keys/keymap.ts";
@@ -381,7 +383,14 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
         // A refusal the service sent did nothing: the same text again is a new add.
         const code = error instanceof Error ? (error as { code?: unknown }).code : undefined;
         if (typeof code === "string" && code !== "internal") dropRequest(space, submitted);
-        if (!feed.failed(error)) say(t("top.addFailed"));
+        if (feed.failed(error)) return;
+        // The words stay in the field: a space that takes no change says why, without "Try again".
+        const readOnly = readOnlyReason(error);
+        say(
+          readOnly === undefined
+            ? t("top.addFailed")
+            : t("top.addReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }),
+        );
       },
     );
   };

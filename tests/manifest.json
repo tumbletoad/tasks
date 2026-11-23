@@ -4178,6 +4178,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.10.5.copies.e2e",
+      "title": "In both browsers: Open folder with a restored copy beside its open original goes to the copy's own address and the switcher names it a restored copy; a task link and a reload stay on the copy; the page shows the service's reason above the views; a title typed there is kept under it with the reason, Copy and Discard and no Try again; the original is not written",
+      "source": "A2 3.10.5, A5 3.3, A5 3.11",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.19.web.contrast",
       "title": "Every allowed foreground and background token pair of Sumi and Washi meets its WCAG 2.x threshold (4.5:1 text, 3:1 controls, focus and marks), computed from the theme data the stylesheet is built from; the formula reproduces A5's values, the decorative pairs stay below 3:1 and outside the allowed pairs, and a token change that breaks a pair is caught",
       "source": "A5 3.19, A7 3.12 M5.01",

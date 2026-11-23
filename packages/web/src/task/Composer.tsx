@@ -27,6 +27,8 @@ import { useKeyLabel } from "../keys/labels.ts";
 import type { AskField, RowActions } from "../row/actions.ts";
 import { ChevronIcon as ChevronDownIcon } from "../app/Icons.tsx";
 import { CopyIcon, RunIcon } from "../row/icons.tsx";
+import { sayMsg } from "../row/say.ts";
+import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { runners } from "./runs.ts";
 import { tileState, type BusyOf } from "../row/launch.ts";
 import type { TaskRow } from "../store/rows.ts";
@@ -194,7 +196,13 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
       },
       (error: unknown) => {
         if (sending.current === words) sending.current = undefined;
-        if (!live.failed(error)) say(t("composer.noteFailed"));
+        if (live.failed(error)) return;
+        const readOnly = readOnlyReason(error);
+        say(
+          readOnly === undefined
+            ? t("composer.noteFailed")
+            : t("composer.noteReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }),
+        );
       },
     );
   };

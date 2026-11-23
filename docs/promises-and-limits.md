@@ -73,6 +73,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A restored copy you open in the browser is the copy that page shows, in every tab and after a
   reload, also when its original is open: the address names that copy, and the page says it is a
   restored copy.
+- In a space that takes no change, such as a restored copy or one another machine owns, the page
+  says why and what would let it change, and keeps what you typed there to copy, never offering a
+  Try again that cannot work.
 
 ## Projects and folders
 
