@@ -157,6 +157,24 @@ describe("[A1.trash.write] a task moved to the Trash and restored, by the writer
     expect(back.results[0]?.status).toBe("updated");
   });
 
+  test("a removal with a base from before any change to one of its tasks is a conflict that names that task, and nothing moves", () => {
+    const a = task("Renew the passport");
+    const b = task("Book the dentist");
+    const seen = fx.base();
+    applied(send("codex", [{ kind: "task.patch", task: b, set: { summary: "Repurposed" } }]));
+    const stale = send(
+      "human",
+      [
+        { kind: "task.delete", task: a },
+        { kind: "task.delete", task: b },
+      ],
+      { base: seen },
+    );
+    expectStatus(stale, "conflict");
+    expect(stale.conflicts.map((c) => [c.task, c.field])).toEqual([[b, "summary"]]);
+    expect([deleted(a), deleted(b)]).toEqual([false, false]);
+  });
+
   test("a task whose creation was undone is not restored, alone, by its undo's change or beside another: the request is refused whole and Redo brings it back with its links", () => {
     const live = task("Renew the passport");
     remove(live);

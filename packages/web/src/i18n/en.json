@@ -583,6 +583,7 @@
   "toast.trashed": "Moved {ref} to the Trash",
   "toast.trashedWorking": "Moved {ref} to the Trash. Its run is still working",
   "toast.trashFailed": "{ref} was not moved to the Trash",
+  "toast.trashConflict": "{who, select, user {You changed {ref} elsewhere} import {The import changed {ref}} other {{by} changed {ref}}} just now. It was not moved to the Trash.",
   "toast.restoredTask": "{ref} is back",
   "toast.restoredIn": "{ref} is back in {place}",
   "toast.restoredInGroup": "{ref} is back in {place}, in {group}",

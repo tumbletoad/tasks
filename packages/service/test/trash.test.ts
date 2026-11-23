@@ -276,6 +276,25 @@ describe("[A3.trash] the Trash through real requests", () => {
     expect((sections["log"] as Json[]).map((l) => l["text"])).toEqual(["Fixture log entry."]);
   });
 
+  test("a removal with a base from before any change to one of its tasks is a conflict that names it, and nothing moves", async () => {
+    const [a, b] = [
+      await add({ title: "Fixture stale removal one" }),
+      await add({ title: "Fixture stale removal two" }),
+    ];
+    const seen = await asOf();
+    await call("task.update", {
+      task: b,
+      set: { title: "Fixture repurposed meanwhile" },
+      base: seen,
+      request_id: rid(),
+    });
+    const stale = await refusal("task.delete", { tasks: [a, b], base: seen, request_id: rid() });
+    expect(stale).toMatchObject({ code: "conflict" });
+    const conflicts = (stale.data as { conflicts: Json[] }).conflicts;
+    expect(conflicts.map((c) => c["task"])).toEqual([b]);
+    expect(refs((await trash({ q: "Fixture stale removal" })).rows)).toEqual([]);
+  });
+
   test("a removed task whose agent was opened in a terminal is among the ones still worked on", async () => {
     const a = await add({ title: "Fixture agent still on it" });
     const quiet = await add({ title: "Fixture nobody on it" });

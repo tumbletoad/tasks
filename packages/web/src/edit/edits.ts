@@ -796,7 +796,16 @@ export class Edits {
           return;
         }
         if (this.#deps.failed(decision.error)) return;
-        say({ kind: "error", text: { id: "toast.trashFailed", values: { ref: task.ref } } });
+        // Someone changed the task since the person looked: nothing moved, and the card shows the
+        // task as it is now, with Move to Trash.
+        const conflict = problemOf(decision.error)?.conflicts[0];
+        say({
+          kind: "error",
+          text:
+            conflict === undefined
+              ? { id: "toast.trashFailed", values: { ref: task.ref } }
+              : { id: "toast.trashConflict", values: { ref: task.ref, ...whoOf(conflict.by) } },
+        });
       },
       toast,
     );

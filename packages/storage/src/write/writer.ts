@@ -1722,12 +1722,16 @@ export class SpaceWriter {
               held.push({ source, by });
             }
           }
+          // A removal is based on the task as the person saw it: any field changed since makes the
+          // request a conflict, so a task someone repurposed meanwhile never leaves unseen. A
+          // restore is based on its tombstone; one of a change, on the change's provenance.
+          const guarded = deleting ? (Object.keys(TASK_FIELDS) as TaskField[]) : ["deleted"];
           return {
             i,
             op,
             target,
             task: target,
-            touches: change === undefined ? taskTouches(target, ["deleted"]) : [],
+            touches: change === undefined ? taskTouches(target, guarded) : [],
             record,
             ...(held.length === 0 ? {} : { held }),
           };
