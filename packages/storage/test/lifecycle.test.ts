@@ -363,8 +363,11 @@ describe("[A1.5.write.lifecycle] complete, reopen, archive, wrap-up, delete and 
     expect(changesAt(deleted.seq)).toEqual([["tasks", "deleted", "set"]]);
     expect(one("SELECT affected FROM commits WHERE seq = $seq", { seq: deleted.seq })).toBe(1);
     const seq = lastSeq();
+    // A second delete finds it as asked: no change, and no error a second tab would have to read.
+    const again = submit([{ kind: "task.delete", task: id }]);
+    expectStatus(again, "unchanged");
+    expect(again.results[0]).toMatchObject({ status: "unchanged", task: id });
     for (const op of [
-      { kind: "task.delete", task: id },
       { kind: "task.patch", task: id, set: { summary: "x" } },
       { kind: "note.add", task: id, body: "x" },
       { kind: "task.complete", task: id },
@@ -389,11 +392,8 @@ describe("[A1.5.write.lifecycle] complete, reopen, archive, wrap-up, delete and 
     expectStatus(restored, "applied");
     expect(task(id)).toMatchObject({ deleted_at: null, deleted_by: null });
     expect(one("SELECT count(*) FROM log_entries WHERE task_id = $id", { id })).toBe(1);
-    // Only a deleted task is restored, and both need a base.
-    expect(submit([{ kind: "task.restore", task: id }]).error).toMatchObject({
-      code: "INVALID_TRANSITION",
-      op: 0,
-    });
+    // A live task's restore is no change; a change needs a base.
+    expectStatus(submit([{ kind: "task.restore", task: id }]), "unchanged");
     expect(submit([{ kind: "task.delete", task: id }], { base: null }).error).toMatchObject({
       code: "BASE_REQUIRED",
     });

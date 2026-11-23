@@ -240,6 +240,16 @@ export interface OpResult {
    * between them and this task.
    */
   shared_with?: string[];
+  /**
+   * `task.restore` of an active task: each live link whose key another active task held by then,
+   * which the restore left removed, with that task's reference. Captures of the item stay there.
+   */
+  held_links?: { source: Id<"s">; by: string }[];
+  /**
+   * `task.restore` into a project or area that is gone: the task went to the project's area, or
+   * with no live area left, to the Inbox.
+   */
+  regrouped?: "area" | "inbox";
   /** A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). */
   matched_by?: "source_key";
   lifecycle?: TaskLifecycle;
@@ -456,16 +466,24 @@ export interface TaskWrapUp {
   once?: boolean;
 }
 
-/** `task.delete` (A1 3.11.4): sets the tombstone. Nothing is removed, and `task.restore` undoes it. */
+/**
+ * `task.delete` (A1 3.11.4): sets the tombstone. Nothing is removed, and `task.restore` undoes it.
+ * A deleted task is unchanged.
+ */
 export interface TaskDelete {
   kind: "task.delete";
   task: string;
 }
 
-/** `task.restore` (A1 3.11.4): clears the tombstone of a deleted task. */
+/**
+ * `task.restore` (A1 3.11.4): clears the tombstone of a deleted task. A live task is unchanged, and
+ * so is one with `change` whose tombstone another commit set: restored and moved to the Trash again
+ * since, it belongs to that later change. `change` guards by that instead of a base.
+ */
 export interface TaskRestore {
   kind: "task.restore";
   task: string;
+  change?: Id<"op">;
 }
 
 /** Who a note is for (A1 3.4): the user, or the user's agents. */
@@ -1496,9 +1514,14 @@ function checkOperation(value: unknown, i: number): Operation {
       op = wrap;
       break;
     }
-    case "task.delete":
-    case "task.restore": {
+    case "task.delete": {
       op = { kind, task: f.reference("task") };
+      break;
+    }
+    case "task.restore": {
+      const restore: TaskRestore = { kind, task: f.reference("task") };
+      if (f.has("change")) restore.change = f.id("change", "op");
+      op = restore;
       break;
     }
     case "task.reopen": {

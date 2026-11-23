@@ -1330,10 +1330,12 @@ describe("[A1.5.write.dedupe-lifecycle] dedupe sees the request's archive, wrap-
     const fresh = draft(["jira:FIX-1"]);
     const deleted = human([{ kind: "task.delete", task: a.id }, ...fresh.ops]);
     expect(deleted.results[1]).toMatchObject({ status: "created", id: fresh.id });
-    // Restored in the same request as a draft with its key: an active holder again, so with the
-    // other active holder the match is ambiguous.
+    // Restored while the new task holds the key: the key stays there, so a draft after it in the
+    // same request still follows the one holder.
     const both = human([{ kind: "task.restore", task: a.id }, ...draft(["jira:FIX-1"]).ops]);
-    expect(both.results[1]).toMatchObject({ status: "existing", ambiguous: ["M-1", "M-2"] });
+    expect(both.results[0]).toMatchObject({ held_links: [{ by: "M-2" }] });
+    expect(both.results[1]).toMatchObject({ status: "existing", id: fresh.id });
+    expect(both.results[1]?.ambiguous).toBeUndefined();
     // Deleted in a request of its own, then restored before a draft: the draft's entries follow.
     const b = draft(["jira:FIX-2"]);
     submit(b.ops);

@@ -463,16 +463,30 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expect(live()).toEqual({});
   });
 
-  test("a task in a deleted project is restored after its project", () => {
+  test("a task restored after its project was deleted lands in the project's area; with the project restored first it stays in it", () => {
+    const where = (task: string) =>
+      fx.reader
+        .prepare("SELECT area_id, project_id FROM tasks WHERE id = $task")
+        .get<{ area_id: string | null; project_id: string | null }>({ task });
+    const area = fx.reader
+      .prepare("SELECT id FROM areas WHERE slug = 'lumen'")
+      .get<{ id: string }>()?.id;
     const project = newProject("Holder");
-    const task = newTask("Inside", project);
-    expectStatus(submit([{ kind: "task.delete", task }]), "applied");
+    const [moved, kept] = [newTask("Inside", project), newTask("Kept", project)];
+    expectStatus(submit([{ kind: "task.delete", task: moved }]), "applied");
+    expectStatus(submit([{ kind: "task.delete", task: kept }]), "applied");
     expectStatus(submit([{ kind: "project.delete", project }]), "applied");
-    const refused = submit([{ kind: "task.restore", task }]);
-    expectStatus(refused, "rejected");
-    expect(refused.error).toMatchObject({ code: "DELETED", op: 0, field: "project" });
-    expectStatus(submit([{ kind: "project.restore", project }]), "applied");
-    expectStatus(submit([{ kind: "task.restore", task }]), "applied");
+    const restored = submit([{ kind: "task.restore", task: moved }]);
+    expectStatus(restored, "applied");
+    expect(restored.results[0]).toMatchObject({ regrouped: "area" });
+    expect(where(moved)).toEqual({ area_id: area, project_id: null });
+    const both = submit([
+      { kind: "project.restore", project },
+      { kind: "task.restore", task: kept },
+    ]);
+    expectStatus(both, "applied");
+    expect(both.results[1]?.regrouped).toBeUndefined();
+    expect(where(kept)).toEqual({ area_id: area, project_id: project });
   });
 
   test("a task left in a deleted project before these rules can still be changed", async () => {

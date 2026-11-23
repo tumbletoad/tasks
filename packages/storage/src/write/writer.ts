@@ -394,11 +394,17 @@ interface StagedOp {
   existing?: { match?: Match };
   /** `source.add`: the active task that holds the source's key, so it was linked without it. */
   heldBy?: Id<"t">;
+  /**
+   * `task.restore` of an active task: its live links whose key another active task holds by
+   * then, with that task. The restore leaves them removed, so one item never has two holders.
+   */
+  held?: { source: Id<"s">; by: Id<"t"> }[];
   /** `task.wrap_up`: the IDs of the learnings it adds, one per text of `learnings.add`. */
   learnings?: Id<"lr">[];
   /**
-   * No write: `task.wrap_up` with `once` on a task wrapped already that it would not change, or a
-   * matched draft's `log.add` whose entry the task has already.
+   * No write: `task.wrap_up` with `once` on a task wrapped already that it would not change, a
+   * matched draft's `log.add` whose entry the task has already, or a `task.delete` or
+   * `task.restore` that finds the task as it asks.
    */
   skip?: true;
   /** A folder operation: the request's machine and its OS, whose case rule compares paths. */
@@ -600,6 +606,14 @@ const SQL = {
   removeLink:
     "UPDATE task_sources SET removed_at = $at WHERE task_id = $task AND source_id = $source",
   undoOf: "SELECT undo_of FROM commits WHERE seq = $seq",
+  commitSeq: "SELECT seq FROM commits WHERE id = $id",
+  /** A task's links to live keyed sources, removed ones too, with each source's key. */
+  keyedLinks:
+    "SELECT ts.*, s.source_key AS k FROM task_sources ts JOIN sources s ON s.id = ts.source_id " +
+    "WHERE ts.task_id = $task AND s.source_key IS NOT NULL AND s.deleted_at IS NULL " +
+    "ORDER BY ts.position, ts.source_id",
+  projectGroup: "SELECT area_id, deleted_at FROM projects WHERE id = $id",
+  areaGone: "SELECT 1 AS found FROM areas WHERE id = $id AND deleted_at IS NOT NULL",
   sharedWith:
     "SELECT t.ref FROM task_sources ts JOIN tasks t ON t.id = ts.task_id " +
     "JOIN sources s ON s.id = ts.source_id WHERE ts.source_id = $source AND ts.task_id <> $task " +
@@ -1249,7 +1263,7 @@ export class SpaceWriter {
     const affected = new Set<Id<"t">>();
     const random = this.#random;
     /** Dedupe by source key (A1 3.6), and the drafts that matched a task, by the draft's ID. */
-    const dedupe = new Dedupe(conn, request.ops, at);
+    const dedupe = new Dedupe(conn, request.ops, at, restoredKeys(conn, space, request.ops));
     const matched = new Map<string, Match>();
     /**
      * The keys of a created draft that another active task holds, by `<draft>|<key>`, with that
@@ -1647,18 +1661,59 @@ export class SpaceWriter {
         case "task.delete":
         case "task.restore": {
           const deleting = op.kind === "task.delete";
-          const target = task(op.task, "task", !deleting);
+          const target = task(op.task, "task", true);
+          const start = tasks.get(target);
+          const change = op.kind === "task.restore" ? op.change : undefined;
+          const record = { task: target, ...(change === undefined ? {} : { change }) };
+          const skip: StagedOp = { i, op, target, task: target, touches: [], record, skip: true };
+          let from: number | undefined;
+          if (change !== undefined) {
+            const commit = conn.prepare(SQL.commitSeq).get({ id: change });
+            if (commit === undefined) {
+              return problem("NOT_FOUND", "The space has no change with this ID", i, "change");
+            }
+            from = new RowReader("commits", commit).int("seq", "seq");
+          }
+          // A task already as asked is no change: two tabs that both asked get the same answer.
+          if ((tombstones.get(target) ?? start?.deleted ?? false) === deleting) return skip;
+          // Restoring a change: only a tombstone that change set and nothing since. Provenance, not
+          // a base, says so, so a task restored and removed again since stays with the later change.
+          if (from !== undefined) {
+            if (tombstones.has(target) || start === undefined) return skip;
+            if (provenanceOf(start, "deleted") !== from) return skip;
+          }
           if (deleting) affected.add(target);
           tombstones.set(target, deleting);
-          // A deleted task holds no key, and a restored one holds its keys again (A1 3.6).
+          // A deleted task holds no key, and a restored one holds its keys again (A1 3.6), except
+          // a key another active task took meanwhile: that link stays removed, and captures of the
+          // item go on to that task. Two restores of one key in one request: the first holds it.
           dedupe.deleted(target, deleting);
+          const held: { source: Id<"s">; by: Id<"t"> }[] = [];
+          const active = (lifecycles.get(target) ?? start?.lifecycle) === "active";
+          if (!deleting && active) {
+            for (const row of conn.prepare(SQL.keyedLinks).all({ task: target })) {
+              const r = new RowReader("task_sources", row);
+              const source = r.id("source_id", "s");
+              const id = `${target}|${source}`;
+              if (!(links.get(id) ?? row["removed_at"] === null)) continue;
+              const key = r.text("k");
+              const [by] = dedupe.match([key], false).active.filter((other) => other !== target);
+              if (by === undefined) continue;
+              links.set(id, false);
+              dedupe.unlinked(key, target);
+              const startKey = rowKey("task_sources", id);
+              if (!starts.has(startKey)) starts.set(startKey, linkState(row));
+              held.push({ source, by });
+            }
+          }
           return {
             i,
             op,
             target,
             task: target,
-            touches: taskTouches(target, ["deleted"]),
-            record: { task: target },
+            touches: change === undefined ? taskTouches(target, ["deleted"]) : [],
+            record,
+            ...(held.length === 0 ? {} : { held }),
           };
         }
         case "note.add":
@@ -2745,6 +2800,27 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
           version: new RowReader("task_sources", link).int("version", "seq"),
         };
       }
+      case "task.delete":
+      case "task.restore": {
+        const task = readTask(conn, staged.target as Id<"t">);
+        const fields = new Set(
+          writes.filter((w) => w.key === rowKey("tasks", task.id)).map((w) => w.field),
+        );
+        const regrouped = fields.has("inbox") ? "inbox" : fields.has("grouping") ? "area" : null;
+        const held = staged.held ?? [];
+        return {
+          i,
+          status,
+          id: task.id,
+          task: task.id,
+          ref: formatTaskRef(run.plan.refPrefix, task.ref),
+          version: task.version,
+          ...(held.length === 0
+            ? {}
+            : { held_links: held.map(({ source, by }) => ({ source, by: refOf(by) })) }),
+          ...(regrouped === null ? {} : { regrouped }),
+        };
+      }
       case "place.set": {
         const place = readRow(conn, "places", staged.target);
         const task = staged.task;
@@ -3156,6 +3232,28 @@ function follows(op: Operation, match: Match): boolean {
 }
 
 /**
+ * The keys of the links of the tasks `ops` restores, so dedupe reads who holds them. A reference
+ * that names no task is staging's to refuse.
+ */
+function restoredKeys(conn: Connection, space: SpaceRow, ops: readonly Operation[]): string[] {
+  const keys: string[] = [];
+  for (const op of ops) {
+    if (op.kind !== "task.restore") continue;
+    let id: Id<"t">;
+    try {
+      id = resolveTask(conn, space, op.task, new Set(), 0, "task").id;
+    } catch (error) {
+      if (error instanceof RequestProblem) continue;
+      throw error;
+    }
+    for (const row of conn.prepare(SQL.keyedLinks).all({ task: id })) {
+      keys.push(new RowReader("sources", row).text("k"));
+    }
+  }
+  return keys;
+}
+
+/**
  * `source.add`'s `shared_with`: the other active tasks a live link joins to the keyed `source`,
  * when `task`'s own `link` is live and the task active after the request.
  */
@@ -3284,6 +3382,35 @@ function wrote(
     ofOp.push({ key, field });
     if (row.created === undefined && !row.fields.has(field)) row.fields.set(field, i);
   }
+}
+
+/**
+ * A restored task whose project or area is gone goes to the project's area, or with no live area
+ * left to the Inbox, in the restore's own change: a deleted project holds no live task, and a task
+ * filed where no list shows it would be lost from view.
+ */
+function regroupRestored(conn: Connection, run: Execution, staged: StagedOp, target: Id<"t">) {
+  const task = readTask(conn, target);
+  let area = task.areaId;
+  if (task.projectId !== null) {
+    const project = conn.prepare(SQL.projectGroup).get({ id: task.projectId });
+    if (project === undefined || project["deleted_at"] === null) return;
+    area = new RowReader("projects", project).optText("area_id", (v) => isId(v, "a")) as Id<
+      "a"
+    > | null;
+  }
+  if (area !== null && conn.prepare(SQL.areaGone).get({ id: area }) !== undefined) area = null;
+  if (task.projectId === null && area === task.areaId) return;
+  const group: GroupIntent = { area, project: null };
+  const placed = place(conn, { ...staged, group, touches: [] }, target, task);
+  const inbox = area === null;
+  update(conn, target, {
+    area_id: placed.areaId,
+    project_id: placed.projectId,
+    position: placed.position,
+    ...(inbox ? { inbox: 1 } : {}),
+  });
+  wrote(run, staged.i, "tasks", target, target, inbox ? ["grouping", "inbox"] : ["grouping"]);
 }
 
 function update(conn: Connection, id: Id<"t">, values: Record<string, SqlValue>): void {
@@ -3614,10 +3741,8 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
     case "task.delete":
     case "task.restore": {
       // A1 3.11.4: the tombstone only. Every row of the task and its history stay.
+      if (staged.skip === true) return;
       const target = staged.target as Id<"t">;
-      if (op.kind === "task.restore" && !readTask(conn, target).deleted) {
-        problem("INVALID_TRANSITION", "Only a deleted task can be restored", i, "task");
-      }
       update(
         conn,
         target,
@@ -3626,6 +3751,12 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
           : { deleted_at: null, deleted_by: null },
       );
       wrote(run, i, "tasks", target, target, ["deleted"]);
+      if (op.kind === "task.delete") return;
+      for (const { source } of staged.held ?? []) {
+        conn.prepare(SQL.removeLink).run({ task: target, source, at: run.at });
+        wrote(run, i, "task_sources", `${target}|${source}`, target, ["removed"]);
+      }
+      regroupRestored(conn, run, staged, target);
       return;
     }
     case "note.add": {
