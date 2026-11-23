@@ -30,7 +30,14 @@ let before: ReturnType<typeof SpaceStatusResult.parse>["counts"];
 const host = (): OpsHost => ({
   machine: { id: MACHINE.id },
   spaces: () => [
-    { id: fx.spaceId, name: "Mira", state: "open", writer: undefined, reader: readerOf(fx.reader) },
+    {
+      id: fx.spaceId,
+      name: "Mira",
+      folder: "/fixture/mira",
+      state: "open",
+      writer: undefined,
+      reader: readerOf(fx.reader),
+    },
   ],
   now: () => DAY_CLOCK.now,
   timeZone: () => DAY_CLOCK.timeZone,
