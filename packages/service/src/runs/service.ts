@@ -226,6 +226,8 @@ export class RunService {
   #timer: NodeJS.Timeout | undefined;
   #stopped = false;
   #ending: () => void = () => undefined;
+  /** Who hears that a person queued or stopped a run, by whichever way they asked. */
+  readonly #changed = new Set<(space: string) => void>();
   /** Resolves once the service began to close: an update's hold ends with it. */
   readonly closing: Promise<void> = new Promise((resolve) => {
     this.#ending = resolve;
@@ -469,7 +471,20 @@ export class RunService {
         throw error;
       });
     void this.#supervisor.round();
+    this.#tell(space);
     return queued;
+  }
+
+  /** Hears each run a person queues or stops, from the page or `ttasks run`. */
+  onChange(listener: (space: string) => void): () => void {
+    this.#changed.add(listener);
+    return () => {
+      this.#changed.delete(listener);
+    };
+  }
+
+  #tell(space: string): void {
+    for (const listener of this.#changed) listener(space);
   }
 
   /** A space's newest runs, or a task's, each with its task's reference. */
@@ -573,6 +588,7 @@ export class RunService {
     if (after?.state === "unknown") after = await host.forceEnd(run);
     if (after?.state === "cancelled") this.#commands.delete(run);
     void this.#supervisor.round();
+    this.#tell(space);
     return after;
   }
 
