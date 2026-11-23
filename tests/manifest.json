@@ -2578,6 +2578,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.5.search.effort-exact",
+      "title": "A stored list with two sizes that differ only in case: effort: takes the exact name first, and matches without case otherwise",
+      "source": "A3 3.9",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.7.binding.ticket",
       "title": "A launched agent's bridge is its session from the claim, with no window and no first use: by its ticket or by its preset alone (allow-list mode), when it presents the click's app and its home's expected instance (a live row's, any row's when all were revoked, manual for a home that never had one); its task is the default, its actor and writer scope are the session's, named after the launch, and the bind writes nothing; a forged, malformed, unclaimed or ended launch's value, a launch without an app, another app, another or a malformed instance, and two live values of two launches are none, logged with a closed reason and never the value; an open bridge stays the session after its agent's end, a new bind then is the app's and its retry a new change; a task named on a call wins for that call only; a launch file held for a moment as the service starts again is read at a later try, so the same session replays the retry, and one held through every wait is left out with one log event while the service starts, a chat started by hand works and a run's ticket is still looked up past the launches",
       "source": "A3 3.7.2, A3 3.7.3, A3 3.7.4, A3 5, A4 3.1, A7 3.9 M2.04",
@@ -3640,7 +3648,7 @@
     },
     {
       "id": "A1.3.16.prefs.registry",
-      "title": "Every preference is declared once with a bounded value shape, a default that fits it, its scope, its writers and whether it is policy; policy keys have the human as their only writer, an agent writes only keys that list it, and a reader takes a stored value only when it fits, else the default, never a newer build's",
+      "title": "Every preference is declared once with a bounded value shape, a default that fits it, its scope, its writers and whether it is policy; policy keys have the human as their only writer, an agent writes only keys that list it, and a reader takes a stored value only when it fits, else what its declaration salvages from it, else the default, and never a newer build's value whole",
       "source": "A1 3.16, A3 3.8.2, A6 3.6.3, A7 3.10 M3.11",
       "owner": "M3",
       "kind": "ci",
@@ -3674,6 +3682,30 @@
       "id": "A1.3.16.prefs.machine",
       "title": "Machine preferences live in machine.toml's [preferences] with the same registry and validation: a valid value is read, a bad entry is dropped with a content-free problem, a space key there is refused, and a set or a reset splices one line, keeping every other byte",
       "source": "A1 3.16, A2 3.2.4, A7 3.10 M3.11",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.16.prefs.effort-any",
+      "title": "Every reader of the effort scale (an agent's tools, the refusal of a wrong size, the page's snapshot, the writer's check) offers exactly the names of a stored list whose items carry unknown fields, or of a newer build's list, which stays read-only; a missing or reset row offers S, M and L; a list the person set offers its names; a value that is no list of sizes reads as the fallback",
+      "source": "A1 3.16",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.16.prefs.effort-longest",
+      "title": "A size of the longest name goes through add_tasks, update_task and a follow-up of complete_task, and search, get_task and the readable file show it whole",
+      "source": "A1 3.16, A3 3.4",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.3.16.prefs.effort-lists",
+      "title": "Generated lists of 1 to 10 sizes (one character, the longest, a digit first, . - and _, mixed case) set as the person: every size given through add_tasks and one changed through update_task, effort: finds exactly those tasks, sort:effort and sort:-effort follow the list with unsized tasks last, search and get_task text and the readable file show the name, and a wrong size's refusal lists exactly the list",
+      "source": "A1 3.16, A3 3.4, A3 3.9",
       "owner": "M3",
       "kind": "ci",
       "profiles": ["v1"]
@@ -4214,6 +4246,22 @@
       "id": "A5.3.7.web.scales",
       "title": "The space's statuses and effort scale reach the page from the snapshot's preferences, anything that does not read as a list of keys keeps the defaults, and a batch that changes a preference asks for a fresh snapshot, whose value the core then holds",
       "source": "A5 3.7, A5 3.15",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.7.web.effort-lists",
+      "title": "Generated lists of 1 to 10 sizes reach the page's store, the card's options and the row's mark and tip as they are; a size the scale lost stays on its task's card; items with unknown fields keep their names, and more sizes than the contract allows, or a name longer than it allows, keep the fallback",
+      "source": "A5 3.6, A5 3.7",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.7.e2e.effort-scales",
+      "title": "In Chromium and Firefox against the real service: a space with one size and one with ten (four of the longest name) offer each size whole in the expanded task's control; the largest chosen there holds after a reload at 1,440 and 390 px with nothing scrolling sideways, and the collapsed row marks it with the whole name in its tip, hidden at 390 px",
+      "source": "A5 3.6, A5 3.7",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

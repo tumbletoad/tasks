@@ -2,7 +2,7 @@
 // to read, though an agent is not shown it. The CLI in this process against a service in this
 // process; fixture text and temporary folders only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { EXIT_CODES } from "@ttasks/contracts";
+import { EFFORT_KEY_MAX, EFFORT_SCALE_MAX, EXIT_CODES } from "@ttasks/contracts";
 import { contractWorld, type ContractWorld } from "@ttasks/service/test/contract";
 import { runMain, type Ran } from "./cli-harness.ts";
 
@@ -65,5 +65,27 @@ describe("[A3.3.4.prefs.set] ttasks prefs set", () => {
     expect((await tasks(["prefs", "get", "--keys", "tasks.effort_scale"])).stdout).toBe(
       'tasks.effort_scale: ["XS","S","M","L","XL"]\n',
     );
+  });
+
+  test("ten sizes of the longest name are set, given to a task and printed as they are", async () => {
+    const names = [
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL",
+      ...["Deep-work", "1.5d", "two_days", "Week"].map((n) => n.padEnd(EFFORT_KEY_MAX, "x")),
+      "Q".repeat(EFFORT_KEY_MAX),
+    ];
+    expect(names).toHaveLength(EFFORT_SCALE_MAX);
+    const set = await tasks(["prefs", "set", "tasks.effort_scale", names.join(",")]);
+    expect(set.stderr).toBe("");
+    expect(set.code).toBe(0);
+    const longest = names.at(-1) ?? "";
+    const added = await tasks(["add", "Fixture longest size", "--effort", longest, "--json"]);
+    expect(added.code).toBe(0);
+    const ref = (JSON.parse(added.stdout) as { tasks: { ref: string }[] }).tasks[0]?.ref ?? "";
+    const found = await tasks(["find", `effort:${longest}`]);
+    expect(found.stdout).toContain(`${ref} · open · ${longest} · Fixture longest size`);
   });
 });

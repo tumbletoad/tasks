@@ -13,6 +13,7 @@
 // (FIXED_SAMPLE_0_1) pins these rows and the IDs drawn after them, and its rows are what the
 // writer would write.
 import { join } from "node:path";
+import { EFFORT_FALLBACK } from "@ttasks/contracts/preferences";
 import {
   CheckedDriver,
   createSpace,
@@ -151,7 +152,7 @@ const OUTCOMES = [
 ];
 
 const STATUSES = ["open", "open", "waiting", "review", "backlog"];
-const EFFORTS = [null, "S", "M", "L"];
+const EFFORTS = [null, ...EFFORT_FALLBACK];
 const LOG_KINDS = ["progress", "evidence", "decision", "question"] as const;
 
 // ---------------------------------------------------------------------------------------------

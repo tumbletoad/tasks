@@ -3474,6 +3474,15 @@ async function prefsSet(call: Call): Promise<unknown> {
     }
   };
   const before = await read();
+  for (const { p, path } of changes) {
+    if (before.reads.get(p.key)?.state === "newer") {
+      throw invalid(
+        `${path}.key`,
+        "A newer build wrote this setting, so this build only reads it",
+        `Change it with the newer build, or update ${PRODUCT_NAME} here.`,
+      );
+    }
+  }
   let result;
   try {
     result = await submit(
@@ -3574,7 +3583,7 @@ function prefRow(
       ? { value, is_default: JSON.stringify(value) === JSON.stringify(fallback) }
       : {}),
     default: fallback,
-    writable: prefWritable(p, principal),
+    writable: prefWritable(p, principal) && read?.state !== "newer",
     ...(p.policy ? { policy: true } : {}),
   };
 }

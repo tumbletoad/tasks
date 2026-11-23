@@ -85,12 +85,16 @@ export function spaceSwitcher(page: Page, name: string): Locator {
 }
 
 /**
- * Waits until the tab shows `name`'s space, live, in its own faces: they arrive after the first
- * text, and a box measured before them is another width once they are in.
+ * Waits until the tab shows `name`'s space, live, with every face of the page loaded: a face
+ * arrives after the first text that needs it, and a box measured before it is another width once
+ * it is in. Every face, not only those loading now: the mono face or another script's face is
+ * first asked for when its text appears, later in the test.
  */
 export async function showsSpace(page: Page, name: string): Promise<void> {
   await expect(spaceSwitcher(page, name)).toBeVisible();
-  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(async () => {
+    await Promise.all([...document.fonts].map((face) => face.load()));
+  });
 }
 
 /**

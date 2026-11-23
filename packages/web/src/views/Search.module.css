@@ -24,6 +24,10 @@
   margin: 16px 0 24px;
 }
 
+.offer {
+  margin: 12px 0 0;
+}
+
 .action {
   min-height: 28px;
   padding: 0 10px;

@@ -6,13 +6,13 @@
 // A release build is the default and writes into packages/launcher-win/dist/. --test-hooks
 // defines TTASKS_TEST_HOOKS for this package's tests (README.md, "Test builds"): never ship it.
 //
-// cl.exe is found through vswhere, the Windows SDK by its default folder. INCLUDE, LIB and PATH
-// are passed to cl.exe directly, so no vcvars batch file and no shell runs, and every tool gets
+// cl.exe and link.exe are found through vswhere, the Windows SDK by its default folder. INCLUDE, LIB
+// and PATH are passed to them directly, so no vcvars batch file and no shell runs, and every tool gets
 // an argument array. The caller's compiler and linker variables never reach the tools, and a
 // release build is checked for test hooks before it counts as built.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -27,6 +27,7 @@ export const defaultOut = resolve(here, "..", "dist");
 
 export interface Msvc {
   cl: string;
+  link: string;
   env: Record<string, string>;
 }
 
@@ -134,7 +135,57 @@ export function findMsvc(): Msvc {
     join(kits, "Lib", sdk, "ucrt", "x64"),
     join(kits, "Lib", sdk, "um", "x64"),
   ].join(";");
-  return { cl, env };
+  return { cl, link: join(dirname(cl), "link.exe"), env };
+}
+
+export interface NativeSource {
+  /** The C file. */
+  source: string;
+  /** The program or DLL to write. */
+  out: string;
+  /** Compiler options, besides /c, the object file and the source. */
+  compile: readonly string[];
+  /** Linker options, besides the output and the object file. */
+  link: readonly string[];
+}
+
+/**
+ * Compiles and links one C file as two steps, so a failure names its step, its exit status and
+ * what the tool printed. A tool that ends without a word still leaves its status: 0xC0000142
+ * says the process could not start, another 0xC0000… code what ended it.
+ */
+export function compileC(msvc: Msvc, { source, out, compile, link }: NativeSource): string {
+  const objDir = `${out}.obj.d`;
+  mkdirSync(objDir, { recursive: true });
+  const obj = join(objDir, "main.obj");
+  try {
+    runTool(msvc, "compile", msvc.cl, ["/nologo", "/c", ...compile, `/Fo${obj}`, source], out);
+    runTool(msvc, "link", msvc.link, ["/nologo", ...link, `/OUT:${out}`, obj], out);
+  } finally {
+    rmSync(objDir, { recursive: true, force: true });
+  }
+  return out;
+}
+
+function runTool(msvc: Msvc, step: string, tool: string, args: string[], out: string): void {
+  const result = spawnSync(tool, args, {
+    cwd: dirname(out),
+    env: msvc.env,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  if (result.error !== undefined) {
+    throw new Error(`the ${step} step for ${out} did not start`, { cause: result.error });
+  }
+  if (result.status === 0) return;
+  const ended =
+    result.status === null
+      ? `was ended by ${String(result.signal)}`
+      : `exited with ${String(result.status)} (0x${(result.status >>> 0).toString(16).toUpperCase()})`;
+  const said = `${result.stdout}${result.stderr}`.trim();
+  throw new Error(
+    `the ${step} step for ${out} failed: ${basename(tool)} ${ended}\n${said === "" ? "(no output)" : said}`,
+  );
 }
 
 interface Program {
@@ -150,13 +201,10 @@ interface Program {
  * imported DLLs loaded from System32 only. /Brepro makes the output reproducible.
  */
 function compile(outDir: string, { name, source, gui, testHooks }: Program, msvc: Msvc) {
-  const objDir = join(outDir, `${name}.obj.d`);
-  mkdirSync(objDir, { recursive: true });
-  const exe = join(outDir, `${name}.exe`);
-  const result = spawnSync(
-    msvc.cl,
-    [
-      "/nologo",
+  return compileC(msvc, {
+    source,
+    out: join(outDir, `${name}.exe`),
+    compile: [
       "/W4",
       "/WX",
       "/sdl",
@@ -170,10 +218,8 @@ function compile(outDir: string, { name, source, gui, testHooks }: Program, msvc
       "/D_UNICODE",
       ...(gui ? ["/DTTASKS_GUI"] : []),
       ...(testHooks ? ["/DTTASKS_TEST_HOOKS"] : []),
-      `/Fo${objDir}\\`,
-      `/Fe${exe}`,
-      source,
-      "/link",
+    ],
+    link: [
       "/Brepro",
       "/guard:cf",
       "/CETCOMPAT",
@@ -185,14 +231,7 @@ function compile(outDir: string, { name, source, gui, testHooks }: Program, msvc
       "/MANIFEST:NO",
       ...(gui ? ["/SUBSYSTEM:WINDOWS", "/ENTRY:wmainCRTStartup"] : ["/SUBSYSTEM:CONSOLE"]),
     ],
-    { cwd: outDir, env: msvc.env, encoding: "utf8", windowsHide: true },
-  );
-  rmSync(objDir, { recursive: true, force: true });
-  if (result.error !== undefined) throw result.error;
-  if (result.status !== 0) {
-    throw new Error(`cl.exe failed for ${name}.exe:\n${result.stdout}${result.stderr}`);
-  }
-  return exe;
+  });
 }
 
 /** Every test hook's name starts with this (README.md, "Test builds"). */

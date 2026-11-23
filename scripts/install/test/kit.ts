@@ -38,6 +38,7 @@ import { testEnv } from "../../../packages/testkit/src/env.ts";
 import {
   assertReleaseBinary,
   buildRunHelper,
+  compileC,
   findMsvc,
 } from "../../../packages/launcher-win/src/build.ts";
 import { runLaunchers } from "../../../packages/launcher-win/test/install.ts";
@@ -887,24 +888,12 @@ export function prepareCanary(work: string): Canary {
   const literal = dir.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
   const source = join(build, "canary.c");
   writeFileSync(source, `#define CANARY_DIR L"${literal}"\n${CANARY_C}`);
-  const msvc = findMsvc();
-  const exe = join(build, "canary.exe");
-  const ran = spawnSync(
-    msvc.cl,
-    [
-      "/nologo",
-      "/W4",
-      "/MT",
-      "/utf-8",
-      "/DUNICODE",
-      "/D_UNICODE",
-      `/Fo${build}\\`,
-      `/Fe${exe}`,
-      source,
-    ],
-    { cwd: build, env: msvc.env, encoding: "utf8", windowsHide: true },
-  );
-  if (ran.status !== 0) throw new Error(`cl.exe failed for the canary:\n${ran.stdout}`);
+  const exe = compileC(findMsvc(), {
+    source,
+    out: join(build, "canary.exe"),
+    compile: ["/W4", "/MT", "/utf-8", "/DUNICODE", "/D_UNICODE"],
+    link: [],
+  });
   return { dir, exe };
 }
 

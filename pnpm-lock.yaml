@@ -442,6 +442,9 @@ importers:
       '@ttasks/bridge':
         specifier: workspace:*
         version: link:../bridge
+      '@ttasks/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@ttasks/storage':
         specifier: workspace:*
         version: link:../storage
