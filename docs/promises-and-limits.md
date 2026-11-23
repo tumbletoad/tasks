@@ -164,9 +164,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   count for an agent, while the sidebar counts it in Open.
 - Every note is visible to agents until you take it back.
 - You can take back any note on a task, in its thread or with `ttasks note <task> --remove <n>`:
-  from then on no agent, search or readable file reads it, a launch it was the request of says the
-  request was taken back, and Put back brings it back as it was. Only you take notes back, and
-  nothing is deleted for good.
+  from then on no agent and no search reads it, the task's readable file loses it within about a
+  second, a launch it was the request of says the request was taken back, and Put back brings it
+  back as it was. Only you take notes back, and nothing is deleted for good.
 - A question an agent logs on a task waits for you under Needs you on the Agents page, also once
   the task is finished or dropped, until you write a note on the task after it or dismiss it.
   A note you take back answers nothing. Dismiss sets aside only the questions you were shown; Undo

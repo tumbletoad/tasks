@@ -377,6 +377,16 @@ export interface Asked {
   readonly platform?: NodeJS.Platform;
 }
 
+/**
+ * A command the output tells the person to run next, as they can paste it: in the space this one
+ * was run for, since without `--space` it would act on the default space's task of the same
+ * reference.
+ */
+function next(asked: Asked, words: readonly string[]): string {
+  const argv = [CLI_NAME, ...words, ...(asked.space === undefined ? [] : ["--space", asked.space])];
+  return shellLine(asked.platform ?? process.platform, argv) ?? argv.join(" ");
+}
+
 export function render(entry: string, result: Result, space: string, asked: Asked = {}): string {
   const lines: string[] = [];
   switch (entry) {
@@ -405,7 +415,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
       const number = note.replace(/^n/u, "");
       lines.push(
         result["result"] === "removed"
-          ? `Removed note ${note} from ${task} in ${space}: put it back with ttasks note ${task} --put-back ${number}${replay(result)}`
+          ? `Removed note ${note} from ${task} in ${space}: put it back with ${next(asked, ["note", task, "--put-back", number])}${replay(result)}`
           : result["result"] === "put_back"
             ? `Put back note ${note} on ${task} in ${space}${replay(result)}`
             : `No change to note ${note} on ${task} in ${space}${replay(result)}`,
@@ -480,7 +490,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
         // A person is told how to bring it back; an agent's shell or a script, to tell the person.
         lines.push(
           asked.person === true
-            ? `In the Trash: ${mover(trashed["by"])} moved it there at ${at}. Restore it with ttasks restore ${str(task["ref"])}`
+            ? `In the Trash: ${mover(trashed["by"])} moved it there at ${at}. Restore it with ${next(asked, ["restore", str(task["ref"])])}`
             : `In the Trash: ${trashed["by"] === "user" ? "the user" : str(trashed["by"])} moved it there at ${at}. Tell the user; do not add it again or restore it.`,
         );
       }
@@ -584,7 +594,9 @@ export function render(entry: string, result: Result, space: string, asked: Aske
         );
       }
       if (removedNotes.length > 0) {
-        lines.push(`Put a note back with ttasks note ${str(task["ref"])} --put-back <number>`);
+        lines.push(
+          `Put a note back with ${next(asked, ["note", str(task["ref"])])} --put-back <number>`,
+        );
       }
       if (typeof result["before"] === "string") {
         lines.push(`More: the same command with --before ${result["before"]}`);

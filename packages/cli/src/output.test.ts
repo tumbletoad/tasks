@@ -642,6 +642,41 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] ttasks area and ttasks pref
     expect(described.split("\n")[0]).toBe("tasks.statuses: The statuses (a list of 1 to 12 keys)");
   });
 
+  test("a command it tells the person to run next names the space this one was run for", () => {
+    const asked = { space: "Second space", person: true, platform: "linux" as const };
+    // Without the space, the pasted command would act on the default space's task of that reference.
+    const removed = render(
+      "note.remove",
+      { result: "removed", note: "n1", task: "M-13" },
+      "Second space",
+      asked,
+    );
+    expect(removed).toContain("ttasks note M-13 --put-back 1 --space 'Second space'");
+    const shown = render(
+      "task.get",
+      {
+        task: {
+          ref: "M-13",
+          title: "Fixture",
+          deleted: { at: "2026-11-20T10:00:00Z", by: "user" },
+        },
+        removed_notes: [
+          { ref: "n1", text: "Fixture note", removed: { at: "2026-11-20", by: "user" } },
+        ],
+      },
+      "Second space",
+      asked,
+    );
+    expect(shown).toContain("Restore it with ttasks restore M-13 --space 'Second space'");
+    expect(shown).toContain("ttasks note M-13 --space 'Second space' --put-back <number>");
+    // In the default space nothing is added.
+    expect(
+      render("note.remove", { result: "removed", note: "n1", task: "M-13" }, "Mira", {
+        platform: "linux",
+      }),
+    ).toContain("put it back with ttasks note M-13 --put-back 1" + String.fromCharCode(10));
+  });
+
   test("[A3.3.4.prefs.set] a set says what changed from and to, or that nothing did", () => {
     const row = { key: "tasks.effort_scale", value: ["XS", "S", "M", "L", "XL"], default: [] };
     const set = (changed: unknown[]) =>
