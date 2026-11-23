@@ -1,11 +1,12 @@
-// What the browser keeps of a space's unsaved text (a composer's draft, a field edit that waits)
-// belongs to a task. A finished task or one in the Trash can come back, and a task the space does
-// not have now (a backup restored over it, a creation undone) may hold words the person still
-// needs: those stay, listed with Copy and Discard at the foot of the Trash (views/Trash.tsx), until
-// the person discards them. Only text kept under a key of no task's shape is forgotten, when the
-// space next opens.
+// What the browser keeps of a space's unsaved text (a composer's draft, a note on its way, a title
+// being typed, a field edit that waits) belongs to a task. A finished task or one in the Trash can
+// come back, and a task the space does not have now (a backup restored over it, a creation undone)
+// may hold words the person still needs: those stay, listed with Copy and Discard at the foot of
+// the Trash (views/Trash.tsx), until the person discards them. Only text kept under a key of no
+// task's shape is forgotten, when the space next opens.
 import type { Api } from "../api.ts";
 import { forgetUnsaved, unsavedTasks } from "../edit/keep.ts";
+import { forgetTitleDrafts, titleDraftTasks } from "../row/title-draft.ts";
 import { draftTasks, keepDraft } from "../task/composer.ts";
 
 /** The most tasks asked about per opening: the rest wait for the next one. */
@@ -23,7 +24,7 @@ export async function forgetGone(
   api: Api,
   known: (task: string) => boolean,
 ): Promise<void> {
-  const tasks = new Set([...draftTasks(space), ...unsavedTasks(space)]);
+  const tasks = new Set([...draftTasks(space), ...titleDraftTasks(space), ...unsavedTasks(space)]);
   const unknown = [...tasks].filter((task) => task !== "" && !known(task));
   // A random few each time: tasks that still exist never keep the others from being asked about.
   for (let i = unknown.length - 1; i > 0; i -= 1) {
@@ -37,6 +38,7 @@ export async function forgetGone(
     } catch (error) {
       if (!notATask(error)) continue;
       keepDraft(space, task, "");
+      forgetTitleDrafts(space, task);
       forgetUnsaved(space, task);
     }
   }

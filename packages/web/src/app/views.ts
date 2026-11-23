@@ -13,6 +13,7 @@
 import { flatGroups, groupTasks, personGroups, type GroupTasks } from "../groups.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { TaskRow } from "../live.ts";
+import type { AgentChange } from "../store/rows.ts";
 import {
   byDue,
   byText,
@@ -200,18 +201,7 @@ export const CHANGES_DAYS = 7;
 const DAY_MS = 86_400_000;
 
 /** An agent's change to a task, as far as the page knows it. */
-export interface TaskChange {
-  readonly task: string;
-  /** The actor's label ("Codex"). */
-  readonly actor: string;
-  /** When the page saw it, in milliseconds since 1970. */
-  readonly at: number;
-  /**
-   * The task's newest row the feed brought, kept for a task the live rows no longer hold: one the
-   * agent finished is still what the person comes back to see.
-   */
-  readonly row?: TaskRow;
-}
+export type TaskChange = AgentChange;
 
 export interface TodayOptions {
   /** Next's length (`today.next_limit`). */
@@ -338,10 +328,9 @@ export function todayOf(tasks: Iterable<TaskRow>, clock: Clock, options: TodayOp
 }
 
 // ---------------------------------------------------------------------------------------------
-// Agents until the service has a read of sessions, runs and routines: "Recent", the
-// tasks an agent or a routine changed while this tab followed the space (the change log Today's
-// Changes reads), newest first, one group per day of the change. A task the agent finished stays,
-// with the row the feed last brought; a deleted one leaves.
+// Agents' "Recent": the tasks an agent or a routine changed in the last seven days (the change log
+// Today's Changes reads), newest first, one group per day of the change. A task the agent
+// finished stays, with the newest row the page has of it; a deleted one leaves.
 
 export interface RecentDay {
   /** `YYYY-MM-DD` on the viewer's calendar. */

@@ -136,6 +136,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   and counts are the ones your page shows, except that a status of the space's own has its own
   count for an agent, while the sidebar counts it in Open.
 - Every note is visible to agents.
+- A question an agent logs on a task waits for you under Needs you on the Agents page, also once
+  the task is finished or dropped, until you write a note on the task after it or dismiss it.
+  Dismiss sets aside only the questions you were shown; Undo brings them back.
 - Your skills, the files in `skills/` of TTasks's folder, are your instructions to every agent that
   uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, an
   empty one, one that cannot be read or a link is not used at all, and agents and `ttasks skills`
@@ -232,6 +235,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   run. For Note this holds in the same browser under the same sign-in; for Run in the same browser
   within a day of the first press, also after signing in again.
 - What you are typing in a field stays when an agent changes that field or finishes the task.
+- A title you are typing and have not saved comes back in its editor after a reload or a crash of
+  the tab, in that tab, and is saved only when you save it. Another tab shows it as typed there
+  and does not erase it; on a task finished meanwhile it stays with Copy and Discard.
+- Today's Changes and the Agents page list the tasks agents changed in the last seven days, read
+  from the space when the page opens: a reload or another tab shows the same.
 - Task text cannot run scripts or load remote images.
 - A website you visit cannot read or change your tasks through the page.
 - Logs hold no task text, and there is no telemetry. Task text leaves TTasks only where you send it:

@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { Api } from "../api.ts";
 import { titleChange } from "../edit/change.ts";
 import { unsavedKeeper, unsavedTasks } from "../edit/keep.ts";
+import { keepTitleDraft, titleDraftTasks } from "../row/title-draft.ts";
 import { draftTasks, keepDraft } from "../task/composer.ts";
 import { forgetGone } from "./leftovers.ts";
 
@@ -44,6 +45,8 @@ describe("[A5.3.8.web.leftovers] the kept text of a space's tasks when the space
     for (const task of ["tk_live", "tk_done", "tk_trash", "tk_gone", "tk_down", "nonsense"]) {
       keepDraft(SPACE, task, `Draft of ${task}`);
     }
+    keepTitleDraft(SPACE, "tk_gone", { typed: "Title of a gone task", title: "Gone" });
+    keepTitleDraft(SPACE, "tk_done", { typed: "Title of a done task", title: "Done" });
     unsavedKeeper(SPACE).save(
       new Map([
         [
@@ -82,6 +85,7 @@ describe("[A5.3.8.web.leftovers] the kept text of a space's tasks when the space
       "tk_trash",
     ]);
     expect(unsavedTasks(SPACE)).toEqual(["tk_gone"]);
+    expect(titleDraftTasks(SPACE).sort()).toEqual(["tk_done", "tk_gone"]);
   });
 
   test("many finished tasks with drafts do not keep a key of no task's shape from being forgotten", async () => {

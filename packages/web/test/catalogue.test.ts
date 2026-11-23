@@ -117,6 +117,7 @@ const SAMPLE = {
   group: "Lumen / Portal",
   holder: "M-20",
   already: 1,
+  later: 1,
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

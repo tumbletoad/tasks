@@ -21,7 +21,7 @@ export const EntryAddInput = z.strictObject({
   task: SessionTask,
   kind: z
     .enum(ENTRY_KINDS_IN)
-    .describe("question flags it for the user; note: a note for the user")
+    .describe("question: the user sees it until they answer; note: a note for the user")
     .optional(),
   // The user may write a note as long as A1 allows a note. The handler applies A1's log-entry
   // limit to the log kinds (A1 3.7).

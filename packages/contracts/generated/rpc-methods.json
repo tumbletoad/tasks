@@ -31,7 +31,7 @@
           },
           "kind": {
             "default": "progress",
-            "description": "question flags it for the user; note: a note for the user",
+            "description": "question: the user sees it until they answer; note: a note for the user",
             "enum": [
               "progress",
               "evidence",
@@ -3938,6 +3938,48 @@
                   "description": "Project ID",
                   "type": "string"
                 },
+                "questions": {
+                  "description": "Questions agents asked that wait for the person, newest first",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": {
+                        "description": "When it was asked",
+                        "maximum": 8640000000000000,
+                        "minimum": -8640000000000000,
+                        "type": "integer"
+                      },
+                      "by": {
+                        "description": "The agent that asked",
+                        "type": "string"
+                      },
+                      "ref": {
+                        "description": "The log entry, such as l3",
+                        "type": "string"
+                      },
+                      "text": {
+                        "description": "Its first 300 characters",
+                        "maxLength": 300,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "ref",
+                      "by",
+                      "text",
+                      "at"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 10,
+                  "type": "array"
+                },
+                "questions_more": {
+                  "description": "How many more questions wait",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
                 "ref": {
                   "description": "Task reference",
                   "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
@@ -6546,6 +6588,48 @@
                   "description": "Project ID",
                   "type": "string"
                 },
+                "questions": {
+                  "description": "Questions agents asked that wait for the person, newest first",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": {
+                        "description": "When it was asked",
+                        "maximum": 8640000000000000,
+                        "minimum": -8640000000000000,
+                        "type": "integer"
+                      },
+                      "by": {
+                        "description": "The agent that asked",
+                        "type": "string"
+                      },
+                      "ref": {
+                        "description": "The log entry, such as l3",
+                        "type": "string"
+                      },
+                      "text": {
+                        "description": "Its first 300 characters",
+                        "maxLength": 300,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "ref",
+                      "by",
+                      "text",
+                      "at"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 10,
+                  "type": "array"
+                },
+                "questions_more": {
+                  "description": "How many more questions wait",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
                 "ref": {
                   "description": "Task reference",
                   "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
@@ -6938,6 +7022,12 @@
               "project": {
                 "description": "Project name or slug",
                 "maxLength": 120,
+                "type": "string"
+              },
+              "reviewed": {
+                "description": "Newest agent question the user read, such as l4: it and earlier ones are done",
+                "maxLength": 10,
+                "pattern": "^l[0-9]{1,9}$",
                 "type": "string"
               },
               "status": {

@@ -15,6 +15,7 @@ import {
   opSpec,
   LATER_PREFERENCES,
   PREFERENCES,
+  preferenceSpec,
   PrefsManageResult,
   registry,
   TaskAddResult,
@@ -938,7 +939,10 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
     const all = PrefsManageResult.parse(
       await call(fx, user, "prefs.manage", { action: "describe" }),
     );
-    for (const later of LATER_PREFERENCES) {
+    // A machine key lives in machine.toml, and doctor names one set there.
+    for (const later of LATER_PREFERENCES.filter(
+      (row) => preferenceSpec(row.key)?.scope === "space",
+    )) {
       expect(
         all.prefs.some((p) => p.key === later.key),
         later.key,

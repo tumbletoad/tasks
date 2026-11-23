@@ -182,3 +182,98 @@ describe("[A5.3.9.web.thread-request] a launch's request shows in the thread as 
     expect(request?.textContent).toContain("Book the van");
   });
 });
+
+describe("[A5.while-away.web.thread-older] Earlier shows what the page holds, then Older entries reads further", () => {
+  test("Earlier reveals the held entries; then Older entries asks once, says it reads, and goes with the last of them", () => {
+    const notes = [1, 2, 3, 4, 5, 6, 7, 8].map((i) =>
+      note(`n${String(i)}`, `Note ${String(i)}`, [], AT + i * 60_000),
+    );
+    let asked = 0;
+    const draw = (partial: boolean, loadingOlder: boolean, shown = notes) => {
+      act(() => {
+        root ??= createRoot(host);
+        root.render(
+          <I18n>
+            <Thread
+              notes={shown}
+              log={[]}
+              receipts={[]}
+              instances={[CLAUDE]}
+              partial={partial}
+              onOlder={() => {
+                asked += 1;
+              }}
+              loadingOlder={loadingOlder}
+            />
+          </I18n>,
+        );
+      });
+    };
+    const button = () => host.querySelector<HTMLButtonElement>("[data-part='earlier']");
+    draw(true, false);
+    expect(button()?.textContent).toBe("Earlier · 2");
+    act(() => {
+      button()?.click();
+    });
+    expect(entries()).toHaveLength(8);
+    expect(button()?.textContent).toBe("Older entries");
+    act(() => {
+      button()?.click();
+    });
+    expect(asked).toBe(1);
+    draw(true, true);
+    expect(button()?.textContent).toBe("Reading older entries…");
+    expect(button()?.getAttribute("aria-busy")).toBe("true");
+    act(() => {
+      button()?.click();
+    });
+    expect(asked).toBe(1);
+    // The first entry came: no button is left, and every entry shows.
+    const older = [note("n0", "Note 0", [], AT), ...notes];
+    draw(false, false, older);
+    expect(button()).toBeNull();
+    expect(entries()).toHaveLength(9);
+  });
+
+  test("a first read with no entry but more behind it offers Older entries; a failed read says so once and can be pressed again", () => {
+    let asked = 0;
+    const draw = (shown: DetailNote[], olderFailed: boolean) => {
+      act(() => {
+        root ??= createRoot(host);
+        root.render(
+          <I18n>
+            <Thread
+              notes={shown}
+              log={[]}
+              receipts={[]}
+              instances={[CLAUDE]}
+              partial
+              onOlder={() => {
+                asked += 1;
+              }}
+              olderFailed={olderFailed}
+            />
+          </I18n>,
+        );
+      });
+    };
+    const button = () => host.querySelector<HTMLButtonElement>("[data-part='earlier']");
+    draw([], false);
+    expect(host.textContent).not.toContain("Nothing logged yet.");
+    expect(button()?.textContent).toBe("Older entries");
+    act(() => {
+      button()?.click();
+    });
+    expect(asked).toBe(1);
+    draw([], true);
+    expect(host.querySelector("[role='status']")?.textContent).toBe(
+      "Older entries could not be read.",
+    );
+    expect(button()?.textContent).toBe("Older entries");
+    expect(button()?.getAttribute("aria-busy")).toBe("false");
+    act(() => {
+      button()?.click();
+    });
+    expect(asked).toBe(2);
+  });
+});

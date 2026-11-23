@@ -1,11 +1,12 @@
 // Every agent once on the Agents page. A task of this space that agents work on is one row, placed
 // by the agent that asks most of the person, with every one of its agents beneath it in its own
-// state; "On this computer" leaves those agents out. TTasks' record decides what an agent is: a
+// state; "On this computer" leaves those agents out. A question an agent logged on the task that
+// waits for the person asks as much as an agent that waits. TTasks' record decides what an agent is: a
 // background run's state is TTasks' own, an agent in a terminal's is the monitor's, and a
 // terminal agent TTasks holds as running that the monitor has not seen is shown as such, never
 // as idle.
 import type { AgentsPicture, AgentsSession } from "@ttasks/contracts/monitor";
-import type { TaskRow } from "../store/rows.ts";
+import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 
 /** What an agent of a task does, in the page's order: what asks most of the person first. */
 export const AGENT_STATES = [
@@ -55,6 +56,15 @@ const rank = (state: AgentState): number => AGENT_STATES.indexOf(state);
 /** What a background run does, as its row's record says; undefined: no run on now. */
 const runState = (row: TaskRow): AgentState | undefined =>
   row.run?.state === "needs_you" ? "waiting" : row.run?.state === "working" ? "working" : undefined;
+
+/** What TTasks' own record says of the task: its run's state, and questions that wait. */
+const ownStates = (row: TaskRow): AgentState[] => {
+  const run = runState(row);
+  return [
+    ...(run === undefined ? [] : [run]),
+    ...(questionsWaiting(row) === 0 ? [] : ["waiting" as const]),
+  ];
+};
 
 const stateOf = (activity: AgentsSession["activity"]): AgentState =>
   activity === "waiting" ||
@@ -139,8 +149,9 @@ export function mergeAgents(
   const tasks = new Map<string, Placed>();
   for (const row of rows.values()) {
     const run = runState(row);
+    const own = ownStates(row);
     const agents = (found.get(row.id) ?? []).sort(byStart);
-    if (run === undefined && agents.length === 0) continue;
+    if (own.length === 0 && agents.length === 0) continue;
     const others = agents.filter((a) => !a.current);
     // TTasks' own run is one of the task's agents, also when the monitor does not see it.
     const current =
@@ -156,7 +167,7 @@ export function mergeAgents(
         : undefined);
     // An agent inside a conversation that waits for the person asks as much as its parent would.
     const states = [
-      ...(run === undefined ? [] : [run]),
+      ...own,
       ...agents.flatMap((a) => [
         a.state,
         ...(a.session?.nested ?? []).map((inner) => stateOf(inner.activity)),
@@ -168,7 +179,7 @@ export function mergeAgents(
     );
     tasks.set(row.id, {
       state: AGENT_STATES[best] ?? "unknown",
-      own: run !== undefined && rank(run) === best,
+      own: own.some((state) => rank(state) === best),
       ageMs: ages.length === 0 ? null : Math.max(...ages),
       agents: current === undefined ? others : [current, ...others],
     });

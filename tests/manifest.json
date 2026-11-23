@@ -3806,6 +3806,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.16.prefs.machine.not-read",
+      "title": "A machine preference this build does not read yet (projection.dir) loads from machine.toml and changes nothing: the readable files stay in the space's view/ and nothing is made at the named folder, ttasks doctor says so and where the files are, ttasks prefs set answers that this build does not act on it, and without the key there is no note",
+      "source": "A1 3.16, A2 3.2.4",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.16.prefs.effort-any",
       "title": "Every reader of the effort scale (an agent's tools, the refusal of a wrong size, the page's snapshot, the writer's check) offers exactly the names of a stored list whose items carry unknown fields, or of a newer build's list, which stays read-only; a missing or reset row offers S, M and L; a list the person set offers its names; a value that is no list of sizes reads as the fallback",
       "source": "A1 3.16",
@@ -5649,6 +5657,111 @@
       "title": "ttasks doctor's monitor row: ttam found on the PATH (an executable only on Windows), a probe that reads only the hello of a child whose input is closed, fails one that does not end after its hello, shares one process between doctors and is ended with the service, and the row for found and fitting, not installed, a script, a build without ttam query, a version that does not fit with the side to update, a failed start, a monitor that does not end, and an older service",
       "source": "A3 3.14",
       "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.service.recent",
+      "title": "A page's snapshot holds the tasks an agent or a routine changed in the last seven days, newest first, each with the agent that changed it last and when, the row of a finished one with it; not the person's own changes, a deleted task or a change older than a week",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.service.recent-limits",
+      "title": "The snapshot's recent changes count only tasks still there towards their hundred, and find a change inside the week behind tens of thousands of later commits",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.web.recent",
+      "title": "The page's change log takes a snapshot's agents' changes as its list, puts the feed's later agent changes on top once each, and a fresh snapshot replaces it",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.web.recent-dates",
+      "title": "The page's list of agents' changes dates each by its commit, also one the feed replays after a reconnect; a deleted task leaves it and takes no place; a change leaves when it turns seven days old while the page stays open",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.e2e.recent",
+      "title": "In Chromium and Firefox: an agent's change made before the page opened is under the day of its own date (Today, on one day) on the Agents page and in Today's Changes, also after a reload, and a space without one says no agent changed anything in the last 7 days; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.e2e.question",
+      "title": "In Chromium and Firefox: an agent's question puts its task under Needs you with its words; Dismiss takes it out and the toast's Undo brings it back; the person's note after it answers it, also after a reload; two questions on a task finished since both wait, newest first, after a reload, and one Dismiss sets them aside; the day the task is grouped under is the change's own; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.e2e.older",
+      "title": "In Chromium and Firefox: a thread longer than the first read shows Earlier, then Older entries, which loads the rest with the oldest entry shown before kept in its place, until the first note; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.e2e.title-draft",
+      "title": "In Chromium and Firefox: a title typed and not yet saved is back in its editor after a reload and is not saved by itself; Escape lets it go for good; a second tab shows it as typed in another tab and its own Escape does not erase it; on a task finished meanwhile the words show with Copy and Discard instead of an editor; in Sumi and Washi at 1,440 and 390 px, axe clean, no sideways scroll (Washi, axe and the screenshots in Chromium only)",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.web.title-tabs",
+      "title": "A title being typed is kept per tab: a tab reads and lets go of its own words only, lists another tab's as theirs until the person discards them, and a task gone for good takes every tab's words with it",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.service.question",
+      "title": "A task's row carries the newest question an agent or a routine logged on it while no note of the person's came after it and their dismissal came before it: not the person's own question, an agent's note does not answer it, the person's note does, a dismissal hides it and its undo brings it back, a later question waits again, and the feed's batch of the question carries the task's row",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.service.reads",
+      "title": "With an agent's question waiting on an active, a completed and a dropped task, every read that returns task rows answers: the snapshot, Completed's both lists, search in each scope, status with every section, and each task's read",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.web.asking",
+      "title": "The page holds every finished or dropped task an agent's question waits on, from the snapshot and the batches after it: a row with questions outside the open tasks joins, one dismissed, answered or deleted leaves, and a reopened one is an open task again",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.web.question-placed",
+      "title": "On the Agents page an agent's question that waits places its task under Needs you as TTasks' own state, above a run that works, and a task with no question, run or agent is not placed",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.web.thread-pages",
+      "title": "A thread's read takes the first pages of task.get, and each Older entries reads more from where the last read ended without reading the earlier pages again, up to the first entry; a first page with no entry but more behind it is partial; a read no one waits for stops between pages",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.while-away.web.thread-older",
+      "title": "Earlier shows what the page holds, then Older entries asks once and says it reads; a first read with no entry but more behind it offers Older entries instead of saying nothing was logged; a failed read says so in one line and the button can be pressed again",
+      "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]
     }

@@ -3,9 +3,9 @@
   "estimator": "ceil(utf8 bytes of the compact JSON / bytes_per_token), per tool (A3 3.2.5)",
   "tools": [
     {
-      "bytes": 1402,
+      "bytes": 1416,
       "name": "add_entry",
-      "tokens": 701
+      "tokens": 708
     },
     {
       "bytes": 3258,
@@ -54,8 +54,8 @@
     }
   ],
   "total": {
-    "bytes": 19660,
-    "tokens": 9832,
+    "bytes": 19674,
+    "tokens": 9839,
     "tools": 10
   }
 }

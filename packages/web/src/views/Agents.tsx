@@ -1,8 +1,10 @@
 // Agents as far as the page's data allows: first "Needs you", the open tasks whose newest
-// background run stopped to ask the person or whose agent in a terminal waits for them, and
+// background run stopped to ask the person or whose agent in a terminal waits for them, and every
+// task, finished or not, on which agents asked questions that wait for them (shown beneath the
+// row, newest first, with one Dismiss), and
 // "Working", those whose run or agent works now; then "With an agent", the tasks whose agents are
-// in any other state; then "Recent", the tasks an agent or a routine changed while this tab
-// followed the space, the ones it finished included, newest first, one small heading per day. The
+// in any other state; then "Recent", the tasks an agent or a routine changed in the last seven
+// days, the ones it finished included, newest first, one small heading per day. The
 // runs' states come from the live rows, the terminal agents' from the Agent Monitor
 // (agents-merge.ts). A task is in one group, by the agent that asks most of the person, and every
 // one of its agents is listed beneath its row in its own state: the lines say what is true now,
@@ -18,21 +20,26 @@
 import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { changeLogOf } from "../app/changes.ts";
+import { classes } from "../app/css.ts";
 import { recentOf } from "../app/views.ts";
 import { Session } from "../context.ts";
+import { useEdits } from "../edit/useEdits.ts";
 import type { Group } from "../groups.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { formatDay, type Clock } from "../row/dates.ts";
+import { focusAfter } from "../row/Row.tsx";
 import { useClock } from "../row/useClock.ts";
-import { classes } from "../app/css.ts";
-import { useEdits } from "../edit/useEdits.ts";
-import { Latest } from "../latest.ts";
 import { useLive } from "../store/hooks.ts";
-import { taskRow, type TaskRow } from "../store/rows.ts";
-import css from "./Trash.module.css";
+import { questionsWaiting, taskRow, type TaskRow } from "../store/rows.ts";
+import { Latest } from "../latest.ts";
 import { linkedOutside, mergeAgents, type AgentState } from "./agents-merge.ts";
+import css from "./Computer.module.css";
+import trashCss from "./Trash.module.css";
 import { Computer, TaskAgents } from "./Computer.tsx";
 import { TaskList, type GroupsOf, type HeldRow } from "./TaskList.tsx";
+
+const styles = classes(css, ["question", "asked", "count", "asks", "words", "more", "dismiss"]);
+const trash = classes(trashCss, ["where", "restore"]);
 
 /** Agents' changes may touch any task: its rows fade in and are announced like Today's. */
 const ANY = (): boolean => true;
@@ -53,8 +60,6 @@ const heldIn = (held: HeldRow): string | undefined =>
 
 const byRef = (a: TaskRow, b: TaskRow): number =>
   a.ref.localeCompare(b.ref, "en", { numeric: true });
-
-const styles = classes(css, ["where", "restore"]);
 
 /** Rows per read of the Trash: every page is read, so none falls behind. */
 const PAGE = 200;
@@ -135,22 +140,32 @@ export interface AgentsProps {
 export function AgentsPage({ task, onExpand }: AgentsProps) {
   const t = useT();
   const { live } = useContext(Session);
+  const edits = useEdits();
   const log = changeLogOf(live);
   const changes = useSyncExternalStore(log.subscribe, log.getEntries);
   const clock = useClock(false);
-  const { tasks: liveRows } = useLive();
-  const edits = useEdits();
+  const { tasks: open, asking } = useLive();
   const agents = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
   const picture = agents.view?.picture ?? null;
   const named = useMemo(
-    () => linkedOutside(picture, live.spaceId, liveRows),
-    [picture, live.spaceId, liveRows],
+    () =>
+      linkedOutside(
+        picture,
+        live.spaceId,
+        asking.size === 0 ? open : new Map([...asking, ...open]),
+      ),
+    [picture, live.spaceId, open, asking],
   );
   const trashed = useTrashedWork(named);
-  // A task in the Trash with an agent still on it is placed like any other.
+  // A finished task a question waits on is placed as an open one is, and so is a task in the
+  // Trash an agent works on.
+  const outside = useMemo(
+    () => (trashed.size === 0 ? asking : new Map([...trashed, ...asking])),
+    [asking, trashed],
+  );
   const rows = useMemo(
-    () => (trashed.size === 0 ? liveRows : new Map([...trashed, ...liveRows])),
-    [liveRows, trashed],
+    () => (outside.size === 0 ? open : new Map([...outside, ...open])),
+    [open, outside],
   );
   const merged = useMemo(
     () => mergeAgents(picture, live.spaceId, rows),
@@ -167,28 +182,38 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const beneath = useCallback(
     (row: TaskRow) => {
       const listed = merged.tasks.get(row.id)?.agents ?? [];
-      const working =
-        listed.length === 0 ? undefined : <TaskAgents agents={listed} current={agents.current} />;
-      if (row.deleted_at === undefined) return working;
+      const asked = questionsWaiting(row) > 0;
+      const removed = row.deleted_at !== undefined;
+      if (listed.length === 0 && !asked && !removed) return undefined;
       // A run's card has its Stop; an agent in a terminal has none here, so the line says where.
       const terminal = listed.some((agent) => agent.started === "terminal");
       return (
         <>
-          <span className={styles.where} data-part="agents-in-trash">
-            {t(terminal ? "agents.inTrashTerminal" : "agents.inTrash")}
-            <button
-              type="button"
-              className={styles.restore}
-              data-part="restore"
-              aria-label={t("trash.restoreLabel", { ref: row.ref })}
-              onClick={() => {
-                edits.restore(row);
+          {removed ? (
+            <span className={trash.where} data-part="agents-in-trash">
+              {t(terminal ? "agents.inTrashTerminal" : "agents.inTrash")}
+              <button
+                type="button"
+                className={trash.restore}
+                data-part="restore"
+                aria-label={t("trash.restoreLabel", { ref: row.ref })}
+                onClick={() => {
+                  edits.restore(row);
+                }}
+              >
+                {t("trash.restore")}
+              </button>
+            </span>
+          ) : null}
+          {asked ? (
+            <Questions
+              row={row}
+              onDismiss={(newest) => {
+                edits.dismissQuestions(row, newest);
               }}
-            >
-              {t("trash.restore")}
-            </button>
-          </span>
-          {working}
+            />
+          ) : null}
+          {listed.length === 0 ? null : <TaskAgents agents={listed} current={agents.current} />}
         </>
       );
     },
@@ -213,7 +238,7 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
       const age = (row: TaskRow) => merged.tasks.get(row.id)?.ageMs ?? -1;
       const withAgents = [
         ...tasks.values(),
-        ...[...trashed.values()].filter((r) => !tasks.has(r.id)),
+        ...[...outside.values()].filter((r) => !tasks.has(r.id)),
       ]
         .filter((row) => merged.tasks.has(row.id))
         .sort((a, b) => own(a) - own(b) || (own(a) === 0 ? 0 : age(b) - age(a) || byRef(a, b)));
@@ -239,7 +264,7 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
       }
       return groupsOf(sections, t, clock);
     },
-    [changes, clock, t, merged, trashed],
+    [changes, clock, t, merged, outside],
   );
   return (
     <div>
@@ -257,6 +282,58 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
         beneath={beneath}
       />
       <Computer shown={merged.shown} />
+    </div>
+  );
+}
+
+/**
+ * The questions agents asked that wait for the person, newest first, each in its own words:
+ * answered by a note on the task, or set aside with Dismiss, which names the newest one shown so
+ * that a question asked after it still waits.
+ */
+function Questions({
+  row,
+  onDismiss,
+}: {
+  readonly row: TaskRow;
+  readonly onDismiss: (newest: string) => void;
+}) {
+  const t = useT();
+  const questions = row.questions ?? [];
+  const count = questionsWaiting(row);
+  const more = count - questions.length;
+  const newest = questions[0];
+  if (newest === undefined) return null;
+  return (
+    <div className={styles.question} data-part="question">
+      <div className={styles.asked}>
+        {count > 1 ? <p className={styles.count}>{t("agents.questions", { count })}</p> : null}
+        <ul>
+          {questions.map((question) => (
+            <li key={question.ref}>
+              <p className={styles.asks}>{t("agents.asks", { by: question.by })}</p>
+              <p className={styles.words} dir="auto">
+                {question.text}
+              </p>
+            </li>
+          ))}
+        </ul>
+        {more > 0 ? (
+          <p className={styles.more}>{t("agents.questionsMore", { count: more })}</p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        className={styles.dismiss}
+        data-part="dismiss-question"
+        aria-label={t("agents.dismissLabel", { count, ref: row.ref })}
+        onClick={(event) => {
+          focusAfter(event.currentTarget);
+          onDismiss(newest.ref);
+        }}
+      >
+        {t("agents.dismiss")}
+      </button>
     </div>
   );
 }

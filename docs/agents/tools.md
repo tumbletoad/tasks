@@ -65,7 +65,7 @@ MCP tool `add_entry`, "Log on a task": Use often while working: log progress, ev
 | A1 operations | `log.add`, `note.add` |
 | Faces | MCP `add_entry`, CLI `ttasks log`, `ttasks note`, UI |
 | Errors | `invalid_input`, `unbound`, `not_found`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 701, reported |
+| Definition, estimated tokens | 708, reported |
 | Result budget, estimated tokens | typical 40, max 80 |
 
 ### Input
@@ -73,7 +73,7 @@ MCP tool `add_entry`, "Log on a task": Use often while working: log progress, ev
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `task` | string, max 40 | no | Task ref (M-14) or ID; default: this session's task |
-| `kind` | "progress" \| "evidence" \| "decision" \| "blocker" \| "question" \| "note" | no, default `"progress"` | question flags it for the user; note: a note for the user |
+| `kind` | "progress" \| "evidence" \| "decision" \| "blocker" \| "question" \| "note" | no, default `"progress"` | question: the user sees it until they answer; note: a note for the user |
 | `text` | string, max 65536; agents: string, max 2000 | yes | The entry, in Markdown |
 | `links` | object[], max 5 items | no | Links that back the entry |
 | `links[].title` | string, max 200 | yes | Link title |
@@ -1819,6 +1819,12 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].run.id` | string | yes | The run's ID |
 | `rows[].run.state` | "working" \| "needs_you" | yes | Its newest background run works, or ended asking the person |
 | `rows[].run.instance` | string | yes | The run's agent instance |
+| `rows[].questions` | object[], max 10 items | no | Questions agents asked that wait for the person, newest first |
+| `rows[].questions[].ref` | string | yes | The log entry, such as l3 |
+| `rows[].questions[].by` | string | yes | The agent that asked |
+| `rows[].questions[].text` | string, max 300 | yes | Its first 300 characters |
+| `rows[].questions[].at` | integer, -8640000000000000 to 8640000000000000 | yes | When it was asked |
+| `rows[].questions_more` | integer, 0 to 9007199254740991 | no | How many more questions wait |
 | `rows[].ending` | string, max 300 | no | How it ended, one line: why it was dropped, or its outcome once wrapped up |
 | `cursor` | string | no | Pass it for the next page |
 
@@ -2729,6 +2735,12 @@ What is in the Trash, newest change first, a page at a time.
 | `rows[].run.id` | string | yes | The run's ID |
 | `rows[].run.state` | "working" \| "needs_you" | yes | Its newest background run works, or ended asking the person |
 | `rows[].run.instance` | string | yes | The run's agent instance |
+| `rows[].questions` | object[], max 10 items | no | Questions agents asked that wait for the person, newest first |
+| `rows[].questions[].ref` | string | yes | The log entry, such as l3 |
+| `rows[].questions[].by` | string | yes | The agent that asked |
+| `rows[].questions[].text` | string, max 300 | yes | Its first 300 characters |
+| `rows[].questions[].at` | integer, -8640000000000000 to 8640000000000000 | yes | When it was asked |
+| `rows[].questions_more` | integer, 0 to 9007199254740991 | no | How many more questions wait |
 | `rows[].area` | string | no | Its area's name, a deleted one too |
 | `rows[].project` | string | no | Its project's name, a deleted one too |
 | `rows[].removed` | object | yes | The change that moved it to the Trash |
@@ -2813,6 +2825,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `set.project` | string, max 120 | no | Project name or slug |
 | `set.folder` | string, 1 to 4096 | no | "cwd", an absolute folder or one under ~ |
 | `set.focus` | boolean | no | Star it: on Today until cleared. Only when the user asks |
+| `set.reviewed` | string, max 10 | no, user only | Newest agent question the user read, such as l4: it and earlier ones are done |
 | `clear` | ("summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus")[], max 7 items | no | Fields to clear |
 | `context` | object | no | Change the context |
 | `context.mode` | "append" \| "replace" | yes | append needs no base |

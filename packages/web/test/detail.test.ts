@@ -55,11 +55,11 @@ describe("[A5.3.9.web.thread-request] the request a session names is in the deta
       for (const fill of ["c", "d"]) await note(fill.repeat(42_000));
       for (const fill of ["e", "f"]) await note(fill.repeat(42_000), true);
 
-      const before = await readDetail(client, task);
+      const { detail: before } = await readDetail(client, task);
       const paged = reads;
       expect(before.partial).toBe(true);
       reads = 0;
-      const detail = await readDetail(client, task, [request, toAgents]);
+      const { detail } = await readDetail(client, task, [request, toAgents]);
       expect(detail.notes.find((n) => n.ref === request)?.text).toBe(asked);
       expect(detail.notes.find((n) => n.ref === toAgents)).toMatchObject({
         text: instruction,
