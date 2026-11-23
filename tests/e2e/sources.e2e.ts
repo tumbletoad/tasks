@@ -1,7 +1,8 @@
 // A wrong source removed from a task in the page, and put back (A5 3.7), against the real service
 // process with fixture data: Remove on the source's line, the toast's Undo, the Removed line after
 // a reload, Put back refused while another task holds the key, naming it, and Put back once that
-// task lets the key go. Screenshots at 1,440 and 390 px for review.
+// task lets the key go; with more holders than it names, how many more. Screenshots at 1,440 and
+// 390 px for review.
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { picture, showsSpace, signIn, violations, watchViolations } from "./page.ts";
@@ -112,6 +113,47 @@ test.describe("[A5.source.detach] A wrong source is removed from a task and put 
     await expect(toast(page)).toHaveText(`Source put back on ${ref}`);
     await expect(live).toHaveCount(2, { timeout: SLOW_MS });
     await expect(removedLine).toHaveCount(0);
+    expect(await violations(page)).toEqual([]);
+  });
+
+  test("the Removed line names five tasks that hold the key and counts the rest", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const space = world.mira.id;
+    const key = `jira:SHARED-${tag}`;
+    const ticket = { kind: "ticket", key, title: "Badge reader offline" };
+    const { ref } = await addTask(world, {
+      title: `Answer the front desk (${tag})`,
+      area: "lumen",
+      sources: [ticket],
+    });
+    await world.op(space, "task.update", { task: ref, remove_sources: [key] }, "agent");
+    const holders: string[] = [];
+    for (const n of [1, 2, 3, 4, 5, 6]) {
+      const holder = await addTask(world, {
+        title: `Check the badge reader, door ${String(n)} (${tag})`,
+        area: "lumen",
+        sources: [{ kind: "chat", title: `Door ${String(n)}` }],
+      });
+      await world.op(space, "task.update", { task: holder.ref, add_sources: [ticket] });
+      holders.push(holder.ref);
+    }
+    await watchViolations(page);
+    await signIn(page, world, `/s/${space}/task/${ref}`);
+    await showsSpace(page, world.mira.name);
+    const body = page.locator(`li[data-task="${ref}"]`).locator('[data-part="expanded"]');
+    const removedLine = body.locator('[data-part="removed"]');
+    await removedLine.getByRole("button", { name: "Show" }).click({ timeout: SLOW_MS });
+    const captures = body.locator('[data-part="source"][data-removed] [data-part="captures-to"]');
+    await expect(captures.getByRole("link")).toHaveText(holders.slice(0, 5));
+    await expect(captures).toContainText("a capture asks which of");
+    await expect(captures).toContainText("and 1 more");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await picture(page, "sources-more-1440.png");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await picture(page, "sources-more-390.png");
     expect(await violations(page)).toEqual([]);
   });
 });
