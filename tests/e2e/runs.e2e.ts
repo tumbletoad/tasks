@@ -465,14 +465,17 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
       // No fake agent can outlive a Stop of the real service: the service's answer about the run
       // says what it says of a run whose processes could not be confirmed ended.
       await page.route("**/api/v1/launch/runs", async (route) => {
-        const response = await route.fetch();
+        const response = await route.fetch().catch(() => undefined);
+        if (response === undefined) return;
         const body = (await response.json()) as { result: { runs: Record<string, unknown>[] } };
         const runs = body.result.runs.map((run) => ({
           ...run,
           state: "unknown",
           reason: "stop_timed_out",
         }));
-        await route.fulfill({ response, json: { ...body, result: { ...body.result, runs } } });
+        await route
+          .fulfill({ response, json: { ...body, result: { ...body.result, runs } } })
+          .catch(() => undefined);
       });
       for (const theme of themes()) {
         await world.machine("ui.theme", theme);
@@ -499,6 +502,8 @@ test.describe("[M6.page.e2e.screens] A run's states in both themes: screenshots 
       }
     } finally {
       await world.machine("ui.theme", null);
+      await context.unrouteAll({ behavior: "ignoreErrors" });
+      for (const open of context.pages()) await open.unrouteAll({ behavior: "ignoreErrors" });
       await context.close();
     }
   });
