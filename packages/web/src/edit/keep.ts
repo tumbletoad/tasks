@@ -103,6 +103,13 @@ export function unsavedKeeper(space: string): UnsavedKeeper {
           next.set(name, before);
           continue;
         }
+        // A new line where this tab kept or read one (a Try again refused) is written only while
+        // the browser still holds that one, or nothing: another tab's newer value stays.
+        const stored = browserKept.read(name);
+        if (before !== undefined && stored !== undefined && stored !== before.value) {
+          next.set(name, { unsaved: each, value: before.value });
+          continue;
+        }
         const value = keptOf(each);
         if (value !== undefined) browserKept.keep(name, value);
         next.set(name, { unsaved: each, value });

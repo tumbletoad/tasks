@@ -773,84 +773,50 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     expect(w.edits.unsaved("t_00001", "effort")).toBeUndefined();
   });
 
-  test("a kept edit whose base is of another history (a restore) takes the first snapshot of the new one as its base, once: a change made after that is a conflict", async () => {
-    const updated = (w: World) => ({
-      result: "updated",
-      task: "M-1",
-      fields: ["priority"],
-      as_of: w.asOf(30),
-      warnings: [],
-    });
-    const kept = (base: string): Unsaved => ({
+  test("a kept edit made against a history the screen no longer shows (a restore since, or no base) is not sent again, and nothing of it is rewritten", async () => {
+    const kept = (base: string | undefined): Unsaved => ({
       task: "t_00001",
       ref: "M-1",
       field: "priority",
       change: priorityChange(1),
       reason: "failed",
-      base,
+      ...(base === undefined ? {} : { base }),
     });
-    let held: readonly Unsaved[] = [];
+    const saves: (readonly Unsaved[])[] = [];
     const restored = new World([task(1)], {
       load: () => [kept("1.10.01234567")],
       save: (unsaved) => {
-        held = [...new Set(unsaved.values())];
+        saves.push([...new Set(unsaved.values())]);
       },
     });
-    // The space was restored: its history is another epoch and incarnation, first seen at 2.4.
-    const OTHER = "ai_zzzzzzzzzzzzzzzzzzzzzzzzzz";
+    const line = restored.edits.unsaved("t_00001", "priority");
+    if (line === undefined) throw new Error("the kept edit was not loaded");
+    // Of the screen's history, not ahead of it: Try again sends it with its base.
+    expect(restored.edits.restored(line)).toBe(false);
+    // The space was restored: its history is another epoch and incarnation.
     restored.store.push({
       type: "snapshot",
       space: SPACE,
-      cursor: { epoch: 2, incarnation: OTHER, seq: 4 },
+      cursor: { epoch: 2, incarnation: "ai_zzzzzzzzzzzzzzzzzzzzzzzzzz", seq: 4 },
       tasks: [task(1)],
       areas: [],
       projects: [],
       instances: [],
     });
     restored.store.flush();
-    expect(held.map((u) => u.base)).toEqual(["2.4.zzzzzzzz"]);
-    // An agent sets the priority after the restore; Try again does not write over it.
-    restored.store.push({
-      type: "batch",
-      space_id: SPACE.id,
-      epoch: 2,
-      incarnation: OTHER,
-      from: 4,
-      through: 5,
-      events: [
-        {
-          seq: 5,
-          op_id: `op_${"5".padStart(26, "0")}`,
-          request_id: "agent-1",
-          actor: { kind: "agent", label: "Codex" },
-          kind: "task.update",
-          entities: [
-            {
-              type: "task",
-              id: "t_00001",
-              row: task(1, { priority: 2, version: 2 }) as unknown as Record<string, unknown>,
-              changed: ["priority"],
-              created: false,
-            },
-          ],
-        },
-      ],
-    });
-    restored.store.flush();
-    expect(restored.store.asOf).toBe("2.5.zzzzzzzz");
-    restored.answer("task.update", () => updated(restored));
+    expect(restored.edits.restored(line)).toBe(true);
     restored.edits.apply("t_00001", "priority");
     await flush();
-    expect(restored.calls[0]?.input).toMatchObject({ base: "2.4.zzzzzzzz" });
-    // A base ahead of what the screen shows takes the screen's as-of when it is loaded.
-    const ahead = new World([task(1)], {
-      load: () => [kept("1.20.01234567")],
-      save: () => undefined,
-    });
-    ahead.answer("task.update", () => updated(ahead));
-    ahead.edits.apply("t_00001", "priority");
+    expect(restored.calls).toEqual([]);
+    expect(restored.edits.unsaved("t_00001", "priority")).toBe(line);
+    expect(saves).toEqual([]);
+    // A failed edit kept with no base (an earlier build) alike.
+    const old = new World([task(1)], { load: () => [kept(undefined)], save: () => undefined });
+    const none = old.edits.unsaved("t_00001", "priority");
+    expect(none === undefined ? undefined : old.edits.restored(none)).toBe(true);
+    old.edits.apply("t_00001", "priority");
     await flush();
-    expect(ahead.calls[0]?.input).toMatchObject({ base: ahead.asOf(10) });
+    expect(old.calls).toEqual([]);
   });
 
   test("Try again on a value that is already there is saved: the conflict that names the person's own value shows no line and no toast", async () => {
@@ -938,35 +904,6 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     answer({ result: "updated", task: "M-1", fields: ["effort"], as_of: w.asOf(11), warnings: [] });
     await flush();
     expect(held).toEqual([]);
-  });
-
-  test("an edit kept by an earlier build without a base takes the screen's now when it is loaded: a change made after that is a conflict", async () => {
-    let held: readonly Unsaved[] = [];
-    const old: Unsaved = {
-      task: "t_00001",
-      ref: "M-1",
-      field: "priority",
-      change: priorityChange(1),
-      reason: "failed",
-    };
-    const w = new World([task(1)], {
-      load: () => [old],
-      save: (unsaved) => {
-        held = [...new Set(unsaved.values())];
-      },
-    });
-    expect(held.map((u) => u.base)).toEqual([w.asOf(10)]);
-    w.feed([task(1, { priority: 2, version: 2 })], "agent-1", ["priority"], "agent");
-    w.answer("task.update", () => ({
-      result: "updated",
-      task: "M-1",
-      fields: ["priority"],
-      as_of: w.asOf(12),
-      warnings: [],
-    }));
-    w.edits.apply("t_00001", "priority");
-    await flush();
-    expect(w.calls[0]?.input).toMatchObject({ set: { priority: 1 }, base: w.asOf(10) });
   });
 
   test("an edit refused because someone finished the task meanwhile keeps the value, and its toast offers no Try again", async () => {

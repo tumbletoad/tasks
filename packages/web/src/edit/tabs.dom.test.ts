@@ -2,7 +2,7 @@
 //
 // Try again in one tab while another tab of the space keeps a newer value of the same field
 // (keep.ts on the browser's real storage): the retry never writes over that value, nor takes it
-// away once it is decided.
+// away, whatever its outcome.
 import { PRODUCT_ID } from "@ttasks/brand";
 import { beforeEach, describe, expect, test } from "vitest";
 import { FakeFrames } from "../../test/fake-frames.ts";
@@ -46,52 +46,87 @@ const kept = (level: number): Unsaved => ({
   base: "1.10.01234567",
 });
 
+/** An error as the generated client throws it: a code and its data. */
+const refusal = (code: string, data: Record<string, unknown>) =>
+  Object.assign(new Error("refused"), { code, data });
+
+const conflictOn = (value: number) =>
+  refusal("conflict", {
+    cause: "VERSION_CONFLICT",
+    conflicts: [
+      {
+        task: "M-1",
+        field: "priority",
+        value,
+        version: 11,
+        by: "Codex",
+        at: "2026-11-12T09:40:00Z",
+      },
+    ],
+  });
+
+const OUTCOMES: readonly (readonly [string, () => Promise<unknown>])[] = [
+  [
+    "saved",
+    () => Promise.resolve({ result: "updated", task: "M-1", fields: [], as_of: "1.11.01234567" }),
+  ],
+  ["already there", () => Promise.reject(conflictOn(1))],
+  ["failed", () => Promise.reject(refusal("internal", {}))],
+  ["a conflict with another value", () => Promise.reject(conflictOn(2))],
+];
+
 beforeEach(() => {
   localStorage.clear();
 });
 
 describe("[A5.3.11.web.kept-edits] Try again never writes over or takes away another tab's newer value", () => {
-  test("tab A retries P1 while tab B kept P3 for the field: P3 stays in the browser, during and after", async () => {
-    unsavedKeeper(SPACE.id).save(new Map([[`${TASK.id}\u0000priority`, kept(1)]]));
-    const store = new LiveStore({
-      space: SPACE.id,
-      frames: new FakeFrames(),
-      onResnapshot: () => undefined,
-    });
-    const snapshot: SnapshotMessage = {
-      type: "snapshot",
-      space: SPACE,
-      cursor: { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 },
-      tasks: [TASK],
-      areas: [],
-      projects: [],
-      instances: [],
-    };
-    store.push(snapshot);
-    store.flush();
-    let answer: (value: unknown) => void = () => undefined;
-    const edits = new Edits({
-      client: {
-        task: { update: () => new Promise((resolve) => (answer = resolve)) },
-      } as unknown as ConstructorParameters<typeof Edits>[0]["client"],
-      write: (send, overlay) => store.write(send, overlay),
-      asOf: () => store.asOf,
-      failed: () => false,
-      onChanges: (listener) => store.onChanges(listener),
-      rowOf: () => TASK,
-      newRequest: () => "rq-1",
-      keeper: unsavedKeeper(SPACE.id),
-    });
-    expect(edits.unsaved(TASK.id, "priority")).toMatchObject({ change: { set: { priority: 1 } } });
-    // Tab B keeps a newer value for the same field, then closes.
-    unsavedKeeper(SPACE.id).save(new Map([[`${TASK.id}\u0000priority`, kept(3)]]));
-    expect(storedLevel()).toBe(3);
+  test.each(OUTCOMES)(
+    "tab A retries P1 while tab B kept P3 for the field: P3 stays in the browser, during and after an answer that it was %s",
+    async (_, outcome) => {
+      unsavedKeeper(SPACE.id).save(new Map([[`${TASK.id}\u0000priority`, kept(1)]]));
+      const store = new LiveStore({
+        space: SPACE.id,
+        frames: new FakeFrames(),
+        onResnapshot: () => undefined,
+      });
+      const snapshot: SnapshotMessage = {
+        type: "snapshot",
+        space: SPACE,
+        cursor: { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 },
+        tasks: [TASK],
+        areas: [],
+        projects: [],
+        instances: [],
+      };
+      store.push(snapshot);
+      store.flush();
+      let answer: () => void = () => undefined;
+      const answered = new Promise<void>((resolve) => (answer = resolve));
+      const edits = new Edits({
+        client: {
+          task: { update: () => answered.then(outcome) },
+        } as unknown as ConstructorParameters<typeof Edits>[0]["client"],
+        write: (send, overlay) => store.write(send, overlay),
+        asOf: () => store.asOf,
+        failed: () => false,
+        onChanges: (listener) => store.onChanges(listener),
+        rowOf: () => TASK,
+        newRequest: () => "rq-1",
+        keeper: unsavedKeeper(SPACE.id),
+      });
+      expect(edits.unsaved(TASK.id, "priority")).toMatchObject({
+        change: { set: { priority: 1 } },
+      });
+      // Tab B keeps a newer value for the same field, then closes.
+      unsavedKeeper(SPACE.id).save(new Map([[`${TASK.id}\u0000priority`, kept(3)]]));
+      expect(storedLevel()).toBe(3);
 
-    edits.apply(TASK.id, "priority");
-    await flush();
-    expect(storedLevel()).toBe(3);
-    answer({ result: "updated", task: "M-1", fields: ["priority"], as_of: "1.11.01234567" });
-    await flush();
-    expect(storedLevel()).toBe(3);
-  });
+      edits.apply(TASK.id, "priority");
+      await flush();
+      expect(storedLevel()).toBe(3);
+      answer();
+      await flush();
+      expect(storedLevel()).toBe(3);
+    },
+  );
 });

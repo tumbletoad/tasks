@@ -312,11 +312,14 @@ function newer(store: string | undefined, answer: string | undefined): string | 
   return Number(b[2]) > Number(a[2]) ? answer : store;
 }
 
-/** Whether `base` can be compared with what the screen shows at `now`: one history, not ahead. */
-function comparable(base: string, now: string): boolean {
+/**
+ * Whether `base` is of the history the screen shows at `now`: one epoch and incarnation. A base a
+ * little ahead of the screen is of it (an answer's as-of comes before the feed applies it).
+ */
+function sameHistory(base: string, now: string): boolean {
   const a = AS_OF.exec(base);
   const b = AS_OF.exec(now);
-  return a !== null && b !== null && a[1] === b[1] && a[3] === b[3] && Number(a[2]) <= Number(b[2]);
+  return a !== null && b !== null && a[1] === b[1] && a[3] === b[3];
 }
 
 /** A one-field change's effect on the row, the same for one value however it was made. */
@@ -439,32 +442,9 @@ export class Edits {
       for (const field of unsaved.change.fields) restored.set(keyOf(unsaved.task, field), unsaved);
     }
     if (restored.size > 0) this.#state = { ...this.#state, unsaved: restored };
-    this.#baseKept();
     deps.onChanges(({ changes }) => {
-      this.#baseKept();
       this.#heard(changes);
     });
-  }
-
-  /**
-   * A failed edit whose base the service cannot compare takes the screen's as-of the first time
-   * there is one: an edit kept without a base (an earlier build kept none), or with a base of
-   * another history (the space was restored) or ahead of it. A change made after that is then a
-   * conflict, never overwritten. Once set, the base stays, and is kept with the edit.
-   */
-  #baseKept(): void {
-    const now = this.#deps.asOf();
-    if (now === undefined) return;
-    const based = new Map<Unsaved, Unsaved>();
-    for (const unsaved of this.#state.unsaved.values()) {
-      if (unsaved.reason !== "failed" || based.has(unsaved)) continue;
-      if (unsaved.base !== undefined && comparable(unsaved.base, now)) continue;
-      based.set(unsaved, { ...unsaved, base: now });
-    }
-    if (based.size === 0) return;
-    const next = new Map(this.#state.unsaved);
-    for (const [key, unsaved] of next) next.set(key, based.get(unsaved) ?? unsaved);
-    this.#set({ ...this.#state, unsaved: next });
   }
 
   readonly subscribe = (listener: () => void): (() => void) => {
@@ -581,16 +561,28 @@ export class Edits {
     );
   }
 
+  /**
+   * Whether a kept edit was made against a history the screen no longer shows: its base is of
+   * another history (the space was restored since), or a failed edit has none (kept by an earlier
+   * build). No base makes sending it again an informed choice, so it is not sent:
+   * its value can be copied or discarded.
+   */
+  restored(unsaved: Unsaved): boolean {
+    if (unsaved.base === undefined) return unsaved.reason === "failed";
+    const now = this.#deps.asOf();
+    return now !== undefined && !sameHistory(unsaved.base, now);
+  }
+
   /** "Apply mine" or "Try again": the person's kept value, sent again (`#again`). */
   apply(task: string, field: Field): void {
     const unsaved = this.unsaved(task, field);
-    if (unsaved === undefined) return;
+    if (unsaved === undefined || this.restored(unsaved)) return;
     this.#again({ id: unsaved.task, ref: unsaved.ref }, unsaved.change, [unsaved]);
   }
 
   /**
    * Kept values sent again: after a conflict (Apply mine) over the other value the screen shows
-   * now; after a failure (Try again) with the base kept with it (`#baseKept`). The lines move to
+   * now; after a failure (Try again) with the base the person made it at. The lines move to
    * the ones on their way, so the browser keeps them as they are until the request is decided,
    * and then lets go of only what it still holds of them: another tab's newer value stays.
    */
@@ -1387,6 +1379,7 @@ export class Edits {
           const again = joinChanges(waiting);
           const kept = waiting.flatMap((part) => lines.get(part) ?? []);
           if (again === undefined || kept.length === 0) return;
+          if (kept.some((line) => this.restored(line))) return;
           this.#again(task, again, kept);
         },
       },

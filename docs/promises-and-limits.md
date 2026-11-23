@@ -178,7 +178,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   again sends it against what you saw when you made it, so a change made since is shown to you
   first.
 - Pressing Note or Run again after its answer was lost, also after a reload, makes one note or
-  run. This holds in the same browser for Note and Run, for Run within a day of the first press.
+  run. For Note this holds in the same browser under the same sign-in; for Run in the same browser
+  within a day of the first press, also after signing in again.
 - What you are typing in a field stays when an agent changes that field or finishes the task.
 - Task text cannot run scripts or load remote images.
 - A website you visit cannot read or change your tasks through the page.
