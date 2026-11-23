@@ -906,9 +906,10 @@ function differsWarnings(result: WriteResult, paths: ReadonlyMap<number, string>
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 
-/** A link a name resolved to. */
+/** A link a name resolved to: its source, and its version as read, when it was read. */
 interface NamedLink {
   readonly source: Id<"s">;
+  readonly version?: number;
 }
 
 /**
@@ -942,7 +943,7 @@ function linksNamed(links: readonly Row[], names: readonly string[], path: strin
     }
     if (one !== undefined) {
       const source = text(one["id"]) as Id<"s">;
-      found.set(source, { source });
+      found.set(source, { source, version: Number(one["version"]) });
       return;
     }
     if (isId(name, "s")) {
@@ -2342,8 +2343,16 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           "Detach a source or put it back, not both",
         );
       }
-      for (const link of detached) ops.push({ kind: "source.unlink", task, source: link.source });
-      for (const link of back) ops.push({ kind: "source.relink", task, source: link.source });
+      // Without a base, each change is checked against the link's version as read just now.
+      const based = typeof input["base"] === "string";
+      const versioned = (link: NamedLink) =>
+        based || link.version === undefined ? {} : { link_version: link.version };
+      for (const link of detached) {
+        ops.push({ kind: "source.unlink", task, source: link.source, ...versioned(link) });
+      }
+      for (const link of back) {
+        ops.push({ kind: "source.relink", task, source: link.source, ...versioned(link) });
+      }
     }
     // The folder last, so the other operations keep their indexes in a replay, which checks no
     // folder (draftFolders) and sends a stand-in when nothing else is in the request.

@@ -1,7 +1,7 @@
 // A wrong source removed from a task in the page, and put back (A5 3.7), against the real service
 // process with fixture data: Remove on the source's line, the toast's Undo, the Removed line after
-// a reload, and Put back when another task has taken the key since, which brings the source back
-// as context and says where its captures go. Screenshots at 1,440 and 390 px for review.
+// a reload, Put back refused while another task holds the key, naming it, and Put back once that
+// task lets the key go. Screenshots at 1,440 and 390 px for review.
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
 import { picture, showsSpace, signIn, violations, watchViolations } from "./page.ts";
@@ -27,7 +27,7 @@ const toast = (page: Page) => page.locator('[data-part="toast-text"]');
 const toastAction = (page: Page) => page.locator('[data-part="toast-action"]');
 
 test.describe("[A5.source.detach] A wrong source is removed from a task and put back", () => {
-  test("Remove, the toast's Undo, the Removed line after a reload, and Put back when another task holds the key", async ({
+  test("Remove, the toast's Undo, the Removed line after a reload, and Put back refused while another task holds the key", async ({
     page,
     world,
   }) => {
@@ -90,21 +90,28 @@ test.describe("[A5.source.detach] A wrong source is removed from a task and put 
     await picture(page, "sources-removed-390.png");
     await page.setViewportSize({ width: 1440, height: 900 });
 
-    // Put back: the other task keeps the key, and this one has the ticket as context.
+    // Put back while the other task holds the key is refused, naming it; nothing changes.
     await removed.getByRole("button", { name: "Put back" }).click();
-    await expect(toast(page)).toHaveText(`Put back as context: captures go to ${other.ref}`);
-    await expect(live).toHaveCount(2, { timeout: SLOW_MS });
-    const context = live.and(body.locator('[data-kind="ticket"]'));
-    const goesTo = context.locator('[data-part="captures-to"]');
-    await expect(goesTo).toContainText(other.ref);
-    await expect(goesTo.getByRole("link", { name: other.ref })).toHaveAttribute(
-      "href",
-      `/s/${space}/task/${other.ref}`,
+    await expect(toast(page)).toHaveText(
+      `${key} is on ${other.ref} now: captures go there. Nothing was put back.`,
     );
-    await expect(removedLine).toHaveCount(0);
-    await picture(page, "sources-context-1440.png");
+    await expect(live).toHaveCount(1);
+    await expect(removed).toHaveCount(1);
+    await picture(page, "sources-refused-1440.png");
     await page.setViewportSize({ width: 390, height: 844 });
-    await picture(page, "sources-context-390.png");
+    await picture(page, "sources-refused-390.png");
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    // The agent detaches the ticket from the other task: the card reads again and drops the
+    // holder, and Put back brings the ticket back here.
+    await world.op(space, "task.update", { task: other.ref, remove_sources: [key] }, "agent");
+    await expect(removed.locator('[data-part="captures-to"]')).toHaveCount(0, {
+      timeout: SLOW_MS,
+    });
+    await removed.getByRole("button", { name: "Put back" }).click();
+    await expect(toast(page)).toHaveText(`Source put back on ${ref}`);
+    await expect(live).toHaveCount(2, { timeout: SLOW_MS });
+    await expect(removedLine).toHaveCount(0);
     expect(await violations(page)).toEqual([]);
   });
 });

@@ -218,6 +218,38 @@ describe("[A3.source.detach] detaching a source and putting it back, through rea
     );
   });
 
+  test("a put back with a base from before a later detach is a conflict; without a base it is checked against the link as it is now", async () => {
+    const { ref } = await add({ title: "Fixture stale", sources: [ticket("fix:DT-6")] });
+    await update({ task: ref, remove_sources: ["fix:DT-6"] });
+    const old = await asOf();
+    await update({ task: ref, put_back_sources: ["fix:DT-6"] });
+    await update({ task: ref, remove_sources: ["fix:DT-6"] });
+    const stale = await refusal("task.update", {
+      task: ref,
+      put_back_sources: ["fix:DT-6"],
+      base: old,
+      request_id: rid(),
+    });
+    expect(stale.code).toBe("conflict");
+    expect(stale.data?.["reason"]).toBeUndefined();
+    expect((await sources(ref))[0]?.removed).toBeDefined();
+    // An agent without a base: the link's version as read now.
+    expect(
+      await call(
+        "task.update",
+        { task: ref, put_back_sources: ["fix:DT-6"], request_id: rid() },
+        AGENT,
+      ),
+    ).toMatchObject({ result: "updated" });
+    expect(
+      await call(
+        "task.update",
+        { task: ref, remove_sources: ["fix:DT-6"], request_id: rid() },
+        AGENT,
+      ),
+    ).toMatchObject({ result: "updated" });
+  });
+
   test("a finished task takes a detach alone; mixed with another change it is refused whole", async () => {
     const { ref } = await add({ title: "Fixture finished", sources: [ticket("fix:DT-3")] });
     await call("task.finish", {
