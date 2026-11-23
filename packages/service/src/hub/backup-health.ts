@@ -37,12 +37,11 @@ export interface BackupTroubleView {
  */
 const NO_ROOM = "BUNDLE_LIMIT_EXCEEDED";
 
-const later = (a: number | undefined, b: number | undefined): number | undefined =>
-  a === undefined ? b : b === undefined ? a : Math.max(a, b);
-
 /** After an upkeep run that ended with `report`. */
 export function afterRun(health: BackupHealth, report: MaintenanceReport): BackupHealth {
-  const lastGood = later(report.verifiedAt, health.lastGood);
+  // The run's verified backup is the newest by the work it holds, so it replaces the one known
+  // before even when its date is earlier: a clock set back dates later work earlier.
+  const lastGood = report.verifiedAt ?? health.lastGood;
   const base = lastGood === undefined ? {} : { lastGood };
   // Retention verified the newest backups in this run: its verdict replaces what was known.
   if (report.checked === true) {

@@ -53,6 +53,12 @@ describe("[A1.5.backup.failure-shown] what a space's backups report, run by run"
     expect(afterRun(unverified, run({ checked: true, verifiedAt: AT }))).toEqual({ lastGood: AT });
   });
 
+  test("the run's newest backup that restores replaces the one known before, also when it is dated earlier", () => {
+    // A clock set back an hour: the backup holding later work has the earlier date.
+    const after = afterRun({ lastGood: AT }, run({ checked: true, verifiedAt: AT - 3_600_000 }));
+    expect(after).toEqual({ lastGood: AT - 3_600_000 });
+  });
+
   test("a backup the person made that passed its trial restore clears every report", () => {
     expect(afterProvenBackup(AT)).toEqual({ lastGood: AT });
     expect(troubleView(afterProvenBackup(AT))).toBeUndefined();

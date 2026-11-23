@@ -4,10 +4,14 @@
 //
 // - Daily: at the first idle minute after 03:00 local time, or at start when the last daily backup
 //   is older than 24 hours.
+// - NEWEST IS THE FURTHEST SAVED WORK (list.ts compareNewest): the later incarnation, then the later
+//   commit, and the clock only between backups of one commit. A clock set back gives later work an
+//   earlier date, so a date never decides which of two backups holds more.
 // - Kept: the newest daily backup of each of the 7 most recent local days that have one, the newest
 //   daily backup of each of the 4 most recent local weeks (Monday to Sunday) that have one, and
-//   never the newest complete backup. Only daily backups are ever removed: a manual backup is the
-//   person's, and a pre-migration or pre-import backup may be the last one an older build reads.
+//   always the newest complete backup, whatever its date. Only daily backups are ever removed: a
+//   manual backup is the person's, and a pre-migration or pre-import backup may be the last one an
+//   older build reads.
 // - Only complete backups (state "ok") of THIS space take part. A backups folder can hold another
 //   space's backups (a machine-local backup.dir set to one folder twice): those are neither kept,
 //   removed nor counted. A backup the listing could not verify is never removed here: a person
@@ -22,8 +26,8 @@
 //   and only while the sidecar still reads as listed and the data still has its size and SHA-256.
 // - A backup dated after `now` (a clock that once ran ahead) is kept, and counts for nothing: it is
 //   not the last daily backup (it would hold back every daily backup until the clock caught up),
-//   nor the newest backup, nor the newest of its day or week, nor the newest verified one (it would
-//   take those places, and every backup made since the clock came back would be removed).
+//   nor one of the most recent days or weeks (it would take their places, and every backup made
+//   since the clock came back would be removed), nor the newest verified one.
 //
 // Local time is the UTC offset the caller passes for `now`, so the result is the same on every
 // machine for the same inputs. Across a daylight-saving change a day boundary moves by the change.
@@ -34,7 +38,13 @@ import { isDeepStrictEqual } from "node:util";
 import { fsyncFolder } from "../files.ts";
 import type { Id } from "../ids.ts";
 import type { CheckedDriver } from "../startup-check.ts";
-import { verifyBackup, type BackupListing, type ListedBackup, type VerifyOptions } from "./list.ts";
+import {
+  newestFirst,
+  verifyBackup,
+  type BackupListing,
+  type ListedBackup,
+  type VerifyOptions,
+} from "./list.ts";
 import { BUNDLE_POLICY, type BundlePolicy } from "./policy.ts";
 import { DATA_SUFFIX, readSidecar, SIDECAR_SUFFIX } from "./sidecar.ts";
 
@@ -79,11 +89,9 @@ export function lastLocalHour(clock: LocalClock, hour: number): number {
 
 const createdAt = (b: ListedBackup): number => b.sidecar?.created_at ?? 0;
 
-/** The complete backups of the space `spaceId`, newest first. */
+/** The complete backups of the space `spaceId`, newest first (list.ts compareNewest). */
 const complete = (listing: BackupListing, spaceId: Id<"sp">): ListedBackup[] =>
-  listing.backups
-    .filter((b) => b.state === "ok" && b.sidecar?.space_id === spaceId)
-    .sort((a, b) => createdAt(b) - createdAt(a));
+  newestFirst(listing.backups.filter((b) => b.state === "ok" && b.sidecar?.space_id === spaceId));
 
 /**
  * Whether a daily backup is due. `atStart` is the service's start: then a daily backup older than
@@ -123,27 +131,27 @@ export function planRetention(
 ): RetentionPlan {
   const rules = options.rules ?? RETENTION;
   const all = complete(listing, options.spaceId);
-  // A backup dated after now is kept and counts for nothing: it would take the newest place and
-  // the newest days and weeks, and every backup made since the clock came back would go.
+  // A backup dated after now is kept and counts for nothing: it would take the most recent days
+  // and weeks, and every backup made since the clock came back would go.
   const ahead = all.filter((b) => createdAt(b) > clock.now).map((b) => b.name);
   const backups = all.filter((b) => createdAt(b) <= clock.now);
   const keep = new Set<string>(ahead);
   const newest = backups[0];
   if (newest !== undefined) keep.add(newest.name);
   const offset = clock.utcOffsetMinutes;
-  const pickNewestPer = (bucket: (ms: number) => number, count: number): void => {
-    const seen = new Set<number>();
-    for (const b of backups) {
-      if (b.sidecar?.kind !== "daily") continue;
-      const key = bucket(createdAt(b));
-      if (seen.has(key)) continue;
-      if (seen.size >= count) break;
-      seen.add(key);
-      keep.add(b.name);
+  const dailies = backups.filter((b) => b.sidecar?.kind === "daily");
+  // The most recent `count` local days or weeks by date, and in each the newest by work.
+  const keepNewestPer = (bucket: (ms: number) => number, count: number): void => {
+    const recent = [...new Set(dailies.map((b) => bucket(createdAt(b))))]
+      .sort((a, b) => b - a)
+      .slice(0, count);
+    for (const key of recent) {
+      const first = dailies.find((b) => bucket(createdAt(b)) === key);
+      if (first !== undefined) keep.add(first.name);
     }
   };
-  pickNewestPer((ms) => localDay(ms, offset), rules.daily);
-  pickNewestPer((ms) => localWeek(ms, offset), rules.weekly);
+  keepNewestPer((ms) => localDay(ms, offset), rules.daily);
+  keepNewestPer((ms) => localWeek(ms, offset), rules.weekly);
   for (const b of backups) if (b.sidecar?.kind !== "daily") keep.add(b.name);
   return {
     spaceId: options.spaceId,

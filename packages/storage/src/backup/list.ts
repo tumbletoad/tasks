@@ -52,6 +52,10 @@ export interface ListedBackup {
   name: string;
   /** When the backup began, by its name: known also when its sidecar is not. */
   createdAt: number;
+  /** The epoch of the incarnation it holds, by its name. */
+  epoch: number;
+  /** The last commit it holds, by its name. */
+  seq: number;
   /** The `.db.gz` file (it may be missing: see `state`). */
   file: string;
   sidecarFile: string;
@@ -62,7 +66,7 @@ export interface ListedBackup {
 
 export interface BackupListing {
   folder: string;
-  /** Newest first, by the time each backup began. */
+  /** Newest first (newestFirst). */
   backups: ListedBackup[];
   /** Names of a backup's temporary files: a crash left them, or a backup is writing them now. */
   leftovers: string[];
@@ -76,6 +80,29 @@ function readFolder(folder: string): Dirent[] {
     throw fsError(error);
   }
 }
+
+/**
+ * Orders backups newest first by the work they hold, never by the clock alone: a later
+ * incarnation (each claim and restore in place takes an epoch above every one the machine knows),
+ * then within one the later commit, and only for the same commit the later time. A clock set back
+ * between two backups gives the later work the earlier time, and it is still the newer one.
+ */
+export function compareNewest(
+  a: Pick<ListedBackup, "name" | "createdAt" | "epoch" | "seq">,
+  b: Pick<ListedBackup, "name" | "createdAt" | "epoch" | "seq">,
+): number {
+  return (
+    b.epoch - a.epoch ||
+    b.seq - a.seq ||
+    b.createdAt - a.createdAt ||
+    (a.name < b.name ? 1 : a.name > b.name ? -1 : 0)
+  );
+}
+
+/** `backups` newest first (compareNewest), as a new array. */
+export const newestFirst = <T extends Pick<ListedBackup, "name" | "createdAt" | "epoch" | "seq">>(
+  backups: readonly T[],
+): T[] => [...backups].sort(compareNewest);
 
 /** What is at `path`, without following a link. */
 const look = (path: string): Stats | undefined =>
@@ -109,7 +136,14 @@ export function listBackups(
     const file = join(backupDir, `${base}${DATA_SUFFIX}`);
     const sidecarFile = join(backupDir, `${base}${SIDECAR_SUFFIX}`);
     const data = look(file);
-    const listed = { name: base, createdAt: parts.createdAt, file, sidecarFile };
+    const listed = {
+      name: base,
+      createdAt: parts.createdAt,
+      epoch: parts.epoch,
+      seq: parts.seq,
+      file,
+      sidecarFile,
+    };
     if (look(sidecarFile) === undefined) {
       // No sidecar under any name the file system matches.
       if (data?.isFile() === true) {
@@ -126,10 +160,11 @@ export function listBackups(
     else state = data.size === sidecar.compressed_size ? "ok" : "size_mismatch";
     backups.push({ ...listed, state, sidecar });
   }
-  backups.sort(
-    (a, b) => b.createdAt - a.createdAt || (a.name < b.name ? 1 : a.name > b.name ? -1 : 0),
-  );
-  return { folder: backupDir, backups, leftovers: leftovers.sort() };
+  return {
+    folder: backupDir,
+    backups: newestFirst(backups),
+    leftovers: leftovers.sort(),
+  };
 }
 
 /** How long a leftover stays untouched before it is removed: younger, it may be in progress. */

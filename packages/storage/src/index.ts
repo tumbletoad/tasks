@@ -203,7 +203,9 @@ export {
   type SpaceBackupOptions,
 } from "./backup/backup.ts";
 export {
+  compareNewest,
   listBackups,
+  newestFirst,
   removeBackupLeftovers,
   verifyBackup,
   type BackupListing,

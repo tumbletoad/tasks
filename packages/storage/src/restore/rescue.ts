@@ -3,7 +3,8 @@
 //
 // - restoreLatest: `ttasks space restore latest --to <folder>` restores the newest complete backup
 //   of the space that restores into a new folder, as a read-only copy. The candidates are
-//   restored directly, newest first: a restore checks its backup in full and runs its first write
+//   restored directly, newest first by the work they hold (backup/list.ts compareNewest), never by
+//   the clock alone: a restore checks its backup in full and runs its first write
 //   (restore.ts), so a newer one that does not restore, or that went away before the restore held
 //   its files (retention, the person), is skipped and kept, never removed, and nothing is unpacked
 //   twice.

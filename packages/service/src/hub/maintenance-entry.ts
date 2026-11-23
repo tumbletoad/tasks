@@ -7,6 +7,7 @@ import {
   backupSpace,
   backupsFolder,
   CheckedDriver,
+  compareNewest,
   dailyBackupDue,
   DEFAULT_DRIVER,
   listBackups,
@@ -52,10 +53,11 @@ try {
           planRetention(listing, after, { spaceId: job.spaceId }),
         )
       : undefined;
-  const verifiedAt =
+  const verified =
     retention?.verified === undefined
       ? undefined
-      : listing.backups.find((b) => b.name === retention.verified)?.sidecar?.created_at;
+      : listing.backups.find((b) => b.name === retention.verified);
+  const verifiedAt = verified?.sidecar?.created_at;
   // Backups of the space newer than the one that restores whose files are no longer whole (data
   // missing or of another size, a sidecar missing or unreadable): retention passes them over, and
   // they do not restore either. One without a sidecar that reads names no space: in the space's own
@@ -68,7 +70,7 @@ try {
           (b) =>
             b.state !== "ok" &&
             (b.sidecar === undefined ? ownFolder : b.sidecar.space_id === job.spaceId) &&
-            b.createdAt > (verifiedAt ?? 0) &&
+            (verified === undefined || compareNewest(b, verified) < 0) &&
             b.createdAt <= after.now,
         ).length;
   reply({

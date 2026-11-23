@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { backupSpace, backupSpaceWith } from "../src/backup/backup.ts";
 import {
   listBackups,
+  newestFirst,
   verifyBackup,
   type BackupListing,
   type ListedBackup,
@@ -51,22 +52,31 @@ const NEWEST_ONLY: RetentionRules = { daily: 1, weekly: 1, dailyHour: 3 };
 const SPACE: Id<"sp"> = "sp_7c0hq2m4w9d8k1r6t3v5x0b2nf";
 const OTHER_SPACE: Id<"sp"> = "sp_2b8n4c6x0v1m3q5w7e9r0t2y4u";
 
+/** Where a backup stands in its space's history: its incarnation's epoch and its last commit. */
+interface Work {
+  epoch?: number;
+  seq?: number;
+}
+
 function listed(
   kind: BackupKind,
   createdAt: number,
   state: ListedBackup["state"] = "ok",
   spaceId: Id<"sp"> = SPACE,
+  work: Work = {},
 ): ListedBackup {
   // Two spaces' backups can share a folder: the seq tells their names apart in these listings.
-  const name = backupName({ kind, createdAt, epoch: 1, seq: spaceId === SPACE ? 0 : 1 });
+  const epoch = work.epoch ?? 1;
+  const seq = work.seq ?? (spaceId === SPACE ? 0 : 1);
+  const name = backupName({ kind, createdAt, epoch, seq });
   const sidecar: BackupSidecar = {
     [SIDECAR_MARKER]: 1,
     kind,
     created_at: createdAt,
     space_id: spaceId,
-    epoch: 1,
-    incarnation: "ai_5n0w8k3q7d1m9x4r2t6v0b8c3h",
-    seq: 0,
+    epoch,
+    incarnation: epoch === 1 ? "ai_5n0w8k3q7d1m9x4r2t6v0b8c3h" : "ai_5d2m5q9w1x7k3r0t4v6b8c2n5h",
+    seq,
     user_version: 1,
     size: 4096,
     sha256: "0".repeat(64),
@@ -75,7 +85,16 @@ function listed(
     counts: {},
     written_by: "0.0.0",
   };
-  return { name, createdAt, file: `${name}.db.gz`, sidecarFile: `${name}.json`, state, sidecar };
+  return {
+    name,
+    createdAt,
+    epoch,
+    seq,
+    file: `${name}.db.gz`,
+    sidecarFile: `${name}.json`,
+    state,
+    sidecar,
+  };
 }
 
 const listing = (backups: ListedBackup[]): BackupListing => ({
@@ -418,27 +437,115 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
   });
 });
 
+describe("[A1.5.backup.newest-work] the newest backup is the one that holds the furthest saved work", () => {
+  test("after the clock was set back an hour, the later commit is the newest, and its day keeps it", () => {
+    // A daily at noon, three commits, the clock set back an hour, another daily.
+    const noon = listed("daily", WED + 12 * HOUR, "ok", SPACE, { seq: 0 });
+    const later = listed("daily", WED + 11 * HOUR, "ok", SPACE, { seq: 3 });
+    const clock = { now: WED + 13 * HOUR, utcOffsetMinutes: 0 };
+    for (const rules of [NEWEST_ONLY, undefined]) {
+      const plan = planRetention(listing([noon, later]), clock, {
+        spaceId: SPACE,
+        ...(rules === undefined ? {} : { rules }),
+      });
+      expect(plan.keep).toEqual([later.name]);
+      expect(plan.remove).toEqual([noon.name]);
+    }
+  });
+
+  test("the backup that holds the furthest commit stays whatever its date, and each day and week keeps its furthest work", () => {
+    const now = WED + 12 * HOUR;
+    // Ten days of dailies, then the clock set back by weeks for the last one.
+    const days = Array.from({ length: 10 }, (_, i) =>
+      listed("daily", now - (i + 1) * DAY, "ok", SPACE, { seq: 20 - i }),
+    );
+    const furthest = listed("daily", now - 40 * DAY, "ok", SPACE, { seq: 30 });
+    // Yesterday again, earlier on the clock and later in the work.
+    const yesterday = listed("daily", now - DAY - HOUR, "ok", SPACE, { seq: 21 });
+    const plan = planRetention(
+      listing([...days, furthest, yesterday]),
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: SPACE },
+    );
+    expect(plan.keep).toContain(furthest.name);
+    expect(plan.keep).toContain(yesterday.name);
+    expect(plan.remove).toContain(days[0]?.name);
+  });
+
+  test("a later incarnation's backup is newer than an earlier incarnation's, whatever their commits and dates", () => {
+    const now = WED + 12 * HOUR;
+    // Restored in place from an older backup (a new epoch), with the clock set back meanwhile.
+    const before = listed("daily", now - 2 * HOUR, "ok", SPACE, { epoch: 1, seq: 50 });
+    const restored = listed("daily", now - 3 * HOUR, "ok", SPACE, { epoch: 2, seq: 12 });
+    const plan = planRetention(
+      listing([before, restored]),
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: SPACE, rules: NEWEST_ONLY },
+    );
+    expect(plan.keep).toEqual([restored.name]);
+    expect(newestFirst(listing([before, restored]).backups).map((b) => b.name)).toEqual([
+      restored.name,
+      before.name,
+    ]);
+  });
+
+  test("on real files, the backup with the later commit is the newest that restores, and retention keeps it", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const noon = WED + 12 * HOUR;
+    const first = await backupSpace(checked, folder, { kind: "daily", now: () => noon });
+    await writeCommits(folder, 3);
+    const later = await backupSpace(checked, folder, { kind: "daily", now: () => noon - HOUR });
+    expect(later.sidecar.seq).toBeGreaterThan(first.sidecar.seq);
+    const listed = listBackups(dir);
+    expect(listed.backups.map((b) => b.name)).toEqual([later.name, first.name]);
+    const { backup } = await restoreLatest(
+      checked,
+      dir,
+      space.spaceId,
+      join(folders.make(), "copy"),
+    );
+    expect(backup).toBe(later.name);
+    const clock = { now: noon + HOUR, utcOffsetMinutes: 0 };
+    const applied = await applyRetention(
+      checked,
+      listed,
+      planRetention(listed, clock, { spaceId: space.spaceId }),
+    );
+    expect(applied).toMatchObject({ verified: later.name, removed: [first.name] });
+    expect(existsSync(later.file) && existsSync(later.sidecarFile)).toBe(true);
+  });
+});
+
 describe("[A1.5.backup.rotation] rotation removes only what A1's retention allows", () => {
   const KINDS: BackupKind[] = ["daily", "manual", "pre-migrate"];
   const STATES: ListedBackup["state"][] = ["ok", "ok", "ok", "missing_data", "invalid_sidecar"];
 
-  test("property: a plan removes only daily backups, never the newest complete one, another space's or a damaged one", () => {
+  test("property: a plan removes only daily backups, never the one with the furthest saved work, another space's or a damaged one", () => {
     const backup = fc.record({
       kind: fc.constantFrom(...KINDS),
       // From two days ahead (a clock that ran ahead) to over a year back, in minutes.
       age: fc.integer({ min: -2 * 24 * 60, max: 400 * 24 * 60 }),
       state: fc.constantFrom(...STATES),
       other: fc.boolean(),
+      // The last commit each holds: a clock set back makes it run against the dates.
+      seq: fc.integer({ min: 0, max: 3 }),
     });
     fc.assert(
       fc.property(
-        fc.uniqueArray(backup, { maxLength: 60, selector: (b) => `${b.kind}${String(b.age)}` }),
+        fc.uniqueArray(backup, {
+          maxLength: 60,
+          selector: (b) => `${b.kind}${String(b.age)}s${String(b.seq)}`,
+        }),
         fc.integer({ min: -720, max: 840 }),
         fc.integer({ min: 0, max: 7 * 24 * 60 }),
         (drawn, offset, shift) => {
           const now = WED + shift * 60_000;
           const all = drawn.map((b) =>
-            listed(b.kind, now - b.age * 60_000, b.state, b.other ? OTHER_SPACE : SPACE),
+            listed(b.kind, now - b.age * 60_000, b.state, b.other ? OTHER_SPACE : SPACE, {
+              seq: b.seq,
+            }),
           );
           const plan = planRetention(
             listing(all),
@@ -455,9 +562,10 @@ describe("[A1.5.backup.rotation] rotation removes only what A1's retention allow
           for (const b of complete) {
             if (removed.has(b.name)) expect(b.sidecar?.kind).toBe("daily");
           }
-          const newest = [...complete].sort(
-            (a, b) => (b.sidecar?.created_at ?? 0) - (a.sidecar?.created_at ?? 0),
-          )[0];
+          // The newest is the furthest saved work: the later commit, then the later time.
+          const furthest = (backups: ListedBackup[]) =>
+            [...backups].sort((a, b) => b.seq - a.seq || b.createdAt - a.createdAt)[0];
+          const newest = furthest(complete);
           if (newest !== undefined) expect(removed.has(newest.name)).toBe(false);
           // A backup dated after now (a clock that ran ahead) is kept, and so is the newest one
           // dated at or before now: the future one counts for nothing.
@@ -465,9 +573,7 @@ describe("[A1.5.backup.rotation] rotation removes only what A1's retention allow
           for (const b of complete) {
             if ((b.sidecar?.created_at ?? 0) > now) expect(removed.has(b.name)).toBe(false);
           }
-          const newestPast = [...past].sort(
-            (a, b) => (b.sidecar?.created_at ?? 0) - (a.sidecar?.created_at ?? 0),
-          )[0];
+          const newestPast = furthest(past);
           if (newestPast !== undefined) expect(removed.has(newestPast.name)).toBe(false);
         },
       ),

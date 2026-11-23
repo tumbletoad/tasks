@@ -6,9 +6,19 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
-import { backupsFolder, createSpace, listBackups, newId, type Id } from "@ttasks/storage";
+import {
+  backupSpace,
+  backupsFolder,
+  createSpace,
+  listBackups,
+  newId,
+  type Id,
+} from "@ttasks/storage";
 import { checkedDriver } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
+import { writeCommits } from "../../storage/test/backup-helpers.ts";
+import { FIXTURE_MACHINE } from "../../storage/test/fixture-requests.ts";
+import { Maintenance } from "../src/hub/maintenance.ts";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import {
   readLog,
@@ -223,6 +233,68 @@ describe("[A1.5.backup.own-folder] the daily backup goes to the folder this mach
       const daily = listBackups(elsewhere).backups.filter((b) => b.sidecar?.kind === "daily");
       expect(daily.map((b) => b.sidecar?.space_id)).toEqual([work.space.spaceId]);
       expect(existsSync(backupsFolder(work.folder))).toBe(false);
+    },
+    SLOW,
+  );
+});
+
+const HOUR = 3_600_000;
+
+/** Minutes east of UTC that make `now` local noon, so no daily hour falls inside a test. */
+const noonAt = (now: number): number => {
+  const utcMinutes = Math.floor((now % 86_400_000) / 60_000);
+  return ((((12 * 60 - utcMinutes) % 1440) + 1440 + 720) % 1440) - 720;
+};
+
+describe("[A1.5.backup.newest-work] the newest backup is the one that holds the furthest saved work", () => {
+  test(
+    "after the clock was set back, restore latest takes the backup with the later commits, and the upkeep keeps it",
+    async () => {
+      // The machine the fixture commits are written as.
+      const machine = FIXTURE_MACHINE.id;
+      const { home, spaces } = setUp("clock-back", machine);
+      const work = await fixtureSpace(join(spaces, "work"), machine);
+      const checked = await checkedDriver();
+      const now = Date.now();
+      // A daily backup, three commits, the clock set back an hour, another daily backup.
+      const first = await backupSpace(checked, work.folder, {
+        kind: "daily",
+        now: () => now - 2 * HOUR,
+      });
+      await writeCommits(work.folder, 3);
+      const later = await backupSpace(checked, work.folder, {
+        kind: "daily",
+        now: () => now - 3 * HOUR,
+      });
+      expect(later.sidecar.seq).toBeGreaterThan(first.sidecar.seq);
+
+      const { user } = await start(home, [work.folder]);
+      const restored = await call(user, "space/restore", {
+        backup: "latest",
+        of: work.folder,
+        to: join(spaces, "copy"),
+      });
+      expect(restored["backup"]).toBe(later.name);
+
+      const runner = new Maintenance();
+      try {
+        const report = await runner.run({
+          folder: work.folder,
+          spaceId: work.space.spaceId,
+          cleanup: true,
+          atStart: true,
+          now,
+          utcOffsetMinutes: noonAt(now),
+        });
+        expect(report).toMatchObject({
+          checked: true,
+          unverified: 0,
+          verifiedAt: later.sidecar.created_at,
+        });
+      } finally {
+        await runner.stop();
+      }
+      expect(existsSync(later.file) && existsSync(later.sidecarFile)).toBe(true);
     },
     SLOW,
   );
