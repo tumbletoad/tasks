@@ -242,7 +242,9 @@ test.describe("[A5.trash.e2e.title] A title being typed stays through a removal"
     // Restored: the words come back in the title's editor, unsent.
     const status = (await world.op(space, "space.status", {})) as { as_of: string };
     await world.op(space, "task.delete", { tasks: [ref], restore: true, base: status.as_of });
-    await openTask(page, world, ref);
+    // The card opens in its title's editor, so it is opened by its link, not by its title button.
+    await page.goto(`${world.origin}/s/${space}/task/${ref}`);
+    await showsSpace(page, world.mira.name);
     await expect(rowOf(page, ref).getByRole("textbox", { name: "Title" })).toHaveValue(typed, {
       timeout: SLOW_MS,
     });
