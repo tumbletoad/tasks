@@ -14,6 +14,7 @@ import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
 import type { BatchMessage, SnapshotMessage, TaskRow } from "../store/rows.ts";
 import { Thread } from "../task/Thread.tsx";
+import { keepTitleDraft, readTitleDraft } from "../unsent.ts";
 import type { DetailLog } from "../task/detail.ts";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
@@ -590,6 +591,23 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     } finally {
       localStorage.removeItem(name);
     }
+  });
+
+  test("a title a reload brought back whose save was on its way: when the title arrives as those words, the editor closes and lets them go", async () => {
+    localStorage.clear();
+    keepTitleDraft(SPACE.id, "t_00001", { typed: "Task 1, fixed", title: "Task 1" });
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot([task(1)]));
+    expand("t_00001");
+    await settle();
+    const field = () =>
+      container.querySelector<HTMLInputElement>('li[data-key="t_00001"] [data-part="title-edit"]');
+    expect(field()?.value).toBe("Task 1, fixed");
+    apply(batch(11, [task(1, { title: "Task 1, fixed", version: 2 })], ["title"]));
+    await settle();
+    expect(field()).toBeNull();
+    expect(readTitleDraft(SPACE.id, "t_00001")).toBeUndefined();
+    expect(updates).toEqual([]);
   });
 
   test("a title being typed is saved when the view changes under the person", () => {

@@ -340,6 +340,16 @@ function TitleEditor({
     };
   });
   const before = opened.title;
+  // Words a reload brought back whose save was still on its way: when the title arrives as them,
+  // and the person has not typed since, they are saved, and the editor that held them closes.
+  useEffect(() => {
+    const words = opened.typed;
+    if (words === undefined || done.current || task.title !== words.trim()) return;
+    if (field.current?.value !== words) return;
+    done.current = true;
+    letGo(space, { kind: "title", task: task.id, text: words });
+    onDone();
+  }, [task.title, task.id, opened, space, onDone]);
   /** What the person typed, for a save when the editor goes away under them. */
   const typed = useRef<string | undefined>(undefined);
   const latest = useRef(task);
