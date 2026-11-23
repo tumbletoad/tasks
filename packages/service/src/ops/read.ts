@@ -838,24 +838,22 @@ export async function readRunRows(
 }
 
 /**
- * This machine's open runs that the space's current authority did not make: recorded before its
- * claim (`authority_since`), so a claim or a restore in place brought them back from a backup.
+ * The open runs that the space's current authority did not make: recorded before its claim
+ * (`authority_since`), so a claim or a restore in place brought them back from a backup, whichever
+ * machine made them.
  */
 const RUNS_RESTORED: Statement = {
   sql:
-    "SELECT r.id FROM runs r, space s WHERE s.one = 1 AND r.machine_id = $machine " +
+    "SELECT r.id FROM runs r, space s WHERE s.one = 1 " +
     "AND r.created_seq < s.authority_since AND (r.state IN ('queued','starting','running'," +
     "'waiting_for_input','cancelling','reconciling') " +
     "OR (r.state = 'unknown' AND r.reason = 'stop_timed_out'))",
   mode: "all",
 };
 
-/** The IDs of RUNS_RESTORED: open runs of `machine` a claim or a restore brought back. */
-export async function readRestoredRuns(
-  reader: WorkerConnection,
-  machine: string,
-): Promise<Set<string>> {
-  const [rows] = await snapshot(reader, [RUNS_RESTORED], { machine });
+/** The IDs of RUNS_RESTORED: open runs a claim or a restore brought back. */
+export async function readRestoredRuns(reader: WorkerConnection): Promise<Set<string>> {
+  const [rows] = await snapshot(reader, [RUNS_RESTORED]);
   return new Set(
     (rows as Row[]).flatMap((row) => (typeof row["id"] === "string" ? [row["id"]] : [])),
   );

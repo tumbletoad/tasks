@@ -887,7 +887,7 @@ export class RunService {
     if (closed()) throw new Error("The space's host was closed");
     const reader = served.reader;
     if (reader === undefined) throw new Error("The space has no reader");
-    await host.recover(await readRestoredRuns(reader, id));
+    await host.recover(await readRestoredRuns(reader));
     if (closed()) throw new Error("The space's host was closed");
     this.#lanes.set(space, { space, machine, host });
     return { host, machine };

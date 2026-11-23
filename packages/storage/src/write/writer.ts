@@ -2071,7 +2071,15 @@ export class SpaceWriter {
           if (!draftRuns.has(op.run)) {
             const row = conn.prepare(RUN_SQL.run).get({ id: op.run });
             if (row === undefined) return problem("NOT_FOUND", "No run has this ID", i, "run");
-            if (row["machine_id"] !== request.actor.machine_id) {
+            // A run a claim or a restore in place brought back from a backup runs nowhere now: the
+            // machine that holds the space settles it, whichever machine made it.
+            const restored =
+              Number(row["created_seq"]) <
+              Number(conn.prepare(SQL.space).get()?.["authority_since"]);
+            const settles =
+              op.next === "reconciling" ||
+              (FINAL_RUN_STATES as readonly RunState[]).includes(op.next);
+            if (row["machine_id"] !== request.actor.machine_id && !(restored && settles)) {
               problem(
                 "VALIDATION_FAILED",
                 "A run moves only on the machine that runs it",

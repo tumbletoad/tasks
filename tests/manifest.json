@@ -1725,7 +1725,7 @@
     },
     {
       "id": "A4.3.11.9.run.restored",
-      "title": "The runs a backup held open, working or queued, are settled as interrupted by the restore after a claim of the copy and after a restore in place, and none of them starts, also one the person had stopped since; a restored copy that is not claimed lists and shows them as recorded, with nothing the machine knows of them now; the runs the claimed space queued itself are recovered and tried over a restart as before",
+      "title": "The runs a backup held open, working or queued, are settled as interrupted by the restore after a claim of the copy, also a claim under another machine's identity, and after a restore in place, and none of them starts, also one the person had stopped since; a restored copy that is not claimed lists and shows them as recorded, with nothing the machine knows of them now; the runs the claimed space queued itself are recovered and tried over a restart as before",
       "source": "A4 3.11.9, A1 3.18",
       "owner": "M6",
       "kind": "ci",

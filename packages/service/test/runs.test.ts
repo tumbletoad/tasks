@@ -730,6 +730,46 @@ describe("[A4.3.11.9.run.restored] the runs a backup held open never start or go
     user.close();
   }, 120_000);
 
+  test("a backup claimed under another machine's identity settles the runs the first machine left open as restored and starts none", async () => {
+    const w = await backedUpRuns("runs-elsewhere");
+    const { user, spaceId } = w;
+    await user.call("space/close", { space: w.folder }, { timeoutMs: 60_000 });
+    const copy = join(w.root, "spaces", "mira-copy");
+    await user.call(
+      "space/restore",
+      { backup: w.backup, to: copy, of: w.folder },
+      { timeoutMs: 60_000 },
+    );
+    user.close();
+    await w.service.stop();
+    // The service starts again as another machine, which claims the copy.
+    writeFileSync(
+      join(stateOf(w.home), "machine.json"),
+      JSON.stringify({
+        machine_id: newId("m"),
+        name: "fixture-other-machine",
+        created_at: "2026-11-16T08:00:00.000Z",
+      }),
+      { mode: 0o600 },
+    );
+    const other = await start(w.home, { containers: w.boxes.containers });
+    const person = await classSession(w.home, other.endpoint.path, "cli-interactive");
+    const before = w.boxes.started.length;
+    await person.call("space/claim", { space: copy }, { timeoutMs: 60_000 });
+    await other.runs.tick();
+    await other.runs.tick();
+    expect(await other.runs.read(spaceId, w.queued.id)).toMatchObject({
+      state: "failed",
+      reason: "restored",
+    });
+    expect(await other.runs.read(spaceId, w.working.id)).toMatchObject({
+      state: "failed",
+      reason: "restored",
+    });
+    expect(w.boxes.started.length).toBe(before);
+    person.close();
+  }, 120_000);
+
   test("a restore in place settles the backup's working and queued runs as restored and starts neither", async () => {
     const w = await backedUpRuns("runs-in-place");
     const { service, user, spaceId } = w;

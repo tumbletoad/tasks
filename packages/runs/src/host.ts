@@ -406,24 +406,29 @@ export class RunHost {
    * cannot be confirmed is `unknown`. Queued runs stay queued.
    *
    * `restored`: the open runs a claim or a restore in place brought back from a backup. None of
-   * them starts or goes on: a queued one fails `restored` at once, any other once its container is
-   * confirmed empty (`cancelled` after an accepted Stop). Returns the runs it looked at.
+   * them starts or goes on: a queued one fails `restored` at once, any other of this machine once
+   * its container is confirmed empty (`cancelled` after an accepted Stop). One another machine
+   * made is settled `restored` at once: nothing of it runs here to stop. Returns the runs it looked
+   * at.
    */
   async recover(restored: ReadonlySet<string> = new Set()): Promise<RunRecord[]> {
     const open = await this.#machine.open();
+    const own = new Set(open.map((run) => run.id));
     const looked = open.filter(
       (run) => (run.state !== "queued" || restored.has(run.id)) && !this.#flows.has(run.id),
     );
-    const settled = await Promise.all(
-      looked.map((run) =>
+    const elsewhere = [...restored].filter((id) => !own.has(id));
+    const settled = await Promise.all([
+      ...looked.map((run) =>
         !restored.has(run.id)
           ? this.#reconcile(run)
           : run.state === "queued"
             ? this.#settle(run.id, RESTORED)
             : this.#reconcile(run, RESTORED),
       ),
-    );
-    this.#log("run.recovered", { runs: looked.length });
+      ...elsewhere.map((id) => this.#settle(id, RESTORED)),
+    ]);
+    this.#log("run.recovered", { runs: looked.length + elsewhere.length });
     return settled.flatMap((run) => (run === undefined ? [] : [run]));
   }
 
