@@ -160,6 +160,7 @@ test.describe("[A2.3.10.5.copies.e2e] a restored copy on the page is the copy th
     const where = await restored.locator('[data-part="folder"]').allTextContents();
     expect(where).toHaveLength(count);
     expect(new Set(where).size).toBe(count);
+    await shots(page, "copies-told-apart");
     await page.keyboard.press("Escape");
     // From here on one restored copy is open beside the original: once the original closes, the
     // space's ID means that copy and no other.
@@ -176,8 +177,19 @@ test.describe("[A2.3.10.5.copies.e2e] a restored copy on the page is the copy th
     await expect(runState(ref)).toContainText("is working on it", { timeout: SLOW_MS });
     await runs(ref).first().getByRole("button", { name: /^Stop/u }).click();
     await expect(toast).toHaveText("Not stopped: this is a restored copy.");
+    await shots(page, "copy-stop-refused");
     await run(ref).click();
     await expect(toast).toHaveText("Nothing was started: this is a restored copy.");
+    // Open and Copy say the same, with no Try again.
+    const strip = row(ref).getByRole("toolbar", { name: "Act on this task" });
+    await strip
+      .getByRole("button", { name: /^Open in / })
+      .first()
+      .click();
+    await expect(toast).toHaveText("Nothing was opened: this is a restored copy.");
+    await strip.getByRole("button", { name: /^Copy / }).click();
+    await expect(toast).toHaveText("No brief was made: this is a restored copy.");
+    await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
     await expect(runs(ref)).toHaveCount(1);
     await openTask(page, world, ref);
     await expect(runs(ref)).toHaveCount(1);
@@ -214,6 +226,7 @@ test.describe("[A2.3.10.5.copies.e2e] a restored copy on the page is the copy th
         timeout: SLOW_MS,
       });
       await expect(page.locator(`main a[href="/s/${copy}/today"]`)).toBeVisible();
+      await shots(page, "copy-original-not-open");
     } finally {
       await world.space("open", { path: own });
     }
@@ -221,8 +234,32 @@ test.describe("[A2.3.10.5.copies.e2e] a restored copy on the page is the copy th
     await expect(row(only).locator('[data-part="composer"]')).toHaveValue(words, {
       timeout: SLOW_MS,
     });
+
+    // The original closes again, and the copy is claimed: the copy's tab says it is the space now
+    // and goes no further, and its link opens it as the space, where it takes changes.
+    await signIn(page, world, `/s/${copy}/today`);
+    await showsSpace(page, `${world.mira.name}, ${COPY}`);
+    await world.space("close", { space: own });
+    await world.space("claim", { space: folder });
+    const claimed = page.locator('[data-part="claimed"]');
+    await expect(claimed).toContainText("This restored copy was claimed", { timeout: SLOW_MS });
+    await shots(page, "copy-claimed");
+    await claimed.getByRole("link", { name: "Open it" }).click();
+    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/`, "u"));
+    await showsSpace(page, world.mira.name);
+    await expect(page.locator('[data-part="read-only"]')).toHaveCount(0);
   });
 });
+
+/** Pictures of the page as it is, at 1,440 and 390 px wide, with no sideways scroll at either. */
+async function shots(page: Page, name: string): Promise<void> {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await sideScroll(page), `sideways scroll at ${String(width)} px`).toBe(0);
+    await picture(page, `${name}-${String(width)}.png`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+}
 
 /** Open folder in the switcher with a restored copy's folder: the tab goes there; its key. */
 async function openFolder(page: Page, world: World, folder: string): Promise<string> {
