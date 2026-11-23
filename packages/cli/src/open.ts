@@ -1,7 +1,9 @@
-// `ttasks open [--space <id or name>] [--task <ref>] [--tab] [--print-url]` (A2 3.9, 3.8.4), and
+// `ttasks open [<space>] [--task <ref>] [--tab] [--print-url]` (A2 3.9, 3.8.4), and
 // `ttasks service port <n> [--reuse [--yes]]` (A2 3.8.2 step 5).
 //
 // `ttasks open`:
+//   0. names its space as every command does (namedSpace: the argument, --space, TTASKS_SPACE),
+//      and settles it to one space's ID by the service's rule before anything opens;
 //   1. connects over the socket and asks for a one-time code (`ui/mint_code`). An agent's shell
 //      (`cli-agent`) may not: "Ask the user to open TTasks". When another user holds or held the
 //      UI's port, the service refuses with A2's message and no code exists;
@@ -26,9 +28,11 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join, win32 } from "node:path";
+import { isAbsolute, join, win32 } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { isAgentMarker, parseKey, rpcContextEnv } from "@ttasks/bridge/protocol";
+import type { ErrorBody } from "@ttasks/contracts";
+import { ambiguousError, findSpace, isAmbiguity } from "@ttasks/service/copies";
 import { IPC_KEY } from "@ttasks/service/paths";
 import { movedMessage, PROBE_PATH, verifyProbe } from "@ttasks/service/http/shared";
 import type { Globals } from "./args.ts";
@@ -37,16 +41,8 @@ import type { Io } from "./io.ts";
 import { listenerRequest } from "./listener-request.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
 import { refusedArgument, serviceUsage } from "./service.ts";
+import { namedSpace, type SpaceRow } from "./space.ts";
 import { asAppError } from "./verbs.ts";
-
-/** Whether a text holds a control character (C0, DEL). */
-function hasControl(text: string): boolean {
-  for (let i = 0; i < text.length; i += 1) {
-    const code = text.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
 
 /** Opens a URL in the user's browser; false when no opener could. */
 export type OpenUrl = (url: string, io: Io) => Promise<boolean>;
@@ -208,28 +204,74 @@ export const openInBrowser: OpenUrl = async (url, io) => {
 };
 
 /**
- * The page's route for the tab (A5 3.3): `/s/<space>`, and `/task/<ref>` below it for a task; a
+ * The page's route for the tab (A5 3.3): `/s/<space ID>`, and `/task/<ref>` below it for a task; a
  * task without a space is `/task/<ref>`, which the page opens in the machine's default space.
  */
-export function routeOf(
-  space: string | undefined,
-  task: string | undefined,
-  spaces: readonly unknown[],
-): string | undefined {
-  let id = space;
-  if (space !== undefined && !/^sp_/.test(space)) {
-    // A name: the space's ID when exactly one served space has it.
-    const named = spaces.filter(
-      (s): s is { id: string; name: string } =>
-        typeof s === "object" &&
-        s !== null &&
-        typeof (s as { id?: unknown }).id === "string" &&
-        (s as { name?: unknown }).name === space,
-    );
-    if (named.length === 1) id = named[0]?.id;
-  }
+function routeOf(id: string | undefined, task: string | undefined): string | undefined {
   if (id === undefined) return task === undefined ? undefined : `/task/${task}`;
   return task === undefined ? `/s/${id}` : `/s/${id}/task/${task}`;
+}
+
+/**
+ * The ID of the one space `named` means, by the service's own rule (findSpace), among the spaces
+ * it does not hold closed; else the error that says there is none or several, with the spaces to
+ * choose from.
+ */
+async function resolveSpace(
+  session: Session,
+  named: string,
+): Promise<{ readonly id: string } | { readonly error: ErrorBody }> {
+  const listed = (await session.call("space/list", {}, { timeoutMs: 10_000 })) as {
+    spaces: SpaceRow[];
+  };
+  const live = listed.spaces
+    .filter((row) => row.state !== "closed")
+    .map((row) => ({ ...row, id: row.id ?? row.registered }));
+  const found = findSpace(live, named);
+  const choices = (rows: readonly (typeof live)[number][]) => ({
+    spaces: rows.flatMap((row) =>
+      row.id === undefined
+        ? []
+        : [
+            {
+              id: row.id,
+              ...(row.name === undefined ? {} : { name: row.name }),
+              ...(row.folder === undefined ? {} : { folder: row.folder }),
+            },
+          ],
+    ),
+  });
+  if (isAmbiguity(found)) {
+    return {
+      error: {
+        ...ambiguousError(`Name it by its ID or its folder: ${CLI_NAME} open <space>.`).toBody(),
+        data: choices(found.candidates),
+      },
+    };
+  }
+  if (found?.id !== undefined) return { id: found.id };
+  return {
+    error: {
+      code: "not_found",
+      message: isAbsolute(named)
+        ? "The service has no space in that folder."
+        : "The service has no space by that ID or name.",
+      hint: `${CLI_NAME} space list also shows the closed ones.`,
+      data: choices(live),
+    },
+  };
+}
+
+/** An error, and in text the spaces it offers, one a line: name, ID and folder. */
+function printChoices(io: Io, json: boolean, body: ErrorBody): number {
+  const code = printError(io, json, body);
+  const spaces = body.data?.["spaces"];
+  if (!json && Array.isArray(spaces)) {
+    for (const s of spaces as { id: string; name?: string; folder?: string }[]) {
+      io.stderr(`  ${[s.name ?? "(unnamed)", s.id, s.folder].filter(Boolean).join("  ")}\n`);
+    }
+  }
+  return code;
 }
 
 interface Minted {
@@ -261,9 +303,10 @@ export async function openCommand(
   options: OpenOptions,
 ): Promise<number> {
   let task: string | undefined;
+  let given: string | undefined;
   let printUrl = false;
   for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i];
+    const arg = args[i] ?? "";
     if (arg === "--print-url") printUrl = true;
     else if (arg === "--tab") continue;
     else if (arg === "--task") {
@@ -272,26 +315,17 @@ export async function openCommand(
       if (task === undefined || !/^[A-Za-z0-9_-]{1,64}$/.test(task)) {
         return printUsage(io, globals.json, "ttasks open --task takes a task reference");
       }
+    } else if (!arg.startsWith("-") && given === undefined) {
+      given = arg;
     } else {
       return printUsage(
         io,
         globals.json,
-        "ttasks open takes --space, --task, --tab and --print-url",
+        "ttasks open takes one <space>, --space, --task, --tab and --print-url",
       );
     }
   }
-  const space = globals.space;
-  // A folder (either separator) is no space ID or name. The page opens a space folder itself.
-  if (space !== undefined && /[\\/]/u.test(space)) {
-    return printError(io, globals.json, {
-      code: "invalid_input",
-      message: `${CLI_NAME} open --space takes a space ID or name, not a folder.`,
-      hint: `Run ${CLI_NAME} open, then choose Open folder in the page's space list to open that folder.`,
-    });
-  }
-  if (space !== undefined && (space.length > 200 || hasControl(space))) {
-    return printUsage(io, globals.json, "ttasks open --space takes a space ID or name");
-  }
+  const named = namedSpace(io, globals, given);
   let session: Session;
   try {
     session = await connectService(io, options);
@@ -324,6 +358,18 @@ export async function openCommand(
     }
   }
   try {
+    // The space is settled before a code exists: a name that means no space or two opens nothing,
+    // since the page would land on its default and the next edit would go to the wrong list.
+    let space: string | undefined;
+    if (named !== undefined) {
+      try {
+        const resolved = await resolveSpace(session, named);
+        if ("error" in resolved) return printChoices(io, globals.json, resolved.error);
+        space = resolved.id;
+      } catch (error) {
+        return printError(io, globals.json, bodyOf(asAppError(error)));
+      }
+    }
     let minted: Minted | undefined;
     try {
       minted = mintedOf(await session.call("ui/mint_code", {}, { timeoutMs: 10_000 }));
@@ -357,7 +403,7 @@ export async function openCommand(
         data: { reason: "untrusted_endpoint", retryable: false },
       });
     }
-    const to = routeOf(space, task, session.bound.spaces);
+    const to = routeOf(space, task);
     const url =
       `http://127.0.0.1:${String(minted.port)}/#k=${minted.code}` +
       (to === undefined ? "" : `&to=${encodeURIComponent(to)}`);
