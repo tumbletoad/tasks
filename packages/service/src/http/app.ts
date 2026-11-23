@@ -42,7 +42,8 @@ import {
 } from "@ttasks/contracts";
 import { hasControl } from "@ttasks/launch";
 import { WebSocketServer } from "ws";
-import { copyOf, isAmbiguity } from "../ops/copies.ts";
+import { shownPath } from "../hub/agent-apps.ts";
+import { copyOf } from "../ops/copies.ts";
 import { opCall, type OpsHost } from "../ops/index.ts";
 import { isLive, type Grant, type GrantStore } from "../local/index.ts";
 import {
@@ -82,6 +83,14 @@ export const WELL_KNOWN = { app: PRODUCT_ID, protocol: 1 } as const;
 export const SPACE_HEADER = httpHeader("space");
 /** The header that names the UI's build (A2 3.8.3 "Build check"). */
 export const BUILD_HEADER = httpHeader("build");
+/**
+ * The header that names the copy of its space a tab loaded (the feed's `space.copy`): a call is
+ * refused when the space is served from another copy now (ops/copies.ts spaceChanged).
+ */
+export const COPY_HEADER = httpHeader("copy");
+
+/** A copy as the feed names it (hub/spaces.ts copyToken). */
+const COPY = /^[0-9a-f]{24}$/u;
 
 /** A grant store whose writes can be awaited (grants.ts). The in-memory store needs none. */
 export type AppGrants = GrantStore & { flush?(): Promise<void> };
@@ -719,10 +728,15 @@ export class HttpApp {
             });
             return;
           }
+          const copy = headerText(req.headers[COPY_HEADER]);
+          if (copy !== undefined && !COPY.test(copy)) {
+            this.#refuse(res, port, route, 400, "bad_json");
+            return;
+          }
           if (route === "launch") {
             const input = await this.#readBody(req, res);
             const space = headerText(req.headers[SPACE_HEADER]);
-            await this.#launch(res, port, path.slice(LAUNCH_PREFIX.length), input, space);
+            await this.#launch(res, port, path.slice(LAUNCH_PREFIX.length), input, space, copy);
             return;
           }
           if (route === "space") {
@@ -744,7 +758,7 @@ export class HttpApp {
           entry = findEntry(name)?.name;
           const input = await this.#readBody(req, res);
           const space = headerText(req.headers[SPACE_HEADER]);
-          await this.#op(res, port, grant, name, input, space);
+          await this.#op(res, port, grant, name, input, space, copy);
           return;
         }
         default:
@@ -770,6 +784,7 @@ export class HttpApp {
     name: string,
     input: Record<string, unknown>,
     space: string | undefined,
+    copy: string | undefined,
   ): Promise<void> {
     if (space !== undefined && (space.length > 200 || hasControl(space))) {
       this.#refuse(res, port, "op", 400, "bad_json");
@@ -778,7 +793,7 @@ export class HttpApp {
     try {
       const result = await opCall(
         this.options.ops,
-        { class: "ui", env: {}, grant: grant.grant_id },
+        { class: "ui", env: {}, grant: grant.grant_id, ...(copy === undefined ? {} : { copy }) },
         { op: name, input, ...(space === undefined ? {} : { space }) },
       );
       this.#json(res, port, 200, { result });
@@ -806,6 +821,7 @@ export class HttpApp {
     action: string,
     input: Record<string, unknown>,
     space: string | undefined,
+    copy: string | undefined,
   ): Promise<void> {
     if (space !== undefined && (space.length > 200 || hasControl(space))) {
       this.#refuse(res, port, "launch", 400, "bad_json");
@@ -814,16 +830,16 @@ export class HttpApp {
     try {
       const result =
         action === "folder"
-          ? await this.launches.showFolder(space, input)
+          ? await this.launches.showFolder(space, input, copy)
           : action === "run"
-            ? { run: await this.launches.run(space, input) }
+            ? { run: await this.launches.run(space, input, copy) }
             : action === "runs"
-              ? { runs: await this.launches.runs(space, input) }
+              ? { runs: await this.launches.runs(space, input, copy) }
               : action === "stop"
-                ? { run: await this.launches.stop(space, input) }
+                ? { run: await this.launches.stop(space, input, copy) }
                 : action === "busy"
-                  ? { busy: await this.launches.busy(space) }
-                  : { receipts: await this.launches.list(space, input) };
+                  ? { busy: await this.launches.busy(space, copy) }
+                  : { receipts: await this.launches.list(space, input, copy) };
       this.#json(res, port, 200, { result });
     } catch (error) {
       const body: ErrorBody =
@@ -853,14 +869,14 @@ export class HttpApp {
         const all = this.options.ops.spaces().filter((s) => s.state !== "closed");
         const reasonOf = (s: { readonly reason?: string }) =>
           s.reason === undefined ? {} : { reason: s.reason };
-        // One row per space: the page names a space by its ID, which means the copy copies.ts
-        // picks, so a restored copy beside its original is not a second row.
+        // One row per space: the page names a space by its ID, which means the folder that
+        // serves it (copies.ts). A restored copy says so, with its folder and its record.
+        const { home, platform } = this.options.ops;
         const live = all.filter((s) => s.id !== undefined);
         const spaces = live
           .filter((s, i) => live.findIndex((other) => other.id === s.id) === i)
           .map((first) => {
-            const copy = copyOf(live, first.id ?? "");
-            const s = copy === undefined || isAmbiguity(copy) ? first : copy;
+            const s = copyOf(live, first.id ?? "") ?? first;
             return {
               id: s.id,
               name: s.name ?? "",
@@ -868,6 +884,12 @@ export class HttpApp {
               ...reasonOf(s),
               // An open space whose backups are not working: a fixed word (hub/backup-health.ts).
               ...(s.backup === undefined ? {} : { backup: s.backup }),
+              ...(s.restored === undefined || s.folder === undefined
+                ? {}
+                : {
+                    restored: s.restored,
+                    folder: shownPath(platform ?? process.platform, home, s.folder),
+                  }),
             };
           });
         // A space that never opened has no ID or name yet, but the person must still learn that

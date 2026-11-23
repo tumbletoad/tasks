@@ -37,7 +37,10 @@ import { Session } from "../context.ts";
 import { liveGroups } from "../groups.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { tabKept } from "../kept.ts";
+import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { formatDay } from "../row/dates.ts";
+import { CopyIcon } from "../row/icons.tsx";
+import { sayMsg } from "../row/say.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
 import { actionOf, ariaKeys, isMac, keysOf } from "../keys/keymap.ts";
@@ -165,7 +168,19 @@ function chipLabel(t: Translate, chip: Chip, locale: string): string {
   }
 }
 
-export function TopBar({ space, live }: { readonly space: string; readonly live: boolean }) {
+/**
+ * `live`: the field adds and searches. `ended`: the tab's copy of its space is gone, so nothing
+ * more is saved from it: the field keeps what was typed, to select or Copy, and sends nothing.
+ */
+export function TopBar({
+  space,
+  live,
+  ended = false,
+}: {
+  readonly space: string;
+  readonly live: boolean;
+  readonly ended?: boolean;
+}) {
   const t = useT();
   const say = useToast();
   const { api, live: feed } = useContext(Session);
@@ -406,14 +421,22 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
         // A refusal the service sent did nothing: the same text again is a new add.
         const code = error instanceof Error ? (error as { code?: unknown }).code : undefined;
         if (typeof code === "string" && code !== "internal") dropRequest(space, submitted);
-        if (!feed.failed(error)) say(t("top.addFailed"));
+        if (feed.failed(error)) return;
+        // The words stay in the field: a space that takes no change says why, without "Try again".
+        const readOnly = readOnlyReason(error);
+        say(
+          readOnly === undefined
+            ? t("top.addFailed")
+            : t("top.addReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }),
+        );
       },
     );
   };
 
   const value = searching ? query : text;
   const label = searching ? t("top.search") : t("top.newTask");
-  const showPanel = within && !searching && text.trim() !== "" && (read || suggestions.length > 0);
+  const showPanel =
+    within && !ended && !searching && text.trim() !== "" && (read || suggestions.length > 0);
 
   return (
     <div className={styles.bar}>
@@ -449,7 +472,8 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
           aria-describedby={showPanel ? "top-capture" : undefined}
           autoComplete="off"
           spellCheck={!searching}
-          disabled={!live}
+          disabled={!live && !ended}
+          readOnly={ended}
           onChange={(event) => {
             const next = event.target.value;
             setCaret(event.target.selectionStart ?? next.length);
@@ -584,17 +608,38 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
           </div>
         ) : null}
       </div>
-      <Button
-        className={styles.button}
-        aria-label={searching ? t("top.toAdd") : t("top.add")}
-        isDisabled={!live}
-        onPress={() => {
-          if (searching) endSearch(query);
-          else add();
-        }}
-      >
-        <PlusIcon />
-      </Button>
+      {ended && !searching && text.trim() !== "" ? (
+        <Button
+          className={styles.button}
+          data-part="top-copy"
+          aria-label={t("top.copy")}
+          data-tip={t("top.copy")}
+          onPress={() => {
+            navigator.clipboard.writeText(text).then(
+              () => {
+                say(t("row.copied"));
+              },
+              () => {
+                say(t("row.copyFailed"));
+              },
+            );
+          }}
+        >
+          <CopyIcon />
+        </Button>
+      ) : (
+        <Button
+          className={styles.button}
+          aria-label={searching ? t("top.toAdd") : t("top.add")}
+          isDisabled={!live}
+          onPress={() => {
+            if (searching) endSearch(query);
+            else add();
+          }}
+        >
+          <PlusIcon />
+        </Button>
+      )}
     </div>
   );
 }

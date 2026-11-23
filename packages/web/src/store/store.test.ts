@@ -7,7 +7,7 @@ import { FeedModel, ModelSubscription, SPACE, type Op } from "../../test/feed-mo
 import { LiveCore } from "./core.ts";
 import { FrameQueue, type FrameClock } from "./frame.ts";
 import type { BatchMessage, SnapshotMessage, TaskRow } from "./rows.ts";
-import { LiveStore } from "./store.ts";
+import { goneOf, LiveStore } from "./store.ts";
 
 const opArb: fc.Arbitrary<Op> = fc.oneof(
   fc.record({ op: fc.constant("add" as const), hidden: fc.constant(false), area: fc.nat(9) }),
@@ -412,5 +412,119 @@ describe("[A5.3.15.web.store.frames] the frame queue", () => {
     queue.clear();
     frames.frame();
     expect(seen).toEqual([[1, 2], [3]]);
+  });
+});
+
+describe("[A5.3.15.web.store.copy] a tab keeps the copy of its space it loaded", () => {
+  const copied = (snapshot: SnapshotMessage, copy: string, more: object = {}): SnapshotMessage => ({
+    ...snapshot,
+    space: { ...snapshot.space, copy, folder: "~/spaces/mira", ...more },
+  });
+
+  test("a snapshot of another copy applies nothing: the tab shows what it loaded, says what happened and takes no more", () => {
+    const { model, sub, snapshot } = seeded();
+    const frames = new FakeFrames();
+    let ended = 0;
+    const store = new LiveStore({
+      space: SPACE,
+      frames,
+      onResnapshot: () => undefined,
+      onGone: () => {
+        ended += 1;
+      },
+    });
+    const restored = { restored: { at: "2026-11-23T09:00:00.000Z" } };
+    store.push(copied(snapshot, "a".repeat(24), restored));
+    frames.frame();
+    expect(store.copy).toBe("a".repeat(24));
+    const shown = store.getState().tasks;
+    // The same copy again (a reconnect, a fresh snapshot) applies as ever.
+    model.apply({ op: "retitle", task: 0 });
+    store.push(copied(model.snapshot(), "a".repeat(24), restored));
+    frames.frame();
+    expect(store.getState().gone).toBeUndefined();
+    const before = store.getState().tasks;
+    expect(before).not.toBe(shown);
+    // The copy was claimed: same folder, no longer restored.
+    model.apply({ op: "add", hidden: false, area: 0 });
+    store.push(copied(model.snapshot(), "b".repeat(24)));
+    frames.frame();
+    expect(store.getState().gone).toEqual({ why: "claimed", folder: "~/spaces/mira" });
+    expect(store.getState().tasks).toBe(before);
+    expect(store.copy).toBe("a".repeat(24));
+    expect(ended).toBe(1);
+    // Nothing more applies.
+    for (const m of sub.pump(5)) store.push(m);
+    store.push(copied(model.snapshot(), "a".repeat(24)));
+    frames.frame();
+    expect(store.getState().tasks).toBe(before);
+  });
+
+  test("what a snapshot of another copy says happened", () => {
+    const head = { id: SPACE, name: "Mira", ref_prefix: "M", copy: "a", folder: "~/m" };
+    const at = { at: "2026-11-23T09:00:00.000Z" };
+    expect(goneOf(head, { ...head, copy: "b", restored: at, folder: "~/c" })).toEqual({
+      why: "restored_copy",
+      folder: "~/c",
+    });
+    expect(goneOf({ ...head, restored: at }, { ...head, copy: "b" })).toEqual({
+      why: "claimed",
+      folder: "~/m",
+    });
+    expect(goneOf(head, { ...head, copy: "b" })).toEqual({ why: "restored", folder: "~/m" });
+    expect(goneOf(head, { ...head, copy: "b", folder: "~/n" })).toEqual({
+      why: "other_folder",
+      folder: "~/n",
+    });
+  });
+
+  test("the feed ending after the tab showed its space says it was closed and keeps the rows; before that, the space is not open", () => {
+    const { snapshot } = seeded();
+    const frames = new FakeFrames();
+    const store = newStore(frames);
+    store.push({ type: "error", code: "space_unavailable" });
+    frames.frame();
+    expect(store.getState().phase).toBe("no_space");
+    expect(store.getState().gone).toBeUndefined();
+    store.push(copied(snapshot, "a".repeat(24)));
+    frames.frame();
+    const shown = store.getState().tasks;
+    store.push({ type: "error", code: "space_unavailable" });
+    frames.frame();
+    expect(store.getState().gone).toEqual({ why: "closed" });
+    expect(store.getState().tasks).toBe(shown);
+  });
+
+  test("a tab opened for the copy the person's Open folder answered loads that copy, and nothing of another: a snapshot of another copy, or the service's word that another is served, ends it with nothing shown", () => {
+    const { snapshot } = seeded();
+    const opened = (frames: FakeFrames) =>
+      new LiveStore({ space: SPACE, copy: "a".repeat(24), frames, onResnapshot: () => undefined });
+
+    const frames = new FakeFrames();
+    const right = opened(frames);
+    expect(right.copy).toBe("a".repeat(24));
+    expect(right.loaded).toBe(false);
+    right.push(copied(snapshot, "a".repeat(24)));
+    frames.frame();
+    expect(right.loaded).toBe(true);
+    expect(right.getState().gone).toBeUndefined();
+    expect(right.getState().tasks.size).toBeGreaterThan(0);
+
+    const other = opened(frames);
+    other.push(copied(snapshot, "b".repeat(24)));
+    frames.frame();
+    expect(other.getState().gone).toEqual({ why: "replaced" });
+    expect(other.getState().space).toBeUndefined();
+    expect(other.getState().tasks.size).toBe(0);
+
+    const refused = opened(frames);
+    refused.push({ type: "error", code: "space_unavailable", reason: "replaced" });
+    frames.frame();
+    expect(refused.getState().gone).toEqual({ why: "replaced" });
+    const closed = opened(frames);
+    closed.push({ type: "error", code: "space_unavailable" });
+    frames.frame();
+    expect(closed.getState().gone).toEqual({ why: "closed" });
+    expect(closed.getState().space).toBeUndefined();
   });
 });

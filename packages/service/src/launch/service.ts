@@ -58,6 +58,7 @@ import {
   routeOf,
   sanitiseComposer,
   instanceHome,
+  isOpenLaunch,
   sanitiseTitle,
   sessionRecord,
   SHIM_METHODS,
@@ -98,12 +99,13 @@ import {
 } from "@ttasks/launch";
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
+import type { OpeningSpace } from "../hub/spaces.ts";
 import type { ConnectionInfo, RpcContext, RpcHandlers } from "../local/index.ts";
 import type { SpaceWriterHandle } from "@ttasks/storage";
 import type { ServedSpace } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
-import type { TaskFolder } from "../ops/read.ts";
+import { readRestoredLaunches, type TaskFolder } from "../ops/read.ts";
 import { agentHomeOf, homeDigest, physicalHome } from "../setup/agents.ts";
 import {
   briefNames,
@@ -116,6 +118,7 @@ import {
   LaunchFolderUnavailable,
   LaunchFolderUnmarked,
   LaunchUnavailable,
+  LaunchWriterGone,
   type Choice,
   type RegisteredElsewhere,
   type OpenTaskRequest,
@@ -298,9 +301,16 @@ export interface LaunchServiceOptions extends LaunchOptions {
   readonly registeredElsewhere?: RegisteredElsewhere;
 }
 
+/** A space's launching on one writer: its machine and store, and the copy that writer serves. */
+interface Launching {
+  readonly machine: LaunchMachine;
+  readonly store: SpaceExecutionStore;
+  readonly copy: string | undefined;
+}
+
 interface Hosted {
   readonly writer: unknown;
-  readonly made: Promise<{ machine: LaunchMachine; store: SpaceExecutionStore }>;
+  readonly made: Promise<Launching>;
 }
 
 /** The one answer every refused shim call gets: no reason a guesser could learn from. */
@@ -378,7 +388,13 @@ export class LaunchService {
    */
   readonly #matches = new Map<
     string,
-    { readonly space: string; readonly match: ReferenceMatch; readonly at: number }
+    {
+      readonly space: string;
+      /** The copy the launch's click was made in: its evidence goes there only. */
+      readonly copy: string | undefined;
+      readonly match: ReferenceMatch;
+      readonly at: number;
+    }
   >();
   readonly #timers = new Set<NodeJS.Timeout>();
   readonly #listeners = new Set<(space: string) => void>();
@@ -399,7 +415,7 @@ export class LaunchService {
         }),
       probe: options.probe ?? osProbe,
       platform: options.platform,
-      machine: async (space) => (await this.#space(space))?.machine,
+      machine: (space, copy) => this.#machineOf(space, copy),
       environment: (launch) => this.#baseFor(launch),
       ...(options.now === undefined ? {} : { now: options.now }),
     });
@@ -671,8 +687,10 @@ export class LaunchService {
 
   async #openTask(request: OpenTaskRequest): Promise<OpenTaskResult> {
     const { space, task, requestId } = request;
-    const hosted = await this.#space(space);
-    if (hosted === undefined) throw new Error("The space is not open on this machine");
+    // The writer the call checked, also after its turn in the queue: another one serving the space
+    // now holds another copy, whose task the call never read.
+    const hosted = await this.#space(space, request.writer);
+    if (hosted === undefined) throw new LaunchWriterGone();
     // A repeated request (A1 3.8) replays the intent it made, read from its receipt before the
     // task or machine.toml is read again: an edit to the task since the click never turns a retry
     // into a conflict, and a retry saves, prepares and dispatches nothing.
@@ -878,9 +896,12 @@ export class LaunchService {
     };
   }
 
-  /** Whether the launch's session runs now: its shim is here, attached, and its agent started. */
-  running(launch: string): boolean {
-    return this.host.running(launch);
+  /**
+   * Whether the launch's session runs now and belongs to the copy `copy` served now: its shim is
+   * here, attached, its agent started, and its click was made in that copy.
+   */
+  running(launch: string, copy: string | undefined): boolean {
+    return this.host.madeIn(launch, copy) && this.host.running(launch);
   }
 
   /**
@@ -913,9 +934,9 @@ ${instance}`;
   }
 
   /** The launches of a space whose agent runs here now, as the shims say and no end is recorded. */
-  async #sessions(space: string, hosted: { store: SpaceExecutionStore }): Promise<LaunchIntent[]> {
+  async #sessions(space: string, hosted: Launching): Promise<LaunchIntent[]> {
     const read = await Promise.all(
-      this.host.runningIn(space).map((launch) => hosted.store.readIntent(launch)),
+      this.host.runningIn(space, hosted.copy).map((launch) => hosted.store.readIntent(launch)),
     );
     return read.filter(
       (intent): intent is LaunchIntent =>
@@ -1237,6 +1258,18 @@ ${instance}`;
   }
 
   /**
+   * The launch machine of `space` while it is served from `copy`, the copy a launch's click was
+   * made in: a report or evidence never lands in another copy. An earlier build's record names no
+   * copy.
+   */
+  async #machineOf(space: string, copy: string | undefined): Promise<LaunchMachine | undefined> {
+    const hosted = await this.#space(space);
+    return hosted !== undefined && (copy === undefined || hosted.copy === copy)
+      ? hosted.machine
+      : undefined;
+  }
+
+  /**
    * The folder a launch of `space` with this plan folder would work in, resolved now: the folder,
    * or for none the space's work folder. `open` and the dispatch step ask it.
    */
@@ -1311,7 +1344,7 @@ ${instance}`;
    */
   async #openWith(
     space: string,
-    hosted: { machine: LaunchMachine; store: SpaceExecutionStore },
+    hosted: Launching,
     click: Omit<NewIntent, "machine">,
     requestId: string,
     planFor: (intent: LaunchIntent) => SpawnPlan,
@@ -1319,7 +1352,9 @@ ${instance}`;
   ): Promise<LaunchIntent> {
     const intent = await hosted.machine.open(click, requestId);
     if (intent.route === "terminal" && intent.state === "prepared") {
-      this.host.prepare(space, intent, planFor(intent), given);
+      // The launch's session and reports belong to the copy its click was made in.
+      const copy = hosted.copy === undefined ? {} : { copy: hosted.copy };
+      this.host.prepare(space, intent, planFor(intent), { ...given, ...copy });
     }
     return intent;
   }
@@ -1545,7 +1580,7 @@ ${instance}`;
         });
         if (thread === undefined) return;
         const found = thread;
-        void this.machine(space)
+        void this.#machineOf(kept.space, kept.copy)
           .then((machine) =>
             machine?.report(launch, { kind: "evidence", evidence: { thread: found } }),
           )
@@ -1568,18 +1603,17 @@ ${instance}`;
   }
 
   /** The space's machine and store, made once per writer, with that writer's recovery. */
-  async #space(
-    space: string,
-  ): Promise<{ machine: LaunchMachine; store: SpaceExecutionStore } | undefined> {
+  async #space(space: string, only?: SpaceWriterHandle): Promise<Launching | undefined> {
     const served = this.#options.spaces().find((s) => s.id === space && isOpen(s));
     const writer = served?.writer;
     if (served === undefined || writer === undefined) return undefined;
+    if (only !== undefined && writer !== only) return undefined;
     const known = this.#hosted.get(space);
     if (known?.writer === writer) return known.made;
     const made = this.#make(space, served);
     this.#hosted.set(space, { writer, made });
     made.then(
-      ({ machine }) => this.#recover(space, writer, machine),
+      ({ machine }) => this.#recover(space, served, machine),
       () => {
         if (this.#hosted.get(space)?.made === made) this.#hosted.delete(space);
       },
@@ -1587,10 +1621,22 @@ ${instance}`;
     return made;
   }
 
-  async #make(
-    space: string,
-    served: ServedSpace,
-  ): Promise<{ machine: LaunchMachine; store: SpaceExecutionStore }> {
+  /**
+   * Ends every launch the space holds open from before its last claim or restore in place, which a
+   * backup brought back, before the space is served (LaunchMachine.endRestored).
+   */
+  async settleRestored(space: OpeningSpace): Promise<void> {
+    const restored = await readRestoredLaunches(space.reader);
+    if (restored.size === 0) return;
+    const { machine } = await this.#make(space.id, { writer: space.writer });
+    for (const id of restored) {
+      const after = await machine.endRestored(id);
+      if (after !== undefined && isOpenLaunch(after))
+        throw new Error("A restored launch did not end");
+    }
+  }
+
+  async #make(space: string, served: Pick<ServedSpace, "writer" | "copy">): Promise<Launching> {
     const writer = served.writer;
     if (writer === undefined) throw new Error("The space has no writer");
     const { machine: id, now, elapsed } = this.#options;
@@ -1613,7 +1659,7 @@ ${instance}`;
       machine: id,
       steps: { dispatch: (intent) => this.#dispatchStep(intent) },
       recovery: {
-        observe: (intent) => this.host.observe(intent),
+        observe: (intent) => this.host.observe(intent, served.copy),
         // T3 (M2.11): not paired yet, so a T3 launch left open is Unknown.
         grant: () => Promise.resolve(undefined),
         replay: () => Promise.resolve({ kind: "refused" }),
@@ -1621,7 +1667,7 @@ ${instance}`;
       ...(now === undefined ? {} : { now }),
       ...(elapsed === undefined ? {} : { elapsed }),
     });
-    return { machine, store };
+    return { machine, store, copy: served.copy };
   }
 
   /**
@@ -1712,6 +1758,7 @@ ${instance}`;
       this.#pruneMatches();
       this.#matches.set(intent.id, {
         space: record.space,
+        copy: record.copy,
         match: new ReferenceMatch(
           match.home,
           { folder: where.folder, reference: intent.reference, platform: this.#options.platform },
@@ -1829,8 +1876,9 @@ ${instance}`;
     return outcome;
   }
 
-  async #recover(space: string, writer: unknown, machine: LaunchMachine): Promise<void> {
+  async #recover(space: string, served: ServedSpace, machine: LaunchMachine): Promise<void> {
     const t0 = performance.now();
+    const writer = served.writer;
     try {
       const left = await machine.recover();
       this.#options.log.log("launch.recovered", {

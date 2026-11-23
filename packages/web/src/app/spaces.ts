@@ -14,6 +14,10 @@ export interface SpaceItem {
   readonly reason?: string;
   /** Why its backups are not working, while it is open: a fixed word, such as `disk_full`. */
   readonly backup?: string;
+  /** A restored copy not claimed: when it was restored, and the backup file it came from. */
+  readonly restored?: { readonly at: string; readonly backup?: string };
+  /** A restored copy's folder, as the person reads it (the home as `~`). */
+  readonly folder?: string;
 }
 
 /** A space that never opened: it has no ID or name yet. */
@@ -95,13 +99,35 @@ export async function listSpaces(api: Api): Promise<SpaceList> {
     const backup = s["backup"];
     return typeof backup === "string" && REASON.test(backup) ? { backup } : {};
   };
+  const restoredOf = (s: Record<string, unknown>) => {
+    const restored = s["restored"];
+    const folder = s["folder"];
+    if (!isRecord(restored) || typeof restored["at"] !== "string") return {};
+    const file = restored["backup"];
+    return {
+      restored: {
+        at: restored["at"],
+        ...(typeof file === "string" ? { backup: file } : {}),
+      },
+      ...(typeof folder === "string" ? { folder } : {}),
+    };
+  };
   const spaces = value["spaces"].flatMap((s): SpaceItem[] =>
     isRecord(s) &&
     typeof s["id"] === "string" &&
     SPACE_ID.test(s["id"]) &&
     typeof s["name"] === "string" &&
     typeof s["state"] === "string"
-      ? [{ id: s["id"], name: s["name"], state: s["state"], ...reasonOf(s), ...backupOf(s) }]
+      ? [
+          {
+            id: s["id"],
+            name: s["name"],
+            state: s["state"],
+            ...reasonOf(s),
+            ...backupOf(s),
+            ...restoredOf(s),
+          },
+        ]
       : [],
   );
   const unopened = (Array.isArray(value["unopened"]) ? value["unopened"] : []).flatMap(

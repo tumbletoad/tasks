@@ -110,6 +110,7 @@ export function receiptText(receipt: Receipt, label: string, t: Translate): stri
       return t(receipt.route === "clipboard" ? "receipt.copied" : "receipt.asked", { label });
     case "confirmed":
       if (receipt.session === "running") return t("receipt.running", { opened });
+      if (receipt.session === "restored") return t("receipt.restored", { opened });
       if (receipt.session === "ended") {
         return receipt.ran_ms === undefined
           ? t("receipt.ended", { opened })
@@ -117,12 +118,17 @@ export function receiptText(receipt: Receipt, label: string, t: Translate): stri
       }
       return opened;
     case "failed":
+      if (receipt.reason === "restored") return t("receipt.restoredOpening");
       return t("receipt.failed", {
         reason: receipt.reason ?? "failed",
         words: (receipt.reason ?? "failed").replaceAll("_", " "),
       });
     case "unknown":
       return t("receipt.unknown");
+    case "recorded":
+      return receipt.at.confirmed === undefined
+        ? t("receipt.recordedOpening", { label })
+        : t("receipt.recorded", { opened });
   }
 }
 

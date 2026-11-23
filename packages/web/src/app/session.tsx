@@ -14,6 +14,7 @@ import { Live } from "../live.ts";
 import { changeLogOf } from "./changes.ts";
 import { forgetGone } from "./leftovers.ts";
 import { useMachine } from "./machine.ts";
+import { forgetOpened, openedCopy } from "./opened.ts";
 
 /** The browser's sign-in: its token, the build that served the page, and the way out. */
 export interface Auth {
@@ -53,10 +54,20 @@ export function SpaceSession({
   machine.current = control;
   const [value, setValue] = useState<SessionValue | undefined>(undefined);
   useEffect(() => {
-    const api = new Api(auth.token, auth.build, () => space);
+    // Every call names the copy of the space the feed loaded, once it did.
+    const loaded: { live?: Live } = {};
+    const api = new Api(
+      auth.token,
+      auth.build,
+      () => space,
+      () => loaded.live?.copy,
+      () => loaded.live?.getState().gone !== undefined,
+    );
     const live = new Live({
       api,
       route: { space },
+      // The copy the person's Open folder answered, when they came here from it.
+      copy: openedCopy(space),
       build: auth.build,
       onSpace: () => undefined,
       onSignedOut: auth.signedOut,
@@ -64,14 +75,21 @@ export function SpaceSession({
         machine.current.receive(preferences);
       },
     });
+    loaded.live = live;
     // Today's Changes counts from the session's start, whichever view the tab opens on.
     changeLogOf(live);
     setValue({ api, live });
-    // Once the space is live, the kept text of its tasks that are gone for good is forgotten.
+    // Once the tab loaded the space, or learned it cannot, the copy the person's Open folder
+    // answered is no longer what the next load asks for.
     const stopWatching = live.subscribe(() => {
-      if (live.getState().phase !== "live") return;
+      const state = live.getState();
+      if (state.phase !== "live" && state.gone === undefined) return;
       stopWatching();
-      void forgetGone(space, api, (task) => live.getState().tasks.has(task));
+      forgetOpened(space);
+      // The kept text under keys that name no task at all is forgotten.
+      if (state.phase === "live") {
+        void forgetGone(space, api, (task) => live.getState().tasks.has(task));
+      }
     });
     live.start();
     return () => {

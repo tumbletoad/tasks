@@ -1,8 +1,10 @@
 // What the browser is asked to send (api.ts): every request is kept alive across a reload or a
 // close while the bodies in flight that way fit the page's 48 KiB, under the browser's 64 KiB;
-// one past that goes as an ordinary request, and a settled one frees its share.
+// one past that goes as an ordinary request, and a settled one frees its share. A tab whose copy
+// of its space is gone sends nothing that changes the space.
+import { registry } from "@ttasks/contracts";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { Api } from "./api.ts";
+import { Api, READ_ENTRIES } from "./api.ts";
 
 interface Sent {
   readonly size: number;
@@ -57,5 +59,47 @@ describe("[A5.3.11.web.sent-at-unload] a write made just before the tab goes is 
     expect(sent[0]?.size).toBe(60_000);
     expect(sent[0]?.keepalive).toBe(false);
     sent[0]?.answer("{}");
+  });
+});
+
+describe("[A5.3.15.web.gone-sends-nothing] a tab that says nothing more is saved from it sends nothing that changes its space", () => {
+  test("a write, a launch, Run and Stop are refused in the page as replaced and never sent; a read still goes", async () => {
+    const sent = fakeFetch();
+    let ended = false;
+    const api = new Api(
+      "t",
+      "",
+      () => "sp_00000000000000000000000000",
+      () => "a".repeat(24),
+      () => ended,
+    );
+    void api.post("/api/v1/op/task.update", "{}");
+    expect(sent).toHaveLength(1);
+    sent[0]?.answer("{}");
+    ended = true;
+    for (const path of [
+      "/api/v1/op/task.update",
+      "/api/v1/op/entry.add",
+      "/api/v1/op/history.undo",
+      "/api/v1/op/launch.open",
+      "/api/v1/op/group.manage",
+      "/api/v1/launch/run",
+      "/api/v1/launch/stop",
+    ]) {
+      await expect(api.post(path, "{}"), path).rejects.toMatchObject({
+        code: "space_unavailable",
+        data: { reason: "replaced" },
+      });
+    }
+    expect(sent).toHaveLength(1);
+    const read = api.post("/api/v1/op/task.get", "{}");
+    expect(sent).toHaveLength(2);
+    sent[1]?.answer("{}");
+    await read;
+  });
+
+  test("the entries it still sends are exactly the registry's reads", () => {
+    const reads = [...registry].filter((entry) => entry.kind === "read").map((e) => e.name);
+    expect([...READ_ENTRIES].sort()).toEqual(reads.sort());
   });
 });

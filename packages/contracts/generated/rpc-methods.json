@@ -4139,7 +4139,7 @@
                 },
                 "run": {
                   "additionalProperties": false,
-                  "description": "Its newest background run, while it works or needs the person",
+                  "description": "Its newest background run, while it works, needs the person, or is recorded",
                   "properties": {
                     "id": {
                       "description": "The run's ID",
@@ -4150,10 +4150,11 @@
                       "type": "string"
                     },
                     "state": {
-                      "description": "Its newest background run works, or ended asking the person",
+                      "description": "It works, ended asking the person, or was open when this copy's backup was made",
                       "enum": [
                         "working",
-                        "needs_you"
+                        "needs_you",
+                        "recorded"
                       ],
                       "type": "string"
                     }
@@ -6958,7 +6959,7 @@
                 },
                 "run": {
                   "additionalProperties": false,
-                  "description": "Its newest background run, while it works or needs the person",
+                  "description": "Its newest background run, while it works, needs the person, or is recorded",
                   "properties": {
                     "id": {
                       "description": "The run's ID",
@@ -6969,10 +6970,11 @@
                       "type": "string"
                     },
                     "state": {
-                      "description": "Its newest background run works, or ended asking the person",
+                      "description": "It works, ended asking the person, or was open when this copy's backup was made",
                       "enum": [
                         "working",
-                        "needs_you"
+                        "needs_you",
+                        "recorded"
                       ],
                       "type": "string"
                     }

@@ -180,8 +180,8 @@ export async function runVerb(
   present?: (result: Record<string, unknown>, printed: string) => Promise<void>,
   hooks?: VerbHooks,
 ): Promise<number> {
-  // `--space` may name a folder, as the space verbs' <space> does: sent absolute, it names that
-  // copy of a space, a read-only copy beside its original too (A2 3.10.5).
+  // `--space` may name a folder, as the space verbs' <space> does: sent absolute, it names the
+  // space that folder serves (A2 3.10.5).
   const named = given.space;
   const globals: Globals =
     named !== undefined && (isAbsolute(named) || named.includes("/") || named.includes("\\"))

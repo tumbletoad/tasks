@@ -121,6 +121,8 @@ export const SPACE_REASONS = [
   "synced_folder",
   /** A sync signal was found and PRAGMA quick_check failed: never written (A1 3.2). */
   "check_failed",
+  /** Another folder on this machine serves the same space: one copy is served at a time. */
+  "other_copy_open",
 ] as const;
 export type SpaceReason = (typeof SPACE_REASONS)[number];
 
@@ -340,6 +342,11 @@ export const EVENTS = {
     lvl: "info",
     c: "space",
     fields: { entry: "int", verdict: ["local", "synced", "network"] },
+  },
+  "space.not_opened": {
+    lvl: "info",
+    c: "space",
+    fields: { entry: "int", space: "space", reason: SPACE_REASONS },
   },
   "space.unavailable": {
     lvl: "warn",

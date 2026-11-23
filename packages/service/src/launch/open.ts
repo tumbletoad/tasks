@@ -21,6 +21,7 @@ import {
   type Route,
 } from "@ttasks/launch";
 import { decodeConfig, parseToml, readConfigFile } from "../config/toml.ts";
+import type { SpaceWriterHandle } from "@ttasks/storage";
 import type { MarkerOwner } from "../ops/marker.ts";
 import type { TaskFolder } from "../ops/read.ts";
 
@@ -42,6 +43,17 @@ export const UNAVAILABLE_REASONS = [
   "other_space",
 ] as const;
 export type UnavailableReason = (typeof UNAVAILABLE_REASONS)[number];
+
+/**
+ * The writer a click was checked against no longer serves its space (it closed, or another copy
+ * opened): nothing was made, and a retry is checked against the space as it is then.
+ */
+export class LaunchWriterGone extends Error {
+  override readonly name = "LaunchWriterGone";
+  constructor() {
+    super("The space's writer the click was checked against is gone");
+  }
+}
 
 /**
  * A click whose folder cannot be used on this machine now (it is not there, or not a folder): no
@@ -126,6 +138,11 @@ export interface LaunchTask {
 /** A click on Open or Copy (`launch.open`). */
 export interface OpenTaskRequest {
   readonly space: string;
+  /**
+   * The space's writer the call checked and read the task through: the launch is made through it
+   * or not at all, so it never lands in a copy the call did not read.
+   */
+  readonly writer: SpaceWriterHandle;
   readonly task: LaunchTask;
   /** The instance's key; undefined is Copy (A4 3.4.6). */
   readonly instance: string | undefined;

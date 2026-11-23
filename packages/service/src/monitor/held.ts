@@ -3,7 +3,7 @@
 // the home it started the app in and the app's session ID, as they were when it started. A launch
 // counts while its agent runs and for a day after its record last changed, so a conversation the
 // person resumes by hand still shows with its task.
-import { copyOf, isAmbiguity } from "../ops/copies.ts";
+import { copyOf } from "../ops/copies.ts";
 import { readAgentSessions, type ServedSpace } from "../ops/index.ts";
 import type { HeldSession } from "./links.ts";
 
@@ -14,29 +14,34 @@ export interface HeldSources {
   spaces(): readonly ServedSpace[];
   /** This machine's ID: only its own launches and runs count. */
   readonly machine: string;
-  /** The terminal launches of a space whose agent runs now, as the shims say. */
-  running(space: string): readonly string[];
+  /**
+   * The terminal launches of a space whose agent runs now, as the shims say, of those made in its
+   * copy `copy`.
+   */
+  running(space: string, copy: string | undefined): readonly string[];
   /** Wall clock milliseconds. */
   now(): number;
 }
 
 /**
- * Every session TTasks holds now. A space is read in the copy that opening its tasks reads
- * (copies.ts): a restored copy never links a task its original no longer has, and a space whose
- * copies could both answer links nothing. A space that cannot be read holds none this time.
+ * Every session TTasks holds now, read in the folder that serves each space (one at a time,
+ * copies.ts). A space that cannot be read holds none this time, and a restored copy that is not
+ * claimed none at all: its sessions are history, never the machine's agents of today.
  */
 export async function heldSessions(sources: HeldSources): Promise<HeldSession[]> {
   const since = sources.now() - HELD_MS;
   const served = sources.spaces().filter((s) => s.id !== undefined && s.reader !== undefined);
   const chosen = [...new Set(served.map((s) => s.id))].flatMap((id) => {
     const copy = id === undefined ? undefined : copyOf(served, id);
-    return copy === undefined || isAmbiguity(copy) ? [] : [copy];
+    return copy === undefined ? [] : [copy];
   });
   const read = await Promise.all(
     chosen.map(async (served): Promise<HeldSession[]> => {
       const id = served.id;
-      if (id === undefined || served.reader === undefined) return [];
-      const running = sources.running(id);
+      if (id === undefined || served.reader === undefined || served.restored !== undefined) {
+        return [];
+      }
+      const running = sources.running(id, served.copy);
       const found = await readAgentSessions(served.reader, {
         machine: sources.machine,
         since,

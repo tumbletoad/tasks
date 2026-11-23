@@ -201,7 +201,11 @@ describe("[A1.5.restore.read-only-copy] a backup restored into a new folder is a
     const target = join(folders.make(), "mira");
     const at = Date.UTC(2026, 10, 13, 12, 0, 0);
     const restored = await restoreBackup(checked, backup.file, target, { now: () => at });
-    expect(restored.space.transfer).toEqual({ state: "restored_copy", at });
+    expect(restored.space.transfer).toEqual({
+      state: "restored_copy",
+      at,
+      backup: basename(backup.file),
+    });
 
     // Every writer is refused with the reason's own code: in the calling thread and in a worker.
     await expectCode(() => openSpace(checked, target, { role: "writer" }), "SPACE_READ_ONLY_COPY");
@@ -221,6 +225,7 @@ describe("[A1.5.restore.read-only-copy] a backup restored into a new folder is a
     expect(described.state === "present" && described.manifest?.transfer).toEqual({
       state: "restored_copy",
       at,
+      backup: basename(backup.file),
     });
 
     // The claim: a new epoch above every known one, a new incarnation, one commit that also ends

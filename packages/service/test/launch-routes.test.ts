@@ -99,6 +99,13 @@ interface Rig {
   readonly report: (name: string) => string;
 }
 
+/** The writer that serves the rig's space now: what a call's request path checks a click against. */
+function writerOf(r: Rig) {
+  const writer = r.lab.running.ops.spaces().find((s) => s.id === r.lab.spaceId)?.writer;
+  if (writer === undefined) throw new Error("the space is not open for writing");
+  return writer;
+}
+
 /**
  * A lab whose machine.toml has the fake Claude Code and Codex as instances: Claude Code with full
  * access (`claude`), Claude Code with the prefill route (`claude-link`), Codex with the brief sent
@@ -646,6 +653,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       // What the request path read for each call: the retry read the task after an edit.
       const request = (title: string, version: number) => ({
         space: r.lab.spaceId,
+        writer: writerOf(r),
         task: { id: task.id, ref: task.ref, title, version, folder: { kind: "none" as const } },
         instance: undefined,
         composer: undefined,
@@ -895,6 +903,7 @@ describe("[A4.5.routes.folders] a launch opens in the task's folder, else its pr
       const elsewhere = (instance: string | undefined) =>
         service.openTask({
           space: r.lab.spaceId,
+          writer: writerOf(r),
           task: {
             id: far.id,
             ref: far.ref,

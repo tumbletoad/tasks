@@ -686,6 +686,7 @@ export const LAUNCH_EVIDENCE_FIELDS = {
   exit_code: "count",
   ran_ms: "count",
   lost_at: "instant",
+  restored_at: "instant",
   bound_at: "instant",
   terminal: "id",
   terminal_source: "id",
@@ -706,6 +707,7 @@ export const LAUNCH_FAIL_REASONS = [
   "agent_exited",
   "folder_mismatch",
   "interrupted",
+  "restored",
   // The folder's own reason, when it no longer resolved right before the launch.
   "invalid_path",
   "root_missing",

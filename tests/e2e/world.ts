@@ -146,6 +146,13 @@ export interface World {
   /** An agent logs on a task, through the service's request path as an agent does. */
   agentLog(space: string, task: string, text: string): Promise<void>;
   /**
+   * Backs `space` up and restores the backup into a new folder beside it, as `ttasks space restore
+   * --to` does: a read-only copy, not opened while the space is. Returns the copy's folder.
+   */
+  restoreCopy(space: string): Promise<string>;
+  /** A space verb of the person's own, as `ttasks space <verb>` sends it: `list`, `close`, `claim`. */
+  space(verb: string, params: Record<string, unknown>): Promise<unknown>;
+  /**
    * Registers the fake agent's home for `space` as agent setup does, until the function it gives
    * takes the registration back. The home's own files are never read or written.
    */
@@ -408,6 +415,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
 
     let logs = 0;
     let ops = 0;
+    let copies = 0;
     /** The world's own sign-in for `machine`, made once. */
     let token: string | undefined;
     return {
@@ -495,6 +503,27 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           .split("\n")
           .filter((line) => line !== "")
           .map(Number);
+      },
+      space: (verb, params) => life.user.call(`space/${verb}`, params, { timeoutMs: SLOW_MS }),
+      restoreCopy: async (space) => {
+        copies += 1;
+        const listed = (await life.user.call("space/list", {}, { timeoutMs: SLOW_MS })) as {
+          spaces: { id?: string; folder: string }[];
+        };
+        const folder = listed.spaces.find((s) => s.id === space)?.folder;
+        if (folder === undefined) throw new Error(`no space ${space}`);
+        const made = (await life.user.call(
+          "space/backup",
+          { space: folder },
+          { timeoutMs: SLOW_MS },
+        )) as { backup: { name: string } };
+        const to = join(spacesRoot, `copy-${String(copies)}`);
+        await life.user.call(
+          "space/restore",
+          { backup: made.backup.name, to, of: folder },
+          { timeoutMs: SLOW_MS },
+        );
+        return to;
       },
       agentLog: async (space, taskId, text) => {
         logs += 1;

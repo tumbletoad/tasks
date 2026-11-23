@@ -9,6 +9,7 @@
 import { z } from "zod";
 import { under, type Pairs } from "./define.ts";
 import { EFFORT_KEY_MAX } from "./preferences.ts";
+import { ROW_RUN_STATES } from "./runs.ts";
 import { safeLine, safeText } from "./safe-text.ts";
 
 /**
@@ -442,11 +443,13 @@ export const CompactTaskRow = z.strictObject({
     .strictObject({
       id: z.string().describe("The run's ID"),
       state: z
-        .enum(["working", "needs_you"])
-        .describe("Its newest background run works, or ended asking the person"),
+        .enum(ROW_RUN_STATES)
+        .describe(
+          "It works, ended asking the person, or was open when this copy's backup was made",
+        ),
       instance: z.string().describe("The run's agent instance"),
     })
-    .describe("Its newest background run, while it works or needs the person")
+    .describe("Its newest background run, while it works, needs the person, or is recorded")
     .optional(),
   questions: z
     .array(

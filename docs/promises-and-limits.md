@@ -71,6 +71,17 @@ the behaviour it describes, and keep each one to a sentence or two.
   restored.
 - Restoring over a space keeps what was there before.
 - A restored copy cannot be edited until you make it the current copy.
+- To look inside a backup, restore it into a new folder, close the space, open that folder, look,
+  close it, and open the space again. TTasks never opens two copies of one space together, so the
+  page and the command line always show and change the copy you opened, and a restored copy says
+  so, with its folder and the backup it came from. An agent or a run that was working when the
+  backup was made is shown as working then, never as working now.
+- A restore over a space, or a claim of a restored copy, never starts or resumes a background run
+  the backup held open, and never takes an agent session the backup held open for one of today:
+  each is shown as interrupted by the restore as soon as the restore or the claim is done.
+- An agent you opened from a task writes only into the copy of the space it was opened in. After a
+  restore over the space or a claim of a copy, it is told so and changes nothing: open it again
+  from the task.
 - Apart from that clean-up of scheduled backups, TTasks never deletes your data or a backup as a
   side effect of something else.
 - An export that holds text shaped like a known kind of secret, such as an access token or a
@@ -87,8 +98,17 @@ the behaviour it describes, and keep each one to a sentence or two.
   closed. TTasks never takes a space off its list by itself.
 - Recording this keeps your own comments and settings in the configuration file. When the file
   cannot be written, TTasks says so and names the command that records it once the file is fixed.
-- When several copies of one space are on this machine, a command without a folder reaches the
-  copy that takes changes, and after a restart that is still the copy you last changed.
+- When several copies of one space are on this machine, TTasks opens one of them at a time:
+  opening another is refused, with what is open and how to switch. After a restart the copy you
+  last changed opens.
+- In a space that takes no change, such as a restored copy or one another machine owns, the page
+  says why before you act and keeps what you typed there to copy, never offering a Try again that
+  cannot work, and never sends it later by itself.
+- A tab whose space was closed, restored or claimed since it loaded says so and saves no more
+  changes to that space; what you typed there stays to copy.
+- What you typed for a task and did not send stays in the browser, also when the copy of the space
+  you open does not hold that task, such as an older backup you claimed: TTasks never deletes it
+  because a task is missing.
 
 ## Projects and folders
 
@@ -288,6 +308,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Undo and Restore do not unsend a mail, reverse a commit or undo anything done outside TTasks.
 - Undo steps back through your own changes. A change by an agent or a script is not on it, and
   nothing from before the last upgrade that changed the data format can be undone.
+- One copy of a space at a time holds for one TTasks service. Two services with homes of their own
+  on one machine each keep their own list of spaces, and each can open a copy of the same space.
 - Two copies of one space that both take changes, such as a restored copy and its original used
   in turn, give out references on their own: a task in one can get a reference a task in the
   other has. A restore over a space, or a claim of a copy, goes on from the backup's counter when

@@ -38,6 +38,8 @@ import {
   apart,
   CLAIM_WINDOW_MS,
   CLICK_SLACK_MS,
+  isOpening,
+  isOpenLaunch,
   PREPARED_TTL_MS,
   STEP_DEADLINE_MS,
   STORE_DEADLINE_MS,
@@ -366,6 +368,23 @@ export class LaunchMachine {
    */
   async recover(): Promise<LaunchIntent[]> {
     return (await this.#settleAll("restart")).map((s) => s.intent);
+  }
+
+  /**
+   * Ends a launch a claim or a restore in place brought back from a backup while it was open
+   * (isOpenLaunch), whichever machine made it: one still opening fails `restored`, a terminal
+   * session records `restored_at`. No process is asked about: a session writes only into the copy
+   * it was made in. Any other launch is returned as it is.
+   */
+  endRestored(id: string): Promise<LaunchIntent | undefined> {
+    return this.#section(id, () => this.#decide(id, (intent) => this.#restored(intent)));
+  }
+
+  /** How a launch a backup brought back while it was open ends: as restored. */
+  #restored(intent: LaunchIntent): Move | undefined {
+    if (isOpening(intent)) return { next: "failed", reason: "restored" };
+    if (isOpenLaunch(intent)) return { next: "confirmed", evidence: { restored_at: this.#now() } };
+    return undefined;
   }
 
   /**
