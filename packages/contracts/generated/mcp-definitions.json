@@ -8,14 +8,14 @@
       "tokens": 701
     },
     {
-      "bytes": 3358,
+      "bytes": 3240,
       "name": "add_tasks",
-      "tokens": 1679
+      "tokens": 1620
     },
     {
-      "bytes": 3998,
+      "bytes": 4032,
       "name": "complete_task",
-      "tokens": 1999
+      "tokens": 2016
     },
     {
       "bytes": 1302,
@@ -23,44 +23,39 @@
       "tokens": 651
     },
     {
-      "bytes": 1550,
+      "bytes": 1469,
       "name": "organize",
-      "tokens": 775
+      "tokens": 735
     },
     {
-      "bytes": 1697,
+      "bytes": 705,
       "name": "preferences",
-      "tokens": 849
+      "tokens": 353
     },
     {
-      "bytes": 1035,
+      "bytes": 1042,
       "name": "reopen_task",
-      "tokens": 518
+      "tokens": 521
     },
     {
-      "bytes": 1327,
-      "name": "run_report",
-      "tokens": 664
-    },
-    {
-      "bytes": 1066,
+      "bytes": 1079,
       "name": "search",
-      "tokens": 533
+      "tokens": 540
     },
     {
-      "bytes": 1199,
+      "bytes": 1190,
       "name": "status",
-      "tokens": 600
+      "tokens": 595
     },
     {
-      "bytes": 3568,
+      "bytes": 3357,
       "name": "update_task",
-      "tokens": 1784
+      "tokens": 1679
     }
   ],
   "total": {
-    "bytes": 21502,
-    "tokens": 10753,
-    "tools": 11
+    "bytes": 18818,
+    "tokens": 9411,
+    "tools": 10
   }
 }

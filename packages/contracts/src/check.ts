@@ -27,7 +27,7 @@ import {
 } from "./define.ts";
 import { isErrorCode } from "./errors.ts";
 import { opSpec } from "./operations.ts";
-import { Base, RequestId, SessionTask } from "./schemas.ts";
+import { Base, GroupBase, RequestId, SessionTask } from "./schemas.ts";
 
 /**
  * Entries whose optional task never defaults to the session's: they choose what they act on
@@ -240,7 +240,8 @@ function isShared(schema: z.ZodType, shared: z.ZodType, optional: boolean): bool
 }
 
 /**
- * `base` is the shared Base schema, or `Base.optional()`. A write that may emit an operation that
+ * `base` is a shared base schema (`Base`, or `GroupBase` for a group), or one of them made
+ * optional. A write that may emit an operation that
  * always needs a base takes it, and requires it when every operation it emits does (A1 3.5,
  * A3 3.4.1).
  */
@@ -251,11 +252,12 @@ function checkBase(entry: AnyEntry, say: Say): void {
     if (guarded.length > 0) {
       say(`a write entry that may emit ${guarded.join(", ")} takes base (A1 3.5)`);
     }
-  } else if (!isShared(base, Base, true)) {
-    say("base must be the shared Base schema from schemas.ts, or Base.optional() (A3 3.4.1)");
+  } else if (!isShared(base, Base, true) && !isShared(base, GroupBase, true)) {
+    say("base must be a shared base schema from schemas.ts, or one made optional (A3 3.4.1)");
   } else if (entry.actions !== undefined) {
     // A read action takes no base: the request path requires it for a write action (A3 3.2.3).
-    if (base === Base) say("base of an entry with read actions is Base.optional() (A3 3.2.3)");
+    if (base === Base || base === GroupBase)
+      say("base of an entry with read actions is Base.optional() (A3 3.2.3)");
   } else if (base !== Base && guarded.length > 0 && guarded.length === entry.ops.length) {
     say("base is required: every operation of the entry changes existing fields (A1 3.5)");
   }

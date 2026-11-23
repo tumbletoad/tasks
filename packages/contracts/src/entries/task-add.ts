@@ -34,7 +34,7 @@ export const TaskAddResult = z.strictObject({
       z.strictObject({
         result: z
           .enum(["created", "exists", "proposed", "inbox"])
-          .describe("created, matched an existing task, proposed, or created in the Inbox"),
+          .describe("created, matched an existing task, or created in the Inbox"),
         id: TaskId.optional(),
         ref: TaskRef.optional(),
         title: z.string().describe("Title"),

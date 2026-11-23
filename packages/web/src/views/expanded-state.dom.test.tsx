@@ -4,6 +4,7 @@
 // React into a DOM (happy-dom): the URL's task and the person's own choice, the injected row of a
 // task the view does not hold, the title editor's base, focus when the card closes, the detail
 // read again after a fresh snapshot, and a thread entry that keeps focus while entries arrive.
+import { PRODUCT_ID } from "@ttasks/brand";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -526,6 +527,43 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     expect(updates).toEqual([
       expect.objectContaining({ task: id, set: { title: "Task 1, fixed" } }),
     ]);
+  });
+
+  test("an edit kept from before the space was restored is not sent again: its line says why, shows the value, and offers Copy and Discard", async () => {
+    // Kept by a page of the space's earlier history: another incarnation than the screen's. It is
+    // the only kept edit (earlier tests leave theirs in the browser's storage).
+    localStorage.clear();
+    const name = `${PRODUCT_ID}.unsaved.${SPACE.id}.t_00001.priority`;
+    localStorage.setItem(
+      name,
+      JSON.stringify({
+        task: "t_00001",
+        ref: "M-1",
+        field: "priority",
+        reason: "failed",
+        base: "1.10.zzzzzzzz",
+        source: { kind: "priority", level: 1 },
+      }),
+    );
+    try {
+      mount(<TaskList view="open" filter={OPEN} empty="" />);
+      apply(snapshot([task(1)]));
+      expand("t_00001");
+      await settle();
+      const line = container.querySelector('li[data-key="t_00001"] [data-part="unsaved"]');
+      expect(line?.getAttribute("data-reason")).toBe("restored");
+      expect(line?.textContent).toContain("Not saved: the space was restored since");
+      expect(line?.querySelector('[data-part="unsaved-value"]')?.textContent).toBe("P1");
+      expect(line?.querySelector('[data-part="apply-mine"]')).toBeNull();
+      expect(line?.querySelector('[data-part="copy-mine"]')).not.toBeNull();
+      act(() => {
+        line?.querySelector<HTMLElement>('[data-part="keep-theirs"]')?.click();
+      });
+      expect(localStorage.getItem(name)).toBeNull();
+      expect(updates).toEqual([]);
+    } finally {
+      localStorage.removeItem(name);
+    }
   });
 
   test("a title being typed is saved when the view changes under the person", () => {

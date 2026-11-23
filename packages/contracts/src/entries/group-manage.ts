@@ -7,7 +7,7 @@ import { defineEntry } from "../define.ts";
 import { safeLine } from "../safe-text.ts";
 import {
   AsOf,
-  Base,
+  GroupBase,
   Cwd,
   FolderInput,
   idPattern,
@@ -42,7 +42,7 @@ export const GroupManageInput = z.strictObject({
   folder: FolderInput.describe(
     'create, set_folder: the project\'s folder here, "cwd" or an absolute path',
   ).optional(),
-  base: Base.optional(),
+  base: GroupBase.optional(),
   request_id: RequestId.optional(),
   mode: Mode,
   cwd: Cwd.optional(),

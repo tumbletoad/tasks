@@ -7,13 +7,16 @@ import {
   coreOf,
   defOf,
   descriptionOf,
-  inputSchemaFor,
   isAgentAllowed,
+  shownKind,
+  shownOutputFor,
+  shownSchemaFor,
   type AgentRules,
   type AnyEntry,
 } from "../define.ts";
 import { ERROR_CODES } from "../errors.ts";
 import { definitionTokens, mcpTool, toJsonSchema, type JsonSchema } from "../json-schema.ts";
+import { isOffered, laterIn } from "../later.ts";
 import { verbSpec } from "./artefacts.ts";
 
 export interface DocNames {
@@ -172,7 +175,7 @@ function entrySection(entry: AnyEntry, names: DocNames): string[] {
   lines.push(
     "| Property | Value |",
     "|---|---|",
-    `| Kind | ${entry.kind} |`,
+    `| Kind | ${shownKind(entry)} |`,
     `| Actors | ${entry.actors} (${ACTOR_KINDS_BY_CLASS[entry.actors].join(", ")}) |`,
     `| Scope | ${code(entry.scope)} |`,
     `| Remote class | ${entry.remote} |`,
@@ -195,12 +198,16 @@ function entrySection(entry: AnyEntry, names: DocNames): string[] {
       `| Result budget, estimated tokens | typical ${String(budget.typical)}, max ${String(budget.max)} |`,
     );
   }
-  const agent = { schema: inputSchemaFor(entry, "agent"), rules: entry.agent ?? {} };
-  const input = fieldTable(inputSchemaFor(entry, "user"), "input", agent);
+  const agent = { schema: shownSchemaFor(entry, "agent"), rules: entry.agent ?? {} };
+  const input = fieldTable(shownSchemaFor(entry, "user"), "input", agent);
   lines.push("", "### Input", "", ...input, "");
-  lines.push("### Output", "", ...outputTables(entry.output), "");
+  lines.push("### Output", "", ...outputTables(shownOutputFor(entry)), "");
   lines.push("### Examples", "");
-  for (const example of entry.examples) {
+  // An example of what a later step builds shows what this build refuses.
+  const shownExamples = entry.examples.filter(
+    (example) => laterIn(entry.name, example.input) === undefined,
+  );
+  for (const example of shownExamples) {
     const actor = example.actor ?? (isAgentAllowed(entry) ? "agent" : "user");
     lines.push(`#### ${example.title}`, "", `Called by the ${actor}.`, "");
     lines.push(...json(example.input), "", "Result:", "", ...json(example.output), "");
@@ -208,9 +215,9 @@ function entrySection(entry: AnyEntry, names: DocNames): string[] {
   return lines;
 }
 
-/** `docs/agents/tools.md`: every entry, its metadata, fields and examples. */
+/** `docs/agents/tools.md`: every entry offered, its metadata, fields and examples. */
 export function toolsMd(entries: readonly AnyEntry[], names: DocNames): string {
-  const sorted = [...entries].sort(byName);
+  const sorted = entries.filter((e) => isOffered(e.name)).sort(byName);
   const lines = [
     "# Operations and agent tools",
     "",

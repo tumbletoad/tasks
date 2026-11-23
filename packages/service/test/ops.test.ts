@@ -531,7 +531,8 @@ describe("[A3.3.4.add.upsert] task.add upserts by source key (A3 3.4.5, A1 3.6)"
     const ref = first?.ref ?? "";
     expect(first).toMatchObject({ result: "created", lifecycle: "active", log_added: false });
 
-    // The same key: exists, and the draft's log entry is added to the task, nothing else.
+    // The same key: exists with the task's own title, and the draft's log entry is added to the
+    // task, nothing else.
     const again = await add([
       { title: "Fixture upsert again", sources: [ticket(1)], log: "Fixture: seen again." },
     ]);
@@ -540,7 +541,7 @@ describe("[A3.3.4.add.upsert] task.add upserts by source key (A3 3.4.5, A1 3.6)"
         result: "exists",
         id: first?.id,
         ref,
-        title: "Fixture upsert again",
+        title: "Fixture upsert task",
         lifecycle: "active",
         matched_by: "source_key",
         log_added: true,
@@ -610,7 +611,8 @@ describe("[A3.3.4.add.upsert] task.add upserts by source key (A3 3.4.5, A1 3.6)"
     );
     const followRef = finished.follow_ups[1]?.ref ?? "";
     expect(finished.follow_ups).toEqual([
-      { result: "exists", ref: otherRef, title: "Fixture follow-up" },
+      // A matched follow-up answers with the task's own title.
+      { result: "exists", ref: otherRef, title: "Fixture other upsert" },
       { result: "created", ref: followRef, title: "Fixture follow-up of its ticket" },
     ]);
     expect([ref, otherRef]).not.toContain(followRef);

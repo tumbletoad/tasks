@@ -54,7 +54,6 @@ import {
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import type { ConnectionClass } from "../local/index.ts";
 import { ambiguousError, findSpace, isAmbiguity } from "../ops/copies.ts";
-import { unsupported } from "../ops/errors.ts";
 import { isUserClass } from "../ops/index.ts";
 import { storageFailureBody } from "./space-errors.ts";
 import { AdminFailed, runAdmin, type AdminResult } from "./space-admin.ts";
@@ -627,7 +626,14 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       }
       // A transfer moves authority: it needs the machine key that signs its statement and the
       // durable transfer states, which come with M3.08.
-      if (mode === "transfer") throw unsupported("mode", "M3.08");
+      if (mode === "transfer") {
+        throw new AppError({
+          code: "invalid_input",
+          message: "This service does not support that field yet.",
+          hint: "It arrives with M3.08.",
+          data: { issues: [{ path: "mode", message: "Not supported by this service yet" }] },
+        });
+      }
       if (text(params, "to", 64) !== undefined) {
         throw invalid("to", "Only a transfer names the machine it is for");
       }

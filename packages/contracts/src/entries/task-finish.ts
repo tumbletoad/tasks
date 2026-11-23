@@ -30,12 +30,16 @@ export const TaskFinishInput = z.strictObject({
   task: SessionTask,
   status: z.enum(["done", "dropped"]).describe("dropped: abandoned").optional(),
   outcome: safeText(USER_LIMITS.outcome)
-    .describe("What changed and the evidence; agents must give it")
+    .describe(
+      `What changed and the evidence; agents must give it, in at most ${String(AGENT_LIMITS.outcome)} characters`,
+    )
     .optional(),
   learnings: z
     .array(safeText(USER_LIMITS.learning))
     .max(USER_LIMITS.learnings)
-    .describe("Lessons reusable beyond this task")
+    .describe(
+      `Lessons reusable beyond this task; a task keeps ${String(USER_LIMITS.learnings)} in all`,
+    )
     .optional(),
   follow_ups: z.array(TaskDraft).max(10).describe("Tasks to create, as for task.add").optional(),
   finished: PastInput.describe(
@@ -50,7 +54,7 @@ export const TaskFinishInput = z.strictObject({
 export const TaskFinishResult = z.strictObject({
   result: z
     .enum(["completed", "no_change", "review", "proposed"])
-    .describe("completed, already so, waiting for the user's check-off, or proposed"),
+    .describe("completed, or already so"),
   task: TaskRef,
   lifecycle: Lifecycle,
   wrap_state: WrapState.optional(),
@@ -115,8 +119,9 @@ export const taskFinish = defineEntry({
       title: "Complete a task",
       description:
         "Use when a task is done or dropped: records the outcome and learnings and creates " +
-        "follow-ups in one call. Also wraps up a task the user checked off. Pass base. A " +
-        "review or proposed result is normal: the user decides.",
+        "follow-ups in one call. Also wraps up a task the user checked off. Pass base: the " +
+        "as_of of your last get_task, of the add_tasks that created it, or of your " +
+        "complete_task or reopen_task of it.",
     },
   },
   budget: { typical: 100, max: 1500 },

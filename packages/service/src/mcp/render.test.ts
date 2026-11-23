@@ -60,7 +60,7 @@ const row = (n: number, title: string) => ({
 
 describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget", () => {
   test("every listed tool has a compact rendering", () => {
-    expect(TOOLS.length).toBe(11);
+    expect(TOOLS.length).toBe(10);
     for (const tool of tools) expect(hasRenderer(tool.name), tool.name).toBe(true);
   });
 
@@ -79,9 +79,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
   });
 
   test("A3's example results: the write results read as A3 shows them", () => {
-    expect(renderResult("entry.add", example("entry.add", 0))).toBe(
-      "logged l3 on M-14 (evidence) · as_of 1.1047.5n0w8k3q",
-    );
+    expect(renderResult("entry.add", example("entry.add", 0))).toBe("logged l3 on M-14 (evidence)");
     expect(renderResult("task.update", example("task.update", 0))).toBe(
       "updated M-14: summary, context · as_of 1.1047.5n0w8k3q",
     );
@@ -484,7 +482,8 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
       "error conflict: A field changed after the base: read again. Read the task again, then send the change with a new request ID.",
     );
     // Which fields changed stays whole; their stored values come inside the block, as fit.
-    expect(split(conflict).outside).toContain("as_of 1.1050.5n0w8k3q");
+    // No as_of: a conflict is no base; the agent reads the task again.
+    expect(conflict).not.toContain("as_of");
     expect(split(conflict).outside).toContain(
       "Changed since your base: M-14 context (v1049), M-14 context (v1049), M-14 context (v1049)",
     );

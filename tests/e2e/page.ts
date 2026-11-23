@@ -90,10 +90,8 @@ export async function showsSpace(page: Page, name: string): Promise<void> {
 }
 
 /**
- * Opens a task's card through its link, signed in, and waits for its thread: the thread arrives
- * after the card and pushes the composer and the strip down, so a click before it can land where
- * a button no longer is. Runs come on a read of their own: a test that expects some waits for
- * them as well. Returns the task's row.
+ * Opens a task's card through its link, signed in, and waits for its thread: its notes, sessions
+ * and runs are drawn. Returns the task's row.
  */
 export async function openTask(page: Page, world: World, ref: string): Promise<Locator> {
   await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);

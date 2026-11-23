@@ -88,8 +88,18 @@ export const RequestId = z
   .regex(patterns.requestId)
   .describe("New per intended change; reuse it only to retry that call");
 
-/** The one `base` schema, which the registry check requires on writes that change fields. */
-export const Base = z.string().max(40).describe("as_of from your last read, verbatim");
+/**
+ * The `base` schemas, which the registry check requires on writes that change fields: a task's,
+ * and a group's, whose base comes from another answer.
+ */
+export const Base = z
+  .string()
+  .max(40)
+  .describe("as_of: the get_task that showed the field, the add that made it, your set of it");
+export const GroupBase = z
+  .string()
+  .max(40)
+  .describe("as_of of the organize list that showed the group, or of your write of it");
 
 /** Each entry that takes it gives it the default `"apply"` in its `defaults`. */
 export const Mode = z
@@ -240,7 +250,7 @@ export const SOURCE_KINDS = [
 export const AsOf = z
   .string()
   .regex(patterns.asOf)
-  .describe("Read position; pass it as base on your next write");
+  .describe("The space's position when this answer was made");
 
 export const TaskId = z.string().regex(idPattern("t")).describe("Task ID");
 export const TaskRef = z.string().regex(patterns.taskRef).describe("Task reference");

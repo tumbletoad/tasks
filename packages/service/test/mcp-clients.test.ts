@@ -120,7 +120,7 @@ async function useClient(
 
 describe("[A3.3.3.mcp.clients] official clients of both eras through ttasks mcp", () => {
   test(
-    "each lists the eleven tools, reads the instructions and calls status, through the CLI's entry and the bridge's",
+    "each lists the ten tools, reads the instructions and calls status, through the CLI's entry and the bridge's",
     { timeout: 300_000 },
     async () => {
       const temp = tempRoot("oc");
@@ -153,7 +153,6 @@ describe("[A3.3.3.mcp.clients] official clients of both eras through ttasks mcp"
             "organize",
             "preferences",
             "reopen_task",
-            "run_report",
             "search",
             "status",
             "update_task",
@@ -162,7 +161,7 @@ describe("[A3.3.3.mcp.clients] official clients of both eras through ttasks mcp"
           expect(seen.instructions, label).toBe(INSTRUCTIONS);
           expect(seen.isError, label).toBe(false);
           expect(seen.text, label).toContain("Space: Mira (M)");
-          expect(seen.text, label).toMatch(/^TTasks · .* · as_of \d+\.\d+\.[0-9a-z]{8}\n/);
+          expect(seen.text, label).toMatch(/^TTasks · [^\n]* · autonomy full\n/);
           if (kind === "v2-legacy") {
             expect([seen.era, seen.version], label).toEqual(["legacy", "2025-11-25"]);
           } else if (kind !== "v1-legacy") {

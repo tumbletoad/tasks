@@ -125,8 +125,8 @@ export const spaceStatus = defineEntry({
       tool: "status",
       title: "Orientation and session status",
       description:
-        "Call first when a session did not start from a task, and to refresh. Returns the date, " +
-        "autonomy, whether this is a task's session, the tasks matching cwd and counts. " +
+        "Call first when a session did not start from a task, and again later. Returns the " +
+        "date, autonomy, whether this is a task's session, the tasks matching cwd and counts. " +
         "include adds " +
         "sections. guide returns a workflow guide instead. You cannot open or run agents: ask " +
         "the user.",
@@ -180,7 +180,7 @@ export const spaceStatus = defineEntry({
       },
     },
     {
-      title: "A refresh asks what changed since a time from Date.toISOString()",
+      title: "What changed since a time from Date.toISOString()",
       input: { include: ["changes"], since: "2026-11-11T09:00:00.000Z" },
       output: {
         as_of: AS_OF,

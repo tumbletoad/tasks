@@ -31,7 +31,6 @@ import {
   type QueryKey,
   type QueryOp,
 } from "@ttasks/contracts";
-import { unsupported } from "../ops/errors.ts";
 
 export const QUERY_LIMITS = { length: 500, terms: 20 } as const;
 
@@ -73,21 +72,13 @@ export const IS_VALUES = [
   "inbox",
   "focus",
   "overdue",
-  "new",
   "proposed",
   "bound",
-  "changed",
   "completed",
   "archived",
   "unwrapped",
 ] as const;
 export type IsValue = (typeof IS_VALUES)[number];
-
-/** `is:` values whose data a later step brings: refused naming the step, never ignored. */
-const IS_LATER: Readonly<Partial<Record<IsValue, string>>> = {
-  new: "M5.09 (the seen cursor)",
-  changed: "M5.09 (the seen cursor)",
-};
 
 export const HAS_VALUES = [
   "folder",
@@ -161,6 +152,12 @@ export function suggest(word: string, options: readonly string[]): string[] {
 const didYouMean = (found: readonly string[]): string | undefined =>
   found.length === 0 ? undefined : `Did you mean ${found.join(" or ")}?`;
 
+/** The hint for an unknown value of a filter with few values: the closest, then all of them. */
+const takes = (key: string, values: readonly string[], found: readonly string[]): string =>
+  [didYouMean(found), `${key}: takes ${values.join(", ")}.`]
+    .filter((s) => s !== undefined)
+    .join(" ");
+
 // ---------------------------------------------------------------------------------------------
 // Values
 
@@ -190,15 +187,13 @@ function checkValue(key: Key, op: Op, value: string): void {
       return;
     case "is": {
       if (!(IS_VALUES as readonly string[]).includes(v)) {
-        throw queryProblem("Unknown is: value", didYouMean(suggest(v, IS_VALUES)));
+        throw queryProblem("Unknown is: value", takes("is", IS_VALUES, suggest(v, IS_VALUES)));
       }
-      const later = IS_LATER[v as IsValue];
-      if (later !== undefined) throw unsupported("q", later);
       return;
     }
     case "has":
       if (!(HAS_VALUES as readonly string[]).includes(v)) {
-        throw queryProblem("Unknown has: value", didYouMean(suggest(v, HAS_VALUES)));
+        throw queryProblem("Unknown has: value", takes("has", HAS_VALUES, suggest(v, HAS_VALUES)));
       }
       return;
     case "due":
