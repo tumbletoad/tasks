@@ -60,10 +60,8 @@ async function shots(
     }
     await page.getByRole("button", { name: "Menu" }).click();
     const drawer = page.getByRole("dialog", { name: "Views and areas" });
-    if (menu === "shelf") {
-      await shelf(drawer).click();
-      await expect(shelf(drawer)).toHaveAttribute("aria-expanded", "true");
-    }
+    // Archived is the page's: opened in the side menu, it is open in the drawer, every time.
+    if (menu === "shelf") await expect(shelf(drawer)).toHaveAttribute("aria-expanded", "true");
     await settled(page);
     await picture(page, `archived-${name}-${theme}-390.png`);
     if (pictures())
@@ -148,7 +146,7 @@ test.describe("[A5.archived.e2e.sidebar] an archived area or project is out of t
     await adding(page).fill(`Fold the blankets #garage-${tag}`);
     await expect(capture(page).getByRole("listitem")).toHaveText([garage]);
     await adding(page).fill(`Fold the blankets #attic-${tag}`);
-    await expect(capture(page).getByRole("listitem")).toHaveCount(0);
+    await expect(capture(page).getByRole("listitem")).toHaveText([`${attic} is archived`]);
     await adding(page).fill("");
     await sidebar(page).getByRole("button", { name: "New project", exact: true }).click();
     const areaChoice = page.getByRole("dialog").getByLabel("Area", { exact: true });
@@ -181,10 +179,161 @@ test.describe("[A5.archived.e2e.sidebar] an archived area or project is out of t
     await expect(line).toContainText("Archived.");
     await expect(shelf(sidebar(page))).toHaveAttribute("data-within", "true");
   });
+
+  test("a project without an area is listed, archived and brought back like any other; a project brought back inside an archived area says it stays there and offers the area's Unarchive; at 390 px the drawer keeps Archived open or folded", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const kiln = `Kiln ${tag}`;
+    const fire = `Fire the pots (${tag})`;
+    await world.op(world.mira.id, "task.add", { tasks: [{ title: fire, project: kiln }] });
+    const kilnId = (await listed(world)).projects.find((p) => p.name === kiln)?.id ?? "";
+    expect(kilnId).not.toBe("");
+    const loft = `Loft ${tag}`;
+    const trays = `Trays ${tag}`;
+    await world.op(world.mira.id, "group.manage", { action: "create", path: `${loft}/${trays}` });
+    await world.op(world.mira.id, "task.add", {
+      tasks: [{ title: `Stack the trays (${tag})`, area: loft, project: trays }],
+    });
+    await signIn(page, world, `/s/${world.mira.id}/today`);
+    await showsSpace(page, world.mira.name);
+    const areas = areasList(page);
+    await expect(linkTo(areas, kiln)).toBeVisible({ timeout: SLOW_MS });
+
+    // Archived, it leaves the areas for Archived, and its page and its task's card say so.
+    await archive(world, kilnId);
+    await expect(linkTo(areas, kiln)).toHaveCount(0);
+    await shelf(sidebar(page)).click();
+    const archived = sidebar(page).locator(
+      `#${(await shelf(sidebar(page)).getAttribute("aria-controls")) ?? ""}`,
+    );
+    await archived.getByRole("link", { name: `${kiln}, 1 task` }).click();
+    const line = page.locator('[data-part="archived-line"]');
+    await expect(line).toContainText("Archived. Its open tasks stay in your views.");
+    const row = page.locator("main li[data-task]").filter({ hasText: fire });
+    await row.locator('[data-part="title"]').click();
+    await expect(row.locator('[data-part="area"]')).toHaveAccessibleName(`Area, ${kiln}, archived`);
+    await line.getByRole("button", { name: "Unarchive" }).click();
+    await expect(toast(page)).toHaveText(`${kiln} is back in the sidebar`);
+    await expect(linkTo(areas, kiln)).toBeVisible();
+    await expect(line).toHaveCount(0);
+
+    // A project brought back while its area stays archived stays under Archived, and says so.
+    await archive(world, `${loft}/${trays}`);
+    await archive(world, loft);
+    await archived.getByRole("link", { name: `${trays}, 1 task` }).click();
+    await expect(line).toContainText("Archived. Its open tasks stay in your views.");
+    await line.getByRole("button", { name: "Unarchive", exact: true }).click();
+    await expect(toast(page)).toHaveText(
+      `${trays} is unarchived. It stays under Archived with its area, ${loft}.`,
+    );
+    await expect(toastAction(page)).toHaveText("Undo");
+    await expect(line).toContainText(`Archived with its area, ${loft}.`);
+    await expect(linkTo(areas, trays)).toHaveCount(0);
+    await line.getByRole("button", { name: `Unarchive ${loft}` }).click();
+    await expect(toast(page)).toHaveText(`${loft} is back in the sidebar`);
+    await expect(linkTo(areas, trays)).toBeVisible();
+    await expect(line).toHaveCount(0);
+
+    // At 390 px, Archived open or folded is the page's: closing the drawer keeps it.
+    await archive(world, kilnId);
+    await page.setViewportSize({ width: 390, height: 900 });
+    const menu = page.getByRole("button", { name: "Menu" });
+    const drawer = page.getByRole("dialog", { name: "Views and areas" });
+    for (const open of ["false", "true"]) {
+      await menu.click();
+      await shelf(drawer).click();
+      await expect(shelf(drawer)).toHaveAttribute("aria-expanded", open);
+      await page.keyboard.press("Escape");
+      await expect(drawer).toHaveCount(0);
+      await menu.click();
+      await expect(shelf(drawer)).toHaveAttribute("aria-expanded", open);
+      await page.keyboard.press("Escape");
+    }
+  });
+});
+
+test.describe("[A5.archived.e2e.new-work] new work never lands in an archived group unless the screen says so", () => {
+  test("New project sends the area it shows, also after that area is archived meanwhile; a new area's name that an archived area has offers its Unarchive and adds nothing before; a submitted #name of an archived area files to the Inbox, not to a live project of that name", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const loft = `Loft room ${tag}`;
+    await world.op(world.mira.id, "group.manage", { action: "create", path: loft });
+    await world.op(world.mira.id, "group.manage", { action: "create", path: `Workshop ${tag}` });
+    const loftId = await areaIdOf(world, loft);
+    await signIn(page, world, `/s/${world.mira.id}/area/${loftId}`);
+    await showsSpace(page, world.mira.name);
+
+    // Archived while the dialog is open: the list moves on, and the project goes where it shows.
+    const newProject = sidebar(page).getByRole("button", { name: "New project", exact: true });
+    await newProject.click();
+    const dialog = page.getByRole("dialog", { name: "New project" });
+    const areaChoice = dialog.getByLabel("Area", { exact: true });
+    await expect(areaChoice).toHaveValue(loftId, { timeout: SLOW_MS });
+    await archive(world, loft);
+    await expect(areaChoice).not.toHaveValue(loftId);
+    const shown = (await areaChoice.locator("option:checked").textContent()) ?? "";
+    const racks = `Racks ${tag}`;
+    await dialog.getByLabel("Name", { exact: true }).fill(racks);
+    await dialog.getByRole("button", { name: "Without a folder" }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(await areaOfProject(world, racks)).toBe(shown);
+
+    // A new area named as the archived one: the dialog says so and adds nothing until it is back.
+    await newProject.click();
+    await areaChoice.selectOption({ label: "New area" });
+    await dialog.getByLabel("New area's name").fill(loft.toUpperCase());
+    const note = dialog.locator('[data-part="area-archived"]');
+    await expect(note).toContainText(`An archived area is named ${loft}.`);
+    await expect(dialog.getByRole("button", { name: "Without a folder" })).toBeDisabled();
+    const crates = `Crates ${tag}`;
+    await dialog.getByLabel("Name", { exact: true }).fill(crates);
+    await note.getByRole("button", { name: `Unarchive ${loft}` }).click();
+    await expect(areaChoice).toHaveValue(loftId);
+    await expect(note).toHaveCount(0);
+    await expect(linkTo(areasList(page), loft)).toBeVisible();
+    await dialog.getByRole("button", { name: "Without a folder" }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(await areaOfProject(world, crates)).toBe(loft);
+    expect((await listed(world)).areas.filter((a) => a.name === loft)).toHaveLength(1);
+
+    // An archived area's name in the top field files nothing there, nor in a live project of the
+    // same name: the field says why, and Enter adds to the Inbox with the words in the title.
+    const garden = `Garden ${tag}`;
+    await world.op(world.mira.id, "group.manage", { action: "create", path: garden });
+    await world.op(world.mira.id, "group.manage", {
+      action: "create",
+      path: `House ${tag}/${garden}`,
+    });
+    await archive(world, garden);
+    await sidebar(page)
+      .getByRole("link", { name: /^Today/ })
+      .click();
+    const title = `Weed the beds #garden-${tag}`;
+    await adding(page).fill(title);
+    await expect(capture(page).getByRole("listitem")).toHaveText([`${garden} is archived`]);
+    await adding(page).press("Enter");
+    await expect(toast(page)).toHaveText("Added to Inbox");
+    const found = (await world.op(world.mira.id, "task.search", { q: "Weed", scope: "all" })) as {
+      rows: { ref: string; title: string }[];
+    };
+    const ref = found.rows.find((r) => r.title === title)?.ref ?? "";
+    const { task } = (await world.op(world.mira.id, "task.get", { task: ref })) as {
+      task: { inbox: boolean; area?: string; project?: string };
+    };
+    expect(task).toMatchObject({ inbox: true });
+    expect(task.area).toBeUndefined();
+    expect(task.project).toBeUndefined();
+  });
 });
 
 interface Listed {
   areas: { id: string; name: string; projects: { id: string; name: string }[] }[];
+  /** The projects without an area. */
+  projects: { id: string; name: string }[];
 }
 
 async function listed(world: World): Promise<Listed> {
@@ -198,6 +347,11 @@ async function areaIdOf(world: World, name: string): Promise<string> {
   const area = (await listed(world)).areas.find((a) => a.name === name);
   if (area === undefined) throw new Error(`no area ${name}`);
   return area.id;
+}
+
+/** The name of the area that holds the project named `name`. */
+async function areaOfProject(world: World, name: string): Promise<string | undefined> {
+  return (await listed(world)).areas.find((a) => a.projects.some((p) => p.name === name))?.name;
 }
 
 async function projectIdOf(world: World, area: string, name: string): Promise<string> {
