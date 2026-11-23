@@ -412,6 +412,7 @@ export function TopBar({
   const label = searching ? t("top.search") : t("top.newTask");
   const showPanel =
     within &&
+    !ended &&
     !searching &&
     text.trim() !== "" &&
     (capture.chips.length > 0 || suggestions.length > 0);

@@ -63,6 +63,7 @@ test.describe("[A2.3.10.5.copies.e2e] a person looks inside a backup on the page
     await expect(refusal).toContainText("space close");
     await pictures(page, "copy-refused");
     await page.keyboard.press("Escape");
+    await expect(form).toHaveCount(0);
     await expect(page.locator('[data-part="read-only"]')).toHaveCount(0);
 
     // The person closes the space: the tab says so and keeps what it shows.
