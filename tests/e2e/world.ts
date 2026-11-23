@@ -17,6 +17,7 @@ import {
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RpcSession } from "../../packages/bridge/src/protocol/index.ts";
+import { findEntry } from "../../packages/contracts/src/index.ts";
 import { atomicWrite } from "../../packages/files/src/index.ts";
 import { startTimes } from "../../packages/launch/src/process.ts";
 import { openSpace, type Id } from "../../packages/storage/src/index.ts";
@@ -461,7 +462,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
             op,
             // Reads take no request ID; every write gets a fresh one.
             input:
-              op.endsWith(".get") || op === "task.search"
+              findEntry(op)?.kind === "read"
                 ? input
                 : { ...input, request_id: `e2e-world-op-${String(ops).padStart(4, "0")}` },
           },
