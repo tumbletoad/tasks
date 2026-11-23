@@ -560,7 +560,7 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
     for (const name of alpha) await write({ action: "create", path: `Alpha/${name}` });
     for (const name of beta) await write({ action: "create", path: `Beta/${name}` });
     await write({ action: "create", path: "Gamma" });
-    const names = (page: GroupManageResult) =>
+    const names = (page: Awaited<ReturnType<typeof list>>) =>
       page.areas.flatMap((a) => a.projects.map((p) => `${a.name}/${p.name}`));
     const first = await list();
     // The page ends inside Alpha, after the fixture's own groups.

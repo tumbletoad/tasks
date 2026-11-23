@@ -642,7 +642,7 @@
               "cursor": {
                 "description": "list: the last page's cursor, with the same path and archived",
                 "maxLength": 300,
-                "pattern": "^(?:[0-9A-Za-z]{2,120}.a_[0-9a-hjkmnp-tv-z]{26}(?:.[0-9A-Za-z]{2,120}.p_[0-9a-hjkmnp-tv-z]{26})?|~.[0-9A-Za-z]{2,120}.p_[0-9a-hjkmnp-tv-z]{26})$",
+                "pattern": "^(?:[0-9A-Za-z]{2,120}\\.a_[0-9a-hjkmnp-tv-z]{26}(?:\\.[0-9A-Za-z]{2,120}\\.p_[0-9a-hjkmnp-tv-z]{26})?|~\\.[0-9A-Za-z]{2,120}\\.p_[0-9a-hjkmnp-tv-z]{26})$",
                 "type": "string"
               },
               "cwd": {
@@ -1671,7 +1671,7 @@
               "cursor": {
                 "description": "list: the last page's cursor, with the same path and archived",
                 "maxLength": 300,
-                "pattern": "^(?:[0-9A-Za-z]{2,120}.a_[0-9a-hjkmnp-tv-z]{26}(?:.[0-9A-Za-z]{2,120}.p_[0-9a-hjkmnp-tv-z]{26})?|~.[0-9A-Za-z]{2,120}.p_[0-9a-hjkmnp-tv-z]{26})$",
+                "pattern": "^(?:[0-9A-Za-z]{2,120}\\.a_[0-9a-hjkmnp-tv-z]{26}(?:\\.[0-9A-Za-z]{2,120}\\.p_[0-9a-hjkmnp-tv-z]{26})?|~\\.[0-9A-Za-z]{2,120}\\.p_[0-9a-hjkmnp-tv-z]{26})$",
                 "type": "string"
               },
               "cwd": {

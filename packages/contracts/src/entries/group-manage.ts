@@ -43,7 +43,7 @@ const B32 = "[0-9a-hjkmnp-tv-z]{26}";
  * ID of its area (`~`: none), then of the project.
  */
 export const GROUP_CURSOR = new RegExp(
-  `^(?:${POSITION}\.a_${B32}(?:\.${POSITION}\.p_${B32})?|~\.${POSITION}\.p_${B32})$`,
+  `^(?:${POSITION}\\.a_${B32}(?:\\.${POSITION}\\.p_${B32})?|~\\.${POSITION}\\.p_${B32})$`,
   "u",
 );
 const GroupCursor = z.string().max(300).regex(GROUP_CURSOR);

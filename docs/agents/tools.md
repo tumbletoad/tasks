@@ -248,7 +248,7 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | A1 operations | `area.create`, `area.patch`, `area.move`, `area.archive`, `project.create`, `project.patch`, `project.move`, `project.archive`, `area.unarchive`, `project.unarchive`, `project.folder_set`, `project.folder_clear` |
 | Faces | MCP `organize`, CLI `ttasks area`, UI |
 | Errors | `invalid_input`, `not_found`, `ambiguous`, `conflict`, `forbidden`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 932, reported |
+| Definition, estimated tokens | 937, reported |
 | Result budget, estimated tokens | typical 400, max 1500 |
 
 ### Input
