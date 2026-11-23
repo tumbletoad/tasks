@@ -92,12 +92,14 @@ export interface Leaving {
   readonly at?: number;
 }
 
-/** Where the edits that wait are kept across a reload (keep.ts). */
+/** Where the edits that wait are kept across a reload (unsent.ts). */
 export interface UnsavedKeeper {
   /** The space's kept edits, each once. */
   load(): Unsaved[];
   /** The tab's edits that wait now, as the edits' state holds them (one under each field). */
   save(unsaved: ReadonlyMap<string, Unsaved>): void;
+  /** Tells of each edit this tab kept or read that the browser holds no more: let go elsewhere. */
+  onGone(listener: (unsaved: Unsaved) => void): () => void;
 }
 
 export interface EditState {
@@ -435,6 +437,11 @@ function conflictText(
 interface EditOptions {
   readonly base?: string | undefined;
   readonly refused?: (why: Msg) => Msg;
+  /**
+   * The service holds the change, or this tab keeps it as not saved (a refusal, no answer): the
+   * caller's own copy of the words can go.
+   */
+  readonly settled?: () => void;
 }
 
 export class Edits {
@@ -484,6 +491,10 @@ export class Edits {
       for (const field of unsaved.change.fields) restored.set(keyOf(unsaved.task, field), unsaved);
     }
     if (restored.size > 0) this.#state = { ...this.#state, unsaved: restored };
+    // Let go in another tab or at the foot of the Trash: the line goes here too, if it still shows.
+    deps.keeper?.onGone((line) => {
+      if (this.unsaved(line.task, line.field) === line) this.#forget(line.task, line.field);
+    });
     deps.onChanges(({ changes }) => {
       this.#heard(changes);
     });
@@ -527,7 +538,13 @@ export class Edits {
    * when it opened; a control leaves it out. `refused` says a refusal after what came before it.
    */
   edit(task: TaskRow, change: Change, options: EditOptions = {}): void {
-    void this.#edit(task, change, options);
+    const { settled } = options;
+    void this.#edit(task, change, options).finally(settled);
+  }
+
+  /** Whether a write of the task's is on its way from this tab. */
+  sending(task: string): boolean {
+    return this.#chains.has(task);
   }
 
   /** `edit`, resolved once its request is decided, or kept as not saved for want of an answer. */

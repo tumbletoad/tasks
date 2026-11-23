@@ -27,7 +27,6 @@ import { useT, type Translate } from "../i18n/intl.tsx";
 import { is } from "../keys/keymap.ts";
 import { useIntl } from "react-intl";
 import type { AreaRow, ProjectRow, TaskRow } from "../store/rows.ts";
-import { useHasDraft } from "../task/composer.ts";
 import { Expanded } from "../task/Expanded.tsx";
 import { agentMarker } from "../task/runs.ts";
 import { placeFact, sourceFacts } from "../task/sources.ts";
@@ -37,7 +36,14 @@ import { tileClick, type BusyOf, type FolderRefusal } from "./launch.ts";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
 import { KeptTitles } from "./KeptTitles.tsx";
-import { keepTitleDraft, pageLeaving, readTitleDraft, TITLE_MAX } from "./title-draft.ts";
+import {
+  keepTitleDraft,
+  letGo,
+  pageLeaving,
+  readTitleDraft,
+  TITLE_MAX,
+  useHasDraft,
+} from "../unsent.ts";
 import {
   ChevronUpIcon,
   ClockIcon,
@@ -301,9 +307,9 @@ function Slots({
  * is the person's edit like any other (edits.ts), with the base taken when the editor opened: a
  * title someone else changed while the person typed is a conflict, never overwritten, and the
  * field says so while the person types. Leaving the window is not leaving the field: the editor
- * stays open with what was typed. What is typed is kept in the browser until then (title-draft.ts):
- * after a reload the editor opens with it again, and only the person's Enter or leaving the field
- * saves it.
+ * stays open with what was typed. What is typed is kept in the browser (unsent.ts) until the service
+ * has answered its save: after a reload the editor opens with it again, and a refusal keeps it as a
+ * refused edit is kept. Only the person's Enter or leaving the field saves it.
  */
 function TitleEditor({
   task,
@@ -323,7 +329,9 @@ function TitleEditor({
   // Taken once, as the editor opens: the save's base is the title the person began to change, also
   // when a reload brought back what they typed.
   const [opened] = useState(() => {
-    const kept = readTitleDraft(space, task.id);
+    const found = readTitleDraft(space, task.id);
+    // Words whose save is still on its way are the title shown: the editor starts from it.
+    const kept = found?.typed.trim() === task.title ? undefined : found;
     return {
       base: kept === undefined ? live.store.asOf : kept.base,
       mark: edits.mark(),
@@ -343,19 +351,26 @@ function TitleEditor({
     if (opened.typed === undefined) input?.select();
     else input?.setSelectionRange(input.value.length, input.value.length);
   }, [opened]);
+  /** Sends what was typed; the kept words go once the service holds them or the edit keeps them. */
+  const save = (row: TaskRow, value: string) => {
+    edits.edit(row, titleChange(value.trim()), {
+      ...(opened.base === undefined ? {} : { base: opened.base }),
+      settled: () => {
+        letGo(space, { kind: "title", task: row.id, text: value });
+      },
+    });
+  };
   // The row goes away while the person types (the task leaves the view, the card collapses): what
-  // they typed is saved, as leaving the field does, never dropped.
+  // they typed is saved, as leaving the field does, never dropped. A task the page no longer holds
+  // (moved to the Trash, finished, gone) takes no title: the words stay kept, unsent, with it.
   useEffect(
     () => () => {
-      const title = (typed.current ?? "").trim();
+      const value = typed.current ?? "";
+      const title = value.trim();
       if (done.current || title === "" || title === before) return;
       done.current = true;
-      keepTitleDraft(space, latest.current.id, undefined);
-      edits.edit(
-        latest.current,
-        titleChange(title),
-        opened.base === undefined ? {} : { base: opened.base },
-      );
+      if (!live.getState().tasks.has(latest.current.id)) return;
+      save(latest.current, value);
     },
     // The editor's own values, fixed while it is open.
     [edits, before, opened, space],
@@ -364,16 +379,17 @@ function TitleEditor({
   const finish = (keep: boolean, refocus: boolean) => {
     if (done.current) return;
     done.current = true;
-    keepTitleDraft(space, task.id, undefined);
-    const title = (field.current?.value ?? "").trim();
+    const value = field.current?.value ?? "";
+    const title = value.trim();
+    const sending = keep && title !== "" && title !== before;
+    // Escape, or nothing to save: nothing typed waits any more.
+    if (!sending) keepTitleDraft(space, task.id, undefined);
     const line = field.current?.closest("[data-row-line]");
     // The title is drawn back before focus goes to it, within this key: a key pressed right after
     // acts from the title, and nothing moves focus later.
     if (refocus) flushSync(onDone);
     else onDone();
-    if (keep && title !== "" && title !== before) {
-      edits.edit(task, titleChange(title), opened.base === undefined ? {} : { base: opened.base });
-    }
+    if (sending) save(task, value);
     if (refocus) {
       line?.querySelector<HTMLElement>('[data-part="title"]')?.focus({ preventScroll: true });
     }
@@ -533,13 +549,18 @@ function RowView({
     if (!expanded) actions.expand(task);
     setEditing(true);
   };
-  // A title the person was typing when the page went away comes back in its editor with the card.
+  // A title the person was typing when the page went away comes back in its editor with the card,
+  // unless the service took it before the page went: the title shows it, and no save is on its way.
   const space = live.spaceId ?? "";
+  const edits = useEdits();
   useEffect(() => {
-    if (expanded && editable && readTitleDraft(space, task.id) !== undefined) {
-      setEditing(true);
-    }
-  }, [expanded, space, task.id, editable]);
+    const kept = readTitleDraft(space, task.id);
+    if (!expanded || kept === undefined) return;
+    if (kept.typed.trim() === task.title && !edits.sending(task.id)) {
+      letGo(space, { kind: "title", task: task.id, text: kept.typed });
+    } else if (editable) setEditing(true);
+    // The title is read as the card opens, not again as it changes.
+  }, [expanded, space, task.id, editable, edits]);
   // The offset is a custom property set through the CSSOM (React's style object), which the CSP's
   // style-src allows; the stylesheet turns it into a transform. Nothing writes a style attribute.
   const position =

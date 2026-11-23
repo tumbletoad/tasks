@@ -6,6 +6,7 @@
 // words typed for a task the space does not have now stay at the foot of the Trash. Screenshots at
 // 1,440 and 390 px for review.
 import { expect, type Page } from "@playwright/test";
+import { PRODUCT_ID } from "../../packages/brand/src/index.ts";
 import { test } from "./fixture.ts";
 import {
   axeFound,
@@ -213,41 +214,212 @@ test.describe("[A5.trash.e2e.unsent] Every unsent word of a removed task stays, 
     await page.reload();
     await expect(unsent.filter({ hasText: draft })).toBeVisible({ timeout: SLOW_MS });
   });
-});
 
-test.describe("[A5.trash.e2e.title] A title being typed stays through a removal", () => {
-  test("a title being typed stays through the task's removal, a page opened meanwhile and its restore: listed at the foot of the Trash, then back in its editor", async ({
+  test("the foot follows every tab: an edit another tab could not save appears in it while it is open, Discard takes only the value shown, and a finished task restored with all four kinds listed leaves it at once, its words on its card", async ({
     page,
     world,
   }) => {
     const tag = test.info().project.name;
     const space = world.mira.id;
-    const title = `Plan the move (${tag})`;
+    const title = `Return the rental van (${tag})`;
     const ref = await addTask(world, { title, area: "home" });
-    await openTask(page, world, ref);
-    const editor = rowOf(page, ref).getByRole("textbox", { name: "Title" });
-    await rowOf(page, ref).locator('[data-part="title"]').focus();
-    await page.keyboard.press("F2");
-    await expect(editor).toBeFocused();
-    await page.keyboard.press("End");
-    await page.keyboard.type(" in May");
-    const typed = `${title} in May`;
-    // Removed from elsewhere while the words wait; the page opens again, and its cleanup runs.
+    const id = ((await world.op(space, "task.get", { task: ref })) as { task: { id: string } }).task
+      .id;
+
+    // Another tab: a priority and a note on their way, a draft, and a title being typed.
+    const other = await page.context().newPage();
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const held: string[] = [];
+    await other.route(/\/api\/v1\/op\/(task\.update|entry\.add)$/u, async (route) => {
+      held.push(route.request().url());
+      await released;
+      await route.continue();
+    });
+    await openTask(other, world, ref);
+    const card = rowOf(other, ref);
+    await card
+      .getByRole("radiogroup", { name: "Priority" })
+      .getByRole("radio", { name: "P1" })
+      .click();
+    const note = `Ask for the deposit back (${tag})`;
+    const draft = `And the parking ticket (${tag})`;
+    await card.locator('[data-part="composer"]').fill(note);
+    await other.keyboard.press("Enter");
+    await expect.poll(() => held.length).toBe(2);
+    await card.locator('[data-part="composer"]').fill(draft);
+    await card.locator('[data-part="title"]').focus();
+    await other.keyboard.press("F2");
+    await other.keyboard.press("End");
+    await other.keyboard.type(" on Monday");
+    const typed = `${title} on Monday`;
+
+    // Finished and then removed from elsewhere; this tab's foot is open before the edit is refused.
+    const finished = (await world.op(space, "space.status", {})) as { as_of: string };
+    await world.op(space, "task.finish", { task: ref, base: finished.as_of });
     await removeTasks(world, [ref]);
-    await page.goto(`${world.origin}/s/${space}/trash`);
+    await signIn(page, world, `/s/${space}/trash`);
     await showsSpace(page, world.mira.name);
-    const kept = page.locator('[data-part="unsent-words"][data-kind="title"]');
-    await expect(kept).toContainText(typed, { timeout: SLOW_MS });
-    await expect(kept).toContainText(ref);
-    // Restored: the words come back in the title's editor, unsent.
-    const status = (await world.op(space, "space.status", {})) as { as_of: string };
-    await world.op(space, "task.delete", { tasks: [ref], restore: true, base: status.as_of });
-    // The card opens in its title's editor, so it is opened by its link, not by its title button.
-    await page.goto(`${world.origin}/s/${space}/task/${ref}`);
-    await showsSpace(page, world.mira.name);
-    await expect(rowOf(page, ref).getByRole("textbox", { name: "Title" })).toHaveValue(typed, {
+    const unsent = page.locator('[data-part="unsent-words"]');
+    await expect(unsent.filter({ hasText: typed })).toHaveAttribute("data-kind", "title", {
       timeout: SLOW_MS,
     });
+    const refused = other.waitForResponse(/\/api\/v1\/op\/task\.update$/u);
+    release();
+    expect((await refused).status()).toBeGreaterThanOrEqual(400);
+    await expect(unsent.filter({ hasText: "P1" })).toHaveAttribute("data-kind", "edit", {
+      timeout: SLOW_MS,
+    });
+    await expect(unsent.filter({ hasText: note })).toHaveAttribute("data-kind", "note");
+    await expect(unsent.filter({ hasText: draft })).toHaveAttribute("data-kind", "draft");
+    await other.close();
+
+    // A newer draft is kept before this tab hears of it: Discard of the one shown leaves it.
+    const newer = `${draft}, and the keys`;
+    await page.evaluate(
+      ([name, value]) => {
+        localStorage.setItem(name, value);
+      },
+      [`${PRODUCT_ID}.draft.${space}.${id}`, newer] as const,
+    );
+    await unsent.filter({ hasText: draft }).getByRole("button", { name: "Discard" }).click();
+    await page.reload();
+    await showsSpace(page, world.mira.name);
+    await expect(unsent.filter({ hasText: newer })).toHaveAttribute("data-kind", "draft", {
+      timeout: SLOW_MS,
+    });
+    await expect(unsent).toHaveCount(4);
+
+    // Restored into Completed: the foot lets them go at once, and the card shows each.
+    await rowOf(page, ref).locator('[data-part="restore"]').click();
+    await expect(toast(page)).toContainText(`${ref} is back`, { timeout: SLOW_MS });
+    await expect(unsent).toHaveCount(0);
+    await page.goto(`${world.origin}/s/${space}/task/${ref}`);
+    await showsSpace(page, world.mira.name);
+    const back = rowOf(page, ref);
+    await expect(back.locator('[data-part="composer"]')).toHaveValue(newer, { timeout: SLOW_MS });
+    await expect(back.locator('[data-part="kept-note"]')).toContainText(note);
+    await expect(back.locator('[data-part="kept-title"]')).toContainText(typed);
+    await expect(back.locator('[data-part="unsaved"] [data-part="copy-mine"]')).toHaveAttribute(
+      "aria-label",
+      "Copy: P1",
+    );
+  });
+});
+
+test.describe("[A5.trash.e2e.title] A title being typed stays through a removal, whichever comes first", () => {
+  /** Opens the task's card and types after its title, unsent: the words the steps follow. */
+  async function typeTitle(page: Page, world: World, ref: string, title: string): Promise<string> {
+    await openTask(page, world, ref);
+    await rowOf(page, ref).locator('[data-part="title"]').focus();
+    await page.keyboard.press("F2");
+    await expect(rowOf(page, ref).getByRole("textbox", { name: "Title" })).toBeFocused();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" in May");
+    return `${title} in May`;
+  }
+
+  test("the page leaves before the removal arrives, stays while it arrives, or leaves while its save is on its way: each time the words are at the foot of the Trash, also after one more reload, and back in the editor after Restore", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const space = world.mira.id;
+    const add = (what: string) => addTask(world, { title: `${what} (${tag})`, area: "home" });
+    const saves: string[] = [];
+    page.on("request", (request) => {
+      if (request.url().endsWith("/api/v1/op/task.update")) saves.push(request.url());
+    });
+
+    // The page leaves before the removal reaches it.
+    const left = await add("Plan the move");
+    const leftWords = await typeTitle(page, world, left, `Plan the move (${tag})`);
+    await page.goto(`${world.origin}/s/${space}/trash`);
+    await showsSpace(page, world.mira.name);
+    await removeTasks(world, [left]);
+
+    // The page stays while the removal reaches it: the editor goes, and nothing is sent.
+    const stayed = await add("Paint the hall");
+    const stayedWords = await typeTitle(page, world, stayed, `Paint the hall (${tag})`);
+    await removeTasks(world, [stayed]);
+    await expect(rowOf(page, stayed).getByRole("textbox", { name: "Title" })).toHaveCount(0, {
+      timeout: SLOW_MS,
+    });
+    expect(saves).toEqual([]);
+
+    // The page leaves while its save is on its way: no answer ever reaches it.
+    const sending = await add("Sell the piano");
+    const sendingWords = await typeTitle(page, world, sending, `Sell the piano (${tag})`);
+    let reached = false;
+    await page.route("**/api/v1/op/task.update", () => {
+      reached = true;
+    });
+    await page.keyboard.press("Enter");
+    await expect.poll(() => reached).toBe(true);
+    await removeTasks(world, [sending]);
+    await page.goto(`${world.origin}/s/${space}/trash`);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await showsSpace(page, world.mira.name);
+
+    const kept = page.locator('[data-part="unsent-words"][data-kind="title"]');
+    const listed = async () => {
+      for (const [ref, words] of [
+        [left, leftWords],
+        [stayed, stayedWords],
+        [sending, sendingWords],
+      ] as const) {
+        await expect(kept.filter({ hasText: words })).toContainText(ref, { timeout: SLOW_MS });
+      }
+    };
+    await listed();
+    await page.reload();
+    await showsSpace(page, world.mira.name);
+    await listed();
+
+    // Restored: the words come back in the title's editor, unsent, and leave the foot at once.
+    await page.locator(`main li[data-task="${stayed}"] [data-part="restore"]`).click();
+    await expect(kept.filter({ hasText: stayedWords })).toHaveCount(0, { timeout: SLOW_MS });
+    // The card opens in its title's editor, so it is opened by its link, not by its title button.
+    await page.goto(`${world.origin}/s/${space}/task/${stayed}`);
+    await showsSpace(page, world.mira.name);
+    await expect(rowOf(page, stayed).getByRole("textbox", { name: "Title" })).toHaveValue(
+      stayedWords,
+      { timeout: SLOW_MS },
+    );
+  });
+
+  test("a save the service refuses because the task was removed meanwhile: the words are a kept edit then, listed once, never in no store", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const space = world.mira.id;
+    const ref = await addTask(world, { title: `Fix the gate (${tag})`, area: "home" });
+    const words = await typeTitle(page, world, ref, `Fix the gate (${tag})`);
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reached = false;
+    await page.route("**/api/v1/op/task.update", async (route) => {
+      reached = true;
+      await released;
+      await route.continue();
+    });
+    await page.keyboard.press("Enter");
+    await expect.poll(() => reached).toBe(true);
+    await removeTasks(world, [ref]);
+    const answered = page.waitForResponse("**/api/v1/op/task.update");
+    release();
+    expect((await answered).status()).toBeGreaterThanOrEqual(400);
+    await page.unroute("**/api/v1/op/task.update");
+    await page.goto(`${world.origin}/s/${space}/trash`);
+    await showsSpace(page, world.mira.name);
+    const unsent = page.locator('[data-part="unsent-words"]').filter({ hasText: words });
+    await expect(unsent).toHaveAttribute("data-kind", "edit", { timeout: SLOW_MS });
+    await expect(unsent).toHaveCount(1);
   });
 });
 

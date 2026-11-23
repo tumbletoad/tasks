@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// The field edits that wait, kept in the browser across a reload (keep.ts): each control's edit
+// The field edits that wait, kept in the browser across a reload (unsent.ts): each control's edit
 // comes back as the control made it, a value no control could make never comes back, and a tab
 // removes only what it kept or read.
 import { PRODUCT_ID } from "@ttasks/brand";
@@ -20,7 +20,7 @@ import {
   type Change,
 } from "./change.ts";
 import type { Unsaved } from "./edits.ts";
-import { forgetUnsaved, unsavedKeeper, unsavedOf, unsavedTasks } from "./keep.ts";
+import { forgetTask, unsavedKeeper, unsavedOf, unsentTasks } from "../unsent.ts";
 
 const SPACE = "sp_0123456789abcdefghjkmnpqrs";
 const OTHER = "sp_abcdefghjkmnpqrs0123456789";
@@ -107,7 +107,7 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
     }
     // Kept per space: another space's page reads none of them.
     expect(unsavedKeeper(OTHER).load()).toEqual([]);
-    expect(unsavedTasks(SPACE)).toHaveLength(list.length);
+    expect(unsentTasks(SPACE)).toHaveLength(list.length);
   });
 
   test("a value no control could make, or not of the edit's shape, never comes back and is removed", () => {
@@ -235,7 +235,7 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
     expect(stored()).toEqual([]);
     // A task gone for good takes its edits with it.
     tab.save(asMap([unsaved(titleChange("Again"), 3), unsaved(priorityChange(1), 3)]));
-    forgetUnsaved(SPACE, "tk_00003");
+    forgetTask(SPACE, "tk_00003");
     expect(stored()).toEqual([]);
   });
 

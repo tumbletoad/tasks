@@ -2156,6 +2156,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.trash.web.unsent",
+      "title": "Every unsent word goes through one module: drafts, notes on their way, titles being typed and kept field edits are listed with their task and exact value, a Discard takes only the value it was shown so a newer one another tab kept stays, a change of any kind from this tab or another is heard, and a kept edit let go anywhere leaves the tab that kept it",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.trash.web.agents",
       "title": "A task in the Trash on the Agents page: the tasks the monitor links an agent to that the live store does not hold are named once, for this space, for the page to read; read, a removed task is placed by the same rule as a live one, whether its run ended or works, and restored it is placed the same",
       "owner": "M5",

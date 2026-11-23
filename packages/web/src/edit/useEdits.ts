@@ -5,7 +5,7 @@ import { requestId, type Api } from "../api.ts";
 import { Session } from "../context.ts";
 import type { Live } from "../live.ts";
 import { Edits, type EditState } from "./edits.ts";
-import { unsavedKeeper } from "./keep.ts";
+import { unsavedKeeper } from "../unsent.ts";
 
 const controllers = new WeakMap<Live, Edits>();
 

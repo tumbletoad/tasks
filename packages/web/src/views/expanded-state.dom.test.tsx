@@ -463,15 +463,10 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     expect(line?.querySelector('[data-part="keep-theirs"]')).not.toBeNull();
   });
 
-  test("a title typed while an agent checks the task off stays readable with Copy; Try again only once it is reopened", async () => {
+  test("a title typed while an agent checks the task off stays readable with Copy and is sent nowhere; reopened, it is back in the title's editor", async () => {
     (api.client.task as { update: unknown }).update = (input: Record<string, unknown>) => {
       updates.push(input);
-      return Promise.reject(
-        Object.assign(new Error("not active"), {
-          code: "wrong_tool",
-          data: { cause: "TASK_NOT_ACTIVE" },
-        }),
-      );
+      return new Promise(() => undefined);
     };
     const tasks = [task(1), task(2)];
     mount(<TaskList view="open" filter={OPEN} empty="" />);
@@ -479,28 +474,29 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     const id = "t_00001";
     expand(id);
     press(titleOf(id), "F2");
-    const field = container.querySelector<HTMLInputElement>(
-      `li[data-key="${id}"] [data-part="title-edit"]`,
+    type(
+      container.querySelector<HTMLInputElement>(`li[data-key="${id}"] [data-part="title-edit"]`),
+      "Task 1, fixed",
     );
-    type(field, "Task 1, fixed");
-    // An agent completes the task while the person types; then the person presses Enter.
+    // An agent completes the task while the person types: the editor goes, and nothing is sent.
     apply(batch(11, [task(1, { lifecycle: "completed", version: 2 })], ["lifecycle"]));
-    press(field, "Enter");
     await settle();
-    expect(updates).toHaveLength(1);
-    const card = container.querySelector(`li[data-key="${id}"]`);
-    const line = card?.querySelector('[data-part="unsaved"]');
-    // The typed title is shown, with Copy and Discard, and no Try again that would fail again.
+    expect(updates).toEqual([]);
+    const line = container.querySelector(`li[data-key="${id}"] [data-part="kept-title"]`);
+    // The typed title is shown, with Copy and Discard.
     expect(line?.getAttribute("data-reason")).toBe("finished");
-    expect(line?.querySelector('[data-part="unsaved-value"]')?.textContent).toBe("Task 1, fixed");
-    expect(line?.querySelector('[data-part="apply-mine"]')).toBeNull();
-    expect(line?.querySelector('[data-part="copy-mine"]')).not.toBeNull();
-    expect(line?.querySelector('[data-part="keep-theirs"]')).not.toBeNull();
-    // Reopened, the title offers Try again.
+    expect(line?.querySelector('[data-part="kept-title-value"]')?.textContent).toBe(
+      "Task 1, fixed",
+    );
+    expect(line?.querySelector('[data-part="copy-kept-title"]')).not.toBeNull();
+    expect(line?.querySelector('[data-part="discard-kept-title"]')).not.toBeNull();
+    // Reopened, the words are back in the title's editor, for Enter to save.
     apply(batch(12, [task(1, { lifecycle: "active", version: 3 })], ["lifecycle"]));
-    const again = container.querySelector(`li[data-key="${id}"] [data-part="unsaved"]`);
-    expect(again?.getAttribute("data-reason")).toBe("failed");
-    expect(again?.querySelector('[data-part="apply-mine"]')).not.toBeNull();
+    await settle();
+    expect(
+      container.querySelector<HTMLInputElement>(`li[data-key="${id}"] [data-part="title-edit"]`)
+        ?.value,
+    ).toBe("Task 1, fixed");
   });
 
   test("leaving the title editor for another control keeps focus there", async () => {

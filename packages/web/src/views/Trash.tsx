@@ -10,16 +10,15 @@ import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { Session } from "../context.ts";
-import { useEdits, useEditState } from "../edit/useEdits.ts";
+import { useEdits } from "../edit/useEdits.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { formatInstant, type Clock } from "../row/dates.ts";
+import { sayMsg } from "../row/say.ts";
 import { useClock } from "../row/useClock.ts";
 import { useLive, usePagedQuery } from "../store/hooks.ts";
+import { affects } from "../store/queries.ts";
 import type { TaskRow } from "../store/rows.ts";
-import { onKeptUnder } from "../kept.ts";
-import { discardTitleDraft } from "../row/title-draft.ts";
-import { discardDraft, discardNote } from "../task/composer.ts";
-import { unsentOf, type Unsent } from "./unsent.ts";
+import { letGo, useUnsent } from "../unsent.ts";
 import { TaskList, type GroupsOf } from "./TaskList.tsx";
 import { trashGroups, trashSource, type Removal, type TrashedRow } from "./trash.ts";
 import css from "./Trash.module.css";
@@ -304,6 +303,8 @@ function Where({ row, onRestore }: { readonly row: TrashedRow; readonly onRestor
   );
 }
 
+/** A task ID as the service gives one: what is kept under another name is not asked about. */
+const TASK_ID = /^t_[0-9a-hjkmnp-tv-z]{26}$/u;
 /** Tasks per read of the Trash by task. */
 const PAGE = 200;
 /** Reads of a task's digest at once, for the words of tasks neither listed nor in the Trash. */
@@ -344,40 +345,39 @@ async function whereAre(
 
 /**
  * The words this browser holds for a task in the Trash or one the space does not have now (a
- * backup restored over it, or a creation undone): drafts, notes on their way and field edits not
- * taken (unsent.ts). Each stays, with Copy and Discard, until the person discards it; Discard
- * removes the value shown and nothing else, so a newer one typed in another tab stays.
+ * backup restored over it, or a creation undone), of every kind, from any tab (unsent.ts). Each
+ * stays, with Copy and Discard, until the person discards it; Discard removes the value shown and
+ * nothing else, so a newer one typed in another tab stays. Where each task is comes from the
+ * service, asked again whenever a task is removed or restored or a snapshot replaces what the page
+ * knew: a task that is live again leaves at once, and its words are its card's.
  */
 function UnsentWords() {
   const t = useT();
   const say = useToast();
   const { api, live } = useContext(Session);
-  const edits = useEdits();
-  const { unsaved } = useEditState();
   const { tasks: known } = useLive();
   const space = live.spaceId ?? "";
-  // Another tab's draft or note, or a Discard here: read again.
-  const [, setRead] = useState(0);
-  useEffect(() => {
-    const again = (): void => {
-      setRead((n) => n + 1);
-    };
-    const drafts = onKeptUnder("draft.", again);
-    const notes = onKeptUnder("note.", again);
-    const titles = onKeptUnder("title.", again);
-    return () => {
-      drafts();
-      notes();
-      titles();
-    };
-  }, []);
-  const words = space === "" ? [] : unsentOf(space, unsaved.values());
-  // The tasks asked about, again only when that list changes.
+  const words = useUnsent(space).filter((word) => TASK_ID.test(word.task));
+  const [where, setWhere] = useState<ReadonlyMap<string, string | null>>(new Map());
+  const [round, setRound] = useState(0);
+  useEffect(
+    () =>
+      live.onChanges(({ changes, reset }) => {
+        const moved = changes.filter((change) => affects(QUERY, change));
+        const back = moved
+          .filter((change) => (change.after as TaskRow | undefined)?.deleted_at === undefined)
+          .map((change) => change.id);
+        if (back.length > 0) {
+          setWhere((now) => new Map([...now].filter(([task]) => !back.includes(task))));
+        }
+        if (reset || moved.length > 0) setRound((n) => n + 1);
+      }),
+    [live],
+  );
   const asked = [...new Set(words.map((word) => word.task))]
     .filter((task) => !known.has(task))
     .sort()
     .join(" ");
-  const [where, setWhere] = useState<ReadonlyMap<string, string | null>>(new Map());
   useEffect(() => {
     if (asked === "") return;
     let current = true;
@@ -392,18 +392,15 @@ function UnsentWords() {
     return () => {
       current = false;
     };
-  }, [api, live, asked]);
+  }, [api, live, asked, round]);
   const shown = words.filter((word) => where.has(word.task) && !known.has(word.task));
   if (shown.length === 0) return null;
-  const discard = (word: Unsent): void => {
-    if (word.kind === "draft") discardDraft(space, word.task, word.text);
-    else if (word.kind === "note") discardNote(space, word.task, word.id);
-    else if (word.kind === "title") discardTitleDraft(space, word.task, word.tab, word.text);
-    else if (edits.unsaved(word.task, word.field)?.change.shown === word.text) {
-      edits.dismiss(word.task, word.field);
-    }
-    setRead((n) => n + 1);
-  };
+  const textOf = (word: (typeof shown)[number]): string =>
+    word.kind !== "edit"
+      ? word.text
+      : typeof word.shown === "string"
+        ? word.shown
+        : sayMsg(t, word.shown);
   return (
     <section className={styles.unsent} aria-label={t("trash.unsent")}>
       <h2 className={list.line}>{t("trash.unsent")}</h2>
@@ -417,13 +414,13 @@ function UnsentWords() {
             </span>
             <span className={styles.kind}>{t("trash.unsentKind", { kind: word.kind })}</span>
             <span className={styles.text} dir="auto">
-              {word.text}
+              {textOf(word)}
             </span>
             <button
               type="button"
               className={styles.act}
               onClick={() => {
-                navigator.clipboard.writeText(word.text).then(
+                navigator.clipboard.writeText(textOf(word)).then(
                   () => {
                     say(t("row.copied"));
                   },
@@ -439,7 +436,7 @@ function UnsentWords() {
               type="button"
               className={styles.act}
               onClick={() => {
-                discard(word);
+                letGo(space, word);
               }}
             >
               {t("edit.discard")}

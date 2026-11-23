@@ -7,12 +7,13 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { PRODUCT_ID } from "@ttasks/brand";
 import type { Api } from "../api.ts";
 import { Session } from "../context.ts";
 import { I18n } from "../i18n/intl.tsx";
 import { Live } from "../live.ts";
 import type { SnapshotMessage } from "../store/rows.ts";
-import { keepDraft, keepNote, readDraft, readNote } from "../task/composer.ts";
+import { keepDraft, keepNote, readDraft, readNotes } from "../unsent.ts";
 import { TaskList } from "./TaskList.tsx";
 import { FakeFrames } from "../../test/fake-frames.ts";
 
@@ -252,7 +253,7 @@ describe("[A5.trash.web.card] the card of a task in the Trash is for reading", (
     await settle();
 
     expect(readDraft(SPACE.id, TASK)).toBe(DRAFT);
-    expect(readNote(SPACE.id, TASK)).toEqual(note);
+    expect(readNotes(SPACE.id, TASK)).toEqual([note]);
     expect(card()?.querySelector<HTMLTextAreaElement>('[data-part="composer"]')?.value).toBe(DRAFT);
     expect(calls.filter((name) => !READS.has(name))).toEqual([]);
     // No control that writes is offered at all.
@@ -260,5 +261,25 @@ describe("[A5.trash.web.card] the card of a task in the Trash is for reading", (
     for (const part of ["move-to-trash", "check", "strip", "tile"]) {
       expect(card()?.querySelector(`[data-part="${part}"]`), part).toBeNull();
     }
+  });
+});
+
+describe("[A5.trash.web.unsent] the card's Discard takes the words it shows", () => {
+  test("another tab's title, kept newer before this tab heard of it: the card's Discard of the older one leaves it", async () => {
+    const name = `${PRODUCT_ID}.title.${SPACE.id}.${TASK}.othertab`;
+    const kept = (typed: string) => JSON.stringify({ typed, title: "Renew the passport" });
+    localStorage.setItem(name, kept("Renew the passport in May"));
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: name, storageArea: localStorage }));
+    });
+    await settle();
+    const line = card()?.querySelector('[data-part="kept-title"]');
+    expect(line?.textContent).toContain("Renew the passport in May");
+    // The newer words arrive before their event does.
+    localStorage.setItem(name, kept("Renew the passport in June"));
+    act(() => {
+      line?.querySelector<HTMLElement>('[data-part="discard-kept-title"]')?.click();
+    });
+    expect(localStorage.getItem(name)).toBe(kept("Renew the passport in June"));
   });
 });

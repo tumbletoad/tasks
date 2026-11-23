@@ -5,9 +5,7 @@
 // the Trash (views/Trash.tsx), until the person discards them. Only text kept under a key of no
 // task's shape is forgotten, when the space next opens.
 import type { Api } from "../api.ts";
-import { forgetUnsaved, unsavedTasks } from "../edit/keep.ts";
-import { forgetTitleDrafts, titleDraftTasks } from "../row/title-draft.ts";
-import { draftTasks, keepDraft } from "../task/composer.ts";
+import { forgetTask, unsentTasks } from "../unsent.ts";
 
 /** The most tasks asked about per opening: the rest wait for the next one. */
 const MAX_ASKED = 20;
@@ -24,8 +22,7 @@ export async function forgetGone(
   api: Api,
   known: (task: string) => boolean,
 ): Promise<void> {
-  const tasks = new Set([...draftTasks(space), ...titleDraftTasks(space), ...unsavedTasks(space)]);
-  const unknown = [...tasks].filter((task) => task !== "" && !known(task));
+  const unknown = unsentTasks(space).filter((task) => !known(task));
   // A random few each time: tasks that still exist never keep the others from being asked about.
   for (let i = unknown.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -37,9 +34,7 @@ export async function forgetGone(
       await api.client.task.get({ task });
     } catch (error) {
       if (!notATask(error)) continue;
-      keepDraft(space, task, "");
-      forgetTitleDrafts(space, task);
-      forgetUnsaved(space, task);
+      forgetTask(space, task);
     }
   }
 }
