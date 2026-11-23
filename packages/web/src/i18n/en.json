@@ -327,6 +327,7 @@
   "run.stopLabel": "Stop {label}'s run",
   "run.stopFailed": "Stop did not reach {product}. Try again.",
   "run.unanswered": "{product} did not answer, so the run may have started. It shows in the thread once {product} answers.",
+  "run.alreadyTaken": "This request was already taken: its run is in the thread. Press Run again to start a new one.",
   "run.refused": "{reason, select, task_not_found {This task is not here any more.} task_closed {This task is done or deleted.} instance {{label} cannot work on tasks in the background here.} other_machine {This task's folder is on {machine}: run it there.} folder_missing {Folder not found on this machine: {folder}.} work_folder {The space's work folder cannot be used on this machine.} marker_missing {This may not be the folder set for this task: its {product} marker is missing. {folder}. Open the task there once to use this folder, then Run.} marker_other {This may not be the folder set for this task: its {product} marker names another. {folder}. Open the task there once to use this folder, then Run.} too_large {What you typed is too long for a run.} runs_unavailable {This build of {product} cannot run agents in the background.} not_served {This space is not open on this machine.} other {The run did not start. Try again.}} Nothing was started.",
 
   "settings.where": "These settings are kept on this machine. Every space and every browser here follows them.",
@@ -457,6 +458,7 @@
   "edit.changedByEarlier": "{who, select, user {Changed elsewhere} import {Changed by the import} other {Changed by {by}}}",
   "edit.notSaved": "Not saved",
   "edit.notSavedFinished": "Not saved: the task is finished",
+  "edit.notSavedRestored": "Not saved: the space was restored since",
   "edit.copyValue": "Copy: {value}",
   "edit.applyMine": "Apply mine",
   "edit.applyMineValue": "Apply mine: {value}",

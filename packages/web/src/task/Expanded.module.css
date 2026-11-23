@@ -1,16 +1,14 @@
 /*
- * The expanded task's body (A5 3.7, 3.20): content 1fr and facts 304 px with a 36 px gap, then
- * the composer's place across both. The facts come first in the document, so below 1,024 px the
- * one column reads header, facts, content, composer in document order; at full width the grid
- * places them, and `order` is never used. Tokens only.
+ * The expanded task's body (A5 3.7, 3.20): content 1fr, the composer first in it, and facts
+ * 304 px with a 36 px gap. The facts come first in the document, so below 1,024 px the one column
+ * reads header, facts, content in document order; at full width the grid places them, and
+ * `order` is never used. Tokens only.
  */
 
 .body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 304px;
-  grid-template-areas:
-    "content facts"
-    "composer composer";
+  grid-template-areas: "content facts";
   column-gap: 36px;
   padding-top: 6px;
 }
@@ -655,13 +653,14 @@ a + .muted,
   color: var(--k-late);
 }
 
-/* The composer, across both columns: its field, then the strip of where its text goes. */
+/* The composer, at the top of the content: its field, then the strip of where its text goes. */
 .composer {
-  grid-area: composer;
-  margin-top: 18px;
+  margin-bottom: 18px;
 }
 
 .input {
+  /* Ask scrolls the field into view clear of the sticky top bar. */
+  scroll-margin-top: calc(var(--k-top) + 8px);
   display: block;
   width: 100%;
   min-height: 40px;
@@ -789,6 +788,18 @@ a + .muted,
   flex: 1 1 0;
 }
 
+.label {
+  display: inline-grid;
+}
+
+.label > * {
+  grid-area: 1 / 1;
+}
+
+.label > [data-off] {
+  visibility: hidden;
+}
+
 /* How much more fits, near the composer's limit: said before a click, never after. */
 .limit {
   font-size: 0.75rem;
@@ -913,8 +924,7 @@ a + .muted,
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "facts"
-      "content"
-      "composer";
+      "content";
   }
 
   .facts {

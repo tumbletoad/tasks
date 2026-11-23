@@ -281,6 +281,17 @@ export class SpaceExecutionStore implements ExecutionStore {
     return { intents: rows.map(decodeLaunch), runs: runs.map(decodeRun) };
   }
 
+  async replayedRun(requestId: string): Promise<RunRecord | undefined> {
+    const found = await this.#writer.receipt({
+      scope_id: this.#credential.scope_id,
+      request_id: requestId,
+    });
+    if (found === null || found === undefined) return undefined;
+    if (found.status !== "applied" && found.status !== "unchanged") return undefined;
+    const id = found.result?.results[0]?.id;
+    return id === undefined ? undefined : this.readRun(id);
+  }
+
   async createRun(value: NewRun, requestId: string): Promise<RunRecord> {
     const input = checkNewRun(value);
     if (input.machine !== this.#credential.machine_id) {

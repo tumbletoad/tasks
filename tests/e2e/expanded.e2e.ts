@@ -330,11 +330,9 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     await page.keyboard.press("Enter");
     await expect(title).toHaveAttribute("aria-expanded", "true");
     await expect(page).toHaveURL(`${world.origin}${view}?task=${ref}`);
-    // The card's controls show once its thread is read.
-    await expect(row.locator('[data-part="composer"]')).toBeVisible({ timeout: SLOW_MS });
 
-    // Tab walks the header's controls, then the card: its facts, its source link, the composer,
-    // then the strip, which is one stop: the arrows walk it from Note to Copy.
+    // Tab walks the header's controls, then the card: its facts, the composer, then the strip,
+    // which is one stop (the arrows walk it from Note to Copy), then its source link.
     const active = () =>
       page.evaluate(() => {
         const e = document.activeElement;
@@ -345,12 +343,12 @@ test.describe("[A7.3.12.m5-06.e2e.keyboard] The expanded task by keyboard alone"
     for (let i = 0; i < 25; i += 1) {
       await page.keyboard.press("Tab");
       reached.push(await active());
-      if (reached.at(-1) === "button:note") break;
+      if (reached.at(-1)?.startsWith("a:") === true) break;
     }
     expect(reached).toContain("button:star");
     expect(reached).toContain("button:collapse");
-    expect(reached.some((r) => r.startsWith("a:"))).toBe(true);
-    expect(reached.slice(-2)).toEqual(["textarea:composer", "button:note"]);
+    expect(reached.slice(-3)).toEqual(["textarea:composer", "button:note", "a:Van rental"]);
+    await page.keyboard.press("Shift+Tab");
     for (let i = 0; i < 6 && (await active()) !== "button:copy"; i += 1) {
       await page.keyboard.press("ArrowRight");
     }

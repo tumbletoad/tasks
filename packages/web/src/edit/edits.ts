@@ -70,6 +70,11 @@ export interface Unsaved {
   readonly field: Field;
   readonly change: Change;
   readonly reason: "conflict" | "failed";
+  /**
+   * What the screen showed when the person made it: Try again sends it with this base, so a change
+   * someone made since is a conflict, never overwritten. Apply mine takes the screen's now.
+   */
+  readonly base?: string;
   /** Who changed the field since (a conflict): the actor's label, `user` or `import`. */
   readonly by?: string;
   readonly at?: number;
@@ -122,6 +127,8 @@ export interface EditDeps {
   readonly alive?: () => boolean;
   readonly timers?: Timers;
   readonly keeper?: UnsavedKeeper;
+  /** Resolves when the page goes away (`pageGone`). */
+  readonly leaving?: () => Promise<unknown>;
 }
 
 /** An undo's commit: named, or the commit of the tab's own write, resolved in the undo's turn. */
@@ -211,6 +218,42 @@ interface Problem {
   readonly commit?: string;
 }
 
+/**
+ * Resolves when the page goes away: a reload, a close, another site, the back-forward cache. A
+ * page that comes back from that cache waits anew. A switch to another tab is no leaving.
+ */
+let pageGone: Promise<void> = new Promise(() => undefined);
+if (typeof window !== "undefined") {
+  let go: () => void = () => undefined;
+  const arm = () => {
+    pageGone = new Promise((resolve) => {
+      go = resolve;
+    });
+  };
+  arm();
+  window.addEventListener("pagehide", () => {
+    go();
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) arm();
+  });
+}
+
+/**
+ * Whether a refusal says the part's value is already there: a conflict on each of its fields
+ * whose present value is the one the part writes.
+ */
+function inPlace(part: Change, error: unknown): boolean {
+  const problem = problemOf(error);
+  if (problem?.code !== "conflict") return false;
+  return part.fields.every((field) => {
+    const conflict = problem.conflicts.find((c) => c.field === field);
+    if (conflict === undefined || !Object.hasOwn(conflict, "value")) return false;
+    const there = restoreChange(field, conflict.value);
+    return there !== undefined && effectOf(there) === effectOf(part);
+  });
+}
+
 /** An error the service sent (the generated client's AppError), read by its shape. */
 function problemOf(error: unknown): Problem | undefined {
   if (!(error instanceof Error)) return undefined;
@@ -268,6 +311,23 @@ function newer(store: string | undefined, answer: string | undefined): string | 
   if (a === null || b === null || a[1] !== b[1] || a[3] !== b[3]) return store;
   return Number(b[2]) > Number(a[2]) ? answer : store;
 }
+
+/**
+ * Whether `base` is of the history the screen shows at `now`: one epoch and incarnation. A base a
+ * little ahead of the screen is of it (an answer's as-of comes before the feed applies it).
+ */
+function sameHistory(base: string, now: string): boolean {
+  const a = AS_OF.exec(base);
+  const b = AS_OF.exec(now);
+  return a !== null && b !== null && a[1] === b[1] && a[3] === b[3];
+}
+
+/** A one-field change's effect on the row, the same for one value however it was made. */
+const effectOf = (change: Change): string =>
+  JSON.stringify([
+    Object.entries(change.overlay.set).sort(([a], [b]) => (a < b ? -1 : 1)),
+    [...(change.overlay.clear ?? [])].sort(),
+  ]);
 
 /** The key of a task's field in the maps of unsaved edits and others' changes. */
 export const keyOf = (task: string, field: string) => `${task}\u0000${field}`;
@@ -366,6 +426,11 @@ export class Edits {
   readonly #remote = new Map<string, Remote>();
   /** The timers of the rows that leave, per task. */
   readonly #holds = new Map<string, unknown[]>();
+  /**
+   * The kept edits sent again by Try again or Apply mine, by task and field, until their request
+   * is decided: the browser keeps them meanwhile, so a page that goes before the answer loses none.
+   */
+  readonly #retrying = new Map<string, Unsaved>();
   #marks = 0;
   #toasts = 0;
 
@@ -419,12 +484,29 @@ export class Edits {
    * with the person's value. `base` is the editor's, taken when it opened; a control leaves it out.
    */
   edit(task: TaskRow, change: Change, options: { readonly base?: string } = {}): void {
-    for (const field of change.fields) this.#forget(task.id, field);
+    void this.#edit(task, change, options);
+  }
+
+  /** `edit`, resolved once its request is decided, or kept as not saved for want of an answer. */
+  #edit(
+    task: TaskRow,
+    change: Change,
+    options: { readonly base?: string },
+    retried: readonly Unsaved[] = [],
+  ): Promise<void> {
+    for (const field of change.fields) {
+      // A new edit of the field takes the place of a line sent again before it.
+      const key = keyOf(task.id, field);
+      const sending = this.#retrying.get(key);
+      if (sending !== undefined && !retried.includes(sending)) this.#retrying.delete(key);
+      this.#forget(task.id, field);
+    }
     this.#edits += 1;
     const number = this.#edits;
     for (const field of change.fields) this.#latest.set(keyOf(task.id, field), number);
     // What the person saw: the editor's base, or the screen's now.
-    const sent = this.#send(task.id, change, options.base ?? this.#deps.asOf());
+    const seen = options.base ?? this.#deps.asOf();
+    const sent = this.#send(task.id, change, seen);
     const saved: Omit<Toast, "key"> = {
       kind: "undo",
       text: change.said,
@@ -446,7 +528,7 @@ export class Edits {
       [...interim]
         .filter(([part, line]) => this.unsaved(task.id, part.fields[0] ?? "title") === line)
         .map(([part]) => part);
-    void this.#outcome(
+    return this.#outcome(
       sent.answer,
       sent.call,
       (decision, say, late) => {
@@ -462,24 +544,63 @@ export class Edits {
         }
         // Kept part by part: a part whose field the person edited again since gives way to that
         // newer choice, and the others still wait for the person.
-        const kept = late
+        const waiting = late
           ? stillShown()
           : (change.parts ?? [change]).filter((part) =>
               part.fields.every((field) => this.#latest.get(keyOf(task.id, field)) === number),
             );
-        if (kept.length > 0) interim = this.#refused(task, kept, decision.error, say);
-        else if (late) say(undefined);
+        // A conflict with the person's own value (saved after all, before a reload or from
+        // another tab) is no conflict: that part is saved.
+        const there = waiting.filter((part) => inPlace(part, decision.error));
+        if (late) for (const part of there) this.#forget(task.id, part.fields[0] ?? "title");
+        const kept = waiting.filter((part) => !there.includes(part));
+        if (kept.length > 0) interim = this.#refused(task, kept, seen, decision.error, say);
+        else if (late || there.length > 0) say(undefined);
       },
       toast,
     );
   }
 
-  /** "Apply mine" or "Try again": the person's kept value, sent again with a fresh base. */
+  /**
+   * Whether a kept edit was made against a history the screen no longer shows: its base is of
+   * another history (the space was restored since), or a failed edit has none (kept by an earlier
+   * build). No base makes sending it again an informed choice, so it is not sent:
+   * its value can be copied or discarded.
+   */
+  restored(unsaved: Unsaved): boolean {
+    if (unsaved.base === undefined) return unsaved.reason === "failed";
+    const now = this.#deps.asOf();
+    return now !== undefined && !sameHistory(unsaved.base, now);
+  }
+
+  /** "Apply mine" or "Try again": the person's kept value, sent again (`#again`). */
   apply(task: string, field: Field): void {
     const unsaved = this.unsaved(task, field);
-    if (unsaved === undefined) return;
-    const row = this.#deps.rowOf(unsaved.ref);
-    this.edit(row ?? ({ id: unsaved.task, ref: unsaved.ref } as TaskRow), unsaved.change);
+    if (unsaved === undefined || this.restored(unsaved)) return;
+    this.#again({ id: unsaved.task, ref: unsaved.ref }, unsaved.change, [unsaved]);
+  }
+
+  /**
+   * Kept values sent again: after a conflict (Apply mine) over the other value the screen shows
+   * now; after a failure (Try again) with the base the person made it at. The lines move to
+   * the ones on their way, so the browser keeps them as they are until the request is decided,
+   * and then lets go of only what it still holds of them: another tab's newer value stays.
+   */
+  #again(task: Pick<TaskRow, "id" | "ref">, change: Change, lines: readonly Unsaved[]): void {
+    const row = this.#deps.rowOf(task.ref) ?? ({ ...task } as TaskRow);
+    const kept = lines[0];
+    const base = kept?.reason === "failed" ? kept.base : undefined;
+    const keys = lines.flatMap((line) =>
+      line.change.fields.map((field) => [keyOf(line.task, field), line] as const),
+    );
+    for (const [key, line] of keys) this.#retrying.set(key, line);
+    const decided = this.#edit(row, change, base === undefined ? {} : { base }, lines);
+    void decided.then(() => {
+      for (const [key, line] of keys) {
+        if (this.#retrying.get(key) === line) this.#retrying.delete(key);
+      }
+      this.#keep();
+    });
   }
 
   /** The person keeps the other value: their own goes. */
@@ -1162,7 +1283,12 @@ export class Edits {
     };
     const sent = this.#deps.write(async (request) => {
       try {
-        if (waits.length > 0 && !(await ahead.wait())) throw new NotSent();
+        // The page going away ends the wait as not sent: the edit is kept as not saved and offered
+        // after the reload. Sent now, it could arrive before the edit it waits for.
+        if (waits.length > 0) {
+          const gone = (this.#deps.leaving ?? (() => pageGone))().then(() => false);
+          if (!(await Promise.race([ahead.wait(), gone]))) throw new NotSent();
+        }
         // The same base for a second send with the same request ID: one intent, sent again.
         const base = this.#baseFor(task, fields, seen);
         const one = this.#call(
@@ -1190,6 +1316,7 @@ export class Edits {
   #refused(
     task: TaskRow,
     parts: readonly Change[],
+    seen: string | undefined,
     error: unknown,
     say: Say,
   ): ReadonlyMap<Change, Unsaved> {
@@ -1212,6 +1339,7 @@ export class Edits {
         field: change.fields[0] ?? "title",
         change,
         reason: conflict === undefined ? "failed" : "conflict",
+        ...(seen === undefined ? {} : { base: seen }),
         ...(conflict === undefined ? {} : { by: conflict.by, at: Date.parse(conflict.at) }),
       };
       lines.set(change, unsaved);
@@ -1244,14 +1372,15 @@ export class Edits {
       action: {
         label: { id: conflict === undefined ? "toast.tryAgain" : "toast.applyMine" },
         run: () => {
-          // Every part that still waits, as one edit again.
-          const waiting = parts
-            .map((part) => this.unsaved(task.id, part.fields[0] ?? "title")?.change)
-            .filter((change): change is Change => change !== undefined);
+          // Every part that still waits as this refusal kept it, as one edit again.
+          const waiting = parts.filter(
+            (part) => this.unsaved(task.id, part.fields[0] ?? "title") === lines.get(part),
+          );
           const again = joinChanges(waiting);
-          if (again === undefined) return;
-          const row = this.#deps.rowOf(task.ref);
-          this.edit(row ?? task, again);
+          const kept = waiting.flatMap((part) => lines.get(part) ?? []);
+          if (again === undefined || kept.length === 0) return;
+          if (kept.some((line) => this.restored(line))) return;
+          this.#again(task, again, kept);
         },
       },
     });
@@ -1358,6 +1487,16 @@ export class Edits {
     }
   }
 
+  /** Hands the browser what waits: the lines shown, and those sent again until decided. */
+  #keep(): void {
+    if (this.#deps.keeper === undefined) return;
+    this.#deps.keeper.save(
+      this.#retrying.size === 0
+        ? this.#state.unsaved
+        : new Map([...this.#retrying, ...this.#state.unsaved]),
+    );
+  }
+
   #toast(toast: Omit<Toast, "key">): Toast {
     this.#toasts += 1;
     const shown: Toast = { ...toast, key: this.#toasts };
@@ -1374,7 +1513,7 @@ export class Edits {
   #set(state: EditState): void {
     const before = this.#state;
     this.#state = state;
-    if (state.unsaved !== before.unsaved) this.#deps.keeper?.save(state.unsaved);
+    if (state.unsaved !== before.unsaved) this.#keep();
     for (const listener of this.#listeners) listener();
   }
 }

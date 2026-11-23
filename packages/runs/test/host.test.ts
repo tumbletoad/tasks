@@ -396,6 +396,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
       // The `running` commit lands only after the agent exited and its pipes were left alone.
       wrap: (store) => ({
         createRun: (input, request) => store.createRun(input, request),
+        replayedRun: (request) => store.replayedRun(request),
         readRun: (run) => store.readRun(run),
         openWork: (machine) => store.openWork(machine),
         transitionRun: async (run, seen, next, patch) => {
@@ -500,6 +501,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
         },
         wrap: (store) => ({
           createRun: (input, request) => store.createRun(input, request),
+          replayedRun: (request) => store.replayedRun(request),
           readRun: (run) => store.readRun(run),
           openWork: (machine) => store.openWork(machine),
           transitionRun: async (run, seen, next, patch) => {
@@ -573,6 +575,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
       },
       wrap: (store) => ({
         createRun: (input, request) => store.createRun(input, request),
+        replayedRun: (request) => store.replayedRun(request),
         readRun: (run) => store.readRun(run),
         openWork: (machine) => store.openWork(machine),
         transitionRun: (run, seen, next, patch) =>
@@ -607,6 +610,7 @@ describe("[A4.5.run.host] the run host's rules", () => {
         }),
       wrap: (store) => ({
         createRun: (input, request) => store.createRun(input, request),
+        replayedRun: (request) => store.replayedRun(request),
         readRun: (run) => store.readRun(run),
         openWork: (machine) => store.openWork(machine),
         transitionRun: (run, seen, next, patch) =>

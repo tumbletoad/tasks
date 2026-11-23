@@ -48,6 +48,12 @@ export class Unanswered {
     return id;
   }
 
+  /** Whether the request `id` for `name` was sent by an earlier press too. */
+  again(name: string, id: string): boolean {
+    const before = this.#pending(name);
+    return before?.id === id && before.sent > 1;
+  }
+
   /** The service answered the request `id` for `name`, or for `name` whatever it was: it goes. */
   answered(name: string, id?: string): void {
     const before = this.#pending(name);
