@@ -116,6 +116,7 @@ import {
   LaunchFolderUnavailable,
   LaunchFolderUnmarked,
   LaunchUnavailable,
+  LaunchWriterGone,
   type Choice,
   type RegisteredElsewhere,
   type OpenTaskRequest,
@@ -385,7 +386,13 @@ export class LaunchService {
    */
   readonly #matches = new Map<
     string,
-    { readonly space: string; readonly match: ReferenceMatch; readonly at: number }
+    {
+      readonly space: string;
+      /** The copy the launch's click was made in: its evidence goes there only. */
+      readonly copy: string | undefined;
+      readonly match: ReferenceMatch;
+      readonly at: number;
+    }
   >();
   readonly #timers = new Set<NodeJS.Timeout>();
   readonly #listeners = new Set<(space: string) => void>();
@@ -406,7 +413,7 @@ export class LaunchService {
         }),
       probe: options.probe ?? osProbe,
       platform: options.platform,
-      machine: async (space) => (await this.#space(space))?.machine,
+      machine: (space, copy) => this.#machineOf(space, copy),
       environment: (launch) => this.#baseFor(launch),
       ...(options.now === undefined ? {} : { now: options.now }),
     });
@@ -678,8 +685,10 @@ export class LaunchService {
 
   async #openTask(request: OpenTaskRequest): Promise<OpenTaskResult> {
     const { space, task, requestId } = request;
-    const hosted = await this.#space(space);
-    if (hosted === undefined) throw new Error("The space is not open on this machine");
+    // The writer the call checked, also after its turn in the queue: another one serving the space
+    // now holds another copy, whose task the call never read.
+    const hosted = await this.#space(space, request.writer);
+    if (hosted === undefined) throw new LaunchWriterGone();
     // A repeated request (A1 3.8) replays the intent it made, read from its receipt before the
     // task or machine.toml is read again: an edit to the task since the click never turns a retry
     // into a conflict, and a retry saves, prepares and dispatches nothing.
@@ -1244,6 +1253,18 @@ ${instance}`;
   }
 
   /**
+   * The launch machine of `space` while it is served from `copy`, the copy a launch's click was
+   * made in: a report or evidence never lands in another copy. An earlier build's record names no
+   * copy.
+   */
+  async #machineOf(space: string, copy: string | undefined): Promise<LaunchMachine | undefined> {
+    const hosted = await this.#space(space);
+    return hosted !== undefined && (copy === undefined || hosted.copy === copy)
+      ? hosted.machine
+      : undefined;
+  }
+
+  /**
    * The folder a launch of `space` with this plan folder would work in, resolved now: the folder,
    * or for none the space's work folder. `open` and the dispatch step ask it.
    */
@@ -1554,7 +1575,7 @@ ${instance}`;
         });
         if (thread === undefined) return;
         const found = thread;
-        void this.machine(space)
+        void this.#machineOf(kept.space, kept.copy)
           .then((machine) =>
             machine?.report(launch, { kind: "evidence", evidence: { thread: found } }),
           )
@@ -1577,10 +1598,11 @@ ${instance}`;
   }
 
   /** The space's machine and store, made once per writer, with that writer's recovery. */
-  async #space(space: string): Promise<Launching | undefined> {
+  async #space(space: string, only?: SpaceWriterHandle): Promise<Launching | undefined> {
     const served = this.#options.spaces().find((s) => s.id === space && isOpen(s));
     const writer = served?.writer;
     if (served === undefined || writer === undefined) return undefined;
+    if (only !== undefined && writer !== only) return undefined;
     const known = this.#hosted.get(space);
     if (known?.writer === writer) return known.made;
     const made = this.#make(space, served);
@@ -1716,6 +1738,7 @@ ${instance}`;
       this.#pruneMatches();
       this.#matches.set(intent.id, {
         space: record.space,
+        copy: record.copy,
         match: new ReferenceMatch(
           match.home,
           { folder: where.folder, reference: intent.reference, platform: this.#options.platform },

@@ -4229,6 +4229,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.10.5.copies.launch",
+      "title": "A click checked against the original's writer makes nothing once a backup is claimed, while the same click against the claimed copy's writer is made; the original's shim reporting its agent's end after the claim changes nothing in the claimed copy",
+      "source": "A2 3.10.5, A4 3.9.1, A1 3.18",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.10.5.copies.e2e",
       "title": "In Chromium and Firefox against the real service, at 1,440 and 390 px without sideways scroll: Open folder with a restored copy while its space is open is refused with what is open, what the folder is and what to do; a tab whose space is closed says so; the copy opened alone says it is a restored copy with its folder, backup and ways out, in the switcher too; an edit there keeps the words with the reason, Copy and Discard and no Try again, also over a reload; a claim of the copy tells the open tab, whose Undo then writes nothing, and loading it again shows the space as it is now",
       "source": "A2 3.10.5, A5 3.11, A1 3.18",

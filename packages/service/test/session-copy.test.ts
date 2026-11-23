@@ -5,7 +5,9 @@
 // world's launches are claimed in this process as a shim claims them. Fixture data only.
 import { join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
+import { SHIM_METHODS } from "@ttasks/launch";
 import { afterEach, describe, expect, test } from "vitest";
+import { LaunchWriterGone } from "../src/launch/open.ts";
 import type { ServedSpace } from "../src/ops/index.ts";
 import { bridge, launchContext, shell } from "./agents.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
@@ -123,6 +125,66 @@ describe("[A2.3.10.5.copies.session] an agent's session writes only into the cop
         await agent.close();
         await terminal.close();
       }
+    },
+  );
+});
+
+describe("[A2.3.10.5.copies.launch] a launch and its later reports stay with the copy its click was made in", () => {
+  test(
+    "a click checked against the writer of the original makes nothing once a backup is claimed, while the same click against the claimed copy's writer is made; the original's shim reporting its agent's end after the claim changes nothing in the claimed copy",
+    SLOW,
+    async () => {
+      const { w, person, folder } = await world("launch-copy");
+      const launch = await w.launch("M-1");
+      const writer = served(w).writer;
+      if (writer === undefined) throw new Error("no writer");
+      const read = (await person.call(
+        "op/call",
+        { op: "task.get", input: { task: "M-1" } },
+        CALL,
+      )) as { task: { id: string } };
+      // The task as the request path read it in the original.
+      const task = {
+        id: read.task.id,
+        ref: "M-1",
+        title: "Fixture task",
+        version: 1,
+        folder: { kind: "none" as const },
+      };
+      const copy = await restoredCopy(w, person, folder);
+      await person.call("space/claim", { space: copy }, CALL);
+
+      // A Copy click whose request path checked the original's writer, its turn in the queue
+      // coming after the claim.
+      const click = (checked: typeof writer, requestId: string) =>
+        w.service.launches.openTask({
+          space: w.space,
+          writer: checked,
+          task,
+          instance: undefined,
+          composer: undefined,
+          requestId,
+          saveNote: () => Promise.reject(new Error("no words were given")),
+        });
+      await expect(click(writer, "launch-copy-click-000001")).rejects.toBeInstanceOf(
+        LaunchWriterGone,
+      );
+      expect(await receipts(w, "launch-copy-click-000001")).toEqual([]);
+      const now = served(w).writer;
+      if (now === undefined) throw new Error("the claimed copy takes no write");
+      expect((await click(now, "launch-copy-click-000002")).intent.state).toBe("dispatched");
+
+      // The original's agent ends: its shim's report is not the claimed copy's to take.
+      const before = await w.service.launches.read(w.space, launch.id);
+      if (launch.attachment === undefined) throw new Error("the launch was not claimed");
+      const ended = await w.service.launches.host.report(launch.attachment, SHIM_METHODS.exited, {
+        code: 0,
+        signal: null,
+        ran_ms: 5_000,
+        settled: true,
+      });
+      expect(ended).toEqual({ kind: "refused", reason: "space" });
+      expect(await w.service.launches.read(w.space, launch.id)).toEqual(before);
     },
   );
 });

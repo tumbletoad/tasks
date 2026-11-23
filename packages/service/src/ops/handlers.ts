@@ -86,6 +86,7 @@ import {
   LaunchFolderUnavailable,
   LaunchFolderUnmarked,
   LaunchUnavailable,
+  LaunchWriterGone,
   type OpenTaskRequest,
   type OpenTaskResult,
   type PackContent,
@@ -2640,7 +2641,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw new AppError({ code: "internal", message: "This service opens no tasks." });
     }
     // A launch writes launch records: the space must be open for writing on this machine.
-    writerOf(call.space);
+    const writer = writerOf(call.space);
     const space = call.space.id;
     if (space === undefined) throw spaceUnavailable("not_served", false);
     let read;
@@ -2699,6 +2700,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     try {
       opened = await launches.openTask({
         space,
+        writer,
         task: read,
         instance,
         composer: text,
@@ -2711,11 +2713,13 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         // step of theirs, under a request ID the click's derives. Its writer scope is the click's
         // as the launch's replay is, not the sign-in's: a click repeated from any page or shell
         // finds the note instead of adding a second one.
+        // It goes into the copy the click was checked against, or nowhere.
         saveNote: async (body, forAgents) => {
           const principal = { ...call.principal, scope: `launch-note:${host.machine.id}` };
+          const copy = call.space.copy === undefined ? {} : { copy: call.space.copy };
           const saved = (await opCall(
             host,
-            { ...call.caller, principal },
+            { ...call.caller, principal, ...copy },
             {
               space,
               op: "entry.add",
@@ -4285,6 +4289,7 @@ export function launchError(error: unknown): unknown {
       data: { field: "task", reason, ...(folder === undefined ? {} : { folder }) },
     });
   }
+  if (error instanceof LaunchWriterGone) return spaceUnavailable("not_served", true);
   if (error instanceof ExecutionRefused) {
     switch (error.code) {
       case "not_found":

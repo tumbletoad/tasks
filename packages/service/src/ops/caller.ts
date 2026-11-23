@@ -17,8 +17,9 @@ export interface Caller {
    */
   readonly grant?: string;
   /**
-   * For the `ui` class: the copy of its space the page loaded (ServedSpace `copy`). A call is
-   * refused when the space is served from another copy now (ops/copies.ts spaceChanged).
+   * The copy of its space the call was made for (ServedSpace `copy`): the one a page loaded, or
+   * the one a click's note was checked against. A call is refused when the space is served from
+   * another copy now (ops/copies.ts spaceChanged).
    */
   readonly copy?: string;
   /**
