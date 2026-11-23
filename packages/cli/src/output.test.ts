@@ -225,6 +225,41 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
     expect(shown).not.toContain(separator);
   });
 
+  test("a task's learnings: the digest's first ones and their count, the outcome section's all", () => {
+    const task = { ref: "M-25", title: "Fixture task", status: "open", priority: 2 };
+    const digest = (learnings: string[], more: number) =>
+      render(
+        "task.get",
+        { as_of: "1.1046.5n0w8k3q", task: { ...task, learnings, more: { learnings: more } } },
+        "Mira",
+      );
+    expect(digest(["Book early.", "Ask twice."], 0)).toBe(
+      "M-25  Fixture task  (open, p2)\n  learnings: 2 of 2\n  learning: Book early.\n  learning: Ask twice.\n",
+    );
+    expect(digest([], 3)).toBe(
+      "M-25  Fixture task  (open, p2)\n  learnings: 0 of 3, all with --section outcome\n",
+    );
+    expect(digest([], 0)).toBe("M-25  Fixture task  (open, p2)\n");
+    const section = render(
+      "task.get",
+      {
+        as_of: "1.1046.5n0w8k3q",
+        task,
+        sections: {
+          outcome: {
+            outcome: "Booked.",
+            wrap_state: "wrapped",
+            learnings: ["Book early.", "Ask twice."],
+          },
+        },
+      },
+      "Mira",
+    );
+    expect(section).toBe(
+      "M-25  Fixture task  (open, p2)\n  outcome (wrapped): Booked.\n  learning: Book early.\n  learning: Ask twice.\n",
+    );
+  });
+
   test("a task's folder says whose it is and when it is not on this machine", () => {
     const folderLine = (folder: Record<string, unknown>) =>
       render(

@@ -195,7 +195,7 @@
         {
           "field": "tasks[].focus",
           "flag": "--focus",
-          "help": "Star it for today, only when the user asks",
+          "help": "Star it: on Today until cleared. Only when the user asks",
           "repeat": false,
           "required": false,
           "type": "boolean"
@@ -927,7 +927,7 @@
           },
           {
             "field": "set.focus",
-            "help": "Star it for today, only when the user asks",
+            "help": "Star it: on Today until cleared. Only when the user asks",
             "key": "focus",
             "type": "boolean"
           }

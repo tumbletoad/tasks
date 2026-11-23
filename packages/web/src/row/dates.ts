@@ -1,35 +1,17 @@
-// Calendar arithmetic for the row (A5 3.6, 3.23): due dates are local calendar dates ("2026-11-14")
-// and instants are milliseconds since 1970 in UTC (A1). The row compares them on the viewer's
+// Calendar formatting for the row (A5 3.6, 3.23): due dates are local calendar dates ("2026-11-14")
+// and instants are milliseconds since 1970 in UTC (A1). The row reads them on the viewer's
 // calendar, which the clock names, so every function here is pure: the same clock gives the same
-// answer on every machine, and tests pass their own.
+// answer on every machine, and tests pass their own. The calendar arithmetic is day.ts's, shared
+// with the service.
+import { dayNumber, localDate, type DayClock } from "@ttasks/contracts/day";
 
-/** The viewer's calendar: today's date, the instant, its time zone and its locale. */
-export interface Clock {
-  /** Today on the viewer's calendar, `YYYY-MM-DD`. */
-  readonly today: string;
-  /** Now, milliseconds since 1970. */
-  readonly now: number;
-  /** An IANA time zone ("Europe/Amsterdam"). */
-  readonly timeZone: string;
+/** The viewer's calendar and its locale. */
+export interface Clock extends DayClock {
   /** A BCP 47 locale ("en"). */
   readonly locale: string;
 }
 
-const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DAY_MS = 86_400_000;
-
-/** Days since 1970-01-01 of a calendar date, or undefined for a value that is none. */
-export function dayNumber(date: string): number | undefined {
-  const match = DATE.exec(date);
-  if (match === null) return undefined;
-  const ms = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  return Number.isFinite(ms) ? Math.floor(ms / DAY_MS) : undefined;
-}
-
-/** The calendar date of a day number. */
-export function dateOf(day: number): string {
-  return new Date(day * DAY_MS).toISOString().slice(0, 10);
-}
 
 const formats = new Map<string, Intl.DateTimeFormat>();
 
@@ -46,17 +28,6 @@ export function formatter(
     formats.set(key, format);
   }
   return format;
-}
-
-/** The calendar date of an instant in a time zone. */
-export function localDate(ms: number, timeZone: string): string {
-  const parts = formatter("en-CA", timeZone, {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(ms);
-  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 /** Today's clock for this browser: its zone and the page's locale. */

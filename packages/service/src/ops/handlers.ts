@@ -89,7 +89,7 @@ import {
 } from "../launch/open.ts";
 import type { Session, SessionPort } from "./binding.ts";
 import { checkGrant, grantRefused, standingOf, type HomeGate } from "./grant.ts";
-import { addDays, dateIn, dueDate, localTimeZone, pastInstant } from "./dates.ts";
+import { dateIn, dueDate, localTimeZone, pastInstant } from "./dates.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
 import {
   checkFolder,
@@ -1916,8 +1916,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const found = cwd === undefined ? undefined : ((await hereFor(call, cwd)) ?? null);
     const boundTask = sessionIn(call)?.task;
     const status = await readStatus(reader, {
-      today: call.today,
-      week: addDays(call.today, 7),
+      clock: { today: call.today, now, timeZone: (call.host.timeZone ?? localTimeZone)() },
       since: sinceOf(input["since"], now),
       include,
       ...(found === undefined || found === null ? {} : { here: found.ids }),

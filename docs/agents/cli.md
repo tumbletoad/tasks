@@ -47,7 +47,7 @@ Usage: `ttasks add <title> [flags]`
 | `--effort` | `tasks[].effort` | string | A size of the space: read skill sizing-effort first |
 | `--due` | `tasks[].due` | string | ISO date or phrase: fri, +3d |
 | `--waiting-on` | `tasks[].waiting_on` | string | Who or what it waits on |
-| `--focus` | `tasks[].focus` | boolean | Star it for today, only when the user asks |
+| `--focus` | `tasks[].focus` | boolean | Star it: on Today until cleared. Only when the user asks |
 | `--created` | `tasks[].created` | string | When it was created, only for work that existed before: ISO date or instant |
 | `--folder` | `tasks[].folder` | string | Its folder: "cwd", an absolute folder or one under ~ |
 | `--context` | `tasks[].context` | string | Markdown context |
@@ -219,7 +219,7 @@ Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 | `area=` | `set.area` | string | Area name or slug |
 | `project=` | `set.project` | string | Project name or slug |
 | `folder=` | `set.folder` | string | "cwd", an absolute folder or one under ~ |
-| `focus=` | `set.focus` | boolean | Star it for today, only when the user asks |
+| `focus=` | `set.focus` | boolean | Star it: on Today until cleared. Only when the user asks |
 
 Only through `--input`: `context`, `add_sources`.
 

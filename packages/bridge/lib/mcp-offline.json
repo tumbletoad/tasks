@@ -184,7 +184,7 @@
                       "type": "string"
                     },
                     "focus": {
-                      "description": "Star it for today, only when the user asks",
+                      "description": "Star it: on Today until cleared. Only when the user asks",
                       "type": "boolean"
                     },
                     "folder": {
@@ -374,7 +374,7 @@
                       "type": "string"
                     },
                     "focus": {
-                      "description": "Star it for today, only when the user asks",
+                      "description": "Star it: on Today until cleared. Only when the user asks",
                       "type": "boolean"
                     },
                     "folder": {
@@ -1014,7 +1014,7 @@
                     "type": "string"
                   },
                   "focus": {
-                    "description": "Star it for today, only when the user asks",
+                    "description": "Star it: on Today until cleared. Only when the user asks",
                     "type": "boolean"
                   },
                   "folder": {
@@ -1212,7 +1212,7 @@
                       "type": "string"
                     },
                     "focus": {
-                      "description": "Star it for today, only when the user asks",
+                      "description": "Star it: on Today until cleared. Only when the user asks",
                       "type": "boolean"
                     },
                     "folder": {
@@ -1402,7 +1402,7 @@
                       "type": "string"
                     },
                     "focus": {
-                      "description": "Star it for today, only when the user asks",
+                      "description": "Star it: on Today until cleared. Only when the user asks",
                       "type": "boolean"
                     },
                     "folder": {
@@ -2042,7 +2042,7 @@
                     "type": "string"
                   },
                   "focus": {
-                    "description": "Star it for today, only when the user asks",
+                    "description": "Star it: on Today until cleared. Only when the user asks",
                     "type": "boolean"
                   },
                   "folder": {
