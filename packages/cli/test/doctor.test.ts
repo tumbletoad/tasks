@@ -79,7 +79,11 @@ describe("[A2.3.13.cli.doctor] ttasks doctor --self-test", () => {
     const temp = tempRoot("da");
     try {
       // Windows's flow on every OS: an in-memory registry, never a real Run value.
-      const fake = fakeContext({ platform: "win32", dir: temp.root, registry: new MemoryRegistry() });
+      const fake = fakeContext({
+        platform: "win32",
+        dir: temp.root,
+        registry: new MemoryRegistry(),
+      });
       const main = { serviceContext: () => fake.ctx };
       const row = async () => {
         const ran = await runMain(["doctor", "--json"], { home: join(temp.root, "h"), main });

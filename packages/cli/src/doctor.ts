@@ -744,7 +744,9 @@ export async function candidateRows(
 async function autostartCheck(io: Io, connect: DoctorOptions): Promise<Check> {
   const install = await import("@ttasks/service/install");
   try {
-    const ctx = (connect.serviceContext ?? (() => install.defaultServiceContext({ env: io.env })))();
+    const ctx = (
+      connect.serviceContext ?? (() => install.defaultServiceContext({ env: io.env }))
+    )();
     const { starts } = await install.autostartStatus(ctx);
     return {
       id: "autostart",

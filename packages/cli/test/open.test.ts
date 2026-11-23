@@ -95,56 +95,58 @@ describe("[A2.3.9.cli.open] ttasks open", () => {
     expect(failed.stderr).toContain("--print-url");
   });
 
-  test("a space that names no space, or two, opens nothing and lists the spaces there are", SLOW, async () => {
-    const w = await world("od");
-    const opened: string[] = [];
-    const openUrl = (url: string) => {
-      opened.push(url);
-      return Promise.resolve(true);
-    };
-    const open = (args: string[], env: Record<string, string> = {}) =>
-      runMain(["open", ...args], { home: w.home, tty: true, env, main: { openUrl } });
+  test(
+    "a space that names no space, or two, opens nothing and lists the spaces there are",
+    SLOW,
+    async () => {
+      const w = await world("od");
+      const opened: string[] = [];
+      const openUrl = (url: string) => {
+        opened.push(url);
+        return Promise.resolve(true);
+      };
+      const open = (args: string[], env: Record<string, string> = {}) =>
+        runMain(["open", ...args], { home: w.home, tty: true, env, main: { openUrl } });
 
-    const typo = await open(["--space", "Mra"]);
-    expect(typo.code).toBe(3);
-    expect(typo.stderr).toContain("The service has no space by that ID or name.");
-    expect(typo.stderr).toMatch(/\n {2}Mira {2}sp_[0-9a-z]{26} {2}\S/);
-    const fromEnv = await open([], { TTASKS_SPACE: "Mra" });
-    expect(fromEnv.code).toBe(3);
+      const typo = await open(["--space", "Mra"]);
+      expect(typo.code).toBe(3);
+      expect(typo.stderr).toContain("The service has no space by that ID or name.");
+      expect(typo.stderr).toMatch(/\n {2}Mira {2}sp_[0-9a-z]{26} {2}\S/);
+      const fromEnv = await open([], { TTASKS_SPACE: "Mra" });
+      expect(fromEnv.code).toBe(3);
 
-    const user = await w.user();
-    const other = (await user.call(
-      "space/create",
-      { name: "mira", path: join(w.root, "s", "mira-two"), ref_prefix: "N" },
-      { timeoutMs: 120_000 },
-    )) as { space: { id: string } };
-    const two = await open(["--space", "Mira", "--task", "M-1"]);
-    expect(two.code).toBe(3);
-    expect(two.stderr).toContain("Several spaces have this name.");
-    expect(two.stderr).toContain(`  mira  ${other.space.id}`);
-    const json = await open(["--space", "Mira", "--json"]);
-    expect(JSON.parse(json.stdout)).toMatchObject({
-      error: {
-        code: "ambiguous",
-        data: {
-          spaces: expect.arrayContaining([
-            expect.objectContaining({ id: other.space.id, name: "mira" }),
-          ]),
-        },
-      },
-    });
-    expect(opened).toEqual([]);
+      const user = await w.user();
+      const other = (await user.call(
+        "space/create",
+        { name: "mira", path: join(w.root, "s", "mira-two"), ref_prefix: "N" },
+        { timeoutMs: 120_000 },
+      )) as { space: { id: string } };
+      const two = await open(["--space", "Mira", "--task", "M-1"]);
+      expect(two.code).toBe(3);
+      expect(two.stderr).toContain("Several spaces have this name.");
+      expect(two.stderr).toContain(`  mira  ${other.space.id}`);
+      const json = await open(["--space", "Mira", "--json"]);
+      const error = (
+        JSON.parse(json.stdout) as {
+          error: { code: string; data: { spaces: { id: string; name: string }[] } };
+        }
+      ).error;
+      expect(error.code).toBe("ambiguous");
+      expect(error.data.spaces.map((s) => s.name).sort()).toEqual(["Mira", "mira"]);
+      expect(error.data.spaces.map((s) => s.id)).toContain(other.space.id);
+      expect(opened).toEqual([]);
 
-    // Its ID, its folder or the argument name the one space, and the tab goes to it.
-    for (const args of [["--space", other.space.id], [join(w.root, "s", "mira-two")]]) {
-      expect((await open(args)).code).toBe(0);
-      const to = decodeURIComponent(URL_SHAPE.exec(opened.pop() ?? "")?.[3] ?? "");
-      expect(to).toBe(`/s/${other.space.id}`);
-    }
-    // No space named: the page's own default, as before.
-    expect((await open([])).code).toBe(0);
-    expect(URL_SHAPE.exec(opened.pop() ?? "")?.[3]).toBeUndefined();
-  });
+      // Its ID, its folder or the argument name the one space, and the tab goes to it.
+      for (const args of [["--space", other.space.id], [join(w.root, "s", "mira-two")]]) {
+        expect((await open(args)).code).toBe(0);
+        const to = decodeURIComponent(URL_SHAPE.exec(opened.pop() ?? "")?.[3] ?? "");
+        expect(to).toBe(`/s/${other.space.id}`);
+      }
+      // No space named: the page's own default, as before.
+      expect((await open([])).code).toBe(0);
+      expect(URL_SHAPE.exec(opened.pop() ?? "")?.[3]).toBeUndefined();
+    },
+  );
 
   test("an agent's shell cannot open the UI: it is told to ask the user", SLOW, async () => {
     const w = await world("oc", {}, { space: false });

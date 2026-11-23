@@ -298,7 +298,10 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
 
     expect(await run("install", { yes: true }, captureIO())).toBe(0);
     const on = await statusOf();
-    expect(on.json.starts).toEqual({ on: true, text: "on: Windows starts the service when you sign in" });
+    expect(on.json.starts).toEqual({
+      on: true,
+      text: "on: Windows starts the service when you sign in",
+    });
     expect(on.text).toContain("  Autostart: on: Windows starts the service when you sign in\n");
   });
 
@@ -330,9 +333,9 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
       on: false,
       fix: "ttasks service install",
     });
-    expect(
-      autostartAnswer(unit, { ...systemd("enabled", "yes"), user_manager: false }).on,
-    ).toBe(false);
+    expect(autostartAnswer(unit, { ...systemd("enabled", "yes"), user_manager: false }).on).toBe(
+      false,
+    );
   });
 
   test("start waits for ready and says so when it does not come; a running service is left alone", async () => {
