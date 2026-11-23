@@ -48,6 +48,8 @@ test.describe("[A2.3.10.5.copies.e2e] a person looks inside a backup on the page
     };
     const spaceFolder = listed.spaces.find((s) => s.id === id)?.folder ?? "";
     const copyFolder = await world.restoreCopy(id);
+    // Pictures of what stands, not of what fades in.
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await signIn(page, world, `/s/${id}/today`);
     await showsSpace(page, name);
 
