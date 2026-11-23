@@ -538,6 +538,7 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await page.keyboard.type(typo);
     await expect(page.getByRole("option").first()).toHaveText(seedlings);
     await expect(offer).toHaveText(`New area “${typo}”`);
+    await expect(page.getByRole("option").first()).toHaveAttribute("data-focused", "true");
     await page.keyboard.press("Enter");
     await expect(toast(page)).toHaveText(`Moved to ${seedlings}`);
     await expect.poll(areaOf).toBe(seedlings);
@@ -553,7 +554,10 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await page.keyboard.type(garden);
     await expect(page.getByRole("option").first()).toHaveText(seedlings);
     await expect(page.getByRole("option").nth(1)).toHaveText(`New area “${garden}”`);
+    // The keys act on the highlighted choice, as a person sees it: the area first, then one down.
+    await expect(page.getByRole("option").first()).toHaveAttribute("data-focused", "true");
     await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("option").nth(1)).toHaveAttribute("data-focused", "true");
     await page.keyboard.press("Enter");
     await expect(toast(page)).toHaveText(`Moved to ${garden}`);
     await expect(toastAction(page)).toHaveText("Undo");
@@ -587,6 +591,7 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await expect(shelved).toHaveAccessibleDescription("archived");
     await expect(page.getByRole("option").first()).toHaveText(`New area “${typo}”`);
     await expect(page.getByRole("option").last()).toHaveAccessibleName(seedlings);
+    await expect(page.getByRole("option").first()).toHaveAttribute("data-focused", "true");
     await page.keyboard.press("Enter");
     await expect(toast(page)).toHaveText(`Moved to ${typo}`);
     await expect.poll(areaOf).toBe(typo);
