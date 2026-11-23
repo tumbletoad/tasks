@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import {
   ANSWER_CAP_BYTES,
   LINE_CAP_BYTES,
+  LONG_LINE_CAP_BYTES,
   STREAM_KINDS,
   TEXT_CAP_BYTES,
   createStreamParser,
@@ -90,18 +91,19 @@ describe.each(STREAM_KINDS)(
       expect(c.events).toBeGreaterThanOrEqual(OK[kind].length);
     });
 
-    test("a line exactly at the cap is parsed; one byte more is skipped whole", () => {
+    test("a line at the cap is parsed, and so is a longer one; a longer one that is not JSON is not read, and counted", () => {
       const atCap = bigLine(kind, LINE_CAP_BYTES);
       const overCap = bigLine(kind, LINE_CAP_BYTES + 1);
+      const broken = overCap.slice(0, -2) + "xx";
       expect(bytes(atCap).length).toBe(LINE_CAP_BYTES);
-      const stream = [OK[kind][0], atCap, overCap, ...OK[kind].slice(1)].join("\n") + "\n";
+      const stream = [OK[kind][0], atCap, overCap, broken, ...OK[kind].slice(1)].join("\n") + "\n";
       const { outcome } = parseStream(kind, stream, exit0);
       expect(outcome.counts.oversized).toBe(1);
-      expect(outcome.counts.events).toBe(OK[kind].length + 1);
+      expect(outcome.counts.events).toBe(OK[kind].length + 2);
       expect(outcome.reason).toBe("success");
       // CRLF: the CR does not count against the cap.
-      const crlf = parseStream(kind, `${atCap}\r\n${overCap}\r\n`, exit0);
-      expect([crlf.outcome.counts.events, crlf.outcome.counts.oversized]).toEqual([1, 1]);
+      const crlf = parseStream(kind, `${atCap.slice(0, -2)}xx\r\n${broken}\r\n`, exit0);
+      expect([crlf.outcome.counts.notJson, crlf.outcome.counts.oversized]).toEqual([1, 1]);
     });
 
     test("a message over the answer cap: its message event is cut to 8 KB and its answer to 1 MiB, on a code point boundary", () => {
@@ -156,22 +158,24 @@ describe.each(STREAM_KINDS)(
       expect(parser.counts().invalidUtf8).toBe(1);
     });
 
-    test("a whole line over the cap handed over as text is skipped", () => {
+    test("a whole line handed over as text obeys the same bounds", () => {
       const parser = createStreamParser(kind);
       expect(parser.line(bigLine(kind, LINE_CAP_BYTES + 1))).toEqual([]);
+      expect(parser.counts().events).toBe(1);
       expect(parser.line("€".repeat(LINE_CAP_BYTES / 3 + 1))).toEqual([]);
-      expect(parser.counts().oversized).toBe(2);
+      expect(parser.line(bigLine(kind, LONG_LINE_CAP_BYTES + 1))).toEqual([]);
+      expect([parser.counts().events, parser.counts().oversized]).toEqual([1, 2]);
     });
 
-    test("memory stays bounded: 64 MB without a newline holds at most the cap", () => {
+    test("memory stays bounded: a line longer than the longest line read holds at most that", () => {
       const parser = createStreamParser(kind);
       const chunk = new Uint8Array(64 * 1024).fill(0x61);
       let most = 0;
-      for (let i = 0; i < 1024; i += 1) {
+      for (let i = 0; i < LONG_LINE_CAP_BYTES / chunk.length + 64; i += 1) {
         parser.push(chunk);
         most = Math.max(most, parser.held().bufferCapacity);
       }
-      expect(most).toBeLessThanOrEqual(LINE_CAP_BYTES + 1);
+      expect(most).toBeLessThanOrEqual(LONG_LINE_CAP_BYTES + 1);
       expect(parser.held().bufferedBytes).toBe(0);
       // The skipped line ends at its newline, and parsing goes on.
       parser.push(`\n${OK[kind].join("\n")}\n`);

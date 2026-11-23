@@ -13,6 +13,7 @@ import {
   ANSWER_CAP_BYTES,
   APP_TOOLS_STATES,
   LINE_CAP_BYTES,
+  LONG_LINE_CAP_BYTES,
   OUTCOME_REASONS,
   PROGRESS_LABELS,
   TEXT_CAP_BYTES,
@@ -301,7 +302,7 @@ function run(kind: StreamKind, chunks: readonly Uint8Array[], exit: ProcessExit)
   for (const c of chunks) {
     events.push(...parser.push(c));
     const held = parser.held();
-    check("line buffer bounded", held.bufferCapacity <= LINE_CAP_BYTES + 1);
+    check("line buffer bounded", held.bufferCapacity <= LONG_LINE_CAP_BYTES + 1);
     check("retained keys bounded", held.retained <= 1024);
   }
   const end = parser.end(exit);

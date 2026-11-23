@@ -14,11 +14,8 @@
 // - The work is settled when the thread's turn completed, no command it started is still running
 //   and no agent it started still works: what goes on in the background ends later, and the run
 //   waits for it.
-// - A message too long to read whole is read like any other, with its long strings cut
-//   (streams/cut-json.ts): a command whose output was cut still ended, an answer that was cut is
-//   kept as far as it came, cut, and never replaces one heard whole, and a question that was cut is
-//   still a question. One that cannot be read at all ends the work at once as failed, with what
-//   the agent said: nothing tells whom it was for, or what it ended.
+// - A message that cannot be read (streams/json-lines.ts) ends the work at once as failed, with
+//   what the agent said: nothing tells whom it was for, or what it ended.
 // - The answer is the message the protocol marks as the final answer, never just the last text.
 //   Messages are kept by item, per turn, and the run's answer is its last turn's: the message the
 //   turn's summary names, else the turn's last answer, whole or as far as it streamed. A message
@@ -44,7 +41,6 @@ import {
 } from "@ttasks/contracts/runs";
 import { realpath } from "node:fs/promises";
 import { MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/brand";
-import { wasCut } from "../streams/cut-json.ts";
 import { array, capText, count, nativeId, record, string, type Json } from "../streams/values.ts";
 import { LineRpc, NO_ANSWER, RPC_ERRORS, RpcClosed, RpcError } from "./json-rpc.ts";
 import type { DriverSession, OpenDriver, Work } from "./types.ts";
@@ -143,36 +139,25 @@ function labelOf(item: Json): ProgressLabel | undefined {
 }
 
 /**
- * A question for the person as text: each question with its choices, and whether what it shows
- * was cut on the way. Blocking questions name theirs `question` with `{label}` choices, the ones a
- * turn ends with `title` with plain ones.
+ * A question for the person as text: each question with its choices. Blocking questions name
+ * theirs `question` with `{label}` choices, the ones a turn ends with `title` with plain ones.
  */
-function questionText(params: Json): Words {
-  let cut = false;
-  /** The string at `key` of `container`, if it is one. */
-  const shown = (container: unknown, key: string | number): string | undefined => {
-    const value: unknown = Array.isArray(container)
-      ? container[key as number]
-      : record(container)?.[key];
-    if (typeof value !== "string") return undefined;
-    cut ||= wasCut(container, key);
-    return value;
-  };
-  const questions = array(params["questions"]) ?? [];
+function questionText(params: Json): string {
+  const questions = Array.isArray(params["questions"]) ? params["questions"] : [];
   const lines: string[] = [];
-  for (const question of questions) {
-    if (record(question) === undefined) continue;
+  for (const q of questions) {
+    const question = record(q);
+    if (question === undefined) continue;
     const text =
-      shown(question, "question") ?? shown(question, "title") ?? shown(question, "header") ?? "";
-    const choices = array(record(question)?.["options"]) ?? [];
-    const options = choices
-      .map((o, at) => shown(choices, at) ?? shown(o, "label"))
+      string(question["question"]) ?? string(question["title"]) ?? string(question["header"]) ?? "";
+    const options = (Array.isArray(question["options"]) ? question["options"] : [])
+      .map((o) => string(o) ?? string(record(o)?.["label"]))
       .filter((label): label is string => label !== undefined && label !== "");
     lines.push(options.length > 0 ? `${text} (${options.join(", ")})` : text);
   }
-  const message = shown(params, "message");
+  const message = string(params["message"]);
   if (lines.length === 0 && message !== undefined) lines.push(message);
-  return { text: lines.join("\n").trim(), cut };
+  return lines.join("\n").trim();
 }
 
 /**
@@ -256,9 +241,9 @@ function saidBy(turn: Turn): (Words & { final: boolean }) | null {
 }
 
 /** A question for the person, cut to the answer's cap. */
-function question({ text, cut }: Words): Words {
+function question(text: string): Words {
   const capped = capText(text === "" ? "Codex asked a question." : text, ANSWER_CAP_BYTES);
-  return { text: capped.text, cut: cut || capped.capped };
+  return { text: capped.text, cut: capped.capped };
 }
 
 /** A message the turn ends with that asks the person, rather than answers: its questions. */
@@ -420,27 +405,14 @@ export function codexDriver(session: CodexSession): OpenDriver {
       const text = string(item["text"]) ?? "";
       message.phase = item["phase"];
       message.done = true;
-      const asked = asksPerson(item) ? questionText({ questions: item["questions"] }) : null;
-      const asks =
-        asked === null
-          ? null
-          : question({
-              text: [text.trim(), asked.text].filter((part) => part !== "").join("\n"),
-              cut: asked.cut || wasCut(item, "text"),
-            });
-      // A question that was cut never replaces one heard whole.
-      if (asks?.cut !== true || message.asks?.cut !== false) message.asks = asks;
-      if (wasCut(item, "text")) {
-        // Only the text's start was read: it never replaces a text heard whole, and of the words
-        // streamed and the start, the longer is kept.
-        if (!message.whole) {
-          if (text.length > message.text.length) {
-            message.text = capText(text, ANSWER_CAP_BYTES).text;
-          }
-          message.cut = true;
-          message.whole = true;
-        }
-      } else if (!blank(text) || blank(message.text)) {
+      message.asks = asksPerson(item)
+        ? question(
+            [text.trim(), questionText({ questions: item["questions"] })]
+              .filter((part) => part !== "")
+              .join("\n"),
+          )
+        : null;
+      if (!blank(text) || blank(message.text)) {
         const capped = capText(text, ANSWER_CAP_BYTES);
         message.text = capped.text;
         message.cut = capped.capped;
@@ -517,8 +489,8 @@ export function codexDriver(session: CodexSession): OpenDriver {
       });
     };
 
-    const needsPerson = (params: Json): typeof NO_ANSWER => {
-      state.asked = question(questionText(params));
+    const needsPerson = (text: string): typeof NO_ANSWER => {
+      state.asked = question(text);
       keep();
       interruptTurn();
       finish("needs_input");
@@ -560,15 +532,15 @@ export function codexDriver(session: CodexSession): OpenDriver {
             : { permissions: {}, scope: "turn" };
         case "item/tool/requestUserInput":
         case "mcpServer/elicitation/request":
-          return helper ? unanswered(method) : needsPerson(params);
+          return helper ? unanswered(method) : needsPerson(questionText(params));
         default:
           throw new RpcError(RPC_ERRORS.methodNotFound, `Method not found: ${method}`);
       }
     });
 
     /**
-     * A message too long to read that could not be read at all: the work ends now, failed, with
-     * what the agent said so far, since nothing tells whom the message was for or what it ended.
+     * A message that could not be read: the work ends now, failed, with what the agent said so
+     * far, since nothing tells whom the message was for or what it ended.
      */
     const unreadable = (): void => {
       finish(
@@ -652,9 +624,9 @@ export function codexDriver(session: CodexSession): OpenDriver {
           const delta = string(params["delta"]) ?? "";
           if (message === undefined || message.done || message.cut || delta === "") return;
           if (!answers(message.phase)) return;
-          // Words past the answer's cap, or after words that were cut, are not kept.
+          // Words past the answer's cap are not kept.
           const bytes = Buffer.byteLength(delta, "utf8");
-          if (wasCut(params, "delta") || message.bytes + bytes > ANSWER_CAP_BYTES) {
+          if (message.bytes + bytes > ANSWER_CAP_BYTES) {
             message.text = capText(message.text + delta, ANSWER_CAP_BYTES).text;
             message.cut = true;
           } else {

@@ -1,16 +1,9 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, test } from "vitest";
-import {
-  CUT_DEPTH,
-  CUT_KEPT_BYTES,
-  CUT_STRING_BYTES,
-  CutJson,
-  wasCut,
-} from "../streams/cut-json.ts";
 import { LineRpc, NO_ANSWER, RPC_ERRORS, RpcClosed, RpcError } from "./json-rpc.ts";
 
 /** One side of a connection, and what it wrote, line by line. */
-function side(options: { version?: boolean; lineCap?: number } = {}) {
+function side(options: { version?: boolean; lineCap?: number; longLineCap?: number } = {}) {
   const input = new PassThrough();
   const output = new PassThrough();
   const written: Record<string, unknown>[] = [];
@@ -119,7 +112,7 @@ describe("[A4.3.11.json-rpc.lines] JSON-RPC over lines, with requests in both di
     expect(asked).toEqual([9]);
   });
 
-  test("lines split anywhere, with CRLF, are read whole, a line over the cap too; a line that is not JSON and an object that is no message are skipped", async () => {
+  test("lines split anywhere, with CRLF, are read whole, a line over the cap too, its long strings cut to the cap; a line that is not JSON and an object that is no message are skipped", async () => {
     const { rpc, input, say } = side({ lineCap: 64 });
     const heard: unknown[] = [];
     rpc.onNotification((method, params) => heard.push([method, params]));
@@ -133,16 +126,16 @@ describe("[A4.3.11.json-rpc.lines] JSON-RPC over lines, with requests in both di
     await tick();
     expect(heard).toEqual([
       ["a", { n: 1 }],
-      ["long", "x".repeat(200)],
+      ["long", "x".repeat(64)],
       ["b", undefined],
     ]);
     expect(rpc.skipped).toBe(3);
   });
 
-  test("a line too long to read whole is a message like any other, in its own shape, with each long string cut to its start and marked as cut, however it is split", async () => {
+  test("a line longer than a line read whole is read as the platform reads every line, however it is split: numbers of any length, any depth, a key said twice, escapes; only each string longer than a line read whole is cut, to its start on a whole character", async () => {
     const { rpc, input, written, say } = side({ lineCap: 256 });
-    const heard: [string, Record<string, unknown>][] = [];
-    rpc.onNotification((method, params) => heard.push([method, params as Record<string, unknown>]));
+    const heard: [string, unknown][] = [];
+    rpc.onNotification((method, params) => heard.push([method, params]));
     const asked: unknown[] = [];
     rpc.onRequest((_method, params) => {
       asked.push(params);
@@ -151,87 +144,51 @@ describe("[A4.3.11.json-rpc.lines] JSON-RPC over lines, with requests in both di
     let lost = 0;
     rpc.onLost(() => (lost += 1));
     const answer = rpc.request("thread/read", {});
-    // One is cut inside an escape, the other inside a character of two bytes.
-    const big = `${"é".repeat(CUT_STRING_BYTES / 2 - 1)}x\n${"y".repeat(CUT_STRING_BYTES)}`;
-    const wide = `x${"é".repeat(CUT_STRING_BYTES / 2)}`;
-    const items = Array.from({ length: 300 }, (_, at) => ({ id: `i${String(at)}`, at }));
-    const completion = {
-      method: "item/completed",
-      params: {
-        item: {
-          type: "commandExecution",
-          id: "exec-1",
-          status: "completed",
-          exitCode: 0,
-          aggregatedOutput: big,
-          commandActions: [{ type: "unknown", id: "not this one" }, null, true, -1.5e3],
-          deep: { a: { b: { c: "deep" } } },
-          items,
-        },
-        threadId: "t1",
-      },
-    };
-    for (const byte of Buffer.from(`${JSON.stringify(completion)}\n`)) {
-      input.write(Buffer.from([byte]));
-    }
+    // Past the bound by a pair written as an escape, and by a character of two bytes.
+    const paired = `${"y".repeat(255)}\\ud83d\\ude00`;
+    const wide = `x${"é".repeat(128)}`;
+    const key = "k".repeat(300);
+    const line = `{"method":"item/completed","params":{"threadId":"t1","item":{"type":"commandExecution","id":"exec-1","n":${"1".repeat(65)},"deep":${"[".repeat(80)}${"]".repeat(80)},"csv":"\\"a\\",\\"b \\"\\"c\\"\\"\\"","whole":"${"z".repeat(256)}","${key}":1,"aggregatedOutput":"${paired}"},"threadId":"t2"}}\n`;
+    for (const byte of Buffer.from(line)) input.write(Buffer.from([byte]));
     say({ id: 9, method: "item/fileChange/requestApproval", params: { diff: wide, why: "edit" } });
-    say({ id: 1, result: { thread: { id: "t1", text: big } } });
+    say({ id: 1, result: { thread: { id: "t1", text: "y".repeat(257) } } });
     await tick();
 
-    const kept = `${"é".repeat(CUT_STRING_BYTES / 2 - 1)}x`;
-    const params = heard[0]?.[1] as { item: Record<string, unknown>; threadId: string };
-    expect(heard[0]?.[0]).toBe("item/completed");
-    expect(params).toEqual({
-      item: { ...completion.params.item, aggregatedOutput: kept },
-      threadId: "t1",
-    });
-    expect(wasCut(params.item, "aggregatedOutput")).toBe(true);
-    expect(wasCut(params, "item") && wasCut(params)).toBe(true);
-    expect(wasCut(params.item, "id") || wasCut(params, "threadId")).toBe(false);
-    expect(wasCut(params.item["deep"])).toBe(false);
+    const parsed = JSON.parse(line) as { params: { item: Record<string, unknown> } };
+    expect(heard).toEqual([
+      [
+        "item/completed",
+        { ...parsed.params, item: { ...parsed.params.item, aggregatedOutput: "y".repeat(255) } },
+      ],
+    ]);
+    expect((heard[0]?.[1] as { threadId: string }).threadId).toBe("t2");
     expect(asked).toEqual([{ diff: wide.slice(0, -1), why: "edit" }]);
     expect(written.find((message) => message["id"] === 9)).toEqual({
       id: 9,
       result: { decision: "decline" },
     });
-    const thread = ((await answer) as { thread: Record<string, unknown> }).thread;
-    expect(thread).toEqual({ id: "t1", text: kept });
-    expect(wasCut(thread, "text")).toBe(true);
+    expect(await answer).toEqual({ thread: { id: "t1", text: "y".repeat(256) } });
     expect([lost, rpc.skipped]).toEqual([0, 0]);
-    expect(wasCut(JSON.parse(JSON.stringify(completion)))).toBe(false);
   });
 
-  test("a line too long to read that is not JSON, holds more than is kept of one, is nested deeper or has a key too long to keep is lost: nothing of it reaches a handler", async () => {
-    const { rpc, input } = side({ lineCap: 256 });
+  test("a line past the longest line read is lost the moment it passes it, and so is a line longer than a line read whole that is not JSON: nothing of either reaches a handler; a short line that is not JSON, and an unfinished one at the end, are skipped", async () => {
+    const { rpc, input } = side({ lineCap: 64, longLineCap: 512 });
     const heard: string[] = [];
     rpc.onNotification((method) => heard.push(method));
     let lost = 0;
     rpc.onLost(() => (lost += 1));
-    const nested = (depth: number): string =>
-      `{"method":"deep","pad":"${"p".repeat(300)}","params":${"[".repeat(depth - 1)}${"]".repeat(depth - 1)}}`;
-    input.write(`${"not json ".repeat(100)}\n`);
-    input.write(`{"method":"flood","params":[${'"ab",'.repeat(CUT_KEPT_BYTES / 5)}"ab"]}\n`);
-    input.write(`${nested(CUT_DEPTH + 1)}\n`);
-    input.write(`{"method":"key","params":{"${"k".repeat(CUT_STRING_BYTES + 1)}":1}}\n`);
-    input.write(`{"method":"unfinished","params":{"a":1${" ".repeat(300)}\n`);
-    input.write(`${nested(CUT_DEPTH)}\n`);
+    input.write(`{"method":"far","params":"${"x".repeat(600)}`);
     await tick();
-    expect([lost, rpc.skipped]).toEqual([5, 5]);
-    expect(heard).toEqual(["deep"]);
-  });
-
-  test("what is kept of a line too long to read stays within its bound, however long the line", () => {
-    const reader = new CutJson();
-    reader.push(Buffer.from('{"method":"output","params":{"text":"'));
-    const chunk = Buffer.alloc(1024 * 1024, 0x78);
-    for (let i = 0; i < 64; i += 1) {
-      reader.push(chunk);
-      expect(reader.kept).toBeLessThan(CUT_STRING_BYTES + 1024);
-    }
-    reader.push(Buffer.from('"}}'));
-    const value = reader.end() as { params: { text: string } };
-    expect(value.params.text).toHaveLength(CUT_STRING_BYTES);
-    expect(reader.kept).toBeLessThan(CUT_STRING_BYTES + 1024);
+    expect(lost).toBe(1);
+    input.write(`"}\n`);
+    input.write(`${"not json ".repeat(20)}\n`);
+    input.write("not json\n");
+    input.write(`{"method":"near","params":"${"x".repeat(400)}"}\n`);
+    input.write(`{"method":"unfinished","params":"${"x".repeat(100)}`);
+    input.end();
+    await rpc.ended;
+    expect(heard).toEqual(["near"]);
+    expect([lost, rpc.skipped]).toEqual([2, 4]);
   });
 
   test("the version field is written when the protocol wants it", () => {

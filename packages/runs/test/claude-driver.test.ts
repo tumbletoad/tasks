@@ -261,48 +261,63 @@ async function driverIn(phase: Phase) {
       if (event.kind === "answer") answer = [event.text, event.final];
     },
   );
-  const say = async (...messages: unknown[]) => {
-    fromProgram.write(messages.map((m) => `${JSON.stringify(m)}\n`).join(""));
+  /** Writes `text` as the program does, and lets it be read. */
+  const raw = async (text: string) => {
+    fromProgram.write(text);
     for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
   };
+  const say = (...messages: unknown[]) =>
+    raw(messages.map((m) => `${JSON.stringify(m)}\n`).join(""));
   await say(INIT);
   if (phase === "between") await say(backgroundOf(1), { ...RESULT, result: "First." });
   if (phase === "settled") await say({ ...RESULT, result: "First." });
   if (phase === "stopping") driver.interrupt();
   await say();
   wrote.splice(0);
-  return { driver, wrote, say, answer: () => answer };
+  return { driver, wrote, say, raw, answer: () => answer };
 }
 
-/** Makes the driver hear `heard`; `ask` is the request for the person, when it hears one. */
+/** Longer than a line read whole: a file a tool wrote, say. */
+const BULK = "x".repeat(LINE_CAP_BYTES + 1);
+
+/**
+ * Makes the driver hear `heard`; `ask` is the request for the person, when it hears one. `long`:
+ * the line it hears also carries more than a line read whole.
+ */
 async function makeHear(
-  { driver, say }: Awaited<ReturnType<typeof driverIn>>,
+  { driver, say, raw }: Awaited<ReturnType<typeof driverIn>>,
   heard: Heard,
   ask: (typeof ASKS)[number],
+  long = false,
 ): Promise<void> {
+  const line = (message: Json): Json => (long ? { ...message, bulk: BULK } : message);
   switch (heard) {
     case "turn":
-      return say(own("Newer words."));
+      return say(line(own("Newer words.")));
     case "other":
-      return say({ ...own("A helper's notes."), parent_tool_use_id: "toolu_h1" });
+      return say(line({ ...own("A helper's notes."), parent_tool_use_id: "toolu_h1" }));
     case "result":
-      return say(backgroundOf(0), { ...RESULT, result: "Done." });
+      return say(backgroundOf(0), line({ ...RESULT, result: "Done." }));
     case "result, more":
-      return say({ ...RESULT, result: "Done.", queued_turn_count: 1 });
+      return say(line({ ...RESULT, result: "Done.", queued_turn_count: 1 }));
     case "failed":
-      return say({
-        ...RESULT,
-        is_error: true,
-        subtype: "error_during_execution",
-        result: "The API failed.",
-      });
+      return say(
+        line({
+          ...RESULT,
+          is_error: true,
+          subtype: "error_during_execution",
+          result: "The API failed.",
+        }),
+      );
     case "asks":
-      return say({ type: "control_request", request_id: "r1", request: ask.request });
+      return say(line({ type: "control_request", request_id: "r1", request: ask.request }));
     case "unreadable":
-      // Too long to read whole, and not an object or an array: nothing of it can be read.
-      return say("x".repeat(LINE_CAP_BYTES));
+      // Longer than a line read whole, and not JSON: nothing of it can be read.
+      return raw(`${BULK}\n`);
     case "unknown request":
-      return say({ type: "control_request", request_id: "r2", request: { subtype: "later_kind" } });
+      return say(
+        line({ type: "control_request", request_id: "r2", request: { subtype: "later_kind" } }),
+      );
     case "exit":
       driver.ended({ code: 1, signal: null });
       return say();
@@ -313,47 +328,52 @@ async function makeHear(
 }
 
 describe("[A4.3.11.claude.driver] the claude driver's decisions: every phase against everything it hears", () => {
-  for (const phase of PHASES) {
-    for (const heard of HEARD) {
-      test(`${phase}, hears ${heard}`, async () => {
-        const expected = TABLE[phase][heard] as Expected | undefined;
-        expect(expected, `no cell for ${phase} × ${heard}`).toBeDefined();
-        if (expected === undefined) return;
-        for (const ask of heard === "asks" ? ASKS : ASKS.slice(0, 1)) {
-          const bench = await driverIn(phase);
-          const before = await settledNow(bench.driver);
-          await makeHear(bench, heard, ask);
-          const work = await settledNow(bench.driver);
-          if (expected === "unchanged") {
-            expect(work).toEqual(before);
-            expect(bench.wrote).toEqual([]);
-            continue;
+  // A line too long to read whole is heard as its short twin is: the work and its answer come from
+  // the same reading of it.
+  for (const long of [false, true]) {
+    for (const phase of PHASES) {
+      for (const heard of HEARD) {
+        const name = `${phase}, hears ${heard}${long ? ", in a line too long to read whole" : ""}`;
+        test(name, async () => {
+          const expected = TABLE[phase][heard] as Expected | undefined;
+          expect(expected, `no cell for ${phase} × ${heard}`).toBeDefined();
+          if (expected === undefined) return;
+          for (const ask of heard === "asks" ? ASKS : ASKS.slice(0, 1)) {
+            const bench = await driverIn(phase);
+            const before = await settledNow(bench.driver);
+            await makeHear(bench, heard, ask, long);
+            const work = await settledNow(bench.driver);
+            if (expected === "unchanged") {
+              expect(work).toEqual(before);
+              expect(bench.wrote).toEqual([]);
+              continue;
+            }
+            expect(bench.wrote).toEqual(expected.wrote ?? []);
+            const [text, final] = expected.answer;
+            const answer = [text === ASKED ? ask.asked : text, final];
+            if ("settles" in expected) {
+              expect(before).toBeUndefined();
+              expect(work).toEqual(done(expected.settles));
+              expect([work?.text, work?.textFinal], "the answer").toEqual(answer);
+              continue;
+            }
+            expect(work).toBeUndefined();
+            expect(bench.answer(), "the answer").toEqual(answer);
+            // Which phase it goes on in shows in what a Stop then does.
+            bench.wrote.splice(0);
+            bench.driver.interrupt();
+            await bench.say();
+            const stopped = await settledNow(bench.driver);
+            if (expected.goesOn === "between") {
+              expect(stopped).toEqual(done({ outcome: "interrupted" }));
+              expect(bench.wrote).toEqual(["interrupt", "end"]);
+            } else {
+              expect(stopped).toBeUndefined();
+              expect(bench.wrote).toEqual(expected.goesOn === "turn" ? ["interrupt"] : []);
+            }
           }
-          expect(bench.wrote).toEqual(expected.wrote ?? []);
-          const [text, final] = expected.answer;
-          const answer = [text === ASKED ? ask.asked : text, final];
-          if ("settles" in expected) {
-            expect(before).toBeUndefined();
-            expect(work).toEqual(done(expected.settles));
-            expect([work?.text, work?.textFinal], "the answer").toEqual(answer);
-            continue;
-          }
-          expect(work).toBeUndefined();
-          expect(bench.answer(), "the answer").toEqual(answer);
-          // Which phase it goes on in shows in what a Stop then does.
-          bench.wrote.splice(0);
-          bench.driver.interrupt();
-          await bench.say();
-          const stopped = await settledNow(bench.driver);
-          if (expected.goesOn === "between") {
-            expect(stopped).toEqual(done({ outcome: "interrupted" }));
-            expect(bench.wrote).toEqual(["interrupt", "end"]);
-          } else {
-            expect(stopped).toBeUndefined();
-            expect(bench.wrote).toEqual(expected.goesOn === "turn" ? ["interrupt"] : []);
-          }
-        }
-      });
+        });
+      }
     }
   }
 
@@ -912,33 +932,5 @@ describe("[A4.3.11.claude.driver] the claude driver against the recorded print m
     const work = await driver.settled;
     expect(work.text === answer).toBe(true);
     expect(work.textCut).toBe(false);
-  });
-
-  test("a line too long to read whole is still heard: a result in it settles the work with the answer it had, not final, and a request in it is turned down", async () => {
-    const long = "x".repeat(LINE_CAP_BYTES);
-    const ended = await driverIn("turn");
-    await ended.say(own("Done."), {
-      ...RESULT,
-      result: "Done.",
-      permission_denials: [
-        { tool_name: "Write", tool_input: { file_path: "a.txt", content: long } },
-      ],
-    });
-    expect(await settledNow(ended.driver)).toEqual(
-      done({ ok: false, outcome: "no_result", text: "Done.", textFinal: false }),
-    );
-
-    const asks = await driverIn("turn");
-    await asks.say({
-      type: "control_request",
-      request_id: "r1",
-      request: {
-        subtype: "can_use_tool",
-        tool_name: "Write",
-        input: { file_path: "a.txt", content: long },
-      },
-    });
-    expect(await settledNow(asks.driver)).toEqual(done({ outcome: "needs_input" }));
-    expect(asks.wrote).toEqual(["turned down", "interrupt"]);
   });
 });

@@ -3,14 +3,12 @@
 // and must answer what it is asked; a request the other side asks is answered while this side
 // keeps reading, so an answer that takes its time never holds up a reply or a notification.
 //
-// Lines are read in bounded memory (streams/lines.ts). One longer than the cap is read as it
-// passes, with its long strings cut (streams/cut-json.ts), and is then a message like any other.
-// One that cannot be read so, past the reader's bounds or not JSON, reaches onLost: nothing of it
-// is known, not even whom it was for. A short line that is not a JSON message is skipped. A request
-// with a method no handler takes gets the protocol's "method not found" error, never silence.
+// Lines are read as every agent's output is (streams/json-lines.ts). A line that could not be read
+// reaches onLost: nothing of it is known, not even whom it was for. A line that is not a JSON
+// message is skipped. A request with a method no handler takes gets the protocol's "method not
+// found" error, never silence.
 import type { Readable, Writable } from "node:stream";
-import { LINE_CAP_BYTES } from "@ttasks/contracts/runs";
-import { LineSplitter, type LineResult } from "../streams/lines.ts";
+import { JsonLines, type JsonLine } from "../streams/json-lines.ts";
 
 /** JSON-RPC's own error codes. */
 export const RPC_ERRORS = {
@@ -55,8 +53,10 @@ export type NotificationHandler = (method: string, params: unknown) => void;
 export interface LineRpcOptions {
   /** Writes `"jsonrpc": "2.0"` on every message. Codex's app server goes without it. */
   readonly version?: boolean;
-  /** The longest line read, in UTF-8 bytes. Default: LINE_CAP_BYTES. */
+  /** The longest line read as it is, in UTF-8 bytes. Default: LINE_CAP_BYTES. */
   readonly lineCap?: number;
+  /** The longest line read at all. Default: LONG_LINE_CAP_BYTES. */
+  readonly longLineCap?: number;
 }
 
 type Id = number | string;
@@ -70,7 +70,7 @@ const isId = (value: unknown): value is Id =>
 export class LineRpc {
   readonly #output: Writable;
   readonly #version: boolean;
-  readonly #splitter: LineSplitter;
+  readonly #lines: JsonLines;
   readonly #pending = new Map<Id, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   #onRequest: RequestHandler = (method) => {
     throw new RpcError(RPC_ERRORS.methodNotFound, `Method not found: ${method}`);
@@ -87,16 +87,16 @@ export class LineRpc {
   constructor(input: Readable, output: Writable, options: LineRpcOptions = {}) {
     this.#output = output;
     this.#version = options.version ?? false;
-    this.#splitter = new LineSplitter(options.lineCap ?? LINE_CAP_BYTES, { readLong: true });
+    this.#lines = new JsonLines(options.lineCap, options.longLineCap);
     output.on("error", () => undefined);
     input.on("data", (chunk: Buffer | string) => {
       const bytes = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk;
-      for (const line of this.#splitter.push(bytes)) this.#take(line);
+      for (const line of this.#lines.push(bytes)) this.#take(line);
     });
     this.ended = new Promise((resolve) => {
       const end = (): void => {
         if (this.#ended) return;
-        for (const line of this.#splitter.end()) this.#take(line);
+        for (const line of this.#lines.end()) this.#take(line);
         this.#end();
         resolve();
       };
@@ -116,7 +116,7 @@ export class LineRpc {
     this.#onNotification = handler;
   }
 
-  /** Who hears that a line too long to read could not be read at all. */
+  /** Who hears that a line could not be read (streams/json-lines.ts). */
   onLost(handler: () => void): void {
     this.#onLost = handler;
   }
@@ -170,33 +170,22 @@ export class LineRpc {
     }
   }
 
-  #take(line: LineResult): void {
-    if (line.kind === "line") {
-      this.#line(line.line.text);
-      return;
+  #take(line: JsonLine): void {
+    switch (line.kind) {
+      case "json":
+        this.#message(line.value);
+        return;
+      case "text":
+        if (!line.blank) this.skipped += 1;
+        return;
+      case "lost":
+        this.skipped += 1;
+        try {
+          this.#onLost();
+        } catch {
+          // A defect in a handler never stops the reading.
+        }
     }
-    if (line.value !== undefined) {
-      this.#message(line.value);
-      return;
-    }
-    this.skipped += 1;
-    try {
-      this.#onLost();
-    } catch {
-      // A defect in a handler never stops the reading.
-    }
-  }
-
-  #line(text: string): void {
-    if (text.trim() === "") return;
-    let message: unknown;
-    try {
-      message = JSON.parse(text);
-    } catch {
-      this.skipped += 1;
-      return;
-    }
-    this.#message(message);
   }
 
   #message(message: unknown): void {

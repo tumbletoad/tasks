@@ -6,12 +6,16 @@
 import { PassThrough } from "node:stream";
 import { createInterface } from "node:readline";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { LINE_CAP_BYTES, type OutcomeReason } from "@ttasks/contracts/runs";
+import {
+  ANSWER_CAP_BYTES,
+  LINE_CAP_BYTES,
+  TEXT_CAP_BYTES,
+  type OutcomeReason,
+} from "@ttasks/contracts/runs";
 import { claudeDriver } from "../src/drivers/claude.ts";
 import { codexDriver } from "../src/drivers/codex.ts";
 import { printDriver } from "../src/drivers/print.ts";
 import type { DriverSession, OpenDriver } from "../src/drivers/types.ts";
-import { CUT_STRING_BYTES } from "../src/streams/cut-json.ts";
 
 /** What a message is in Codex's protocol: its answer, its commentary, or not said (null). */
 type Phase = "final_answer" | "commentary" | null;
@@ -91,8 +95,8 @@ const THREAD = "00000000-0000-4000-8000-000000000002";
 const HELPER = "00000000-0000-4000-8000-000000000003";
 const SESSION = "00000000-0000-4000-8000-0000000000a1";
 const turnId = (turn: number): string => `turn-${String(turn)}`;
-/** Longer than a line read whole. */
-const BULK = "x".repeat(LINE_CAP_BYTES);
+/** Longer than a line read whole, and than any string kept of a line too long to read whole. */
+const BULK = "x".repeat(LINE_CAP_BYTES + 1);
 
 /** A command of a turn's summary, as Codex lists it: its own output, `output` by default. */
 const commandItem = (id: string, at: number, output = "ok"): object => ({
@@ -384,10 +388,19 @@ const turnEnds = (item?: string, text?: string, more: { bulk?: boolean } = {}): 
 const turnStarts: Step = { kind: "turn starts" };
 const helperStarts: Step = { kind: "helper starts" };
 const helperEnds = (more: { bulk?: boolean } = {}): Step => ({ kind: "helper ends", ...more });
-/** An answer longer than the start of a string that is kept of a line too long to read whole. */
-const LONG_ANSWER = `${ANSWER} `.repeat(Math.ceil((2 * CUT_STRING_BYTES) / ANSWER.length));
-/** What is kept of a string too long to keep whole: its start. */
-const start = (text: string): string => text.slice(0, CUT_STRING_BYTES);
+/** An answer of a few pages: longer than a message is kept, well within an answer. */
+const LONG_ANSWER = `${ANSWER} `.repeat(Math.ceil((2 * TEXT_CAP_BYTES) / ANSWER.length));
+/** An answer that starts with a page of spaces. */
+const SPACED = `${" ".repeat(8_192)}${ANSWER}`;
+/** A report of a few pages the turn's summary holds whole, of which a message said the start. */
+const REPORT = `First paragraph.\n\n${LONG_ANSWER}`;
+/** A table of about 6,000 bytes as an answer: its JSON, with every quote escaped, is longer. */
+const CSV = Array.from(
+  { length: 280 },
+  (_, at) => `"${String(at)}","export ""${String(at)}"""`,
+).join("\n");
+/** What is kept of an answer longer than an answer is kept: its start (of one-byte characters). */
+const start = (text: string): string => text.slice(0, ANSWER_CAP_BYTES);
 const commandStarts: Step = { kind: "command starts" };
 const commandEnds: Step = { kind: "command ends" };
 const timePasses: Step = { kind: "time passes" };
@@ -726,9 +739,77 @@ const ORDERS: readonly {
     final: true,
   },
   {
-    name: "a long answer, then the turn's end with it beside a command's output too long to read whole: the start the summary keeps never replaces the whole answer",
+    name: "a long answer, then the turn's end with it beside a command's output too long to read whole",
     for: CODEX,
     steps: [message("A", LONG_ANSWER), turnEnds("A", LONG_ANSWER, { bulk: true })],
+    outcome: "success",
+    text: LONG_ANSWER,
+    final: true,
+  },
+  {
+    name: "a table as the answer, in the turn's end",
+    for: CODEX,
+    steps: [turnEnds("A", CSV)],
+    outcome: "success",
+    text: CSV,
+    final: true,
+  },
+  {
+    name: "a table as the answer, in the turn's end beside a command's output too long to read whole",
+    for: CODEX,
+    steps: [turnEnds("A", CSV, { bulk: true })],
+    outcome: "success",
+    text: CSV,
+    final: true,
+  },
+  {
+    name: "the answer, then the turn's summary holds more of it",
+    for: CODEX,
+    steps: [message("A", "First paragraph."), turnEnds("A", REPORT)],
+    outcome: "success",
+    text: REPORT,
+    final: true,
+  },
+  {
+    name: "the answer, then the turn's summary holds more of it beside a command's output too long to read whole",
+    for: CODEX,
+    steps: [message("A", "First paragraph."), turnEnds("A", REPORT, { bulk: true })],
+    outcome: "success",
+    text: REPORT,
+    final: true,
+  },
+  {
+    name: "an earlier answer, then the turn's summary names the final one, which starts with a page of spaces",
+    for: CODEX,
+    steps: [message("A", "Looking into it."), turnEnds("B", SPACED)],
+    outcome: "success",
+    text: SPACED,
+    final: true,
+  },
+  {
+    name: "an earlier answer, then the turn's summary names the final one, which starts with a page of spaces, beside a command's output too long to read whole",
+    for: CODEX,
+    steps: [message("A", "Looking into it."), turnEnds("B", SPACED, { bulk: true })],
+    outcome: "success",
+    text: SPACED,
+    final: true,
+  },
+  {
+    name: "the turn's end with a long answer comes before the answer's own message",
+    for: CODEX,
+    steps: [streams("A", "The export "), turnEnds("A", LONG_ANSWER), message("A", LONG_ANSWER)],
+    outcome: "success",
+    text: LONG_ANSWER,
+    final: true,
+  },
+  {
+    name: "the turn's end with a long answer, beside a command's output too long to read whole, comes before the answer's own message",
+    for: CODEX,
+    steps: [
+      streams("A", "The export "),
+      turnEnds("A", LONG_ANSWER, { bulk: true }),
+      message("A", LONG_ANSWER),
+    ],
     outcome: "success",
     text: LONG_ANSWER,
     final: true,
@@ -747,7 +828,7 @@ const ORDERS: readonly {
     for: CODEX,
     steps: [streams("A", "The export "), streams("A", BULK), turnEnds(), timePasses],
     outcome: "success",
-    text: `The export ${start(BULK)}`,
+    text: start(`The export ${BULK}`),
     final: false,
     cut: true,
   },
@@ -759,7 +840,7 @@ const ORDERS: readonly {
       message("A", "Two exports exist.", { asks: `Which one should I fix? ${BULK}` }),
     ],
     outcome: "needs_input",
-    text: `Two exports exist.\n${start(`Which one should I fix? ${BULK}`)} (CSV, PDF)`,
+    text: start(`Two exports exist.\nWhich one should I fix? ${BULK}`),
     final: false,
     cut: true,
   },
