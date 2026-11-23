@@ -52,6 +52,16 @@ async function shots(
   for (const theme of themes()) {
     await world.machine("ui.theme", theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme, { timeout: SLOW_MS });
+    // Colours move to the theme's in a transition: the picture and axe take them once they are
+    // there. A spinner never ends and is not waited for.
+    await page.evaluate(() =>
+      Promise.all(
+        document
+          .getAnimations()
+          .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+          .map((animation) => animation.finished.catch(() => undefined)),
+      ),
+    );
     for (const [width, height] of [
       [1440, 1000],
       [390, 900],
