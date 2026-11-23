@@ -200,6 +200,7 @@ test.describe("[A5.archived.e2e.sidebar] an archived area or project is out of t
     await showsSpace(page, world.mira.name);
     const areas = areasList(page);
     await expect(linkTo(areas, kiln)).toBeVisible({ timeout: SLOW_MS });
+    await shots(page, world, "loose");
 
     // Archived, it leaves the areas for Archived, and its page and its task's card say so.
     await archive(world, kilnId);
@@ -231,6 +232,7 @@ test.describe("[A5.archived.e2e.sidebar] an archived area or project is out of t
     await expect(toastAction(page)).toHaveText("Undo");
     await expect(line).toContainText(`Archived with its area, ${loft}.`);
     await expect(linkTo(areas, trays)).toHaveCount(0);
+    await shots(page, world, "in-area", "page");
     await line.getByRole("button", { name: `Unarchive ${loft}` }).click();
     await expect(toast(page)).toHaveText(`${loft} is back in the sidebar`);
     await expect(linkTo(areas, trays)).toBeVisible();
@@ -289,6 +291,7 @@ test.describe("[A5.archived.e2e.new-work] new work never lands in an archived gr
     const note = dialog.locator('[data-part="area-archived"]');
     await expect(note).toContainText(`An archived area is named ${loft}.`);
     await expect(dialog.getByRole("button", { name: "Without a folder" })).toBeDisabled();
+    await shots(page, world, "new-area", "page");
     const crates = `Crates ${tag}`;
     await dialog.getByLabel("Name", { exact: true }).fill(crates);
     await note.getByRole("button", { name: `Unarchive ${loft}` }).click();
@@ -315,6 +318,7 @@ test.describe("[A5.archived.e2e.new-work] new work never lands in an archived gr
     const title = `Weed the beds #garden-${tag}`;
     await adding(page).fill(title);
     await expect(capture(page).getByRole("listitem")).toHaveText([`${garden} is archived`]);
+    await shots(page, world, "capture", "page");
     await adding(page).press("Enter");
     await expect(toast(page)).toHaveText("Added to Inbox");
     const found = (await world.op(world.mira.id, "task.search", { q: "Weed", scope: "all" })) as {
