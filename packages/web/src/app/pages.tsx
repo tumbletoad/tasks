@@ -15,6 +15,7 @@ import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
 import type { TaskFacts } from "../task/detail.ts";
+import { ArchivedLine } from "./Archived.tsx";
 import { useTitle, useToast } from "./frame.ts";
 import { hostOf, type Host } from "./host.ts";
 import css from "./pages.module.css";
@@ -122,11 +123,11 @@ export function AreaPage({
       onExpand={onExpand}
     />
   );
-  if (project === undefined) return list;
-  // A project's view begins with its folder on this machine.
+  // An archived group's view begins with the way back; a project's with its folder on this machine.
   return (
     <>
-      <ProjectFolder key={project} project={project} />
+      <ArchivedLine area={area} project={project} />
+      {project === undefined ? null : <ProjectFolder key={project} project={project} />}
       {list}
     </>
   );
