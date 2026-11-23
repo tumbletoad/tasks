@@ -2,7 +2,12 @@
 // (codex-server.ts, fixtures/codex-app-server), over a pair of in-memory pipes.
 import { PassThrough } from "node:stream";
 import { describe, expect, test } from "vitest";
-import { ANSWER_CAP_BYTES, type RunEvent, type RunPermission } from "@ttasks/contracts/runs";
+import {
+  ANSWER_CAP_BYTES,
+  LINE_CAP_BYTES,
+  type RunEvent,
+  type RunPermission,
+} from "@ttasks/contracts/runs";
 import { codexDriver, type CodexSession } from "../src/drivers/codex.ts";
 import type { DriverSession, Work } from "../src/drivers/types.ts";
 import { serveCodex, type FakeCodex, type FakeScenario } from "./codex-server.ts";
@@ -22,6 +27,8 @@ interface Bench {
   readonly say: (method: string, params: Record<string, unknown>) => void;
   /** Asks what the server asks, beside the replay. */
   readonly ask: (id: number, method: string, params: Record<string, unknown>) => void;
+  /** Writes what the server writes, as it is. */
+  readonly raw: (text: string) => void;
 }
 
 function bench(scenario: FakeScenario, session: Partial<CodexSession> = {}): Bench {
@@ -41,7 +48,10 @@ function bench(scenario: FakeScenario, session: Partial<CodexSession> = {}): Ben
   const ask = (id: number, method: string, params: Record<string, unknown>): void => {
     fromServer.write(`${JSON.stringify({ id, method, params })}\n`);
   };
-  return { driver, fake, events, toServer, say, ask };
+  const raw = (text: string): void => {
+    fromServer.write(text);
+  };
+  return { driver, fake, events, toServer, say, ask, raw };
 }
 
 /** The work, or undefined while it has not settled. */
@@ -701,6 +711,64 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
     const work = await driver.settled;
     expect(work.text === answer).toBe(true);
     expect(work.textCut).toBe(false);
+  });
+
+  test("a command whose completion is too long to read still ends: the turn's work settles with its answer", async () => {
+    const { driver, fake } = bench({
+      fixture: "windows-plain",
+      notifications: [
+        {
+          method: "item/started",
+          params: { item: { type: "commandExecution", id: "exec-big", status: "inProgress" } },
+        },
+        {
+          method: "item/completed",
+          params: {
+            item: {
+              type: "commandExecution",
+              id: "exec-big",
+              status: "completed",
+              aggregatedOutput: "x".repeat(LINE_CAP_BYTES),
+              exitCode: 0,
+            },
+          },
+        },
+      ],
+    });
+    await fake.replayed;
+    expect(await settledNow(driver)).toEqual(
+      done({ ok: true, outcome: "success", text: "Fixture text.", textFinal: true }),
+    );
+    driver.close();
+  });
+
+  test("a message too long to read whose end cannot be told ends the run at once as failed, with what the agent said", async () => {
+    const { driver, say } = bench({ fixture: "windows-plain", stallAt: "initialize" });
+    say("thread/started", { thread: { id: THREAD } });
+    say("turn/started", { threadId: THREAD, turn: { id: "turn-1" } });
+    say("item/started", {
+      threadId: THREAD,
+      item: { type: "agentMessage", id: "say-1", text: "", phase: "final_answer" },
+    });
+    say("item/agentMessage/delta", { threadId: THREAD, itemId: "say-1", delta: "Half done." });
+    say("item/started", {
+      threadId: THREAD,
+      item: { type: "commandExecution", id: "exec-1", status: "inProgress" },
+    });
+    // The command's ID is longer than what is read of a line too long to keep.
+    say("item/completed", {
+      threadId: THREAD,
+      item: { type: "commandExecution", id: "x".repeat(LINE_CAP_BYTES), status: "completed" },
+    });
+    expect(await settledNow(driver)).toEqual(
+      done({ ok: false, outcome: "agent_error", text: "Half done.", textFinal: false }),
+    );
+    driver.close();
+
+    const garbled = bench({ fixture: "windows-plain", stallAt: "initialize" });
+    garbled.raw(`${"not a message ".repeat(LINE_CAP_BYTES / 8)}\n`);
+    expect(await settledNow(garbled.driver)).toEqual(done({ ok: false, outcome: "agent_error" }));
+    garbled.driver.close();
   });
 
   test("an app server that ends before its work settled: what it said is the work, unfinished", async () => {

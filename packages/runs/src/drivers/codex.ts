@@ -14,6 +14,10 @@
 // - The work is settled when the thread's turn completed, no command it started is still running
 //   and no agent it started still works: what goes on in the background ends later, and the run
 //   waits for it.
+// - A message too long to read whole is told by its short values: a command whose completion was
+//   too long still ended, and an answer too long to read is kept as far as it came, cut. When the
+//   part the work's end depends on cannot be read, the work ends at once as failed, with what the
+//   agent said.
 // - The answer is the message the protocol marks as the final answer, never just the last text.
 //   Messages are kept by item, per turn, and the run's answer is its last turn's: the message the
 //   turn's summary names, else the turn's last answer, whole or as far as it streamed. A message
@@ -536,7 +540,22 @@ export function codexDriver(session: CodexSession): OpenDriver {
       }
     });
 
-    rpc.onNotification((method, raw) => {
+    /**
+     * A message too long to read whole whose lost part the work's end depends on: the work ends
+     * now, failed, with what the agent said so far, since nothing would ever say it ended.
+     */
+    const unreadable = (): void => {
+      finish(
+        "agent_error",
+        `Codex sent a message too long for ${PRODUCT_NAME} to read, so it could not tell when the work ended.`,
+      );
+    };
+
+    /**
+     * What the server says. `cut`: the message was too long to read whole, and `raw` holds only its
+     * short values (streams/skim.ts).
+     */
+    const heard = (method: string, raw: unknown, cut: boolean): void => {
       // Settled work is saved as it is: what the server says while it closes changes none of it.
       if (done) return;
       state.heard = true;
@@ -594,12 +613,18 @@ export function codexDriver(session: CodexSession): OpenDriver {
         }
         case "item/completed": {
           const item = record(params["item"]);
+          const id = string(item?.["id"]);
+          if (cut && id === undefined) {
+            unreadable();
+            return;
+          }
           if (item === undefined) return;
-          const id = string(item["id"]);
           if (id !== undefined) running.delete(id);
           if (item["status"] === "declined") state.declined += 1;
           if (item["type"] === "agentMessage" && ours(params) && now(params)) {
-            complete(item);
+            const message = turn.messages.get(complete(item));
+            // Its text was too long to read: what streamed of it is its start.
+            if (cut && item["text"] === undefined && message !== undefined) message.cut = true;
             keep();
           }
           check();
@@ -609,8 +634,14 @@ export function codexDriver(session: CodexSession): OpenDriver {
           if (!ours(params) || !now(params)) return;
           const message = turn.messages.get(string(params["itemId"]) ?? "");
           const delta = string(params["delta"]) ?? "";
-          if (message === undefined || message.done || message.cut || delta === "") return;
+          if (message === undefined || message.done || message.cut) return;
           if (!answers(message.phase)) return;
+          if (cut && params["delta"] === undefined) {
+            // Words too long to read: the answer is kept as far as it came.
+            message.cut = true;
+            return;
+          }
+          if (delta === "") return;
           // Words past the answer's cap are not kept.
           const bytes = Buffer.byteLength(delta, "utf8");
           if (message.bytes + bytes > ANSWER_CAP_BYTES) {
@@ -624,6 +655,13 @@ export function codexDriver(session: CodexSession): OpenDriver {
         }
         case "turn/completed": {
           const ended = record(params["turn"]);
+          if (
+            cut &&
+            (string(ended?.["status"]) === undefined || string(ended?.["id"]) === undefined)
+          ) {
+            unreadable();
+            return;
+          }
           if (ended === undefined) return;
           const id = string(ended["id"]);
           if (!ours(params)) {
@@ -695,6 +733,13 @@ export function codexDriver(session: CodexSession): OpenDriver {
         default:
           return;
       }
+    };
+    rpc.onNotification((method, params) => {
+      heard(method, params, false);
+    });
+    rpc.onCut((method, params) => {
+      if (method === undefined) unreadable();
+      else heard(method, params, true);
     });
 
     /** Why the thread works outside the run's folder, or null when it works in it. */

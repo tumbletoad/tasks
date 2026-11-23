@@ -4,8 +4,11 @@
 // keeps reading, so an answer that takes its time never holds up a reply or a notification.
 //
 // Lines are read in bounded memory (streams/lines.ts): one longer than the cap is skipped whole,
-// and so is anything that is not a JSON object. A request with a method no handler takes gets the
-// protocol's "method not found" error, never silence.
+// and so is anything that is not a JSON object. What a skipped line was is still told from what
+// could be read of it (streams/skim.ts): a request gets an error, an answer fails its request, and a
+// notification reaches onCut with its short params, so that no side waits for a message it lost. A
+// request with a method no handler takes gets the protocol's "method not found" error, never
+// silence.
 import type { Readable, Writable } from "node:stream";
 import { LINE_CAP_BYTES } from "@ttasks/contracts/runs";
 import { LineSplitter } from "../streams/lines.ts";
@@ -50,6 +53,12 @@ export type RequestHandler = (method: string, params: unknown, id: number | stri
 
 export type NotificationHandler = (method: string, params: unknown) => void;
 
+/**
+ * Hears a line too long to read whole: a notification's method and what of its params could be
+ * read (skim.ts), or undefined for both when nothing tells what the line was.
+ */
+export type CutHandler = (method: string | undefined, params: unknown) => void;
+
 export interface LineRpcOptions {
   /** Writes `"jsonrpc": "2.0"` on every message. Codex's app server goes without it. */
   readonly version?: boolean;
@@ -74,6 +83,7 @@ export class LineRpc {
     throw new RpcError(RPC_ERRORS.methodNotFound, `Method not found: ${method}`);
   };
   #onNotification: NotificationHandler = () => undefined;
+  #onCut: CutHandler = () => undefined;
   #next = 1;
   #ended = false;
   /** Lines that were skipped: too long, not JSON, or not a message. */
@@ -84,12 +94,12 @@ export class LineRpc {
   constructor(input: Readable, output: Writable, options: LineRpcOptions = {}) {
     this.#output = output;
     this.#version = options.version ?? false;
-    this.#splitter = new LineSplitter(options.lineCap ?? LINE_CAP_BYTES);
+    this.#splitter = new LineSplitter(options.lineCap ?? LINE_CAP_BYTES, { skim: true });
     output.on("error", () => undefined);
     input.on("data", (chunk: Buffer | string) => {
       const bytes = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk;
       for (const line of this.#splitter.push(bytes)) {
-        if (line.kind === "oversized") this.skipped += 1;
+        if (line.kind === "oversized") this.#cut(line.skimmed);
         else this.#line(line.line.text);
       }
     });
@@ -97,7 +107,8 @@ export class LineRpc {
       const end = (): void => {
         if (this.#ended) return;
         for (const line of this.#splitter.end()) {
-          if (line.kind === "line") this.#line(line.line.text);
+          if (line.kind === "oversized") this.#cut(line.skimmed);
+          else this.#line(line.line.text);
         }
         this.#end();
         resolve();
@@ -116,6 +127,11 @@ export class LineRpc {
   /** Who hears the other side's notifications. */
   onNotification(handler: NotificationHandler): void {
     this.#onNotification = handler;
+  }
+
+  /** Who hears a line too long to read whole that is no request or answer. */
+  onCut(handler: CutHandler): void {
+    this.#onCut = handler;
   }
 
   /** Asks the other side. Rejects with RpcError for its error, RpcClosed when it ended first. */
@@ -192,6 +208,29 @@ export class LineRpc {
       return;
     }
     this.skipped += 1;
+  }
+
+  /** A line too long to read whole, told by what could be read of it. */
+  #cut(message: Record<string, unknown> | undefined): void {
+    this.skipped += 1;
+    const method = message?.["method"];
+    const id = message?.["id"];
+    if (typeof method === "string" && isId(id)) {
+      this.fail(id, new RpcError(RPC_ERRORS.invalidRequest, "The request was too long to read"));
+      return;
+    }
+    if (typeof method !== "string" && isId(id)) {
+      const pending = this.#pending.get(id);
+      this.#pending.delete(id);
+      pending?.reject(new RpcError(RPC_ERRORS.internal, "The answer was too long to read"));
+      return;
+    }
+    try {
+      if (typeof method === "string") this.#onCut(method, message?.["params"]);
+      else this.#onCut(undefined, undefined);
+    } catch {
+      // A defect in a handler never stops the reading.
+    }
   }
 
   #response(id: Id, message: Record<string, unknown>): void {

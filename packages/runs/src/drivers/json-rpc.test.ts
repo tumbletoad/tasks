@@ -131,6 +131,74 @@ describe("[A4.3.11.json-rpc.lines] JSON-RPC over lines, with requests in both di
     expect(rpc.skipped).toBe(4);
   });
 
+  test("a line too long to read is still told by what can be read of it: a notification by its method and short values, a request gets an error, an answer fails its request", async () => {
+    const { rpc, input, written, say } = side({ lineCap: 256 });
+    const cut: unknown[] = [];
+    rpc.onCut((method, params) => cut.push([method, params]));
+    const asked = rpc.request("thread/read", {}).then(
+      () => "answered",
+      (error: unknown) => error,
+    );
+    const big = "x".repeat(10_000);
+    const completion = {
+      method: "item/completed",
+      params: {
+        threadId: "t1",
+        item: {
+          type: "commandExecution",
+          id: "exec-1",
+          status: "completed",
+          exitCode: 0,
+          aggregatedOutput: big,
+          commandActions: [{ type: "unknown", id: "not this one" }],
+          deep: { a: { b: { c: "too deep" } } },
+        },
+      },
+    };
+    // Split anywhere: one byte at a time.
+    for (const byte of Buffer.from(`${JSON.stringify(completion)}\n`)) {
+      input.write(Buffer.from([byte]));
+    }
+    say({ id: 9, method: "item/fileChange/requestApproval", params: { diff: big } });
+    say({ id: 1, result: { thread: { text: big } } });
+    input.write(`${"not json ".repeat(100)}\n`);
+    await tick();
+    expect(cut).toEqual([
+      [
+        "item/completed",
+        {
+          threadId: "t1",
+          item: {
+            type: "commandExecution",
+            id: "exec-1",
+            status: "completed",
+            exitCode: 0,
+            deep: {},
+          },
+        },
+      ],
+      [undefined, undefined],
+    ]);
+    expect(written.find((message) => message["id"] === 9)?.["error"]).toMatchObject({
+      code: RPC_ERRORS.invalidRequest,
+    });
+    expect(await asked).toBeInstanceOf(RpcError);
+    expect(rpc.skipped).toBe(4);
+  });
+
+  test("what is read of a line too long to keep stays small, however many short values it has", async () => {
+    const { rpc, input } = side({ lineCap: 256 });
+    const cut: unknown[] = [];
+    rpc.onCut((method, params) => cut.push([method, params]));
+    const params = Object.fromEntries(
+      Array.from({ length: 50_000 }, (_, i) => [`key${String(i)}`, "v".repeat(20)]),
+    );
+    input.write(`${JSON.stringify({ method: "flood", params })}\n`);
+    await tick();
+    expect(cut).toHaveLength(1);
+    expect(Buffer.byteLength(JSON.stringify(cut[0]))).toBeLessThan(128 * 1024);
+  });
+
   test("the version field is written when the protocol wants it", () => {
     const { rpc, written } = side({ version: true });
     void rpc.request("initialize", {}).catch(() => undefined);
