@@ -134,7 +134,7 @@ M2.04b and M2.10t are not in the base count. Until M2.10t lands, Open on a T3 in
 | M3.15 | Full crash and model suites | M3.02–M3.14 | M | todo |
 | M3.16 | Scale on Windows and Linux | M3.05, M3.10 | S RM | todo |
 
-M3.13 relies on a CI job that the local checks do not cover. M3.05's search tables come with schema 0.4. Of M3.08 the claim is built, and transfer and the detection of two writing copies are not. Of M3.15 the crash harness runs on every pull request and every night, and the disk-full test, the outside-write check and the model with 3 to 12 actors are not built. A task's delete and restore (M3.04) are in the writer and no command, tool or page action reaches them yet.
+M3.13 relies on a CI job that the local checks do not cover. M3.05's search tables come with schema 0.4. Of M3.08 the claim is built, and transfer and the detection of two writing copies are not. Of M3.15 the crash harness runs on every pull request and every night, and the disk-full test, the outside-write check and the model with 3 to 12 actors are not built. A task's move to the Trash and its restore (M3.04) reach a person through the page and `ttasks delete`, `restore` and `trash`. No agent tool reaches them yet.
 
 ## M4: agent interface (parallel with M3)
 
@@ -176,7 +176,7 @@ M4.05b and M4.01b are not in the base count. M4.06 was built as a redesign in fo
 | M5.14 | Add project and folders in the page | M4.09, M6.16, M5.06 | M | done |
 | M5.14b | What M5.14 left: the same folders on another machine after a restore, Settings > Folders, a project's rename and archive in the page | M5.14 | M | ready |
 
-M5.14b is not in the base count. M5.12 merged as a first space and an agent-apps step, not as the plan's seven steps. Of M5.09 the launch receipts and the states of a session and a run are in the thread, and the proposals, the changed dot and the stored digest wait for M4.02 and M4.03.
+M5.14b is not in the base count. M5.12 merged as a first space and an agent-apps step, not as the plan's seven steps. Of M5.09 the launch receipts and the states of a session and a run are in the thread, and the proposals, the changed dot and the stored digest wait for M4.02 and M4.03. Of M5.14b an archived area's or project's page has Unarchive, and archiving from the page is not built.
 
 ## M6: runs, routines and every v1 target (parallel with M5)
 
@@ -222,7 +222,18 @@ Not in the base count. No step of the plan holds this work, so the rows have no 
 | Skills: the person's guidance for agents, read through the MCP server, `ttasks skills` | 127, 131 | done |
 | Effort sizes a person sets: `ttasks prefs set` for the effort scale and the dedupe window, any list of 1 to 10 sizes | 128, 133 | done |
 | The Agents page shows every coding agent on this computer and each account's plan usage, read from the Agent Monitor | 129, 135 | done |
-| The Agents page links an agent to the task TTasks started it for | 138 | review |
+| The Agents page links an agent to the task TTasks started it for, and shows each agent once | 138 | done |
+| The command line and the texts offer only what this build does: `ttasks prefs set --reset`, and a key this build does not read (`projection.dir` in `machine.toml` too) says what is in force | 140, 149 | done |
+| Today by one rule: an agent's `status`, its counts and the digest's star follow the page's Today and This week | 142 | done |
+| Every area and project listed in pages, archived ones on request, and a new area made from the area picker | 144 | done |
+| An archived area or project leaves the sidebar for Archived, says so on its page, and comes back with Unarchive | 151 | done |
+| A wrong source detached from a task and put back, by a person and by an agent (the Trash, step 1) | 145 | done |
+| A person who comes back sees what agents changed in the last 7 days and the questions they wait on | 147 | done |
+| The Trash: a person moves tasks to it and restores them, in the page and on the command line (the Trash, step 2) | 148 | done |
+| The Trash, step 3: agents remove tasks, and the keyboard shortcut | none | ready |
+| The Trash, step 4: retracting a note | none | ready |
+| A folder's marker keeps protecting when the machine is slow or the service is held up | 152 | done |
+| One copy of a space served at a time, and a restored copy that says so | 146 | review |
 
 A space's statuses, the page's Settings for the sizes and an agent's `set` (M3.11's part for agents) are not built: `ttasks prefs set` and the `preferences` tool refuse them.
 
