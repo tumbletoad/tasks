@@ -1132,6 +1132,16 @@ describe("[A3.3.13.setup.fixtures] agent setup's fixture table: each file and ev
           'model="m"\n\n[mcp_servers.y]\ncommand = "y"\n',
         ],
         [
+          "a table ending in a blank line inserted right before the entry, no final newline before",
+          'model="m"',
+          (t) =>
+            t.replace(
+              `[mcp_servers.${MCP_SERVER_KEY}]`,
+              `[mcp_servers.y]\ncommand = "y"\n\n[mcp_servers.${MCP_SERVER_KEY}]`,
+            ),
+          'model="m"\n\n[mcp_servers.y]\ncommand = "y"\n',
+        ],
+        [
           "CRLF, a table appended after the entry, no final newline before",
           'model="m"\r\nx = 1',
           (t) => `${t}[mcp_servers.x]\r\ncommand = "x"\r\n`,
