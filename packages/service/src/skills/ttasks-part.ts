@@ -44,6 +44,7 @@ const ORGANIZING = [
   `How ${PRODUCT_NAME}'s tools do this:`,
   `- The Inbox: ${status} with include ["inbox"]. The areas and projects with their active task counts: ${organize} with action list. Use the names as written.`,
   `- The same work elsewhere: ${search} the task's title words first.`,
+  `- While sorting, use ${addEntry} only for what the user must know.`,
   `- Filing: ${updateTask} with area and project by name (only ones ${organize} lists), a status, and inbox false. Pass base, the as_of of your ${getTask} that showed those fields, and a new request_id.`,
   `- A project: ${organize} action create with path "Area/Project"; a new area in the path is created with it. A name close to an existing one is refused as a likely typo: use the existing one.`,
   `- rename takes path and to; move takes path "Area/Project" and to, the new area; archive and unarchive. Each needs base, the as_of of the last answer that listed the group, and a new request_id.`,

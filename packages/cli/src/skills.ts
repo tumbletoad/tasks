@@ -5,16 +5,24 @@
 //   ttasks skills
 //   ttasks skills show <name>
 //   ttasks skills copy <name>
-import { closeSync } from "node:fs";
+import { closeSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { CLI_NAME, DATA_FOLDER, PRODUCT_NAME, SKILLS_FOLDER } from "@ttasks/brand";
 import { createFile, makeDir, writeAll } from "@ttasks/files";
 import { hostFacts, LayoutError, resolveLayout } from "@ttasks/service/paths";
-import { DEFAULTS, listSkills, SKILL_FILE, type Skill } from "@ttasks/service/skills";
+import {
+  DEFAULTS,
+  listLine,
+  listSkills,
+  SKILL_FILE,
+  SKILL_FOLDERS,
+  SKILL_LIST_ROWS,
+  type Skill,
+} from "@ttasks/service/skills";
 import { verbSpec, type Globals } from "./args.ts";
 import type { ConnectOptions } from "./connect.ts";
 import type { Io } from "./io.ts";
-import { printUsage } from "./output.ts";
+import { printError, printUsage } from "./output.ts";
 import { runVerb } from "./verbs.ts";
 
 /** `ttasks skills --help` and `ttasks help skills`. */
@@ -55,8 +63,11 @@ function stateOf(skill: Skill): string {
   return skill.origin === "own" ? "yours" : skill.origin;
 }
 
+/** How long a person waits for a slow skills folder before the list goes on without it. */
+const LIST_WITHIN_MS = 30_000;
+
 async function list(io: Io, globals: Globals, folder: string): Promise<number> {
-  const skills = await listSkills(folder);
+  const { skills, unread } = await listSkills(folder, LIST_WITHIN_MS);
   if (globals.json) {
     const rows = skills.map((skill) => ({
       name: skill.name,
@@ -65,17 +76,36 @@ async function list(io: Io, globals: Globals, folder: string): Promise<number> {
       ...(skill.path === undefined ? {} : { path: skill.path }),
       ...(skill.problem === undefined ? {} : { problem: skill.problem }),
     }));
-    io.stdout(`${JSON.stringify({ folder, skills: rows })}\n`);
+    io.stdout(`${JSON.stringify({ folder, skills: rows, ...(unread === 0 ? {} : { unread }) })}\n`);
     return 0;
   }
   const width = Math.max(...skills.map((skill) => skill.name.length));
   const lines = [`Your skills folder: ${folder}`, ""];
+  const pad = " ".repeat(width);
   for (const skill of skills) {
     lines.push(`${skill.name.padEnd(width)}  ${stateOf(skill)}`);
-    if (skill.description !== "") lines.push(`${" ".repeat(width)}  ${skill.description}`);
-    if (skill.origin !== "default" && skill.path !== undefined) {
-      lines.push(`${" ".repeat(width)}  ${skill.path}`);
+    if (skill.description !== "") {
+      lines.push(`${pad}  ${skill.description}`);
+      const unused = skill.problem !== undefined;
+      if (!listLine(skill.name, skill.description, unused).endsWith(skill.description)) {
+        lines.push(`${pad}  (agents see this cut short in their list)`);
+      }
     }
+    if (skill.origin !== "default" && skill.path !== undefined) {
+      lines.push(`${pad}  ${skill.path}`);
+    }
+  }
+  if (skills.length > SKILL_LIST_ROWS) {
+    lines.push(
+      "",
+      `Agents' list shows the first ${String(SKILL_LIST_ROWS)}. They read the others only by name.`,
+    );
+  }
+  if (unread > 0) {
+    lines.push(
+      "",
+      `${String(unread)} more folders are not read: ${PRODUCT_NAME} reads the first ${String(SKILL_FOLDERS)} by name.`,
+    );
   }
   lines.push(
     "",
@@ -96,6 +126,16 @@ function copy(io: Io, globals: Globals, folder: string, name: string): number {
     );
   }
   const path = join(folder, name, SKILL_FILE);
+  // A copy goes into a real folder: in a linked one, the service would not read it.
+  for (const dir of [folder, join(folder, name)]) {
+    if (lstatSync(dir, { throwIfNoEntry: false })?.isSymbolicLink() === true) {
+      return printError(io, globals.json, {
+        code: "invalid_input",
+        message: `${dir} is a link, and ${PRODUCT_NAME} reads only real folders there`,
+        hint: "Make it a real folder, then copy again.",
+      });
+    }
+  }
   makeDir(join(folder, name), 0o700);
   let fd: number;
   try {

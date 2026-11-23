@@ -171,7 +171,7 @@ import {
   type DigestFolder,
 } from "./task-view.ts";
 import { readFinished } from "./task-rows.ts";
-import { listSkills, servedText, type Skill } from "../skills/index.ts";
+import { listSkills, readSkills, servedText, type Skill } from "../skills/index.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
 export interface ServedSpace {
@@ -1926,19 +1926,22 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       here === undefined || here.length === 0
         ? undefined
         : call.host.sessions?.live(status.space.id);
-    const skills = await listSkills(call.host.skillsFolder);
-    let skillFields: Record<string, unknown> = { skills: skills.map(skillRow) };
+    let skillFields: Record<string, unknown>;
     if (reading) {
-      const space = { efforts: (await readTaskKeys(reader)).effort };
-      const chosen = asked.flatMap((name) => skills.filter((skill) => skill.name === name));
-      const missing = asked.filter((name) => !skills.some((skill) => skill.name === name));
+      // Only the files asked for are read.
+      const [space, read] = await Promise.all([
+        readTaskKeys(reader).then((keys) => ({ efforts: keys.effort })),
+        readSkills(call.host.skillsFolder, asked),
+      ]);
       skillFields = {
-        skills: chosen.map((skill) => {
+        skills: read.skills.map((skill) => {
           const text = servedText(skill, space);
           return { ...skillRow(skill), ...(text === undefined ? {} : { text }) };
         }),
-        ...(missing.length === 0 ? {} : { missing }),
+        ...(read.missing.length === 0 ? {} : { missing: read.missing }),
       };
+    } else {
+      skillFields = { skills: (await listSkills(call.host.skillsFolder)).skills.map(skillRow) };
     }
     return {
       as_of: status.space.asOf,
@@ -2081,7 +2084,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     }
     // A read by launch is a session's first call: it lists the skills, as status does.
     if (launch !== undefined) {
-      answer["skills"] = (await listSkills(call.host.skillsFolder)).map(skillRow);
+      answer["skills"] = (await listSkills(call.host.skillsFolder)).skills.map(skillRow);
     }
     // Connected only once the agent has its whole answer, the person's request included.
     if (launch !== undefined) await markConnected(call, launch);

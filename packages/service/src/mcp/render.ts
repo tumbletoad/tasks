@@ -11,6 +11,7 @@ import {
   type ErrorBody,
   type OutputOf,
 } from "@ttasks/contracts";
+import { listLine, SKILL_LIST_ROWS } from "../skills/index.ts";
 import { toolOf } from "./tools.ts";
 import {
   clip,
@@ -109,10 +110,15 @@ type SkillOut = NonNullable<Status["skills"]>[number];
 
 const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/u;
 
-/** The list a session's first call gives: each skill's name and when to read it. */
+/**
+ * The list a session's first call gives: one short line per skill, at most SKILL_LIST_ROWS, and a
+ * line for the rest. It has room of its own on top of the budget, so it never takes the task's.
+ */
 function skillListParts(skills: readonly SkillOut[] | undefined): Part[] {
   const listed = (skills ?? []).filter((skill) => skill.text === undefined);
   if (listed.length === 0) return [];
+  const shown = listed.slice(0, SKILL_LIST_ROWS);
+  const rest = listed.length - shown.length;
   return [
     {
       fixed: true,
@@ -121,14 +127,21 @@ function skillListParts(skills: readonly SkillOut[] | undefined): Part[] {
         [
           `Skills, the user's ways of working: before you act, read the ones that apply with ${toolOf("space.status")} skills [names].`,
         ],
-        ...listed.map((skill) => [
-          `  ${skill.name}${skill.when === undefined ? "" : `: ${skill.when}`}`,
-          ...(skill.problem === undefined ? [] : [`    ${skill.problem}`]),
-        ]),
+        ...shown.map((skill) => [listLine(skill.name, skill.when, skill.problem !== undefined)]),
+        ...(rest === 0
+          ? []
+          : [
+              [
+                `  +${String(rest)} more, not listed here: the user lists them all with ${CLI_NAME} skills.`,
+              ],
+            ]),
       ],
     },
   ];
 }
+
+/** The most the list of skills adds to an answer, in estimated tokens. */
+export const SKILL_LIST_TOKENS = 1_000;
 
 /** The skills asked for, each whole, and the names that are no skill. */
 function skillTextParts(result: Status): Part[] {
@@ -836,14 +849,16 @@ type Renderer = (
 };
 
 const RENDERERS: Readonly<Record<string, Renderer>> = {
-  // The list of skills fits the budget like any part; a skill's own text gets room of its own.
+  // The list of skills and a skill's text get room of their own: neither takes the task's.
   "space.status": (result: Status) => ({
     parts: statusParts(result),
     more: STATUS_MORE,
-    extra: wholeTokens(skillTextParts(result)),
+    extra: wholeTokens([...skillTextParts(result), ...skillListParts(result.skills)]),
   }),
   "task.get": (result: TaskGet, { getTask }) => {
-    const extra = requestTokens(result.request, getTask, result.task.ref);
+    const extra =
+      requestTokens(result.request, getTask, result.task.ref) +
+      wholeTokens(skillListParts(result.skills));
     if (result.view === "digest") {
       return { ...digestRendered(result, getTask), max: DIGEST_TOKENS, extra };
     }

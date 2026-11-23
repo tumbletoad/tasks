@@ -417,6 +417,12 @@ export function render(entry: string, result: Result, space: string): string {
       if (listed.length > 0) {
         lines.push(`skills: ${listed.map((s) => String(s["name"])).join(", ")}`);
       }
+      // A skill that cannot be used says why, also when it was asked for by name.
+      for (const skill of listed) {
+        if (typeof skill["problem"] === "string") {
+          lines.push(`  ${String(skill["name"])}: ${skill["problem"]}`);
+        }
+      }
       const here = result["here"] as Result[] | undefined;
       if (here !== undefined) {
         const total = result["here_total"];

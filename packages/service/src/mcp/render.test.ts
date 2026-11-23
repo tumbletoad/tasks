@@ -3,7 +3,15 @@
 // text and editable names only inside the data block (A3 3.10, X14).
 import { findEntry, registry, REQUEST_CHARS, resultTokens, type AnyEntry } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
-import { DIGEST_TOKENS, ERROR_TOKENS, hasRenderer, renderError, renderResult } from "./render.ts";
+import { SKILL_LINE_CHARS, SKILL_LIST_ROWS } from "../skills/index.ts";
+import {
+  DIGEST_TOKENS,
+  ERROR_TOKENS,
+  hasRenderer,
+  renderError,
+  renderResult,
+  SKILL_LIST_TOKENS,
+} from "./render.ts";
 import { DATA_WORD, closeMarker, openMarker } from "./text.ts";
 import { TOOLS } from "./tools.ts";
 
@@ -250,7 +258,9 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
       const parsed = entry(name).output.safeParse(result);
       expect(parsed.success, `${name}: the worst case is a valid result`).toBe(true);
       const text = renderResult(name, result);
-      expect(resultTokens(text), name).toBeLessThanOrEqual(cap);
+      // The list of skills has room of its own on top.
+      const room = result["skills"] === undefined ? 0 : SKILL_LIST_TOKENS;
+      expect(resultTokens(text), name).toBeLessThanOrEqual(cap + room);
       // A write names every item it decided, whole (A3 3.2.5): only the others cut.
       if (name === "task.finish") {
         for (let n = 0; n < 10; n += 1) {
@@ -453,11 +463,40 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
     });
     expect(entry("task.get").output.safeParse(digest).success).toBe(true);
     const text = renderResult("task.get", digest);
-    expect(resultTokens(text)).toBeLessThanOrEqual(DIGEST_TOKENS);
+    expect(resultTokens(text)).toBeLessThanOrEqual(DIGEST_TOKENS + SKILL_LIST_TOKENS);
     expect(text.isWellFormed()).toBe(true);
     const { inside, outside } = split(text);
     expect(inside[0]).toMatch(/^Title: (😀)+(\.\.\. \(\+\d+ chars\))?$/);
     expect(outside.some((line) => line.startsWith("More: get_task"))).toBe(true);
+  });
+
+  test("[A3.3.6.mcp.skills] a long list of skills takes none of the task's room: one short line each, the rest counted", () => {
+    const many = Array.from({ length: SKILL_LIST_ROWS + 2 }, (_, n) => ({
+      name: `${"s".repeat(60)}-${String(n).padStart(2, "0")}`,
+      when: "Use when ".padEnd(1_024, "x"),
+      ...(n === 0 ? { problem: `The user's file ${"p".repeat(300)} cannot be used.` } : {}),
+    }));
+    const status = { ...example("space.status", 0), skills: many };
+    const digest = { ...example("task.get", 0), skills: many };
+    for (const [name, result, cap] of [
+      ["space.status", status, 1_500],
+      ["task.get", digest, DIGEST_TOKENS],
+    ] as const) {
+      expect(entry(name).output.safeParse(result).success, name).toBe(true);
+      const text = renderResult(name, result);
+      expect(resultTokens(text), name).toBeLessThanOrEqual(cap + SKILL_LIST_TOKENS);
+      // Without the list, the task's own lines are the same: the list took nothing from them.
+      const without = renderResult(name, { ...result, skills: [] });
+      const rows = text.split("\n").filter((line) => line.startsWith("  sssss"));
+      expect(rows.length, name).toBe(SKILL_LIST_ROWS);
+      for (const row of rows) expect(Array.from(row).length).toBeLessThanOrEqual(SKILL_LINE_CHARS);
+      expect(text, name).toContain(
+        "  +2 more, not listed here: the user lists them all with ttasks skills.",
+      );
+      // The data block's marker is drawn per answer: compare the lines outside it.
+      for (const line of split(without).outside) expect(split(text).outside, name).toContain(line);
+      for (const line of split(without).inside) expect(split(text).inside, name).toContain(line);
+    }
   });
 
   test("errors: A3 3.5's text form within the error budget, values cut, the reason named", () => {

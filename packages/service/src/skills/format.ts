@@ -81,6 +81,8 @@ export function parseSkill(bytes: Uint8Array): Parsed {
   } catch {
     return { ok: false, problem: "it is not UTF-8 text" };
   }
+  if (text.includes("\0")) return { ok: false, problem: "it is not text: it holds a NUL byte" };
+  if (text.trim() === "") return { ok: false, problem: "it is empty" };
   // The decoder has taken off a byte order mark.
   const lines = text.replaceAll("\r\n", "\n").split("\n");
   let description: string | undefined;
@@ -99,7 +101,10 @@ export function parseSkill(bytes: Uint8Array): Parsed {
       problem: `its description is over ${String(DESCRIPTION_CHARS)} characters`,
     };
   }
-  return { ok: true, description, body: body.join("\n").trim() };
+  const kept = body.join("\n").trim();
+  // A copy cut short, or one that kept only its front matter, would take away the whole part.
+  if (kept === "") return { ok: false, problem: "it has no text after its front matter" };
+  return { ok: true, description, body: kept };
 }
 
 /** A size for a person: `16 KB`. */

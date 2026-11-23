@@ -9,6 +9,7 @@ import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { normaliseText, resultTokens } from "@ttasks/contracts";
 import { bridgePrincipal, toolCaller } from "../src/mcp/index.ts";
+import { SKILL_LIST_TOKENS } from "../src/mcp/render.ts";
 import { DATA_WORD, closeMarker, openMarker } from "../src/mcp/text.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { join } from "node:path";
@@ -162,8 +163,11 @@ function budgetOf(tool: string, args: Json, isError: boolean): number {
   if (isError) return 300;
   switch (tool) {
     case "status":
-      // A skill's text has room of its own: a shipped one is at most 1,500 (skills.test.ts).
-      return 1_500 * (1 + (Array.isArray(args["skills"]) ? args["skills"].length : 0));
+      // A skill's text has room of its own (a shipped one is at most 1,500: skills.test.ts), and
+      // so has the list of skills.
+      return Array.isArray(args["skills"])
+        ? 1_500 * (1 + args["skills"].length)
+        : 1_500 + SKILL_LIST_TOKENS;
     case "get_task":
       return args["sections"] === undefined ? 1_200 : 4_000;
     case "update_task":

@@ -114,8 +114,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A change by an agent or a script is never recorded as yours.
 - Every note is visible to agents.
 - Your skills, the files in `skills/` of TTasks's folder, are your instructions to every agent that
-  uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, or
-  one that cannot be read, is not used at all, and agents and `ttasks skills` say why.
+  uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, an
+  empty one, one that cannot be read or a link is not used at all, and agents and `ttasks skills`
+  say why.
 
 ## Opening a task in an agent app
 
