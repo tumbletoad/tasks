@@ -66,7 +66,9 @@ export const OPERATIONS: Readonly<Record<string, OpSpec>> = {
   "task.label": agent(false),
   "note.add": agent(false),
   "note.patch": agent(true),
-  "note.delete": agent(true),
+  // The person retracts a note and puts it back: agents never take back what the person wrote.
+  "note.delete": { class: "user", scopes: WRITE, base: true },
+  "note.restore": { class: "user", scopes: WRITE, base: true },
   "log.add": agent(false),
   "log.delete": agent(true),
   // A link version for a revival.

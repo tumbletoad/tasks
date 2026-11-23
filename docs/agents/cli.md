@@ -20,6 +20,7 @@ and `cwd`.
 | `ttasks find` | `task.search` | Find active tasks, finished tasks and learnings: rows only, a page at a time. |
 | `ttasks log` | `entry.add` | Append to a task's log, or record a note for the user. |
 | `ttasks note` | `entry.add` | Append to a task's log, or record a note for the user. |
+| `ttasks note` | `note.remove` | Take back a note on a task, or put a removed one back. Nothing is deleted for good. |
 | `ttasks prefs` | `prefs.manage` | Read and change the space's preferences that are not policy. |
 | `ttasks receipt` | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. |
 | `ttasks redo` | `history.redo` | Redo the change you undid last, as long as nobody changed its fields since. |
@@ -162,6 +163,18 @@ Sets `kind: "note"`.
 | `--for-agents` | `for_agents` | boolean | Address the note to agents (user only) |
 
 Only through `--input`: `links`.
+
+## `ttasks note`
+
+Take back a note on a task, or put a removed one back. Nothing is deleted for good.
+
+Usage: `ttasks note <task> [flags]`
+
+| Argument | Field | Type | Description |
+|---|---|---|---|
+| `<task>` | `task` | string | Task ref (M-14) or ID |
+| `--remove` | `remove` | string | Take back this note: its number, such as 3 or n3 |
+| `--put-back` | `put_back` | string | Put back this removed note |
 
 ## `ttasks prefs`
 

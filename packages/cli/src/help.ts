@@ -7,7 +7,7 @@
 // command is checked against it (hints.test.ts), so no message sends a person to a command that
 // does not exist.
 import { CLI_NAME } from "@ttasks/brand";
-import { CLI_SPEC, takesFolder, verbSpec, type VerbSpec } from "./args.ts";
+import { CLI_SPEC, takesFolder, verbFaces, type VerbSpec } from "./args.ts";
 import { ROOTS_HELP } from "./roots.ts";
 import { SERVICE_HELP } from "./service.ts";
 import { SETUP_HELP } from "./setup.ts";
@@ -209,7 +209,9 @@ export function shortHelp(): string {
     `Usage: ${CLI_NAME} <command> [arguments] [--json] [--space <id or name>] [--request-id <id>]`,
     "",
   ];
-  for (const verb of [...CLI_SPEC.verbs].sort((a, b) => a.verb.localeCompare(b.verb))) {
+  // A verb that faces share through `when` is listed once, by its face without it.
+  const verbs = CLI_SPEC.verbs.filter((v) => v.when === undefined);
+  for (const verb of [...verbs].sort((a, b) => a.verb.localeCompare(b.verb))) {
     lines.push(`  ${verb.verb.padEnd(width)}  ${verb.summary}`);
   }
   lines.push("");
@@ -236,6 +238,15 @@ export function verbHelp(verb: VerbSpec): string {
       return p.required ? name : `[${name}]`;
     }),
     ...required.map(withValue),
+    // The flags that choose this face of a shared verb: one of them is given.
+    ...(verb.when === undefined
+      ? []
+      : [
+          verb.when
+            .map((flag) => verb.flags.find((f) => f.flag === flag))
+            .flatMap((f) => (f === undefined ? [] : [withValue(f)]))
+            .join(" | "),
+        ]),
     ...(verb.keyValue === undefined ? [] : ["[key=value ...]"]),
     "[options]",
   ].join(" ");
@@ -278,6 +289,6 @@ export function helpText(topic: string | undefined): string {
   if (topic === undefined) return shortHelp();
   const local = localCommand(topic);
   if (local !== undefined) return local.help;
-  const verb = verbSpec(topic);
-  return verb === undefined ? shortHelp() : verbHelp(verb);
+  const faces = verbFaces(topic);
+  return faces.length === 0 ? shortHelp() : faces.map(verbHelp).join("\n");
 }

@@ -14,6 +14,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { LocalError } from "@ttasks/bridge/protocol";
 import type { ErrorBody } from "@ttasks/contracts";
 import {
+  faceOfInput,
   isRequestId,
   parseVerb,
   REQUEST_ID_RULE,
@@ -173,7 +174,7 @@ export interface VerbHooks {
 export async function runVerb(
   io: Io,
   given: Globals,
-  verb: VerbSpec,
+  chosen: VerbSpec,
   args: readonly string[],
   options: ConnectOptions,
   present?: (result: Record<string, unknown>, printed: string) => Promise<void>,
@@ -187,8 +188,11 @@ export async function runVerb(
       ? { ...given, space: resolve(io.cwd, named) }
       : given;
   let input: Record<string, unknown>;
+  let verb = chosen;
   try {
     const base = globals.input === undefined ? undefined : await readInput(io, globals.input);
+    // `--input` can name the face of a shared verb as its flag does: `{"remove": "3"}` on `note`.
+    verb = faceOfInput(chosen, base);
     // stdin is read once: by `--input -`, or by one text argument `-`, never both.
     const stdin =
       globals.input === "-"

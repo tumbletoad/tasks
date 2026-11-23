@@ -310,6 +310,7 @@ function columnsOf(entity: Entity, field: string): readonly string[] {
           entity === "launches" ||
           entity === "runs" ||
           entity === "learnings" ||
+          entity === "notes" ||
           entity === "preferences" ||
           entity === "areas" ||
           entity === "projects" ||
@@ -579,6 +580,10 @@ const SQL = {
     "NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0)",
   // Notes and log entries (A1 3.6): append-only rows with the task's next ordinal.
   note: "SELECT * FROM notes WHERE id = $id",
+  noteOf: "SELECT * FROM notes WHERE task_id = $task AND ordinal = $ordinal",
+  removeNote: "UPDATE notes SET deleted_at = $at WHERE id = $id",
+  reviveNote: "UPDATE notes SET deleted_at = NULL WHERE id = $id",
+  noteVersions: "UPDATE notes SET version = $seq, fv = $fv, fp = $fp WHERE id = $id",
   insertNote:
     "INSERT INTO notes (id, task_id, ordinal, author_id, addressee, audience, body, created_at, " +
     "edited_at, deleted_at, created_seq, version, fv, fp) VALUES ($id, $task, $ordinal, $author, " +
@@ -838,6 +843,8 @@ function setVersions(
     conn.prepare(RUN_SQL.versions).run({ ...maps, id: row.id });
   } else if (row.entity === "learnings") {
     conn.prepare(SQL.learningVersions).run({ ...maps, id: row.id });
+  } else if (row.entity === "notes") {
+    conn.prepare(SQL.noteVersions).run({ ...maps, id: row.id });
   } else if (row.entity === "preferences") {
     conn.prepare(SQL.preferenceVersions).run({ ...maps, id: row.id });
   } else if (row.entity === "task_sources") {
@@ -1281,6 +1288,8 @@ export class SpaceWriter {
     const heldKeys = new Map<string, Id<"t">>();
     /** Links earlier operations removed (`false`) or brought back (`true`), by `task|source`. */
     const links = new Map<string, boolean>();
+    /** Notes earlier operations retracted (`false`) or put back (`true`), by note ID. */
+    const notes = new Map<string, boolean>();
     /** The log entries earlier operations add, by task and text: a matched draft's same one. */
     const stagedLogs = new Map<string, string>();
     /**
@@ -1844,6 +1853,41 @@ export class SpaceWriter {
             touches,
             record: { task: parent, ...inputOf(op, "task") },
           };
+        }
+        case "note.delete":
+        case "note.restore": {
+          const parent = task(op.task, "task");
+          const row = drafts.has(parent)
+            ? undefined
+            : conn.prepare(SQL.noteOf).get({ task: parent, ordinal: op.ordinal });
+          if (row === undefined) {
+            return problem("NOT_FOUND", "The task has no note with this number", i, "ordinal");
+          }
+          const id = new RowReader("notes", row).id("id", "n");
+          const record = { task: parent, ordinal: op.ordinal };
+          const live = notes.get(id) ?? row["deleted_at"] === null;
+          if (op.kind === "note.delete" ? !live : live) {
+            return { i, op, target: id, task: parent, touches: [], record, skip: true };
+          }
+          const start = rowState("notes", row, CHILD_FIELDS.notes);
+          if (op.kind === "note.restore" && !notes.has(id)) {
+            // An undo that took back the note's writing removed it: Redo brings it back with the
+            // rest of that change, which putting it back here would take away from Redo.
+            const removal = conn.prepare(SQL.undoOf).get({ seq: provenanceOf(start, "deleted") });
+            if (removal === undefined || removal["undo_of"] !== null) {
+              return problem(
+                "INVALID_TRANSITION",
+                "The note was removed by undoing its writing: Redo brings it back",
+                i,
+                "ordinal",
+              );
+            }
+          }
+          notes.set(id, op.kind === "note.restore");
+          const startKey = rowKey("notes", id);
+          if (!starts.has(startKey)) starts.set(startKey, start);
+          const touch: Touch = { entity: "notes", id, field: "deleted", task: parent };
+          return { i, op, target: id, task: parent, touches: [touch], record };
         }
         case "source.unlink":
         case "source.relink": {
@@ -2824,6 +2868,20 @@ function opResults(conn: Connection, run: Execution, changes: readonly ChangeRow
             op.kind === "note.add" ? "note" : "log",
             r.int("ordinal", "ordinal"),
           ),
+          version: r.int("version", "seq"),
+        };
+      }
+      case "note.delete":
+      case "note.restore": {
+        const r = new RowReader("notes", readRow(conn, "notes", staged.target));
+        const task = r.id("task_id", "t");
+        return {
+          i,
+          status,
+          id: staged.target,
+          task,
+          ref: refOf(task),
+          entry: formatEntryRef("note", r.int("ordinal", "ordinal")),
           version: r.int("version", "seq"),
         };
       }
@@ -3844,6 +3902,17 @@ function apply(conn: Connection, run: Execution, staged: StagedOp): void {
         seq: run.seq,
       });
       wrote(run, i, "notes", staged.target, task, null);
+      return;
+    }
+    case "note.delete":
+    case "note.restore": {
+      if (staged.skip === true) return;
+      const task = must(staged.task, "A note has a task");
+      const sql = op.kind === "note.delete" ? SQL.removeNote : SQL.reviveNote;
+      conn
+        .prepare(sql)
+        .run({ id: staged.target, ...(op.kind === "note.delete" ? { at: run.at } : {}) });
+      wrote(run, i, "notes", staged.target, task, ["deleted"]);
       return;
     }
     case "log.add": {

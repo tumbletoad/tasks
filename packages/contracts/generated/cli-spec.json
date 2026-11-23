@@ -678,6 +678,49 @@
       "verb": "note"
     },
     {
+      "actors": "user",
+      "auto": [
+        "base",
+        "request_id"
+      ],
+      "entry": "note.remove",
+      "flags": [
+        {
+          "field": "remove",
+          "flag": "--remove",
+          "help": "Take back this note: its number, such as 3 or n3",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "put_back",
+          "flag": "--put-back",
+          "help": "Put back this removed note",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "inputOnly": [],
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "task",
+          "help": "Task ref (M-14) or ID",
+          "name": "task",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "summary": "Take back a note on a task, or put a removed one back. Nothing is deleted for good.",
+      "verb": "note",
+      "when": [
+        "--remove",
+        "--put-back"
+      ]
+    },
+    {
       "actions": {
         "field": "action",
         "reads": [

@@ -31,6 +31,10 @@ export function createClient(transport: ClientTransport) {
       /** Open a task in an agent app on this machine, or Copy its pointer brief. */
       open: (input: InputOf<"launch.open">): Promise<OutputOf<"launch.open">> => call("launch.open", input),
     },
+    note: {
+      /** Take back a note on a task, or put a removed one back. Nothing is deleted for good. */
+      remove: (input: InputOf<"note.remove">): Promise<OutputOf<"note.remove">> => call("note.remove", input),
+    },
     prefs: {
       /** Read and change the space's preferences that are not policy. */
       manage: (input: InputOf<"prefs.manage">): Promise<OutputOf<"prefs.manage">> => call("prefs.manage", input),

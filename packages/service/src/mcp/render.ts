@@ -395,6 +395,13 @@ type TaskGetRequest = Extract<TaskGet, { view: "digest" }>["request"];
  */
 function requestPart(request: Request | undefined, getTask: string, ref: string): Part[] {
   if (request === undefined) return [];
+  if ("removed" in request) {
+    return [
+      fixed(
+        `The user took back their request for this launch (note ${request.note}): do not act on it. Ask the user what they want.`,
+      ),
+    ];
+  }
   return [
     {
       fixed: true,

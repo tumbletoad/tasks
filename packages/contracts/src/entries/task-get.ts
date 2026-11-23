@@ -112,6 +112,16 @@ const NoteOutput = z.strictObject({
   slice: Slice.optional(),
 });
 
+/** The most removed notes a digest lists: the newest. */
+export const REMOVED_NOTES = 50;
+
+/** A note taken back from the task: the person's to read and put back, never an agent's. */
+const RemovedNote = NoteOutput.omit({ cut: true, slice: true }).extend({
+  removed: z
+    .strictObject({ at: At, by: Author.describe("Who took it back") })
+    .describe("When it was taken back, and by whom"),
+});
+
 const LogOutput = z.strictObject({
   ref: z.string().regex(patterns.entryRef).describe("Log ordinal, such as l3"),
   kind: z.enum(LOG_KINDS).describe("Entry kind"),
@@ -236,11 +246,17 @@ export const REQUEST_CHARS = 8_000;
  * on the task that the launch names, given to every call with the launch's reference.
  */
 const Request = z
-  .strictObject({
-    note: z.string().regex(patterns.entryRef).describe("The note that holds it"),
-    text: z.string().max(REQUEST_CHARS).describe("The request"),
-    cut: Cut.optional(),
-  })
+  .union([
+    z.strictObject({
+      note: z.string().regex(patterns.entryRef).describe("The note that holds it"),
+      text: z.string().max(REQUEST_CHARS).describe("The request"),
+      cut: Cut.optional(),
+    }),
+    z.strictObject({
+      note: z.string().regex(patterns.entryRef).describe("The note that held it"),
+      removed: z.literal(true).describe("The user took the request back: do not act on it"),
+    }),
+  ])
   .describe("The user's request for this launch: do it")
   .optional();
 
@@ -264,6 +280,11 @@ export const TaskGetResult = z.union([
     request: Request,
     task: TaskDetail.describe("The task"),
     notes: NamedNotes,
+    removed_notes: z
+      .array(RemovedNote)
+      .max(REMOVED_NOTES)
+      .describe("For the user only: notes taken back, newest first, to read and put back")
+      .optional(),
     skills: Skills,
     skills_unread: SkillsUnread,
   }),

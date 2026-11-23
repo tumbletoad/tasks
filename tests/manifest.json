@@ -2137,6 +2137,69 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.note.retract",
+      "title": "A note taken back through real requests: by its number, as 3 or n3; the digest, a sections read, a read by reference and search skip it from then on, and the person's read lists it with who took it back; put back, it is read and found again with its number and author; a note to agents taken back is no instruction and an agent's read lists nothing taken back; a repeat is no change, a stale base a conflict, a missing number not found and the task untouched; an agent's shell and a script are refused in words; a note whose writing was undone is Redo's",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.note.retract.cli",
+      "title": "ttasks note <task> --remove <n> and --put-back <n> as a person reads them: the answer names the way back, show lists the note taken back to the person only, the note verb still writes a note; a missing or mistyped number removes nothing and never the task; an agent's shell is refused",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.note.retract.request",
+      "title": "A launch whose request the person took back: its agent's get_task and a shell's show say it was taken back and hold none of its words, until it is put back",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A3.note.retract.question",
+      "title": "A note the person takes back answers no question: the agent's question waits again, and put back it is answered",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.note.retract.files",
+      "title": "A note taken back leaves its task's readable file, which equals a fresh render, and put back it returns",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.note.retract.web.thread",
+      "title": "In the thread, Remove on a note and on a session's request takes back that note, named for whose it is; a card that only reads offers none; a session whose request was taken back says so without its words",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.note.retract.e2e",
+      "title": "A note taken back in the page: Remove on its line and the toast's Undo, Remove by keyboard, and after a reload the removed line with who took it back, Show and Put back by keyboard, the note back in its place; an agent's note offers Remove too",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.note.retract.e2e.screens",
+      "title": "The thread's Remove, a session whose request was taken back saying so without its words, and the removed line with two notes at 1,440 and 390 px in Sumi and Washi: axe clean, and nothing wider than the screen at 390 px",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A1.note.retract",
+      "title": "A note retracted from a task, by the writer: the row stays with its number, author and audience and put back brings back the same note; the task and its other notes are untouched; an agent's note too; a repeat is unchanged; a base is needed and a stale one is a conflict; a number the task has no note under is not found and leaves the task as it was; undo and redo take a retraction back and forth as the same change; a note whose writing was undone is Redo's, not put back; a task in the Trash takes none; the search index drops and regains the note",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.trash.write",
       "title": "A task moved to the Trash and restored, by the writer: a second delete and a restore of a live task are no change and name the task; a delete with a base from before a restore is a conflict and nothing moves; a restore of one change brings back only the tasks whose tombstone it still holds, and a change the space does not have restores nothing; a delete undone and redone is still its first change; a key another active task took meanwhile stays with it and the restored task's link stays removed, also for two restores in one request and in two, while a finished task keeps its link; a task whose project or area is gone comes back in the area or the Inbox",
       "owner": "M5",

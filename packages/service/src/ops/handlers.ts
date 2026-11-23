@@ -2284,11 +2284,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       ...ranges,
       ...(named === undefined ? {} : { named }),
       trash: true,
+      // The notes the person took back are theirs to read and put back, never an agent's.
+      removed: sections.length === 0 && call.principal.audience === "user",
     });
     const notes = named === undefined ? {} : { notes: read.named.map(noteOf) };
+    const removed = read.removedNotes.map(noteOf);
     // The connection is this task's session: its later calls need no task.
     const bound = sessionIn(call)?.task === String(read.row["id"]);
-    // What the person asked this launch's agent to do: the note the launch names, while it is there.
+    // What the person asked this launch's agent to do: the note the launch names. The launch named
+    // a note of the person's, so one not read now was taken back.
     const asked = launch?.request;
     let request: Record<string, unknown> | undefined;
     if (asked !== undefined) {
@@ -2298,7 +2302,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       } catch (error) {
         throw storageFailure(error);
       }
-      if (body !== undefined) request = { note: asked, ...requestText(body) };
+      request =
+        body === undefined ? { note: asked, removed: true } : { note: asked, ...requestText(body) };
     }
     let answer: Record<string, unknown>;
     if (sections.length === 0) {
@@ -2310,6 +2315,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...(request === undefined ? {} : { request }),
         task: digest,
         ...notes,
+        ...(removed.length === 0 ? {} : { removed_notes: removed }),
       };
     } else {
       const logLimit = typeof input["log_limit"] === "number" ? input["log_limit"] : 20;
@@ -2638,6 +2644,32 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       task: refOf(done),
       entry: done.entry,
       kind,
+      as_of: result.as_of,
+      ...replayed(result),
+    };
+  },
+
+  "note.remove": async (call) => {
+    const { input } = call;
+    const remove = typeof input["remove"] === "string" ? input["remove"] : undefined;
+    const putBack = typeof input["put_back"] === "string" ? input["put_back"] : undefined;
+    const given = remove ?? putBack;
+    if (given === undefined || (remove !== undefined && putBack !== undefined)) {
+      throw invalid(
+        remove === undefined ? "remove" : "put_back",
+        "Name one note: to remove, or to put back",
+        "Pass remove or put_back with the note's number, such as 3.",
+      );
+    }
+    const ordinal = Number(given.replace(/^n/u, ""));
+    const kind = remove === undefined ? "note.restore" : "note.delete";
+    const result = await submit(call, [{ kind, task: String(input["task"]), ordinal }]);
+    const done = opAt(result, 0);
+    return {
+      result:
+        done.status !== "updated" ? "no_change" : remove === undefined ? "put_back" : "removed",
+      task: refOf(done),
+      note: `n${String(ordinal)}`,
       as_of: result.as_of,
       ...replayed(result),
     };

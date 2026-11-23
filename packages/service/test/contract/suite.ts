@@ -401,6 +401,8 @@ const VERIFIED = new Set([
   "task.update 0",
   "entry.add 0",
   "entry.add 1",
+  "note.remove 0",
+  "note.remove 1",
   "task.finish 0",
   "task.finish 1",
   "task.reopen 0",
@@ -583,6 +585,8 @@ function meaning(entry: string, value: Value): unknown {
         ]),
         commit: typeof value["commit"],
       };
+    case "note.remove":
+      return { result: value["result"], task: value["task"], note: value["note"] };
     case "task.trash":
       return (value["rows"] as Value[]).map((r) => [
         r["ref"],

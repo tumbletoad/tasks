@@ -166,6 +166,10 @@ const USER_ONLY_WORDS: Readonly<Record<string, { message: string; hint: string }
     message: "Only the user moves tasks to the Trash and back: agents cannot remove tasks yet.",
     hint: "Tell the user which tasks you would remove and why.",
   },
+  "note.remove": {
+    message: "Only the user takes back a note or puts one back: agents cannot remove notes.",
+    hint: "Tell the user which note you would remove and why.",
+  },
 };
 
 /**

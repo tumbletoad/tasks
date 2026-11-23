@@ -26,6 +26,8 @@ const VERBS: Readonly<Record<string, string>> = {
   "task.patch": "changed",
   "log.add": "logged on",
   "note.add": "added a note to",
+  "note.delete": "took back a note on",
+  "note.restore": "put back a note on",
 };
 
 export interface UndoOptions extends ConnectOptions {

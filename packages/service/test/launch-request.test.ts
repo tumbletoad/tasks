@@ -900,3 +900,51 @@ describe("[A4.5.routes.request-task] the request is task data from the click: wh
     },
   );
 });
+
+describe("[A3.note.retract.request] a request the person took back reaches no agent that reads it from then on", () => {
+  test(
+    "the launch says the request was taken back, to its agent and to a shell, until it is put back",
+    { timeout: 600_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("request-retracted");
+      const task = await addTask(r, "folder-retracted");
+      const folder = join(r.lab.work, "folder-retracted");
+      const marker = newMarker();
+      const words = requestOf(marker, 1_000);
+      const result = await open(r, { task: task.ref, instance: "claude-link", text: words });
+      await r.lab.waitIntent(result.launch.id, (i) => i.state === "dispatched", "Dispatched");
+      const prefill = new URL(opened[0]?.argv.at(-1) ?? "").searchParams.get("q") ?? "";
+      const base = (await r.user.call("op/call", {
+        space: r.lab.spaceId,
+        op: "space.status",
+        input: {},
+      })) as { as_of: string };
+      const number = (result.note ?? "").slice(1);
+      expect(
+        await call(r, "note.remove", { task: task.ref, remove: number, base: base.as_of }),
+      ).toMatchObject({ result: "removed", note: result.note });
+
+      const agent = await mcpAgent(r, folder);
+      const text = await agent.getTask({ launch: result.launch.reference });
+      expect(text).not.toContain(marker);
+      expect(text).not.toContain(REQUEST);
+      expect(text).toContain(
+        `The user took back their request for this launch (note ${String(result.note)}): do not act on it.`,
+      );
+      expect((await cliShow(r, prefill)).request).toEqual({ note: result.note, removed: true });
+      expect(await notesOf(r, task.ref)).toEqual([]);
+
+      const now = (await r.user.call("op/call", {
+        space: r.lab.spaceId,
+        op: "space.status",
+        input: {},
+      })) as { as_of: string };
+      await call(r, "note.remove", { task: task.ref, put_back: number, base: now.as_of });
+      const back = await agent.getTask({ launch: result.launch.reference });
+      expect(back).toContain(REQUEST);
+      expect(back).toContain(marker);
+      await agent.close();
+    },
+  );
+});

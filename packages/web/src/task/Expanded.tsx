@@ -4,8 +4,8 @@
 // - Content, with no section labels: first the composer (Composer.tsx), its field and the strip of
 //   what the text goes to, then the outcome and the task's own learnings once it is done, the
 //   context (Markdown, clamped at ten lines with More), one line per source with its own text and
-//   Remove, one collapsed line for the sources removed from it with Put back, the place on this
-//   machine, a hairline, then the thread (Thread.tsx).
+//   Remove, one collapsed line for the sources and notes removed from it with Put back, the place
+//   on this machine, a hairline, then the thread (Thread.tsx).
 // - Facts (Facts.tsx): short muted labels and their controls, edited in place (A5 3.11). Each fact
 //   shows here and nowhere else in the card; the row's columns for them are hidden while it is
 //   expanded.
@@ -42,6 +42,7 @@ import {
   FolderIcon,
   FolderOpenIcon,
   OutcomeIcon,
+  PencilIcon,
   SourceIcon,
 } from "../row/icons.tsx";
 import { safeHref } from "../row/model.ts";
@@ -53,7 +54,8 @@ import css from "./Expanded.module.css";
 import { Facts } from "./Facts.tsx";
 import { LINK_REL, Markdown } from "./markdown.tsx";
 import { useSourceWrites, type SourceWrites } from "./sourceWrites.ts";
-import { Thread } from "./Thread.tsx";
+import { useNoteWrites, type NoteWrites } from "./noteWrites.ts";
+import { actorOf, Thread } from "./Thread.tsx";
 import { useDetail } from "./useDetail.ts";
 
 const styles = classes(css, [
@@ -224,8 +226,9 @@ function CapturesTo({
 
 /**
  * The task's sources, each with Remove once the card is read, then one collapsed line for the
- * links detached from it, each with Put back: a wrong source is corrected here, and a correction
- * that was itself a mistake is undone here, also after a reload or when an agent made it.
+ * links detached from it and the notes taken back from it, each with Put back: a wrong source or
+ * note is corrected here, and a correction that was itself a mistake is undone here, also after
+ * a reload or when an agent made it.
  */
 function Sources({
   task,
@@ -255,6 +258,9 @@ function Sources({
       ...(s.url === undefined ? {} : { url: s.url }),
     }));
   const removed = all?.filter((s) => s.removed !== undefined) ?? [];
+  const notes = detail?.removedNotes ?? [];
+  const count = removed.length + notes.length;
+  const putBack = card?.notes.putBack;
   const act = (
     write: SourceWrites["detach"] | undefined,
     source: SourceOutput,
@@ -290,11 +296,18 @@ function Sources({
               })}
         />
       ))}
-      {removed.length === 0 ? null : (
+      {count === 0 ? null : (
         <li className={styles.link} data-part="removed">
           <span className={styles.icon} aria-hidden="true" />
           <span className={styles.muted} data-fact="">
-            {t("source.removedCount", { count: removed.length })}
+            {t(
+              notes.length === 0
+                ? "source.removedCount"
+                : removed.length === 0
+                  ? "note.removedCount"
+                  : "task.removedCount",
+              { count },
+            )}
           </span>
           <span className={styles.acts}>
             <Button
@@ -318,6 +331,40 @@ function Sources({
               onAsk={onAsk}
               acts={act(writes?.putBack, source, "source.notPutBack", false, "source.putBack")}
             />
+          ))
+        : null}
+      {open
+        ? notes.map((note) => (
+            <li key={`removed:${note.ref}`} className={styles.link} data-part="removed-note">
+              <span className={styles.icon} role="img" aria-label={t("note.kind")}>
+                <PencilIcon />
+              </span>
+              <div data-fact="">
+                {/* Whose it was and who took it back, above its words, as the thread's lines read. */}
+                <div className={styles.muted}>
+                  {t("note.removedBy", {
+                    who: actorOf(note.author, t).who,
+                    by: note.removed.by,
+                    at: Date.parse(note.removed.at),
+                  })}
+                </div>
+                <Markdown text={note.text} />
+              </div>
+              {putBack === undefined || base === undefined ? null : (
+                <span className={styles.acts}>
+                  <Button
+                    className={line.act}
+                    onPress={() => {
+                      putBack(task, note, base).catch((error: unknown) => {
+                        say(refusalText(error, t("note.notPutBack")));
+                      });
+                    }}
+                  >
+                    {t("source.putBack")}
+                  </Button>
+                </span>
+              )}
+            </li>
           ))
         : null}
     </>
@@ -547,6 +594,7 @@ interface CardWrites {
   /** Click-to-ask on an agent-only field. */
   readonly ask: (field: AskField) => (event: MouseEvent<HTMLElement>) => void;
   readonly sources: SourceWrites;
+  readonly notes: NoteWrites;
   readonly folder: FolderWrites;
   /** Opens a note of the person's again in an agent, as its request. */
   readonly openAgain: (note: DetailNote, instance: Instance) => void;
@@ -634,6 +682,8 @@ export function Expanded({
   const fresh = held !== undefined && held.refused === refused && held.detail === detail;
   const learnings = detail?.learnings ?? [];
   const sources = useSourceWrites();
+  const notes = useNoteWrites();
+  const say = useToast();
   const folder = useFolderWrites();
   // A task in the Trash is for reading: Copy, Stop, Restore and its links work, nothing changes it.
   // This is the card's one decision about it. A control takes its way to change the task from
@@ -643,6 +693,7 @@ export function Expanded({
       ? {
           ask: (field) => askOn(actions.ask, task, field),
           sources,
+          notes,
           folder,
           openAgain: (note, instance) => {
             void actions.open(task, instance, { request: note.ref });
@@ -729,6 +780,16 @@ export function Expanded({
             loadingOlder={loadingOlder ?? false}
             olderFailed={olderFailed ?? false}
             {...(writes === undefined ? {} : { onOpenAgain: writes.openAgain })}
+            removed={detail.removedNotes}
+            onRemove={
+              writes === undefined || base === undefined
+                ? undefined
+                : (note) => {
+                    writes.notes.remove(task, note, base).catch((error: unknown) => {
+                      say(refusalText(error, t("note.notRemoved")));
+                    });
+                  }
+            }
             onStop={(run) => {
               actions.stop(task, run);
             }}

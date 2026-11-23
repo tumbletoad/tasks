@@ -34,6 +34,7 @@ import {
   type DayClock,
   preferenceValue,
   readPreference,
+  REMOVED_NOTES,
   REQUEST_LAUNCHES,
   type PreferenceRead,
 } from "@ttasks/contracts";
@@ -224,6 +225,23 @@ const NAMED: Statement = {
     "AND n.ordinal IN (SELECT value FROM json_each($named)) ORDER BY n.ordinal DESC",
   mode: "all",
 };
+
+/**
+ * The notes taken back from the task, newest removal first, with who removed them: the person's
+ * alone to see and put back. A note removed by an undo of its writing is not one: Redo brings it
+ * back with the rest of that change.
+ */
+const REMOVED_NOTE_ROWS: Statement = {
+  sql:
+    `SELECT ${NOTE_COLUMNS}, n.deleted_at, CASE WHEN c.origin = 'import' THEN 'import' ` +
+    "WHEN rx.kind = 'human' THEN 'user' ELSE rx.label END AS removed_by " +
+    "FROM notes n JOIN actors x ON x.id = n.author_id " +
+    "JOIN commits c ON c.seq = json_extract(n.fp, '$.deleted') " +
+    `JOIN actors rx ON rx.id = c.author_id WHERE n.task_id = ${MATCH} ` +
+    "AND n.deleted_at IS NOT NULL AND c.undo_of IS NULL " +
+    `ORDER BY n.deleted_at DESC, n.ordinal DESC LIMIT ${String(REMOVED_NOTES)}`,
+  mode: "all",
+};
 const NOTE_COUNTS: Statement = {
   sql: `SELECT count(*) FILTER (WHERE ${INSTRUCTION}) AS i, count(*) FILTER (WHERE NOT ${INSTRUCTION}) AS n ${NOTES_FROM}`,
   mode: "get",
@@ -384,6 +402,9 @@ export const noteOf = (row: Row) => {
     at: iso(row["created_at"]),
     text: text(row["body"]),
     ...(launches.length === 0 ? {} : { request_for: launches }),
+    ...(typeof row["deleted_at"] === "number"
+      ? { removed: { at: iso(row["deleted_at"]), by: text(row["removed_by"]) } }
+      : {}),
   };
 };
 
@@ -481,6 +502,8 @@ export interface TaskRead {
   readonly sources: Row[];
   /** The links detached from it, newest first: the card's Removed line. */
   readonly removedSources: Row[];
+  /** The notes taken back from it, newest first, when `removed` asked for them. */
+  readonly removedNotes: Row[];
   /** Where the task opens on the read's machine. */
   readonly folder: TaskFolder;
   readonly history: Row[];
@@ -511,6 +534,8 @@ export async function readTask(
     readonly log: EntryRange;
     readonly named?: readonly number[];
     readonly trash?: boolean;
+    /** The notes taken back too: for the person, never for an agent. */
+    readonly removed?: boolean;
   },
 ): Promise<TaskRead> {
   const key = taskKey(ref);
@@ -544,6 +569,7 @@ export async function readTask(
     history,
     learnings,
     named,
+    removedNotes,
     own,
     project,
   ] = await snapshot(
@@ -562,6 +588,7 @@ export async function readTask(
       HISTORY,
       learned ? LEARNINGS : NOTHING,
       options.named === undefined || options.named.length === 0 ? NOTHING : NAMED,
+      options.removed === true ? REMOVED_NOTE_ROWS : NOTHING,
       ...(folders ? [OWN_FOLDERS_OF_MATCH, PROJECT_FOLDERS_OF_MATCH] : []),
     ],
     params,
@@ -589,6 +616,7 @@ export async function readTask(
     log: log as Row[],
     sources: sourceRows,
     removedSources: removedSources as Row[],
+    removedNotes: (removedNotes ?? []) as Row[],
     folder: taskFolderOf((own ?? []) as Row[], (project ?? []) as Row[], options.machine),
     history: history as Row[],
     learnings: ((learnings ?? []) as Row[]).flatMap((learning, k) =>

@@ -165,6 +165,8 @@ export interface KeySpec {
 
 export interface VerbSpec {
   readonly verb: string;
+  /** The flags that send the verb to this entry, when another entry has the verb too. */
+  readonly when?: readonly string[];
   readonly entry: string;
   readonly kind: "read" | "write";
   readonly actors: string;
@@ -199,8 +201,35 @@ const FOLDER_ENTRIES: ReadonlySet<string> = new Set(["task.add", "task.update", 
 export const takesFolder = (verb: Pick<VerbSpec, "entry">): boolean =>
   FOLDER_ENTRIES.has(verb.entry);
 
-export function verbSpec(verb: string): VerbSpec | undefined {
-  return CLI_SPEC.verbs.find((v) => v.verb === verb);
+/**
+ * The verb's face for these arguments: one whose `when` flag is among them (before `--`), else the
+ * verb's face without `when`. Without arguments, that face.
+ */
+export function verbSpec(verb: string, args: readonly string[] = []): VerbSpec | undefined {
+  const end = args.indexOf("--");
+  const given = new Set(
+    (end < 0 ? args : args.slice(0, end)).map((arg) => arg.split("=")[0] ?? ""),
+  );
+  const faces = verbFaces(verb);
+  return (
+    faces.find((v) => v.when?.some((flag) => given.has(flag)) === true) ??
+    faces.find((v) => v.when === undefined)
+  );
+}
+
+/** Every face of a verb: more than one when a face shares it through `when`. */
+export const verbFaces = (verb: string): readonly VerbSpec[] =>
+  CLI_SPEC.verbs.filter((v) => v.verb === verb);
+
+/** The face of a shared verb whose `when` field the `--input` JSON names, else `verb` itself. */
+export function faceOfInput(verb: VerbSpec, input: unknown): VerbSpec {
+  if (verb.when !== undefined || typeof input !== "object" || input === null) return verb;
+  const names = (face: VerbSpec) =>
+    (face.when ?? []).flatMap((flag) => face.flags.find((f) => f.flag === flag)?.field ?? []);
+  return (
+    verbFaces(verb.verb).find((face) => names(face).some((field) => Object.hasOwn(input, field))) ??
+    verb
+  );
 }
 
 /** Converts one value to its field's type, or a usage error naming the option. */

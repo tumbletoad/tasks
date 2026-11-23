@@ -72,7 +72,7 @@ export function checkRegistry(entries: readonly AnyEntry[], options: CheckOption
   const problems: string[] = [];
   const names = new Set<string>();
   const tools = new Set<string>();
-  const verbs = new Set<string>();
+  const verbs = new Map<string, VerbUse>();
   for (const entry of entries) {
     const own: string[] = [];
     const say: Say = (m) => {
@@ -87,6 +87,33 @@ export function checkRegistry(entries: readonly AnyEntry[], options: CheckOption
     checkFaces(entry, say, options, schemasOk, { tools, verbs });
     checkExamples(entry, say, schemasOk);
     problems.push(...own.map((m) => `${entry.name}: ${m}`));
+  }
+  problems.push(...sharedVerbs(verbs));
+  return problems;
+}
+
+/** The faces of one verb: the entry whose face has no `when`, and the faces that have one. */
+interface VerbUse {
+  plain?: AnyEntry;
+  when: { entry: AnyEntry; fields: readonly string[] }[];
+}
+
+/**
+ * A verb shared through `when` has one face without it, which takes every call without those
+ * flags, and that face's entry has no field of the same name, whose flag would never reach it.
+ */
+function sharedVerbs(verbs: ReadonlyMap<string, VerbUse>): string[] {
+  const problems: string[] = [];
+  for (const [verb, use] of verbs) {
+    for (const { entry, fields } of use.when) {
+      if (use.plain === undefined) {
+        problems.push(`${entry.name}: verb "${verb}" with when needs a face without when`);
+        continue;
+      }
+      for (const name of fields.filter((field) => hasField(use.plain as AnyEntry, field))) {
+        problems.push(`${entry.name}: when "${name}" is a field of ${use.plain.name} too`);
+      }
+    }
   }
   return problems;
 }
@@ -869,7 +896,7 @@ function checkFaces(
   say: Say,
   options: CheckOptions,
   schemasOk: boolean,
-  seen: { tools: Set<string>; verbs: Set<string> },
+  seen: { tools: Set<string>; verbs: Map<string, VerbUse> },
 ): void {
   const { faces } = entry;
   const clis = cliFaces(entry);
@@ -920,8 +947,15 @@ function checkFaces(
     if (!VERB.test(face.verb)) {
       say(`verb "${face.verb}" must be lower case letters, digits and hyphens`);
     }
-    if (seen.verbs.has(face.verb)) say(`verb "${face.verb}" is used twice`);
-    seen.verbs.add(face.verb);
+    const use = seen.verbs.get(face.verb) ?? { when: [] };
+    seen.verbs.set(face.verb, use);
+    if (face.when === undefined) {
+      if (use.plain !== undefined) say(`verb "${face.verb}" is used twice`);
+      use.plain = entry;
+    } else {
+      if (use.when.some((other) => other.entry === entry)) say(`verb "${face.verb}" is used twice`);
+      use.when.push({ entry, fields: face.when });
+    }
     if (schemasOk) {
       checkCliFace(entry, face, (m) => {
         say(`cli "${face.verb}": ${m}`);
@@ -978,6 +1012,19 @@ function checkCliFace(entry: AnyEntry, face: CliFace, say: Say): void {
     const info = fields.get(name);
     if (info === undefined) say(`fixed names unknown field "${name}"`);
     else if (!info.schema.safeParse(value).success) say(`fixed value for "${name}" is not valid`);
+  }
+  // A `when` field is one of the face's own flags: the flag that sends the verb here.
+  const taken = new Set([...positional, ...Object.keys(face.fixed ?? {}), ...(face.exclude ?? [])]);
+  if (face.when?.length === 0) say("when names at least one field");
+  for (const name of face.when ?? []) {
+    const info = fields.get(name);
+    if (
+      info?.scalar === undefined ||
+      taken.has(name) ||
+      (AUTO_FIELDS as readonly string[]).includes(name)
+    ) {
+      say(`when "${name}" is not a flag of a scalar input field`);
+    }
   }
 }
 

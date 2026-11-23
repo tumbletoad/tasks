@@ -182,6 +182,17 @@ describe("[A5.while-away.service.question] the questions agents asked wait on th
     expect(await refs()).toEqual(["l5"]);
   });
 
+  test("[A3.note.retract.question] a note the person takes back answers nothing: the question waits again, and put back it is answered", async () => {
+    const { task, ask, refs, next } = asking();
+    ask(fx.codex, "Fixture which one?");
+    submit(fx.human, [{ kind: "note.add", task, body: "Fixture answer" }], next());
+    expect(await refs()).toEqual([]);
+    submit(fx.human, [{ kind: "note.delete", task, ordinal: 1 }], next());
+    expect(await refs()).toEqual(["l1"]);
+    submit(fx.human, [{ kind: "note.restore", task, ordinal: 1 }], next());
+    expect(await refs()).toEqual([]);
+  });
+
   test("Dismiss sets aside the question it names and those before it; one asked after it still waits, an Undo brings them back, and the answer names the field", async () => {
     const { task, ask, refs } = asking();
     ask(fx.codex, "Fixture first?");

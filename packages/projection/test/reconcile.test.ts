@@ -227,6 +227,30 @@ describe("[A1.5.projection.reconcile] reconciliation file by file: what is missi
     expectSameTree(treeOf(w.dir), await freshRender());
   }, 120_000);
 
+  test("[A1.note.retract.files] a note taken back leaves its task's readable file, and put back it returns", async () => {
+    const projector = w.projector();
+    await projector.start();
+    await settle(projector);
+    const [a] = catalogOf(w.dir);
+    const task = a?.id ?? "";
+    const file = join(w.dir, ...(a?.path ?? "").split("/"));
+    w.submit([{ kind: "note.add", task, body: "Fixture words taken back later" }]);
+    await settle(projector);
+    expect(readFileSync(file, "utf8")).toContain("Fixture words taken back later");
+    const ordinal = Number(
+      w.reader.prepare("SELECT max(ordinal) AS o FROM notes WHERE task_id = $task").get({ task })?.[
+        "o"
+      ],
+    );
+    w.submit([{ kind: "note.delete", task, ordinal }]);
+    await settle(projector);
+    expect(readFileSync(file, "utf8")).not.toContain("Fixture words taken back later");
+    expectSameTree(treeOf(w.dir), await freshRender());
+    w.submit([{ kind: "note.restore", task, ordinal }]);
+    await settle(projector);
+    expect(readFileSync(file, "utf8")).toContain("Fixture words taken back later");
+  });
+
   test("a rebuild of an intact tree writes nothing, removes nothing and moves nothing aside", async () => {
     const projector = w.projector();
     await projector.start();

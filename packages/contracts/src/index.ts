@@ -66,6 +66,12 @@ export {
   receiptResult,
   type StoredReceiptLike,
 } from "./entries/receipt-get.ts";
+export {
+  NoteNumber,
+  noteRemove,
+  NoteRemoveInput,
+  NoteRemoveResult,
+} from "./entries/note-remove.ts";
 export { spaceStatus, SpaceStatusInput, SpaceStatusResult } from "./entries/space-status.ts";
 export { taskAdd, TaskAddInput, TaskAddResult } from "./entries/task-add.ts";
 export {
@@ -92,6 +98,7 @@ export {
   TaskFinishedResult,
 } from "./entries/task-finished.ts";
 export {
+  REMOVED_NOTES,
   REQUEST_CHARS,
   REQUEST_LAUNCHES,
   TaskDetail,

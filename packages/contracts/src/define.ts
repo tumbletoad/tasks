@@ -74,8 +74,13 @@ export interface McpFace {
 
 /** One CLI verb (A2 3.10, A3 3.4.13). Field names refer to top-level input fields or `item` fields. */
 export interface CliFace {
-  /** The verb: `ttasks <verb>`. Lower case, unique. */
+  /** The verb: `ttasks <verb>`. Lower case, unique unless `when` is given. */
   readonly verb: string;
+  /**
+   * Fields whose flags send the verb to this entry, when another entry's face has the verb without
+   * `when`: `ttasks note M-14 --remove 3` is `note.remove`, `ttasks note M-14 <text>` is `entry.add`.
+   */
+  readonly when?: readonly string[];
   /**
    * Scalar fields taken as positional arguments, in order. The last may be an array of scalars,
    * which takes every argument left (`ttasks delete M-14 M-15`).

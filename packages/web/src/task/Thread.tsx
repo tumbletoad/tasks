@@ -8,7 +8,9 @@
 // that is never HTML (markdown.tsx). A run shows what was asked, its state in plain words with
 // Stop while it may still work, and the agent's answer or question (RunBody). A session shows what
 // was asked the same way (the note its launch names) above its state, and a launch that did not
-// open offers to open again with it. Copy on a log entry shows on hover and on focus. Grouped field
+// open offers to open again with it, or says that the person took the request back. Copy on a log
+// entry and Remove on a note or a session's request show on hover and on focus, and always without
+// hover; Remove takes the note back, and the card's removed line puts it back. Grouped field
 // changes and their Revert join with M5.09.
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Instance, Receipt, Run } from "../api.ts";
@@ -153,6 +155,10 @@ interface Item {
   readonly state?: string;
   /** What the person asked the session's agent: the note its launch names. */
   readonly asked?: DetailNote;
+  /** The session's request was taken back: no agent reads it from now on. */
+  readonly askedRemoved?: boolean;
+  /** The note a note's entry shows: the one Remove takes back. */
+  readonly note?: DetailNote;
   /** Open the session's instance again with what was asked. */
   readonly again?: () => void;
   /** A run's entry: its record, drawn by RunBody in place of the text. */
@@ -188,6 +194,10 @@ export interface ThreadProps {
   readonly olderFailed?: boolean;
   /** Open an instance again with a request already on the task (its note). */
   readonly onOpenAgain?: (note: DetailNote, instance: Instance) => void;
+  /** The notes taken back: a session whose request is one of them says so. */
+  readonly removed?: readonly DetailNote[];
+  /** The person's Remove of a note: none in a card that only reads. */
+  readonly onRemove?: ((note: DetailNote) => void) | undefined;
   /** The person's Stop of a run. */
   readonly onStop?: (run: Run) => void;
 }
@@ -203,6 +213,8 @@ export function Thread({
   loadingOlder = false,
   olderFailed = false,
   onOpenAgain,
+  removed = [],
+  onRemove,
   onStop,
 }: ThreadProps) {
   const t = useT();
@@ -245,8 +257,10 @@ export function Thread({
       text: note.text,
       markdown: true,
       kind: "note",
+      note,
     });
   }
+  const taken = new Set(removed.map((note) => note.ref));
   // Open again is offered on the newest launch of a request, when it did not open.
   const newest = new Map<string, Receipt>();
   for (const receipt of receipts) {
@@ -279,7 +293,9 @@ export function Thread({
       instance?.label ?? (receipt.route === "clipboard" ? t("row.copy") : receipt.instance);
     const text = receiptText(receipt, label, t);
     const asked = askedOf(receipt);
-    if (text === undefined && asked === undefined) continue;
+    const askedRemoved =
+      asked === undefined && receipt.request !== undefined && taken.has(receipt.request);
+    if (text === undefined && asked === undefined && !askedRemoved) continue;
     const again =
       asked !== undefined &&
       instance !== undefined &&
@@ -301,7 +317,8 @@ export function Thread({
       markdown: false,
       kind: "session",
       state: entryState(receipt),
-      ...(asked === undefined ? {} : { asked }),
+      ...(asked === undefined ? {} : { asked, note: asked }),
+      ...(askedRemoved ? { askedRemoved } : {}),
       ...(again === undefined ? {} : { again }),
     });
   }
@@ -427,6 +444,11 @@ export function Thread({
                 ) : null}
               </div>
               {item.asked === undefined ? null : <Asked words={item.asked.text} part="asked" />}
+              {item.askedRemoved === true ? (
+                <p className={`${styles.text} ${styles.state}`} data-part="asked-removed">
+                  {t("thread.requestRemoved")}
+                </p>
+              ) : null}
               {item.run !== undefined ? (
                 <RunBody
                   run={item.run}
@@ -475,6 +497,26 @@ export function Thread({
                   {t("thread.copy")}
                 </button>
               ) : null}
+              {item.note === undefined || onRemove === undefined ? null : (
+                <button
+                  type="button"
+                  className={styles.act}
+                  data-part="remove-note"
+                  aria-label={t(
+                    item.kind === "session"
+                      ? "thread.removeRequest"
+                      : item.note.author === "user"
+                        ? "thread.removeMine"
+                        : "thread.removeNote",
+                    { who: item.who },
+                  )}
+                  onClick={() => {
+                    if (item.note !== undefined) onRemove(item.note);
+                  }}
+                >
+                  {t("thread.remove")}
+                </button>
+              )}
             </span>
           </li>
         ))}
