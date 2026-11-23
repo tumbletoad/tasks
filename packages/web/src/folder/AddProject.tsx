@@ -1,15 +1,20 @@
 // New project: choose its folder, see the name it gets (the folder's, changeable) and the
 // repository a checkout holds, choose or name its area, done. A folder that is another project's
-// already opens that project instead. A project without a folder is one click away.
+// already opens that project instead. A project without a folder is one click away. Where the
+// project went is what the service's answer says: a name can resolve to an archived area in ways the
+// dialog does not foresee, and an area can be archived before the write lands.
 import { useNavigate } from "@tanstack/react-router";
 import { useContext, useId, useMemo, useState, type SyntheticEvent } from "react";
 import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { classes } from "../app/css.ts";
+import { useUnarchive } from "../app/Archived.tsx";
 import { useToast } from "../app/frame.ts";
 import setup from "../app/Setup.module.css";
 import { Session } from "../context.ts";
+import { liveGroups } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
+import { sameName } from "../task/areaNames.ts";
 import type { Live } from "../live.ts";
 import { chosenFolder } from "./chooser.ts";
 import { FolderFacts, refusalText } from "./FolderDialog.tsx";
@@ -76,9 +81,10 @@ export function AddProject({
   const state = useLive();
   const nameId = useId();
   const areaId = useId();
+  // An archived area takes no new project: it is not offered, also when the page on screen is its.
   const areas = useMemo(
     () =>
-      [...state.areas.values()].sort((a, b) =>
+      liveGroups(state.areas.values(), []).areas.sort((a, b) =>
         a.position < b.position ? -1 : a.position > b.position ? 1 : 0,
       ),
     [state.areas],
@@ -90,12 +96,25 @@ export function AddProject({
   const [newArea, setNewArea] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const unarchive = useUnarchive();
 
   const folder = chosenFolder(text);
   const exact = look?.text === text ? look.exact : undefined;
   const named = name ?? exact?.name ?? "";
-  const areaName =
-    area === NEW_AREA ? newArea.trim() : (state.areas.get(area)?.title ?? newArea.trim());
+  // The area the list shows is the one the project goes in: the one chosen while it is live, else
+  // the first live one. The request names it by its ID, so no other area of its name is meant.
+  const shown =
+    area === NEW_AREA || areas.some((a) => a.id === area) ? area : (areas[0]?.id ?? NEW_AREA);
+  const typed = newArea.trim();
+  const sent = shown === NEW_AREA ? typed : shown;
+  // A new area's name that an archived area has would put the project in that area, out of sight:
+  // the dialog says so before the click. The answer of the write says it for every other way.
+  const shelved =
+    shown !== NEW_AREA || typed === "" || areas.some((a) => sameName(a.title, typed))
+      ? undefined
+      : [...state.areas.values()].find(
+          (a) => a.lifecycle === "archived" && sameName(a.title, typed),
+        );
 
   const open = (project: string, areaOf: string | undefined) => {
     onClose();
@@ -107,9 +126,9 @@ export function AddProject({
   };
 
   const add = (withFolder: boolean) => {
-    if (busy) return;
+    if (busy || shelved !== undefined) return;
     if (withFolder && folder === undefined) return;
-    if (areaName === "") {
+    if (sent === "") {
       setError(t("project.needsArea"));
       return;
     }
@@ -123,7 +142,7 @@ export function AddProject({
       .addProject({
         ...(withFolder && folder !== undefined ? { folder } : {}),
         name: named,
-        area: areaName,
+        area: sent,
       })
       .then(
         async (written) => {
@@ -132,7 +151,17 @@ export function AddProject({
             onClose();
             return;
           }
+          const area = written.area;
           if (written.result === "exists") say(t("project.exists", { project: project.name }));
+          else if (area?.archived === true) {
+            // The edit history keeps the add: Ctrl+Z still takes it back.
+            say(t("toast.projectAddedArchived", { name: project.name, area: area.name }), {
+              label: { id: "archived.unarchiveArea", values: { area: area.name } },
+              run: () => {
+                void unarchive({ id: area.id, title: area.name });
+              },
+            });
+          }
           open(project.id, await arrival(live, project.id));
         },
         (failed: unknown) => {
@@ -183,9 +212,17 @@ export function AddProject({
                   className={sheet.quiet}
                   onPress={() => {
                     const project = exact.project;
-                    if (project !== undefined) {
-                      open(project.id, live.getState().projects.get(project.id)?.area_id);
+                    if (project === undefined) return;
+                    const areaOf = live.getState().projects.get(project.id)?.area_id;
+                    if (areaOf !== undefined) {
+                      open(project.id, areaOf);
+                      return;
                     }
+                    onClose();
+                    void navigate({
+                      to: "/s/$space/project/$project",
+                      params: { space, project: project.id },
+                    });
                   }}
                 >
                   {t("project.open", { project: exact.project.name })}
@@ -217,7 +254,7 @@ export function AddProject({
                 <select
                   id={areaId}
                   className={sheet.input}
-                  value={area}
+                  value={shown}
                   onChange={(event) => {
                     setArea(event.target.value);
                     setError(undefined);
@@ -231,7 +268,7 @@ export function AddProject({
                   <option value={NEW_AREA}>{t("project.newArea")}</option>
                 </select>
               )}
-              {area === NEW_AREA || areas.length === 0 ? (
+              {shown === NEW_AREA ? (
                 <input
                   type="text"
                   className={sheet.input}
@@ -248,6 +285,26 @@ export function AddProject({
                   }}
                 />
               ) : null}
+              {shelved === undefined ? null : (
+                <p className={sheet.note} data-part="area-archived" role="status">
+                  {t("project.areaArchived", { area: shelved.title })}
+                  <Button
+                    className={sheet.quiet}
+                    isDisabled={busy}
+                    onPress={() => {
+                      setBusy(true);
+                      void unarchive(shelved).then((back) => {
+                        setBusy(false);
+                        if (!back) return;
+                        setArea(shelved.id);
+                        setNewArea("");
+                      });
+                    }}
+                  >
+                    {t("archived.unarchiveArea", { area: shelved.title })}
+                  </Button>
+                </p>
+              )}
             </div>
             {error === undefined ? null : (
               <p className={sheet.error} role="alert">
@@ -258,13 +315,13 @@ export function AddProject({
               <Button
                 type="submit"
                 className={sheet.primary}
-                isDisabled={busy || folder === undefined}
+                isDisabled={busy || shelved !== undefined || folder === undefined}
               >
                 {t("project.add")}
               </Button>
               <Button
                 className={sheet.quiet}
-                isDisabled={busy}
+                isDisabled={busy || shelved !== undefined}
                 onPress={() => {
                   add(false);
                 }}

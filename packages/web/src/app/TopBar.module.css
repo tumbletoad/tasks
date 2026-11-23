@@ -124,6 +124,18 @@
   font-size: 0.8125rem;
 }
 
+/* An archived group a `#name` named: said, with nothing to undo. */
+.chip[data-kind="archived"] {
+  padding-inline: 10px;
+  border-style: dashed;
+  color: var(--k-muted);
+}
+
+/* Where a capture that names no group goes: said, with nothing to take off. */
+.chip[data-kind="inbox"] {
+  padding-inline: 10px;
+}
+
 .keep {
   display: inline-grid;
   place-items: center;

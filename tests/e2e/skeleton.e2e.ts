@@ -277,7 +277,11 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
       await expect(line).toContainText(`${set.folder} [portal-web]`);
       await picture(page, "open-marker-repo.png");
 
-      // The checkout is moved aside and an unrelated folder made at its path.
+      // The checkout is moved aside, once its marker is there (a busy machine writes it after the
+      // set answers), and an unrelated folder made at its path.
+      await expect
+        .poll(() => existsSync(join(folder, FOLDER_MARKER, "owners.json")), { timeout: SLOW_MS })
+        .toBe(true);
       renameSync(folder, join(temp, "portal-aside"));
       mkdirSync(folder);
       const before = world.terminal().length;
@@ -305,7 +309,9 @@ test.describe("[A4.5.e2e.open-marker] Open asks before it opens a folder that ma
       // the field clears once the agent has them, as after any Open.
       await said.getByRole("button", { name: "Use this folder" }).click();
       await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
-      expect(existsSync(join(folder, FOLDER_MARKER, "owners.json"))).toBe(true);
+      await expect
+        .poll(() => existsSync(join(folder, FOLDER_MARKER, "owners.json")), { timeout: SLOW_MS })
+        .toBe(true);
       await expect(composer).toHaveValue("", { timeout: SLOW_MS });
       expect(await violations(page)).toEqual([]);
     } finally {

@@ -15,12 +15,14 @@ import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
 import type { TaskFacts } from "../task/detail.ts";
+import { ArchivedLine } from "./Archived.tsx";
 import { useTitle, useToast } from "./frame.ts";
 import { hostOf, type Host } from "./host.ts";
 import css from "./pages.module.css";
 import {
   areaFilter,
   isCounted,
+  projectFilter,
   LANDING,
   VIEW_LABEL,
   VIEW_LIST,
@@ -93,41 +95,97 @@ export function ViewPage({
   );
 }
 
+/** An area's page: its tasks, its projects' included. */
 export function AreaPage({
   area,
-  project,
   task,
 }: {
   readonly area: string;
-  readonly project?: string;
   readonly task?: string | undefined;
 }) {
   const t = useT();
   const state = useLive();
   const onExpand = useExpandInUrl();
   const row = state.areas.get(area);
-  const named = project === undefined ? row?.title : state.projects.get(project)?.title;
-  useTitle(named ?? "");
-  const filter = useMemo(() => areaFilter(area, project), [area, project]);
+  useTitle(row?.title ?? "");
+  const filter = useMemo(() => areaFilter(area), [area]);
   if (row === undefined) return <p className={styles.line}>{t("view.noArea")}</p>;
-  const list = (
-    <TaskList
-      key={`${area}/${project ?? ""}`}
-      view="area"
-      grouping="project"
-      group={project === undefined ? areaGroups : projectGroups}
-      filter={filter}
-      empty={t("view.empty")}
-      expand={task}
-      onExpand={onExpand}
-    />
-  );
-  if (project === undefined) return list;
-  // A project's view begins with its folder on this machine.
+  // An archived area's view begins with the way back.
   return (
     <>
+      <ArchivedLine area={area} />
+      <TaskList
+        key={area}
+        view="area"
+        grouping="project"
+        group={areaGroups}
+        filter={filter}
+        empty={t("view.empty")}
+        expand={task}
+        onExpand={onExpand}
+      />
+    </>
+  );
+}
+
+/**
+ * A project's page, by its ID alone: its tasks, its archived line and its folder are the project's
+ * as it is now. Its address names its area when it has one; an address whose area part no longer
+ * fits (the project moved, or the move was undone) is replaced by the present one.
+ */
+export function ProjectPage({
+  space,
+  project,
+  area: addressed,
+  task,
+}: {
+  readonly space: string;
+  readonly project: string;
+  /** The area the address names. */
+  readonly area?: string;
+  readonly task?: string | undefined;
+}) {
+  const t = useT();
+  const state = useLive();
+  const onExpand = useExpandInUrl();
+  const row = state.projects.get(project);
+  useTitle(row?.title ?? "");
+  const filter = useMemo(() => projectFilter(project), [project]);
+  if (row === undefined) return <p className={styles.line}>{t("view.noProject")}</p>;
+  const area = row.area_id;
+  if (area !== addressed) {
+    const search = task === undefined ? {} : { task };
+    return area === undefined ? (
+      <Navigate
+        to="/s/$space/project/$project"
+        params={{ space, project }}
+        search={search}
+        replace
+      />
+    ) : (
+      <Navigate
+        to="/s/$space/area/$area/project/$project"
+        params={{ space, area, project }}
+        search={search}
+        replace
+      />
+    );
+  }
+  // An archived project's view begins with the way back, then its folder on this machine.
+  return (
+    <>
+      <ArchivedLine area={area} project={project} />
       <ProjectFolder key={project} project={project} />
-      {list}
+      <TaskList
+        key={`list/${project}`}
+        view="area"
+        grouping="project"
+        group={projectGroups}
+        filter={filter}
+        empty={t("view.empty")}
+        expand={task}
+        onExpand={onExpand}
+      />
     </>
   );
 }

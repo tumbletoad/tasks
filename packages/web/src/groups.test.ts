@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { groupTasks, slotOf } from "./groups.ts";
+import {
+  archivedGroup,
+  groupTasks,
+  liveGroups,
+  projectGroups,
+  sidebarAreas,
+  slotOf,
+} from "./groups.ts";
 import type { AreaRow, ProjectRow, TaskRow } from "./live.ts";
 
 let n = 0;
@@ -92,5 +99,85 @@ describe("[A5.3.5.web.groups] open tasks by area and project", () => {
     expect(slotOf(lumen, 8)).toBe(1);
     const groups = groupTasks([task({ title: "x", area_id: "a_lumen" })], [home, lumen], []);
     expect(groups[0]?.slot).toBe(2);
+  });
+});
+
+describe("[A5.archived.web.groups] an archived area or project leaves the areas for Archived and takes no new work", () => {
+  const attic: AreaRow = { id: "a_attic", title: "Attic", position: "a05", lifecycle: "archived" };
+  const boxes: ProjectRow = { id: "p_boxes", area_id: "a_attic", title: "Boxes", position: "c0" };
+  const shelvedSync: ProjectRow = { ...sync, lifecycle: "archived" };
+  const areas = [lumen, attic, home, empty];
+  const projects = [portal, shelvedSync, boxes];
+
+  test("the sidebar: live areas with their live projects; Archived in the same order, an archived area with all its projects and an archived project of a live area on its own", () => {
+    const { live, archived } = sidebarAreas(areas, projects);
+    expect(live.map((a) => [a.area.title, a.projects.map((p) => p.title)])).toEqual([
+      ["Home", []],
+      ["Lumen", ["Lumen portal"]],
+      ["Empty", []],
+    ]);
+    expect(
+      archived.map((g) =>
+        g.kind === "area"
+          ? [g.area.title, g.projects.map((p) => p.title)]
+          : [g.area?.title, g.project.title],
+      ),
+    ).toEqual([
+      ["Attic", ["Boxes"]],
+      ["Lumen", "Clinic sync"],
+    ]);
+  });
+
+  test("a project without an area: a live one is listed after the areas, an archived one under Archived after the areas' groups", () => {
+    const shed: ProjectRow = { id: "p_shed", title: "Shed", position: "d0" };
+    const kiln: ProjectRow = { id: "p_kiln", title: "Kiln", position: "d1", lifecycle: "archived" };
+    const { live, loose, archived } = sidebarAreas(areas, [...projects, kiln, shed]);
+    expect(live.flatMap((a) => a.projects.map((p) => p.title))).toEqual(["Lumen portal"]);
+    expect(loose.map((p) => p.title)).toEqual(["Shed"]);
+    expect(archived.map((g) => (g.kind === "area" ? g.area.title : g.project.title))).toEqual([
+      "Attic",
+      "Clinic sync",
+      "Kiln",
+    ]);
+    expect(archived.at(-1)?.area).toBeUndefined();
+  });
+
+  test("a project's view: its tasks in one list, open first, with or without an area", () => {
+    const kiln: ProjectRow = { id: "p_kiln", title: "Kiln", position: "d1" };
+    const rows = [
+      task({ title: "Later", project_id: "p_kiln", status: "backlog" }),
+      task({ title: "Fire it", project_id: "p_kiln" }),
+    ];
+    expect(titles(projectGroups(rows, areas, [kiln]))).toEqual([
+      ["flat", undefined, [[undefined, ["Fire it", "Later"]]]],
+    ]);
+  });
+
+  test("archiving an area recolours no other: each keeps its place among all areas", () => {
+    const before = sidebarAreas(
+      areas.map((a) => ({ ...a, lifecycle: "active" })),
+      projects,
+    );
+    const after = sidebarAreas(areas, projects);
+    const slots = (listed: ReturnType<typeof sidebarAreas>) =>
+      Object.fromEntries(
+        [...listed.live, ...listed.archived].map((g) => [g.area?.title ?? "", g.slot]),
+      );
+    expect(slots(after)).toEqual(slots(before));
+  });
+
+  test("new work goes to live groups: no archived area, no archived project, no project of an archived area", () => {
+    const { areas: open, projects: openProjects } = liveGroups(areas, projects);
+    expect(open.map((a) => a.title)).toEqual(["Lumen", "Home", "Empty"]);
+    expect(openProjects.map((p) => p.title)).toEqual(["Lumen portal"]);
+  });
+
+  test("a page is archived by its project, else by its area; a live one is not", () => {
+    expect(archivedGroup(lumen, portal)).toBeUndefined();
+    expect(archivedGroup(lumen)).toBeUndefined();
+    expect(archivedGroup(lumen, shelvedSync)).toEqual({ kind: "project", row: shelvedSync });
+    expect(archivedGroup(attic, boxes)).toEqual({ kind: "area", row: attic });
+    expect(archivedGroup(attic)).toEqual({ kind: "area", row: attic });
+    expect(archivedGroup(undefined)).toBeUndefined();
   });
 });

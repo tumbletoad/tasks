@@ -52,6 +52,8 @@ export function Shell({ space }: { readonly space: string }) {
   const toastHandle = useRef<ToastHandle | undefined>(undefined);
   const plain = useRef(0);
   const [drawer, setDrawer] = useState(false);
+  // Archived in the sidebar, open or folded: the side menu and the drawer show the same.
+  const [shelf, setShelf] = useState(false);
   const [sheet, setSheet] = useState(false);
   const { singleKeys } = useMachine();
   const sheetControl = useMemo(
@@ -139,7 +141,7 @@ export function Shell({ space }: { readonly space: string }) {
             {t("app.skip")}
           </a>
           <nav className={styles.sidebar} aria-label={t("nav.label")}>
-            <Sidebar space={space} />
+            <Sidebar space={space} shelfOpen={shelf} onShelf={setShelf} />
           </nav>
           <div className={styles.column}>
             <header className={styles.top}>
@@ -198,7 +200,7 @@ export function Shell({ space }: { readonly space: string }) {
           >
             <Modal className={styles.drawer}>
               <Dialog className={styles.drawerBody} aria-label={t("nav.label")}>
-                <Sidebar space={space} />
+                <Sidebar space={space} shelfOpen={shelf} onShelf={setShelf} />
               </Dialog>
             </Modal>
           </ModalOverlay>

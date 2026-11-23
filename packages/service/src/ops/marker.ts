@@ -7,11 +7,14 @@
 //
 // What this machine has marked is kept in its own state (`FolderMarks`), by owner and path: an
 // undo may give an owner back a folder, and only a folder that was marked for that owner can have
-// lost its marker. With each mark it keeps what identifies the folder itself (`identityOf`), so a
-// marker that went while the folder stayed (`git clean -x`) is put back without a question, and
-// a folder made again at the path (a fresh clone) still asks. A folder TTasks cannot write to
-// (read-only, a share) gets no marker and is opened as before: that is the limit of the
-// protection, not a refusal.
+// lost its marker. With each mark it keeps what identifies the folder itself (`identityFrom`), so a
+// marker that went while the folder stayed (`git clean -x`), or that another owner's write lost,
+// is put back without a question, and a folder made again at the path (a fresh clone) still asks.
+// A write slower than its bound is abandoned, so it never lands in a folder made at the path since
+// or after a clear; the folder still counts as marked when its identity is known, so a busy machine
+// keeps the protection. A folder TTasks cannot write to (read-only, a share) gets no marker and is
+// opened as before: that is the limit of the protection, not a refusal. When the person chose to
+// use such a folder, its identity is what is remembered.
 import { readFileSync } from "node:fs";
 import { lstat, readFile, rm, rmdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -54,6 +57,13 @@ export type MarkerRead =
 
 const same = (a: MarkerOwner, b: MarkerOwner): boolean =>
   a.space === b.space && a.kind === b.kind && a.id === b.id;
+
+const sameRead = (a: MarkerRead, b: MarkerRead): boolean =>
+  a.state === b.state &&
+  (a.state !== "owners" ||
+    (b.state === "owners" &&
+      a.owners.length === b.owners.length &&
+      a.owners.every((o, k) => same(o, b.owners[k] as MarkerOwner))));
 
 function ownersOf(text: string): MarkerOwner[] | undefined {
   let parsed: unknown;
@@ -118,24 +128,45 @@ async function isOwnFolder(dir: string): Promise<boolean> {
 const IGNORE_ALL = "*\n";
 
 /**
+ * Puts `text` in place as the owners file of the marker at `absolute`, only while `signal` holds
+ * and the marker still reads as `before`: a write never replaces owners it did not read.
+ */
+function replaceOwners(
+  absolute: string,
+  text: string,
+  before: MarkerRead,
+  signal: AbortSignal,
+): Promise<void> {
+  return atomicWriteAsync(join(absolute, FOLDER_MARKER, MARKER_OWNERS), text, 0o644, {
+    signal,
+    ready: async () => {
+      if (!sameRead(await readMarker(absolute), before)) throw new Error("The marker changed");
+    },
+  });
+}
+
+/**
  * Adds `owner` to the marker of the folder at `absolute`, making the marker when there is none.
  * An owners file that is not one TTasks writes is written over: it is in the marker's own folder.
  * False when the folder takes no marker: it cannot be written, or something that is not a folder
- * has the marker's name.
+ * has the marker's name. Once `signal` is aborted it changes nothing more.
  */
 async function addOwnerNow(
   absolute: string,
   owner: MarkerOwner,
   before: MarkerRead,
+  signal: AbortSignal,
 ): Promise<boolean> {
   if (before.state === "unreadable") return false;
   const dir = join(absolute, FOLDER_MARKER);
   try {
+    signal.throwIfAborted();
     await makeDirAsync(dir, 0o755);
   } catch (error) {
     if (codeOf(error) !== "EEXIST" || !(await isOwnFolder(dir))) return false;
   }
   try {
+    signal.throwIfAborted();
     const handle = await createFileAsync(join(dir, ".gitignore"), 0o644);
     try {
       await handle.writeFile(IGNORE_ALL, "utf8");
@@ -148,18 +179,22 @@ async function addOwnerNow(
   const owners = before.state === "owners" ? before.owners : [];
   if (owners.some((o) => same(o, owner))) return true;
   try {
-    await atomicWriteAsync(join(dir, MARKER_OWNERS), textOf([...owners, owner]), 0o644);
+    await replaceOwners(absolute, textOf([...owners, owner]), before, signal);
     return true;
   } catch {
     return false;
   }
 }
 
-/** Takes `owner` off the marker at `absolute`; the marker goes when no owner is left. */
+/**
+ * Takes `owner` off the marker at `absolute`; the marker goes when no owner is left. Once `signal`
+ * is aborted it changes nothing more.
+ */
 async function removeOwnerNow(
   absolute: string,
   owner: MarkerOwner,
   before: MarkerRead,
+  signal: AbortSignal,
 ): Promise<void> {
   if (before.state !== "owners") return;
   const dir = join(absolute, FOLDER_MARKER);
@@ -167,15 +202,19 @@ async function removeOwnerNow(
   if (left.length === before.owners.length || !(await isOwnFolder(dir))) return;
   try {
     if (left.length > 0) {
-      await atomicWriteAsync(join(dir, MARKER_OWNERS), textOf(left), 0o644);
+      await replaceOwners(absolute, textOf(left), before, signal);
       return;
     }
+    if (!sameRead(await readMarker(absolute), before)) return;
+    signal.throwIfAborted();
     await rm(join(dir, MARKER_OWNERS), { force: true });
     // An ignore file with other words in it is the person's, and stays.
     const ignore = join(dir, ".gitignore");
     const words = await readFile(ignore, "utf8").catch(() => undefined);
+    signal.throwIfAborted();
     if (words === IGNORE_ALL) await rm(ignore, { force: true });
     // Only when nothing else is in it: a file a person put there stays, and so does the folder.
+    signal.throwIfAborted();
     await rmdir(dir);
   } catch {
     // A marker that cannot be changed stays as it is: it names an owner, and harms nothing.
@@ -183,21 +222,12 @@ async function removeOwnerNow(
 }
 
 /**
- * What identifies the folder itself, whatever its path: its volume, its file number and the
- * instant it was made. A rename keeps them and so does `git clean`; a folder made again at the path
- * (a fresh clone, a checkout moved aside and another made) has others on Windows and Linux alike.
- * Undefined when it cannot be read, or when the file system keeps no creation time (zero) or no
- * file number that fits (zero, or all ones on ReFS): an inode used again could then pass.
+ * What identifies a folder itself, whatever its path, from its stat: its volume, its file number
+ * and the instant it was made. A rename keeps them and so does `git clean`; a folder made again at
+ * the path (a fresh clone, a checkout moved aside and another made) has others on Windows and
+ * Linux alike. Undefined when the file system keeps no creation time (zero) or no file number that
+ * fits (zero, or all ones on ReFS): an inode used again could then pass.
  */
-export async function identityOf(open: string): Promise<string | undefined> {
-  try {
-    return identityFrom(await stat(open, { bigint: true }));
-  } catch {
-    return undefined;
-  }
-}
-
-/** `identityOf` for a stat already read. */
 export function identityFrom(found: {
   readonly dev: bigint;
   readonly ino: bigint;
@@ -296,7 +326,7 @@ export type MarkerCheck =
   | { readonly kind: "ok" }
   /** This machine marked the folder for this owner, and the marker is gone. */
   | { readonly kind: "missing" }
-  /** This machine marked the folder for this owner, and its marker now names others only. */
+  /** This machine marked the folder for this owner, and another folder there names others only. */
   | { readonly kind: "other"; readonly owners: readonly MarkerOwner[] };
 
 /**
@@ -345,27 +375,66 @@ export class FolderMarkers {
     if (open === undefined) return undefined;
     const found = await bounded(async () => {
       try {
-        return (await stat(open)).isDirectory() ? await identityOf(open) : false;
+        const folder = await stat(open, { bigint: true });
+        return folder.isDirectory() ? (identityFrom(folder) ?? true) : false;
       } catch {
         return false;
       }
     }, MARKER_MS);
     if (found === false || found === "not_answering") return undefined;
-    return found === undefined ? { open } : { open, identity: found };
+    return found === true ? { open } : { open, identity: found };
   }
 
-  /** Marks the folder `stored` as `owner`'s. False when it takes no marker. */
+  /** Marks the folder `stored` as `owner`'s: it was set. False when it takes no marker. */
   mark(owner: MarkerOwner, stored: string): Promise<boolean> {
+    return this.#mark(owner, stored, false);
+  }
+
+  /**
+   * Marks the folder `stored` as `owner`'s because the person chose to use it as it is now: that
+   * is remembered by its identity also when it takes no marker. False when it takes none.
+   */
+  use(owner: MarkerOwner, stored: string): Promise<boolean> {
+    return this.#mark(owner, stored, true);
+  }
+
+  #mark(owner: MarkerOwner, stored: string, chosen: boolean): Promise<boolean> {
     return this.#turn(async () => {
       const folder = await this.#folder(stored);
       if (folder === undefined) return false;
       const { open, identity } = folder;
       const before = await bounded(() => readMarker(open), MARKER_MS);
-      if (before === "not_answering") return false;
-      const done = (await bounded(() => addOwnerNow(open, owner, before), MARKER_MS)) === true;
-      if (done) this.#marks.set(this.#key(owner, stored), true, identity);
-      return done;
+      return this.#write(this.#key(owner, stored), open, owner, before, identity, chosen);
     });
+  }
+
+  /**
+   * Adds `owner` to the marker of the folder at `open`, and keeps what this machine marked. A write
+   * that did not answer within the bound is abandoned, and the folder answered as itself: known by
+   * its identity, it stays this owner's, so a folder made at the path meanwhile still asks and this
+   * one takes its marker at the next look. A folder the person `chosen` is kept by its identity
+   * whatever the write did; without one there is nothing to keep it by, and it opens as before.
+   */
+  async #write(
+    key: string,
+    open: string,
+    owner: MarkerOwner,
+    before: MarkerRead | "not_answering",
+    identity: string | undefined,
+    chosen = false,
+  ): Promise<boolean> {
+    const written =
+      before === "not_answering"
+        ? before
+        : await bounded((signal) => addOwnerNow(open, owner, before, signal), MARKER_MS);
+    if (identity !== undefined && (chosen || written !== false)) {
+      this.#marks.set(key, true, identity);
+    } else if (written === true) {
+      this.#marks.set(key, true);
+    } else if (chosen) {
+      this.#marks.set(key, false);
+    }
+    return written === true;
   }
 
   /** Takes `owner` off the folder `stored`: its folder there was cleared. */
@@ -376,7 +445,7 @@ export class FolderMarkers {
       if (open === undefined) return;
       const before = await bounded(() => readMarker(open), MARKER_MS);
       if (before !== "not_answering") {
-        await bounded(() => removeOwnerNow(open, owner, before), MARKER_MS);
+        await bounded((signal) => removeOwnerNow(open, owner, before, signal), MARKER_MS);
       }
     });
   }
@@ -396,7 +465,7 @@ export class FolderMarkers {
    * The look a launch takes at its folder just before an agent starts. A folder that is not
    * there, or does not answer, is the launch's own check to report, and one whose marker cannot
    * be read opens as before. Only a folder this machine marked for this owner can say it is not
-   * that folder any more, and a marker gone from the very folder that was marked is put back. One
+   * that folder any more, and the very folder that was marked has its marker put back. One
    * it never marked for this owner (set before markers, before the folder was there, or given back
    * by an undo of a clear) is marked now, quietly, whatever its marker names: nothing tells it from
    * the folder that was set.
@@ -413,16 +482,12 @@ export class FolderMarkers {
         this.#marks.set(key, true, identity);
         return { kind: "ok" };
       }
-      if (this.#marks.has(key)) {
-        const unchanged = identity !== undefined && this.#marks.identity(key) === identity;
-        if (read.state !== "none") {
-          return { kind: "other", owners: read.state === "owners" ? read.owners : [] };
-        }
-        if (!unchanged) return { kind: "missing" };
+      const unchanged = identity !== undefined && this.#marks.identity(key) === identity;
+      if (this.#marks.has(key) && !unchanged) {
+        if (read.state === "none") return { kind: "missing" };
+        return { kind: "other", owners: read.state === "owners" ? read.owners : [] };
       }
-      if ((await bounded(() => addOwnerNow(open, owner, read), MARKER_MS)) === true) {
-        this.#marks.set(key, true, identity);
-      }
+      await this.#write(key, open, owner, read, identity);
       return { kind: "ok" };
     });
   }

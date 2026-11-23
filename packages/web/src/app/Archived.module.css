@@ -1,0 +1,38 @@
+/* An archived group's line, at the top of its page as a project's folder line is. Tokens only. */
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 36px;
+  padding: 4px 10px;
+  color: var(--k-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.words {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.act {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--k-control);
+  background: transparent;
+  color: var(--k-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.act[data-hovered] {
+  background: var(--k-hover);
+}
+
+.act[data-focus-visible] {
+  outline: 2px solid var(--k-focus);
+  outline-offset: 1px;
+}
