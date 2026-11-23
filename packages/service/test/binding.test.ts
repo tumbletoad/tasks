@@ -355,7 +355,7 @@ describe("[A3.3.7.binding.ticket] a launched agent's bridge is its session by th
       // Accepted: a program the agent left running, connected when it ended, is still its session.
       expect(
         await helper.call("entry.add", { kind: "note", text: "Fixture note.", request_id: rid() }),
-      ).toMatch(/^noted \S+ on M-1 /);
+      ).toMatch(/^noted \S+ on M-1$/);
       const late = await launched(launch);
       expect(late.binding?.["state"]).toBe("unbound");
       expect(

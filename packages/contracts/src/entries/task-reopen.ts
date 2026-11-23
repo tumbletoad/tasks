@@ -25,9 +25,7 @@ export const TaskReopenInput = z.strictObject({
 });
 
 export const TaskReopenResult = z.strictObject({
-  result: z
-    .enum(["reopened", "no_change", "proposed"])
-    .describe("reopened, already active, or proposed"),
+  result: z.enum(["reopened", "no_change", "proposed"]).describe("reopened, or already active"),
   task: TaskRef,
   lifecycle: Lifecycle,
   status: z.string().describe("Status key"),
@@ -57,7 +55,7 @@ export const taskReopen = defineEntry({
       tool: "reopen_task",
       title: "Reopen a finished task",
       description:
-        "Use when a completed or archived task needs work again, instead of adding a new one. Its earlier outcome and learnings stay. Pass base and a reason. update_task changes only active tasks.",
+        "Use when a completed or archived task needs work again, instead of adding a new one. Its earlier outcome and learnings stay. Pass a reason, and base: the as_of of your last get_task, or of your complete_task or reopen_task of it. update_task changes only active tasks.",
     },
   },
   budget: { typical: 40, max: 150 },

@@ -3,6 +3,7 @@
 // the CLI verb, the HTTP route, the typed client and the docs.
 import { z } from "zod";
 import type { ErrorCode } from "./errors.ts";
+import { LATER_RESULTS, laterFields } from "./later.ts";
 
 /** "read": a query. "write": one A1 operation kind, or a fixed bundle of them, as one request. */
 export const ENTRY_KINDS = ["read", "write"] as const;
@@ -407,6 +408,112 @@ export function inputSchemaFor(entry: Rules, audience: Audience): z.ZodType {
     built.set(entry, found);
   }
   return (found[audience] ??= applyNode(entry.input, ruleTree(entry, audience)));
+}
+
+const shown = new WeakMap<object, Partial<Record<Audience, z.ZodType>>>();
+
+/**
+ * The input an audience is shown (later.ts): the audience's input without the fields and values a
+ * later step builds. A field left with only its default says nothing and goes too, and so do
+ * `request_id` and `base` of an entry whose every shown action only reads. The request path still
+ * parses with `inputSchemaFor`, so a call that uses a listed field gets that row's refusal.
+ */
+export function shownSchemaFor(
+  entry: Rules & Pick<AnyEntry, "name" | "actions">,
+  audience: Audience,
+): z.ZodType {
+  let found = shown.get(entry);
+  if (found === undefined) {
+    found = {};
+    shown.set(entry, found);
+  }
+  if (found[audience] !== undefined) return found[audience];
+  const full = inputSchemaFor(entry, audience);
+  const rows = laterFields(entry.name);
+  const shape: Record<string, z.ZodType> = {};
+  for (const [key, field] of Object.entries(defOf(full)["shape"] as Record<string, z.ZodType>)) {
+    let kept: z.ZodType | undefined = field;
+    for (const row of rows) {
+      if (row.field !== key || kept === undefined) continue;
+      kept = row.value === undefined ? undefined : without(kept, row.value);
+    }
+    if (kept !== undefined) shape[key] = kept;
+  }
+  const writes = !readsOnlyNow(entry, shape);
+  const offered = Object.fromEntries(
+    Object.entries(shape).filter(([key]) => writes || (key !== "request_id" && key !== "base")),
+  );
+  return (found[audience] = rebuild(full, { shape: offered }));
+}
+
+/** The output the docs show: without the results a later step brings (`LATER_RESULTS`). */
+export function shownOutputFor(entry: Pick<AnyEntry, "name" | "output">): z.ZodType {
+  let schema = entry.output;
+  for (const row of LATER_RESULTS) {
+    if (row.entry === entry.name) schema = withoutAt(schema, pathSteps(row.path) ?? [], row.value);
+  }
+  return schema;
+}
+
+/** `schema` without the field at `steps`, or without `value` of the enum field there. */
+function withoutAt(
+  schema: z.ZodType,
+  steps: readonly string[],
+  value: string | undefined,
+): z.ZodType {
+  const [step, ...rest] = steps;
+  const all = layers(schema);
+  const core = all[all.length - 1] ?? schema;
+  const def = defOf(core);
+  let next: z.ZodType;
+  if (step === "[]" && def.type === "array") {
+    next = rebuild(core, { element: withoutAt(def["element"] as z.ZodType, rest, value) });
+  } else if (step !== undefined && def.type === "object") {
+    const shape: Record<string, z.ZodType> = {};
+    for (const [key, field] of Object.entries(def["shape"] as Record<string, z.ZodType>)) {
+      if (key !== step) shape[key] = field;
+      else if (rest.length > 0) shape[key] = withoutAt(field, rest, value);
+      else if (value !== undefined) shape[key] = without(field, value) ?? field;
+    }
+    next = rebuild(core, { shape });
+  } else {
+    return schema;
+  }
+  for (const layer of all.slice(0, -1).reverse()) next = rebuild(layer, { innerType: next });
+  return next;
+}
+
+/** The kind an entry is shown as: a mixed entry whose every shown action reads is a read. */
+export function shownKind(entry: Rules & Pick<AnyEntry, "name" | "kind" | "actions">): EntryKind {
+  if (entry.kind === "read") return "read";
+  const shape = defOf(shownSchemaFor(entry, "agent"))["shape"] as Record<string, z.ZodType>;
+  return readsOnlyNow(entry, shape) ? "read" : "write";
+}
+
+function readsOnlyNow(
+  entry: Pick<AnyEntry, "actions">,
+  shape: Readonly<Record<string, z.ZodType>>,
+): boolean {
+  const actions = entry.actions;
+  const field = actions === undefined ? undefined : shape[actions.field];
+  if (actions === undefined || field === undefined) return false;
+  const values = defOf(coreOf(field))["entries"] as Record<string, string> | undefined;
+  return values !== undefined && Object.values(values).every((v) => actions.reads.includes(v));
+}
+
+/** An enum field without `value`, or undefined when no value is left but its default. */
+function without(field: z.ZodType, value: string): z.ZodType | undefined {
+  const all = layers(field);
+  const core = all[all.length - 1] ?? field;
+  const entries = defOf(core)["entries"] as Record<string, string> | undefined;
+  if (entries === undefined) return field;
+  const kept = Object.values(entries).filter((v) => v !== value);
+  const fallback = all.find((layer) => defOf(layer).type === "default");
+  const preset = fallback === undefined ? undefined : defOf(fallback)["defaultValue"];
+  if (kept.length === 0 || (kept.length === 1 && kept[0] === preset)) return undefined;
+  let next = rebuild(core, { entries: Object.fromEntries(kept.map((v) => [v, v])) });
+  for (const layer of all.slice(0, -1).reverse()) next = rebuild(layer, { innerType: next });
+  return next;
 }
 
 /** A field with its rules: kept, made required, given its default, or limited inside. */

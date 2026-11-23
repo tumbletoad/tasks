@@ -470,7 +470,11 @@ export function render(entry: string, result: Result, space: string): string {
       break;
     }
     default:
-      lines.push(JSON.stringify(result, null, 2));
+      return `${JSON.stringify(result, null, 2)}\n`;
+  }
+  // A warning is part of what happened: a person reads it here, as an agent does in its answer.
+  for (const warning of (result["warnings"] as unknown[] | undefined) ?? []) {
+    lines.push(`Warning: ${str(warning)}`);
   }
   return `${lines.join("\n")}\n`;
 }

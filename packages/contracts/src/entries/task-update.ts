@@ -69,7 +69,7 @@ export const TaskUpdateInput = z.strictObject({
     .describe("Source keys or URLs to unlink")
     .optional(),
   base: Base.optional(),
-  reason: safeText(200).describe("Why, shown in history and proposals").optional(),
+  reason: safeText(200).describe("Why, shown in history").optional(),
   request_id: RequestId,
   mode: Mode,
   cwd: Cwd.optional(),
@@ -78,9 +78,10 @@ export const TaskUpdateInput = z.strictObject({
 export const TaskUpdateResult = z.strictObject({
   result: z
     .enum(["updated", "no_change", "review", "proposed"])
-    .describe("updated, nothing changed, applied with a review mark, or proposed"),
+    .describe("updated, or nothing changed"),
   task: TaskRef,
   fields: z.array(z.string()).describe("The fields the call changed"),
+  context: z.enum(["appended", "replaced"]).describe("How it changed the context").optional(),
   as_of: AsOf,
   proposal: ProposalId.optional(),
   warnings: Warnings,
@@ -131,9 +132,9 @@ export const taskUpdate = defineEntry({
       title: "Update a task",
       description:
         "Use to change a task's fields, summary, context, group or sources. Pass base: the " +
-        "as_of of your last read; a context append needs none. Set focus or priority only " +
-        "when the user asks. Use complete_task to finish. proposed and review results are " +
-        "normal: do not retry.",
+        "as_of of your last get_task that showed those fields, the add_tasks that made it, or " +
+        "your update_task that set them; an append needs none, nor is one. Set focus or " +
+        "priority only when the user asks.",
     },
   },
   budget: { typical: 80, max: 400 },

@@ -20,6 +20,7 @@ import { TaskGetInput } from "./entries/task-get.ts";
 import { taskSearch, TaskSearchInput } from "./entries/task-search.ts";
 import { taskUpdate, TaskUpdateInput } from "./entries/task-update.ts";
 import { mcpTools, rpcMethods } from "./gen/artefacts.ts";
+import { isOffered } from "./later.ts";
 import { agentInputJsonSchema, inputJsonSchema, toJsonSchema } from "./json-schema.ts";
 import { registry, type ParsedInputOf } from "./registry.ts";
 
@@ -46,7 +47,7 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
     const schema = agentInputJsonSchema(taskFinish);
     expect(schema["required"]).toContain("outcome");
     const outcome = (schema["properties"] as Record<string, Record<string, unknown>>)["outcome"];
-    expect(outcome?.["description"]).toBe("What changed and the evidence; agents must give it");
+    expect(outcome?.["description"]).toMatch(/^What changed and the evidence; agents must give it/);
   });
 
   test("the tools that create a task ask the agent to estimate its effort on the default scale", () => {
@@ -210,14 +211,14 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
     });
   });
 
-  test("mcp-tools.json holds exactly the agent-allowed entries with an MCP face", () => {
+  test("mcp-tools.json holds exactly the agent-allowed entries with an MCP face that are offered", () => {
     const { tools } = mcpTools(registry);
     const expected = registry
-      .filter((e) => isAgentAllowed(e) && e.faces.mcp !== undefined)
+      .filter((e) => isAgentAllowed(e) && e.faces.mcp !== undefined && isOffered(e.name))
       .map((e) => e.faces.mcp?.tool)
       .sort();
     expect(tools.map((t) => t.name)).toEqual(expected);
-    // A3 1 item 3: the eleven tools of every connection (M4.01).
+    // The tools of every connection: run_report comes with run bindings.
     expect(tools.map((t) => t.name)).toEqual([
       "add_entry",
       "add_tasks",
@@ -226,7 +227,6 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
       "organize",
       "preferences",
       "reopen_task",
-      "run_report",
       "search",
       "status",
       "update_task",
@@ -378,8 +378,9 @@ describe("[A3.5.registry.agent-projection] agent projection and the MCP tool lis
 
   test("annotations are explicit: reads are read-only, nothing is destructive or open-world", () => {
     for (const tool of mcpTools(registry).tools) {
-      // A tool with write actions is no read, even when most calls of it only read (organize).
-      const read = ["status", "get_task", "search"].includes(tool.name);
+      // A tool with write actions is no read, even when most calls of it only read (organize). One
+      // whose write actions are all a later step's only reads now (preferences).
+      const read = ["status", "get_task", "search", "preferences"].includes(tool.name);
       expect(tool.annotations, tool.name).toEqual({
         readOnlyHint: read,
         destructiveHint: false,

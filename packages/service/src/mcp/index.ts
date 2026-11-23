@@ -20,7 +20,7 @@ export {
 } from "./endpoint.ts";
 export {
   INSTRUCTIONS,
-  MAX_INSTRUCTION_BYTES,
+  MAX_INSTRUCTION_CHARS,
   START_RULE,
   START_RULE_CHARS,
 } from "./instructions.ts";

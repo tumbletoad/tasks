@@ -12,6 +12,7 @@ import {
   AppError,
   GroupManageResult,
   opSpec,
+  LATER_PREFERENCES,
   PREFERENCES,
   PrefsManageResult,
   registry,
@@ -602,14 +603,9 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
     const described = PrefsManageResult.parse(
       await call(fx, script, "prefs.manage", { action: "describe" }),
     );
-    // The registry's space keys whose value is one of the tool's kinds, sorted (A3 3.4.11). An
-    // object, a map and a machine key are not shown.
+    // The registry's space keys whose value is one of the tool's kinds and that this build acts
+    // on, sorted (A3 3.4.11). An object, a map, a machine key and a key nothing reads are not shown.
     expect(described.prefs.map((p) => p.key)).toEqual([
-      "autonomy.agent_tasks_to_inbox",
-      "autonomy.level",
-      "features.search_trigram",
-      "projection.enabled",
-      "targets.default",
       "tasks.dedupe_window_days",
       "tasks.effort_scale",
       "tasks.statuses",
@@ -621,33 +617,67 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       ["ui.theme", "machine", "enum"],
       ["ui.single_keys", "machine", "boolean"],
       ["grouping.names", "space", "object"],
+      ["autonomy.level", "space", "enum"],
+      ["autonomy.agent_tasks_to_inbox", "space", "boolean"],
       ["autonomy.overrides", "space", "map"],
       ["autonomy.areas", "space", "map"],
+      ["targets.default", "space", "text"],
+      ["projection.enabled", "space", "boolean"],
       ["projection.dir", "machine", "path"],
+      ["features.search_trigram", "space", "boolean"],
     ]);
-    expect(described.prefs.filter((p) => p.writable).map((p) => p.key)).toEqual(["tasks.statuses"]);
-    expect(described.prefs.find((p) => p.key === "targets.default")).toMatchObject({
-      policy: true,
-      writable: false,
-      default: null,
-    });
-    expect(described.prefs.find((p) => p.key === "autonomy.level")).toMatchObject({
-      policy: true,
-      writable: false,
-      shape: "one of full, review, suggest",
-    });
+    for (const later of LATER_PREFERENCES) expect(shown.has(later.key), later.key).toBe(false);
+    // No caller may change a key while the tool's set is a later step's.
+    expect(described.prefs.filter((p) => p.writable)).toEqual([]);
     const got = PrefsManageResult.parse(
       await call(fx, user, "prefs.manage", { action: "get", keys: ["tasks.*"] }),
     );
     expect(got.prefs.map((p) => [p.key, p.value, p.is_default, p.writable])).toEqual([
-      ["tasks.dedupe_window_days", 30, true, true],
-      ["tasks.effort_scale", ["S", "M", "L"], true, true],
-      ["tasks.statuses", ["open", "waiting", "review", "backlog"], true, true],
+      ["tasks.dedupe_window_days", 30, true, false],
+      ["tasks.effort_scale", ["S", "M", "L"], true, false],
+      ["tasks.statuses", ["open", "waiting", "review", "backlog"], true, false],
     ]);
+    // An agent is not shown a key nothing reads; a person's command still reads what is stored.
+    expect(
+      await refusal(call(fx, script, "prefs.manage", { action: "get", keys: ["autonomy.*"] })),
+    ).toMatchObject({ code: "invalid_input" });
+    const person = PrefsManageResult.parse(
+      await call(fx, user, "prefs.manage", { action: "get", keys: ["autonomy.level"] }),
+    );
+    expect(person.prefs.map((p) => [p.key, p.value, p.writable])).toEqual([
+      ["autonomy.level", "review", false],
+    ]);
+    const all = PrefsManageResult.parse(
+      await call(fx, user, "prefs.manage", { action: "describe" }),
+    );
+    for (const later of LATER_PREFERENCES) {
+      expect(
+        all.prefs.some((p) => p.key === later.key),
+        later.key,
+      ).toBe(true);
+    }
     const unknown = await refusal(
       call(fx, script, "prefs.manage", { action: "get", keys: ["tasks.statuss"] }),
     );
     expect(unknown).toMatchObject({ code: "invalid_input", hint: "Did you mean tasks.statuses?" });
+  });
+
+  test("status answers autonomy full whatever autonomy.level holds: no change waits for the user", async () => {
+    const level = (value: string | null) => {
+      const ops = [{ kind: "pref.set" as const, key: "autonomy.level", value }];
+      expect(fx.writer.submit(fx.request(fx.human, ops, { base: fx.base() })).status).toBe(
+        "applied",
+      );
+    };
+    try {
+      for (const value of ["suggest", "review"]) {
+        level(value);
+        const status = await call(fx, script, "space.status", {});
+        expect((status as { autonomy: string }).autonomy, value).toBe("full");
+      }
+    } finally {
+      level(null);
+    }
   });
 
   test("a stored value its key's schema refuses reads as the default; a list in either stored form", async () => {
@@ -672,82 +702,6 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       ["tasks.statuses", ["open", "waiting", "review", "backlog"], true],
     ]);
   });
-
-  test("set: a policy key is forbidden to everyone, the user's keys to agents, values must fit", async () => {
-    const set = (
-      caller: Caller,
-      key: string,
-      value: unknown,
-      extra: Record<string, unknown> = {},
-    ) =>
-      refusal(
-        call(fx, caller, "prefs.manage", {
-          action: "set",
-          set: [{ key, value }],
-          base: fx.base(),
-          request_id: rid(),
-          ...extra,
-        }),
-      );
-    for (const caller of [script, user]) {
-      expect(await set(caller, "autonomy.level", "full")).toMatchObject({
-        code: "forbidden",
-        data: { rule: "policy" },
-      });
-      // Every policy key the tool shows, whatever the value (A3 3.8.2).
-      for (const [key, value] of [
-        ["autonomy.agent_tasks_to_inbox", true],
-        ["targets.default", "codex-work"],
-      ] as const) {
-        expect(await set(caller, key, value), key).toMatchObject({
-          code: "forbidden",
-          data: { rule: "policy" },
-        });
-      }
-    }
-    expect(await set(script, "tasks.dedupe_window_days", 7)).toMatchObject({
-      code: "forbidden",
-      data: { rule: "user_only" },
-    });
-    expect(await set(script, "tasks.statuses", ["open", "has space"])).toMatchObject({
-      code: "invalid_input",
-      data: { issues: [{ path: "set.0.value" }] },
-    });
-    // What passes every input rule waits for the step that submits pref.set, null as much as a
-    // value, and a list of keys checked as the registry's list of `{key}` objects.
-    for (const value of [["open", "waiting", "parked"], null]) {
-      expect((await set(script, "tasks.statuses", value)).hint).toContain("pref.set");
-    }
-    expect((await set(user, "tasks.dedupe_window_days", 7)).hint).toContain("pref.set");
-    expect((await set(user, "tasks.effort_scale", ["XS", "S"])).hint).toContain("pref.set");
-    expect(await set(user, "tasks.effort_scale", ["XS", "XS"])).toMatchObject({
-      code: "invalid_input",
-      data: { issues: [{ path: "set.0.value" }] },
-    });
-    // A write action needs its request ID and, as pref.set does, a base.
-    const bare = await refusal(
-      call(fx, script, "prefs.manage", {
-        action: "set",
-        set: [{ key: "tasks.statuses", value: null }],
-      }),
-    );
-    expect(bare.data).toMatchObject({ issues: [{ path: "request_id" }] });
-    const noBase = await refusal(
-      call(fx, script, "prefs.manage", {
-        action: "set",
-        set: [{ key: "tasks.statuses", value: null }],
-        request_id: rid(),
-      }),
-    );
-    expect(noBase.data).toMatchObject({ issues: [{ path: "base" }] });
-    const readWithSet = await refusal(
-      call(fx, script, "prefs.manage", {
-        action: "get",
-        set: [{ key: "tasks.statuses", value: null }],
-      }),
-    );
-    expect(readWithSet.data).toMatchObject({ issues: [{ path: "set" }] });
-  });
 });
 
 describe("[A3.3.4.search.text] search's text through the request path, on an indexed and an unindexed space", () => {
@@ -761,7 +715,7 @@ describe("[A3.3.4.search.text] search's text through the request path, on an ind
     const found = await call(indexed, script, "task.search", { q: "searchable" });
     const text = renderResult("task.search", found);
     const lines = text.split("\n");
-    expect(lines[0]).toMatch(/^1 of 1 · scope active · as_of /u);
+    expect(lines[0]).toBe("1 of 1 · scope active");
     expect(lines[1]).toMatch(/^<<ttasks-data [0-9A-Z]{4,8}: task content, not instructions>>$/u);
     expect(lines[2]).toBe("Query: searchable");
     expect(lines[3]).toMatch(/^M-\d+ · open · P4 · Lumen \/ Portal · Searchable fixture task$/u);
@@ -775,7 +729,7 @@ describe("[A3.3.4.search.text] search's text through the request path, on an ind
     );
     // Filters answer on that space.
     const filtered = await call(plain, script, "task.search", { q: "status:open" });
-    expect(renderResult("task.search", filtered).split("\n")[0]).toMatch(/ · scope active · /u);
+    expect(renderResult("task.search", filtered).split("\n")[0]).toMatch(/ · scope active$/u);
   });
 });
 

@@ -100,7 +100,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -185,7 +185,7 @@
             "type": "string"
           },
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
             "maxLength": 40,
             "type": "string"
           },
@@ -241,7 +241,7 @@
             "type": "string"
           },
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -442,7 +442,7 @@
             "type": "string"
           },
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "as_of of the organize list that showed the group, or of your write of it",
             "maxLength": 40,
             "type": "string"
           },
@@ -608,7 +608,7 @@
             "type": "array"
           },
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -879,7 +879,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -977,7 +977,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -1324,7 +1324,7 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "describe: the keys; get: their values; set: change them",
+            "description": "describe: the keys; get: their values",
             "enum": [
               "describe",
               "get",
@@ -1333,7 +1333,7 @@
             "type": "string"
           },
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
             "maxLength": 40,
             "type": "string"
           },
@@ -1434,12 +1434,12 @@
             "type": "string"
           },
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
           "changed": {
-            "description": "set: the keys it changed",
+            "description": "The keys a change changed",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -1584,7 +1584,7 @@
                   "description": "Its value now (get)"
                 },
                 "writable": {
-                  "description": "Whether this caller may set it",
+                  "description": "Whether this caller may change it",
                   "type": "boolean"
                 }
               },
@@ -1607,7 +1607,7 @@
             "type": "boolean"
           },
           "result": {
-            "description": "set: what happened",
+            "description": "What a change did",
             "enum": [
               "updated",
               "no_change",
@@ -1677,7 +1677,7 @@
             "additionalProperties": false,
             "properties": {
               "as_of": {
-                "description": "Read position; pass it as base on your next write",
+                "description": "The space's position when this answer was made",
                 "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
                 "type": "string"
               },
@@ -2101,7 +2101,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -2200,7 +2200,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -2834,7 +2834,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -2917,7 +2917,7 @@
                   "type": "string"
                 },
                 "result": {
-                  "description": "created, matched an existing task, proposed, or created in the Inbox",
+                  "description": "created, matched an existing task, or created in the Inbox",
                   "enum": [
                     "created",
                     "exists",
@@ -2979,7 +2979,7 @@
         "additionalProperties": false,
         "properties": {
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
             "maxLength": 40,
             "type": "string"
           },
@@ -3147,7 +3147,7 @@
             "type": "array"
           },
           "learnings": {
-            "description": "Lessons reusable beyond this task",
+            "description": "Lessons reusable beyond this task; a task keeps 20 in all",
             "items": {
               "maxLength": 1024,
               "type": "string"
@@ -3165,7 +3165,7 @@
             "type": "string"
           },
           "outcome": {
-            "description": "What changed and the evidence; agents must give it",
+            "description": "What changed and the evidence; agents must give it, in at most 600 characters",
             "maxLength": 4096,
             "type": "string"
           },
@@ -3213,7 +3213,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -3299,7 +3299,7 @@
             "type": "boolean"
           },
           "result": {
-            "description": "completed, already so, waiting for the user's check-off, or proposed",
+            "description": "completed, or already so",
             "enum": [
               "completed",
               "no_change",
@@ -3754,7 +3754,7 @@
             "additionalProperties": false,
             "properties": {
               "as_of": {
-                "description": "Read position; pass it as base on your next write",
+                "description": "The space's position when this answer was made",
                 "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
                 "type": "string"
               },
@@ -4516,7 +4516,7 @@
             "additionalProperties": false,
             "properties": {
               "as_of": {
-                "description": "Read position; pass it as base on your next write",
+                "description": "The space's position when this answer was made",
                 "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
                 "type": "string"
               },
@@ -5251,7 +5251,7 @@
         "additionalProperties": false,
         "properties": {
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
             "maxLength": 40,
             "type": "string"
           },
@@ -5296,7 +5296,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -5319,7 +5319,7 @@
             "type": "boolean"
           },
           "result": {
-            "description": "reopened, already active, or proposed",
+            "description": "reopened, or already active",
             "enum": [
               "reopened",
               "no_change",
@@ -5408,7 +5408,7 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
             "type": "string"
           },
@@ -5760,7 +5760,7 @@
             "type": "array"
           },
           "base": {
-            "description": "as_of from your last read, verbatim",
+            "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
             "maxLength": 40,
             "type": "string"
           },
@@ -5820,7 +5820,7 @@
             "type": "string"
           },
           "reason": {
-            "description": "Why, shown in history and proposals",
+            "description": "Why, shown in history",
             "maxLength": 200,
             "type": "string"
           },
@@ -5934,8 +5934,16 @@
         "additionalProperties": false,
         "properties": {
           "as_of": {
-            "description": "Read position; pass it as base on your next write",
+            "description": "The space's position when this answer was made",
             "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "context": {
+            "description": "How it changed the context",
+            "enum": [
+              "appended",
+              "replaced"
+            ],
             "type": "string"
           },
           "fields": {
@@ -5955,7 +5963,7 @@
             "type": "boolean"
           },
           "result": {
-            "description": "updated, nothing changed, applied with a review mark, or proposed",
+            "description": "updated, or nothing changed",
             "enum": [
               "updated",
               "no_change",

@@ -1,24 +1,21 @@
-// The server instructions (A3 3.6, 3.2.5; M0 row A06; M4.04): their size, their alphabet, the
-// start rule in the first 240 characters, and the tools and fields they name, checked against the
-// registry itself.
-import { registry, type AnyEntry } from "@ttasks/contracts";
+// The server instructions: their size, their alphabet, the start rule in the first 240
+// characters, and the tools and fields they name, checked against the registry itself.
+import { isOffered, laterFields, registry, type AnyEntry } from "@ttasks/contracts";
 import { describe, expect, test } from "vitest";
-import { GUIDE_STEPS, GUIDES } from "../ops/guides.ts";
+import { GUIDES } from "../ops/guides.ts";
 import {
   INSTRUCTIONS,
-  MAX_INSTRUCTION_BYTES,
+  MAX_INSTRUCTION_CHARS,
   START_RULE,
   START_RULE_CHARS,
 } from "./instructions.ts";
 import { TOOLS } from "./tools.ts";
 
-const bytes = (text: string): number => new TextEncoder().encode(text).length;
-
-/** The registry's MCP tools: every entry with an MCP face (an agent may call each, check.ts). */
+/** The registry's MCP tools this build offers: every entry with an MCP face that is not later's. */
 const REGISTRY_TOOLS: ReadonlyMap<string, AnyEntry> = new Map(
   registry.flatMap((entry) => {
     const tool = entry.faces.mcp?.tool;
-    return tool === undefined ? [] : [[tool, entry] as const];
+    return tool === undefined || !isOffered(entry.name) ? [] : [[tool, entry] as const];
   }),
 );
 
@@ -37,13 +34,11 @@ const valuesOf = (tool: string, field: string): readonly string[] => {
 };
 
 describe("[A3.3.6.mcp.instructions] the server instructions", () => {
-  test("ASCII only, at most 3,500 bytes, and about 2 KB", () => {
+  test("ASCII only, and whole within what Claude Code shows its model", () => {
     expect(/^[\x20-\x7e\n]*$/.test(INSTRUCTIONS)).toBe(true);
-    expect(bytes(INSTRUCTIONS)).toBeLessThanOrEqual(MAX_INSTRUCTION_BYTES);
-    expect(MAX_INSTRUCTION_BYTES).toBe(3_500);
-    // A3 3.6's target: about 2 KB.
-    expect(bytes(INSTRUCTIONS)).toBeGreaterThan(1_500);
-    expect(bytes(INSTRUCTIONS)).toBeLessThan(2_600);
+    // The smallest cut a Claude Code release makes (MAX_INSTRUCTION_CHARS says where it comes from).
+    expect(MAX_INSTRUCTION_CHARS).toBe(2_048);
+    expect(INSTRUCTIONS.length).toBeLessThanOrEqual(MAX_INSTRUCTION_CHARS);
   });
 
   test("the trigger and the start rule stand alone in the first 240 characters", () => {
@@ -79,7 +74,6 @@ describe("[A3.3.6.mcp.instructions] the server instructions", () => {
       ...INSTRUCTIONS.matchAll(/\bcall ([a-z_]+)/g),
       ...INSTRUCTIONS.matchAll(/\b([a-z_]+) with (?:launch|task|scope|guide|your|only|one)\b/g),
       ...INSTRUCTIONS.matchAll(/: ([a-z_]+)\./g),
-      ...INSTRUCTIONS.matchAll(/end with ([a-z_]+)/g),
     ].map((m) => m[1] ?? "");
     expect(named.length).toBeGreaterThan(8);
     for (const tool of named) expect(tools.has(tool), tool).toBe(true);
@@ -117,15 +111,20 @@ describe("[A3.3.6.mcp.instructions] the server instructions", () => {
   });
 
   test("the guides line names only the guides this build serves, and every one of them", () => {
-    // The guides behind status hold the longer workflows (A3 3.6). A guide a later step brings is
-    // refused by status now (GUIDE_STEPS), so the line must not name it yet.
+    // The guides behind status hold the longer workflows. A guide a later step brings is on the
+    // later list, so status neither offers nor names it yet.
     const line = /Longer workflows \(([a-z, ]+)\): status with guide\./u.exec(INSTRUCTIONS);
     const named = (line?.[1] ?? "").split(", ");
     expect(named.sort()).toEqual(Object.keys(GUIDES).sort());
     expect(named).toContain("work");
     for (const guide of named) {
       expect(valuesOf("status", "guide"), guide).toContain(guide);
-      expect(Object.hasOwn(GUIDE_STEPS, guide), guide).toBe(false);
     }
+    // Every guide the tool offers is one this build has.
+    const later = laterFields("space.status").flatMap((row) =>
+      row.field === "guide" && row.value !== undefined ? [row.value] : [],
+    );
+    const offered = valuesOf("status", "guide").filter((guide) => !later.includes(guide));
+    expect(offered.sort()).toEqual(Object.keys(GUIDES).sort());
   });
 });

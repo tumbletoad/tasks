@@ -82,7 +82,9 @@ describe("[A3.5.search.parser] the query language", () => {
     expect(refusal(() => parseQuery("aera:home")).hint).toBe("Did you mean area?");
     expect(refusal(() => parseQuery("-projects:portal")).hint).toBe("Did you mean project?");
     expect(refusal(() => parseQuery("stat:open")).hint).toBe("Did you mean status?");
-    expect(refusal(() => parseQuery("is:inbx")).hint).toBe("Did you mean inbox?");
+    expect(refusal(() => parseQuery("is:inbx")).hint).toBe(
+      "Did you mean inbox? is: takes inbox, focus, overdue, proposed, bound, completed, archived, unwrapped.",
+    );
   });
 
   test("ordinary text that looks like a filter is words, and an alias is its key", () => {
@@ -178,20 +180,6 @@ describe("[A3.5.search.parser] the query language", () => {
     expect(parseQuery("— …").groups).toEqual([]);
     // The OR rules hold for what was written.
     expect(refusal(() => parseQuery("& OR status:open")).code).toBe("invalid_input");
-  });
-
-  test("is:new and is:changed are refused as not supported yet, never as an unknown value", () => {
-    const unknown = refusal(() => parseQuery("is:nosuch"));
-    for (const later of ["is:new", "is:changed"]) {
-      const error = refusal(() => parseQuery(later));
-      expect(error.code).toBe("invalid_input");
-      expect(error.data["issues"]).toEqual([
-        { path: "q", message: expect.not.stringMatching(/unknown/i) as unknown },
-      ]);
-      expect(error.message).not.toBe(unknown.message);
-      // Known, and supported later: the refusal says so, whatever names the step.
-      expect(error.message).toMatch(/not support.* yet/i);
-    }
   });
 
   test("a query that names completed or archived tasks widens the default scope", () => {
