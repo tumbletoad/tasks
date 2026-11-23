@@ -32,7 +32,7 @@ import { Expanded } from "../task/Expanded.tsx";
 import { runMarker } from "../task/runs.ts";
 import { placeFact, sourceFacts } from "../task/sources.ts";
 import { classes } from "../app/css.ts";
-import type { RowActions } from "./actions.ts";
+import { readOnly, type RowActions } from "./actions.ts";
 import { tileClick, type BusyOf, type FolderRefusal } from "./launch.ts";
 import { renderRow, type RowContext, type RowModel } from "./model.ts";
 import { sayMsg } from "./say.ts";
@@ -228,9 +228,7 @@ function Slots({
           data-tip={t("row.star")}
           tabIndex={tab}
           onClick={() => {
-            if (task.lifecycle === "active" && task.deleted_at === undefined) {
-              actions.star(task, !model.starred);
-            }
+            if (task.lifecycle === "active") actions.star(task, !model.starred);
           }}
         >
           <StarIcon />
@@ -438,7 +436,7 @@ function RowView({
   fresh,
   posinset,
   setsize,
-  actions,
+  actions: given,
   leaving,
   refused,
   muted = false,
@@ -449,6 +447,10 @@ function RowView({
 }: RowProps) {
   const t = useT();
   const intl = useIntl();
+  // A task in the Trash is for reading until it is restored: its row and its card get only the
+  // actions that read (actions.ts).
+  const trashed = task.deleted_at !== undefined;
+  const actions = trashed ? readOnly(given) : given;
   const place = placeFact(task.place);
   const marker = runMarker(task.run, instances);
   const { live } = useContext(Session);
@@ -475,8 +477,6 @@ function RowView({
   // Checked: completed, or checked off and in its hold. The box takes a check-off of an open task,
   // and during this tab's own hold, its undo.
   const active = task.lifecycle === "active";
-  // A task in the Trash takes no change until it is restored.
-  const trashed = task.deleted_at !== undefined;
   const checked = leaving === undefined ? !active : leaving.done;
   const checkable = !trashed && (leaving === undefined ? active : leaving.by === undefined);
   const completedTip =
@@ -629,7 +629,7 @@ function RowView({
             <div
               className={styles.summary}
               data-part={model.ending === undefined ? "summary" : "ending"}
-              data-tip={expanded ? t("ask.tip") : undefined}
+              data-tip={expanded && !trashed ? t("ask.tip") : undefined}
               onClick={(event) => {
                 // Expanded, the line is an agent's to change: a click asks one (A5 3.11), unless
                 // it ends a selection of its text.

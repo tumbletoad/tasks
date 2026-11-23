@@ -2149,6 +2149,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.trash.web.card",
+      "title": "The card of a task in the Trash is for reading: every control a live card offers, pressed on a removed task (the fields that ask an agent, every button but Restore, the composer's keys, the title's edit), leaves its kept draft, its pending note and the task as they were, sends no write, and offers no control that writes",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.trash.e2e",
       "title": "A task taken away and brought back in the page, in the browser: Move to Trash in the card and the toast's Undo; the Trash in the sidebar by change with Restore these, Find by words and reference, and a Restore the keyboard reaches that says where the task is back; a link to a removed task opens it in the Trash read-only with Restore; the words typed for a task the space does not have now stay at the Trash's foot with Discard; screenshots at 1,440 and 390 px, axe clean",
       "owner": "M5",

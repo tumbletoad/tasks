@@ -81,6 +81,36 @@ export interface ComposerProps {
   readonly actions: RowActions;
 }
 
+/**
+ * The composer of a task in the Trash: its kept draft as it is, to read and copy, following another
+ * tab's changes. It writes nothing, and nothing a click elsewhere asks reaches it: Restore first.
+ */
+export function KeptDraft({ task }: { readonly task: TaskRow }) {
+  const t = useT();
+  const { live } = useContext(Session);
+  const space = live.spaceId ?? "";
+  const [text, setText] = useState(() => readDraft(space, task.id));
+  useEffect(() => onDraft(space, task.id, setText), [space, task.id]);
+  return (
+    <>
+      {text === "" ? null : (
+        <textarea
+          className={styles.input}
+          data-part="composer"
+          aria-label={t("composer.label")}
+          readOnly
+          rows={1}
+          dir="auto"
+          value={text}
+        />
+      )}
+      <p className={styles.strip} data-part="strip-trash">
+        {t("composer.inTrash")}
+      </p>
+    </>
+  );
+}
+
 export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const t = useT();
   const say = useToast();
@@ -263,9 +293,6 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const first = instances[0];
   const [runner, ...others] = runners(instances);
   const finished = task.lifecycle !== "active";
-  // A task in the Trash takes no note and opens no agent until it is restored: its draft stays
-  // readable, to copy.
-  const trashed = task.deleted_at !== undefined;
   /** Run's key on a finished task: Reopen, the step before any run. */
   const runOrReopen = (instance: Instance) => {
     if (finished) edits.reopen(task);
@@ -277,27 +304,6 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
       label: instance.label,
       words: words === "" ? "task" : "words",
     });
-
-  if (trashed) {
-    return (
-      <>
-        {text === "" ? null : (
-          <textarea
-            className={styles.input}
-            data-part="composer"
-            aria-label={t("composer.label")}
-            readOnly
-            rows={1}
-            dir="auto"
-            value={text}
-          />
-        )}
-        <p className={styles.strip} data-part="strip-trash">
-          {t("composer.inTrash")}
-        </p>
-      </>
-    );
-  }
 
   return (
     <>

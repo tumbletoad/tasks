@@ -31,7 +31,7 @@ import { useT } from "../i18n/intl.tsx";
 import { Button } from "react-aria-components";
 import { FolderDialog, refusalText } from "../folder/FolderDialog.tsx";
 import folderCss from "../folder/Folder.module.css";
-import { useFolderWrites } from "../folder/writes.ts";
+import { useFolderWrites, type FolderWrites } from "../folder/writes.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { BusyOf, FolderRefusal } from "../row/launch.ts";
 import type { AskField, RowActions } from "../row/actions.ts";
@@ -47,12 +47,12 @@ import {
 import { safeHref } from "../row/model.ts";
 import { useClock } from "../row/useClock.ts";
 import type { TaskRow } from "../store/rows.ts";
-import { Composer } from "./Composer.tsx";
-import type { Detail, SourceOutput } from "./detail.ts";
+import { Composer, KeptDraft } from "./Composer.tsx";
+import type { Detail, DetailNote, SourceOutput } from "./detail.ts";
 import css from "./Expanded.module.css";
 import { Facts } from "./Facts.tsx";
 import { LINK_REL, Markdown } from "./markdown.tsx";
-import { useSourceWrites } from "./sourceWrites.ts";
+import { useSourceWrites, type SourceWrites } from "./sourceWrites.ts";
 import { Thread } from "./Thread.tsx";
 import { useDetail } from "./useDetail.ts";
 
@@ -118,7 +118,8 @@ function SourceLine({
 }: {
   readonly source: SourceOutput;
   readonly task: TaskRow;
-  readonly onAsk: (event: MouseEvent<HTMLElement>) => void;
+  /** A click asks an agent to change the sources; none in a card that only reads. */
+  readonly onAsk: ((event: MouseEvent<HTMLElement>) => void) | undefined;
   /** Its own words at the end of the line: Remove, or Put back on a detached link. */
   readonly acts?: ReactNode;
 }) {
@@ -163,9 +164,7 @@ function SourceLine({
       data-part="source"
       data-kind={source.kind}
       data-removed={source.removed === undefined ? undefined : ""}
-      data-ask=""
-      data-tip={t("ask.tip")}
-      onClick={onAsk}
+      {...asks(onAsk, t("ask.tip"))}
     >
       <span className={styles.icon} role="img" aria-label={t("source.kind", { kind: source.kind })}>
         <SourceIcon kind={source.kind} />
@@ -232,17 +231,18 @@ function Sources({
   task,
   detail,
   base,
-  onAsk,
+  writes: card,
 }: {
   readonly task: TaskRow;
   readonly detail: Detail | undefined;
   /** Where the feed was when `detail` was read: a change is made from it. */
   readonly base: string | undefined;
-  readonly onAsk: (event: MouseEvent<HTMLElement>) => void;
+  readonly writes: CardWrites | undefined;
 }) {
   const t = useT();
   const say = useToast();
-  const writes = useSourceWrites();
+  const writes = card?.sources;
+  const onAsk = card?.ask("sources");
   const [open, setOpen] = useState(false);
   const all = detail?.sources;
   const live: readonly SourceOutput[] =
@@ -256,24 +256,25 @@ function Sources({
     }));
   const removed = all?.filter((s) => s.removed !== undefined) ?? [];
   const act = (
-    write: typeof writes.detach,
+    write: SourceWrites["detach"] | undefined,
     source: SourceOutput,
     failed: MessageId,
     quiet: boolean,
     label: MessageId,
-  ) => (
-    <Button
-      className={line.act}
-      data-quiet={quiet || undefined}
-      onPress={() => {
-        write(task, source, base).catch((error: unknown) => {
-          say(refusalText(error, t(failed)));
-        });
-      }}
-    >
-      {t(label)}
-    </Button>
-  );
+  ) =>
+    write === undefined ? undefined : (
+      <Button
+        className={line.act}
+        data-quiet={quiet || undefined}
+        onPress={() => {
+          write(task, source, base).catch((error: unknown) => {
+            say(refusalText(error, t(failed)));
+          });
+        }}
+      >
+        {t(label)}
+      </Button>
+    );
   return (
     <>
       {live.map((source) => (
@@ -285,7 +286,7 @@ function Sources({
           {...(all === undefined
             ? {}
             : {
-                acts: act(writes.detach, source, "source.notRemoved", true, "source.remove"),
+                acts: act(writes?.detach, source, "source.notRemoved", true, "source.remove"),
               })}
         />
       ))}
@@ -315,7 +316,7 @@ function Sources({
               source={source}
               task={task}
               onAsk={onAsk}
-              acts={act(writes.putBack, source, "source.notPutBack", false, "source.putBack")}
+              acts={act(writes?.putBack, source, "source.notPutBack", false, "source.putBack")}
             />
           ))
         : null}
@@ -345,6 +346,7 @@ function PlaceLine({
   base,
   refused,
   onShow,
+  writes,
 }: {
   readonly task: TaskRow;
   readonly detail: Detail | undefined;
@@ -354,10 +356,11 @@ function PlaceLine({
   readonly refused: FolderRefusal | undefined;
   /** Shows the folder in the file manager. */
   readonly onShow: (task: TaskRow) => void;
+  /** How the folder changes: none in a card that only reads. */
+  readonly writes: FolderWrites | undefined;
 }) {
   const t = useT();
   const say = useToast();
-  const writes = useFolderWrites();
   const [choosing, setChoosing] = useState(false);
   // The toast's "Choose another folder" opens the chooser, once for each time it is asked.
   const [asked, setAsked] = useState<FolderRefusal>();
@@ -368,56 +371,58 @@ function PlaceLine({
   const folder = detail?.task.folder;
   const own = folder !== undefined && "path" in folder && folder.of === "task" ? folder : undefined;
   const marker = refused?.anyway;
-  const ways = (choose: MessageId) => (
-    <>
-      {marker === undefined ? null : (
-        <Button className={line.act} onPress={marker}>
-          {t("row.openAnyway")}
-        </Button>
-      )}
-      <Button
-        className={line.act}
-        data-quiet={refused === undefined || undefined}
-        onPress={() => {
-          setChoosing(true);
-        }}
-      >
-        {t(refused === undefined ? choose : "row.chooseFolder")}
-      </Button>
-      {own === undefined || refused !== undefined ? null : (
+  const ways = (choose: MessageId) =>
+    writes === undefined ? null : (
+      <>
+        {marker === undefined ? null : (
+          <Button className={line.act} onPress={marker}>
+            {t("row.openAnyway")}
+          </Button>
+        )}
         <Button
           className={line.act}
-          data-quiet
+          data-quiet={refused === undefined || undefined}
           onPress={() => {
-            writes.clearTask(task, base).catch((error: unknown) => {
-              say(refusalText(error, t("folder.notCleared")));
-            });
+            setChoosing(true);
           }}
         >
-          {t("folder.clear")}
+          {t(refused === undefined ? choose : "row.chooseFolder")}
         </Button>
-      )}
-    </>
-  );
-  const chooser = choosing ? (
-    <FolderDialog
-      title={t("folder.forTask", { ref: task.ref })}
-      {...(folder !== undefined &&
-      "path" in folder &&
-      folder.of === "project" &&
-      refused === undefined
-        ? { lead: t("folder.taskLead") }
-        : {})}
-      start={own?.path ?? ""}
-      base={base}
-      onClose={() => {
-        setChoosing(false);
-      }}
-      onChoose={async (chosen, base) => {
-        await writes.setTask(task, chosen, base);
-      }}
-    />
-  ) : null;
+        {own === undefined || refused !== undefined ? null : (
+          <Button
+            className={line.act}
+            data-quiet
+            onPress={() => {
+              writes.clearTask(task, base).catch((error: unknown) => {
+                say(refusalText(error, t("folder.notCleared")));
+              });
+            }}
+          >
+            {t("folder.clear")}
+          </Button>
+        )}
+      </>
+    );
+  const chooser =
+    choosing && writes !== undefined ? (
+      <FolderDialog
+        title={t("folder.forTask", { ref: task.ref })}
+        {...(folder !== undefined &&
+        "path" in folder &&
+        folder.of === "project" &&
+        refused === undefined
+          ? { lead: t("folder.taskLead") }
+          : {})}
+        start={own?.path ?? ""}
+        base={base}
+        onClose={() => {
+          setChoosing(false);
+        }}
+        onChoose={async (chosen, base) => {
+          await writes.setTask(task, chosen, base);
+        }}
+      />
+    ) : null;
   const copy = (text: string) => {
     navigator.clipboard.writeText(text).then(
       () => {
@@ -534,6 +539,20 @@ function PlaceLine({
 }
 
 /**
+ * Everything in the card that changes the task, apart from its facts and its row's actions. A card
+ * that only reads (a task in the Trash) has none of it, so a control that takes its way to change
+ * the task from here offers nothing there.
+ */
+interface CardWrites {
+  /** Click-to-ask on an agent-only field. */
+  readonly ask: (field: AskField) => (event: MouseEvent<HTMLElement>) => void;
+  readonly sources: SourceWrites;
+  readonly folder: FolderWrites;
+  /** Opens a note of the person's again in an agent, as its request. */
+  readonly openAgain: (note: DetailNote, instance: Instance) => void;
+}
+
+/**
  * Click-to-ask (A5 3.11): a click on an agent-only field starts a request for an agent in the
  * composer, unless it was on a link or a button inside it, or ended a selection of its text.
  */
@@ -549,13 +568,21 @@ function askOn(
   };
 }
 
+/** An agent-only field's click and its tip, when a click asks: none in a card that only reads. */
+function asks(
+  onAsk: ((event: MouseEvent<HTMLElement>) => void) | undefined,
+  tip: string,
+): { "data-ask"?: ""; "data-tip"?: string; onClick?: (event: MouseEvent<HTMLElement>) => void } {
+  return onAsk === undefined ? {} : { "data-ask": "", "data-tip": tip, onClick: onAsk };
+}
+
 /** The context, clamped at ten lines with More when it is longer. */
 function Context({
   text,
   onAsk,
 }: {
   readonly text: string;
-  readonly onAsk: (event: MouseEvent<HTMLElement>) => void;
+  readonly onAsk: ((event: MouseEvent<HTMLElement>) => void) | undefined;
 }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
@@ -567,13 +594,7 @@ function Context({
     setLong(element.scrollHeight > element.clientHeight + 1);
   }, [text, open]);
   return (
-    <div
-      className={styles.context}
-      data-part="context"
-      data-ask=""
-      data-tip={t("ask.tip")}
-      onClick={onAsk}
-    >
+    <div className={styles.context} data-part="context" {...asks(onAsk, t("ask.tip"))}>
       <div ref={box} data-clamped={!open} data-fact="">
         <Markdown text={text} />
       </div>
@@ -612,7 +633,22 @@ export function Expanded({
   if (refused !== held?.refused) setHeld(refused === undefined ? undefined : { refused, detail });
   const fresh = held !== undefined && held.refused === refused && held.detail === detail;
   const learnings = detail?.learnings ?? [];
-  const ask = actions.ask;
+  const sources = useSourceWrites();
+  const folder = useFolderWrites();
+  // A task in the Trash is for reading: Copy, Stop, Restore and its links work, nothing changes it.
+  // This is the card's one decision about it. A control takes its way to change the task from
+  // `writes`, so one added later changes nothing in the Trash either.
+  const writes: CardWrites | undefined =
+    task.deleted_at === undefined
+      ? {
+          ask: (field) => askOn(actions.ask, task, field),
+          sources,
+          folder,
+          openAgain: (note, instance) => {
+            void actions.open(task, instance, { request: note.ref });
+          },
+        }
+      : undefined;
   // A row read from search knows no creation time (Completed, A5 3.5): the digest's says it.
   const created = detail?.task.created === undefined ? Number.NaN : Date.parse(detail.task.created);
   const facts =
@@ -625,15 +661,17 @@ export function Expanded({
         {/* First in the content, above all that its reads bring in: the composer and its strip
             keep their place from the card's first frame, whatever the thread holds. */}
         <div className={styles.composer}>
-          <Composer task={task} busy={busy} instances={instances} actions={actions} />
+          {writes === undefined ? (
+            <KeptDraft task={task} />
+          ) : (
+            <Composer task={task} busy={busy} instances={instances} actions={actions} />
+          )}
         </div>
         {detail?.outcome === undefined ? null : (
           <div
             className={styles.outcome}
             data-part="outcome"
-            data-ask=""
-            data-tip={t("ask.tip")}
-            onClick={askOn(ask, task, "outcome")}
+            {...asks(writes?.ask("outcome"), t("ask.tip"))}
           >
             <span className={styles.icon} role="img" aria-label={t("task.outcome")}>
               <OutcomeIcon />
@@ -644,25 +682,24 @@ export function Expanded({
           </div>
         )}
         {detail === undefined || detail.context.trim() === "" ? null : (
-          <Context text={detail.context} onAsk={askOn(ask, task, "context")} />
+          <Context text={detail.context} onAsk={writes?.ask("context")} />
         )}
         <ul className={styles.links}>
-          <Sources task={task} detail={detail} base={base} onAsk={askOn(ask, task, "sources")} />
+          <Sources task={task} detail={detail} base={base} writes={writes} />
           <PlaceLine
             task={task}
             detail={detail}
             base={base}
             refused={fresh ? refused : undefined}
             onShow={actions.folder}
+            writes={writes?.folder}
           />
           {learnings.map((learning, i) => (
             <li
               key={`learning:${String(i)}`}
               className={styles.link}
               data-part="learning"
-              data-ask=""
-              data-tip={t("ask.tip")}
-              onClick={askOn(ask, task, "learnings")}
+              {...asks(writes?.ask("learnings"), t("ask.tip"))}
             >
               <span className={styles.icon} role="img" aria-label={t("task.learning")}>
                 <BulbIcon />
@@ -688,9 +725,7 @@ export function Expanded({
             runs={runs}
             instances={instances}
             partial={detail.partial}
-            onOpenAgain={(note, instance) => {
-              void actions.open(task, instance, { request: note.ref });
-            }}
+            {...(writes === undefined ? {} : { onOpenAgain: writes.openAgain })}
             onStop={(run) => {
               actions.stop(task, run);
             }}
