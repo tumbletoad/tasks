@@ -148,6 +148,8 @@ export interface World {
    * --to` does: a read-only copy, served beside the original. Returns the copy's folder.
    */
   restoreCopy(space: string): Promise<string>;
+  /** A space verb of the person's own, as `ttasks space <verb>` sends it: `list`, `close`, `open`. */
+  space(verb: string, params: Record<string, unknown>): Promise<unknown>;
   /**
    * Registers the fake agent's home for `space` as agent setup does, until the function it gives
    * takes the registration back. The home's own files are never read or written.
@@ -514,6 +516,7 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
           { timeoutMs: SLOW_MS },
         );
       },
+      space: (verb, params) => life.user.call(`space/${verb}`, params, { timeoutMs: SLOW_MS }),
       restoreCopy: async (space) => {
         copies += 1;
         const listed = (await life.user.call("space/list", {}, { timeoutMs: SLOW_MS })) as {

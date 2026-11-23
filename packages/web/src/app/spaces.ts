@@ -3,6 +3,7 @@
 // a tab that shows a space keeps it, whatever the default becomes. Every answer is checked by its
 // shape before the page uses it.
 import type { Api } from "../api.ts";
+import { folderLabels } from "../folder/labels.ts";
 import { COPY_KEY, SPACE_ADDRESS, SPACE_ID, spaceIdOf } from "../route.ts";
 
 /** One copy of a space: a restored copy beside its original is a row of its own. */
@@ -177,4 +178,26 @@ export function landingSpace(list: SpaceList): string | undefined {
   }
   const served = spaces.filter(isServed);
   return served.length === 1 ? served[0]?.id : undefined;
+}
+
+/**
+ * The rows that would read the same as another (two restored copies of one space, say), each by
+ * its folder's last parts, as few as tell them apart; by its copy's key.
+ */
+export function apartByFolder(rows: readonly SpaceItem[]): Map<string, string> {
+  const alike = new Map<string, SpaceItem[]>();
+  for (const row of rows) {
+    const look = `${row.name}\n${row.state === "read_only" ? (row.reason ?? "") : row.state}`;
+    alike.set(look, [...(alike.get(look) ?? []), row]);
+  }
+  const out = new Map<string, string>();
+  for (const group of alike.values()) {
+    if (group.length < 2) continue;
+    const labels = folderLabels(group.map((row) => row.folder));
+    for (const row of group) {
+      const label = labels.get(row.folder);
+      if (label !== undefined && label !== "") out.set(row.copy, label);
+    }
+  }
+  return out;
 }

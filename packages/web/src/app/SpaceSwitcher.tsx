@@ -20,7 +20,6 @@ import { Button, Dialog, DialogTrigger, Modal, ModalOverlay, Popover } from "rea
 import { SignedOut } from "../api.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useToast } from "./frame.ts";
-import { folderLabels } from "../folder/labels.ts";
 import { CheckIcon, ChevronIcon } from "./Icons.tsx";
 import type { ReadOnly } from "../store/rows.ts";
 import { useAuth, useMachineApi } from "./session.tsx";
@@ -28,12 +27,12 @@ import { NotOpenNotes } from "./NotOpen.tsx";
 import { SpaceForm, type SpaceFormMode } from "./SpaceForm.tsx";
 import setup from "./Setup.module.css";
 import {
+  apartByFolder,
   backupTrouble,
   isServed,
   listSpaces,
   makeDefault,
   notOpen,
-  type SpaceItem,
   type SpaceList,
 } from "./spaces.ts";
 import css from "./SpaceSwitcher.module.css";
@@ -69,28 +68,6 @@ const stateWords = (state: string, reason: string | undefined) =>
     : reason === "read_only_copy"
       ? "space.restoredCopy"
       : "space.readOnly";
-
-/**
- * The rows that would read the same as another (two restored copies of one space, say), each by
- * its folder's last parts, as few as tell them apart; by its copy's key.
- */
-function apartByFolder(rows: readonly SpaceItem[]): Map<string, string> {
-  const alike = new Map<string, SpaceItem[]>();
-  for (const row of rows) {
-    const look = `${row.name}\n${row.state === "read_only" ? (row.reason ?? "") : row.state}`;
-    alike.set(look, [...(alike.get(look) ?? []), row]);
-  }
-  const out = new Map<string, string>();
-  for (const group of alike.values()) {
-    if (group.length < 2) continue;
-    const labels = folderLabels(group.map((row) => row.folder));
-    for (const row of group) {
-      const label = labels.get(row.folder);
-      if (label !== undefined && label !== "") out.set(row.copy, label);
-    }
-  }
-  return out;
-}
 
 export function SpaceSwitcher({
   copy,

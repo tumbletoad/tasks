@@ -56,11 +56,11 @@ export const test = base.extend<
     { scope: "worker", timeout: 240_000 },
   ],
   // A world of its own for the tests that restore a copy of a space beside it: no other test
-  // meets the copy in its space switcher.
+  // meets the copy in its space switcher. The fake Codex runs tasks there, for Run and Stop.
   copies: [
     // eslint-disable-next-line no-empty-pattern
     async ({}, use) => {
-      const world = await startWorld(built());
+      const world = await startWorld(built(), { runs: true });
       try {
         await use(world);
       } finally {

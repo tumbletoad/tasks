@@ -13,6 +13,7 @@ import { AgentApps } from "./AgentApps.tsx";
 import { NotOpenNotes } from "./NotOpen.tsx";
 import { SpaceForm, type SpaceFormMode } from "./SpaceForm.tsx";
 import {
+  apartByFolder,
   isServed,
   landingSpace,
   listSpaces,
@@ -70,6 +71,7 @@ export function Landing({
     );
   }
   const served = list.spaces.filter(isServed);
+  const apart = apartByFolder(served);
   const closed = notOpen(list);
   if (served.length === 0 && !missing) return <FirstStart closed={closed} />;
   return (
@@ -78,7 +80,7 @@ export function Landing({
       {served.length === 0 ? null : <p className={styles.line}>{t("app.pickSpace")}</p>}
       <ul className={styles.spaces}>
         {served.map((item) => (
-          <li key={item.address}>
+          <li key={item.copy}>
             {/* A task link keeps its task through the choice. */}
             {task === undefined ? (
               <Link
@@ -86,7 +88,7 @@ export function Landing({
                 params={{ space: item.address, view: LANDING }}
                 className={styles.space}
               >
-                <SpaceName item={item} />
+                <SpaceName item={item} folder={apart.get(item.copy)} />
               </Link>
             ) : (
               <Link
@@ -94,7 +96,7 @@ export function Landing({
                 params={{ space: item.address, task }}
                 className={styles.space}
               >
-                <SpaceName item={item} />
+                <SpaceName item={item} folder={apart.get(item.copy)} />
               </Link>
             )}
           </li>
@@ -105,14 +107,25 @@ export function Landing({
   );
 }
 
-/** A space's name, and for a restored copy that it is one. */
-function SpaceName({ item }: { readonly item: SpaceItem }) {
+/**
+ * A space's name, for a restored copy that it is one, and where it reads the same as another, its
+ * folder.
+ */
+function SpaceName({
+  item,
+  folder,
+}: {
+  readonly item: SpaceItem;
+  readonly folder: string | undefined;
+}) {
   const t = useT();
+  const name =
+    item.reason === "read_only_copy"
+      ? t("space.nameState", { name: item.name, state: t("space.restoredCopy") })
+      : item.name;
   return (
-    <span dir="auto">
-      {item.reason === "read_only_copy"
-        ? t("space.nameState", { name: item.name, state: t("space.restoredCopy") })
-        : item.name}
+    <span dir="auto" {...(folder === undefined ? {} : { title: item.folder })}>
+      {folder === undefined ? name : t("space.nameState", { name, state: folder })}
     </span>
   );
 }

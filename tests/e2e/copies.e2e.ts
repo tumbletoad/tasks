@@ -1,11 +1,12 @@
 // A restored copy opened beside its open original: the tab shows that copy, by an address of its
-// own, through navigation, a task link and a reload; the page says it is a read-only copy and why
-// before the person acts; and an edit there keeps the person's words, with no Try again. Fixture
-// data only.
-import { expect, type Page } from "@playwright/test";
+// own, through navigation, a task link, a reload and a reconnect; the page says it is a read-only
+// copy and why before the person acts; an edit, Run and Stop there keep the person's words and
+// never reach the original. A tab on the original stops when the original closes, and its drafts
+// outlive that. Fixture data only.
+import { expect, type Page, type WebSocketRoute } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { picture, showsSpace, signIn, spaceSwitcher } from "./page.ts";
-import { SLOW_MS } from "./world.ts";
+import { openTask, picture, showsSpace, signIn, spaceSwitcher } from "./page.ts";
+import { CODEX_INSTANCE, SLOW_MS, type World } from "./world.ts";
 
 const COPY = "Restored copy, read-only";
 
@@ -108,4 +109,121 @@ test.describe("[A2.3.10.5.copies.e2e] a restored copy on the page is the copy th
     };
     expect(original.task.title).toBe(world.task.title);
   });
+
+  test("in a restored copy's tab Run and Stop never reach the original; a tab on the original that reconnects after it closed stops there, never shows the copy, and its draft outlives the closing and a reload", async ({
+    page,
+    copies: world,
+  }) => {
+    const tag = test.info().project.name;
+    const added = async (title: string) =>
+      (
+        (await world.op(world.mira.id, "task.add", {
+          tasks: [{ title: `${title} (${tag})`, area: "home" }],
+        })) as { tasks: { ref: string }[] }
+      ).tasks[0]?.ref ?? "";
+    const row = (ref: string) => page.locator(`main li[data-task="${ref}"]`);
+    const runs = (ref: string) => row(ref).locator('[data-entry="run"]');
+    const runState = (ref: string) => runs(ref).first().locator('[data-part="run-state"]');
+    const toast = page.locator('[data-part="toast-text"]');
+    const run = (ref: string) =>
+      row(ref)
+        .getByRole("toolbar", { name: "Act on this task" })
+        .getByRole("button", { name: `Run with ${CODEX_INSTANCE.label}` });
+
+    // A run of the original that works until it is stopped, recorded in the backup as working.
+    const ref = await added("Check the restored runs");
+    world.codex(ref, ["hold"]);
+    await openTask(page, world, ref);
+    await run(ref).click();
+    await expect(runState(ref)).toContainText("is working on it", { timeout: SLOW_MS });
+    const folder = await world.restoreCopy(world.mira.id);
+    await world.space("open", { path: await world.restoreCopy(world.mira.id) });
+    const copy = await openFolder(page, world, folder);
+
+    // Two restored copies of the space read the same but for their folders, which tell them apart.
+    await spaceSwitcher(page, `${world.mira.name}, ${COPY}`).click();
+    const restored = page
+      .getByRole("dialog", { name: "Spaces on this machine" })
+      .locator("li")
+      .filter({ hasText: COPY });
+    const count = await restored.count();
+    expect(count).toBeGreaterThanOrEqual(2);
+    const where = await restored.locator('[data-part="folder"]').allTextContents();
+    expect(where).toHaveLength(count);
+    expect(new Set(where).size).toBe(count);
+    await page.keyboard.press("Escape");
+
+    // The copy's tab shows the copy's record of that run: its Stop and a new Run are refused with
+    // the copy's reason, and nothing reaches the original.
+    await signIn(page, world, `/s/${copy}/task/${ref}`);
+    await showsSpace(page, `${world.mira.name}, ${COPY}`);
+    await expect(runState(ref)).toContainText("is working on it", { timeout: SLOW_MS });
+    await runs(ref).first().getByRole("button", { name: /^Stop/u }).click();
+    await expect(toast).toHaveText("Not stopped: this is a restored copy.");
+    await run(ref).click();
+    await expect(toast).toHaveText("Nothing was started: this is a restored copy.");
+    await expect(runs(ref)).toHaveCount(1);
+    await openTask(page, world, ref);
+    await expect(runs(ref)).toHaveCount(1);
+    await expect(runState(ref)).toContainText("is working on it");
+    await runs(ref).first().getByRole("button", { name: /^Stop/u }).click();
+    await expect(runState(ref)).toContainText(/^Stopped\./u, { timeout: SLOW_MS });
+
+    // A draft on a task only the original has, in a tab on the space's ID. Its feed drops, and
+    // while it is away the original closes, so the ID means the restored copy now: the tab comes
+    // back to the original it showed, which is not open, and never shows the copy in its place.
+    const sockets: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/api\/v1\/ws/u, (ws) => {
+      ws.connectToServer();
+      sockets.push(ws);
+    });
+    const only = await added("Only in the original");
+    await openTask(page, world, only);
+    const words = `Ask about the March totals (${tag})`;
+    await row(only).locator('[data-part="composer"]').fill(words);
+    const listed = (await world.space("list", {})) as { spaces: { id?: string; folder: string }[] };
+    const own = listed.spaces.find((s) => s.id === world.mira.id && s.folder !== folder)?.folder;
+    if (own === undefined) throw new Error("no original folder");
+    const frame = page.locator("[data-phase]");
+    await page.route("**/api/v1/ws-ticket", (route) => route.fulfill({ status: 503, body: "{}" }));
+    await sockets.at(-1)?.close();
+    await expect(frame).toHaveAttribute("data-phase", "offline", { timeout: SLOW_MS });
+    await world.space("close", { space: own });
+    try {
+      await page.unroute("**/api/v1/ws-ticket");
+      await expect(frame).toHaveAttribute("data-phase", "no_space", { timeout: SLOW_MS });
+      await expect(page.locator("main")).toContainText("This space is not open on this machine");
+      await expect(page.locator('[data-part="read-only"]')).toHaveCount(0);
+      // A reload lands on the ID, which means no copy the person would take for the original: they
+      // choose, and nothing they typed is forgotten.
+      await page.reload();
+      await expect(page.getByText("This space is not open on this machine")).toBeVisible({
+        timeout: SLOW_MS,
+      });
+      await expect(page.locator(`main a[href="/s/${copy}/today"]`)).toBeVisible();
+    } finally {
+      await world.space("open", { path: own });
+    }
+    await openTask(page, world, only);
+    await expect(row(only).locator('[data-part="composer"]')).toHaveValue(words, {
+      timeout: SLOW_MS,
+    });
+  });
 });
+
+/** Open folder in the switcher with a restored copy's folder: the tab goes there; its key. */
+async function openFolder(page: Page, world: World, folder: string): Promise<string> {
+  await signIn(page, world, `/s/${world.mira.id}/today`);
+  await showsSpace(page, world.mira.name);
+  await spaceSwitcher(page, world.mira.name).click();
+  await page
+    .getByRole("dialog", { name: "Spaces on this machine" })
+    .getByRole("button", { name: "Open folder" })
+    .click();
+  const open = page.getByRole("dialog", { name: "Open a space folder" });
+  await open.getByRole("combobox", { name: "Folder" }).fill(folder);
+  await open.getByRole("button", { name: "Open", exact: true }).click();
+  const address = new RegExp(`/s/(${world.mira.id}-copy-[0-9a-f]{12})/`, "u");
+  await expect(page).toHaveURL(address);
+  return address.exec(page.url())?.[1] ?? "";
+}
