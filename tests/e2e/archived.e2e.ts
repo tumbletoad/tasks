@@ -291,7 +291,18 @@ test.describe("[A5.archived.e2e.new-work] new work never lands in an archived gr
     const note = dialog.locator('[data-part="area-archived"]');
     await expect(note).toContainText(`An archived area is named ${loft}.`);
     await expect(dialog.getByRole("button", { name: "Without a folder" })).toBeDisabled();
-    await shots(page, world, "new-area", "page");
+    // The area field and its note only: the dialog's folder list names this machine's folders.
+    for (const theme of themes()) {
+      await world.machine("ui.theme", theme);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme, { timeout: SLOW_MS });
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        await settled(page);
+        await picture(note.locator(".."), `archived-new-area-${theme}-${String(width)}.png`);
+      }
+    }
+    await world.machine("ui.theme", null);
+    await page.setViewportSize({ width: 1440, height: 900 });
     const crates = `Crates ${tag}`;
     await dialog.getByLabel("Name", { exact: true }).fill(crates);
     await note.getByRole("button", { name: `Unarchive ${loft}` }).click();
