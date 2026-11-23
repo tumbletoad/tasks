@@ -263,13 +263,16 @@ function lowerOf(value: string): string {
   return value.toLowerCase();
 }
 
-/** The space's values a comma list names, each matched without regard to case. */
+/**
+ * The space's values a comma list names, each matched without regard to case. A stored list may
+ * hold two values that differ only in case, so an exact match comes first.
+ */
 function namedValues(term: FilterTerm, known: readonly string[], what: string): string[] {
   const found: string[] = [];
   for (const part of term.value.split(",")) {
     const want = part.trim();
     if (want === "") continue;
-    const hit = known.find((k) => lowerOf(k) === lowerOf(want));
+    const hit = known.includes(want) ? want : known.find((k) => lowerOf(k) === lowerOf(want));
     if (hit === undefined) {
       throw queryProblem(`Unknown ${what}`, undefined, suggest(want, known));
     }
