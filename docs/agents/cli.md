@@ -141,7 +141,6 @@ Sets `kind: "note"`.
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `<text>` | `text` | string | The entry, in Markdown |
 | `--for-agents` | `for_agents` | boolean | Address the note to agents (user only) |
-| `--at` | `at` | string | When a log entry was made, only for older work: ISO date or instant |
 
 Only through `--input`: `links`.
 

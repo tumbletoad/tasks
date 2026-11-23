@@ -17,3 +17,11 @@ export async function runBridge(argv: readonly string[]): Promise<number> {
   const { runMcp } = await import("@ttasks/bridge/mcp");
   return runMcp(argv);
 }
+
+/**
+ * Whether a command line goes to the bridge: `ttasks mcp`, unless it asks for help, which the CLI
+ * prints as for every other command. The bridge itself takes no help option: setup writes its line.
+ */
+export function isBridge(argv: readonly string[]): boolean {
+  return argv[0] === MCP_VERB && !argv.slice(1).some((arg) => arg === "--help" || arg === "-h");
+}

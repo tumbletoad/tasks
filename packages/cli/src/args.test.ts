@@ -86,6 +86,13 @@ describe("[A2.3.10.cli.parse] arguments from cli-spec.json", () => {
       text: "Fixture note",
       kind: "note",
     });
+    // A note is dated when it is written: only a log entry takes --at.
+    expect((await parse("log", ["M-14", "Old work", "--at", "2026-01-02"])).input).toMatchObject({
+      at: "2026-01-02",
+    });
+    expect(await usage(parse("note", ["M-14", "Fixture note", "--at", "2026-01-02"]))).toBe(
+      "ttasks note has no option --at",
+    );
     const sections = await parse("show", ["M-14", "--section", "log", "--section", "history"]);
     expect(sections.input).toEqual({ task: "M-14", sections: ["log", "history"] });
   });

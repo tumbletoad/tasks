@@ -53,10 +53,8 @@ describe("[A2.3.10.cli.help] help for every command", () => {
       const help = await helpOf(["help", command]);
       expect(help, command).not.toBe(list);
       expect(help, command).toMatch(new RegExp(`^Usage: ttasks ${command}\\b`));
-      // `ttasks mcp …` is the bridge's own command line (A2 3.7.1): its help is `ttasks help mcp`
-      // and `ttasks --help mcp`.
-      const flagged = command === "mcp" ? ["--help", command] : [command, "--help"];
-      expect(await helpOf(flagged), command).toBe(help);
+      expect(await helpOf([command, "--help"]), command).toBe(help);
+      expect(await helpOf([command, "-h"]), command).toBe(help);
     }
     // The list names every command once.
     for (const command of COMMANDS) {

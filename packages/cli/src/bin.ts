@@ -9,11 +9,11 @@
 // `process.exit`, which the pinned Node can otherwise hang in (A2 3.12.1).
 import "@ttasks/bridge/safe-exit";
 import { fileURLToPath } from "node:url";
-import { MCP_VERB, runBridge } from "./mcp.ts";
+import { isBridge, runBridge } from "./mcp.ts";
 
 const argv = process.argv.slice(2);
 
-if (argv[0] === MCP_VERB) {
+if (isBridge(argv)) {
   // The bridge's timers keep the loop alive by design, so the process ends here.
   process.exit(await runBridge(argv.slice(1)));
 }

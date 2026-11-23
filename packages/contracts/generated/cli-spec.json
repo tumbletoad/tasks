@@ -571,14 +571,6 @@
           "required": false,
           "type": "boolean",
           "userOnly": true
-        },
-        {
-          "field": "at",
-          "flag": "--at",
-          "help": "When a log entry was made, only for older work: ISO date or instant",
-          "repeat": false,
-          "required": false,
-          "type": "string"
         }
       ],
       "inputOnly": [

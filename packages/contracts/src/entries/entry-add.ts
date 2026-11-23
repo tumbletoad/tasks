@@ -72,7 +72,7 @@ export const entryAdd = defineEntry({
     ui: true,
     cli: [
       { verb: "log", positional: ["task", "text"], exclude: ["for_agents"] },
-      { verb: "note", positional: ["task", "text"], fixed: { kind: "note" } },
+      { verb: "note", positional: ["task", "text"], fixed: { kind: "note" }, exclude: ["at"] },
     ],
     mcp: {
       tool: "add_entry",
