@@ -4,6 +4,7 @@
 // stderr. The exit code follows the error's class.
 import { CLI_NAME } from "@ttasks/brand";
 import { RpcError } from "@ttasks/bridge/protocol";
+import { shellLine } from "@ttasks/launch";
 import {
   errorClass,
   EXIT_CODES,
@@ -256,7 +257,16 @@ function insideLines(result: Result): string[] {
   return lines;
 }
 
-export function render(entry: string, result: Result, space: string): string {
+/** What the command asked that a command it prints must ask again. */
+export interface Asked {
+  /** `--space` as given. */
+  readonly space?: string | undefined;
+  /** `--archived`. */
+  readonly archived?: boolean;
+  readonly platform?: NodeJS.Platform;
+}
+
+export function render(entry: string, result: Result, space: string, asked: Asked = {}): string {
   const lines: string[] = [];
   switch (entry) {
     case "task.add":
@@ -488,12 +498,22 @@ export function render(entry: string, result: Result, space: string): string {
       }
       const loose = (result["projects"] as Result[] | undefined) ?? [];
       if (loose.length > 0) lines.push("No area", ...loose.map(project));
-      // A write takes no cursor: the rest of the list is read with list.
+      // A write takes no cursor: the rest of the list is read with list, in the same space and with
+      // the same archived groups.
       if (typeof result["cursor"] === "string") {
+        const argv = [
+          CLI_NAME,
+          "area",
+          "list",
+          ...(asked.space === undefined ? [] : ["--space", asked.space]),
+          ...(asked.archived === true ? ["--archived"] : []),
+          "--cursor",
+          result["cursor"],
+        ];
         lines.push(
           result["action"] === "list"
             ? `More: the same command with --cursor ${result["cursor"]}`
-            : `More: ${CLI_NAME} area list --cursor ${result["cursor"]}`,
+            : `More: ${shellLine(asked.platform ?? process.platform, argv) ?? argv.join(" ")}`,
         );
       }
       break;
