@@ -360,16 +360,30 @@ function TitleEditor({
       },
     });
   };
+  // The feed says the task was moved to the Trash, or its creation undone: it takes no title.
+  const removed = useRef(false);
+  useEffect(
+    () =>
+      live.onChanges(({ changes }) => {
+        for (const change of changes) {
+          const after = change.after as TaskRow | undefined;
+          if (change.type === "task" && change.id === task.id && after?.deleted_at !== undefined) {
+            removed.current = true;
+          }
+        }
+      }),
+    [live, task.id],
+  );
   // The row goes away while the person types (the task leaves the view, the card collapses): what
-  // they typed is saved, as leaving the field does, never dropped. A task the page no longer holds
-  // (moved to the Trash, finished, gone) takes no title: the words stay kept, unsent, with it.
+  // they typed is saved, as leaving the field does, never dropped. A task moved to the Trash takes
+  // no title: the words stay kept, unsent, for its card there and its return.
   useEffect(
     () => () => {
       const value = typed.current ?? "";
       const title = value.trim();
       if (done.current || title === "" || title === before) return;
       done.current = true;
-      if (!live.getState().tasks.has(latest.current.id)) return;
+      if (removed.current) return;
       save(latest.current, value);
     },
     // The editor's own values, fixed while it is open.

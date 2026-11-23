@@ -227,7 +227,7 @@ test.describe("[A5.trash.e2e.unsent] Every unsent word of a removed task stays, 
     const id = ((await world.op(space, "task.get", { task: ref })) as { task: { id: string } }).task
       .id;
 
-    // Another tab: a priority and a note on their way, a draft, and a title being typed.
+    // Another tab: a priority and a note on their way, and a draft.
     const other = await page.context().newPage();
     let release: () => void = () => undefined;
     const released = new Promise<void>((resolve) => {
@@ -251,11 +251,16 @@ test.describe("[A5.trash.e2e.unsent] Every unsent word of a removed task stays, 
     await other.keyboard.press("Enter");
     await expect.poll(() => held.length).toBe(2);
     await card.locator('[data-part="composer"]').fill(draft);
-    await card.locator('[data-part="title"]').focus();
-    await other.keyboard.press("F2");
-    await other.keyboard.press("End");
-    await other.keyboard.type(" on Monday");
+    // A third tab types a title and goes away before saving it.
+    const third = await page.context().newPage();
+    await openTask(third, world, ref);
+    await rowOf(third, ref).locator('[data-part="title"]').focus();
+    await third.keyboard.press("F2");
+    await third.keyboard.press("End");
+    await third.keyboard.type(" on Monday");
     const typed = `${title} on Monday`;
+    await third.goto("about:blank");
+    await third.close();
 
     // Finished and then removed from elsewhere; this tab's foot is open before the edit is refused.
     const finished = (await world.op(space, "space.status", {})) as { as_of: string };
@@ -276,6 +281,7 @@ test.describe("[A5.trash.e2e.unsent] Every unsent word of a removed task stays, 
     await expect(unsent.filter({ hasText: note })).toHaveAttribute("data-kind", "note");
     await expect(unsent.filter({ hasText: draft })).toHaveAttribute("data-kind", "draft");
     await other.close();
+    await both(page, "trash-unsent-all");
 
     // A newer draft is kept before this tab hears of it: Discard of the one shown leaves it.
     const newer = `${draft}, and the keys`;
@@ -307,6 +313,8 @@ test.describe("[A5.trash.e2e.unsent] Every unsent word of a removed task stays, 
       "aria-label",
       "Copy: P1",
     );
+    await back.locator('[data-part="kept-note"]').scrollIntoViewIfNeeded();
+    await both(page, "kept-note");
   });
 });
 
@@ -605,6 +613,7 @@ test.describe("[A5.trash.e2e.terminal] An agent in a terminal on a removed task 
       { timeout: SLOW_MS },
     );
     await expect(rowOf(page, ref)).toHaveCount(1);
+    await both(page, "trash-agents-terminal");
     // The person quits the agent: its end is recorded, and the task leaves the page.
     world.release(ref);
     await expect(rowOf(page, ref)).toHaveCount(0, { timeout: SLOW_MS });
