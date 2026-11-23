@@ -17,8 +17,17 @@
 //                                                                (or none any more), seen at a
 //                                                                heartbeat
 //                    {type:"error", code}                        the subscription ended
+//                    {type:"agents", picture, trouble}           the Agent Monitor's picture
+//                                                                (contracts' AgentsView), only
+//                                                                while the tab watches: the newest
+//                                                                only, for a tab that reads slowly
 //   page → service   {type:"subscribe", space?, cursor?}         a new subscription replaces the old
 //                    {type:"unsubscribe"}
+//                    {type:"watch", agents, visible, focused}    an Agents page is mounted, the tab
+//                                                                visible, its window focused: on
+//                                                                each change and after hello. The
+//                                                                monitor's pace follows it
+//                                                                (monitor/pace.ts)
 //
 // A space with subscribers is checked for new commits every `feedPollMs` (one small read of its
 // head), and at once after a write through this listener. Close codes: 4401 the token was revoked
@@ -29,8 +38,10 @@
 // read in progress (the generation moves on), and every continuation after an await checks that
 // before it acts.
 import type { PreferenceRead } from "@ttasks/contracts";
+import type { AgentsView } from "@ttasks/contracts/monitor";
 import type { RawData, WebSocket } from "ws";
 import type { ServerTimer } from "../local/index.ts";
+import type { MonitorPace } from "../monitor/index.ts";
 import { copyOf, findSpace, isAmbiguity, onlySpace } from "../ops/copies.ts";
 import { defaultOf, type ServedSpace } from "../ops/index.ts";
 import type { HttpLog, WsClose } from "./events.ts";
@@ -88,6 +99,8 @@ export interface FeedOptions {
    * that a restart switches to it. Default: none.
    */
   readonly installed?: () => string | undefined;
+  /** The Agent Monitor's pace, which each tab's watch message sets. None: watch is ignored. */
+  readonly agents?: Pick<MonitorPace, "watch" | "leave">;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -139,6 +152,9 @@ class FeedSocket {
   #subscribing = false;
   /** The installed version this page was last told of. */
   #installed: string | undefined;
+  /** The newest Agents view, waiting while the one before it is handed to the socket. */
+  #agentsNext: AgentsView | undefined;
+  #agentsSending = false;
   readonly #ping: ServerTimer;
 
   constructor(ws: WebSocket, hub: FeedHub, grant: string, conn: number) {
@@ -329,6 +345,19 @@ class FeedSocket {
       this.close(WS_CLOSE.badMessage, "bad_message");
       return;
     }
+    if (message["type"] === "watch") {
+      const { agents, visible, focused } = message;
+      if (
+        typeof agents !== "boolean" ||
+        typeof visible !== "boolean" ||
+        typeof focused !== "boolean"
+      ) {
+        this.close(WS_CLOSE.badMessage, "bad_message");
+        return;
+      }
+      this.#hub.options.agents?.watch(this, { agents, visible, focused });
+      return;
+    }
     if (message["type"] === "unsubscribe") {
       this.#wanted = undefined;
       this.#unsubscribe();
@@ -352,6 +381,31 @@ class FeedSocket {
     this.#unsubscribe();
     this.#wanted = { ref: space, cursor };
     void this.#nextSubscription();
+  }
+
+  /** The Agent Monitor's view for this tab. A tab that reads slowly gets the newest only. */
+  show(view: AgentsView): void {
+    if (this.#closed) return;
+    this.#agentsNext = view;
+    if (!this.#agentsSending) this.#showNext();
+  }
+
+  #showNext(): void {
+    const view = this.#agentsNext;
+    this.#agentsNext = undefined;
+    if (view === undefined || this.#closed) {
+      this.#agentsSending = false;
+      return;
+    }
+    this.#agentsSending = true;
+    this.#send({ type: "agents", ...view }).then(
+      () => {
+        this.#showNext();
+      },
+      () => {
+        this.#agentsSending = false;
+      },
+    );
   }
 
   /** Runs the wanted subscriptions one at a time: at most one subscribe read per socket. */
@@ -553,6 +607,7 @@ class FeedSocket {
     this.#output = undefined;
     this.#ping.clear();
     this.#hub.unwatch(this);
+    this.#hub.options.agents?.leave(this);
     this.#hub.forget(this);
     this.#hub.options.log({
       ev: "http.ws_closed",

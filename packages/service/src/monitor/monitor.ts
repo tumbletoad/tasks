@@ -72,12 +72,7 @@ export type MonitorCommand =
   | { readonly ok: false; readonly reason: "not_found" | "script" };
 
 export type MonitorAnswer =
-  | {
-      readonly ok: true;
-      readonly snapshot: MonitorSnapshot;
-      /** performance.now() when it arrived: an age in it is that old plus the time since. */
-      readonly receivedAt: number;
-    }
+  | { readonly ok: true; readonly snapshot: MonitorSnapshot }
   | { readonly ok: false; readonly problem: MonitorProblem };
 
 export interface MonitorStatus {
@@ -472,7 +467,7 @@ export class Monitor {
     this.#lastPassMs = snapshot.collectionMs;
     this.#slow = false;
     this.#failure = undefined;
-    const answer: MonitorAnswer = { ok: true, snapshot, receivedAt: performance.now() };
+    const answer: MonitorAnswer = { ok: true, snapshot };
     for (const waiter of sent.waiters) waiter(answer);
     this.#onChange();
     this.#pump();

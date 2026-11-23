@@ -11,3 +11,12 @@ export {
   type MonitorTimes,
 } from "./monitor.ts";
 export { findMonitor, MONITOR_VARIABLE } from "./find.ts";
+export {
+  MonitorPace,
+  PACE,
+  type PaceOptions,
+  type PaceTimerKind,
+  type PaceTimers,
+  type Watcher,
+} from "./pace.ts";
+export { pictureOf } from "./picture.ts";

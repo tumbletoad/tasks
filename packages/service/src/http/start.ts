@@ -9,6 +9,7 @@ import { editMachineToml } from "../config/edit.ts";
 import type { OpsHost } from "../ops/index.ts";
 import {
   HttpApp,
+  type AppOptions,
   type UiApps,
   type UiDefaultSpace,
   type UiFolders,
@@ -67,6 +68,8 @@ export interface HttpStart {
   readonly limits?: Partial<HttpLimits>;
   readonly timers?: StartHttpTimer;
   readonly now?: () => number;
+  /** A steady clock in ms, for the Agent Monitor's pace and ages. Default: performance.now(). */
+  readonly steady?: () => number;
   /** A built UI folder (packages/web, M2.13), or a bundle. Default: page.ts's minimal shell. */
   readonly ui?: string | UiBundle;
   /** Which commits a feed subscriber sees (v1: all). */
@@ -106,6 +109,8 @@ export interface HttpOptions extends HttpStart {
   readonly launch?: UiLaunchPort;
   /** The service's background runs, which the page's Run starts (launches.ts). Default: none. */
   readonly runs?: UiRunPort;
+  /** The Agent Monitor behind the Agents page (monitor/). Default: none, and no such part. */
+  readonly monitor?: AppOptions["monitor"];
 }
 
 export interface RunningHttp {
@@ -176,6 +181,8 @@ export async function startHttp(options: HttpOptions): Promise<RunningHttp> {
     ...(options.spaces === undefined ? {} : { spaces: options.spaces }),
     ...(options.apps === undefined ? {} : { apps: options.apps }),
     ...(options.folders === undefined ? {} : { folders: options.folders }),
+    ...(options.monitor === undefined ? {} : { monitor: options.monitor }),
+    ...(options.steady === undefined ? {} : { steady: options.steady }),
   });
   const os = OS_WORD[process.platform] ?? "linux";
   const facts: PortFacts = {

@@ -759,6 +759,10 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       log: (event, fields) => {
         log.log(event, fields);
       },
+      // The page's part marks a picture whose next answer is overdue.
+      onChange: () => {
+        httpRunning?.app.agents?.changed();
+      },
     });
     const hub = {
       status,
@@ -1103,6 +1107,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
           make: (input) => pageFolders.make(input, "ui"),
           project: (input, space) => pageFolders.project(input, "ui", space),
         },
+        monitor,
         db: grantsDb.db,
         grants: grantsDb.grants,
         log: httpLog,

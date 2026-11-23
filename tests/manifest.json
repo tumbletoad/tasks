@@ -5379,6 +5379,20 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.agents.pace",
+      "title": "The service asks the Agent Monitor at the pace of the most attentive tab, on a clock the test moves: looked at with live usage after four passes (1 s after a settling answer, at most three times), visible only every 30 s with cached usage, nothing for a hidden tab or one without the page, still looked at for five minutes after the focus went, a closed tab forgotten and a new one given the newest at once with its age on the steady clock, the newest dropped 30 s after the last tab left, two tabs at the faster pace and none sent to a tab without the page, a launch asking at once and several while an answer is out making one request, and a missing monitor looked for again only when a page opens or gets the focus back",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.agents.picture",
+      "title": "The Agents page's picture of a snapshot: each conversation once with every agent inside it one level under it, a parent that is gone or a loop standing on its own, an unknown agent app by its name and an unknown state as unknown, plan usage per account, keys stable between snapshots, and no session ID, home path or process in it",
+      "owner": "M6",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.14.doctor.monitor",
       "title": "ttasks doctor's monitor row: ttam found on the PATH (an executable only on Windows), a probe that reads only the hello of a child whose input is closed, fails one that does not end after its hello, shares one process between doctors and is ended with the service, and the row for found and fitting, not installed, a script, a build without ttam query, a version that does not fit with the side to update, a failed start, a monitor that does not end, and an older service",
       "source": "A3 3.14",

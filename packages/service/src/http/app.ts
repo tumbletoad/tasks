@@ -72,6 +72,7 @@ import { UiLaunches, type UiLaunchPort, type UiRunPort } from "./launches.ts";
 import type { HttpLimits } from "./limits.ts";
 import { shellFor, type UiBundle } from "./page.ts";
 import type { StartHttpTimer } from "./timers.ts";
+import { MonitorPace, type Monitor } from "../monitor/index.ts";
 import { FeedHub, WS_CLOSE } from "./ws.ts";
 
 /** The protocol `/.well-known/ttasks` names (A2 3.8.5). */
@@ -114,6 +115,10 @@ export interface AppOptions {
   readonly apps?: UiApps;
   /** The folder chooser (hub/page-folders.ts). None: the page types folders only. */
   readonly folders?: UiFolders;
+  /** The Agent Monitor, asked at the pace of the tabs that show an Agents page. None: no part. */
+  readonly monitor?: Pick<Monitor, "ask" | "recheck" | "status">;
+  /** A steady clock in ms, for the monitor's pace and ages. Default: performance.now(). */
+  readonly steady?: () => number;
 }
 
 /** The folder chooser's calls; `space` is the tab's, when it names one. */
@@ -235,6 +240,8 @@ export class HttpApp {
   readonly options: AppOptions;
   readonly feed: FeedHub;
   readonly launches: UiLaunches;
+  /** The Agent Monitor's pace, when the service has a monitor. */
+  readonly agents: MonitorPace | undefined;
   readonly #codes: OneTimeSecrets<true>;
   readonly #tickets: OneTimeSecrets<string>;
   readonly #redeemRate: RateLimit;
@@ -275,8 +282,18 @@ export class HttpApp {
       log: options.log,
       changed: (space) => {
         this.feed.poke(space);
+        // A launch or a stop: what the monitor shows next comes from a pass after it.
+        this.agents?.nudge();
       },
     });
+    this.agents =
+      options.monitor === undefined
+        ? undefined
+        : new MonitorPace({
+            monitor: options.monitor,
+            timers: options.timers,
+            now: options.steady ?? (() => performance.now()),
+          });
     this.feed = new FeedHub({
       host: options.ops,
       limits: options.limits,
@@ -291,6 +308,7 @@ export class HttpApp {
         : { machine: () => options.machine?.preferences() ?? [] }),
       ...(options.visible === undefined ? {} : { visible: options.visible }),
       ...(options.installed === undefined ? {} : { installed: options.installed }),
+      ...(this.agents === undefined ? {} : { agents: this.agents }),
     });
     const ops = new Set<string>(httpRoutes.map((r) => r.entry));
     this.#routes = {
@@ -401,6 +419,7 @@ export class HttpApp {
 
   /** The drain: every feed is told the service stops, every socket closed. */
   closeAll(): void {
+    this.agents?.close();
     this.feed.closeAll(WS_CLOSE.shutdown, "shutdown");
     for (const socket of this.#sockets.keys()) socket.destroy();
     this.#unrevoke();
