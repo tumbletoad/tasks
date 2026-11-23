@@ -69,6 +69,7 @@ const PrefRow = z.strictObject({
   is_default: z.boolean().describe("The value is the default (get)").optional(),
   writable: z.boolean().describe("Whether this caller may change it"),
   policy: z.literal(true).describe("Policy: the user's own (A3 3.8)").optional(),
+  fixed: z.literal(true).describe("Fixed in this build: nobody changes it").optional(),
   in_force: PrefValueOutput.describe(
     "What this build does whatever the key says: it does not act on the key yet",
   ).optional(),
@@ -118,7 +119,7 @@ export const prefsManage = defineEntry({
       tool: "preferences",
       title: "Read settings",
       description:
-        "Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. Policy stays the user's.",
+        "Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. A key marked fixed nobody changes in this build. Policy stays the user's.",
     },
   },
   budget: { typical: 600, max: 2000 },
@@ -137,6 +138,7 @@ export const prefsManage = defineEntry({
             default: ["open", "waiting", "review", "backlog"],
             is_default: true,
             writable: false,
+            fixed: true,
           },
         ],
       },

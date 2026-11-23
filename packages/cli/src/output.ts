@@ -490,8 +490,9 @@ export function render(entry: string, result: Result, space: string): string {
           "in_force" in pref
             ? ` · in force: ${JSON.stringify(pref["in_force"])}, as this build does not read it yet`
             : "";
+        const fixed = pref["fixed"] === true ? " · fixed in this build" : "";
         lines.push(
-          `${str(pref["key"])}: ${shown}${pref["policy"] === true ? " · policy" : ""}${inForce}`,
+          `${str(pref["key"])}: ${shown}${pref["policy"] === true ? " · policy" : ""}${fixed}${inForce}`,
         );
       }
       break;

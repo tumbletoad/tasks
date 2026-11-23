@@ -1537,6 +1537,11 @@
                   ],
                   "description": "Its default"
                 },
+                "fixed": {
+                  "const": true,
+                  "description": "Fixed in this build: nobody changes it",
+                  "type": "boolean"
+                },
                 "in_force": {
                   "anyOf": [
                     {

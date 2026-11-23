@@ -3449,8 +3449,8 @@ async function prefsSet(call: Call): Promise<unknown> {
     if (setStep !== undefined) {
       throw invalid(
         `${path}.key`,
-        "Changing this setting is not built yet",
-        `It arrives with ${setStep}.`,
+        "This setting is fixed in this build",
+        `Changing it comes with ${setStep}.`,
       );
     }
     if (!prefWritable(p, call.principal)) {
@@ -3597,6 +3597,7 @@ function prefRow(
     default: fallback,
     writable: prefWritable(p, principal) && read?.state !== "newer",
     ...(p.policy ? { policy: true } : {}),
+    ...(laterSet(p) === undefined ? {} : { fixed: true }),
     ...(later === undefined ? {} : { in_force: later.inForce }),
   };
 }

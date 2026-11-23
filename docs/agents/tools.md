@@ -650,7 +650,7 @@ Result:
 
 Read and change the space's preferences that are not policy.
 
-MCP tool `preferences`, "Read settings": Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. Policy stays the user's.
+MCP tool `preferences`, "Read settings": Use when the user asks about a setting: describe lists the keys and who may change them, get reads their values. Only the user changes them, from a terminal: tell the user. A key marked fixed nobody changes in this build. Policy stays the user's.
 
 | Property | Value |
 |---|---|
@@ -662,7 +662,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | A1 operations | `pref.set` |
 | Faces | MCP `preferences`, CLI `ttasks prefs`, UI |
 | Errors | `invalid_input`, `forbidden`, `conflict`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 359, reported |
+| Definition, estimated tokens | 384, reported |
 | Result budget, estimated tokens | typical 600, max 2000 |
 
 ### Input
@@ -693,6 +693,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `prefs[].is_default` | boolean | no | The value is the default (get) |
 | `prefs[].writable` | boolean | yes | Whether this caller may change it |
 | `prefs[].policy` | true | no | Policy: the user's own (A3 3.8) |
+| `prefs[].fixed` | true | no | Fixed in this build: nobody changes it |
 | `prefs[].in_force` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | no | What this build does whatever the key says: it does not act on the key yet |
 | `result` | "updated" \| "no_change" | no | What a change did |
 | `changed` | object[] | no | The keys a change changed |
@@ -738,7 +739,8 @@ Result:
         "backlog"
       ],
       "is_default": true,
-      "writable": false
+      "writable": false,
+      "fixed": true
     }
   ]
 }
