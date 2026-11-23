@@ -659,7 +659,7 @@ a + .muted,
 }
 
 .input {
-  /* Focus scrolls the field out from under the sticky top bar (Ask from a card scrolled past it). */
+  /* Ask scrolls the field into view clear of the sticky top bar. */
   scroll-margin-top: calc(var(--k-top) + 8px);
   display: block;
   width: 100%;

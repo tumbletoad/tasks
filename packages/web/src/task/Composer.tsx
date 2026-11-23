@@ -144,6 +144,9 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
         if (element === null) return;
         element.focus();
         element.setSelectionRange(element.value.length, element.value.length);
+        // Focus alone leaves a field behind the sticky top bar where it is: the field's scroll
+        // margin brings it out from under the bar.
+        element.scrollIntoView({ block: "nearest" });
       }),
     [space, task.id, t],
   );
