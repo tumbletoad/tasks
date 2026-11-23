@@ -479,20 +479,27 @@ export class FolderMarkers {
         if (earlier === folder.identity) return false;
       }
       const read = await bounded(() => readMarker(folder.open), MARKER_MS);
-      if (read === "not_answering") return read;
+      // A marker that is there and cannot be read says nothing either way: it could not be checked.
+      if (read === "not_answering" || read.state === "unreadable") return "not_answering";
       return read.state === "owners" && read.owners.some((o) => same(o, owner));
     });
   }
 
   /**
    * A folder that moved with another: its marker moved with it, inside it, so what this machine
-   * marked follows too. The old place stays marked: an undo gives the owner that place back, and
-   * an unrelated folder made there since is still noticed.
+   * marked follows too, as the folder it is at its new place: a rename keeps its identity, a move
+   * to another volume gives it a new one, and the old one kept there would later read as a folder
+   * brought from elsewhere. The old place stays marked: an undo gives the owner that place back,
+   * and an unrelated folder made there since is still noticed.
    */
-  moved(owner: MarkerOwner, from: string, to: string): void {
-    const key = this.#key(owner, from);
-    if (this.#marks.has(key))
-      this.#marks.set(this.#key(owner, to), true, this.#marks.identity(key));
+  moved(owner: MarkerOwner, from: string, to: string): Promise<void> {
+    return this.#turn(async () => {
+      if (!this.#marks.has(this.#key(owner, from))) return;
+      const folder = await this.#look(to);
+      const identity =
+        folder === undefined || folder === "not_answering" ? undefined : folder.identity;
+      this.#marks.set(this.#key(owner, to), true, identity);
+    });
   }
 
   /**

@@ -2,7 +2,7 @@
 // answer: the old folder's, the new folder's, its marker's, or a folder's inside the new one. Nothing
 // moves on a guess, and the answer says a folder could not be checked. The folders are temporary
 // ones of this test; a look that does not answer is a mock (hung-fs.ts).
-import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FOLDER_MARKER } from "@ttasks/brand";
@@ -81,6 +81,23 @@ async function pastLimit<T>(reached: Promise<void>, work: () => Promise<T>): Pro
   await vi.advanceTimersByTimeAsync(60_000);
   return running;
 }
+
+describe("[A1.3.15.folders.move] what the looks find decides, and is said as it is", () => {
+  test("a file at the old folder's path is not the old folder: the copy with its marker still carries them", async () => {
+    const file = await copied();
+    writeFileSync(file.old.absolute, "not a folder");
+    expect(outcome(await file.move())).toEqual({ moved: ["M-0", "M-1"], stayed: [] });
+  });
+
+  test("a marker that is there and cannot be read moves none, and says a folder could not be checked", async () => {
+    const locked = await copied();
+    const owners = join(locked.next.absolute, FOLDER_MARKER, "owners.json");
+    rmSync(owners);
+    // A folder where the owners file belongs: reading it fails, which is not "no marker".
+    mkdirSync(owners);
+    expect(outcome(await locked.move())).toEqual(NONE_MOVED);
+  });
+});
 
 describe("[A1.3.15.folders.move] a look that does not answer moves no folder inside the old one", () => {
   test("a copy with its marker carries them; the same copy whose marker, or whose folder, does not answer moves none and says a folder could not be checked", async () => {

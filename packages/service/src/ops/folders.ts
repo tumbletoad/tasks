@@ -444,7 +444,8 @@ export async function moveOf(
   const stay = (because: Stayed): Move => ({ moved: [], stayed: inside, because });
   const gone = await lookAt(expanded(old, facts.home, facts.platform));
   if (gone === "unchecked") return stay("unchecked");
-  if (gone !== "none") return stay("old_folder_there");
+  // Only a folder there is the old folder; a file at its path is not.
+  if (gone === "folder") return stay("old_folder_there");
   const moved = await movedHere();
   if (moved === "not_answering") return stay("unchecked");
   if (!moved) return stay("old_folder_unseen");

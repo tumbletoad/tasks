@@ -1609,7 +1609,7 @@ async function markersAfter(
     await markers.mark({ space, kind, id }, op.path);
   }
   for (const f of extra.move?.moved ?? []) {
-    markers.moved({ space, kind: f.kind, id: f.owner }, f.from, f.to);
+    await markers.moved({ space, kind: f.kind, id: f.owner }, f.from, f.to);
   }
   const cleared = extra.cleared;
   if (cleared !== undefined) {
