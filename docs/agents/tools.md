@@ -88,7 +88,7 @@ MCP tool `add_entry`, "Log on a task": Use often while working: log progress, ev
 | `task` | string | yes | Task reference |
 | `entry` | string | yes | Its ordinal: l3 for a log entry, n2 for a note |
 | `kind` | "progress" \| "evidence" \| "decision" \| "blocker" \| "question" \| "note" | yes | Entry kind |
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 
 ### Examples
@@ -168,7 +168,7 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | `task` | string, max 40 | no | set, clear: the task, such as M-14 |
 | `area` | string, max 120 | no | add_project: the new project's area, by name |
 | `folder` | string, 1 to 4096 | no | add_project, set: an absolute folder on this machine, or one under ~ |
-| `base` | string, max 40 | no | as_of: your last get_task, the add_tasks that made it, or your set of that field |
+| `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 
 ### Output
@@ -197,7 +197,7 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | `kept[].ref` | string | no | Task reference |
 | `kept[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
 | `kept[].missing` | true | no | No folder is there on this machine now |
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 
 ### Examples
@@ -248,7 +248,7 @@ MCP tool `organize`, "List or shape areas and projects": Use to see the user's a
 | A1 operations | `area.create`, `area.patch`, `area.move`, `area.archive`, `project.create`, `project.patch`, `project.move`, `project.archive`, `area.unarchive`, `project.unarchive`, `project.folder_set`, `project.folder_clear` |
 | Faces | MCP `organize`, CLI `ttasks area`, UI |
 | Errors | `invalid_input`, `not_found`, `ambiguous`, `conflict`, `forbidden`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 739, reported |
+| Definition, estimated tokens | 735, reported |
 | Result budget, estimated tokens | typical 400, max 1500 |
 
 ### Input
@@ -259,7 +259,7 @@ MCP tool `organize`, "List or shape areas and projects": Use to see the user's a
 | `path` | string, max 250 | no | "Area" or "Area/Project", by name or slug; list: one area |
 | `to` | string, max 120 | no | rename: the new name; move: the new area |
 | `folder` | string, 1 to 4096 | no | create, set_folder: the project's folder here, "cwd" or an absolute path |
-| `base` | string, max 40 | no | as_of: your last get_task, the add_tasks that made it, or your set of that field |
+| `base` | string, max 40 | no | as_of of the organize list that showed the group, or of your write of it |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
 
@@ -268,7 +268,7 @@ MCP tool `organize`, "List or shape areas and projects": Use to see the user's a
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `action` | "list" \| "create" \| "rename" \| "move" \| "archive" \| "unarchive" \| "set_folder" \| "clear_folder" | yes | The action |
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `areas` | object[] | yes | Active areas in the space's order |
 | `areas[].id` | string | yes | Area ID |
 | `areas[].slug` | string | yes | Slug |
@@ -461,7 +461,7 @@ Redo the change you undid last, as long as nobody changed its fields since.
 | `commit` | string | yes | The change undone or redone |
 | `tasks` | string[], max 50 items | no | The tasks it changed, the first 50; absent when they could not be read |
 | `task_count` | integer, 0 to 9999999999 | no | How many tasks it changed; absent when they could not be read |
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 
 ### Examples
@@ -522,7 +522,7 @@ Undo your newest change in the space, field by field as long as nobody changed i
 | `commit` | string | yes | The change undone or redone |
 | `tasks` | string[], max 50 items | no | The tasks it changed, the first 50; absent when they could not be read |
 | `task_count` | integer, 0 to 9999999999 | no | How many tasks it changed; absent when they could not be read |
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 | `unresolved` | object[] | no | Fields left as others set them |
 | `unresolved[].entity` | string, max 20 | yes | Table of the row: tasks, or a child such as notes or log_entries |
@@ -677,7 +677,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `action` | "describe" \| "get" \| "set" | yes | The action |
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `prefs` | object[] | yes | The keys asked for, sorted |
 | `prefs[].key` | string | yes | The key |
 | `prefs[].summary` | string | no | What it sets (describe) |
@@ -775,7 +775,7 @@ When `found` is `true`:
 | `request` | string | yes | The request ID |
 | `status` | "applied" \| "proposed" \| "unchanged" \| "conflict" \| "rejected" | yes | The overall outcome |
 | `decided_at` | string | yes | When it was decided |
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `incarnation` | string | yes | The authority incarnation it was decided under |
 | `commit` | string | no | The commit it wrote |
 | `target` | string | no | An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo |
@@ -945,7 +945,7 @@ MCP tool `status`, "Orientation and session status": Call first when a session d
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `date` | string | yes | Today in the space's time zone |
 | `time_zone` | string | yes | IANA time zone of the space |
 | `autonomy` | "full" \| "review" \| "suggest" | yes | Autonomy level for this session |
@@ -1225,7 +1225,7 @@ MCP tool `add_tasks`, "Add tasks": For work left for later and items from email,
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `tasks` | object[] | yes | One row per draft, in order |
 | `tasks[].result` | "created" \| "exists" \| "inbox" | yes | created, matched an existing task, or created in the Inbox |
 | `tasks[].id` | string | no | Task ID |
@@ -1319,7 +1319,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | A1 operations | `task.complete`, `task.archive`, `task.wrap_up`, `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `complete_task`, CLI `ttasks done`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 2017, reported |
+| Definition, estimated tokens | 2016, reported |
 | Result budget, estimated tokens | typical 100, max 1500 |
 
 ### Input
@@ -1355,7 +1355,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].log` | string, max 16384; agents: string, max 2000 | no | Log entry; also added to a matched task that lacks it |
 | `follow_ups[].on_existing` | "return" \| "add_sources" \| "create_new" | no | When a source key matches; default return |
 | `finished` | string, max 40 | no | When it was done, only for work done before it was recorded: ISO date or instant |
-| `base` | string, max 40 | yes | as_of: your last get_task, the add_tasks that made it, or your set of that field |
+| `base` | string, max 40 | yes | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
 
@@ -1376,7 +1376,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].held[].source` | integer, 0 to 9 | yes | Index in the draft's sources |
 | `follow_ups[].held[].held_by` | string | yes | The task that holds its key |
 | `warnings` | string[] | no | Warnings, one sentence each |
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 
 ### Examples
@@ -1633,7 +1633,7 @@ When `view` is `"digest"`:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `view` | "digest" | yes | A bounded digest of the task |
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `bound` | boolean | yes | This connection is the task's session: calls without task act on it |
 | `request` | object | no | The user's request for this launch: do it |
 | `request.note` | string | yes | The note that holds it |
@@ -1745,7 +1745,7 @@ When `view` is `"sections"`:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `view` | "sections" | yes | The sections asked for, in full |
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `bound` | boolean | yes | This connection is the task's session: calls without task act on it |
 | `request` | object | no | The user's request for this launch: do it |
 | `request.note` | string | yes | The note that holds it |
@@ -2098,7 +2098,7 @@ MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archiv
 | A1 operations | `task.reopen` |
 | Faces | MCP `reopen_task`, CLI `ttasks reopen`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 522, reported |
+| Definition, estimated tokens | 521, reported |
 | Result budget, estimated tokens | typical 40, max 150 |
 
 ### Input
@@ -2107,7 +2107,7 @@ MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archiv
 |---|---|---|---|
 | `task` | string, max 40 | no | Task ref (M-14) or ID; default: this session's task |
 | `reason` | string, max 200 | agents only | Why it is open again |
-| `base` | string, max 40 | yes | as_of: your last get_task, the add_tasks that made it, or your set of that field |
+| `base` | string, max 40 | yes | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 
 ### Output
@@ -2118,7 +2118,7 @@ MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archiv
 | `task` | string | yes | Task reference |
 | `lifecycle` | "active" \| "completed" \| "archived" | yes | Lifecycle |
 | `status` | string | yes | Status key |
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 
 ### Examples
@@ -2181,7 +2181,7 @@ MCP tool `search`, "Search tasks and learnings": Use to find tasks before you ad
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `scope` | "active" \| "finished" \| "all" \| "learnings" | yes | The scope searched |
 | `parsed` | string | yes | How the query was read |
 | `total` | integer, 0 to 10000 \| "10000+" | yes | Matches: exact up to 10,000 |
@@ -2312,7 +2312,7 @@ Result:
 
 Change an active task's fields, summary, context, group or sources.
 
-MCP tool `update_task`, "Update a task": Use to change a task's fields, summary, context, group or sources. Pass base: the as_of of your last get_task, the add_tasks that created it, or your update_task that set those fields; an append needs none and is no base. Set focus or priority only when the user asks.
+MCP tool `update_task`, "Update a task": Use to change a task's fields, summary, context, group or sources. Pass base: the as_of of your last get_task that showed those fields, the add_tasks that made it, or your update_task that set them; an append needs none, nor is one. Set focus or priority only when the user asks.
 
 | Property | Value |
 |---|---|
@@ -2324,7 +2324,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
 | Faces | MCP `update_task`, CLI `ttasks set`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict` |
-| Definition, estimated tokens | 1674, reported |
+| Definition, estimated tokens | 1679, reported |
 | Result budget, estimated tokens | typical 80, max 400 |
 
 ### Input
@@ -2356,7 +2356,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `add_sources[].who` | string, max 120 | no | Sender or counterpart |
 | `add_sources[].url` | string, max 2048 | no | Link |
 | `add_sources[].at` | string, max 40 | no | When it was sent |
-| `base` | string, max 40 | no | as_of: your last get_task, the add_tasks that made it, or your set of that field |
+| `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `reason` | string, max 200 | no | Why, shown in history |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
@@ -2368,7 +2368,8 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `result` | "updated" \| "no_change" | yes | updated, or nothing changed |
 | `task` | string | yes | Task reference |
 | `fields` | string[] | yes | The fields the call changed |
-| `as_of` | string | yes | Read position; pass it as base on your next write |
+| `context` | "appended" \| "replaced" | no | How it changed the context |
+| `as_of` | string | yes | The space's position when this answer was made |
 | `warnings` | string[] | yes | Warnings, one sentence each |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 

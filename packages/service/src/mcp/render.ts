@@ -799,9 +799,9 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
           : result.result === "review"
             ? `review ${result.task}${fields} (applied, marked for the user's review)`
             : `proposed ${result.task}${fields}${result.proposal === undefined ? "" : ` · proposal ${result.proposal}`}`;
-    // A call that changed only the context may have appended, and an append is no base: such an
-    // answer offers none, and a replace after it reads the task first.
-    const contextOnly = result.fields.length > 0 && result.fields.every((f) => f === "context");
+    // An append is no base: an answer that only appended offers none. A replace is a set, and is.
+    const contextOnly =
+      result.context === "appended" && result.fields.every((f) => f === "context");
     return {
       parts: [
         fixed(

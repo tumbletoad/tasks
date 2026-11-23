@@ -1726,9 +1726,21 @@ function madeWarning(areas: readonly string[], projects: readonly string[]): str
   const more = paths.length - MADE_SHOWN;
   const at = `${paths.slice(0, MADE_SHOWN).join(", ")}${more > 0 ? ` and ${String(more)} more` : ""}`;
   return [
-    `Made ${what.join(" and ")} for names that matched none (a project, none in its area): ${at}.`,
+    `${MADE}${what.join(" and ")} for names that matched none (a project, none in its area): ${at}.`,
   ];
 }
+
+/** How the groups line starts, so an answer can put it first. */
+const MADE = "Made ";
+
+/**
+ * The warnings with the groups line first: a cut takes from the end, and the line says what no
+ * other warning does. It is stored with the receipt, so a replay finds it there by its start.
+ */
+const madeFirst = (warnings: readonly string[]): string[] => [
+  ...warnings.filter((w) => w.startsWith(MADE)),
+  ...warnings.filter((w) => !w.startsWith(MADE)),
+];
 
 /**
  * A result as the call's own operations see it: the results of the groups it created by name are
@@ -2092,7 +2104,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           ...heldOf(result, sourcePaths, at(k)),
         };
       }),
-      warnings: [...differsWarnings(result, sourcePaths), ...kept],
+      warnings: madeFirst([...differsWarnings(result, sourcePaths), ...kept]),
       ...replayed(result),
     };
   },
@@ -2222,12 +2234,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       // The fields the commit changed, read from its history, so a replay answers the same.
       // Unread, the fields the call set stand in.
       fields: !updated ? [] : facts === undefined ? named : changedFields(named, facts),
+      ...(updated && context !== undefined
+        ? { context: append ? ("appended" as const) : ("replaced" as const) }
+        : {}),
       as_of: result.as_of,
-      warnings: [
+      warnings: madeFirst([
         ...differsWarnings(result, sourcePaths),
         ...result.warnings,
         ...(updated && result.replayed !== true ? moveWarnings(move) : []),
-      ],
+      ]),
       ...replayed(result),
     };
   },
@@ -2335,10 +2350,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const outcomes = follow.map((_, k) => draftOutcome(result, firsts[k] ?? 0));
     // A matched follow-up takes no folder, so its folder's warning does not apply.
     const matched = follow.map((_, k) => at(k)).filter((_, k) => outcomes[k]?.result === "exists");
-    const warnings = [
+    const warnings = madeFirst([
       ...differsWarnings(result, sourcePaths),
       ...result.warnings.filter((w) => !matched.some((m) => w.startsWith(`${m}.`))),
-    ];
+    ]);
     const done = opAt(result, 0);
     // Whether the call finished or wrapped up the task, from the operations' stored results; its
     // lifecycle, wrap-up state and the learnings it recorded from history as of the commit. So a

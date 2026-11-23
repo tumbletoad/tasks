@@ -197,6 +197,23 @@ describe("[A3.3.3.mcp.later] what a later step builds", () => {
       request_id: rid(),
     });
     expect(replaced).toMatch(/^error conflict/u);
+    // A replace is a set: its answer is a base for the next replace of the context.
+    const own = await create("Fixture replaced", "fix:RP-1");
+    const first = await tool("update_task", {
+      task: own.ref,
+      context: { mode: "replace", text: "First text." },
+      base: own.base,
+      request_id: rid(),
+    });
+    const next = AS_OF.exec(first)?.[1] ?? "";
+    expect(next).not.toBe("");
+    const second = await tool("update_task", {
+      task: own.ref,
+      context: { mode: "replace", text: "Second text." },
+      base: next,
+      request_id: rid(),
+    });
+    expect(second).toMatch(/^updated /u);
 
     // Another field's write: the person completes and reopens, the agent changes the title. A
     // completion with the base of the rule conflicts, and the task stays open.
@@ -264,6 +281,35 @@ describe("[A3.3.3.mcp.later] what a later step builds", () => {
       warnings: [warning],
     });
     expect(text).toContain(`warning: ${warning}`);
+  });
+
+  test("the groups line comes first of all warnings", async () => {
+    const source = (n: number, title: string) => ({
+      kind: "ticket",
+      title,
+      key: `fix:WF-${String(n)}`,
+    });
+    await call("task.add", {
+      tasks: [1, 2, 3].map((n) => ({
+        title: `Fixture held ${String(n)}`,
+        sources: [source(n, "First")],
+      })),
+      request_id: rid(),
+    });
+    const added = await call("task.add", {
+      tasks: [
+        ...[1, 2, 3].map((n) => ({
+          title: `Fixture held ${String(n)}`,
+          sources: [source(n, "Other")],
+          on_existing: "add_sources",
+        })),
+        { title: "Fixture filed first", area: "Fixture Quince" },
+      ],
+      request_id: rid(),
+    });
+    const warnings = added["warnings"] as string[];
+    expect(warnings).toHaveLength(4);
+    expect(warnings[0]).toMatch(/^Made 1 new area /u);
   });
 
   test("add_tasks says in one line which names made a new area or project, and nothing for a name it found", async () => {

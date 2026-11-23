@@ -91,6 +91,8 @@ describe("[A3.3.3.mcp.later] what a later step builds is never offered", () => {
     ];
     const absent = [...new Set(LATER.map(nameOf))].filter((name) => !offered.has(name));
     expect(absent.length).toBeGreaterThan(0);
+    // The position an answer returns is no advice to pass it on: the base is one of three answers.
+    for (const [where, text] of texts) expect(text, where).not.toMatch(/pass it as base/iu);
     for (const name of absent) {
       for (const [where, text] of texts) expect(text, `${where}: ${name}`).not.toMatch(word(name));
     }

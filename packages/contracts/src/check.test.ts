@@ -1131,7 +1131,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           input: taskUpdate.input.extend({ base: Base.optional().check(any(z.maxLength(1))) }),
         });
         expect(check(inUpdate)).toContain(
-          "task.update: base must be the shared Base schema from schemas.ts, or Base.optional() (A3 3.4.1)",
+          "task.update: base must be a shared base schema from schemas.ts, or one made optional (A3 3.4.1)",
         );
         // SafeText with a minimum or a pattern on its optional: both run after normalising.
         for (const field of [
@@ -1549,7 +1549,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
         input: taskReopen.input.extend({ base: z.string().max(40).describe("Base") }),
       });
       expect(check(lookAlike)).toEqual([
-        "task.reopen: base must be the shared Base schema from schemas.ts, or Base.optional() (A3 3.4.1)",
+        "task.reopen: base must be a shared base schema from schemas.ts, or one made optional (A3 3.4.1)",
       ]);
       // task.finish also emits task.create, which needs no base, so base could be optional there.
       const finish = defineEntry({
@@ -1571,7 +1571,7 @@ describe("[A3.5.registry.lint-rules] the registry check rejects each rule on a f
           expect(
             check(defineEntry({ ...entry, input: entry.input.extend({ base: wrapped }) })),
           ).toContainEqual(
-            `${entry.name}: base must be the shared Base schema from schemas.ts, or Base.optional() (A3 3.4.1)`,
+            `${entry.name}: base must be a shared base schema from schemas.ts, or one made optional (A3 3.4.1)`,
           );
         }
       }

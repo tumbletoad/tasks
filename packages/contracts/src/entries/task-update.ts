@@ -81,6 +81,7 @@ export const TaskUpdateResult = z.strictObject({
     .describe("updated, or nothing changed"),
   task: TaskRef,
   fields: z.array(z.string()).describe("The fields the call changed"),
+  context: z.enum(["appended", "replaced"]).describe("How it changed the context").optional(),
   as_of: AsOf,
   proposal: ProposalId.optional(),
   warnings: Warnings,
@@ -131,9 +132,9 @@ export const taskUpdate = defineEntry({
       title: "Update a task",
       description:
         "Use to change a task's fields, summary, context, group or sources. Pass base: the " +
-        "as_of of your last get_task, the add_tasks that created it, or your update_task that " +
-        "set those fields; an append needs none and is no base. Set focus or priority only " +
-        "when the user asks.",
+        "as_of of your last get_task that showed those fields, the add_tasks that made it, or " +
+        "your update_task that set them; an append needs none, nor is one. Set focus or " +
+        "priority only when the user asks.",
     },
   },
   budget: { typical: 80, max: 400 },
