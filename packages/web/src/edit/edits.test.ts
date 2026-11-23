@@ -740,7 +740,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     w.answer("task.update", () => {
       throw appError("internal", {});
     });
-    w.edits.edit(task(1), priorityChange(3));
+    w.edits.edit(w.row("t_00001") ?? task(1), priorityChange(3));
     await flush();
     w.feed([task(1, { effort: "M", priority: 2, version: 4 })], "agent-2", ["priority"], "agent");
     w.answer("task.update", () => ({
@@ -1094,7 +1094,8 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and their c
     w.edits.reopen(done);
     expect(w.calls[0]).toMatchObject({
       name: "task.reopen",
-      input: { task: "t_00007", base: w.asOf(10) },
+      // The store does not hold a finished task: its row shows it as of its own version.
+      input: { task: "t_00007", base: w.asOf(1) },
     });
     // A person's click has no reason to give, and sends none.
     expect(w.calls[0]?.input).not.toHaveProperty("reason");

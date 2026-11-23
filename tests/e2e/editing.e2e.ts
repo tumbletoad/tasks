@@ -732,3 +732,31 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
     await world.machine("ui.theme", null);
   });
 });
+
+test.describe("[A5.3.11.e2e.row-base] A row's button changes the task as its row shows it", () => {
+  test("an Inbox row held under focus after an agent moved the task to Waiting: Move to Open overwrites nothing and says who changed it", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const [ref] = await addTasks(world, [
+      { title: `Sort the scanned receipts (${tag})`, inbox: true },
+    ]);
+    if (ref === undefined) throw new Error("the task was not added");
+    await signIn(page, world, `/s/${world.mira.id}/inbox`);
+    await showsSpace(page, world.mira.name);
+    const row = rowOf(page, ref);
+    const title = row.locator('[data-part="title"]');
+    await title.focus();
+    await agentSets(world, ref, { status: "waiting", inbox: false });
+    // Held under focus, the row stays as the person saw it, with its Move to Open, whether or not
+    // the feed brought the agent's change yet: either way the click is a change of what it shows.
+    await row.locator('[data-part="move"]').click();
+    await expect(toast(page)).toContainText(" changed ", { timeout: SLOW_MS });
+    const now = (await read(world, ref)) as unknown as { task: { status: string; inbox: boolean } };
+    expect(now.task).toMatchObject({ status: "waiting", inbox: false });
+    await picture(page, "row-held-conflict-1440.png");
+    await page.setViewportSize({ width: 390, height: 900 });
+    await picture(page, "row-held-conflict-390.png");
+  });
+});

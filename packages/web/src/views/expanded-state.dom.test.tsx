@@ -327,6 +327,150 @@ describe("[A5.3.15.web.expanded-state] the expanded task's state holds against t
     ]);
   });
 
+  test("a fresh snapshot without the expanded active task shows it as it is now: finished elsewhere, without a star to press, with Reopen", async () => {
+    answer = (input) =>
+      input.sections === undefined
+        ? Promise.resolve(digest(1, { version: 15 }))
+        : Promise.resolve({ view: "sections", as_of: "1.20.01234567", sections: {} });
+    mount(<TaskList view="open" filter={OPEN} empty="" onExpand={() => undefined} />);
+    apply(snapshot([task(1), task(2)]));
+    act(() => {
+      titleOf("t_00001")?.click();
+    });
+    await settle();
+    const card = () => container.querySelector<HTMLElement>(`li[data-key="t_00001"]`);
+    const star = () => card()?.querySelector<HTMLElement>('[data-part="star"]');
+    expect(star()?.getAttribute("aria-disabled")).toBeNull();
+    // Completed elsewhere while the tab heard nothing: the snapshot after it leaves the task out.
+    apply(snapshot([task(2)], 20));
+    await settle();
+    expect(expandedOf("t_00001")).toBe("true");
+    expect(star()?.getAttribute("aria-disabled")).toBe("true");
+    expect(card()?.querySelector<HTMLInputElement>('[data-part="check"]')?.checked).toBe(true);
+    expect(card()?.querySelector('[data-part="reopen"]')).not.toBeNull();
+    expect(card()?.querySelector('[data-part="status"]')).toBeNull();
+  });
+
+  test("a fresh snapshot without the expanded task, which no longer exists, closes its card and drops it from the URL", async () => {
+    const onExpand = vi.fn<(task: TaskRow | undefined, gone?: boolean) => void>();
+    mount(<TaskList view="open" filter={OPEN} empty="" onExpand={onExpand} />);
+    apply(snapshot([task(1), task(2)]));
+    act(() => {
+      titleOf("t_00001")?.click();
+    });
+    await settle();
+    apply(snapshot([task(2)], 20));
+    await settle();
+    expect(keys()).toEqual(["t_00002"]);
+    expect(onExpand).toHaveBeenLastCalledWith(undefined, true);
+  });
+
+  test("while the expanded task a fresh snapshot left out is read again, its card says so and offers nothing; a failed read is tried again with the minute's read", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const digests: ((error: unknown) => void)[] = [];
+      answer = (input) =>
+        input.sections === undefined
+          ? new Promise((_, reject) => {
+              digests.push(reject);
+            })
+          : Promise.resolve({ view: "sections", as_of: "1.20.01234567", sections: {} });
+      mount(<TaskList view="open" filter={OPEN} empty="" onExpand={() => undefined} />);
+      apply(snapshot([task(1), task(2)]));
+      act(() => {
+        titleOf("t_00001")?.click();
+      });
+      await settle();
+      const card = () => container.querySelector<HTMLElement>(`li[data-key="t_00001"]`);
+      // What the card shows: a part of a hidden card's body is not there for the person.
+      const part = (name: string) => {
+        const found = card()?.querySelector<HTMLElement>(`[data-part="${name}"]`) ?? undefined;
+        return found?.closest("[hidden]") === null ? found : undefined;
+      };
+      const asked = digests.length;
+      apply(snapshot([task(2)], 20));
+      await settle();
+      // Every read of the task since the snapshot, the card's detail's among them.
+      const fail = (error: unknown) => {
+        for (const reject of digests.slice(asked)) reject(error);
+      };
+      const offers = () => ({
+        unresolved: part("unresolved")?.textContent ?? null,
+        star: part("star")?.getAttribute("aria-disabled") ?? null,
+        check: part("check")?.hasAttribute("disabled") ?? null,
+        trash: part("move-to-trash") ?? null,
+        status: part("status") ?? null,
+        composer: part("composer") ?? null,
+      });
+      expect(offers()).toMatchObject({
+        unresolved: expect.stringContaining("Reading it again") as unknown,
+        star: "true",
+        check: true,
+        trash: null,
+        status: null,
+        composer: null,
+      });
+      fail(new TypeError("Failed to fetch"));
+      await settle();
+      expect(offers()).toMatchObject({
+        unresolved: expect.stringContaining("could not be read") as unknown,
+        star: "true",
+        trash: null,
+      });
+      // The minute's read tries again, and its answer shows the task as it is now.
+      const before = gets.filter((g) => g.task === "t_00001" && g.sections === undefined).length;
+      answer = (input) =>
+        input.sections === undefined
+          ? Promise.resolve(digest(1, { version: 15 }))
+          : Promise.resolve({ view: "sections", as_of: "1.20.01234567", sections: {} });
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      await settle();
+      expect(gets.filter((g) => g.task === "t_00001" && g.sections === undefined)).toHaveLength(
+        before + 1,
+      );
+      expect(part("unresolved")).toBeUndefined();
+      expect(part("reopen")).not.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("an answer about the expanded task that the feed outdated while it was on its way changes nothing", async () => {
+    const digests: ((error: unknown) => void)[] = [];
+    answer = (input) =>
+      input.sections === undefined
+        ? new Promise((_, reject) => {
+            digests.push(reject);
+          })
+        : Promise.resolve({ view: "sections", as_of: "1.20.01234567", sections: {} });
+    const onExpand = vi.fn<(task: TaskRow | undefined, gone?: boolean) => void>();
+    mount(<TaskList view="open" filter={OPEN} empty="" onExpand={onExpand} />);
+    apply(snapshot([task(1), task(2)]));
+    act(() => {
+      titleOf("t_00001")?.click();
+    });
+    await settle();
+    const asked = digests.length;
+    apply(snapshot([task(2)], 20));
+    await settle();
+    // Every read of the task since the snapshot, the card's detail's among them.
+    const fail = (error: unknown) => {
+      for (const reject of digests.slice(asked)) reject(error);
+    };
+    // The feed brings the task back, active, before the read's answer.
+    apply(batch(21, [{ ...task(1), version: 21 }], ["lifecycle"]));
+    await settle();
+    fail(notFound());
+    await settle();
+    expect(expandedOf("t_00001")).toBe("true");
+    expect(onExpand.mock.calls.filter(([, gone]) => gone === true)).toEqual([]);
+    const card = container.querySelector<HTMLElement>(`li[data-key="t_00001"]`);
+    expect(card?.querySelector('[data-part="unresolved"]')).toBeNull();
+    expect(card?.querySelector('[data-part="move-to-trash"]')).not.toBeNull();
+  });
+
   test("Collapse puts focus on the title, as Escape does", () => {
     const tasks = [task(1), task(2)];
     mount(<TaskList view="open" filter={OPEN} empty="" />);

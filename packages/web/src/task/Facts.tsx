@@ -257,7 +257,7 @@ function WaitingOn({
     .sort((a, b) => a.localeCompare(b));
   const begin = () => {
     opened.current ??= {
-      base: edits.seen(task.id, ["waiting_on"]),
+      base: edits.seen(task, ["waiting_on"]),
       mark: edits.mark(),
       value: saved,
     };

@@ -303,6 +303,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   Try again sends it against what you saw when you made it, so a change made since is shown to you
   first. Another tab's edit, or a closed tab's, shows with Copy and Discard: to send its words,
   copy them into the field.
+- A button on a task's row or card (the box, the star, a move, a status, the area, Move to Trash),
+  a search result's included, changes the task as that row shows it. If someone changed it since,
+  also while the row stayed under your focus, nothing is overwritten: the page says who changed it.
+  An open card whose task the page cannot tell after it was away says so and offers nothing until
+  it can.
 - A field sends only what you typed in it. Going in and out of a field without typing sends
   nothing, and it then shows what is saved, also a change someone made while you were in it.
 - Pressing Note or Run again after its answer was lost, also after a reload, makes one note or
