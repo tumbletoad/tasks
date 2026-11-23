@@ -3141,7 +3141,11 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
   let cleared: Cleared | undefined;
   if (action === "create") {
     if (path.area === undefined) {
-      throw invalid("path", "A new group is named, not given by ID", "Name the area/project.");
+      throw invalid(
+        "path",
+        "A new group takes a name, not an ID",
+        "This ID names a project that exists. To make another, give its name as Area/Project.",
+      );
     }
     // The group created is created as named; an area named only to hold it keeps the typo check.
     let area = resolveGroup(names, "area", path.area, "path", {

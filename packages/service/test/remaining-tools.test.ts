@@ -702,6 +702,16 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
       group: { kind: "project", name: "Loose one" },
     });
     expect((await list({ path: loose?.ref })).projects.map((p) => p.name)).toEqual(["Loose one"]);
+    // A new group takes a name: create given an ID says so.
+    const byId = await refusal(
+      call(named, script, "group.manage", {
+        action: "create",
+        path: loose?.ref,
+        request_id: rid(),
+      }),
+    );
+    expect(byId).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "path" }] } });
+    expect(byId.message).toBe("A new group takes a name, not an ID.");
   });
 
   test("a write action needs a request_id, a group and, to change one, a base; mode propose waits for M4.02", async () => {
