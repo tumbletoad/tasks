@@ -13,15 +13,18 @@
 //   the entities it touched, `{type, id, task?, row, changed, created?}`. `row` is the compact row
 //   of a task, area or project (the working set's kinds) and null for the rest (notes, log
 //   entries, sources, links, places, launches): a client refetches the task those touch. No body
-//   of a note or log entry, no context, outcome or other long text is in the feed.
+//   of a note, no context, outcome or other long text is in the feed, and of a log entry only the
+//   start of an agent's question that waits for the person, on its task's row.
+// - Each event carries its commit's time (`at`), which only moves forward.
 // - A task's compact row (ops/task-rows.ts) also carries what its row shows of its children
 //   (A5 3.6): its first three sources with their own text and URL (`sources`), how many more it
 //   has (`sources_more`), where it opens on this machine (`place`), from its own folder or its
-//   project's, and whether its newest background run works or needs the person (`run`). A commit
-//   that changes a source, a link, a folder or a run of a task therefore carries the task's row
-//   too, as an entity of its own, and one that changes a project's folder carries the rows of the
-//   project's tasks the batch holds, so the row the client holds never shows a source, a folder
-//   or a run state the space no longer has.
+//   project's, whether its newest background run works or needs the person (`run`), and the
+//   questions agents asked that wait for the person (`questions`). A commit that changes a
+//   source, a link, a folder, a note, a log entry or a run of a task therefore carries the task's
+//   row too, as an entity of its own, and one that changes a project's folder carries the rows of
+//   the project's tasks the batch holds, so the row the client holds never shows a source, a
+//   folder, a run state or a question the space no longer has.
 import type { PreferenceRead } from "@ttasks/contracts";
 import type { Row, WorkerConnection } from "@ttasks/storage";
 import { hasFolderTable } from "../ops/read.ts";
@@ -29,6 +32,7 @@ import {
   compact,
   taskColumns,
   taskRows,
+  WAITS,
   type CompactRow,
   type FeedHere,
 } from "../ops/task-rows.ts";
@@ -61,6 +65,8 @@ export interface FeedEntity {
 
 export interface FeedEvent {
   readonly seq: number;
+  /** The commit's time. */
+  readonly at: number;
   readonly op_id: string;
   readonly request_id: string;
   readonly actor: { readonly kind: string; readonly label: string };
@@ -68,11 +74,33 @@ export interface FeedEvent {
   readonly entities: readonly FeedEntity[];
 }
 
+/**
+ * A task agents changed lately: who changed it last of them, and when. `row` is the row of a task
+ * the snapshot's open tasks do not hold, one an agent finished among them.
+ */
+export interface AgentChange {
+  readonly task: string;
+  readonly actor: string;
+  readonly at: number;
+  readonly row?: CompactRow;
+}
+
 export interface SnapshotMessage {
   readonly type: "snapshot";
   readonly space: { readonly id: string; readonly name: string; readonly ref_prefix: string };
   readonly cursor: Cursor;
   readonly tasks: readonly CompactRow[];
+  /**
+   * The tasks an agent or a routine changed in the last `AGENT_CHANGE_DAYS` days, newest change
+   * first, at most `AGENT_CHANGE_TASKS`: as of the snapshot's cursor, so the batches after it go on
+   * from there.
+   */
+  readonly agent_changes: readonly AgentChange[];
+  /**
+   * The rows of the finished and dropped tasks on which a question waits for the person: the open
+   * tasks' rows carry theirs.
+   */
+  readonly asking: readonly CompactRow[];
   readonly areas: readonly CompactRow[];
   readonly projects: readonly CompactRow[];
   /**
@@ -129,9 +157,40 @@ const openTasks = (folders: boolean) =>
 const LIVE_AREAS = `SELECT ${AREA_COLUMNS} FROM areas a WHERE a.deleted_at IS NULL ORDER BY a.position, a.id`;
 const LIVE_PROJECTS = `SELECT ${PROJECT_COLUMNS} FROM projects p WHERE p.deleted_at IS NULL ORDER BY p.position, p.id`;
 
+/** How far back the agents' changes in a snapshot reach, in days. */
+export const AGENT_CHANGE_DAYS = 7;
+/** At most this many tasks agents changed are in a snapshot. */
+export const AGENT_CHANGE_TASKS = 100;
+/**
+ * Each live task's newest commit by an agent or a routine since `$since`, newest first, at most
+ * `AGENT_CHANGE_TASKS`. Commit times only move forward, so the week is the newest commits: the
+ * walk goes back from the newest one by one and stops at the first one older.
+ */
+const AGENT_CHANGED =
+  "WITH RECURSIVE week(seq) AS (SELECT seq FROM commits WHERE seq = (SELECT max(seq) FROM " +
+  "commits) AND at >= $since UNION ALL SELECT c.seq FROM week w JOIN commits c ON c.seq = " +
+  "(SELECT max(seq) FROM commits WHERE seq < w.seq) WHERE c.at >= $since), recent AS (SELECT " +
+  "c.task_id AS task, max(w.seq) AS seq FROM week w JOIN commits k ON k.seq = w.seq JOIN changes " +
+  "c ON c.seq = w.seq JOIN tasks t ON t.id = c.task_id WHERE k.actor_kind IN ('agent', " +
+  "'routine') AND t.deleted_at IS NULL GROUP BY c.task_id ORDER BY seq DESC LIMIT " +
+  `${String(AGENT_CHANGE_TASKS)}) `;
+const AGENT_CHANGES =
+  AGENT_CHANGED +
+  "SELECT r.task AS task, k.at AS at, a.label AS actor FROM recent r JOIN commits k ON " +
+  "k.seq = r.seq JOIN actors a ON a.id = k.principal_id ORDER BY r.seq DESC";
+/** The rows of the tasks agents changed that the open tasks do not hold. */
+const agentChangedRows = (folders: boolean) =>
+  `${AGENT_CHANGED}SELECT ${taskColumns(folders)} FROM tasks t WHERE t.id IN ` +
+  "(SELECT task FROM recent) AND t.lifecycle <> 'active'";
+/** The rows of the finished and dropped tasks a question waits on (task-rows.ts's `WAITS`). */
+const askingRows = (folders: boolean) =>
+  `SELECT ${taskColumns(folders)} FROM tasks t WHERE t.lifecycle <> 'active' AND ` +
+  "t.deleted_at IS NULL AND t.id IN (SELECT task_id FROM log_entries WHERE kind = 'question' " +
+  `AND deleted_at IS NULL) AND EXISTS (SELECT 1 FROM log_entries q WHERE ${WAITS})`;
+
 const IN_BATCH = "seq > $after AND seq <= $upto";
 const COMMITS =
-  "SELECT seq, id, request_id, kind, actor_kind, origin, principal_id FROM commits " +
+  "SELECT seq, id, at, request_id, kind, actor_kind, origin, principal_id FROM commits " +
   `WHERE ${IN_BATCH} ORDER BY seq`;
 const CHANGES =
   "SELECT seq, n, entity, entity_id, task_id, action, field FROM changes " +
@@ -141,8 +200,11 @@ const ACTORS = `SELECT id, kind, label FROM actors WHERE id IN (SELECT principal
 const LATER = "SELECT DISTINCT entity, entity_id, task_id FROM changes WHERE seq > $upto";
 const touched = (entity: string) =>
   `SELECT entity_id FROM changes WHERE ${IN_BATCH} AND entity = '${entity}'`;
-/** The tables whose rows a task's compact row shows (A5 3.6): a change to one carries the row. */
-const ROW_CHILDREN = ["sources", "task_sources", "folders"] as const;
+/**
+ * The tables whose rows a task's compact row shows (A5 3.6), its waiting question among them: a
+ * change to one carries the row.
+ */
+const ROW_CHILDREN = ["sources", "task_sources", "folders", "notes", "log_entries"] as const;
 /** The projects whose folders a commit after `$after` changed: their tasks' rows show them. */
 const PROJECT_FOLDERS_CHANGED =
   "SELECT id, owner_id FROM folders WHERE owner_kind = 'project' AND id IN " +
@@ -209,27 +271,47 @@ export async function readHead(reader: WorkerConnection): Promise<SpaceHead> {
 }
 
 /**
- * The open working set (A5 3.15 step 1) with its cursor, in one snapshot. With `here`, each task's
- * row carries its place's state on that machine.
+ * The open working set (A5 3.15 step 1) with its cursor, and the tasks agents changed lately, in
+ * one snapshot. With `here`, each task's row carries its place's state on that machine.
  */
 export async function readSnapshot(
   reader: WorkerConnection,
   here?: FeedHere,
+  now: number = Date.now(),
 ): Promise<SnapshotMessage> {
   const folders = await hasFolderTable(reader);
-  const [space, tasks, areas, projects, preferences] = await reader.transaction("deferred", [
-    { sql: SPACE_SQL, mode: "get" },
-    { sql: openTasks(folders), mode: "all" },
-    { sql: LIVE_AREAS, mode: "all" },
-    { sql: LIVE_PROJECTS, mode: "all" },
-    { sql: PREFERENCE_ROWS, mode: "all" },
-  ]);
+  const since = { since: now - AGENT_CHANGE_DAYS * 86_400_000 };
+  const [space, tasks, areas, projects, preferences, changed, finished, asking] =
+    await reader.transaction("deferred", [
+      { sql: SPACE_SQL, mode: "get" },
+      { sql: openTasks(folders), mode: "all" },
+      { sql: LIVE_AREAS, mode: "all" },
+      { sql: LIVE_PROJECTS, mode: "all" },
+      { sql: PREFERENCE_ROWS, mode: "all" },
+      { sql: AGENT_CHANGES, mode: "all", params: since },
+      { sql: agentChangedRows(folders), mode: "all", params: since },
+      { sql: askingRows(folders), mode: "all" },
+    ]);
   const head = headOf(space);
+  const rows = new Map(
+    (await taskRows(finished as Row[], head.ref_prefix, here)).map((row) => [row["id"], row]),
+  );
   return {
     type: "snapshot",
     space: { id: head.id, name: head.name, ref_prefix: head.ref_prefix },
     cursor: head.cursor,
     tasks: await taskRows(tasks as Row[], head.ref_prefix, here),
+    agent_changes: (changed as Row[]).map((change) => {
+      const task = String(change["task"]);
+      const row = rows.get(task);
+      return {
+        task,
+        actor: typeof change["actor"] === "string" ? change["actor"] : "",
+        at: Number(change["at"]),
+        ...(row === undefined ? {} : { row }),
+      };
+    }),
+    asking: await taskRows(asking as Row[], head.ref_prefix, here),
     areas: (areas as Row[]).map((row) => compact(row)),
     projects: (projects as Row[]).map((row) => compact(row)),
     preferences: spacePreferencesOf(preferences as Row[]),
@@ -421,6 +503,7 @@ export async function readBatch(
     const actor = actorOf.get(String(commit["principal_id"]));
     events.push({
       seq,
+      at: Number(commit["at"]),
       op_id: String(commit["id"]),
       request_id: String(commit["request_id"]),
       actor: {

@@ -57,6 +57,12 @@ export const TaskUpdateInput = z.strictObject({
         .boolean()
         .describe("Star it: on Today until cleared. Only when the user asks")
         .optional(),
+      reviewed: z
+        .string()
+        .max(10)
+        .regex(/^l[0-9]{1,9}$/u)
+        .describe("Newest agent question the user read, such as l4: it and earlier ones are done")
+        .optional(),
     })
     .describe("Fields to change")
     .optional(),
@@ -123,6 +129,7 @@ export const taskUpdate = defineEntry({
   ],
   input: TaskUpdateInput,
   agent: {
+    hidden: ["set.reviewed"],
     max: [
       ["set.title", AGENT_LIMITS.title],
       ["set.summary", AGENT_LIMITS.summary],

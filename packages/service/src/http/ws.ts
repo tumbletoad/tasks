@@ -569,7 +569,7 @@ class FeedSocket {
       let start: Cursor | undefined = cursor;
       if (cursor !== undefined && copy !== undefined && copy !== found.copy) {
         // The tab loaded another copy of the space: what it holds says nothing of this one.
-        const snapshot = await readSnapshot(reader, this.#hub.here());
+        const snapshot = await readSnapshot(reader, this.#hub.here(), this.#hub.options.now());
         if (generation !== this.#generation) return;
         await this.#sendSnapshot(snapshot, found, "copy");
         start = snapshot.cursor;
@@ -577,7 +577,7 @@ class FeedSocket {
         const head = await readHead(reader);
         if (!sameAuthority(cursor, head.cursor) || cursor.seq > head.cursor.seq) {
           start = undefined;
-          const snapshot = await readSnapshot(reader, this.#hub.here());
+          const snapshot = await readSnapshot(reader, this.#hub.here(), this.#hub.options.now());
           if (generation !== this.#generation) return;
           await this.#sendSnapshot(
             snapshot,
@@ -589,7 +589,7 @@ class FeedSocket {
           this.#facts = JSON.stringify(factsOf(found, this.#hub.options.host));
         }
       } else {
-        const snapshot = await readSnapshot(reader, this.#hub.here());
+        const snapshot = await readSnapshot(reader, this.#hub.here(), this.#hub.options.now());
         if (generation !== this.#generation) return;
         await this.#sendSnapshot(snapshot, found);
         start = snapshot.cursor;
@@ -692,7 +692,7 @@ class FeedSocket {
       if (!sameAuthority(cursor, head.cursor) || facts !== this.#facts) {
         // An epoch or incarnation change always means a fresh snapshot (A1 3.7), and so does
         // another copy of the space, or another reason it takes no change.
-        const snapshot = await readSnapshot(reader, this.#hub.here());
+        const snapshot = await readSnapshot(reader, this.#hub.here(), this.#hub.options.now());
         if (generation !== this.#generation) return;
         await this.#sendSnapshot(
           snapshot,

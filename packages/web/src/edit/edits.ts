@@ -31,7 +31,7 @@ import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { Msg } from "../row/model.ts";
 import type { Change as FeedChange } from "../store/core.ts";
 import type { Overlay } from "../store/pending.ts";
-import type { TaskRow } from "../store/rows.ts";
+import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 import type { Changes, Sent } from "../store/store.ts";
 import {
   allOf,
@@ -729,6 +729,56 @@ export class Edits {
               ? { id: "toast.reopenFailed" }
               : { id: "toast.reopenConflict", values: whoOf(conflict.by) }),
         });
+      },
+      toast,
+    );
+  }
+
+  /**
+   * The person sets aside the questions agents asked on a task without answering them: one
+   * action, gone from the row at once, and an Undo that brings them back. It names `newest`, the
+   * newest question the row showed: one asked after it still waits. The service decides the mark
+   * from its own read and never moves it back, so it needs no base: another tab's dismissal in
+   * between is no conflict.
+   */
+  dismissQuestions(task: TaskRow, newest: string): void {
+    const count = questionsWaiting(task);
+    const sent = this.#sendWith(
+      task.id,
+      ["reviewed_at"],
+      undefined,
+      (_base, request) =>
+        this.#deps.client.task.update({
+          task: task.id,
+          set: { reviewed: newest },
+          request_id: request,
+        }),
+      { tasks: [{ id: task.id, set: {}, clear: ["questions", "questions_more"] }] },
+    );
+    const dismissed: Omit<Toast, "key"> = {
+      kind: "undo",
+      text: { id: "toast.questionDismissed", values: { count } },
+      action: {
+        label: { id: "toast.undo" },
+        run: () => {
+          void this.undo(sent);
+        },
+      },
+    };
+    const toast = this.#toast(dismissed);
+    void sent.commit.then((commit) => {
+      if (commit !== undefined) this.#fieldsOf.set(commit, ["reviewed_at"]);
+    });
+    void this.#outcome(
+      sent.answer,
+      sent.call,
+      (decision, say, late) => {
+        if (decision.ok) {
+          if (late) say(dismissed);
+          return;
+        }
+        if (this.#deps.failed(decision.error)) return;
+        say({ kind: "error", text: { id: "toast.dismissFailed", values: { count } } });
       },
       toast,
     );

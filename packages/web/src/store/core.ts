@@ -25,7 +25,9 @@ import type { Instance } from "../api.ts";
 import {
   DEFAULT_SCALES,
   inWorkingSet,
+  type AgentChange,
   isRowType,
+  questionsWaiting,
   ROW_OF,
   type AnyRow,
   type AreaRow,
@@ -53,6 +55,8 @@ export interface Change {
   readonly created: boolean;
   readonly kind: string;
   readonly actor: { readonly kind: string; readonly label: string };
+  /** When its commit was made, in milliseconds since 1970. */
+  readonly at?: number;
   readonly request_id: string;
 }
 
@@ -62,8 +66,8 @@ export type ResnapshotReason = "gap" | "authority" | "withheld" | "unreadable" |
 const SCALE_KEYS: ReadonlySet<string> = new Set(["tasks.statuses", "tasks.effort_scale"]);
 
 export type Outcome =
-  /** A snapshot replaced the working set. */
-  | { readonly kind: "snapshot" }
+  /** A snapshot replaced the working set, with the tasks agents changed lately. */
+  | { readonly kind: "snapshot"; readonly agentChanges: readonly AgentChange[] }
   /**
    * A batch moved the cursor; `changes` and `requests` are those of its new events, and
    * `commits` each request's commit ID where the event named one.
@@ -94,6 +98,8 @@ export interface Held {
   readonly space: SpaceHead;
   readonly cursor: Cursor;
   readonly tasks: ReadonlyMap<string, TaskRow>;
+  /** The finished and dropped tasks on which a question waits for the person. */
+  readonly asking: ReadonlyMap<string, TaskRow>;
   readonly areas: ReadonlyMap<string, AreaRow>;
   readonly projects: ReadonlyMap<string, ProjectRow>;
   readonly instances: readonly Instance[];
@@ -104,7 +110,12 @@ interface Maps {
   task: Map<string, AnyRow>;
   area: Map<string, AnyRow>;
   project: Map<string, AnyRow>;
+  asking: Map<string, TaskRow>;
 }
+
+/** Whether a task's row belongs in `asking`: a question waits on it outside the working set. */
+const asksOutside = (row: TaskRow): boolean =>
+  !inWorkingSet("task", row) && questionsWaiting(row) > 0;
 
 function mapOf(type: RowType, rows: readonly AnyRow[]): Map<string, AnyRow> {
   const map = new Map<string, AnyRow>();
@@ -128,6 +139,7 @@ export class LiveCore {
   /** A fresh snapshot was asked for: batches wait for it. */
   #awaiting = false;
   readonly #dirty = new Set<RowType>();
+  #askingDirty = false;
   #published: Held | undefined;
 
   constructor(space?: string, copy?: string) {
@@ -203,11 +215,13 @@ export class LiveCore {
       task: mapOf("task", message.tasks),
       area: mapOf("area", message.areas),
       project: mapOf("project", message.projects),
+      asking: new Map((message.asking ?? []).filter(asksOutside).map((row) => [row.id, row])),
     };
     this.#awaiting = false;
     this.#dirty.add("task").add("area").add("project");
+    this.#askingDirty = true;
     this.#published = undefined;
-    return { kind: "snapshot" };
+    return { kind: "snapshot", agentChanges: message.agent_changes ?? [] };
   }
 
   #batch(batch: BatchMessage): Outcome {
@@ -260,6 +274,7 @@ export class LiveCore {
           created: entity.created,
           kind: event.kind,
           actor: event.actor,
+          ...(event.at === undefined ? {} : { at: event.at }),
           request_id: event.request_id,
         };
         if (!isRowType(entity.type)) {
@@ -289,6 +304,12 @@ export class LiveCore {
         if (inWorkingSet(type, after)) map.set(entity.id, after);
         else map.delete(entity.id);
         this.#dirty.add(type);
+        if (type === "task") {
+          const row = after as TaskRow;
+          if (asksOutside(row)) maps.asking.set(row.id, row);
+          else maps.asking.delete(row.id);
+          this.#askingDirty = true;
+        }
         changes.push({
           ...base,
           ...(type === "task" ? { task: entity.id } : {}),
@@ -318,10 +339,12 @@ export class LiveCore {
       tasks: copy<TaskRow>("task", before?.tasks),
       areas: copy<AreaRow>("area", before?.areas),
       projects: copy<ProjectRow>("project", before?.projects),
+      asking: before !== undefined && !this.#askingDirty ? before.asking : new Map(maps.asking),
       instances: this.#instances,
       scales: this.#scales,
     };
     this.#dirty.clear();
+    this.#askingDirty = false;
     this.#published = held;
     return held;
   }

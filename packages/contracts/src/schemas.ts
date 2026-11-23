@@ -364,8 +364,8 @@ const Count = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
 /**
  * A task's compact row: the change feed's form, which the page's lists draw. A column that is null
  * in the space is left out. It carries no long text (context, outcome, notes), only what a row
- * shows of its children: its first three sources, how many more, where it opens here, and its
- * newest background run while it works or needs the person.
+ * shows of its children: its first three sources, how many more, where it opens here, its
+ * newest background run while it works or needs the person, and the questions that wait.
  */
 export const CompactTaskRow = z.strictObject({
   id: TaskId,
@@ -432,6 +432,19 @@ export const CompactTaskRow = z.strictObject({
     })
     .describe("Its newest background run, while it works or needs the person")
     .optional(),
+  questions: z
+    .array(
+      z.strictObject({
+        ref: z.string().describe("The log entry, such as l3"),
+        by: z.string().describe("The agent that asked"),
+        text: z.string().max(300).describe("Its first 300 characters"),
+        at: Millis.describe("When it was asked"),
+      }),
+    )
+    .max(10)
+    .describe("Questions agents asked that wait for the person, newest first")
+    .optional(),
+  questions_more: Count.describe("How many more questions wait").optional(),
 });
 
 /** The most tasks a read names as holding a source's key. */

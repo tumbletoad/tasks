@@ -554,6 +554,47 @@ export async function readTaskLinks(reader: WorkerConnection, ref: string): Prom
   return [...(live as Row[]), ...(removed as Row[])];
 }
 
+/**
+ * The question `ordinal` of the task, if it is one: when it arrived, whether a later question
+ * arrived in the same millisecond, and the task's `reviewed_at`.
+ */
+const QUESTION_ARRIVAL: Statement = {
+  sql:
+    "SELECT k.at AS at, t.reviewed_at AS reviewed, EXISTS (SELECT 1 FROM log_entries l JOIN " +
+    "commits c ON c.seq = l.created_seq WHERE l.task_id = q.task_id AND l.kind = 'question' AND " +
+    "l.created_seq > q.created_seq AND c.at = k.at) AS tied FROM log_entries q JOIN commits k " +
+    `ON k.seq = q.created_seq JOIN tasks t ON t.id = q.task_id WHERE q.task_id = ${MATCH} AND ` +
+    "q.ordinal = $ordinal AND q.kind = 'question' AND q.deleted_at IS NULL",
+  mode: "get",
+};
+
+/**
+ * The task's `reviewed_at` once the person dismissed its question `ordinal` and those before it:
+ * that question's arrival (task-rows.ts's `WAITS`), a millisecond before it when a later question
+ * arrived in the same millisecond, so the one the person did not see still waits. Never earlier
+ * than the mark the task has. `mark` is undefined when the entry is no question of the task;
+ * `asOf` is the read's.
+ */
+export async function readReviewedMark(
+  reader: WorkerConnection,
+  ref: string,
+  ordinal: number,
+): Promise<{ readonly mark: number | undefined; readonly asOf: string }> {
+  const { id, ref: number, alias } = taskKey(ref);
+  const [space, found] = await snapshot(reader, [SPACE, QUESTION_ARRIVAL], {
+    id,
+    ref: number,
+    alias,
+    ordinal,
+  });
+  const { asOf } = spaceFacts(space);
+  if (found === undefined || found === null) return { mark: undefined, asOf };
+  const row = found as Row;
+  const mark = Number(row["at"]) - (Number(row["tied"]) === 1 ? 1 : 0);
+  const reviewed = row["reviewed"];
+  return { mark: typeof reviewed === "number" && reviewed > mark ? reviewed : mark, asOf };
+}
+
 // ---------------------------------------------------------------------------------------------
 // Launches and the bound task (A3 3.7.3, 3.4.2)
 

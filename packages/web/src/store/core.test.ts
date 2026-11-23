@@ -310,3 +310,67 @@ describe("[A5.3.15.web.store.interleavings] the live store's core against a mode
     );
   });
 });
+
+describe("[A5.while-away.web.asking] the page holds every finished task a question waits on", () => {
+  test("from the snapshot and the batches after it: a row with questions outside the open set joins, one without them or deleted leaves, an open one stays with the open tasks", () => {
+    const task = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      ref: `M-${id.slice(-1)}`,
+      title: "Fixture",
+      lifecycle: "completed",
+      status: "open",
+      inbox: false,
+      position: "a",
+      created_at: 0,
+      version: 1,
+      ...patch,
+    });
+    const questions = [{ ref: "l1", by: "Codex", text: "Fixture which?", at: 1 }];
+    const [a, b, c] = [
+      "t_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "t_bbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "t_cccccccccccccccccccccccccc",
+    ];
+    const core = new LiveCore();
+    core.receive({
+      type: "snapshot",
+      space: { id: SPACE, name: "Mira", ref_prefix: "M" },
+      cursor: { epoch: 1, incarnation: "i", seq: 10 },
+      tasks: [task(c, { lifecycle: "active", questions })],
+      asking: [task(a, { questions })],
+      areas: [],
+      projects: [],
+      instances: [],
+    } as unknown as SnapshotMessage);
+    const asking = () => [...(core.publish()?.asking.keys() ?? [])].sort();
+    expect(asking()).toEqual([a]);
+    const batch = (seq: number, row: Record<string, unknown>): BatchMessage => ({
+      type: "batch",
+      space_id: SPACE,
+      epoch: 1,
+      incarnation: "i",
+      from: seq - 1,
+      through: seq,
+      events: [
+        {
+          seq,
+          request_id: "",
+          actor: { kind: "agent", label: "Codex" },
+          kind: "log.add",
+          entities: [{ type: "task", id: String(row["id"]), row, changed: [], created: false }],
+        },
+      ],
+    });
+    // A question on a dropped task the page did not hold.
+    core.receive(batch(11, task(b, { lifecycle: "archived", questions })));
+    expect(asking()).toEqual([a, b]);
+    // Dismissed; and deleted.
+    core.receive(batch(12, task(a)));
+    core.receive(batch(13, task(b, { lifecycle: "archived", questions, deleted_at: 5 })));
+    expect(asking()).toEqual([]);
+    // Reopened with its question: it is an open task again.
+    core.receive(batch(14, task(b, { lifecycle: "active", questions })));
+    expect(asking()).toEqual([]);
+    expect(core.publish()?.tasks.has(b)).toBe(true);
+  });
+});

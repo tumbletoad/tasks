@@ -35,7 +35,7 @@ import {
   type TerminalSettings,
   type Verdict,
 } from "@ttasks/launch";
-import { fitsShape, preferenceSpec, type PrefValue } from "@ttasks/contracts";
+import { fitsShape, LATER_PREFERENCES, preferenceSpec, type PrefValue } from "@ttasks/contracts";
 import { QUEUE_LIMITS, type QueueLimits } from "@ttasks/contracts/runs";
 import { isId, type Id } from "@ttasks/storage";
 import {
@@ -162,7 +162,8 @@ export const DEFAULT_CONFIG: MachineConfig = {
  * `[preferences]` (A1 3.16): each key is a machine preference's whole name, quoted
  * (`"projection.dir" = "/srv/ttasks-view"`), checked by the registry as the writer checks a space
  * preference, and by this platform's rule for a path. A bad entry drops itself; a name the
- * registry does not know is a warning, as a newer build may know it.
+ * registry does not know is a warning, as a newer build may know it, and so is a key this build
+ * does not read yet.
  */
 function readMachinePreferences(
   doc: TomlDocument,
@@ -200,6 +201,7 @@ function readMachinePreferences(
       problems.error(key, "invalid_value");
       continue;
     }
+    if (LATER_PREFERENCES.some((later) => later.key === name)) problems.warn(key, "not_read");
     out.set(name, value as PrefValue);
   }
   return out;

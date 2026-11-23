@@ -255,12 +255,12 @@ a + .muted,
   cursor: pointer;
 }
 
-.earlier:hover:not(:disabled) {
+.earlier:hover {
   color: var(--k-text);
 }
 
-.earlier:disabled {
-  cursor: default;
+.earlier[aria-busy="true"] {
+  cursor: progress;
 }
 
 .thread {

@@ -128,7 +128,7 @@ Usage: `ttasks log [<task>] <text> [flags]`
 |---|---|---|---|
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `<text>` | `text` | string | The entry, in Markdown |
-| `--kind` | `kind` | "progress" \| "evidence" \| "decision" \| "blocker" \| "question" \| "note" | question flags it for the user; note: a note for the user |
+| `--kind` | `kind` | "progress" \| "evidence" \| "decision" \| "blocker" \| "question" \| "note" | question: the user sees it until they answer; note: a note for the user |
 | `--at` | `at` | string | When a log entry was made, only for older work: ISO date or instant |
 
 Only through `--input`: `links`.
@@ -222,6 +222,7 @@ Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 | `project=` | `set.project` | string | Project name or slug |
 | `folder=` | `set.folder` | string | "cwd", an absolute folder or one under ~ |
 | `focus=` | `set.focus` | boolean | Star it: on Today until cleared. Only when the user asks |
+| `reviewed=` | `set.reviewed` | string | Newest agent question the user read, such as l4: it and earlier ones are done |
 
 Only through `--input`: `context`, `add_sources`.
 

@@ -52,7 +52,8 @@ export const AUTONOMY_IN_FORCE = "full";
 /**
  * Preference keys this build declares but does not act on: nothing reads them, so `preferences`
  * leaves them out rather than show a setting that changes nothing. A person still reads what is
- * stored, beside `inForce`: what this build does whatever the key says.
+ * stored, beside `inForce`: what this build does whatever the key says. A machine key set in
+ * machine.toml is a warning there (`not_read`), which `ttasks doctor` words with `inForce`.
  */
 export const LATER_PREFERENCES: readonly {
   readonly key: string;
@@ -71,6 +72,11 @@ export const LATER_PREFERENCES: readonly {
     step: "the step that makes Open use the default instance",
   },
   { key: "projection.enabled", inForce: true, step: "the step that makes the projection read it" },
+  {
+    key: "projection.dir",
+    inForce: "the readable files are in each space folder's view/",
+    step: "the step that makes the projection write there",
+  },
   { key: "features.search_trigram", inForce: false, step: "M3.16 (trigram search)" },
 ];
 
