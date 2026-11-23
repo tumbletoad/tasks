@@ -8,6 +8,7 @@
 // Every pattern carries the `u` flag, so Zod reads it by code point, as Ajv and JSON Schema do.
 import { z } from "zod";
 import { under, type Pairs } from "./define.ts";
+import { EFFORT_KEY_MAX } from "./preferences.ts";
 import { safeLine, safeText } from "./safe-text.ts";
 
 /**
@@ -170,7 +171,7 @@ export const TaskDraft = z.strictObject({
   status: safeLine(40).describe("A status of the space; default open").optional(),
   inbox: z.boolean().describe("Put it in the Inbox for the user").optional(),
   priority: Priority.describe("1 highest, 4 none").optional(),
-  effort: safeLine(20)
+  effort: safeLine(EFFORT_KEY_MAX)
     .describe("Estimate time and difficulty; default scale S under 30 min, M half a day, L more")
     .optional(),
   due: safeLine(40).describe("ISO date or phrase: fri, +3d").optional(),

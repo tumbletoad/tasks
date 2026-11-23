@@ -627,7 +627,8 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       ["features.search_trigram", "space", "boolean"],
     ]);
     for (const later of LATER_PREFERENCES) expect(shown.has(later.key), later.key).toBe(false);
-    // A script changes no key: the agents' set is a later step's (later.ts). The person does.
+    // A script changes no key: the agents' set is a later step's (later.ts). The person does,
+    // all but the statuses, whose change is a later step's too.
     expect(described.prefs.filter((p) => p.writable)).toEqual([]);
     const got = PrefsManageResult.parse(
       await call(fx, user, "prefs.manage", { action: "get", keys: ["tasks.*"] }),
@@ -635,7 +636,7 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
     expect(got.prefs.map((p) => [p.key, p.value, p.is_default, p.writable])).toEqual([
       ["tasks.dedupe_window_days", 30, true, true],
       ["tasks.effort_scale", ["S", "M", "L"], true, true],
-      ["tasks.statuses", ["open", "waiting", "review", "backlog"], true, true],
+      ["tasks.statuses", ["open", "waiting", "review", "backlog"], true, false],
     ]);
     // An agent is not shown a key nothing reads; a person's command still reads what is stored.
     expect(

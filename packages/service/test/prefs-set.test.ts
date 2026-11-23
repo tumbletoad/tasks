@@ -135,29 +135,39 @@ describe("[A3.3.4.prefs.set] the person changes a space's settings, and everythi
     expect(await effortOf(large)).toBe("L");
   });
 
-  test("a new status is one a task takes at once, and status counts it in the space's order", async () => {
-    await set(person, "tasks.statuses", "open,parked,waiting,review,backlog");
-    await add([{ title: "Fixture parked", status: "parked" }]);
-    const status = await call(script, "space.status", {});
-    const counts = (status["counts"] as { statuses: { status: string }[] }).statuses;
-    expect(counts.map((c) => c.status)).toEqual(["open", "parked", "waiting", "review", "backlog"]);
+  test("the statuses are not changed yet: the refusal says so, and nothing is written", async () => {
+    const before = await asOf();
+    expect(await refusal(set(person, "tasks.statuses", "open,parked,waiting"))).toMatchObject({
+      code: "invalid_input",
+      message: "Changing this setting is not built yet.",
+    });
+    expect(await asOf()).toBe(before);
+    expect(await get("tasks.statuses")).toEqual(["open", "waiting", "review", "backlog"]);
   });
 
-  test("a change that drops a key active tasks hold is refused naming them, and nothing changes", async () => {
-    const [large, waiting] = await add([
-      { title: "Fixture large", effort: "L" },
-      { title: "Fixture blocked", status: "waiting" },
-    ]);
+  test("a change that drops a size active tasks hold is refused naming them, and nothing changes", async () => {
+    const [large] = await add([{ title: "Fixture large", effort: "L" }]);
     const effort = await refusal(set(person, "tasks.effort_scale", "S,M"));
     expect(effort).toMatchObject({
       code: "invalid_input",
       message: `Active tasks hold an effort this change removes: ${large ?? ""} (L). Nothing was changed.`,
       data: { tasks: [large], task_count: 1 },
     });
-    const status = await refusal(set(person, "tasks.statuses", "open,review,backlog"));
-    expect(status).toMatchObject({ data: { tasks: [waiting], task_count: 1 } });
     expect(await get("tasks.effort_scale")).toEqual(["S", "M", "L"]);
-    expect(await get("tasks.statuses")).toEqual(["open", "waiting", "review", "backlog"]);
+  });
+
+  test("a size the scale takes is one every task input takes, and no two differ only in case", async () => {
+    const longest = "X".repeat(20);
+    await set(person, "tasks.effort_scale", `S,M,L,${longest}`);
+    const [sized] = await add([{ title: "Fixture longest size", effort: longest }]);
+    expect(await effortOf(sized ?? "")).toBe(longest);
+    expect(
+      await refusal(set(person, "tasks.effort_scale", `S,M,L,${longest},${longest}X`)),
+    ).toMatchObject({ code: "invalid_input", hint: "It takes a list of 1 to 10 keys." });
+    expect(await refusal(set(person, "tasks.effort_scale", "S,M,L,l"))).toMatchObject({
+      code: "invalid_input",
+    });
+    expect(await get("tasks.effort_scale")).toEqual(["S", "M", "L", longest]);
   });
 
   test("the same value again changes nothing, and says so", async () => {

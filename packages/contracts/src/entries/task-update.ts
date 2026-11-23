@@ -1,6 +1,7 @@
 // task.update: change an active task's fields, summary, context, group and sources (A3 3.4.6).
 import { z } from "zod";
 import { defineEntry, under } from "../define.ts";
+import { EFFORT_KEY_MAX } from "../preferences.ts";
 import { safeLine, safeText } from "../safe-text.ts";
 import {
   AGENT_LIMITS,
@@ -44,7 +45,7 @@ export const TaskUpdateInput = z.strictObject({
       status: safeLine(40).describe("A status of the space").optional(),
       inbox: z.boolean().describe("In the Inbox").optional(),
       priority: Priority.describe("1 highest, 4 none").optional(),
-      effort: safeLine(20).describe("Effort").optional(),
+      effort: safeLine(EFFORT_KEY_MAX).describe("Effort").optional(),
       due: safeLine(40).describe("ISO date or phrase: fri, +3d").optional(),
       waiting_on: safeLine(80).describe("Who or what it waits on").optional(),
       area: safeLine(120).describe("Area name or slug").optional(),

@@ -133,11 +133,11 @@ export const prefsManage = defineEntry({
       },
     },
     {
-      title: "The user adds a status",
+      title: "The user adds sizes",
       actor: "user",
       input: {
         action: "set",
-        set: [{ key: "tasks.statuses", value: ["open", "waiting", "review", "backlog", "parked"] }],
+        set: [{ key: "tasks.effort_scale", value: ["XS", "S", "M", "L", "XL"] }],
         base: AS_OF,
         request_id: requestId(15),
       },
@@ -146,9 +146,9 @@ export const prefsManage = defineEntry({
         as_of: AS_OF_NEXT,
         prefs: [
           {
-            key: "tasks.statuses",
-            value: ["open", "waiting", "review", "backlog", "parked"],
-            default: ["open", "waiting", "review", "backlog"],
+            key: "tasks.effort_scale",
+            value: ["XS", "S", "M", "L", "XL"],
+            default: ["S", "M", "L"],
             is_default: false,
             writable: true,
           },
@@ -156,9 +156,9 @@ export const prefsManage = defineEntry({
         result: "updated",
         changed: [
           {
-            key: "tasks.statuses",
-            from: ["open", "waiting", "review", "backlog"],
-            to: ["open", "waiting", "review", "backlog", "parked"],
+            key: "tasks.effort_scale",
+            from: ["S", "M", "L"],
+            to: ["XS", "S", "M", "L", "XL"],
           },
         ],
       },

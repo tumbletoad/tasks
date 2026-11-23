@@ -40,6 +40,15 @@ export const LATER: readonly Later[] = [
 ];
 
 /**
+ * Preference keys this build reads and nobody sets yet: a change of them needs more than its value.
+ * A space's statuses: the page's Open and the finished statuses assume `open`, and search tells
+ * statuses apart that differ only in case.
+ */
+export const LATER_SETS: readonly { readonly key: string; readonly step: string }[] = [
+  { key: "tasks.statuses", step: "the step that lets a space change its statuses" },
+];
+
+/**
  * Preference keys this build declares but does not act on: nothing reads them, so `preferences`
  * leaves them out rather than show a setting that changes nothing.
  */

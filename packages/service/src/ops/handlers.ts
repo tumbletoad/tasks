@@ -21,6 +21,7 @@ import {
   isKeyList,
   laterIn,
   LATER_PREFERENCES,
+  LATER_SETS,
   mayWrite,
   opSpec,
   parseInput,
@@ -3334,13 +3335,18 @@ function unknownPref(path: string, key: string, shown: readonly PreferenceSpec[]
 const laterStep = (p: PreferenceSpec): string | undefined =>
   LATER_PREFERENCES.find((later) => later.key === p.key)?.step;
 
+/** The step that lets anyone set a key this build reads, if it is one. */
+const laterSet = (p: PreferenceSpec): string | undefined =>
+  LATER_SETS.find((later) => later.key === p.key)?.step;
+
 /**
- * Whether the caller may set the key here (A1 3.16): a key this build acts on, never a policy key,
- * else by its writers, and only for a caller who may set at all (later.ts).
+ * Whether the caller may set the key here (A1 3.16): a key this build acts on and lets be set,
+ * never a policy key, else by its writers, and only for a caller who may set at all (later.ts).
  */
 const prefWritable = (p: PreferenceSpec, principal: Principal): boolean =>
   laterIn("prefs.manage", { action: "set" }, principal.audience) === undefined &&
   laterStep(p) === undefined &&
+  laterSet(p) === undefined &&
   !p.policy &&
   mayWrite(p, principal.actorKind);
 
@@ -3394,6 +3400,14 @@ async function prefsSet(call: Call): Promise<unknown> {
         `${path}.key`,
         "This build does not act on this key yet, so it is not changed",
         `It arrives with ${step}.`,
+      );
+    }
+    const setStep = laterSet(p);
+    if (setStep !== undefined) {
+      throw invalid(
+        `${path}.key`,
+        "Changing this setting is not built yet",
+        `It arrives with ${setStep}.`,
       );
     }
     if (!prefWritable(p, call.principal)) {

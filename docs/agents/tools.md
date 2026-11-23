@@ -742,7 +742,7 @@ Result:
 }
 ```
 
-#### The user adds a status
+#### The user adds sizes
 
 Called by the user.
 
@@ -751,13 +751,13 @@ Called by the user.
   "action": "set",
   "set": [
     {
-      "key": "tasks.statuses",
+      "key": "tasks.effort_scale",
       "value": [
-        "open",
-        "waiting",
-        "review",
-        "backlog",
-        "parked"
+        "XS",
+        "S",
+        "M",
+        "L",
+        "XL"
       ]
     }
   ],
@@ -774,19 +774,18 @@ Result:
   "as_of": "1.1047.5n0w8k3q",
   "prefs": [
     {
-      "key": "tasks.statuses",
+      "key": "tasks.effort_scale",
       "value": [
-        "open",
-        "waiting",
-        "review",
-        "backlog",
-        "parked"
+        "XS",
+        "S",
+        "M",
+        "L",
+        "XL"
       ],
       "default": [
-        "open",
-        "waiting",
-        "review",
-        "backlog"
+        "S",
+        "M",
+        "L"
       ],
       "is_default": false,
       "writable": true
@@ -795,19 +794,18 @@ Result:
   "result": "updated",
   "changed": [
     {
-      "key": "tasks.statuses",
+      "key": "tasks.effort_scale",
       "from": [
-        "open",
-        "waiting",
-        "review",
-        "backlog"
+        "S",
+        "M",
+        "L"
       ],
       "to": [
-        "open",
-        "waiting",
-        "review",
-        "backlog",
-        "parked"
+        "XS",
+        "S",
+        "M",
+        "L",
+        "XL"
       ]
     }
   ]
