@@ -66,12 +66,22 @@ afterEach(async () => {
 /** What the recording spawner saw: the link route's opener, which never really runs. */
 const opened: SpawnRequest[] = [];
 
+/** The `systemd-run` the rig names: on Linux, its scope probe says scopes work. */
+const SYSTEMD_RUN = "/usr/bin/systemd-run";
+
 /**
  * A spawner that starts nothing: the opener "ran" and exited with `code`, or never answers
- * (`hang`) and is stopped at the opener's deadline.
+ * (`hang`). The scope probe answers 0 and is not an opener.
  */
 function recordingSpawner(code: number | "hang") {
   return (request: SpawnRequest): Promise<SpawnedProcess> => {
+    if (request.argv[0] === SYSTEMD_RUN && request.argv.includes("--quiet")) {
+      return Promise.resolve({
+        pid: 1,
+        exited: Promise.resolve({ code: 0, signal: null }),
+        stop: () => undefined,
+      });
+    }
     opened.push(request);
     let stop = (): void => undefined;
     const exited =
@@ -172,6 +182,7 @@ async function rig(label: string, opener: number | "hang" = 0): Promise<Rig> {
     launch: {
       terminals: {
         spawn: recordingSpawner(opener),
+        systemdRun: SYSTEMD_RUN,
         // The recording spawner's hang never ends: what is proved is the answer once the
         // deadline passes, not the deadline's length (opener.test.ts covers that).
         ...(opener === "hang" ? { openerMs: 200 } : {}),
@@ -465,10 +476,24 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       expect(opened).toHaveLength(1);
       const argv = opened[0]?.argv ?? [];
       const url = argv.at(-1) ?? "";
+      // Never tied to the service: on Linux in a scope of its own, outside the service's unit.
+      expect(opened[0]?.detached).toBe(true);
+      const gio = [expect.stringMatching(/\/gio$/u), "open", url];
       expect(argv).toEqual(
         WINDOWS
           ? [expect.stringMatching(/rundll32\.exe$/iu), "url.dll,FileProtocolHandler", url]
-          : [expect.stringMatching(/\/gio$/u), "open", url],
+          : process.platform === "linux"
+            ? [
+                SYSTEMD_RUN,
+                "--user",
+                "--scope",
+                "--collect",
+                "--slice=app.slice",
+                expect.stringMatching(/^--unit=[a-z0-9]+-[0-9a-z]+-open-[0-9a-f]{16}$/u),
+                "--",
+                ...gio,
+              ]
+            : gio,
       );
       const query = new URL(url).searchParams;
       expect(url.startsWith("claude-cli://open?cwd=")).toBe(true);
@@ -489,7 +514,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
     { timeout: 300_000 },
     async () => {
       opened.length = 0;
-      // An opener that does not end in time is stopped: "it may have opened".
+      // An opener that does not end in time: "it may have opened".
       const r = await rig("claude-link-unknown", "hang");
       const task = await addTask(r, "Fix appointment time zones");
       const { result } = await open(r, { task: task.ref, instance: "claude-link" });

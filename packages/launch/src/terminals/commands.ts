@@ -27,6 +27,7 @@
 //   gives it a new, visible console outside the service's job. The product's command reaches the
 //   script in two variables, never in the script's text. Judged like a direct terminal: the
 //   starter exits 0 at once, a non-zero exit means the start failed and nothing started.
+import { randomBytes } from "node:crypto";
 import { basename, win32 } from "node:path";
 import { envVar, PRODUCT_ID } from "@ttasks/brand";
 import type { TerminalApp } from "../sections.ts";
@@ -280,8 +281,13 @@ export function scopeUnit(install: string, launch: string, attempt: number): str
   return `${PRODUCT_ID}-${install}-launch-${launch}-${String(attempt)}`;
 }
 
+/** An OS opener's scope unit: `<product>-<install>-open-<random>`, one per opener started. */
+export const openerUnit = (install: string): string =>
+  `${PRODUCT_ID}-${install}-open-${randomBytes(8).toString("hex")}`;
+
 /** A unit name systemd accepts and this module makes: nothing a person typed reaches it. */
-export const SCOPE_UNIT = /^[a-z0-9]+-[0-9a-z]{1,32}-launch-la_[0-9a-z]{26}-[0-9]{1,3}$/;
+export const SCOPE_UNIT =
+  /^[a-z0-9]+-[0-9a-z]{1,32}-(?:launch-la_[0-9a-z]{26}-[0-9]{1,3}|open-[0-9a-f]{16})$/;
 
 /**
  * Linux: the terminal's argv inside a transient scope of the user manager, outside the service's

@@ -1041,6 +1041,7 @@ ${instance}`;
       platform,
       env,
       spawn: this.#options.terminals?.spawn ?? osSpawner,
+      outside: (argv) => this.terminals.outside(env, argv),
       which: (name) => findOnPosixPath(name, path),
       cwd: this.#options.home ?? this.#options.stateDir,
       ...(this.#options.terminals?.openerMs === undefined

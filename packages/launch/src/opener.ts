@@ -45,6 +45,11 @@ export interface OpenerOptions {
   /** The folder the opener runs in: any that exists, never the task's. */
   readonly cwd: string;
   readonly timeoutMs?: number;
+  /**
+   * The argv an opener starts with, so that it and what it opens outlive the service: on Linux a
+   * transient scope of its own (TerminalLauncher.outside). Default: as it is.
+   */
+  readonly outside?: (argv: readonly string[]) => Promise<readonly string[]>;
 }
 
 /** A program the OS opener runs, and what its exit codes say. */
@@ -151,10 +156,12 @@ async function run(
   if (list === "no_session") return { result: "no_session", opener: "none" };
   for (const candidate of list) {
     const request: SpawnRequest = {
-      argv: candidate.argv,
+      argv: options.outside === undefined ? candidate.argv : await options.outside(candidate.argv),
       cwd: options.cwd,
       env: { ...options.env },
-      detached: options.platform !== "win32",
+      // Never tied to the service: in a session of its own on Linux and macOS, and on Windows
+      // outside the kill-on-close job that ends a normal child when the service exits.
+      detached: true,
       hidden: true,
     };
     let started: Awaited<ReturnType<Spawner>>;
