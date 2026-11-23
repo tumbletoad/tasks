@@ -27,6 +27,13 @@ export const test = base.extend<
     monitored: World;
   }
 >({
+  // A test's routes end with the test. One that still passes a request on when its test ends (the
+  // page asks again on a timer) is rejected then, and that failed whichever test ran next.
+  context: async ({ context }, use) => {
+    await use(context);
+    for (const page of context.pages()) await page.unrouteAll({ behavior: "ignoreErrors" });
+    await context.unrouteAll({ behavior: "ignoreErrors" });
+  },
   // One started only by the tests that use it: the fake `ttam` as the Agent Monitor, and the fake
   // Codex, so a task can have a background run beside an agent in a terminal.
   monitored: [
