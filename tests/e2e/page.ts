@@ -84,9 +84,13 @@ export function spaceSwitcher(page: Page, name: string): Locator {
   return page.getByRole("button", { name: `Space ${name}. Switch space` });
 }
 
-/** Waits until the tab shows `name`'s space, live. */
+/**
+ * Waits until the tab shows `name`'s space, live, in its own faces: they arrive after the first
+ * text, and a box measured before them is another width once they are in.
+ */
 export async function showsSpace(page: Page, name: string): Promise<void> {
   await expect(spaceSwitcher(page, name)).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
 }
 
 /**
