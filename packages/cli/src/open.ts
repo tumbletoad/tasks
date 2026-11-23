@@ -32,7 +32,14 @@ import { isAbsolute, join, win32 } from "node:path";
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { isAgentMarker, parseKey, rpcContextEnv } from "@ttasks/bridge/protocol";
 import type { ErrorBody } from "@ttasks/contracts";
-import { ambiguousError, findSpace, isAmbiguity } from "@ttasks/service/copies";
+import {
+  ambiguousError,
+  copyOf,
+  findSpace,
+  isAmbiguity,
+  isServed,
+  type Copy,
+} from "@ttasks/service/copies";
 import { IPC_KEY } from "@ttasks/service/paths";
 import { movedMessage, PROBE_PATH, verifyProbe } from "@ttasks/service/http/shared";
 import type { Globals } from "./args.ts";
@@ -213,9 +220,33 @@ function routeOf(id: string | undefined, task: string | undefined): string | und
 }
 
 /**
+ * The refusal of a folder whose copy of a space is not the one served. The page goes to a space
+ * by its ID, which a restored copy shares with its original, so opening anyway would show the
+ * served copy: a person who meant to look at a backup would edit live work.
+ */
+function notServedHere(folder: string, copy: Copy, serving: Copy | undefined): ErrorBody {
+  const name = serving?.name ?? copy.name ?? "a space";
+  const data = { reason: "not_served", retryable: false };
+  if (serving?.folder === undefined) {
+    return {
+      code: "space_unavailable",
+      message: `That folder holds a copy of ${name} that is not open here, and no other folder serves it now.`,
+      hint: `To open this copy: ${CLI_NAME} space open ${folder}`,
+      data,
+    };
+  }
+  return {
+    code: "space_unavailable",
+    message: `That folder holds a copy of ${name} that is not open here. ${name} is open from ${serving.folder}.`,
+    hint: `To go to ${name} as it is open: ${CLI_NAME} open ${serving.folder}. To look inside this copy, close that one first (${CLI_NAME} space close ${serving.folder}), then run: ${CLI_NAME} space open ${folder}`,
+    data: { ...data, serving: serving.folder },
+  };
+}
+
+/**
  * The ID of the one space `named` means, by the service's own rule (findSpace), among the spaces
  * it does not hold closed; else the error that says there is none or several, with the spaces to
- * choose from.
+ * choose from. A folder means its own copy, so it is taken only while that copy serves the space.
  */
 async function resolveSpace(
   session: Session,
@@ -224,9 +255,17 @@ async function resolveSpace(
   const listed = (await session.call("space/list", {}, { timeoutMs: 10_000 })) as {
     spaces: SpaceRow[];
   };
-  const live = listed.spaces
-    .filter((row) => row.state !== "closed")
-    .map((row) => ({ ...row, id: row.id ?? row.registered }));
+  const rows = listed.spaces.map((row) => ({ ...row, id: row.id ?? row.registered }));
+  const live = rows.filter((row) => row.state !== "closed");
+  if (isAbsolute(named)) {
+    const copy = findSpace(rows, named);
+    if (copy !== undefined && !isAmbiguity(copy) && copy.id !== undefined) {
+      const serving = copyOf(live.filter(isServed), copy.id);
+      return serving?.entry === copy.entry
+        ? { id: copy.id }
+        : { error: notServedHere(named, copy, serving) };
+    }
+  }
   const found = findSpace(live, named);
   const choices = (rows: readonly (typeof live)[number][]) => ({
     spaces: rows.flatMap((row) =>

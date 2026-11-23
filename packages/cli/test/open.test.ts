@@ -6,6 +6,7 @@
 // opener is recorded.
 import { createServer as createHttpServer } from "node:http";
 import { createServer, type Server, type Socket } from "node:net";
+import { renameSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { blockedMessage, movedMessage } from "@ttasks/service/http/shared";
@@ -145,6 +146,56 @@ describe("[A2.3.9.cli.open] ttasks open", () => {
       // No space named: the page's own default, as before.
       expect((await open([])).code).toBe(0);
       expect(URL_SHAPE.exec(opened.pop() ?? "")?.[3]).toBeUndefined();
+    },
+  );
+
+  test(
+    "a folder opens only the copy in it: a restored copy that is not served opens nothing, though it shares its space's ID",
+    SLOW,
+    async () => {
+      const w = await world("og");
+      const opened: string[] = [];
+      const openUrl = (url: string) => {
+        opened.push(url);
+        return Promise.resolve(true);
+      };
+      const user = (argv: string[]) => runMain(argv, { home: w.home, cwd: w.root, tty: true });
+      const open = (args: string[]) =>
+        runMain(["open", ...args], { home: w.home, tty: true, main: { openUrl } });
+      const original = join(w.root, "s", "mira");
+      const copy = join(w.root, "s", "mira-copy");
+      const backup = await user(["space", "backup", "--space", "Mira", "--json"]);
+      const name = (JSON.parse(backup.stdout) as { backup: { name: string } }).backup.name;
+      expect((await user(["space", "restore", name, "--space", "Mira", "--to", copy])).code).toBe(
+        0,
+      );
+      expect((await user(["space", "close", "Mira"])).code).toBe(0);
+      expect((await user(["space", "open", copy])).code).toBe(0);
+
+      // The copy serves the space, read-only: its folder opens it, the original's folder does not.
+      expect((await open([copy])).code).toBe(0);
+      expect(decodeURIComponent(URL_SHAPE.exec(opened.pop() ?? "")?.[3] ?? "")).toMatch(
+        /^\/s\/sp_/,
+      );
+      const closed = await open([original]);
+      expect(closed.code).toBe(8);
+      expect(closed.stderr).toContain(`Mira is open from ${copy}.`);
+
+      // The copy's folder goes away and the original is open again: the copy's folder still names
+      // that copy, not the writable original.
+      await w.stop();
+      renameSync(copy, `${copy}-away`);
+      await w.restart();
+      expect((await user(["space", "open", original])).code).toBe(0);
+      const away = await open([copy]);
+      expect(away.code).toBe(8);
+      expect(away.stderr).toContain("That folder holds a copy of Mira that is not open here.");
+      expect(away.stderr).toContain(`Mira is open from ${original}.`);
+      const json = await open([copy, "--json"]);
+      expect(JSON.parse(json.stdout)).toMatchObject({
+        error: { code: "space_unavailable", data: { reason: "not_served", serving: original } },
+      });
+      expect(opened).toEqual([]);
     },
   );
 
