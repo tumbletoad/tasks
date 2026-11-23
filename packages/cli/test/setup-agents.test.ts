@@ -125,7 +125,7 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
           app: string;
           state: string;
           sha256: string;
-          change: { args: string[]; diff: string[] };
+          change: { entry: { command: string; args: string[] }; diff: string[] };
         }[];
       };
       expect(planned.space).toBe(space);
@@ -146,8 +146,8 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
       ]);
       for (const h of planned.homes) {
         expect(h.sha256).toMatch(/^[0-9a-f]{64}$/u);
-        expect(h.change.args).toContain(join(home, "bin", windows ? "ttasks.exe" : "ttasks"));
-        expect(h.change.args).toContain(space);
+        expect(h.change.entry.command).toBe(join(home, "bin", windows ? "ttasks.exe" : "ttasks"));
+        expect(h.change.entry.args).toContain(space);
       }
       const text = await run(["setup", "agents"], false);
       expect(text.code).toBe(0);
@@ -351,11 +351,11 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
         space: string;
         plan: string;
         apply: string[];
-        homes: { app: string; change: { args: string[] } }[];
+        homes: { app: string; change: { entry: { args: string[] } } }[];
       };
       expect(planned.space).toBe(other);
       expect(planned.homes.map((h) => h.app)).toEqual(["codex"]);
-      expect(planned.homes[0]?.change.args).toContain(other);
+      expect(planned.homes[0]?.change.entry.args).toContain(other);
       expect(planned.apply).toEqual([
         CLI_NAME,
         "setup",
@@ -426,7 +426,7 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
         expect(preview.code, preview.stderr).toBe(0);
         const planned = JSON.parse(preview.stdout) as {
           apply: string[];
-          homes: { app: string; instance: string; change: { args: string[] } }[];
+          homes: { app: string; instance: string; change: { entry: { args: string[] } } }[];
         };
         // The default Codex home would be `codex`, which the other home's row holds; Claude Code's
         // `claude` is free and kept.
@@ -435,7 +435,7 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
           ["codex", "codex-2"],
         ]);
         const codex = planned.homes.find((h) => h.app === "codex");
-        expect(codex?.change.args).toEqual(expect.arrayContaining(["--instance", "codex-2"]));
+        expect(codex?.change.entry.args).toEqual(expect.arrayContaining(["--instance", "codex-2"]));
         // --instance selects by the instance the preview shows.
         const selected = await run(
           ["setup", "agents", "--space", space, "--instance", "codex-2", "--json"],

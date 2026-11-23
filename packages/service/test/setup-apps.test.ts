@@ -182,14 +182,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         "--app",
         "claude-desktop",
       ];
-      expect(change).toMatchObject({
-        writer: "edit",
-        exec: [],
-        args: [],
-        undo: [],
-        set: {},
-        entry: argv,
-      });
+      expect(change.entry).toEqual({ command: w.tasks, args: argv.slice(1) });
       expect(change.diff).toEqual([
         `+ mcpServers.${MCP_SERVER_KEY}.command = ${JSON.stringify(w.tasks)}`,
         `+ mcpServers.${MCP_SERVER_KEY}.args = ${JSON.stringify(argv.slice(1))}`,
@@ -219,8 +212,6 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         app: "claude-desktop",
         state: "applied",
         entry: { command: w.tasks, args: argv.slice(1) },
-        args: [],
-        undo: [],
         grant: ROWS.live.find((row) => row.home === view.home.home)?.grant,
       });
       expect(JSON.stringify(readRecords(w.state))).not.toContain(SENTINEL);
@@ -338,7 +329,9 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         "ambiguous",
         "ambiguous",
       ]);
-      expect(planOf(input, [first], SPACE)[0]?.change).toMatchObject({ writer: "edit" });
+      expect(planOf(input, [first], SPACE)[0]?.change).toMatchObject({
+        entry: { command: w.tasks },
+      });
       expect(await applyHome(input, first, SPACE, ROWS, "ambiguous")).toMatchObject({
         result: "left",
         reason: "ambiguous",
@@ -437,18 +430,14 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
           result: "applied",
         });
       }
-      // The command ran with the home T3 gives each instance.
-      expect(
-        mcpCalls(w)
-          .map((c) => [c.tool, c.env.CLAUDE_CONFIG_DIR, c.env.CODEX_HOME])
-          .sort(),
-      ).toEqual(
-        [
-          ["claude", join(w.home, "work-claude"), null],
-          ["codex", null, join(w.home, ".codex")],
-          ["codex", null, join(w.home, ".codex_second")],
-        ].sort(),
-      );
+      // Each entry went into the file of the home T3 gives its instance.
+      for (const file of [
+        join(w.home, "work-claude", ".claude.json"),
+        join(w.home, ".codex", "config.toml"),
+        join(w.home, ".codex_second", "config.toml"),
+      ]) {
+        expect(readFileSync(file, "utf8"), file).toContain(MCP_SERVER_KEY);
+      }
       for (const view of await survey(input)) {
         expect((await removeHome(input, view, ROWS)).result, view.home.instance).toBe("removed");
       }
@@ -576,7 +565,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
         "codex.js",
       );
       const found = await inputOf(w, { LOCALAPPDATA: local });
-      // No Codex CLI on this PATH: only the app's engine reads and writes the home.
+      // No Codex CLI on this PATH: only the app's engine reads the home, and setup writes it.
       const input: SetupInput = {
         ...found,
         detection: {
@@ -589,8 +578,6 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       expect(codexAppEngines(input)).toEqual([engine]);
       const view = only(await survey(input), "codex");
       expect(view.home).toMatchObject({ instance: "codex", hosts: ["codex-app"] });
-      const change = planChange(input, view, SPACE);
-      expect(typeof change !== "string" && change.exec).toEqual([engine]);
       expect(codexEngines(input, view.home)).toEqual([{ kind: "app", exec: [engine] }]);
       expect((await applyHome(input, view, SPACE, ROWS)).result).toBe("applied");
       expect(readFileSync(join(w.home, ".codex", "config.toml"), "utf8")).toContain(
@@ -599,7 +586,7 @@ describe("[A3.3.13.setup.apps] setup for Claude Desktop, the Codex app and T3's 
       expect(await removeHome(input, only(await survey(input), "codex"), ROWS)).toMatchObject({
         result: "removed",
       });
-      // The file the engine's add made, emptied by its remove, is gone again.
+      // The file setup made for its entry is gone again.
       expect(existsSync(join(w.home, ".codex", "config.toml"))).toBe(false);
     },
     SLOW,

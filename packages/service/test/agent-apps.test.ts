@@ -93,13 +93,15 @@ async function call<T = Record<string, unknown>>(
   return { status: reply.status, result: (JSON.parse(reply.body) as { result: T }).result };
 }
 
-/** TTasks's entry in the scratch Claude Code home, or undefined. */
+/** TTasks's entry in the scratch Claude Code home, or undefined (also when setup's file is gone). */
 const claudeEntry = (user: string): { args?: unknown } | undefined =>
-  (
-    JSON.parse(readFileSync(join(user, ".claude.json"), "utf8")) as {
-      mcpServers?: Record<string, { args?: unknown }>;
-    }
-  ).mcpServers?.["ttasks"];
+  existsSync(join(user, ".claude.json"))
+    ? (
+        JSON.parse(readFileSync(join(user, ".claude.json"), "utf8")) as {
+          mcpServers?: Record<string, { args?: unknown }>;
+        }
+      ).mcpServers?.["ttasks"]
+    : undefined;
 
 const row = (view: AppsView, app: string) => {
   const found = view.rows.find((r) => r.app === app);

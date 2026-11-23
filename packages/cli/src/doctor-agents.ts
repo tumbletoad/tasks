@@ -63,6 +63,7 @@ import {
   readBlockRecords,
   readRecords,
   readsHome,
+  recordArgv,
   recordedBlocks,
   samePath,
   SetupStateInvalid,
@@ -476,7 +477,7 @@ async function mcpCheck(
       };
     }
   }
-  const argv = record.entry_argv;
+  const argv = recordArgv(record);
   const command = argv[0] ?? "";
   if (!isFile(command)) {
     return {
@@ -527,7 +528,7 @@ async function enginesCheck(
   if (engines.length === 0) {
     return { id, status: "skip", detail: `${name(view)}: no Codex engine was found to ask.` };
   }
-  const command = view.record?.entry_argv[0] ?? "";
+  const command = view.record === undefined ? "" : (recordArgv(view.record)[0] ?? "");
   const failed: string[] = [];
   for (const engine of engines) {
     const out = await output(
@@ -948,7 +949,7 @@ async function bridgeCheck(
   probeMs: number,
 ): Promise<Check> {
   const id = `bridge.${view.home.instance}`;
-  const argv = resolve(view.record?.entry_argv ?? []);
+  const argv = resolve(view.record === undefined ? [] : recordArgv(view.record));
   const failed = (why: string): Check => ({
     id,
     status: "fail",

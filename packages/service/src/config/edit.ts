@@ -10,11 +10,11 @@
 //
 // Who may edit: approvals and instances are user-only operations (A4 3.2 step 4, R7). The caller
 // (the UI session or an interactive CLI, A2 3.6.5) checks that; this module only writes.
-import { lstatSync } from "node:fs";
+import { closeSync, fsyncSync, lstatSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { hasControl, isTable } from "@ttasks/launch";
-import { atomicWrite, makeDir } from "../hub/files.ts";
+import { atomicWrite, createFile, makeDir, writeAll } from "../hub/files.ts";
 import { loadMachineConfig, MACHINE_TOML } from "./machine-toml.ts";
 import { scanToml, ScanError, type ScannedHeader, type ScannedLine } from "./scan.ts";
 import {
@@ -50,6 +50,18 @@ export type Edit =
   | { readonly op: "append"; readonly array: string; readonly entries: Entries }
   /** Adds a new standard table `[table…]` at the end. Refused when it exists. */
   | { readonly op: "add_table"; readonly table: readonly string[]; readonly entries: Entries }
+  /**
+   * Takes out the standard table `[table…]`, from its header line through its last key line (a
+   * comment there goes with it), and right before it `before`, the bytes add_table put there, when
+   * they are still there; with `before` null, one blank line. A parent table that held only it may
+   * go with it. Refused `absent` without such a header, `unsupported_layout` when the table has a
+   * sub-table or more of it is written elsewhere.
+   */
+  | {
+      readonly op: "remove_table";
+      readonly table: readonly string[];
+      readonly before: string | null;
+    }
   /**
    * Takes out the one element `[[array]]` that is still exactly as `append` wrote `entries` in
    * this file's line breaks: its header and key lines byte for byte, nothing added to it and no
@@ -333,6 +345,8 @@ function place(text: string, layout: Layout, edit: Edit): string | { refused: Ed
       const found = removal(text, layout, edit);
       return "refused" in found ? found : found.text;
     }
+    case "remove_table":
+      return tableRemoval(text, layout, edit);
     case "set_in_element":
     case "remove_element":
       // Placed with the parsed document (elementSet, elementRemoval), in applyEdits.
@@ -492,6 +506,46 @@ function removal(
   return { text: before + after, index: match.index };
 }
 
+/** Where the standard table `[table…]` is: its header line through its last key line. */
+export function tableSpan(
+  lines: readonly ScannedLine[],
+  table: readonly string[],
+): { start: number; end: number } | { refused: EditRefusal } {
+  const at = lines.findIndex((l) => l.kind === "header" && !l.array && samePath(l.path, table));
+  const header = lines[at];
+  if (header === undefined) return { refused: "absent" };
+  let end = header.end;
+  for (const line of lines.slice(at + 1)) {
+    if (line.kind === "header") break;
+    end = line.end;
+  }
+  const elsewhere = lines.some(
+    (l) => l !== header && l.kind === "header" && startsWithPath(l.path, table),
+  );
+  return elsewhere ? { refused: "unsupported_layout" } : { start: header.start, end };
+}
+
+function tableRemoval(
+  text: string,
+  layout: Layout,
+  edit: Extract<Edit, { op: "remove_table" }>,
+): string | { refused: EditRefusal } {
+  const span = tableSpan(layout.lines, edit.table);
+  if ("refused" in span) return span;
+  let before = text.slice(0, span.start);
+  const after = text.slice(span.end);
+  const { eol } = layout;
+  if (edit.before !== null) {
+    if (before.endsWith(edit.before)) before = before.slice(0, before.length - edit.before.length);
+  } else if (
+    before.endsWith(eol) &&
+    (before.length === eol.length || before.slice(0, -eol.length).endsWith("\n"))
+  ) {
+    before = before.slice(0, before.length - eol.length);
+  }
+  return before + after;
+}
+
 /** The last line of `text` that ends with its line break, without it; "" when none. */
 function lastLine(text: string): string {
   const body = text.endsWith("\n") ? text.slice(0, -1) : "";
@@ -545,7 +599,20 @@ function intended(doc: TomlDocument, edit: Edit, index = -1): TomlDocument | Edi
       );
       return withValue(doc, edit.table, table);
     }
+    case "remove_table":
+      return withoutValue(doc, edit.table);
   }
+}
+
+/** `doc` without the tables on `path` that hold nothing, innermost first. */
+function withoutEmpty(doc: TomlDocument, path: readonly string[]): TomlDocument {
+  let out = doc;
+  for (let n = path.length; n > 0; n -= 1) {
+    const at = valueAt(out, path.slice(0, n));
+    if (!isTable(at) || Object.keys(at).length > 0) break;
+    out = withoutValue(out, path.slice(0, n));
+  }
+  return out;
 }
 
 /** Plain data for comparison: dates as their text, everything else as it is. */
@@ -615,7 +682,16 @@ export function applyEdits(text: string, edits: readonly Edit[]): EditResult {
     // (a lone surrogate) would be written as something else than was checked.
     if (!next.isWellFormed()) return { ok: false, reason: "invalid_value" };
     const parsed = parseToml(next);
-    if (!parsed.ok || !isDeepStrictEqual(comparable(parsed.doc), comparable(want))) {
+    const fits = (doc: TomlDocument) =>
+      parsed.ok && isDeepStrictEqual(comparable(parsed.doc), comparable(doc));
+    // A table's implicit parent goes with its last table; one written as a header of its own stays.
+    if (
+      !parsed.ok ||
+      !(
+        fits(want) ||
+        (edit.op === "remove_table" && fits(withoutEmpty(want, edit.table.slice(0, -1))))
+      )
+    ) {
       return { ok: false, reason: "unsupported_layout" };
     }
     doc = parsed.doc;
@@ -717,7 +793,7 @@ export interface CommitOptions {
  * alone (`changed_meanwhile`). What remains is the rename itself: a save in that instant is not
  * seen. TTasks's own edits are synchronous, so two in one process never interleave. The write keeps
  * the file's mode exactly, whatever the umask (it is the person's choice); a missing file is
- * created 0600, and missing folders 0700. The folder and the file are judged again first, as the
+ * created exclusively, 0600, and missing folders 0700. The folder and the file are judged again first, as the
  * service judges them: machine.toml is never written into a folder that fails the rule, and never
  * through a link (A2 3.2.4; the reader refuses one, so a link that appeared meanwhile is a
  * change). A caller that edits another file with the same editor (an agent app's configuration,
@@ -735,14 +811,32 @@ export function commitEdit(edit: PreparedEdit, options: CommitOptions = {}): Edi
   const unsafe = options.unsafe ?? ((path: string) => unsafeMachineToml(dirname(path)));
   if (unsafe(edit.path)) return { ok: false, reason: "unsafe" };
   if (!unchanged()) return { ok: false, reason: "changed_meanwhile" };
-  let mode = 0o600;
-  if (edit.before === undefined) makeDir(dirname(edit.path), 0o700);
-  else {
+  if (edit.before === undefined) {
+    // A file that was not there is created exclusively: one that appeared meanwhile is never
+    // replaced.
+    makeDir(dirname(edit.path), 0o700);
+    let fd: number;
     try {
-      mode = lstatSync(edit.path).mode & 0o777;
-    } catch {
-      // Keep 0600.
+      fd = createFile(edit.path, 0o600, "wx");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        return { ok: false, reason: "changed_meanwhile" };
+      }
+      throw error;
     }
+    try {
+      writeAll(fd, edit.text);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    return { ok: true, text: edit.text };
+  }
+  let mode = 0o600;
+  try {
+    mode = lstatSync(edit.path).mode & 0o777;
+  } catch {
+    // Keep 0600.
   }
   try {
     atomicWrite(edit.path, edit.text, mode, () => {

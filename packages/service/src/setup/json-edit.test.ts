@@ -1,4 +1,4 @@
-// The JSON splice for an app setup writes itself (A3 3.13.3, M4.05): one member in, the same member
+// The JSON splice of TTasks's entry (A3 3.13.2, 3.13.3, M4.05): one member in, the same member
 // out, and every other byte as it was, in each layout a person or an app writes.
 import { describe, expect, test } from "vitest";
 import { addEntry, removeEntry } from "./json-edit.ts";
@@ -14,7 +14,7 @@ function roundTrip(text: string, created: boolean): string {
   if (!added.ok) throw new Error(`refused: ${added.reason}`);
   const doc = JSON.parse(added.text) as { mcpServers: Record<string, unknown> };
   expect(doc.mcpServers["ttasks"]).toEqual(ENTRY);
-  const removed = removeEntry(added.text, "mcpServers", "ttasks", created);
+  const removed = removeEntry(added.text, "mcpServers", "ttasks", created, added.inner);
   if (!removed.ok) throw new Error(`refused: ${removed.reason}`);
   expect(removed.text).toBe(text);
   return added.text;
@@ -43,9 +43,14 @@ describe("[A3.3.13.setup.json-edit] one entry spliced in and out of a JSON file,
     roundTrip("{}", true);
     roundTrip("{}\n", true);
     roundTrip('{"preferences":{"a":1}}', true);
+    // Whitespace inside an empty object comes back with it.
+    roundTrip('{"mcpServers":{  }}', false);
+    roundTrip('{\r\n  "mcpServers": {\r\n  }\r\n}', false);
+    roundTrip("{ }", true);
+    roundTrip("{\n}\n", true);
     // Kept when told to: a table the person made stays, empty.
     const added = addEntry('{"mcpServers": {}}', "mcpServers", "ttasks", ENTRY);
-    expect(added.ok && removeEntry(added.text, "mcpServers", "ttasks", false)).toEqual({
+    expect(added.ok && removeEntry(added.text, "mcpServers", "ttasks", false)).toMatchObject({
       ok: true,
       text: '{"mcpServers": {}}',
     });
@@ -55,7 +60,7 @@ describe("[A3.3.13.setup.json-edit] one entry spliced in and out of a JSON file,
     const text =
       '{\n  "mcpServers": {\n    "ttasks": {"command": "y"},\n    "x}{": {"command": "]["}\n  }\n}\n';
     const removed = removeEntry(text, "mcpServers", "ttasks", false);
-    expect(removed).toEqual({
+    expect(removed).toMatchObject({
       ok: true,
       text: '{\n  "mcpServers": {\n    "x}{": {"command": "]["}\n  }\n}\n',
     });

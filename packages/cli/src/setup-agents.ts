@@ -78,7 +78,6 @@ import {
   rowAccess,
   runCommand,
   samePath,
-  SERVERS_KEY,
   SetupStateInvalid,
   SetupStateUnsafe,
   settleHomes,
@@ -265,9 +264,8 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
   unsafe: "its file or folder belongs to another user, or anyone can change it",
   wrong_type: "its servers are not a table",
   unsupported_layout:
-    "its MCP servers are written in a layout setup cannot keep (inline, dotted keys, or JSON it cannot splice)",
+    "its MCP servers are written in a layout setup cannot keep (inline, dotted keys, or JSON it cannot splice), or the entry's command cannot be written there",
   foreign_entry: `it has an entry named ${MCP_SERVER_KEY} that setup did not write`,
-  no_command: "the app's command was not found on this PATH",
   not_set_up:
     "Claude Desktop has not made its configuration file yet: open its Settings, then Developer, once, and run setup again",
   ambiguous: `there are several Claude Desktop configuration files: pass --home <folder> for the one the app uses`,
@@ -276,8 +274,8 @@ const REASON: Readonly<Record<OutcomeReason, string>> = {
   missing: "the entry setup wrote is gone",
   not_registered: "setup has not registered it",
   changed_meanwhile: "its file changed while setup was working",
-  command_failed: "the app's command failed; run the command from the preview to see why",
-  unexpected_entry: "the app's command did not write the entry setup asked for",
+  unexpected_entry: "the entry is not there as setup wrote it",
+  busy: "Claude Code kept its settings file locked while setup waited: try again in a moment",
   other_space: `it names another space: run ${CLI_NAME} setup agents --remove first`,
   grant_failed: `${PRODUCT_NAME}'s service did not give it its grant row, so its entry was taken out again`,
   instance_taken: `another agent home is registered as this instance, so its entry was taken out again: run ${CLI_NAME} setup agents again for a free one, or give this home an instance of its own in machine.toml`,
@@ -314,7 +312,6 @@ function reasonText(reason: OutcomeReason, home: HomeView["home"]): string {
 }
 
 const NOTE: Readonly<Record<string, string>> = {
-  empty_parent_kept: `Claude Code keeps an empty ${SERVERS_KEY["claude-code"]} object after its own remove. ${PRODUCT_NAME} never edits that file.`,
   undo_failed: `The entry may still be there: the next ${CLI_NAME} setup agents --apply or --remove takes it out.`,
   entry_left:
     "The entry there is not exactly the one setup asked for, so it was left as it is: take it out by hand if it is not wanted.",
@@ -831,14 +828,7 @@ async function preview(
             : typeof change === "string"
               ? { state: "refused", reason: change }
               : {
-                  change: {
-                    writer: change.writer,
-                    exec: change.exec,
-                    args: change.args,
-                    env: change.set,
-                    unset: change.unset,
-                    diff: change.diff,
-                  },
+                  change: { entry: change.entry, diff: change.diff },
                 }),
         })),
         ...(parsed.parts.includes("approve-tools")
@@ -871,18 +861,7 @@ async function preview(
       io.stdout(`   left alone: ${reasonText(change, view.home)}.\n`);
     } else {
       changes += 1;
-      io.stdout(
-        change.writer === "edit"
-          ? `   writes one entry into this file (the app has no command for it)\n`
-          : `   the app's own command writes the entry into this file, run for this home only (--json lists it)\n`,
-      );
-      const by =
-        view.home.app === "codex"
-          ? `the command writes the table; ${PRODUCT_NAME} adds the last ${String(change.patches.length)} keys`
-          : change.writer === "edit"
-            ? `${PRODUCT_NAME} writes these keys`
-            : "the command writes these keys";
-      io.stdout(`   diff (${by}):\n`);
+      io.stdout(`   ${PRODUCT_NAME} writes one entry into this file, and nothing else there:\n`);
       for (const line of change.diff) io.stdout(`     ${line}\n`);
     }
   }

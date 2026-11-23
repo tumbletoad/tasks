@@ -375,6 +375,10 @@ the behaviour it describes, and keep each one to a sentence or two.
   changes.
 - An editor that had the configuration file open while TTasks recorded a space, and saves it
   afterwards, writes its own list of spaces back, and the next start follows that list.
+- Agent setup reads an agent app's settings file again just before it replaces it, and leaves a
+  file that changed alone; a save another program makes in the instant between that read and the
+  replacement is lost, except a Claude Code session's, which waits for setup under Claude Code's
+  own lock.
 - On a machine that several people sign in to, another person could serve a page at TTasks's
   address while TTasks is stopped.
 - Words you typed and did not send for a task in the Trash, or for one the space does not have now,
