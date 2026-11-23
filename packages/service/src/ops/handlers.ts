@@ -17,6 +17,7 @@ import {
   AppError,
   FINISHED_CURSOR,
   fitsShape,
+  GROUP_CURSOR,
   GROUP_PAGE,
   isKeyList,
   laterIn,
@@ -2707,7 +2708,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     return groupList(read, {
       ...listScope(call),
       ...(only === undefined ? {} : { only }),
-      ...(typeof cursor === "string" ? { after: placeOf(cursor) } : {}),
+      ...(typeof cursor === "string" ? { after: placeOf(cursor, read.space.id) } : {}),
     });
   },
 
@@ -3360,13 +3361,26 @@ function comparePlaces(a: Place, b: Place): number {
   return comparePair(a.project, b.project);
 }
 
-/** A place as a cursor: `<position>.<area ID>` or `~`, then `.<position>.<project ID>`. */
-const cursorOf = (place: Place): string =>
-  [...(place.area ?? ["~"]), ...(place.project ?? [])].join(".");
+/**
+ * A place in a space's list as a cursor: the space's ID, `<position>.<area ID>` or `~`, then
+ * `.<position>.<project ID>`.
+ */
+const cursorOf = (space: string, place: Place): string =>
+  [space, ...(place.area ?? ["~"]), ...(place.project ?? [])].join(".");
 
-/** The place a cursor names; its shape is the schema's (GROUP_CURSOR). */
-function placeOf(cursor: string): Place {
-  const parts = cursor.split(".");
+/** The place a cursor names in the list of `space`, whose list gave it. */
+function placeOf(cursor: string, space: string): Place {
+  if (!GROUP_CURSOR.test(cursor)) {
+    throw invalid("cursor", "The cursor is damaged", "Start the list again without a cursor.");
+  }
+  const [from, ...parts] = cursor.split(".");
+  if (from !== space) {
+    throw invalid(
+      "cursor",
+      "The cursor is from another space's list",
+      "Start the list again without a cursor, or pass it with the space it came from.",
+    );
+  }
   const loose = parts[0] === "~";
   const area = loose ? undefined : ([parts[0] ?? "", parts[1] ?? ""] as const);
   const project = parts.slice(loose ? 1 : 2);
@@ -3465,7 +3479,9 @@ function groupList(read: GroupsHere, scope: ListScope): Record<string, unknown> 
       projects,
       total_areas: all.filter((slot) => slot.kind === "area").length,
       total_projects: all.filter((slot) => slot.kind === "project").length,
-      ...(rest.length > count && last !== undefined ? { cursor: cursorOf(last.place) } : {}),
+      ...(rest.length > count && last !== undefined
+        ? { cursor: cursorOf(read.space.id, last.place) }
+        : {}),
     };
   };
   // The most groups the caller's face shows whole: the next page starts at the first it would cut.

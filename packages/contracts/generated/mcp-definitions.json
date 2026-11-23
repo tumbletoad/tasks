@@ -23,9 +23,9 @@
       "tokens": 651
     },
     {
-      "bytes": 1874,
+      "bytes": 1707,
       "name": "organize",
-      "tokens": 937
+      "tokens": 854
     },
     {
       "bytes": 767,
@@ -54,8 +54,8 @@
     }
   ],
   "total": {
-    "bytes": 19462,
-    "tokens": 9732,
+    "bytes": 19295,
+    "tokens": 9649,
     "tools": 10
   }
 }

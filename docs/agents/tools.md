@@ -248,7 +248,7 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | A1 operations | `area.create`, `area.patch`, `area.move`, `area.archive`, `project.create`, `project.patch`, `project.move`, `project.archive`, `area.unarchive`, `project.unarchive`, `project.folder_set`, `project.folder_clear` |
 | Faces | MCP `organize`, CLI `ttasks area`, UI |
 | Errors | `invalid_input`, `not_found`, `ambiguous`, `conflict`, `forbidden`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 937, reported |
+| Definition, estimated tokens | 854, reported |
 | Result budget, estimated tokens | typical 400, max 1500 |
 
 ### Input
@@ -260,7 +260,7 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | `to` | string, max 120 | no | rename: the new name; move: the new area |
 | `folder` | string, 1 to 4096 | no | create, set_folder: the project's folder here, "cwd" or an absolute path |
 | `archived` | boolean | no | list: true includes archived areas and projects |
-| `cursor` | string, max 300 | no | list: the last page's cursor, with the same path and archived |
+| `cursor` | string, max 330 | no | list: the last page's cursor, with the same path and archived |
 | `base` | string, max 40 | no | as_of of the organize list that showed the group, or of your write of it |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
@@ -298,7 +298,7 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | `projects[].ref` | string | no | Its ID, for a path: its name alone does not name it |
 | `total_areas` | integer, 0 to 1000000000 | yes | Areas the whole list holds |
 | `total_projects` | integer, 0 to 1000000000 | yes | Projects the whole list holds |
-| `cursor` | string, max 300 | no | Pass it for the next page |
+| `cursor` | string, max 330 | no | Pass it for the next page |
 | `result` | "created" \| "exists" \| "renamed" \| "moved" \| "archived" \| "unarchived" \| "folder_set" \| "folder_cleared" \| "no_change" | no | A write: what happened; exists: another project has this folder |
 | `group` | object | no | A write: the group it changed |
 | `group.kind` | "area" \| "project" | yes | Area or project |

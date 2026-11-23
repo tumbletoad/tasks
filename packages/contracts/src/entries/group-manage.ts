@@ -39,14 +39,15 @@ export const GROUP_PAGE = 25;
 const POSITION = "[0-9A-Za-z]{2,120}";
 const B32 = "[0-9a-hjkmnp-tv-z]{26}";
 /**
- * Where the next page starts: after the last group's place in the list's order, the position and
- * ID of its area (`~`: none), then of the project.
+ * Where the next page starts: the space's ID, then after the last group's place in the list's
+ * order, the position and ID of its area (`~`: none), then of the project.
  */
 export const GROUP_CURSOR = new RegExp(
-  `^(?:${POSITION}\\.a_${B32}(?:\\.${POSITION}\\.p_${B32})?|~\\.${POSITION}\\.p_${B32})$`,
+  `^sp_${B32}\\.(?:${POSITION}\\.a_${B32}(?:\\.${POSITION}\\.p_${B32})?|~\\.${POSITION}\\.p_${B32})$`,
   "u",
 );
-const GroupCursor = z.string().max(300).regex(GROUP_CURSOR);
+/** A cursor's longest form. */
+const CURSOR_LENGTH = 330;
 
 export const GroupManageInput = z.strictObject({
   action: z.enum(GROUP_ACTIONS).describe("list reads; the others change a group"),
@@ -58,9 +59,12 @@ export const GroupManageInput = z.strictObject({
     'create, set_folder: the project\'s folder here, "cwd" or an absolute path',
   ).optional(),
   archived: z.boolean().describe("list: true includes archived areas and projects").optional(),
-  cursor: GroupCursor.describe(
-    "list: the last page's cursor, with the same path and archived",
-  ).optional(),
+  // Any text: the service says whether it is damaged or from another space.
+  cursor: z
+    .string()
+    .max(CURSOR_LENGTH)
+    .describe("list: the last page's cursor, with the same path and archived")
+    .optional(),
   base: GroupBase.optional(),
   request_id: RequestId.optional(),
   mode: Mode,
@@ -106,7 +110,12 @@ export const GroupManageResult = z.strictObject({
   projects: z.array(ProjectRow).describe("Projects without an area, after every area"),
   total_areas: Count.describe("Areas the whole list holds"),
   total_projects: Count.describe("Projects the whole list holds"),
-  cursor: GroupCursor.describe("Pass it for the next page").optional(),
+  cursor: z
+    .string()
+    .max(CURSOR_LENGTH)
+    .regex(GROUP_CURSOR)
+    .describe("Pass it for the next page")
+    .optional(),
   result: z
     .enum([
       "created",

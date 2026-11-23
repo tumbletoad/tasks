@@ -40,6 +40,7 @@ export { historyRedo, HistoryRedoInput, HistoryRedoResult } from "./entries/hist
 export { historyUndo, HistoryUndoInput, HistoryUndoResult } from "./entries/history-undo.ts";
 export {
   GROUP_ACTIONS,
+  GROUP_CURSOR,
   GROUP_PAGE,
   groupManage,
   GroupManageInput,

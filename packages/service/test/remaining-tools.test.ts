@@ -528,18 +528,32 @@ describe("[A3.3.4.organize.list] organize: the list, one area, and writes that w
     const shelved = await pages();
     expect(shelved.flatMap(names)).not.toContain("Home");
     expect(shelved[0]?.areas.find((a) => a.name === "Many")).toMatchObject({ archived: true });
-    // A page goes on after a group that was archived since; a cursor no group has is refused.
+    // A page goes on after a group that was archived since.
     const first = await list();
     await write({ action: "archive", path: "Many/Project 1", base: paged.base() });
     const second = await list({ cursor: first.cursor });
     expect([...names(first), ...names(second)].filter((name) => name !== "Many")).toEqual(
       [...new Set([...names(first), ...names(second)])].filter((name) => name !== "Many"),
     );
-    expect(
-      await refusal(
-        call(paged, script, "group.manage", { action: "list", cursor: `a_${"0".repeat(26)}` }),
-      ),
-    ).toMatchObject({ code: "invalid_input", data: { issues: [{ path: "cursor" }] } });
+    // A damaged cursor says to start again; one from another space's list says so.
+    const damaged = await refusal(
+      call(paged, script, "group.manage", { action: "list", cursor: `a_${"0".repeat(26)}` }),
+    );
+    expect(damaged).toMatchObject({
+      code: "invalid_input",
+      data: { issues: [{ path: "cursor" }] },
+    });
+    expect(damaged.hint).toMatch(/start the list again/iu);
+    const elsewhere = (first.cursor ?? "").replace(/^sp_\w+/u, moved.spaceId);
+    expect(elsewhere).not.toBe(first.cursor);
+    const foreign = await refusal(
+      call(paged, script, "group.manage", { action: "list", cursor: elsewhere }),
+    );
+    expect(foreign).toMatchObject({
+      code: "invalid_input",
+      data: { issues: [{ path: "cursor" }] },
+    });
+    expect(foreign.message).toMatch(/another space/u);
   });
 
   test("a list goes on from where its page ended while groups move: none that stayed put is skipped", async () => {
