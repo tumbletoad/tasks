@@ -37,8 +37,8 @@ const working: TaskRow = {
   position: "p1",
   created_at: 0,
   version: 1,
-  run: { id: "r_1", state: "working" },
-} as TaskRow;
+  run: { state: "working", instance: "fake-agent" },
+};
 
 function snapshot(tasks: readonly TaskRow[]): SnapshotMessage {
   return {
