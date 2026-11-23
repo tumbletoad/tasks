@@ -72,12 +72,12 @@ export const TaskUpdateInput = z.strictObject({
   remove_sources: z
     .array(z.string().max(USER_LIMITS.url))
     .max(10)
-    .describe("Sources to detach: ID, or a key or URL of one")
+    .describe("Sources to detach (ID, key or URL): their next capture makes new work")
     .optional(),
   put_back_sources: z
     .array(z.string().max(USER_LIMITS.url))
     .max(10)
-    .describe("Detached sources to link again: ID, key or URL")
+    .describe("Detached sources to link again; refused while another active task has the key")
     .optional(),
   base: Base.optional(),
   reason: safeText(200).describe("Why, shown in history").optional(),
@@ -101,7 +101,8 @@ export const TaskUpdateResult = z.strictObject({
 
 export const taskUpdate = defineEntry({
   name: "task.update",
-  summary: "Change an active task's fields, summary, context, group or sources.",
+  summary:
+    "Change a task's fields, summary, context, group or sources; a finished one's sources only.",
   kind: "write",
   actors: "agent",
   scope: "space:write",

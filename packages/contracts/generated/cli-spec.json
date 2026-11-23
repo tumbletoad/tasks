@@ -819,7 +819,7 @@
         {
           "field": "remove_sources",
           "flag": "--remove-source",
-          "help": "Sources to detach: ID, or a key or URL of one",
+          "help": "Sources to detach (ID, key or URL): their next capture makes new work",
           "repeat": true,
           "required": false,
           "type": "string"
@@ -827,7 +827,7 @@
         {
           "field": "put_back_sources",
           "flag": "--put-back-source",
-          "help": "Detached sources to link again: ID, key or URL",
+          "help": "Detached sources to link again; refused while another active task has the key",
           "repeat": true,
           "required": false,
           "type": "string"
@@ -943,7 +943,7 @@
           "type": "string"
         }
       ],
-      "summary": "Change an active task's fields, summary, context, group or sources.",
+      "summary": "Change a task's fields, summary, context, group or sources; a finished one's sources only.",
       "verb": "set"
     },
     {

@@ -23,7 +23,7 @@ and `cwd`.
 | `ttasks receipt` | `receipt.get` | The stored result of a write, by its request_id, in the caller's own writer scope. |
 | `ttasks redo` | `history.redo` | Redo the change you undid last, as long as nobody changed its fields since. |
 | `ttasks reopen` | `task.reopen` | Reopen a completed or archived task. Its earlier outcome and learnings stay. |
-| `ttasks set` | `task.update` | Change an active task's fields, summary, context, group or sources. |
+| `ttasks set` | `task.update` | Change a task's fields, summary, context, group or sources; a finished one's sources only. |
 | `ttasks show` | `task.get` | Load a task as a bounded digest, or selected sections in full, by task or launch reference. |
 | `ttasks status` | `space.status` | Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts. |
 | `ttasks undo` | `history.undo` | Undo your newest change in the space, field by field as long as nobody changed it. |
@@ -196,7 +196,7 @@ Usage: `ttasks reopen [<task>] [flags]`
 
 ## `ttasks set`
 
-Change an active task's fields, summary, context, group or sources.
+Change a task's fields, summary, context, group or sources; a finished one's sources only.
 
 Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 
@@ -204,8 +204,8 @@ Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 |---|---|---|---|
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--clear` | `clear` | "summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus" | Fields to clear (repeatable) |
-| `--remove-source` | `remove_sources` | string | Sources to detach: ID, or a key or URL of one (repeatable) |
-| `--put-back-source` | `put_back_sources` | string | Detached sources to link again: ID, key or URL (repeatable) |
+| `--remove-source` | `remove_sources` | string | Sources to detach (ID, key or URL): their next capture makes new work (repeatable) |
+| `--put-back-source` | `put_back_sources` | string | Detached sources to link again; refused while another active task has the key (repeatable) |
 | `--reason` | `reason` | string | Why, shown in history |
 | `--mode` | `mode` | "apply" | Always apply in this build |
 | `title=` | `set.title` | string | Title: read skill writing-tasks first |

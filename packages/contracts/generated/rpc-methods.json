@@ -6082,7 +6082,7 @@
             "type": "string"
           },
           "put_back_sources": {
-            "description": "Detached sources to link again: ID, key or URL",
+            "description": "Detached sources to link again; refused while another active task has the key",
             "items": {
               "maxLength": 2048,
               "type": "string"
@@ -6096,7 +6096,7 @@
             "type": "string"
           },
           "remove_sources": {
-            "description": "Sources to detach: ID, or a key or URL of one",
+            "description": "Sources to detach (ID, key or URL): their next capture makes new work",
             "items": {
               "maxLength": 2048,
               "type": "string"
@@ -6268,7 +6268,7 @@
       },
       "remote": "write",
       "scope": "space:write",
-      "summary": "Change an active task's fields, summary, context, group or sources."
+      "summary": "Change a task's fields, summary, context, group or sources; a finished one's sources only."
     }
   ],
   "version": 1
