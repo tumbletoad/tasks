@@ -16,7 +16,7 @@ import {
   type RunLimits,
   type RunRecord,
 } from "@ttasks/contracts/runs";
-import { decodeRun, newTicket, sessionOf, SpaceExecutionStore } from "@ttasks/launch";
+import { decodeRun, newTicket, RunRefused, sessionOf, SpaceExecutionStore } from "@ttasks/launch";
 import { decodeRunRow } from "@ttasks/storage";
 import {
   containers as platformContainers,
@@ -127,8 +127,9 @@ export interface RunRequest {
 }
 
 /**
- * Whether `asked` asks for the run `run` was queued for: its task (a task that cannot be read any
- * more is taken as the same), its words, and its agent when one was named.
+ * Whether `asked` asks for the run `run` was queued for: its task, its words, and its agent when one
+ * was named. A task asked for that cannot be read is the same only when the run's own task cannot be
+ * read either (deleted since); else it is another task, refused as not found.
  */
 async function sameAsked(
   reader: Parameters<typeof readLaunchTask>[0],
@@ -141,6 +142,13 @@ async function sameAsked(
   if (run.task === asked.task) return true;
   try {
     return (await readLaunchTask(reader, asked.task, machine)).id === run.task;
+  } catch (error) {
+    if (!(error instanceof AppError) || error.code !== "not_found") throw error;
+  }
+  if (run.task === null) return false;
+  try {
+    await readLaunchTask(reader, run.task, machine);
+    return false;
   } catch (error) {
     if (error instanceof AppError && error.code === "not_found") return true;
     throw error;
@@ -435,21 +443,31 @@ export class RunService {
             );
     }
     const settings = this.#settings();
-    const queued = await hosted.machine.queue(
-      {
-        task: task.id,
-        routine: null,
-        instance: instance.id,
-        adapter: runAdapter(instance),
-        place: null,
-        // A task's run always holds what was asked: the person's words, else to work on the task.
-        request: asked.request ?? WORK_ON_IT,
-        briefHash: runBriefHash(task.ref, task.title),
-        permission: runPermission(instance),
-        limits: { ...RUN_LIMITS.task, ...timeLimits(settings) },
-      },
-      asked.requestId,
-    );
+    const queued = await hosted.machine
+      .queue(
+        {
+          task: task.id,
+          routine: null,
+          instance: instance.id,
+          adapter: runAdapter(instance),
+          place: null,
+          // A task's run always holds what was asked: the person's words, else to work on the task.
+          request: asked.request ?? WORK_ON_IT,
+          briefHash: runBriefHash(task.ref, task.title),
+          permission: runPermission(instance),
+          limits: { ...RUN_LIMITS.task, ...timeLimits(settings) },
+        },
+        asked.requestId,
+      )
+      .catch((error: unknown) => {
+        if (error instanceof RunRefused && error.code === "request_id_reused") {
+          throw new AppError({
+            code: "request_id_conflict",
+            message: "This request ID was used for another run: use a new ID.",
+          });
+        }
+        throw error;
+      });
     void this.#supervisor.round();
     return queued;
   }

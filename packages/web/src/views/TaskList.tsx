@@ -815,10 +815,10 @@ export function TaskList({
             unansweredRuns.answered(name, id);
             refuse(task.id, undefined);
             showRun(task.id, run);
-            // A press again answered with a run that already ended: that request ran before. The
-            // words stay, and the next press is a new run.
+            // A press again answered with a run that already ended: that request was taken
+            // before. The words stay, and the next press is a new run.
             if (again && run.ended_at !== null) {
-              say(t("run.alreadyRan"));
+              say(t("run.alreadyTaken"));
               return undefined;
             }
             return run;

@@ -381,8 +381,15 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
     const renamed = await user(["run", task, "--request-id", id, "--json", "Again, please."]);
     expect(renamed.code, renamed.stderr).toBe(0);
     expect((JSON.parse(renamed.stdout) as { id: string }).id).toBe(a.id);
+    const errorOf = (out: { stdout: string }) =>
+      (JSON.parse(out.stdout) as { error: { code: string } }).error.code;
     const other = await user(["run", task, "--request-id", id, "--json", "Something else."]);
-    expect(other.code).not.toBe(0);
+    expect(other.code).toBe(4);
+    expect(errorOf(other)).toBe("request_id_conflict");
+    // A task that does not exist under that ID is no repeat of the run on this one.
+    const missing = await user(["run", "M-999", "--request-id", id, "--json", "Again, please."]);
+    expect(missing.code).not.toBe(0);
+    expect(errorOf(missing)).toBe("not_found");
     const after = await user(["run", "list", task, "--json"]);
     const count = (JSON.parse(after.stdout) as { runs: { id: string }[] }).runs.length;
     expect(count).toBe(ids.length);

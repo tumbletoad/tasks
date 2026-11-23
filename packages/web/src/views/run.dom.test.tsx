@@ -303,7 +303,7 @@ describe("[M6.page.run-once] one press is one run, and a Run without an answer i
     expect(composer()?.value).toBe("");
   });
 
-  test("pressed again and answered with a run that already ended, the words stay and the page says so; the next press is a new run", async () => {
+  test("pressed again and answered with a run that already ended (done, failed or stopped), the words stay and the page says so; the next press is a new run", async () => {
     down = true;
     const ended = record({ state: "succeeded", ended_at: Date.UTC(2026, 10, 1, 10), version: 5 });
     startAnswer = (call) => (call === 1 ? lost() : Promise.resolve(ended));
@@ -314,7 +314,9 @@ describe("[M6.page.run-once] one press is one run, and a Run without an answer i
     await settle();
     expect(started[1]?.id).toBe(started[0]?.id);
     expect(composer()?.value).toBe("Check it");
-    expect(toasts.at(-1)).toBe("This request already ran. Press Run again to run it once more.");
+    expect(toasts.at(-1)).toBe(
+      "This request was already taken: its run is in the thread. Press Run again to start a new one.",
+    );
     startAnswer = queued;
     click(1);
     await settle();

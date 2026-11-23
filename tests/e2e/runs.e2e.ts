@@ -187,9 +187,9 @@ test.describe("[M6.page.run-once] A Run pressed again after a reload is the same
     });
     await expect(composer).toHaveValue(words);
     await runButton(page, ref).click();
-    // That request already ran: the page says so, and the words stay for the next press.
+    // That request was taken before: the page says so, and the words stay for the next press.
     await expect(toast(page)).toHaveText(
-      "This request already ran. Press Run again to run it once more.",
+      "This request was already taken: its run is in the thread. Press Run again to start a new one.",
       { timeout: SLOW_MS },
     );
     await expect(composer).toHaveValue(words);
