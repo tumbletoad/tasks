@@ -21,6 +21,8 @@
 //   after_end    at its end writes one more answer and half a line before it exits
 //   settling     answers every request with the recording's first snapshot, which is settling
 //   no_agents    answers with snapshots that hold no agent
+//   none         TTAM taken away: exits 1 without a line, at its start or at its next request,
+//                so the next start finds no TTAM (the end-to-end world's `none`)
 //   hold         stays where it is, before its hello or before an answer, until the mode is
 //                another (--control), then goes on in that one: a test holds a state until it
 //                has checked it
@@ -74,6 +76,7 @@ process.stdin.once("end", endHeld);
 process.stdin.resume();
 const mode = await released();
 process.stdin.off("end", endHeld);
+if (mode === "none") process.exit(1);
 
 if (process.argv.at(-1) !== "query" || mode === "no_query") {
   process.stderr.write("error: unrecognized subcommand\n");
@@ -171,6 +174,7 @@ function serve(request: Request): void {
 }
 
 function pass(request: Request, now: string): void {
+  if (now === "none") process.exit(1);
   const passMs = now.startsWith("slow=") ? Number(now.slice(5)) : 10;
   setTimeout(() => {
     if (ended) return;
