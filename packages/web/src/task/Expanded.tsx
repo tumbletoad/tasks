@@ -517,7 +517,11 @@ function PlaceLine({
           <FolderIcon />
         </span>
         <span data-fact="">
-          <span className={`${styles.mono} ${missing ? styles.muted : ""}`} dir="ltr">
+          <span
+            className={`${styles.mono} ${missing ? styles.muted : ""}`}
+            data-machine=""
+            dir="ltr"
+          >
             {shown.path}
           </span>
           {repo === undefined ? null : (
@@ -558,7 +562,7 @@ function PlaceLine({
         <span className={styles.icon} aria-hidden="true">
           <FolderElsewhereIcon />
         </span>
-        <span className={styles.muted} data-fact="" dir="auto">
+        <span className={styles.muted} data-fact="" data-machine="" dir="auto">
           {t("place.elsewhere", { machine: elsewhere })}
         </span>
         <span className={styles.acts}>{ways("folder.chooseHere")}</span>

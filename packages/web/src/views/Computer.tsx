@@ -218,7 +218,11 @@ function SessionItem({
       <div className={styles.meta}>
         <App app={session.app} name={session.appName} />
         <span>{session.account}</span>
-        {session.folder === null ? null : <span title={session.folder}>{folder}</span>}
+        {session.folder === null ? null : (
+          <span title={session.folder} data-machine="">
+            {folder}
+          </span>
+        )}
         {age === undefined ? null : <span>{t("computer.started", { age })}</span>}
         {session.task === null || beneath ? null : (
           <TaskLink task={session.task} here={session.task.space === space} />

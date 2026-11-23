@@ -110,6 +110,16 @@ describe("[A7.3.3.lint.custom-rules] the custom lint rules of A7 3.3", () => {
     expect(await messages(member, SOURCE)).toEqual([expect.stringMatching(/\.cmd or \.bat/)]);
   });
 
+  test("a browser test takes its pictures only through the helper that hides this machine", async () => {
+    const code = 'export const shoot = (page) => page.screenshot({ path: "x.png" });\n';
+    expect(await messages(code, "tests/e2e/probe.e2e.js")).toEqual([
+      expect.stringMatching(/^no-restricted-properties: .*picture\(\)/),
+    ]);
+    expect(await messages(code, "tests/e2e/page.ts")).not.toContainEqual(
+      expect.stringMatching(/^no-restricted-properties/),
+    );
+  });
+
   test("exec and execSync, which always use a shell, are refused through every binding", async () => {
     const refused = [
       'import { execSync } from "node:child_process";\nexecSync("ls");\n',
