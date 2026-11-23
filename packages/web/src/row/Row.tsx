@@ -449,7 +449,7 @@ function RowView({
   const place = placeFact(task.place);
   const marker = runMarker(task.run, instances);
   const { live } = useContext(Session);
-  const draft = useHasDraft(live.address ?? "", task.id);
+  const draft = useHasDraft(live.copy, task.id);
   const model = renderRow(
     {
       task,

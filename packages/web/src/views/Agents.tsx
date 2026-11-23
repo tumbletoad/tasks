@@ -59,10 +59,7 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const { tasks: rows } = useLive();
   const agents = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
   const picture = agents.view?.picture ?? null;
-  const merged = useMemo(
-    () => mergeAgents(picture, live.spaceId, rows),
-    [picture, live.spaceId, rows],
-  );
+  const merged = useMemo(() => mergeAgents(picture, live.copy, rows), [picture, live.copy, rows]);
   // What the monitor put in a group is as old as its picture: muted while that is not current.
   const muted = useMemo(
     () =>

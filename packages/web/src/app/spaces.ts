@@ -3,13 +3,17 @@
 // a tab that shows a space keeps it, whatever the default becomes. Every answer is checked by its
 // shape before the page uses it.
 import type { Api } from "../api.ts";
-import { SPACE_ADDRESS, SPACE_ID, spaceIdOf } from "../route.ts";
+import { COPY_KEY, SPACE_ADDRESS, SPACE_ID, spaceIdOf } from "../route.ts";
 
 /** One copy of a space: a restored copy beside its original is a row of its own. */
 export interface SpaceItem {
   readonly id: string;
-  /** What the tab's route names: the space's ID, or for a copy the ID does not mean, its own. */
+  /** What the tab's route names: the space's ID, or for a copy the ID does not mean, its key. */
   readonly address: string;
+  /** The copy's key, whatever its address: what a tab that shows it holds on to. */
+  readonly copy: string;
+  /** The copy's folder on this machine. */
+  readonly folder: string;
   readonly name: string;
   /** `open`, `read_only`, `opening`, `unavailable`, … (A2 3.1). */
   readonly state: string;
@@ -99,10 +103,14 @@ export async function listSpaces(api: Api): Promise<SpaceList> {
     return typeof backup === "string" && REASON.test(backup) ? { backup } : {};
   };
   const spaces = value["spaces"].flatMap((s): SpaceItem[] => {
+    // A row without its copy's key could not be held on to: it is left out.
     if (
       !isRecord(s) ||
       typeof s["id"] !== "string" ||
       !SPACE_ID.test(s["id"]) ||
+      typeof s["copy"] !== "string" ||
+      !COPY_KEY.test(s["copy"]) ||
+      spaceIdOf(s["copy"]) !== s["id"] ||
       typeof s["name"] !== "string" ||
       typeof s["state"] !== "string"
     ) {
@@ -110,13 +118,16 @@ export async function listSpaces(api: Api): Promise<SpaceList> {
     }
     const id = s["id"];
     const address = s["address"];
+    const folder = s["folder"];
     return [
       {
         id,
         address:
           typeof address === "string" && SPACE_ADDRESS.test(address) && spaceIdOf(address) === id
             ? address
-            : id,
+            : s["copy"],
+        copy: s["copy"],
+        folder: typeof folder === "string" && folder.length <= 4096 ? folder : "",
         name: s["name"],
         state: s["state"],
         ...reasonOf(s),
@@ -135,6 +146,14 @@ export async function listSpaces(api: Api): Promise<SpaceList> {
     default: typeof chosen === "string" && SPACE_ID.test(chosen) ? chosen : null,
   };
 }
+
+/**
+ * The key of the copy a route's `address` means in `list`: the copy that address names, which
+ * for the space's ID is the copy that ID means now and never a restored copy waiting for its
+ * claim. Undefined when it names none.
+ */
+export const copyAt = (list: SpaceList, address: string): string | undefined =>
+  list.spaces.find((s) => s.address === address && isServed(s))?.copy;
 
 /** Make default: the machine's default space becomes `space`. Resolves with it. */
 export async function makeDefault(api: Api, space: string): Promise<string> {

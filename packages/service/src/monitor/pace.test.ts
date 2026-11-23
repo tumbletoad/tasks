@@ -19,6 +19,8 @@ const HOME = process.platform === "win32" ? "C:\\fixture\\claude" : "/fixture/cl
 const SESSION = "aaaaaaaa-1111-4111-8111-000000000001";
 const TASK = {
   space: "sp_fixture",
+  copy: "sp_fixture-copy-0123456789ab",
+  address: "sp_fixture",
   spaceName: "Fixture",
   id: "t_fixture",
   ref: "F-1",

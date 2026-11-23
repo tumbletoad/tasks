@@ -26,7 +26,14 @@ import { classes } from "./css.ts";
 
 const styles = classes(css, ["line", "page", "space", "spaces", "start"]);
 
-export function Landing({ task }: { readonly task?: string }) {
+export function Landing({
+  task,
+  missing = false,
+}: {
+  readonly task?: string;
+  /** A link named a space that is not open now: the person chooses, nothing is chosen for them. */
+  readonly missing?: boolean;
+}) {
   const t = useT();
   const auth = useAuth();
   const api = useMachineApi();
@@ -54,7 +61,7 @@ export function Landing({ task }: { readonly task?: string }) {
 
   if (list === undefined) return <p className={styles.line}>{t("app.starting")}</p>;
   if (list === "failed") return <p className={styles.line}>{t("space.listFailed")}</p>;
-  const space = landingSpace(list);
+  const space = missing ? undefined : landingSpace(list);
   if (space !== undefined) {
     return task === undefined ? (
       <Navigate to="/s/$space/$view" params={{ space, view: LANDING }} replace />
@@ -64,10 +71,11 @@ export function Landing({ task }: { readonly task?: string }) {
   }
   const served = list.spaces.filter(isServed);
   const closed = notOpen(list);
-  if (served.length === 0) return <FirstStart closed={closed} />;
+  if (served.length === 0 && !missing) return <FirstStart closed={closed} />;
   return (
     <main className={styles.page}>
-      <p className={styles.line}>{t("app.pickSpace")}</p>
+      {missing ? <p className={styles.line}>{t("app.noSpace")}</p> : null}
+      {served.length === 0 ? null : <p className={styles.line}>{t("app.pickSpace")}</p>}
       <ul className={styles.spaces}>
         {served.map((item) => (
           <li key={item.address}>

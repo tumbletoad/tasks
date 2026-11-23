@@ -1,4 +1,4 @@
-// Every agent once on the Agents page. A task of this space that agents work on is one row, placed
+// Every agent once on the Agents page. A task of this copy that agents work on is one row, placed
 // by the agent that asks most of the person, with every one of its agents beneath it in its own
 // state; "On this computer" leaves those agents out. TTasks' record decides what an agent is: a
 // background run's state is TTasks' own, an agent in a terminal's is the monitor's, and a
@@ -71,14 +71,15 @@ const byStart = (a: TaskAgent, b: TaskAgent): number =>
   (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
 /**
- * The agents of each task of `space` the page holds as `rows`, from the monitor's `picture`. The
- * agent of the task's current run is the session matched to that run, in TTasks' state; any other
- * session, one of an earlier run or launch resumed by hand among them, is an agent of its own in
- * the monitor's state.
+ * The agents of each task the page holds as `rows`, from the monitor's `picture`, that a launch or
+ * run of `copy`, the copy of the space on screen, started: another copy's agent of a task with the
+ * same ID is not this task's. The agent of the task's current run is the session matched to that
+ * run, in TTasks' state; any other session, one of an earlier run or launch resumed by hand among
+ * them, is an agent of its own in the monitor's state.
  */
 export function mergeAgents(
   picture: AgentsPicture | null,
-  space: string | undefined,
+  copy: string,
   rows: ReadonlyMap<string, TaskRow>,
 ): Merged {
   const found = new Map<string, TaskAgent[]>();
@@ -88,10 +89,10 @@ export function mergeAgents(
     if (list === undefined) found.set(task, [agent]);
     else list.push(agent);
   };
-  if (picture !== null && space !== undefined) {
+  if (picture !== null) {
     for (const session of picture.sessions) {
       const task = session.task;
-      if (task?.space !== space) continue;
+      if (task?.copy !== copy) continue;
       const row = rows.get(task.id);
       if (row === undefined) continue;
       shown.add(session.key);
@@ -105,7 +106,7 @@ export function mergeAgents(
       });
     }
     for (const task of picture.unseen) {
-      if (task.space !== space || !rows.has(task.id)) continue;
+      if (task.copy !== copy || !rows.has(task.id)) continue;
       add(task.id, {
         key: `unseen:${task.of}`,
         state: "unseen",

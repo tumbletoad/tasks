@@ -2,7 +2,7 @@
 // bar for service problems, and the routed view. No border between the sidebar and the view:
 // spacing separates them. Views have no heading; the active sidebar item and the tab's title name
 // the view. Below 1,024 px the sidebar becomes a drawer behind a Menu button.
-import { Outlet, useRouterState } from "@tanstack/react-router";
+import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, Dialog, Modal, ModalOverlay } from "react-aria-components";
 import { useEdits } from "../edit/useEdits.ts";
@@ -13,12 +13,14 @@ import { askField } from "./field.ts";
 import { ToastContext, type ToastAction } from "./frame.ts";
 import { Toast, type Shown, type ToastHandle } from "./Toast.tsx";
 import { MenuIcon } from "./Icons.tsx";
+import { spaceIdOf } from "../route.ts";
 import { useLive } from "../store/hooks.ts";
 import { useMachine } from "./machine.ts";
 import css from "./Shell.module.css";
 import { Sidebar } from "./Sidebar.tsx";
 import { Tips } from "./Tips.tsx";
 import { TopBar } from "./TopBar.tsx";
+import { LANDING } from "./views.ts";
 import { classes } from "./css.ts";
 
 const styles = classes(css, [
@@ -111,6 +113,21 @@ export function Shell({ space }: { readonly space: string }) {
     content = <p className={styles.line}>{t("app.starting")}</p>;
   } else if (state.phase === "no_space") {
     content = <p className={styles.line}>{t("app.noSpace")}</p>;
+  } else if (state.phase === "claimed") {
+    // The restored copy this tab showed is the space now: the tab goes no further, and the link
+    // opens it as the space list names it now, by the space's ID.
+    content = (
+      <div data-part="claimed">
+        <p className={styles.line} role="status">
+          {t("space.claimed")}
+        </p>
+        <p className={styles.line}>
+          <Link to="/s/$space/$view" params={{ space: spaceIdOf(space), view: LANDING }}>
+            {t("space.openClaimed")}
+          </Link>
+        </p>
+      </div>
+    );
   } else {
     content = <Outlet />;
   }

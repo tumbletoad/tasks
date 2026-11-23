@@ -20,6 +20,7 @@ import { Button, Dialog, DialogTrigger, Modal, ModalOverlay, Popover } from "rea
 import { SignedOut } from "../api.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useToast } from "./frame.ts";
+import { folderLabels } from "../folder/labels.ts";
 import { CheckIcon, ChevronIcon } from "./Icons.tsx";
 import type { ReadOnly } from "../store/rows.ts";
 import { useAuth, useMachineApi } from "./session.tsx";
@@ -32,6 +33,7 @@ import {
   listSpaces,
   makeDefault,
   notOpen,
+  type SpaceItem,
   type SpaceList,
 } from "./spaces.ts";
 import css from "./SpaceSwitcher.module.css";
@@ -68,13 +70,35 @@ const stateWords = (state: string, reason: string | undefined) =>
       ? "space.restoredCopy"
       : "space.readOnly";
 
+/**
+ * The rows that would read the same as another (two restored copies of one space, say), each by
+ * its folder's last parts, as few as tell them apart; by its copy's key.
+ */
+function apartByFolder(rows: readonly SpaceItem[]): Map<string, string> {
+  const alike = new Map<string, SpaceItem[]>();
+  for (const row of rows) {
+    const look = `${row.name}\n${row.state === "read_only" ? (row.reason ?? "") : row.state}`;
+    alike.set(look, [...(alike.get(look) ?? []), row]);
+  }
+  const out = new Map<string, string>();
+  for (const group of alike.values()) {
+    if (group.length < 2) continue;
+    const labels = folderLabels(group.map((row) => row.folder));
+    for (const row of group) {
+      const label = labels.get(row.folder);
+      if (label !== undefined && label !== "") out.set(row.copy, label);
+    }
+  }
+  return out;
+}
+
 export function SpaceSwitcher({
-  space,
+  copy,
   name,
   readOnly,
 }: {
-  /** The tab's route: the space's ID, or one copy's address. */
-  readonly space: string;
+  /** The key of the copy the tab shows. */
+  readonly copy: string;
   readonly name: string | undefined;
   readonly readOnly?: ReadOnly | undefined;
 }) {
@@ -123,9 +147,13 @@ export function SpaceSwitcher({
     list !== undefined &&
     list !== "failed" &&
     list.spaces.some(
-      (item) => item.address === space && item.state === "open" && item.backup !== undefined,
+      (item) => item.copy === copy && item.state === "open" && item.backup !== undefined,
     );
   const shownState = readOnly === undefined ? undefined : stateWords("read_only", readOnly.reason);
+  const apart =
+    list === undefined || list === "failed"
+      ? new Map<string, string>()
+      : apartByFolder(list.spaces);
 
   const make = (id: string, title: string) => {
     setBusy(id);
@@ -180,14 +208,21 @@ export function SpaceSwitcher({
                 <>
                   <ul className={styles.spaces}>
                     {(list?.spaces ?? []).map((item) => {
-                      const current = item.address === space;
+                      const current = item.copy === copy;
                       // The default names a space by its ID: the copy that ID means.
                       const own = item.address === item.id;
                       const isDefault = own && list?.default === item.id;
                       const served = isServed(item);
                       const words = stateWords(item.state, item.reason);
+                      const where = apart.get(item.copy);
+                      const folder =
+                        where === undefined ? null : (
+                          <span className={styles.state} title={item.folder} data-part="folder">
+                            {where}
+                          </span>
+                        );
                       return (
-                        <li key={item.address} className={styles.space}>
+                        <li key={item.copy} className={styles.space}>
                           {served ? (
                             <Link
                               to="/s/$space/$view"
@@ -203,6 +238,7 @@ export function SpaceSwitcher({
                               {words === undefined ? null : (
                                 <span className={styles.state}>{t(words)}</span>
                               )}
+                              {folder}
                             </Link>
                           ) : (
                             <span className={styles.pick} data-disabled="true">
@@ -211,6 +247,7 @@ export function SpaceSwitcher({
                                 {item.name}
                               </span>
                               <span className={styles.state}>{t("space.unavailable")}</span>
+                              {folder}
                             </span>
                           )}
                           {isDefault ? (

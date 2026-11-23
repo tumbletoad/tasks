@@ -19,6 +19,8 @@ import { FakeFrames } from "../../test/fake-frames.ts";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
+/** The key of the copy the tab shows: what its kept text is kept under. */
+const COPY = `${SPACE.id}-copy-0123456789ab`;
 
 function task(n: number): TaskRow {
   return {
@@ -48,7 +50,7 @@ beforeEach(() => {
   } as unknown as Api;
   live = new Live({
     api,
-    route: { space: SPACE.id },
+    route: { space: SPACE.id, copy: COPY },
     build: "",
     onSpace: () => undefined,
     onSignedOut: () => undefined,
@@ -103,18 +105,18 @@ describe("[A5.3.6.web.draft-mark] a row shows that its composer holds unsent wor
   test("the mark comes with a draft and goes when it is sent or emptied, also from another tab", () => {
     expect(markOf("t_00001")).toBeUndefined();
     act(() => {
-      keepDraft(SPACE.id, "t_00001", "Ask about the March totals");
+      keepDraft(COPY, "t_00001", "Ask about the March totals");
     });
     expect(markOf("t_00001")).toEqual({ kind: "draft", label: "Unsent words in its composer" });
     expect(markOf("t_00002")).toBeUndefined();
     // Blank lines are no words to send.
     act(() => {
-      keepDraft(SPACE.id, "t_00001", "\n  \n");
+      keepDraft(COPY, "t_00001", "\n  \n");
     });
     expect(markOf("t_00001")).toBeUndefined();
 
     // Another tab of the browser keeps a draft, then sends it.
-    const key = `${PRODUCT_ID}.draft.${SPACE.id}.t_00002`;
+    const key = `${PRODUCT_ID}.draft.${COPY}.t_00002`;
     act(() => {
       localStorage.setItem(key, "Check the invoice");
       window.dispatchEvent(

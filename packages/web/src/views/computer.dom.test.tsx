@@ -29,6 +29,8 @@ import { AgentsPage } from "./Agents.tsx";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
+/** The key of the copy the tab shows. */
+const COPY = `${SPACE.id}-copy-0123456789ab`;
 const CURSOR = { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 };
 const MIN = 60_000;
 
@@ -145,7 +147,7 @@ beforeEach(() => {
   } as unknown as Api;
   live = new Live({
     api,
-    route: { space: SPACE.id },
+    route: { space: SPACE.id, copy: COPY },
     build: "",
     onSpace: () => undefined,
     onSignedOut: () => undefined,
@@ -533,6 +535,8 @@ const linkTo = (
   of = started === "run" ? (row.run?.id ?? "ru_ended") : `la_${row.id}`,
 ): AgentsTask => ({
   space: SPACE.id,
+  copy: COPY,
+  address: SPACE.id,
   spaceName: SPACE.name,
   id: row.id,
   ref: row.ref,
@@ -844,6 +848,8 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
         session(1, {
           task: {
             space: "sp_9876543210abcdefghjkmnpqrs",
+            copy: "sp_9876543210abcdefghjkmnpqrs-copy-0123456789ab",
+            address: "sp_9876543210abcdefghjkmnpqrs",
             spaceName: "Studio",
             id: "t_studio",
             ref: "S-4",
@@ -858,6 +864,25 @@ describe("[A5.agents.web-merge] an agent working on a task of this space is show
     const link = container.querySelector<HTMLAnchorElement>('[data-part="session-task"]');
     expect(link?.textContent).toBe("Task S-4 in Studio");
     expect(link?.getAttribute("href")).toBe("/s/sp_9876543210abcdefghjkmnpqrs/agents?task=S-4");
+  });
+
+  test("an agent another copy of this space started, the original, is no row's of this copy: it is listed with a link that names the original and opens it", async () => {
+    const other = task(2);
+    await mount([working, other]);
+    const original = `${SPACE.id}-copy-aaaaaaaaaaaa`;
+    show({
+      picture: picture([
+        session(1, {
+          task: { ...linkTo(other), copy: original, address: SPACE.id },
+          title: "Agent of the original",
+        }),
+      ]),
+      trouble: null,
+    });
+    expect(layout()).toEqual(["H2:Working", "M-1"]);
+    const link = container.querySelector<HTMLAnchorElement>('[data-part="session-task"]');
+    expect(link?.textContent).toBe("Task M-2 in Mira, the original");
+    expect(link?.getAttribute("href")).toBe(`/s/${SPACE.id}/agents?task=M-2`);
   });
 
   test("a picture that is not current mutes the rows it placed, and moves none", async () => {

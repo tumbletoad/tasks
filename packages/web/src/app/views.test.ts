@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { TaskRow } from "../live.ts";
-import { landingSpace, notOpen, type SpaceList } from "./spaces.ts";
+import { copyAt, landingSpace, notOpen, type SpaceList } from "./spaces.ts";
 import {
   areaFilter,
   COUNTED,
@@ -118,7 +118,14 @@ const A = "sp_aaaaaaaaaaaaaaaaaaaaaaaaaa";
 const B = "sp_bbbbbbbbbbbbbbbbbbbbbbbbbb";
 const list = (defaultId: string | null, states: [string, string][]): SpaceList => ({
   default: defaultId,
-  spaces: states.map(([id, state]) => ({ id, address: id, name: id.slice(3, 4), state })),
+  spaces: states.map(([id, state]) => ({
+    id,
+    address: id,
+    copy: `${id}-copy-0000000000${id.slice(3, 5)}`,
+    folder: `/spaces/${id}`,
+    name: id.slice(3, 4),
+    state,
+  })),
   unopened: [],
 });
 
@@ -177,15 +184,30 @@ describe("[A5.3.3.web.landing] what a new tab opens", () => {
     const copy = {
       id: A,
       address: `${A}-copy-0123456789ab`,
+      copy: `${A}-copy-0123456789ab`,
+      folder: "/spaces/a-copy",
       name: "a",
       state: "read_only",
       reason: "read_only_copy",
     };
-    const original = { id: A, address: A, name: "a", state: "open" };
+    const original = {
+      id: A,
+      address: A,
+      copy: `${A}-copy-aaaaaaaaaaaa`,
+      folder: "/spaces/a",
+      name: "a",
+      state: "open",
+    };
     for (const defaultId of [A, null]) {
       expect(landingSpace({ default: defaultId, spaces: [copy, original], unopened: [] })).toBe(A);
       expect(landingSpace({ default: defaultId, spaces: [copy], unopened: [] })).toBeUndefined();
     }
+    // A tab on the space's ID holds on to the copy that ID means as it arrives, never to a
+    // restored copy waiting for its claim; a copy's key is that copy.
+    const both: SpaceList = { default: null, spaces: [copy, original], unopened: [] };
+    expect(copyAt(both, A)).toBe(original.copy);
+    expect(copyAt(both, copy.address)).toBe(copy.copy);
+    expect(copyAt({ default: null, spaces: [copy], unopened: [] }, A)).toBeUndefined();
   });
 
   test("a space that is not open is named with why, also one that never opened", () => {

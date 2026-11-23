@@ -37,7 +37,9 @@ import {
   type BusyOf,
   type FolderRefusal,
 } from "../row/launch.ts";
+import { readOnlyReason, readOnlyWhy } from "../edit/read-only.ts";
 import { contextFor, type Grouping, type RowView } from "../row/model.ts";
+import { sayMsg } from "../row/say.ts";
 import type { OpenWith, RowActions } from "../row/actions.ts";
 import type { Clock } from "../row/dates.ts";
 import { Row } from "../row/Row.tsx";
@@ -690,7 +692,7 @@ export function TaskList({
         { text, request, another = false }: OpenWith = {},
       ) => {
         const key = `open\n${task.id}\n${instance.key}`;
-        const name = openName(live.address ?? "", task.id, instance.key);
+        const name = openName(live.copy, task.id, instance.key);
         const asked = openAsked(another, text, request);
         const launch = (markFolder: boolean): Promise<Receipt | undefined> => {
           watched.current.add(task.id);
@@ -708,9 +710,8 @@ export function TaskList({
               refuse(task.id, undefined);
               shown(task, receipt);
               loadBusy();
-              const space = live.address;
-              if (text !== undefined && space !== undefined && opened.note !== undefined) {
-                savedWords(space, task.id, text);
+              if (text !== undefined && opened.note !== undefined) {
+                savedWords(live.copy, task.id, text);
               }
               // The app takes the brief by paste: without it on the clipboard nothing opens.
               if (copy !== undefined && !(await toClipboard(copy))) return undefined;
@@ -725,6 +726,13 @@ export function TaskList({
               if (!answered) {
                 say(t("row.openUnanswered", { label: instance.label }));
                 loadReceipts(task.id);
+                return undefined;
+              }
+              // A space that takes no change: why, and no Try again, which could not work.
+              const readOnly = readOnlyReason(error);
+              if (readOnly !== undefined) {
+                refuse(task.id, undefined);
+                say(t("row.openReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }));
                 return undefined;
               }
               // Its agent could not use the tools in this space: Settings is where that changes.
@@ -810,7 +818,14 @@ export function TaskList({
             return copy === undefined ? false : toClipboard(copy, pack);
           })
           .catch((error: unknown) => {
-            if (!live.failed(error)) say(t("row.copyFailed"));
+            // The service made no brief: nothing reached the clipboard to be refused there.
+            if (live.failed(error)) return false;
+            const readOnly = readOnlyReason(error);
+            say(
+              readOnly === undefined
+                ? t("row.copyNotMade")
+                : t("row.copyReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }),
+            );
             return false;
           });
       },
@@ -837,7 +852,7 @@ export function TaskList({
       run: (task, instance, text) => {
         watched.current.add(task.id);
         const asked = `${instance.key}\n${text ?? ""}`;
-        const name = runName(live.address ?? "", task.id);
+        const name = runName(live.copy, task.id);
         const id = unansweredRuns.idFor(name, asked);
         return api
           .startRun(task.id, instance.key, id, text)
@@ -861,6 +876,11 @@ export function TaskList({
             if (!refusedHere) {
               say(t("run.unanswered"));
               loadRuns(task.id);
+              return undefined;
+            }
+            const readOnly = readOnlyReason(error);
+            if (readOnly !== undefined) {
+              say(t("run.readOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }));
               return undefined;
             }
             const refused = runRefusal(error);
@@ -891,7 +911,14 @@ export function TaskList({
           })
           .catch((error: unknown) => {
             answered();
-            if (!live.failed(error)) say(t("run.stopFailed"));
+            if (!live.failed(error)) {
+              const readOnly = readOnlyReason(error);
+              say(
+                readOnly === undefined
+                  ? t("run.stopFailed")
+                  : t("run.stopReadOnly", { why: sayMsg(t, readOnlyWhy(readOnly)) }),
+              );
+            }
             loadRuns(task.id);
           });
       },
@@ -910,7 +937,7 @@ export function TaskList({
         else edits.checkOff(task);
       },
       ask: (task, field) => {
-        if (live.address !== undefined) askFor(live.address, task.id, field);
+        askFor(live.copy, task.id, field);
       },
       current: (task) => {
         setCurrent(task.id);

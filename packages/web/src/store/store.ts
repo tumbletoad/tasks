@@ -26,7 +26,9 @@ import {
   type TaskRow,
 } from "./rows.ts";
 
-export type Phase = "starting" | "connecting" | "live" | "offline" | "signed_out" | "no_space";
+/** `claimed`: the restored copy the tab showed was claimed, and the tab goes no further. */
+export type Phase =
+  "starting" | "connecting" | "live" | "offline" | "signed_out" | "no_space" | "claimed";
 
 export interface LiveState {
   readonly phase: Phase;
@@ -82,6 +84,8 @@ export interface StoreOptions {
   readonly onResnapshot: (reason: ResnapshotReason) => void;
   /** The first snapshot named the tab's space. */
   readonly onSpace?: (space: string) => void;
+  /** The restored copy the tab showed was claimed: the transport ends its feed. */
+  readonly onClaimed?: () => void;
   /** A fresh request ID (A1 3.8). */
   readonly newRequest?: () => string;
 }
@@ -280,8 +284,10 @@ export class LiveStore {
     let reset = false;
     let applied = false;
     let phase: Phase | undefined;
+    let claimed = false;
     const before = this.#core.space;
     for (const item of items) {
+      if (claimed) break;
       if (item.type === "error") {
         phase = "no_space";
         continue;
@@ -293,7 +299,8 @@ export class LiveStore {
           changes = [];
           reset = true;
           applied = true;
-          phase = "live";
+          claimed = outcome.claimed;
+          phase = claimed ? "claimed" : "live";
           break;
         case "applied":
           changes.push(...outcome.changes);
@@ -344,6 +351,7 @@ export class LiveStore {
       for (const listener of this.#touchListeners) listener({ tasks: touched, launches, reset });
       for (const listener of this.#changeListeners) listener({ changes, reset });
     }
+    if (claimed) this.#options.onClaimed?.();
   }
 
   /** The pending overlays changed: the tasks the views see are made again. */

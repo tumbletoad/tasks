@@ -62,8 +62,11 @@ export type ResnapshotReason = "gap" | "authority" | "withheld" | "unreadable" |
 const SCALE_KEYS: ReadonlySet<string> = new Set(["tasks.statuses", "tasks.effort_scale"]);
 
 export type Outcome =
-  /** A snapshot replaced the working set. */
-  | { readonly kind: "snapshot" }
+  /**
+   * A snapshot replaced the working set. `claimed`: the tab showed a restored copy, and a claim
+   * has made that copy the space since, another thing than the tab showed: it goes no further.
+   */
+  | { readonly kind: "snapshot"; readonly claimed: boolean }
   /**
    * A batch moved the cursor; `changes` and `requests` are those of its new events, and
    * `commits` each request's commit ID where the event named one.
@@ -163,6 +166,9 @@ export class LiveCore {
   #snapshot(message: SnapshotMessage): Outcome {
     // Another space's snapshot never lands in this tab.
     if (this.#space !== undefined && message.space.id !== this.#space) return { kind: "ignored" };
+    const claimed =
+      this.#head?.read_only?.reason === "read_only_copy" &&
+      message.space.read_only?.reason !== "read_only_copy";
     this.#space = message.space.id;
     this.#head = message.space;
     this.#cursor = message.cursor;
@@ -176,7 +182,7 @@ export class LiveCore {
     this.#awaiting = false;
     this.#dirty.add("task").add("area").add("project");
     this.#published = undefined;
-    return { kind: "snapshot" };
+    return { kind: "snapshot", claimed };
   }
 
   #batch(batch: BatchMessage): Outcome {

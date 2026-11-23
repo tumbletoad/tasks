@@ -25,7 +25,7 @@ export function editsOf(live: Live, api: Api): Edits {
       },
       newRequest: requestId,
       alive: () => !live.stopped,
-      ...(live.address === undefined ? {} : { keeper: unsavedKeeper(live.address) }),
+      keeper: unsavedKeeper(live.copy),
     });
     controllers.set(live, edits);
   }

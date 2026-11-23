@@ -21,6 +21,8 @@ import { FakeFrames } from "../../test/fake-frames.ts";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const SPACE = { id: "sp_0123456789abcdefghjkmnpqrs", name: "Mira", ref_prefix: "M" };
+/** The key of the copy the tab shows: what its kept text is kept under. */
+const COPY = `${SPACE.id}-copy-0123456789ab`;
 const CURSOR = { epoch: 1, incarnation: "ai_0123456789abcdefghjkmnpq", seq: 10 };
 
 function task(n: number, fields: Partial<TaskRow> = {}): TaskRow {
@@ -164,7 +166,7 @@ beforeEach(() => {
   } as unknown as Api;
   live = new Live({
     api,
-    route: { space: SPACE.id },
+    route: { space: SPACE.id, copy: COPY },
     build: "",
     onSpace: () => undefined,
     onSignedOut: () => undefined,
@@ -533,7 +535,7 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     // Kept by a page of the space's earlier history: another incarnation than the screen's. It is
     // the only kept edit (earlier tests leave theirs in the browser's storage).
     localStorage.clear();
-    const name = `${PRODUCT_ID}.unsaved.${SPACE.id}.t_00001.priority`;
+    const name = `${PRODUCT_ID}.unsaved.${COPY}.t_00001.priority`;
     localStorage.setItem(
       name,
       JSON.stringify({

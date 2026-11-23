@@ -18,7 +18,7 @@
 //   or a service of another build until the next `agents`, the page shows it as not current. A
 //   page of another build tells nothing: the service may not know the message.
 //
-// Each tab has its own socket and subscription, to the space its route names. Two tabs on two
+// Each tab has its own socket and subscription, to the one copy it shows. Two tabs on two
 // spaces never share one.
 import type { Api } from "../api.ts";
 import { SignedOut, StaleBuild } from "../api.ts";
@@ -74,12 +74,15 @@ export class Live {
   constructor(options: LiveOptions) {
     this.#options = options;
     this.store = new LiveStore({
-      space: options.route.space === undefined ? undefined : spaceIdOf(options.route.space),
+      space: spaceIdOf(options.route.copy),
       frames: options.frames ?? browserFrames(),
       onResnapshot: () => {
         if (!this.#greeting) this.#subscribe(undefined);
       },
       onSpace: options.onSpace,
+      onClaimed: () => {
+        this.#end();
+      },
     });
   }
 
@@ -100,13 +103,17 @@ export class Live {
     return this.store.space;
   }
 
+  /** The tab's space as its route names it: what its links name. */
+  get address(): string {
+    return this.#options.route.space;
+  }
+
   /**
-   * The tab's space as its route names it (one copy's address, or the space's ID), else its ID:
-   * what its feed subscribes to, what its links name, and what the text it keeps is kept under,
-   * so a restored copy and its original never share a draft.
+   * The key of the one copy the tab shows: what its calls and its feed name, and what the text it
+   * keeps is kept under, so two copies of a space never share a draft.
    */
-  get address(): string | undefined {
-    return this.#options.route.space ?? this.store.space;
+  get copy(): string {
+    return this.#options.route.copy;
   }
 
   /**
@@ -182,6 +189,14 @@ export class Live {
   stop(): void {
     this.#stopped = true;
     this.#unattend?.();
+    clearTimeout(this.#retry);
+    this.store.stop();
+    this.#ws?.close(1000);
+  }
+
+  /** The copy the tab shows was claimed, so it is another thing now: the feed ends here. */
+  #end(): void {
+    this.#stopped = true;
     clearTimeout(this.#retry);
     this.store.stop();
     this.#ws?.close(1000);
@@ -301,9 +316,7 @@ export class Live {
   }
 
   #subscribe(cursor: Cursor | undefined): void {
-    const message: Record<string, unknown> = { type: "subscribe" };
-    const space = this.address;
-    if (space !== undefined) message["space"] = space;
+    const message: Record<string, unknown> = { type: "subscribe", space: this.copy };
     if (cursor !== undefined) message["cursor"] = cursor;
     // Without a socket, the next `hello` subscribes: from no cursor while a snapshot is awaited.
     if (this.#ws?.readyState === 1) this.#ws.send(JSON.stringify(message));

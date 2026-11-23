@@ -48,7 +48,7 @@ beforeEach(() => {
   } as unknown as Api;
   live = new Live({
     api,
-    route: { space: SPACE.id },
+    route: { space: SPACE.id, copy: `${SPACE.id}-copy-0123456789ab` },
     build: "",
     onSpace: () => undefined,
     onSignedOut: () => undefined,

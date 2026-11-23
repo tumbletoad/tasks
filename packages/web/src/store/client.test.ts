@@ -4,6 +4,8 @@ import { SignedOut, StaleBuild, type Api } from "../api.ts";
 import { Live } from "./client.ts";
 
 const SPACE = "sp_00000000000000000000000000";
+/** The key of the copy a tab on the space's ID is bound to. */
+const COPY = `${SPACE}-copy-0123456789ab`;
 
 /** A WebSocket the test drives: what the page sent, and the service's side by hand. */
 class FakeSocket {
@@ -75,7 +77,7 @@ function start(space = SPACE): Live {
   const api = { ticket: () => Promise.resolve("t".repeat(32)) } as unknown as Api;
   const live = new Live({
     api,
-    route: { space },
+    route: { space, copy: space === SPACE ? COPY : space },
     build: "",
     onSpace: () => undefined,
     onSignedOut: () => undefined,
@@ -115,7 +117,7 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     const live = start();
     await vi.advanceTimersByTimeAsync(0);
     socket().receive({ type: "hello", build: "b" });
-    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: SPACE });
+    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: COPY });
     receive(snapshot(5));
     expect(live.getState().phase).toBe("live");
 
@@ -127,7 +129,7 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     expect(socket().sent).toHaveLength(sent);
     // A gap: a fresh snapshot.
     receive(batch(7, 8, [taskEvent(task("d", "Four"), 8)]));
-    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: SPACE });
+    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: COPY });
     // Batches of the replaced subscription wait for the snapshot.
     receive(batch(6, 7, [taskEvent(task("c", "Three"), 7)]));
     expect([...live.getState().tasks.keys()]).toEqual(["a"]);
@@ -153,12 +155,49 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     });
     expect(live.getState().phase).toBe("live");
     expect(live.getState().space?.read_only).toEqual(why);
-    // Its kept text is kept under the copy's address, apart from the original's.
-    expect(live.address).toBe(copy);
+    // Its kept text is kept under the copy's key, apart from the original's.
+    expect(live.copy).toBe(copy);
     expect(live.spaceId).toBe(SPACE);
     // A gap asks again for the copy, never for the space's ID (which means the original).
     receive(batch(7, 8));
     expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: copy });
+    live.stop();
+  });
+
+  test("a restored copy's tab whose copy was claimed says so and goes no further: no reconnect, no other copy", async () => {
+    const copy = `${SPACE}-copy-0123456789ab`;
+    const live = start(copy);
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b" });
+    const restored = { reason: "read_only_copy", message: "This is a restored copy." };
+    receive({
+      ...snapshot(5),
+      space: { id: SPACE, name: "Mira", ref_prefix: "M", read_only: restored },
+    });
+    expect(live.getState().phase).toBe("live");
+    // The claim: the same copy's next snapshot takes changes.
+    receive({ ...snapshot(1), space: { id: SPACE, name: "Mira", ref_prefix: "M" } });
+    expect(live.getState().phase).toBe("claimed");
+    const sockets = FakeSocket.all.length;
+    const sent = socket().sent.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.all.length).toBe(sockets);
+    expect(socket().sent.length).toBe(sent);
+    expect(live.getState().phase).toBe("claimed");
+    live.stop();
+  });
+
+  test("a copy that becomes read-only for another reason, or writable again, is no claim", async () => {
+    const live = start();
+    await vi.advanceTimersByTimeAsync(0);
+    socket().receive({ type: "hello", build: "b" });
+    const synced = { reason: "synced_folder", message: "This space is in a synced folder." };
+    receive({
+      ...snapshot(5),
+      space: { id: SPACE, name: "Mira", ref_prefix: "M", read_only: synced },
+    });
+    receive({ ...snapshot(6), space: { id: SPACE, name: "Mira", ref_prefix: "M" } });
+    expect(live.getState().phase).toBe("live");
     live.stop();
   });
 
@@ -179,7 +218,7 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     expect(live.getState().phase).toBe("offline");
     socket().receive({ type: "hello", build: "b" });
     // It resumes after what it received: the queued batch applied first.
-    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: SPACE, cursor: cursor(6) });
+    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: COPY, cursor: cursor(6) });
     // Nothing changed while away: the service sends no snapshot and, until its heartbeat, nothing.
     expect(live.getState().phase).toBe("live");
     expect([...live.getState().tasks.keys()]).toEqual(["a", "b"]);
@@ -198,7 +237,7 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     const api = { ticket: () => Promise.resolve("t".repeat(32)) } as unknown as Api;
     const live = new Live({
       api,
-      route: { space: SPACE },
+      route: { space: SPACE, copy: COPY },
       build: "",
       onSpace: () => undefined,
       onSignedOut: () => (signedOut += 1),
@@ -239,7 +278,7 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     frames.frame();
     await vi.advanceTimersByTimeAsync(1_000);
     socket().receive({ type: "hello", build: "b" });
-    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: SPACE });
+    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: COPY });
 
     // A gap still queued when the next socket greets: one subscription, without a cursor.
     receive(snapshot(10, [task("a", "One")]));
@@ -247,7 +286,7 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     socket().drop();
     await vi.advanceTimersByTimeAsync(1_000);
     socket().receive({ type: "hello", build: "b" });
-    expect(socket().sent).toEqual([{ type: "subscribe", space: SPACE }]);
+    expect(socket().sent).toEqual([{ type: "subscribe", space: COPY }]);
     live.stop();
   });
 
@@ -266,7 +305,7 @@ describe("[A5.3.15.web.live] the tab's feed client", () => {
     live.refresh();
     expect(live.getState().tasks.get("a")?.title).toBe("Two");
     expect(changed).toEqual(["a"]);
-    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: SPACE });
+    expect(socket().sent.at(-1)).toEqual({ type: "subscribe", space: COPY });
     // A batch from before the new snapshot is not applied over it.
     receive(batch(6, 7, [taskEvent(task("a", "Old"), 7)]));
     expect(live.getState().tasks.get("a")?.title).toBe("Two");
@@ -311,7 +350,7 @@ describe("[A5.3.15.web.installed] the page and a newer installed version", () =>
     } as unknown as Api;
     const live = new Live({
       api,
-      route: { space: SPACE },
+      route: { space: SPACE, copy: COPY },
       build: "b1",
       onSpace: () => undefined,
       onSignedOut: () => undefined,
@@ -385,7 +424,7 @@ const PICTURE = {
 function watching(tab: ReturnType<typeof attention>): Live {
   const live = new Live({
     api: { ticket: () => Promise.resolve("t".repeat(32)) } as unknown as Api,
-    route: { space: SPACE },
+    route: { space: SPACE, copy: COPY },
     build: "",
     onSpace: () => undefined,
     onSignedOut: () => undefined,
@@ -470,7 +509,7 @@ describe("[A5.agents.web-watch] the tab tells the service whether it watches the
     const tab = attention(true, true);
     const live = new Live({
       api: { ticket: () => Promise.resolve("t".repeat(32)) } as unknown as Api,
-      route: { space: SPACE },
+      route: { space: SPACE, copy: COPY },
       build: "b1",
       onSpace: () => undefined,
       onSignedOut: () => undefined,

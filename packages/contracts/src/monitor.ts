@@ -192,6 +192,13 @@ export interface AgentsNested {
 export interface AgentsTask {
   /** The space's ID. */
   readonly space: string;
+  /**
+   * The key of the copy of the space whose launch or run started the agent: a tab of another copy
+   * of the space never holds it as its own.
+   */
+  readonly copy: string;
+  /** The address that opens that copy on the page. */
+  readonly address: string;
   readonly spaceName: string;
   /** The task's ID. */
   readonly id: string;

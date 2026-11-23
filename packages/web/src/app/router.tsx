@@ -30,7 +30,7 @@ import { SPACE_ADDRESS, SEGMENT } from "../route.ts";
 import { Landing } from "./Landing.tsx";
 import { AreaPage, SearchPage, TaskPage, ViewPage } from "./pages.tsx";
 import { SettingsPage } from "./Settings.tsx";
-import { SpaceSession } from "./session.tsx";
+import { SpaceSession } from "./space-session.tsx";
 import { Shell } from "./Shell.tsx";
 import { isView, LANDING } from "./views.ts";
 

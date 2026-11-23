@@ -3,7 +3,7 @@
 // the home it started the app in and the app's session ID, as they were when it started. A launch
 // counts while its agent runs and for a day after its record last changed, so a conversation the
 // person resumes by hand still shows with its task.
-import { copyOf, isAmbiguity } from "../ops/copies.ts";
+import { addressOf, copyKey, copyOf, isAmbiguity } from "../ops/copies.ts";
 import { readAgentSessions, type ServedSpace } from "../ops/index.ts";
 import type { HeldSession } from "./links.ts";
 
@@ -27,7 +27,9 @@ export interface HeldSources {
  */
 export async function heldSessions(sources: HeldSources): Promise<HeldSession[]> {
   const since = sources.now() - HELD_MS;
-  const served = sources.spaces().filter((s) => s.id !== undefined && s.reader !== undefined);
+  // The copies as the space list names them, so a link opens the copy the list shows.
+  const listed = sources.spaces().filter((s) => s.state !== "closed");
+  const served = listed.filter((s) => s.id !== undefined && s.reader !== undefined);
   const chosen = [...new Set(served.map((s) => s.id))].flatMap((id) => {
     const copy = id === undefined ? undefined : copyOf(served, id);
     return copy === undefined || isAmbiguity(copy) ? [] : [copy];
@@ -36,6 +38,8 @@ export async function heldSessions(sources: HeldSources): Promise<HeldSession[]>
     chosen.map(async (served): Promise<HeldSession[]> => {
       const id = served.id;
       if (id === undefined || served.reader === undefined) return [];
+      const copy = copyKey(id, served.folder);
+      const address = addressOf(listed, served) ?? id;
       const running = sources.running(id);
       const found = await readAgentSessions(served.reader, {
         machine: sources.machine,
@@ -46,6 +50,8 @@ export async function heldSessions(sources: HeldSources): Promise<HeldSession[]>
       return found.rows.map((row): HeldSession => ({
         task: {
           space: id,
+          copy,
+          address,
           spaceName: found.space.name,
           id: row.task,
           ref: row.ref,

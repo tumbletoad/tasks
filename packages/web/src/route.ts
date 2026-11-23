@@ -8,14 +8,16 @@
 //   /s/<space>/<view…>             a view of the space, at most four plain segments
 //   /s/<space>/task/<ref>          a task of the space, expanded
 //
-// <space> is the space's ID, which means the copy the service picks (the one that takes changes),
-// or a copy's own address, `<space ID>-copy-<digest>`, which means that copy and no other: a
-// restored copy opened to look inside it.
+// <space> is the space's ID, or one copy's key, `<space ID>-copy-<digest of its folder>`. A tab
+// shows one copy for its whole life: a key names it, and an ID is resolved once, as the tab
+// arrives, to the copy it means then. Its calls, its feed and the text it keeps name that key.
 //
 // The skeleton's task links (`/s/<space>/t/<ref>`) still land on the task.
 
 export const SPACE_ID = /^sp_[0-9a-z]{26}$/;
-/** A space's ID, or one copy's address: its ID, `-copy-` and a digest of its folder. */
+/** One copy's key: its space's ID, `-copy-` and a digest of its folder. */
+export const COPY_KEY = /^sp_[0-9a-z]{26}-copy-[0-9a-f]{12}$/;
+/** A space's ID, or one copy's key. */
 export const SPACE_ADDRESS = /^sp_[0-9a-z]{26}(?:-copy-[0-9a-f]{12})?$/;
 
 /** The space ID an address names a copy of. */
@@ -43,10 +45,11 @@ export function pagePath(path: string): string | undefined {
   return `/s/${[space, ...rest].join("/")}`;
 }
 
-/** What the feed client needs of the route: the tab's space (and a task, for the skeleton). */
+/** The space a tab shows: the address its route names, and the one copy it is bound to. */
 export interface PageRoute {
-  readonly space?: string;
-  readonly task?: string;
+  readonly space: string;
+  /** The key of the copy the tab shows for its whole life. */
+  readonly copy: string;
 }
 
 export interface Fragment {

@@ -13,7 +13,9 @@ import { Link } from "@tanstack/react-router";
 import { useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { classes } from "../app/css.ts";
 import { Session } from "../context.ts";
+import { folderLabels } from "../folder/labels.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
+import { spaceIdOf } from "../route.ts";
 import type {
   AgentsAccount,
   AgentsSession,
@@ -73,44 +75,6 @@ export function sessionOrder(sessions: readonly AgentsSession[]): AgentsSession[
   );
 }
 
-const partsOf = (folder: string): string[] =>
-  folder
-    .replace(/[\\/]+$/, "")
-    .split(/[\\/]/)
-    .filter((part) => part !== "");
-
-/** A folder's label shows at most this many of its last parts, and this many characters. */
-export const LABEL_PARTS = 3;
-export const LABEL_CHARS = 40;
-
-/**
- * Each folder by as few of its last parts as tell it apart from the others: its own name, which
- * names a project, and more of its path only where two folders share that name, up to
- * LABEL_PARTS parts and LABEL_CHARS characters. What it leaves out is behind "…"; the whole path
- * is the label's tip.
- */
-export function folderLabels(folders: readonly string[]): Map<string, string> {
-  const unique = [...new Set(folders)];
-  const parts = new Map(unique.map((f) => [f, partsOf(f)]));
-  const tail = (folder: string, n: number): string =>
-    (parts.get(folder) ?? []).slice(-n).join("/") || folder;
-  const out = new Map<string, string>();
-  for (const folder of unique) {
-    const own = Math.min(parts.get(folder)?.length ?? 1, LABEL_PARTS);
-    let n = 1;
-    while (
-      n < own &&
-      unique.some((other) => other !== folder && tail(other, n) === tail(folder, n))
-    ) {
-      n += 1;
-    }
-    const shown = tail(folder, n);
-    const label = n > 1 && n < (parts.get(folder)?.length ?? 1) ? `…/${shown}` : shown;
-    out.set(folder, label.length <= LABEL_CHARS ? label : `…${label.slice(1 - LABEL_CHARS)}`);
-  }
-  return out;
-}
-
 /** Ages move on while the page is shown, once every TICK_MS. */
 function useNow(): number {
   const [now, setNow] = useState(() => performance.now());
@@ -167,19 +131,25 @@ function App({ app, name }: { readonly app: string; readonly name: string }) {
   return <span>{t("computer.app", { app, name })}</span>;
 }
 
-/** The task TTasks started the agent for: a link that opens it on its own space's Agents page. */
-function TaskLink({ task, here }: { readonly task: AgentsTask; readonly here: boolean }) {
+/**
+ * The task TTasks started the agent for: a link that opens it on the Agents page of the copy whose
+ * launch started it. A tab of another copy of that space, a restored one, says the link leads to
+ * the original, so the person never leaves the copy without being told.
+ */
+function TaskLink({ task, copy }: { readonly task: AgentsTask; readonly copy: string }) {
   const t = useT();
   return (
     <Link
       to="/s/$space/$view"
-      params={{ space: task.space, view: "agents" }}
+      params={{ space: task.address, view: "agents" }}
       search={{ task: task.ref }}
       data-part="session-task"
     >
-      {here
+      {task.copy === copy
         ? t("computer.taskHere", { ref: task.ref })
-        : t("computer.taskThere", { ref: task.ref, space: task.spaceName })}
+        : task.space === spaceIdOf(copy)
+          ? t("computer.taskOriginal", { ref: task.ref, space: task.spaceName })
+          : t("computer.taskThere", { ref: task.ref, space: task.spaceName })}
     </Link>
   );
 }
@@ -189,7 +159,7 @@ function SessionItem({
   state = session.activity,
   since,
   folder,
-  space,
+  copy,
 }: {
   readonly session: AgentsSession;
   /** What it does, where TTasks knows better than the monitor: a background run's own state. */
@@ -197,12 +167,12 @@ function SessionItem({
   readonly since: number;
   /** The folder as this list names it. */
   readonly folder: string | undefined;
-  /** The space on screen; null beneath its task's row, which names the task already. */
-  readonly space: string | undefined | null;
+  /** The copy on screen; null beneath its task's row, which names the task already. */
+  readonly copy: string | null;
 }) {
   const t = useT();
   const age = session.ageMs === null ? undefined : spanOf(session.ageMs + since, t);
-  const beneath = space === null;
+  const beneath = copy === null;
   return (
     <li
       className={beneath ? styles.agent : styles.item}
@@ -220,8 +190,8 @@ function SessionItem({
         <span>{session.account}</span>
         {session.folder === null ? null : <span title={session.folder}>{folder}</span>}
         {age === undefined ? null : <span>{t("computer.started", { age })}</span>}
-        {session.task === null || beneath ? null : (
-          <TaskLink task={session.task} here={session.task.space === space} />
+        {session.task === null || copy === null ? null : (
+          <TaskLink task={session.task} copy={copy} />
         )}
       </div>
       {session.nested.length === 0 ? null : (
@@ -290,7 +260,7 @@ export function TaskAgents({
             state={agent.state}
             since={since}
             folder={agent.session.folder === null ? undefined : folders.get(agent.session.folder)}
-            space={null}
+            copy={null}
           />
         ),
       )}
@@ -447,7 +417,7 @@ export function Computer({ shown }: { readonly shown: ReadonlySet<string> }) {
                 session={session}
                 since={since}
                 folder={session.folder === null ? undefined : folders.get(session.folder)}
-                space={live.spaceId}
+                copy={live.copy}
               />
             ))}
           </ul>

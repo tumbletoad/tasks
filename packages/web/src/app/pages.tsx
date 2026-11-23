@@ -199,14 +199,14 @@ export function TaskPage({ task }: { readonly task: string }) {
               status: known.facts.status,
               area_id: [...state.areas.values()].find((a) => a.title === known.facts.area)?.id,
             });
-  // The route's space, which may name one copy: the snapshot's ID would mean the space's other one.
+  // The route's space: a link the tab follows stays on the copy it shows.
   const space = live.address;
   const ref = row?.ref ?? (known !== undefined && "facts" in known ? known.facts.ref : task);
   useEffect(() => {
     if (resolved?.kind === "gone") say(t("task.gone"));
     if (resolved?.kind === "trash") say(t("task.inTrash"));
   }, [resolved?.kind, say, t]);
-  if (resolved === undefined || space === undefined) return null;
+  if (resolved === undefined) return null;
   switch (resolved.kind) {
     case "view":
       return (

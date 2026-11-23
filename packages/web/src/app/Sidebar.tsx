@@ -12,9 +12,10 @@
 // while the pointer or focus is on it, in place of the area's count so nothing beside it moves; on
 // a touch screen always, after the count.
 import { Link, useParams } from "@tanstack/react-router";
-import { useId, useMemo, useState, type FocusEvent, type PointerEvent } from "react";
+import { useContext, useId, useMemo, useState, type FocusEvent, type PointerEvent } from "react";
 import { Button } from "react-aria-components";
 import { useIntl } from "react-intl";
+import { Session } from "../context.ts";
 import { AddProject } from "../folder/AddProject.tsx";
 import { slotOf } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
@@ -121,6 +122,7 @@ export function Sidebar({ space }: { readonly space: string }) {
   const t = useT();
   const intl = useIntl();
   const state = useLive();
+  const { live } = useContext(Session);
   // The rows are known from the first snapshot on (an offline tab keeps them).
   const known = state.space !== undefined;
   const entries = useMemo(
@@ -145,7 +147,7 @@ export function Sidebar({ space }: { readonly space: string }) {
 
   return (
     <div className={styles.sidebar}>
-      <SpaceSwitcher space={space} name={state.space?.name} readOnly={state.space?.read_only} />
+      <SpaceSwitcher copy={live.copy} name={state.space?.name} readOnly={state.space?.read_only} />
       <ul className={styles.list}>
         {[...entries].map(([view, { count, empty }]) => {
           const label = t(VIEW_LABEL[view]);
