@@ -108,7 +108,7 @@ import type { ServedSpace } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
 import { readRestoredLaunches, type TaskFolder } from "../ops/read.ts";
-import { runsWith } from "../runs/agent.ts";
+import { runsWith } from "../runs/drivers.ts";
 import { agentHomeOf, homeDigest, physicalHome } from "../setup/agents.ts";
 import {
   briefNames,

@@ -462,8 +462,11 @@ test.describe("[A7.3.12.launch.e2e.left-out] An Open that could not carry what i
     const open = stripOf(page, ref).getByRole("button", {
       name: `Open in ${FAKE_INSTANCE.label}`,
     });
+    const before = world.terminal().length;
     await open.click();
     await expect(toast(page)).toHaveText(said, { timeout: SLOW_MS });
+    // The launch is the real one: it reaches the terminal, and no later test counts it.
+    await expect.poll(() => world.terminal().length, { timeout: SLOW_MS }).toBe(before + 1);
     await picture(page, "left-out-1440.png");
     await page.unroute("**/api/v1/op/launch.open");
     await page.setViewportSize({ width: 390, height: 900 });

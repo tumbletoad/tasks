@@ -66,15 +66,14 @@ import {
 } from "../ops/read.ts";
 import {
   buildRun,
-  runAdapter,
   runBriefHash,
   runFolder,
   runPermission,
-  runsWith,
   WORK_ON_IT,
   type BuiltRun,
   type RunAgents,
 } from "./agent.ts";
+import { runAdapter, runsWith } from "./drivers.ts";
 
 /** What a start of the service may set for runs. Tests pass their containers or times. */
 export interface RunOptions {

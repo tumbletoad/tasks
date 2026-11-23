@@ -149,7 +149,8 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
       // A Claude session's own leftover, scrubbed for every home (A4 3.8).
       ["CLAUDE_CODE_ENTRYPOINT", false, false],
     ] as const;
-    const base = Object.fromEntries([["PATH", "/usr/bin"], ...table.map(([n]) => [n, inert])]);
+    const base: Record<string, string> = { PATH: "/usr/bin" };
+    for (const [name] of table) base[name] = inert;
     const agentOf = (instance: Parameters<typeof agentSetup>[0], platform: NodeJS.Platform) => {
       const setup = agentSetup(instance, "/home/mira", platform);
       return agentEnvironment({
