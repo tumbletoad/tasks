@@ -4,14 +4,15 @@
 // of no task. Each task shows once, as its row, in the group its agent's state puts it in, with
 // its agents beneath it (one of them twice, as a conversation resumed in a second terminal is);
 // the fourth, which the monitor does not report, is not seen; a picture that is not current mutes
-// those rows and moves none; and the second space lists the agents with a link that opens their
-// task in its own space. At 1,440 and 390 px in both themes. Fixture data only.
+// those rows and moves none; the second space lists the agents with a link that opens their task
+// in its own space; and a task whose conversation waits while its background run works shows both,
+// each in its own state. At 1,440 and 390 px in both themes. Fixture data only.
 import { expect, type Page } from "@playwright/test";
 import { ttamAgent, ttamHome } from "../../packages/testkit/src/index.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { test } from "./fixture.ts";
 import { axeFound, openTask, picture, pictures, showsSpace, signIn, themes } from "./page.ts";
-import { SLOW_MS, type World } from "./world.ts";
+import { CODEX_INSTANCE, SLOW_MS, type World } from "./world.ts";
 
 const HOME = "claude-e2e";
 /** An agent's session that no launch of TTasks preset. */
@@ -38,9 +39,7 @@ async function opened(page: Page, world: World, ref: string): Promise<string> {
     .getByRole("toolbar")
     .getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` })
     .click();
-  await expect(row.locator('[data-part="tile"]')).toHaveAttribute("data-state", "running", {
-    timeout: SLOW_MS,
-  });
+  // The held fake agent records the session it was started with once it runs.
   await expect.poll(() => world.agentSessions(ref).length, { timeout: SLOW_MS }).toBe(1);
   return world.agentSessions(ref)[0] ?? "";
 }
@@ -51,6 +50,10 @@ async function shots(page: Page, world: World, name: string): Promise<void> {
     await world.machine("ui.theme", theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme, { timeout: SLOW_MS });
     await page.setViewportSize({ width: 1440, height: 1000 });
+    // A whole-page picture of a scrolled page draws its sticky parts where the window was.
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+    });
     await picture(page, `agents-${name}-${theme}-1440.png`, { fullPage: true });
     if (pictures()) expect(await axeFound(page, ["main"]), `axe in ${theme}`).toEqual([]);
     await page.setViewportSize({ width: 390, height: 900 });
@@ -58,6 +61,9 @@ async function shots(page: Page, world: World, name: string): Promise<void> {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+    });
     await picture(page, `agents-${name}-${theme}-390.png`, { fullPage: true });
     await page.setViewportSize({ width: 1440, height: 1000 });
   }
@@ -80,6 +86,7 @@ test.describe("[A5.agents.e2e.links] each agent shows once, with its task and it
       works: await newTask(world, "Fixture agent works"),
       rests: await newTask(world, "Fixture agent rests"),
       gone: await newTask(world, "Fixture agent unseen"),
+      both: await newTask(world, "Fixture run and conversation"),
     };
     try {
       const page = await context.newPage();
@@ -101,7 +108,7 @@ test.describe("[A5.agents.e2e.links] each agent shows once, with its task and it
         });
       // Two folders whose long endings are the same: their labels stay short at 390 px.
       const far = "clients/fixture-traders-international/appointments-portal-frontend/src";
-      world.monitorAgents({
+      const reported = {
         homes: [ttamHome({ id: HOME, provider: "claude", path: world.agentHome })],
         agents: [
           agent("e2e-asks", session.asks, "Fixture session asks", "waiting"),
@@ -118,7 +125,8 @@ test.describe("[A5.agents.e2e.links] each agent shows once, with its task and it
           ),
           agent("e2e-far", NO_TASK, "Fixture session far away", "idle", `/fixture/beta/${far}`),
         ],
-      });
+      };
+      world.monitorAgents(reported);
 
       await signIn(page, world, `/s/${world.mira.id}/agents`);
       await showsSpace(page, world.mira.name);
@@ -141,7 +149,7 @@ test.describe("[A5.agents.e2e.links] each agent shows once, with its task and it
       ]) {
         await expect(computer).not.toContainText(name);
       }
-      for (const ref of Object.values(refs)) {
+      for (const ref of [refs.asks, refs.works, refs.rests, refs.gone]) {
         await expect(page.locator(`main li[data-task="${ref}"]`)).toHaveCount(1);
       }
       // The task two agents work on is one row, with both beneath it in their own states.
@@ -182,6 +190,37 @@ test.describe("[A5.agents.e2e.links] each agent shows once, with its task and it
       await expect(
         page.locator(`main li[data-task="${refs.asks}"] [data-part="title"]`),
       ).toHaveAttribute("aria-expanded", "true", { timeout: SLOW_MS });
+
+      // A task whose conversation in a terminal waits while its background run works, as an
+      // earlier run's conversation resumed by hand beside the current run: two lines, each in its
+      // own state, the task under Needs you.
+      const conversation = await opened(page, world, refs.both);
+      world.codex(refs.both, ["hold"]);
+      await page
+        .locator(`main li[data-task="${refs.both}"]`)
+        .getByRole("toolbar", { name: "Act on this task" })
+        .getByRole("button", { name: `Run with ${CODEX_INSTANCE.label}` })
+        .click();
+      world.monitorAgents({
+        ...reported,
+        agents: [
+          ...reported.agents,
+          agent("e2e-both", conversation, "Fixture conversation", "waiting"),
+        ],
+      });
+      await signIn(page, world, `/s/${world.mira.id}/agents`);
+      await showsSpace(page, world.mira.name);
+      const lines = rowIn(page, "Needs you", refs.both).locator('[data-part="agent"]');
+      await expect(lines).toHaveCount(2, { timeout: SLOW_MS });
+      await expect(lines.nth(0)).toContainText(/^Background runWorking/);
+      await expect(lines.nth(1)).toContainText(/^Fixture conversationNeeds you/);
+      await shots(page, world, "run-and-conversation");
+      const row = await openTask(page, world, refs.both);
+      await row
+        .locator('[data-entry="run"]')
+        .first()
+        .getByRole("button", { name: /^Stop/u })
+        .click();
     } finally {
       for (const ref of Object.values(refs)) world.release(ref);
       world.monitorAgents(null);
