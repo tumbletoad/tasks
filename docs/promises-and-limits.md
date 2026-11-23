@@ -240,7 +240,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   folder made again at the same path, such as a fresh clone, asks, also when the machine was too
   busy to write the marker when the folder was set, and so does any folder whose marker went on a
   file system that records no creation time. A marker write given up after two seconds changes
-  nothing in the folder afterwards.
+  nothing in the folder afterwards. A folder replaced at its path while Open looks at it opens
+  nothing, and the next Open asks about the new one.
 - Opening with a particular account uses that account's settings of the agent app. A Claude Code
   instance with a home of its own gets no API key, token or provider choice from your own
   environment, so it works with the account signed in to that home; set one in the instance's

@@ -739,13 +739,13 @@ export class LaunchService {
       throw this.#unavailable("other_machine");
     }
     // Copy starts nothing: its brief says where the task opens (#briefOf).
-    const folder = choice.route === "clipboard" ? null : this.#planFolder(task.folder);
+    const set = choice.route === "clipboard" ? null : this.#planFolder(task.folder);
     // A link opens the folder resolved now (and again at its dispatch); a UNC one cannot.
     if (choice.route === "link") {
-      const where = await this.resolveFolder(space, folder);
+      const where = await this.resolveFolder(space, set);
       if (where.status === "failed") {
         this.#options.log.log("launch.folder_refused", { stage: "open", reason: where.reason });
-        throw new LaunchFolderUnavailable(where.reason, folder?.stored);
+        throw new LaunchFolderUnavailable(where.reason, set?.stored);
       }
       if (isUncPath(where.folder)) throw this.#unavailable("unc");
     }
@@ -765,9 +765,12 @@ export class LaunchService {
         );
       }
     }
-    if (choice.route !== "clipboard") {
-      await this.#checkMarker(space, task.folder, request.markFolder === true);
-    }
+    // The directory whose marker was checked: the dispatch opens nothing in another.
+    const at =
+      choice.route === "clipboard"
+        ? undefined
+        : await this.#checkMarker(space, task.folder, request.markFolder === true);
+    const folder: PlanFolder | null = set === null || at === undefined ? set : { ...set, at };
 
     const brief = await this.#briefOf(space, request, choice);
     // Decided on a reference of the real one's length: the real brief has the same length, so
@@ -1057,18 +1060,23 @@ ${instance}`;
   /**
    * The look at the folder's marker just before an agent starts (marker.ts): a folder whose
    * marker names other owners only, or whose marker this machine wrote and is gone, throws
-   * LaunchFolderUnmarked. With `mark`, the person chose to use it: it is marked and opens.
+   * LaunchFolderUnmarked. With `mark`, the person chose to use it: it is marked and opens. Gives
+   * the directory it looked at (identityKey), when there was one.
    */
-  async #checkMarker(space: string, folder: TaskFolder, mark: boolean): Promise<void> {
+  async #checkMarker(
+    space: string,
+    folder: TaskFolder,
+    mark: boolean,
+  ): Promise<string | undefined> {
     const markers = this.#options.markers;
-    if (markers === undefined || (folder.kind !== "task" && folder.kind !== "project")) return;
-    const owner = { space, kind: folder.kind, id: folder.owner };
-    if (mark) {
-      await markers.use(owner, folder.path);
-      return;
+    if (markers === undefined || (folder.kind !== "task" && folder.kind !== "project")) {
+      return undefined;
     }
-    const found = await markers.check(owner, folder.path);
-    if (found.kind === "ok") return;
+    const owner = { space, kind: folder.kind, id: folder.owner };
+    const found = await (mark
+      ? markers.use(owner, folder.path)
+      : markers.check(owner, folder.path));
+    if (found.kind === "ok") return found.at;
     const reason = found.kind === "missing" ? "marker_missing" : "marker_other";
     this.#options.log.log("launch.folder_unmarked", { reason });
     throw new LaunchFolderUnmarked(
@@ -1711,7 +1719,10 @@ ${instance}`;
     this.#links.delete(intent.id);
     // The click's brief is gone (a restart between the click and its dispatch): nothing opens.
     if (pending === undefined) return { kind: "refused", reason: "cancelled" };
-    const where = await this.resolveFolder(pending.space, pending.folder);
+    const where = this.#checked(
+      pending.folder,
+      await this.resolveFolder(pending.space, pending.folder),
+    );
     if (where.status === "failed") {
       this.#options.log.log("launch.folder_refused", { stage: "dispatch", reason: where.reason });
       return { kind: "refused", reason: where.reason };
@@ -1737,10 +1748,24 @@ ${instance}`;
     }
   }
 
+  /**
+   * A dispatch's resolution, failed as `folder_changed` when it found another directory than the
+   * one whose marker the click checked: it was replaced at its path in between.
+   */
+  #checked(folder: PlanFolder | null, where: FolderResolution): FolderResolution {
+    if (where.status !== "ok" || folder?.at === undefined) return where;
+    return identityKey(where.identity) === folder.at
+      ? where
+      : { status: "failed", reason: "folder_changed" };
+  }
+
   async #dispatchTerminal(intent: LaunchIntent): Promise<DispatchOutcome> {
     const record = this.host.record(intent.id);
     if (record === undefined) return { kind: "refused" };
-    const where = await this.resolveFolder(record.space, record.plan.folder);
+    const where = this.#checked(
+      record.plan.folder,
+      await this.resolveFolder(record.space, record.plan.folder),
+    );
     if (where.status === "failed") {
       this.#options.log.log("launch.folder_refused", { stage: "dispatch", reason: where.reason });
       // No ticket was issued and nothing started: nothing more can come from its machine state.

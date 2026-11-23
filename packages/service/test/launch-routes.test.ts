@@ -14,6 +14,7 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -1044,6 +1045,40 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
       for (const name of ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_VERTEX"]) {
         expect(usual, name).toContain(name);
       }
+    },
+  );
+
+  test(
+    "a folder replaced at its path after its marker was checked opens nothing: the launch fails as folder_changed",
+    { timeout: 300_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("chosen-folder");
+      for (const instance of ["claude", "claude-link"]) {
+        const task = await addTask(r, `Fixture replaced folder ${instance}`, `swapped-${instance}`);
+        const folder = join(r.lab.work, `swapped-${instance}`);
+        // Only its marker went (`git clean -x`): the check puts it back, and the checkout is
+        // replaced while it writes.
+        rmSync(join(folder, FOLDER_MARKER), { recursive: true, force: true });
+        const held = holdNextWrite();
+        const opening = open(r, { task: task.ref, instance });
+        await held.reached;
+        renameSync(folder, join(r.lab.work, `swapped-aside-${instance}`));
+        mkdirSync(folder);
+        await held.land();
+        const { result } = await opening;
+        const settled = await waitFor(
+          async () => {
+            const now = await r.lab.running.launches.read(r.lab.spaceId, result.launch.id);
+            return now?.state === "failed" ? now : undefined;
+          },
+          LONG_MS,
+          "the refused dispatch",
+        );
+        expect(settled.reason, instance).toBe("folder_changed");
+        expect(r.lab.folders.get(result.launch.id), instance).toBeUndefined();
+      }
+      expect(opened).toHaveLength(0);
     },
   );
 });

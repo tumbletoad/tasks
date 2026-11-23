@@ -47,7 +47,15 @@ export interface PlanFolder {
   readonly stored: string;
   /** The absolute path this machine opens, `~` expanded. */
   readonly path: string;
+  /**
+   * The directory whose marker the click checked (identityKey): the launch opens nothing in
+   * another one found at the path later. Absent: no marker was checked.
+   */
+  readonly at?: string;
 }
+
+/** An identityKey: `<volume>:<file number>`. */
+const IDENTITY_KEY = /^[0-9]{1,20}:[0-9]{1,20}$/u;
 
 /** What the claim's reply hands the shim to start (A4 3.6.3 step 3), kept from the click. */
 export interface SpawnPlan {
@@ -180,10 +188,13 @@ const isFolderText = (value: unknown): value is string =>
  */
 export function checkPlanFolder(value: unknown): PlanFolder | null | undefined {
   if (value === null) return null;
-  if (!isObject(value) || Object.keys(value).length !== 2) return undefined;
-  const { stored, path } = value;
-  if (!isFolderText(stored) || !isFolderText(path)) return undefined;
-  return { stored, path };
+  if (!isObject(value)) return undefined;
+  const { stored, path, at, ...rest } = value;
+  if (Object.keys(rest).length > 0 || !isFolderText(stored) || !isFolderText(path)) {
+    return undefined;
+  }
+  if (at === undefined) return { stored, path };
+  return typeof at === "string" && IDENTITY_KEY.test(at) ? { stored, path, at } : undefined;
 }
 
 /** The plan, checked: a plan that is not one starts nothing. */
