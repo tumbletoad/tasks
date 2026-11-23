@@ -13,7 +13,8 @@ export const DAY_CLOCK: DayClock = {
 /** A task of the table: its own fields; every one is active. */
 export interface DayCase {
   readonly name: string;
-  readonly status: "open" | "waiting" | "review" | "backlog";
+  /** `inbox` is a status the space defines itself, not the Inbox. */
+  readonly status: "open" | "waiting" | "review" | "backlog" | "inbox";
   readonly inbox?: true;
   readonly priority?: 1 | 2 | 3;
   readonly due_date?: string;
@@ -50,6 +51,7 @@ export const DAY_CASES: readonly DayCase[] = [
   },
   { name: "due tomorrow in the backlog", status: "backlog", due_date: "2026-11-21" },
   { name: "undated", status: "open" },
+  { name: "of a status the space named inbox", status: "inbox" },
 ];
 
 /** Today, in its order. */
@@ -75,5 +77,11 @@ export const DAY_WEEK = [
 /** The starred tasks. */
 export const DAY_STARRED = ["starred today in the backlog", "starred yesterday"] as const;
 
-/** What the active tasks count toward. */
-export const DAY_COUNTS = { inbox: 1, open: 11, waiting: 1, review: 0, backlog: 3 } as const;
+/** The statuses the space defines for the table: the defaults and one named like the Inbox. */
+export const DAY_STATUSES = ["open", "waiting", "review", "backlog", "inbox"] as const;
+
+/** What the active tasks count toward: the Inbox by its flag, else their status. */
+export const DAY_COUNTS = {
+  inbox: 1,
+  statuses: { open: 11, waiting: 1, review: 0, backlog: 3, inbox: 1 },
+} as const;

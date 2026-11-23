@@ -15,7 +15,7 @@ import type { TaskRow } from "../live.ts";
 import {
   byDue,
   byText,
-  countedAs,
+  countedStatus,
   dateOf,
   dayNumber,
   dayOf,
@@ -67,8 +67,8 @@ export const isCounted = (view: View): view is CountedView =>
  * own that has no view of its own is listed and counted in Open, so no open task is in no view.
  */
 export function countedViewOf(task: TaskRow): CountedView {
-  const counted = countedAs(task);
-  return counted === "inbox" ? "inbox" : (STATUS_VIEWS.find((view) => view === counted) ?? "open");
+  const status = countedStatus(task);
+  return status === null ? "inbox" : (STATUS_VIEWS.find((view) => view === status) ?? "open");
 }
 
 /** The views of the default statuses (A1 `tasks.statuses`: open, waiting, review, backlog). */

@@ -222,7 +222,7 @@ export function dayOf<T extends DayTask>(tasks: Iterable<T>, clock: DayClock): D
 }
 
 /**
- * What a task counts toward: the Inbox by its flag, else its status. A task counts once, so the
- * counts add up to the active tasks.
+ * The status a task counts toward, or null for a task in the Inbox, which counts toward the Inbox
+ * by its flag whatever its status is named. A task counts once, so the counts add up.
  */
-export const countedAs = (task: DayTask): string => (task.inbox ? "inbox" : task.status);
+export const countedStatus = (task: DayTask): string | null => (task.inbox ? null : task.status);

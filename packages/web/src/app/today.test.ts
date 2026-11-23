@@ -77,7 +77,9 @@ describe("[A5.3.4.day.one-rule] the page's day follows the rule an agent's statu
   });
 
   test("the sidebar counts each task once: the Inbox by its flag, else its status", () => {
-    expect(viewCounts(rows)).toEqual(DAY_COUNTS);
+    const { inbox, statuses } = DAY_COUNTS;
+    // A status of the space's own has no view: the sidebar lists and counts it in Open.
+    expect(viewCounts(rows)).toEqual({ ...statuses, inbox, open: statuses.open + statuses.inbox });
   });
 
   test("the row is starred where the digest says focus", () => {

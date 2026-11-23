@@ -10,6 +10,7 @@ import {
   DAY_CLOCK,
   DAY_COUNTS,
   DAY_STARRED,
+  DAY_STATUSES,
   DAY_TODAY,
   DAY_WEEK,
 } from "@ttasks/contracts/day-cases";
@@ -51,6 +52,12 @@ beforeAll(async () => {
   fx = await writeFixture(folder, { flush: false });
   fx.reopen({ now: () => clock });
   before = (await status()).counts;
+  const statuses = fx.writer.submit(
+    fx.request(fx.human, [{ kind: "pref.set", key: "tasks.statuses", value: [...DAY_STATUSES] }], {
+      base: fx.base(),
+    }),
+  );
+  if (statuses.status !== "applied") throw new Error(JSON.stringify(statuses.error));
   for (const c of DAY_CASES) {
     clock += 1000;
     const id = newId("t");
@@ -94,8 +101,8 @@ describe("[A5.3.4.day.one-rule] an agent's day follows the page's rule", () => {
     const of = (c: typeof counts, status: string) =>
       c.statuses.find((s) => s.status === status)?.count ?? 0;
     expect(counts.inbox - before.inbox).toBe(DAY_COUNTS.inbox);
-    for (const key of ["open", "waiting", "review", "backlog"] as const) {
-      expect(of(counts, key) - of(before, key), key).toBe(DAY_COUNTS[key]);
+    for (const key of DAY_STATUSES) {
+      expect(of(counts, key) - of(before, key), key).toBe(DAY_COUNTS.statuses[key]);
     }
   });
 
