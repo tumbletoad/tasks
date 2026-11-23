@@ -1,5 +1,5 @@
 // A person's edits, check-offs, undo and redo (A5 3.11, 3.12): the one code path for "a person
-// changes a field", whatever control they used (the star, the title, a fact, "Restore mine").
+// changes a field", whatever control they used (the star, the title, a fact).
 // Plain code without React, one per live session (`editsOf`), so every view of the tab shares it
 // and what it holds survives a switch of view, a collapsed card and a fresh snapshot.
 //
@@ -7,7 +7,7 @@
 // - What the person chose is never lost. An edit the service refused stays here, per task and
 //   field, with the person's value ready to apply again with one click: after a conflict ("Changed
 //   by Codex just now · Apply mine") and after a failed call ("Not saved · Try again"). Nothing is
-//   overwritten silently: "Apply mine" and "Restore mine" are the person's explicit choice.
+//   overwritten silently: "Apply mine" is the person's explicit choice.
 // - A check-off by mistake is undone with one action. The row stays, checked and struck through,
 //   for the hold (4 s), its toast's Undo names its own commit, and clicking the box again during
 //   the hold undoes it too.
@@ -45,7 +45,7 @@ import {
   type Timers,
   type Turn,
 } from "./calls.ts";
-import { joinChanges, restoreChange, type Change, type Field } from "./change.ts";
+import { changeTo, joinChanges, type Change, type Field } from "./change.ts";
 import { readOnlyReason, readOnlyWhy } from "./read-only.ts";
 
 /** What a toast says of a write the space refused because it takes no change; else undefined. */
@@ -184,7 +184,7 @@ function receiptError(found: Found): Error {
     code: found.status === "conflict" ? "conflict" : "refused",
     data: {
       cause: found.error?.cause ?? "",
-      // A receipt keeps a conflict without its values (A1 3.10.1): no Restore mine from it.
+      // A receipt keeps a conflict without its values (A1 3.10.1).
       conflicts: (found.conflicts ?? []).map((c) => ({
         ...(c.ref === undefined ? {} : { task: c.ref }),
         ...(c.entity === "tasks" ? {} : { entity: c.entity, id: c.id }),
@@ -226,10 +226,8 @@ interface Conflict {
   readonly task?: string;
   readonly entity?: string;
   readonly field: string;
-  /** What is there now, what the change wrote, and what undoing it would set back. */
+  /** What is there now. */
   readonly value?: unknown;
-  readonly wrote?: unknown;
-  readonly restore?: unknown;
   readonly by: string;
   readonly at: string;
 }
@@ -277,7 +275,7 @@ function inPlace(part: Change, error: unknown): boolean {
   return part.fields.every((field) => {
     const conflict = problem.conflicts.find((c) => c.field === field);
     if (conflict === undefined || !Object.hasOwn(conflict, "value")) return false;
-    const there = restoreChange(field, conflict.value);
+    const there = changeTo(field, conflict.value);
     return there !== undefined && effectOf(there) === effectOf(part);
   });
 }
@@ -444,33 +442,6 @@ export const whoOf = (by: string): { who: string; by: string } => ({
 function listText({ shown, more }: ShortList, name: (item: string) => string | Msg): Msg {
   const [a = "", b = "", c = ""] = shown.map(name);
   return { id: "toast.list", values: { count: shown.length + more, a, b, c, rest: more } };
-}
-
-/**
- * What Restore mine writes over, as its toast says it (A5 3.12): who changed the one field and
- * when, and for a field whose values read as words, what the person's change wrote, what is there
- * now and what Restore mine puts back. A title's values stay out: a long title does not fit a toast.
- */
-function restoreText(conflict: Conflict): Msg {
-  const values = {
-    ...whoOf(conflict.by),
-    field: { id: fieldWords(conflict.field) } as Msg,
-    at: Date.parse(conflict.at),
-  };
-  const shown = (key: "value" | "wrote" | "restore") =>
-    Object.hasOwn(conflict, key) ? restoreChange(conflict.field, conflict[key])?.shown : undefined;
-  const now = shown("value");
-  const wrote = shown("wrote");
-  const back = shown("restore");
-  if (
-    conflict.field === "title" ||
-    now === undefined ||
-    wrote === undefined ||
-    back === undefined
-  ) {
-    return { id: "toast.conflict", values };
-  }
-  return { id: "toast.conflictValues", values: { ...values, now, wrote, restore: back } };
 }
 
 /**
@@ -1408,11 +1379,10 @@ export class Edits {
   }
 
   /**
-   * An undo or redo the service refused. A conflict says who changed which tasks since and offers
-   * the one action that fits (A5 3.12): "Restore mine" when it would write one field of one
-   * change, which its toast names with the values, "Undo the rest" when only some of an undo's
-   * fields conflict. Anything wider the person settles on the task: one click never writes over
-   * several changes of others. A redo has no partial form.
+   * An undo or redo the service refused. A conflict says who changed which tasks since (A5 3.12),
+   * and the person settles it on the task, looking at what is there: no click writes over what
+   * others changed. An undo whose step this tab made, with fields that do not conflict, offers
+   * "Undo the rest". A redo has no partial form.
    */
   #historyFailed(
     kind: "undo" | "redo",
@@ -1429,8 +1399,8 @@ export class Edits {
       say({ kind: "error", text: readOnly ?? { id: "toast.undoFailed" } });
       return;
     }
-    // The commit it met, named: Restore mine and Undo the rest act on that one only, never on
-    // whatever is newest by the time the person chooses (a change made since in another window).
+    // The commit it met, named: Undo the rest acts on that one only, never on whatever is newest
+    // by the time the person chooses (a change made since in another window).
     const commit = asked ?? problem.commit;
     switch (problem.cause) {
       case "NOTHING_TO_UNDO":
@@ -1453,106 +1423,33 @@ export class Edits {
         return;
     }
     const conflicts = problem.conflicts;
-    const first = conflicts[0];
-    if (first === undefined) {
+    if (conflicts.length === 0) {
       say({ kind: "error", text: { id: "toast.undoFailed" } });
       return;
     }
-    const fields = new Set(conflicts.map((c) => c.field));
-    const one = conflicts.length === 1 && problem.passed.length <= 1;
-    const restore = one ? this.#restoreOf(conflicts) : undefined;
-    const known = commit === undefined ? undefined : this.#fieldsOf.get(commit);
-    // Only some of the change's fields conflict: the rest can be undone and the others kept.
-    const some = kind === "undo" && known !== undefined && known.some((f) => !fields.has(f));
     const newer = newerValues(problem.newer);
     const text: Msg =
       newer === undefined
         ? { id: "toast.notDoneOwn", values: { kind } }
         : { id: "toast.notDone", values: { kind, ...newer } };
-    // Undo the rest, for a commit the page can name: the fields that pass are undone, the others
-    // stay as the other actor set them.
-    const undoRest =
-      kind === "undo" && commit !== undefined
-        ? {
-            action: {
-              label: { id: "toast.undoRest" } as Msg,
-              run: () => {
-                void this.undo(commit, true);
-              },
-            },
-          }
-        : {};
-    if (some || restore === undefined) {
-      // Or nothing a hand edit can put back (a lifecycle, a due time): the person decides.
-      say({ kind: "error", text, ...undoRest });
+    // Undo the rest only where the page knows the step has a field that does not conflict: its
+    // own step's fields. The service then undoes the fields that pass when it is asked, and keeps
+    // the others as they are; a page that does not know the step offers nothing.
+    const fields = new Set(conflicts.map((c) => c.field));
+    const known = commit === undefined ? undefined : this.#fieldsOf.get(commit);
+    if (kind !== "undo" || commit === undefined || !known?.some((f) => !fields.has(f))) {
+      say({ kind: "error", text });
       return;
     }
     say({
       kind: "error",
-      text: restoreText(first),
+      text,
       action: {
-        label: { id: "toast.restoreMine" },
+        label: { id: "toast.undoRest" },
         run: () => {
-          void this.#restore(kind, restore, commit);
+          void this.undo(commit, true);
         },
       },
-    });
-  }
-
-  /** Each task's restorable values as one edit, or undefined when any field cannot be restored. */
-  #restoreOf(conflicts: readonly Conflict[]): Map<string, Change> | undefined {
-    const byTask = new Map<string, Change[]>();
-    for (const conflict of conflicts) {
-      // A child row (a note, a link) or a task the conflict does not name: no hand edit for it.
-      if (conflict.task === undefined || conflict.entity !== undefined) return undefined;
-      if (!Object.hasOwn(conflict, "restore")) return undefined;
-      const change = restoreChange(conflict.field, conflict.restore);
-      if (change === undefined) return undefined;
-      const list = byTask.get(conflict.task) ?? [];
-      list.push(change);
-      byTask.set(conflict.task, list);
-    }
-    const out = new Map<string, Change>();
-    for (const [task, list] of byTask) {
-      const joined = joinChanges(list);
-      if (joined === undefined) return undefined;
-      out.set(task, joined);
-    }
-    return out;
-  }
-
-  /**
-   * "Restore mine" (A5 3.12): the person's values as a new edit of theirs, with a fresh base. After
-   * an undo, the change is first undone as far as it can be (a partial undo), so the stack moves on
-   * past it and the next Ctrl+Z reaches the change below, not this conflict again. Only for a
-   * commit it can name: unnamed, a partial undo could take a newer change instead.
-   */
-  #restore(
-    kind: "undo" | "redo",
-    restore: ReadonlyMap<string, Change>,
-    commit: string | undefined,
-  ): Promise<void> {
-    const put = (base: string | undefined) => {
-      for (const [ref, change] of restore) {
-        const row = this.#deps.rowOf(ref);
-        const fresh = newer(this.#deps.asOf(), base);
-        this.edit(
-          row ?? ({ id: ref, ref } as TaskRow),
-          change,
-          fresh === undefined ? {} : { base: fresh },
-        );
-      }
-    };
-    if (kind !== "undo" || commit === undefined) {
-      put(undefined);
-      return Promise.resolve();
-    }
-    // A partial undo decided late still puts the values back: the person chose it, and each edit
-    // carries its base, so nothing changed since is overwritten.
-    const { answer, call } = this.#history("undo", commit, true);
-    return this.#outcome(answer, call, (decision, say) => {
-      if (decision.ok) put(decision.value.as_of);
-      else this.#historyFailed("undo", decision.error, commit, say);
     });
   }
 

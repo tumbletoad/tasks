@@ -197,8 +197,7 @@ export interface FieldConflict {
   value?: unknown;
   /**
    * Undo and redo: the value the inverted change wrote, and the value the inversion would have
-   * set back (what "Restore mine" applies, A5 3.12). In the reply only, like `value`: a receipt
-   * holds no task text.
+   * set back. In the reply only, like `value`: a receipt holds no task text.
    */
   wrote?: unknown;
   restore?: unknown;

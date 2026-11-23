@@ -1,6 +1,6 @@
 // history.undo and history.redo through the request path (A1 3.10.1, A3 3.2.3, 3.5; A5 3.12; A7
 // 3.10 M3.02): the user's only, the tasks a change changed back, A1's undo codes as the registry's,
-// with the values "Restore mine" needs in a conflict, and a partial undo's unresolved fields. A
+// with each conflict's values, and a partial undo's unresolved fields. A
 // service in this process, fixture text and temporary folders only.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";

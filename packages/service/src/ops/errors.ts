@@ -350,7 +350,7 @@ export function resultFailure(
     ...(c.entity === "tasks" ? {} : { entity: c.entity, id: c.id }),
     field: c.field,
     ...(c.value === undefined ? {} : { value: c.value }),
-    // An undo's: what the change wrote, and what undoing it would set back ("Restore mine").
+    // An undo's: what the change wrote, and what undoing it would set back.
     ...(c.wrote === undefined ? {} : { wrote: c.wrote }),
     ...(c.restore === undefined ? {} : { restore: c.restore }),
     version: c.version,
@@ -365,7 +365,7 @@ export function resultFailure(
       ...(wrapped ? { reason: ALREADY_WRAPPED } : {}),
       as_of: result.as_of,
       // An undo or redo's UNDO_CONFLICT names the commit it met: a caller that named none (Ctrl+Z)
-      // passes it to Undo the rest or Restore mine, so they never reach a newer change instead.
+      // passes it to Undo the rest, so it never reaches a newer change instead.
       ...(result.target === undefined ? {} : { commit: result.target }),
       // A refused redo's: every undone change it tried, which stay for the next redo.
       ...(result.passed === undefined ? {} : { passed_over: result.passed }),

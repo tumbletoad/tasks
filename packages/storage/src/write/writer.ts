@@ -2803,7 +2803,7 @@ export class SpaceWriter {
       };
     }
     // Nothing could be applied. The refusal names the oldest step it tried, which a caller that
-    // named none (Ctrl+Z) passes to Undo the rest or Restore mine.
+    // named none (Ctrl+Z) passes to Undo the rest.
     const first = must(steps[0], "An undo or redo tries a step");
     const conflicts = [...why.values()];
     return {
