@@ -2,7 +2,16 @@
 // projector: an earlier outcome stays after a reopen and is said as earlier, a wait names what it
 // waits on, the folder is the one Open uses, a timed deadline's day is the local one, and a file
 // taken from the folder comes back while the projection runs. Fixture text only.
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
@@ -126,6 +135,41 @@ describe("[A1.5.projection.render] index.md gives a timed deadline the local day
       .split("\n")
       .find((l) => l.startsWith(`- [${ref?.[0] ?? ""}-${ref?.[1] ?? ""}]`));
     expect(line).toContain("due 2026-11-18");
+  });
+});
+
+describe("[A1.5.projection.recovery] files an earlier build made say what this one says after its first start", () => {
+  test("a record without a renderer renders every task again, each file replaced in place, none moved aside", async () => {
+    const task = activeTask();
+    w.submit([{ kind: "task.patch", task, set: { status: "waiting", waiting_on: "Tomas" } }]);
+    await project();
+    // The file as the earlier build wrote it, and its record, which proves it ours.
+    const line = catalogOf(w.dir).find((l) => l.id === task);
+    if (line === undefined) throw new Error("the task is in the catalogue");
+    const abs = join(w.dir, ...line.path.split("/"));
+    const old = readFileSync(abs, "utf8").replace(/\nwaiting_on: .*\n/, "\n").replace("\nfolder:", "\nplace:");
+    chmodSync(abs, 0o600);
+    writeFileSync(abs, old);
+    chmodSync(abs, 0o444);
+    const record = JSON.parse(readFileSync(w.record, "utf8")) as {
+      renderer?: number;
+      files: Record<string, { sha256: string; size: number }>;
+    };
+    delete record.renderer;
+    const file = record.files[line.path];
+    if (file === undefined) throw new Error("the record holds the file");
+    file.sha256 = createHash("sha256").update(old).digest("hex");
+    file.size = Buffer.byteLength(old);
+    writeFileSync(w.record, `${JSON.stringify(record)}\n`);
+
+    const p = w.projector();
+    expect((await p.start()).rebuild).toBe(true);
+    await settle(p);
+    expect(frontMatter(fileOf(task))["waiting_on"]).toBe("Tomas");
+    expect(existsSync(join(w.folder, "exchange", "rescued"))).toBe(false);
+    checkWatermark(w.dir, w.reader);
+    const again = w.projector();
+    expect((await again.start()).rebuild).toBe(false);
   });
 });
 

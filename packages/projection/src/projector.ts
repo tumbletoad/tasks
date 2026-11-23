@@ -67,6 +67,7 @@ import {
   indexText,
   projectionJson,
   README_TEXT,
+  RENDERER,
   renderTask,
   type CatalogEntry,
   type SpaceIdentity,
@@ -179,7 +180,7 @@ export interface StepReport {
 }
 
 export interface StartReport {
-  /** Every task was queued: no record, or one of another identity or format. */
+  /** Every task was queued: no record, or one of another identity, format or renderer. */
   readonly rebuild: boolean;
   /** Temporary files a kill left, removed. */
   readonly temps: number;
@@ -339,9 +340,13 @@ export class Projector {
     let full = found === undefined || journalRead.kind === "unreadable";
     const other = !sameIdentity(record.identity, pending) || record.watermark > pending.lastSeq;
     if (other) full = true;
+    // Files an earlier renderer made say less than this one would: every task again, each file
+    // still proved ours by the record, so it is replaced in place.
+    if (record.renderer !== RENDERER) full = true;
     // Before the record that no longer says why: a kill after it must find every task queued.
     if (full) await this.#queueAll(record);
     record.identity = identityOf(pending);
+    record.renderer = RENDERER;
     // The writer's W holds back until every queued task is rendered; the claim last published
     // stays the record's, which has none without a record of this identity.
     if (other) record.watermark = 0;

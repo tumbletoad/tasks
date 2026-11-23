@@ -28,6 +28,12 @@ import { formatEntryRef, formatTaskRef } from "@ttasks/storage";
 /** The projection's format (A1 3.17 keeps it apart from the schema). A new one rebuilds the tree. */
 export const FORMAT = 1;
 
+/**
+ * What a task's file and the index say. A record made under another renders every task again at
+ * start, each file replaced in place as the projection's own: raise it when what they say changes.
+ */
+export const RENDERER = 2;
+
 /** A1 3.13: a slug of at most 48 ASCII characters. */
 export const SLUG_MAX = 48;
 
