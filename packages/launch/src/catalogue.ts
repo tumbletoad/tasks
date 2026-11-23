@@ -30,6 +30,14 @@ export type Permission = (typeof PERMISSIONS)[number];
 
 export type RouteKind = "terminal" | "link" | "t3-mcp" | "t3-cli" | "clipboard";
 
+/**
+ * What an instance can set beyond its app's own settings: its open permission, its extra
+ * arguments, its environment, and a home of its own (another account). Each reaches the agent
+ * only through a route that carries it.
+ */
+export const SETTINGS = ["permission", "arguments", "environment", "home"] as const;
+export type Setting = (typeof SETTINGS)[number];
+
 /** A template element: literal text and placeholders (A4 3.6.4). */
 export type Template = string;
 
@@ -46,6 +54,11 @@ export interface RouteDef {
   readonly needsGui: boolean;
   /** Also copy the brief, for apps that may drop a prefill. */
   readonly copyBriefToo: boolean;
+  /**
+   * What of an instance's settings the route gives its agent. A route that does not carry what an
+   * instance sets is never taken for it: the agent would work with less than the person chose.
+   */
+  readonly carries: readonly Setting[];
   /**
    * Link routes of the best-effort apps (A4 3.4.4, 3.4.5): the bridge's binding confirms the launch
    * only when the bridge's working folder is the folder the link named. Otherwise a binding through
@@ -129,6 +142,8 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "project",
         needsGui: true,
         copyBriefToo: false,
+        // The permission as the thread's runtime mode (t3-route.ts).
+        carries: ["permission"],
       },
       {
         // The argv is M2.09's: it needs the project ID and provider, which are not placeholders yet.
@@ -141,6 +156,8 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "project",
         needsGui: true,
         copyBriefToo: false,
+        // The CLI has no runtime-mode flag (t3-cli.ts refuses a narrower mode itself).
+        carries: [],
       },
     ],
     instances: "per-provider-instance",
@@ -171,6 +188,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "once-per-root",
         needsGui: true,
         copyBriefToo: false,
+        carries: SETTINGS,
         argv: [
           "{exec}",
           "--session-id",
@@ -193,7 +211,31 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "once-per-root",
         needsGui: true,
         copyBriefToo: false,
+        carries: [],
         url: "claude-cli://open?cwd={cwd}&q={brief}",
+      },
+      {
+        // The assisted open, as Codex's: no prompt in argv, the brief on the clipboard to paste.
+        // A prefill instance takes it when the link cannot carry what the instance sets.
+        kind: "terminal",
+        folder: "cwd",
+        prompt: "clipboard",
+        nativeId: "preset",
+        maxPrompt: null,
+        budget: TERMINAL_BUDGET,
+        trust: "once-per-root",
+        needsGui: true,
+        copyBriefToo: true,
+        carries: SETTINGS,
+        argv: [
+          "{exec}",
+          "--session-id",
+          "{session}",
+          "-n",
+          "{task.id}",
+          "{permission}",
+          "{extra_args}",
+        ],
       },
     ],
     instances: "per-home",
@@ -238,6 +280,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "once-per-root",
         needsGui: true,
         copyBriefToo: false,
+        carries: SETTINGS,
         argv: [
           "{exec}",
           "-C",
@@ -261,6 +304,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "once-per-root",
         needsGui: true,
         copyBriefToo: true,
+        carries: SETTINGS,
         argv: [
           "{exec}",
           "-C",
@@ -307,6 +351,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         needsGui: true,
         copyBriefToo: true,
         confirmFolder: true,
+        carries: [],
         url: "claude://code/new?folder={cwd}&q={brief}",
       },
     ],
@@ -332,6 +377,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         needsGui: true,
         copyBriefToo: true,
         confirmFolder: true,
+        carries: [],
         url: "codex://threads/new?path={cwd}&prompt={brief}",
       },
     ],
@@ -355,6 +401,7 @@ export const CATALOGUE: readonly TargetDef[] = [
         trust: "none",
         needsGui: false,
         copyBriefToo: false,
+        carries: [],
       },
     ],
     instances: "single",

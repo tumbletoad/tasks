@@ -211,10 +211,12 @@ describe("[M6.page.run-view] the page's view of a run", () => {
     ).rejects.toThrow("longer");
     expect(queued).toEqual([]);
     // The page offers Run for the instances the service says can run.
-    expect(launches.instances().map((i) => [i.key, i.runs])).toEqual([
-      ["codex-work", true],
-      ["claude", undefined],
-    ]);
+    expect(launches.instances("sp_3q7k9d2xw8f4r6t1c5v0b2n8a7").map((i) => [i.key, i.runs])).toEqual(
+      [
+        ["codex-work", true],
+        ["claude", undefined],
+      ],
+    );
     // Blank words are no words: the run works on the task.
     await launches.run(space, { task, request_id: id, text: "  \n" });
     await launches.run(space, { task, request_id: id, text: "Check the export" });

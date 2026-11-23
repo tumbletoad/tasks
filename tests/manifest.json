@@ -2066,7 +2066,7 @@
     },
     {
       "id": "A4.5.routes.golden-argv",
-      "title": "Golden argv per target, route and OS compared as arrays: Claude Code's terminal route with --session-id, -n, the permission and the brief after --; Codex's with -C filled at the claim, --no-daemon, its env_vars override and the brief after --; Codex's assisted open without a prompt; the claude-cli:// link's values decoded back exactly; hostile values stay one element; refused routes",
+      "title": "Golden argv per target, route and OS compared as arrays: Claude Code's terminal route with --session-id, -n, the permission and the brief after --; Codex's with -C filled at the claim, --no-daemon, its env_vars override and the brief after --; the assisted open of Codex and Claude Code without a prompt; the claude-cli:// link's values decoded back exactly; hostile values stay one element; refused routes",
       "source": "A4 3.4.2, A4 3.4.3, A4 3.6.4, A4 5.1, A7 3.9 M2.10",
       "owner": "M2",
       "kind": "ci",
@@ -2124,6 +2124,14 @@
       "id": "A4.5.routes.service",
       "title": "Open and Copy through the service with a real shim and a fake Claude Code and Codex: the golden argv reaches the fake agent as arrays and byte for byte through the OS's real process creation, hostile titles, folders and composer text included, in the resolved folder; Codex's env_vars override and reference match; the assisted open's brief to copy; the claude-cli:// link's one URL element, and clicks straight after given the same launch whose words go only while it holds none; an opener that does not answer is Unknown; Copy's pointer brief, a repeat that replays, words past Copy's budget saved once as a note while Open holds them instead; refusals that record nothing",
       "source": "A4 3.4.2, A4 3.4.3, A4 3.4.6, A4 3.6.5, A4 3.15, A7 3.9 M2.10",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A4.5.routes.chosen",
+      "title": "Open starts the agent as its instance is set up: a route is taken only when it carries the instance's permission, arguments, environment and home, so a prefill instance with any of them opens in a terminal with the brief to paste and an app that opens with its own settings says so; an instance for some spaces is offered and opened only there; an instance with a home of its own gets no account variable from the person's environment while its own env wins; a folder replaced after its marker check opens nothing",
+      "source": "A4 3.4, A4 3.8, A4 3.3",
       "owner": "M2",
       "kind": "ci",
       "profiles": ["v1"]

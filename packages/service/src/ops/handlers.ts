@@ -72,6 +72,7 @@ import {
   MANUAL_INSTANCE,
   PACK_LOG,
   type LaunchIntent,
+  type Setting,
 } from "@ttasks/launch";
 import {
   ambiguousError,
@@ -4583,6 +4584,20 @@ async function unmarkedError(call: Call, error: LaunchFolderUnmarked): Promise<A
   });
 }
 
+/** An instance's settings as a refusal names them, and the machine.toml keys that hold them. */
+const SETTING_WORDS: Readonly<Record<Setting, string>> = {
+  permission: "permission",
+  arguments: "extra arguments",
+  environment: "environment",
+  home: "home",
+};
+const SETTING_KEYS: Readonly<Record<Setting, string>> = {
+  permission: "open_permission",
+  arguments: "extra_args",
+  environment: "env",
+  home: "config_home",
+};
+
 export function launchError(error: unknown): unknown {
   if (error instanceof LaunchUnavailable) {
     if (error.reason === "other_space") {
@@ -4597,15 +4612,45 @@ export function launchError(error: unknown): unknown {
         },
       });
     }
+    const settings = error.settings;
+    const set = settings.length === 0 ? "" : listed(settings.map((s) => SETTING_WORDS[s]));
+    const keys = listed(settings.map((s) => SETTING_KEYS[s]));
+    const said = (() => {
+      switch (error.reason) {
+        case "not_set_up":
+          return { message: "This instance is not set up on this machine." };
+        case "other_machine":
+          return { message: "This task's folder is on another machine." };
+        case "not_for_space":
+          return {
+            message: "This instance is set up for other spaces only. Nothing was started.",
+            hint: "Add this space to its spaces in machine.toml, or open the task with another instance.",
+          };
+        case "settings":
+          return {
+            message: `This app opens with its own settings, so it cannot open with the ${set} this instance sets. Nothing was started.`,
+            hint: `Open the task with an instance that opens in a terminal, or take ${keys} out of this instance in machine.toml.`,
+          };
+        case "no_terminal":
+          return {
+            message:
+              settings.length === 0
+                ? "No terminal can open this instance here. Nothing was started."
+                : `No terminal can open this instance here, and only a terminal carries the ${set} it sets. Nothing was started.`,
+            hint: `Run ${CLI_NAME} doctor to see which terminal it would use.`,
+          };
+        default:
+          return { message: "This instance cannot open the task here." };
+      }
+    })();
     return new AppError({
       code: "invalid_input",
-      message:
-        error.reason === "not_set_up"
-          ? "This instance is not set up on this machine."
-          : error.reason === "other_machine"
-            ? "This task's folder is on another machine."
-            : "This instance cannot open the task here.",
-      data: { field: "instance", reason: error.reason },
+      ...said,
+      data: {
+        field: "instance",
+        reason: error.reason,
+        ...(settings.length === 0 ? {} : { settings: [...settings] }),
+      },
     });
   }
   if (error instanceof LaunchFolderUnavailable) {

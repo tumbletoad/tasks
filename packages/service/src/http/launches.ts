@@ -64,7 +64,8 @@ export interface UiInstance {
  * a way to hear that a space's launch records changed (the feed catches up at once).
  */
 export interface UiLaunchPort {
-  instances(): readonly UiInstance[];
+  /** The instances Open can open a task of the space in here. */
+  instances(space: string): readonly UiInstance[];
   onChange?(listener: (space: string) => void): () => void;
   /**
    * Whether the launch's session runs now, as this service follows it, and was made in the copy
@@ -368,16 +369,16 @@ export class UiLaunches {
   }
 
   /**
-   * The instances the page draws a tile for, each marked when it can run. None without a launch
-   * service: Copy only.
+   * The instances the page draws a tile for in `space`, each marked when it can run. None without
+   * a launch service: Copy only.
    */
-  instances(): UiInstance[] {
+  instances(space: string): UiInstance[] {
     const port = this.#options.port;
     const runs = this.#options.runs;
     if (port === undefined) return [];
     return checkInstances(
       port
-        .instances()
+        .instances(space)
         .map((tile) =>
           runs?.runnable(tile.key) === true ? { ...tile, runs: true as const } : tile,
         ),

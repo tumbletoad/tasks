@@ -24,15 +24,17 @@ import type { RpcSession } from "@ttasks/bridge/protocol";
 import {
   NOTE_LINE,
   OPENER_MS,
+  FixedEnvironment,
   presetSession,
   renderBrief,
+  settingsOf,
   REQUEST_LINE,
   STEP_DEADLINE_MS,
   type LaunchIntent,
   type SpawnRequest,
   type SpawnedProcess,
 } from "@ttasks/launch";
-import { FAKE_CLI_AGENT, type CliAgentReport } from "@ttasks/testkit";
+import { FAKE_CLI_AGENT, testEnv, type CliAgentReport } from "@ttasks/testkit";
 import { briefNames, chooseRoute, codexEntryOf, LaunchUnavailable } from "../src/launch/open.ts";
 import { homeDigest, physicalHome } from "../src/setup/agents.ts";
 import { instanceToml, readLog, stateOf, tempRoot, waitFor } from "./harness.ts";
@@ -116,13 +118,25 @@ function writerOf(r: Rig) {
   return writer;
 }
 
+/** More of a rig: instances whose fake reports under their ID, and the person's environment. */
+interface RigMore {
+  readonly instances?: readonly {
+    readonly id: string;
+    readonly env?: Readonly<Record<string, string>>;
+    readonly [key: string]:
+      string | readonly string[] | Readonly<Record<string, string>> | undefined;
+  }[];
+  /** The person's own environment as the agent's base (a `user` base), on top of the test's. */
+  readonly person?: Readonly<Record<string, string>>;
+}
+
 /**
  * A lab whose machine.toml has the fake Claude Code and Codex as instances: Claude Code with full
- * access (`claude`), Claude Code with the prefill route (`claude-link`), Codex with the brief sent
- * (`codex`) and assisted (`codex-assisted`), with a Codex home of the lab's own whose TTasks entry
- * lacks `env_vars`.
+ * access (`claude`), Claude Code with the prefill route and nothing it cannot carry
+ * (`claude-link`), Codex with the brief sent (`codex`) and assisted (`codex-assisted`), with a
+ * Codex home of the lab's own whose TTasks entry lacks `env_vars`.
  */
-async function rig(label: string, opener: number | "hang" = 0): Promise<Rig> {
+async function rig(label: string, opener: number | "hang" = 0, more: RigMore = {}): Promise<Rig> {
   const fake = (name: string, extra: Record<string, string> = {}) => ({
     exec: process.execPath,
     args_prefix: [FAKE_CLI_AGENT],
@@ -158,7 +172,8 @@ async function rig(label: string, opener: number | "hang" = 0): Promise<Rig> {
           target: "claude-cli",
           label: "Claude link · test",
           prompt: "prefill",
-          ...withReport("claude-link"),
+          exec: process.execPath,
+          args_prefix: [FAKE_CLI_AGENT],
         }),
         instanceToml({
           id: "codex",
@@ -177,9 +192,22 @@ async function rig(label: string, opener: number | "hang" = 0): Promise<Rig> {
           ...withReport("codex-assisted"),
         }),
         instanceToml({ id: "t3-later", target: "t3", label: "T3 · test" }),
+        ...(more.instances ?? []).map(({ env, ...fields }) => {
+          const made = withReport(fields.id);
+          return instanceToml({
+            target: "claude-cli",
+            label: `${fields.id} · test`,
+            ...made,
+            ...fields,
+            env: { ...made.env, ...env },
+          });
+        }),
       ].join("");
     },
     launch: {
+      ...(more.person === undefined
+        ? {}
+        : { environment: new FixedEnvironment({ kind: "user", env: testEnv(more.person) }) }),
       terminals: {
         spawn: recordingSpawner(opener),
         systemdRun: SYSTEMD_RUN,
@@ -719,14 +747,10 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       remoteAllowed: false,
       enabled: true,
     } as const;
-    // On Windows `claude_config_dir` selects another home: the link (default home only) is not
-    // this instance's route.
-    expect(() =>
-      chooseRoute(claude, { terminal: false, home: "C:\\Users\\mira", platform: "win32" }),
-    ).toThrow(LaunchUnavailable);
-    expect(
-      chooseRoute(claude, { terminal: false, home: "/home/mira", platform: "linux" }).route,
-    ).toBe("link");
+    // On Windows `claude_config_dir` selects another home, which the link (default home only)
+    // cannot open; on Linux it is another variable.
+    expect(settingsOf(claude, "C:\\Users\\mira", "win32")).toEqual(["environment", "home"]);
+    expect(settingsOf(claude, "/home/mira", "linux")).toEqual(["environment"]);
     // The Codex home's entry: its own names are kept, a list TTasks cannot repeat exactly is left.
     const entry = (toml: string) => {
       writeFileSync(join(home.root, "config.toml"), toml);
@@ -866,6 +890,123 @@ describe("[A3.3.7.grant.space] Open says at the click when its agent's home is r
       for (const name of ["claude", "codex"]) {
         expect((await reportAt(r.report(name))).argv.length, name).toBeGreaterThan(0);
       }
+    },
+  );
+});
+
+describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: its permission, its account and its spaces", () => {
+  const SPACE = { id: "sp_3q7k9d2xw8f4r6t1c5v0b2n8a7", name: "Personal" };
+  const base = {
+    id: "claude-x",
+    target: "claude-cli",
+    label: "Claude · x",
+    account: "",
+    spaces: [],
+    exec: "/usr/bin/claude",
+    argsPrefix: [],
+    configHome: undefined,
+    env: {},
+    openPermission: "inherit",
+    runPermission: "inherit",
+    extraArgs: [],
+    prompt: "sent",
+    viaLoginShell: false,
+    remoteAllowed: false,
+    enabled: true,
+  } as const;
+  const here = { home: "/home/mira", platform: "linux", space: SPACE } as const;
+  const reason = (run: () => unknown): string | undefined => {
+    try {
+      run();
+    } catch (error) {
+      if (error instanceof LaunchUnavailable) return error.reason;
+      throw error;
+    }
+    return undefined;
+  };
+
+  test("a route is taken only when it carries what the instance sets; otherwise Open says which would", () => {
+    const prefill = { ...base, prompt: "prefill" } as const;
+    // Nothing set beyond the app's own: Claude Code's link, terminal or not.
+    expect(chooseRoute(prefill, { ...here, terminal: true }).route).toBe("link");
+    expect(chooseRoute(prefill, { ...here, terminal: false }).route).toBe("link");
+    // A permission, arguments or an environment of its own: the link carries none of them, so
+    // the agent opens in a terminal with them and the brief to paste, never sent.
+    for (const set of [
+      { openPermission: "read-only" },
+      { extraArgs: ["--model", "fixture"] },
+      { env: { FIXTURE_SETTING: "1" } },
+    ] as const) {
+      const chosen = chooseRoute({ ...prefill, ...set }, { ...here, terminal: true });
+      expect([chosen.route, chosen.prompt, chosen.copy], JSON.stringify(set)).toEqual([
+        "terminal",
+        "clipboard",
+        true,
+      ]);
+      // Without a terminal nothing carries them: the terminal would.
+      expect(reason(() => chooseRoute({ ...prefill, ...set }, { ...here, terminal: false }))).toBe(
+        "no_terminal",
+      );
+    }
+    // The brief sent: the terminal, and without one the link only when it loses nothing.
+    const sent = { ...base, openPermission: "read-only" } as const;
+    expect(chooseRoute(sent, { ...here, terminal: true }).prompt).toBe("sent");
+    expect(reason(() => chooseRoute(sent, { ...here, terminal: false }))).toBe("no_terminal");
+    expect(chooseRoute(base, { ...here, terminal: false }).route).toBe("link");
+    // An app that opens with its own settings has no route for a permission of the instance's.
+    const desktop = { ...base, id: "desktop", target: "claude-desktop", exec: undefined } as const;
+    expect(chooseRoute(desktop, { ...here, terminal: true }).route).toBe("link");
+    expect(
+      reason(() =>
+        chooseRoute({ ...desktop, openPermission: "read-only" }, { ...here, terminal: true }),
+      ),
+    ).toBe("settings");
+  });
+
+  test("an instance set for some spaces opens only there, named by ID or name in any case", () => {
+    const listed = (spaces: readonly string[]) =>
+      reason(() => chooseRoute({ ...base, spaces }, { ...here, terminal: true }));
+    expect(listed([])).toBeUndefined();
+    expect(listed(["personal"])).toBeUndefined();
+    expect(listed([SPACE.id])).toBeUndefined();
+    expect(listed(["Research"])).toBe("not_for_space");
+    expect(listed(["sp_000000000000000000000000000"])).toBe("not_for_space");
+  });
+
+  test(
+    "through the service: read-only with prefill opens in a terminal in plan mode with the brief to paste; an instance for another space is not offered and opens nothing",
+    { timeout: 300_000 },
+    async () => {
+      opened.length = 0;
+      const r = await rig("chosen", 0, {
+        instances: [
+          { id: "claude-plan", prompt: "prefill", open_permission: "read-only" },
+          { id: "claude-research", spaces: ["Research"] },
+        ],
+      });
+      const tiles = r.lab.running.launches.instances(r.lab.spaceId);
+      expect(tiles.find((t) => t.key === "claude-plan")?.route).toBe("terminal");
+      expect(tiles.map((t) => t.key)).not.toContain("claude-research");
+
+      const task = await addTask(r, "Fixture plan only");
+      const { result } = await open(r, { task: task.ref, instance: "claude-plan" });
+      expect(result.launch.route).toBe("terminal");
+      const report = await reportAt(r.report("claude-plan"));
+      expect(report.argv.slice(4)).toEqual(["--permission-mode", "plan"]);
+      expect(report.argv).not.toContain("--");
+      expect(result.copy).toBe(briefFor("prefilled", r.lab.spaceId, task, result.launch.reference));
+      expect(opened).toHaveLength(0);
+
+      const started = r.lab.folders.size;
+      const refused = errorOf(
+        await open(r, { task: task.ref, instance: "claude-research" }).catch((e: unknown) => e),
+      );
+      expect(refused).toMatchObject({
+        code: "invalid_input",
+        message: "This instance is set up for other spaces only. Nothing was started.",
+        data: { field: "instance", reason: "not_for_space" },
+      });
+      expect(r.lab.folders.size).toBe(started);
     },
   );
 });

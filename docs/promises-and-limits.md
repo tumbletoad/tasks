@@ -242,6 +242,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   file system that records no creation time. A marker write given up after two seconds changes
   nothing in the folder afterwards.
 - Opening with a particular account uses that account's settings of the agent app.
+- Open starts an agent only with everything its instance sets: its permission, extra arguments,
+  environment and home. A link or an app that cannot carry them is not used for it: Claude Code
+  set to prefill then opens in a terminal with the brief on the clipboard to paste, and where
+  nothing can, Open says so and starts nothing.
+- An instance set for some spaces is offered, and opens, only in those.
 - TTasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.
 - Restarting or updating TTasks does not end an agent it opened, and the agent stays its task's

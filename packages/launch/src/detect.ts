@@ -16,9 +16,11 @@ import { posix, win32 } from "node:path";
 import {
   inTestedRange,
   isBuiltInTarget,
+  SETTINGS,
   targetDef,
   versionIn,
   type BuiltInTargetId,
+  type Setting,
   type TargetDef,
 } from "./catalogue.ts";
 import { helperOutput } from "./helpers.ts";
@@ -177,6 +179,26 @@ export function instanceHome(
   const fold = (s: string): string =>
     platform === "win32" || platform === "darwin" ? p.resolve(s).toLowerCase() : p.resolve(s);
   return { path: given, isDefault: fallback !== undefined && fold(given) === fold(fallback) };
+}
+
+/**
+ * What an instance sets beyond its app's own settings (SETTINGS): what a route must carry for its
+ * agent to work as the person set it up. One rule for every route, the link's default home
+ * included.
+ */
+export function settingsOf(
+  instance: Pick<Instance, "target" | "env" | "configHome" | "openPermission" | "extraArgs">,
+  userHome: string | undefined,
+  platform: NodeJS.Platform,
+): Setting[] {
+  const home = instanceHome(instance, userHome, platform);
+  const set: Readonly<Record<Setting, boolean>> = {
+    permission: instance.openPermission !== "inherit",
+    arguments: instance.extraArgs.length > 0,
+    environment: Object.keys(instance.env).length > 0,
+    home: home !== undefined && !home.isDefault,
+  };
+  return SETTINGS.filter((setting) => set[setting]);
 }
 
 /** Folders on the PATH, in order, absolute ones only. */

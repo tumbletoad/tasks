@@ -634,15 +634,16 @@ export class LaunchService {
   }
 
   /**
-   * The instances Open can open a task in on this machine (A5 3.6's tiles), in machine.toml's
-   * order: enabled ones whose target has a route here now. Copy is not an instance.
+   * The instances Open can open a task of `space` in on this machine (A5 3.6's tiles), in
+   * machine.toml's order: the ones that have a route for it here now (chooseRoute). Copy is not an
+   * instance.
    */
-  instances(): LaunchInstance[] {
+  instances(space: string): LaunchInstance[] {
     const out: LaunchInstance[] = [];
     for (const instance of this.#instances()) {
       let choice: Choice;
       try {
-        choice = this.#route(instance);
+        choice = this.#route(instance, space);
       } catch {
         continue;
       }
@@ -726,7 +727,7 @@ export class LaunchService {
       instance = this.#instances().find((i) => i.id === request.instance);
       if (instance === undefined) throw this.#unavailable("not_set_up");
       try {
-        choice = this.#route(instance);
+        choice = this.#route(instance, space);
       } catch (error) {
         if (error instanceof LaunchUnavailable) this.#log("launch.unavailable", error.reason);
         throw error;
@@ -1075,12 +1076,13 @@ ${instance}`;
     );
   }
 
-  /** The route an instance takes here now (chooseRoute). Throws LaunchUnavailable. */
-  #route(instance: Instance): Choice {
+  /** The route an instance takes for a task of `space` here now (chooseRoute). */
+  #route(instance: Instance, space: string): Choice {
     return chooseRoute(instance, {
       terminal: this.#terminalReady(),
       home: this.#options.home,
       platform: this.#options.platform,
+      space: { id: space, name: this.#options.spaces().find((s) => s.id === space)?.name },
     });
   }
 
@@ -1178,7 +1180,7 @@ ${instance}`;
     if (request.instance !== undefined) {
       const instance = this.#instances().find((i) => i.id === request.instance);
       try {
-        choice = instance === undefined ? undefined : this.#route(instance);
+        choice = instance === undefined ? undefined : this.#route(instance, space);
       } catch {
         choice = undefined;
       }
