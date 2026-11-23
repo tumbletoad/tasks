@@ -128,7 +128,6 @@ import {
   findMonitor,
   Monitor,
   MONITOR_VARIABLE,
-  probeMonitor,
   type MonitorCommand,
 } from "../monitor/index.ts";
 import { pageFolderVerbs } from "./page-folders.ts";
@@ -768,7 +767,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
     const hub = {
       status,
       // `ttasks doctor`'s monitor row: TTAM's hello only, read by a run that collects nothing.
-      monitor: { probe: async () => probeMonitor(await monitorCommand()) },
+      monitor: { probe: async () => monitor.probe(await monitorCommand()) },
       requestStop: (o: { restart: boolean }) => {
         onStopRequest(o);
       },

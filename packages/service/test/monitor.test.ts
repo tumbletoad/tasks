@@ -13,7 +13,6 @@ import { Logger } from "../src/hub/log.ts";
 import {
   findMonitor,
   Monitor,
-  probeMonitor,
   type MonitorAnswer,
   type MonitorCommand,
   type MonitorTimes,
@@ -284,6 +283,25 @@ describe("[A5.agents.monitor] the monitor module speaks TTAM's line protocol", (
     expect(events).toContainEqual(["monitor.ended", { why: "not_answering", killed: true }]);
   });
 
+  test("a child that failed is owned until it is gone: the next starts after it, close waits for both", async () => {
+    const { monitor, events, pids } = setup({
+      mode: "stall",
+      times: { answerMs: 300, killMs: 1_000, retryMs: [0] },
+    });
+    const failed = { ok: false, problem: { kind: "failed", reason: "not_answering" } };
+    expect(await monitor.ask()).toEqual(failed);
+    expect(await monitor.ask()).toEqual(failed);
+    await monitor.close();
+    expect(pids()).toHaveLength(2);
+    for (const pid of pids()) expect(alive(pid)).toBe(false);
+    expect(events.map(([event]) => event)).toEqual([
+      "monitor.started",
+      "monitor.ended",
+      "monitor.started",
+      "monitor.ended",
+    ]);
+  });
+
   test("ten minutes after the last request the input is closed and TTAM ends by itself; output after the end is no answer", async () => {
     const { monitor, events, pids } = setup({ mode: "after_end", times: { idleMs: 300 } });
     expect(snapshotOf(await monitor.ask()).generation).toBe(1);
@@ -457,32 +475,54 @@ describe("[A3.3.14.doctor.monitor] where ttam comes from, and whether it fits", 
     });
   });
 
-  test("the probe reads the hello of a child whose input is closed: no pass runs", async () => {
+  /** A monitor that starts no child, and a command for the fake in `mode`, which logs to `log`. */
+  function prober(times: Partial<MonitorTimes> = {}) {
     const dir = mkdtempSync(join(tmpdir(), "ttasks-monitor-probe-"));
     dirs.push(dir);
     const log = join(dir, "fake.log");
+    const monitor = new Monitor({
+      command: () => Promise.resolve({ ok: false, reason: "not_found" }),
+      times: { ...NEVER, ...times },
+    });
+    monitors.push(monitor);
     const command = (mode?: string): MonitorCommand => {
       const fake = fakeTtam({ log, ...(mode === undefined ? {} : { mode }) });
       return { ok: true, file: fake.file, args: fake.args, env: process.env, cwd: dir };
     };
-    expect(await probeMonitor(command())).toEqual({
+    const pids = () => [...new Set(readJsonLines(log).map((line) => (line as { pid: number }).pid))];
+    return { monitor, command, log, pids };
+  }
+
+  test("the probe reads the hello of a child whose input is closed: no pass runs", async () => {
+    const { monitor, command, log } = prober();
+    expect(await monitor.probe(command())).toEqual({
       fits: true,
       build: { version: "0.1.0", build: "0123456789ab" },
     });
     expect(
       readJsonLines(log).filter((line) => (line as { get?: number }).get !== undefined),
     ).toEqual([]);
-    expect(await probeMonitor(command("version=5,1"))).toMatchObject({
+    expect(await monitor.probe(command("version=5,1"))).toMatchObject({
       fits: false,
       problem: { kind: "does_not_fit", update: "ttasks" },
     });
-    expect(await probeMonitor(command("no_query"))).toEqual({
+    expect(await monitor.probe(command("no_query"))).toEqual({
       fits: false,
       problem: { kind: "not_installed", reason: "no_query" },
     });
-    expect(await probeMonitor({ ok: false, reason: "not_found" })).toEqual({
+    expect(await monitor.probe({ ok: false, reason: "not_found" })).toEqual({
       fits: false,
       problem: { kind: "not_installed", reason: "not_found" },
     });
+  });
+
+  test("a probe under way when the service stops is ended, and close waits until it is gone", async () => {
+    const { monitor, command, pids } = prober({ helloMs: 60_000, killMs: 60_000 });
+    const probed = monitor.probe(command("deaf"));
+    await until(() => pids().length === 1);
+    await monitor.close();
+    expect(await probed).toEqual({ fits: false, problem: { kind: "failed", reason: "closed" } });
+    for (const pid of pids()) expect(alive(pid)).toBe(false);
+    expect(await monitor.probe(command())).toMatchObject({ problem: { reason: "closed" } });
   });
 });

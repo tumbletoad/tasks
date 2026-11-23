@@ -10,6 +10,8 @@
 //   with no request since, it is ended the same way, and so it is when the service stops.
 // - When the service itself dies, the child's input closes with it and TTAM ends by itself: the
 //   input's other end is held by this process only, never inherited by another child.
+// - Every process started here is owned until it is gone: close() waits for each, and a new child
+//   starts only once the one before it is gone. Doctor's probe is one of them.
 // - A child that failed is started again only after a wait, longer each time, and only when asked.
 //   A missing or unfitting monitor is not asked again until recheck().
 //
@@ -180,7 +182,11 @@ export class Monitor {
   readonly #log: MonitorLog;
   readonly #onChange: () => void;
   #child: Child | undefined;
+  /** Every child whose process is not gone yet: the current one and those ending. */
+  readonly #children = new Set<Child>();
   #starting = false;
+  /** Doctor's probe under way, shared by every caller meanwhile. */
+  #probe: { readonly result: Promise<MonitorProbe>; readonly stop: AbortController } | undefined;
   /** The request that goes once the one out is answered, shared by every ask meanwhile. */
   #next: Request | undefined;
   /** Not installed, or does not fit: kept until recheck(). */
@@ -242,15 +248,30 @@ export class Monitor {
     this.#onChange();
   }
 
-  /** Ends the child, killing it after killMs, and refuses every ask from now on. */
+  /** Doctor's look at `command`: its hello, read by a run that collects nothing. */
+  probe(command: MonitorCommand): Promise<MonitorProbe> {
+    if (this.#closed) return Promise.resolve({ fits: false, problem: closed });
+    if (this.#probe === undefined) {
+      const stop = new AbortController();
+      const result = probeMonitor(command, this.#times, stop.signal).finally(() => {
+        this.#probe = undefined;
+      });
+      this.#probe = { result, stop };
+    }
+    return this.#probe.result;
+  }
+
+  /**
+   * Ends the child and the probe, and returns once every process started here is gone: each is
+   * killed killMs after its end at the latest. Refuses every ask from now on.
+   */
   async close(): Promise<void> {
     this.#closed = true;
     const child = this.#child;
     this.#answerAll(child, { ok: false, problem: closed });
-    if (child !== undefined) {
-      this.#end(child, "closed");
-      await child.gone;
-    }
+    if (child !== undefined) this.#end(child, "closed");
+    this.#probe?.stop.abort();
+    await Promise.all([...[...this.#children].map((c) => c.gone), this.#probe?.result]);
     this.#onChange();
   }
 
@@ -308,6 +329,7 @@ export class Monitor {
     this.#onChange();
     let command: MonitorCommand;
     try {
+      await Promise.all([...this.#children].map((c) => c.gone));
       command = await this.#command();
     } catch {
       command = { ok: false, reason: "not_found" };
@@ -350,6 +372,10 @@ export class Monitor {
       timers: [],
     };
     this.#child = child;
+    this.#children.add(child);
+    void gone.then(() => {
+      this.#children.delete(child);
+    });
     this.#log("monitor.started", {});
     // TTAM's diagnostics may name private things: read and dropped.
     proc.stderr.resume();
@@ -497,7 +523,7 @@ export class Monitor {
     for (const waiter of waiters) waiter(answer);
   }
 
-  /** Closes the child's input, kills it after killMs, and lets it go as the current child. */
+  /** Closes the child's input and kills it after killMs. It is no longer the current child. */
   #end(child: Child, why: string): void {
     if (child.ending) return;
     child.ending = true;
@@ -516,4 +542,83 @@ export class Monitor {
       this.#log("monitor.ended", { why, killed: child.proc.signalCode === "SIGKILL" });
     });
   }
+}
+
+export type MonitorProbe =
+  | { readonly fits: true; readonly build: MonitorBuild }
+  | { readonly fits: false; readonly problem: MonitorProblem };
+
+/**
+ * Starts `command` with its input already closed and reads its hello: TTAM writes its hello, runs
+ * no pass and exits, so it reads no session. Resolves once the process is gone; `stop` kills it.
+ */
+function probeMonitor(
+  command: MonitorCommand,
+  times: { readonly helloMs: number; readonly killMs: number },
+  stop: AbortSignal,
+): Promise<MonitorProbe> {
+  if (!command.ok) {
+    return Promise.resolve({
+      fits: false,
+      problem: { kind: "not_installed", reason: command.reason },
+    });
+  }
+  const failed = (reason: MonitorFailure): MonitorProbe => ({
+    fits: false,
+    problem: { kind: "failed", reason },
+  });
+  return new Promise((resolve) => {
+    let first: string | undefined;
+    let text = "";
+    const proc = spawn(command.file, [...(command.args ?? []), "query"], {
+      cwd: command.cwd,
+      env: command.env,
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
+    });
+    const kill = (): void => {
+      proc.kill("SIGKILL");
+    };
+    stop.addEventListener("abort", kill);
+    const deadline = setTimeout(kill, times.helloMs + times.killMs);
+    proc.stdout.setEncoding("utf8");
+    proc.stdout.on("data", (chunk: string) => {
+      if (first !== undefined) return;
+      text += chunk;
+      const end = text.indexOf("\n");
+      if (end !== -1) first = text.slice(0, end);
+      else if (text.length > 64 * 1024) kill();
+    });
+    const done = (probe: MonitorProbe): void => {
+      clearTimeout(deadline);
+      stop.removeEventListener("abort", kill);
+      resolve(probe);
+    };
+    proc.once("error", () => {
+      if (proc.pid === undefined) done(failed("start_failed"));
+    });
+    proc.once("close", (code) => {
+      if (stop.aborted) {
+        done(failed("closed"));
+        return;
+      }
+      if (first === undefined) {
+        done(
+          code === 2
+            ? { fits: false, problem: { kind: "not_installed", reason: "no_query" } }
+            : failed(code === null ? "no_hello" : "exited"),
+        );
+        return;
+      }
+      const line = readLine(first);
+      if (line?.type !== "hello") {
+        done(failed("no_hello"));
+        return;
+      }
+      const verdict = verdictOf(line.schemaVersion, line.queryVersion, line.build);
+      if (verdict !== undefined) done({ fits: false, problem: verdict });
+      else if (line.build === null) done(failed("no_hello"));
+      else done({ fits: true, build: line.build });
+    });
+  });
 }
