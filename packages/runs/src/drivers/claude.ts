@@ -497,6 +497,11 @@ export function claudeDriver(session: ClaudeSession): OpenDriver {
       }
     });
 
+    // A program that closes its output and lives on has said its last line.
+    stdout.on("end", () => {
+      for (const line of lines.end()) take(line);
+    });
+
     write({
       type: "user",
       message: { role: "user", content: [{ type: "text", text: session.request }] },

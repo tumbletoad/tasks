@@ -274,7 +274,12 @@ async function driverIn(phase: Phase) {
   if (phase === "stopping") driver.interrupt();
   await say();
   wrote.splice(0);
-  return { driver, wrote, say, raw, answer: () => answer };
+  /** Closes the program's output, as a program does that then lives on. */
+  const closeOutput = async () => {
+    fromProgram.end();
+    for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  };
+  return { driver, wrote, say, raw, closeOutput, answer: () => answer };
 }
 
 /** Longer than a line read whole: a file a tool wrote, say. */
@@ -389,6 +394,21 @@ describe("[A4.3.11.claude.driver] the claude driver's decisions: every phase aga
           done({ ok: true, outcome: "success", text: "Done.", textFinal: true }),
         );
       }
+    }
+  });
+
+  test("a result without a line end settles the work when the program closes its output, before it exits", async () => {
+    for (const long of [false, true]) {
+      const bench = await driverIn("turn");
+      const result = { ...RESULT, result: "Done.", ...(long ? { bulk: BULK } : {}) };
+      await bench.say(backgroundOf(0));
+      await bench.raw(JSON.stringify(result));
+      expect(await settledNow(bench.driver), `held, long: ${String(long)}`).toBeUndefined();
+      await bench.closeOutput();
+      expect(await settledNow(bench.driver), `long: ${String(long)}`).toEqual(
+        done({ ok: true, outcome: "success", text: "Done.", textFinal: true }),
+      );
+      expect(bench.answer()).toEqual(["Done.", true]);
     }
   });
 
