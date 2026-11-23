@@ -5141,6 +5141,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.8.web.leftovers",
+      "title": "When a space opens, kept text under a key that has no task's shape is forgotten; a task that is gone, in the Trash, finished or that the service could not answer for keeps its own",
+      "source": "A5 3.8, A7 3.12 M5.07",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.3.8.web.kept",
       "title": "Typed text kept under the product's prefix, for the browser or for the tab alone: listed per prefix, removed, kept for the tab's life when storage is full or blocked, and another tab's change heard by its name only",
       "source": "A5 3.8, A7 3.12 M5.07",
