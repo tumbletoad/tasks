@@ -1334,6 +1334,37 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
       "BACKUP_INVALID",
     );
   });
+
+  test("a disk with room for an older backup but not the newest refuses, and never restores the older one", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const at = Date.UTC(2026, 10, 14);
+    const older = await backupSpace(checked, folder, { kind: "daily", now: () => at - 2_000 });
+    await writeCommits(folder, 40);
+    const newest = await backupSpace(checked, folder, { kind: "manual", now: () => at - 1_000 });
+    expect(newest.sidecar.size).toBeGreaterThan(older.sidecar.size);
+    const parent = folders.make();
+    const room = BUNDLE_POLICY.freeSpaceReserveBytes + older.sidecar.size;
+    await expectCode(
+      () =>
+        restoreLatest(
+          checked,
+          dir,
+          space.spaceId,
+          join(parent, "mira"),
+          {},
+          {
+            freeBytes: () => room,
+          },
+        ),
+      "BUNDLE_LIMIT_EXCEEDED",
+    );
+    expect(readdirSync(parent)).toEqual([]);
+    // With room for it, the newest is the one restored.
+    const { backup } = await restoreLatest(checked, dir, space.spaceId, join(parent, "mira"));
+    expect(backup).toBe(newest.name);
+  });
 });
 
 describe("[A1.5.rescue.damaged] rescue keeps the rows that can still be read (A1 3.2)", () => {

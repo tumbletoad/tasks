@@ -71,6 +71,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Making a backup or an export never overwrites an existing file.
 - A restore checks the backup first. A backup that is broken or too new leaves nothing half
   restored.
+- `ttasks space restore latest` restores the newest backup that restores. When the disk has no
+  room for it, it says so and restores no older one in its place.
 - Restoring over a space keeps what was there before.
 - A restored copy cannot be edited until you make it the current copy.
 - To look inside a backup, restore it into a new folder, close the space, open that folder, look,

@@ -67,10 +67,13 @@ import {
   type RestoreSeams,
 } from "./restore.ts";
 
-/** Codes that say a candidate backup does not restore: the next one is tried. */
+/**
+ * Codes that say a candidate backup does not restore: the next one is tried. A passed limit
+ * (BUNDLE_LIMIT_EXCEEDED: the free disk space, or the size of a database) is not one of them: the
+ * candidate may be whole, and an older one would bring back older work as if it were the newest.
+ */
 const NOT_THIS_BACKUP: ReadonlySet<string> = new Set([
   "BACKUP_INVALID",
-  "BUNDLE_LIMIT_EXCEEDED",
   "SPACE_INVALID",
   "SPACE_NOT_FOUND",
   "SPACE_TOO_NEW",
@@ -81,8 +84,8 @@ const NOT_THIS_BACKUP: ReadonlySet<string> = new Set([
 /**
  * Restores the newest complete backup of `spaceId` in `backupDir` that restores into the new folder
  * `target` (see the header), and names it. The target is checked first, so a failure of a
- * candidate is the candidate's. BACKUP_INVALID when none restores, or the newest candidate's
- * BUNDLE_LIMIT_EXCEEDED (the disk is too full for any).
+ * candidate is the candidate's. BACKUP_INVALID when none restores; BUNDLE_LIMIT_EXCEEDED as soon as
+ * a candidate does not fit the disk or the policy, and nothing older is tried.
  */
 export async function restoreLatest(
   checked: CheckedDriver,
@@ -102,7 +105,6 @@ export async function restoreLatest(
   if (fsCall(() => existsSync(folder))) {
     throw new StorageError("SPACE_EXISTS", "A space folder is already there");
   }
-  let first: StorageError | undefined;
   for (const backup of listBackups(backupDir, seams.policy).backups) {
     if (backup.state !== "ok" || backup.sidecar?.space_id !== spaceId) continue;
     let restored: RestoredSpace;
@@ -110,7 +112,6 @@ export async function restoreLatest(
       restored = await restoreBackupWith(checked, backup.file, folder, options, seams);
     } catch (error) {
       if (!(error instanceof StorageError) || !NOT_THIS_BACKUP.has(error.code)) throw error;
-      first ??= error;
       continue;
     }
     // The sidecar was read again by the restore: one that names another space since the listing
@@ -120,7 +121,6 @@ export async function restoreLatest(
     }
     return { restored, backup: backup.name };
   }
-  if (first?.code === "BUNDLE_LIMIT_EXCEEDED") throw first;
   throw new StorageError("BACKUP_INVALID", "No backup of the space verifies");
 }
 
