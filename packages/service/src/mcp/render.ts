@@ -753,9 +753,11 @@ function heldLines(rows: readonly { held?: Held }[], at: string): string[][] {
  * `add_tasks`' text (A3 3.4.5): the counts and every draft's line, never cut, then the warnings,
  * then which task holds each key a draft's source was linked without. A cut takes from the end, so
  * the held lines go first: each draft's own line already says how many of its sources were held,
- * and the warnings (one line for every group the call made) say what nothing else does.
+ * and the warnings (one line for every group the call made) say what nothing else does. A cut says
+ * the tasks were added and where to read on, never to send them again: a draft without a source
+ * key sent again is a task of its own.
  */
-function addRendered(result: OutputOf<"task.add">): Rendered {
+function addRendered(result: OutputOf<"task.add">, getTask: string): Rendered {
   const created = result.tasks.filter((t) => t.result !== "exists").length;
   // An existing task's line shows only its reference: with no task written, the answer offers no
   // base for changing one.
@@ -770,7 +772,7 @@ function addRendered(result: OutputOf<"task.add">): Rendered {
       { units: result.warnings.map((w) => [`warning: ${w}`]) },
       { units: heldLines(result.tasks, "tasks") },
     ],
-    more: "Send fewer tasks per call to see every line.",
+    more: `The tasks above are added or found as their lines say: send none of them again. Read one with ${getTask} for its sources and folder.`,
   };
 }
 
@@ -973,7 +975,7 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
     };
   },
   "task.search": (result: Search, { tool }) => searchRendered(result, tool),
-  "task.add": (result: OutputOf<"task.add">) => addRendered(result),
+  "task.add": (result: OutputOf<"task.add">, { getTask }) => addRendered(result, getTask),
   "task.reopen": (result: OutputOf<"task.reopen">) => {
     const head =
       result.result === "reopened"
