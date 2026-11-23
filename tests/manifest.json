@@ -5290,7 +5290,7 @@
     },
     {
       "id": "A5.3.12.web.undo",
-      "title": "A check-off holds its row checked for 4 s, collapses and leaves, and a click on its box during the hold undoes it by its commit, the row unchecked at once and kept until the feed brings it back; an undo that conflicts on every field offers Restore mine (a partial undo, then the person's value with a fresh base), one that conflicts on some offers Undo the rest, a value no hand edit can set offers no Restore mine, and nothing to undo, a newer change first and an unknown commit each change nothing; Reopen sends its base and its toast's Undo names its commit, and a refused Reopen says so with no action",
+      "title": "A check-off holds its row checked for 4 s, collapses and leaves, and a click on its box during the hold undoes it by its commit, the row unchecked at once and kept until the feed brings it back; an undo or redo refused because someone changed it since says who changed which tasks and offers no action, except Undo the rest for the tab's own step where only some fields conflict (never on a page that does not know the step, nor for a commit the refusal does not name), and nothing to undo, a newer change first and an unknown commit each change nothing; Reopen sends its base and its toast's Undo names its commit, and a refused Reopen says so with no action",
       "source": "A5 3.12, A1 3.10.1, A7 3.12 M5.08",
       "owner": "M5",
       "kind": "ci",
@@ -5306,7 +5306,7 @@
     },
     {
       "id": "A7.3.12.m5-08.e2e.conflict",
-      "title": "In Chromium and Firefox against the real service: an undo of a due date an agent changed since says who and when and changes nothing until Restore mine puts back the date from before the person's edit; an agent's change while the date popover is open shows there, and the person's pick then keeps their value under the field until Apply mine saves it",
+      "title": "In Chromium and Firefox against the real service: an undo of a due date an agent changed since is refused, says who changed the task, offers no action and leaves the agent's date; an agent's change while the date popover is open shows there, and the person's pick then keeps their value under the field until Apply mine saves it",
       "source": "A5 3.11, A5 3.12, A5 3.15, A7 3.12 M5.08",
       "owner": "M5",
       "kind": "ci",

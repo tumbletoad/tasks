@@ -2,9 +2,9 @@
 // 3.15 item 9), in Chromium and Firefox against the real service process with fixture data.
 //
 // Verify line: by keyboard alone, edit due, priority and effort, check off, undo, redo; an
-// agent-only field starts a composer request. Also: "Restore mine" when an agent changed the field
-// since the person's edit, "Apply mine" when it changed while the person's editor was open, axe in
-// both themes with the date popover and a toast open, and the screenshots at 1,440 and 390 px.
+// agent-only field starts a composer request. Also: an undo refused because an agent changed the
+// field since the person's edit, "Apply mine" when it changed while the person's editor was open,
+// axe in both themes with the date popover and a toast open, and the screenshots at 1,440 and 390 px.
 // Dates are relative to the day the test runs, as the service's are.
 import { expect, type Locator, type Page } from "@playwright/test";
 import { day, onOneDay } from "./days.ts";
@@ -229,8 +229,8 @@ async function bothWidths(page: Page, name: string): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
 }
 
-test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agent changed the same field", () => {
-  test("undo after an agent's change offers Restore mine; an edit over a change made while the popover was open offers Apply mine", async ({
+test.describe("[A7.3.12.m5-08.e2e.conflict] Undo and Apply mine: an agent changed the same field", () => {
+  test("undo after an agent's change is refused, says who changed the task and leaves the agent's value; an edit over a change made while the popover was open offers Apply mine", async ({
     page,
     world,
   }) => {
@@ -261,18 +261,15 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
     await agentSets(world, ref, { due: agents });
     await expect.poll(async () => (await read(world, ref)).task.due).toBe(agents);
 
-    // Undo: the field is the agent's now, so nothing is overwritten unseen. The toast says who
-    // changed it, and what Restore mine would write over what.
+    // Undo: the field is the agent's now, so nothing is overwritten. The toast says who changed
+    // which task, with nothing to choose: the person sets the value on the task if they want.
     await page.locator("main").focus();
     await page.keyboard.press("Control+z");
-    await expect(toast(page)).toContainText("changed the due date at");
-    await expect(toast(page)).toContainText("Restore mine puts back");
-    await expect(toastAction(page)).toHaveText("Restore mine");
-    await bothWidths(page, "undo-restore-mine");
+    await expect(toast(page)).toContainText("Not undone: ");
+    await expect(toast(page)).toHaveText(new RegExp(`.+ changed ${ref} since$`, "u"));
+    await expect(toastAction(page)).toHaveCount(0);
+    await bothWidths(page, "undo-refused");
     expect((await read(world, ref)).task.due).toBe(agents);
-    // Restore mine puts back what the undo would have: the date before the person's edit.
-    await toastAction(page).click();
-    await expect.poll(async () => (await read(world, ref)).task.due).toBe(first);
 
     // The popover takes its base when it opens: an agent's change while it is open is shown there,
     // and the person's pick is a conflict that keeps their value one click away.
