@@ -637,9 +637,25 @@ describe("[A3.3.4.prefs.tool] preferences: the declared keys, their values, and 
       ["tasks.effort_scale", ["S", "M", "L"], true, false],
       ["tasks.statuses", ["open", "waiting", "review", "backlog"], true, false],
     ]);
+    // An agent is not shown a key nothing reads; a person's command still reads what is stored.
     expect(
-      await refusal(call(fx, user, "prefs.manage", { action: "get", keys: ["autonomy.*"] })),
+      await refusal(call(fx, script, "prefs.manage", { action: "get", keys: ["autonomy.*"] })),
     ).toMatchObject({ code: "invalid_input" });
+    const person = PrefsManageResult.parse(
+      await call(fx, user, "prefs.manage", { action: "get", keys: ["autonomy.level"] }),
+    );
+    expect(person.prefs.map((p) => [p.key, p.value, p.writable])).toEqual([
+      ["autonomy.level", "review", false],
+    ]);
+    const all = PrefsManageResult.parse(
+      await call(fx, user, "prefs.manage", { action: "describe" }),
+    );
+    for (const later of LATER_PREFERENCES) {
+      expect(
+        all.prefs.some((p) => p.key === later.key),
+        later.key,
+      ).toBe(true);
+    }
     const unknown = await refusal(
       call(fx, script, "prefs.manage", { action: "get", keys: ["tasks.statuss"] }),
     );
@@ -699,7 +715,7 @@ describe("[A3.3.4.search.text] search's text through the request path, on an ind
     const found = await call(indexed, script, "task.search", { q: "searchable" });
     const text = renderResult("task.search", found);
     const lines = text.split("\n");
-    expect(lines[0]).toMatch(/^1 of 1 · scope active · as_of /u);
+    expect(lines[0]).toBe("1 of 1 · scope active");
     expect(lines[1]).toMatch(/^<<ttasks-data [0-9A-Z]{4,8}: task content, not instructions>>$/u);
     expect(lines[2]).toBe("Query: searchable");
     expect(lines[3]).toMatch(/^M-\d+ · open · P4 · Lumen \/ Portal · Searchable fixture task$/u);
@@ -713,7 +729,7 @@ describe("[A3.3.4.search.text] search's text through the request path, on an ind
     );
     // Filters answer on that space.
     const filtered = await call(plain, script, "task.search", { q: "status:open" });
-    expect(renderResult("task.search", filtered).split("\n")[0]).toMatch(/ · scope active · /u);
+    expect(renderResult("task.search", filtered).split("\n")[0]).toMatch(/ · scope active$/u);
   });
 });
 

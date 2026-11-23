@@ -4,7 +4,7 @@
 // matched no area or project says that it made one. A service in this process.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, LATER, type ErrorBody } from "@ttasks/contracts";
-import { toolCaller } from "../src/mcp/index.ts";
+import { renderResult, toolCaller } from "../src/mcp/index.ts";
 import { opCall, type Binding, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
@@ -160,6 +160,110 @@ describe("[A3.3.3.mcp.later] what a later step builds", () => {
     expect(write).toMatch(/^error conflict/u);
     const task = (await call("task.get", { task: ref }))["task"] as Json;
     expect(task["summary"]).toBe("The person's summary");
+  });
+
+  test("an append, another field's write and a search or status row offer no base for a person's change", async () => {
+    const create = async (title: string, key: string) => {
+      const text = await tool("add_tasks", {
+        tasks: [{ title, sources: [{ kind: "ticket", title: "T", key }] }],
+        request_id: rid(),
+      });
+      return {
+        ref: /created ([A-Z]+-[0-9]+)/u.exec(text)?.[1] ?? "",
+        base: AS_OF.exec(text)?.[1] ?? "",
+      };
+    };
+    const person = async (op: string, input: Json) =>
+      opCall(w.service.ops, PERSON, { op, input: { ...input, request_id: rid() } });
+
+    // An append: the person appends a condition, the agent appends its note. The append's answer
+    // offers no base, and a replace with the creating answer's conflicts.
+    const a = await create("Fixture appended", "fix:AP-1");
+    await person("task.update", {
+      task: a.ref,
+      context: { mode: "append", text: "Only on Fridays." },
+    });
+    const appended = await tool("update_task", {
+      task: a.ref,
+      context: { mode: "append", text: "Agent note." },
+      request_id: rid(),
+    });
+    expect(appended).toMatch(/^updated /u);
+    expect(appended).not.toMatch(AS_OF);
+    const replaced = await tool("update_task", {
+      task: a.ref,
+      context: { mode: "replace", text: "Agent rewrite." },
+      base: a.base,
+      request_id: rid(),
+    });
+    expect(replaced).toMatch(/^error conflict/u);
+
+    // Another field's write: the person completes and reopens, the agent changes the title. A
+    // completion with the base of the rule conflicts, and the task stays open.
+    const b = await create("Fixture reopened", "fix:RO-1");
+    await person("task.finish", { task: b.ref, base: await asOf() });
+    await person("task.reopen", { task: b.ref, base: await asOf() });
+    const titled = await tool("update_task", {
+      task: b.ref,
+      set: { title: "Fixture reopened, renamed" },
+      base: b.base,
+      request_id: rid(),
+    });
+    expect(titled).toMatch(/^updated /u);
+    const completed = await tool("complete_task", {
+      task: b.ref,
+      outcome: "Fixture outcome.",
+      base: b.base,
+      request_id: rid(),
+    });
+    expect(completed).toMatch(/^error conflict/u);
+    expect(((await call("task.get", { task: b.ref }))["task"] as Json)["lifecycle"]).toBe("active");
+
+    // An add that finds the task answers with the task's stored title, never the draft's.
+    const c = await create("Fixture draft title", "fix:TI-1");
+    await person("task.update", {
+      task: c.ref,
+      set: { title: "The person's title" },
+      base: await asOf(),
+    });
+    const found = await call("task.add", {
+      tasks: [
+        {
+          title: "Fixture draft title",
+          sources: [{ kind: "ticket", title: "T", key: "fix:TI-1" }],
+        },
+      ],
+      request_id: rid(),
+    });
+    expect((found["tasks"] as Json[])[0]).toMatchObject({
+      result: "exists",
+      title: "The person's title",
+    });
+
+    // A search row and a status row show part of a task: their answers offer no as_of.
+    expect(await tool("search", { q: "Fixture" })).not.toMatch(AS_OF);
+    expect(await tool("status", {})).not.toMatch(AS_OF);
+    expect(await tool("status", { guide: "work" })).not.toMatch(AS_OF);
+  });
+
+  test("the groups line survives the largest add: 25 drafts, every source held", () => {
+    const tasks = Array.from({ length: 25 }, (_, k) => ({
+      result: "created",
+      id: `t_${"0".repeat(25)}${String(k % 10)}`,
+      ref: `M-${String(k + 1)}`,
+      title: "Fixture",
+      lifecycle: "active",
+      log_added: false,
+      held: Array.from({ length: 10 }, (_, s) => ({ source: s, held_by: "M-999" })),
+    }));
+    const warning =
+      "Made 25 new areas and 25 new projects for names that matched none (a project, none in its area): tasks.0.area, tasks.1.area, tasks.2.area, tasks.3.area, tasks.4.area and 45 more.";
+    const text = renderResult("task.add", {
+      as_of: "1.9.5n0w8k3q",
+      tasks,
+      warnings: [warning],
+    });
+    expect(text).toContain(`warning: ${warning}`);
   });
 
   test("add_tasks says in one line which names made a new area or project, and nothing for a name it found", async () => {

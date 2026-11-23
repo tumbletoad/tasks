@@ -131,9 +131,9 @@ export const taskUpdate = defineEntry({
       title: "Update a task",
       description:
         "Use to change a task's fields, summary, context, group or sources. Pass base: the " +
-        "as_of of the last answer that showed you the fields you change, or of your own write " +
-        "of them; a context append needs none. Set focus or priority only " +
-        "when the user asks. Use complete_task to finish.",
+        "as_of of your last get_task, the add_tasks that created it, or your update_task that " +
+        "set those fields; an append needs none and is no base. Set focus or priority only " +
+        "when the user asks.",
     },
   },
   budget: { typical: 80, max: 400 },

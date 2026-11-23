@@ -578,6 +578,21 @@ const BOUND: Statement = {
   mode: "get",
 };
 
+const TITLES: Statement = {
+  sql: "SELECT id, title FROM tasks WHERE id IN (SELECT value FROM json_each($ids))",
+  mode: "all",
+};
+
+/** The stored titles of the tasks `ids` names, by ID. */
+export async function readTaskTitles(
+  reader: WorkerConnection,
+  ids: readonly string[],
+): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const [rows] = await snapshot(reader, [TITLES], { ids: JSON.stringify(ids) });
+  return new Map((rows as Row[]).map((row) => [String(row["id"]), String(row["title"])]));
+}
+
 /** A task's reference by its ID, or undefined when there is no such task. */
 export async function readTaskRef(
   reader: WorkerConnection,

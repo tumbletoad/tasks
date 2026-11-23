@@ -92,7 +92,7 @@ export const RequestId = z
 export const Base = z
   .string()
   .max(40)
-  .describe("as_of of the last answer that showed you the field, or of your own write of it");
+  .describe("as_of: your last get_task, the add_tasks that made it, or your set of that field");
 
 /** Each entry that takes it gives it the default `"apply"` in its `defaults`. */
 export const Mode = z

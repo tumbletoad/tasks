@@ -482,7 +482,8 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
       "error conflict: A field changed after the base: read again. Read the task again, then send the change with a new request ID.",
     );
     // Which fields changed stays whole; their stored values come inside the block, as fit.
-    expect(split(conflict).outside).toContain("as_of 1.1050.5n0w8k3q");
+    // No as_of: a conflict is no base; the agent reads the task again.
+    expect(conflict).not.toContain("as_of");
     expect(split(conflict).outside).toContain(
       "Changed since your base: M-14 context (v1049), M-14 context (v1049), M-14 context (v1049)",
     );

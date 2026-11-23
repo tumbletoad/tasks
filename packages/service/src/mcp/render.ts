@@ -103,8 +103,9 @@ function sessionLine(session: Status["session"]): string {
 
 function statusParts(result: Status): Part[] {
   const counts = result.counts;
+  // No as_of: a status row is no base (instructions.ts), so the text offers none.
   const header = fixed(
-    `${join(PRODUCT_NAME, withWeekday(result.date), result.time_zone, `autonomy ${result.autonomy}`)} · as_of ${result.as_of}`,
+    join(PRODUCT_NAME, withWeekday(result.date), result.time_zone, `autonomy ${result.autonomy}`),
     sessionLine(result.session),
   );
   // A guide is one workflow text instead of the overview (A3 3.4.2).
@@ -577,7 +578,8 @@ function searchRendered(result: Search, search: string): Rendered {
   return {
     parts: [
       fixed(
-        `${span} of ${String(total)} · scope ${result.scope} · as_of ${result.as_of}${changed ? " · * changed since the search ran" : ""}`,
+        // No as_of: a row shows part of a task, so it is no base (instructions.ts).
+        `${span} of ${String(total)} · scope ${result.scope}${changed ? " · * changed since the search ran" : ""}`,
       ),
       // The query as read: the caller's words, which may hold names copied from stored text.
       ...(result.parsed === ""
@@ -645,9 +647,10 @@ function heldLines(rows: readonly { held?: Held }[], at: string): string[][] {
 }
 
 /**
- * `add_tasks`' text (A3 3.4.5): the counts and every draft's line, never cut, then which task
- * holds each key a draft's source was linked without, then the warnings, which a cut takes from
- * the end, because 25 drafts' lines fit the budget alone (A3 3.2.5).
+ * `add_tasks`' text (A3 3.4.5): the counts and every draft's line, never cut, then the warnings,
+ * then which task holds each key a draft's source was linked without. A cut takes from the end, so
+ * the held lines go first: each draft's own line already says how many of its sources were held,
+ * and the warnings (one line for every group the call made) say what nothing else does.
  */
 function addRendered(result: OutputOf<"task.add">): Rendered {
   const created = result.tasks.filter((t) => t.result !== "exists").length;
@@ -660,8 +663,8 @@ function addRendered(result: OutputOf<"task.add">): Rendered {
         `${join(`${String(created)} created`, `${String(result.tasks.length - created)} existing`, result.proposal !== undefined && `proposal ${result.proposal}`)}${asOf}${replayed(result)}`,
         ...result.tasks.map((row, k) => draftLine(row, `tasks.${String(k)}`)),
       ),
-      { units: heldLines(result.tasks, "tasks") },
       { units: result.warnings.map((w) => [`warning: ${w}`]) },
+      { units: heldLines(result.tasks, "tasks") },
     ],
     more: "Send fewer tasks per call to see every line.",
   };
@@ -796,10 +799,13 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
           : result.result === "review"
             ? `review ${result.task}${fields} (applied, marked for the user's review)`
             : `proposed ${result.task}${fields}${result.proposal === undefined ? "" : ` · proposal ${result.proposal}`}`;
+    // A call that changed only the context may have appended, and an append is no base: such an
+    // answer offers none, and a replace after it reads the task first.
+    const contextOnly = result.fields.length > 0 && result.fields.every((f) => f === "context");
     return {
       parts: [
         fixed(
-          `${head} · as_of ${result.as_of}${replayed(result)}`,
+          `${head}${contextOnly ? "" : ` · as_of ${result.as_of}`}${replayed(result)}`,
           ...result.warnings.map((w) => `warning: ${w}`),
         ),
       ],
@@ -974,7 +980,6 @@ export function renderError(body: ErrorBody, random?: Random): string {
             .slice(0, 5)
             .map((c) => `${where(c)} (v${asText(c.version)})`)
             .join(", ")}`,
-      typeof data["as_of"] === "string" ? `as_of ${data["as_of"]}` : undefined,
     ),
   ];
   if (conflicts.length > 0) {

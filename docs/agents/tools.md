@@ -168,7 +168,7 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | `task` | string, max 40 | no | set, clear: the task, such as M-14 |
 | `area` | string, max 120 | no | add_project: the new project's area, by name |
 | `folder` | string, 1 to 4096 | no | add_project, set: an absolute folder on this machine, or one under ~ |
-| `base` | string, max 40 | no | as_of of the last answer that showed you the field, or of your own write of it |
+| `base` | string, max 40 | no | as_of: your last get_task, the add_tasks that made it, or your set of that field |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 
 ### Output
@@ -248,7 +248,7 @@ MCP tool `organize`, "List or shape areas and projects": Use to see the user's a
 | A1 operations | `area.create`, `area.patch`, `area.move`, `area.archive`, `project.create`, `project.patch`, `project.move`, `project.archive`, `area.unarchive`, `project.unarchive`, `project.folder_set`, `project.folder_clear` |
 | Faces | MCP `organize`, CLI `ttasks area`, UI |
 | Errors | `invalid_input`, `not_found`, `ambiguous`, `conflict`, `forbidden`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 738, reported |
+| Definition, estimated tokens | 739, reported |
 | Result budget, estimated tokens | typical 400, max 1500 |
 
 ### Input
@@ -259,7 +259,7 @@ MCP tool `organize`, "List or shape areas and projects": Use to see the user's a
 | `path` | string, max 250 | no | "Area" or "Area/Project", by name or slug; list: one area |
 | `to` | string, max 120 | no | rename: the new name; move: the new area |
 | `folder` | string, 1 to 4096 | no | create, set_folder: the project's folder here, "cwd" or an absolute path |
-| `base` | string, max 40 | no | as_of of the last answer that showed you the field, or of your own write of it |
+| `base` | string, max 40 | no | as_of: your last get_task, the add_tasks that made it, or your set of that field |
 | `request_id` | string, max 64 | no | New per intended change; reuse it only to retry that call |
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
 
@@ -1307,7 +1307,7 @@ Result:
 
 Finish or abandon a task with an outcome and learnings, and create its follow-ups.
 
-MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped: records the outcome and learnings and creates follow-ups in one call. Also wraps up a task the user checked off. Pass base: the as_of of the last answer that showed you the task's status, or of your own write.
+MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped: records the outcome and learnings and creates follow-ups in one call. Also wraps up a task the user checked off. Pass base: the as_of of your last get_task, of the add_tasks that created it, or of your complete_task or reopen_task of it.
 
 | Property | Value |
 |---|---|
@@ -1319,7 +1319,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | A1 operations | `task.complete`, `task.archive`, `task.wrap_up`, `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `complete_task`, CLI `ttasks done`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 2002, reported |
+| Definition, estimated tokens | 2017, reported |
 | Result budget, estimated tokens | typical 100, max 1500 |
 
 ### Input
@@ -1355,7 +1355,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].log` | string, max 16384; agents: string, max 2000 | no | Log entry; also added to a matched task that lacks it |
 | `follow_ups[].on_existing` | "return" \| "add_sources" \| "create_new" | no | When a source key matches; default return |
 | `finished` | string, max 40 | no | When it was done, only for work done before it was recorded: ISO date or instant |
-| `base` | string, max 40 | yes | as_of of the last answer that showed you the field, or of your own write of it |
+| `base` | string, max 40 | yes | as_of: your last get_task, the add_tasks that made it, or your set of that field |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |
 
@@ -2086,7 +2086,7 @@ Result:
 
 Reopen a completed or archived task. Its earlier outcome and learnings stay.
 
-MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archived task needs work again, instead of adding a new one. Its earlier outcome and learnings stay. Pass a reason, and base: the as_of of the last answer that showed you its status, or of your own write. update_task changes only active tasks.
+MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archived task needs work again, instead of adding a new one. Its earlier outcome and learnings stay. Pass a reason, and base: the as_of of your last get_task, or of your complete_task or reopen_task of it. update_task changes only active tasks.
 
 | Property | Value |
 |---|---|
@@ -2098,7 +2098,7 @@ MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archiv
 | A1 operations | `task.reopen` |
 | Faces | MCP `reopen_task`, CLI `ttasks reopen`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 520, reported |
+| Definition, estimated tokens | 522, reported |
 | Result budget, estimated tokens | typical 40, max 150 |
 
 ### Input
@@ -2107,7 +2107,7 @@ MCP tool `reopen_task`, "Reopen a finished task": Use when a completed or archiv
 |---|---|---|---|
 | `task` | string, max 40 | no | Task ref (M-14) or ID; default: this session's task |
 | `reason` | string, max 200 | agents only | Why it is open again |
-| `base` | string, max 40 | yes | as_of of the last answer that showed you the field, or of your own write of it |
+| `base` | string, max 40 | yes | as_of: your last get_task, the add_tasks that made it, or your set of that field |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 
 ### Output
@@ -2312,7 +2312,7 @@ Result:
 
 Change an active task's fields, summary, context, group or sources.
 
-MCP tool `update_task`, "Update a task": Use to change a task's fields, summary, context, group or sources. Pass base: the as_of of the last answer that showed you the fields you change, or of your own write of them; a context append needs none. Set focus or priority only when the user asks. Use complete_task to finish.
+MCP tool `update_task`, "Update a task": Use to change a task's fields, summary, context, group or sources. Pass base: the as_of of your last get_task, the add_tasks that created it, or your update_task that set those fields; an append needs none and is no base. Set focus or priority only when the user asks.
 
 | Property | Value |
 |---|---|
@@ -2324,7 +2324,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
 | Faces | MCP `update_task`, CLI `ttasks set`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict` |
-| Definition, estimated tokens | 1679, reported |
+| Definition, estimated tokens | 1674, reported |
 | Result budget, estimated tokens | typical 80, max 400 |
 
 ### Input
@@ -2356,7 +2356,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `add_sources[].who` | string, max 120 | no | Sender or counterpart |
 | `add_sources[].url` | string, max 2048 | no | Link |
 | `add_sources[].at` | string, max 40 | no | When it was sent |
-| `base` | string, max 40 | no | as_of of the last answer that showed you the field, or of your own write of it |
+| `base` | string, max 40 | no | as_of: your last get_task, the add_tasks that made it, or your set of that field |
 | `reason` | string, max 200 | no | Why, shown in history |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |
 | `cwd` | string, max 4096 | no | Your working folder, as an absolute path |

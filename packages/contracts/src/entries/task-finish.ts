@@ -120,7 +120,8 @@ export const taskFinish = defineEntry({
       description:
         "Use when a task is done or dropped: records the outcome and learnings and creates " +
         "follow-ups in one call. Also wraps up a task the user checked off. Pass base: the " +
-        "as_of of the last answer that showed you the task's status, or of your own write.",
+        "as_of of your last get_task, of the add_tasks that created it, or of your " +
+        "complete_task or reopen_task of it.",
     },
   },
   budget: { typical: 100, max: 1500 },

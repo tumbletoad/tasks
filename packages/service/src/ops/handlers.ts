@@ -145,6 +145,7 @@ import {
   readTask,
   readTaskKeys,
   readTaskRef,
+  readTaskTitles,
   logOf,
   noteOf,
   sourceOf,
@@ -369,7 +370,7 @@ function checkActionFields(entry: AnyEntry, input: Record<string, unknown>): voi
     throw invalid(
       "base",
       `Required to ${action}`,
-      "Pass base: the as_of of the last answer that showed you what you change.",
+      "Pass base: the as_of of the answer that last listed the group.",
     );
   }
 }
@@ -1546,6 +1547,24 @@ function draftOutcome(
 }
 
 /**
+ * The stored titles of the tasks drafts matched, read after the write: a matched task keeps its
+ * own title, and an answer that echoed the draft's would hand a caller a title it never had, with
+ * an `as_of` that lets an edit replace the one a person gave it. Read later than the write, a
+ * title is never older than the answer's `as_of`, so an edit on it conflicts rather than overwrites.
+ */
+async function matchedTitles(
+  call: Call,
+  outcomes: readonly { result: string; id?: string }[],
+): Promise<Map<string, string>> {
+  const ids = outcomes.flatMap((o) => (o.result === "exists" && o.id !== undefined ? [o.id] : []));
+  try {
+    return await readTaskTitles(readerOf(call.space), ids);
+  } catch (error) {
+    throw storageFailure(error);
+  }
+}
+
+/**
  * Where an agent's draft goes without a group (A3 3.4.5, 3.8.1): the Inbox, unless it says
  * `inbox: false`. The user's own faces decide where a capture lands themselves (A5).
  */
@@ -2058,6 +2077,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const kept = result.warnings.filter(
       (w) => !matched.some((at) => w.startsWith(`${at}:`) || w.startsWith(`${at}.`)),
     );
+    const titles = await matchedTitles(call, outcomes);
     return {
       as_of: result.as_of,
       tasks: list.map((draft, k) => {
@@ -2067,7 +2087,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         const log = typeof draft["log"] === "string" ? opAt(result, first + 1) : undefined;
         return {
           ...outcomes[k],
-          title: String(draft["title"]),
+          title: titles.get(outcomes[k]?.id ?? "") ?? String(draft["title"]),
           log_added: log?.status === "created",
           ...heldOf(result, sourcePaths, at(k)),
         };
@@ -2327,6 +2347,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       (op) => op.status !== "unchanged",
     );
     const facts = await commitOf(call, done, result.seq);
+    const titles = await matchedTitles(call, outcomes);
     // Unread, the operations' own results stand in for history. A task finished before this call
     // was left as it was, which they do not say: "completed" stands in for it.
     const finished = done.status !== "unchanged";
@@ -2349,7 +2370,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       follow_ups: outcomes.map((outcome, k) => ({
         result: outcome.result,
         ...(outcome.ref === undefined ? {} : { ref: outcome.ref }),
-        title: String(follow[k]?.["title"]),
+        title: titles.get(outcome.id ?? "") ?? String(follow[k]?.["title"]),
         ...heldOf(result, sourcePaths, at(k)),
       })),
       ...(warnings.length === 0 ? {} : { warnings }),
@@ -2601,7 +2622,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         throw invalid(
           "base",
           `Required to ${action}`,
-          "Pass base: the as_of of the last answer that showed you what you change.",
+          "Pass base: the as_of of the answer that last listed the group.",
         );
       }
       return groupWrite(call, action);
@@ -2650,7 +2671,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { input } = call;
     const action = String(input["action"]);
     const actor = call.principal.actorKind;
-    const declared = prefsAsked(input["keys"]);
+    const declared = prefsAsked(
+      input["keys"],
+      call.principal.audience === "agent" ? AGENT_PREFERENCES : TOOL_PREFERENCES,
+    );
     let read;
     try {
       read = await readSpacePreferences(readerOf(call.space));
@@ -3236,13 +3260,11 @@ function groupList(read: GroupsHere, only: string | undefined): Record<string, u
  * The keys the `preferences` tool shows (A3 3.4.11), sorted: the registry's space keys whose value
  * is one of the tool's kinds, a word, a whole number, true or false, or a list of keys. An object
  * or a map (`grouping.names`, `autonomy.overrides`, `autonomy.areas`) has no form in the schema
- * grammar's outputs yet, and a machine key lives in machine.toml (A1 3.16). A key this build does
- * not act on yet (`LATER_PREFERENCES`) is left out.
+ * grammar's outputs yet, and a machine key lives in machine.toml (A1 3.16).
  */
 const TOOL_PREFERENCES: readonly PreferenceSpec[] = PREFERENCES.filter(
   (p) =>
     p.scope === "space" &&
-    !LATER_PREFERENCES.some((later) => later.key === p.key) &&
     (p.shape.type === "enum" ||
       p.shape.type === "boolean" ||
       p.shape.type === "integer" ||
@@ -3251,29 +3273,37 @@ const TOOL_PREFERENCES: readonly PreferenceSpec[] = PREFERENCES.filter(
       isKeyList(p.shape)),
 ).toSorted((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 
+/**
+ * The keys an audience is shown. An agent is not shown a key this build does not act on yet
+ * (`LATER_PREFERENCES`): it would read as a setting in force. A person still reads what is stored.
+ */
+const AGENT_PREFERENCES: readonly PreferenceSpec[] = TOOL_PREFERENCES.filter(
+  (p) => !LATER_PREFERENCES.some((later) => later.key === p.key),
+);
+
 /** The declarations `keys` names (A3 3.4.11): exact keys or prefixes ending in `.*`, else all. */
-function prefsAsked(keys: unknown): PreferenceSpec[] {
-  if (!Array.isArray(keys) || keys.length === 0) return [...TOOL_PREFERENCES];
+function prefsAsked(keys: unknown, shown: readonly PreferenceSpec[]): PreferenceSpec[] {
+  if (!Array.isArray(keys) || keys.length === 0) return [...shown];
   const wanted = new Set<string>();
   (keys as string[]).forEach((key, k) => {
     const prefix = key.endsWith(".*") ? key.slice(0, -1) : undefined;
-    const found = TOOL_PREFERENCES.filter((p) =>
+    const found = shown.filter((p) =>
       prefix === undefined ? p.key === key : p.key.startsWith(prefix),
     );
-    if (found.length === 0) throw unknownPref(`keys.${String(k)}`, key);
+    if (found.length === 0) throw unknownPref(`keys.${String(k)}`, key, shown);
     for (const p of found) wanted.add(p.key);
   });
-  return TOOL_PREFERENCES.filter((p) => wanted.has(p.key));
+  return shown.filter((p) => wanted.has(p.key));
 }
 
 /**
  * A key no declaration has. Keys are the product's own words, never stored text, so the closest
  * one may stand in the hint.
  */
-function unknownPref(path: string, key: string): AppError {
-  const close = TOOL_PREFERENCES.map((p) => p.key).find(
-    (name) => editDistance(name, key.toLowerCase(), 3) <= 3,
-  );
+function unknownPref(path: string, key: string, shown: readonly PreferenceSpec[]): AppError {
+  const close = shown
+    .map((p) => p.key)
+    .find((name) => editDistance(name, key.toLowerCase(), 3) <= 3);
   return invalid(
     path,
     "No preference has this key",

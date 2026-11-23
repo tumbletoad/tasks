@@ -45,7 +45,7 @@ const cjk = (chars: number) =>
 describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, organize, preferences and run_report", () => {
   test("A3's example results read as A3 shows them", () => {
     const search = split(renderResult("task.search", example("task.search", 0)));
-    expect(search.outside).toEqual([`1-2 of 2 · scope all · as_of ${AS_OF}`]);
+    expect(search.outside).toEqual(["1-2 of 2 · scope all"]);
     expect(search.inside).toEqual([
       'Query: timezone OR "time zone" OR dst',
       "M-14 · open · P1 · M · due 2026-11-13 (Fri) · Client work / Lumen Health · Fix appointment time zones — …stored without zone and converted twice…",
@@ -60,7 +60,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       "M-3 · completed 2026-04-03 · P2 · Client work / Lumen Health · Fix DST bug in reports — Reports convert to the clinic's zone at render time.",
     );
     const gone = split(renderResult("task.search", example("task.search", 1)));
-    expect(gone.outside).toEqual([`16 of 17 · scope active · as_of ${AS_OF}`]);
+    expect(gone.outside).toEqual(["16 of 17 · scope active"]);
     expect(gone.inside).toEqual(["Query: status:open p<=2", "M-14 · deleted since this search"]);
 
     // Each draft by its input path; its title is the caller's own and is not echoed.
@@ -364,7 +364,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
       if (name === "task.search") {
         expect(text).toContain('Next page: search with cursor "c_7m2k9q4w1z8r3c6d"');
         expect(text.split("\n")[0]).toBe(
-          `1-50 of 10000+ · scope all · as_of ${AS_OF} · * changed since the search ran`,
+          "1-50 of 10000+ · scope all · * changed since the search ran",
         );
       }
       split(text);
