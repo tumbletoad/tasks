@@ -57,7 +57,7 @@ const WORKING = [
 ];
 
 const ORGANIZING = [
-  `- The Inbox: ${status} with include ["inbox"]. The areas and projects with their active task counts: ${organize} with action list. Use the names as written.`,
+  `- The Inbox: ${status} with include ["inbox"]. The areas and projects with their active task counts: ${organize} action list. Use the names as written.`,
   `- The same work elsewhere: ${search} the task's title words first.`,
   `- While sorting, use ${addEntry} only for what the user must know.`,
   `- Filing: ${updateTask} with area and project by name (only ones ${organize} lists), a status, and inbox false. Pass base, the as_of of your ${getTask} that showed those fields, and a new request_id.`,
@@ -77,7 +77,7 @@ const WRITING = [
 
 const PRIORITY = [
   `- priority runs from 1 (highest) to 4 (none, the default); due takes an ISO date or a phrase such as fri or +3d; focus stars a task for today.`,
-  `- A task you add with ${addTasks}: give it the priority the user's part below says. A task that exists: change priority or due with ${updateTask} only when the user asks.`,
+  `- A task you add (${addTasks}, or a follow-up of ${completeTask}): give it the priority the user's part below says. A task that exists: change priority or due with ${updateTask} only when the user asks.`,
   `- Set focus only when the user asks.`,
 ];
 

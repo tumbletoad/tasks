@@ -25,6 +25,8 @@ import {
   readSkills,
   servedText,
   skillCatalogue,
+  TTASKS_LABEL,
+  USER_LABEL,
   type SkillFiles,
 } from "./index.ts";
 
@@ -86,17 +88,17 @@ describe("[A3.3.6.mcp.skills] the shipped skills", () => {
     }
   });
 
-  test("TTasks' part comes first, named, and says its rules come first; the user's part follows", async () => {
+  test("TTasks' part comes first under its head, and the user's part follows under theirs", async () => {
     for (const skill of (await listSkills(undefined)).skills) {
       const text = servedText(skill, SCALE) ?? "";
       const part = TTASKS_PARTS[skill.name]?.(SCALE, skill.body ?? "", false);
       if (part === undefined) throw new Error(`${skill.name} has no part of TTasks'`);
-      const ours = text.indexOf(part.ttasks[0] ?? "");
-      const theirs = text.lastIndexOf(part.body);
-      expect(ours, skill.name).toBeGreaterThan(0);
-      expect(theirs, skill.name).toBeGreaterThan(ours);
-      expect(text.slice(0, ours), skill.name).toMatch(/rules come first/u);
+      expect(text.startsWith(`${TTASKS_LABEL}\n${part.ttasks.join("\n")}\n`), skill.name).toBe(true);
+      expect(text.endsWith(`\n\n${USER_LABEL}\n\n${part.body}`), skill.name).toBe(true);
     }
+    // A skill of the user's own has no TTasks part, and no heads.
+    const own = { name: "own", origin: "own", description: "", body: "Mine.", path: "", problem: undefined } as const;
+    expect(servedText(own, SCALE)).toBe("Mine.");
   });
 });
 

@@ -426,8 +426,9 @@ export function listText(
   return lines.join("\n");
 }
 
-const TTASKS_LABEL = `${PRODUCT_NAME}'s part: how its tools do this. Its rules come first.`;
-const USER_LABEL = "The user's part: how they want it done.";
+/** The heads of the two parts, so an agent can tell them apart and knows which one wins. */
+export const TTASKS_LABEL = `${PRODUCT_NAME}'s part: how its tools do this.`;
+export const USER_LABEL = "The user's part: how they want it done, within the rules above.";
 
 /**
  * The text an agent is handed: TTasks' part of a default, then the person's part, each named.

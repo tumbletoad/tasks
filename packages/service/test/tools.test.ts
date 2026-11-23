@@ -12,6 +12,7 @@ import type { WriteRequest } from "@ttasks/storage";
 import { toolCaller } from "../src/mcp/index.ts";
 import { opCall, type Binding, type Caller, type OpsHost } from "../src/ops/index.ts";
 import { DATA_WORD } from "../src/mcp/text.ts";
+import { DEFAULTS, USER_LABEL } from "../src/skills/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 import { grantHome } from "./ops-helpers.ts";
 
@@ -313,6 +314,17 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
       })("status", input)
     ).content[0].text;
   const USERS_RULE = "Every title starts with a verb in capitals.";
+  /** The first line of the default sizing-effort's user part, which every space is served. */
+  const DEFAULT_SIZING = DEFAULTS.get("sizing-effort")?.body.split("\n")[0] ?? "no default";
+  /** The keys TTasks' part of a skill names, in the order it names them. */
+  const sizesNamed = (text: string, keys: readonly string[]) => {
+    const part = text.slice(0, text.indexOf(USER_LABEL));
+    return keys
+      .map((key) => ({ key, at: part.search(new RegExp(`(?<![A-Za-z])${key}(?![A-Za-z])`, "u")) }))
+      .filter(({ at }) => at >= 0)
+      .sort((a, b) => a.at - b.at)
+      .map(({ key }) => key);
+  };
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"], now: clock });
@@ -364,11 +376,11 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
     const scale = (prefs["prefs"] as Json[])[0]?.["value"] as string[];
     expect(scale.length).toBeGreaterThan(0);
     const sizing = String(named(read["asked"], "sizing-effort")?.["text"]);
-    expect(sizing).toContain(`This space's sizes, smallest first: ${scale.join(", ")}.`);
-    expect(sizing).toContain("Never estimate hours or minutes.");
+    expect(sizesNamed(sizing, scale)).toEqual(scale);
+    expect(sizing).toContain(DEFAULT_SIZING);
     expect(String(named(read["asked"], "working-a-task")?.["text"])).toContain("get_task");
     const text = await statusText({ skills: ["sizing-effort"] });
-    expect(text).toContain("Never estimate hours or minutes.");
+    expect(text).toContain(DEFAULT_SIZING);
     expect(text).not.toContain("Counts:");
     expect(text).not.toContain(DATA_WORD);
   });
@@ -385,7 +397,7 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
     expect(first?.["when"]).toBe("Use when sizing.");
     expect(String(first?.["text"])).toContain(USERS_RULE);
     expect(String(first?.["text"])).toContain("This space's sizes");
-    expect(String(first?.["text"])).not.toContain("Never estimate hours");
+    expect(String(first?.["text"])).not.toContain(DEFAULT_SIZING);
     writeSkill("sizing-effort", "No front matter: the whole file is the user's part.\n");
     const second = named(
       (await call("space.status", { skills: ["sizing-effort"] }))["asked"],
@@ -406,7 +418,7 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
       await call("space.status", { skills: ["sizing-effort", "organizing", "big-own"] })
     )["asked"];
     const sizing = named(read, "sizing-effort");
-    expect(String(sizing?.["text"])).toContain("Never estimate hours or minutes.");
+    expect(String(sizing?.["text"])).toContain(DEFAULT_SIZING);
     expect(String(sizing?.["text"])).not.toContain(USERS_RULE);
     expect(String(sizing?.["problem"])).toMatch(
       /over the limit of 16 KB\. This is the default\.$/u,
@@ -418,6 +430,22 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
     expect(
       String(named((await call("space.status", {}))["skills"], "big-own")?.["problem"]),
     ).toContain("over the limit");
+  });
+
+  test("an app that kept the old tool list and sends guide is pointed to the skills that replaced it", async () => {
+    const result = await toolCaller({
+      ops: w.service.ops,
+      context: { space: null },
+      conn: 1,
+      binding: inSpace(),
+    })("status", { guide: "work" });
+    expect(result.isError).toBe(true);
+    const hint = (await refusal("space.status", { guide: "triage" })).hint ?? "";
+    expect(result.content[0].text).toContain(hint);
+    expect(hint).toMatch(/\bskills\b/u);
+    const named = [...hint.matchAll(/\["([^"]+)"\]/gu)].map((match) => match[1] ?? "");
+    expect(named.length).toBeGreaterThan(0);
+    for (const name of named) expect(DEFAULTS.has(name), name).toBe(true);
   });
 
   test("a skill of the user's own is served as written, with no part of TTasks'", async () => {
