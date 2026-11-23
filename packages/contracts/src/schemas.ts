@@ -432,6 +432,15 @@ export const CompactTaskRow = z.strictObject({
     })
     .describe("Its newest background run, while it works or needs the person")
     .optional(),
+  question: z
+    .strictObject({
+      ref: z.string().describe("The log entry, such as l3"),
+      by: z.string().describe("The agent that asked"),
+      text: z.string().max(300).describe("Its first 300 characters"),
+      at: Millis.describe("When it was asked"),
+    })
+    .describe("The newest question an agent asked that waits for the person")
+    .optional(),
 });
 
 /** The most tasks a read names as holding a source's key. */

@@ -1691,6 +1691,11 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].run.id` | string | yes | The run's ID |
 | `rows[].run.state` | "working" \| "needs_you" | yes | Its newest background run works, or ended asking the person |
 | `rows[].run.instance` | string | yes | The run's agent instance |
+| `rows[].question` | object | no | The newest question an agent asked that waits for the person |
+| `rows[].question.ref` | string | yes | The log entry, such as l3 |
+| `rows[].question.by` | string | yes | The agent that asked |
+| `rows[].question.text` | string, max 300 | yes | Its first 300 characters |
+| `rows[].question.at` | integer, -8640000000000000 to 8640000000000000 | yes | When it was asked |
 | `rows[].ending` | string, max 300 | no | How it ended, one line: why it was dropped, or its outcome once wrapped up |
 | `cursor` | string | no | Pass it for the next page |
 

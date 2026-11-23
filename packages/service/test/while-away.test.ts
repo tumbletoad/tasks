@@ -7,7 +7,10 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { newId, type Credential, type Id, type Operation } from "@ttasks/storage";
 import { writeFixture, type Fixture } from "@ttasks/storage/write-helpers";
+import { MACHINE } from "@ttasks/storage/write-helpers";
 import { readBatch, readSnapshot } from "../src/http/feed.ts";
+import type { Caller } from "../src/ops/caller.ts";
+import { opCall, type OpsHost } from "../src/ops/index.ts";
 import { readerOf, tempRoot } from "./harness.ts";
 
 let temp: { root: string; cleanup: () => void };
@@ -153,5 +156,82 @@ describe("[A5.while-away.service.question] an agent's question waits on its task
       next(),
     );
     expect((await rowOf())?.["question"]).toMatchObject({ ref: "l5", by: "Claude Code · work" });
+  });
+});
+
+describe("[A5.while-away.service.reads] a waiting question breaks no read of task rows", () => {
+  test("the views' snapshot, Completed, search, status and a task's read, with one on an active, a completed and a dropped task", async () => {
+    let at = START + 40 * DAY;
+    const next = () => (at += 60_000);
+    const [active, done, dropped] = [newId("t"), newId("t"), newId("t")];
+    submit(
+      fx.human,
+      [active, done, dropped].map((id): Operation => ({
+        kind: "task.create",
+        id,
+        title: "Fixture reads",
+        area: fx.areas.home,
+      })),
+      next(),
+    );
+    for (const task of [active, done, dropped]) {
+      submit(
+        fx.codex,
+        [{ kind: "log.add", task, body: "Fixture which way?", log_kind: "question" }],
+        next(),
+      );
+    }
+    // Checked off: Completed's first list.
+    submit(fx.human, [{ kind: "task.complete", task: done }], next());
+    submit(fx.human, [{ kind: "task.archive", task: dropped }], next());
+
+    const host: OpsHost = {
+      machine: { id: MACHINE.id },
+      spaces: () => [
+        {
+          id: fx.spaceId,
+          name: "Mira",
+          state: "open",
+          writer: undefined,
+          reader: readerOf(fx.reader),
+        },
+      ],
+      now: () => at,
+      timeZone: () => "Europe/Lisbon",
+    };
+    const user: Caller = { class: "cli-interactive", env: {} };
+    const call = (op: string, input: Record<string, unknown>) => opCall(host, user, { op, input });
+
+    const snapshot = await readSnapshot(readerOf(fx.reader), undefined, at);
+    expect(snapshot.tasks.find((t) => t["id"] === active)?.["question"]).toMatchObject({
+      text: "Fixture which way?",
+    });
+    const completed = (await call("task.finished", { checked_off: true })) as {
+      rows: Record<string, unknown>[];
+    };
+    const other = (await call("task.finished", { checked_off: false })) as {
+      rows: Record<string, unknown>[];
+    };
+    expect(completed.rows.find((r) => r["id"] === done)?.["question"]).toMatchObject({
+      text: "Fixture which way?",
+    });
+    expect(other.rows.find((r) => r["id"] === dropped)?.["question"]).toMatchObject({
+      text: "Fixture which way?",
+    });
+    for (const scope of ["active", "finished", "all"]) {
+      await expect(call("task.search", { q: "Fixture reads", scope })).resolves.toMatchObject({
+        rows: expect.any(Array) as unknown,
+      });
+    }
+    await expect(
+      call("space.status", {
+        include: ["today", "week", "review", "waiting", "inbox", "changes"],
+      }),
+    ).resolves.toMatchObject({ space: expect.any(Object) as unknown });
+    for (const task of [active, done, dropped]) {
+      await expect(call("task.get", { task })).resolves.toMatchObject({
+        task: { id: task },
+      });
+    }
   });
 });
