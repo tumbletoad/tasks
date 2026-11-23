@@ -11,6 +11,7 @@ import {
   configOf,
   removeRuntimeDir,
   Services,
+  stateOf,
   tempRoot,
   waitReady,
   within,
@@ -49,6 +50,8 @@ export interface FreshWorld {
   editCodexEntry(): void;
   /** The person writes the Codex home's config.toml as `text`. */
   writeCodex(text: string): void;
+  /** Setup's record of the agent homes is damaged; the call gives back how to put it back. */
+  damageRecord(): () => void;
   /** machine.toml's text, or "" when there is none. */
   machineToml(): string;
   close(): Promise<void>;
@@ -153,6 +156,14 @@ export async function startFresh(ui: string): Promise<FreshWorld> {
       },
       writeCodex: (text) => {
         writeFileSync(join(agentHome, ".codex", "config.toml"), text);
+      },
+      damageRecord: () => {
+        const file = join(stateOf(home), "setup", "agents.json");
+        const kept = readFileSync(file);
+        writeFileSync(file, '{"format": 2, "homes": [');
+        return () => {
+          writeFileSync(file, kept);
+        };
       },
       machineToml: () => read(join(configOf(home), "machine.toml")),
       close: async () => {

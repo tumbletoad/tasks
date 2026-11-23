@@ -245,6 +245,44 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await expect(page.getByRole("status")).toContainText("Done.");
     expect(fresh.codexConfig()).toBe(bare);
 
+    // Setup's own record cannot be read: the page names it, the tools still turn off, nothing
+    // turns on, and no file changes.
+    await flip(page, toolsFor("Codex"), true);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    const registered = fresh.codexConfig();
+    const restore = fresh.damageRecord();
+    try {
+      await page.reload();
+      await expect(appsHeading(page)).toBeVisible();
+      await expect(page.locator('[data-part="record"]')).toContainText(
+        `${PRODUCT_NAME} cannot read its own record of the agent apps, ~`,
+      );
+      await expect(toggle(page, toolsFor("Codex"))).toBeChecked();
+      await expect(toggle(page, toolsFor("Codex"))).toBeEnabled();
+      await widths(page, "settings-apps-record-unreadable");
+      await flip(page, toolsFor("Codex"), false);
+      await page.getByRole("button", { name: "Apply" }).click();
+      await expect(page.getByRole("status")).toContainText("Done.");
+      await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
+      await expect(toggle(page, toolsFor("Codex"))).toBeDisabled();
+      expect(fresh.codexConfig()).toBe(registered);
+    } finally {
+      restore();
+    }
+    // Readable again: the entry is in place with its access off, and the switch gives it back.
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
+    await expect(page.locator('[data-part="record"]')).toHaveCount(0);
+    await flip(page, toolsFor("Codex"), true);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    expect(fresh.codexConfig()).toBe(registered);
+    await flip(page, toolsFor("Codex"), false);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    expect(fresh.codexConfig()).toBe(bare);
+
     // Everything out again, from the same place.
     await flip(page, openIn("Claude Code"), false);
     await flip(page, toolsFor("Claude Code"), false);

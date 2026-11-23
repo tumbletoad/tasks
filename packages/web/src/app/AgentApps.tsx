@@ -219,7 +219,7 @@ export function AgentApps({
       {heading}
       <p className={styles.lead}>{t(firstStart ? "apps.leadFirst" : "apps.lead")}</p>
       {view.record === undefined ? null : (
-        <p className={styles.note} data-part="record" role="status">
+        <p className={styles.note} data-part="record">
           {t("apps.recordUnreadable", { file: view.record })}
         </p>
       )}
