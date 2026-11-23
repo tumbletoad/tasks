@@ -187,22 +187,25 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
   });
 
   test("a marker written too slowly still keeps the folder: a folder made again at the path asks", async () => {
-    // The write lands after the bound, and the checkout is then replaced at its path.
+    // The write was given up at its bound and puts nothing in place after it; the very folder
+    // takes its marker at the next look, and a checkout made at its path after that asks.
     const late = fresh();
     const slowly = await markSlowly(late.markers, project, late.folder);
     expect(slowly.answered).toBe(false);
-    expect(await slowly.land()).toBeUndefined();
+    expect(await slowly.land()).toBeInstanceOf(Error);
+    expect(await readMarker(late.folder)).toEqual({ state: "none" });
+    expect(await late.markers.check(project, late.folder)).toEqual({ kind: "ok" });
     expect(await readMarker(late.folder)).toEqual({ state: "owners", owners: [project] });
     renameSync(late.folder, `${late.folder}-aside`);
     mkdirSync(late.folder);
     expect(await late.markers.check(project, late.folder)).toEqual({ kind: "missing" });
 
-    // The write has not landed when the checkout is replaced: it fails, and the new one asks.
+    // The checkout is replaced before any look: the new one asks.
     const never = fresh();
     const held = await markSlowly(never.markers, project, never.folder);
     renameSync(never.folder, `${never.folder}-aside`);
     mkdirSync(never.folder);
-    expect(await held.land()).toMatchObject({ code: "ENOENT" });
+    expect(await held.land()).toBeInstanceOf(Error);
     expect(await never.markers.check(project, never.folder)).toEqual({ kind: "missing" });
 
     // The very folder whose write never landed takes its marker at the next look.
@@ -220,6 +223,25 @@ describe("[A1.3.15.folders.marker] the marker in a project's or a task's folder"
     expect(await readMarker(folder)).toEqual({ state: "owners", owners: [project] });
     expect(await markers.check(task, folder)).toEqual({ kind: "ok" });
     expect(await readMarker(folder)).toEqual({ state: "owners", owners: [project, task] });
+  });
+
+  test("a write given up at its bound changes nothing after: not another checkout moved to the path, not a cleared folder", async () => {
+    // Another marked checkout takes the path while the write is held.
+    const { folder, markers } = fresh();
+    const held = await markSlowly(markers, project, folder);
+    renameSync(folder, `${folder}-aside`);
+    mkdirSync(folder);
+    await new FolderMarkers({ file: join(base, "marks-other.json") }).mark(elsewhere, folder);
+    expect(await held.land()).toBeInstanceOf(Error);
+    expect(await readMarker(folder)).toEqual({ state: "owners", owners: [elsewhere] });
+    expect(await markers.check(project, folder)).toEqual({ kind: "other", owners: [elsewhere] });
+
+    // The folder is cleared while the write is held.
+    const cleared = fresh();
+    const late = await markSlowly(cleared.markers, project, cleared.folder);
+    await cleared.markers.unmark(project, cleared.folder);
+    expect(await late.land()).toBeInstanceOf(Error);
+    expect(await readMarker(cleared.folder)).toEqual({ state: "none" });
   });
 
   test("a file system that keeps no creation time or no usable file number gives no identity, so a gone marker still asks", () => {

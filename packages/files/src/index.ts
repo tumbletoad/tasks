@@ -312,8 +312,20 @@ export async function createFileAsync(
   return handle;
 }
 
-/** As atomicWrite: a temporary file beside `path`, written whole and flushed, renamed over it. */
-export async function atomicWriteAsync(path: string, text: string, mode: number): Promise<void> {
+/**
+ * As atomicWrite: a temporary file beside `path`, written whole and flushed, renamed over it.
+ * `signal` abandons the write before it makes the temporary file and before it puts it in place;
+ * `ready` runs right before it is put in place, and its throw abandons the write too. Abandoned,
+ * the temporary file is removed and `path` is as it was.
+ */
+export async function atomicWriteAsync(
+  path: string,
+  text: string,
+  mode: number,
+  options: { readonly signal?: AbortSignal; readonly ready?: () => Promise<void> } = {},
+): Promise<void> {
+  const { signal, ready } = options;
+  signal?.throwIfAborted();
   const temp = join(
     dirname(path),
     `${tempPrefix(basename(path))}${String(process.pid)}.${randomBytes(4).toString("hex")}${TEMP_SUFFIX}`,
@@ -328,6 +340,8 @@ export async function atomicWriteAsync(path: string, text: string, mode: number)
     }
     for (let attempt = 1; ; attempt += 1) {
       try {
+        await ready?.();
+        signal?.throwIfAborted();
         await renameAsync(temp, path);
         return;
       } catch (error) {

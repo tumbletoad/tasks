@@ -986,23 +986,25 @@ describe("[A4.5.routes.markers] a launch reads its folder's marker before an age
       const plain = await addTask(r, "Fixture unmarkable", "unmarkable");
       const free = (await open(r, { task: plain.ref, instance: "claude" })).result.launch;
       await waitFor(() => r.lab.folders.get(free.id), LONG_MS, "the terminal's folder");
+
       const events = readLog(r.lab.home).filter((e) => e["ev"] === "launch.folder_unmarked");
       expect(events.map((e) => e["reason"])).toEqual(["marker_missing", "marker_other"]);
     },
   );
 
   test(
-    "a folder whose marker was written after the bound, replaced at its path, opens nothing",
+    "a folder whose marker was not written within its bound, replaced at its path, opens nothing",
     { timeout: 300_000 },
     async () => {
       opened.length = 0;
       const r = await rig("routes-markers-late");
-      // The set answers once the bound passed; the marker's write lands after that.
+      // The set answers once the bound passed; the marker's write was given up and puts nothing
+      // in place after that.
       const held = holdNextWrite();
       const late = await addTask(r, "Fixture late marker", "late-checkout");
-      expect(await held.land()).toBeUndefined();
+      expect(await held.land()).toBeInstanceOf(Error);
       expect(existsSync(join(r.lab.work, "late-checkout", FOLDER_MARKER, "owners.json"))).toBe(
-        true,
+        false,
       );
 
       renameSync(join(r.lab.work, "late-checkout"), join(r.lab.work, "late-aside"));
