@@ -658,6 +658,27 @@ describe("[A2.3.10.cli.space-words] what ttasks space says, and the ways it name
     expect((await user(["space", "close", mine])).code).toBe(0);
   }, 240_000);
 
+  test("[A1.5.restore.own-space] a backup's file named with a space restores only a backup of that space; named alone, it restores the space it holds", async () => {
+    const folder = join(world.root, "s", "other-file");
+    expect((await user(["space", "create", "Other", "--path", folder])).code).toBe(0);
+    const made = await user(["space", "backup", folder, "--json"]);
+    expect(made.code, made.stdout + made.stderr).toBe(0);
+    const name = (parsed(made.stdout)["backup"] as { name: string }).name;
+    const file = join(folder, "backups", `${name}.db.gz`);
+    const copy = join(world.root, "s", "other-as-mira");
+    const refused = await user(["space", "restore", file, "Mira", "--to", copy, "--json"]);
+    expect(refused.code).not.toBe(0);
+    expect(parsed(refused.stdout)).toMatchObject({
+      error: { data: { cause: "SPACE_ID_MISMATCH" } },
+    });
+    expect(existsSync(copy)).toBe(false);
+    // Named alone, the file restores the space it holds: a copy, beside the space that is open.
+    const alone = await user(["space", "restore", file, "--to", copy, "--json"]);
+    expect(alone.code, alone.stdout + alone.stderr).toBe(0);
+    expect(existsSync(join(copy, "space.db"))).toBe(true);
+    expect((await user(["space", "close", folder])).code).toBe(0);
+  }, 240_000);
+
   test("a backup by the name space backups prints, restored into a new folder; --space takes that folder for any command", async () => {
     const folder = join(world.root, "s", "named");
     expect((await user(["space", "create", "Named", "--path", folder])).code).toBe(0);

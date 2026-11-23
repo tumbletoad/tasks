@@ -49,7 +49,7 @@ import {
   removeQuietly,
   temporaryTag,
 } from "../files.ts";
-import type { Id } from "../ids.ts";
+import { isId, type Id } from "../ids.ts";
 import { DATABASE_FILE } from "../manifest.ts";
 import { stepPosition } from "../migrate/steps.ts";
 import { applyPragmas, BUSY_TIMEOUT_MS, openUnconfigured } from "../open.ts";
@@ -148,9 +148,16 @@ function fileStates(db: string): string {
 export interface RescueRecord extends JsonlReport {
   /** The JSON lines file the rows went into. */
   file: string;
+  /**
+   * `confirmed`: the database's space row names the space the rescue was for. `unconfirmed`: damage
+   * keeps it from saying which space it holds, so the rows may be another space's.
+   */
+  identity: "confirmed" | "unconfirmed";
 }
 
 export interface RescueOptions {
+  /** The space the folder is registered as. A database that names another one is refused. */
+  spaceId?: Id<"sp">;
   now?: () => number;
   busyTimeoutMs?: number;
   /** The registered schema steps. Default: SCHEMA_STEPS. Tests pass stand-in steps. */
@@ -305,9 +312,30 @@ function rescueTables(
 }
 
 /**
+ * Whether the database on `conn` names `expected` as its space: "confirmed" when its space row
+ * reads and names it, SPACE_ID_MISMATCH when it reads and names another space, "unconfirmed" when
+ * damage keeps it from saying (or no space was expected).
+ */
+function identityOf(conn: Connection, expected: Id<"sp"> | undefined): RescueRecord["identity"] {
+  let named: unknown;
+  try {
+    named = conn.prepare("SELECT space_id FROM space WHERE one = 1").get()?.["space_id"];
+  } catch {
+    return "unconfirmed";
+  }
+  if (expected === undefined || !isId(named, "sp")) return "unconfirmed";
+  if (named !== expected) {
+    throw new StorageError("SPACE_ID_MISMATCH", "The folder holds another space's database");
+  }
+  return "confirmed";
+}
+
+/**
  * Writes every row of the space at `folder` that can still be read into a new JSON lines file
  * under `exchange/rescued/`, from a private copy of its database files (see the header). A copy that
- * does not open at all is refused with its error, and the space folder stays as it was.
+ * does not open at all is refused with its error, and the space folder stays as it was. A copy
+ * whose space row names another space than `options.spaceId` is refused (SPACE_ID_MISMATCH) before
+ * any row is written.
  */
 export function rescueSpace(
   checked: CheckedDriver,
@@ -358,12 +386,13 @@ export function rescueSpace(
     }
     const conn = openCopy(checked, copy, options.busyTimeoutMs ?? BUSY_TIMEOUT_MS);
     try {
+      const identity = identityOf(conn, options.spaceId);
       const tables = rescueTables(checked, conn, options.steps ?? SCHEMA_STEPS);
       const file = join(out, `rescued-${utcStamp(now)}.jsonl`);
       // Created exclusively: a file already there is refused and stays. One cut short by a failure
       // stays too, with the rows it holds: nothing a rescue wrote is removed.
       const maxBytes = free - BUNDLE_POLICY.freeSpaceReserveBytes - copying;
-      return { file, ...writeJsonl(conn, file, tables, { tolerant: true, maxBytes }) };
+      return { file, identity, ...writeJsonl(conn, file, tables, { tolerant: true, maxBytes }) };
     } finally {
       closeQuietlyConn(conn);
     }

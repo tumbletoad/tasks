@@ -1672,6 +1672,32 @@ async function addAttachment(
   writeFileSync(join(dir, hash), blob);
 }
 
+describe("[A1.5.rescue.registered] a rescue takes only the rows of the space it is for", () => {
+  test("a database that names another space is refused with no rows file; one too damaged to say is rescued, and says so", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 2);
+    const at = Date.UTC(2026, 10, 14);
+    await expectCode(
+      () => rescueSpace(checked, folder, { spaceId: newId("sp"), now: () => at }),
+      "SPACE_ID_MISMATCH",
+    );
+    expect(readdirSync(join(folder, "exchange", "rescued"))).toEqual([]);
+    const own = rescueSpace(checked, folder, { spaceId: space.spaceId, now: () => at + 1 });
+    expect(own.identity).toBe("confirmed");
+    // The space row no longer says which space this is.
+    const conn = await rawWriter(folder);
+    try {
+      conn.exec("UPDATE space SET space_id = 'unreadable' WHERE one = 1");
+    } finally {
+      conn.close();
+    }
+    const damaged = rescueSpace(checked, folder, { spaceId: space.spaceId, now: () => at + 2 });
+    expect(damaged.identity).toBe("unconfirmed");
+    expect(damaged.rows).toBe(own.rows);
+  });
+});
+
 describe("[A1.5.rescue.whole] a rescue of a space in use holds every change committed before it", () => {
   test("a checkpoint between the copy of the database and of its log loses no committed task", async () => {
     const checked = await checkedDriver();

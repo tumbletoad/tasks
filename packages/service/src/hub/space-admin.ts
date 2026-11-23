@@ -42,7 +42,12 @@ export type AdminJob =
       readonly target: string;
     }
   /** The rows that can still be read, into `exchange/rescued/` (A1 3.2). */
-  | { readonly kind: "rescue"; readonly folder: string };
+  | {
+      readonly kind: "rescue";
+      readonly folder: string;
+      /** The space the folder is registered as: another space's rows are refused. */
+      readonly spaceId?: Id<"sp">;
+    };
 
 export interface AdminBackup {
   readonly name: string;
@@ -87,6 +92,8 @@ export type AdminResult =
       readonly rows: number;
       /** Tables that could not be read to their end: names from the schema, never content. */
       readonly failed: readonly string[];
+      /** Whether the database said it holds the space the rescue was for (rescue.ts). */
+      readonly identity: "confirmed" | "unconfirmed";
     };
 
 export type AdminReply =

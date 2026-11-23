@@ -384,3 +384,25 @@ describe("[A1.5.backup.folder-away] a backups folder set for the space that is n
     SLOW,
   );
 });
+
+describe("[A1.5.rescue.registered] a rescue takes only the rows of the space it is for", () => {
+  test(
+    "a rescue of a space whose folder now holds another space's files is refused, and writes no rows",
+    async () => {
+      const machine = newId("m");
+      const { root, home, spaces } = setUp("rescue-other", machine);
+      const work = await fixtureSpace(join(spaces, "work"), machine);
+      const life = await fixtureSpace(join(spaces, "life"), machine, "Life");
+      const { user } = await start(home, [work.folder, life.folder]);
+      for (const s of [work, life]) await call(user, "space/close", { space: s.folder });
+      // Life's folder is moved into the place of Work's.
+      renameSync(work.folder, join(root, "work-aside"));
+      renameSync(life.folder, work.folder);
+      const body = await refused(call(user, "space/rescue", { space: work.space.spaceId }));
+      expect(body["data"]).toMatchObject({ cause: "SPACE_ID_MISMATCH" });
+      const rescued = join(work.folder, "exchange", "rescued");
+      expect(existsSync(rescued) ? readdirSync(rescued) : []).toEqual([]);
+    },
+    SLOW,
+  );
+});

@@ -912,7 +912,13 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       userOnly(cls);
       const view = find(required(params, "space"));
       try {
-        const done = await runAdmin({ kind: "rescue", folder: manager.folderOf(view.entry) });
+        // The folder may hold another space's files now: the entry still says which it is for.
+        const spaceId = view.registered ?? view.id;
+        const done = await runAdmin({
+          kind: "rescue",
+          folder: manager.folderOf(view.entry),
+          ...(spaceId === undefined ? {} : { spaceId }),
+        });
         return done.kind === "rescue"
           ? {
               rescue: {
@@ -920,6 +926,7 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
                 tables: done.tables,
                 rows: done.rows,
                 failed: done.failed,
+                identity: done.identity,
               },
             }
           : {};

@@ -466,9 +466,12 @@ export async function spaceCommand(
                 ),
               }
             : { to: absolute(io, to) }),
-          // `latest` names the space whose newest verified backup it restores, and a backup's name
-          // the space it is of.
-          ...(to !== undefined && !isFile ? { of: await which(o.positional[1]) } : {}),
+          // `latest` names the space whose newest verified backup it restores, a backup's name the
+          // space it is of, and a backup's file named with a space the space it must be of. A file
+          // named alone restores whatever space it holds.
+          ...(to !== undefined && (!isFile || o.positional[1] !== undefined)
+            ? { of: await which(o.positional[1]) }
+            : {}),
         });
         out(result, () => {
           if (typeof result["backup"] === "string") {
@@ -501,6 +504,11 @@ export async function spaceCommand(
             `Rescued ${str(rescue["rows"])} rows of ${str(rescue["tables"])} tables into ${str(rescue["file"])}\n`,
           );
           if (failed.length > 0) io.stdout(`Not read to the end: ${failed.join(", ")}\n`);
+          if (rescue["identity"] === "unconfirmed") {
+            io.stdout(
+              "The damaged database no longer says which space it holds: check that these rows are this space's.\n",
+            );
+          }
         });
         return 0;
       }

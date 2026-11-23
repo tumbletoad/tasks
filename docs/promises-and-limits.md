@@ -80,8 +80,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 - `ttasks space rescue` writes every row saved before it began that can still be read, also while
   the space is in use. A space that keeps changing while its files are copied is refused.
 - Restoring over a space keeps what was there before, and takes only a backup of that space, also
-  when its files no longer say which space it was. A space's backup list, and a restore by a
-  backup's name, keep to that space's backups in a backups folder spaces share.
+  when its files no longer say which space it was. A space's backup list, a restore by a backup's
+  name, and a restore of a backup's file you name with a space keep to that space's backups.
+- `ttasks space rescue` writes only the rows of the space you named. When the database is too
+  damaged to say which space it holds, the rescue says so.
 - A restored copy cannot be edited until you make it the current copy.
 - To look inside a backup, restore it into a new folder, close the space, open that folder, look,
   close it, and open the space again. TTasks never opens two copies of one space together, so the
