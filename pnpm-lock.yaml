@@ -312,6 +312,9 @@ importers:
       '@ttasks/brand':
         specifier: workspace:*
         version: link:../brand
+      '@ttasks/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@ttasks/files':
         specifier: workspace:*
         version: link:../files

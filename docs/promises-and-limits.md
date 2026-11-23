@@ -324,7 +324,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Logs hold no task text, and there is no telemetry. Task text leaves TTasks only where you send it:
   what you copy, and what an agent reads through its connection.
 - The generated folder of readable files is not where tasks are stored. A file you edit or add
-  there is kept or moved to a rescue folder, never deleted.
+  there is kept or moved to a rescue folder, never deleted. A generated file that goes missing,
+  removed by hand or by a sync, is written again within seconds while TTasks runs.
 
 ## Installing and updating
 

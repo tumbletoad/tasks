@@ -58,6 +58,17 @@ const COUNTEREXAMPLES: (readonly Action[])[] = [
     { kind: "rest" },
     { kind: "create", squat: false },
   ],
+  // A file where open/ was while the rescue folder is a link: the open tasks cannot be placed and
+  // wait their pause, still queued, as the running projection settles.
+  [
+    { kind: "swap-rescue" },
+    { kind: "folder-file", which: 0 },
+    { kind: "swap-rescued-root" },
+    { kind: "replace", pick: 0 },
+    { kind: "rename", pick: 0 },
+    { kind: "rename", pick: 0 },
+    { kind: "create", squat: false },
+  ],
 ];
 
 describe(SUITE, () => {
