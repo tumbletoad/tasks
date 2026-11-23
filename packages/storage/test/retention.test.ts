@@ -5,6 +5,7 @@ import { basename, join } from "node:path";
 import fc from "fast-check";
 import { afterEach, describe, expect, test } from "vitest";
 import { backupSpace, backupSpaceWith } from "../src/backup/backup.ts";
+import { BUNDLE_POLICY } from "../src/backup/policy.ts";
 import {
   listBackups,
   newestFirst,
@@ -99,6 +100,7 @@ function listed(
 
 const listing = (backups: ListedBackup[]): BackupListing => ({
   folder: "unused",
+  present: true,
   backups: [...backups].sort((a, b) => (b.sidecar?.created_at ?? 0) - (a.sidecar?.created_at ?? 0)),
   leftovers: [],
 });
@@ -286,8 +288,11 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     expect(listing.backups.map((b) => b.state)).toEqual(["ok", "ok"]);
     const [first, second] = listing.backups;
     if (first === undefined || second === undefined) throw new Error("two backups expected");
-    expect(await verifyBackup(checked, first)).toBeUndefined();
-    expect(await verifyBackup(checked, second)).toEqual(second.sidecar);
+    expect(await verifyBackup(checked, first)).toEqual({ state: "failed" });
+    expect(await verifyBackup(checked, second)).toEqual({
+      state: "verified",
+      sidecar: second.sidecar,
+    });
     const plan = planRetention(
       listing,
       { now, utcOffsetMinutes: 0 },
@@ -683,6 +688,42 @@ async function expectCode(fn: () => unknown, code: string): Promise<void> {
   throw new Error(`expected ${code}, but nothing was thrown`);
 }
 
+describe("[A1.5.restore.not-the-backup] a trial restore the surroundings stop is no verdict on the backup", () => {
+  test("with no room to trial restore the newest backup, retention names it unchecked, calls no older one the newest, and removes nothing", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const now = WED + 12 * HOUR;
+    const oldest = await backupSpace(checked, folder, { kind: "daily", now: () => now - 3 * DAY });
+    const older = await backupSpace(checked, folder, { kind: "daily", now: () => now - 2 * DAY });
+    await writeCommits(folder, 60);
+    const newer = await backupSpace(checked, folder, { kind: "daily", now: () => now - DAY });
+    expect(newer.sidecar.size).toBeGreaterThan(older.sidecar.size);
+    const listing = listBackups(dir);
+    const plan = planRetention(
+      listing,
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: space.spaceId, rules: NEWEST_ONLY },
+    );
+    expect([...plan.remove].sort()).toEqual([oldest.name, older.name].sort());
+    // Room on the backups' disk to trial restore the older databases, not the newest.
+    const room = BUNDLE_POLICY.freeSpaceReserveBytes + older.sidecar.size;
+    const applied = await applyRetention(checked, listing, plan, { freeBytes: () => room });
+    expect(applied).toEqual({
+      removed: [],
+      verified: undefined,
+      unverified: [],
+      unchecked: { name: newer.name, code: "BUNDLE_LIMIT_EXCEEDED" },
+    });
+    for (const b of [oldest, older, newer]) {
+      expect(existsSync(b.file) && existsSync(b.sidecarFile), b.name).toBe(true);
+    }
+    // With room, the newest restores and the plan is applied.
+    const roomy = await applyRetention(checked, listing, plan);
+    expect(roomy).toMatchObject({ verified: newer.name, unverified: [] });
+  });
+});
+
 describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran to their first write on a scratch copy", () => {
   test("a backup whose restore fails at its first write is never verified, and never the reason another backup is removed", async () => {
     const checked = await checkedDriver();
@@ -723,8 +764,11 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
     expect(plan.remove).toEqual([older.name]);
     const [first, second] = listing.backups;
     if (first === undefined || second === undefined) throw new Error("two backups expected");
-    expect(await verifyBackup(checked, first, { steps })).toBeUndefined();
-    expect(await verifyBackup(checked, second, { steps })).toEqual(older.sidecar);
+    expect(await verifyBackup(checked, first, { steps })).toEqual({ state: "failed" });
+    expect(await verifyBackup(checked, second, { steps })).toEqual({
+      state: "verified",
+      sidecar: older.sidecar,
+    });
     const applied = await applyRetention(checked, listing, plan, { steps });
     expect(applied).toEqual({ removed: [], verified: older.name, unverified: [newer.name] });
     expect(existsSync(older.file) && existsSync(older.sidecarFile)).toBe(true);
@@ -836,7 +880,7 @@ describe("[A1.5.backup.held-files] a reader opens both files of a backup before 
     });
     expect(removed).toEqual([old.name]);
     expect(existsSync(old.file) || existsSync(old.sidecarFile)).toBe(false);
-    expect(verified).toEqual(old.sidecar);
+    expect(verified).toEqual({ state: "verified", sidecar: old.sidecar });
     expect(existsSync(kept.file) && existsSync(kept.sidecarFile)).toBe(true);
   });
 

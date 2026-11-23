@@ -197,7 +197,29 @@ export async function unpackBundle(
 
 const UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
-/** The unpacked database's facts; a database that does not check is the source's fault. */
+/**
+ * Codes a database's own content gives when it is opened, checked or written to: damaged pages, a
+ * file that is not a space's, a schema or row TTasks does not make. A failing or full disk, a file
+ * that is busy or went away, or a bug gives others.
+ */
+const CONTENT_FAILURES: ReadonlySet<string> = new Set([
+  "STORAGE_CORRUPT",
+  "SPACE_INVALID",
+  "SPACE_VERSION_UNKNOWN",
+  "SPACE_TOO_NEW",
+  "SPACE_SCHEMA_FOREIGN",
+  "STORAGE_SQL",
+  "STORAGE_CONSTRAINT",
+]);
+
+/** Whether a failure on an unpacked database comes from what the database holds. */
+export const isContentFailure = (error: unknown): error is StorageError =>
+  error instanceof StorageError && CONTENT_FAILURES.has(error.code);
+
+/**
+ * The unpacked database's facts. Its bytes matched what the source records, so a check its content
+ * fails means the source was bad when written; any other failure passes on as itself.
+ */
 function factsOf(
   checked: CheckedDriver,
   db: string,
@@ -207,9 +229,8 @@ function factsOf(
   try {
     return checkSnapshot(checked, db, options.busyTimeoutMs);
   } catch (error) {
-    // Its bytes matched what the source records, so a failing check means it was bad when written.
-    const cause = error instanceof StorageError ? error.code : "an unexpected error";
-    throw invalid(`its database does not check (${cause})`);
+    if (!isContentFailure(error)) throw error;
+    throw invalid(`its database does not check (${error.code})`);
   }
 }
 

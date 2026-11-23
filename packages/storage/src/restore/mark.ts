@@ -25,6 +25,7 @@ import type { CheckedDriver } from "../startup-check.ts";
 import { ALL_OBJECTS, isDropped } from "../backup/snapshot.ts";
 import { remakeSearchIndex } from "../search/remake.ts";
 import { claimInTransaction } from "./claim.ts";
+import { isContentFailure } from "./unpack.ts";
 
 /** The state `space.transfer` holds for a read-only copy (A6 3.5's `read_only_copy`). */
 export const READ_ONLY_COPY = "restored_copy";
@@ -107,8 +108,8 @@ export function markReadOnlyCopy(
  * A restore's first write `write` on the unpacked copy `db`, which no other connection has open,
  * through its own writer, whose close checkpoints the -wal into the file. A refusal by the copy
  * itself (a definition or a row that fails the write, a mark it did not keep) is the source's
- * fault: `invalid`, with the cause's code. A full or failing disk (DURABILITY_FAILED) is not, and
- * passes on.
+ * fault: `invalid`, with the cause's code. Anything else (a full or failing disk, a file that
+ * cannot be opened, a bug) is not, and passes on as itself.
  */
 export function firstWrite<T>(
   checked: CheckedDriver,
@@ -126,9 +127,8 @@ export function firstWrite<T>(
       conn.close();
     }
   } catch (error) {
-    if (error instanceof StorageError && error.code === "DURABILITY_FAILED") throw error;
-    const cause = error instanceof StorageError ? error.code : "an unexpected error";
-    throw invalid(`its database refuses the restore's first write (${cause})`);
+    if (!isContentFailure(error)) throw error;
+    throw invalid(`its database refuses the restore's first write (${error.code})`);
   }
 }
 

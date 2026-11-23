@@ -29,6 +29,7 @@ import { readBundle } from "../src/bundle/read.ts";
 import { checkEntryName, ZipWriter } from "../src/bundle/zip.ts";
 import { BUNDLE_POLICY, type BundlePolicy } from "../src/backup/policy.ts";
 import { StorageError } from "../src/errors.ts";
+import { CheckedDriver } from "../src/startup-check.ts";
 import { NODE_IO } from "../src/files.ts";
 import { newId, osRandom } from "../src/ids.ts";
 import { backupPeak, backupSpace, backupSpaceWith } from "../src/backup/backup.ts";
@@ -976,9 +977,9 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
       const listed = listBackups(join(folder, "backups")).backups.find(
         (b) => b.name === backup.name,
       );
-      expect(listed === undefined ? "none" : await verifyBackup(checked, listed), sql).toBe(
-        undefined,
-      );
+      expect(listed === undefined ? "none" : await verifyBackup(checked, listed), sql).toEqual({
+        state: "failed",
+      });
     }
   });
 
@@ -989,7 +990,10 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     const backup = await backupSpaceWith(checked, folder, { kind: "manual" }, { steps: STEPS_0_1 });
     const listed = listBackups(join(folder, "backups")).backups[0];
     if (listed === undefined) throw new Error("the backup is listed");
-    expect(await verifyBackup(checked, listed)).toEqual(backup.sidecar);
+    expect(await verifyBackup(checked, listed)).toEqual({
+      state: "verified",
+      sidecar: backup.sidecar,
+    });
     const copy = await restoreBackup(checked, backup.file, join(folders.make(), "mira"));
     expect(copy.revision).toEqual({ major: 0, minor: 1 });
     const inPlace = await restoreInPlace(checked, backup.file, folder, { machineId: TEST_MACHINE });
@@ -1015,7 +1019,7 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     const listing = listBackups(join(folder, "backups"));
     for (const b of listing.backups) {
       expect(await verifyBackup(checked, b), b.name).toEqual(
-        b.name === good.name ? good.sidecar : undefined,
+        b.name === good.name ? { state: "verified", sidecar: good.sidecar } : { state: "failed" },
       );
     }
     const refusal = await expectCode(
@@ -1057,9 +1061,9 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
       const bad = await backupSpace(checked, folder, { kind: "daily", now: () => at + 1000 });
       const listing = listBackups(join(folder, "backups"));
       const listed = listing.backups.find((b) => b.name === bad.name);
-      expect(listed === undefined ? "none" : await verifyBackup(checked, listed), sql).toBe(
-        undefined,
-      );
+      expect(listed === undefined ? "none" : await verifyBackup(checked, listed), sql).toEqual({
+        state: "failed",
+      });
       await expectCode(
         () => restoreBackup(checked, bad.file, join(folders.make(), "mira")),
         "BACKUP_INVALID",
@@ -1123,7 +1127,10 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     const backup = await backupSpace(checked, folder, { kind: "manual" });
     const listed = listBackups(join(folder, "backups")).backups[0];
     if (listed === undefined) throw new Error("the backup is listed");
-    expect(await verifyBackup(checked, listed)).toEqual(backup.sidecar);
+    expect(await verifyBackup(checked, listed)).toEqual({
+      state: "verified",
+      sidecar: backup.sidecar,
+    });
     for (const file of [backup.file, bundle.file]) {
       const restored = await restoreBackup(checked, file, join(folders.make(), "mira"));
       expect(unchecked(join(restored.folder, "space.db")), file).toBe(0);
@@ -1147,7 +1154,10 @@ describe("[A1.5.bundle.restore-drill] the restore drill, from a backup and from 
     }
     const listed = listBackups(join(folder, "backups")).backups[0];
     if (listed === undefined) throw new Error("the backup is listed");
-    expect(await verifyBackup(checked, listed)).toEqual(backup.sidecar);
+    expect(await verifyBackup(checked, listed)).toEqual({
+      state: "verified",
+      sidecar: backup.sidecar,
+    });
 
     const conn = await rawWriter(folder);
     try {
@@ -1364,6 +1374,65 @@ describe("[A1.5.sync.check-failed-ways] restore latest restores the newest backu
     // With room for it, the newest is the one restored.
     const { backup } = await restoreLatest(checked, dir, space.spaceId, join(parent, "mira"));
     expect(backup).toBe(newest.name);
+  });
+});
+
+describe("[A1.5.restore.not-the-backup] a failure that is not the backup's is said as itself", () => {
+  /**
+   * The checked driver, except that the first open of a database whose path holds `marker` fails
+   * with `code`, as a failing disk would.
+   */
+  async function failingOnce(marker: string, code: "DURABILITY_FAILED"): Promise<CheckedDriver> {
+    const base = (await checkedDriver()).driver;
+    let failed = false;
+    return CheckedDriver.check({
+      name: base.name,
+      open: (path, opts) => {
+        if (!failed && path.includes(marker)) {
+          failed = true;
+          throw new StorageError(code, "A disk error");
+        }
+        return base.open(path, opts);
+      },
+      backup: (src, dest, opts) => base.backup(src, dest, opts),
+    });
+  }
+
+  test("an I/O error on the destination while the newest backup is checked stops restore latest, and the older backup is not restored", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const at = Date.UTC(2026, 10, 14);
+    const older = await backupSpace(checked, folder, { kind: "manual", now: () => at - 2_000 });
+    await writeCommits(folder, 3);
+    const newest = await backupSpace(checked, folder, { kind: "manual", now: () => at - 1_000 });
+    const parent = folders.make();
+    const failing = await failingOnce(".mira.restoring-", "DURABILITY_FAILED");
+    await expectCode(
+      () => restoreLatest(failing, dir, space.spaceId, join(parent, "mira")),
+      "DURABILITY_FAILED",
+    );
+    expect(readdirSync(parent)).toEqual([]);
+    const { backup } = await restoreLatest(checked, dir, space.spaceId, join(parent, "mira"));
+    expect(backup).toBe(newest.name);
+    expect(older.name).not.toBe(newest.name);
+  });
+
+  test("a trial restore that fails on the disk says so, and leaves the backup neither verified nor failed", async () => {
+    const { folder } = await createFixtureSpace(folders.make());
+    const checked = await checkedDriver();
+    const backup = await backupSpace(checked, folder, { kind: "manual" });
+    const [listed] = listBackups(join(folder, "backups")).backups;
+    if (listed === undefined) throw new Error("a backup expected");
+    const failing = await failingOnce(".backup.tmp-", "DURABILITY_FAILED");
+    expect(await verifyBackup(failing, listed)).toEqual({
+      state: "unchecked",
+      code: "DURABILITY_FAILED",
+    });
+    expect(await verifyBackup(checked, listed)).toEqual({
+      state: "verified",
+      sidecar: backup.sidecar,
+    });
   });
 });
 

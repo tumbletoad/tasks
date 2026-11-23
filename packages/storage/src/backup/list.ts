@@ -32,9 +32,9 @@ import {
   sidecarMatchesName,
   type BackupSidecar,
 } from "./sidecar.ts";
-import { verifyBackupFile, type VerifyOptions } from "../restore/restore.ts";
+import { verifyBackupFile, type TrialVerdict, type VerifyOptions } from "../restore/restore.ts";
 
-export type { VerifyOptions };
+export type { TrialVerdict, VerifyOptions };
 
 export type ListedState =
   /** The sidecar is valid and its `.db.gz` is there with the recorded size. */
@@ -66,17 +66,23 @@ export interface ListedBackup {
 
 export interface BackupListing {
   folder: string;
+  /**
+   * Whether the folder is there. A folder that is not there holds no backups, which is not the
+   * same as an empty one: a backups folder set on a drive that is not connected is not there.
+   */
+  present: boolean;
   /** Newest first (newestFirst). */
   backups: ListedBackup[];
   /** Names of a backup's temporary files: a crash left them, or a backup is writing them now. */
   leftovers: string[];
 }
 
-function readFolder(folder: string): Dirent[] {
+/** The folder's entries, or undefined when it is not there. */
+function readFolder(folder: string): Dirent[] | undefined {
   try {
     return readdirSync(folder, { withFileTypes: true });
   } catch (error) {
-    if (errnoCode(error) === "ENOENT") return [];
+    if (errnoCode(error) === "ENOENT") return undefined;
     throw fsError(error);
   }
 }
@@ -108,15 +114,16 @@ export const newestFirst = <T extends Pick<ListedBackup, "name" | "createdAt" | 
 const look = (path: string): Stats | undefined =>
   fsCall(() => lstatSync(path, { throwIfNoEntry: false }));
 
-/** Lists the backups in `backupDir`. A missing folder holds none. */
+/** Lists the backups in `backupDir`. A missing folder holds none, and the listing says so. */
 export function listBackups(
   backupDir: string,
   policy: BundlePolicy = BUNDLE_POLICY,
 ): BackupListing {
+  const entries = readFolder(backupDir);
   // The base names that appear with a backup's exact suffixes, and the temporary files.
   const bases = new Set<string>();
   const leftovers: string[] = [];
-  for (const entry of readFolder(backupDir)) {
+  for (const entry of entries ?? []) {
     const { name } = entry;
     if (isBackupTemporary(name)) {
       if (entry.isFile()) leftovers.push(name);
@@ -162,6 +169,7 @@ export function listBackups(
   }
   return {
     folder: backupDir,
+    present: entries !== undefined,
     backups: newestFirst(backups),
     leftovers: leftovers.sort(),
   };
@@ -202,14 +210,14 @@ export function removeBackupLeftovers(
 /**
  * Verifies a listed backup by a trial restore (restore/restore.ts verifyBackupFile): the restore's
  * own steps, its first write included, on a scratch copy beside the backup, which is removed again.
- * The files are read again from disk, both held open while they are read. Returns the sidecar it
- * verified, or undefined when any step fails. It needs the database's size in free disk space.
+ * The files are read again from disk, both held open while they are read. It needs the database's
+ * size in free disk space: without it the backup is `unchecked`, never `failed`.
  */
 export async function verifyBackup(
   checked: CheckedDriver,
   backup: ListedBackup,
   options: VerifyOptions = {},
-): Promise<BackupSidecar | undefined> {
-  if (backup.state !== "ok" || backup.sidecar === undefined) return undefined;
+): Promise<TrialVerdict> {
+  if (backup.state !== "ok" || backup.sidecar === undefined) return { state: "failed" };
   return verifyBackupFile(checked, backup.file, options);
 }

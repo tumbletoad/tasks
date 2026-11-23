@@ -65,6 +65,7 @@ import { utcStamp } from "../backup/sidecar.ts";
 import { productTables, type ProductTable } from "../backup/snapshot.ts";
 import { writeJsonl, type JsonlReport } from "../bundle/jsonl.ts";
 import {
+  isBackupsOwnFailure,
   restoreBackupWith,
   type RestoredSpace,
   type RestoreOptions,
@@ -72,24 +73,12 @@ import {
 } from "./restore.ts";
 
 /**
- * Codes that say a candidate backup does not restore: the next one is tried. A passed limit
- * (BUNDLE_LIMIT_EXCEEDED: the free disk space, or the size of a database) is not one of them: the
- * candidate may be whole, and an older one would bring back older work as if it were the newest.
- */
-const NOT_THIS_BACKUP: ReadonlySet<string> = new Set([
-  "BACKUP_INVALID",
-  "SPACE_INVALID",
-  "SPACE_NOT_FOUND",
-  "SPACE_TOO_NEW",
-  "SPACE_VERSION_UNKNOWN",
-  "STORAGE_CORRUPT",
-]);
-
-/**
  * Restores the newest complete backup of `spaceId` in `backupDir` that restores into the new folder
- * `target` (see the header), and names it. The target is checked first, so a failure of a
- * candidate is the candidate's. BACKUP_INVALID when none restores; BUNDLE_LIMIT_EXCEEDED as soon as
- * a candidate does not fit the disk or the policy, and nothing older is tried.
+ * `target` (see the header), and names it. Only a candidate's own failure (restore.ts
+ * isBackupsOwnFailure) moves on to the next older one. Any other stops the restore with its own
+ * code, and nothing older is tried: the candidate may be whole, and an older one would bring back
+ * older work as if it were the newest (BUNDLE_LIMIT_EXCEEDED for the free space or a size limit,
+ * DURABILITY_FAILED for a failing disk). BACKUP_INVALID when none restores.
  */
 export async function restoreLatest(
   checked: CheckedDriver,
@@ -122,7 +111,7 @@ export async function restoreLatest(
         seams,
       );
     } catch (error) {
-      if (!(error instanceof StorageError) || !NOT_THIS_BACKUP.has(error.code)) throw error;
+      if (!isBackupsOwnFailure(error, backup.file)) throw error;
       continue;
     }
     return { restored, backup: backup.name };

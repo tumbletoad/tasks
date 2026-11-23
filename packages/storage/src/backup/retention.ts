@@ -20,7 +20,9 @@
 //   removes anything, it verifies the newest complete backups, one by one, by a trial restore (the
 //   restore's own steps, its first write included, on a scratch copy: verifyBackup), until one
 //   passes, and keeps that one. Nothing else makes a backup verified. A newer one that does not
-//   verify is kept too, for a person. When none verifies, nothing is removed.
+//   verify is kept too, for a person. When none verifies, nothing is removed. A trial that the
+//   surroundings stop (no room for it, a failing disk) says nothing of its backup: the search stops
+//   there, so no older backup becomes the newest that restores, and nothing is removed.
 // - Removal looks at each file again, since the listing may be stale: only the two regular files
 //   of a listed backup are removed, one at a time, never a folder or a link put in their place,
 //   and only while the sidecar still reads as listed and the data still has its size and SHA-256.
@@ -168,6 +170,11 @@ export interface RetentionResult {
   verified: string | undefined;
   /** Newer complete backups that did not verify, kept for a person to look at, newest first. */
   unverified: string[];
+  /**
+   * The backup whose trial restore stopped for a reason that is not its own, with that reason's code
+   * (none for a bug). Nothing older was tried and nothing was removed.
+   */
+  unchecked?: { name: string; code?: string };
 }
 
 /** What tests inject. Not part of the package's interface. */
@@ -275,8 +282,13 @@ export async function applyRetentionWith(
   for (const b of backups) {
     // Kept whatever happens: the newest verified backup is one dated at or before now.
     if (ahead.has(b.name)) continue;
+    const verdict = await verifyBackup(checked, b, options);
+    if (verdict.state === "unchecked") {
+      const code = verdict.code === undefined ? {} : { code: verdict.code };
+      return { removed: [], verified: undefined, unverified, unchecked: { name: b.name, ...code } };
+    }
     // The sidecar is read again from disk by the verification, and must still name this space.
-    if ((await verifyBackup(checked, b, options))?.space_id === plan.spaceId) {
+    if (verdict.state === "verified" && verdict.sidecar.space_id === plan.spaceId) {
       verified = b.name;
       break;
     }

@@ -3,7 +3,7 @@
 // place takes only a backup of the space the entry names, a failed one leaves a closed space
 // closed, and the daily backup goes to the folder this machine set for the space also when its
 // space.json is gone. Services run in this process on temporary homes; fixture spaces only.
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import {
@@ -131,6 +131,7 @@ describe("[A1.5.restore.own-space] a restore takes only a backup of the space it
       const work = await fixtureSpace(join(spaces, "work"), machine);
       const life = await fixtureSpace(join(spaces, "life"), machine, "Life");
       const shared = join(root, "shared-backups");
+      mkdirSync(shared);
       for (const s of [work, life]) {
         writeSettings(home, s.space.spaceId, { format: 1, backup: { dir: shared } });
       }
@@ -218,6 +219,7 @@ describe("[A1.5.backup.own-folder] the daily backup goes to the folder this mach
       const { root, home, spaces } = setUp("manifest-gone", machine);
       const work = await fixtureSpace(join(spaces, "work"), machine);
       const elsewhere = join(root, "elsewhere");
+      mkdirSync(elsewhere);
       writeSettings(home, work.space.spaceId, { format: 1, backup: { dir: elsewhere } });
       rmSync(join(work.folder, "space.json"));
       await start(home, [{ path: work.folder, id: work.space.spaceId }], true);
@@ -295,6 +297,89 @@ describe("[A1.5.backup.newest-work] the newest backup is the one that holds the 
         await runner.stop();
       }
       expect(existsSync(later.file) && existsSync(later.sidecarFile)).toBe(true);
+    },
+    SLOW,
+  );
+});
+
+describe("[A1.5.backup.folder-away] a backups folder set for the space that is not there is said as such", () => {
+  test(
+    "the list, restore latest, a backup now and the upkeep say so with its path, and nothing makes a folder in its place",
+    async () => {
+      const machine = newId("m");
+      const { root, home, spaces } = setUp("folder-away", machine);
+      const work = await fixtureSpace(join(spaces, "work"), machine);
+      const drive = join(root, "drive");
+      const set = join(drive, "backups");
+      mkdirSync(set, { recursive: true });
+      writeSettings(home, work.space.spaceId, { format: 1, backup: { dir: set } });
+      const made = await backupSpace(await checkedDriver(), work.folder, {
+        kind: "manual",
+        backupDir: set,
+      });
+      // The drive is not connected when the service starts.
+      renameSync(drive, join(root, "drive-away"));
+      const { user } = await start(home, [work.folder], true);
+      const row = await waitFor(
+        async () => {
+          const found = (await call(user, "space/list", {}))["spaces"] as {
+            backup?: { why: string; message: string };
+          }[];
+          return found[0]?.backup === undefined ? undefined : found[0];
+        },
+        READY_MS,
+        "the upkeep's report",
+      );
+      expect(row.backup?.why).toBe("away");
+      expect(row.backup?.message).toContain("space backups <folder>");
+      const asked: [string, Record<string, unknown>][] = [
+        ["space/backups", { space: work.folder }],
+        ["space/restore", { backup: "latest", of: work.folder, to: join(spaces, "copy") }],
+        ["space/backup", { space: work.folder }],
+      ];
+      for (const [method, params] of asked) {
+        const body = await refused(call(user, method, params));
+        expect(body, method).toMatchObject({
+          code: "not_found",
+          data: { reason: "backups_folder_missing", folder: set },
+        });
+        expect(String(body["message"]), method).toContain(set);
+      }
+      expect(existsSync(drive)).toBe(false);
+      expect(existsSync(join(spaces, "copy"))).toBe(false);
+
+      // Connected again, the list and restore latest find the backup.
+      renameSync(join(root, "drive-away"), drive);
+      const listed = (await call(user, "space/backups", { space: work.folder }))["backups"] as {
+        name: string;
+      }[];
+      expect(listed.map((b) => b.name)).toEqual([made.name]);
+      const restored = await call(user, "space/restore", {
+        backup: "latest",
+        of: work.folder,
+        to: join(spaces, "copy"),
+      });
+      expect(restored["backup"]).toBe(made.name);
+    },
+    SLOW,
+  );
+
+  test(
+    "restore latest from the space's own folder with no backup of the space says there is none",
+    async () => {
+      const machine = newId("m");
+      const { home, spaces } = setUp("no-backup", machine);
+      const work = await fixtureSpace(join(spaces, "work"), machine);
+      const { user } = await start(home, [work.folder]);
+      const body = await refused(
+        call(user, "space/restore", {
+          backup: "latest",
+          of: work.folder,
+          to: join(spaces, "copy"),
+        }),
+      );
+      expect(body).toMatchObject({ code: "not_found", data: { reason: "no_backup" } });
+      expect(String(body["message"])).toContain(backupsFolder(work.folder));
     },
     SLOW,
   );

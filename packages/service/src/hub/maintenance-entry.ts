@@ -15,18 +15,22 @@ import {
   planRetention,
   removeBackupLeftovers,
 } from "@ttasks/storage";
-import type { MaintenanceJob, MaintenanceReply } from "./maintenance.ts";
+import type { MaintenanceJob, MaintenanceReply, MaintenanceReport } from "./maintenance.ts";
 
 const reply = (message: MaintenanceReply): void => {
   parentPort?.postMessage(message);
 };
 
-const job = workerData as MaintenanceJob;
-try {
+async function upkeep(job: MaintenanceJob): Promise<MaintenanceReport> {
   const checked = await CheckedDriver.check(await loadDriver(DEFAULT_DRIVER));
   const dir = job.backupDir ?? backupsFolder(job.folder);
   const clock = { now: job.now, utcOffsetMinutes: job.utcOffsetMinutes };
   let listing = listBackups(dir);
+  // A backups folder this machine set for the space that is not there may be on a drive that is
+  // not connected: no backup goes to a new folder in its place, where nobody looks for it.
+  if (job.backupDir !== undefined && !listing.present) {
+    return { leftovers: 0, backup: "away", removed: 0, unverified: 0 };
+  }
   // Only in a backups folder this service alone writes: see maintenance.ts.
   const leftovers = job.cleanup ? removeBackupLeftovers(listing, { now: job.now }).length : 0;
   if (leftovers > 0) listing = listBackups(dir);
@@ -53,16 +57,17 @@ try {
           planRetention(listing, after, { spaceId: job.spaceId }),
         )
       : undefined;
-  const verified =
-    retention?.verified === undefined
-      ? undefined
-      : listing.backups.find((b) => b.name === retention.verified);
+  const named = (name: string | undefined) =>
+    name === undefined ? undefined : listing.backups.find((b) => b.name === name);
+  const verified = named(retention?.verified);
   const verifiedAt = verified?.sidecar?.created_at;
-  // Backups of the space newer than the one that restores whose files are no longer whole (data
-  // missing or of another size, a sidecar missing or unreadable): retention passes them over, and
-  // they do not restore either. One without a sidecar that reads names no space: in the space's own
-  // folder it is the space's, in a backup.dir that other spaces may share it is nobody's known.
+  // Backups of the space newer than the one that restores, or than the one whose trial could not
+  // run, whose files are no longer whole (data missing or of another size, a sidecar missing or
+  // unreadable): retention passes them over, and they do not restore either. One without a sidecar
+  // that reads names no space: in the space's own folder it is the space's, in a backup.dir that
+  // other spaces may share it is nobody's known.
   const ownFolder = job.backupDir === undefined;
+  const newestKnown = verified ?? named(retention?.unchecked?.name);
   const broken =
     retention === undefined
       ? 0
@@ -70,21 +75,26 @@ try {
           (b) =>
             b.state !== "ok" &&
             (b.sidecar === undefined ? ownFolder : b.sidecar.space_id === job.spaceId) &&
-            (verified === undefined || compareNewest(b, verified) < 0) &&
+            (newestKnown === undefined || compareNewest(b, newestKnown) < 0) &&
             b.createdAt <= after.now,
         ).length;
-  reply({
-    ok: true,
-    report: {
-      leftovers,
-      backup: due ? "taken" : "not_due",
-      removed: retention?.removed.length ?? 0,
-      unverified: (retention?.unverified.length ?? 0) + broken,
-      ...(searchIndexDamaged ? { searchIndexDamaged: true as const } : {}),
-      ...(retention === undefined ? {} : { checked: true as const }),
-      ...(verifiedAt === undefined ? {} : { verifiedAt }),
-    },
-  });
+  const unchecked = retention?.unchecked;
+  return {
+    leftovers,
+    backup: due ? "taken" : "not_due",
+    removed: retention?.removed.length ?? 0,
+    unverified: (retention?.unverified.length ?? 0) + broken,
+    ...(searchIndexDamaged ? { searchIndexDamaged: true as const } : {}),
+    ...(retention === undefined ? {} : { checked: true as const }),
+    ...(verifiedAt === undefined ? {} : { verifiedAt }),
+    ...(unchecked === undefined
+      ? {}
+      : { unchecked: unchecked.code === undefined ? {} : { code: unchecked.code } }),
+  };
+}
+
+try {
+  reply({ ok: true, report: await upkeep(workerData as MaintenanceJob) });
 } catch (error) {
   // Only the code crosses: the message can name a path.
   const code = (error as { code?: unknown } | null)?.code;

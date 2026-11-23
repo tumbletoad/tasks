@@ -1374,9 +1374,14 @@ async function checkBackups(
         // sizes), so a backup whose bytes changed after its check, by any means, is checked again.
         const id = [backup.name, fileHash(backup.file), fileHash(backup.sidecarFile)].join(" ");
         if (verified.has(id)) continue;
-        const sidecar = await verifyBackup(checked, backup, { steps: HARNESS_STEPS });
-        if (sidecar === undefined) {
+        const verdict = await verifyBackup(checked, backup, { steps: HARNESS_STEPS });
+        if (verdict.state === "failed") {
           found.add("backup-complete-or-absent", "a complete backup does not verify");
+        } else if (verdict.state === "unchecked") {
+          found.add(
+            "backup-complete-or-absent",
+            `a complete backup could not be trial restored (${verdict.code ?? "a bug"})`,
+          );
         } else verified.add(id);
       }
     } catch (error) {

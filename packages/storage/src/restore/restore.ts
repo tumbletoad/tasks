@@ -289,21 +289,54 @@ export async function trialRestore(
   }
 }
 
+/** Codes that say a backup itself does not restore, whatever disk it is restored to. */
+const BACKUPS_OWN: ReadonlySet<string> = new Set([
+  "BACKUP_INVALID",
+  "SPACE_INVALID",
+  "SPACE_TOO_NEW",
+  "SPACE_VERSION_UNKNOWN",
+]);
+
 /**
- * Verifies the backup `backupFile` by a trial restore (trialRestore). Returns the backup's sidecar
- * when the restore ran to its end, undefined when any step failed. Never throws for the backup's
- * sake.
+ * Whether a restore of the backup `file` failed for the backup's own sake: its files or its
+ * database are not what a restore takes, or it went away before the restore held it (its `.db.gz`
+ * is gone). Any other failure (the disk restored to, its free space, a size limit, a bug) says
+ * nothing about the backup.
  */
+export function isBackupsOwnFailure(error: unknown, file: string): boolean {
+  if (!(error instanceof StorageError)) return false;
+  if (error.code === "SPACE_NOT_FOUND") return !fsCall(() => existsSync(file));
+  return BACKUPS_OWN.has(error.code);
+}
+
+/** What a trial restore found. */
+export type TrialVerdict =
+  /** The restore ran to its end: the backup restores. */
+  | { readonly state: "verified"; readonly sidecar: BackupSidecar }
+  /** The backup does not restore (isBackupsOwnFailure). */
+  | { readonly state: "failed" }
+  /**
+   * The trial stopped for a reason that is not the backup's: too little free space beside it for
+   * the trial (BUNDLE_LIMIT_EXCEEDED), a failing disk, a bug (no code). Nothing is known of it.
+   */
+  | { readonly state: "unchecked"; readonly code?: string };
+
+/** Verifies the backup `backupFile` by a trial restore (trialRestore). */
 export async function verifyBackupFile(
   checked: CheckedDriver,
   backupFile: string,
   options: VerifyOptions = {},
-): Promise<BackupSidecar | undefined> {
+): Promise<TrialVerdict> {
   try {
     const source = await trialRestore(checked, backupFile, options);
-    return source.kind === "backup" ? source.sidecar : undefined;
-  } catch {
-    return undefined;
+    return source.kind === "backup"
+      ? { state: "verified", sidecar: source.sidecar }
+      : { state: "failed" };
+  } catch (error) {
+    if (isBackupsOwnFailure(error, backupFile)) return { state: "failed" };
+    return error instanceof StorageError
+      ? { state: "unchecked", code: error.code }
+      : { state: "unchecked" };
   }
 }
 

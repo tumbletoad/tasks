@@ -180,6 +180,19 @@ function userOnly(cls: ConnectionClass): void {
   }
 }
 
+/**
+ * A backups folder this machine set for a space that is not there: a drive that is not connected,
+ * a folder moved. Said as such, never as a folder without backups.
+ */
+function backupsAway(folder: string): AppError {
+  return new AppError({
+    code: "not_found",
+    message: `The backups folder set for this space is not there: ${folder}`,
+    hint: "If it is on a drive that is not connected, connect it. Otherwise create the folder.",
+    data: { reason: "backups_folder_missing", folder },
+  });
+}
+
 /** The space an admin job made: a create's new space, a restore's read-only copy. */
 function spaceOf(result: AdminResult): Id<"sp"> {
   if (result.kind !== "create" && result.kind !== "restore") {
@@ -512,11 +525,15 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
     };
   };
 
-  const backupDirOf = (view: SpaceView): string => {
+  /** The space's backups folder, and whether this machine set it (`backup.dir`). */
+  const backupsOf = (view: SpaceView): { dir: string; set: boolean } => {
     const id = view.id ?? view.registered;
     const settings = id === undefined ? {} : readSpaceSettings(host.settingsDir, id);
-    return settings.backupDir ?? backupsFolder(manager.folderOf(view.entry));
+    return settings.backupDir === undefined
+      ? { dir: backupsFolder(manager.folderOf(view.entry)), set: false }
+      : { dir: settings.backupDir, set: true };
   };
+  const backupDirOf = (view: SpaceView): string => backupsOf(view).dir;
 
   return {
     "space/list": () =>
@@ -677,12 +694,14 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
           data: { reason: "not_served", retryable: false, state: view.state },
         });
       }
-      const settings = view.id === undefined ? {} : readSpaceSettings(host.settingsDir, view.id);
+      const { dir, set } = backupsOf(view);
+      // As for the daily backup: none goes to a new folder in place of one that is not there.
+      if (set && !existsSync(dir)) throw backupsAway(dir);
       try {
         const done = await runAdmin({
           kind: "backup",
           folder: manager.folderOf(view.entry),
-          ...(settings.backupDir === undefined ? {} : { backupDir: settings.backupDir }),
+          ...(set ? { backupDir: dir } : {}),
         });
         if (done.kind !== "backup") return {};
         manager.backedUp(view.entry, Date.parse(done.backup.created_at));
@@ -710,10 +729,12 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
 
     "space/backups": (params) => {
       const view = find(required(params, "space"));
-      const dir = backupDirOf(view);
+      const { dir, set } = backupsOf(view);
       const id = view.id ?? view.registered;
       try {
         const listing = listBackups(dir);
+        // The space's own folder is made at its first backup: until then it holds none.
+        if (set && !listing.present) throw backupsAway(dir);
         return Promise.resolve({
           folder: dir,
           // A backup.dir can be shared: another space's backups are not this one's. One whose
@@ -803,12 +824,25 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
         const spaceId = of.id ?? of.registered;
         if (spaceId === undefined) throw invalid("of", "The space's ID is not known yet");
         const target = resolve(to);
+        const { dir, set } = backupsOf(of);
         try {
+          // A folder that is not there, or holds no backup of the space, is said as itself: never
+          // as a backup that does not verify.
+          const listing = listBackups(dir);
+          if (set && !listing.present) throw backupsAway(dir);
+          if (!listing.backups.some((b) => b.state === "ok" && b.sidecar?.space_id === spaceId)) {
+            throw new AppError({
+              code: "not_found",
+              message: `No complete backup of this space is in ${dir}`,
+              hint: `${CLI_NAME} space backups <folder> lists what is there.`,
+              data: { reason: "no_backup", folder: dir },
+            });
+          }
           return await oneAtATime(async () => {
             refuseNetwork(await manager.checkFolder(target), "to");
             const restored = await runAdmin({
               kind: "restore-latest",
-              backupDir: backupDirOf(of),
+              backupDir: dir,
               spaceId,
               target,
             });

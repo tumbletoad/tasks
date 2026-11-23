@@ -30,7 +30,11 @@ export interface MaintenanceJob {
 
 export interface MaintenanceReport {
   readonly leftovers: number;
-  readonly backup: "taken" | "not_due";
+  /**
+   * `away`: the backups folder this machine set for the space is not there (a drive that is not
+   * connected, a folder moved), and nothing else was done.
+   */
+  readonly backup: "taken" | "not_due" | "away";
   readonly removed: number;
   /** Backups newer than the newest that restores which do not restore, or are no longer whole. */
   readonly unverified: number;
@@ -40,6 +44,12 @@ export interface MaintenanceReport {
   readonly checked?: true;
   /** When the newest backup that passed was made, when one did. */
   readonly verifiedAt?: number;
+  /**
+   * The trial restore of a backup newer than any that passed stopped for a reason that is not the
+   * backup's, with its code (none for a bug): nothing older counts as the newest that restores,
+   * and nothing was removed.
+   */
+  readonly unchecked?: { readonly code?: string };
 }
 
 export type MaintenanceReply =
