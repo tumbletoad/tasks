@@ -2669,6 +2669,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.answers.replay-meanwhile",
+      "title": "A retry with the same request ID gets the first answer whatever was written in between: a project's creation after the project moved names the area it was made in, a folder change after its project was renamed names the project as it was, an import and a follow-up that found a task by key give the title they gave after the task was renamed, a preference set after another value was set says the value it set, and an undo after a script changed its task says what it said",
+      "owner": "M2",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.answers.groups",
       "title": "An import makes an area or a project only for the drafts it adds: a draft that finds its task by key makes none of the groups it names and its answer announces none, and a group named by a matched draft and an added one is made once, for the added one",
       "owner": "M2",

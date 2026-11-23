@@ -53,6 +53,8 @@ const host = (): OpsHost => ({
         spaceId: fx.spaceId,
         submit: (request: WriteRequest) => Promise.resolve(fx.writer.submit(request)),
         receipt: (lookup: ReceiptLookup) => Promise.resolve(fx.writer.receipt(lookup)),
+        keep: (...args: Parameters<SpaceWriterHandle["keep"]>) =>
+          Promise.resolve(fx.writer.keep(...args)),
         actor: (kind: "human" | "agent", label: string) =>
           Promise.resolve(fx.writer.actor(kind, label)),
       } as unknown as SpaceWriterHandle,

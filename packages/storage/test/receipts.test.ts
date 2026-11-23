@@ -204,6 +204,32 @@ describe("[A1.5.write.receipts] a repeated request ID returns the stored result"
     }
   });
 
+  test("the answer a caller was given is kept once with its receipt, and a replay carries it", () => {
+    const request = fresh([{ kind: "task.create", title: "Fix the export" }]);
+    const first = fx.writer.submit(request);
+    expectStatus(first, "applied");
+    const fingerprint = intentFingerprint({
+      space_id: request.space_id,
+      entry: null,
+      input: { ops: request.ops },
+      reason: null,
+    });
+    const lookup = { scope_id: request.actor.scope_id, request_id: request.request_id };
+    const given = { sent: "a".repeat(64), result: { result: "created", tasks: ["M-1"] } };
+    // Only on its own intent's receipt, and only once: the first answer is the one kept.
+    expect(fx.writer.keep({ ...lookup, fingerprint: "b".repeat(64) }, given)).toBe(false);
+    expect(fx.writer.keep({ ...lookup, fingerprint }, given)).toBe(true);
+    const other = { sent: "a".repeat(64), result: { result: "no_change" } };
+    expect(fx.writer.keep({ ...lookup, fingerprint }, other)).toBe(false);
+    expect(fx.writer.submit(request)).toEqual(replayOf({ ...first, given }));
+    // A request ID no request used keeps nothing, and the kept answer writes no commit.
+    const seq = lastSeq();
+    expect(
+      fx.writer.keep({ ...lookup, request_id: "fixture-unknown-0001", fingerprint }, given),
+    ).toBe(false);
+    expect(lastSeq()).toBe(seq);
+  });
+
   test("a receipt that keeps no answer, as an earlier build wrote it, replays as it was", () => {
     const request = fresh([{ kind: "task.create", title: "Fix the export" }]);
     const first = fx.writer.submit(request);

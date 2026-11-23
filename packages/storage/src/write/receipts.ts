@@ -14,17 +14,18 @@
 //
 // What a receipt stores is the result with one change: a conflict keeps the field, version, author
 // and time of each conflicting field but not its values (the current one, and an undo's value
-// written and value to restore). The current value was a read at the time of the decision, a
-// replay is no fresh read, and so a receipt holds no task text at all. The stored
-// result is bounded by its request: at most one result per operation, and at most one conflict per
-// (row, field) the request touches, each a few hundred bytes.
+// written and value to restore). The current value was a read at the time of the decision, and a
+// replay is no fresh read. The stored result is bounded by its request: at most one result per
+// operation, and at most one conflict per (row, field) the request touches, each a few hundred
+// bytes. Once the service has built its answer, the receipt also keeps that answer as the caller
+// was given it (`keepGiven`), bounded as the answer was: the titles and names it showed among it.
 import { createHash } from "node:crypto";
 import type { Connection, Row } from "../driver.ts";
 import { misuse } from "../errors.ts";
 import type { Id } from "../ids.ts";
 import { invalidValue, RowReader } from "../rows.ts";
 import { canonicalJson } from "./canonical.ts";
-import type { CheckedRequest, WriteResult, WriteStatus } from "./request.ts";
+import type { CheckedRequest, Given, WriteResult, WriteStatus } from "./request.ts";
 
 /** A stored receipt. */
 export interface Receipt {
@@ -68,6 +69,9 @@ const SQL = {
     "INSERT INTO receipts (scope_id, request_id, fingerprint, status, seq, epoch, incarnation, " +
     "result, at) VALUES ($scope, $request, $fingerprint, $status, $seq, $epoch, $incarnation, " +
     "$result, $at)",
+  result:
+    "UPDATE receipts SET result = $result WHERE scope_id = $scope AND request_id = $request " +
+    "AND fingerprint = $fingerprint",
 } as const;
 
 /**
@@ -175,6 +179,36 @@ function storedResult(result: WriteResult): string {
   };
   delete decided.replayed;
   return JSON.stringify(decided);
+}
+
+/**
+ * Keeps the answer the caller was given with the receipt of its request (WriteResult.given), in
+ * the caller's transaction: once, and only on the receipt of the intent with `fingerprint`. A
+ * receipt of another intent, one that keeps an answer already, or none at all, is left as it is.
+ * Returns whether it kept it.
+ */
+export function keepGiven(
+  conn: Connection,
+  lookup: ReceiptLookup & { readonly fingerprint: string },
+  given: Given,
+): boolean {
+  if (!conn.inTransaction) throw misuse("An answer is kept in a transaction");
+  const plain = (value: unknown) =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  const kept = "result" in given ? given.result : given.error;
+  if (!FINGERPRINT.test(given.sent) || !FINGERPRINT.test(lookup.fingerprint) || !plain(kept)) {
+    throw misuse("An answer is kept as an object, under the fingerprints of its intent");
+  }
+  const found = readReceipt(conn, lookup);
+  if (found?.fingerprint !== lookup.fingerprint || found.result.given !== undefined) return false;
+  const result = { ...found.result, given };
+  conn.prepare(SQL.result).run({
+    scope: lookup.scope_id,
+    request: lookup.request_id,
+    fingerprint: lookup.fingerprint,
+    result: storedResult(result),
+  });
+  return true;
 }
 
 /**

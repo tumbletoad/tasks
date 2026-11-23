@@ -11,10 +11,10 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Changes sent together are saved together, or not at all.
 - A change that was reported as saved survives a crash of TTasks.
 - A change sent again with the same request ID after a lost reply is applied once, and answered as
-  it was the first time, also when it changed nothing: for an agent, through the same connection,
-  or through the tools and the shell of one agent TTasks opened. The page and the agent tools
-  resend that way by themselves. At the command line, repeat the command with the `--request-id`
-  that the failed command named.
+  it was the first time, also when it changed nothing or when the space changed since: for an
+  agent, through the same connection, or through the tools and the shell of one agent TTasks
+  opened. The page and the agent tools resend that way by themselves. At the command line, repeat
+  the command with the `--request-id` that the failed command named.
 - Every change keeps what changed and who made it: you, an agent, or a script.
 - Undo and redo never replace someone else's work that came in between, also when that work set a
   value and set it back. Redo passes over a change of yours it cannot bring back and redoes the
@@ -362,6 +362,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   other has. A restore over a space, or a claim of a copy, goes on from the backup's counter when
   the earlier space's database cannot be read at all.
 - A command repeated without its request ID is a new change: a note added twice is there twice.
+- A change saved by a build before this one, or saved just before TTasks stopped and before its
+  answer was kept, is answered again from what was saved: such an answer can name a title or a
+  group as it is now.
 - A project that is moved or reordered past the place a list of areas and projects has reached,
   while that list is read page by page, can be listed twice or not at all.
 - Everything started inside a terminal agent while it runs counts as that task's session: a new

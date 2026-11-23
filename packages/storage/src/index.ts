@@ -373,6 +373,7 @@ export {
   type TaskPatch,
   type TaskReopen,
   type TaskValues,
+  type Given,
   type WriteErrorCode,
   type WriteProblem,
   type WriteRequest,

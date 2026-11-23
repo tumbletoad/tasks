@@ -569,11 +569,13 @@ function mcpContract(era: "legacy" | "modern"): () => Promise<ContractTransport>
         throw error instanceof AppError ? new ContractError(error.toBody()) : error;
       }
     };
+    /** The request IDs sent through the tools: a tool call with one of them again is a retry. */
+    const sent = new Set<unknown>();
     return {
       portal: w.portal,
       folder: (task) => w.folder(task),
+      aside: (entry, input, by) => w.aside(entry, input, by),
       launch: async (task) => (await w.launch(task)).reference,
-      replays: true,
       call: async (name, input, actor) => {
         const entry = findEntry(name);
         if (actor === "user") {
@@ -595,18 +597,24 @@ function mcpContract(era: "legacy" | "modern"): () => Promise<ContractTransport>
           if (code === undefined) throw new Error("a tool error without A3's text form");
           throw new ContractError({ code: code as never, message: text });
         }
+        // The structured result is that request again: the tool's own answer is a replay when the
+        // tool had the request before, and the first answer otherwise.
+        const again = sent.has(input["request_id"]);
+        sent.add(input["request_id"]);
         const structured = (await direct(name, input)) as Json;
-        let first = structured;
+        let shown = structured;
         if (!readsOnly(entry, input)) {
           expect(structured["replayed"], `${name}: the same request replays`).toBe(true);
-          first = Object.fromEntries(
-            Object.entries(structured).filter(([key]) => key !== "replayed"),
-          );
+          if (!again) {
+            shown = Object.fromEntries(
+              Object.entries(structured).filter(([key]) => key !== "replayed"),
+            );
+          }
         }
         expect(unmarked(text), `${name}: the text is the rendering of the result`).toBe(
-          unmarked(renderResult(name, first)),
+          unmarked(renderResult(name, shown)),
         );
-        return first;
+        return shown;
       },
       close: async () => {
         await client.close();

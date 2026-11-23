@@ -35,7 +35,7 @@ import type { LaunchRecord } from "../write/launches.ts";
 import type { ProjectedBatch } from "../write/outbox.ts";
 import type { RunRow } from "../write/runs.ts";
 import type { Receipt, ReceiptLookup } from "../write/receipts.ts";
-import type { WriteResult } from "../write/request.ts";
+import type { Given, WriteResult } from "../write/request.ts";
 import type { MachineInfo } from "../write/writer.ts";
 import type { HolderFacts } from "../writer-lock.ts";
 
@@ -203,6 +203,11 @@ export interface Calls {
   submit: { args: { handle: number; request: unknown }; result: WriteResult };
   /** A request's receipt in a writer scope (A1 3.8, A3 3.2.3's `receipt.get`), or null. */
   receipt: { args: { handle: number; lookup: ReceiptLookup }; result: Receipt | null };
+  /** Keeps the answer a caller was given with its receipt (`SpaceWriter.keep`): whether it did. */
+  keep: {
+    args: { handle: number; lookup: ReceiptLookup & { fingerprint: string }; given: Given };
+    result: boolean;
+  };
   /** A launch record (A4 3.16.1), or null. (`id` names the request itself.) */
   launch: { args: { handle: number; launch: string }; result: LaunchRecord | null };
   /** A machine's launches that are not final: the execution store's `openWork`. */

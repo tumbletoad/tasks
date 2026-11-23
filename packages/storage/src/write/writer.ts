@@ -113,6 +113,7 @@ import {
   type RunState,
 } from "./runs.ts";
 import {
+  keepGiven,
   readReceipt,
   requestFingerprint,
   writeReceipt,
@@ -140,6 +141,7 @@ import {
   type ConflictEntity,
   type Due,
   type FieldConflict,
+  type Given,
   type HistoryOperation,
   type OpResult,
   type Operation,
@@ -1080,6 +1082,15 @@ export class SpaceWriter {
   receipt(lookup: ReceiptLookup): Receipt | undefined {
     const conn = this.#usable();
     return conn.transaction("deferred", () => readReceipt(conn, lookup));
+  }
+
+  /**
+   * Keeps the answer a caller was given with its request's receipt (receipts.ts `keepGiven`): a
+   * bookkeeping write, with no commit and no history. Returns whether it kept it.
+   */
+  keep(lookup: ReceiptLookup & { readonly fingerprint: string }, given: Given): boolean {
+    const conn = this.#usable();
+    return conn.transaction("immediate", () => keepGiven(conn, lookup, given));
   }
 
   /** A launch record as it is now (A4 3.16.1), or undefined: the execution store's read. */

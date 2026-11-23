@@ -332,9 +332,22 @@ export interface WriteResult {
   warnings: string[];
   /** The request's `answer`, for `applied` and `unchanged`: from the receipt on a replay. */
   answer?: Record<string, unknown>;
+  /** The answer the caller was given, once the service kept it with the receipt (`Given`). */
+  given?: Given;
   /** A retry with the same intent got the stored result of the first decision (A1 3.8). */
   replayed?: true;
 }
+
+/**
+ * The answer a caller was given for a request, kept with its receipt after the service built it
+ * (SpaceWriter.keep): the entry's result, or the body of its refusal. A retry is given it again as
+ * it was, whatever changed in the space since. `sent` is the fingerprint of the input as the
+ * caller sent it, before the service's own rules read it, so a retry sent as it was is known
+ * before any rule of a later build looks at it.
+ */
+export type Given =
+  | { readonly sent: string; readonly result: Record<string, unknown> }
+  | { readonly sent: string; readonly error: Record<string, unknown> };
 
 // ---------------------------------------------------------------------------------------------
 // The request

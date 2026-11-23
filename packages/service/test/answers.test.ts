@@ -196,6 +196,140 @@ describe("[A3.answers.replay] a retry gets the answer the first call got", () =>
   });
 });
 
+describe("[A3.answers.replay-meanwhile] a retry gets the first answer, whatever was written in between", () => {
+  const groupId = (answer: Json) => String((answer["group"] as Json)["id"]);
+  const ticket = (key: string) => ({ key, kind: "ticket", title: "Fixture ticket" });
+
+  test("a project's creation, sent again after the project moved, names the area it was made in", async () => {
+    const create = { action: "create", path: "Farm/Barn", request_id: rid() };
+    const first = await call("group.manage", create, USER);
+    expect(first).toMatchObject({ result: "created", group: { area: { name: "Farm" } } });
+    await call(
+      "group.manage",
+      { action: "move", path: groupId(first), to: "Coast", base: await asOf(), request_id: rid() },
+      USER,
+    );
+    expect(await call("group.manage", create, USER)).toEqual({ ...first, replayed: true });
+  });
+
+  test("a folder change, sent again after its project was renamed, names the project as it was", async () => {
+    const made = await call(
+      "folder.manage",
+      { action: "add_project", project: "Kiln", folder: folder("kiln"), request_id: rid() },
+      USER,
+    );
+    const project = String((made["owner"] as Json)["id"]);
+    const set = {
+      action: "set",
+      project: "Kiln",
+      folder: folder("kiln-next"),
+      base: await asOf(),
+      request_id: rid(),
+    };
+    const first = await call("folder.manage", set, USER);
+    expect(first).toMatchObject({ result: "set", owner: { name: "Kiln" } });
+    await call(
+      "group.manage",
+      {
+        action: "rename",
+        path: project,
+        to: "Kiln renamed",
+        base: await asOf(),
+        request_id: rid(),
+      },
+      USER,
+    );
+    expect(await call("folder.manage", set, USER)).toEqual({ ...first, replayed: true });
+  });
+
+  test("an import that found its task by key, sent again after the task was renamed, gives the title it gave", async () => {
+    await call("task.add", {
+      tasks: [{ title: "Keyed before", sources: [ticket("fixture:meanwhile-1")] }],
+      request_id: rid(),
+    });
+    const again = {
+      tasks: [{ title: "Keyed again", sources: [ticket("fixture:meanwhile-1")] }],
+      request_id: rid(),
+    };
+    const first = await call("task.add", again);
+    const found = (first["tasks"] as Json[])[0] as { result: string; ref: string; title: string };
+    expect(found).toMatchObject({ result: "exists", title: "Keyed before" });
+    await call("task.update", {
+      task: found.ref,
+      set: { title: "Keyed and renamed" },
+      base: await asOf(),
+      request_id: rid(),
+    });
+    expect(await call("task.add", again)).toEqual({ ...first, replayed: true });
+  });
+
+  test("a follow-up that found its task by key, sent again after the task was renamed, gives the title it gave", async () => {
+    await call("task.add", {
+      tasks: [{ title: "Keyed follow-up", sources: [ticket("fixture:meanwhile-2")] }],
+      request_id: rid(),
+    });
+    const added = await call("task.add", {
+      tasks: [{ title: "Finished here" }],
+      request_id: rid(),
+    });
+    const done = (added["tasks"] as { ref: string }[])[0]?.ref ?? "";
+    const finish = {
+      task: done,
+      outcome: "Fixture outcome.",
+      follow_ups: [{ title: "Follow it up", sources: [ticket("fixture:meanwhile-2")] }],
+      base: await asOf(),
+      request_id: rid(),
+    };
+    const first = await call("task.finish", finish);
+    const follow = (first["follow_ups"] as { result: string; ref: string }[])[0];
+    expect(follow).toMatchObject({ result: "exists", title: "Keyed follow-up" });
+    await call("task.update", {
+      task: follow?.ref,
+      set: { title: "Followed and renamed" },
+      base: await asOf(),
+      request_id: rid(),
+    });
+    expect(await call("task.finish", finish)).toEqual({ ...first, replayed: true });
+  });
+
+  test("a preference set, sent again after another value was set, says the value it set", async () => {
+    const key = "tasks.dedupe_window_days";
+    const set = (value: number) => ({
+      action: "set",
+      set: [{ key, value }],
+      request_id: rid(),
+    });
+    const fourteen = set(14);
+    const first = await call("prefs.manage", { ...fourteen, base: await asOf() }, USER);
+    expect(first).toMatchObject({ result: "updated", prefs: [{ key, value: 14 }] });
+    await call("prefs.manage", { ...set(30), base: await asOf() }, USER);
+    const retry = await call("prefs.manage", { ...fourteen, base: await asOf() }, USER);
+    await call("prefs.manage", { ...set(21), base: await asOf() }, USER);
+    expect(retry).toEqual({ ...first, replayed: true });
+  });
+
+  test("an undo, sent again after a script changed its task, says what it said", async () => {
+    const added = await call("task.add", { tasks: [{ title: "Undone here" }], request_id: rid() });
+    const ref = (added["tasks"] as { ref: string }[])[0]?.ref ?? "";
+    await call(
+      "task.update",
+      { task: ref, set: { summary: "A change to undo" }, base: await asOf(), request_id: rid() },
+      USER,
+    );
+    const undo = { request_id: rid() };
+    const first = await call("history.undo", undo, USER);
+    expect(first).toMatchObject({ result: "undone", tasks: [ref] });
+    expect(first["script_change"]).toBeUndefined();
+    await call("task.update", {
+      task: ref,
+      set: { summary: "A script's change after the undo" },
+      base: await asOf(),
+      request_id: rid(),
+    });
+    expect(await call("history.undo", undo, USER)).toEqual({ ...first, replayed: true });
+  });
+});
+
 describe("[A3.answers.groups] an import makes groups only for the drafts it adds", () => {
   const ticket = (key: string) => ({ key, kind: "ticket", title: "Fixture ticket" });
 

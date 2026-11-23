@@ -4,16 +4,17 @@
 // their own caller. For every call:
 //
 //   entry → exposure (the class may call it) → principal (audience, actor, writer scope)
+//   → the space, and for a write its request's receipt: a request answered before is answered
+//     again as it was (A3 3.4.1), marked `replayed`, before any rule reads its input
 //   → the caller's input parsed with the contract (SafeText, defaults, the audience's limits)
-//   → the space → reads through the space's reader, writes expanded into A1 operations and sent
-//     to the space's writer with the scope and the intent
-//   → the contract's result, checked against the entry's output schema, or the error body.
+//   → reads through the space's reader, writes expanded into A1 operations and sent to the space's
+//     writer with the scope and the intent
+//   → the contract's result, checked against the entry's output schema, or the error body; a
+//     write's is kept with its receipt.
 //
-// A write's result is built from the writer's result and the caller's input only, so a replay of
-// the same request ID gives the same result (A3 3.4.1), marked `replayed`. What a handler decides
-// before the writer and says in its answer, such as the folders a move carries along or the group
-// a create found, goes to the writer with the request (`submit`'s `answer`), also when nothing
-// changes, and comes back in the writer's result: the first answer and a replay read it there.
+// What a handler decides before the writer and says in its answer, such as the group a create
+// found, goes to the writer with the request (`submit`'s `answer`), also when nothing changes, so a
+// request whose answer was not kept is told again from the writer's result.
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import {
   findEntry,
@@ -38,6 +39,7 @@ import {
   registry,
   shapeText,
   type AnyEntry,
+  type ErrorBody,
   type PreferenceRead,
   type PreferenceSpec,
   type PrefValue,
@@ -46,14 +48,18 @@ import { localDate } from "@ttasks/contracts/day";
 import {
   folderKey,
   freeSlug,
+  intentFingerprint,
   isId,
   newId,
   normaliseSourceKey,
+  normaliseStored,
+  type Given,
   type Id,
   type Operation,
   type OpResult,
   type SourceFields,
   type PatchableField,
+  type Receipt,
   type Row,
   type SpaceWriterHandle,
   type TaskCreate,
@@ -127,6 +133,7 @@ import {
   spaceUnavailable,
   refuseLater,
   storageFailure,
+  withReplay,
   type PathOf,
 } from "./errors.ts";
 import type { FolderMarkers } from "./marker.ts";
@@ -302,6 +309,14 @@ interface Call {
   /** The input after the contract: SafeText, defaults and the audience's limits. */
   readonly input: Record<string, unknown>;
   readonly today: string;
+  /**
+   * The call's request ID had a receipt of this intent when the call started, which keeps no
+   * answer: a request of an earlier build, or one whose answer was not kept. The writer replays
+   * it, and a rule this build added does not refuse it (`sourceFields`).
+   */
+  readonly replay: boolean;
+  /** What the writer decided for this call's request, once `submit` has its result. */
+  decided?: WriteResult["status"];
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -404,7 +419,12 @@ function checkActionFields(entry: AnyEntry, input: Record<string, unknown>): voi
   }
 }
 
-/** `opCall` as `principal`. */
+/**
+ * `opCall` as `principal`. A write with a request ID goes one at a time with any other call of
+ * that request (a retry while the first call still runs waits for its answer), and a request that
+ * was answered is answered again from its receipt: as it was, before any rule reads the input, so
+ * neither a write since nor a rule a later build tightened changes what a retry is told.
+ */
 async function callWith(
   host: OpsHost,
   caller: Caller,
@@ -421,15 +441,66 @@ async function callWith(
     }
     if (Object.hasOwn(entry.input.shape, "request_id")) input["request_id"] = params.request_id;
   }
+  if (params.space !== undefined && typeof params.space !== "string") {
+    throw invalid("space", "Expected a space ID or name");
+  }
+  // A call whose space cannot be picked is told what is wrong with its input first, as before.
+  let space: UsableSpace | undefined;
+  let unpicked: unknown;
+  try {
+    space = pickSpace(host, caller, params.space);
+  } catch (error) {
+    unpicked = error;
+  }
+  const picked = (): UsableSpace => {
+    if (space === undefined) throw unpicked;
+    return space;
+  };
+  const requestId = input["request_id"];
+  if (
+    space === undefined ||
+    entry.kind !== "write" ||
+    typeof requestId !== "string" ||
+    readsOnly(entry, input)
+  ) {
+    return decideCall(host, caller, entry, principal, picked, input, undefined);
+  }
+  const here = space;
+  return oneAtATime(`${here.id}\n${principal.scope}\n${requestId}`, async () => {
+    const receipt = await receiptOf(host, caller, here, principal, requestId);
+    const kept = receipt?.result.given;
+    if (kept !== undefined && kept.sent === intentPrint(here.id, entry.name, input)) {
+      return givenAgain(kept);
+    }
+    return decideCall(host, caller, entry, principal, picked, input, receipt);
+  });
+}
+
+/**
+ * The call after its receipt was looked up: the input's rules, then the handler. A receipt of the
+ * call's intent answers it as it was kept; one that keeps no answer leaves it to the writer to
+ * replay. The answer to a request the writer decided is kept with its receipt, and so is the
+ * refusal of one the writer refused.
+ */
+async function decideCall(
+  host: OpsHost,
+  caller: Caller,
+  entry: AnyEntry,
+  principal: Principal,
+  picked: () => UsableSpace,
+  input: Record<string, unknown>,
+  receipt: Receipt | undefined,
+): Promise<unknown> {
   checkHiddenFields(entry, input, principal.audience);
   refuseLater(entry.name, input, principal.audience);
   const parsed = parseInput(entry, principal.audience, input);
   if (!parsed.success) throw schemaFailure(parsed.error, input, principal.origin, entry.name);
   checkActionFields(entry, parsed.data);
-  if (params.space !== undefined && typeof params.space !== "string") {
-    throw invalid("space", "Expected a space ID or name");
-  }
-  const space = pickSpace(host, caller, params.space);
+  const space = picked();
+  const intent = intentPrint(space.id, entry.name, parsed.data);
+  const replay = receipt?.fingerprint === intent;
+  const kept = receipt?.result.given;
+  if (replay && kept !== undefined) return givenAgain(kept);
   const now = (host.now ?? Date.now)();
   const call: Call = {
     host,
@@ -439,15 +510,28 @@ async function callWith(
     space,
     input: parsed.data,
     today: localDate(now, (host.timeZone ?? localTimeZone)()),
+    replay,
   };
   const handler = HANDLERS[entry.name];
   if (handler === undefined) throw opUnknown();
-  // A call that binds a folder or may create a group by name decides on what it read of the
-  // space: such calls go one at a time per space, from that read to the writer's answer, so two
-  // never both create one name or bind one folder by two spellings.
-  const result = await (decidesOnNames(entry.name, call.input)
-    ? oneAtATime(space.id, () => handler(call))
-    : handler(call));
+  const sent = intentPrint(space.id, entry.name, input);
+  let result: unknown;
+  try {
+    // A call that binds a folder or may create a group by name decides on what it read of the
+    // space: such calls go one at a time per space, from that read to the writer's answer, so two
+    // never both create one name or bind one folder by two spellings.
+    result = await (decidesOnNames(entry.name, call.input)
+      ? oneAtATime(space.id, () => handler(call))
+      : handler(call));
+  } catch (error) {
+    if (error instanceof AppError && (call.decided === "rejected" || call.decided === "conflict")) {
+      await keepAnswer(call, intent, { sent, error: keptRefusal(error.toBody()) });
+    }
+    throw error;
+  }
+  if (call.decided !== undefined && isRecord(result)) {
+    await keepAnswer(call, intent, { sent, result: unmarked(result) });
+  }
   const checked = entry.output.safeParse(result);
   if (!checked.success) {
     // A write whose handler returned has done its work, whichever path it wrote through: an error
@@ -463,6 +547,101 @@ async function callWith(
     });
   }
   return result;
+}
+
+/**
+ * The receipt of a call's request ID in its writer scope, read in the writer's queue so that it
+ * sees every request sent before. None on a space without a writer here: its write is refused as
+ * it was. The grant first, so a home that may not use the space reads no answer of it.
+ */
+async function receiptOf(
+  host: OpsHost,
+  caller: Caller,
+  space: UsableSpace,
+  principal: Principal,
+  requestId: string,
+): Promise<Receipt | undefined> {
+  if (space.state !== "open" || space.writer === undefined) return undefined;
+  checkGrant(host, caller, space.id);
+  try {
+    return await space.writer.receipt({ scope_id: principal.scope, request_id: requestId });
+  } catch (error) {
+    throw storageFailure(error);
+  }
+}
+
+/**
+ * The fingerprint the writer keeps for a request of `entry` with `input` (receipts.ts), as `submit`
+ * sends its intent: the input as the service parsed it, or as the caller sent it.
+ */
+function intentPrint(space: string, entry: string, input: Record<string, unknown>): string {
+  const reason = input["reason"];
+  return intentFingerprint({
+    space_id: space,
+    entry,
+    input: intentInput(input),
+    reason: typeof reason === "string" ? normaliseStored(reason) : null,
+  });
+}
+
+/** The answer a request was given, again: marked as a replay, whatever changed since. */
+function givenAgain(kept: Given): Record<string, unknown> {
+  if ("error" in kept) throw new AppError(withReplay(kept.error as unknown as ErrorBody));
+  return { ...kept.result, replayed: true };
+}
+
+/** An answer without the mark of a replay: as a receipt keeps it. */
+function unmarked(answer: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(answer).filter(([key]) => key !== "replayed"));
+}
+
+/**
+ * A refusal as its receipt keeps it: without a conflicting field's values, which were read when
+ * the request was decided and are no fact of it (receipts.ts), and without the mark of a replay.
+ */
+function keptRefusal(body: ErrorBody): Record<string, unknown> {
+  const data = unmarked(body.data ?? {});
+  const conflicts = data["conflicts"];
+  return {
+    ...body,
+    ...(body.data === undefined ? {} : { data }),
+    ...(Array.isArray(conflicts)
+      ? {
+          data: {
+            ...data,
+            conflicts: conflicts.map((c: unknown) =>
+              isRecord(c)
+                ? Object.fromEntries(
+                    Object.entries(c).filter(([k]) => !["value", "wrote", "restore"].includes(k)),
+                  )
+                : c,
+            ),
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * Keeps the answer a call gave with its request's receipt, once: what a retry is given again. A
+ * call whose answer could not be kept still answers, and its retry is answered from what the
+ * writer stored, as a request of an earlier build is.
+ */
+async function keepAnswer(call: Call, intent: string, answer: Given): Promise<void> {
+  const writer = call.space.state === "open" ? call.space.writer : undefined;
+  if (writer === undefined) return;
+  try {
+    await writer.keep(
+      {
+        scope_id: call.principal.scope,
+        request_id: String(call.input["request_id"]),
+        fingerprint: intent,
+      },
+      answer,
+    );
+  } catch {
+    // The write has its answer either way.
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -857,6 +1036,7 @@ async function submit(
   } catch (error) {
     throw storageFailure(error);
   }
+  call.decided = result.status;
   if (result.status === "conflict" || result.status === "rejected") {
     const { inserted } = options;
     const own =

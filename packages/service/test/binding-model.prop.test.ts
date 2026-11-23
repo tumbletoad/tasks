@@ -54,6 +54,8 @@ const writerOf = (f: Fixture): SpaceWriterHandle =>
     spaceId: f.spaceId,
     submit: (request: WriteRequest) => Promise.resolve(f.writer.submit(request)),
     receipt: (lookup: ReceiptLookup) => Promise.resolve(f.writer.receipt(lookup)),
+    keep: (...args: Parameters<SpaceWriterHandle["keep"]>) =>
+      Promise.resolve(f.writer.keep(...args)),
     actor: (kind: "human" | "agent", label: string) => Promise.resolve(f.writer.actor(kind, label)),
   }) as unknown as SpaceWriterHandle;
 

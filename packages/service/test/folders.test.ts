@@ -619,13 +619,9 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
       base: await asOf(user),
       request_id: rid(),
     });
+    // The retry is told what the first call was: the project by the name it had then.
     const retry = FolderManageResult.parse(await call(user, "folder.manage", input));
-    expect(retry).toMatchObject({
-      result: "set",
-      replayed: true,
-      owner: { kind: "project", id: made.owner.id, name: "Renamed" },
-      folder: first.folder,
-    });
+    expect(retry).toEqual({ ...first, replayed: true });
   });
 
   test("an agent files a task into a project it names first, which is created with it", async () => {

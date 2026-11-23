@@ -43,6 +43,7 @@ contractSuite("[A3.3.2.ops.contract] the contract suite, through the CLI with --
   const transport: ContractTransport = {
     portal: w.portal,
     folder: (task) => w.folder(task),
+    aside: (entry, input, by) => w.aside(entry, input, by),
     // The CLI holds no binding: `ttasks show --launch` resolves the reference for that call.
     // An entry with no command is the UI's alone.
     carries: onCli,
