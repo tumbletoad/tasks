@@ -28,7 +28,7 @@ export function SpaceBar({ state }: { readonly state: LiveState }) {
     return (
       <div className={styles.bar} role="status" data-part="gone" dir="auto">
         <p className={styles.line}>
-          {t("space.gone", { why: state.gone.why, name, folder: state.gone.folder ?? "" })}
+          {t("space.gone", { why: state.gone.why, name, folder: state.gone.folder ?? folder })}
         </p>
         <button
           type="button"
@@ -55,6 +55,9 @@ export function SpaceBar({ state }: { readonly state: LiveState }) {
             backup: restored.backup ?? "none",
             folder,
             space: commandWord(name, head.id),
+            // A claim is offered only where the service takes it: a copy read-only for its folder
+            // too (a synced one) says that way out below.
+            claim: readOnly?.reason === "read_only_copy" ? "yes" : "no",
           })}
         </p>
       )}

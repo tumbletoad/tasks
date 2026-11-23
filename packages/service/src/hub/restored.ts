@@ -35,14 +35,19 @@ export function restoredOf(transfer: unknown): Restored | undefined {
   };
 }
 
-/** An open of a folder whose space another folder serves now: `open`, with the space's name. */
+/**
+ * An open of a folder whose space another folder serves now: `open`, with the space's ID and
+ * name.
+ */
 export class OtherCopyOpen extends Error {
   override readonly name = "OtherCopyOpen";
   readonly open: string;
+  readonly spaceId: string;
   readonly spaceName: string | undefined;
-  constructor(open: string, spaceName: string | undefined) {
+  constructor(open: string, spaceId: string, spaceName: string | undefined) {
     super("Another copy of this space is open");
     this.open = open;
+    this.spaceId = spaceId;
     this.spaceName = spaceName;
   }
 }

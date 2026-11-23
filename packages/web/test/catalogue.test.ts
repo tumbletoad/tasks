@@ -73,6 +73,7 @@ const SAMPLE = {
   project: "Lumen Health",
   age: "3d",
   where: "Ghostty, the desktop's default",
+  claim: "yes",
   terminal: "ghostty",
   source: "desktop",
   value: "P1",

@@ -68,8 +68,9 @@ export const SPACE_HELP = `Usage: ttasks space <command> [arguments] [--json]
 
 <space> is an ID, a name or a folder. Without one: --space, TTASKS_SPACE, the default space
 (ttasks space use), else the one space the service serves; recover takes the space that needs it
-and claim the restored copy. An ID or a name means the copy that takes writes; name a restored
-copy beside it by its folder. <backup> is a file, or a name ttasks space backups prints. A space
+and claim the restored copy. One copy of a space is open at a time: an ID or a name means the
+folder that serves it, and a closed copy is named by its folder. <backup> is a file, or a name
+ttasks space backups prints. A space
 stays open or closed as you left it, also after a restart: the service records it in machine.toml.
 Only the user can run these, from a terminal; list and backups work everywhere.
 `;
@@ -175,11 +176,21 @@ export function wayOut(row: Pick<SpaceRow, "state" | "reason"> & Partial<SpaceRo
       ];
 }
 
-/** What a restored copy is, whatever else keeps it from being written. */
-function restoredLine(restored: NonNullable<SpaceRow["restored"]>): string {
+/**
+ * What a restored copy is, whatever else keeps it from being written. A claim is offered only
+ * where it is taken: a copy read-only for its folder (a synced one) says that way out instead.
+ */
+function restoredLine(row: SpaceRow, restored: NonNullable<SpaceRow["restored"]>): string {
   const from = restored.backup === undefined ? "" : ` from ${restored.backup}`;
-  return `A copy restored ${restored.at}${from}, to look inside. Claim it to make it the space: ${CLI_NAME} space claim <folder>`;
+  const look = `A copy restored ${restored.at}${from}, to look inside.`;
+  return claimable(row)
+    ? `${look} Claim it to make it the space: ${CLI_NAME} space claim <folder>`
+    : look;
 }
+
+/** Whether `space claim` takes the space as it is now. */
+const claimable = (row: Pick<SpaceRow, "state" | "reason">): boolean =>
+  row.state === "read_only" && row.reason === "read_only_copy";
 
 function printSpace(io: Io, row: SpaceRow, verb: string, isDefault = false): void {
   // A space not served since the start (closed, or unavailable) has no name read yet.
@@ -189,7 +200,7 @@ function printSpace(io: Io, row: SpaceRow, verb: string, isDefault = false): voi
   io.stdout(
     `${verb}${name}${row.ref_prefix === undefined ? "" : ` (${row.ref_prefix})`}  ${state}${id === undefined ? "" : `  ${id}`}${row.folder === undefined ? "" : `  ${row.folder}`}\n`,
   );
-  if (row.restored !== undefined) io.stdout(`  ${restoredLine(row.restored)}\n`);
+  if (row.restored !== undefined) io.stdout(`  ${restoredLine(row, row.restored)}\n`);
   if (row.message !== undefined) io.stdout(`  ${row.message}\n`);
   if (row.migrated !== undefined) io.stdout(`  ${migratedLine(row.migrated)}\n`);
   if (row.backup?.message !== undefined) io.stdout(`  ${row.backup.message}\n`);
@@ -468,8 +479,9 @@ export async function spaceCommand(
             io.stdout(`Restored into ${str(result["folder"])}\n${result["not_opened"]}\n`);
             return;
           }
-          printSpace(io, result["space"] as SpaceRow, "Restored ");
-          if (result["read_only_copy"] === true) {
+          const space = result["space"] as SpaceRow;
+          printSpace(io, space, "Restored ");
+          if (result["read_only_copy"] === true && claimable(space)) {
             io.stdout(
               `This is a read-only copy. Claim it to write to it: ${CLI_NAME} space claim <folder>\n`,
             );

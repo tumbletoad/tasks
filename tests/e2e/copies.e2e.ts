@@ -71,6 +71,7 @@ test.describe("[A2.3.10.5.copies.e2e] a person looks inside a backup on the page
     await expect(gone).toContainText(`${name} was closed since this page loaded it.`, {
       timeout: SLOW_MS,
     });
+    await expect(gone).toContainText("To open it again, use Open folder in the space list");
 
     // Then opens the copy: the tab goes to it, and it says it is a restored copy before anything.
     await page.reload();

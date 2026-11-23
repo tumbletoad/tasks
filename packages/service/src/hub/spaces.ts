@@ -1178,7 +1178,7 @@ export class SpaceManager {
   /** Refuses an open of a copy of the space `id` while another folder holds it. */
   #refuseOtherCopy(id: Id<"sp">, except: Hosted | undefined): void {
     const holder = this.#holderOf(id, except);
-    if (holder !== undefined) throw new OtherCopyOpen(holder.folder, holder.name);
+    if (holder !== undefined) throw new OtherCopyOpen(holder.folder, id, holder.name);
   }
 
   /**

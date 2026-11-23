@@ -480,6 +480,23 @@ describe("[A1.5.sync.way-out] a space read-only for its synced or network folder
     expect(name).not.toBe("");
     const closed = await user(["space", "close", folder]);
     expect(closed.code, closed.stdout + closed.stderr).toBe(0);
+    // A copy restored into the synced folder is one to look inside, and offers no claim, which the
+    // service would refuse there: the folder's own ways out are named.
+    const inSync = join(synced, "notes-copy");
+    const looked = await user([
+      "space",
+      "restore",
+      `${folder}/backups/${name}.db.gz`,
+      "--to",
+      inSync,
+    ]);
+    expect(looked.code, looked.stdout + looked.stderr).toBe(0);
+    expect(looked.stdout).toContain(", to look inside.\n");
+    expect(looked.stdout).not.toContain("space claim <folder>");
+    expect(looked.stdout).toContain(EXCLUDED_WAY);
+    const unclaimed = await user(["space", "claim", inSync]);
+    expect(unclaimed.code).not.toBe(0);
+    expect((await user(["space", "close", inSync])).code).toBe(0);
     const copy = join(world.root, "s", "notes");
     const restored = await user([
       "space",

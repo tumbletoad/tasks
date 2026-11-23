@@ -338,3 +338,40 @@ describe("[A2.3.10.5.copies.history] a restored copy shows its launches and runs
     },
   );
 });
+
+describe("[A2.3.10.5.copies.words] the refusal of a second copy names a command that works as printed", () => {
+  test(
+    "with another space of the same name, the command that closes the open copy names it by its ID",
+    SLOW,
+    async () => {
+      const w = await httpWorld("copy-words");
+      worlds.push(w);
+      const user = await w.user();
+      const [mira] = (
+        (await user.call("space/list", {}, CALL)) as { spaces: { id: string; folder: string }[] }
+      ).spaces;
+      if (mira === undefined) throw new Error("no Mira");
+      await user.call(
+        "space/create",
+        { name: "Mira", path: join(w.root, "s", "other-mira"), ref_prefix: "N" },
+        CALL,
+      );
+      const backup = (await user.call("space/backup", { space: mira.folder }, CALL)) as {
+        backup: { name: string };
+      };
+      const copyFolder = join(w.root, "s", "mira-copy");
+      const made = (await user.call(
+        "space/restore",
+        { backup: backup.backup.name, to: copyFolder, of: mira.folder },
+        CALL,
+      )) as { not_opened?: string };
+      expect(made.not_opened).toContain(`space close ${mira.id}`);
+      const { token } = await signIn(w);
+      const refused = JSON.parse(
+        (await post(w.port(), "/api/v1/space/open", { folder: copyFolder }, { token })).body,
+      ) as Answer;
+      expect(refused.error?.hint).toContain(`space close ${mira.id}`);
+      expect(refused.error?.hint).not.toContain("space close Mira");
+    },
+  );
+});

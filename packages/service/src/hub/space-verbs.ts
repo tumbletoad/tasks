@@ -339,19 +339,36 @@ function copyWords(folder: string): string {
 }
 
 /**
- * How a person closes the copy that is open: by the space's name, which means the one folder that
- * serves it, so the command works as printed in any shell; by its folder when the name is not known.
+ * How a person closes the copy that is open, so the command works as printed in any shell: by the
+ * space's name, which means the one folder that serves it; by its ID when another space has that
+ * name too; by its folder when the name is not known.
  */
-const closeCommand = (error: OtherCopyOpen): string =>
-  command(["space", "close", error.spaceName ?? error.open], "space close <folder>");
+function closeCommand(error: OtherCopyOpen, spaces: readonly SpaceView[]): string {
+  const name = error.spaceName;
+  const shared =
+    name !== undefined &&
+    spaces.some(
+      (view) =>
+        view.name?.toLowerCase() === name.toLowerCase() &&
+        (view.id ?? view.registered) !== error.spaceId,
+    );
+  return command(
+    ["space", "close", shared ? error.spaceId : (name ?? error.open)],
+    "space close <folder>",
+  );
+}
 
 /**
  * The refusal of an open of `folder` while another folder serves its space (one copy at a time):
  * what is open, what this folder is, and how to look at it instead.
  */
-function otherCopyRefusal(error: OtherCopyOpen, folder: string): AppError {
+function otherCopyRefusal(
+  error: OtherCopyOpen,
+  folder: string,
+  spaces: readonly SpaceView[],
+): AppError {
   const name = error.spaceName ?? "This space";
-  const close = closeCommand(error);
+  const close = closeCommand(error, spaces);
   return new AppError({
     code: "invalid_input",
     message: `${name} is open from ${error.open}. ${copyWords(folder)} Two copies of one space are never open together.`,
@@ -477,7 +494,7 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
     } catch (error) {
       if (!(error instanceof OtherCopyOpen)) throw error;
       const name = error.spaceName ?? "The space";
-      const close = closeCommand(error);
+      const close = closeCommand(error, manager.list());
       const open = command(["space", "open", folder], "space open <folder>");
       return {
         folder,
@@ -557,7 +574,9 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
           try {
             entry = await manager.open(folder, undefined, { retryMigration });
           } catch (error) {
-            if (error instanceof OtherCopyOpen) throw otherCopyRefusal(error, folder);
+            if (error instanceof OtherCopyOpen) {
+              throw otherCopyRefusal(error, folder, manager.list());
+            }
             throw error;
           }
           const view = viewOf(entry);
