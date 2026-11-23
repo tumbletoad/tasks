@@ -486,7 +486,13 @@ export function render(entry: string, result: Result, space: string): string {
           result["action"] === "describe"
             ? `${str(pref["summary"])} (${str(pref["shape"])})`
             : `${JSON.stringify(pref["value"])}${pref["is_default"] === true ? " (default)" : ""}`;
-        lines.push(`${str(pref["key"])}: ${shown}${pref["policy"] === true ? " · policy" : ""}`);
+        const inForce =
+          "in_force" in pref
+            ? ` · in force: ${JSON.stringify(pref["in_force"])}, as this build does not read it yet`
+            : "";
+        lines.push(
+          `${str(pref["key"])}: ${shown}${pref["policy"] === true ? " · policy" : ""}${inForce}`,
+        );
       }
       break;
     case "launch.open": {

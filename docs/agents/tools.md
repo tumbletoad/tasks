@@ -662,14 +662,14 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | A1 operations | `pref.set` |
 | Faces | MCP `preferences`, CLI `ttasks prefs`, UI |
 | Errors | `invalid_input`, `forbidden`, `conflict`, `space_unavailable`, `request_id_conflict` |
-| Definition, estimated tokens | 368, reported |
+| Definition, estimated tokens | 359, reported |
 | Result budget, estimated tokens | typical 600, max 2000 |
 
 ### Input
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `action` | "describe" \| "get" \| "set"; agents: "describe" \| "get" | yes | describe: the keys; get: their values; set: change them |
+| `action` | "describe" \| "get" \| "set"; agents: "describe" \| "get" | yes | describe: the keys; get: their values |
 | `keys` | (string, max 64)[], max 20 items | no | Keys, or prefixes ending in ".*"; default every key |
 | `set` | object[], 1 to 10 items | no | set: the keys and their new values |
 | `set[].key` | string, max 64 | yes | A key describe lists |
@@ -693,6 +693,7 @@ MCP tool `preferences`, "Read settings": Use when the user asks about a setting:
 | `prefs[].is_default` | boolean | no | The value is the default (get) |
 | `prefs[].writable` | boolean | yes | Whether this caller may change it |
 | `prefs[].policy` | true | no | Policy: the user's own (A3 3.8) |
+| `prefs[].in_force` | string \| integer, -1000000 to 1000000 \| boolean \| string[] \| null | no | What this build does whatever the key says: it does not act on the key yet |
 | `result` | "updated" \| "no_change" | no | What a change did |
 | `changed` | object[] | no | The keys a change changed |
 | `changed[].key` | string | yes | The key |

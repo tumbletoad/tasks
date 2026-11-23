@@ -1324,7 +1324,7 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "describe: the keys; get: their values; set: change them",
+            "description": "describe: the keys; get: their values",
             "enum": [
               "describe",
               "get",
@@ -1536,6 +1536,31 @@
                     }
                   ],
                   "description": "Its default"
+                },
+                "in_force": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "maximum": 1000000,
+                      "minimum": -1000000,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "What this build does whatever the key says: it does not act on the key yet"
                 },
                 "is_default": {
                   "description": "The value is the default (get)",

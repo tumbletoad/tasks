@@ -109,18 +109,6 @@
       "entry": "task.add",
       "flags": [
         {
-          "field": "mode",
-          "flag": "--mode",
-          "help": "propose: ask the user to decide",
-          "repeat": false,
-          "required": false,
-          "type": "string",
-          "values": [
-            "apply",
-            "propose"
-          ]
-        },
-        {
           "field": "tasks[].summary",
           "flag": "--summary",
           "help": "One line: the next step",
@@ -286,18 +274,6 @@
           "repeat": false,
           "required": false,
           "type": "string"
-        },
-        {
-          "field": "mode",
-          "flag": "--mode",
-          "help": "propose: ask the user to decide",
-          "repeat": false,
-          "required": false,
-          "type": "string",
-          "values": [
-            "apply",
-            "propose"
-          ]
         }
       ],
       "inputOnly": [],
@@ -452,18 +428,6 @@
           "repeat": false,
           "required": false,
           "type": "string"
-        },
-        {
-          "field": "mode",
-          "flag": "--mode",
-          "help": "propose: ask the user to decide",
-          "repeat": false,
-          "required": false,
-          "type": "string",
-          "values": [
-            "apply",
-            "propose"
-          ]
         }
       ],
       "inputOnly": [
@@ -664,18 +628,6 @@
           "type": "string"
         },
         {
-          "field": "mode",
-          "flag": "--mode",
-          "help": "propose: ask the user to decide",
-          "repeat": false,
-          "required": false,
-          "type": "string",
-          "values": [
-            "apply",
-            "propose"
-          ]
-        },
-        {
           "field": "set[].reset",
           "flag": "--reset",
           "help": "Put the key back to its default, instead of a value",
@@ -690,7 +642,7 @@
       "positionals": [
         {
           "field": "action",
-          "help": "describe: the keys; get: their values; set: change them",
+          "help": "describe: the keys; get: their values",
           "name": "action",
           "required": true,
           "type": "string",
@@ -775,18 +727,6 @@
           "repeat": false,
           "required": false,
           "type": "string"
-        },
-        {
-          "field": "mode",
-          "flag": "--mode",
-          "help": "propose: ask the user to decide",
-          "repeat": false,
-          "required": false,
-          "type": "string",
-          "values": [
-            "apply",
-            "propose"
-          ]
         }
       ],
       "inputOnly": [],
@@ -802,30 +742,6 @@
       ],
       "summary": "Reopen a completed or archived task. Its earlier outcome and learnings stay.",
       "verb": "reopen"
-    },
-    {
-      "actors": "run",
-      "auto": [
-        "request_id"
-      ],
-      "entry": "run.report",
-      "flags": [
-        {
-          "field": "summary",
-          "flag": "--summary",
-          "help": "Counts created, updated, unchanged; what was unsure",
-          "repeat": false,
-          "required": false,
-          "type": "string"
-        }
-      ],
-      "inputOnly": [
-        "sources"
-      ],
-      "kind": "write",
-      "positionals": [],
-      "summary": "Report a run's coverage, one row per source: works only in a run or routine.",
-      "verb": "run-report"
     },
     {
       "actors": "agent",
@@ -854,32 +770,12 @@
           ]
         },
         {
-          "field": "remove_sources",
-          "flag": "--remove-source",
-          "help": "Source keys or URLs to unlink",
-          "repeat": true,
-          "required": false,
-          "type": "string"
-        },
-        {
           "field": "reason",
           "flag": "--reason",
           "help": "Why, shown in history",
           "repeat": false,
           "required": false,
           "type": "string"
-        },
-        {
-          "field": "mode",
-          "flag": "--mode",
-          "help": "propose: ask the user to decide",
-          "repeat": false,
-          "required": false,
-          "type": "string",
-          "values": [
-            "apply",
-            "propose"
-          ]
         }
       ],
       "inputOnly": [

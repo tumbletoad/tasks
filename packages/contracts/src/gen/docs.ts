@@ -17,7 +17,7 @@ import {
 import { ERROR_CODES } from "../errors.ts";
 import { definitionTokens, mcpTool, toJsonSchema, type JsonSchema } from "../json-schema.ts";
 import { isOffered, laterIn } from "../later.ts";
-import { verbSpec } from "./artefacts.ts";
+import { offeredVerbs } from "./artefacts.ts";
 
 export interface DocNames {
   /** The CLI command, such as `ttasks`. */
@@ -252,10 +252,7 @@ export function toolsMd(entries: readonly AnyEntry[], names: DocNames): string {
 
 /** `docs/agents/cli.md`: the operation verbs of the CLI. */
 export function cliMd(entries: readonly AnyEntry[], names: DocNames): string {
-  const verbs = [...entries]
-    .sort(byName)
-    .flatMap((entry) => cliFaces(entry).map((face) => verbSpec(entry, face)))
-    .sort((a, b) => (a.verb < b.verb ? -1 : a.verb > b.verb ? 1 : 0));
+  const verbs = offeredVerbs(entries);
   const lines = [
     "# CLI verbs",
     "",

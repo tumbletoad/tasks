@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { CLI_NAME } from "@ttasks/brand";
+import { cliFaces, findEntry, LATER } from "@ttasks/contracts";
 import { SERVICE_VERBS } from "@ttasks/service/install";
 import { CLI_SPEC } from "./args.ts";
 import { LOCAL_COMMANDS, shortHelp, verbHelp } from "./help.ts";
@@ -40,6 +41,8 @@ async function helpOf(argv: readonly string[]): Promise<string> {
   expect(io.err).toBe("");
   return io.out;
 }
+
+const CLI_DOCS = readFileSync(new URL("../../../docs/agents/cli.md", import.meta.url), "utf8");
 
 const COMMANDS = [...CLI_SPEC.verbs.map((v) => v.verb), ...LOCAL_COMMANDS.map((c) => c.name)];
 
@@ -108,6 +111,31 @@ describe("[A2.3.10.cli.help] help for every command", () => {
     const lines = verbHelp(strict).split("\n");
     expect(lines[0]).toBe("Usage: ttasks reopen [<task>] --reason <reason> [options]");
     expect(lines.find((line) => line.startsWith("  --reason"))).toMatch(/ \(required\)$/);
+  });
+
+  test("no verb, flag or value a later step brings is offered, in the help or in docs/agents/cli.md", async () => {
+    const rows = LATER.filter((row) => !("audience" in row) || row.audience === undefined);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const verbs = CLI_SPEC.verbs.filter((verb) => verb.entry === row.entry);
+      const faces = cliFaces(findEntry(row.entry) ?? { faces: {} });
+      if (!("field" in row)) {
+        expect(verbs, row.entry).toEqual([]);
+        for (const face of faces) {
+          expect(shortHelp(), face.verb).not.toMatch(new RegExp(`^ {2}${face.verb} `, "m"));
+          expect(CLI_DOCS, face.verb).not.toContain(`ttasks ${face.verb}\``);
+        }
+        continue;
+      }
+      for (const verb of verbs) {
+        const flag = verb.flags.find((f) => f.field === row.field);
+        if (row.value === undefined) expect(flag, `${verb.verb} ${row.field}`).toBeUndefined();
+        else expect(flag?.values ?? [], `${verb.verb} ${row.field}`).not.toContain(row.value);
+        const help = await helpOf(["help", verb.verb]);
+        expect(help, `${verb.verb} ${row.field}`).not.toContain(row.value ?? `--${row.field}`);
+      }
+    }
+    expect(CLI_DOCS).not.toContain("propose");
   });
 
   test("ttasks --version prints the version, as ttasks version does", async () => {

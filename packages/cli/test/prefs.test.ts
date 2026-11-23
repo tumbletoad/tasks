@@ -21,12 +21,15 @@ const tasks = (args: readonly string[], terminal = true): Promise<Ran> =>
   runMain(args, { home: w.home, tty: terminal });
 
 describe("[A3.3.4.prefs.tool] ttasks prefs", () => {
-  test("a person reads a key nothing acts on yet; a script is not shown it", async () => {
+  test("a person reads a key nothing acts on yet, with what is in force; a script is not shown it", async () => {
     const person = await tasks(["prefs", "get", "--keys", "autonomy.level", "--json"]);
     expect(person.code).toBe(0);
     expect(JSON.parse(person.stdout)).toMatchObject({
-      prefs: [{ key: "autonomy.level", value: "review" }],
+      prefs: [{ key: "autonomy.level", value: "review", in_force: "full" }],
     });
+    expect((await tasks(["prefs", "get", "autonomy.level"])).stdout).toBe(
+      'autonomy.level: "review" (default) · policy · in force: "full", as this build does not read it yet\n',
+    );
     const script = await tasks(["prefs", "get", "--keys", "autonomy.level", "--json"], false);
     expect(script.code).toBe(EXIT_CODES.usage);
   });

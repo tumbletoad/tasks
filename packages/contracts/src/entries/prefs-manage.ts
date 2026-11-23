@@ -37,9 +37,7 @@ const PrefValueOutput = z.union([
 export const PREFS_ACTIONS = ["describe", "get", "set"] as const;
 
 export const PrefsManageInput = z.strictObject({
-  action: z
-    .enum(PREFS_ACTIONS)
-    .describe("describe: the keys; get: their values; set: change them"),
+  action: z.enum(PREFS_ACTIONS).describe("describe: the keys; get: their values"),
   keys: z
     .array(z.string().max(64))
     .max(20)
@@ -71,6 +69,9 @@ const PrefRow = z.strictObject({
   is_default: z.boolean().describe("The value is the default (get)").optional(),
   writable: z.boolean().describe("Whether this caller may change it"),
   policy: z.literal(true).describe("Policy: the user's own (A3 3.8)").optional(),
+  in_force: PrefValueOutput.describe(
+    "What this build does whatever the key says: it does not act on the key yet",
+  ).optional(),
 });
 
 export const PrefsManageResult = z.strictObject({

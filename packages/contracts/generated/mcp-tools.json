@@ -632,7 +632,7 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "describe: the keys; get: their values; set: change them",
+            "description": "describe: the keys; get: their values",
             "enum": [
               "describe",
               "get"

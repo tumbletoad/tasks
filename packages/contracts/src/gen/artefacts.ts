@@ -11,6 +11,7 @@ import {
   outputJsonSchema,
   type McpTool,
 } from "../json-schema.ts";
+import { isOffered, laterFields } from "../later.ts";
 import { definitionReport } from "./report.ts";
 import { stableJson } from "./stable-json.ts";
 
@@ -79,6 +80,26 @@ function flagSpec(info: FieldInfo, face: CliFace) {
   };
 }
 
+/**
+ * A field as the command line offers it (later.ts): without the values a later step brings, and
+ * not at all when the field is one of them or no choice is left, as with `mode` and its `apply`.
+ */
+function offered(entry: AnyEntry, info: FieldInfo): FieldInfo | undefined {
+  const rows = laterFields(entry.name, "user").filter((row) => row.field === info.path);
+  if (rows.length === 0) return info;
+  if (rows.some((row) => row.value === undefined)) return undefined;
+  const values = info.values?.filter((value) => !rows.some((row) => row.value === value));
+  return values === undefined || values.length < 2 ? undefined : { ...info, values };
+}
+
+/** The operation verbs the command line offers: none of an entry a later step brings. */
+export function offeredVerbs(entries: readonly AnyEntry[]) {
+  return entries
+    .filter((entry) => isOffered(entry.name))
+    .flatMap((entry) => cliFaces(entry).map((face) => verbSpec(entry, face)))
+    .sort((a, b) => (a.verb < b.verb ? -1 : a.verb > b.verb ? 1 : 0));
+}
+
 /** One verb of `cli-spec.json`. */
 export function verbSpec(entry: AnyEntry, face: CliFace) {
   const fields = faceFields(entry, face);
@@ -95,8 +116,9 @@ export function verbSpec(entry: AnyEntry, face: CliFace) {
   ]);
   const flags: ReturnType<typeof flagSpec>[] = [];
   const inputOnly: string[] = [];
-  for (const info of fields.values()) {
-    if (skip.has(info.name)) continue;
+  for (const field of fields.values()) {
+    const info = offered(entry, field);
+    if (skip.has(field.name) || info === undefined) continue;
     if (info.scalar !== undefined || info.repeatable !== undefined)
       flags.push(flagSpec(info, face));
     else inputOnly.push(info.path);
@@ -152,9 +174,7 @@ export function verbSpec(entry: AnyEntry, face: CliFace) {
 
 /** `cli-spec.json`: the operation verbs for A2's CLI parser, with error classes and exit codes. */
 export function cliSpec(entries: readonly AnyEntry[]) {
-  const verbs = entries
-    .flatMap((entry) => cliFaces(entry).map((face) => verbSpec(entry, face)))
-    .sort((a, b) => (a.verb < b.verb ? -1 : a.verb > b.verb ? 1 : 0));
+  const verbs = offeredVerbs(entries);
   return {
     version: 1,
     common: [

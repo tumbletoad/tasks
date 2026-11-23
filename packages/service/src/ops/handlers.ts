@@ -20,6 +20,7 @@ import {
   GROUP_LIMITS,
   isKeyList,
   laterIn,
+  AUTONOMY_IN_FORCE,
   LATER_PREFERENCES,
   LATER_SETS,
   mayWrite,
@@ -1954,8 +1955,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       as_of: status.space.asOf,
       date: call.today,
       time_zone: (call.host.timeZone ?? localTimeZone)(),
-      // Nothing in this build holds an agent's change for the user: every change applies at once.
-      autonomy: "full",
+      autonomy: AUTONOMY_IN_FORCE,
       space: { id: status.space.id, name: status.space.name, ref_prefix: status.space.refPrefix },
       session: sessionOf(call, status.bound),
       ...(here === undefined
@@ -3587,6 +3587,7 @@ function prefRow(
 ): Record<string, unknown> {
   const value = shownValue(p, read?.value ?? p.default);
   const fallback = shownValue(p, p.default);
+  const later = LATER_PREFERENCES.find((row) => row.key === p.key);
   return {
     key: p.key,
     ...(action === "describe" ? { summary: p.summary, shape: shapeText(p.shape) } : {}),
@@ -3596,6 +3597,7 @@ function prefRow(
     default: fallback,
     writable: prefWritable(p, principal) && read?.state !== "newer",
     ...(p.policy ? { policy: true } : {}),
+    ...(later === undefined ? {} : { in_force: later.inForce }),
   };
 }
 
