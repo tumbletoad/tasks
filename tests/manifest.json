@@ -4269,8 +4269,16 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.3.15.web.gone-sends-nothing",
+      "title": "A tab that says nothing more is saved from it refuses in the page, as replaced, every write, launch, Run and Stop of its space and sends none of them; a read still goes; the entries it still sends are exactly the registry's reads",
+      "source": "A5 3.15, A2 3.10.5",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.10.5.copies.e2e",
-      "title": "In Chromium and Firefox against the real service, at 1,440 and 390 px without sideways scroll: Open folder with a restored copy while its space is open is refused with what is open, what the folder is and what to do; a tab whose space is closed says so; the copy opened alone says it is a restored copy with its folder, backup and ways out, in the switcher too; an edit there keeps the words with the reason, Copy and Discard and no Try again, also over a reload; a claim of the copy tells the open tab, whose Undo then writes nothing, and loading it again shows the space as it is now",
+      "title": "In Chromium and Firefox against the real service, at 1,440 and 390 px without sideways scroll: Open folder with a restored copy while its space is open is refused with what is open, what the folder is and what to do; a tab whose space is closed says so; the copy opened alone says it is a restored copy with its folder, backup and ways out, in the switcher too; an edit there keeps the words with the reason, Copy and Discard and no Try again, also over a reload; a claim of the copy tells the open tab, whose Undo then writes nothing and whose top field keeps its words to copy and adds nothing, and loading it again shows the space as it is now",
       "source": "A2 3.10.5, A5 3.11, A1 3.18",
       "owner": "M3",
       "kind": "ci",

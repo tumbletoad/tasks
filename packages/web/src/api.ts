@@ -285,29 +285,55 @@ export async function redeem(code: string): Promise<string | null> {
   }
 }
 
+/** The entries that only read: a tab that saves nothing more may still send these. */
+export const READ_ENTRIES: ReadonlySet<string> = new Set([
+  "receipt.get",
+  "space.status",
+  "task.finished",
+  "task.get",
+  "task.search",
+]);
+
+/** Whether a call of the tab's space changes it or starts something from it. */
+function changes(path: string): boolean {
+  if (path === "/api/v1/launch/run" || path === "/api/v1/launch/stop") return true;
+  const op = /^\/api\/v1\/op\/(.+)$/u.exec(path)?.[1];
+  return op !== undefined && !READ_ENTRIES.has(op);
+}
+
 /** A session's calls: its token, the page's build, the tab's space and the copy it loaded. */
 export class Api {
   readonly #token: string;
   readonly #build: string;
   readonly #space: () => string | undefined;
   readonly #copy: () => string | undefined;
+  readonly #ended: () => boolean;
   readonly client: Client;
 
+  /**
+   * `ended`: the tab says nothing more is saved from it (its copy of the space is gone). From then
+   * on nothing that would change the space or start something from it leaves the page.
+   */
   constructor(
     token: string,
     build: string,
     space: () => string | undefined,
     copy: () => string | undefined = () => undefined,
+    ended: () => boolean = () => false,
   ) {
     this.#token = token;
     this.#build = build;
     this.#space = space;
     this.#copy = copy;
+    this.#ended = ended;
     this.client = createClient({ post: (path, body) => this.post(path, body) });
   }
 
   async post(path: string, body: string): Promise<{ status: number; body: string }> {
     const space = this.#space();
+    if (space !== undefined && this.#ended() && changes(path)) {
+      throw new Refused(0, "space_unavailable", undefined, { reason: "replaced" });
+    }
     const copy = space === undefined ? undefined : this.#copy();
     const headers: Record<string, string> = { Authorization: `Bearer ${this.#token}` };
     if (this.#build !== "") headers[BUILD_HEADER] = this.#build;

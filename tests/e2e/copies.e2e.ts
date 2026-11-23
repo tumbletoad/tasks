@@ -127,6 +127,10 @@ test.describe("[A2.3.10.5.copies.e2e] a person looks inside a backup on the page
       timeout: SLOW_MS,
     });
 
+    // Words typed in the top field and not added yet.
+    const top = page.getByRole("textbox", { name: "New task" });
+    await top.fill("Fixture words not added yet");
+
     // The copy is claimed: the tab says so, offers to load it as it is now, and writes nothing
     // more. Its words stay, to copy.
     await world.space("claim", { space: copyFolder });
@@ -137,6 +141,11 @@ test.describe("[A2.3.10.5.copies.e2e] a person looks inside a backup on the page
     await expect(line).toHaveAttribute("data-reason", "gone");
     await expect(line.locator('[data-part="unsaved-value"]')).toHaveText(words);
     await expect(line.locator('[data-part="apply-mine"]')).toHaveCount(0);
+    // The top field keeps its words to copy, and adds nothing.
+    await expect(top).toHaveValue("Fixture words not added yet");
+    await expect(top).toHaveAttribute("readonly", "");
+    await expect(page.locator('[data-part="top-copy"]')).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add the task" })).toHaveCount(0);
     await pictures(page, "copy-claimed-tab", async () => {
       await page.evaluate(() => {
         window.scrollTo(0, 0);

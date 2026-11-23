@@ -61,6 +61,7 @@ export function SpaceSession({
       auth.build,
       () => space,
       () => loaded.live?.copy,
+      () => loaded.live?.getState().gone !== undefined,
     );
     const live = new Live({
       api,

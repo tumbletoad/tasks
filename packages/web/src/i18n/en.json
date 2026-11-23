@@ -56,6 +56,7 @@
 
   "top.newTask": "New task",
   "top.add": "Add the task",
+  "top.copy": "Copy what you typed",
   "top.addFailed": "The task was not added. Try again.",
   "top.addReadOnly": "The task was not added: {why}. It is still in the field.",
   "top.pasteCut": "Only the first {count} characters fit here. The rest is still on the clipboard.",
