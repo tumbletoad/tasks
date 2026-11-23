@@ -391,7 +391,9 @@ export function serve(
         // A migration made the index just now. Otherwise the owner's open repairs or refreshes it
         // here, so search works without the person doing anything: the tasks are the truth.
         const searchIndex =
-          owned && migration === undefined ? repairSearchIndex(checked, ready.conn, steps) : "sound";
+          owned && migration === undefined
+            ? repairSearchIndex(checked, ready.conn, steps)
+            : "sound";
         // Attached only: the caller registers the machine once the space is claimed. Attach
         // refuses a writer that still has a reason to be read-only.
         writers.set(handle, SpaceWriter.attach(ready, { machine }, writeSeams));
