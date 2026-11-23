@@ -9,5 +9,6 @@ const monitor = new Monitor({
 });
 const answer = await monitor.ask();
 process.stdout.write(`${answer.ok ? "ok" : "failed"}\n`);
-// It never outlives its test by long, should the test not kill it.
-setTimeout(() => process.exit(3), 120_000);
+// It never outlives its test by long, should the test not kill it: with its child ended, nothing
+// keeps it running.
+setTimeout(() => void monitor.close(), 120_000);
