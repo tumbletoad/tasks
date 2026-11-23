@@ -977,6 +977,47 @@
             "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
           },
+          "newer_changes": {
+            "description": "How many changes others made since, in all",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "newer_work": {
+            "description": "Who changed which task since, one entry per task and author",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "description": "When that author last changed it",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                  "type": "string"
+                },
+                "by": {
+                  "description": "Who: user, import, run (a run's own progress) or the actor's label",
+                  "type": "string"
+                },
+                "changes": {
+                  "description": "How many changes that author made there",
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "task": {
+                  "description": "The task; absent for an area, a project or a source",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "by",
+                "at",
+                "changes"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "passed_over": {
             "description": "Older changes it could not redo: they stay, and the next redo tries them again",
             "items": {
@@ -1084,6 +1125,47 @@
             "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
             "type": "string"
           },
+          "newer_changes": {
+            "description": "How many changes others made since, in all",
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "newer_work": {
+            "description": "Who changed which task since, one entry per task and author",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "description": "When that author last changed it",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                  "type": "string"
+                },
+                "by": {
+                  "description": "Who: user, import, run (a run's own progress) or the actor's label",
+                  "type": "string"
+                },
+                "changes": {
+                  "description": "How many changes that author made there",
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "task": {
+                  "description": "The task; absent for an area, a project or a source",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "by",
+                "at",
+                "changes"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "replayed": {
             "description": "True when a retry returned the stored result",
             "type": "boolean"
@@ -1168,12 +1250,6 @@
                   "maxLength": 60,
                   "pattern": "^[a-z]{1,2}_[0-9a-hjkmnp-tv-z]{26}(?:\\|(?:s|lb)_[0-9a-hjkmnp-tv-z]{26})?$",
                   "type": "string"
-                },
-                "more": {
-                  "description": "How many more such rows by this author on this task are left too",
-                  "maximum": 1000000,
-                  "minimum": 1,
-                  "type": "integer"
                 },
                 "task": {
                   "description": "Task reference",
@@ -2011,12 +2087,6 @@
                       ],
                       "description": "The row, task_id|source_id (task_id|label_id) for a link, or a preference's key"
                     },
-                    "more": {
-                      "description": "An undo's or redo's: how many more such rows by this author on this task",
-                      "maximum": 1000000,
-                      "minimum": 1,
-                      "type": "integer"
-                    },
                     "op": {
                       "description": "Index of the operation in the request",
                       "maximum": 999999,
@@ -2098,6 +2168,47 @@
                 "description": "The authority incarnation it was decided under",
                 "pattern": "^ai_[0-9a-hjkmnp-tv-z]{26}$",
                 "type": "string"
+              },
+              "newer_changes": {
+                "description": "How many changes others made since, in all",
+                "maximum": 1000000000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "newer_work": {
+                "description": "Who changed which task since, one entry per task and author",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "description": "When that author last changed it",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                      "type": "string"
+                    },
+                    "by": {
+                      "description": "Who: user, import, run (a run's own progress) or the actor's label",
+                      "type": "string"
+                    },
+                    "changes": {
+                      "description": "How many changes that author made there",
+                      "maximum": 1000000000,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "task": {
+                      "description": "The task; absent for an area, a project or a source",
+                      "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "by",
+                    "at",
+                    "changes"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               },
               "passed_over": {
                 "description": "A redo's: the undone changes it could not redo, which stay for the next redo",

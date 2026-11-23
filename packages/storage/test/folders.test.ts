@@ -441,6 +441,39 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     ]);
   });
 
+  test("a folder one agent set and another repointed since is named once, by the second, with its path now: by Redo of a removal and by Undo of the task's creation", () => {
+    const repointed = (task: Id<"t">): WriteResult => {
+      expectStatus(
+        submit([{ kind: "task.folder_set", task, path: "~/work/a" }], fx.codex),
+        "applied",
+      );
+      const moved = submit([{ kind: "task.folder_set", task, path: "~/work/b" }], fx.claude);
+      expectStatus(moved, "applied");
+      return moved;
+    };
+    const once = (result: WriteResult, task: Id<"t">, moved: WriteResult): void => {
+      expectStatus(result, "conflict");
+      expect(result.conflicts).toEqual([
+        expect.objectContaining({
+          entity: "folders",
+          field: "path",
+          task,
+          value: "~/work/b",
+          version: moved.seq,
+          by: expect.objectContaining({ actor: fx.claude.principal_id }) as unknown,
+        }),
+      ]);
+    };
+    const removed = newTask("Removed, then set and repointed");
+    expectStatus(submit([{ kind: "task.delete", task: removed }]), "applied");
+    expectStatus(undo(), "applied");
+    const first = repointed(removed);
+    once(redo(), removed, first);
+    const made = newTask("Created, then set and repointed");
+    const second = repointed(made);
+    once(undo(), made, second);
+  });
+
   test("Redo of a clear after someone changed the folder is a conflict, and their folder stays", () => {
     const task = newTask("Moved since", undefined, "~/work/a");
     expectStatus(submit([{ kind: "task.folder_clear", task }]), "applied");

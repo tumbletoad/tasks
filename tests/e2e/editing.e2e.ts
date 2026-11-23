@@ -220,6 +220,15 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
   });
 });
 
+/** The page now at 1,440 and 390 px wide, for the pull request, and back to 1,440. */
+async function bothWidths(page: Page, name: string): Promise<void> {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await picture(page, `${name}-${String(width)}.png`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+}
+
 test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agent changed the same field", () => {
   test("undo after an agent's change offers Restore mine; an edit over a change made while the popover was open offers Apply mine", async ({
     page,
@@ -252,11 +261,13 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
     await agentSets(world, ref, { due: agents });
     await expect.poll(async () => (await read(world, ref)).task.due).toBe(agents);
 
-    // Undo: the field is the agent's now, so nothing is overwritten unseen. The toast says who.
+    // Undo: the field is the agent's now, so nothing is overwritten unseen. The toast says who
+    // changed which task.
     await page.locator("main").focus();
     await page.keyboard.press("Control+z");
-    await expect(toast(page)).toContainText("changed the due date at");
+    await expect(toast(page)).toHaveText(new RegExp(`^Not undone: .+ changed ${ref} since$`, "u"));
     await expect(toastAction(page)).toHaveText("Restore mine");
+    await bothWidths(page, "undo-restore-mine");
     expect((await read(world, ref)).task.due).toBe(agents);
     // Restore mine puts back what the undo would have: the date before the person's edit.
     await toastAction(page).click();
@@ -286,8 +297,8 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
   });
 });
 
-test.describe("[A5.3.12.e2e.redo-set-aside] A refused Redo says what an agent added and steps aside", () => {
-  test("Redo of a removal after an agent's note offers Move to Trash anyway; the next Redo brings back the edit behind it", async ({
+test.describe("[A5.3.12.e2e.redo-passed-over] Redo passes over a change an agent added to since, and says who changed which task", () => {
+  test("Redo after an agent's note on a removed task redoes the edit behind it and keeps the task; the next Redo is refused, naming the same", async ({
     page,
     world,
   }) => {
@@ -322,23 +333,26 @@ test.describe("[A5.3.12.e2e.redo-set-aside] A refused Redo says what an agent ad
       "agent",
     );
 
-    // Redo would move the task, note and all, to the Trash: it says who added what, and stays.
+    // Redo would move the task, note and all, to the Trash: it passes over that and redoes the
+    // edit behind it, and says who changed which task.
+    const changed = new RegExp(`.+ changed ${removed} since$`, "u");
     await page.keyboard.press("Control+Shift+z");
-    await expect(toast(page)).toContainText(`added a note on ${removed} at`);
-    await expect(toast(page)).toContainText("Redo goes on to your next change");
-    await expect(toastAction(page)).toHaveText("Move to Trash anyway");
-    for (const width of [1440, 390]) {
-      await page.setViewportSize({ width, height: 900 });
-      await picture(page, `redo-set-aside-${String(width)}.png`);
-    }
-    await page.setViewportSize({ width: 1440, height: 900 });
-
-    // The next Redo reaches the edit behind it; the task stays where the note is seen.
-    await page.locator("main").focus();
-    await page.keyboard.press("Control+Shift+z");
-    await expect(toast(page)).toHaveText("Redone");
+    await expect(toast(page)).toContainText("Redone. Not redone: ");
+    await expect(toast(page)).toHaveText(changed);
+    await expect(toastAction(page)).toHaveText("Undo");
     await expect.poll(async () => (await read(world, edited)).task.priority).toBe(1);
     expect((await read(world, removed)).task.deleted).toBeUndefined();
+    await bothWidths(page, "redo-passed-over");
+
+    // Nothing else can be redone: refused, naming the same, with nothing to choose.
+    await page.locator("main").focus();
+    await page.keyboard.press("Control+Shift+z");
+    await expect(toast(page)).toContainText("Not redone: ");
+    await expect(toast(page)).not.toContainText("Redone.");
+    await expect(toast(page)).toHaveText(changed);
+    await expect(toastAction(page)).toHaveCount(0);
+    expect((await read(world, removed)).task.deleted).toBeUndefined();
+    await bothWidths(page, "redo-refused");
   });
 });
 

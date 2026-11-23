@@ -8,6 +8,7 @@ import {
   cliFaces,
   findEntry,
   laterIn,
+  newerWorkJson,
   type ErrorBody,
 } from "@ttasks/contracts";
 import { StorageError, type WriteResult } from "@ttasks/storage";
@@ -355,7 +356,6 @@ export function resultFailure(
     version: c.version,
     by: byOf(c.by),
     at: new Date(c.at).toISOString(),
-    ...(c.more === undefined ? {} : { more: c.more }),
   }));
   return new AppError({
     ...base,
@@ -369,6 +369,8 @@ export function resultFailure(
       ...(result.target === undefined ? {} : { commit: result.target }),
       // A refused redo's: every undone change it tried, which stay for the next redo.
       ...(result.passed === undefined ? {} : { passed_over: result.passed }),
+      // An undo's or a redo's: who changed which task since.
+      ...(result.newer === undefined ? {} : newerWorkJson(result.newer)),
       conflicts,
       ...(result.replayed === true ? { replayed: true } : {}),
     },

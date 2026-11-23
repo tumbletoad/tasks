@@ -211,11 +211,25 @@ export interface FieldConflict {
    */
   by: { actor: Id<"ac">; kind: string; label: string; origin?: string };
   at: number;
-  /**
-   * An undo or redo names a few rows of each table and field by each author on each task (a
-   * hundred notes are three): the last one named says how many more of them it leaves out.
-   */
-  more?: number;
+}
+
+/**
+ * Who changed which task since, as an undo's or a redo's answer counts it (history.ts,
+ * newerWorkOf): per task and author, that author's newest change there and how many changes
+ * (commits), and how many changes in all.
+ */
+export interface NewerWork {
+  work: {
+    /** Absent for a row of no task: an area, a project, a source. */
+    task?: Id<"t">;
+    ref?: string;
+    by: FieldConflict["by"];
+    /** A run's own progress: the run's, whichever credential wrote it. */
+    run: boolean;
+    at: number;
+    changes: number;
+  }[];
+  changes: number;
 }
 
 export interface OpResult {
@@ -307,6 +321,8 @@ export interface WriteResult {
    * the next redo tries them again; `conflicts` says why.
    */
   passed?: Id<"op">[];
+  /** An undo's or a redo's conflicts, as who changed which task since. */
+  newer?: NewerWork;
   /** One per operation, for `applied` and `unchanged`. */
   results: OpResult[];
   /**

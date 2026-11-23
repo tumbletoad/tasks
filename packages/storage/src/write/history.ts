@@ -64,6 +64,7 @@ import {
   WRITE_LIMITS,
   type ConflictEntity,
   type FieldConflict,
+  type NewerWork,
 } from "./request.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "./row-state.ts";
 
@@ -395,6 +396,10 @@ const SQL = {
   undone:
     `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
     "AND undo_status = 'undone' ORDER BY seq",
+  /** Of the commits in `$seqs`, the principal's own steps: undoable writes, undos and redos. */
+  ownSteps:
+    "SELECT seq FROM commits WHERE seq IN (SELECT value FROM json_each($seqs)) " +
+    "AND principal_id = $principal AND (undo_status IS NOT NULL OR kind IN ('undo', 'redo'))",
   /** The newest redo of commit `$seq`, if any. */
   lastRedo: "SELECT max(seq) AS seq FROM commits WHERE seq > $seq AND redo_of = $seq",
   author:
@@ -831,30 +836,32 @@ export function planInversions(
     }
     for (const kid of kids.get(`${entity}|${id}`) ?? []) {
       const { child, state } = kid;
-      // Another's row is named by its tombstone, with who created or revived it; a row of the
-      // creating commits by each field another wrote since, so that a partial inversion keeps the
-      // parent, and the row stays reachable, too.
+      // Another's row, or a row of the creating commits that another wrote since, keeps the
+      // parent, so that a partial inversion keeps it and the row stays reachable. It is named once,
+      // by its newest change (one no one changed since by its tombstone, a run by its state), with
+      // that field's value now.
       const theirs = !options.creating.has(state.createdSeq);
-      const fields = theirs
-        ? [child.field]
-        : Object.keys(child.fields).filter((f) => !options.creating.has(provenanceOf(state, f)));
-      for (const field of fields) {
-        passes = false;
-        const value = columnsValue(state.raw, child.fields[field] ?? []);
-        blocked(
-          conflict(
-            {
-              entity: child.entity,
-              id: kid.id,
-              ...(kid.task === null ? {} : { task: kid.task }),
-              field,
-              value: theirs ? null : value,
-            },
-            // A row without a tombstone (a run) is named with who created it.
-            theirs && child.column === null ? state.createdSeq : versionOf(state, field),
-          ),
-        );
-      }
+      const written = Object.keys(child.fields).filter(
+        (f) => theirs || !options.creating.has(provenanceOf(state, f)),
+      );
+      if (written.length === 0) continue;
+      passes = false;
+      const field = written.reduce(
+        (newest, f) => (versionOf(state, f) > versionOf(state, newest) ? f : newest),
+        written.includes(child.field) ? child.field : (written[0] ?? child.field),
+      );
+      blocked(
+        conflict(
+          {
+            entity: child.entity,
+            id: kid.id,
+            ...(kid.task === null ? {} : { task: kid.task }),
+            field,
+            value: columnsValue(state.raw, child.fields[field] ?? []),
+          },
+          versionOf(state, field),
+        ),
+      );
     }
     if (!passes) continue;
     // Tombstoned already by the creating commits themselves: nothing more to invert.
@@ -896,10 +903,10 @@ function rowNow(
 }
 
 /**
- * Others' changes to a row after commit `since`, and for a task to anything of it (the header):
- * each row and field once, with its value now and its newest change. A row created since is named
- * by its tombstone, as a create's guard names another's child row, so its creation and a later
- * change of that field are one: a folder set and cleared since is named by its clearing.
+ * Others' changes to a row after commit `since`, and for a task to anything of it (the header).
+ * Each field of the row itself is named once; every other row once, by its newest change: that
+ * change's field (a creation sets its tombstone, or a run's state), with the field's value now. A
+ * folder set by one agent and repointed by another is named once, by the second.
  */
 function newerWork(
   conn: Connection,
@@ -926,12 +933,9 @@ function newerWork(
     if (now.row === undefined) throw invalidValue("changes", "entity_id");
     const field = r.optText("field") ?? now.field;
     const version = r.int("version", "seq");
-    const key = `${changed}|${rowId}|${field}`;
-    const earlier = work.get(key);
-    if (earlier !== undefined) {
-      earlier.version = Math.max(earlier.version, version);
-      continue;
-    }
+    const own = changed === entity && rowId === id;
+    const key = own ? `${changed}|${rowId}|${field}` : `${changed}|${rowId}`;
+    if ((work.get(key)?.version ?? 0) >= version) continue;
     work.set(key, {
       where: {
         entity: changed as ConflictEntity,
@@ -946,28 +950,49 @@ function newerWork(
   return [...work.values()];
 }
 
-/** How many rows of one table and field by one author on one task an answer names. */
-const NAMED = 3;
-
 /**
- * The conflicts an undo or redo answers with: of the rows of each table and field that one author
- * changed on one task, the first three, the third with how many more it leaves out. A task's own
- * field is one row, so each stays named, and each author keeps a name of their own.
+ * Who changed which task since, from an undo's or a redo's conflicts (WriteResult.newer): per
+ * task and author, the time of that author's newest change there and how many changes (commits),
+ * and how many changes in all. The principal's own steps (its undoable writes, undos and redos)
+ * are no one's newer work: they hold a redo back only after an earlier step of the person's was
+ * passed over, and that step's conflicts say why. A run's own progress is the run's, whichever
+ * credential wrote it.
  */
-export function namedConflicts(conflicts: readonly FieldConflict[]): FieldConflict[] {
-  const kind = (c: FieldConflict): string => `${c.entity}|${c.field}|${c.task ?? ""}|${c.by.actor}`;
-  const counts = new Map<string, number>();
-  for (const c of conflicts) counts.set(kind(c), (counts.get(kind(c)) ?? 0) + 1);
-  const seen = new Map<string, number>();
-  const named: FieldConflict[] = [];
+export function newerWorkOf(
+  conn: Connection,
+  conflicts: readonly FieldConflict[],
+  principal: Id<"ac">,
+): NewerWork {
+  const seqs = [...new Set(conflicts.map((c) => c.version))];
+  const own = new Set(
+    conn
+      .prepare(SQL.ownSteps)
+      .all({ seqs: JSON.stringify(seqs), principal })
+      .map((row) => new RowReader("commits", row).int("seq", "seq")),
+  );
+  const work = new Map<string, NewerWork["work"][number]>();
+  /** The changes of each entry, and of all of them. */
+  const versions = new Map<string, Set<number>>();
+  const changes = new Set<number>();
   for (const c of conflicts) {
-    const n = (seen.get(kind(c)) ?? 0) + 1;
-    seen.set(kind(c), n);
-    if (n > NAMED) continue;
-    const more = (counts.get(kind(c)) ?? 0) - NAMED;
-    named.push(n === NAMED && more > 0 ? { ...c, more } : c);
+    if (own.has(c.version)) continue;
+    changes.add(c.version);
+    const run = c.entity === "runs";
+    const key = `${c.task ?? ""}|${run ? "run" : c.by.actor}`;
+    const seen = versions.get(key) ?? new Set<number>();
+    seen.add(c.version);
+    versions.set(key, seen);
+    const entry = work.get(key);
+    work.set(key, {
+      ...(c.task === undefined ? {} : { task: c.task }),
+      ...(c.ref === undefined ? {} : { ref: c.ref }),
+      by: entry?.by ?? c.by,
+      run,
+      at: Math.max(entry?.at ?? c.at, c.at),
+      changes: seen.size,
+    });
   }
-  return named;
+  return { work: [...work.values()], changes: changes.size };
 }
 
 /** Whether a tombstone field's value says the row is live: every column null. */

@@ -76,7 +76,7 @@ import {
   brokenIn,
   groupBreaks,
   lastApplied,
-  namedConflicts,
+  newerWorkOf,
   planInversions,
   readChanges,
   redoSteps,
@@ -2785,19 +2785,22 @@ export class SpaceWriter {
         if (error instanceof RequestProblem) rollBack(conn);
         throw error;
       }
+      const conflicts = undo ? plan.conflicts : [...why.values()];
       return {
         ...accepted("applied", { ...asOf, seq }),
         commit: commitId,
         results: [{ i: 0, status: "updated", id: target.id, version: seq }],
         // What a partial undo left as others set it, or why a redo passed over the steps before
         // the one it redid (WriteResult.conflicts).
-        conflicts: namedConflicts(undo ? plan.conflicts : [...why.values()]),
+        conflicts,
         ...(passed.length === 0 ? {} : { passed }),
+        ...(conflicts.length === 0 ? {} : { newer: newerWorkOf(conn, conflicts, principal) }),
       };
     }
     // Nothing could be applied. The refusal names the oldest step it tried, which a caller that
     // named none (Ctrl+Z) passes to Undo the rest or Restore mine.
     const first = must(steps[0], "An undo or redo tries a step");
+    const conflicts = [...why.values()];
     return {
       ...refused(
         "conflict",
@@ -2808,10 +2811,11 @@ export class SpaceWriter {
             ? "Someone changed it since: undo the rest, or keep theirs"
             : "Someone changed what it would change since: nothing was redone",
         },
-        namedConflicts([...why.values()]),
+        conflicts,
       ),
       target: first.id,
       ...(undo ? {} : { passed }),
+      newer: newerWorkOf(conn, conflicts, principal),
     };
   }
 

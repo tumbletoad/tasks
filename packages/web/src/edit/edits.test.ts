@@ -16,6 +16,11 @@ import {
   triageChange,
   waitingChange,
 } from "./change.ts";
+import { createIntl } from "react-intl";
+import { newerText } from "@ttasks/contracts/newer-work";
+import { CATALOGUE, SOURCE_LOCALE } from "../i18n/intl.tsx";
+import type { Msg } from "../row/model.ts";
+import { sayMsg } from "../row/say.ts";
 import { ASK_MS } from "./calls.ts";
 import {
   Edits,
@@ -1159,20 +1164,21 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
             at: "2026-11-12T10:42:00.000Z",
           },
         ],
+        newer_work: [{ task: "M-1", by: "Codex", at: "2026-11-12T10:42:00.000Z", changes: 1 }],
       });
     });
     await w.edits.undo();
     const shown = w.lastToast();
-    // What the change wrote, what is there now, and what Restore mine puts back.
+    // Which task and who: the person looks at the task.
     expect(shown?.text).toMatchObject({
-      id: "toast.conflictValues",
+      id: "toast.notDone",
       values: {
-        who: "other",
-        by: "Codex",
-        field: { id: "field.due" },
-        wrote: "2026-11-13",
-        now: "2026-11-22",
-        restore: "2026-11-17",
+        kind: "undo",
+        who: {
+          id: "toast.list",
+          values: { count: 1, a: { id: "toast.whoName", values: { by: "Codex" } } },
+        },
+        tasks: { id: "toast.list", values: { count: 1, a: "M-1" } },
       },
     });
     expect(shown?.action?.label).toEqual({ id: "toast.restoreMine" });
@@ -1362,74 +1368,93 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     expect(restoreChange("priority", null)?.set).toEqual({ priority: 4 });
   });
 
-  /** A row another added to M-1 since: a note, a log entry, a run. */
-  const added = (entity: string, by: string, extra: Record<string, unknown> = {}) => ({
-    task: "M-1",
-    entity,
-    id: `${entity}-1`,
-    field: entity === "runs" ? "state" : "deleted",
-    value: null,
-    version: 12,
+  /** An answer's newer work: one author's changes to one task since. */
+  const work = (task: string | undefined, by: string) => ({
+    ...(task === undefined ? {} : { task }),
     by,
     at: "2026-11-12T10:42:00.000Z",
-    ...extra,
+    changes: 1,
   });
+  const intl = createIntl({ locale: SOURCE_LOCALE, messages: CATALOGUE });
+  const said = (text: string | Msg | undefined): string =>
+    text === undefined || typeof text === "string"
+      ? String(text)
+      : sayMsg((id, values) => intl.formatMessage({ id }, values), text);
 
-  test("a refused redo says what kind of work others did and who, each apart, and offers nothing", async () => {
+  test("a refused undo or redo says which tasks and who, each list short, as the command line says it, and offers nothing for a redo", async () => {
     const w = new World([task(1)]);
+    const newer = [
+      work("M-1", "Codex · work"),
+      work("M-2", "run"),
+      work("M-1", "Claude · work"),
+      work("M-3", "user"),
+      work("M-4", "Claude · work"),
+    ];
     w.answer("history.redo", () => {
       throw appError("conflict", {
         cause: "UNDO_CONFLICT",
         commit: `op_${"11".padStart(26, "0")}`,
         conflicts: [
-          added("notes", "Codex"),
-          added("notes", "Codex"),
-          added("notes", "Codex", { more: 97 }),
-          added("log_entries", "Claude"),
-          // A run writes with the person's credential: it is a run, not the person elsewhere.
-          added("runs", "user", { value: { state: "running" } }),
+          {
+            task: "M-1",
+            entity: "notes",
+            id: "n-1",
+            field: "deleted",
+            by: "Codex · work",
+            at: newer[0]?.at,
+          },
         ],
+        newer_work: newer,
       });
     });
     await w.edits.redo();
     const shown = w.lastToast();
-    const name = (by: string) => ({ id: "toast.who", values: { who: "other", by } });
-    expect(shown?.text).toEqual({
-      id: "toast.workMore",
-      values: {
-        first: {
-          id: "toast.workNotes",
-          values: { name: name("Codex"), act: "added", count: 100, ref: "M-1" },
-        },
-        second: {
-          id: "toast.workLog",
-          values: { name: name("Claude"), act: "added", count: 1, ref: "M-1" },
-        },
-        count: 1,
-      },
-    });
+    expect(said(shown?.text)).toBe(`Not redone: ${String(newerText(newer))}`);
+    expect(said(shown?.text)).toBe(
+      "Not redone: Codex · work, a run and 2 more changed M-1, M-2 and 2 more since",
+    );
     expect(shown?.action).toBeUndefined();
-  });
-
-  test("a run's progress is said as the run's, at its time", async () => {
-    const w = new World([task(1)]);
-    const mine = `op_${"11".padStart(26, "0")}`;
+    // A group's change names no task.
     w.answer("history.undo", () => {
       throw appError("conflict", {
         cause: "UNDO_CONFLICT",
-        commit: mine,
-        conflicts: [added("runs", "user", { value: { state: "running" } })],
+        commit: `op_${"12".padStart(26, "0")}`,
+        conflicts: [
+          { entity: "projects", id: "p-1", field: "title", by: "import", at: newer[0]?.at },
+        ],
+        newer_work: [work(undefined, "import")],
       });
     });
     await w.edits.undo();
+    expect(said(w.lastToast()?.text)).toBe("Not undone: the import changed it since");
+  });
+
+  test("a redo that passed over older changes says who changed which tasks, beside Redone, and its Undo takes back the change redone", async () => {
+    const w = new World([task(1)]);
+    const redone = `op_${"21".padStart(26, "0")}`;
+    w.answer("history.redo", () => ({
+      result: "redone",
+      commit: redone,
+      tasks: ["M-2"],
+      task_count: 1,
+      as_of: w.asOf(12),
+      passed_over: [`op_${"11".padStart(26, "0")}`],
+      newer_work: [work("M-1", "Codex · work")],
+    }));
+    await w.edits.redo();
     const shown = w.lastToast();
-    expect(shown?.text).toEqual({
-      id: "toast.work",
-      values: {
-        work: { id: "toast.workRuns", values: { count: 1, ref: "M-1" } },
-        at: Date.parse("2026-11-12T10:42:00.000Z"),
-      },
-    });
+    expect(said(shown?.text)).toBe("Redone. Not redone: Codex · work changed M-1 since");
+    expect(shown?.action?.label).toEqual({ id: "toast.undo" });
+    w.answer("history.undo", () => ({
+      result: "undone",
+      commit: redone,
+      tasks: ["M-2"],
+      task_count: 1,
+      as_of: w.asOf(13),
+    }));
+    shown?.action?.run();
+    await flush();
+    expect(w.calls.at(-1)).toMatchObject({ name: "history.undo", input: { commit: redone } });
   });
 
   test("nothing to undo, a newer change first, and a toast whose commit is unknown each say so and change nothing", async () => {

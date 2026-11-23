@@ -266,7 +266,7 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
   );
 
   test(
-    "a refusal over a hundred notes and a question names a few of each and counts the rest",
+    "a refusal over a hundred notes and a question names the task and its author once, with how many changes; the answer, the receipt and a partial undo say the same",
     async () => {
       const task = await add("Fixture task with many notes");
       await call("task.delete", { tasks: [task], base: await asOf(), request_id: rid() });
@@ -277,22 +277,19 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
       }
       const asked = { task, kind: "question", text: "Fixture question?", request_id: rid() };
       await call("entry.add", asked, SCRIPT);
-      const refused = await refusal("history.redo", { request_id: rid() });
-      const conflicts = (refused.data?.["conflicts"] ?? []) as Json[];
-      const count = (named: Json[], entity: string) =>
-        named
-          .filter((c) => c["entity"] === entity)
-          .reduce((sum, c) => sum + 1 + Number(c["more"] ?? 0), 0);
-      expect([count(conflicts, "notes"), count(conflicts, "log_entries")]).toEqual([100, 1]);
-      expect(conflicts.length).toBeLessThanOrEqual(4);
-      expect(conflicts.every((c) => c["by"] === "script")).toBe(true);
+      const redo = rid();
+      const refused = await refusal("history.redo", { request_id: redo });
+      const newer = { newer_work: [{ task, by: "script", changes: 101 }], newer_changes: 101 };
+      expect(refused.data).toMatchObject(newer);
+      expect((refused.data?.["newer_work"] as Json[]).length).toBe(1);
+      // Each row once, for a program that looks closer.
+      expect((refused.data?.["conflicts"] as Json[]).length).toBe(101);
+      expect(await call("receipt.get", { request: redo })).toMatchObject(newer);
       // The removal stays undone: the next undo reaches the task's creation, which the notes keep,
-      // and what it leaves is counted the same way.
+      // and what it leaves says the same.
       const undone = await call("history.undo", { partial: true, request_id: rid() });
-      const unresolved = undone["unresolved"] as Json[];
-      expect(undone["result"]).toBe("partial");
-      expect([count(unresolved, "notes"), count(unresolved, "log_entries")]).toEqual([100, 1]);
-      expect(unresolved.length).toBeLessThanOrEqual(4);
+      expect(undone).toMatchObject({ result: "partial", ...newer });
+      expect((undone["unresolved"] as Json[]).length).toBe(101);
     },
     LONG,
   );
@@ -412,17 +409,30 @@ describe("[A1.5.history.runs] a run keeps its task's create, through the request
       expect(created.status).toBe("applied");
       const run = String(created.results[0]?.id);
       const refused = rid();
+      // The run is named by its state now, and is a run's work, not the person's elsewhere.
+      const newer = { newer_work: [{ task, by: "run", changes: 1 }], newer_changes: 1 };
       expect(await refusal("history.undo", { request_id: refused })).toMatchObject({
         code: "conflict",
         data: {
           cause: "UNDO_CONFLICT",
-          conflicts: [{ task, entity: "runs", id: run, field: "state", value: null, by: "user" }],
+          conflicts: [
+            {
+              task,
+              entity: "runs",
+              id: run,
+              field: "state",
+              value: { state: "queued" },
+              by: "user",
+            },
+          ],
+          ...newer,
         },
       });
       expect(await call("receipt.get", { request: refused })).toMatchObject({
         found: true,
         status: "conflict",
         conflicts: [{ entity: "runs", id: run, ref: task, field: "state" }],
+        ...newer,
       });
       const partial = await call("history.undo", { partial: true, request_id: rid() });
       expect(partial).toMatchObject({

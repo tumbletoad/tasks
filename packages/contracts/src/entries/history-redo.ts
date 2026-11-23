@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { RequestId } from "../schemas.ts";
-import { CommitId, CommitInput, HistoryResultFields } from "./history-undo.ts";
+import { CommitId, CommitInput, HistoryResultFields, NewerWorkFields } from "./history-undo.ts";
 import { requestId } from "./fixture.ts";
 
 export const HistoryRedoInput = z.strictObject({
@@ -23,6 +23,7 @@ export const HistoryRedoResult = z.strictObject({
     .array(CommitId)
     .describe("Older changes it could not redo: they stay, and the next redo tries them again")
     .optional(),
+  ...NewerWorkFields,
 });
 
 export const historyRedo = defineEntry({

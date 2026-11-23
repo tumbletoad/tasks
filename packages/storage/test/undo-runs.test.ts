@@ -229,11 +229,11 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
     );
     const created = startRun(id);
     const run = String(created.results[0]?.id);
-    const refusal = (): WriteResult => {
+    const refusal = (version: number, state: string): WriteResult => {
       const refused = undo();
       expectStatus(refused, "conflict");
       expect(refused.error?.code).toBe("UNDO_CONFLICT");
-      // Named once, by its table and its state, with who created it: the person's run.
+      // Named once, by its state, with its newest change and its state now: the person's run.
       expect(refused.conflicts).toEqual([
         expect.objectContaining({
           entity: "runs",
@@ -241,19 +241,19 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
           task: id,
           ref: "M-1",
           field: "state",
-          value: null,
-          version: created.seq,
+          value: expect.objectContaining({ state }) as unknown,
+          version,
           by: expect.objectContaining({ actor: fx.human.principal_id, kind: "human" }) as unknown,
         }),
       ]);
       return refused;
     };
-    refusal();
+    refusal(created.seq, "queued");
     move(run, "queued", "starting");
-    move(run, "starting", "running");
-    refusal();
-    move(run, "running", "succeeded", { result: RESULT });
-    refusal();
+    const running = move(run, "starting", "running");
+    refusal(running.seq, "running");
+    const done = move(run, "running", "succeeded", { result: RESULT });
+    refusal(done.seq, "succeeded");
     expect(task(id)["deleted_at"]).toBeNull();
     expect(commitAt(made.seq)["undo_status"]).toBe("done");
 

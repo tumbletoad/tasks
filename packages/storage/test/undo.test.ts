@@ -739,17 +739,14 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     expect(undo().conflicts.map((c) => c.field)).toEqual(["wrap"]);
     expect(lastSeq()).toBe(seq);
     // A partial undo would bring the removed learning back as a 21st: it stays removed, named
-    // with the 20 that hold the place (a few of each author's, and how many more), and the change
-    // leaves the stack.
+    // with the 20 that hold the place, and the change leaves the stack.
     const u = applied(undo({ partial: true }));
     expect(changesAt(u.seq)).toEqual([]);
     expect(u.conflicts[0]).toMatchObject({ entity: "tasks", field: "wrap", version: theirs.seq });
     const named = u.conflicts.slice(1);
-    for (const c of named) {
-      expect([c.entity, c.field, c.task]).toEqual(["learnings", "deleted", id]);
-      expect(held).toContain(c.id);
-    }
-    expect(named.reduce((n, c) => n + 1 + (c.more ?? 0), 0)).toBe(held.length);
+    expect(named.map((c) => [c.entity, c.id, c.field, c.task]).sort()).toEqual(
+      held.map((l) => ["learnings", l, "deleted", id]).sort(),
+    );
     expect(named.find((c) => c.version === theirs.seq)).toMatchObject({ by: { kind: "agent" } });
     expect(learnings(id)).toEqual(held);
     expect(commitAt(mine.seq)["undo_status"]).toBe("undone");
@@ -895,6 +892,19 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     // passed over. The rename is judged on A as it is, live, and redone.
     const first = applied(redo());
     expect(first.passed).toEqual([removal.commit, restore.commit]);
+    // Who changed what since: Codex on A. The restore waits on the person's own removal, which is
+    // no one's newer work.
+    expect(first.newer).toEqual({
+      work: [
+        expect.objectContaining({
+          task: a,
+          by: expect.objectContaining({ kind: "agent" }) as unknown,
+          run: false,
+          changes: 1,
+        }),
+      ],
+      changes: 1,
+    });
     expect(task(a)["title"]).toBe("Renew both passports");
     expect(task(a)["deleted_at"]).toBeNull();
     // The next Redo tries both from the start again, then reaches B's edit.
@@ -938,6 +948,17 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     const refused = redo();
     expectStatus(refused, "conflict");
     expect(refused.passed).toEqual([area.commit, project.commit]);
+    // The partner took the slug: a change of no task. The project waits on the area.
+    expect(refused.newer).toEqual({
+      work: [
+        expect.objectContaining({
+          by: expect.objectContaining({ actor: other.principal_id }) as unknown,
+          changes: 1,
+        }),
+      ],
+      changes: 1,
+    });
+    expect(refused.newer?.work[0]?.task).toBeUndefined();
     const live = (table: "areas" | "projects", id: string) =>
       row(`SELECT deleted_at FROM ${table} WHERE id = $id`, { id })["deleted_at"] === null;
     expect([live("areas", areaId), live("projects", projectId)]).toEqual([false, false]);

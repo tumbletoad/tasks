@@ -28,6 +28,7 @@
 // its own ID, and what waits behind a request whose outcome cannot be learned stays with the
 // person as not saved, never sent out of order (calls.ts, A5 3.11 "No request holds the queue").
 import type { Client } from "@ttasks/contracts/generated/client.ts";
+import { newerSaid, type NewerWorkEntry, type ShortList } from "@ttasks/contracts/newer-work";
 import type { Msg } from "../row/model.ts";
 import type { Change as FeedChange } from "../store/core.ts";
 import type { Overlay } from "../store/pending.ts";
@@ -191,9 +192,10 @@ function receiptError(found: Found): Error {
         version: c.version,
         by: byOf(c.by),
         at: c.at,
-        ...(c.more === undefined ? {} : { more: c.more }),
       })),
       ...(found.target === undefined ? {} : { commit: found.target }),
+      ...(found.passed_over === undefined ? {} : { passed_over: found.passed_over }),
+      ...(found.newer_work === undefined ? {} : { newer_work: found.newer_work }),
     },
   });
 }
@@ -230,8 +232,6 @@ interface Conflict {
   readonly restore?: unknown;
   readonly by: string;
   readonly at: string;
-  /** An undo's or redo's: how many more such rows of this author on this task it leaves out. */
-  readonly more?: number;
 }
 
 interface Problem {
@@ -240,6 +240,8 @@ interface Problem {
   readonly conflicts: readonly Conflict[];
   /** The commit an undo or redo meant, which its UNDO_CONFLICT names (A1 3.10.1). */
   readonly commit?: string;
+  /** An undo's or a redo's: who changed which task since. */
+  readonly newer: readonly NewerWorkEntry[];
 }
 
 /**
@@ -299,7 +301,20 @@ function problemOf(error: unknown): Problem | undefined {
     cause: typeof record["cause"] === "string" ? record["cause"] : "",
     conflicts,
     ...(typeof commit === "string" && commit !== "" ? { commit } : {}),
+    newer: newerOf(record["newer_work"]),
   };
+}
+
+/** An answer's newer work, read by its shape. */
+function newerOf(value: unknown): NewerWorkEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (w): w is NewerWorkEntry =>
+      typeof w === "object" &&
+      w !== null &&
+      typeof (w as NewerWorkEntry).by === "string" &&
+      typeof (w as NewerWorkEntry).at === "string",
+  );
 }
 
 type HistoryResult =
@@ -320,6 +335,8 @@ function historyOf(kind: "undo" | "redo", found: Found): Decision<HistoryResult>
     tasks: [],
     task_count: 0,
     as_of: found.as_of,
+    ...(found.passed_over === undefined ? {} : { passed_over: found.passed_over }),
+    ...(found.newer_work === undefined ? {} : { newer_work: found.newer_work }),
   };
   return { ok: true, value: value as HistoryResult };
 }
@@ -420,101 +437,25 @@ export const whoOf = (by: string): { who: string; by: string } => ({
   by,
 });
 
-/** What another did on a task, by the table of the row: a note added, a source linked. */
-const WORK: Readonly<Record<string, Msg["id"]>> = {
-  notes: "toast.workNotes",
-  log_entries: "toast.workLog",
-  learnings: "toast.workLearnings",
-  task_sources: "toast.workSources",
-  folders: "toast.workFolder",
-  places: "toast.workFolder",
-};
-
-/** One kind of work and who did it: the conflicts of one table by one author, counted. */
-interface Work {
-  readonly first: Conflict;
-  count: number;
-  readonly fields: Set<string>;
-  at: number;
+/** A short list as a message: "A", "A and B", "A, B and C", "A, B and 4 more". */
+function listText({ shown, more }: ShortList, name: (item: string) => string | Msg): Msg {
+  const [a = "", b = "", c = ""] = shown.map(name);
+  return { id: "toast.list", values: { count: shown.length + more, a, b, c, rest: more } };
 }
 
 /**
- * The conflicts as kinds of work, in the order they are named: a task's fields together, each
- * other table apart, each author apart. A run's commits carry the person's own credential, so
- * runs are one kind, never "you changed it elsewhere".
+ * Who changed which tasks since, as the toast of a refused undo or redo, or of a redo that passed
+ * over older changes, says it (A5 3.12): the tasks by their numbers and the authors by their names,
+ * as the command line says it (newerSaid). With no one else's work, the person's own earlier
+ * change holds it back.
  */
-function worksOf(conflicts: readonly Conflict[]): Work[] {
-  const works = new Map<string, Work>();
-  for (const c of conflicts) {
-    const table = c.entity ?? "tasks";
-    const key = table === "runs" ? table : `${table}\u0000${c.by}`;
-    const at = Date.parse(c.at);
-    const work = works.get(key) ?? { first: c, count: 0, fields: new Set<string>(), at };
-    work.count += 1 + (c.more ?? 0);
-    work.fields.add(c.field);
-    work.at = Math.max(work.at, at);
-    works.set(key, work);
-  }
-  return [...works.values()];
-}
-
-/** What one kind of work says: "Codex added 3 notes on M-1", "A run made progress on M-1". */
-function workText({ first, count, fields }: Work): Msg {
-  const table = first.entity ?? "tasks";
-  const name: Msg = { id: "toast.who", values: whoOf(first.by) };
-  const ref = first.task ?? "none";
-  if (table === "runs") return { id: "toast.workRuns", values: { count, ref } };
-  if (table === "tasks") {
-    const words = fields.size === 1 ? FIELD_WORDS[first.field] : undefined;
-    return words === undefined
-      ? { id: "toast.workFields", values: { ...whoOf(first.by), count: fields.size } }
-      : { id: "toast.workField", values: { ...whoOf(first.by), field: { id: words } } };
-  }
-  const id = WORK[table];
-  if (id === undefined) return { id: "toast.workOther", values: { name, ref } };
-  // A row's tombstone: clear when someone added it, set when someone removed it. A receipt
-  // keeps no value.
-  const act = !Object.hasOwn(first, "value") ? "other" : first.value === null ? "added" : "removed";
-  return { id, values: { name, act, count, ref } };
-}
-
-/**
- * What an undo or redo conflict says (A5 3.12): what kind of work others did since, who did it and
- * when, each author and each kind apart. For one field whose values read as words and that Restore
- * mine can put back, what the person's change wrote, what is there now and what Restore mine would
- * put back. A title's values stay out: a long title does not fit a toast.
- */
-function conflictText(conflicts: readonly Conflict[], restorable: boolean): Msg {
-  const [one, two, ...rest] = worksOf(conflicts);
-  if (one === undefined) return { id: "toast.undoFailed" };
-  if (two !== undefined) {
-    const first = workText(one);
-    const second = workText(two);
-    return rest.length === 0
-      ? { id: "toast.workTwo", values: { first, second } }
-      : { id: "toast.workMore", values: { first, second, count: rest.length } };
-  }
-  const first = one.first;
-  const words = FIELD_WORDS[first.field];
-  if ((first.entity ?? "tasks") !== "tasks" || one.fields.size !== 1 || words === undefined) {
-    return { id: "toast.work", values: { work: workText(one), at: one.at } };
-  }
-  const values = { ...whoOf(first.by), field: { id: words } as Msg, at: one.at };
-  const shown = (key: "value" | "wrote" | "restore") =>
-    Object.hasOwn(first, key) ? restoreChange(first.field, first[key])?.shown : undefined;
-  const now = shown("value");
-  const wrote = shown("wrote");
-  const back = shown("restore");
-  if (
-    !restorable ||
-    first.field === "title" ||
-    now === undefined ||
-    wrote === undefined ||
-    back === undefined
-  ) {
-    return { id: "toast.conflict", values };
-  }
-  return { id: "toast.conflictValues", values: { ...values, now, wrote, restore: back } };
+function newerValues(work: readonly NewerWorkEntry[]): { who: Msg; tasks: Msg } | undefined {
+  if (work.length === 0) return undefined;
+  const { who, tasks } = newerSaid(work);
+  return {
+    who: listText(who, (by) => ({ id: "toast.whoName", values: { by } })),
+    tasks: tasks.shown.length === 0 ? { id: "toast.it" } : listText(tasks, (ref) => ref),
+  };
 }
 
 interface EditOptions {
@@ -1144,9 +1085,17 @@ export class Edits {
       const result = decision.value;
       for (const ref of result.tasks ?? []) this.#redone.set(ref, result.commit);
       this.#undone(result.tasks ?? [], false);
+      // Older changes it passed over stay for the next Redo: who changed which tasks since.
+      const passed = (result as { passed_over?: readonly string[] }).passed_over ?? [];
+      const newer = newerValues(newerOf(result.newer_work));
       say({
         kind: "undo",
-        text: { id: "toast.redone" },
+        text:
+          passed.length === 0
+            ? { id: "toast.redone" }
+            : newer === undefined
+              ? { id: "toast.redonePassedOwn" }
+              : { id: "toast.redonePassed", values: newer },
         action: {
           label: { id: "toast.undo" },
           run: () => {
@@ -1429,9 +1378,9 @@ export class Edits {
   }
 
   /**
-   * An undo or redo the service refused. A conflict says what others did and offers the one action
-   * that fits: "Restore mine" when every field of the change conflicts, "Undo the rest" when only
-   * some do (A5 3.12). A redo has no partial form.
+   * An undo or redo the service refused. A conflict says who changed which tasks since and offers
+   * the one action that fits: "Restore mine" when every field of the change conflicts, "Undo the
+   * rest" when only some do (A5 3.12). A redo has no partial form.
    */
   #historyFailed(
     kind: "undo" | "redo",
@@ -1482,7 +1431,11 @@ export class Edits {
     const known = commit === undefined ? undefined : this.#fieldsOf.get(commit);
     // Only some of the change's fields conflict: the rest can be undone and the others kept.
     const some = kind === "undo" && known !== undefined && known.some((f) => !fields.has(f));
-    const text = conflictText(conflicts, !some && restore !== undefined);
+    const newer = newerValues(problem.newer);
+    const text: Msg =
+      newer === undefined
+        ? { id: "toast.notDoneOwn", values: { kind } }
+        : { id: "toast.notDone", values: { kind, ...newer } };
     // Undo the rest, for a commit the page can name: the fields that pass are undone, the others
     // stay as the other actor set them.
     const undoRest =

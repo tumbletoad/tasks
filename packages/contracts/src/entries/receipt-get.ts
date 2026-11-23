@@ -8,6 +8,8 @@ import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { AsOf, idPattern, Lifecycle, patterns, TaskId, TaskRef, Warnings } from "../schemas.ts";
 import { AS_OF, M14, requestId } from "./fixture.ts";
+import { NewerWorkFields } from "./history-undo.ts";
+import { newerBy } from "../newer-work.ts";
 
 const Seq = z.int().min(0).max(999_999_999_999_999);
 const Instant = z.string().regex(patterns.instant);
@@ -104,13 +106,29 @@ const ReceiptConflict = z.strictObject({
     })
     .describe("Who wrote that version"),
   at: Instant.describe("When"),
-  more: z
-    .int()
-    .min(1)
-    .max(1_000_000)
-    .describe("An undo's or redo's: how many more such rows by this author on this task")
-    .optional(),
 });
+
+/** A writer's newer work as an answer's JSON (WriteResult.newer): tasks by reference, who by name. */
+export function newerWorkJson(newer: {
+  readonly work: readonly {
+    readonly ref?: string;
+    readonly by: { readonly kind: string; readonly label: string; readonly origin?: string };
+    readonly run: boolean;
+    readonly at: number;
+    readonly changes: number;
+  }[];
+  readonly changes: number;
+}): { newer_work: z.input<typeof NewerWorkFields.newer_work>; newer_changes: number } {
+  return {
+    newer_work: newer.work.map((w) => ({
+      ...(w.ref === undefined ? {} : { task: w.ref }),
+      by: newerBy(w.by, w.run),
+      at: new Date(w.at).toISOString(),
+      changes: w.changes,
+    })),
+    newer_changes: newer.changes,
+  };
+}
 
 export const ReceiptGetResult = z.union([
   z.strictObject({
@@ -138,6 +156,7 @@ export const ReceiptGetResult = z.union([
       .array(z.string().regex(idPattern("op")))
       .describe("A redo's: the undone changes it could not redo, which stay for the next redo")
       .optional(),
+    ...NewerWorkFields,
     results: z
       .array(ReceiptOpResult)
       .max(50)
@@ -176,6 +195,16 @@ export interface StoredReceiptLike {
     commit?: string;
     target?: string;
     passed?: readonly string[];
+    newer?: {
+      readonly work: readonly {
+        readonly ref?: string;
+        readonly by: { readonly kind: string; readonly label: string; readonly origin?: string };
+        readonly run: boolean;
+        readonly at: number;
+        readonly changes: number;
+      }[];
+      readonly changes: number;
+    };
     results: readonly object[];
     conflicts: readonly { at: number }[];
     error?: { code: string; message: string; op?: number; field?: string };
@@ -205,6 +234,7 @@ export function receiptResult(
     ...(result.commit === undefined ? {} : { commit: result.commit }),
     ...(result.target === undefined ? {} : { target: result.target }),
     ...(result.passed === undefined ? {} : { passed_over: [...result.passed] }),
+    ...(result.newer === undefined ? {} : newerWorkJson(result.newer)),
     // A request or an import holds more operations than a reply shows: the first 50.
     results: result.results.slice(0, 50) as z.input<typeof ReceiptOpResult>[],
     ...(result.results.length > 50 ? { results_more: result.results.length - 50 } : {}),

@@ -14,6 +14,7 @@ import {
   type ErrorBody,
   type ErrorClass,
 } from "@ttasks/contracts";
+import { newerText, type NewerWorkEntry } from "@ttasks/contracts/newer-work";
 import type { Io } from "./io.ts";
 
 /** A scalar as text; anything else as nothing. */
@@ -69,22 +70,46 @@ export function printError(io: Io, json: boolean, body: ErrorBody): number {
         io.stderr(`  ${str(issue.path)}: ${str(issue.message)}\n`);
       }
     }
-    // A conflict names its task, the row's table when it is not the task, and the field, and who
-    // wrote it when (A3 3.5), never the value. An undo's names a few rows of a kind: the rest count.
+    // An undo's or a redo's refusal says who changed which tasks since. Another conflict names its
+    // task and field, and who wrote it when (A3 3.5), never the value.
+    const newer = newerOf(body.data);
     const conflicts = body.data?.["conflicts"];
-    if (Array.isArray(conflicts)) {
+    if (newer !== undefined) {
+      io.stderr(`  ${capital(newer)}.\n`);
+    } else if (Array.isArray(conflicts)) {
       for (const c of conflicts.slice(0, 5) as Record<string, unknown>[]) {
-        const what = [str(c["task"]), str(c["entity"]), str(c["field"])]
-          .filter((part) => part !== "")
-          .join(" ");
+        const what = [str(c["task"]), str(c["field"])].filter((part) => part !== "").join(" ");
         const who = str(c["by"]) === "" ? "" : `: ${str(c["by"])} at ${str(c["at"])}`;
-        const more = typeof c["more"] === "number" ? `, and ${String(c["more"])} more` : "";
-        io.stderr(`  ${what}${who}${more}\n`);
+        io.stderr(`  ${what}${who}\n`);
       }
     }
   }
   return EXIT_CODES[cls];
 }
+
+/**
+ * Who changed which tasks since, from an undo's or a redo's answer (newerText), or undefined when
+ * it names none. With no one else's work, the person's own earlier change holds it back.
+ */
+function newerOf(data: Readonly<Record<string, unknown>> | undefined): string | undefined {
+  const work = data?.["newer_work"];
+  if (!Array.isArray(work)) return undefined;
+  const entries = (work as Record<string, unknown>[]).flatMap((w): NewerWorkEntry[] =>
+    typeof w["by"] === "string" && typeof w["at"] === "string"
+      ? [
+          {
+            ...(typeof w["task"] === "string" ? { task: w["task"] } : {}),
+            by: w["by"],
+            at: w["at"],
+            changes: Number(w["changes"]),
+          },
+        ]
+      : [],
+  );
+  return newerText(entries) ?? "it needs another change of yours first";
+}
+
+const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** A usage error (exit 2): the message names options and verbs, never a value. */
 export function printUsage(io: Io, json: boolean, message: string): number {
@@ -492,10 +517,10 @@ export function render(entry: string, result: Result, space: string, asked: Aske
               : "Nothing of your change was left to undo";
       lines.push(`${done}${which} in ${space}${replay(result)}`);
       const kept = (result["unresolved"] as Result[] | undefined) ?? [];
-      if (kept.length > 0) lines.push("Kept as others set them:");
-      for (const field of kept) {
-        const task = typeof field["task"] === "string" ? `${field["task"]} ` : "";
-        lines.push(`  ${task}${str(field["field"])}: ${str(field["by"])} at ${str(field["at"])}`);
+      // What a partial undo left, or the older changes a redo passed over: who changed what since.
+      const newer = newerOf(result);
+      if (newer !== undefined) {
+        lines.push(`${result["result"] === "redone" ? "Not redone" : "Not undone"}: ${newer}.`);
       }
       // A3 3.7.4: a newer change by a script of the same person, which no undo reaches. A partial
       // undo that kept a script's field has said so above.

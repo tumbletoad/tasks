@@ -481,6 +481,12 @@ Redo the change you undid last, as long as nobody changed its fields since.
 | `as_of` | string | yes | The space's position when this answer was made |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 | `passed_over` | string[] | no | Older changes it could not redo: they stay, and the next redo tries them again |
+| `newer_work` | object[] | no | Who changed which task since, one entry per task and author |
+| `newer_work[].task` | string | no | The task; absent for an area, a project or a source |
+| `newer_work[].by` | string | yes | Who: user, import, run (a run's own progress) or the actor's label |
+| `newer_work[].at` | string | yes | When that author last changed it |
+| `newer_work[].changes` | integer, 1 to 1000000000 | yes | How many changes that author made there |
+| `newer_changes` | integer, 0 to 1000000000 | no | How many changes others made since, in all |
 
 ### Examples
 
@@ -549,7 +555,12 @@ Undo your newest change in the space, field by field as long as nobody changed i
 | `unresolved[].field` | string, max 40 | yes | Logical field; deleted or removed for a child row, state for a run |
 | `unresolved[].by` | string | yes | Who changed it since: user, import or the actor's label |
 | `unresolved[].at` | string | yes | When |
-| `unresolved[].more` | integer, 1 to 1000000 | no | How many more such rows by this author on this task are left too |
+| `newer_work` | object[] | no | Who changed which task since, one entry per task and author |
+| `newer_work[].task` | string | no | The task; absent for an area, a project or a source |
+| `newer_work[].by` | string | yes | Who: user, import, run (a run's own progress) or the actor's label |
+| `newer_work[].at` | string | yes | When that author last changed it |
+| `newer_work[].changes` | integer, 1 to 1000000000 | yes | How many changes that author made there |
+| `newer_changes` | integer, 0 to 1000000000 | no | How many changes others made since, in all |
 | `script_change` | object | no | A newer change by a script, which is not on the undo stack |
 | `script_change.task` | string | yes | Task reference |
 | `script_change.change` | string | yes | Its first operation's kind on the task, such as task.complete |
@@ -963,6 +974,12 @@ When `found` is `true`:
 | `commit` | string | no | The commit it wrote |
 | `target` | string | no | An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo |
 | `passed_over` | string[] | no | A redo's: the undone changes it could not redo, which stay for the next redo |
+| `newer_work` | object[] | no | Who changed which task since, one entry per task and author |
+| `newer_work[].task` | string | no | The task; absent for an area, a project or a source |
+| `newer_work[].by` | string | yes | Who: user, import, run (a run's own progress) or the actor's label |
+| `newer_work[].at` | string | yes | When that author last changed it |
+| `newer_work[].changes` | integer, 1 to 1000000000 | yes | How many changes that author made there |
+| `newer_changes` | integer, 0 to 1000000000 | no | How many changes others made since, in all |
 | `results` | object[], max 50 items | yes | One result per operation, the first 50 of an import's |
 | `results[].i` | integer, 0 to 999999 | yes | Index of the operation in the request |
 | `results[].status` | "created" \| "updated" \| "unchanged" \| "existing" \| "proposed" | yes | What the operation did |
@@ -990,7 +1007,6 @@ When `found` is `true`:
 | `conflicts[].by.label` | string | yes | Actor label |
 | `conflicts[].by.origin` | "ui" \| "cli" \| "mcp" \| "http" \| "import" \| "system" \| "migration" | no | Where the commit came from; import: the user applied an import |
 | `conflicts[].at` | string | yes | When |
-| `conflicts[].more` | integer, 1 to 1000000 | no | An undo's or redo's: how many more such rows by this author on this task |
 | `error` | object | no | Why it was refused |
 | `error.cause` | string, max 40 | yes | A1's error code |
 | `error.message` | string | yes | What was refused, in one sentence |
