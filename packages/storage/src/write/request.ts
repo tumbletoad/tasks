@@ -914,17 +914,17 @@ export interface ProjectDelete {
 
 /**
  * `project.folder_set` and `task.folder_set`: the owner's folder on the request's machine, as that
- * machine spells it, the home written as `~`. The path is stored exactly as sent. With `carry`,
- * the folder was moved on disk: every other folder on that machine that is the old folder or
- * inside it, a project's or a task's, moves along to the same place inside the new one, unless one
- * of the two folders is the other or inside it.
+ * machine spells it, the home written as `~`. The path is stored exactly as sent. `carry` names
+ * the owners, projects and tasks by their IDs, whose folders on that machine moved on disk with
+ * this one: each that is the old folder or inside it moves along to the same place inside the new
+ * one, unless one of the two folders is the other or inside it.
  */
 export interface FolderSet {
   kind: "project.folder_set" | "task.folder_set";
   project?: string;
   task?: string;
   path: string;
-  carry?: boolean;
+  carry?: readonly string[];
 }
 
 /** `project.folder_clear` and `task.folder_clear`: removes the owner's folder on this machine. */
@@ -1885,7 +1885,13 @@ function checkOperation(value: unknown, i: number): Operation {
         kind === "project.folder_set"
           ? { kind, project: requiredGroup(f, "project"), path: path as string }
           : { kind, task: f.reference("task"), path: path as string };
-      if (f.has("carry")) set.carry = f.boolean("carry");
+      if (f.has("carry")) {
+        const carry = f.raw("carry");
+        if (!Array.isArray(carry) || !carry.every((id) => isId(id, "p") || isId(id, "t"))) {
+          f.fail("VALIDATION_FAILED", "Expected the IDs of projects and tasks", "carry");
+        }
+        set.carry = carry as string[];
+      }
       op = set;
       break;
     }

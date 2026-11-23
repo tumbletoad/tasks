@@ -12,6 +12,7 @@ import {
   type OutputOf,
 } from "@ttasks/contracts";
 import { listText, oneLine } from "../skills/index.ts";
+import { stayedWhy } from "../ops/folders.ts";
 import { toolOf } from "./tools.ts";
 import {
   clip,
@@ -685,30 +686,44 @@ function searchRendered(result: Search, search: string): Rendered {
 // ---------------------------------------------------------------------------------------------
 // task.add (A3 3.4.5), task.reopen (A3 3.4.9), run.report (A3 3.4.12)
 
-type Added = OutputOf<"task.add">["tasks"][number];
+type Added = OutputOf<"task.add">["tasks"][number] | OutputOf<"task.finish">["follow_ups"][number];
 
 /** At most this many references of an ambiguous match, then how many more. */
 const AMBIGUOUS_SHOWN = 3;
 
 /**
  * What became of the draft at `path` (A3 3.2.5, 3.4.5): created, or matched by its source key,
- * with its reference. Only the product's words and references, so the line is never cut and needs
- * no data block; the draft's title is the caller's own and is not echoed.
+ * with its reference or the references it matched, and whether its log entry was added. Only the
+ * product's words and references, so the line is never cut and needs no data block; the draft's
+ * title is the caller's own and is not echoed.
  */
 function draftLine(row: Added, path: string): string {
   const refs = row.ambiguous ?? [];
+  const log = row.log_left_out === true ? "log not added here" : row.log_added && "log added";
   const what =
     row.result === "exists"
       ? row.ambiguous !== undefined
-        ? `exists, several match: ${refs.slice(0, AMBIGUOUS_SHOWN).join(", ")}${refs.length > AMBIGUOUS_SHOWN ? ` and ${String(refs.length - AMBIGUOUS_SHOWN)} more` : ""}`
+        ? join(
+            `exists, several match: ${refs.slice(0, AMBIGUOUS_SHOWN).join(", ")}${refs.length > AMBIGUOUS_SHOWN ? ` and ${String(refs.length - AMBIGUOUS_SHOWN)} more` : ""}`,
+            log,
+          )
         : join(
             `exists ${row.ref ?? ""}`,
             row.lifecycle !== undefined && row.lifecycle !== "active" && row.lifecycle,
-            row.matched_by === "source_key" && "by source key",
-            row.log_added && "log added",
+            "matched_by" in row && row.matched_by === "source_key" && "by source key",
+            log,
           )
       : join(`${row.result} ${row.ref ?? ""}`.trimEnd(), heldCount(row.held));
   return `${path}: ${what.trimEnd()}`;
+}
+
+/** What to do with a log entry this request added to no task: a matched one may hold it already. */
+function leftOutLog(rows: readonly Added[]): string[] {
+  return rows.some((row) => row.log_left_out === true)
+    ? [
+        `A log not added here was added to no task by this request. Look at the tasks on its line first, as one may hold it already, then add it with ${toolOf("entry.add")} where it belongs.`,
+      ]
+    : [];
 }
 
 type Held = readonly { source: number; held_by: string }[] | undefined;
@@ -750,6 +765,7 @@ function addRendered(result: OutputOf<"task.add">): Rendered {
       fixed(
         `${join(`${String(created)} created`, `${String(result.tasks.length - created)} existing`, result.proposal !== undefined && `proposal ${result.proposal}`)}${asOf}${replayed(result)}`,
         ...result.tasks.map((row, k) => draftLine(row, `tasks.${String(k)}`)),
+        ...leftOutLog(result.tasks),
       ),
       { units: result.warnings.map((w) => [`warning: ${w}`]) },
       { units: heldLines(result.tasks, "tasks") },
@@ -773,20 +789,24 @@ function groupsRendered(result: Groups, organize: string): Rendered {
   // A folder is shortened, so the line of any group fits a page and no group is left out of the text.
   const project = (p: Groups["projects"][number]) =>
     `${p.name}${p.repo === undefined ? "" : ` [${p.repo}]`} (${String(p.active)}${facts(p)}${p.folder === undefined ? "" : `, ${clip(p.folder, LIST_FOLDER)}`})`;
-  const inside = result.followed ?? result.kept ?? [];
-  const insideLine =
-    inside.length === 0
-      ? []
-      : [
-          [
-            `${result.moved === undefined ? `Stayed, the old folder is still there: ${String(result.stayed ?? 0)}` : `Moved along: ${String(result.moved)}`} · ${inside
-              .map(
-                (f) =>
-                  `${f.kind === "task" ? (f.ref ?? "") : (f.name ?? "")} ${f.folder}${f.missing === true ? " (not there)" : ""}`,
-              )
-              .join(" · ")}`,
-          ],
-        ];
+  // The counts and the reason are the product's words and always shown; the folders are data.
+  const insideCounts = [
+    result.moved === undefined
+      ? undefined
+      : `Moved along with the old folder: ${String(result.moved)}`,
+    result.stayed === undefined || result.stayed_because === undefined
+      ? undefined
+      : `Stayed where they are, because ${stayedWhy(result.stayed_because, result.stayed)}: ${String(result.stayed)}`,
+  ];
+  const insideFolder =
+    (what: string) =>
+    (f: NonNullable<Groups["kept"]>[number]): string[] => [
+      `${what}: ${f.kind === "task" ? (f.ref ?? "") : (f.name ?? "")} ${f.folder}`,
+    ];
+  const insideLines = [
+    ...(result.followed ?? []).map(insideFolder("moved")),
+    ...(result.kept ?? []).map(insideFolder("stayed")),
+  ];
   const head = `${String(result.total_areas)} area${result.total_areas === 1 ? "" : "s"} · ${String(result.total_projects)} project${result.total_projects === 1 ? "" : "s"} · as_of ${result.as_of}${replayed(result)}`;
   const done =
     result.result === undefined
@@ -799,11 +819,11 @@ function groupsRendered(result: Groups, organize: string): Rendered {
   // The request path sizes a page to show whole (Caller.shows); a project a unit all the same.
   return {
     parts: [
-      fixed(done, head),
+      fixed(done, head, ...insideCounts),
       {
         data: true,
         units: [
-          ...insideLine,
+          ...insideLines,
           ...result.areas.flatMap((area) => [
             [`${area.name} (${String(area.active)}${facts(area)})`],
             ...area.projects.map((p) => [`  ${project(p)}`]),
@@ -943,10 +963,8 @@ const RENDERERS: Readonly<Record<string, Renderer>> = {
       parts: [
         fixed(
           `${head} · as_of ${result.as_of}${replayed(result)}`,
-          ...result.follow_ups.map(
-            (f, k) =>
-              `follow_ups.${String(k)}: ${join(`${f.result} ${f.ref ?? ""}`.trimEnd(), heldCount(f.held))}`,
-          ),
+          ...result.follow_ups.map((f, k) => draftLine(f, `follow_ups.${String(k)}`)),
+          ...leftOutLog(result.follow_ups),
           ...(result.warnings ?? []).map((w) => `warning: ${w}`),
         ),
         { units: heldLines(result.follow_ups, "follow_ups") },

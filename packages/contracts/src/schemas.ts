@@ -280,30 +280,44 @@ export const InsideFolder = z.strictObject({
   name: z.string().describe("A project's name").optional(),
   ref: TaskRef.optional(),
   folder: z.string().max(4096).describe("Where it is now, the home as ~"),
-  missing: z.literal(true).describe("No folder is there on this machine now").optional(),
 });
 
 /**
- * What a folder change did to the folders inside the old one: an old folder that is gone was
- * moved, and every folder inside it moved along; one that is still there was replaced, and they
- * stayed.
+ * What a folder change did to the folders inside the old one: an old folder that is gone and found
+ * at the new place was moved, and each folder inside it that is there in the new one moved along;
+ * the others stayed, for one reason.
  */
 export const InsideFolders = {
   moved: z
     .int()
     .min(0)
     .max(1_000_000)
-    .describe("Folders inside the old one that moved along: it was moved")
+    .describe("Folders inside the old one that moved along: it was moved, and they are in it")
     .optional(),
   followed: z.array(InsideFolder).max(20).describe("The first of them").optional(),
   stayed: z
     .int()
     .min(0)
     .max(1_000_000)
-    .describe("Folders inside the old one that stayed: it is still there")
+    .describe("Folders inside the old one that stayed")
+    .optional(),
+  stayed_because: z
+    .enum(["old_folder_there", "old_folder_unseen", "unchecked", "not_in_new_folder"])
+    .describe("Why they stayed: old folder there or unseen, unchecked, or not in the new one")
     .optional(),
   kept: z.array(InsideFolder).max(20).describe("The first of them").optional(),
 };
+
+/** A draft that matched several active tasks by its source keys: none was picked. */
+export const SeveralMatch = z.array(TaskRef).describe("Several active matches: pick one");
+export const LogAdded = z.boolean().describe("The draft's log entry was added");
+/**
+ * A draft's log entry that this request added to no task: several match, or the match is finished.
+ * A task may hold it from an earlier call all the same.
+ */
+export const LogLeftOut = z
+  .literal(true)
+  .describe("This request added its log to no task: check the matched task before filing it");
 
 /** A new task's sources whose key another active task holds: each is linked without its key. */
 export const HeldSources = z

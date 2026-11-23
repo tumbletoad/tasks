@@ -595,6 +595,7 @@ describe("[A3.3.4.add.upsert] task.add upserts by source key (A3 3.4.5, A1 3.6)"
         matched_by: "source_key",
         ambiguous: [ref, otherRef],
         log_added: false,
+        log_left_out: true,
       },
     ]);
 
@@ -621,8 +622,19 @@ describe("[A3.3.4.add.upsert] task.add upserts by source key (A3 3.4.5, A1 3.6)"
     const followRef = finished.follow_ups[1]?.ref ?? "";
     expect(finished.follow_ups).toEqual([
       // A matched follow-up answers with the task's own title.
-      { result: "exists", ref: otherRef, title: "Fixture other upsert" },
-      { result: "created", ref: followRef, title: "Fixture follow-up of its ticket" },
+      {
+        result: "exists",
+        ref: otherRef,
+        title: "Fixture other upsert",
+        lifecycle: "active",
+        log_added: false,
+      },
+      {
+        result: "created",
+        ref: followRef,
+        title: "Fixture follow-up of its ticket",
+        log_added: false,
+      },
     ]);
     expect([ref, otherRef]).not.toContain(followRef);
     expect((await add([{ title: "Fixture upsert", sources: [ticket(2)] }])).tasks[0]).toMatchObject(

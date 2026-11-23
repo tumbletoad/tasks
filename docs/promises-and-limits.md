@@ -40,6 +40,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Adding work by a source that an open task or a recently finished one already has finds that task
   and keeps its fields. A task finished longer ago or a deleted one does not stand in the way of
   new work.
+- A log entry given with such work, a finished task's follow-up included, goes on the one open task
+  it found. When it found a finished task or several open ones, that request adds the entry to none
+  of them, and the answer names the tasks it found and says so.
 - Work recreated from another tool can keep when each task was created and finished and when each
   log entry was made. A time in the future is refused. Such a task finished long ago is still
   found by its source for the usual number of days after it was recorded here, so a second pass
@@ -119,9 +122,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   whose folder holds that folder most closely. In an archived project's folder it joins no project,
   and the agent is told.
 - When you move a folder on disk and then give its project or task the new folder, every folder
-  TTasks knows inside the old one moves along, other projects' and tasks' included, as one undo
-  step on that machine. When the old folder is still there, nothing else moves, and you are told
-  which folders stayed. TTasks itself never moves files.
+  TTasks knows inside the old one that is there in the new one moves along, other projects' and
+  tasks' included, as one undo step on that machine. TTasks takes it as a move only when the old
+  folder is gone and the new one is it: the same folder, or a copy whose marker names the owner and
+  that was not already there as the owner's earlier folder. Otherwise nothing else moves, and you
+  are told which folders stayed and why. TTasks itself never moves files.
 - An archived project keeps its folder, and a deleted one frees it.
 - Archiving an area or a project keeps its tasks open and in your views. The page then lists it
   under Archived in the sidebar, with its open tasks counted, and offers it for no new work; its

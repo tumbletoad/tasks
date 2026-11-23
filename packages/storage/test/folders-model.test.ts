@@ -7,11 +7,11 @@
 // - an owner has at most one live folder per machine;
 // - two live projects never have one folder on one machine, by that machine's case rule;
 // - a deleted project holds no live folder and no live task, and a task is in its project's area;
-// - a folder change that says the folder was moved (`carry`) moved every other folder on that
-//   machine that is the old one or inside it, projects' and tasks' alike, to the same place inside
-//   the new one, unless the new folder is around or inside the old one, and changed no other
-//   folder; one that does not say so changed the owner's folder alone (worked out here apart from
-//   the writer's code);
+// - a folder change that names the owners whose folders moved with it (`carry`) moved each of
+//   their folders on that machine that is the old one or inside it, projects' and tasks' alike, to
+//   the same place inside the new one, unless the new folder is around or inside the old one, and
+//   changed no other folder; one that names none changed the owner's folder alone (worked out here
+//   apart from the writer's code);
 // - an undo that applied whole, of a commit nobody else's change followed, gives back the space as
 //   it was before that commit, and its redo the space as that commit left it.
 // Each run ends with A1's history invariants (write-helpers.ts: checkHistory). Fixture paths only:
@@ -43,11 +43,13 @@ const TASKS = 4;
 const AREAS = 2;
 
 type Who = "human" | "agent";
+/** The owners a folder change carries, by index: the projects, then the tasks. */
+type Carry = readonly number[];
 
 type Step =
-  | { kind: "project_set"; who: Who; m: number; p: number; path: number; carry: boolean }
+  | { kind: "project_set"; who: Who; m: number; p: number; path: number; carry: Carry }
   | { kind: "project_clear"; m: number; p: number }
-  | { kind: "task_set"; m: number; t: number; path: number; carry: boolean }
+  | { kind: "task_set"; m: number; t: number; path: number; carry: Carry }
   | { kind: "task_clear"; m: number; t: number }
   | { kind: "move"; who: Who; t: number; p: number }
   | { kind: "task_delete"; who: Who; t: number; restore: boolean }
@@ -63,6 +65,12 @@ const m = fc.nat({ max: 1 });
 const p = fc.nat({ max: PROJECTS - 1 });
 const t = fc.nat({ max: TASKS - 1 });
 const path = fc.nat({ max: 5 });
+/** None, every owner, or some. */
+const carry: fc.Arbitrary<Carry> = fc.oneof(
+  fc.constant([]),
+  fc.constant([...Array(PROJECTS + TASKS).keys()]),
+  fc.uniqueArray(fc.nat({ max: PROJECTS + TASKS - 1 })),
+);
 /** Mostly the person, whose changes are on the undo stack; sometimes an agent in between. */
 const who = fc.constantFrom<Who>("human", "human", "agent");
 const step: fc.Arbitrary<Step> = fc.oneof(
@@ -73,7 +81,7 @@ const step: fc.Arbitrary<Step> = fc.oneof(
       m,
       p,
       path,
-      carry: fc.boolean(),
+      carry,
     }),
     weight: 6,
   },
@@ -84,7 +92,7 @@ const step: fc.Arbitrary<Step> = fc.oneof(
       m,
       t,
       path,
-      carry: fc.boolean(),
+      carry,
     }),
     weight: 4,
   },
@@ -171,7 +179,7 @@ const groupStep: fc.Arbitrary<Step> = fc.oneof(
       m,
       p,
       path,
-      carry: fc.boolean(),
+      carry,
     }),
     weight: 2,
   },
@@ -357,6 +365,8 @@ interface Entry {
 
 async function run(steps: readonly Step[]): Promise<void> {
   const w = await world();
+  const carried = (owners: Carry): string[] =>
+    owners.map((k) => (k < PROJECTS ? w.projects[k] : w.tasks[k - PROJECTS]) ?? "");
   const done: Entry[] = [];
   const undone: Entry[] = [];
   const dirty = (): void => {
@@ -378,7 +388,7 @@ async function run(steps: readonly Step[]): Promise<void> {
               kind: "project.folder_set",
               project: w.projects[s.p] ?? "",
               path: PATHS[machine?.os ?? "linux"][s.path] ?? "",
-              ...(s.carry ? { carry: true } : {}),
+              ...(s.carry.length === 0 ? {} : { carry: carried(s.carry) }),
             },
           ];
           break;
@@ -391,7 +401,7 @@ async function run(steps: readonly Step[]): Promise<void> {
               kind: "task.folder_set",
               task: w.tasks[s.t] ?? "",
               path: PATHS[machine?.os ?? "linux"][s.path] ?? "",
-              ...(s.carry ? { carry: true } : {}),
+              ...(s.carry.length === 0 ? {} : { carry: carried(s.carry) }),
             },
           ];
           break;
@@ -506,7 +516,11 @@ async function run(steps: readonly Step[]): Promise<void> {
           if (!f.live) continue;
           let expected = f.path;
           if (mine(f)) expected = to;
-          else if (s.carry && old !== undefined && f.machine === machine.id) {
+          else if (
+            carried(s.carry).includes(f.owner) &&
+            old !== undefined &&
+            f.machine === machine.id
+          ) {
             expected = expectedMove(f.path, old.path, to, machine.os);
           }
           expect(after.get(f.id)?.path, "a folder change moves exactly the folders inside").toBe(
