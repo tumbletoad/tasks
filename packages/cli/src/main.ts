@@ -13,6 +13,7 @@
 // over to the bridge before it loads this module at all (mcp.ts); this route is the same verb for
 // callers of main().
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import type { ServiceContext } from "@ttasks/service/install";
 import { splitGlobals, takesFolder, UsageError, verbSpec, type Globals } from "./args.ts";
 import { briefCommand, type BriefOptions } from "./brief.ts";
 import { folderVerb } from "./folders.ts";
@@ -25,7 +26,7 @@ import { openCommand, servicePortCommand, type OpenOptions } from "./open.ts";
 import { bodyOf, printError, printUsage } from "./output.ts";
 import { rootsCommand } from "./roots.ts";
 import { runCommand } from "./runs.ts";
-import { serviceCommand } from "./service.ts";
+import { refusedArgument, refusedGlobal, serviceCommand, serviceUsage } from "./service.ts";
 import { setupCommand, type SetupOptions } from "./setup.ts";
 import { skillsCommand } from "./skills.ts";
 import { spaceCommand } from "./space.ts";
@@ -48,6 +49,8 @@ export interface MainOptions extends DoctorOptions, OpenOptions, SetupOptions, B
    * (entry.ts). Absent when the CLI runs from source. doctor checks it (integrity, runtime gate).
    */
   readonly versionFolder?: string;
+  /** Tests only: the service install's stand-ins, so `ttasks service` reaches no real service. */
+  readonly serviceContext?: () => ServiceContext;
 }
 
 type Command = (
@@ -59,7 +62,8 @@ type Command = (
 
 /** Routing slots that later steps fill: a function per local command group. */
 export const SLOTS: Record<"service" | "mcp", Command | undefined> = {
-  service: (io, globals, args) => serviceCommand(io, globals, args),
+  service: (io, globals, args, options) =>
+    serviceCommand(io, globals, args, options.serviceContext),
   // The bridge: the arguments after `mcp`, as they are (A2 3.7.1).
   mcp: (_io, _globals, args, options) => (options.mcp ?? runBridge)(args),
 };
@@ -152,6 +156,10 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
         // Only with a CLI option before it: `ttasks mcp …` itself was routed above.
         return printUsage(io, globals.json, MCP_USAGE);
       case "service": {
+        const refused = refusedGlobal(globals);
+        if (refused !== undefined) {
+          return serviceUsage(io, globals.json, refusedArgument(args[0], refused));
+        }
         // `ttasks service port` is the UI listener's (M2.12), routed ahead of M1.12's slot.
         if (args[0] === "port") {
           return await servicePortCommand(io, globals, args.slice(1), options);
