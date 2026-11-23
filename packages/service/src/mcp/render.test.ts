@@ -203,7 +203,7 @@ describe("[A3.3.2.5.mcp.result-budget] every tool's text fits its result budget"
         kind: "ticket",
         title: cjk(300),
         who: long(120),
-        captures_to: "M-1000000000",
+        captures_to: Array.from({ length: 5 }, () => "M-1000000000"),
         removed: { at, by: long(64) },
       })),
       outcome: {

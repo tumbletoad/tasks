@@ -260,7 +260,7 @@
   "source.removedBy": "· removed by {who, select, user {you} import {the import} other {{who}}} {at, date, medium}",
   "source.putBack": "Put back",
   "source.notPutBack": "The source was not put back. Try again.",
-  "source.capturesTo": "· captures go to",
+  "source.capturesTo": "{count, plural, one {· captures go to} other {· a capture asks which of}}",
   "source.kind": "{kind, select, email {Mail} chat {Chat} ticket {Ticket} pr {Pull request} issue {Issue} doc {Document} calendar {Event} crash {Crash} session {Session} book {Book} web {Web page} other {Source}}",
 
   "place.missing": "· not found on this machine",
@@ -686,6 +686,5 @@
   "toast.folderSetStayed": "Folder set to {folder}. The old folder is still there, so {count, plural, one {# folder} other {# folders}} inside it stayed: {names}",
   "toast.folderCleared": "Folder cleared",
   "toast.sourceRemoved": "Source removed from {ref}",
-  "toast.sourcePutBack": "Source put back on {ref}",
-  "toast.sourceAsContext": "Put back as context: captures go to {ref}"
+  "toast.sourcePutBack": "Source put back on {ref}"
 }

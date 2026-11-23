@@ -236,7 +236,7 @@ type Source = {
   readonly who?: string | undefined;
   readonly url?: string | undefined;
   readonly ref?: string | undefined;
-  readonly captures_to?: string | undefined;
+  readonly captures_to?: readonly string[] | undefined;
   readonly removed?: { readonly at: string; readonly by: string } | undefined;
   readonly cut?: number | undefined;
 };
@@ -305,6 +305,12 @@ const logLines = (entry: LogEntry): string[] =>
     withCut(entry.text, entry.cut),
   );
 
+/** Where captures of a source's item go: one task, or several a capture asks between. */
+const capturesTo = (refs: readonly string[]): string =>
+  refs.length === 1
+    ? `captures go to ${refs.join("")}`
+    : `captures ask which of ${refs.join(", ")}`;
+
 const sourceLine = (source: Source): string =>
   `- ${join(
     source.removed !== undefined && `detached ${day(source.removed.at)} by ${source.removed.by}:`,
@@ -313,7 +319,7 @@ const sourceLine = (source: Source): string =>
     source.key !== undefined && `key ${source.key}`,
     source.ref !== undefined && `ref ${source.ref}`,
     source.url,
-    source.captures_to !== undefined && `captures go to ${source.captures_to}`,
+    source.captures_to !== undefined && capturesTo(source.captures_to),
     source.id,
   )}`;
 

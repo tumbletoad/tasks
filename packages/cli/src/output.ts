@@ -256,6 +256,15 @@ function insideLines(result: Result): string[] {
   return lines;
 }
 
+/** Where captures of a source's item go: one task, or several a capture asks between. */
+function capturesTo(value: unknown): string | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const refs = value.map(String);
+  return refs.length === 1
+    ? `captures go to ${refs.join("")}`
+    : `captures ask which of ${refs.join(", ")}`;
+}
+
 export function render(entry: string, result: Result, space: string): string {
   const lines: string[] = [];
   switch (entry) {
@@ -372,9 +381,7 @@ export function render(entry: string, result: Result, space: string): string {
         const facts = [
           typeof key === "string" ? key : undefined,
           typeof source["url"] === "string" ? source["url"] : undefined,
-          typeof source["captures_to"] === "string"
-            ? `captures go to ${source["captures_to"]}`
-            : undefined,
+          capturesTo(source["captures_to"]),
           String(source["id"]),
         ].filter((fact) => fact !== undefined);
         const label =

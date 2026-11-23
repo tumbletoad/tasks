@@ -188,23 +188,28 @@ function SourceLine({
             })}
           </span>
         )}
-        {source.captures_to === undefined ? null : <CapturesTo task={source.captures_to} />}
+        {source.captures_to === undefined ? null : <CapturesTo tasks={source.captures_to} />}
       </span>
       {acts === undefined ? null : <span className={styles.acts}>{acts}</span>}
     </li>
   );
 }
 
-/** Where captures of a source's item go: the task that holds its key now, a link to it. */
-function CapturesTo({ task }: { readonly task: string }) {
+/**
+ * Where captures of a source's item go: the active tasks that hold its key now, as the card last
+ * read them, each a link. Several make a capture ask which.
+ */
+function CapturesTo({ tasks }: { readonly tasks: readonly string[] }) {
   const t = useT();
   const { live } = useContext(Session);
   return (
     <span className={styles.muted} data-part="captures-to">
-      {t("source.capturesTo")}
-      <Link to="/s/$space/task/$task" params={{ space: live.spaceId ?? "", task }}>
-        {task}
-      </Link>
+      {t("source.capturesTo", { count: tasks.length })}
+      {tasks.map((task) => (
+        <Link key={task} to="/s/$space/task/$task" params={{ space: live.spaceId ?? "", task }}>
+          {task}
+        </Link>
+      ))}
     </span>
   );
 }

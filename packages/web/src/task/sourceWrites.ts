@@ -14,7 +14,6 @@ type UpdateResult = Awaited<ReturnType<Client["task"]["update"]>>;
 
 interface Task {
   readonly ref: string;
-  readonly lifecycle: string;
 }
 
 type SourceWrite = (task: Task, source: SourceOutput, base?: string) => Promise<unknown>;
@@ -43,14 +42,11 @@ export function sourceWrites(client: Client, edits: Pick<Edits, "write">): Sourc
         { id: "toast.sourceRemoved", values: { ref: task.ref } },
         base,
       ),
-    // An active task whose source's key another task holds by now gets it back as context: the
-    // toast says where its captures go, as the card does from then on.
+    // While another active task holds the key the service refuses it, naming that task.
     putBack: (task, source, base) =>
       update(
         { task: task.ref, put_back_sources: [source.id] },
-        source.captures_to === undefined || task.lifecycle !== "active"
-          ? { id: "toast.sourcePutBack", values: { ref: task.ref } }
-          : { id: "toast.sourceAsContext", values: { ref: source.captures_to } },
+        { id: "toast.sourcePutBack", values: { ref: task.ref } },
         base,
       ),
   };

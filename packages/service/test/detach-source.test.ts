@@ -1,8 +1,8 @@
 // A source detached from a task and put back, through real requests: the person at a terminal and
 // an agent's shell call the request path in this process, and an agent reads the MCP text. Every
-// read lists each source's ID; a key or URL names one link or is refused with the candidates; put
-// back says where captures go when another task holds the key; a finished task takes a detach
-// alone. Fixture text only.
+// read lists each source's ID; a key or URL names one link among all of the task's links or is
+// refused with the candidates; put back is refused while another active task holds the key, naming
+// it; a retry gets its first answer; a finished task takes a detach alone. Fixture text only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
 import { renderResult } from "../src/mcp/index.ts";
@@ -16,7 +16,7 @@ interface Source {
   title: string;
   url?: string;
   ref?: string;
-  captures_to?: string;
+  captures_to?: string[];
   removed?: { at: string; by: string };
 }
 
@@ -144,35 +144,78 @@ describe("[A3.source.detach] detaching a source and putting it back, through rea
     ).toMatchObject({ code: "invalid_input" });
   });
 
-  test("a capture after a detach is new work; put back then keeps the capture there and says so in every read", async () => {
+  test("a capture after a detach is new work; put back is refused while that task holds the key, and works once it no longer does", async () => {
     const { ref } = await add({ title: "Fixture wrong ticket", sources: [ticket("fix:DT-2")] });
     // An agent detaches the wrong ticket through its tool's entry.
     await update({ task: ref, remove_sources: ["fix:DT-2"] }, AGENT);
     const [gone] = await sources(ref);
     expect(gone?.removed?.by).not.toBe("user");
+    expect(gone?.captures_to).toBeUndefined();
     // The agent's next capture of the ticket is new work.
     const other = await add({ title: "Fixture right task", sources: [ticket("fix:DT-2")] }, AGENT);
     expect(other).toMatchObject({ result: "created" });
     expect(other.ref).not.toBe(ref);
-    expect(gone?.captures_to).toBeUndefined();
-    expect((await sources(ref))[0]?.captures_to).toBe(other.ref);
-    // The person puts it back: the other task keeps the key, this one has the ticket as context.
-    const back = await update({ task: ref, put_back_sources: [gone?.id ?? ""] });
-    expect(back["warnings"]).toEqual([
-      `The source at put_back_sources.0 is back as context: captures of its item go to ${other.ref}, which holds its key.`,
-    ]);
+    // The removed line says where captures go, read now.
+    expect((await sources(ref))[0]?.captures_to).toEqual([other.ref]);
+    // Put back is refused, naming the task that holds the key; nothing is copied.
+    const refused = await refusal("task.update", {
+      task: ref,
+      put_back_sources: [gone?.id ?? ""],
+      base: await asOf(),
+      request_id: rid(),
+    });
+    expect(refused).toMatchObject({
+      code: "conflict",
+      message: `fix:DT-2 is on ${other.ref} now: captures go there. Nothing was put back.`,
+      data: { reason: "key_held", conflicts: [{ task: other.ref }] },
+    });
     const now = await sources(ref);
     expect(now).toHaveLength(1);
-    expect(now[0]).toMatchObject({ ref: "fix:DT-2", captures_to: other.ref });
-    expect(now[0]?.key).toBeUndefined();
+    expect(now[0]).toMatchObject({ id: gone?.id, removed: {}, captures_to: [other.ref] });
+    // An agent reads where captures go, and each source's ID, in its tool's text.
+    const text = renderResult(
+      "task.get",
+      await call("task.get", { task: ref, sections: ["sources"] }),
+    );
+    expect(text).toContain(`captures go to ${other.ref}`);
+    expect(text).toContain(gone?.id ?? "?");
     // The next capture still goes to the other task.
     expect(await add({ title: "Fixture again", sources: [ticket("fix:DT-2")] }, AGENT)).toEqual(
       expect.objectContaining({ ref: other.ref }),
     );
-    // An agent reads where captures go, and each source's ID, in its tool's text.
-    const text = renderResult("task.get", await call("task.get", { task: ref }));
-    expect(text).toContain(`captures go to ${other.ref}`);
-    expect(text).toContain(now[0]?.id ?? "?");
+    // The other task detaches it too: put back works, and captures find this task again.
+    await update({ task: other.ref, remove_sources: ["fix:DT-2"] });
+    expect((await sources(ref))[0]?.captures_to).toBeUndefined();
+    expect(await update({ task: ref, put_back_sources: ["fix:DT-2"] })).toMatchObject({
+      result: "updated",
+      warnings: [],
+    });
+    expect(await add({ title: "Fixture once more", sources: [ticket("fix:DT-2")] }, AGENT)).toEqual(
+      expect.objectContaining({ ref }),
+    );
+  });
+
+  test("where two active tasks share a key, the read and the refusal name both, as a capture does", async () => {
+    const { ref } = await add({ title: "Fixture shared one", sources: [ticket("fix:DT-5")] });
+    await update({ task: ref, remove_sources: ["fix:DT-5"] });
+    const b = await add({ title: "Fixture shared two", sources: [ticket("fix:DT-5")] });
+    const c = await add({ title: "Fixture shared three", sources: [{ kind: "chat", title: "x" }] });
+    await update({ task: c.ref, add_sources: [ticket("fix:DT-5")] });
+    const captured = await call("task.add", {
+      tasks: [{ title: "Fixture capture", sources: [ticket("fix:DT-5")] }],
+      request_id: rid(),
+    });
+    expect((captured["tasks"] as Json[])[0]).toMatchObject({ ambiguous: [b.ref, c.ref] });
+    expect((await sources(ref))[0]?.captures_to).toEqual([b.ref, c.ref]);
+    const refused = await refusal("task.update", {
+      task: ref,
+      put_back_sources: ["fix:DT-5"],
+      base: await asOf(),
+      request_id: rid(),
+    });
+    expect(refused.message).toBe(
+      `fix:DT-5 is on ${b.ref} and ${c.ref} now: a capture of it asks which. Nothing was put back.`,
+    );
   });
 
   test("a finished task takes a detach alone; mixed with another change it is refused whole", async () => {

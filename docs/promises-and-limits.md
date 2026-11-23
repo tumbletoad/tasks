@@ -35,8 +35,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   one, such as a ticket two tasks are about: it becomes its own task, linked to the shared source,
   and the answer says which task holds that source.
 - A source detached from a task, by you or an agent, no longer brings captures of its item there,
-  and Put back brings the same link back. If another task holds its key by then, captures stay
-  with that task, and this one keeps the source as context and says where they go.
+  and Put back brings the same link back. While another active task holds its key, captures go
+  there and Put back is refused, naming that task: one item never gets two homes this way.
 
 ## Backups, restore and export
 

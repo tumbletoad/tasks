@@ -25,6 +25,7 @@ import {
 } from "@ttasks/storage";
 import {
   AppError,
+  CAPTURES_TO_MAX,
   dayOf,
   PREFERENCES,
   weekLastDay,
@@ -198,20 +199,21 @@ const LOG_COUNT: Statement = {
   mode: "get",
 };
 /**
- * Where captures of a source's item go when another task holds its key: for a source linked as
- * plain context (its key kept as its reference) and for a detached keyed link, the active task
- * that holds the key now. Read each time, so it holds after any put back or restore.
+ * Where captures of a source's item go when other tasks hold its key: for a source linked as
+ * plain context (its key kept as its reference) and for a detached keyed link, the active tasks
+ * that hold the key now, by reference, as a JSON array. Several make a capture ask which. Read
+ * each time, so it holds after any change of a holder.
  */
 const CAPTURES_TO =
-  "CASE WHEN ts.removed_at IS NOT NULL OR s.source_key IS NULL THEN (SELECT " +
-  "(SELECT ref_prefix FROM space WHERE one = 1) || '-' || h.ref FROM sources k " +
+  "CASE WHEN ts.removed_at IS NOT NULL OR s.source_key IS NULL THEN (SELECT json_group_array(r) " +
+  "FROM (SELECT (SELECT ref_prefix FROM space WHERE one = 1) || '-' || h.ref AS r FROM sources k " +
   "JOIN task_sources hl ON hl.source_id = k.id JOIN tasks h ON h.id = hl.task_id " +
   "WHERE k.source_key = coalesce(s.source_key, s.ref) AND k.deleted_at IS NULL " +
   "AND hl.removed_at IS NULL AND h.deleted_at IS NULL AND h.lifecycle = 'active' " +
-  "AND h.id <> ts.task_id ORDER BY h.ref LIMIT 1) END";
+  `AND h.id <> ts.task_id ORDER BY h.ref LIMIT ${String(CAPTURES_TO_MAX)})) END`;
 const SOURCE_COLUMNS =
-  "s.id, s.source_key, s.kind, s.title, s.who, s.url, s.at, s.ref, ts.removed_at, " +
-  `${CAPTURES_TO} AS captures_to`;
+  "s.id, s.source_key, s.kind, s.title, s.who, s.url, s.at, s.ref, ts.task_id, ts.version, " +
+  `ts.removed_at, ${CAPTURES_TO} AS captures_to`;
 const SOURCES: Statement = {
   sql:
     `SELECT ${SOURCE_COLUMNS} FROM task_sources ts ` +
@@ -221,8 +223,7 @@ const SOURCES: Statement = {
 };
 /**
  * The links detached from the task, newest first, with who detached them. A link removed by an
- * undo of its creation is not one: Redo brings it back with the rest of that change. Nor is a
- * keyed link put back as plain context, because another task held its key by then.
+ * undo of its creation is not one: Redo brings it back with the rest of that change.
  */
 const REMOVED_SOURCES: Statement = {
   sql:
@@ -232,9 +233,6 @@ const REMOVED_SOURCES: Statement = {
     "JOIN commits c ON c.seq = json_extract(ts.fp, '$.removed') " +
     `JOIN actors x ON x.id = c.author_id WHERE ts.task_id = ${MATCH} ` +
     "AND ts.removed_at IS NOT NULL AND s.deleted_at IS NULL AND c.undo_of IS NULL " +
-    "AND NOT EXISTS (SELECT 1 FROM task_sources p JOIN sources q ON q.id = p.source_id " +
-    "WHERE p.task_id = ts.task_id AND p.removed_at IS NULL AND q.deleted_at IS NULL " +
-    "AND q.source_key IS NULL AND q.ref = s.source_key) " +
     "ORDER BY ts.removed_at DESC, s.id",
   mode: "all",
 };
@@ -357,6 +355,13 @@ export const logOf = (row: Row) => ({
   text: text(row["body"]),
 });
 
+/** The tasks a read names as holding a source's key, when any do. */
+function capturesTo(value: unknown): { captures_to?: string[] } {
+  if (typeof value !== "string") return {};
+  const refs = (JSON.parse(value) as unknown[]).filter((r): r is string => typeof r === "string");
+  return refs.length === 0 ? {} : { captures_to: refs };
+}
+
 export const sourceOf = (row: Row) => ({
   id: text(row["id"]),
   ...present("key", row["source_key"]),
@@ -366,7 +371,7 @@ export const sourceOf = (row: Row) => ({
   ...present("url", row["url"]),
   ...(typeof row["at"] === "number" ? { at: iso(row["at"]) } : {}),
   ...present("ref", row["ref"]),
-  ...present("captures_to", row["captures_to"]),
+  ...capturesTo(row["captures_to"]),
   ...(typeof row["removed_at"] === "number"
     ? { removed: { at: iso(row["removed_at"]), by: text(row["removed_by"]) } }
     : {}),
@@ -532,18 +537,15 @@ export async function readTask(
   };
 }
 
-/** A task's live links and those detached from it, as its read lists them. */
-export async function readTaskLinks(
-  reader: WorkerConnection,
-  ref: string,
-): Promise<{ live: Row[]; removed: Row[] }> {
+/** A task's live links, then those detached from it, as its read lists them. */
+export async function readTaskLinks(reader: WorkerConnection, ref: string): Promise<Row[]> {
   const { id, ref: number, alias } = taskKey(ref);
   const [live, removed] = await snapshot(reader, [SOURCES, REMOVED_SOURCES], {
     id,
     ref: number,
     alias,
   });
-  return { live: live as Row[], removed: removed as Row[] };
+  return [...(live as Row[]), ...(removed as Row[])];
 }
 
 // ---------------------------------------------------------------------------------------------

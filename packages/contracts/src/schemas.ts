@@ -434,6 +434,9 @@ export const CompactTaskRow = z.strictObject({
     .optional(),
 });
 
+/** The most tasks a read names as holding a source's key. */
+export const CAPTURES_TO_MAX = 5;
+
 export const SourceOutput = z.strictObject({
   id: SourceId.describe("Source ID: detach or put back by it"),
   key: z.string().describe("Source key").optional(),
@@ -443,7 +446,11 @@ export const SourceOutput = z.strictObject({
   url: z.string().describe("Link").optional(),
   at: z.string().describe("When it was sent").optional(),
   ref: z.string().describe("Its key, held by another task").optional(),
-  captures_to: TaskRef.describe("Captures of its item go to this task").optional(),
+  captures_to: z
+    .array(TaskRef)
+    .max(CAPTURES_TO_MAX)
+    .describe("Active tasks with its key: captures go there")
+    .optional(),
   removed: z
     .strictObject({
       at: z.string().describe("When, ISO date and time"),

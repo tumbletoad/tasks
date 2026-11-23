@@ -903,66 +903,97 @@ function differsWarnings(result: WriteResult, paths: ReadonlyMap<number, string>
   });
 }
 
-/**
- * A put back that found the source's key held by another active task: the key stays there and the
- * task has the source as context. From the writer's result, so a replay warns the same.
- */
-function keptWarnings(result: WriteResult, paths: ReadonlyMap<number, string>): string[] {
-  return result.results.flatMap((op) => {
-    const path = paths.get(op.i);
-    if (path === undefined || op.held_by === undefined) return [];
-    return [
-      `The source at ${path} is back as context: captures of its item go to ${op.held_by}, which holds its key.`,
-    ];
-  });
-}
-
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 
+/** A link a name resolved to. */
+interface NamedLink {
+  readonly source: Id<"s">;
+}
+
 /**
- * The source IDs of the links `names` name on a task, at `path`: a source ID, or a key or URL that
- * names one link. `first` are the links the call acts on (the live ones to detach); `then` the
- * others, so a call repeated after it applied names the same link and changes nothing. A name
- * that fits several links is ambiguous and lists their IDs; one that fits none is not_found,
- * except a source ID, which the writer decides.
+ * The links `names` name among all of a task's links, live and detached, at `path`: a source ID,
+ * or a key or URL that names one link. A name that fits several
+ * links is ambiguous and lists their IDs, whatever state each is in. Two names of one link are that
+ * link once. A name that fits none is not_found, except a source ID, which the writer decides.
  */
-function linksNamed(
-  first: readonly Row[],
-  then: readonly Row[],
-  names: readonly string[],
-  path: string,
-): Id<"s">[] {
-  const fits = (row: Row, name: string): boolean =>
-    row["id"] === name ||
-    row["source_key"] === name ||
-    row["url"] === name ||
-    (row["source_key"] === null && row["ref"] === name);
-  return names.map((name, k) => {
-    const at = `${path}.${String(k)}`;
-    const found = first.filter((row) => fits(row, name));
-    const candidates = found.length > 0 ? found : then.filter((row) => fits(row, name));
-    const [one] = candidates;
-    if (one !== undefined && candidates.length === 1) return text(one["id"]) as Id<"s">;
-    if (candidates.length > 1) {
-      const ids = candidates.map((row) => text(row["id"]));
+function linksNamed(links: readonly Row[], names: readonly string[], path: string): NamedLink[] {
+  const found = new Map<string, NamedLink>();
+  names.forEach((name, k) => {
+    const fits = links.filter(
+      (row) =>
+        row["id"] === name ||
+        row["source_key"] === name ||
+        row["url"] === name ||
+        (row["source_key"] === null && row["ref"] === name),
+    );
+    const [one] = fits;
+    if (fits.length > 1) {
+      const ids = fits.map((row) => text(row["id"]));
       throw new AppError({
         code: "ambiguous",
         message: "Several sources of the task have this key or URL.",
         hint: `Name one by its ID: ${ids.join(", ")}.`,
         data: {
-          issues: [{ path: at, message: "Names several sources" }],
-          candidates: candidates.map((row) => ({ id: text(row["id"]), title: text(row["title"]) })),
+          issues: [{ path: `${path}.${String(k)}`, message: "Names several sources" }],
+          candidates: fits.map((row) => ({ id: text(row["id"]), title: text(row["title"]) })),
         },
       });
     }
-    if (isId(name, "s")) return name;
+    if (one !== undefined) {
+      const source = text(one["id"]) as Id<"s">;
+      found.set(source, { source });
+      return;
+    }
+    if (isId(name, "s")) {
+      found.set(name, { source: name });
+      return;
+    }
     throw new AppError({
       code: "not_found",
       message: "No source of the task has this ID, key or URL.",
       hint: "Read the task's sources for their IDs (ttasks show <task> --section sources).",
-      data: { issues: [{ path: at, message: "Names no source of the task" }] },
+      data: { issues: [{ path: `${path}.${String(k)}`, message: "Names no source of the task" }] },
     });
+  });
+  return [...found.values()];
+}
+
+/** `refs` as a sentence lists them: "M-20", "M-20 and M-21", "M-20, M-21 and M-22". */
+const listed = (refs: readonly string[]): string =>
+  refs.length < 2 ? refs.join("") : `${refs.slice(0, -1).join(", ")} and ${refs.at(-1) ?? ""}`;
+
+/**
+ * A put back refused because other active tasks hold the source's key: the writer names each
+ * holder's link in its conflicts, and this says where captures go, with the key from `links`.
+ * Undefined for any other refusal, such as a stale base on the task's own link.
+ */
+function keyHeld(error: unknown, task: Id<"t"> | undefined, links: readonly Row[]): unknown {
+  if (!(error instanceof AppError) || error.code !== "conflict" || task === undefined) {
+    return undefined;
+  }
+  const conflicts = (error.data["conflicts"] ?? []) as { task?: string; id?: string }[];
+  const held = new Map<string, string[]>();
+  for (const c of conflicts) {
+    const [holder, source] = (c.id ?? "").split("|");
+    if (holder === undefined || source === undefined || holder === task || c.task === undefined) {
+      return undefined;
+    }
+    held.set(source, [...(held.get(source) ?? []), c.task]);
+  }
+  if (held.size === 0) return undefined;
+  const said = [...held].map(([source, refs]) => {
+    const row = links.find((link) => link["id"] === source);
+    const key = typeof row?.["source_key"] === "string" ? row["source_key"] : "Its key";
+    return refs.length === 1
+      ? `${key} is on ${listed(refs)} now: captures go there.`
+      : `${key} is on ${listed(refs)} now: a capture of it asks which.`;
+  });
+  return new AppError({
+    code: "conflict",
+    message: `${said.join(" ")} Nothing was put back.`,
+    hint: "Put it back once no other active task holds the key: finished, dropped, or the source detached from it.",
+    data: { ...error.data, reason: "key_held" },
   });
 }
 
@@ -2291,24 +2322,28 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     });
     const detach = strings(input["remove_sources"]);
     const putBack = strings(input["put_back_sources"]);
-    /** The input path of each put back, by its operation's index: where it says a key stayed. */
-    const putBackPaths = new Map<number, string>();
+    /** The task's links, live and detached: what the names name, and a refusal's keys. */
+    let links: Row[] = [];
+    let linkTask: Id<"t"> | undefined;
     if (detach.length > 0 || putBack.length > 0) {
-      const links = await readTaskLinks(readerOf(call.space), task);
-      const detached = linksNamed(links.live, links.removed, detach, "remove_sources");
-      const back = linksNamed(links.removed, links.live, putBack, "put_back_sources");
-      const both = back.findIndex((source) => detached.includes(source));
+      try {
+        links = await readTaskLinks(readerOf(call.space), task);
+      } catch (error) {
+        throw storageFailure(error);
+      }
+      const [first] = links;
+      if (first !== undefined) linkTask = text(first["task_id"]) as Id<"t">;
+      const detached = linksNamed(links, detach, "remove_sources");
+      const back = linksNamed(links, putBack, "put_back_sources");
+      const both = back.findIndex((b) => detached.some((d) => d.source === b.source));
       if (both >= 0) {
         throw invalid(
           `put_back_sources.${String(both)}`,
           "Detach a source or put it back, not both",
         );
       }
-      for (const source of detached) ops.push({ kind: "source.unlink", task, source });
-      back.forEach((source, k) => {
-        putBackPaths.set(ops.length, `put_back_sources.${String(k)}`);
-        ops.push({ kind: "source.relink", task, source });
-      });
+      for (const link of detached) ops.push({ kind: "source.unlink", task, source: link.source });
+      for (const link of back) ops.push({ kind: "source.relink", task, source: link.source });
     }
     // The folder last, so the other operations keep their indexes in a replay, which checks no
     // folder (draftFolders) and sends a stand-in when nothing else is in the request.
@@ -2346,8 +2381,9 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // request that only detaches or puts back sources also corrects a finished task, which still
     // catches captures of its sources for a while.
     const linksOnly = ops.every((op) => op.kind === "source.unlink" || op.kind === "source.relink");
-    const result = ownResults(
-      await submit(call, [...groups, ...ops], {
+    let submitted: WriteResult;
+    try {
+      submitted = await submit(call, [...groups, ...ops], {
         active: !linksOnly,
         inserted: { at: 0, count: groups.length },
         warnings: made,
@@ -2355,8 +2391,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           ops[i]?.kind === "task.patch" && field !== undefined && /^[a-z_]+$/u.test(field)
             ? `set.${field}`
             : undefined,
-      }),
-    );
+      });
+    } catch (error) {
+      throw keyHeld(error, linkTask, links) ?? error;
+    }
+    const result = ownResults(submitted);
     const updated = result.status === "applied";
     await markersAfter(call, ops, result, { move, cleared });
     const first = opAt(result, 0);
@@ -2374,7 +2413,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       as_of: result.as_of,
       warnings: madeFirst([
         ...differsWarnings(result, sourcePaths),
-        ...keptWarnings(result, putBackPaths),
         ...result.warnings,
         ...(updated && result.replayed !== true ? moveWarnings(move) : []),
       ]),

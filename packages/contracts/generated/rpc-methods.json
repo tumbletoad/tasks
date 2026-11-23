@@ -4545,9 +4545,14 @@
                           "type": "string"
                         },
                         "captures_to": {
-                          "description": "Captures of its item go to this task",
-                          "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
-                          "type": "string"
+                          "description": "Active tasks with its key: captures go there",
+                          "items": {
+                            "description": "Task reference",
+                            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                            "type": "string"
+                          },
+                          "maxItems": 5,
+                          "type": "array"
                         },
                         "cut": {
                           "description": "Characters left out; a sections read has them",
@@ -5254,9 +5259,14 @@
                           "type": "string"
                         },
                         "captures_to": {
-                          "description": "Captures of its item go to this task",
-                          "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
-                          "type": "string"
+                          "description": "Active tasks with its key: captures go there",
+                          "items": {
+                            "description": "Task reference",
+                            "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                            "type": "string"
+                          },
+                          "maxItems": 5,
+                          "type": "array"
                         },
                         "id": {
                           "description": "Source ID: detach or put back by it",

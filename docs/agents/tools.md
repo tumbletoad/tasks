@@ -1879,7 +1879,7 @@ When `view` is `"digest"`:
 | `task.sources[].url` | string | no | Link |
 | `task.sources[].at` | string | no | When it was sent |
 | `task.sources[].ref` | string | no | Its key, held by another task |
-| `task.sources[].captures_to` | string | no | Captures of its item go to this task |
+| `task.sources[].captures_to` | string[], max 5 items | no | Active tasks with its key: captures go there |
 | `task.sources[].removed` | object | no | Detached from the task; put_back_sources brings it back |
 | `task.sources[].removed.at` | string | yes | When, ISO date and time |
 | `task.sources[].removed.by` | string | yes | Actor that detached it |
@@ -1995,7 +1995,7 @@ When `view` is `"sections"`:
 | `sections.sources[].url` | string | no | Link |
 | `sections.sources[].at` | string | no | When it was sent |
 | `sections.sources[].ref` | string | no | Its key, held by another task |
-| `sections.sources[].captures_to` | string | no | Captures of its item go to this task |
+| `sections.sources[].captures_to` | string[], max 5 items | no | Active tasks with its key: captures go there |
 | `sections.sources[].removed` | object | no | Detached from the task; put_back_sources brings it back |
 | `sections.sources[].removed.at` | string | yes | When, ISO date and time |
 | `sections.sources[].removed.by` | string | yes | Actor that detached it |
