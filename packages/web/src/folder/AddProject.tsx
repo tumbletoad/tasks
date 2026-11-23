@@ -8,6 +8,7 @@ import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import setup from "../app/Setup.module.css";
 import { Session } from "../context.ts";
+import { liveGroups } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
 import type { Live } from "../live.ts";
@@ -76,9 +77,10 @@ export function AddProject({
   const state = useLive();
   const nameId = useId();
   const areaId = useId();
+  // An archived area takes no new project: it is not offered, also when the page on screen is its.
   const areas = useMemo(
     () =>
-      [...state.areas.values()].sort((a, b) =>
+      liveGroups(state.areas.values(), []).areas.sort((a, b) =>
         a.position < b.position ? -1 : a.position > b.position ? 1 : 0,
       ),
     [state.areas],
@@ -86,7 +88,9 @@ export function AddProject({
   const [text, setText] = useState("");
   const [look, setLook] = useState<FolderLook>();
   const [name, setName] = useState<string>();
-  const [area, setArea] = useState(preset ?? areas[0]?.id ?? NEW_AREA);
+  const [area, setArea] = useState(
+    (areas.some((a) => a.id === preset) ? preset : undefined) ?? areas[0]?.id ?? NEW_AREA,
+  );
   const [newArea, setNewArea] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();

@@ -27,7 +27,7 @@ import { Session } from "../context.ts";
 import { groupingChange } from "../edit/change.ts";
 import { useEdits } from "../edit/useEdits.ts";
 import { refusalText } from "../folder/FolderDialog.tsx";
-import { areaSlots } from "../groups.ts";
+import { archivedGroup, areaSlots } from "../groups.ts";
 import { useT } from "../i18n/intl.tsx";
 import { useLive } from "../store/hooks.ts";
 import type { TaskRow } from "../store/rows.ts";
@@ -174,6 +174,8 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
       : project === undefined
         ? area.title
         : t("fact.areaProject", { area: area.title, project: project.title });
+  // A task stays in its area or project when that is archived: the pill says so.
+  const shelved = archivedGroup(area, project) !== undefined;
   const current = task.project_id ?? task.area_id;
   return (
     <DialogTrigger
@@ -186,12 +188,25 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
       <Button
         className={shown === undefined ? `${styles.pill} ${styles.empty}` : styles.pill}
         data-part="area"
-        aria-label={t("fact.control", { label: t("fact.area"), value: shown ?? t("fact.noArea") })}
+        aria-label={t("fact.control", {
+          label: t("fact.area"),
+          value:
+            shown === undefined
+              ? t("fact.noArea")
+              : shelved
+                ? t("area.archivedName", { name: shown })
+                : shown,
+        })}
       >
         {area === undefined ? null : (
           <span className={`${styles.dot} slot-${String(slot ?? 1)}`} aria-hidden="true" />
         )}
         <span dir="auto">{shown ?? t("fact.noArea")}</span>
+        {shelved ? (
+          <span className={styles.mark} aria-hidden="true">
+            {t("area.archived")}
+          </span>
+        ) : null}
       </Button>
       <Popover className={styles.popover} placement="bottom start">
         <Dialog className={styles.dialog} aria-label={t("area.label")}>

@@ -4,7 +4,8 @@
 // Adding is the field's own mode and the fast path: click it, type, Enter. The text's shortcuts
 // (a date, p1 to p3, #area/project, @person, *) show under the field as what they became, each
 // with a cross that keeps its words as text, and the title they leave. In an area's view the task
-// lands in that area unless the person turns that off. `n` (outside a text field) comes here to add.
+// lands in that area unless the person turns that off. An archived area or project takes no new
+// task here: `#` neither offers nor reads it, and its own view adds to no area. `n` (outside a text field) comes here to add.
 // Searching is a page state, the search route: `/` (outside a text field), Ctrl+K or the lens at
 // the field's start enter it, and the field then
 // says so in its icon, its name and its placeholder, before anything is pressed. Typing there
@@ -31,6 +32,7 @@ import {
 } from "../capture/parse.ts";
 import { requestId } from "../api.ts";
 import { Session } from "../context.ts";
+import { liveGroups } from "../groups.ts";
 import { useT, type Translate } from "../i18n/intl.tsx";
 import { tabKept } from "../kept.ts";
 import { formatDay } from "../row/dates.ts";
@@ -312,8 +314,11 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
     [],
   );
 
-  const areas = useMemo(() => [...state.areas.values()], [state.areas]);
-  const projects = useMemo(() => [...state.projects.values()], [state.projects]);
+  // New work goes to live groups only: an archived one is neither suggested nor taken by name.
+  const { areas, projects } = useMemo(
+    () => liveGroups(state.areas.values(), state.projects.values()),
+    [state.areas, state.projects],
+  );
   const inArea = location.pathname.startsWith(`/s/${space}/area/`);
   const hereArea = inArea ? params.area : undefined;
   const hereProject = inArea ? params.project : undefined;
