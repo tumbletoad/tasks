@@ -11,6 +11,7 @@ import {
   type ErrorBody,
   type OutputOf,
 } from "@ttasks/contracts";
+import { listText, oneLine } from "../skills/index.ts";
 import { toolOf } from "./tools.ts";
 import {
   clip,
@@ -101,6 +102,41 @@ function sessionLine(session: Status["session"]): string {
   )}`;
 }
 
+const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/u;
+
+// ---------------------------------------------------------------------------------------------
+// Skills: the user's instructions to their agents, as a note for agents is. They follow the
+// answer, which is fitted to its own budget as if there were none, outside every data block.
+
+/** The skills asked for, each whole, and the names that are no skill. */
+function skillTexts(result: Status): string[] {
+  const blocks = (result.asked ?? []).map((skill) =>
+    [
+      `Skill ${skill.name}${skill.when === undefined ? "" : `: ${oneLine(skill.when)}`}`,
+      ...(skill.problem === undefined ? [] : [skill.problem]),
+      ...(skill.text === undefined ? [] : ["", skill.text.split(LINE_BREAK).join("\n")]),
+    ].join("\n"),
+  );
+  if (result.missing !== undefined) {
+    blocks.push(
+      `No skill is named ${result.missing.map(oneLine).join(", ")}. ${toolOf("space.status")} without skills lists them.`,
+    );
+  }
+  return blocks;
+}
+
+/** What follows an answer: the skills a status asked for, or the list a first call gives. */
+function skillsAfter(entryName: string, result: unknown): string {
+  const status = toolOf("space.status");
+  if (entryName === "space.status") {
+    const read = result as Status;
+    return read.asked !== undefined || read.missing !== undefined
+      ? skillTexts(read).join("\n\n")
+      : listText(read.skills ?? [], status);
+  }
+  return entryName === "task.get" ? listText((result as TaskGet).skills ?? [], status) : "";
+}
+
 function statusParts(result: Status): Part[] {
   const counts = result.counts;
   // No as_of: a status row is no base (instructions.ts), so the text offers none.
@@ -108,8 +144,8 @@ function statusParts(result: Status): Part[] {
     join(PRODUCT_NAME, withWeekday(result.date), result.time_zone, `autonomy ${result.autonomy}`),
     sessionLine(result.session),
   );
-  // A guide is one workflow text instead of the overview (A3 3.4.2).
-  if (result.guide !== undefined) return [header, fixed(...result.guide.split("\n"))];
+  // Skills asked for come instead of the overview, after the header.
+  if (result.asked !== undefined || result.missing !== undefined) return [header];
   const parts: Part[] = [
     header,
     {
@@ -162,9 +198,6 @@ function statusParts(result: Status): Part[] {
   if (result.hint !== undefined) parts.push(fixed(result.hint));
   return parts;
 }
-
-/** A3 3.2.5: a guide's budget. */
-export const GUIDE_TOKENS = 900;
 
 /** How to see what a status left out: its rows are cut last-first. */
 const STATUS_MORE = "Pass a deeper cwd, or ask for fewer include sections.";
@@ -330,7 +363,7 @@ function requestPart(request: Request | undefined, getTask: string, ref: string)
       whole: true,
       units: [
         ["Request from the user for this launch:"],
-        ...request.text.split(/\r\n|[\n\r\u2028\u2029]/u).map((line) => [`  ${line}`]),
+        ...request.text.split(LINE_BREAK).map((line) => [`  ${line}`]),
         ...(request.cut === undefined
           ? []
           : [
@@ -777,11 +810,7 @@ type Renderer = (
 };
 
 const RENDERERS: Readonly<Record<string, Renderer>> = {
-  "space.status": (result: Status) => ({
-    parts: statusParts(result),
-    more: STATUS_MORE,
-    ...(result.guide === undefined ? {} : { max: GUIDE_TOKENS }),
-  }),
+  "space.status": (result: Status) => ({ parts: statusParts(result), more: STATUS_MORE }),
   "task.get": (result: TaskGet, { getTask }) => {
     const extra = requestTokens(result.request, getTask, result.task.ref);
     if (result.view === "digest") {
@@ -906,7 +935,9 @@ export function renderResult(entryName: string, result: unknown, random?: Random
       random,
     );
   }
-  return fit(shaped.text, shaped.max, random);
+  const answer = fit(shaped.text, shaped.max, random);
+  const after = skillsAfter(entryName, result);
+  return after === "" ? answer : `${answer}\n${after}`;
 }
 
 /** Whether an entry's result shows whole in its tool's text: nothing of it is cut. */

@@ -51,6 +51,12 @@ export const SPACES_FOLDER = "spaces";
 export const MONITOR_NAME = "TTAM";
 export const MONITOR_COMMAND = "ttam";
 
+/**
+ * The folder of the data folder (or of TTASKS_HOME) that holds the person's skills,
+ * `skills/<name>/SKILL.md`: the layout of the repository's own `skills/`.
+ */
+export const SKILLS_FOLDER = "skills";
+
 /** The prefix of every environment variable the product reads or sets. */
 export const ENV_PREFIX = "TTASKS_";
 

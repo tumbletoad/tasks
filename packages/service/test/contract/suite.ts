@@ -396,6 +396,7 @@ const LATER: Readonly<Record<string, Later>> = {
 };
 
 const VERIFIED = new Set([
+  "space.status 2",
   "task.get 0",
   "task.get 1",
   "task.get 2",
@@ -441,7 +442,12 @@ function meaning(entry: string, value: Value): unknown {
           refs(s["tasks"]),
         ]),
         hint: typeof value["hint"] === "string",
-        guide: typeof value["guide"] === "string",
+        // The skills read with their text: the list depends on the person's own files.
+        asked: ((value["asked"] as Value[] | undefined) ?? []).map((s) => [
+          s["name"],
+          typeof s["text"],
+        ]),
+        missing: value["missing"],
       };
     }
     case "task.finished":

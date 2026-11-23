@@ -27,6 +27,7 @@ import { rootsCommand } from "./roots.ts";
 import { runCommand } from "./runs.ts";
 import { serviceCommand } from "./service.ts";
 import { setupCommand, type SetupOptions } from "./setup.ts";
+import { skillsCommand } from "./skills.ts";
 import { spaceCommand } from "./space.ts";
 import { undoCommand } from "./undo.ts";
 import { asAppError, runVerb } from "./verbs.ts";
@@ -131,6 +132,8 @@ export async function main(io: Io, options: MainOptions = {}): Promise<number> {
         return await runCommand(io, globals, args, options);
       case "setup":
         return await setupCommand(io, globals, args, options);
+      case "skills":
+        return await skillsCommand(io, globals, args, options);
       case "doctor":
         return await doctor(io, globals, args, options);
       case "install":

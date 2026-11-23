@@ -9,6 +9,7 @@ import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { normaliseText, resultTokens } from "@ttasks/contracts";
 import { bridgePrincipal, toolCaller } from "../src/mcp/index.ts";
+import { SKILL_LIST_BYTES } from "../src/skills/index.ts";
 import { DATA_WORD, closeMarker, openMarker } from "../src/mcp/text.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { join } from "node:path";
@@ -162,7 +163,11 @@ function budgetOf(tool: string, args: Json, isError: boolean): number {
   if (isError) return 300;
   switch (tool) {
     case "status":
-      return args["guide"] === undefined ? 1_500 : 900;
+      // A skill's text has room of its own (a shipped one is at most 1,500: skills.test.ts), and
+      // so has the list of skills.
+      return Array.isArray(args["skills"])
+        ? 1_500 * (1 + args["skills"].length)
+        : 1_500 + SKILL_LIST_BYTES / 1.5;
     case "get_task":
       return args["sections"] === undefined ? 1_200 : 4_000;
     case "update_task":
@@ -374,7 +379,7 @@ async function runCorpus(size: number, pool: readonly string[], heavyCount: numb
     cwd: w.portal,
     include: ["today", "week", "review", "waiting", "inbox", "changes"],
   });
-  await mcp("status", { guide: "work" });
+  await mcp("status", { skills: ["working-a-task", "sizing-effort"] });
   for (const ref of refs) await mcp("get_task", { task: ref });
 
   // Writes through MCP, on two tasks of their own (the heavy tasks' texts stay as written): an

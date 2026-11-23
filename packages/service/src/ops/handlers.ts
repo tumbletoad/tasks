@@ -87,7 +87,6 @@ import {
 import type { Session, SessionPort } from "./binding.ts";
 import { checkGrant, grantRefused, standingOf, type HomeGate } from "./grant.ts";
 import { addDays, dateIn, dueDate, localTimeZone, pastInstant } from "./dates.ts";
-import { GUIDES } from "./guides.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
 import {
   checkFolder,
@@ -172,6 +171,7 @@ import {
   type DigestFolder,
 } from "./task-view.ts";
 import { readFinished } from "./task-rows.ts";
+import { listSkills, readSkills, servedText, type Skill } from "../skills/index.ts";
 
 /** A space as the request path sees it. The hub's space manager provides them. */
 export interface ServedSpace {
@@ -211,6 +211,8 @@ export interface OpsHost {
   readonly home?: string;
   /** TTasks's own data folder (the TTasks home): no folder is bound inside it. */
   readonly dataFolder?: string;
+  /** The person's skills folder (`<TTasks home>/skills`). None: the default skills alone. */
+  readonly skillsFolder?: string;
   /** The markers in projects' and tasks' folders (marker.ts). None: no folder is marked. */
   readonly markers?: FolderMarkers;
   /** Milliseconds since 1970. Default: Date.now. */
@@ -1870,6 +1872,22 @@ function withLinks(text: string, links: unknown): string {
 const drafts = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
 
+/** A skill as an answer lists it: its name, when to read it, and why the user's file is unused. */
+function skillRow(skill: Skill): Record<string, unknown> {
+  const file = skill.path === undefined ? "The user's file" : `The user's file ${skill.path}`;
+  const problem =
+    skill.problem === undefined
+      ? undefined
+      : skill.origin === "own"
+        ? `${file} cannot be used: ${skill.problem}.`
+        : `${file} is not used: ${skill.problem}. This is the default.`;
+  return {
+    name: skill.name,
+    ...(skill.description === "" ? {} : { when: skill.description }),
+    ...(problem === undefined ? {} : { problem }),
+  };
+}
+
 // ---------------------------------------------------------------------------------------------
 // The handlers
 
@@ -1878,13 +1896,14 @@ type Handler = (call: Call) => Promise<unknown>;
 const HANDLERS: Readonly<Record<string, Handler>> = {
   "space.status": async (call) => {
     const { input } = call;
-    const guide = typeof input["guide"] === "string" ? input["guide"] : undefined;
+    const asked = Array.isArray(input["skills"]) ? [...new Set(input["skills"] as string[])] : [];
     const reader = readerOf(call.space);
     const now = (call.host.now ?? Date.now)();
-    // A guide is one workflow text instead of the overview (A3 3.4.2): no sections, no `here`.
+    // Skills asked for come instead of the overview: no sections, no `here`.
+    const reading = asked.length > 0;
     const include =
-      guide === undefined && Array.isArray(input["include"]) ? (input["include"] as string[]) : [];
-    const cwd = guide === undefined && typeof input["cwd"] === "string" ? input["cwd"] : undefined;
+      !reading && Array.isArray(input["include"]) ? (input["include"] as string[]) : [];
+    const cwd = !reading && typeof input["cwd"] === "string" ? input["cwd"] : undefined;
     // Null: a cwd that relates to no folder here, so no task matches it.
     const found = cwd === undefined ? undefined : ((await hereFor(call, cwd)) ?? null);
     const boundTask = sessionIn(call)?.task;
@@ -1907,6 +1926,23 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       here === undefined || here.length === 0
         ? undefined
         : call.host.sessions?.live(status.space.id);
+    let skillFields: Record<string, unknown>;
+    if (reading) {
+      // Only the files asked for are read.
+      const [space, read] = await Promise.all([
+        readTaskKeys(reader).then((keys) => ({ efforts: keys.effort })),
+        readSkills(call.host.skillsFolder, asked),
+      ]);
+      skillFields = {
+        asked: read.skills.map((skill) => {
+          const text = servedText(skill, space);
+          return { ...skillRow(skill), ...(text === undefined ? {} : { text }) };
+        }),
+        ...(read.missing.length === 0 ? {} : { missing: read.missing }),
+      };
+    } else {
+      skillFields = { skills: (await listSkills(call.host.skillsFolder)).skills.map(skillRow) };
+    }
     return {
       as_of: status.space.asOf,
       date: call.today,
@@ -1927,7 +1963,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           }),
       counts: { statuses: status.statuses, inbox: status.inbox, proposals: 0 },
       ...(include.length === 0 ? {} : { sections: status.sections }),
-      ...(guide === undefined ? {} : { guide: GUIDES[guide] }),
+      ...skillFields,
       ...(hint === undefined ? {} : { hint }),
     };
   },
@@ -2045,6 +2081,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...(page.before === undefined ? {} : { before: page.before }),
         ...notes,
       };
+    }
+    // A read by launch is a session's first call: it lists the skills, as status does.
+    if (launch !== undefined) {
+      answer["skills"] = (await listSkills(call.host.skillsFolder)).skills.map(skillRow);
     }
     // Connected only once the agent has its whole answer, the person's request included.
     if (launch !== undefined) await markConnected(call, launch);

@@ -11,6 +11,7 @@ import { CLI_SPEC, takesFolder, verbSpec, type VerbSpec } from "./args.ts";
 import { ROOTS_HELP } from "./roots.ts";
 import { SERVICE_HELP } from "./service.ts";
 import { SETUP_HELP } from "./setup.ts";
+import { SKILLS_HELP } from "./skills.ts";
 import { SPACE_HELP } from "./space.ts";
 import { RUN_HELP } from "./runs.ts";
 import { VIEW_HELP } from "./view.ts";
@@ -162,6 +163,12 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
       "Connect this machine's agent apps: Open's instances (setup instances), their MCP entries (setup agents), T3 Code (setup t3)",
     help: SETUP_HELP,
     subcommands: ["agents", "instances", "t3"],
+  },
+  {
+    name: "skills",
+    summary: "List your agents' skills, print one, or copy a default to edit (skills copy)",
+    help: SKILLS_HELP,
+    subcommands: ["show", "copy"],
   },
   {
     name: "mcp",
