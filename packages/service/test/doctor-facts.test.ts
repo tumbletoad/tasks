@@ -36,12 +36,18 @@ afterAll(() => {
 
 const log = { log: () => undefined } as unknown as Logger;
 
-/** A fake environment whose check answers `checked`, and records each call's `take`. */
-function environment(checked?: EnvironmentCheck): EnvironmentSource & { takes: boolean[] } {
+/** A fake environment whose check answers `checked`, and records each call's `take` and each base read. */
+function environment(
+  checked?: EnvironmentCheck,
+): EnvironmentSource & { takes: boolean[]; bases: number } {
   const source = {
     takes: [] as boolean[],
+    bases: 0,
     prepare: () => Promise.resolve(),
-    base: () => Promise.resolve({ kind: "service" as const, env: {} }),
+    base: () => {
+      source.bases += 1;
+      return Promise.resolve({ kind: "user" as const, env: { PATH: "/person/bin" } });
+    },
     inFolder: () => Promise.resolve(undefined),
     session: () => Promise.resolve({ XDG_RUNTIME_DIR: "/run/user/1000" }),
   };
@@ -123,7 +129,8 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
     };
     const env = environment(checked);
     const scoped = launches("linux", 0, env);
-    expect(await scoped.service.doctor(false)).toEqual({
+    const report = await scoped.service.doctor(false);
+    expect(report.facts).toEqual({
       scopes: true,
       environment: {
         kind: "snapshot",
@@ -134,6 +141,8 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
       // The terminal a launch now opens first, and why.
       terminal: GNOME_INSTALLED,
     });
+    // The report's other rows get the person's environment as a launch now would start from it.
+    expect(report.env).toEqual({ PATH: "/person/bin" });
     // The probe a launch runs: systemd-run's scope around `true`, with the terminal's environment.
     expect(scoped.probes).toHaveLength(1);
     expect(scoped.probes[0]?.argv[0]).toBe("/usr/bin/systemd-run");
@@ -145,22 +154,27 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
     expect(env.takes).toEqual([false, true]);
     // Nothing attempted and nothing stored: nulls, never a guess.
     expect(
-      await launches("linux", 0, environment({ kind: "snapshot" })).service.doctor(false),
+      (await launches("linux", 0, environment({ kind: "snapshot" })).service.doctor(false)).facts,
     ).toMatchObject({
       environment: { kind: "snapshot", outcome: null, attempted_at: null, taken_at: null },
     });
 
     const unscoped = launches("linux", 1, environment());
-    expect(await unscoped.service.doctor(false)).toEqual({
+    expect((await unscoped.service.doctor(false)).facts).toEqual({
       scopes: false,
       environment: null,
       terminal: GNOME_INSTALLED,
     });
 
     // Windows: no scopes, the registry's answer, and the person's Console Host over Windows
-    // Terminal.
-    const windows = launches("win32", 0, environment({ kind: "registry", read: false }));
-    expect(await windows.service.doctor(false)).toEqual({
+    // Terminal. The registry is read once: the other rows get what the check read.
+    const unread = { kind: "service" as const, env: { Path: "C:\\service" } };
+    const registry = environment({ kind: "registry", read: false, base: unread });
+    const windows = launches("win32", 0, registry);
+    const windowsReport = await windows.service.doctor(false);
+    expect(windowsReport.env).toEqual(unread.env);
+    expect(registry.bases).toBe(0);
+    expect(windowsReport.facts).toEqual({
       scopes: null,
       environment: { kind: "registry", read: false },
       terminal: {
@@ -199,14 +213,14 @@ describe("[A3.3.14.doctor.launch] the service's answers for doctor's launch rows
       return { made, reads };
     };
     const decided = service({ ...DEFAULT_TERMINAL, app: "wt", fallbacks: ["console"] });
-    expect((await decided.made.doctor(false))["terminal"]).toMatchObject({
+    expect((await decided.made.doctor(false)).facts["terminal"]).toMatchObject({
       app: "wt",
       source: "configured",
       unread: null,
     });
     expect(decided.reads.count).toBe(0);
     const auto = service(DEFAULT_TERMINAL);
-    expect((await auto.made.doctor(false))["terminal"]).toMatchObject({
+    expect((await auto.made.doctor(false)).facts["terminal"]).toMatchObject({
       app: "console",
       source: "installed",
       unread: "windows",

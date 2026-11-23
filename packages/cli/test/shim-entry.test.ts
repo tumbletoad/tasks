@@ -9,6 +9,7 @@ import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "no
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { testEnv } from "@ttasks/testkit";
 import { afterEach, describe, expect, test } from "vitest";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
@@ -68,12 +69,8 @@ function run(args: readonly string[]): Promise<{
   const temp = realpathSync.native(mkdtempSync(join(tmpdir(), "ttasks-shim-entry-")));
   temps.push(temp);
   const log = join(temp, "loaded.txt");
-  const env: NodeJS.ProcessEnv = {};
-  for (const [name, value] of Object.entries(process.env)) {
-    if (!/^(TTASKS_|CLAUDE|CODEX_|T3CODE_)/i.test(name)) env[name] = value;
-  }
   const child = spawn(process.execPath, ["--import", RECORDER, CLI_BIN, "shim", ...args], {
-    env: { ...env, TTASKS_HOME: join(temp, "home"), KF_LOAD_LOG: log },
+    env: testEnv({ TTASKS_HOME: join(temp, "home"), KF_LOAD_LOG: log }),
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });

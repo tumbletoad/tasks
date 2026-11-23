@@ -522,9 +522,11 @@ export class LaunchService {
    * `doctor/launch` (A3 3.14; A4 3.7, 3.8): whether terminals start in scopes, asked through the
    * very probe and environment a terminal launch uses (Linux only, else null), and how the agent's
    * environment stands (null for a source doctor does not check): with `take` (`doctor --live`)
-   * the login shell's snapshot is taken now. Words and times only.
+   * the login shell's snapshot is taken now. The facts are words and times only; `env` is the
+   * person's environment as a launch now would start from it, for the report's other rows: on
+   * Windows the one the check read, so the registry is read once.
    */
-  async doctor(take: boolean): Promise<JsonObject> {
+  async doctor(take: boolean): Promise<{ readonly facts: JsonObject; readonly env: Env }> {
     const { platform } = this.#options;
     let scopes: boolean | null = null;
     const session = await this.environment.session().catch(() => ({}));
@@ -547,7 +549,11 @@ export class LaunchService {
               attempted_at: time(checked.attemptedAt),
               taken_at: time(checked.takenAt),
             };
-    return { scopes, environment, terminal };
+    const base =
+      checked?.kind === "registry"
+        ? checked.base
+        : await this.environment.base().catch(() => undefined);
+    return { facts: { scopes, environment, terminal }, env: base?.env ?? this.#options.env };
   }
 
   /**

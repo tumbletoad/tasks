@@ -22,8 +22,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { isAgentMarker } from "@ttasks/bridge/protocol";
 import { buildLaunchers, findMsvc, type Msvc } from "@ttasks/launcher-win/build";
+import { testEnv } from "@ttasks/testkit";
 import { afterAll, describe, expect, test } from "vitest";
 import { detectIdentity, system32 } from "../src/hub/identity.ts";
 import { explorerInSession, startService, stopService } from "../src/install/commands.ts";
@@ -209,11 +209,7 @@ function testInstall(msvc: Msvc): { root: string; ctx: ServiceContext } {
   writeFileSync(join(root, "current"), VERSION);
   writeFileSync(join(root, "home.marker"), "");
   // A person's terminal: no agent marker, so the stop is the operator's (A2 3.6.5).
-  const env: Record<string, string | undefined> = { TTASKS_HOME: root };
-  for (const [name, value] of Object.entries(process.env)) {
-    if (!isAgentMarker(name) && !name.toUpperCase().startsWith("TTASKS_")) env[name] = value;
-  }
-  const real = defaultServiceContext({ env: { ...env, TTASKS_HOME: root } });
+  const real = defaultServiceContext({ env: testEnv({ TTASKS_HOME: root }) });
   const ctx: ServiceContext = {
     ...real,
     // A key that does not exist: nothing reads or writes the real Run key.

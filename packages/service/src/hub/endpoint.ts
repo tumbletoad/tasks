@@ -120,7 +120,8 @@ export interface EndpointHub {
   readonly defaults?: Pick<DefaultSpace, "make">;
   /**
    * The launch shim's methods (A4 3.6.3, `launch.*`, shim class only): launch/ (M2.08). `doctor`
-   * answers `doctor/launch` (A3 3.14); undefined while there is no launch service to ask.
+   * answers `doctor/launch` (A3 3.14), the monitor row with it; undefined while there is no launch
+   * service to ask.
    */
   readonly launches?: {
     handlers(): RpcHandlers;
