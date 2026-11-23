@@ -193,8 +193,10 @@ class Steps {
   readonly #steps: { id: string; what: string; done: boolean; applied: number }[] = [];
   #seq = 10;
   #held: Promise<void> | undefined;
+  readonly #w: World;
 
-  constructor(readonly w: World) {
+  constructor(w: World) {
+    this.#w = w;
     for (let i = 0; i < 20; i += 1) {
       w.answer("task.update", this.#update);
       w.answer("history.undo", this.#undo);
@@ -226,7 +228,7 @@ class Steps {
       done: true,
       applied: this.#seq,
     });
-    return { result: "updated", task: "M-1", fields, as_of: this.w.asOf(this.#seq), warnings: [] };
+    return { result: "updated", task: "M-1", fields, as_of: this.#w.asOf(this.#seq), warnings: [] };
   };
 
   readonly #undo = (input: Record<string, unknown>) => {
@@ -237,7 +239,7 @@ class Steps {
     }
     top.done = false;
     this.#seq += 1;
-    return { result: "undone", commit: top.id, tasks: [], as_of: this.w.asOf(this.#seq) };
+    return { result: "undone", commit: top.id, tasks: [], as_of: this.#w.asOf(this.#seq) };
   };
 
   readonly #redo = () => {
@@ -246,7 +248,7 @@ class Steps {
     oldest.done = true;
     this.#seq += 1;
     oldest.applied = this.#seq;
-    return { result: "redone", commit: oldest.id, tasks: [], as_of: this.w.asOf(this.#seq) };
+    return { result: "redone", commit: oldest.id, tasks: [], as_of: this.#w.asOf(this.#seq) };
   };
 }
 
@@ -2023,7 +2025,10 @@ describe("[A5.3.11.web.edit-queue] an outcome is decided once, and what arrives 
     w.edits.edit(task(1), priorityChange(2));
     await flush();
     const newer = w.lastToast();
-    expect(newer?.text).toEqual({ id: "toast.notSaved", values: { field: { id: "field.priority" } } });
+    expect(newer?.text).toEqual({
+      id: "toast.notSaved",
+      values: { field: { id: "field.priority" } },
+    });
     two.reject?.(conflict);
     await flush();
     expect(w.lastToast()).toBe(newer);
