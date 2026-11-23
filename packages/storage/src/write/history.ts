@@ -21,6 +21,12 @@
 //   them. A run has no tombstone and is never the creating commits', so a task with a run keeps
 //   its create. The tombstone is a write of its own (after_prov is the inverting commit), so a
 //   redo clears it under that guard.
+// - Setting a tombstone back (a redo of a removal, the undo of a restore) puts a row out of sight
+//   again, a step the person decided before anything done to the row since. Another's change to
+//   the row after the step was last applied (its commit, or a redo of it since), and for a task to
+//   anything on it (a field, a note, a log entry, a link, a run, a folder), keeps it in sight, as a
+//   conflict that names the newest such change. The principal's own steps (its undoable writes,
+//   undos and redos) do not count: the person made them.
 // - Clearing a tombstone (a redo of a create's undo, or the undo of a delete) brings a row back. A
 //   source whose key, or a place whose owner and machine, another live row holds now stays
 //   tombstoned, and that row is the conflict: the unique indexes allow one live row each.
@@ -38,6 +44,7 @@
 //
 // Every statement is built from the constant table, column and field names below and in
 // fields.ts, with values bound as parameters (A1 3.7).
+import { newerBy } from "@ttasks/contracts/newer-work";
 import type { Connection, Row, SqlValue } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
 import { isId, type Id } from "../ids.ts";
@@ -58,6 +65,7 @@ import {
   WRITE_LIMITS,
   type ConflictEntity,
   type FieldConflict,
+  type NewerWork,
 } from "./request.ts";
 import { provenanceOf, rowState, versionOf, type RowState } from "./row-state.ts";
 
@@ -363,14 +371,72 @@ function liveChildren(conn: Connection, changes: readonly StoredChange[]): Map<s
 
 const COMMIT_COLUMNS = "seq, id, undo_status, undone_by";
 
+/** Changes after `$since` of row `$entity` `$id`, and of everything of task `$task`, by others. */
+function newerWhere(runs: string): string {
+  return (
+    "WHERE c.seq > $since " +
+    `AND (c.task_id = $task OR (c.entity = $entity AND c.entity_id = $id)${runs}) ` +
+    "AND NOT (k.principal_id = $principal AND (k.undo_status IS NOT NULL " +
+    "OR k.kind IN ('undo', 'redo')))"
+  );
+}
+
+function newerWorkSql(runs: string): string {
+  return (
+    "SELECT c.entity AS entity, c.entity_id AS id, " +
+    "coalesce(c.task_id, CASE c.entity WHEN 'runs' THEN $task END) AS task, c.field AS field, " +
+    `max(c.seq) AS version FROM changes c JOIN commits k ON k.seq = c.seq ${newerWhere(runs)} ` +
+    "GROUP BY c.entity, c.entity_id, c.field ORDER BY min(c.seq), c.entity, c.entity_id, c.field"
+  );
+}
+
+/** Who made those changes: each author once, with the time of their newest, a run's apart. */
+function newerAuthorsSql(runs: string): string {
+  return (
+    "SELECT c.entity = 'runs' AS run, k.author_id AS actor, a.kind AS kind, a.label AS label, " +
+    "k.origin AS origin, max(k.at) AS at FROM changes c JOIN commits k ON k.seq = c.seq " +
+    `JOIN actors a ON a.id = k.author_id ${newerWhere(runs)} ` +
+    "GROUP BY c.entity = 'runs', k.author_id, k.origin"
+  );
+}
+
+const RUNS_OF_TASK =
+  " OR (c.entity = 'runs' AND c.entity_id IN (SELECT id FROM runs WHERE task_id = $task))";
+
+/**
+ * The commit that last applied the rows of commit `seq` (an SQL expression): its newest redo, else
+ * the commit itself. Others' changes after it are newer work, and a script's change after it is
+ * one the person may not mean to keep behind an undo.
+ */
+export const appliedSql = (seq: string): string =>
+  `(SELECT coalesce(max(r.seq), ${seq}) FROM commits r WHERE r.seq > ${seq} AND r.redo_of = ${seq})`;
+
+/**
+ * The step an undo of principal `$principal` takes (A1 3.10.1), with `applied`, the commit that
+ * last applied it: of its `done` commits, the one applied last, by its newest redo or else by its
+ * own seq. A redo can apply a step before an older one it passed over, so a step's own seq does
+ * not say which came last: a redo after the newest `done` commit does. The writer and the
+ * service's question before an undo both read it here, so they never mean different steps.
+ */
+export const UNDO_TARGET_SQL =
+  "WITH newest AS (SELECT seq, id, undo_status, undone_by, seq AS applied FROM commits " +
+  "WHERE principal_id = $principal AND undo_status = 'done' ORDER BY seq DESC LIMIT 1) " +
+  "SELECT * FROM (SELECT t.seq AS seq, t.id AS id, t.undo_status AS undo_status, " +
+  "t.undone_by AS undone_by, r.seq AS applied FROM commits r JOIN commits t ON t.seq = r.redo_of " +
+  "WHERE r.seq > (SELECT seq FROM newest) AND r.principal_id = $principal AND r.kind = 'redo' " +
+  "AND t.undo_status = 'done' ORDER BY r.seq DESC LIMIT 1) " +
+  "UNION ALL SELECT * FROM newest ORDER BY applied DESC LIMIT 1";
+
 const SQL = {
   changes: "SELECT * FROM changes WHERE seq = $seq ORDER BY n",
-  newestDone:
+  undone:
     `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
-    "AND undo_status = 'done' ORDER BY seq DESC LIMIT 1",
-  oldestUndone:
-    `SELECT ${COMMIT_COLUMNS} FROM commits WHERE principal_id = $principal ` +
-    "AND undo_status = 'undone' AND seq > $after ORDER BY seq LIMIT 1",
+    "AND undo_status = 'undone' ORDER BY seq",
+  /** Of the commits in `$seqs`, the principal's own steps: undoable writes, undos and redos. */
+  ownSteps:
+    "SELECT seq FROM commits WHERE seq IN (SELECT value FROM json_each($seqs)) " +
+    "AND principal_id = $principal AND (undo_status IS NOT NULL OR kind IN ('undo', 'redo'))",
+  lastApplied: `SELECT ${appliedSql("$seq")} AS seq`,
   author:
     "SELECT k.at AS at, k.author_id AS actor, a.kind AS kind, a.label AS label, " +
     "k.origin AS origin FROM commits k JOIN actors a ON a.id = k.author_id WHERE k.seq = $seq",
@@ -431,6 +497,16 @@ const SQL = {
   liveLearnings:
     "SELECT task_id, id FROM learnings WHERE deleted_at IS NULL " +
     "AND task_id IN (SELECT value FROM json_each($tasks)) ORDER BY task_id, position",
+  /**
+   * The rows and fields others changed after `$since`: of row `$entity` `$id`, and of everything
+   * of task `$task`. Each once, with its newest change; a create has no field.
+   */
+  newerWork: newerWorkSql(""),
+  /** The same, with the task's runs, whose changes name no task (runs.ts). */
+  newerWorkWithRuns: newerWorkSql(RUNS_OF_TASK),
+  /** Who made them: each author once, with the time of their newest. */
+  newerAuthors: newerAuthorsSql(""),
+  newerAuthorsWithRuns: newerAuthorsSql(RUNS_OF_TASK),
   touched: "UPDATE tasks SET touched = $seq WHERE id = $id",
 } as const;
 
@@ -505,15 +581,29 @@ function decodeStackCommit(row: Row | undefined): StackCommit | undefined {
   return { seq: r.int("seq", "seq"), id: r.id("id", "op"), undoneBy };
 }
 
-/** What undo takes: the principal's newest `done` commit (A1 3.10.1). */
+/** What undo takes (UNDO_TARGET_SQL). */
 export function undoTarget(conn: Connection, principal: Id<"ac">): StackCommit | undefined {
-  return decodeStackCommit(conn.prepare(SQL.newestDone).get({ principal }));
+  return decodeStackCommit(conn.prepare(UNDO_TARGET_SQL).get({ principal }));
 }
 
-/** What redo takes: the oldest `undone` commit newer than the principal's newest `done` one. */
-export function redoTarget(conn: Connection, principal: Id<"ac">): StackCommit | undefined {
-  const after = undoTarget(conn, principal)?.seq ?? 0;
-  return decodeStackCommit(conn.prepare(SQL.oldestUndone).get({ principal, after }));
+/** What redo tries, in this order: the principal's `undone` commits, oldest first (A1 3.10.1). */
+export function redoSteps(conn: Connection, principal: Id<"ac">): StackCommit[] {
+  return conn
+    .prepare(SQL.undone)
+    .all({ principal })
+    .map((row) => {
+      const step = decodeStackCommit(row);
+      if (step === undefined) throw invalidValue("commits", "undo_status");
+      return step;
+    });
+}
+
+/** The commit that last applied a `done` commit's rows (appliedSql). */
+export function lastApplied(conn: Connection, seq: number): number {
+  return new RowReader("commits", conn.prepare(SQL.lastApplied).get({ seq }) ?? {}).int(
+    "seq",
+    "seq",
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -551,6 +641,8 @@ export interface InversionPlan {
   inversions: Inversion[];
   /** Each field whose guard fails, and each live child row that blocks a create's inversion. */
   conflicts: FieldConflict[];
+  /** PlanOptions.applied: what the rules across rows count from too (applyInversions). */
+  applied: number;
 }
 
 export interface PlanOptions {
@@ -562,6 +654,13 @@ export interface PlanOptions {
   partial: boolean;
   /** The request's operation index the conflicts name. */
   op: number;
+  /** Whose undo or redo it is: its own steps since are no newer work (the header). */
+  principal: Id<"ac">;
+  /**
+   * The commit that last applied the rows inverted: their own, or a redo of them since. Others'
+   * changes after it are newer work (the header).
+   */
+  applied: number;
 }
 
 const parsed = (json: string): unknown => {
@@ -575,33 +674,38 @@ const parsed = (json: string): unknown => {
 /** Where a conflict is: what a guard knows. The namer adds who wrote it, when, and the reference. */
 type Where = Omit<FieldConflict, "op" | "ref" | "by" | "at" | "version">;
 
+/** A task's reference, such as `M-14`, read once per task. */
+function refsOf(conn: Connection, refPrefix: string): (task: Id<"t">) => string {
+  const refs = new Map<string, string>();
+  return (task) => {
+    let ref = refs.get(task);
+    if (ref === undefined) {
+      const found = conn.prepare(SQL.taskRef).get({ id: task });
+      if (found === undefined) throw invalidValue("changes", "task_id");
+      ref = formatTaskRef(refPrefix, new RowReader("tasks", found).int("ref", "taskRef"));
+      refs.set(task, ref);
+    }
+    return ref;
+  };
+}
+
 /**
  * Names conflicts for operation `op`: a conflict on `where`, with the commit at `version` (who
  * wrote the field, and when) and its task's reference.
  */
 function namer(
   conn: Connection,
-  options: { refPrefix: string; op: number },
+  options: { op: number },
+  refOf: (task: Id<"t">) => string,
 ): (where: Where, version: number) => FieldConflict {
-  const refs = new Map<string, string>();
   return (where, version) => {
     const by = conn.prepare(SQL.author).get({ seq: version });
     if (by === undefined) throw invalidValue(where.entity, "fv");
     const r = new RowReader("commits", by);
-    let ref: string | undefined;
-    if (where.task !== undefined) {
-      ref = refs.get(where.task);
-      if (ref === undefined) {
-        const found = conn.prepare(SQL.taskRef).get({ id: where.task });
-        if (found === undefined) throw invalidValue("changes", "task_id");
-        ref = formatTaskRef(options.refPrefix, new RowReader("tasks", found).int("ref", "taskRef"));
-        refs.set(where.task, ref);
-      }
-    }
     return {
       op: options.op,
       ...where,
-      ...(ref === undefined ? {} : { ref }),
+      ...(where.task === undefined ? {} : { ref: refOf(where.task) }),
       version,
       by: {
         actor: r.id("actor", "ac"),
@@ -624,7 +728,12 @@ export function planInversions(
   changes: readonly StoredChange[],
   options: PlanOptions,
 ): InversionPlan {
-  const plan: InversionPlan = { inversions: [], conflicts: [] };
+  const plan: InversionPlan = {
+    inversions: [],
+    conflicts: [],
+    applied: options.applied,
+  };
+  const refOf = refsOf(conn, options.refPrefix);
   const rows = new Map<string, RowState>();
   const kids = liveChildren(conn, changes);
   /**
@@ -655,7 +764,7 @@ export function planInversions(
     return row;
   };
   /** A conflict on `where`, named with the commit at `version`: who wrote it and when. */
-  const conflict = namer(conn, options);
+  const conflict = namer(conn, options, refOf);
   /** A field of a row that does not hold the write an inversion needs. */
   const fieldConflict = (
     entity: InvertibleEntity,
@@ -723,6 +832,11 @@ export function planInversions(
         );
         continue;
       }
+      if (field === table.tombstone && !isLive(parsed(restore))) {
+        const newer = newerWork(conn, entity, id, options.applied, options.principal);
+        for (const work of newer) blocked(conflict(work.where, work.version));
+        if (newer.length > 0) continue;
+      }
       plan.inversions.push({
         kind: "restore",
         entity,
@@ -754,30 +868,32 @@ export function planInversions(
     }
     for (const kid of kids.get(`${entity}|${id}`) ?? []) {
       const { child, state } = kid;
-      // Another's row is named by its tombstone, with who created or revived it; a row of the
-      // creating commits by each field another wrote since, so that a partial inversion keeps the
-      // parent, and the row stays reachable, too.
+      // Another's row, or a row of the creating commits that another wrote since, keeps the
+      // parent, so that a partial inversion keeps it and the row stays reachable. It is named once,
+      // by its newest change (one no one changed since by its tombstone, a run by its state), with
+      // that field's value now.
       const theirs = !options.creating.has(state.createdSeq);
-      const fields = theirs
-        ? [child.field]
-        : Object.keys(child.fields).filter((f) => !options.creating.has(provenanceOf(state, f)));
-      for (const field of fields) {
-        passes = false;
-        const value = columnsValue(state.raw, child.fields[field] ?? []);
-        blocked(
-          conflict(
-            {
-              entity: child.entity,
-              id: kid.id,
-              ...(kid.task === null ? {} : { task: kid.task }),
-              field,
-              value: theirs ? null : value,
-            },
-            // A row without a tombstone (a run) is named with who created it.
-            theirs && child.column === null ? state.createdSeq : versionOf(state, field),
-          ),
-        );
-      }
+      const written = Object.keys(child.fields).filter(
+        (f) => theirs || !options.creating.has(provenanceOf(state, f)),
+      );
+      if (written.length === 0) continue;
+      passes = false;
+      const field = written.reduce(
+        (newest, f) => (versionOf(state, f) > versionOf(state, newest) ? f : newest),
+        written.includes(child.field) ? child.field : (written[0] ?? child.field),
+      );
+      blocked(
+        conflict(
+          {
+            entity: child.entity,
+            id: kid.id,
+            ...(kid.task === null ? {} : { task: kid.task }),
+            field,
+            value: columnsValue(state.raw, child.fields[field] ?? []),
+          },
+          versionOf(state, field),
+        ),
+      );
     }
     if (!passes) continue;
     // Tombstoned already by the creating commits themselves: nothing more to invert.
@@ -797,6 +913,153 @@ export function planInversions(
     blocked(conflict(where, version));
   });
   return plan;
+}
+
+/**
+ * A row a change names, as it is now, with its logical fields and the field that names a row
+ * created since: its tombstone, or a run's state.
+ */
+function rowNow(
+  conn: Connection,
+  entity: string,
+  id: string,
+): { fields: Child["fields"]; field: string; row: Row | undefined } {
+  if (isInvertible(entity)) {
+    const table = TABLES[entity];
+    return { fields: table.fields, field: table.tombstone, row: readRow(conn, entity, id)?.raw };
+  }
+  const child = TASK_CHILDREN.find((c) => c.entity === entity);
+  if (child === undefined) throw invalidValue("changes", "entity");
+  const row = conn.prepare(`SELECT * FROM ${child.entity} WHERE ${child.key} = $id`).get({ id });
+  return { fields: child.fields, field: child.field, row };
+}
+
+/**
+ * Others' changes to a row after commit `since`, and for a task to anything of it (the header).
+ * Each field of the row itself is named once; every other row once, by its newest change: that
+ * change's field (a creation sets its tombstone, or a run's state), with the field's value now. A
+ * folder set by one agent and repointed by another is named once, by the second.
+ */
+function newerWork(
+  conn: Connection,
+  entity: InvertibleEntity,
+  id: string,
+  since: number,
+  principal: Id<"ac">,
+): { where: Where; version: number }[] {
+  const runs = entity === "tasks" && conn.prepare(TABLE_EXISTS).get({ name: "runs" }) !== undefined;
+  const found = conn.prepare(runs ? SQL.newerWorkWithRuns : SQL.newerWork).all({
+    since,
+    principal,
+    entity,
+    id,
+    task: entity === "tasks" ? id : null,
+  });
+  const work = new Map<string, { where: Where; version: number }>();
+  for (const row of found) {
+    const r = new RowReader("changes", row);
+    const changed = r.text("entity");
+    const rowId = r.text("id");
+    const task = r.optText("task", (v) => isId(v, "t")) as Id<"t"> | null;
+    const now = rowNow(conn, changed, rowId);
+    if (now.row === undefined) throw invalidValue("changes", "entity_id");
+    const field = r.optText("field") ?? now.field;
+    const version = r.int("version", "seq");
+    const own = changed === entity && rowId === id;
+    const key = own ? `${changed}|${rowId}|${field}` : `${changed}|${rowId}`;
+    if ((work.get(key)?.version ?? 0) >= version) continue;
+    work.set(key, {
+      where: {
+        entity: changed as ConflictEntity,
+        id: rowId,
+        ...(task === null ? {} : { task }),
+        field,
+        value: columnsValue(now.row, now.fields[field] ?? []),
+      },
+      version,
+    });
+  }
+  return [...work.values()];
+}
+
+/** A step an undo or a redo could not take whole: what it last applied, and what held it back. */
+export interface Held {
+  /** PlanOptions.applied: others' changes after it are newer work. */
+  readonly since: number;
+  readonly conflicts: readonly FieldConflict[];
+}
+
+/**
+ * Who changed which task since (WriteResult.newer): for each task a held step's conflicts name,
+ * every author of a change to it or to what belongs to it after the step was last applied, with the
+ * time of that author's newest change there; a row of no task (an area, a project, a source) by
+ * its own changes. The conflicts' own authors are named too: a key another row took counts. The
+ * principal's own steps (its undoable writes, undos and redos) are no one's newer work: they hold
+ * a redo back only after an earlier step of the person's was passed over, and that step's
+ * conflicts say why. A run's own progress is the run's, whichever credential wrote it.
+ */
+export function newerWorkOf(
+  conn: Connection,
+  held: readonly Held[],
+  principal: Id<"ac">,
+): NewerWork {
+  const conflicts = held.flatMap((h) => h.conflicts);
+  const own = new Set(
+    conn
+      .prepare(SQL.ownSteps)
+      .all({ seqs: JSON.stringify([...new Set(conflicts.map((c) => c.version))]), principal })
+      .map((row) => new RowReader("commits", row).int("seq", "seq")),
+  );
+  const work = new Map<string, NewerWork["work"][number]>();
+  const named = (
+    where: { task?: Id<"t">; ref?: string },
+    by: FieldConflict["by"],
+    run: boolean,
+    at: number,
+  ): void => {
+    const key = `${where.task ?? ""}|${newerBy(by, run)}`;
+    const entry = work.get(key);
+    if (entry !== undefined && entry.at >= at) return;
+    work.set(key, {
+      ...(where.task === undefined ? {} : { task: where.task }),
+      ...(where.ref === undefined ? {} : { ref: where.ref }),
+      by,
+      run,
+      at,
+    });
+  };
+  const runs = conn.prepare(TABLE_EXISTS).get({ name: "runs" }) !== undefined;
+  for (const { since, conflicts: theirs } of held) {
+    const asked = new Set<string>();
+    for (const c of theirs) {
+      if (!own.has(c.version)) named(c, c.by, c.entity === "runs", c.at);
+      const scope =
+        c.task === undefined
+          ? { entity: c.entity, id: c.id, task: null }
+          : { entity: "tasks", id: c.task, task: c.task };
+      const key = `${scope.entity}|${scope.id}`;
+      if (asked.has(key)) continue;
+      asked.add(key);
+      const sql = runs && scope.task !== null ? SQL.newerAuthorsWithRuns : SQL.newerAuthors;
+      for (const row of conn.prepare(sql).all({ since, principal, ...scope })) {
+        const r = new RowReader("commits", row);
+        named(
+          c.task === undefined
+            ? {}
+            : { task: c.task, ...(c.ref === undefined ? {} : { ref: c.ref }) },
+          {
+            actor: r.id("actor", "ac"),
+            kind: r.text("kind"),
+            label: r.text("label"),
+            origin: r.text("origin"),
+          },
+          r.int("run", "count") === 1,
+          r.int("at", "instant"),
+        );
+      }
+    }
+  }
+  return { work: [...work.values()] };
 }
 
 /** Whether a tombstone field's value says the row is live: every column null. */
@@ -1028,6 +1291,8 @@ export interface ApplyOptions {
   refPrefix: string;
   /** A partial inversion applies what the rules across rows leave; a full one then nothing. */
   partial: boolean;
+  /** A redo's: no row it writes, and no owner of one, is out of sight after it (ownersLive). */
+  owners: boolean;
 }
 
 /** What an inversion wrote: its change rows, in the plan's order, and the tasks it touched. */
@@ -1064,6 +1329,7 @@ export interface Applied {
  *   back, and the conflict names that other folder's path, with who set it.
  * - **A project and what is in it** (groupRules): a deleted project holds no live task and no live
  *   folder, and a task in a project is in that project's area.
+ * - **A redo writes nothing out of sight** (ownersLive, with `owners`).
  *
  * When a rule breaks, the writes roll back to a savepoint, the conflicts are named on the state
  * before the plan, and a partial inversion applies the rest, checked again, since a folder left
@@ -1076,9 +1342,12 @@ export function applyInversions(
   options: ApplyOptions,
 ): Applied | undefined {
   const checked = (inversions: readonly Inversion[]): boolean =>
-    restoresOf(inversions).size > 0 || inversions.some(inGroupRules);
+    (options.owners && inversions.length > 0) ||
+    restoresOf(inversions).size > 0 ||
+    inversions.some(inGroupRules);
   if (!checked(plan.inversions)) return writeInversions(conn, plan.inversions, options);
-  const since = Math.min(...plan.inversions.map((i) => i.change.seq));
+  const since = plan.applied;
+  const refOf = refsOf(conn, options.refPrefix);
   for (;;) {
     conn.exec("SAVEPOINT restores");
     const applied = writeInversions(conn, plan.inversions, options);
@@ -1088,12 +1357,13 @@ export function applyInversions(
     tooManyLearnings(conn, restores, broken);
     sharedFolders(conn, plan.inversions, broken);
     groupRules(conn, plan.inversions, broken, { seq: options.seq, since });
+    if (options.owners) ownersLive(conn, plan.inversions, broken, since);
     if (broken.undone.size === 0) {
       conn.exec("RELEASE restores");
       return applied;
     }
     conn.exec("ROLLBACK TO restores");
-    const conflict = namer(conn, options);
+    const conflict = namer(conn, options, refOf);
     const named = new Set(plan.conflicts.map((c) => `${c.entity}|${c.id}|${c.field}`));
     for (const n of broken.named) {
       if (named.has(`${n.entity}|${n.id}|${n.field}`)) continue;
@@ -1288,9 +1558,9 @@ export function brokenIn(
  * deleted project. The other side is named, with who wrote it: for a task, who put it into the
  * project.
  *
- * A break whose every side the plan set back (`seq`) or is older than the commits it inverts
- * (`since`) is as it was before them: the plan brings back what a person had, also a break that an
- * earlier version let in. Only a side written since by another makes it the plan's.
+ * A break whose every side the plan set back (`seq`) or is older than the step's latest
+ * application (`since`) is as it was before it: the plan brings back what a person had, also a
+ * break that an earlier version let in. Only a side written since by another makes it the plan's.
  */
 function groupRules(
   conn: Connection,
@@ -1379,6 +1649,92 @@ function groupRules(
   }
 }
 
+/** The rows that own a row (A1 3.4): a child's task, a link's source, a group's area, a folder's owner. */
+function ownersOf(entity: InvertibleEntity, raw: Row): { entity: InvertibleEntity; id: string }[] {
+  const of = (owner: InvertibleEntity, id: unknown) =>
+    typeof id === "string" ? [{ entity: owner, id }] : [];
+  switch (entity) {
+    case "tasks":
+      return [...of("areas", raw["area_id"]), ...of("projects", raw["project_id"])];
+    case "projects":
+      return of("areas", raw["area_id"]);
+    case "notes":
+    case "log_entries":
+    case "learnings":
+      return of("tasks", raw["task_id"]);
+    case "task_sources":
+      return [...of("tasks", raw["task_id"]), ...of("sources", raw["source_id"])];
+    case "places":
+    case "folders": {
+      const kind = raw["owner_kind"];
+      const owner = kind === "task" ? "tasks" : kind === "area" ? "areas" : "projects";
+      return of(owner, raw["owner_id"]);
+    }
+    case "sources":
+    case "areas":
+      return [];
+  }
+}
+
+/**
+ * A redo writes nothing out of sight (applyInversions). It never brings back a row whose owner is
+ * not there: a note of a task that is not there, a link to a source in the Trash, a project of an
+ * area that is not there. And it never writes a row, or under an owner, that went out of sight
+ * after the step was undone (`since`): a step before it passed over, or another's removal, took it
+ * away. A row out of sight before that stays as the step and its undo wrote it: a project's move
+ * also sets the area of its tasks in the Trash. Each row the plan writes is checked on the state
+ * the plan made, unless the plan takes the row away itself; one that fails keeps the plan's writes
+ * of it undone, and the row or its owner is named by its tombstone, with who took it away.
+ */
+function ownersLive(
+  conn: Connection,
+  inversions: readonly Inversion[],
+  broken: Broken,
+  since: number,
+): void {
+  const rows = new Map<string, Inversion[]>();
+  for (const i of inversions) {
+    const key = `${i.entity}|${i.id}`;
+    const list = rows.get(key);
+    if (list === undefined) rows.set(key, [i]);
+    else list.push(i);
+  }
+  for (const list of rows.values()) {
+    const first = list[0];
+    if (first === undefined) continue;
+    const { entity, id } = first;
+    const tombstone = TABLES[entity].tombstone;
+    const writes = list.filter((i) => i.field === tombstone);
+    if (writes.some((i) => i.kind === "tombstone" || !isLive(parsed(i.value)))) continue;
+    const back = writes.length > 0;
+    const row = readRow(conn, entity, id);
+    if (row === undefined) throw misuse("A row the plan wrote has gone");
+    /** Out of sight now: for good when a row comes back under it, else when taken away since. */
+    const gone = (state: RowState, of: InvertibleEntity, owner: boolean): boolean => {
+      const field = TABLES[of].tombstone;
+      if (isLive(valueIn(of, state.raw, field))) return false;
+      return (back && owner) || versionOf(state, field) > since;
+    };
+    const named: Broken["named"] = [];
+    if (gone(row, entity, false)) named.push({ entity, id, task: first.task, field: tombstone });
+    for (const owner of ownersOf(entity, row.raw)) {
+      const found = readRow(conn, owner.entity, owner.id);
+      if (found === undefined) throw invalidValue(entity, "owner");
+      if (!gone(found, owner.entity, true)) continue;
+      const task = owner.entity === "tasks" ? (owner.id as Id<"t">) : null;
+      named.push({
+        entity: owner.entity,
+        id: owner.id,
+        task,
+        field: TABLES[owner.entity].tombstone,
+      });
+    }
+    if (named.length === 0) continue;
+    for (const i of list) broken.undone.add(i);
+    broken.named.push(...named);
+  }
+}
+
 /** The entities whose restores a rule across rows counts. */
 const COUNTED = new Set<InvertibleEntity>(["tasks", "task_sources", "sources", "learnings"]);
 
@@ -1396,11 +1752,11 @@ function restoresOf(inversions: readonly Inversion[]): Map<string, Inversion> {
 interface Broken {
   undone: Set<Inversion>;
   /**
-   * A standing holder's link, a holder's lifecycle, a live learning, another's folder, or a
-   * project and what is in it.
+   * A standing holder's link, a holder's lifecycle, a live learning, another's folder, a project
+   * and what is in it, or a row or owner out of sight.
    */
   named: {
-    entity: "tasks" | "task_sources" | "learnings" | "folders" | "projects";
+    entity: InvertibleEntity;
     id: string;
     task: Id<"t"> | null;
     field: string;

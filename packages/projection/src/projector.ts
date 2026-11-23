@@ -39,6 +39,11 @@
 // publish; a retired file that is gone or no longer ours is forgotten, never touched again. A file
 // on disk the record does not hold is left alone.
 //
+// **A catalogued file that is not there** is looked for by name in its folder's listing before
+// every batch, and every SWEEP_MS while nothing changes: one gone (removed by hand, lost to a sync
+// conflict) is queued like a reconciliation's, so it comes back while the service runs and no
+// watermark is published over it. A file that is there is left to reconciliation, whatever it holds.
+//
 // **Evidence goes last** (A1 3.13): the journal is dropped, and a record that no longer says why
 // something must still happen is written, only once what depends on it is durable elsewhere: the
 // writer's outbox for tasks to render again, the receiver's answer for a stem told. A kill in
@@ -62,6 +67,7 @@ import {
   indexText,
   projectionJson,
   README_TEXT,
+  RENDERER,
   renderTask,
   type CatalogEntry,
   type SpaceIdentity,
@@ -174,7 +180,7 @@ export interface StepReport {
 }
 
 export interface StartReport {
-  /** Every task was queued: no record, or one of another identity or format. */
+  /** Every task was queued: no record, or one of another identity, format or renderer. */
   readonly rebuild: boolean;
   /** Temporary files a kill left, removed. */
   readonly temps: number;
@@ -192,6 +198,12 @@ export interface StartReport {
  */
 export const RETRY_FIRST_MS = 500;
 export const RETRY_MAX_MS = 30_000;
+
+/**
+ * While nothing changes, the catalogued files are looked for this often (#sweep): a file a person
+ * or a sync removed comes back within seconds, not at the next start.
+ */
+export const SWEEP_MS = 5_000;
 
 const sameIdentity = (a: SpaceIdentity, b: SpaceIdentity): boolean =>
   a.spaceId === b.spaceId && a.epoch === b.epoch && a.incarnation === b.incarnation;
@@ -230,6 +242,10 @@ export class Projector {
   #retired = new Set<string>();
   /** A telling of rescues failed: the next batch tells again, rescued or not (rule 3). */
   #untold = false;
+  /** Tasks whose catalogued file the last sweep found not there: queued at the next batch. */
+  readonly #lost = new Set<string>();
+  /** When the catalogued files were last looked for. */
+  #sweptAt = Number.NEGATIVE_INFINITY;
   /** Tasks whose file could not be placed: read again once `until` has passed (rule 7). */
   readonly #waiting = new Map<string, { until: number; pause: number }>();
 
@@ -324,9 +340,13 @@ export class Projector {
     let full = found === undefined || journalRead.kind === "unreadable";
     const other = !sameIdentity(record.identity, pending) || record.watermark > pending.lastSeq;
     if (other) full = true;
+    // Files an earlier renderer made say less than this one would: every task again, each file
+    // still proved ours by the record, so it is replaced in place.
+    if (record.renderer !== RENDERER) full = true;
     // Before the record that no longer says why: a kill after it must find every task queued.
     if (full) await this.#queueAll(record);
     record.identity = identityOf(pending);
+    record.renderer = RENDERER;
     // The writer's W holds back until every queued task is rendered; the claim last published
     // stays the record's, which has none without a record of this identity.
     if (other) record.watermark = 0;
@@ -406,6 +426,29 @@ export class Projector {
     return all + (await this.#queue(missingTasks(this.#conn, [...record.entries.keys()])));
   }
 
+  /**
+   * Looks for every file the catalogue and the root files name (Tree.absent): a task's file that is
+   * not there is queued at the next batch, a root file is placed again at the next publish. Nothing
+   * a person put there is touched: a file that is there, whatever it holds, is reconciliation's.
+   */
+  #sweep(): void {
+    this.#sweptAt = this.#now();
+    const record = this.#rec;
+    const named = [...record.files]
+      .filter(
+        ([path, file]) => file.task === undefined || record.entries.get(file.task)?.path === path,
+      )
+      .map(([path]) => path);
+    const folders = new Map<string, boolean>();
+    for (const path of this.#tree.absent(named)) {
+      const look = this.#tree.look(path, folders);
+      if (look.kind !== "missing" && look.kind !== "unreachable") continue;
+      const task = record.files.get(path)?.task;
+      if (task === undefined) this.#republish = true;
+      else this.#lost.add(task);
+    }
+  }
+
   /** Queues `ids` for rendering again through the writer, in parts. Returns how many it queued. */
   async #queue(ids: readonly string[]): Promise<number> {
     let queued = 0;
@@ -440,10 +483,12 @@ export class Projector {
    * retired file still there.
    */
   pending(): { dirty: boolean; mark: string } {
+    if (this.#now() - this.#sweptAt >= SWEEP_MS) this.#sweep();
     const p = readPending(this.#conn, this.#waitingNow());
     const record = this.#rec;
     const dirty =
       this.#unsaved ||
+      this.#lost.size > 0 ||
       this.#reconcile !== "none" ||
       this.#republish ||
       !sameIdentity(record.identity, p) ||
@@ -480,6 +525,13 @@ export class Projector {
       // Only once it ran: one cut off by a failure is tried again, and a rebuild asked for while it
       // ran stays asked for.
       if (this.#reconcile === asked) this.#reconcile = "none";
+    }
+    // Before the read, so this batch renders them, and the watermark it publishes never covers a
+    // catalogued file that is not there.
+    this.#sweep();
+    if (this.#lost.size > 0) {
+      await this.#queue([...this.#lost]);
+      this.#lost.clear();
     }
     // Tasks that failed before: those still in their pause are not read, the others only after
     // every task that did not fail, so tasks that cannot be placed never fill a batch (rule 7).
@@ -731,7 +783,7 @@ export class Projector {
     };
     const contents: [string, string][] = [
       ["README.md", README_TEXT],
-      ["index.md", indexText(entries, read.groups)],
+      ["index.md", indexText(entries, read.groups, this.#timeZone)],
       ["catalog.jsonl", catalogText(mark, entries)],
       [".projection.json", projectionJson(mark)],
     ];

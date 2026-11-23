@@ -673,6 +673,35 @@ export class Tree {
   }
 
   /**
+   * Of `paths`, those whose name is not in its folder's listing, or whose folder is not reached
+   * through real folders: one listing per folder, cheap enough to run before every batch and while
+   * the projection waits. A name that is listed may still hold a person's bytes: telling those is
+   * reconciliation's, which reads every file.
+   */
+  absent(paths: Iterable<string>): string[] {
+    const byFolder = new Map<string, string[]>();
+    for (const path of paths) {
+      const folder = path.slice(0, Math.max(0, path.lastIndexOf("/")));
+      const list = byFolder.get(folder);
+      if (list === undefined) byFolder.set(folder, [path]);
+      else list.push(path);
+    }
+    const out: string[] = [];
+    for (const [folder, inFolder] of byFolder) {
+      let names: Set<string> | undefined;
+      try {
+        if (this.#reachable(inFolder[0] ?? "")) names = new Set(readdirSync(this.#abs(folder)));
+      } catch {
+        names = undefined;
+      }
+      for (const path of inFolder) {
+        if (names?.has(path.slice(path.lastIndexOf("/") + 1)) !== true) out.push(path);
+      }
+    }
+    return out;
+  }
+
+  /**
    * The projection's rescue folders on disk (rule 3), by their batch's stem, oldest first, with
    * how many each stem has: every real folder `exchange/rescued/<stem>-<n>` with a `view` in it,
    * reached through real folders. They are the evidence of what was rescued, whatever the trusted

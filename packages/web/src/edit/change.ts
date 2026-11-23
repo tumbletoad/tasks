@@ -1,6 +1,6 @@
 // What a person's edit of one field is (A5 3.11): the `task.update` input that makes it, the
 // overlay that shows it at once, and the words the toast says. Every hand edit is one of these, so
-// the star, the title, the facts and "Restore mine" all take one path (edits.ts).
+// the star, the title and the facts all take one path (edits.ts).
 //
 // Fields are A1's logical fields as the feed names them (`due` covers the three due columns,
 // `grouping` the area and project, `focus` the star), so a conflict and a remote change name the
@@ -28,7 +28,7 @@ export type Field =
   | "focus";
 
 export interface Change {
-  /** The fields it writes: one for a control, several for "Restore mine". */
+  /** The fields it writes: one for a control, several for "Apply mine" of several kept edits. */
   readonly fields: readonly Field[];
   readonly set?: UpdateSet;
   readonly clear?: readonly Clearable[];
@@ -65,8 +65,7 @@ export type Source =
   | { readonly kind: "status"; readonly status: string }
   | { readonly kind: "inbox" }
   | { readonly kind: "waiting"; readonly person?: string }
-  | { readonly kind: "grouping"; readonly area: Named; readonly project?: Named }
-  | { readonly kind: "restore"; readonly field: string; readonly value: unknown };
+  | { readonly kind: "grouping"; readonly area: Named; readonly project?: Named };
 
 /** Words for a value: a message, or the person's own text. */
 export type Words = Msg | string;
@@ -249,12 +248,12 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
- * The edit that puts one field back to `value`, the value an undo would have set back (A1 3.10.1
- * `restore`, in storage's form: a column's value, or an object of a field's columns). Undefined for
- * a field no hand edit can set to that value: a due time (the service sets dates only), no area,
- * the lifecycle and every agent-only field. Then the toast offers no "Restore mine".
+ * The edit that sets one field to `value`, a conflict's value in storage's form (a column's value,
+ * or an object of a field's columns), to compare what it does with a person's edit. Undefined for a
+ * value no hand edit sets: a due time (the service sets dates only), no area, the lifecycle and
+ * every agent-only field.
  */
-export function restoreChange(field: string, value: unknown): Change | undefined {
+export function changeTo(field: string, value: unknown): Change | undefined {
   switch (field) {
     case "title":
       return typeof value === "string" && value !== "" ? titleChange(value) : undefined;
@@ -296,13 +295,9 @@ export function restoreChange(field: string, value: unknown): Change | undefined
           typeof project === "string"
             ? { set: { area_id: area, project_id: project } }
             : { set: { area_id: area }, clear: ["project_id"] },
-        said: { id: "toast.restored" },
-        shown: { id: "edit.restoredGroup" },
-        source: {
-          kind: "restore",
-          field,
-          value: { area_id: area, project_id: typeof project === "string" ? project : null },
-        },
+        // Compared, never shown: the area's and project's names are not known here.
+        said: none,
+        shown: none,
       };
     }
     default:
@@ -398,13 +393,6 @@ export function changeOf(source: unknown): Change | undefined {
         return undefined;
       }
       return groupingChange(area, project);
-    }
-    case "restore": {
-      if (s["field"] !== "grouping" || !isRecord(s["value"])) return undefined;
-      const { area_id: area, project_id: project } = s["value"];
-      if (typeof area !== "string" || !ID.test(area)) return undefined;
-      if (project !== null && (typeof project !== "string" || !ID.test(project))) return undefined;
-      return restoreChange("grouping", { area_id: area, project_id: project });
     }
     default:
       return undefined;

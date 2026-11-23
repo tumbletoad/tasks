@@ -662,6 +662,8 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
       refPrefix: "MI",
       partial: false,
       op: 0,
+      principal: fx.human.principal_id,
+      applied: c.seq,
     });
     expect(plan.conflicts).toEqual([]);
     expect(plan.inversions).toHaveLength(75);
@@ -875,5 +877,224 @@ describe("[A1.5.history.undo-redo] undo and redo through the write path", () => 
     expect(commitAt(c1.seq)["undo_status"]).toBe("done");
     expect(commitAt(c2.seq)["undo_status"]).toBe("undone");
     expect(task(id)["summary"]).toBe("Before");
+  });
+
+  test("Redo passes over what it cannot apply and redoes the next step; what it passed over stays, and Undo goes back in the order applied", () => {
+    const a = create("Renew the passport");
+    const b = create("Book the dentist");
+    const removal = applied(write([{ kind: "task.delete", task: a }]));
+    const restore = applied(write([{ kind: "task.restore", task: a }]));
+    patch(a, { title: "Renew both passports" });
+    patch(b, { priority: 1 });
+    for (let i = 0; i < 4; i += 1) applied(undo());
+    applied(write([{ kind: "note.add", task: a, body: "Booked for Tuesday" }], "codex"));
+    // The removal would hide Codex's note, and the restore holds what the removal wrote: both are
+    // passed over. The rename is judged on A as it is, live, and redone.
+    const first = applied(redo());
+    expect(first.passed).toEqual([removal.commit, restore.commit]);
+    // Who changed what since: Codex on A. The restore waits on the person's own removal, which is
+    // no one's newer work.
+    expect(first.newer).toEqual({
+      work: [
+        expect.objectContaining({
+          task: a,
+          by: expect.objectContaining({ kind: "agent" }) as unknown,
+          run: false,
+        }),
+      ],
+    });
+    expect(task(a)["title"]).toBe("Renew both passports");
+    expect(task(a)["deleted_at"]).toBeNull();
+    // The next Redo tries both from the start again, then reaches B's edit.
+    const second = applied(redo());
+    expect(second.passed).toEqual([removal.commit, restore.commit]);
+    expect(task(b)["priority"]).toBe(1);
+    // Nothing more can be redone: refused, with the note named, and nothing is discarded.
+    const third = redo();
+    expectStatus(third, "conflict");
+    expect(third.passed).toEqual([removal.commit, restore.commit]);
+    expect(third.conflicts).toContainEqual(
+      expect.objectContaining({
+        entity: "notes",
+        task: a,
+        by: expect.objectContaining({ kind: "agent" }) as unknown,
+      }),
+    );
+    expect(commitAt(removal.seq)["undo_status"]).toBe("undone");
+    expect(commitAt(restore.seq)["undo_status"]).toBe("undone");
+    expect(task(a)["deleted_at"]).toBeNull();
+    // Undo takes back the step redone last first: B's edit, then the rename.
+    applied(undo());
+    expect(task(b)["priority"]).not.toBe(1);
+    expect(task(a)["title"]).toBe("Renew both passports");
+    applied(undo());
+    expect(task(a)["title"]).toBe("Renew the passport");
+  });
+
+  test("a refused Redo names every author who changed the task since, each with their newest change, and no count", () => {
+    const a = create("Renew the passport");
+    applied(write([{ kind: "task.delete", task: a }]));
+    applied(undo());
+    patch(a, { title: "Renew both passports" }, "codex");
+    const claude = patch(a, { title: "Renew the passports" }, "claude");
+    const last = patch(a, { title: "Renew all passports" }, "codex");
+    const refused = redo();
+    expectStatus(refused, "conflict");
+    const at = (seq: number): number => Number(commitAt(seq)["at"]);
+    expect(refused.newer?.work).toEqual(
+      expect.arrayContaining([
+        {
+          task: a,
+          ref: expect.any(String) as unknown,
+          by: expect.objectContaining({ actor: fx.codex.principal_id }) as unknown,
+          run: false,
+          at: at(last.seq),
+        },
+        {
+          task: a,
+          ref: expect.any(String) as unknown,
+          by: expect.objectContaining({ actor: fx.claude.principal_id }) as unknown,
+          run: false,
+          at: at(claude.seq),
+        },
+      ]),
+    );
+    expect(refused.newer?.work).toHaveLength(2);
+    expect(refused.newer).not.toHaveProperty("changes");
+  });
+
+  test("Undo, Redo, another's write, Redo, Undo, Redo: Redo passes over the step they changed, and Undo always takes the step applied last", async () => {
+    const other = await partner();
+    const a = create("Renew the passport");
+    const b = create("Book the dentist");
+    const c = create("Water the plants");
+    const priorities = () => [a, b, c].map((id) => task(id)["priority"]);
+    const before = priorities();
+    patch(a, { priority: 1 });
+    patch(b, { priority: 1 });
+    patch(c, { priority: 1 });
+    for (let i = 0; i < 3; i += 1) applied(undo());
+    expect(priorities()).toEqual(before);
+    // Redo: the oldest, A.
+    applied(redo());
+    expect(priorities()).toEqual([1, before[1], before[2]]);
+    // The partner changes B's priority: B cannot be redone.
+    const set = { kind: "task.patch", task: b, set: { priority: 3 } } as Operation;
+    applied(fx.writer.submit(fx.request(other, [set], { base: fx.base(), undoable: true })));
+    // Redo passes over B and redoes C.
+    const second = applied(redo());
+    expect(second.passed).toHaveLength(1);
+    expect(priorities()).toEqual([1, 3, 1]);
+    // Undo takes C, the step applied last, never A.
+    applied(undo());
+    expect(priorities()).toEqual([1, 3, before[2]]);
+    // Redo passes over B again and brings C back.
+    applied(redo());
+    expect(priorities()).toEqual([1, 3, 1]);
+    // The partner takes theirs back: B can be redone now, after C.
+    applied(history({ kind: "undo" }, other));
+    applied(redo());
+    expect(priorities()).toEqual([1, 1, 1]);
+    // Undo goes back in the order applied: B, then C, then A.
+    applied(undo());
+    expect(priorities()).toEqual([1, before[1], 1]);
+    applied(undo());
+    expect(priorities()).toEqual([1, before[1], before[2]]);
+    applied(undo());
+    expect(priorities()).toEqual(before);
+  });
+
+  test("Redo never brings back a project whose area is not there: passed over, it comes back after the area", async () => {
+    const other = await partner();
+    const area = applied(write([{ kind: "area.create", title: "Garden" }]));
+    const areaId = String(area.results[0]?.id);
+    const project = applied(write([{ kind: "project.create", title: "Beds", area: areaId }]));
+    const projectId = String(project.results[0]?.id);
+    applied(undo());
+    applied(undo());
+    // The partner's area takes the slug: the area cannot come back, and its project would be
+    // live in an area that is not there.
+    const theirs = { kind: "area.create", title: "Garden" } as Operation;
+    applied(fx.writer.submit(fx.request(other, [theirs], { undoable: true })));
+    const refused = redo();
+    expectStatus(refused, "conflict");
+    expect(refused.passed).toEqual([area.commit, project.commit]);
+    // The partner took the slug: a change of no task. The project waits on the area.
+    expect(refused.newer).toEqual({
+      work: [
+        expect.objectContaining({
+          by: expect.objectContaining({ actor: other.principal_id }) as unknown,
+        }),
+      ],
+    });
+    expect(refused.newer?.work[0]?.task).toBeUndefined();
+    const live = (table: "areas" | "projects", id: string) =>
+      row(`SELECT deleted_at FROM ${table} WHERE id = $id`, { id })["deleted_at"] === null;
+    expect([live("areas", areaId), live("projects", projectId)]).toEqual([false, false]);
+    // The slug free again, Redo brings back the area, then the project in it.
+    applied(history({ kind: "undo" }, other));
+    applied(redo());
+    expect([live("areas", areaId), live("projects", projectId)]).toEqual([true, false]);
+    applied(redo());
+    expect(live("projects", projectId)).toBe(true);
+    expect(row("SELECT area_id FROM projects WHERE id = $id", { id: projectId })["area_id"]).toBe(
+      areaId,
+    );
+  });
+
+  test("Redo never brings back a link to a source that is not there, or a change to a task that is not there", async () => {
+    const other = await partner();
+    const ticket = { kind: "ticket", title: "Export ticket", key: "jira:FIX-7" } as const;
+    const b = create("Call the clinic");
+    const a = newId("t");
+    const made = applied(
+      write([
+        { kind: "task.create", id: a, title: "Answer the clinic" },
+        { kind: "source.add", task: a, source: ticket },
+      ]),
+    );
+    const done = applied(write([{ kind: "task.complete", task: a }]));
+    // A is finished: B links the same source row.
+    const linked = applied(write([{ kind: "source.add", task: b, source: ticket }]));
+    const source = String(linked.results[0]?.id);
+    for (let i = 0; i < 3; i += 1) applied(undo());
+    const liveLinks = (): number =>
+      Number(
+        one(
+          "SELECT count(*) FROM task_sources ts JOIN sources s ON s.id = ts.source_id " +
+            "WHERE ts.task_id = $b AND ts.removed_at IS NULL AND s.deleted_at IS NULL",
+          { b },
+        ),
+      );
+    // The partner's task takes the key: A cannot come back, so neither can its completion, nor
+    // B's link to A's source.
+    const theirs = newId("t");
+    applied(
+      fx.writer.submit(
+        fx.request(
+          other,
+          [
+            { kind: "task.create", id: theirs, title: "Answer the clinic" },
+            { kind: "source.add", task: theirs, source: ticket },
+          ],
+          { undoable: true },
+        ),
+      ),
+    );
+    const refused = redo();
+    expectStatus(refused, "conflict");
+    expect(refused.passed).toEqual([made.commit, done.commit, linked.commit]);
+    expect(
+      row("SELECT removed_at FROM task_sources WHERE task_id = $b", { b })["removed_at"],
+    ).not.toBeNull();
+    // The key free again, each comes back in turn, and B's link is to a live source.
+    applied(history({ kind: "undo" }, other));
+    applied(redo());
+    expect(task(a)["deleted_at"]).toBeNull();
+    applied(redo());
+    expect(task(a)["lifecycle"]).toBe("completed");
+    applied(redo());
+    expect(liveLinks()).toBe(1);
+    expect(one("SELECT source_id FROM task_sources WHERE task_id = $b", { b })).toBe(source);
   });
 });

@@ -34,6 +34,7 @@ import { atomicWrite, makeDir, removeStaleTemps } from "@ttasks/files";
 import {
   FORMAT,
   LIFECYCLES,
+  RENDERER,
   type CatalogEntry,
   type Lifecycle,
   type SpaceIdentity,
@@ -51,6 +52,8 @@ export interface TrustedRecord {
   identity: SpaceIdentity;
   /** The watermark last published: it never moves backwards within one identity. */
   watermark: number;
+  /** The renderer its files were made by (render.ts RENDERER); 1 before records said. */
+  renderer: number;
   /** Every file the projection placed and holds as its own, by its path in the tree. */
   readonly files: Map<string, FileRecord>;
   /** Each task with a file: its catalogue line as rendered, whose `path` is in `files`. */
@@ -93,6 +96,7 @@ const UNREADABLE = { kind: "unreadable" } as const;
 export const newRecord = (identity: SpaceIdentity): TrustedRecord => ({
   identity,
   watermark: 0,
+  renderer: RENDERER,
   files: new Map(),
   entries: new Map(),
   told: new Set(),
@@ -255,8 +259,10 @@ export class TrustedState {
     if (read.kind !== "read") return read;
     const value = read.value;
     const { space_id, epoch, incarnation, watermark, told } = value;
+    const renderer = value["renderer"] ?? 1;
     if (
       typeof space_id !== "string" ||
+      !isCount(renderer) ||
       !isCount(epoch) ||
       typeof incarnation !== "string" ||
       !isCount(watermark) ||
@@ -287,6 +293,7 @@ export class TrustedState {
       value: {
         identity: { spaceId: space_id, epoch, incarnation },
         watermark,
+        renderer,
         files,
         entries,
         told: new Set(told as string[]),
@@ -301,6 +308,7 @@ export class TrustedState {
       epoch: record.identity.epoch,
       incarnation: record.identity.incarnation,
       watermark: record.watermark,
+      renderer: record.renderer,
       files: sorted(record.files),
       entries: sorted(record.entries),
       told: [...record.told].sort(),

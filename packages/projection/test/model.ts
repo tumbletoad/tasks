@@ -18,8 +18,9 @@
 // 3. the watermark covers no task whose file is not on disk (tasks whose files the person touched
 //    excepted, until the projection has been at rest since);
 // 4. the projection never moves its own files aside;
-// 5. at rest (after a restart and its reconciliation, with nothing left to do), the generated files
-//    equal a fresh render and every path the catalogue names exists;
+// 5. at rest, once the running projection has settled, every path the catalogue names exists; and
+//    after a restart and its reconciliation, with nothing left to do, the generated files equal a
+//    fresh render;
 // 6. at rest, every rescue folder in the space's exchange/rescued/ was told to the receiver.
 //
 // Fixture text only; every person's text carries a marker, so the model finds it wherever it is.
@@ -49,9 +50,11 @@ import fc from "fast-check";
 import { afterAll, beforeAll, expect } from "vitest";
 import { ProjectionError, type Projector, type ProjectorOptions } from "../src/index.ts";
 import {
+  catalogOf,
   checkWatermark,
   faultState,
   killAt,
+  inTree,
   Killed,
   settle,
   treeOf,
@@ -951,6 +954,28 @@ class Model {
     // The person undoes a swapped rescue folder first: no rescue could happen through it.
     const rescued = join(this.exchange, "rescued");
     if (lstatSync(rescued, { throwIfNoEntry: false })?.isSymbolicLink() === true) rmSync(rescued);
+    // While it runs, the projection brings back what the catalogue names and is not there: once
+    // it has settled, before any restart, every path the catalogue names exists, but for tasks
+    // still queued, each waiting the pause of a file that could not be placed (rule 7).
+    if (this.projector !== undefined) {
+      await this.act(async () => {
+        await this.current.step();
+        await settle(this.current, 400);
+      });
+      this.check();
+      if (this.realFolder(this.view) && inTree(this.view, "catalog.jsonl")) {
+        const queued = new Set(
+          this.w.reader
+            .prepare("SELECT key FROM outbox WHERE topic = 'projection'")
+            .all<{ key: string }>()
+            .map((row) => row.key),
+        );
+        for (const line of catalogOf(this.view)) {
+          if (queued.has(line.id)) continue;
+          expect(inTree(this.view, line.path), `${line.path} is there while it runs`).toBe(true);
+        }
+      }
+    }
     await this.act(async () => {
       this.projector = this.newProjector();
       await this.projector.start();

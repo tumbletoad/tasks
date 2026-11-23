@@ -10,7 +10,9 @@
 //   `rg '^status: waiting' view/open` works. `seq` is the commit of the task's last change (its
 //   `touched`): the file reflects the task as of that commit, which is what a fresh render gives.
 // - Then the title as H1, the summary, and the sections Context, Sources, Notes and Log. A
-//   completed or archived task leads with Outcome and Learnings and keeps the rest under Record.
+//   completed or archived task leads with why it was dropped, its Outcome and Learnings, and keeps
+//   the rest under Record. An outcome that is not this finish's (the task was reopened, dropped,
+//   or checked off without a new one) is shown as earlier: after the Context of an open task.
 //   Only notes for every audience are read (read.ts), so no other note is ever written.
 // - **Task text is shown, never run** (A1 3.13): agents write most of it, some from mail and
 //   tickets, so a Markdown viewer must run or load nothing it says: no HTML, no link or image whose
@@ -20,10 +22,17 @@
 //   GFM viewer's link on a bare URL, which shows its own target, may still render. The catalogue
 //   holds every text exactly.
 import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
+import { localDate } from "@ttasks/contracts/day";
 import { formatEntryRef, formatTaskRef } from "@ttasks/storage";
 
 /** The projection's format (A1 3.17 keeps it apart from the schema). A new one rebuilds the tree. */
 export const FORMAT = 1;
+
+/**
+ * What a task's file and the index say. A record made under another renders every task again at
+ * start, each file replaced in place as the projection's own: raise it when what they say changes.
+ */
+export const RENDERER = 2;
 
 /** A1 3.13: a slug of at most 48 ASCII characters. */
 export const SLUG_MAX = 48;
@@ -64,9 +73,10 @@ export interface SourceInput {
   readonly key: string | null;
 }
 
-export interface PlaceInput {
+/** The folder a task opens in on one machine, as that machine spells it. */
+export interface FolderInput {
+  /** The machine's name. */
   readonly machine: string;
-  readonly root: string;
   readonly path: string;
 }
 
@@ -79,6 +89,8 @@ export interface TaskInput {
   readonly context: string;
   readonly lifecycle: Lifecycle;
   readonly status: string;
+  /** Who or what the task waits on. */
+  readonly waitingOn: string | null;
   readonly priority: number;
   readonly effort: string | null;
   /** An ISO date, or the ISO instant of a due time. */
@@ -91,8 +103,11 @@ export interface TaskInput {
   readonly createdAt: number;
   readonly completedAt: number | null;
   readonly outcome: string | null;
+  /** Why an archived task was dropped. */
+  readonly dropped: string | null;
   readonly labels: readonly string[];
-  readonly places: readonly PlaceInput[];
+  /** Where Open starts it on each machine that has a folder for it. */
+  readonly folders: readonly FolderInput[];
   readonly notes: readonly NoteInput[];
   readonly log: readonly LogInput[];
   readonly sources: readonly SourceInput[];
@@ -137,18 +152,6 @@ export interface Groups {
   readonly projects: readonly Group[];
 }
 
-/** The calendar date of `ms` in `timeZone`, as `YYYY-MM-DD`. */
-export function dateIn(ms: number, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(ms));
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
-}
-
 /**
  * A title's slug: ASCII letters and digits in lower case, words joined by `-`, at most SLUG_MAX
  * characters, cut at a word where one fits. A title without any (CJK, emoji) gives `task`.
@@ -171,7 +174,7 @@ export function slugOf(title: string): string {
 export function taskPath(prefix: string, task: TaskInput, timeZone: string): string {
   const name = `${formatTaskRef(prefix, task.ref)}-${slugOf(task.title)}.md`;
   if (task.lifecycle === "active") return `open/${name}`;
-  const year = dateIn(task.completedAt ?? task.createdAt, timeZone).slice(0, 4);
+  const year = localDate(task.completedAt ?? task.createdAt, timeZone).slice(0, 4);
   return `${task.lifecycle}/${year}/${name}`;
 }
 
@@ -256,12 +259,12 @@ const sep = " · ";
 
 function noteLine(note: NoteInput, timeZone: string): string {
   const to = note.addressee === "agents" ? " → agents" : "";
-  const head = `${formatEntryRef("note", note.ordinal)}${sep}${dateIn(note.at, timeZone)}${sep}${mdLine(note.author)}${to}: `;
+  const head = `${formatEntryRef("note", note.ordinal)}${sep}${localDate(note.at, timeZone)}${sep}${mdLine(note.author)}${to}: `;
   return item(head, note.body);
 }
 
 function logLine(entry: LogInput, timeZone: string): string {
-  const head = `${formatEntryRef("log", entry.ordinal)}${sep}${dateIn(entry.at, timeZone)}${sep}${mdLine(entry.author)}${sep}${mdLine(entry.kind)}: `;
+  const head = `${formatEntryRef("log", entry.ordinal)}${sep}${localDate(entry.at, timeZone)}${sep}${mdLine(entry.author)}${sep}${mdLine(entry.kind)}: `;
   return item(head, entry.body);
 }
 
@@ -270,7 +273,7 @@ function sourceLine(source: SourceInput, timeZone: string): string {
     source.kind,
     source.title,
     source.who,
-    source.at === null ? null : dateIn(source.at, timeZone),
+    source.at === null ? null : localDate(source.at, timeZone),
     source.ref,
     source.url,
     source.key === null ? null : `key ${source.key}`,
@@ -292,25 +295,22 @@ export function renderTask(
 ): RenderedTask {
   const path = taskPath(space.refPrefix, task, timeZone);
   const ref = formatTaskRef(space.refPrefix, task.ref);
-  const place =
-    task.places.length === 0
-      ? null
-      : task.places.length === 1
-        ? yamlValue(placeText(task.places[0]))
-        : `[${task.places.map((p) => yamlValue(placeText(p))).join(", ")}]`;
+  const folders = task.folders.map((f) => yamlValue(`${f.machine}:${f.path}`));
+  const folder = folders.length < 2 ? (folders[0] ?? "") : `[${folders.join(", ")}]`;
   const front: [string, string][] = [
     ["generated", "true"],
     ["space", yamlValue(space.spaceId)],
     ["ref", yamlValue(ref)],
     ["id", yamlValue(task.id)],
     ["status", yamlValue(task.status)],
+    ["waiting_on", yamlValue(task.waitingOn)],
     ["lifecycle", yamlValue(task.lifecycle)],
     ["priority", yamlValue(task.priority)],
     ["effort", yamlValue(task.effort)],
     ["due", yamlValue(task.due)],
     ["area", yamlValue(task.area)],
     ["project", yamlValue(task.project)],
-    ["place", place ?? ""],
+    ["folder", folder],
     ["version", yamlValue(task.version)],
     ["seq", yamlValue(task.touched)],
   ];
@@ -319,6 +319,20 @@ export function renderTask(
   const notes = task.notes.map((n) => noteLine(n, timeZone));
   const log = task.log.map((l) => logLine(l, timeZone));
   const done = task.lifecycle !== "active";
+  // An open task's outcome and learnings were recorded before it was reopened. A finished task's
+  // are the ones on record for it: the file does not say which finish wrote them, which nothing
+  // stored tells.
+  const ending = [
+    ...(task.lifecycle === "archived"
+      ? section(2, "Why it was dropped", [block(task.dropped ?? "")])
+      : []),
+    ...section(2, done ? "Outcome" : "Earlier outcome", [block(task.outcome ?? "")]),
+    ...section(
+      2,
+      done ? "Learnings" : "Earlier learnings",
+      task.learnings.map((l) => item("", l)),
+    ),
+  ];
   const record = done
     ? [
         ...section(3, "Context", [context]),
@@ -328,17 +342,10 @@ export function renderTask(
       ]
     : [];
   const body = done
-    ? [
-        ...section(2, "Outcome", [block(task.outcome ?? "")]),
-        ...section(
-          2,
-          "Learnings",
-          task.learnings.map((l) => item("", l)),
-        ),
-        ...(record.length === 0 ? [] : ["## Record", "", ...record]),
-      ]
+    ? [...ending, ...(record.length === 0 ? [] : ["## Record", "", ...record])]
     : [
         ...section(2, "Context", [context]),
+        ...ending,
         ...section(2, "Sources", sources),
         ...section(2, "Notes", notes),
         ...section(2, "Log", log),
@@ -372,9 +379,6 @@ export function renderTask(
   };
   return { path, content: `${lines.join("\n").replace(/\n+$/u, "")}\n`, entry };
 }
-
-const placeText = (place: PlaceInput | undefined): string =>
-  place === undefined ? "" : `${place.machine}:${place.root}/${place.path}`;
 
 const LIFECYCLE_ORDER: Readonly<Record<Lifecycle, number>> = {
   active: 0,
@@ -428,12 +432,17 @@ export function projectionJson(mark: Watermark): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+/** A due's day: a date as it is, a due time's day in `timeZone`, as search and Today read it. */
+function dueDay(due: string, timeZone: string): string {
+  return due.length === 10 ? due : localDate(Date.parse(due), timeZone);
+}
+
 /** One open task's line in index.md. */
-function indexLine(entry: CatalogEntry): string {
+function indexLine(entry: CatalogEntry, timeZone: string): string {
   const facts = [
     entry.status,
     `P${String(entry.priority)}`,
-    ...(entry.due === null ? [] : [`due ${entry.due.slice(0, 10)}`]),
+    ...(entry.due === null ? [] : [`due ${dueDay(entry.due, timeZone)}`]),
   ];
   // The reference and the path follow the tree's grammar; the title and the facts are task text.
   return `- [${entry.ref}](${entry.path}) ${mdLine(entry.title)}${sep}${mdLine(facts.join(sep))}`;
@@ -488,7 +497,11 @@ function lookupOf(list: readonly Group[]): {
  * their groups once and each title is looked up once, so the cost grows with the tasks, not with
  * tasks times groups.
  */
-export function indexText(entries: Iterable<CatalogEntry>, groups: Groups): string {
+export function indexText(
+  entries: Iterable<CatalogEntry>,
+  groups: Groups,
+  timeZone: string,
+): string {
   const open = sortEntries(entries)
     .filter((e) => e.lifecycle === "active")
     .sort((a, b) => a.priority - b.priority || refNumber(a.ref) - refNumber(b.ref));
@@ -510,7 +523,7 @@ export function indexText(entries: Iterable<CatalogEntry>, groups: Groups): stri
         heading(3, project === null ? "No project" : (projects.titles.get(project) ?? project)),
         "",
       );
-      for (const task of byProject.get(project) ?? []) lines.push(indexLine(task));
+      for (const task of byProject.get(project) ?? []) lines.push(indexLine(task, timeZone));
       lines.push("");
     }
   }

@@ -827,7 +827,7 @@
         {
           "field": "commit",
           "flag": "--commit",
-          "help": "The change you mean: refused unless it is the next one to redo",
+          "help": "The change you mean: refused unless it is one you undid",
           "repeat": false,
           "required": false,
           "type": "string"

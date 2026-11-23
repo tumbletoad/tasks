@@ -343,7 +343,8 @@ function commitKinds(conn: Connection): Map<number, string> {
  * - per (task, field), the chain of change rows has no hole (checkChain), so no write was lost
  *   between two recorded changes, and the field holds its provenance commit's write;
  * - the row's version is the latest change to any field;
- * - every changed task waits in the outbox for the projection.
+ * - every changed task waits in the outbox for the projection, also after a change to its project's
+ *   folder.
  */
 export function checkHistory(conn: Connection): void {
   const lastSeq = one(conn, "SELECT last_seq FROM space");
@@ -361,6 +362,8 @@ export function checkHistory(conn: Connection): void {
   ).toBe(0);
   expect(one(conn, "SELECT count(*) FROM changes WHERE action = 'set' AND before = after")).toBe(0);
   const kinds = commitKinds(conn);
+  const folders =
+    one(conn, "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'folders'") === 1;
   const tasks = conn
     .prepare("SELECT * FROM tasks")
     .all<Record<string, unknown> & { id: string; fv: string; fp: string }>();
@@ -399,9 +402,22 @@ export function checkHistory(conn: Connection): void {
       Number(one(conn, "SELECT max(seq) FROM changes WHERE task_id = $id", { id: task.id })),
     );
     expect(task["touched"]).toBe(touched);
+    // Its readable file shows its project's folder where it has none of its own, so a live task
+    // is queued again by a change to one, which does not touch it.
+    const inherited =
+      task["deleted_at"] !== null || !folders
+        ? 0
+        : Number(
+            one(
+              conn,
+              "SELECT max(c.seq) FROM changes c JOIN folders f ON f.id = c.entity_id " +
+                "WHERE c.entity = 'folders' AND f.owner_kind = 'project' AND f.owner_id = $p",
+              { p: task["project_id"] ?? "" },
+            ) ?? 0,
+          );
     expect(
       one(conn, "SELECT seq FROM outbox WHERE topic = 'projection' AND key = $id", { id: task.id }),
-    ).toBe(touched);
+    ).toBe(Math.max(touched, inherited));
   }
   checkChildHistory(conn);
 }

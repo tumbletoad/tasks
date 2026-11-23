@@ -13,10 +13,12 @@ import {
   folderView,
   formatAsOf,
   formatTaskRef,
+  appliedSql,
   inTrashSql,
   isId,
   RECEIPT_SQL,
   removalSeqSql,
+  UNDO_TARGET_SQL,
   storedPreference,
   type FolderView,
   type LaunchFolder,
@@ -1496,15 +1498,14 @@ export async function readCommitTasks(
 }
 
 /**
- * The change an undo of `$principal` would take back: its newest commit still on its undo stack,
- * with the kind of the first operation that changed a task.
+ * The change an undo of `$principal` would take back (storage's UNDO_TARGET_SQL, which the writer
+ * reads too), with the kind of the first operation that changed a task.
  */
 const UNDO_TARGET: Statement = {
   sql:
-    "SELECT k.id AS id, k.seq AS seq, (SELECT json_extract(k.ops, '$[' || c.op || '].op') " +
-    "FROM changes c WHERE c.seq = k.seq AND c.task_id IS NOT NULL ORDER BY c.n LIMIT 1) AS change " +
-    "FROM commits k WHERE k.principal_id = $principal AND k.undo_status = 'done' " +
-    "ORDER BY k.seq DESC LIMIT 1",
+    "SELECT u.id AS id, u.seq AS seq, (SELECT json_extract(k.ops, '$[' || c.op || '].op') " +
+    "FROM commits k JOIN changes c ON c.seq = k.seq WHERE k.seq = u.seq AND c.task_id IS NOT NULL " +
+    `ORDER BY c.n LIMIT 1) AS change FROM (${UNDO_TARGET_SQL}) u`,
   mode: "get",
 };
 
@@ -1530,22 +1531,24 @@ export async function readUndoTarget(
 }
 
 /**
- * The newest commit under writer scope `$scope` after the commit `$undone` and before `$seq`, with
- * the first task it changed and the kind of the operation that changed it (`commits.ops[op].op`).
+ * The newest commit under writer scope `$scope` after the commit that last applied `$undone` (its
+ * newest redo, else itself) and before `$seq`, with the first task it changed and the kind of the
+ * operation that changed it (`commits.ops[op].op`).
  */
 const SCRIPT_CHANGE: Statement = {
   sql:
     "SELECT k.at AS at, t.ref AS ref, json_extract(k.ops, '$[' || c.op || '].op') AS change " +
     "FROM commits k JOIN changes c ON c.seq = k.seq AND c.task_id IS NOT NULL " +
     "JOIN tasks t ON t.id = c.task_id WHERE k.scope_id = $scope AND k.seq < $seq " +
-    "AND k.seq > (SELECT seq FROM commits WHERE id = $undone) ORDER BY k.seq DESC, c.n LIMIT 1",
+    `AND k.seq > ${appliedSql("(SELECT seq FROM commits WHERE id = $undone)")} ` +
+    "ORDER BY k.seq DESC, c.n LIMIT 1",
   mode: "get",
 };
 
 /**
- * A change a script of the same person made after the change an undo took back (A3 3.7.4): the
- * newest under the script's writer scope between the undone commit and the undo's own, so a
- * replay of the undo answers the same. Undefined when there is none.
+ * A change a script of the same person made after the change an undo took back was last applied
+ * (A3 3.7.4): the newest under the script's writer scope between then and the undo's own commit,
+ * so a replay of the undo answers the same. Undefined when there is none.
  */
 export async function readScriptChange(
   reader: WorkerConnection,

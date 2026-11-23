@@ -26,7 +26,6 @@ export {
 export { missingTasks, readBatch, readPending, type BatchRead, type Pending } from "./read.ts";
 export {
   catalogText,
-  dateIn,
   FORMAT,
   indexText,
   mdLine,
