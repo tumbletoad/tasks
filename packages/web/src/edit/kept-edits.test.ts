@@ -11,7 +11,6 @@ import {
   effortChange,
   groupingChange,
   priorityChange,
-  restoreChange,
   starChange,
   statusChange,
   titleChange,
@@ -86,7 +85,6 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
       waitingChange(undefined),
       groupingChange(AREA, PROJECT),
       groupingChange(AREA, undefined),
-      restoreChange("grouping", { area_id: AREA.id, project_id: null }) as Change,
     ];
     const list = changes.map((change, i) =>
       unsaved(

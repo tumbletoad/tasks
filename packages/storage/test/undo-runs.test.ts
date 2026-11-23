@@ -208,6 +208,8 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
           refPrefix: "M",
           partial: true,
           op: 0,
+          principal: fx.human.principal_id,
+          applied: seq,
         });
       } catch (error) {
         problem = error;
@@ -227,11 +229,11 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
     );
     const created = startRun(id);
     const run = String(created.results[0]?.id);
-    const refusal = (): WriteResult => {
+    const refusal = (version: number, state: string): WriteResult => {
       const refused = undo();
       expectStatus(refused, "conflict");
       expect(refused.error?.code).toBe("UNDO_CONFLICT");
-      // Named once, by its table and its state, with who created it: the person's run.
+      // Named once, by its state, with its newest change and its state now: the person's run.
       expect(refused.conflicts).toEqual([
         expect.objectContaining({
           entity: "runs",
@@ -239,19 +241,19 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
           task: id,
           ref: "M-1",
           field: "state",
-          value: null,
-          version: created.seq,
+          value: expect.objectContaining({ state }) as unknown,
+          version,
           by: expect.objectContaining({ actor: fx.human.principal_id, kind: "human" }) as unknown,
         }),
       ]);
       return refused;
     };
-    refusal();
+    refusal(created.seq, "queued");
     move(run, "queued", "starting");
-    move(run, "starting", "running");
-    refusal();
-    move(run, "running", "succeeded", { result: RESULT });
-    refusal();
+    const running = move(run, "starting", "running");
+    refusal(running.seq, "running");
+    const done = move(run, "running", "succeeded", { result: RESULT });
+    refusal(done.seq, "succeeded");
     expect(task(id)["deleted_at"]).toBeNull();
     expect(commitAt(made.seq)["undo_status"]).toBe("done");
 
@@ -268,6 +270,53 @@ describe("[A1.5.history.runs] undo and redo beside run records", () => {
     const queued = String(startRun(other).results[0]?.id);
     move(queued, "queued", "cancelled");
     expect(undo().conflicts).toEqual([expect.objectContaining({ entity: "runs", id: queued })]);
+  });
+
+  test("a run on a task since its removal was undone keeps Redo from putting it back in the Trash", () => {
+    const id = create();
+    applied(write([{ kind: "task.delete", task: id }]));
+    applied(undo());
+    // The person's run, though written with the person's credential, is no step on their stack.
+    const run = String(startRun(id).results[0]?.id);
+    const late = redo();
+    expectStatus(late, "conflict");
+    expect(late.conflicts).toEqual([
+      expect.objectContaining({ entity: "runs", id: run, task: id, field: "state" }),
+    ]);
+    expect(task(id)["deleted_at"]).toBeNull();
+  });
+
+  test("a run created and advanced since is named by its advance: who, when, and its state now", () => {
+    const id = create();
+    applied(write([{ kind: "task.delete", task: id }]));
+    applied(undo());
+    const run = String(startRun(id).results[0]?.id);
+    const started = move(run, "queued", "starting");
+    const late = redo();
+    expectStatus(late, "conflict");
+    expect(late.conflicts).toEqual([
+      expect.objectContaining({
+        entity: "runs",
+        id: run,
+        field: "state",
+        version: started.seq,
+        value: expect.objectContaining({ state: "starting" }) as unknown,
+      }),
+    ]);
+  });
+
+  test("Undo of a redone restore counts only what changed after the Redo", () => {
+    const id = create();
+    const run = String(startRun(id).results[0]?.id);
+    applied(write([{ kind: "task.delete", task: id }]));
+    applied(write([{ kind: "task.restore", task: id }]));
+    applied(undo());
+    // The run makes progress while its task is in the Trash; the person then brings it back.
+    move(run, "queued", "starting");
+    applied(redo());
+    expect(task(id)["deleted_at"]).toBeNull();
+    applied(undo());
+    expect(task(id)["deleted_at"]).not.toBeNull();
   });
 
   test("a task its create's undo tombstoned takes no run, and its redo brings it back without one", () => {

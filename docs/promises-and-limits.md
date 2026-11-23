@@ -16,14 +16,17 @@ the behaviour it describes, and keep each one to a sentence or two.
   with the `--request-id` that the failed command named.
 - Every change keeps what changed and who made it: you, an agent, or a script.
 - Undo and redo never replace someone else's work that came in between, also when that work set a
-  value and set it back.
+  value and set it back. Redo passes over a change of yours it cannot bring back and redoes the
+  next one. The change it passed over stays, and a later Redo tries it again.
 - Your undo history survives a restart and is shared by your windows and the command line.
 - Checking off a task completes it at once and can be undone.
 - Wrapping up a task keeps its context, notes, activity and sources. Reopening keeps the earlier
   outcome and what was learned.
 - Moving a task to the Trash deletes nothing: its notes, log, sources and history stay, nothing
   empties the Trash, and Restore brings it back as it was. A task whose project or area is gone
-  comes back in its area, or the Inbox. A task someone changed since you looked is not moved.
+  comes back in its area, or the Inbox. A task someone changed since you looked is not moved, and
+  neither Undo nor Redo puts a task back in the Trash when someone else added to it or changed it
+  since.
 - A task in the Trash changes only by Restore: its card is for reading, and what you typed for it
   stays as you typed it. A task whose creation you undid is not in the Trash: Redo brings it back
   whole.
@@ -335,7 +338,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Logs hold no task text, and there is no telemetry. Task text leaves TTasks only where you send it:
   what you copy, and what an agent reads through its connection.
 - The generated folder of readable files is not where tasks are stored. A file you edit or add
-  there is kept or moved to a rescue folder, never deleted.
+  there is kept or moved to a rescue folder, never deleted. A generated file that goes missing,
+  removed by hand or by a sync, is written again within seconds while TTasks runs.
 
 ## Installing and updating
 

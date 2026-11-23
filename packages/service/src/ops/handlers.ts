@@ -26,6 +26,7 @@ import {
   LATER_PREFERENCES,
   LATER_SETS,
   mayWrite,
+  newerWorkJson,
   opSpec,
   parseInput,
   PREFERENCES,
@@ -38,6 +39,7 @@ import {
   type PreferenceSpec,
   type PrefValue,
 } from "@ttasks/contracts";
+import { localDate } from "@ttasks/contracts/day";
 import {
   folderKey,
   freeSlug,
@@ -95,7 +97,7 @@ import {
 } from "../launch/open.ts";
 import type { Session, SessionPort } from "./binding.ts";
 import { checkGrant, grantRefused, standingOf, type HomeGate } from "./grant.ts";
-import { dateIn, dueDate, localTimeZone, pastInstant } from "./dates.ts";
+import { dueDate, localTimeZone, pastInstant } from "./dates.ts";
 import { HERE_ROWS, hereOf, hereRows, type Here, type Match } from "./here.ts";
 import {
   checkFolder,
@@ -435,7 +437,7 @@ async function callWith(
     entry,
     space,
     input: parsed.data,
-    today: dateIn(now, (host.timeZone ?? localTimeZone)()),
+    today: localDate(now, (host.timeZone ?? localTimeZone)()),
   };
   const handler = HANDLERS[entry.name];
   if (handler === undefined) throw opUnknown();
@@ -4440,6 +4442,8 @@ async function historyResult(
     result: word,
     commit: opAt(result, 0).id,
     ...(tasks === undefined ? {} : { tasks: tasks.refs, task_count: tasks.count }),
+    ...(result.passed === undefined ? {} : { passed_over: result.passed }),
+    ...(result.newer === undefined ? {} : newerWorkJson(result.newer)),
     ...(word === "partial"
       ? {
           unresolved: result.conflicts.map((c) => ({

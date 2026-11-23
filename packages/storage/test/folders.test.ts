@@ -401,6 +401,95 @@ describe("[A1.5.write.folders] a project's and a task's folder through the write
     expectStatus(unbased, "applied");
   });
 
+  test("setting a folder from a base before Undo brought the cleared one back is a conflict, and the restored folder stays", () => {
+    const task = newTask("Restored", undefined, "~/work/a");
+    expectStatus(submit([{ kind: "task.folder_clear", task }]), "applied");
+    const empty = fx.base();
+    expectStatus(undo(), "applied");
+    expect(live()).toEqual({ [`task:${task}`]: "~/work/a" });
+    const stale = submit([{ kind: "task.folder_set", task, path: "~/work/b" }], fx.codex, {
+      base: empty,
+    });
+    expectStatus(stale, "conflict");
+    expect(stale.conflicts).toEqual([
+      expect.objectContaining({ entity: "folders", field: "deleted", task }),
+    ]);
+    expect(live()).toEqual({ [`task:${task}`]: "~/work/a" });
+  });
+
+  test("Redo of a removal names the newest change to a folder set and cleared since: who cleared it, when, and that it is cleared", () => {
+    const task = newTask("Set and cleared since");
+    expectStatus(submit([{ kind: "task.delete", task }]), "applied");
+    expectStatus(undo(), "applied");
+    expectStatus(
+      submit([{ kind: "task.folder_set", task, path: "~/work/a" }], fx.codex),
+      "applied",
+    );
+    const cleared = submit([{ kind: "task.folder_clear", task }], fx.claude);
+    expectStatus(cleared, "applied");
+    const late = redo();
+    expectStatus(late, "conflict");
+    expect(late.conflicts).toEqual([
+      expect.objectContaining({
+        entity: "folders",
+        field: "deleted",
+        task,
+        version: cleared.seq,
+        by: expect.objectContaining({ actor: fx.claude.principal_id }) as unknown,
+        value: expect.any(Number) as unknown,
+      }),
+    ]);
+  });
+
+  test("a folder one agent set and another repointed since is named once, by the second, with its path now: by Redo of a removal and by Undo of the task's creation", () => {
+    const repointed = (task: Id<"t">): WriteResult => {
+      expectStatus(
+        submit([{ kind: "task.folder_set", task, path: "~/work/a" }], fx.codex),
+        "applied",
+      );
+      const moved = submit([{ kind: "task.folder_set", task, path: "~/work/b" }], fx.claude);
+      expectStatus(moved, "applied");
+      return moved;
+    };
+    const once = (result: WriteResult, task: Id<"t">, moved: WriteResult): void => {
+      expectStatus(result, "conflict");
+      expect(result.conflicts).toEqual([
+        expect.objectContaining({
+          entity: "folders",
+          field: "path",
+          task,
+          value: "~/work/b",
+          version: moved.seq,
+          by: expect.objectContaining({ actor: fx.claude.principal_id }) as unknown,
+        }),
+      ]);
+    };
+    const removed = newTask("Removed, then set and repointed");
+    expectStatus(submit([{ kind: "task.delete", task: removed }]), "applied");
+    expectStatus(undo(), "applied");
+    const first = repointed(removed);
+    once(redo(), removed, first);
+    const made = newTask("Created, then set and repointed");
+    const second = repointed(made);
+    once(undo(), made, second);
+  });
+
+  test("Redo of a clear after someone changed the folder is a conflict, and their folder stays", () => {
+    const task = newTask("Moved since", undefined, "~/work/a");
+    expectStatus(submit([{ kind: "task.folder_clear", task }]), "applied");
+    expectStatus(undo(), "applied");
+    expectStatus(
+      submit([{ kind: "task.folder_set", task, path: "~/work/b" }], fx.codex),
+      "applied",
+    );
+    const late = redo();
+    expectStatus(late, "conflict");
+    expect(late.conflicts).toEqual([
+      expect.objectContaining({ entity: "folders", field: "path", task }),
+    ]);
+    expect(live()).toEqual({ [`task:${task}`]: "~/work/b" });
+  });
+
   test("a deleted project never holds a live folder: undo of a clear while it is deleted is a conflict, so its restore cannot share a folder", () => {
     const project = newProject("Away", "~/work/away");
     expectStatus(submit([{ kind: "project.folder_clear", project }]), "applied");

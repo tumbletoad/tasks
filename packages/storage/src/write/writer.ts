@@ -75,9 +75,12 @@ import {
   applyInversions,
   brokenIn,
   groupBreaks,
+  lastApplied,
+  newerWorkOf,
+  type Held,
   planInversions,
   readChanges,
-  redoTarget,
+  redoSteps,
   undoTarget,
   type GroupTouch,
   type Inversion,
@@ -559,6 +562,10 @@ const SQL = {
   outbox:
     "INSERT INTO outbox (topic, key, first_seq, seq) VALUES ('projection', $key, $seq, $seq) " +
     "ON CONFLICT (topic, key) DO UPDATE SET seq = excluded.seq",
+  /** The live tasks of the project a folder belongs to: none for a task's folder. */
+  folderTasks:
+    "SELECT t.id FROM folders f JOIN tasks t ON t.project_id = f.owner_id " +
+    "WHERE f.id = $id AND f.owner_kind = 'project' AND t.deleted_at IS NULL",
   lastSeq: "UPDATE space SET last_seq = $seq WHERE one = 1",
   last: inGroup("max(position)", ""),
   next: inGroup("min(position)", " AND position > $at"),
@@ -2456,10 +2463,12 @@ export class SpaceWriter {
           const touches: Touch[] = [];
           if (row !== undefined) {
             // Another folder for the one there: the base covers the folder the caller saw, and
-            // every folder inside it that moves along, so one set since is not moved unseen.
+            // every folder inside it that moves along, so one set since is not moved unseen. A
+            // folder Undo brought back keeps its old path version: the version of its tombstone
+            // says whether the caller saw it.
             const found = decodeFolder(row);
             target = found.id;
-            touches.push(...folderTouches(row, ["path"], parent));
+            touches.push(...folderTouches(row, ["path", "deleted"], parent));
             if (op.carry !== undefined && op.carry.length > 0) {
               const carried = new Set(op.carry);
               for (const inside of conn
@@ -2469,7 +2478,7 @@ export class SpaceWriter {
                 if (moved.id === found.id || !carried.has(moved.ownerId)) continue;
                 if (carriedTo(moved.path, found.path, op.path, folder.os) === undefined) continue;
                 const owned = moved.ownerKind === "task" ? task(moved.ownerId, "task", true) : null;
-                touches.push(...folderTouches(inside, ["path"], owned));
+                touches.push(...folderTouches(inside, ["path", "deleted"], owned));
               }
             }
           } else {
@@ -2603,8 +2612,9 @@ export class SpaceWriter {
         insertChanges(conn, seq, changes);
         // The search rows, in the same transaction as the state they index (A1 3.7, 3.12).
         if (this.#search) indexChanges(conn, seq, changes);
-        const tasks = new Set(changes.flatMap((c) => (c.taskId === null ? [] : [c.taskId])));
-        for (const id of tasks) conn.prepare(SQL.outbox).run({ key: id, seq });
+        for (const id of projectionTasks(conn, changes)) {
+          conn.prepare(SQL.outbox).run({ key: id, seq });
+        }
         // The projection renders tasks and their children. Launch and run records are not.
         if (changes.some((c) => c.entity !== "launches" && c.entity !== "runs")) {
           conn.prepare(SQL.outbox).run({ key: "*", seq });
@@ -2639,14 +2649,16 @@ export class SpaceWriter {
   // Undo and redo (A1 3.10.1, 3.10.4)
 
   /**
-   * An undo or a redo. The principal's stack decides what it inverts: an undo the newest `done`
-   * commit's change rows, a redo the rows of the oldest `undone` commit's undo. History (history.ts)
-   * plans the inversion under each field's provenance, applies it and checks the holder rule on
-   * what it made, and one commit of kind `undo` or `redo` records it and moves the stack: the
-   * undone commit becomes `undone` with `undone_by`, a redone
-   * one `done` again. An undo is all or nothing unless it is partial, and a partial undo leaves the
-   * stack even when it inverts nothing, so the next undo reaches the commit below; a redo is all or
-   * nothing. The commit itself never joins the stack.
+   * An undo or a redo. The principal's stack decides what it inverts: an undo the change rows of
+   * the `done` commit applied last, a redo the rows of an `undone` commit's undo. History
+   * (history.ts) plans the inversion under each field's provenance, applies it and checks the rules
+   * across rows on what it made, and one commit of kind `undo` or `redo` records it and moves the
+   * stack: the undone commit becomes `undone` with `undone_by`, a redone one `done` again. An undo
+   * is all or nothing unless it is partial, and a partial undo leaves the stack even when it
+   * inverts nothing, so the next undo reaches the commit below. A redo is all or nothing: it tries
+   * the undone commits oldest first and redoes the first that the checks let through. Those before
+   * it are passed over and stay undone, for the next redo to try again. The commit itself never
+   * joins the stack.
    */
   #history(
     conn: Connection,
@@ -2667,118 +2679,155 @@ export class SpaceWriter {
     ) {
       problem("NOT_FOUND", "The space has no change with this ID", 0, "commit");
     }
-    const target = undo ? undoTarget(conn, principal) : redoTarget(conn, principal);
-    if (target === undefined) {
+    const newest = undo ? undoTarget(conn, principal) : undefined;
+    const stack = undo ? (newest === undefined ? [] : [newest]) : redoSteps(conn, principal);
+    if (stack.length === 0) {
       return undo
         ? problem("NOTHING_TO_UNDO", "Nothing of yours is left to undo here", 0)
         : problem("NOTHING_TO_REDO", "Nothing of yours is left to redo here", 0);
     }
     // A caller that names the commit it means (a toast's own undo) never moves another.
-    if (op.commit !== undefined && op.commit !== target.id) {
+    const steps = op.commit === undefined ? stack : stack.filter((s) => s.id === op.commit);
+    if (steps.length === 0) {
       problem(
         "INVALID_TRANSITION",
         undo
           ? "That change is not your newest one: read again"
-          : "That change is not the next one to redo: read again",
+          : "That change is not one you undid: read again",
         0,
         "commit",
       );
     }
-    // The rows an undo inverts are the commit's own; a redo inverts its undo's.
-    const inverted = undo ? target.seq : must(target.undoneBy, "An undone commit names its undo");
-    if (inverted < space.undoFloorSeq) {
-      problem("UNDO_BEFORE_FLOOR", "The change is older than the space's last format change", 0);
-    }
     const partial = op.kind === "undo" && op.partial === true;
-    const plan = planInversions(conn, readChanges(conn, inverted), {
-      creating: new Set([target.seq]),
-      refPrefix: space.refPrefix,
-      partial,
-      op: 0,
-    });
-    const conflict = (): WriteResult => ({
+    const seq = nextSeq(space);
+    /** The steps a redo passed over, and why: each row and field once. */
+    const passed: Id<"op">[] = [];
+    const why = new Map<string, FieldConflict>();
+    const held: Held[] = [];
+    for (const target of steps) {
+      // The rows an undo inverts are the commit's own; a redo inverts its undo's.
+      const inverted = undo ? target.seq : must(target.undoneBy, "An undone commit names its undo");
+      if (inverted < space.undoFloorSeq) {
+        problem("UNDO_BEFORE_FLOOR", "The change is older than the space's last format change", 0);
+      }
+      const plan = planInversions(conn, readChanges(conn, inverted), {
+        creating: new Set([target.seq]),
+        refPrefix: space.refPrefix,
+        partial,
+        op: 0,
+        principal,
+        // A redo applies the step's undo again; an undo takes back the step as its last redo made it.
+        applied: undo ? lastApplied(conn, target.seq) : inverted,
+      });
+      const pass = (): void => {
+        passed.push(target.id);
+        if (plan.conflicts.length > 0)
+          held.push({ since: plan.applied, conflicts: plan.conflicts });
+        for (const c of plan.conflicts) {
+          const key = `${c.entity}|${c.id}|${c.field}`;
+          if (!why.has(key)) why.set(key, c);
+        }
+      };
+      if (plan.conflicts.length > 0 && !partial) {
+        pass();
+        continue;
+      }
+      const commitId = newId("op", this.#random);
+      conn.exec("SAVEPOINT exec");
+      try {
+        // The inversions first: the rules across rows are decided on the state they make (A1 3.10).
+        const applied = applyInversions(conn, plan, {
+          seq,
+          at,
+          principal,
+          op: 0,
+          refPrefix: space.refPrefix,
+          partial,
+          owners: !undo,
+        });
+        if (applied === undefined) {
+          rollBack(conn);
+          pass();
+          continue;
+        }
+        conn.prepare(SQL.insertHistoryCommit).run({
+          seq,
+          id: commitId,
+          epoch: space.authority.epoch,
+          incarnation: space.authority.incarnation,
+          at,
+          actor_kind: actor.actor_kind,
+          principal,
+          author: actor.author_id ?? principal,
+          scope: actor.scope_id,
+          machine: actor.machine_id,
+          session: actor.session_id ?? null,
+          run: actor.run_id ?? null,
+          origin: actor.origin,
+          request: request.request_id,
+          kind: op.kind,
+          ops: opsText([
+            {
+              v: 1,
+              op: op.kind,
+              target: target.id,
+              input: { commit: target.id, ...(partial ? { partial: true } : {}) },
+            },
+          ]),
+          affected: affectedBy(plan.inversions),
+          reason: request.reason ?? null,
+          undo_of: undo ? target.seq : null,
+          redo_of: undo ? null : target.seq,
+        });
+        const changes = applied.changes.map((c) => ({ ...c, action: "set" as const }));
+        insertChanges(conn, seq, changes);
+        // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
+        // its children's, a restore brings them back, a field set back rewrites its document.
+        if (this.#search) indexChanges(conn, seq, changes);
+        for (const task of new Set([...applied.tasks, ...projectionTasks(conn, changes)])) {
+          conn.prepare(SQL.outbox).run({ key: task, seq });
+        }
+        if (applied.changes.length > 0) conn.prepare(SQL.outbox).run({ key: "*", seq });
+        if (undo) conn.prepare(SQL.markUndone).run({ target: target.seq, seq });
+        else conn.prepare(SQL.markRedone).run({ target: target.seq });
+        conn.prepare(SQL.lastSeq).run({ seq });
+        conn.exec("RELEASE exec");
+      } catch (error) {
+        if (error instanceof RequestProblem) rollBack(conn);
+        throw error;
+      }
+      const conflicts = undo ? plan.conflicts : [...why.values()];
+      if (undo && conflicts.length > 0) held.push({ since: plan.applied, conflicts });
+      return {
+        ...accepted("applied", { ...asOf, seq }),
+        commit: commitId,
+        results: [{ i: 0, status: "updated", id: target.id, version: seq }],
+        // What a partial undo left as others set it, or why a redo passed over the steps before
+        // the one it redid (WriteResult.conflicts).
+        conflicts,
+        ...(passed.length === 0 ? {} : { passed }),
+        ...(held.length === 0 ? {} : { newer: newerWorkOf(conn, held, principal) }),
+      };
+    }
+    // Nothing could be applied. The refusal names the oldest step it tried, which a caller that
+    // named none (Ctrl+Z) passes to Undo the rest.
+    const first = must(steps[0], "An undo or redo tries a step");
+    const conflicts = [...why.values()];
+    return {
       ...refused(
         "conflict",
         asOf,
         {
           code: "UNDO_CONFLICT",
-          // A redo is all or nothing (A1 3.10.1): it offers no partial form.
           message: undo
-            ? "Someone changed a field of it since: undo the rest, or keep theirs"
-            : "Someone changed one of its fields since: a redo is all or nothing",
+            ? "Someone changed it since: undo the rest, or keep theirs"
+            : "Someone changed what it would change since: nothing was redone",
         },
-        plan.conflicts,
+        conflicts,
       ),
-      target: target.id,
-    });
-    if (plan.conflicts.length > 0 && !partial) return conflict();
-    const seq = nextSeq(space);
-    const commitId = newId("op", this.#random);
-    conn.exec("SAVEPOINT exec");
-    try {
-      // The inversions first: the holder rule is decided on the state they make (A1 3.10).
-      const applied = applyInversions(conn, plan, {
-        seq,
-        at,
-        principal,
-        op: 0,
-        refPrefix: space.refPrefix,
-        partial,
-      });
-      if (applied === undefined) {
-        rollBack(conn);
-        return conflict();
-      }
-      conn.prepare(SQL.insertHistoryCommit).run({
-        seq,
-        id: commitId,
-        epoch: space.authority.epoch,
-        incarnation: space.authority.incarnation,
-        at,
-        actor_kind: actor.actor_kind,
-        principal,
-        author: actor.author_id ?? principal,
-        scope: actor.scope_id,
-        machine: actor.machine_id,
-        session: actor.session_id ?? null,
-        run: actor.run_id ?? null,
-        origin: actor.origin,
-        request: request.request_id,
-        kind: op.kind,
-        ops: opsText([
-          {
-            v: 1,
-            op: op.kind,
-            target: target.id,
-            input: { commit: target.id, ...(partial ? { partial: true } : {}) },
-          },
-        ]),
-        affected: affectedBy(plan.inversions),
-        reason: request.reason ?? null,
-        undo_of: undo ? target.seq : null,
-        redo_of: undo ? null : target.seq,
-      });
-      const inverted = applied.changes.map((c) => ({ ...c, action: "set" as const }));
-      insertChanges(conn, seq, inverted);
-      // The search rows, as for any commit (A1 3.12): a tombstone drops a task's documents and
-      // its children's, a restore brings them back, a field set back rewrites its document.
-      if (this.#search) indexChanges(conn, seq, inverted);
-      for (const task of applied.tasks) conn.prepare(SQL.outbox).run({ key: task, seq });
-      if (applied.changes.length > 0) conn.prepare(SQL.outbox).run({ key: "*", seq });
-      if (undo) conn.prepare(SQL.markUndone).run({ target: target.seq, seq });
-      else conn.prepare(SQL.markRedone).run({ target: target.seq });
-      conn.prepare(SQL.lastSeq).run({ seq });
-      conn.exec("RELEASE exec");
-    } catch (error) {
-      if (error instanceof RequestProblem) rollBack(conn);
-      throw error;
-    }
-    return {
-      ...accepted("applied", { ...asOf, seq }),
-      commit: commitId,
-      results: [{ i: 0, status: "updated", id: target.id, version: seq }],
-      // What a partial undo left as others set it (WriteResult.conflicts).
-      conflicts: plan.conflicts,
+      target: first.id,
+      ...(undo ? {} : { passed }),
+      newer: newerWorkOf(conn, held, principal),
     };
   }
 
@@ -4503,6 +4552,26 @@ function wrapLearnings(
   if (count > WRITE_LIMITS.learnings && count > live.length) {
     problem("TOO_LARGE", "A task holds at most 20 learnings", staged.i, "learnings.add");
   }
+}
+
+/**
+ * The tasks whose readable files a commit's changes reach: each change's task, and each task of a
+ * project whose folder changed, since a task opens in its project's folder where it has none.
+ */
+function projectionTasks(
+  conn: Connection,
+  changes: readonly { entity: string; entityId: string; taskId: string | null }[],
+): Set<string> {
+  const tasks = new Set<string>();
+  for (const c of changes) {
+    if (c.taskId !== null) tasks.add(c.taskId);
+    else if (c.entity === "folders") {
+      for (const row of conn.prepare(SQL.folderTasks).all({ id: c.entityId })) {
+        tasks.add(String(row["id"]));
+      }
+    }
+  }
+  return tasks;
 }
 
 function withoutDerived(row: Row): Row {

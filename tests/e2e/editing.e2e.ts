@@ -2,9 +2,9 @@
 // 3.15 item 9), in Chromium and Firefox against the real service process with fixture data.
 //
 // Verify line: by keyboard alone, edit due, priority and effort, check off, undo, redo; an
-// agent-only field starts a composer request. Also: "Restore mine" when an agent changed the field
-// since the person's edit, "Apply mine" when it changed while the person's editor was open, axe in
-// both themes with the date popover and a toast open, and the screenshots at 1,440 and 390 px.
+// agent-only field starts a composer request. Also: an undo refused because an agent changed the
+// field since the person's edit, "Apply mine" when it changed while the person's editor was open,
+// axe in both themes with the date popover and a toast open, and the screenshots at 1,440 and 390 px.
 // Dates are relative to the day the test runs, as the service's are.
 import { expect, type Locator, type Page } from "@playwright/test";
 import { day, onOneDay } from "./days.ts";
@@ -32,6 +32,8 @@ interface Digest {
     readonly priority: number;
     readonly effort?: string;
     readonly due?: string;
+    /** Present while the task is in the Trash. */
+    readonly deleted?: unknown;
   };
 }
 
@@ -218,8 +220,17 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
   });
 });
 
-test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agent changed the same field", () => {
-  test("undo after an agent's change offers Restore mine; an edit over a change made while the popover was open offers Apply mine", async ({
+/** The page now at 1,440 and 390 px wide, for the pull request, and back to 1,440. */
+async function bothWidths(page: Page, name: string): Promise<void> {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await picture(page, `${name}-${String(width)}.png`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+}
+
+test.describe("[A7.3.12.m5-08.e2e.conflict] Undo and Apply mine: an agent changed the same field", () => {
+  test("undo after an agent's change is refused, says who changed the task and leaves the agent's value; an edit over a change made while the popover was open offers Apply mine", async ({
     page,
     world,
   }) => {
@@ -250,15 +261,15 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
     await agentSets(world, ref, { due: agents });
     await expect.poll(async () => (await read(world, ref)).task.due).toBe(agents);
 
-    // Undo: the field is the agent's now, so nothing is overwritten unseen. The toast says who.
+    // Undo: the field is the agent's now, so nothing is overwritten. The toast says who changed
+    // which task, with nothing to choose: the person sets the value on the task if they want.
     await page.locator("main").focus();
     await page.keyboard.press("Control+z");
-    await expect(toast(page)).toContainText("changed the due date at");
-    await expect(toastAction(page)).toHaveText("Restore mine");
+    await expect(toast(page)).toContainText("Not undone: ");
+    await expect(toast(page)).toHaveText(new RegExp(`.+ changed ${ref} since$`, "u"));
+    await expect(toastAction(page)).toHaveCount(0);
+    await bothWidths(page, "undo-refused");
     expect((await read(world, ref)).task.due).toBe(agents);
-    // Restore mine puts back what the undo would have: the date before the person's edit.
-    await toastAction(page).click();
-    await expect.poll(async () => (await read(world, ref)).task.due).toBe(first);
 
     // The popover takes its base when it opens: an agent's change while it is open is shown there,
     // and the person's pick is a conflict that keeps their value one click away.
@@ -281,6 +292,65 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
         .toBe(day(7, today.start).iso);
       await expect(unsaved).toHaveCount(0);
     });
+  });
+});
+
+test.describe("[A5.3.12.e2e.redo-passed-over] Redo passes over a change an agent added to since, and says who changed which task", () => {
+  test("Redo after an agent's note on a removed task redoes the edit behind it and keeps the task; the next Redo is refused, naming the same", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const [removed, edited] = await addTasks(world, [
+      { title: `Return the library books (${tag})`, area: "home" },
+      { title: `Order the printer ink (${tag})`, area: "home" },
+    ]);
+    if (removed === undefined || edited === undefined) throw new Error("the tasks were not added");
+    // The person, at a terminal: the same undo stack as the page's.
+    await world.op(world.mira.id, "task.delete", {
+      tasks: [removed],
+      base: (await read(world, removed)).as_of,
+    });
+    await world.op(world.mira.id, "task.update", {
+      task: edited,
+      set: { priority: 1 },
+      base: (await read(world, edited)).as_of,
+    });
+    await signIn(page, world, `/s/${world.mira.id}/task/${edited}`);
+    await showsSpace(page, world.mira.name);
+    await expect(rowOf(page, edited)).toBeVisible({ timeout: SLOW_MS });
+    await page.locator("main").focus();
+    await page.keyboard.press("Control+z");
+    await expect.poll(async () => (await read(world, edited)).task.priority).not.toBe(1);
+    await page.keyboard.press("Control+z");
+    await expect.poll(async () => (await read(world, removed)).task.deleted).toBeUndefined();
+    await world.op(
+      world.mira.id,
+      "entry.add",
+      { task: removed, kind: "note", text: "Fixture note: renewed online instead." },
+      "agent",
+    );
+
+    // Redo would move the task, note and all, to the Trash: it passes over that and redoes the
+    // edit behind it, and says who changed which task.
+    const changed = new RegExp(`.+ changed ${removed} since$`, "u");
+    await page.keyboard.press("Control+Shift+z");
+    await expect(toast(page)).toContainText("Redone. Not redone: ");
+    await expect(toast(page)).toHaveText(changed);
+    await expect(toastAction(page)).toHaveText("Undo");
+    await expect.poll(async () => (await read(world, edited)).task.priority).toBe(1);
+    expect((await read(world, removed)).task.deleted).toBeUndefined();
+    await bothWidths(page, "redo-passed-over");
+
+    // Nothing else can be redone: refused, naming the same, with nothing to choose.
+    await page.locator("main").focus();
+    await page.keyboard.press("Control+Shift+z");
+    await expect(toast(page)).toContainText("Not redone: ");
+    await expect(toast(page)).not.toContainText("Redone.");
+    await expect(toast(page)).toHaveText(changed);
+    await expect(toastAction(page)).toHaveCount(0);
+    expect((await read(world, removed)).task.deleted).toBeUndefined();
+    await bothWidths(page, "redo-refused");
   });
 });
 
