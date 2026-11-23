@@ -254,15 +254,17 @@ export async function runCommand(
     }
     const id = String(started["id"]);
     if (typeof started["space"] === "string") space = { space: started["space"] };
+    // As the person can paste it: with the space they chose, which need not be the default.
+    const look = `${CLI_NAME} run show ${id}${named === undefined || space.space === undefined ? "" : ` --space ${space.space}`}`;
     if (!wait) {
       if (globals.json) io.stdout(`${JSON.stringify(started)}\n`);
       else {
         io.stdout(`${runLine(started)}\n`);
-        io.stderr(`See it with: ${CLI_NAME} run show ${id}\n`);
+        io.stderr(`See it with: ${look}\n`);
       }
       return 0;
     }
-    io.onInterrupt?.(`The run goes on. See it with: ${CLI_NAME} run show ${id}`);
+    io.onInterrupt?.(`The run goes on. See it with: ${look}`);
     for (;;) {
       const shown = await call("runs/show", { ...space, run: id });
       if (STOPS_WAITING.has(String(shown["state"]))) {

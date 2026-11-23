@@ -25,6 +25,7 @@
 //
 // The service records what create, open, close, restore and claim do in machine.toml, so it holds
 // after a restart. When it cannot, the answer's `not_remembered` line says why, on stderr.
+import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { CLI_NAME } from "@ttasks/brand";
 import { onlySpace } from "@ttasks/service/copies";
@@ -229,15 +230,17 @@ export interface Unnamed {
 
 /**
  * The space a command names itself: its argument, --space, else TTASKS_SPACE. A folder is made
- * absolute here, so the service never reads it against its own working folder.
+ * absolute here, so the service never reads it against its own working folder. A name may hold a
+ * slash too, so a relative path is a folder only when a folder is there.
  */
 export function namedSpace(io: Io, globals: Globals, given?: string): string | undefined {
   const fromEnv = io.env["TTASKS_SPACE"];
   const named = given ?? globals.space ?? (fromEnv === "" ? undefined : fromEnv);
   if (named === undefined) return undefined;
-  return isAbsolute(named) || named.includes("/") || named.includes("\\")
-    ? absolute(io, named)
-    : named;
+  if (isAbsolute(named) || named === "." || named === "..") return absolute(io, named);
+  if (!named.includes("/") && !named.includes("\\")) return named;
+  const folder = absolute(io, named);
+  return existsSync(folder) ? folder : named;
 }
 
 /**

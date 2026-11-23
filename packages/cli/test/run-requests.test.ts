@@ -2,7 +2,7 @@
 // chose on every request of the verb, also while --wait looks at the run and the default changes.
 // Two fixture spaces hold a task with the same reference, so a run sent to the wrong one shows.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PRODUCT_NAME } from "@ttasks/brand";
 import { startService, type RunningService } from "@ttasks/service/hub";
@@ -33,6 +33,8 @@ let service: RunningService | undefined;
 /** The two spaces: `first` is the machine's default, `second` the one a person names. */
 let first = "";
 let second = "";
+/** The folder of `second`. */
+let secondFolder = "";
 /** A task reference both spaces hold. */
 let task = "";
 
@@ -61,6 +63,7 @@ beforeAll(async () => {
     (JSON.parse(readFileSync(join(folder, "space.json"), "utf8")) as { space_id: Id<"sp"> })
       .space_id;
   [first, second] = folders.map(idOf) as [string, string];
+  secondFolder = folders[1] ?? "";
   const scenario = { fixture: "windows-tool", answer: "Done.", pace: 0.3 };
   registerSpaces(
     home,
@@ -127,6 +130,8 @@ async function user(
     stdin?: string;
     /** Runs before each call is sent. */
     before?: (call: Call) => Promise<void>;
+    /** The folder the command runs in. */
+    cwd?: string;
   } = {},
 ) {
   const calls: Call[] = [];
@@ -147,6 +152,7 @@ async function user(
     tty: true,
     ...(options.env === undefined ? {} : { env: options.env }),
     ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     main: { wrap },
   });
   return { ...ran, calls };
@@ -232,6 +238,36 @@ describe("[A4.3.11.run.requests] ttasks run sends the person's words from --inpu
     const runCalls = ran.calls.filter((c) => c.method.startsWith("runs/"));
     expect(runCalls.length).toBeGreaterThan(1);
     for (const call of runCalls) expect(call.params["space"]).toBe(second);
+  });
+
+  test("a space named as a folder is that folder from where the person stands; a name that is no folder there stays a name", async () => {
+    const sent = async (space: string, cwd: string) => {
+      const ran = await user(["run", "list", task, "--json", "--space", space], { cwd });
+      return {
+        code: ran.code,
+        space: ran.calls.find((c) => c.method === "runs/list")?.params["space"],
+      };
+    };
+    const here = resolve(secondFolder);
+    expect(await sent(".", here)).toEqual({ code: 0, space: here });
+    mkdirSync(join(here, "notes-of-mine"), { recursive: true });
+    expect(await sent("..", join(here, "notes-of-mine"))).toEqual({ code: 0, space: here });
+    expect(await sent(`./${basename(here)}`, dirname(here))).toEqual({ code: 0, space: here });
+    // A name may hold a slash: with no folder of that name here, it is asked for as a name.
+    expect((await sent("team/mira", root)).space).toBe("team/mira");
+  });
+
+  test("the command a start prints to look at its run names the space the person chose", async () => {
+    const ran = await user(["run", task, "--space", second, REQUEST]);
+    expect(ran.code, ran.stdout + ran.stderr).toBe(0);
+    const id = /run show (\S+)/u.exec(ran.stderr)?.[1];
+    const shown = /See it with: (.+)\n/u.exec(ran.stderr)?.[1]?.split(" ").slice(1) ?? [];
+    expect(shown).toContain("--space");
+    // Run as printed, with another space as the default, it finds the run.
+    const looked = await user([...shown, "--json"]);
+    expect(looked.code, looked.stdout + looked.stderr).toBe(0);
+    expect((JSON.parse(looked.stdout) as { id: string }).id).toBe(id);
+    expect((await user(["run", "stop", String(id), "--space", second])).code).toBe(0);
   });
 
   test("a default that changes while --wait looks at the run does not lose it", async () => {
