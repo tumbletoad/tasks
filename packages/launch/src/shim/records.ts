@@ -25,7 +25,6 @@ import { join } from "node:path";
 import { atomicWrite, makeDir } from "@ttasks/files";
 import { isLaunchRef } from "../intents.ts";
 import { RESOLVE_REASONS, type FolderCheck, type ResolveReason } from "../places.ts";
-import { mayRun } from "../process.ts";
 import { LAUNCH_ID, SESSION_ID, SESSION_UUID, TASK_ID } from "../store.ts";
 import { isHash } from "./secrets.ts";
 import {
@@ -133,9 +132,6 @@ export interface RecordStore {
   /** Where the shim writes `exit.json`. */
   exitPath(launch: string): string;
 }
-
-/** A4 3.6.3: a launch folder whose shim is gone or that is older than this is removed. */
-export const FOLDER_MAX_AGE_MS = 24 * 60 * 60_000;
 
 /** The largest launch file read back, and so the largest written. */
 const MAX_FILE = 1024 * 1024;
@@ -403,10 +399,6 @@ export interface FolderRecordsOptions {
   readonly wait?: (ms: number) => void;
   /** A launch file left out because it could not be read: the launch's ID and the error code. */
   readonly unreadable?: (launch: string, code: string) => void;
-  /** A launch folder with no record of its launch, removed by its age. */
-  readonly removed?: (launch: string) => void;
-  /** The clock a folder's age is read against. */
-  readonly now?: () => number;
 }
 
 function pause(ms: number): void {
@@ -467,31 +459,10 @@ function removeEndedRecords(root: string): void {
   }
 }
 
-/**
- * Whether a launch folder that holds no record this build reads stays: a link in its place is not
- * the product's, a folder that changed within the last day may be a live launch's, and so may one
- * whose file names a shim that may still run. A file no one can parse names no shim: only its
- * folder's age keeps it.
- */
-function keepsFolder(folder: string, value: unknown, now: number): boolean {
-  try {
-    const stat = lstatSync(folder);
-    if (!stat.isDirectory() || now - stat.mtimeMs < FOLDER_MAX_AGE_MS) return true;
-  } catch {
-    return true;
-  }
-  const held = isObject(value) ? value["attachment"] : undefined;
-  if (!isObject(held)) return false;
-  const { pid, startTime } = held;
-  return !isPid(pid) || typeof startTime !== "string" || mayRun(pid, startTime);
-}
-
 /** The machine state in folders under the install's launch root. */
 export class FolderRecords implements RecordStore {
   readonly root: string;
   readonly #files = new Map<string, LaunchFile>();
-  /** The launch folders read back with no record of their launch, and what their file held. */
-  readonly #damaged = new Map<string, unknown>();
 
   /**
    * Creates the root (0700, and any missing folder above it) and reads every launch file in it.
@@ -499,10 +470,6 @@ export class FolderRecords implements RecordStore {
    * truth. A file that cannot be read for a moment is read again over
    * `HELD_FILE_WAITS_MS`; one that still cannot is left out, as a damaged one is. The service
    * judges the root before (hub/service.ts): it holds the commands a launch runs.
-   *
-   * A folder whose file is damaged or missing is no launch's for this build or a later start, so
-   * it goes once it is a day old, unless the shim its file names may still run (keepsFolder). A
-   * file another program held past the waits stays: the next start may read it.
    */
   constructor(root: string, options: FolderRecordsOptions = {}) {
     this.root = root;
@@ -517,21 +484,7 @@ export class FolderRecords implements RecordStore {
       (options.wait ?? pause)(ms);
       for (const [name] of passing) this.#load(name, failed);
     }
-    for (const [name, code] of failed) {
-      options.unreadable?.(name, code);
-      if (!PASSING.has(code)) this.#damaged.set(name, undefined);
-    }
-    const now = (options.now ?? Date.now)();
-    for (const [name, value] of this.#damaged) {
-      const folder = join(root, name);
-      if (keepsFolder(folder, value, now)) continue;
-      try {
-        rmSync(folder, { recursive: true, force: true, maxRetries: 5 });
-        options.removed?.(name);
-      } catch {
-        // Held by another program, or not removable now: it stays for a later start.
-      }
-    }
+    for (const [name, code] of failed) options.unreadable?.(name, code);
     removeEndedRecords(root);
   }
 
@@ -545,7 +498,6 @@ export class FolderRecords implements RecordStore {
     failed.delete(name);
     const file = checkLaunchFile(read.value);
     if (file?.launch === name) this.#files.set(name, file);
-    else this.#damaged.set(name, read.value);
   }
 
   list(): readonly LaunchFile[] {

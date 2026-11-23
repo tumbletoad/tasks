@@ -11,19 +11,17 @@ import {
   rmSync,
   statSync,
   symlinkSync,
-  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { CLAIM_WINDOW_MS, isLaunchRef, launchRefCheck, type Route } from "../src/intents.ts";
 import { LaunchMachine, type DispatchOutcome } from "../src/machine.ts";
-import { ownStartTime, type ProcessProbe } from "../src/process.ts";
+import type { ProcessProbe } from "../src/process.ts";
 import { agentEnvironment, allowedNames, LIBUV_REQUIRED } from "../src/shim/environment.ts";
 import { sessionOf, ShimHost, type Attachment, type ClaimOutcome } from "../src/shim/host.ts";
 import {
   checkPlan,
-  FOLDER_MAX_AGE_MS,
   FolderRecords,
   HELD_FILE_WAITS_MS,
   MemoryRecords,
@@ -1386,59 +1384,6 @@ describe("[A4.5.shim.attach] an ended launch leaves nothing", () => {
     new FolderRecords(root);
     expect(existsSync(ended)).toBe(true);
     expect(existsSync(linked)).toBe(true);
-  });
-
-  test("a start removes a launch folder with no record once the folder is a day old, unless the shim its file names may still run; a link in its place stays", async () => {
-    const temp = tempFolder();
-    temps.push(temp);
-    const root = join(temp.path, "launch");
-    records = new FolderRecords(root);
-    boot();
-    const kept = await dispatched();
-    const old = (Date.now() - FOLDER_MAX_AGE_MS - 60_000) / 1000;
-    const folderOf = (file: string | undefined): string => {
-      const folder = join(root, randomId("la"));
-      mkdirSync(folder);
-      if (file !== undefined) writeFileSync(join(folder, "launch.json"), file);
-      return folder;
-    };
-    const damaged = folderOf("{not json");
-    const empty = folderOf(undefined);
-    const fresh = folderOf("{not json");
-    // A file this build cannot read as a record, that still names a shim that runs: this process.
-    const live = folderOf(
-      JSON.stringify({
-        launch: "x",
-        attachment: { pid: process.pid, startTime: await ownStartTime() },
-      }),
-    );
-    const gone = folderOf(
-      JSON.stringify({ launch: "x", attachment: { pid: 1 << 30, startTime: "x" } }),
-    );
-    // A link in a launch folder's place leads out of the launch root: neither is touched.
-    const elsewhere = join(temp.path, "elsewhere");
-    mkdirSync(elsewhere);
-    writeFileSync(join(elsewhere, "launch.json"), "{not json");
-    const linked = join(root, randomId("la"));
-    symlinkSync(elsewhere, linked, "junction");
-    const notLaunch = join(root, "space-folder");
-    mkdirSync(notLaunch);
-    for (const folder of [damaged, empty, live, gone, elsewhere, notLaunch, join(root, kept.id)]) {
-      utimesSync(folder, old, old);
-    }
-    const removed: string[] = [];
-    records = new FolderRecords(root, { removed: (launch) => removed.push(launch) });
-    boot();
-    expect(existsSync(damaged)).toBe(false);
-    expect(existsSync(empty)).toBe(false);
-    expect(existsSync(gone)).toBe(false);
-    expect(removed.sort()).toEqual(
-      [damaged, empty, gone].map((f) => f.slice(root.length + 1)).sort(),
-    );
-    for (const folder of [fresh, live, linked, notLaunch]) expect(existsSync(folder)).toBe(true);
-    expect(existsSync(join(elsewhere, "launch.json"))).toBe(true);
-    // A launch's own record keeps its folder whatever its age: the PID check decides on it.
-    expect(records.get(kept.id)?.launch).toBe(kept.id);
   });
 
   // Only Windows holds a file against its removal; elsewhere the folder's mode decides.
