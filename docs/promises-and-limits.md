@@ -40,6 +40,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - Adding work by a source that an open task or a recently finished one already has finds that task
   and keeps its fields. A task finished longer ago or a deleted one does not stand in the way of
   new work.
+- A log entry given with such work, a finished task's follow-up included, goes on the one open task
+  it found. When it found a finished task or several open ones, that request adds the entry to none
+  of them, and the answer names the tasks it found and says so.
 - Work recreated from another tool can keep when each task was created and finished and when each
   log entry was made. A time in the future is refused. Such a task finished long ago is still
   found by its source for the usual number of days after it was recorded here, so a second pass
@@ -142,9 +145,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   whose folder holds that folder most closely. In an archived project's folder it joins no project,
   and the agent is told.
 - When you move a folder on disk and then give its project or task the new folder, every folder
-  TTasks knows inside the old one moves along, other projects' and tasks' included, as one undo
-  step on that machine. When the old folder is still there, nothing else moves, and you are told
-  which folders stayed. TTasks itself never moves files.
+  TTasks knows inside the old one that is there in the new one moves along, other projects' and
+  tasks' included, as one undo step on that machine. TTasks takes it as a move only when the old
+  folder is gone and the new one is it: the same folder, or a copy whose marker names the owner and
+  that was not already there as the owner's earlier folder. Otherwise nothing else moves, and you
+  are told which folders stayed and why. TTasks itself never moves files.
 - An archived project keeps its folder, and a deleted one frees it.
 - Archiving an area or a project keeps its tasks open and in your views. The page then lists it
   under Archived in the sidebar, with its open tasks counted, and offers it for no new work; its
@@ -240,8 +245,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - TTasks tells apart "asked the app to open" from "the agent connected", and says so when it does
   not know. An uncertain launch is never started a second time by itself.
 - Restarting or updating TTasks does not end an agent it opened, and the agent stays its task's
-  session. On Linux this needs systemd to give each terminal a scope of its own: where it cannot, a
-  restart may end the agents in the terminals TTasks opened, and `ttasks doctor` warns of that.
+  session. Nor does it end an app TTasks asked the system to open, such as the file manager. On
+  Linux this needs systemd to give each terminal and each such app a scope of its own: where it
+  cannot, a restart may end them, and `ttasks doctor` warns of that.
 - The brief an agent gets when a task opens holds the task's reference, not its title, notes or
   sources. Copy's words too long for it are kept as a note, never cut.
 - The launch reference in a brief, such as `L7KQ2M`, is never given to another launch of the
@@ -259,7 +265,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   start one. A run may do whatever your agent setup allows, without asking: the network, other
   folders, other agents. An instance's `run_permission` narrows that.
 - Your request reaches the agent over its own connection, never on a command line. A run's
-  answer, or the agent's question when it needs you, is kept in the run's record. A question
+  answer, or the agent's question when it needs you, is kept in the run's record, and so is what
+  the agent had written of its answer when Stop, a restart or its own end cut it short. A question
   from a helper the agent started does not reach you: that helper hears that no one answered.
 - Stop ends the agent and everything it started, and the run is called ended only once the system
   confirms none of it is left. Where no process group can hold a run, it starts anyway, and Stop
@@ -285,9 +292,13 @@ the behaviour it describes, and keep each one to a sentence or two.
 ## The page
 
 - A field edit that failed or conflicted stays visible until you decide what to do with it, also
-  after a reload, and so does one still waiting behind your previous edit when the page closed. Try
-  again sends it against what you saw when you made it, so a change made since is shown to you
-  first.
+  after a reload, and so does one still waiting behind your previous edit when the page closed.
+  Each tab's is kept on its own: two tabs' edits of one field both show under it, with their words.
+  Try again sends it against what you saw when you made it, so a change made since is shown to you
+  first. Another tab's edit, or a closed tab's, shows with Copy and Discard: to send its words,
+  copy them into the field.
+- A field sends only what you typed in it. Going in and out of a field without typing sends
+  nothing, and it then shows what is saved, also a change someone made while you were in it.
 - Pressing Note or Run again after its answer was lost, also after a reload, makes one note or
   run. For Note this holds in the same browser under the same sign-in; for Run in the same browser
   within a day of the first press, also after signing in again.
@@ -372,6 +383,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   marked as the request of that launch, and backups and exports hold it.
 - Retracting a note does not reach an agent that already read it, a session that already has it,
   or what you copied. The history, backups and exports keep it.
+- When the service or the machine crashes during a run, the run keeps its answer as of the agent's
+  last finished message. What the agent was still writing is only in the run's raw output.
 - Backups and exports are not encrypted. Their protection is that of the disk they are on.
 - Backups sit beside the space on the same disk unless you set another folder for them or copy an
   export elsewhere. A lost disk then loses them with the space.
@@ -388,8 +401,7 @@ the behaviour it describes, and keep each one to a sentence or two.
   you discard them.
 - A field edit that could not be saved is kept in this browser. Another browser does not have it,
   clearing the browser's data for the page loses it, and a browser whose storage is blocked or full
-  keeps it only until the page is reloaded or closed. When two tabs hold different unsaved values
-  for the same field of a task, the browser keeps one of them.
+  keeps it only until the page is reloaded or closed.
 - Undo, redo and restore compare folders by the text they were given in, not by what is on disk.
   One folder reached by two spellings, such as through a link, can end up on two projects that
   way.

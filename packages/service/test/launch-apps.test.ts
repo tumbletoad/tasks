@@ -39,8 +39,22 @@ const opened: SpawnRequest[] = [];
 /** While set, the opener "runs" until the test releases it: an app may start before it exits. */
 let held: Promise<void> | undefined;
 
+/**
+ * The question whether this machine can start a program in a scope of its own (it can where a
+ * user systemd runs, as on CI's Linux): asked through the same spawner, answered, and no opener.
+ */
+const scopeProbe = (request: SpawnRequest): boolean =>
+  /systemd-run$/u.test(request.argv[0] ?? "") && request.argv.includes("--quiet");
+
 /** A spawner that starts nothing: the opener "ran" and exited 0, once released when held. */
 const recordingSpawner = (request: SpawnRequest): Promise<SpawnedProcess> => {
+  if (scopeProbe(request)) {
+    return Promise.resolve({
+      pid: 1,
+      exited: Promise.resolve({ code: 0, signal: null }),
+      stop: () => undefined,
+    });
+  }
   opened.push(request);
   const gate = held;
   return Promise.resolve({

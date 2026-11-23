@@ -18,9 +18,11 @@
 //   container that is not confirmed empty in time leaves the run `unknown`, with End by force.
 // - The answer is kept whole up to 1 MiB, also after megabytes of other output, and each answer
 //   is saved to the run's folder as it comes, so a crash of the service keeps the last one.
-// - When the service ends, its runs' processes end with it (the container's own guarantee). The
-//   next start settles each open run from its saved work: its own result when the work had
-//   settled, else `service_ended` with the last saved answer.
+// - When the service ends, its runs' processes end with it (the container's own guarantee). A
+//   service that closes saves each agent's work first: its own end when it had settled, else what
+//   it said so far, the words of an answer still being written included. The next start settles
+//   each open run from its saved work: its own result when the work had settled, else
+//   `service_ended` with the last saved answer.
 // - A late PID, exit or event never revives a stopped run: the record's rules (machine.ts) refuse
 //   it, and a container that starts after its run gave up on it is killed.
 //
@@ -124,6 +126,8 @@ interface Flow {
   settling: boolean;
   /** While its agent runs: when it last wrote output, or started, in wall clock milliseconds. */
   quietSince: number | undefined;
+  /** While its agent runs: the driver of its protocol. */
+  session: DriverSession | undefined;
   readonly abort: AbortController;
   done: Promise<RunRecord | undefined>;
 }
@@ -410,15 +414,41 @@ export class RunHost {
 
   /**
    * Stops hosting: every wait ends and every live container is killed, without a record. The
-   * service's own end ends them too; the next start's recovery settles the runs.
+   * service's own end ends them too; the next start's recovery settles the runs, with what each
+   * agent had said: the part of an answer it was still writing is saved first.
    */
   async close(): Promise<void> {
     this.#closed.abort();
     const flows = [...this.#flows.values()];
+    await Promise.all(flows.map((flow) => this.#keepSaid(flow)));
     for (const flow of flows) flow.abort.abort();
     await Promise.all(
       flows.map((flow) => this.#containers.kill(containerName(flow.id)).catch(() => undefined)),
     );
+  }
+
+  /**
+   * Saves what a working agent said: the work's own end when it settled, else what it said so far,
+   * since its output ends here and its driver settles with that. A run whose end is being recorded
+   * saved it already.
+   */
+  async #keepSaid(flow: Flow): Promise<void> {
+    const session = flow.session;
+    if (session === undefined || flow.settling) return;
+    const own = await settledNow(session);
+    if (own === undefined) session.ended({ code: null, signal: null });
+    const work = own ?? (await settledNow(session));
+    if (work === undefined || (own === undefined && work.text === null)) return;
+    try {
+      this.#files.saveAnswer(flow.id, {
+        text: work.text,
+        final: work.textFinal,
+        cut: work.textCut,
+        ...(own === undefined ? {} : { outcome: own.outcome, error: own.error }),
+      });
+    } catch (error) {
+      this.#failed("answer", error);
+    }
   }
 
   #flow(id: string): Flow {
@@ -442,6 +472,7 @@ export class RunHost {
       pending: undefined,
       settling: false,
       quietSince: undefined,
+      session: undefined,
       abort,
       done: Promise.resolve(undefined),
     };
@@ -627,6 +658,7 @@ export class RunHost {
       contained.stdin.end();
       session = unopened;
     }
+    flow.session = session;
     // The agent's own end: its exit, then the rest of its output for as long as the drain allows,
     // since a process it left behind may hold the pipe.
     const agentEnded = exited.then(async (exit) => {

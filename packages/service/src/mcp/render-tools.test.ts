@@ -253,6 +253,7 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
             title,
             ambiguous: Array.from({ length: 40 }, (_, m) => ref(100 * n + m)),
             log_added: false,
+            log_left_out: true,
           }
         : n % 3 === 1
           ? {
@@ -299,15 +300,71 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
 
     const finished = {
       ...example("task.finish", 0),
-      follow_ups: Array.from({ length: 10 }, (_, n) => ({ result: "created", ref: ref(n), title })),
+      follow_ups: Array.from({ length: 10 }, (_, n) =>
+        n % 2 === 0
+          ? { result: "created", ref: ref(n), title, log_added: true }
+          : {
+              result: "exists",
+              title,
+              lifecycle: "active",
+              ambiguous: Array.from({ length: 40 }, (_, m) => ref(100 * n + m)),
+              log_added: false,
+              log_left_out: true,
+            },
+      ),
     };
     expect(entry("task.finish").output.safeParse(finished).success).toBe(true);
     const finishText = renderResult("task.finish", finished);
     expect(resultTokens(finishText)).toBeLessThanOrEqual(max("task.finish"));
-    for (let n = 0; n < 10; n += 1) {
+    for (let n = 0; n < 10; n += 2) {
       expect(finishText).toContain(`follow_ups.${String(n)}: created ${ref(n)}`);
+      expect(finishText).toContain(
+        `follow_ups.${String(n + 1)}: exists, several match: ${ref(100 * (n + 1))}`,
+      );
     }
+    expect(finishText).toContain("add_entry");
     expect(finishText).not.toContain(CJK.slice(0, 4));
+  });
+
+  test("a folder change with many folders left inside the old one keeps their count and why, however long their names", () => {
+    const inside = (n: number, at: string) =>
+      Array.from({ length: 20 }, (_, m) => ({
+        kind: "project",
+        name: cjk(120),
+        folder: `~/${at}/${"f".repeat(200)}${String(n + m)}`,
+      }));
+    const result = {
+      action: "set_folder",
+      as_of: AS_OF,
+      result: "folder_set",
+      group: { kind: "project", id: `p_${"0".repeat(26)}`, name: cjk(120) },
+      moved: 25,
+      followed: inside(0, "new"),
+      stayed: 30,
+      stayed_because: "not_in_new_folder",
+      kept: inside(100, "old"),
+      areas: [],
+      projects: [],
+      total_areas: 0,
+      total_projects: 1,
+    };
+    expect(entry("group.manage").output.safeParse(result).success).toBe(true);
+    const text = renderResult("group.manage", result);
+    expect(resultTokens(text)).toBeLessThanOrEqual(max("group.manage"));
+    const { outside } = split(text);
+    expect(outside).toContain("Moved along with the old folder: 25");
+    expect(outside).toContain("Stayed where they are, because they are not in the new folder: 30");
+    for (const because of ["old_folder_there", "old_folder_unseen", "unchecked"]) {
+      const why = split(
+        renderResult("group.manage", {
+          ...result,
+          moved: undefined,
+          followed: undefined,
+          stayed_because: because,
+        }),
+      ).outside.find((line) => line.startsWith("Stayed where they are, because "));
+      expect(why, because).toMatch(/: 30$/u);
+    }
   });
 
   test("a page of 50 search rows and a page of groups at the limits stay within budget and say the cut", () => {

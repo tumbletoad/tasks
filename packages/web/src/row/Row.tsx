@@ -333,7 +333,7 @@ function TitleEditor({
     // Words whose save is still on its way are the title shown: the editor starts from it.
     const kept = found?.typed.trim() === task.title ? undefined : found;
     return {
-      base: kept === undefined ? live.store.asOf : kept.base,
+      base: kept === undefined ? edits.seen(task.id, ["title"]) : kept.base,
       mark: edits.mark(),
       title: kept?.title ?? task.title,
       typed: kept?.typed,
@@ -752,7 +752,7 @@ function RowView({
           {/* A title the person typed while the task was finished stays readable, with Copy and
               Discard; Try again only once the task is active again (A5 3.11). */}
           {expanded ? (
-            <Unsaved task={task.id} field="title" finished={!active} trashed={trashed} withValue />
+            <Unsaved task={task.id} field="title" finished={!active} trashed={trashed} />
           ) : null}
           {/* What another tab is typing, or what was typed before the task was finished. */}
           {expanded ? (

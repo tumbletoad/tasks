@@ -74,9 +74,16 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) cleanup();
 }, 120_000);
 
+/**
+ * The question whether this machine can start a program in a scope of its own (it can where a
+ * user systemd runs, as on CI's Linux): asked through the same spawner, answered, and no opener.
+ */
+const scopeProbe = (request: SpawnRequest): boolean =>
+  /systemd-run$/u.test(request.argv[0] ?? "") && request.argv.includes("--quiet");
+
 const opened: SpawnRequest[] = [];
 const recordingSpawner = (request: SpawnRequest): Promise<SpawnedProcess> => {
-  opened.push(request);
+  if (!scopeProbe(request)) opened.push(request);
   return Promise.resolve({
     pid: 1,
     exited: Promise.resolve({ code: 0, signal: null }),

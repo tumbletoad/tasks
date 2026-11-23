@@ -51,13 +51,22 @@ import {
   hostFacts,
   installId,
   resolveLayout,
+  runtimeNames,
   type Layout,
 } from "@ttasks/service/paths";
-import { judgePath, unsafeMessage, type UnsafeThing } from "@ttasks/service/permissions";
+import {
+  isPrivateDir,
+  judgePath,
+  socketBlock,
+  socketBlockedMessage,
+  unsafeMessage,
+  type UnsafeThing,
+} from "@ttasks/service/permissions";
 import type { GateFacts } from "@ttasks/service/runtime-gate";
 import type { VersionManifest } from "@ttasks/service/version-folder";
 import { CLI_SPEC, type Globals } from "./args.ts";
 import {
+  alive,
   CLI_BUILD,
   connectService,
   readServiceRecord,
@@ -400,10 +409,33 @@ export async function requestCheck(session: Session, spaces: Status["spaces"]): 
   }
 }
 
+/**
+ * What stands where a stopped service's socket goes (Linux and macOS), which keeps it from
+ * starting: anything but nothing or a socket nobody answers on.
+ */
+async function socketBlocked(
+  io: Pick<Io, "env" | "platform">,
+  layout: Layout,
+  state: string,
+): Promise<string | undefined> {
+  if (io.platform === "win32") return undefined;
+  try {
+    const id = installId(canonicalStatePath(realpathSync.native(state), io.platform));
+    const plan = runtimeNames(layout, id, hostFacts(io.env, io.platform), isPrivateDir).endpoint;
+    if (plan.kind !== "unix") return undefined;
+    const block = await socketBlock(plan.path);
+    return block === undefined ? undefined : socketBlockedMessage(plan.path, block);
+  } catch {
+    // A state folder that cannot be read is the paths row's to report.
+    return undefined;
+  }
+}
+
 /** The checks that talk to the service. */
 async function serviceChecks(
   io: Io,
   state: string,
+  layout: Layout,
   connect: ConnectOptions,
   live: boolean,
 ): Promise<Check[]> {
@@ -411,8 +443,16 @@ async function serviceChecks(
   const launch = await import("./doctor-launch.ts");
   const record = readServiceRecord(state);
   if (record === undefined) {
+    const blocked = await socketBlocked(io, layout, state);
     return [
-      { id: "service", status: "fail", detail: "Not running. Start it with: ttasks service start" },
+      {
+        id: "service",
+        status: "fail",
+        detail:
+          blocked === undefined
+            ? "Not running. Start it with: ttasks service start"
+            : `Not running. ${blocked}`,
+      },
       { id: "endpoint", status: "skip", detail: "No service to reach." },
       { id: "spaces", status: "skip", detail: "No service to ask." },
       { id: "requests", status: "skip", detail: "No service to ask." },
@@ -484,8 +524,15 @@ async function serviceChecks(
     const body = bodyOf(asAppError(error));
     const given = body.data?.["reason"];
     const reason = typeof given === "string" ? given : body.code;
+    // A record a crash or a restore left: its process is gone, so what answers at the socket's
+    // path is not this service.
+    const blocked = alive(record.pid) ? undefined : await socketBlocked(io, layout, state);
     return [
-      { id: "service", status: "fail", detail: body.message },
+      {
+        id: "service",
+        status: "fail",
+        detail: blocked === undefined ? body.message : `${body.message} ${blocked}`,
+      },
       {
         id: "endpoint",
         status: "fail",
@@ -729,7 +776,7 @@ export async function doctor(
   ];
   const after = [
     ...(io.platform === "win32" ? [supervisorCheck(state, layout.crash)] : []),
-    ...(await serviceChecks(io, state, connect, args.includes("--live"))),
+    ...(await serviceChecks(io, state, layout, connect, args.includes("--live"))),
     ...(await candidateRows(io, connect.versionFolder, args.includes("--self-test"), state)),
     // The agent side, loaded only here: it loads setup's engine.
     ...(await (

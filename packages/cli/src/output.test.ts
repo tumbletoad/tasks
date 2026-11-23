@@ -143,16 +143,48 @@ describe("[A2.3.10.cli.exit-codes] exit codes and output", () => {
         {
           tasks: [
             found,
-            { ...found, lifecycle: "completed", log_added: false },
-            { result: "exists", ambiguous: ["M-14", "M-15"], log_added: false },
+            { ...found, lifecycle: "completed", log_added: false, log_left_out: true },
+            {
+              result: "exists",
+              ambiguous: ["M-14", "M-15"],
+              log_added: false,
+              log_left_out: true,
+            },
+            { ...found, log_added: false },
           ],
         },
         "Mira",
       ),
     ).toBe(
       "Found M-14 in Mira by its source key, log entry added\n" +
-        "Found M-14 (completed) in Mira by its source key\n" +
-        "Several tasks in Mira have its source key: M-14, M-15\n",
+        "Found M-14 (completed) in Mira by its source key; this command added its log entry to no task: look at it first, as it may have it already, then add it with ttasks log\n" +
+        "Several tasks in Mira have its source key: M-14, M-15; this command added its log entry to no task: look at them first, as one may have it already, then add it with ttasks log\n" +
+        "Found M-14 in Mira by its source key\n",
+    );
+    // A follow-up found by its source key says the same of the follow-up.
+    expect(
+      render(
+        "task.finish",
+        {
+          result: "completed",
+          task: "M-9",
+          lifecycle: "completed",
+          follow_ups: [
+            { result: "created", ref: "M-31" },
+            {
+              result: "exists",
+              ambiguous: ["M-14", "M-15"],
+              log_added: false,
+              log_left_out: true,
+            },
+          ],
+        },
+        "Mira",
+      ),
+    ).toBe(
+      "Completed M-9 in Mira\n" +
+        "Added M-31 to Mira\n" +
+        "Several tasks in Mira have a follow-up's source key: M-14, M-15; this command added a follow-up's log entry to no task: look at them first, as one may have it already, then add it with ttasks log\n",
     );
     expect(
       render("task.update", { result: "updated", task: "M-14", fields: ["summary"] }, "Mira"),
@@ -576,7 +608,7 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] ttasks area and ttasks pref
       "Mira",
     );
     expect(same).toBe("No change to area Home\n");
-    // A moved folder names what moved along with it; one still there, what stayed.
+    // A moved folder names what moved along with it, and what stayed and why.
     const write = (extra: Record<string, unknown>) =>
       render(
         "group.manage",
@@ -592,26 +624,40 @@ describe("[A3.3.4.organize.list] [A3.3.4.prefs.tool] ttasks area and ttasks pref
         "Mira",
       )
         .split("\n")
-        .slice(1, 4);
+        .slice(1, -1);
     expect(
       write({
         moved: 2,
         followed: [
           { kind: "task", ref: "M-14", folder: "~/code/portal/web" },
-          { kind: "project", name: "Portal api", folder: "~/code/portal/api", missing: true },
+          { kind: "project", name: "Portal api", folder: "~/code/portal/api" },
         ],
+        stayed: 30,
+        stayed_because: "not_in_new_folder",
+        kept: [{ kind: "task", ref: "M-17", folder: "~/work/portal/old" }],
       }),
     ).toEqual([
       "The old folder was moved: 2 folders inside it moved along.",
       "  M-14  ~/code/portal/web",
-      "  project Portal api  ~/code/portal/api  (not there now)",
+      "  project Portal api  ~/code/portal/api",
+      "30 folders inside the old one stay where they are: they are not in the new folder.",
+      "  M-17  ~/work/portal/old",
+      "  and 29 more",
     ]);
-    expect(
-      write({ stayed: 1, kept: [{ kind: "task", ref: "M-15", folder: "~/work/portal/docs" }] }),
-    ).toEqual([
-      "The old folder is still there: 1 folder inside it stays where it is.",
-      "  M-15  ~/work/portal/docs",
-      "",
+    const kept = [{ kind: "task", ref: "M-15", folder: "~/work/portal/docs" }];
+    const why = (because: string) =>
+      write({ stayed: 1, stayed_because: because, kept }).filter((line) => !line.startsWith(" "));
+    expect(why("old_folder_there")).toEqual([
+      "1 folder inside the old one stays where it is: the old folder is still there.",
+    ]);
+    expect(why("old_folder_unseen")).toEqual([
+      "1 folder inside the old one stays where it is: the old folder cannot be seen and nothing shows that the new one is it.",
+    ]);
+    expect(why("unchecked")).toEqual([
+      "1 folder inside the old one stays where it is: a folder could not be checked.",
+    ]);
+    expect(why("not_in_new_folder")).toEqual([
+      "1 folder inside the old one stays where it is: it is not in the new folder.",
     ]);
     const got = render(
       "prefs.manage",

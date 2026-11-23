@@ -68,7 +68,8 @@ export function readServiceRecord(state: string): ServiceRecord | undefined {
   }
 }
 
-function alive(pid: unknown): boolean {
+/** Whether the process `pid` names is running (or runs as someone this one may not signal). */
+export function alive(pid: unknown): boolean {
   if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);

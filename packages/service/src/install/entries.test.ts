@@ -827,6 +827,25 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
     expect(slow.service.budgets.every((ms) => ms !== undefined && ms <= 250)).toBe(true);
   });
 
+  test("a preview of start, stop, restart or status is refused before anything runs: a running service and its runs are left alone", async () => {
+    fake.service.start("ttasksw");
+    const before = [...fake.service.events];
+    const accepted: string[] = [];
+    for (const verb of ["start", "stop", "restart", "status"]) {
+      for (const flags of [["--dry-run"], ["--yes"], ["--json", "--dry-run"]]) {
+        // The CLI's path: parse, and dispatch only what parsed.
+        const parsed = parseServiceArgs([verb, ...flags]);
+        if (parsed === undefined) continue;
+        accepted.push([verb, ...flags].join(" "));
+        await run(parsed.verb, parsed.flags, captureIO());
+      }
+    }
+    expect(fake.service.events).toEqual(before);
+    expect(fake.service.running).toBe(true);
+    expect(fake.tools.calls).toEqual([]);
+    expect(accepted).toEqual([]);
+  });
+
   test("the registry is reached only under HKCU\\Software, and the flags parse strictly", async () => {
     const calls: string[] = [];
     const reg = new RegExe({

@@ -5,10 +5,15 @@
 // bind: a folder inside TTasks's own data, a folder that is not there, and a folder another project
 // has; and a retry that replays after a rename. The folders are temporary ones of this test.
 // Fixture text only.
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { FolderManageResult, HistoryUndoResult, TaskAddResult } from "@ttasks/contracts";
+import {
+  FolderManageResult,
+  HistoryUndoResult,
+  TaskAddResult,
+  TaskUpdateResult,
+} from "@ttasks/contracts";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import { startService, type RunningService } from "../src/hub/service.ts";
 import { readFolders, readLaunchFolder } from "../src/ops/read.ts";
@@ -52,6 +57,34 @@ function folder(...parts: string[]): string {
   mkdirSync(path, { recursive: true, mode: 0o700 });
   return path;
 }
+
+const addProject = async (s: RpcSession, project: string, path: string) =>
+  FolderManageResult.parse(
+    await call(s, "folder.manage", {
+      action: "add_project",
+      project,
+      folder: path,
+      request_id: rid(),
+    }),
+  );
+
+const setProject = async (s: RpcSession, project: string, path: string) =>
+  FolderManageResult.parse(
+    await call(s, "folder.manage", {
+      action: "set",
+      project,
+      folder: path,
+      base: await asOf(s),
+      request_id: rid(),
+    }),
+  );
+
+/** A folder inside `stored`, an owner's folder as the service stored it, spelled as it stores it. */
+const inside = (stored: string | undefined, name: string) =>
+  `${stored ?? ""}${stored?.includes("\\") === true ? "\\" : "/"}${name}`;
+
+const projectPaths = async (project: string) =>
+  (await readFolders(reader(), "project", project)).map((f) => f.path);
 
 const reader = () => {
   const served = service.ops.spaces().find((s) => s.id === space);
@@ -257,6 +290,251 @@ describe("[A1.3.15.folders.request-path] folders through the request path of a r
       kept: [{ kind: "task", ref: task?.ref, folder: `${made.folder ?? ""}${s}inner` }],
     });
     expect(changed.moved).toBeUndefined();
+  });
+
+  test("a folder given another while the old one cannot be seen leaves the folders inside it where they are, and says why", async () => {
+    const user = await session("cli-interactive");
+    const drive = folder("drive");
+    const made = FolderManageResult.parse(
+      await call(user, "folder.manage", {
+        action: "add_project",
+        project: "On a drive",
+        folder: drive,
+        request_id: rid(),
+      }),
+    );
+    const [task] = TaskAddResult.parse(
+      await call(user, "task.add", {
+        tasks: [{ title: "Inside the drive's folder", folder: folder("drive", "inner") }],
+        request_id: rid(),
+      }),
+    ).tasks;
+    const inner = FolderManageResult.parse(
+      await call(user, "folder.manage", {
+        action: "add_project",
+        folder: folder("drive", "sub"),
+        request_id: rid(),
+      }),
+    );
+    const s = made.folder?.includes("\\") === true ? "\\" : "/";
+    const before = {
+      task: await readLaunchFolder(reader(), task?.id ?? "", service.ops.machine.id),
+      project: (await readFolders(reader(), "project", inner.owner.id)).map((f) => f.path),
+    };
+    // The drive is unplugged: its folder is no longer seen, and the person points the project at
+    // an unrelated folder in the meantime.
+    const away = join(root, "away");
+    renameSync(drive, away);
+    const changed = FolderManageResult.parse(
+      await call(user, "folder.manage", {
+        action: "set",
+        project: made.owner.id,
+        folder: folder("unrelated"),
+        base: await asOf(user),
+        request_id: rid(),
+      }),
+    );
+    expect(changed).toMatchObject({
+      result: "set",
+      stayed: 2,
+      stayed_because: "old_folder_unseen",
+    });
+    expect(changed.moved).toBeUndefined();
+    expect(new Set(changed.kept?.map((f) => f.folder))).toEqual(
+      new Set([`${made.folder ?? ""}${s}inner`, `${made.folder ?? ""}${s}sub`]),
+    );
+    // The drive comes back: the folders inside it are still the task's and the project's.
+    renameSync(away, drive);
+    expect(await readLaunchFolder(reader(), task?.id ?? "", service.ops.machine.id)).toEqual(
+      before.task,
+    );
+    expect((await readFolders(reader(), "project", inner.owner.id)).map((f) => f.path)).toEqual(
+      before.project,
+    );
+  });
+
+  test("a project given back its earlier folder while the later one cannot be seen moves nothing: the marker it left there is no sign of a move", async () => {
+    const user = await session("cli-interactive");
+    const earlier = folder("earlier");
+    const made = FolderManageResult.parse(
+      await call(user, "folder.manage", {
+        action: "add_project",
+        project: "Given back",
+        folder: earlier,
+        request_id: rid(),
+      }),
+    );
+    const later = folder("later");
+    await call(user, "folder.manage", {
+      action: "set",
+      project: made.owner.id,
+      folder: later,
+      base: await asOf(user),
+      request_id: rid(),
+    });
+    await call(user, "task.add", {
+      tasks: [{ title: "Inside the later folder", folder: folder("later", "inner") }],
+      request_id: rid(),
+    });
+    const away = join(root, "later-away");
+    renameSync(later, away);
+    const changed = FolderManageResult.parse(
+      await call(user, "folder.manage", {
+        action: "set",
+        project: made.owner.id,
+        folder: earlier,
+        base: await asOf(user),
+        request_id: rid(),
+      }),
+    );
+    renameSync(away, later);
+    expect(changed).toMatchObject({
+      result: "set",
+      stayed: 1,
+      stayed_because: "old_folder_unseen",
+    });
+  });
+
+  test("a folder copied to another drive with its marker, the old one removed, takes the folders inside it along", async () => {
+    const user = await session("cli-interactive");
+    const old = folder("copied");
+    const made = FolderManageResult.parse(
+      await call(user, "folder.manage", {
+        action: "add_project",
+        project: "Copied across",
+        folder: old,
+        request_id: rid(),
+      }),
+    );
+    const [task] = TaskAddResult.parse(
+      await call(user, "task.add", {
+        tasks: [{ title: "Inside the copied folder", folder: folder("copied", "inner") }],
+        request_id: rid(),
+      }),
+    ).tasks;
+    // A copy is a folder of its own: only the marker it carries says it is the project's folder.
+    const copy = join(root, "work", "copied-on-the-other-drive");
+    cpSync(old, copy, { recursive: true });
+    rmSync(old, { recursive: true });
+    const changed = FolderManageResult.parse(
+      await call(user, "folder.manage", {
+        action: "set",
+        project: made.owner.id,
+        folder: copy,
+        base: await asOf(user),
+        request_id: rid(),
+      }),
+    );
+    const s = changed.folder?.includes("\\") === true ? "\\" : "/";
+    expect(changed).toMatchObject({
+      result: "set",
+      moved: 1,
+      followed: [{ kind: "task", ref: task?.ref, folder: `${changed.folder ?? ""}${s}inner` }],
+    });
+  });
+
+  test("a backup of a project's earlier folder, put at a new path while its folder is away, points no folder inside at a place that is not there", async () => {
+    const user = await session("cli-interactive");
+    const first = folder("first");
+    const made = await addProject(user, "Backed up", first);
+    const backup = join(root, "backups", "first");
+    cpSync(first, backup, { recursive: true });
+    const second = folder("second");
+    await setProject(user, made.owner.id, second);
+    const [task] = TaskAddResult.parse(
+      await call(user, "task.add", {
+        tasks: [{ title: "Inside the second folder", folder: folder("second", "inner") }],
+        request_id: rid(),
+      }),
+    ).tasks;
+    const inner = await addProject(user, "Nested in the second", folder("second", "sub"));
+    const before = {
+      task: await readLaunchFolder(reader(), task?.id ?? "", service.ops.machine.id),
+      project: await projectPaths(inner.owner.id),
+    };
+    // The second folder's drive is away; the backup of the first is put back at a new path.
+    const away = join(root, "second-away");
+    renameSync(second, away);
+    const restored = join(root, "work", "restored");
+    cpSync(backup, restored, { recursive: true });
+    const changed = await setProject(user, made.owner.id, restored);
+    renameSync(away, second);
+    expect(changed).toMatchObject({
+      result: "set",
+      stayed: 2,
+      stayed_because: "not_in_new_folder",
+    });
+    expect(changed.moved).toBeUndefined();
+    expect(await readLaunchFolder(reader(), task?.id ?? "", service.ops.machine.id)).toEqual(
+      before.task,
+    );
+    expect(await projectPaths(inner.owner.id)).toEqual(before.project);
+  });
+
+  test("a folder moved to another drive and back to the path it once had takes the folders inside it along both times", async () => {
+    const user = await session("cli-interactive");
+    const original = folder("round-trip");
+    const made = await addProject(user, "Round trip", original);
+    const inner = await addProject(user, "Nested in the round trip", folder("round-trip", "sub"));
+    const other = join(root, "other-drive", "round-trip");
+    cpSync(original, other, { recursive: true });
+    rmSync(original, { recursive: true });
+    const there = await setProject(user, made.owner.id, other);
+    expect(there).toMatchObject({ result: "set", moved: 1 });
+    expect(await projectPaths(inner.owner.id)).toEqual([inside(there.folder, "sub")]);
+    cpSync(other, original, { recursive: true });
+    rmSync(other, { recursive: true });
+    const back = await setProject(user, made.owner.id, original);
+    expect(back).toMatchObject({ result: "set", moved: 1 });
+    expect(back.stayed).toBeUndefined();
+    expect(await projectPaths(inner.owner.id)).toEqual([inside(made.folder, "sub")]);
+  });
+
+  test("a copy that holds some of the folders inside takes those along, and leaves and names the others", async () => {
+    const user = await session("cli-interactive");
+    const old = folder("partial");
+    const made = await addProject(user, "Partly copied", old);
+    const kept = await addProject(user, "Not in the copy", folder("partial", "left"));
+    const taken = await addProject(user, "In the copy", folder("partial", "taken"));
+    const copy = join(root, "work", "partial-copy");
+    cpSync(old, copy, { recursive: true });
+    rmSync(join(copy, "left"), { recursive: true });
+    rmSync(old, { recursive: true });
+    const changed = await setProject(user, made.owner.id, copy);
+    expect(changed).toMatchObject({
+      result: "set",
+      moved: 1,
+      followed: [{ kind: "project", name: "In the copy", folder: inside(changed.folder, "taken") }],
+      stayed: 1,
+      stayed_because: "not_in_new_folder",
+      kept: [{ kind: "project", name: "Not in the copy", folder: inside(made.folder, "left") }],
+    });
+    expect(await projectPaths(taken.owner.id)).toEqual([inside(changed.folder, "taken")]);
+    expect(await projectPaths(kept.owner.id)).toEqual([inside(made.folder, "left")]);
+  });
+
+  test("update_task says why the folders inside a task's old folder stayed", async () => {
+    const user = await session("cli-interactive");
+    const [outer, inner] = TaskAddResult.parse(
+      await call(user, "task.add", {
+        tasks: [
+          { title: "Outer task", folder: folder("task-old") },
+          { title: "Inner task", folder: folder("task-old", "inner") },
+        ],
+        request_id: rid(),
+      }),
+    ).tasks;
+    const updated = TaskUpdateResult.parse(
+      await call(user, "task.update", {
+        task: outer?.ref ?? "",
+        set: { folder: folder("task-new") },
+        base: await asOf(user),
+        request_id: rid(),
+      }),
+    );
+    expect(updated.warnings).toContain(
+      `1 folder inside the old one stays where it is, because the old folder is still there: ${inner?.ref ?? ""}.`,
+    );
   });
 
   test("a project's list names the repository in its folder, never its address", async () => {

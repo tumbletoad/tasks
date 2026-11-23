@@ -2,7 +2,7 @@
 // (codex-server.ts, fixtures/codex-app-server), over a pair of in-memory pipes.
 import { PassThrough } from "node:stream";
 import { describe, expect, test } from "vitest";
-import type { RunEvent, RunPermission } from "@ttasks/contracts/runs";
+import { ANSWER_CAP_BYTES, type RunEvent, type RunPermission } from "@ttasks/contracts/runs";
 import { codexDriver, type CodexSession } from "../src/drivers/codex.ts";
 import type { DriverSession, Work } from "../src/drivers/types.ts";
 import { serveCodex, type FakeCodex, type FakeScenario } from "./codex-server.ts";
@@ -566,6 +566,73 @@ describe("[A4.3.11.codex.driver] the codex driver against the recorded app serve
     expect(await driver.settled).toEqual(
       done({ ok: false, outcome: "no_result", text: "Fixture text.", textFinal: false }),
     );
+  });
+
+  /** A run whose turn is the test's to tell: the server says nothing more of its own. */
+  async function toldTurn(): Promise<Bench> {
+    const told = bench({ fixture: "windows-plain", stallAt: "turn/start" });
+    await until("the turn asked for", () => sent(told.fake, "turn/start").length === 1);
+    told.say("turn/started", { threadId: THREAD, turn: { id: "turn-told" } });
+    return told;
+  }
+
+  test("words that stream in from the agent's commentary or from a helper's thread are never the run's answer", async () => {
+    const { driver, events, say } = await toldTurn();
+    say("item/started", {
+      threadId: THREAD,
+      item: { type: "agentMessage", id: "note-1", text: "", phase: "commentary" },
+    });
+    say("item/agentMessage/delta", { threadId: THREAD, itemId: "note-1", delta: "Looking." });
+    say("item/started", {
+      threadId: CHILD,
+      item: { type: "agentMessage", id: "help-1", text: "", phase: "final_answer" },
+    });
+    say("item/agentMessage/delta", { threadId: CHILD, itemId: "help-1", delta: "A helper's." });
+    expect(await settledNow(driver)).toBeUndefined();
+    driver.ended({ code: 1, signal: null });
+    expect(await driver.settled).toEqual(done({ outcome: "no_result", text: null }));
+    expect(events.filter((e) => e.kind === "answer")).toEqual([]);
+  });
+
+  test("a question in the turn's summary, before its own message, ends the run as needing the person", async () => {
+    const { driver, say } = await toldTurn();
+    const ask = {
+      type: "agentMessage",
+      id: "ask-4",
+      text: "Two exports exist.",
+      phase: "final_answer",
+      delivery: "async",
+      questions: [{ title: "Which one should I fix?", options: ["CSV", "PDF"] }],
+    };
+    say("turn/completed", {
+      threadId: THREAD,
+      turn: { id: "turn-told", items: [ask], itemsView: "summary", status: "completed" },
+    });
+    say("item/completed", { threadId: THREAD, item: ask });
+    expect(await driver.settled).toEqual(
+      done({
+        outcome: "needs_input",
+        text: "Two exports exist.\nWhich one should I fix? (CSV, PDF)",
+        textFinal: false,
+      }),
+    );
+  });
+
+  test("an answer that streams in past the cap keeps its first megabyte, marked as cut", async () => {
+    const { driver, say } = await toldTurn();
+    say("item/started", {
+      threadId: THREAD,
+      item: { type: "agentMessage", id: "long-1", text: "", phase: "final_answer" },
+    });
+    const head = "x".repeat(ANSWER_CAP_BYTES - 3);
+    for (const delta of [head, "éé", "more"]) {
+      say("item/agentMessage/delta", { threadId: THREAD, itemId: "long-1", delta });
+    }
+    expect(await settledNow(driver)).toBeUndefined();
+    driver.ended({ code: 1, signal: null });
+    const work = await driver.settled;
+    expect(work).toEqual(done({ outcome: "no_result", textCut: true, textFinal: false }));
+    expect(work.text === `${head}é`).toBe(true);
   });
 
   test("a request kind the driver does not know gets the protocol's error, and the run goes on", async () => {
