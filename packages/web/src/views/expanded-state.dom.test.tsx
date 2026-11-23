@@ -393,6 +393,78 @@ describe("[A5.3.11.web.edits] what the person types in an editor is never droppe
     ]);
   });
 
+  test.each([
+    ["without typing", (_field: HTMLInputElement | null) => undefined],
+    [
+      "after typing back what was there",
+      (field: HTMLInputElement | null) => {
+        type(field, "Ana Reyes!");
+        type(field, "Ana Reyes");
+      },
+    ],
+  ])(
+    "who it waits on, changed by someone else under an open field the person leaves %s: nothing is sent, ever, and the field shows the new value",
+    (_, touch) => {
+      const tasks = [task(1, { status: "waiting", waiting_on: "Ana Reyes" }), task(2)];
+      mount(<TaskList view="open" filter={OPEN} empty="" />);
+      apply(snapshot(tasks));
+      expand("t_00001");
+      const field = waitingField("t_00001");
+      act(() => {
+        field?.focus();
+      });
+      touch(field);
+      apply(
+        batch(
+          11,
+          [task(1, { status: "waiting", waiting_on: "Ben Ito", version: 2 })],
+          ["waiting_on"],
+        ),
+      );
+      act(() => {
+        field?.blur();
+      });
+      expect(field?.value).toBe("Ben Ito");
+      // In and out again, still without typing: Codex's value stays.
+      act(() => {
+        field?.focus();
+      });
+      act(() => {
+        field?.blur();
+      });
+      expect(waitingSets()).toEqual([]);
+      expect(field?.value).toBe("Ben Ito");
+    },
+  );
+
+  test("who it waits on, typed while someone else changes it: the change shows under the field, and leaving sends the typed words against what the person saw", () => {
+    const tasks = [task(1, { status: "waiting", waiting_on: "Ana Reyes" }), task(2)];
+    mount(<TaskList view="open" filter={OPEN} empty="" />);
+    apply(snapshot(tasks));
+    expand("t_00001");
+    const field = waitingField("t_00001");
+    act(() => {
+      field?.focus();
+    });
+    type(field, "Cleo");
+    apply(
+      batch(
+        11,
+        [task(1, { status: "waiting", waiting_on: "Ben Ito", version: 2 })],
+        ["waiting_on"],
+      ),
+    );
+    expect(field?.value).toBe("Cleo");
+    const card = container.querySelector('li[data-key="t_00001"]');
+    expect(card?.querySelector('[data-part="remote"]')?.textContent).toContain("Codex");
+    act(() => {
+      field?.blur();
+    });
+    expect(waitingSets()).toEqual([
+      expect.objectContaining({ set: { waiting_on: "Cleo" }, base: "1.10.01234567" }),
+    ]);
+  });
+
   test("who it waits on stays, with what was typed, when someone else moves the task out of Waiting", () => {
     const tasks = [task(1, { status: "waiting" }), task(2)];
     mount(<TaskList view="open" filter={OPEN} empty="" />);

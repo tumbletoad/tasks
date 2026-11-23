@@ -196,10 +196,12 @@ function Segmented({
 
 /**
  * Who the task waits on: a text field that saves on Enter or when focus leaves it, with the people
- * the space's tasks wait on as suggestions. Escape puts the saved value back. Its base is taken
- * when the person starts to type (again, after an Enter), and a change by someone else meanwhile
- * shows under it while the typed text stays. A field that goes away while the person edits it
- * (the card collapses, the task leaves the view) saves what was typed, as leaving it does.
+ * the space's tasks wait on as suggestions. Escape puts the saved value back. Only what the person
+ * typed is sent: its base is taken when they start to type (again, after an Enter). Until then the
+ * field shows the saved value as it changes; after that a change by someone else shows under it
+ * while the typed text stays, and leaving sends the text against what the person saw, so the
+ * change is a conflict they choose on. A field that goes away while the person edits it (the card
+ * collapses, the task leaves the view) saves what was typed, as leaving it does.
  */
 function WaitingOn({
   task,
@@ -214,7 +216,7 @@ function WaitingOn({
   const { live } = useContext(Session);
   const state = useLive();
   const field = useRef<HTMLInputElement>(null);
-  /** Set while the person edits the field: the base, the mark and the value they started from. */
+  /** Set once the person types: the base, the mark and the value they started from. */
   const opened = useRef<{ base: string | undefined; mark: number; value: string } | undefined>(
     undefined,
   );
@@ -223,7 +225,7 @@ function WaitingOn({
   const latest = useRef(task);
   latest.current = task;
   const saved = task.waiting_on ?? "";
-  // A new saved value shows in the field only while the person is not editing it.
+  // A new saved value shows in the field until the person types in it.
   useEffect(() => {
     if (opened.current === undefined && field.current !== null) field.current.value = saved;
   }, [saved]);
@@ -238,7 +240,11 @@ function WaitingOn({
     opened.current = undefined;
     typed.current = undefined;
     const text = (value ?? "").trim();
-    if (was === undefined || value === undefined || text === was.value) return;
+    if (was === undefined || value === undefined || text === was.value) {
+      // Nothing to send: the field shows what is saved, also a change made while it was open.
+      if (field.current !== null) field.current.value = latest.current.waiting_on ?? "";
+      return;
+    }
     edits.edit(
       latest.current,
       waitingChange(text === "" ? undefined : text),
@@ -276,7 +282,6 @@ function WaitingOn({
         maxLength={80}
         dir="auto"
         onFocus={() => {
-          begin();
           onEditing(true);
         }}
         onInput={(event) => {
