@@ -2,21 +2,28 @@
 // chosen backup:
 //
 // - restoreLatest: `ttasks space restore latest --to <folder>` restores the newest complete backup
-//   of the space that restores into a new folder, as a read-only copy. The candidates are
-//   restored directly, newest first: a restore checks its backup in full and runs its first write
+//   of the space that restores into a new folder, as a read-only copy. The candidates are one
+//   history's (backup/list.ts backupHistories), restored directly, newest first by the work they
+//   hold, never by the clock alone: a restore checks its backup in full and runs its first write
 //   (restore.ts), so a newer one that does not restore, or that went away before the restore held
 //   its files (retention, the person), is skipped and kept, never removed, and nothing is unpacked
 //   twice.
 // - rescueSpace ("Rescue readable data"): every row that can still be read into
 //   `exchange/rescued/rescued-<utc>.jsonl` in the space folder, for review (bundle/jsonl.ts's
-//   format). RESCUE NEVER OPENS THE DAMAGED ORIGINAL: opening a database, read-only too, can delete
-//   a write-ahead log beside it or play a rollback journal back, and either can be the last
-//   recovery material. So the database file and its side files (`-wal`, `-shm`, `-journal`) are
-//   copied byte for byte, by plain file reads that never go through SQLite, into a private scratch
-//   folder `exchange/rescued/.rescue.tmp-<random>`, and only that copy is opened. Every file that
-//   was in the space folder is the same afterwards; the one new file is the rescued one, created
+//   format). A space its service has open is read as a backup reads it: one read transaction on a
+//   read-only connection beside the writer, one consistent moment. RESCUE NEVER OPENS A DAMAGED
+//   ORIGINAL THAT NOTHING HAS OPEN: opening a database, read-only too, can play a rollback journal
+//   back or leave files beside it, and the journal can be the last recovery material. So the
+//   database file and its side files (`-wal`, `-shm`, `-journal`) are copied byte for byte, by
+//   plain file reads that never go through SQLite, into a private scratch folder
+//   `exchange/rescued/.rescue.tmp-<random>`, and only that copy is opened. Every file that was in
+//   the space folder is the same afterwards; the one new file is the rescued one, created
 //   exclusively, and `exchange/` is the folder meant for files people look at (A1 3.1). The scratch
-//   folder is removed by its full name; a crash's is listed by `ttasks space list`.
+//   folder is removed by its full name; a crash's is listed by `ttasks space list`. Another process
+//   may write the space meanwhile, so the files are copied again when what they say of themselves
+//   changed during the copy (fileStates, never their times): a database from before a checkpoint
+//   beside a log from after it would lose the rows the checkpoint moved, with every table read in
+//   full.
 //   The rows are read by the product's own tables and columns at the database's revision
 //   (backup/snapshot.ts productTables), so the report names only those: a table that fails partway
 //   keeps the rows read before the failure and is named by its product name.
@@ -45,21 +52,22 @@ import {
   removeQuietly,
   temporaryTag,
 } from "../files.ts";
-import type { Id } from "../ids.ts";
+import { isId, type Id } from "../ids.ts";
 import { DATABASE_FILE } from "../manifest.ts";
 import { stepPosition } from "../migrate/steps.ts";
-import { applyPragmas, BUSY_TIMEOUT_MS, openUnconfigured } from "../open.ts";
+import { applyPragmas, BUSY_TIMEOUT_MS, openReader, openUnconfigured } from "../open.ts";
 import { inRange } from "../rows.ts";
 import type { SchemaStep } from "../schema.ts";
 import { checkSpacePath } from "../space-path.ts";
 import type { CheckedDriver } from "../startup-check.ts";
 import { SCHEMA_STEPS } from "../../migrations/index.ts";
 import { makeDurableFolder } from "../backup/backup.ts";
-import { listBackups } from "../backup/list.ts";
+import { backupHistories, listBackups, type BackupHistory } from "../backup/list.ts";
 import { BUNDLE_POLICY, checkFreeSpace, existingFolder, freeBytes } from "../backup/policy.ts";
 import { utcStamp } from "../backup/sidecar.ts";
 import { productTables, type ProductTable } from "../backup/snapshot.ts";
 import { writeJsonl, type JsonlReport } from "../bundle/jsonl.ts";
+import { backupFault } from "./fault.ts";
 import {
   restoreBackupWith,
   type RestoredSpace,
@@ -67,31 +75,39 @@ import {
   type RestoreSeams,
 } from "./restore.ts";
 
-/** Codes that say a candidate backup does not restore: the next one is tried. */
-const NOT_THIS_BACKUP: ReadonlySet<string> = new Set([
-  "BACKUP_INVALID",
-  "BUNDLE_LIMIT_EXCEEDED",
-  "SPACE_INVALID",
-  "SPACE_NOT_FOUND",
-  "SPACE_TOO_NEW",
-  "SPACE_VERSION_UNKNOWN",
-  "STORAGE_CORRUPT",
-]);
+/** What restore latest restored, and the space's other histories it did not take. */
+export interface LatestRestored {
+  restored: RestoredSpace;
+  /** The backup's name. */
+  backup: string;
+  /** The history it is of: the served copy's own, or else the one written to last. */
+  history: BackupHistory;
+  /** Whether that history is the served copy's (`incarnation`). */
+  own: boolean;
+  /** The space's other histories with a complete backup in the folder, written to last first. */
+  others: BackupHistory[];
+}
 
 /**
  * Restores the newest complete backup of `spaceId` in `backupDir` that restores into the new folder
- * `target` (see the header), and names it. The target is checked first, so a failure of a
- * candidate is the candidate's. BACKUP_INVALID when none restores, or the newest candidate's
- * BUNDLE_LIMIT_EXCEEDED (the disk is too full for any).
+ * `target` (see the header), and names it. Its candidates are one history's (list.ts
+ * backupHistories): that of the copy this machine serves (`incarnation`), whenever the folder
+ * holds a backup of it, whole or not, never another's in its place; else, a choice the result
+ * names along with the histories it passed over, the one written to last, then the next. Only a damaged candidate
+ * (fault.ts) moves on to the next older one. Any other failure stops the restore with its own
+ * code, and nothing older is tried: the candidate may be whole, and an older one would bring back
+ * older work as if it were the newest (BUNDLE_LIMIT_EXCEEDED for the free space or a size limit,
+ * DURABILITY_FAILED for a failing disk, STORAGE_SQL for SQLite out of memory). BACKUP_INVALID when
+ * none restores.
  */
 export async function restoreLatest(
   checked: CheckedDriver,
   backupDir: string,
   spaceId: Id<"sp">,
   target: string,
-  options: RestoreOptions = {},
+  options: RestoreOptions & { incarnation?: Id<"ai"> } = {},
   seams: RestoreSeams = {},
-): Promise<{ restored: RestoredSpace; backup: string }> {
+): Promise<LatestRestored> {
   const folder = resolve(target);
   if (fsCall(() => !existsSync(dirname(folder)) || !statSync(dirname(folder)).isDirectory())) {
     throw new StorageError(
@@ -102,25 +118,39 @@ export async function restoreLatest(
   if (fsCall(() => existsSync(folder))) {
     throw new StorageError("SPACE_EXISTS", "A space folder is already there");
   }
-  let first: StorageError | undefined;
-  for (const backup of listBackups(backupDir, seams.policy).backups) {
-    if (backup.state !== "ok" || backup.sidecar?.space_id !== spaceId) continue;
-    let restored: RestoredSpace;
-    try {
-      restored = await restoreBackupWith(checked, backup.file, folder, options, seams);
-    } catch (error) {
-      if (!(error instanceof StorageError) || !NOT_THIS_BACKUP.has(error.code)) throw error;
-      first ??= error;
-      continue;
+  const { incarnation, ...restoreOptions } = options;
+  const all = backupHistories(listBackups(backupDir, seams.policy), spaceId);
+  const histories = all.filter((h) => h.backups.some((b) => b.state === "ok"));
+  // Found before the incomplete ones are left out: a served copy whose backups are all cut short
+  // has none that restores, which is not the same as having none.
+  const own =
+    incarnation === undefined ? undefined : all.find((h) => h.incarnation === incarnation);
+  for (const history of own === undefined ? histories : [own]) {
+    for (const backup of history.backups) {
+      if (backup.state !== "ok") continue;
+      let restored: RestoredSpace;
+      try {
+        // The backup is read again by the restore, and must still be of this space.
+        restored = await restoreBackupWith(
+          checked,
+          backup.file,
+          folder,
+          { ...restoreOptions, spaceId },
+          seams,
+        );
+      } catch (error) {
+        if (backupFault(error, backup.file) !== "damaged") throw error;
+        continue;
+      }
+      return {
+        restored,
+        backup: backup.name,
+        history,
+        own: history === own,
+        others: histories.filter((h) => h !== history),
+      };
     }
-    // The sidecar was read again by the restore: one that names another space since the listing
-    // leaves its read-only copy for the person, never taken for this space's.
-    if (restored.space.spaceId !== spaceId) {
-      throw new StorageError("SPACE_ID_MISMATCH", "The backup is of another space");
-    }
-    return { restored, backup: backup.name };
   }
-  if (first?.code === "BUNDLE_LIMIT_EXCEEDED") throw first;
   throw new StorageError("BACKUP_INVALID", "No backup of the space verifies");
 }
 
@@ -133,18 +163,80 @@ export const RESCUE_TEMP_PREFIX = ".rescue.tmp-";
 /** The files of a space's database a rescue copies: the database, then its side files. */
 const DATABASE_FILES = ["", "-wal", "-shm", "-journal"] as const;
 
+/** How often a rescue copies the files again when a writer changed them during the copy. */
+const COPY_ATTEMPTS = 3;
+
+/**
+ * The bytes at the start of each file a copy must take from one moment that say what changed in it
+ * (SQLite's file format): the database header with its change counter, which every commit moves
+ * outside WAL mode; the log's header with its checkpoint sequence and salts, which change whenever a
+ * checkpoint starts the log over, the one change between the two copies that loses what the
+ * checkpoint moved; a rollback journal's header, new with each transaction.
+ */
+const HEADER_BYTES = { "": 100, "-wal": 32, "-journal": 28 } as const;
+
+/** The first `bytes` bytes of the file at `path`, as hex, or "-" when it is not there. */
+function headerOf(path: string, bytes: number): string {
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_RDONLY | NO_FOLLOW);
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return "-";
+    throw fsError(error);
+  }
+  try {
+    const buffer = Buffer.alloc(bytes);
+    const read = fsCall(() => readSync(fd, buffer, 0, bytes, 0));
+    return buffer.subarray(0, read).toString("hex");
+  } finally {
+    closeQuietly(fd);
+  }
+}
+
+/**
+ * What the database's files say of themselves, compared before and after a copy: each one's
+ * identity, size (a log that grows by commits keeps its header) and header (HEADER_BYTES). Never
+ * their times: a file system with coarse times gives a checkpoint and the copy before it one time.
+ * The shared-memory index is left out: readers write it, and SQLite rebuilds it from the log when
+ * the copy opens alone.
+ */
+function fileStates(db: string): string {
+  return (Object.keys(HEADER_BYTES) as (keyof typeof HEADER_BYTES)[])
+    .map((suffix) => {
+      const path = `${db}${suffix}`;
+      const s = fsCall(() => lstatSync(path, { bigint: true, throwIfNoEntry: false }));
+      if (s === undefined) return "-";
+      return `${String(s.ino)}:${String(s.size)}:${headerOf(path, HEADER_BYTES[suffix])}`;
+    })
+    .join(" ");
+}
+
 export interface RescueRecord extends JsonlReport {
   /** The JSON lines file the rows went into. */
   file: string;
+  /**
+   * `confirmed`: the database's space row names the space the rescue was for. `unconfirmed`: damage
+   * keeps it from saying which space it holds, so the rows may be another space's.
+   */
+  identity: "confirmed" | "unconfirmed";
 }
 
 export interface RescueOptions {
+  /** The space the folder is registered as. A database that names another one is refused. */
+  spaceId?: Id<"sp">;
+  /**
+   * The space is open in this service (its writer or reader holds the database in WAL mode): it is
+   * read in one read transaction on its own database, as a backup reads it, and nothing is copied.
+   */
+  served?: boolean;
   now?: () => number;
   busyTimeoutMs?: number;
   /** The registered schema steps. Default: SCHEMA_STEPS. Tests pass stand-in steps. */
   steps?: readonly SchemaStep[];
   /** Free bytes for a folder. Default: the file system's. */
   freeBytes?: (folder: string) => number;
+  /** Tests: runs after each of the database's files (`""`, `-wal`, ...) was copied. */
+  copied?: (suffix: string) => void;
 }
 
 /** The first bytes of a rollback journal's header (SQLite's file format, "The Rollback Journal"). */
@@ -291,9 +383,67 @@ function rescueTables(
 }
 
 /**
+ * Whether the database on `conn` names `expected` as its space: "confirmed" when its space row
+ * reads and names it, SPACE_ID_MISMATCH when it reads and names another space, "unconfirmed" when
+ * damage keeps it from saying (or no space was expected).
+ */
+function identityOf(conn: Connection, expected: Id<"sp"> | undefined): RescueRecord["identity"] {
+  let named: unknown;
+  try {
+    named = conn.prepare("SELECT space_id FROM space WHERE one = 1").get()?.["space_id"];
+  } catch {
+    return "unconfirmed";
+  }
+  if (expected === undefined || !isId(named, "sp")) return "unconfirmed";
+  if (named !== expected) {
+    throw new StorageError("SPACE_ID_MISMATCH", "The folder holds another space's database");
+  }
+  return "confirmed";
+}
+
+/**
+ * A read-only connection on the database of a space its service has open, or undefined when that
+ * cannot be had: only while the log is beside it and no rollback journal is, so SQLite plays
+ * nothing back. A read-only connection never checkpoints or removes the log, also when it is the
+ * last to close.
+ */
+function openServed(
+  checked: CheckedDriver,
+  db: string,
+  busyTimeoutMs: number,
+): Connection | undefined {
+  const there = (path: string): boolean => fsCall(() => existsSync(path));
+  if (!there(`${db}-wal`) || there(`${db}-journal`)) return undefined;
+  try {
+    return openReader(checked, db, { busyTimeoutMs });
+  } catch {
+    return undefined;
+  }
+}
+
+/** The rows on `conn` into a new file in `out`, once the database said which space it holds. */
+function writeRescue(
+  checked: CheckedDriver,
+  conn: Connection,
+  place: { out: string; now: number; maxBytes: number },
+  options: RescueOptions,
+): RescueRecord {
+  const identity = identityOf(conn, options.spaceId);
+  const tables = rescueTables(checked, conn, options.steps ?? SCHEMA_STEPS);
+  const file = join(place.out, `rescued-${utcStamp(place.now)}.jsonl`);
+  // Created exclusively: a file already there is refused and stays. One cut short by a failure
+  // stays too, with the rows it holds: nothing a rescue wrote is removed.
+  const report = writeJsonl(conn, file, tables, { tolerant: true, maxBytes: place.maxBytes });
+  return { file, identity, ...report };
+}
+
+/**
  * Writes every row of the space at `folder` that can still be read into a new JSON lines file
- * under `exchange/rescued/`, from a private copy of its database files (see the header). A copy that
- * does not open at all is refused with its error, and the space folder stays as it was.
+ * under `exchange/rescued/` (see the header): for a space its service has open (`served`), in one
+ * read transaction on its own database; otherwise from a private copy of its database files. A copy
+ * that does not open at all is refused with its error, and the space folder stays as it was. A
+ * database whose space row names another space than `options.spaceId` is refused
+ * (SPACE_ID_MISMATCH) before any row is written.
  */
 export function rescueSpace(
   checked: CheckedDriver,
@@ -309,10 +459,25 @@ export function rescueSpace(
   if (!inRange(now, "instant"))
     throw new StorageError("STORAGE_MISUSE", "The clock is out of range");
   const out = join(dir, ...RESCUED_FOLDER);
+  const busyTimeoutMs = options.busyTimeoutMs ?? BUSY_TIMEOUT_MS;
+  const free = (options.freeBytes ?? freeBytes)(existingFolder(out));
+  const reserve = BUNDLE_POLICY.freeSpaceReserveBytes;
+  const served = options.served === true ? openServed(checked, db, busyTimeoutMs) : undefined;
+  if (served !== undefined) {
+    try {
+      checkFreeSpace(0, free, BUNDLE_POLICY);
+      makeDurableFolder(out);
+      // Every table from one moment, as a backup reads it, while the writer goes on.
+      return served.transaction("deferred", () =>
+        writeRescue(checked, served, { out, now, maxBytes: free - reserve }, options),
+      );
+    } finally {
+      closeQuietlyConn(served);
+    }
+  }
   // A writer keeps the free-space reserve: the copy must fit before anything is written, and the
   // rows file may then hold what is left, counted as it is written (bundle/jsonl.ts).
   const copying = copyBytes(db);
-  const free = (options.freeBytes ?? freeBytes)(existingFolder(out));
   checkFreeSpace(copying, free, BUNDLE_POLICY);
   makeDurableFolder(out);
   const scratch = join(out, `${RESCUE_TEMP_PREFIX}${temporaryTag()}`);
@@ -321,24 +486,30 @@ export function rescueSpace(
   });
   try {
     const copy = join(scratch, DATABASE_FILE);
-    for (const suffix of DATABASE_FILES) {
-      const copied = copyPlain(`${db}${suffix}`, `${copy}${suffix}`);
-      if (suffix === "" && !copied) {
-        throw new StorageError("SPACE_NOT_FOUND", "No space found: the database is missing");
+    for (let attempt = 1; ; attempt += 1) {
+      const before = fileStates(db);
+      for (const suffix of DATABASE_FILES) {
+        const copied = copyPlain(`${db}${suffix}`, `${copy}${suffix}`);
+        if (suffix === "" && !copied) {
+          throw new StorageError("SPACE_NOT_FOUND", "No space found: the database is missing");
+        }
+        options.copied?.(suffix);
+      }
+      if (fileStates(db) === before) break;
+      // A writer committed or checkpointed while the files were copied one after another: the
+      // copy may hold the database from before and the log from after, and lose what moved.
+      for (const suffix of DATABASE_FILES) removeQuietly(`${copy}${suffix}`);
+      if (attempt === COPY_ATTEMPTS) {
+        throw new StorageError("SPACE_CHANGED", "The space kept changing while it was copied");
       }
     }
     // An empty database file is never a space's (A1 3.1), and SQLite would delete the copied -wal.
     if (fsCall(() => statSync(copy).size) === 0) {
       throw new StorageError("SPACE_INVALID", "The database file is empty");
     }
-    const conn = openCopy(checked, copy, options.busyTimeoutMs ?? BUSY_TIMEOUT_MS);
+    const conn = openCopy(checked, copy, busyTimeoutMs);
     try {
-      const tables = rescueTables(checked, conn, options.steps ?? SCHEMA_STEPS);
-      const file = join(out, `rescued-${utcStamp(now)}.jsonl`);
-      // Created exclusively: a file already there is refused and stays. One cut short by a failure
-      // stays too, with the rows it holds: nothing a rescue wrote is removed.
-      const maxBytes = free - BUNDLE_POLICY.freeSpaceReserveBytes - copying;
-      return { file, ...writeJsonl(conn, file, tables, { tolerant: true, maxBytes }) };
+      return writeRescue(checked, conn, { out, now, maxBytes: free - reserve - copying }, options);
     } finally {
       closeQuietlyConn(conn);
     }

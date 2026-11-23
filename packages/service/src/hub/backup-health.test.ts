@@ -38,7 +38,7 @@ describe("[A1.5.backup.failure-shown] what a space's backups report, run by run"
     const view = troubleView(afterFailure(good, "BACKUP_FAILED"));
     expect(view?.last_good).toBe(new Date(AT).toISOString());
     expect(view?.message).toMatch(
-      /The newest backup that restores is from \d{4}-\d\d-\d\d \d\d:\d\d\.$/,
+      /The newest backup known to restore is from \d{4}-\d\d-\d\d \d\d:\d\d\.$/,
     );
   });
 
@@ -51,6 +51,44 @@ describe("[A1.5.backup.failure-shown] what a space's backups report, run by run"
     // An hourly run that took no backup and verified nothing changes nothing about it.
     expect(afterRun(unverified, run())).toEqual(unverified);
     expect(afterRun(unverified, run({ checked: true, verifiedAt: AT }))).toEqual({ lastGood: AT });
+  });
+
+  test("the run's newest backup that restores replaces the one known before, also when it is dated earlier", () => {
+    // A clock set back an hour: the backup holding later work has the earlier date.
+    const after = afterRun({ lastGood: AT }, run({ checked: true, verifiedAt: AT - 3_600_000 }));
+    expect(after).toEqual({ lastGood: AT - 3_600_000 });
+  });
+
+  test("a newest backup that could not be trial restored is said as that, never as one that does not restore", () => {
+    const good = { lastGood: AT };
+    const noRoom = afterRun(
+      good,
+      run({ checked: true, unchecked: { code: "BUNDLE_LIMIT_EXCEEDED" } }),
+    );
+    expect(noRoom).toEqual({
+      lastGood: AT,
+      trouble: { why: "unchecked", code: "BUNDLE_LIMIT_EXCEEDED" },
+    });
+    const view = troubleView(noRoom);
+    expect(view?.message).toMatch(/^The newest backup could not be trial restored: the disk/);
+    expect(view?.message).toContain("It is kept");
+    expect(view?.message).not.toContain("does not pass");
+    // Another cause names its code; a run without a verdict leaves it; a verdict replaces it.
+    const other = afterRun({}, run({ checked: true, unchecked: { code: "DURABILITY_FAILED" } }));
+    expect(troubleView(other)?.message).toContain("(DURABILITY_FAILED)");
+    expect(afterRun(noRoom, run())).toEqual(noRoom);
+    expect(afterRun(noRoom, run({ checked: true, verifiedAt: AT + 1 }))).toEqual({
+      lastGood: AT + 1,
+    });
+  });
+
+  test("a backups folder that is not there is said as that until a run finds it again", () => {
+    const away = afterRun({ lastGood: AT }, run({ backup: "away" }));
+    expect(away).toEqual({ lastGood: AT, trouble: { why: "away" } });
+    expect(troubleView(away)?.message).toMatch(
+      /^The backups folder set for this space is not there/,
+    );
+    expect(afterRun(away, run())).toEqual({ lastGood: AT });
   });
 
   test("a backup the person made that passed its trial restore clears every report", () => {

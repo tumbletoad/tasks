@@ -300,6 +300,8 @@ export interface ClaimCopyOptions {
 export interface InPlaceRestoreOptions {
   /** This machine's ID: the restored copy's new authority. */
   machineId: Id<"m">;
+  /** The space the folder is registered as: a backup of another space is refused. */
+  spaceId?: Id<"sp">;
   /** Epochs this machine knows for the space besides the backup's and the live space's. */
   knownEpochs?: readonly number[];
   /** A next task reference other copies of the space reached (restore/restore.ts). */
@@ -658,6 +660,7 @@ export class StorageWorker {
           backupFile,
           folder: dir,
           machineId: options.machineId,
+          ...(options.spaceId === undefined ? {} : { spaceId: options.spaceId }),
           knownEpochs: [...(options.knownEpochs ?? [])],
           ...(options.refFloor === undefined ? {} : { refFloor: options.refFloor }),
           ...(options.appVersion === undefined ? {} : { appVersion: options.appVersion }),

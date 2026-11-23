@@ -61,6 +61,7 @@ import type { CheckedDriver } from "../startup-check.ts";
 import { BACKUP_TEMP_PREFIX, type BackupSidecar } from "../backup/sidecar.ts";
 import { bundleInvalid } from "../bundle/read.ts";
 import { claimSpace, type Claim } from "./claim.ts";
+import { backupFault } from "./fault.ts";
 import {
   renameFolder,
   swapIntoPlace,
@@ -89,6 +90,11 @@ export interface RestoreOptions {
   busyTimeoutMs?: number;
   /** Milliseconds since 1970. Default: Date.now. */
   now?: () => number;
+  /**
+   * The space the backup must be of, when the caller knows it: a backup of another space is
+   * refused (SPACE_ID_MISMATCH) before anything takes the target's name.
+   */
+  spaceId?: Id<"sp">;
 }
 
 export interface RestoreInPlaceOptions extends RestoreOptions {
@@ -222,11 +228,12 @@ export async function restoreCopy(
   file: string,
   place: CopyPlace,
   now: number,
-  options: { busyTimeoutMs?: number },
+  options: { busyTimeoutMs?: number; spaceId?: Id<"sp"> },
   seams: RestoreSeams,
 ): Promise<Unpacked> {
   const unpacked = await unpackAny(checked, file, place, busy(options), seams);
   seams.at?.("unpacked");
+  refuseOtherSpace(unpacked.space.spaceId, [options.spaceId]);
   const invalid = isBundleFile(file) ? bundleInvalid : backupInvalid;
   const space = markCopy(
     checked,
@@ -242,6 +249,13 @@ export async function restoreCopy(
 
 const backupInvalid = (why: string): StorageError =>
   new StorageError("BACKUP_INVALID", `The backup does not verify: ${why}`);
+
+/** SPACE_ID_MISMATCH unless the unpacked space is each of the expected ones that is known. */
+function refuseOtherSpace(unpacked: Id<"sp">, expected: readonly (Id<"sp"> | undefined)[]): void {
+  if (expected.some((id) => id !== undefined && id !== unpacked)) {
+    throw new StorageError("SPACE_ID_MISMATCH", "The backup is of another space");
+  }
+}
 
 /** What a verification takes: a restore's seams, and its connections' busy timeout. */
 export interface VerifyOptions extends UnpackSeams {
@@ -276,21 +290,34 @@ export async function trialRestore(
   }
 }
 
-/**
- * Verifies the backup `backupFile` by a trial restore (trialRestore). Returns the backup's sidecar
- * when the restore ran to its end, undefined when any step failed. Never throws for the backup's
- * sake.
- */
+/** What a trial restore found. */
+export type TrialVerdict =
+  /** The restore ran to its end: the backup restores. */
+  | { readonly state: "verified"; readonly sidecar: BackupSidecar }
+  /** The backup does not restore: it is damaged (fault.ts). */
+  | { readonly state: "failed" }
+  /**
+   * The trial could not check the backup (fault.ts): too little free space beside it for the trial
+   * (BUNDLE_LIMIT_EXCEEDED), no memory, a failing disk, a bug (no code). Nothing is known of it.
+   */
+  | { readonly state: "unchecked"; readonly code?: string };
+
+/** Verifies the backup `backupFile` by a trial restore (trialRestore). */
 export async function verifyBackupFile(
   checked: CheckedDriver,
   backupFile: string,
   options: VerifyOptions = {},
-): Promise<BackupSidecar | undefined> {
+): Promise<TrialVerdict> {
   try {
     const source = await trialRestore(checked, backupFile, options);
-    return source.kind === "backup" ? source.sidecar : undefined;
-  } catch {
-    return undefined;
+    return source.kind === "backup"
+      ? { state: "verified", sidecar: source.sidecar }
+      : { state: "failed" };
+  } catch (error) {
+    if (backupFault(error, backupFile) === "damaged") return { state: "failed" };
+    return error instanceof StorageError
+      ? { state: "unchecked", code: error.code }
+      : { state: "unchecked" };
   }
 }
 
@@ -384,7 +411,8 @@ const isNextRef = (value: unknown): value is number =>
 /**
  * Restores `backupFile` in place of the space at `folder` and claims it with a new epoch and a new
  * incarnation. The live folder is moved aside to `<slug>.replaced-<utc>`, never deleted. A backup
- * of another space is refused (SPACE_ID_MISMATCH) when the live space's ID can be read.
+ * of another space than `options.spaceId`, or than the live space's ID when it can be read, is
+ * refused (SPACE_ID_MISMATCH).
  */
 export async function restoreInPlace(
   checked: CheckedDriver,
@@ -425,9 +453,8 @@ export async function restoreInPlaceWith(
       seams,
     );
     seams.at?.("unpacked");
-    if (live.spaceId !== undefined && live.spaceId !== unpacked.space.spaceId) {
-      throw new StorageError("SPACE_ID_MISMATCH", "The backup is of another space");
-    }
+    // The live files may no longer say which space they were: the caller's ID still does.
+    refuseOtherSpace(unpacked.space.spaceId, [options.spaceId, live.spaceId]);
     // The claim happens in the staging folder, before the copy takes the space's name: no crash
     // can leave an unclaimed old incarnation in place of the live space. It is this restore's
     // first write (mark.ts firstWrite), after the copy is prepared (prepareCopy).

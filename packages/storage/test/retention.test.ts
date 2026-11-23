@@ -5,6 +5,7 @@ import { basename, join } from "node:path";
 import fc from "fast-check";
 import { afterEach, describe, expect, test } from "vitest";
 import { backupSpace, backupSpaceWith } from "../src/backup/backup.ts";
+import { BUNDLE_POLICY } from "../src/backup/policy.ts";
 import {
   listBackups,
   verifyBackup,
@@ -17,6 +18,7 @@ import {
   dailyBackupDue,
   lastLocalHour,
   planRetention,
+  type RetentionRules,
 } from "../src/backup/retention.ts";
 import {
   backupName,
@@ -44,25 +46,39 @@ const DAY = 24 * HOUR;
 /** Wednesday 2026-11-11 00:00 UTC. */
 const WED = Date.UTC(2026, 10, 11);
 
+/** Rules under which every daily backup but the newest goes: what the applied tests remove. */
+const NEWEST_ONLY: RetentionRules = { daily: 1, weekly: 1, dailyHour: 3 };
+
 const SPACE: Id<"sp"> = "sp_7c0hq2m4w9d8k1r6t3v5x0b2nf";
 const OTHER_SPACE: Id<"sp"> = "sp_2b8n4c6x0v1m3q5w7e9r0t2y4u";
+/** The incarnation of the epoch-1 backups these listings hold. */
+const FIRST: Id<"ai"> = "ai_5n0w8k3q7d1m9x4r2t6v0b8c3h";
+
+/** Where a backup stands in its space's history: its incarnation's epoch and its last commit. */
+interface Work {
+  epoch?: number;
+  seq?: number;
+}
 
 function listed(
   kind: BackupKind,
   createdAt: number,
   state: ListedBackup["state"] = "ok",
   spaceId: Id<"sp"> = SPACE,
+  work: Work = {},
 ): ListedBackup {
   // Two spaces' backups can share a folder: the seq tells their names apart in these listings.
-  const name = backupName({ kind, createdAt, epoch: 1, seq: spaceId === SPACE ? 0 : 1 });
+  const epoch = work.epoch ?? 1;
+  const seq = work.seq ?? (spaceId === SPACE ? 0 : 1);
+  const name = backupName({ kind, createdAt, epoch, seq });
   const sidecar: BackupSidecar = {
     [SIDECAR_MARKER]: 1,
     kind,
     created_at: createdAt,
     space_id: spaceId,
-    epoch: 1,
-    incarnation: "ai_5n0w8k3q7d1m9x4r2t6v0b8c3h",
-    seq: 0,
+    epoch,
+    incarnation: epoch === 1 ? FIRST : "ai_5d2m5q9w1x7k3r0t4v6b8c2n5h",
+    seq,
     user_version: 1,
     size: 4096,
     sha256: "0".repeat(64),
@@ -71,11 +87,21 @@ function listed(
     counts: {},
     written_by: "0.0.0",
   };
-  return { name, file: `${name}.db.gz`, sidecarFile: `${name}.json`, state, sidecar };
+  return {
+    name,
+    createdAt,
+    epoch,
+    seq,
+    file: `${name}.db.gz`,
+    sidecarFile: `${name}.json`,
+    state,
+    sidecar,
+  };
 }
 
 const listing = (backups: ListedBackup[]): BackupListing => ({
   folder: "unused",
+  present: true,
   backups: [...backups].sort((a, b) => (b.sidecar?.created_at ?? 0) - (a.sidecar?.created_at ?? 0)),
   leftovers: [],
 });
@@ -98,37 +124,68 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
 
   test("a daily backup is due after 03:00 local, or at start when the last is a day old", () => {
     const clock = (now: number) => ({ now, utcOffsetMinutes: 60 });
-    expect(dailyBackupDue(listing([]), clock(WED), { atStart: false, spaceId: SPACE })).toBe(true);
+    expect(
+      dailyBackupDue(listing([]), clock(WED), {
+        atStart: false,
+        spaceId: SPACE,
+        incarnation: FIRST,
+      }),
+    ).toBe(true);
     // Yesterday's daily at 03:30 local: due once today's 03:00 local has passed.
     const yesterday = listing([listed("daily", WED - DAY + 2 * HOUR + 30 * 60_000)]);
     expect(
       dailyBackupDue(yesterday, clock(WED + HOUR + 59 * 60_000), {
         atStart: false,
         spaceId: SPACE,
+        incarnation: FIRST,
       }),
     ).toBe(false);
     expect(
-      dailyBackupDue(yesterday, clock(WED + 2 * HOUR), { atStart: false, spaceId: SPACE }),
+      dailyBackupDue(yesterday, clock(WED + 2 * HOUR), {
+        atStart: false,
+        spaceId: SPACE,
+        incarnation: FIRST,
+      }),
     ).toBe(true);
     // At start, a daily backup older than 24 hours is due at once, before 03:00 too.
     const late = listing([listed("daily", WED - DAY + 4 * HOUR)]);
-    expect(dailyBackupDue(late, clock(WED + HOUR), { atStart: false, spaceId: SPACE })).toBe(false);
-    expect(dailyBackupDue(late, clock(WED + 4 * HOUR + 1), { atStart: true, spaceId: SPACE })).toBe(
-      true,
-    );
-    expect(dailyBackupDue(late, clock(WED + HOUR), { atStart: true, spaceId: SPACE })).toBe(false);
+    expect(
+      dailyBackupDue(late, clock(WED + HOUR), {
+        atStart: false,
+        spaceId: SPACE,
+        incarnation: FIRST,
+      }),
+    ).toBe(false);
+    expect(
+      dailyBackupDue(late, clock(WED + 4 * HOUR + 1), {
+        atStart: true,
+        spaceId: SPACE,
+        incarnation: FIRST,
+      }),
+    ).toBe(true);
+    expect(
+      dailyBackupDue(late, clock(WED + HOUR), {
+        atStart: true,
+        spaceId: SPACE,
+        incarnation: FIRST,
+      }),
+    ).toBe(false);
     // Other kinds and incomplete backups do not count as the day's daily.
     const others = listing([
       listed("manual", WED + 3 * HOUR),
       listed("pre-migrate", WED + 3 * HOUR),
       listed("daily", WED + 3 * HOUR, "missing_data"),
     ]);
-    expect(dailyBackupDue(others, clock(WED + 5 * HOUR), { atStart: false, spaceId: SPACE })).toBe(
-      true,
-    );
+    expect(
+      dailyBackupDue(others, clock(WED + 5 * HOUR), {
+        atStart: false,
+        spaceId: SPACE,
+        incarnation: FIRST,
+      }),
+    ).toBe(true);
   });
 
-  test("keeps 7 daily, 4 weekly, pre-migration for 30 days, manual ones and the newest", () => {
+  test("keeps 7 daily, 4 weekly, every backup that is not a daily one, and the newest", () => {
     const now = WED + 12 * HOUR;
     const dailies = Array.from({ length: 40 }, (_, i) => listed("daily", now - i * DAY - HOUR));
     // A second daily on the newest day: only the newer one of a day counts as that day's.
@@ -150,13 +207,15 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
       const name = dailies.find((b) => b.sidecar?.created_at === now - sunday * DAY - HOUR)?.name;
       expect(name !== undefined && keep.has(name), `${String(sunday)} days ago`).toBe(true);
     }
+    // A backup from before an upgrade may be the last one an older build reads: it stays.
     expect(keep.has(preNew.name)).toBe(true);
-    expect(keep.has(preOld.name)).toBe(false);
+    expect(keep.has(preOld.name)).toBe(true);
     expect(keep.has(manual.name)).toBe(true);
     // Damaged backups take no part: neither kept nor removed.
     expect([...plan.keep, ...plan.remove]).not.toContain(damaged.name);
-    // 7 days, 2 more weeks (this week's and last Sunday's are among the 7 days), 2 others.
-    expect(plan.keep.length).toBe(7 + 2 + 2);
+    // 7 days, 2 more weeks (this week's and last Sunday's are among the 7 days), 3 others.
+    expect(plan.keep.length).toBe(7 + 2 + 3);
+    expect(plan.remove.every((name) => name.startsWith("daily-"))).toBe(true);
     expect(plan.keep.length + plan.remove.length).toBe(all.length - 1);
   });
 
@@ -198,13 +257,13 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     const { folder, space } = await createFixtureSpace(folders.make());
     const dir = join(folder, "backups");
     const now = WED + 12 * HOUR;
-    // Two pre-migration backups past their 30 days: the plan keeps only the newest.
+    // Two daily backups, under rules that keep only the newest.
     const older = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 90 * DAY,
     });
     const newer = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 80 * DAY,
     });
     // Damage the newer one without changing its size: the listing still calls it complete.
@@ -213,7 +272,11 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     writeFileSync(newer.file, bytes);
     const listing = listBackups(dir);
     expect(listing.backups.map((b) => b.state)).toEqual(["ok", "ok"]);
-    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    const plan = planRetention(
+      listing,
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: space.spaceId, rules: NEWEST_ONLY },
+    );
     expect(plan).toEqual({
       spaceId: space.spaceId,
       keep: [newer.name],
@@ -242,11 +305,11 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     const dir = join(folder, "backups");
     const now = WED + 12 * HOUR;
     const older = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 90 * DAY,
     });
     const newer = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 80 * DAY,
     });
     // One count changed in the sidecar, same size: both files' hashes still match it.
@@ -257,9 +320,16 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     expect(listing.backups.map((b) => b.state)).toEqual(["ok", "ok"]);
     const [first, second] = listing.backups;
     if (first === undefined || second === undefined) throw new Error("two backups expected");
-    expect(await verifyBackup(checked, first)).toBeUndefined();
-    expect(await verifyBackup(checked, second)).toEqual(second.sidecar);
-    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    expect(await verifyBackup(checked, first)).toEqual({ state: "failed" });
+    expect(await verifyBackup(checked, second)).toEqual({
+      state: "verified",
+      sidecar: second.sidecar,
+    });
+    const plan = planRetention(
+      listing,
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: space.spaceId, rules: NEWEST_ONLY },
+    );
     const applied = await applyRetention(checked, listing, plan);
     expect(applied).toEqual({ removed: [], verified: older.name, unverified: [newer.name] });
     expect(existsSync(older.file) && existsSync(older.sidecarFile)).toBe(true);
@@ -275,15 +345,19 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     const dir = join(folder, "backups");
     const now = WED + 12 * HOUR;
     const older = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 90 * DAY,
     });
     const newer = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 80 * DAY,
     });
     const listing = listBackups(dir);
-    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    const plan = planRetention(
+      listing,
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: space.spaceId, rules: NEWEST_ONLY },
+    );
     expect(plan.remove).toEqual([older.name]);
     // After the listing, a folder took the data file's name.
     rmSync(older.file);
@@ -300,19 +374,23 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     const dir = join(folder, "backups");
     const now = WED + 12 * HOUR;
     const oldest = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 100 * DAY,
     });
     const older = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 90 * DAY,
     });
     const newer = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 80 * DAY,
     });
     const listing = listBackups(dir);
-    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    const plan = planRetention(
+      listing,
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: space.spaceId, rules: NEWEST_ONLY },
+    );
     expect(plan.remove.sort()).toEqual([oldest.name, older.name].sort());
     // After the listing, a sync puts another space's sidecar under one name, and another data
     // file of the same size under the other.
@@ -334,12 +412,16 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     const dir = join(folder, "backups");
     const now = WED + 12 * HOUR;
     const older = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 90 * DAY,
     });
-    await backupSpace(checked, folder, { kind: "pre-migrate", now: () => now - 80 * DAY });
+    await backupSpace(checked, folder, { kind: "daily", now: () => now - 80 * DAY });
     const listing = listBackups(dir);
-    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    const plan = planRetention(
+      listing,
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: space.spaceId, rules: NEWEST_ONLY },
+    );
     expect(plan.remove).toEqual([older.name]);
     // While the old pair's data is read, a sync replaces both of its files with another pair.
     const sidecar = readFileSync(older.sidecarFile, "utf8").replace(space.spaceId, OTHER_SPACE);
@@ -378,8 +460,16 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     expect(plan.keep).toEqual(ours.slice(0, 7).map((b) => b.name));
     // Today's daily of the other space does not count as this space's.
     const otherToday = listing([listed("daily", now - HOUR, "ok", OTHER_SPACE)]);
-    expect(dailyBackupDue(otherToday, clock, { atStart: false, spaceId: SPACE })).toBe(true);
-    expect(dailyBackupDue(otherToday, clock, { atStart: false, spaceId: OTHER_SPACE })).toBe(false);
+    expect(
+      dailyBackupDue(otherToday, clock, { atStart: false, spaceId: SPACE, incarnation: FIRST }),
+    ).toBe(true);
+    expect(
+      dailyBackupDue(otherToday, clock, {
+        atStart: false,
+        spaceId: OTHER_SPACE,
+        incarnation: FIRST,
+      }),
+    ).toBe(false);
   });
 
   test("a daily backup dated in the future does not hold back the next one", () => {
@@ -387,8 +477,200 @@ describe("[A1.5.backup.retention] daily backups and their retention", () => {
     // A clock that once ran a year ahead left a daily backup from the future.
     const ahead = listing([listed("daily", now + 365 * DAY)]);
     const clock = { now, utcOffsetMinutes: 0 };
-    expect(dailyBackupDue(ahead, clock, { atStart: false, spaceId: SPACE })).toBe(true);
-    expect(dailyBackupDue(ahead, clock, { atStart: true, spaceId: SPACE })).toBe(true);
+    expect(
+      dailyBackupDue(ahead, clock, { atStart: false, spaceId: SPACE, incarnation: FIRST }),
+    ).toBe(true);
+    expect(
+      dailyBackupDue(ahead, clock, { atStart: true, spaceId: SPACE, incarnation: FIRST }),
+    ).toBe(true);
+  });
+});
+
+describe("[A1.5.backup.newest-work] the newest backup is the one that holds the furthest saved work", () => {
+  test("after the clock was set back an hour, the later commit is the newest, and its day keeps it", () => {
+    // A daily at noon, three commits, the clock set back an hour, another daily.
+    const noon = listed("daily", WED + 12 * HOUR, "ok", SPACE, { seq: 0 });
+    const later = listed("daily", WED + 11 * HOUR, "ok", SPACE, { seq: 3 });
+    const clock = { now: WED + 13 * HOUR, utcOffsetMinutes: 0 };
+    for (const rules of [NEWEST_ONLY, undefined]) {
+      const plan = planRetention(listing([noon, later]), clock, {
+        spaceId: SPACE,
+        ...(rules === undefined ? {} : { rules }),
+      });
+      expect(plan.keep).toEqual([later.name]);
+      expect(plan.remove).toEqual([noon.name]);
+    }
+  });
+
+  test("the backup that holds the furthest commit stays whatever its date, and each day and week keeps its furthest work", () => {
+    const now = WED + 12 * HOUR;
+    // Ten days of dailies, then the clock set back by weeks for the last one.
+    const days = Array.from({ length: 10 }, (_, i) =>
+      listed("daily", now - (i + 1) * DAY, "ok", SPACE, { seq: 20 - i }),
+    );
+    const furthest = listed("daily", now - 40 * DAY, "ok", SPACE, { seq: 30 });
+    // Yesterday again, earlier on the clock and later in the work.
+    const yesterday = listed("daily", now - DAY - HOUR, "ok", SPACE, { seq: 21 });
+    const plan = planRetention(
+      listing([...days, furthest, yesterday]),
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: SPACE },
+    );
+    expect(plan.keep).toContain(furthest.name);
+    expect(plan.keep).toContain(yesterday.name);
+    expect(plan.remove).toContain(days[0]?.name);
+  });
+
+  test("two incarnations are two histories: each keeps its own newest, whatever their epochs, commits and dates", () => {
+    const now = WED + 12 * HOUR;
+    // Restored in place from an older backup (a new epoch), with the clock set back meanwhile.
+    const before = listed("daily", now - 2 * HOUR, "ok", SPACE, { epoch: 1, seq: 50 });
+    const restored = listed("daily", now - 3 * HOUR, "ok", SPACE, { epoch: 2, seq: 12 });
+    const plan = planRetention(
+      listing([before, restored]),
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: SPACE, rules: NEWEST_ONLY },
+    );
+    expect([...plan.keep].sort()).toEqual([before.name, restored.name].sort());
+    expect(plan.remove).toEqual([]);
+  });
+
+  test("on real files, the backup with the later commit is the newest that restores, and retention keeps it", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const noon = WED + 12 * HOUR;
+    const first = await backupSpace(checked, folder, { kind: "daily", now: () => noon });
+    await writeCommits(folder, 3);
+    const later = await backupSpace(checked, folder, { kind: "daily", now: () => noon - HOUR });
+    expect(later.sidecar.seq).toBeGreaterThan(first.sidecar.seq);
+    const listed = listBackups(dir);
+    expect(listed.backups.map((b) => b.name)).toEqual([later.name, first.name]);
+    const { backup } = await restoreLatest(
+      checked,
+      dir,
+      space.spaceId,
+      join(folders.make(), "copy"),
+    );
+    expect(backup).toBe(later.name);
+    const clock = { now: noon + HOUR, utcOffsetMinutes: 0 };
+    const applied = await applyRetention(
+      checked,
+      listed,
+      planRetention(listed, clock, { spaceId: space.spaceId }),
+    );
+    expect(applied).toMatchObject({ verified: later.name, removed: [first.name] });
+    expect(existsSync(later.file) && existsSync(later.sidecarFile)).toBe(true);
+  });
+});
+
+describe("[A1.5.backup.histories] no history's backups are judged by another's", () => {
+  /**
+   * Two copies of one space claimed apart into one backups folder, as two machines that restored
+   * the same backup would: each claim takes epoch 2 and a new incarnation. The desktop goes further
+   * (more commits); the laptop's work is its own (tasks the desktop never had) and it was backed up
+   * last. Each made a daily before today's 03:00 (the desktop) or after it (the laptop).
+   */
+  async function twoCopies() {
+    const checked = await checkedDriver();
+    const root = folders.make();
+    const { folder, space } = await createFixtureSpace(root);
+    const shared = join(root, "shared-backups");
+    mkdirSync(shared);
+    const first = await backupSpace(checked, folder, {
+      kind: "manual",
+      backupDir: shared,
+      now: () => WED - 3 * DAY,
+    });
+    const copy = async (slug: string) => {
+      const at = join(root, slug);
+      await restoreBackup(checked, first.file, at);
+      const restored = await restoreInPlace(checked, first.file, at, { machineId: TEST_MACHINE });
+      expect(restored.claim.epoch).toBe(2);
+      return { folder: at, incarnation: restored.claim.incarnation };
+    };
+    const desktop = await copy("desktop");
+    const laptop = await copy("laptop");
+    const daily = (from: string, at: number) =>
+      backupSpace(checked, from, { kind: "daily", backupDir: shared, now: () => at });
+    await writeCommits(desktop.folder, 3, "d");
+    const d1 = await daily(desktop.folder, WED - 2 * DAY);
+    await writeCommits(laptop.folder, 2, "l");
+    const l1 = await daily(laptop.folder, WED - DAY);
+    await writeCommits(desktop.folder, 6, "d");
+    const d2 = await daily(desktop.folder, WED + 2 * HOUR);
+    await writeCommits(laptop.folder, 2, "m");
+    const l2 = await daily(laptop.folder, WED + 11 * HOUR);
+    expect(d2.sidecar.epoch).toBe(l2.sidecar.epoch);
+    expect(d2.sidecar.seq).toBeGreaterThan(l2.sidecar.seq);
+    return { checked, space, shared, root, first, desktop, laptop, d1, d2, l1, l2 };
+  }
+
+  const clock = { now: WED + 12 * HOUR, utcOffsetMinutes: 0 };
+
+  test("restore latest takes the newest backup of the served copy's own history; served nowhere, the history written to last, naming the other", async () => {
+    const { checked, space, shared, root, first, desktop, laptop, d2, l2 } = await twoCopies();
+    const target = (name: string) => join(root, name);
+    const ofLaptop = await restoreLatest(checked, shared, space.spaceId, target("a"), {
+      incarnation: laptop.incarnation,
+    });
+    expect(ofLaptop).toMatchObject({ backup: l2.name, own: true });
+    const ofDesktop = await restoreLatest(checked, shared, space.spaceId, target("b"), {
+      incarnation: desktop.incarnation,
+    });
+    expect(ofDesktop).toMatchObject({ backup: d2.name, own: true });
+    const unknown = await restoreLatest(checked, shared, space.spaceId, target("c"));
+    expect(unknown).toMatchObject({ backup: l2.name, own: false });
+    expect(unknown.history.incarnation).toBe(laptop.incarnation);
+    // The others, written to last first: the desktop's, then the original's first backup.
+    expect(unknown.others.map((h) => h.incarnation)).toEqual([
+      desktop.incarnation,
+      first.sidecar.incarnation,
+    ]);
+    expect(unknown.others[0]?.backups[0]?.name).toBe(d2.name);
+  });
+
+  test("the served copy's own backups are all cut short: restore latest restores nothing, never another copy's work in their place", async () => {
+    const { checked, space, shared, root, laptop, l1, l2 } = await twoCopies();
+    // A sync that stopped halfway: the files are there with their metadata, and are not whole.
+    for (const cut of [l1, l2]) writeFileSync(cut.file, "cut");
+    await expectCode(
+      () =>
+        restoreLatest(checked, shared, space.spaceId, join(root, "a"), {
+          incarnation: laptop.incarnation,
+        }),
+      "BACKUP_INVALID",
+    );
+    expect(existsSync(join(root, "a"))).toBe(false);
+  });
+
+  test("a daily of one copy does not make the other's look done, and retention keeps each history's newest", async () => {
+    const { checked, space, shared, desktop, laptop, d1, d2, l1, l2 } = await twoCopies();
+    const listing = listBackups(shared);
+    const due = (incarnation: Id<"ai">) =>
+      dailyBackupDue(listing, clock, { atStart: false, spaceId: space.spaceId, incarnation });
+    expect(due(desktop.incarnation)).toBe(true);
+    expect(due(laptop.incarnation)).toBe(false);
+
+    const plan = planRetention(listing, clock, { spaceId: space.spaceId, rules: NEWEST_ONLY });
+    expect([...plan.remove].sort()).toEqual([d1.name, l1.name].sort());
+    // The desktop's upkeep runs it: each history's newest is trial restored before anything of it
+    // goes, and the laptop's work stays.
+    const applied = await applyRetention(checked, listing, plan, {
+      history: desktop.incarnation,
+    });
+    expect({ ...applied, removed: [...applied.removed].sort() }).toEqual({
+      removed: [d1.name, l1.name].sort(),
+      verified: d2.name,
+      unverified: [],
+    });
+    for (const kept of [d2, l2]) {
+      expect(existsSync(kept.file) && existsSync(kept.sidecarFile), kept.name).toBe(true);
+    }
+    const left = await restoreLatest(checked, shared, space.spaceId, join(folders.make(), "l"), {
+      incarnation: laptop.incarnation,
+    });
+    expect(left.backup).toBe(l2.name);
   });
 });
 
@@ -396,23 +678,30 @@ describe("[A1.5.backup.rotation] rotation removes only what A1's retention allow
   const KINDS: BackupKind[] = ["daily", "manual", "pre-migrate"];
   const STATES: ListedBackup["state"][] = ["ok", "ok", "ok", "missing_data", "invalid_sidecar"];
 
-  test("property: a plan never removes a manual backup, the newest complete one, a young pre-migration one, another space's or a damaged one", () => {
+  test("property: a plan removes only daily backups, never the one with the furthest saved work, another space's or a damaged one", () => {
     const backup = fc.record({
       kind: fc.constantFrom(...KINDS),
       // From two days ahead (a clock that ran ahead) to over a year back, in minutes.
       age: fc.integer({ min: -2 * 24 * 60, max: 400 * 24 * 60 }),
       state: fc.constantFrom(...STATES),
       other: fc.boolean(),
+      // The last commit each holds: a clock set back makes it run against the dates.
+      seq: fc.integer({ min: 0, max: 3 }),
     });
     fc.assert(
       fc.property(
-        fc.uniqueArray(backup, { maxLength: 60, selector: (b) => `${b.kind}${String(b.age)}` }),
+        fc.uniqueArray(backup, {
+          maxLength: 60,
+          selector: (b) => `${b.kind}${String(b.age)}s${String(b.seq)}`,
+        }),
         fc.integer({ min: -720, max: 840 }),
         fc.integer({ min: 0, max: 7 * 24 * 60 }),
         (drawn, offset, shift) => {
           const now = WED + shift * 60_000;
           const all = drawn.map((b) =>
-            listed(b.kind, now - b.age * 60_000, b.state, b.other ? OTHER_SPACE : SPACE),
+            listed(b.kind, now - b.age * 60_000, b.state, b.other ? OTHER_SPACE : SPACE, {
+              seq: b.seq,
+            }),
           );
           const plan = planRetention(
             listing(all),
@@ -427,15 +716,12 @@ describe("[A1.5.backup.rotation] rotation removes only what A1's retention allow
           expect([...plan.keep, ...plan.remove].sort()).toEqual(complete.map((b) => b.name).sort());
           for (const name of plan.keep) expect(removed.has(name)).toBe(false);
           for (const b of complete) {
-            if (!removed.has(b.name)) continue;
-            expect(b.sidecar?.kind).not.toBe("manual");
-            const created = b.sidecar?.created_at ?? 0;
-            if (b.sidecar?.kind === "pre-migrate")
-              expect(now - created).toBeGreaterThanOrEqual(30 * DAY);
+            if (removed.has(b.name)) expect(b.sidecar?.kind).toBe("daily");
           }
-          const newest = [...complete].sort(
-            (a, b) => (b.sidecar?.created_at ?? 0) - (a.sidecar?.created_at ?? 0),
-          )[0];
+          // The newest is the furthest saved work: the later commit, then the later time.
+          const furthest = (backups: ListedBackup[]) =>
+            [...backups].sort((a, b) => b.seq - a.seq || b.createdAt - a.createdAt)[0];
+          const newest = furthest(complete);
           if (newest !== undefined) expect(removed.has(newest.name)).toBe(false);
           // A backup dated after now (a clock that ran ahead) is kept, and so is the newest one
           // dated at or before now: the future one counts for nothing.
@@ -443,9 +729,7 @@ describe("[A1.5.backup.rotation] rotation removes only what A1's retention allow
           for (const b of complete) {
             if ((b.sidecar?.created_at ?? 0) > now) expect(removed.has(b.name)).toBe(false);
           }
-          const newestPast = [...past].sort(
-            (a, b) => (b.sidecar?.created_at ?? 0) - (a.sidecar?.created_at ?? 0),
-          )[0];
+          const newestPast = furthest(past);
           if (newestPast !== undefined) expect(removed.has(newestPast.name)).toBe(false);
         },
       ),
@@ -477,11 +761,11 @@ describe("[A1.5.backup.rotation] rotation removes only what A1's retention allow
     const dir = join(folder, "backups");
     const now = WED + 12 * HOUR;
     const older = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 60 * DAY,
     });
     const newer = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 40 * DAY,
     });
     const future = await backupSpace(checked, folder, {
@@ -493,7 +777,11 @@ describe("[A1.5.backup.rotation] rotation removes only what A1's retention allow
     bytes[bytes.length - 5] = (bytes[bytes.length - 5] ?? 0) ^ 1;
     writeFileSync(newer.file, bytes);
     const listing = listBackups(dir);
-    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    const plan = planRetention(
+      listing,
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: space.spaceId, rules: NEWEST_ONLY },
+    );
     expect(plan.remove).toEqual([older.name]);
     const applied = await applyRetention(checked, listing, plan);
     expect(applied).toEqual({ removed: [], verified: older.name, unverified: [newer.name] });
@@ -551,8 +839,44 @@ async function expectCode(fn: () => unknown, code: string): Promise<void> {
   throw new Error(`expected ${code}, but nothing was thrown`);
 }
 
+describe("[A1.5.restore.not-the-backup] a trial restore the surroundings stop is no verdict on the backup", () => {
+  test("with no room to trial restore the newest backup, retention names it unchecked, calls no older one the newest, and removes nothing", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    const dir = join(folder, "backups");
+    const now = WED + 12 * HOUR;
+    const oldest = await backupSpace(checked, folder, { kind: "daily", now: () => now - 3 * DAY });
+    const older = await backupSpace(checked, folder, { kind: "daily", now: () => now - 2 * DAY });
+    await writeCommits(folder, 60);
+    const newer = await backupSpace(checked, folder, { kind: "daily", now: () => now - DAY });
+    expect(newer.sidecar.size).toBeGreaterThan(older.sidecar.size);
+    const listing = listBackups(dir);
+    const plan = planRetention(
+      listing,
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: space.spaceId, rules: NEWEST_ONLY },
+    );
+    expect([...plan.remove].sort()).toEqual([oldest.name, older.name].sort());
+    // Room on the backups' disk to trial restore the older databases, not the newest.
+    const room = BUNDLE_POLICY.freeSpaceReserveBytes + older.sidecar.size;
+    const applied = await applyRetention(checked, listing, plan, { freeBytes: () => room });
+    expect(applied).toEqual({
+      removed: [],
+      verified: undefined,
+      unverified: [],
+      unchecked: { name: newer.name, code: "BUNDLE_LIMIT_EXCEEDED" },
+    });
+    for (const b of [oldest, older, newer]) {
+      expect(existsSync(b.file) && existsSync(b.sidecarFile), b.name).toBe(true);
+    }
+    // With room, the newest restores and the plan is applied.
+    const roomy = await applyRetention(checked, listing, plan);
+    expect(roomy).toMatchObject({ verified: newer.name, unverified: [] });
+  });
+});
+
 describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran to their first write on a scratch copy", () => {
-  test("a backup whose restore fails at its first write is never verified, and never the reason another backup is removed", async () => {
+  test("a backup whose restore fails at its first write for a reason SQLite does not call damage is never verified, never the reason another backup is removed, and never passed over for older work", async () => {
     const checked = await checkedDriver();
     // A schema whose restore refuses its read-only mark once the space has three commits: the
     // exact-schema rule passes it, since its own steps made it (stand-in-steps.ts).
@@ -564,14 +888,14 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
     const older = await backupSpaceWith(
       checked,
       folder,
-      { kind: "pre-migrate", now: () => now - 90 * DAY },
+      { kind: "daily", now: () => now - 90 * DAY },
       { steps },
     );
     await writeCommits(folder, 2, "t", steps);
     const newer = await backupSpaceWith(
       checked,
       folder,
-      { kind: "pre-migrate", now: () => now - 80 * DAY },
+      { kind: "daily", now: () => now - 80 * DAY },
       { steps },
     );
     expect(newer.sidecar.seq).toBeGreaterThanOrEqual(3);
@@ -580,40 +904,52 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
     const parent = folders.make();
     await unpackBackup(checked, newer.file, join(parent, "unpacked.db"), {}, { steps });
 
-    // Verification, marking and retention together: the plan would remove the older backup, and
-    // only the older one restores, so it is the newest verified one and stays.
+    // Verification, marking and retention together: the plan would remove the older backup. The
+    // newer one's first write fails with SQLITE_ERROR (an integer overflow), which names no damage:
+    // it could not be checked, so nothing is removed and the older one is not taken in its place.
     const listing = listBackups(dir);
-    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    const plan = planRetention(
+      listing,
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: space.spaceId, rules: NEWEST_ONLY },
+    );
     expect(plan.remove).toEqual([older.name]);
     const [first, second] = listing.backups;
     if (first === undefined || second === undefined) throw new Error("two backups expected");
-    expect(await verifyBackup(checked, first, { steps })).toBeUndefined();
-    expect(await verifyBackup(checked, second, { steps })).toEqual(older.sidecar);
+    expect(await verifyBackup(checked, first, { steps })).toEqual({
+      state: "unchecked",
+      code: "STORAGE_SQL",
+    });
+    expect(await verifyBackup(checked, second, { steps })).toEqual({
+      state: "verified",
+      sidecar: older.sidecar,
+    });
     const applied = await applyRetention(checked, listing, plan, { steps });
-    expect(applied).toEqual({ removed: [], verified: older.name, unverified: [newer.name] });
+    expect(applied).toEqual({
+      removed: [],
+      verified: undefined,
+      unverified: [],
+      unchecked: { name: newer.name, code: "STORAGE_SQL" },
+    });
     expect(existsSync(older.file) && existsSync(older.sidecarFile)).toBe(true);
     // The trials left nothing beside the backups.
     expect(readdirSync(dir).sort()).toEqual(
       [older.file, older.sidecarFile, newer.file, newer.sidecarFile].map((f) => basename(f)).sort(),
     );
 
-    // A restore refuses the newer one for the same reason, and leaves no folder; the older one
-    // restores, and `restore latest` goes past the newer one to it.
+    // A restore of the newer one stops with SQLite's code and leaves no folder, and so does
+    // `restore latest`, rather than bring back the older work as the newest. The older one
+    // restores when it is named.
     await expectCode(
       () => restoreBackupWith(checked, newer.file, join(parent, "a"), {}, { steps }),
-      "BACKUP_INVALID",
+      "STORAGE_SQL",
     );
-    expect(existsSync(join(parent, "a"))).toBe(false);
+    await expectCode(
+      () => restoreLatest(checked, dir, space.spaceId, join(parent, "c"), {}, { steps }),
+      "STORAGE_SQL",
+    );
+    expect(existsSync(join(parent, "a")) || existsSync(join(parent, "c"))).toBe(false);
     await restoreBackupWith(checked, older.file, join(parent, "b"), {}, { steps });
-    const latest = await restoreLatest(
-      checked,
-      dir,
-      space.spaceId,
-      join(parent, "c"),
-      {},
-      { steps },
-    );
-    expect(latest.backup).toBe(older.name);
   });
 
   test("a backup whose copy refuses a claim is never verified: the mark's transaction runs the claim and takes it back", async () => {
@@ -623,7 +959,7 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
     const now = WED + 12 * HOUR;
     await writeCommits(folder, 2);
     const older = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 90 * DAY,
     });
     // The space's own schema, with rows a claim cannot use: no system actor to write its commit.
@@ -634,11 +970,15 @@ describe("[A1.5.backup.trial-restore] verified means the restore's own steps ran
       conn.close();
     }
     const newer = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 80 * DAY,
     });
     const listing = listBackups(dir);
-    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    const plan = planRetention(
+      listing,
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: space.spaceId, rules: NEWEST_ONLY },
+    );
     expect(plan.remove).toEqual([older.name]);
     const applied = await applyRetention(checked, listing, plan);
     expect(applied).toEqual({ removed: [], verified: older.name, unverified: [newer.name] });
@@ -670,16 +1010,20 @@ describe("[A1.5.backup.held-files] a reader opens both files of a backup before 
     const now = WED + 12 * HOUR;
     await writeCommits(folder, 1);
     const old = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 90 * DAY,
     });
     await writeCommits(folder, 1, "t");
     const kept = await backupSpace(checked, folder, {
-      kind: "pre-migrate",
+      kind: "daily",
       now: () => now - 80 * DAY,
     });
     const listing = listBackups(dir);
-    const plan = planRetention(listing, { now, utcOffsetMinutes: 0 }, { spaceId: space.spaceId });
+    const plan = planRetention(
+      listing,
+      { now, utcOffsetMinutes: 0 },
+      { spaceId: space.spaceId, rules: NEWEST_ONLY },
+    );
     expect(plan.remove).toEqual([old.name]);
     const oldListed = listing.backups.find((b) => b.name === old.name);
     if (oldListed === undefined) throw new Error("the old backup is listed");
@@ -692,7 +1036,7 @@ describe("[A1.5.backup.held-files] a reader opens both files of a backup before 
     });
     expect(removed).toEqual([old.name]);
     expect(existsSync(old.file) || existsSync(old.sidecarFile)).toBe(false);
-    expect(verified).toEqual(old.sidecar);
+    expect(verified).toEqual({ state: "verified", sidecar: old.sidecar });
     expect(existsSync(kept.file) && existsSync(kept.sidecarFile)).toBe(true);
   });
 

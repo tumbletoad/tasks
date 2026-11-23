@@ -45,6 +45,7 @@ import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
 import { shellLine } from "@ttasks/launch";
 import {
+  backupHistories,
   backupsFolder,
   exportsFolder,
   listBackups,
@@ -58,7 +59,7 @@ import type { ConnectionClass } from "../local/index.ts";
 import { ambiguousError, findSpace, isAmbiguity } from "../ops/copies.ts";
 import { isUserClass } from "../ops/index.ts";
 import { storageFailureBody } from "./space-errors.ts";
-import { AdminFailed, runAdmin, type AdminResult } from "./space-admin.ts";
+import { AdminFailed, historyView, runAdmin, type AdminResult } from "./space-admin.ts";
 import {
   because,
   forgetSpaceRecord,
@@ -96,6 +97,7 @@ export interface SpaceVerbsHost {
     | "rebuildView"
     | "repairSearch"
     | "backedUp"
+    | "incarnationOf"
   >;
   readonly machine: MachineInfo;
   /** The state folder, for each space's machine-local settings (`backup.dir`). */
@@ -180,6 +182,19 @@ function userOnly(cls: ConnectionClass): void {
   }
 }
 
+/**
+ * A backups folder this machine set for a space that is not there: a drive that is not connected,
+ * a folder moved. Said as such, never as a folder without backups.
+ */
+function backupsAway(folder: string): AppError {
+  return new AppError({
+    code: "not_found",
+    message: `The backups folder set for this space is not there: ${folder}`,
+    hint: "If it is on a drive that is not connected, connect it. Otherwise create the folder.",
+    data: { reason: "backups_folder_missing", folder },
+  });
+}
+
 /** The space an admin job made: a create's new space, a restore's read-only copy. */
 function spaceOf(result: AdminResult): Id<"sp"> {
   if (result.kind !== "create" && result.kind !== "restore") {
@@ -210,6 +225,20 @@ function failure(error: unknown): AppError {
   if (error instanceof AdminFailed) return new AppError(storageFailureBody(error.code));
   if (error instanceof StorageError) return new AppError(storageFailureBody(error.code));
   return new AppError({ code: "internal", message: "Something went wrong in the service." });
+}
+
+/**
+ * `latest` that restored nothing. It stops at the first backup it cannot judge, and never takes
+ * another copy's work for this copy's, so the way on is a backup the person names: the answer
+ * says how to see them and how to restore one.
+ */
+function latestFailure(error: unknown): AppError {
+  const failed = failure(error);
+  if (failed.hint !== undefined || failed.data["cause"] === undefined) return failed;
+  return new AppError({
+    ...failed.toBody(),
+    hint: `${CLI_NAME} space backups <space> lists every backup with its state, also those of another copy of the space. Restore one by its name: ${CLI_NAME} space restore <name> <space> --to <folder>`,
+  });
 }
 
 /**
@@ -512,10 +541,13 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
     };
   };
 
-  const backupDirOf = (view: SpaceView): string => {
+  /** The space's backups folder, and whether this machine set it (`backup.dir`). */
+  const backupsOf = (view: SpaceView): { dir: string; set: boolean } => {
     const id = view.id ?? view.registered;
     const settings = id === undefined ? {} : readSpaceSettings(host.settingsDir, id);
-    return settings.backupDir ?? backupsFolder(manager.folderOf(view.entry));
+    return settings.backupDir === undefined
+      ? { dir: backupsFolder(manager.folderOf(view.entry)), set: false }
+      : { dir: settings.backupDir, set: true };
   };
 
   return {
@@ -677,12 +709,14 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
           data: { reason: "not_served", retryable: false, state: view.state },
         });
       }
-      const settings = view.id === undefined ? {} : readSpaceSettings(host.settingsDir, view.id);
+      const { dir, set } = backupsOf(view);
+      // As for the daily backup: none goes to a new folder in place of one that is not there.
+      if (set && !existsSync(dir)) throw backupsAway(dir);
       try {
         const done = await runAdmin({
           kind: "backup",
           folder: manager.folderOf(view.entry),
-          ...(settings.backupDir === undefined ? {} : { backupDir: settings.backupDir }),
+          ...(set ? { backupDir: dir } : {}),
         });
         if (done.kind !== "backup") return {};
         manager.backedUp(view.entry, Date.parse(done.backup.created_at));
@@ -710,19 +744,40 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
 
     "space/backups": (params) => {
       const view = find(required(params, "space"));
-      const dir = backupDirOf(view);
+      const { dir, set } = backupsOf(view);
+      const id = view.id ?? view.registered;
       try {
         const listing = listBackups(dir);
+        // The space's own folder is made at its first backup: until then it holds none.
+        if (set && !listing.present) throw backupsAway(dir);
+        // Each copy of the space writes its own history (a copy claimed on another machine, one a
+        // restore in place replaced): this copy's first, then the one written to last.
+        const own = manager.incarnationOf(view.entry);
+        const histories = id === undefined ? [] : backupHistories(listing, id);
+        const ordered = [
+          ...histories.filter((h) => h.incarnation === own),
+          ...histories.filter((h) => h.incarnation !== own),
+        ];
         return Promise.resolve({
           folder: dir,
-          backups: listing.backups.map((b) => ({
+          histories: ordered.map((h) => ({
+            ...historyView(h),
+            this_copy: h.incarnation === own,
+          })),
+          // A backup.dir can be shared: another space's backups are not this one's. One whose
+          // sidecar does not read names no space and no history, and is listed for each, last.
+          backups: [
+            ...ordered.flatMap((h) => h.backups),
+            ...listing.backups.filter((b) => b.sidecar === undefined),
+          ].map((b) => ({
             name: b.name,
             state: b.state,
+            created_at: new Date(b.createdAt).toISOString(),
             ...(b.sidecar === undefined
               ? {}
               : {
                   kind: b.sidecar.kind,
-                  created_at: new Date(b.sidecar.created_at).toISOString(),
+                  history: b.sidecar.incarnation,
                   epoch: b.sidecar.epoch,
                   seq: b.sidecar.seq,
                   size: b.sidecar.size,
@@ -798,25 +853,46 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
         const spaceId = of.id ?? of.registered;
         if (spaceId === undefined) throw invalid("of", "The space's ID is not known yet");
         const target = resolve(to);
+        const { dir, set } = backupsOf(of);
         try {
+          // A folder that is not there, or holds no backup of the space, is said as itself: never
+          // as a backup that does not verify.
+          const listing = listBackups(dir);
+          if (set && !listing.present) throw backupsAway(dir);
+          if (!listing.backups.some((b) => b.state === "ok" && b.sidecar?.space_id === spaceId)) {
+            throw new AppError({
+              code: "not_found",
+              message: `No complete backup of this space is in ${dir}`,
+              hint: `${CLI_NAME} space backups <folder> lists what is there.`,
+              data: { reason: "no_backup", folder: dir },
+            });
+          }
           return await oneAtATime(async () => {
             refuseNetwork(await manager.checkFolder(target), "to");
+            // This copy's own history first: another copy's work is never taken in its place
+            // without the answer saying so (storage's restoreLatest).
+            const incarnation = manager.incarnationOf(of.entry);
             const restored = await runAdmin({
               kind: "restore-latest",
-              backupDir: backupDirOf(of),
+              backupDir: dir,
               spaceId,
               target,
+              ...(incarnation === undefined ? {} : { incarnation }),
             });
             return await openRestored(
               target,
               spaceOf(restored),
               restored.kind === "restore" && restored.backup !== undefined
-                ? { backup: restored.backup }
+                ? {
+                    backup: restored.backup,
+                    ...(restored.history === undefined ? {} : { history: { ...restored.history } }),
+                    other_histories: (restored.others ?? []).map((h) => ({ ...h })),
+                  }
                 : {},
             );
           });
         } catch (error) {
-          throw failure(error);
+          throw latestFailure(error);
         }
       }
       // A backup's or a bundle's file, or its name as `space backups` prints it: a backup's in the
@@ -824,12 +900,22 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       // bundle's (`.zip`) in its exports folder.
       let file: string;
       const from = inPlace ?? text(params, "of");
+      // The space the backup must be of, when the person named it: a folder of backups can be
+      // shared by spaces. A restore in place checks against its entry's space (spaces.ts).
+      const of = from === undefined ? undefined : find(from);
+      const spaceId = of?.id ?? of?.registered;
       if (isAbsolute(backup)) file = resolve(backup);
-      else if (from !== undefined && /^[A-Za-z0-9._-]+$/.test(backup)) {
-        const space = find(from);
+      else if (of !== undefined && /^[A-Za-z0-9._-]+$/.test(backup)) {
+        const name = backup.endsWith(".db.gz") ? backup : `${backup}.db.gz`;
+        const { dir, set } = backupsOf(of);
+        // An upgrade whose folder set for the space was away left its backup in the space's own
+        // backups folder (spaces.ts): a name not in the set folder is looked for there too.
+        const own = join(backupsFolder(manager.folderOf(of.entry)), name);
         file = /\.zip$/i.test(backup)
-          ? join(exportsFolder(manager.folderOf(space.entry)), backup)
-          : join(backupDirOf(space), backup.endsWith(".db.gz") ? backup : `${backup}.db.gz`);
+          ? join(exportsFolder(manager.folderOf(of.entry)), backup)
+          : set && !existsSync(join(dir, name)) && existsSync(own)
+            ? own
+            : join(dir, name);
       } else {
         throw invalid(
           "backup",
@@ -842,7 +928,12 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
           const target = resolve(to);
           return await oneAtATime(async () => {
             refuseNetwork(await manager.checkFolder(target), "to");
-            const restored = await runAdmin({ kind: "restore", backupFile: file, target });
+            const restored = await runAdmin({
+              kind: "restore",
+              backupFile: file,
+              target,
+              ...(spaceId === undefined ? {} : { spaceId }),
+            });
             return await openRestored(target, spaceOf(restored), {});
           });
         }
@@ -865,7 +956,14 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       userOnly(cls);
       const view = find(required(params, "space"));
       try {
-        const done = await runAdmin({ kind: "rescue", folder: manager.folderOf(view.entry) });
+        // The folder may hold another space's files now: the entry still says which it is for.
+        const spaceId = view.registered ?? view.id;
+        const done = await runAdmin({
+          kind: "rescue",
+          folder: manager.folderOf(view.entry),
+          served: view.state === "open" || view.state === "read_only",
+          ...(spaceId === undefined ? {} : { spaceId }),
+        });
         return done.kind === "rescue"
           ? {
               rescue: {
@@ -873,6 +971,7 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
                 tables: done.tables,
                 rows: done.rows,
                 failed: done.failed,
+                identity: done.identity,
               },
             }
           : {};

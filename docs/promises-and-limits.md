@@ -63,16 +63,39 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A backup that is called verified has passed a trial restore. So has every backup you make with
   `ttasks space backup`.
 - While a space is open for changes, TTasks backs it up once a day. It keeps the backups of seven
-  recent days and four recent weeks, and removes older scheduled ones. Backups you make by hand
-  stay until you remove them.
+  recent days and four recent weeks, and removes older daily ones. Backups you make by hand, and
+  the one taken before an upgrade, stay until you remove them.
+- A backup whose `.json` beside it went missing is kept: `ttasks space backups` lists it as
+  `missing_sidecar`, and it restores again once its `.json` is back.
 - When a daily backup fails, or the newest backup does not pass a trial restore, `ttasks doctor`,
   `ttasks space list` and the page's space switcher say so and what to do, until a backup succeeds
-  again.
-- Clean-up never removes the newest backup that restores.
+  again. A trial restore that has no room to run is said as that, never as a backup that does not
+  restore, and clean-up then removes nothing.
+- Each copy of a space keeps its own line of backups: a copy you claim, here or on another
+  machine, and the space after a restore over it start a new one. One copy's backups never decide
+  which of another's are kept, which is the newest, or whether its daily backup is due, also when
+  several copies share one backups folder. A line no copy writes any more keeps what clean-up kept
+  when it ended.
+- Within a copy's backups, the newest is the one that holds your latest saved work, also after the
+  clock was set back. Clean-up never removes it, nor the newest backup that restores.
+- A backups folder you set for a space that is not there, such as one on a drive that is not
+  connected, is said as not there, with its path. No backup goes to a new folder in its place. An
+  upgrade does not wait for it: its backup goes to the space's own backups folder, and
+  `ttasks space list` says where.
 - Making a backup or an export never overwrites an existing file.
 - A restore checks the backup first. A backup that is broken or too new leaves nothing half
   restored.
-- Restoring over a space keeps what was there before.
+- `ttasks space restore latest` restores the newest backup of this copy that restores. When the
+  folder holds none of this copy's, it takes the copy whose backups were made last and says which
+  other copies it holds. When the disk has no room, fails, or a backup could not be checked for a
+  reason that is not the backup's own, it says so and restores no older one in its place.
+- `ttasks space rescue` writes every row saved before it began that can still be read, also while
+  the space is in use. A space that keeps changing while its files are copied is refused.
+- Restoring over a space keeps what was there before, and takes only a backup of that space, also
+  when its files no longer say which space it was. A space's backup list, a restore by a backup's
+  name, and a restore of a backup's file you name with a space keep to that space's backups.
+- `ttasks space rescue` writes only the rows of the space you named. When the database is too
+  damaged to say which space it holds, the rescue says so.
 - A restored copy cannot be edited until you make it the current copy.
 - To look inside a backup, restore it into a new folder, close the space, open that folder, look,
   close it, and open the space again. TTasks never opens two copies of one space together, so the
@@ -98,7 +121,7 @@ the behaviour it describes, and keep each one to a sentence or two.
 ## Your spaces on this machine
 
 - A space you create, open, restore or claim opens again after a restart, and one you close stays
-  closed. TTasks never takes a space off its list by itself.
+  closed, also when a restore over it fails. TTasks never takes a space off its list by itself.
 - Recording this keeps your own comments and settings in the configuration file. When the file
   cannot be written, TTasks says so and names the command that records it once the file is fixed.
 - When several copies of one space are on this machine, TTasks opens one of them at a time:
@@ -241,6 +264,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - `ttasks run` starts an agent on a task in the task's folder, the one Open uses, and only you can
   start one. A run may do whatever your agent setup allows, without asking: the network, other
   folders, other agents. An instance's `run_permission` narrows that.
+- A run starts in the space you named, with `--space` or `TTASKS_SPACE`, else in the default
+  space, and `--wait` keeps following it there when the default changes. An answer longer than
+  TTasks keeps is kept as its start, and showing it says so.
 - Your request reaches the agent over its own connection, never on a command line. A run's
   answer, or the agent's question when it needs you, is kept in the run's record, and so is what
   the agent had written of its answer when Stop, a restart or its own end cut it short. A question
