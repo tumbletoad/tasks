@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { renderPlist, renderUnit, withDelegate } from "../src/install/render.ts";
-import { applyPlan, delegateUnit, planInstall } from "../src/install/commands.ts";
+import { applyPlan, delegateUnit, planInstall, STATUS_ASK_MS } from "../src/install/commands.ts";
 import { serviceEntry } from "../src/install/entries.ts";
 import {
   captureIO,
@@ -639,6 +639,31 @@ describe.skipIf(!posix)(
         "<plist><dict><key>Label</key><string>other</string></dict></plist>\n",
       );
       expect((await run(fake, "install")).code).toBe(4);
+    });
+
+    test("Linux: a user manager that does not answer is unknown, and every question of the status is bounded", async () => {
+      const fake = fakeContext({ platform: "linux", dir, tools: { linger: "yes" } });
+      expect((await run(fake, "install")).code).toBe(0);
+      const asked: (number | undefined)[] = [];
+      const silent: FakeContext = {
+        ...fake,
+        ctx: {
+          ...fake.ctx,
+          run: (file, args, options) => {
+            asked.push(options?.timeoutMs);
+            return args.includes("show")
+              ? Promise.resolve({ code: null, stdout: "", stderr: "", failure: "ETIMEDOUT" })
+              : fake.ctx.run(file, args, options);
+          },
+        },
+      };
+      const status = await run(silent, "status", { json: true });
+      expect(JSON.parse(status.io.text())).toMatchObject({
+        autostart: { user_manager: null, unanswered: "ETIMEDOUT" },
+        starts: { on: null, text: "unknown: the systemd user manager did not answer within 5 s" },
+      });
+      expect(asked.length).toBeGreaterThan(0);
+      expect(asked.every((ms) => ms === STATUS_ASK_MS)).toBe(true);
     });
 
     test("Linux and macOS: a unit or launch agent that starts another install's launcher, or one that is gone, is not on", async () => {

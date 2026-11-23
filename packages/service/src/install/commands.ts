@@ -51,7 +51,7 @@ import { readUmask, umaskRefusal } from "../hub/umask.ts";
 import { currentVersion } from "../version/switch.ts";
 import { liveRecord, type Probe, type ProbeReason, type ServiceContext } from "./context.ts";
 import { ServiceCommandError } from "./errors.ts";
-import { TOOL_TIMEOUT_MS, type Runner, type RunResult } from "./process.ts";
+import { TOOL_TIMEOUT_MS, type Runner, type RunOptions, type RunResult } from "./process.ts";
 import {
   missingKeys,
   regBytes,
@@ -749,14 +749,16 @@ export async function userManager(ctx: ServiceContext, call: Runner = ctx.run): 
 }
 
 /** loginctl's Linger for this user: read only. TTasks never enables it (A2 3.3.3). */
-export async function linger(ctx: ServiceContext): Promise<"yes" | "no" | "unknown"> {
+export async function linger(
+  ctx: ServiceContext,
+  options: RunOptions = {},
+): Promise<"yes" | "no" | "unknown"> {
   if (ctx.uid === undefined) return "unknown";
-  const result = await ctx.run(LOGINCTL, [
-    "show-user",
-    String(ctx.uid),
-    "--property=Linger",
-    "--value",
-  ]);
+  const result = await ctx.run(
+    LOGINCTL,
+    ["show-user", String(ctx.uid), "--property=Linger", "--value"],
+    options,
+  );
   const value = result.stdout.trim();
   return result.code === 0 && (value === "yes" || value === "no") ? value : "unknown";
 }
@@ -764,8 +766,8 @@ export async function linger(ctx: ServiceContext): Promise<"yes" | "no" | "unkno
 const domain = (ctx: ServiceContext) => `gui/${String(ctx.uid ?? 0)}`;
 const target = (ctx: ServiceContext) => `${domain(ctx)}/${ctx.names.label}`;
 
-async function launchdLoaded(ctx: ServiceContext): Promise<boolean> {
-  return (await ctx.run(LAUNCHCTL, ["print", target(ctx)])).code === 0;
+async function launchdLoaded(ctx: ServiceContext, options: RunOptions = {}): Promise<boolean> {
+  return (await ctx.run(LAUNCHCTL, ["print", target(ctx)], options)).code === 0;
 }
 
 function lingerNote(state: "yes" | "no" | "unknown"): string | undefined {
@@ -1820,7 +1822,9 @@ async function stopStartedByHand(
 export type Autostart =
   | {
       readonly kind: "systemd";
-      readonly user_manager: boolean;
+      /** null: systemctl did not answer, for the reason in `unanswered` (ETIMEDOUT: not in time). */
+      readonly user_manager: boolean | null;
+      readonly unanswered?: string;
       /** `systemctl --user is-enabled` and `is-active` for the unit, as systemd words them. */
       readonly enabled: string | null;
       readonly active: string | null;
@@ -1848,6 +1852,12 @@ export type AutostartAnswer =
   | { readonly on: null; readonly text: string };
 
 const INSTALL = `${CLI_NAME} service install`;
+
+/**
+ * How long one OS question of the status may take. The questions go in at most two rounds, so
+ * `service status` and doctor wait at most about 10 s for autostart, never four tools' 30 s each.
+ */
+export const STATUS_ASK_MS = 5_000;
 
 /** What `systemctl --user is-enabled` says of a unit a person switched off. */
 const SWITCHED_OFF: ReadonlySet<string> = new Set(["disabled", "masked", "masked-runtime"]);
@@ -1898,7 +1908,16 @@ export function autostartAnswer(entry: EntryInfo, a: Autostart): AutostartAnswer
           }
         : { on: true, text: "on: Windows starts the service when you sign in" };
     case "systemd":
-      if (!a.user_manager) {
+      if (a.user_manager === null && ours) {
+        return {
+          on: null,
+          text:
+            a.unanswered === "ETIMEDOUT"
+              ? `unknown: the systemd user manager did not answer within ${String(STATUS_ASK_MS / 1000)} s`
+              : `unknown: systemctl could not be asked (${a.unanswered ?? "no answer"})`,
+        };
+      }
+      if (a.user_manager === false) {
         return {
           on: false,
           text: "off: this machine has no systemd user manager, so nothing starts the service at sign-in",
@@ -1953,19 +1972,30 @@ export function autostartLine(starts: AutostartAnswer): string {
 export async function autostartStatus(
   ctx: ServiceContext,
 ): Promise<{ entry: EntryInfo; autostart: Autostart; starts: AutostartAnswer }> {
-  const wanted = await readEntry(ctx);
+  const bound = { timeoutMs: STATUS_ASK_MS };
+  const wanted = await readEntry(ctx, bound);
   let autostart: Autostart;
   switch (ctx.platform) {
     case "linux": {
-      const manager = await userManager(ctx);
+      // Two rounds at most: the manager and linger together, then the unit's two questions.
+      const [probe, lingers] = await Promise.all([
+        ctx.run(SYSTEMCTL, ["--user", "show", "--property=Version"], bound),
+        linger(ctx, bound),
+      ]);
+      const manager =
+        probe.code === 0 ? true : probe.code !== null || probe.failure === "ENOENT" ? false : null;
       const ask = async (verb: string) =>
-        manager ? word((await ctx.run(SYSTEMCTL, ["--user", verb, ctx.names.unit])).stdout) : null;
+        manager === true
+          ? word((await ctx.run(SYSTEMCTL, ["--user", verb, ctx.names.unit], bound)).stdout)
+          : null;
+      const [enabled, active] = await Promise.all([ask("is-enabled"), ask("is-active")]);
       autostart = {
         kind: "systemd",
         user_manager: manager,
-        enabled: await ask("is-enabled"),
-        active: await ask("is-active"),
-        linger: await linger(ctx),
+        ...(manager === null ? { unanswered: probe.failure ?? "no answer" } : {}),
+        enabled,
+        active,
+        linger: lingers,
       };
       break;
     }
@@ -1973,7 +2003,7 @@ export async function autostartStatus(
       autostart = { kind: "run", startup_apps: wanted.startupApps ?? "not_set" };
       break;
     case "darwin":
-      autostart = { kind: "launchd", loaded: await launchdLoaded(ctx) };
+      autostart = { kind: "launchd", loaded: await launchdLoaded(ctx, bound) };
       break;
   }
   return { entry: wanted.info, autostart, starts: autostartAnswer(wanted.info, autostart) };

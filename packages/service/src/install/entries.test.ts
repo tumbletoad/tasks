@@ -370,6 +370,12 @@ describe("[A2.3.3.5.service-install.commands] ttasks service install, uninstall,
       on: false,
       broken: false,
     });
+    // A manager that did not answer is not a machine without one.
+    const unanswered = { ...noManager, user_manager: null, unanswered: "ETIMEDOUT" } as const;
+    expect(autostartAnswer(unit, unanswered)).toEqual({
+      on: null,
+      text: "unknown: the systemd user manager did not answer within 5 s",
+    });
     // An enabled unit or a launch agent of another install's launcher starts nothing of this one.
     const another = {
       ...unit,
