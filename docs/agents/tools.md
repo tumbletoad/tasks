@@ -1252,7 +1252,7 @@ Result:
 
 Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it.
 
-MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, chat or tickets: 1 to 25 a call, not TODOs in files. Read skill sizing-effort first. Key only the source a task is (jira:KEY): a match answers exists. folder "cwd" files a task in your folder's project; no area or project: the Inbox.
+MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, chat or tickets: 1 to 25 a call, not TODOs in files. First read skills writing-tasks, sizing-effort, setting-priority. Key only the source a task is (jira:KEY): a match answers exists. folder "cwd" files a task in your folder's project.
 
 | Property | Value |
 |---|---|
@@ -1264,7 +1264,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | A1 operations | `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `add_tasks`, CLI `ttasks add`, UI |
 | Errors | `invalid_input`, `too_large`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 1603, reported |
+| Definition, estimated tokens | 1622, reported |
 | Result budget, estimated tokens | typical 80, max 2000 |
 
 ### Input
@@ -1278,7 +1278,7 @@ MCP tool `add_tasks`, "Add tasks": Work left for later and items from email, cha
 | `tasks[].project` | string, max 120 | no | Project name or slug |
 | `tasks[].status` | string, max 40 | no | A status of the space; default open |
 | `tasks[].inbox` | boolean | no | Put it in the Inbox for the user |
-| `tasks[].priority` | integer, 1 to 4 | no | 1 highest, 4 none |
+| `tasks[].priority` | integer, 1 to 4 | no | 1 highest, 4 none: read skill setting-priority first |
 | `tasks[].effort` | string, max 20 | no | A size of the space: read skill sizing-effort first |
 | `tasks[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `tasks[].waiting_on` | string, max 80 | no | Who or what it waits on |
@@ -1396,7 +1396,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | A1 operations | `task.complete`, `task.archive`, `task.wrap_up`, `task.create`, `log.add`, `source.add`, `task.folder_set`, `area.create`, `project.create` |
 | Faces | MCP `complete_task`, CLI `ttasks done`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `request_id_conflict` |
-| Definition, estimated tokens | 2002, reported |
+| Definition, estimated tokens | 2019, reported |
 | Result budget, estimated tokens | typical 100, max 1500 |
 
 ### Input
@@ -1414,7 +1414,7 @@ MCP tool `complete_task`, "Complete a task": Use when a task is done or dropped:
 | `follow_ups[].project` | string, max 120 | no | Project name or slug |
 | `follow_ups[].status` | string, max 40 | no | A status of the space; default open |
 | `follow_ups[].inbox` | boolean | no | Put it in the Inbox for the user |
-| `follow_ups[].priority` | integer, 1 to 4 | no | 1 highest, 4 none |
+| `follow_ups[].priority` | integer, 1 to 4 | no | 1 highest, 4 none: read skill setting-priority first |
 | `follow_ups[].effort` | string, max 20 | no | A size of the space: read skill sizing-effort first |
 | `follow_ups[].due` | string, max 40 | no | ISO date or phrase: fri, +3d |
 | `follow_ups[].waiting_on` | string, max 80 | no | Who or what it waits on |

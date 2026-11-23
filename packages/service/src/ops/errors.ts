@@ -63,6 +63,10 @@ function valueAt(input: unknown, path: readonly PropertyKey[]): unknown {
 /** Fields an earlier build took, and the field a caller gives instead now. */
 const RENAMED: Readonly<Record<string, string>> = { place: "folder" };
 
+/** status's guides became skills: what an app that kept the old tool list sends instead. */
+const GUIDE_NOW =
+  'guide is now skills: skills ["working-a-task"] for work, ["organizing"] for triage or organize.';
+
 /** The form of a field whose pattern the caller cannot see in its name, by the field's name. */
 const FORMATS: Readonly<Record<string, string>> = {
   request_id: "16 to 64 characters from A-Z, a-z, 0-9, _ and -",
@@ -109,6 +113,7 @@ export function schemaFailure(
   entry?: string,
 ): AppError {
   const renamed: string[] = [];
+  let guide = false;
   const issues = error.issues.slice(0, 20).flatMap((issue) => {
     const path = issue.path.map(String).join(".");
     // An old field, or its name in a list of fields such as update_task's clear.
@@ -121,6 +126,10 @@ export function schemaFailure(
       const now = RENAMED[value] ?? "";
       renamed.push(`${value} is now ${now}`);
       return [{ path, message: `Now ${now}` }];
+    }
+    if (issue.code === "unrecognized_keys" && path === "" && issue.keys?.includes("guide")) {
+      guide = true;
+      return [{ path: "guide", message: "Now skills" }];
     }
     const old = (issue.keys ?? []).filter((key) => Object.hasOwn(RENAMED, key));
     if (issue.code === "unrecognized_keys" && old.length > 0) {
@@ -149,8 +158,9 @@ export function schemaFailure(
   const found = face === "cli" && entry !== undefined ? findEntry(entry) : undefined;
   const verb = found === undefined ? undefined : cliFaces(found)[0]?.verb;
   const help = verb === undefined ? undefined : `Run ${CLI_NAME} help ${verb} for the arguments.`;
-  const hint =
-    renamed.length > 0
+  const hint = guide
+    ? GUIDE_NOW
+    : renamed.length > 0
       ? `${[...new Set(renamed)].join(", ")}: "cwd", an absolute folder or one under ~.`
       : help;
   return new AppError({

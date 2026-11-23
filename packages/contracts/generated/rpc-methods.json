@@ -2752,7 +2752,7 @@
                   "type": "string"
                 },
                 "priority": {
-                  "description": "1 highest, 4 none",
+                  "description": "1 highest, 4 none: read skill setting-priority first",
                   "maximum": 4,
                   "minimum": 1,
                   "type": "integer"
@@ -3086,7 +3086,7 @@
                   "type": "string"
                 },
                 "priority": {
-                  "description": "1 highest, 4 none",
+                  "description": "1 highest, 4 none: read skill setting-priority first",
                   "maximum": 4,
                   "minimum": 1,
                   "type": "integer"

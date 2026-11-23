@@ -163,7 +163,7 @@
         {
           "field": "tasks[].priority",
           "flag": "--priority",
-          "help": "1 highest, 4 none",
+          "help": "1 highest, 4 none: read skill setting-priority first",
           "repeat": false,
           "required": false,
           "short": "-p",

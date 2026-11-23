@@ -16,8 +16,20 @@ export const SKILL_BYTES = 16 * 1024;
 /** The longest "when to use", as the Agent Skills format allows. */
 export const DESCRIPTION_CHARS = 1024;
 
+/**
+ * The key under the front matter's `metadata` that names the default version a person's copy was
+ * made from, as `ttasks skills copy` writes it.
+ */
+export const BASED_ON = "ttasks-default";
+
 export type Parsed =
-  | { readonly ok: true; readonly description: string | undefined; readonly body: string }
+  | {
+      readonly ok: true;
+      readonly description: string | undefined;
+      /** The default version the file says it was made from. */
+      readonly basedOn: string | undefined;
+      readonly body: string;
+    }
   | { readonly ok: false; readonly problem: string };
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
@@ -86,13 +98,19 @@ export function parseSkill(bytes: Uint8Array): Parsed {
   // The decoder has taken off a byte order mark.
   const lines = text.replaceAll("\r\n", "\n").split("\n");
   let description: string | undefined;
+  let basedOn: string | undefined;
   let body = lines;
   if (lines[0]?.trimEnd() === "---") {
     const end = lines.findIndex((line, i) => i > 0 && /^(?:---|\.\.\.)\s*$/u.test(line));
     if (end < 0) return { ok: false, problem: "its front matter has no closing --- line" };
-    const given = keys(lines.slice(1, end)).get("description");
+    const found = keys(lines.slice(1, end));
+    const given = found.get("description");
     description = given === undefined ? undefined : scalar(given);
     if (description === "") description = undefined;
+    // metadata is a map: one indented key per line.
+    const meta = keys((found.get("metadata") ?? []).slice(1).map((line) => line.trim()));
+    const based = meta.get(BASED_ON);
+    basedOn = based === undefined || scalar(based) === "" ? undefined : scalar(based);
     body = lines.slice(end + 1);
   }
   if (description !== undefined && description.length > DESCRIPTION_CHARS) {
@@ -104,7 +122,7 @@ export function parseSkill(bytes: Uint8Array): Parsed {
   const kept = body.join("\n").trim();
   // A copy cut short, or one that kept only its front matter, would take away the whole part.
   if (kept === "") return { ok: false, problem: "it has no text after its front matter" };
-  return { ok: true, description, body: kept };
+  return { ok: true, description, basedOn, body: kept };
 }
 
 /** A size for a person: `16 KB`. */

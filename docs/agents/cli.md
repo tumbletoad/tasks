@@ -44,7 +44,7 @@ Usage: `ttasks add <title> [flags]`
 | `--project` | `tasks[].project` | string | Project name or slug |
 | `--status` | `tasks[].status` | string | A status of the space; default open |
 | `--inbox` | `tasks[].inbox` | boolean | Put it in the Inbox for the user |
-| `-p`, `--priority` | `tasks[].priority` | integer | 1 highest, 4 none |
+| `-p`, `--priority` | `tasks[].priority` | integer | 1 highest, 4 none: read skill setting-priority first |
 | `--effort` | `tasks[].effort` | string | A size of the space: read skill sizing-effort first |
 | `--due` | `tasks[].due` | string | ISO date or phrase: fri, +3d |
 | `--waiting-on` | `tasks[].waiting_on` | string | Who or what it waits on |

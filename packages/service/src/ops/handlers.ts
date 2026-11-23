@@ -1930,7 +1930,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (reading) {
       // Only the files asked for are read.
       const [space, read] = await Promise.all([
-        readTaskKeys(reader).then((keys) => ({ efforts: keys.effort })),
+        readTaskKeys(reader).then((keys) => ({ sizes: keys.effort.map((key) => ({ key })) })),
         readSkills(call.host.skillsFolder, asked),
       ]);
       skillFields = {

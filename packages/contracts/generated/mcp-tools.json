@@ -87,7 +87,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Work left for later and items from email, chat or tickets: 1 to 25 a call, not TODOs in files. Read skill sizing-effort first. Key only the source a task is (jira:KEY): a match answers exists. folder \"cwd\" files a task in your folder's project; no area or project: the Inbox.",
+      "description": "Work left for later and items from email, chat or tickets: 1 to 25 a call, not TODOs in files. First read skills writing-tasks, sizing-effort, setting-priority. Key only the source a task is (jira:KEY): a match answers exists. folder \"cwd\" files a task in your folder's project.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -161,7 +161,7 @@
                   "type": "string"
                 },
                 "priority": {
-                  "description": "1 highest, 4 none",
+                  "description": "1 highest, 4 none: read skill setting-priority first",
                   "maximum": 4,
                   "minimum": 1,
                   "type": "integer"
@@ -351,7 +351,7 @@
                   "type": "string"
                 },
                 "priority": {
-                  "description": "1 highest, 4 none",
+                  "description": "1 highest, 4 none: read skill setting-priority first",
                   "maximum": 4,
                   "minimum": 1,
                   "type": "integer"

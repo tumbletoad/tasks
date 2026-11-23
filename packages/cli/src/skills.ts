@@ -5,15 +5,19 @@
 //   ttasks skills
 //   ttasks skills show <name>
 //   ttasks skills copy <name>
-import { closeSync, lstatSync } from "node:fs";
+//   ttasks skills diff <name>
+import { closeSync, lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLI_NAME, DATA_FOLDER, PRODUCT_NAME, SKILLS_FOLDER } from "@ttasks/brand";
 import { createFile, makeDir, writeAll } from "@ttasks/files";
 import { hostFacts, LayoutError, resolveLayout } from "@ttasks/service/paths";
 import {
+  copyText,
+  defaultChange,
   DEFAULTS,
   listLine,
   listSkills,
+  readSkills,
   SKILL_FILE,
   SKILL_FOLDERS,
   SKILL_LIST_ROWS,
@@ -29,6 +33,7 @@ import { runVerb } from "./verbs.ts";
 export const SKILLS_HELP = `Usage: ${CLI_NAME} skills [--json]
        ${CLI_NAME} skills show <name>
        ${CLI_NAME} skills copy <name>
+       ${CLI_NAME} skills diff <name>
 
 Skills tell your agents how you want tasks sized, sorted and worked on. Each agent app with
 ${PRODUCT_NAME}'s tools reads them through ${PRODUCT_NAME}: ${PRODUCT_NAME}'s own part (which tool,
@@ -39,6 +44,7 @@ their next call.
   (none)       List the skills: default, edited, yours, and files that cannot be used, with why
   show <name>  Print a skill as an agent gets it, with the space's sizes (asks the service)
   copy <name>  Write a default's text into your skills folder, to edit
+  diff <name>  What changed in a default since your copy was made from it
 `;
 
 const sortName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -60,7 +66,92 @@ function stateOf(skill: Skill): string {
       ? `cannot be used: ${skill.problem}`
       : `default, your file is not used: ${skill.problem}`;
   }
-  return skill.origin === "own" ? "yours" : skill.origin;
+  if (skill.origin === "own") return "yours";
+  const change = defaultChange(skill)?.state;
+  return change === "changed"
+    ? `edited, and the default changed since: ${CLI_NAME} skills diff ${skill.name}`
+    : change === "unknown"
+      ? `edited, from a default this build does not know: ${CLI_NAME} skills diff ${skill.name}`
+      : skill.origin;
+}
+
+/**
+ * The lines of `after` against `before`, with two lines around each change: "- " a line that went,
+ * "+ " a line that came, "  " one that stayed, and "..." where unchanged lines are left out.
+ */
+export function lineDiff(before: string, after: string): string[] {
+  const a = before.split("\n");
+  const b = after.split("\n");
+  // The longest common subsequence from each pair of positions on.
+  const common = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  const at = (i: number, j: number): number => common[i]?.[j] ?? 0;
+  for (let i = a.length - 1; i >= 0; i -= 1) {
+    for (let j = b.length - 1; j >= 0; j -= 1) {
+      const row = common[i];
+      if (row !== undefined) {
+        row[j] = a[i] === b[j] ? at(i + 1, j + 1) + 1 : Math.max(at(i + 1, j), at(i, j + 1));
+      }
+    }
+  }
+  const lines: string[] = [];
+  for (let i = 0, j = 0; i < a.length || j < b.length; ) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      lines.push(`  ${a[i] ?? ""}`);
+      i += 1;
+      j += 1;
+    } else if (j >= b.length || (i < a.length && at(i + 1, j) >= at(i, j + 1))) {
+      lines.push(`- ${a[i] ?? ""}`);
+      i += 1;
+    } else {
+      lines.push(`+ ${b[j] ?? ""}`);
+      j += 1;
+    }
+  }
+  const near = (k: number) =>
+    lines.slice(Math.max(0, k - 2), k + 3).some((line) => !line.startsWith("  "));
+  const shown: string[] = [];
+  let left = false;
+  lines.forEach((line, k) => {
+    if (!near(k)) {
+      left = true;
+      return;
+    }
+    if (left && shown.length > 0) shown.push("...");
+    left = false;
+    shown.push(line);
+  });
+  return shown;
+}
+
+async function diff(io: Io, globals: Globals, folder: string, name: string): Promise<number> {
+  if (!DEFAULTS.has(name)) {
+    return printUsage(io, globals.json, `${CLI_NAME} skills diff takes a default skill`);
+  }
+  const [skill] = (await readSkills(folder, [name], LIST_WITHIN_MS)).skills;
+  const change = skill === undefined ? undefined : defaultChange(skill);
+  if (skill === undefined || change === undefined) {
+    io.stdout(`You have no copy of ${name} that is used: agents get the default.\n`);
+    return 0;
+  }
+  if (change.state === "current") {
+    io.stdout(`Your copy of ${name} was made from this build's default: it has not changed since.\n`);
+    return 0;
+  }
+  const lines =
+    change.state === "changed"
+      ? [`What changed in the default ${name} since your copy was made from it:`, "", ...lineDiff(change.before, change.after)]
+      : [
+          `Your copy of ${name} names a default this build does not have. Your copy against today's default:`,
+          "",
+          ...lineDiff(readFileSync(skill.path ?? "", "utf8").replaceAll("\r\n", "\n"), change.after),
+        ];
+  lines.push(
+    "",
+    `Your copy: ${skill.path ?? ""}`,
+    `Take over what you want. Then set ttasks-default: ${change.id} under metadata in its front matter, and the mark goes.`,
+  );
+  io.stdout(`${lines.join("\n")}\n`);
+  return 0;
 }
 
 /** How long a person waits for a slow skills folder before the list goes on without it. */
@@ -147,7 +238,7 @@ function copy(io: Io, globals: Globals, folder: string, name: string): number {
     return 0;
   }
   try {
-    writeAll(fd, skill.file);
+    writeAll(fd, copyText(skill));
   } finally {
     closeSync(fd);
   }
@@ -168,14 +259,15 @@ export async function skillsCommand(
     return printUsage(io, globals.json, `${PRODUCT_NAME}'s folders cannot be found`);
   }
   if (sub === undefined) return await list(io, globals, folder);
-  if ((sub !== "show" && sub !== "copy") || name === undefined || rest.length > 0) {
+  if (!["show", "copy", "diff"].includes(sub) || name === undefined || rest.length > 0) {
     return printUsage(
       io,
       globals.json,
-      `${CLI_NAME} skills takes nothing, show <name> or copy <name>`,
+      `${CLI_NAME} skills takes nothing, show <name>, copy <name> or diff <name>`,
     );
   }
   if (sub === "copy") return copy(io, globals, folder, name);
+  if (sub === "diff") return await diff(io, globals, folder, name);
   const status = verbSpec("status");
   if (status === undefined) throw new Error("status is no verb");
   return await runVerb(io, globals, status, ["--skill", name], options);

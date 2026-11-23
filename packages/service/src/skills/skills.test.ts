@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { registry, resultTokens } from "@ttasks/contracts";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { DESCRIPTION_CHARS, parseSkill } from "./format.ts";
+import { TTASKS_PARTS } from "./ttasks-part.ts";
 import {
   DEFAULTS,
   SKILL_BYTES,
@@ -26,7 +27,7 @@ import {
 } from "./index.ts";
 
 const REPO_SKILLS = join(import.meta.dirname, "..", "..", "..", "..", "skills");
-const SCALE = { efforts: ["S", "M", "L"] };
+const SCALE = { sizes: [{ key: "S" }, { key: "M" }, { key: "L" }] };
 /** What one shipped skill may cost an agent who reads it, in estimated tokens. */
 const SHIPPED_TOKENS = 1_500;
 
@@ -75,22 +76,81 @@ describe("[A3.3.6.mcp.skills] the shipped skills", () => {
           new RegExp(`\`${tool}\`|\\bcall ${tool}\\b|\\b${tool} with\\b`, "u"),
         );
       }
-      const ttasks = (servedText(skill, SCALE) ?? "").slice(0, -body.length);
+      const part = TTASKS_PARTS[skill.name]?.(SCALE, body, false).ttasks.join("\n") ?? "";
       expect(
-        tools.some((tool) => new RegExp(`\\b${tool}\\b`, "u").test(ttasks)),
+        tools.some((tool) => new RegExp(`\\b${tool}\\b`, "u").test(part)),
         skill.name,
       ).toBe(true);
     }
   });
 
-  test("sizing-effort gives the space's own sizes", async () => {
-    const sizing = (await listSkills(undefined)).skills.find(
-      (skill) => skill.name === "sizing-effort",
-    );
-    if (sizing === undefined) throw new Error("no sizing-effort");
-    expect(servedText(sizing, { efforts: ["XS", "S", "M", "L", "XL"] })).toContain(
-      "This space's sizes, smallest first: XS, S, M, L, XL.",
-    );
+  test("TTasks' part comes first, named, and says its rules come first; the user's part follows", async () => {
+    for (const skill of (await listSkills(undefined)).skills) {
+      const text = servedText(skill, SCALE) ?? "";
+      const part = TTASKS_PARTS[skill.name]?.(SCALE, skill.body ?? "", false);
+      if (part === undefined) throw new Error(`${skill.name} has no part of TTasks'`);
+      const ours = text.indexOf(part.ttasks[0] ?? "");
+      const theirs = text.lastIndexOf(part.body);
+      expect(ours, skill.name).toBeGreaterThan(0);
+      expect(theirs, skill.name).toBeGreaterThan(ours);
+      expect(text.slice(0, ours), skill.name).toMatch(/rules come first/u);
+    }
+  });
+});
+
+describe("[A3.3.6.mcp.skills] sizing-effort in a space", () => {
+  const sizing = () => {
+    const skill = DEFAULTS.get("sizing-effort");
+    if (skill === undefined) throw new Error("no sizing-effort");
+    return skill;
+  };
+  const served = (keys: readonly string[], body = sizing().body, edited = false) =>
+    servedText(
+      {
+        name: "sizing-effort",
+        origin: edited ? "edited" : "default",
+        description: "",
+        body,
+        path: undefined,
+        problem: undefined,
+      },
+      { sizes: keys.map((key) => ({ key })) },
+    ) ?? "";
+  const headings = (text: string) => [...text.matchAll(/^## (.+)$/gmu)].map((m) => m[1]);
+  /** The sizes the TTasks part names, in its order. */
+  const named = (text: string, keys: readonly string[]) =>
+    keys
+      .map((key) => ({ key, at: text.search(new RegExp(`(?<![A-Za-z])${key}(?![A-Za-z])`, "u")) }))
+      .filter(({ at }) => at >= 0)
+      .sort((a, b) => a.at - b.at)
+      .map(({ key }) => key);
+
+  test("its part names the space's own sizes, in their order", () => {
+    for (const keys of [["S", "M", "L"], ["XS", "S", "M", "L", "XL"], ["small", "big"]]) {
+      const text = served(keys);
+      const part = text.slice(0, text.indexOf("# Sizing effort"));
+      expect(named(part, keys)).toEqual(keys);
+    }
+  });
+
+  test("the default's examples show only sizes the space has, and a size with none is said", () => {
+    expect(headings(sizing().body)).toEqual(["XS", "S", "M", "L", "XL"]);
+    expect(headings(served(["XS", "S", "M", "L", "XL"]))).toEqual(["XS", "S", "M", "L", "XL"]);
+    const three = served(["S", "M", "L"]);
+    expect(headings(three)).toEqual(["S", "M", "L"]);
+    expect(three).not.toMatch(/No example below shows/u);
+    const other = served(["small", "big"]);
+    expect(headings(other)).toEqual([]);
+    expect(other).toMatch(/No example below shows a size of this space: .*ask the user/u);
+    const more = served(["XS", "S", "M", "L", "XL", "XXL"]);
+    expect(more).toMatch(/No example below shows XXL: .*ask the user/u);
+  });
+
+  test("the user's copy is served as written, whatever its headings", () => {
+    const copy = "## S\n\nTheir own S.\n\n## Huge\n\nTheir own huge.";
+    const text = served(["S", "M"], copy, true);
+    expect(text).toContain(copy);
+    expect(text).not.toMatch(/No example below shows/u);
   });
 });
 
