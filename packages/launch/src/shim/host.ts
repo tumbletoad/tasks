@@ -433,6 +433,7 @@ export class ShimHost {
           base: base.env,
           baseKind: base.kind,
           instance: latest.plan.env,
+          ...(latest.plan.unset === undefined ? {} : { unset: latest.plan.unset }),
           additions: {
             [ADDED.ticket]: ticket,
             [ADDED.space]: space,

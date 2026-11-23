@@ -10,6 +10,7 @@ import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_ID, PRODUCT_NAME } from "@ttasks/bran
 import { findEntry, cliFaces } from "@ttasks/contracts";
 import type { RunAdapterId, RunPermission, RunRecord } from "@ttasks/contracts/runs";
 import {
+  accountVariables,
   ADDED,
   agentEnvironment,
   instanceHome,
@@ -187,6 +188,7 @@ export async function buildRun(
     base: base?.env ?? {},
     baseKind: base?.kind ?? "service",
     instance: instance.env,
+    unset: accountVariables(instance, agents.home, agents.platform),
     additions: { [ADDED.ticket]: ticket, [ADDED.task]: task.ref, [ADDED.space]: space },
     executable: instance.exec,
   });

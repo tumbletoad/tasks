@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { FAKE_SHELL, readJsonLines } from "@ttasks/testkit";
 import {
+  accountVariables,
   agentEnvironment,
   captureOutput,
   expandWindows,
@@ -63,7 +64,7 @@ const temp = (): string => {
 const SPACE = "sp_3q7k9d2xw8f4r6t1c5v0b2n8a7";
 
 describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", () => {
-  test("the person's own environment is taken whole, scrubbed after merging; the service's goes through the allow-list", () => {
+  test("the person's own environment is taken whole and scrubbed, the instance's own wins; the service's goes through the allow-list", () => {
     const base = {
       PATH: "/home/mira/.nvm/versions/node/v24/bin:/usr/bin",
       HOME: "/home/mira",
@@ -95,6 +96,8 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
     expect(user).toEqual({
       CLAUDE_CONFIG_DIR: "/c",
       FIXTURE_INSTANCE: "1",
+      // The instance set it: the person's choice, unlike an inherited one.
+      NODE_OPTIONS: "--inspect",
       FIXTURE_PROFILE_EXPORT: "1",
       GOPATH: "/home/mira/go",
       HOME: "/home/mira",
@@ -113,6 +116,72 @@ describe("[A4.5.environment.scrub] A4 3.8's scrub and the two kinds of base", ()
     expect(Object.keys(service).sort()).toEqual(["HOME", "PATH", "TTASKS_SPACE", "TTASKS_TICKET"]);
     // The executable's own folder in front of PATH (nvm keeps `node` beside it).
     expect(service["PATH"]).toBe("/opt/agent/bin:/home/mira/.nvm/versions/node/v24/bin:/usr/bin");
+  });
+
+  test("the variables that choose an account: the person's for the default home, none of them for a home of the instance's own, whose env still sets them", () => {
+    const inert = "inert-stand-in";
+    const base = {
+      PATH: "/usr/bin",
+      ANTHROPIC_API_KEY: inert,
+      ANTHROPIC_AUTH_TOKEN: inert,
+      CLAUDE_CODE_OAUTH_TOKEN: inert,
+      CLAUDE_CODE_USE_VERTEX: "1",
+      CLAUDE_CODE_ENTRYPOINT: "cli",
+    };
+    const names = (instance: Record<string, string>, unset?: readonly string[]) =>
+      Object.keys(
+        agentEnvironment({
+          platform: "linux",
+          base,
+          baseKind: "user",
+          instance,
+          ...(unset === undefined ? {} : { unset }),
+          additions: {},
+        }),
+      ).sort();
+    // The default home: what the person's setup gives, but a Claude session's own leftovers.
+    expect(names({})).toEqual([
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_AUTH_TOKEN",
+      "CLAUDE_CODE_OAUTH_TOKEN",
+      "CLAUDE_CODE_USE_VERTEX",
+      "PATH",
+    ]);
+    const own = { platform: "linux" as const };
+    const claude = {
+      target: "claude-cli" as const,
+      configHome: undefined,
+      env: { CLAUDE_CONFIG_DIR: "/home/mira/.claude-work", CLAUDE_CODE_USE_BEDROCK: "1" },
+    };
+    const unset = accountVariables(claude, "/home/mira", own.platform);
+    expect(names(claude.env, unset)).toEqual([
+      "CLAUDE_CODE_USE_BEDROCK",
+      "CLAUDE_CONFIG_DIR",
+      "PATH",
+    ]);
+    // The default home, named or not, and a Codex home of its own take nothing away.
+    expect(accountVariables({ ...claude, env: {} }, "/home/mira", "linux")).toEqual([]);
+    expect(
+      accountVariables(
+        {
+          target: "codex-cli",
+          configHome: undefined,
+          env: { CODEX_HOME: "/home/mira/.codex-work" },
+        },
+        "/home/mira",
+        "linux",
+      ),
+    ).toEqual([]);
+    // On Windows in any case.
+    const windows = agentEnvironment({
+      platform: "win32",
+      base: { Path: "C:\\Windows", Anthropic_Api_Key: inert },
+      baseKind: "user",
+      instance: {},
+      unset: ["ANTHROPIC_API_KEY"],
+      additions: {},
+    });
+    expect(Object.keys(windows).map((n) => n.toUpperCase())).not.toContain("ANTHROPIC_API_KEY");
   });
 
   test("Windows names are scrubbed whatever their case, and PATH is left as the layers gave it", () => {

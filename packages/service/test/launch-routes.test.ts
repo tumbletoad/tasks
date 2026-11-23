@@ -1009,6 +1009,43 @@ describe("[A4.5.routes.chosen] Open starts the agent as its instance is set up: 
       expect(r.lab.folders.size).toBe(started);
     },
   );
+
+  test(
+    "through the service: an instance with a home of its own gets no account variable from the person's environment, and its own env wins; the default home keeps the person's",
+    { timeout: 300_000 },
+    async () => {
+      // Inert stand-ins: no value here is a credential, and only the names are reported.
+      const inert = "inert-stand-in";
+      const home = tempRoot("chosen-home");
+      cleanups.push(home.cleanup);
+      const r = await rig("chosen-account", 0, {
+        person: {
+          ANTHROPIC_AUTH_TOKEN: inert,
+          ANTHROPIC_API_KEY: inert,
+          CLAUDE_CODE_USE_VERTEX: "1",
+        },
+        instances: [
+          {
+            id: "claude-own",
+            env: { CLAUDE_CONFIG_DIR: join(home.root, "claude"), CLAUDE_CODE_USE_BEDROCK: "1" },
+          },
+        ],
+      });
+      const task = await addTask(r, "Fixture account");
+      await open(r, { task: task.ref, instance: "claude-own" });
+      await open(r, { task: task.ref, instance: "claude", another: true });
+      const own = (await reportAt(r.report("claude-own"))).envNames.map((n) => n.toUpperCase());
+      expect(own).toContain("CLAUDE_CONFIG_DIR");
+      expect(own).toContain("CLAUDE_CODE_USE_BEDROCK");
+      for (const name of ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_VERTEX"]) {
+        expect(own, name).not.toContain(name);
+      }
+      const usual = (await reportAt(r.report("claude"))).envNames.map((n) => n.toUpperCase());
+      for (const name of ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_VERTEX"]) {
+        expect(usual, name).toContain(name);
+      }
+    },
+  );
 });
 
 describe("[A4.5.routes.folders] a launch opens in the task's folder, else its project's, else on its machine, else in the work folder", () => {

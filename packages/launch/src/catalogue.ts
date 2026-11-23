@@ -79,8 +79,16 @@ export interface DetectRule {
   readonly npm?: { readonly package: string; readonly entry: string };
   /** User wrapper scripts in `~/.local/bin`: names that start with this prefix (Linux, macOS). */
   readonly wrapperPrefix?: string;
-  /** Config homes in the user's home folder: the default folder, and `<default>-<suffix>`. */
-  readonly homes?: { readonly folder: string; readonly env: string };
+  /**
+   * Config homes in the user's home folder: the default folder, and `<default>-<suffix>`. `account`
+   * names the variables that choose the app's account or provider over the home's sign-in: an
+   * instance with a home of its own does not inherit them (accountVariables).
+   */
+  readonly homes?: {
+    readonly folder: string;
+    readonly env: string;
+    readonly account: readonly string[];
+  };
   /** A folder in the home whose presence shows the app is installed (T3's `~/.t3`). */
   readonly appFolder?: string;
   /** A variable that names that folder instead when it holds an absolute path (`T3CODE_HOME`). */
@@ -243,7 +251,19 @@ export const CATALOGUE: readonly TargetDef[] = [
       binaries: ["claude"],
       npm: { package: "@anthropic-ai/claude-code", entry: "cli.js" },
       wrapperPrefix: "claude-",
-      homes: { folder: ".claude", env: "CLAUDE_CONFIG_DIR" },
+      homes: {
+        folder: ".claude",
+        env: "CLAUDE_CONFIG_DIR",
+        // Claude Code takes a provider, a token or a key from these before the home's sign-in.
+        account: [
+          "ANTHROPIC_API_KEY",
+          "ANTHROPIC_AUTH_TOKEN",
+          "CLAUDE_CODE_OAUTH_TOKEN",
+          "CLAUDE_CODE_USE_BEDROCK",
+          "CLAUDE_CODE_USE_FOUNDRY",
+          "CLAUDE_CODE_USE_VERTEX",
+        ],
+      },
       urlScheme: "claude-cli",
     },
     testedVersions: ">=2.1.0 <3.0.0",
@@ -321,7 +341,9 @@ export const CATALOGUE: readonly TargetDef[] = [
       binaries: ["codex"],
       npm: { package: "@openai/codex", entry: "bin/codex.js" },
       wrapperPrefix: "codex-",
-      homes: { folder: ".codex", env: "CODEX_HOME" },
+      // Codex keeps its sign-in and its provider in the home (auth.json, config.toml) and reads a
+      // variable for a provider's key only where that config names it: none is taken away.
+      homes: { folder: ".codex", env: "CODEX_HOME", account: [] },
       urlScheme: "codex",
     },
     testedVersions: ">=0.166.0 <0.200.0",
@@ -416,6 +438,14 @@ export function targetDef(id: BuiltInTargetId): TargetDef {
   if (def === undefined) throw new Error("unknown built-in target");
   return def;
 }
+
+/**
+ * The variables any target's `account` names. The scrub of the person's environment (A4 3.8)
+ * leaves them, so an instance of the default home keeps the account the person's setup gives it.
+ */
+export const ACCOUNT_VARIABLES: readonly string[] = [
+  ...new Set(CATALOGUE.flatMap((def) => def.detect.homes?.account ?? [])),
+].sort();
 
 /**
  * The variables that select an agent's config home (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`). A home is

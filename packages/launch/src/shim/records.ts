@@ -61,6 +61,11 @@ export interface SpawnPlan {
   readonly folder: PlanFolder | null;
   /** The instance's `env` (A4 3.8 layer 3). */
   readonly env: Readonly<Record<string, string>>;
+  /**
+   * The names the person's environment does not give the agent: the account variables of an
+   * instance with a home of its own (accountVariables). Absent: none.
+   */
+  readonly unset?: readonly string[];
   /** For the terminal title and the announce line. */
   readonly title: string;
   readonly afterExit: AfterExit;
@@ -184,7 +189,7 @@ export function checkPlanFolder(value: unknown): PlanFolder | null | undefined {
 /** The plan, checked: a plan that is not one starts nothing. */
 export function checkPlan(value: unknown): SpawnPlan | undefined {
   if (!isObject(value)) return undefined;
-  const { argv, env, title, afterExit, loginShell, folderArgs, match } = value;
+  const { argv, env, title, afterExit, loginShell, folderArgs, match, unset } = value;
   if (!Array.isArray(argv) || argv.length === 0 || argv.length > REPLY_BOUNDS.argv) {
     return undefined;
   }
@@ -193,6 +198,14 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
   if (folder === undefined || !isEnv(env) || !isText(title, REPLY_BOUNDS.title)) return undefined;
   if (!(AFTER_EXIT_MODES as readonly unknown[]).includes(afterExit)) return undefined;
   if (loginShell !== undefined && typeof loginShell !== "boolean") return undefined;
+  if (
+    unset !== undefined &&
+    (!Array.isArray(unset) ||
+      unset.length > 64 ||
+      !unset.every((name): name is string => typeof name === "string" && AGENT_ENV_NAME.test(name)))
+  ) {
+    return undefined;
+  }
   // The folder's elements: distinct indices of empty elements after the executable.
   if (folderArgs !== undefined) {
     if (!Array.isArray(folderArgs) || folderArgs.length > 16) return undefined;
@@ -219,6 +232,7 @@ export function checkPlan(value: unknown): SpawnPlan | undefined {
       ? {}
       : { folderArgs: folderArgs as number[] }),
     ...(match === undefined ? {} : { match: { home: (match as { home: string }).home } }),
+    ...(unset === undefined || unset.length === 0 ? {} : { unset }),
   };
   return Buffer.byteLength(JSON.stringify(plan), "utf8") <= PLAN_MAX_BYTES ? plan : undefined;
 }

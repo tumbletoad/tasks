@@ -201,6 +201,22 @@ export function settingsOf(
   return SETTINGS.filter((setting) => set[setting]);
 }
 
+/**
+ * The variables of the person's own environment an instance's agent does not get: with a home of
+ * its own, its account is the one signed in there, and a credential or provider choice exported
+ * for the default home would win over it. The instance's own `env` may still set them.
+ */
+export function accountVariables(
+  instance: Pick<Instance, "target" | "env" | "configHome">,
+  userHome: string | undefined,
+  platform: NodeJS.Platform,
+): readonly string[] {
+  if (!isBuiltInTarget(instance.target)) return [];
+  const home = instanceHome(instance, userHome, platform);
+  if (home === undefined || home.isDefault) return [];
+  return targetDef(instance.target).detect.homes?.account ?? [];
+}
+
 /** Folders on the PATH, in order, absolute ones only. */
 function pathDirs(host: DetectHost): string[] {
   const p = pathOf(host.platform);

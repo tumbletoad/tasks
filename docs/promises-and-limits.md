@@ -241,7 +241,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   busy to write the marker when the folder was set, and so does any folder whose marker went on a
   file system that records no creation time. A marker write given up after two seconds changes
   nothing in the folder afterwards.
-- Opening with a particular account uses that account's settings of the agent app.
+- Opening with a particular account uses that account's settings of the agent app. A Claude Code
+  instance with a home of its own gets no API key, token or provider choice from your own
+  environment, so it works with the account signed in to that home; set one in the instance's
+  `env` to use it there. The default home gets them as your setup gives them. Codex keeps its
+  account in its home, and TTasks takes nothing away from a Codex instance's environment.
 - Open starts an agent only with everything its instance sets: its permission, extra arguments,
   environment and home. A link or an app that cannot carry them is not used for it: Claude Code
   set to prefill then opens in a terminal with the brief on the clipboard to paste, and where

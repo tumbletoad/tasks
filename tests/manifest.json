@@ -2154,7 +2154,7 @@
     },
     {
       "id": "A4.5.environment.scrub",
-      "title": "A4 3.8's scrub after merging (agent sessions' variables, NODE_OPTIONS, ELECTRON_RUN_AS_NODE, every TTASKS_*), the home variables before the instance's env, the person's own base taken whole and the service's through the allow-list, the executable's folder in front of PATH; a terminal's environment keeps only the install's home of the product's variables; no service variable the plan scrubs and no product secret reaches the agent",
+      "title": "A4 3.8's scrub of the base (agent sessions' variables, NODE_OPTIONS, ELECTRON_RUN_AS_NODE) with the home variables before the instance's env, which wins, and every TTASKS_* after it; the variables that choose an account kept for the default home and taken from the base for a home of the instance's own, the person's own base taken whole and the service's through the allow-list, the executable's folder in front of PATH; a terminal's environment keeps only the install's home of the product's variables; no service variable the plan scrubs and no product secret reaches the agent",
       "source": "A4 3.8, A7 3.9 M2.09",
       "owner": "M2",
       "kind": "ci",
