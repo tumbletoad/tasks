@@ -13,7 +13,7 @@ const MESSAGES: Readonly<Record<string, string>> = {
   BACKUP_INVALID: "The backup does not verify.",
   BACKUP_FAILED: "The backup or export failed. Nothing was changed.",
   BUNDLE_LIMIT_EXCEEDED:
-    "The disk lacks the free space for it, with 1 GB to spare, or it is over a size limit. Free some space and try again.",
+    "The disk lacks the free space for it, with 1 GB to spare, or it is over a size limit.",
   BUNDLE_INVALID: "The bundle is not a valid export of a space, or does not verify.",
   EXPORT_SECRET_FOUND: `A file of the space lies in ${PRODUCT_NAME}'s secrets folder. Nothing was exported.`,
   SPACE_SCHEMA_FOREIGN: `The space's database holds tables, indexes or views that ${PRODUCT_NAME} does not make, so a restore would refuse its bundle. Nothing was exported.`,
