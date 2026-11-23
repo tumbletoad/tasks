@@ -11,6 +11,11 @@ export interface Migrated {
   readonly to: string;
   readonly at: string;
   readonly backup?: string;
+  /**
+   * The folder that backup is in when the one set for the space was not there at the upgrade: the
+   * space's own backups folder.
+   */
+  readonly backup_folder?: string;
   /** Whether that backup is still in the space's backups folder. An older service leaves it out. */
   readonly backup_listed?: boolean;
 }
@@ -41,7 +46,9 @@ export function migratedLine(migrated: Migrated): string {
       ? ""
       : migrated.backup_listed === false
         ? ` The backup taken just before it was ${migrated.backup}.`
-        : ` The backup from just before it: ${migrated.backup} (${CLI_NAME} space backups lists it).`;
+        : migrated.backup_folder !== undefined
+          ? ` The backup from just before it: ${migrated.backup}, in ${migrated.backup_folder}, since the backups folder set for the space was not there.`
+          : ` The backup from just before it: ${migrated.backup} (${CLI_NAME} space backups lists it).`;
   return `Updated from schema ${migrated.from} to ${migrated.to} on ${local(migrated.at)}.${backup}`;
 }
 

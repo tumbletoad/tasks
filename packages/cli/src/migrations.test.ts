@@ -20,4 +20,11 @@ describe("[A2.3.1.hub.migration-timeout] what the space list says a migration di
     expect(gone).toMatch(/The backup taken just before it was pre-migrate-\S+\.$/);
     expect(gone).not.toContain("space backups");
   });
+
+  test("[A1.5.backup.folder-away] when the backups folder set for the space was not there, it names the folder the backup went to", () => {
+    const folder = "/home/fixture/spaces/work/backups";
+    const line = migratedLine({ ...MIGRATED, backup_folder: folder, backup_listed: true });
+    expect(line).toContain(`${MIGRATED.backup}, in ${folder}, since the backups folder set`);
+    expect(line).not.toContain("space backups lists it");
+  });
 });

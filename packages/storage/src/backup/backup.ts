@@ -41,7 +41,7 @@
 // derived from it. The migration runner calls this from the space's writer, under its claim.
 //
 // Named seams (`BackupSeams.at`) mark each point for M1.07's crash harness.
-import { existsSync, lstatSync, utimesSync, type BigIntStats } from "node:fs";
+import { existsSync, lstatSync, statSync, utimesSync, type BigIntStats } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Connection } from "../driver.ts";
 import { misuse, StorageError } from "../errors.ts";
@@ -147,6 +147,26 @@ export const backupsFolder = (spaceFolder: string): string =>
   join(checkSpacePath(spaceFolder), BACKUPS_FOLDER);
 
 /**
+ * The backups folder this machine set for a space (`backup.dir`) is not there: a drive that is not
+ * connected, a folder moved. No backup makes it, so none lands on whatever disk holds the path,
+ * where nobody looks and from where the next backups would go on without a word.
+ */
+export class BackupsFolderAway extends StorageError {
+  constructor() {
+    super("BACKUP_FAILED", "The backups folder set for the space is not there");
+  }
+}
+
+/**
+ * Where a backup goes: the space's own backups folder, which the writer makes when it is missing,
+ * or another folder (`backup.dir`), which must be there (BackupsFolderAway).
+ */
+interface BackupPlace {
+  readonly folder: string;
+  readonly own: boolean;
+}
+
+/**
  * Takes a verified backup of the space at `folder` through its own read-only connection. Opening
  * the space refuses as a reader's open does. Any later failure is BACKUP_FAILED (the cause's code
  * in the message), or BUNDLE_LIMIT_EXCEEDED for a database larger than the policy allows.
@@ -177,11 +197,13 @@ export async function backupSpaceWith(
     },
     seams.steps === undefined ? {} : { steps: seams.steps },
   );
+  const own = join(dir, BACKUPS_FOLDER);
+  const target = options.backupDir ?? own;
   try {
     return await writeBackup(
       checked,
       opened.conn,
-      options.backupDir ?? join(dir, BACKUPS_FOLDER),
+      { folder: target, own: resolve(target) === resolve(own) },
       options,
       seams,
     );
@@ -202,13 +224,14 @@ function backupFailed(error: unknown): StorageError {
  * The backup pipeline from an open connection to the space database: copy, check, compress, read
  * back, rename, sidecar. `source` should be a read-only connection that holds no transaction.
  */
-export async function writeBackup(
+async function writeBackup(
   checked: CheckedDriver,
   source: Connection,
-  backupDir: string,
+  place: BackupPlace,
   options: SpaceBackupOptions,
   seams: BackupSeams = {},
 ): Promise<BackupRecord> {
+  const backupDir = place.folder;
   const policy = seams.policy ?? BUNDLE_POLICY;
   const io = seams.io ?? NODE_IO;
   const appVersion = options.appVersion ?? SOURCE_APP_VERSION;
@@ -243,6 +266,14 @@ export async function writeBackup(
   const timer = setInterval(refresh, FRESH_INTERVAL_MS);
   timer.unref();
   try {
+    // Only the space's own folder is made here: any other is one a person chose, and it may be on
+    // a drive that is away.
+    if (
+      !place.own &&
+      !fsCall(() => statSync(backupDir, { throwIfNoEntry: false }))?.isDirectory()
+    ) {
+      throw new BackupsFolderAway();
+    }
     // Before anything is written: the free disk space, less the policy's reserve, holds the
     // backup's peak (backupPeak).
     checkFreeSpace(
@@ -250,7 +281,7 @@ export async function writeBackup(
       (seams.freeBytes ?? freeBytes)(existingFolder(backupDir)),
       policy,
     );
-    makeDurableFolder(backupDir, io);
+    if (place.own) makeDurableFolder(backupDir, io);
     // The driver writes only a new file (A1 3.18): it creates the copy exclusively and
     // owner-only under this backup's random temporary name, so the copy is owner-only from its
     // first byte and no other file, a live space's least of all, can be written by mistake.

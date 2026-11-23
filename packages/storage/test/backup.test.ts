@@ -18,6 +18,7 @@ import {
   backupSpace,
   backupSpaceWith,
   BACKUP_TEMP_PREFIX,
+  BackupsFolderAway,
   type BackupPoint,
   type BackupRecord,
 } from "../src/backup/backup.ts";
@@ -305,18 +306,17 @@ describe("[A1.5.backup.verified] the backup and its sidecar", () => {
   });
 
   test.skipIf(process.platform === "win32")(
-    "new folders on the way to the backups folder are synced into their parents",
+    "the space's own backups folder, made by its first backup, is synced into the space's folder",
     async () => {
       const checked = await checkedDriver();
       const { folder } = await createFixtureSpace(folders.make());
-      const parent = folders.make();
-      // A machine-local backup.dir that does not exist yet, two levels below an existing folder.
-      const backupDir = join(parent, "tasks", "mira", "backups");
+      const backupDir = join(folder, "backups");
+      expect(existsSync(backupDir)).toBe(false);
       const synced: string[] = [];
       await backupSpaceWith(
         checked,
         folder,
-        { kind: "manual", backupDir },
+        { kind: "manual" },
         {
           io: {
             ...NODE_IO,
@@ -327,15 +327,31 @@ describe("[A1.5.backup.verified] the backup and its sidecar", () => {
           },
         },
       );
-      // Each new folder's entry lives in its parent: the parent of the first new folder and every
-      // new folder above the backups folder are synced, and the backups folder itself.
-      for (const dir of [parent, join(parent, "tasks"), join(parent, "tasks", "mira"), backupDir]) {
-        expect(synced, dir).toContain(dir);
-      }
+      // A new folder's entry lives in its parent: the space's folder is synced, then the backups
+      // folder itself once a file landed in it.
+      for (const dir of [folder, backupDir]) expect(synced, dir).toContain(dir);
       const at = (dir: string): number => synced.indexOf(dir);
-      expect(at(join(parent, "tasks", "mira"))).toBeLessThan(at(backupDir));
+      expect(at(folder)).toBeLessThan(at(backupDir));
     },
   );
+
+  test("[A1.5.backup.folder-away] a backups folder set for the space that is not there is made by no backup: the backup is refused, and nothing is made on the way", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    // A drive that is not connected, whose path's parent can be written.
+    const drive = join(folders.make(), "drive");
+    const backupDir = join(drive, "tasks", "backups");
+    const error = await expectCode(
+      () => backupSpace(checked, folder, { kind: "daily", backupDir }),
+      "BACKUP_FAILED",
+    );
+    expect(error).toBeInstanceOf(BackupsFolderAway);
+    expect(existsSync(drive)).toBe(false);
+    // Once it is there, the backup goes there.
+    mkdirSync(backupDir, { recursive: true });
+    const made = await backupSpace(checked, folder, { kind: "daily", backupDir });
+    expect(listBackups(backupDir).backups.map((b) => b.name)).toEqual([made.name]);
+  });
 
   test("errors name no path, and a backup of a missing space is SPACE_NOT_FOUND", async () => {
     const checked = await checkedDriver();

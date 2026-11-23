@@ -688,7 +688,7 @@
     },
     {
       "id": "A1.5.backup.folder-away",
-      "title": "Through the service, a backups folder set for the space that is not there is said as not there, with its path, by the backup list, restore latest, a backup now and the upkeep, and nothing makes a folder in its place; restore latest from a folder with no backup of the space says there is none",
+      "title": "Through the service, a backups folder set for the space that is not there is said as not there, with its path, by the backup list, restore latest, a backup now and the upkeep, and no backup makes a folder in its place: an upgrade goes on behind a backup in the space's own backups folder, which the space list names and a restore by name finds; restore latest from a folder with no backup of the space says there is none",
       "source": "A1 3.18",
       "owner": "M3",
       "kind": "ci",

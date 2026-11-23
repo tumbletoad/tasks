@@ -535,7 +535,6 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       ? { dir: backupsFolder(manager.folderOf(view.entry)), set: false }
       : { dir: settings.backupDir, set: true };
   };
-  const backupDirOf = (view: SpaceView): string => backupsOf(view).dir;
 
   return {
     "space/list": () =>
@@ -893,9 +892,16 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
       const spaceId = of?.id ?? of?.registered;
       if (isAbsolute(backup)) file = resolve(backup);
       else if (of !== undefined && /^[A-Za-z0-9._-]+$/.test(backup)) {
+        const name = backup.endsWith(".db.gz") ? backup : `${backup}.db.gz`;
+        const { dir, set } = backupsOf(of);
+        // An upgrade whose folder set for the space was away left its backup in the space's own
+        // backups folder (spaces.ts): a name not in the set folder is looked for there too.
+        const own = join(backupsFolder(manager.folderOf(of.entry)), name);
         file = /\.zip$/i.test(backup)
           ? join(exportsFolder(manager.folderOf(of.entry)), backup)
-          : join(backupDirOf(of), backup.endsWith(".db.gz") ? backup : `${backup}.db.gz`);
+          : set && !existsSync(join(dir, name)) && existsSync(own)
+            ? own
+            : join(dir, name);
       } else {
         throw invalid(
           "backup",

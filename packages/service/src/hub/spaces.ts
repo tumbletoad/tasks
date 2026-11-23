@@ -80,7 +80,7 @@
 // guards, so a worker that hangs keeps both until the process exits.
 import { createHash } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { CLI_NAME } from "@ttasks/brand";
 import {
   backupsFolder,
@@ -682,8 +682,9 @@ export class SpaceManager {
       const settings = readSpaceSettings(this.#options.settingsDir, space.id ?? space.registered);
       const last = settings.lastMigration;
       // The backup from before it is sent to only while it is there: a build before this one
-      // removed it after 30 days, and a person may have since.
-      const dir = settings.backupDir ?? backupsFolder(space.folder);
+      // removed it after 30 days, and a person may have since. It is in the folder its record
+      // names when the one set for the space was away at the upgrade.
+      const dir = last?.backup_folder ?? settings.backupDir ?? backupsFolder(space.folder);
       const migrated =
         last?.backup === undefined
           ? last
@@ -1374,6 +1375,10 @@ export class SpaceManager {
           from: encodeRevision(writer.migration.from),
           to: encodeRevision(writer.migration.to),
           backup: writer.migration.backup.name,
+          // The folder set for the space was away: the list says where the backup went.
+          ...(writer.migration.setFolderAway === true
+            ? { backupFolder: dirname(writer.migration.backup.file) }
+            : {}),
         });
       } catch {
         // Only what the space list says about the migration: the migration itself is done.

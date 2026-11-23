@@ -650,6 +650,46 @@ async function spaceAt03(folder: string) {
   return created;
 }
 
+describe("[A1.5.backup.folder-away] an upgrade whose backups folder set for the space is not there", () => {
+  test(
+    "goes on behind a backup in the space's own folder, makes no folder at the set path, and the space list and a restore by name find that backup",
+    async () => {
+      const { home, spaces } = setUp("away-upgrade");
+      const space = await spaceAt01(join(spaces, "work"));
+      const id = space.space.spaceId;
+      // The drive the folder is on is not connected; the path's parent can be written.
+      const drive = join(spaces, "drive");
+      mkdirSync(join(stateOf(home), SPACES_FOLDER), { recursive: true, mode: 0o700 });
+      writeFileSync(
+        join(stateOf(home), SPACES_FOLDER, `${id}.json`),
+        JSON.stringify({ format: 1, backup: { dir: join(drive, "backups") } }),
+        { mode: 0o600 },
+      );
+      const service = await start(home, space.folder);
+      expect(service.spaces()).toEqual([{ entry: 0, state: "open", id }]);
+      expect(existsSync(drive)).toBe(false);
+      const [backup] = barrierBackups(space.folder);
+      expect(backup).toBeDefined();
+      const user = await session(home, service, "cli-interactive");
+      const listed = (await call(user, "space/list", {}))["spaces"] as Record<string, unknown>[];
+      expect(listed[0]?.["migrated"]).toMatchObject({
+        backup,
+        backup_folder: backupsFolder(space.folder),
+        backup_listed: true,
+      });
+      const restored = await call(user, "space/restore", {
+        backup,
+        of: space.folder,
+        to: join(spaces, "copy"),
+      });
+      expect(restored).toMatchObject({ read_only_copy: true });
+      expect(existsSync(join(spaces, "copy", "space.db"))).toBe(true);
+      expect(existsSync(drive)).toBe(false);
+    },
+    LONG,
+  );
+});
+
 describe("[A2.3.1.hub.search-after-migration] word search on a migrated space, a new one, and one whose update failed", () => {
   test(
     "a 0.3 space migrates on open and answers words, and the index follows adds, edits, notes and completion through the request path",

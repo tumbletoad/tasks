@@ -99,6 +99,11 @@ export interface MigrationReport {
   seqs: number[];
   /** False when space.json could not be rewritten: the next writer's open does it. */
   manifestWritten: boolean;
+  /**
+   * The backups folder set for the space was not there: the barrier backup is in the space's own
+   * backups folder (migrate/runner.ts).
+   */
+  setFolderAway?: true;
 }
 
 /** What openSpaceWriter does once the space is claimed for the process. */
