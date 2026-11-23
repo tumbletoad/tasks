@@ -62,7 +62,7 @@ const kept = (page: Page): Promise<Record<string, string>> =>
     for (const storage of [localStorage, sessionStorage]) {
       for (let i = 0; i < storage.length; i += 1) {
         const key = storage.key(i) ?? "";
-        if (/\.(draft|note|top|unsaved|unanswered)\./u.test(key) && key.startsWith(prefix)) {
+        if (/\.(draft|note|top|edit|unsaved|unanswered)\./u.test(key) && key.startsWith(prefix)) {
           found[key] = storage.getItem(key) ?? "";
         }
       }

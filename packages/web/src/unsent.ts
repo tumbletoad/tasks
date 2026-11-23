@@ -23,11 +23,21 @@ const draftName = (space: string, task: string) => `draft.${space}.${task}`;
 /** Each note on its way is kept under its own request ID; a name without one is an earlier build's. */
 const notePrefix = (space: string, task: string) => `note.${space}.${task}`;
 const titlePrefix = (space: string, task: string) => `title.${space}.${task}.`;
-/** Each refused edit under its own ID; an empty ID is an earlier build's, one per field. */
+/**
+ * Each refused edit under its own ID. An empty ID is an earlier build's, one per field, under a
+ * prefix that build reads and clears of every name it cannot parse: the others stay out of it.
+ */
+const editPrefix = (space: string) => `edit.${space}.`;
+const legacyPrefix = (space: string) => `unsaved.${space}.`;
 const editName = (space: string, task: string, field: string, id: string) =>
-  `unsaved.${space}.${task}.${field}${id === "" ? "" : `.${id}`}`;
-const editNames = (space: string): string[] => browserKept.names(`unsaved.${space}.`);
-const KINDS = ["draft.", "note.", "title.", "unsaved."] as const;
+  id === ""
+    ? `${legacyPrefix(space)}${task}.${field}`
+    : `${editPrefix(space)}${task}.${field}.${id}`;
+const editNames = (space: string): string[] => [
+  ...browserKept.names(editPrefix(space)),
+  ...browserKept.names(legacyPrefix(space)),
+];
+const KINDS = ["draft.", "note.", "title.", "edit.", "unsaved."] as const;
 
 const listeners = new Set<() => void>();
 let hearing: (() => void) | undefined;
@@ -567,7 +577,8 @@ export function unsentTasks(space: string): string[] {
     ...after(`draft.${space}.`),
     ...after(`note.${space}.`).map(noteTask),
     ...after(`title.${space}.`).map(taskOf),
-    ...after(`unsaved.${space}.`).map(editTask),
+    ...after(editPrefix(space)).map(editTask),
+    ...after(legacyPrefix(space)).map(editTask),
   ];
   return [...new Set(tasks.filter((task) => task !== ""))];
 }
@@ -582,7 +593,10 @@ export function forgetTask(space: string, task: string): void {
   for (const name of browserKept.names(titlePrefix(space, task))) {
     browserKept.keep(name, undefined);
   }
-  for (const name of browserKept.names(`unsaved.${space}.${task}.`)) {
+  for (const name of [
+    ...browserKept.names(`${editPrefix(space)}${task}.`),
+    ...browserKept.names(`${legacyPrefix(space)}${task}.`),
+  ]) {
     browserKept.keep(name, undefined);
   }
   tell();

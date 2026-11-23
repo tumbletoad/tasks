@@ -57,11 +57,11 @@ const effect = (change: Change | undefined) =>
 
 const stored = () =>
   Object.keys(localStorage)
-    .filter((key) => key.startsWith(`${PRODUCT_ID}.unsaved.`))
+    .filter((key) => /^[^.]+.(edit|unsaved)./u.test(key))
     .sort();
 /** The name an edit with an ID is kept under. */
 const keptName = (task: string, field: string, id: string) =>
-  `${PRODUCT_ID}.unsaved.${SPACE}.${task}.${field}.${id}`;
+  `${PRODUCT_ID}.edit.${SPACE}.${task}.${field}.${id}`;
 
 beforeEach(() => {
   localStorage.clear();
@@ -288,6 +288,45 @@ describe("[A5.3.11.web.kept-edits] an edit the service did not take survives a r
     expect(unsentTasks(SPACE)).toEqual(["tk_00001"]);
     letGo(SPACE, { kind: "edit", task: "tk_00001", field: "waiting_on", id: "", value });
     expect(stored()).toEqual([]);
+  });
+
+  test("opening the build before this one takes none of the edits this one kept, and its own are still listed and let go once", () => {
+    // What the build before does as it loads a space: every name under its prefix that it cannot
+    // read as one of its own is removed (its `unsavedKeeper(space).load()`).
+    const loadOfBuildBefore = (space: string) => {
+      const prefix = `${PRODUCT_ID}.unsaved.${space}.`;
+      for (const key of Object.keys(localStorage).filter((k) => k.startsWith(prefix))) {
+        const unsaved = unsavedOf(JSON.parse(localStorage.getItem(key) ?? "null"));
+        if (
+          unsaved === undefined ||
+          `${PRODUCT_ID}.unsaved.${space}.${unsaved.task}.${unsaved.field}` !== key
+        ) {
+          localStorage.removeItem(key);
+        }
+      }
+    };
+    const legacy = JSON.stringify({
+      task: "tk_00001",
+      ref: "M-1",
+      field: "waiting_on",
+      reason: "failed",
+      source: waitingChange("Ana").source,
+    });
+    const legacyName = `${PRODUCT_ID}.unsaved.${SPACE}.tk_00001.waiting_on`;
+    localStorage.setItem(legacyName, legacy);
+    unsavedKeeper(SPACE).save(asMap([unsaved(waitingChange("Ben"), 1)]));
+    unsavedKeeper(SPACE).save(asMap([unsaved(waitingChange("Cleo"), 1)]));
+    const words = () =>
+      unsentOf(SPACE)
+        .flatMap((word) => (word.kind === "edit" ? [word.shown] : []))
+        .sort();
+    expect(words()).toEqual(["Ana", "Ben", "Cleo"]);
+    loadOfBuildBefore(SPACE);
+    expect(words()).toEqual(["Ana", "Ben", "Cleo"]);
+    // The build before's own edit is let go once, by its exact value.
+    letGo(SPACE, { kind: "edit", task: "tk_00001", field: "waiting_on", id: "", value: legacy });
+    expect(words()).toEqual(["Ben", "Cleo"]);
+    expect(localStorage.getItem(legacyName)).toBeNull();
   });
 
   test("a kept edit is read by its shape alone", () => {
