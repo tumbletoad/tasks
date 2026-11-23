@@ -2702,7 +2702,7 @@
     },
     {
       "id": "M6.page.e2e.stop",
-      "title": "In the browser: a working run shows in the thread and on the row, the same after a reload and in a second tab; Stop answers at once and then says what was ended; a queued run says why it waits and starts once the other stopped",
+      "title": "In the browser: a working run shows in the thread and on the row, the same after a reload and in a second tab; Stop answers at once and then says what was ended; a queued run says why it waits and starts once the other stopped; a queued run's Stop held on its way says Stopping, and the answer Stopped before it started; a read of the runs that failed says so in the thread",
       "owner": "M6",
       "kind": "ci",
       "profiles": ["v1"]
@@ -5150,6 +5150,14 @@
       "id": "A5.3.11.e2e.unanswered",
       "title": "In Chromium and Firefox against the real service: Ctrl+Z whose first request never reaches the service does not hold the star clicked after it; the page learns the undo's outcome by its request ID, sends it again, and the star goes out after it, so the undo takes back the priority and the star stays",
       "source": "A5 3.11, A1 3.8",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
+      "id": "A5.3.11.e2e.row-base",
+      "title": "In Chromium and Firefox against the real service: an Inbox row held under focus after an agent moved the task to Waiting and out of the Inbox; Move to Open overwrites nothing and the toast says who changed it",
+      "source": "A5 3.11, A5 3.15",
       "owner": "M5",
       "kind": "ci",
       "profiles": ["v1"]

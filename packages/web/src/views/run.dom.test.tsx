@@ -683,6 +683,17 @@ describe("[M6.page.run-follow] a read of the runs that failed says so and is rea
   const failedLine = () => thread()?.querySelector('[data-part="runs-failed"]');
   const entry = () => thread()?.querySelector<HTMLElement>('[data-entry="run"]');
 
+  test("a thread with no entries whose read of the runs fails says the runs could not be read, not that nothing is logged", async () => {
+    down = true;
+    act(() => {
+      live.store.push({ ...snapshot(), cursor: { ...snapshot().cursor, seq: 12 } });
+      live.store.flush();
+    });
+    await settle();
+    expect(failedLine()).not.toBeNull();
+    expect(thread()?.textContent).not.toContain("Nothing logged yet.");
+  });
+
   test("a working run whose next read fails shows that its runs could not be read, and the minute's read brings how it ended", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     try {

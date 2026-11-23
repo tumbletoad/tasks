@@ -376,15 +376,19 @@ export function Thread({
     if (document.activeElement === document.body) entry.focus({ preventScroll: true });
   });
   const older = hidden === 0 && partial && onOlder !== undefined;
-  // A thread whose first pages held no entry has older ones: it is not empty.
-  if (items.length === 0 && !older) return <p className={styles.line}>{t("thread.empty")}</p>;
+  // A thread whose first pages held no entry has older ones: it is not empty. Nor is one whose runs
+  // could not be read: it may have some.
+  const failedRuns = (
+    <p className={styles.line} role="status" data-part="runs-failed">
+      {t("thread.runsFailed")}
+    </p>
+  );
+  if (items.length === 0 && !older) {
+    return runsFailed ? failedRuns : <p className={styles.line}>{t("thread.empty")}</p>;
+  }
   return (
     <>
-      {runsFailed ? (
-        <p className={styles.line} role="status" data-part="runs-failed">
-          {t("thread.runsFailed")}
-        </p>
-      ) : null}
+      {runsFailed ? failedRuns : null}
       {older && olderFailed ? (
         <p className={styles.line} role="status">
           {t("thread.olderFailed")}
