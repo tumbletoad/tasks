@@ -10,12 +10,13 @@ import { CLI_NAME, PRODUCT_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
 import {
   FINAL_RUN_STATES,
+  normaliseRunText,
   RUN_LIMITS,
   type NewRun,
   type RunLimits,
   type RunRecord,
 } from "@ttasks/contracts/runs";
-import { decodeRun, newTicket, sessionOf, SpaceExecutionStore } from "@ttasks/launch";
+import { decodeRun, newTicket, RunRefused, sessionOf, SpaceExecutionStore } from "@ttasks/launch";
 import { decodeRunRow } from "@ttasks/storage";
 import {
   containers as platformContainers,
@@ -123,6 +124,35 @@ export interface RunRequest {
   /** The person's request, or null for "work on this task". */
   readonly request: string | null;
   readonly requestId: string;
+}
+
+/**
+ * Whether `asked` asks for the run `run` was queued for: its task, its words, and its agent when one
+ * was named. A task asked for that cannot be read is the same only when the run's own task cannot be
+ * read either (deleted since); else it is another task, refused as not found.
+ */
+async function sameAsked(
+  reader: Parameters<typeof readLaunchTask>[0],
+  run: RunRecord,
+  asked: RunRequest,
+  machine: string,
+): Promise<boolean> {
+  if (run.request !== normaliseRunText(asked.request ?? WORK_ON_IT)) return false;
+  if (asked.instance !== undefined && run.instance !== asked.instance) return false;
+  if (run.task === asked.task) return true;
+  try {
+    return (await readLaunchTask(reader, asked.task, machine)).id === run.task;
+  } catch (error) {
+    if (!(error instanceof AppError) || error.code !== "not_found") throw error;
+  }
+  if (run.task === null) return false;
+  try {
+    await readLaunchTask(reader, run.task, machine);
+    return false;
+  } catch (error) {
+    if (error instanceof AppError && error.code === "not_found") return true;
+    throw error;
+  }
 }
 
 /** How often spaces that opened since are recovered, and the queue looked at. */
@@ -348,6 +378,16 @@ export class RunService {
     if (agents === undefined || served?.reader === undefined || hosted === undefined) {
       throw refusal("not_served", "The space is not open on this machine.");
     }
+    // A repeat is given its run as it is now, before the task is read again: a rename since, or
+    // the run's end, would build another request under the same ID. Another task, agent or words
+    // under that ID is no repeat, and goes on to be refused below.
+    const replayed = await hosted.machine.replayed(asked.requestId);
+    if (
+      replayed !== undefined &&
+      (await sameAsked(served.reader, replayed, asked, this.#options.machine))
+    ) {
+      return replayed;
+    }
     let task: Awaited<ReturnType<typeof readLaunchTask>>;
     try {
       task = await readLaunchTask(served.reader, asked.task, this.#options.machine);
@@ -403,21 +443,31 @@ export class RunService {
             );
     }
     const settings = this.#settings();
-    const queued = await hosted.machine.queue(
-      {
-        task: task.id,
-        routine: null,
-        instance: instance.id,
-        adapter: runAdapter(instance),
-        place: null,
-        // A task's run always holds what was asked: the person's words, else to work on the task.
-        request: asked.request ?? WORK_ON_IT,
-        briefHash: runBriefHash(task.ref, task.title),
-        permission: runPermission(instance),
-        limits: { ...RUN_LIMITS.task, ...timeLimits(settings) },
-      },
-      asked.requestId,
-    );
+    const queued = await hosted.machine
+      .queue(
+        {
+          task: task.id,
+          routine: null,
+          instance: instance.id,
+          adapter: runAdapter(instance),
+          place: null,
+          // A task's run always holds what was asked: the person's words, else to work on the task.
+          request: asked.request ?? WORK_ON_IT,
+          briefHash: runBriefHash(task.ref, task.title),
+          permission: runPermission(instance),
+          limits: { ...RUN_LIMITS.task, ...timeLimits(settings) },
+        },
+        asked.requestId,
+      )
+      .catch((error: unknown) => {
+        if (error instanceof RunRefused && error.code === "request_id_reused") {
+          throw new AppError({
+            code: "request_id_conflict",
+            message: "This request ID was used for another run: use a new ID.",
+          });
+        }
+        throw error;
+      });
     void this.#supervisor.round();
     return queued;
   }

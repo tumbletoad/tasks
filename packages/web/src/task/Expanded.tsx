@@ -1,15 +1,15 @@
 // The expanded task's body (A5 3.7). The row (Row.tsx) owns the header (check, title, summary,
 // star, collapse), its expansion and the region; this is what the region holds, in two columns:
 //
-// - Content, with no section labels: the outcome and the task's own learnings once it is done,
-//   the context (Markdown, clamped at ten lines with More), one line per source with its own text,
-//   the place on this machine, a hairline, then the thread (Thread.tsx).
+// - Content, with no section labels: first the composer (Composer.tsx), its field and the strip of
+//   what the text goes to, then the outcome and the task's own learnings once it is done, the
+//   context (Markdown, clamped at ten lines with More), one line per source with its own text, the
+//   place on this machine, a hairline, then the thread (Thread.tsx).
 // - Facts (Facts.tsx): short muted labels and their controls, edited in place (A5 3.11). Each fact
 //   shows here and nowhere else in the card; the row's columns for them are hidden while it is
 //   expanded.
 //
-// Below both, the composer (Composer.tsx): its field and the strip of what the text goes to. A
-// click on an agent-only field (the context, the outcome, a source's line, a learning, the summary
+// A click on an agent-only field (the context, the outcome, a source's line, a learning, the summary
 // in the header) starts a request for an agent there. Everything a task holds is untrusted text: it
 // is rendered as text or as Markdown that is never HTML, and links open only through allowed
 // schemes (A5 3.26).
@@ -73,6 +73,8 @@ export interface ExpandedProps {
   readonly busy: BusyOf | undefined;
   /** Its background runs, oldest first. */
   readonly runs: readonly Run[];
+  /** Whether its receipts and runs were read: the thread draws once, with all of them. */
+  readonly read: boolean;
   readonly instances: readonly Instance[];
   readonly actions: RowActions;
   /** The last Open of this task, refused on its folder; none once an Open went through. */
@@ -441,6 +443,7 @@ export function Expanded({
   receipts,
   busy,
   runs,
+  read,
   instances,
   actions,
   refused,
@@ -472,6 +475,11 @@ export function Expanded({
       {/* First in the document: below 1,024 px the facts come before the content (A5 3.7). */}
       <Facts task={facts} clock={clock} />
       <div className={styles.content}>
+        {/* First in the content, above all that its reads bring in: the composer and its strip
+            keep their place from the card's first frame, whatever the thread holds. */}
+        <div className={styles.composer}>
+          <Composer task={task} busy={busy} instances={instances} actions={actions} />
+        </div>
         {detail?.outcome === undefined ? null : (
           <div
             className={styles.outcome}
@@ -526,8 +534,8 @@ export function Expanded({
           ))}
         </ul>
         <hr className={styles.hairline} />
-        {detail === undefined ? (
-          failed ? (
+        {detail === undefined || !read ? (
+          failed && detail === undefined ? (
             <p className={styles.line} role="status">
               {t("thread.failed")}
             </p>
@@ -553,9 +561,6 @@ export function Expanded({
             {t("task.stale")}
           </p>
         ) : null}
-      </div>
-      <div className={styles.composer}>
-        <Composer task={task} busy={busy} instances={instances} actions={actions} />
       </div>
     </div>
   );

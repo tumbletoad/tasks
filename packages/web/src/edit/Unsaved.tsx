@@ -3,7 +3,9 @@
 // conflict: "Changed by Codex just now · Apply mine · Keep theirs". After a failed call: "Not saved
 // · Try again · Discard". On a finished task, which takes no edit until it is reopened: "Not saved:
 // the task is finished · Copy · Discard", after the value itself where no fact shows it (the
-// title). The line stays until the person chooses, whatever the feed brings.
+// title). An edit made against a history the space no longer has (restored since) is not sent
+// again: "<value> Not saved: the space was restored since · Copy · Discard". The line stays until
+// the person chooses, whatever the feed brings.
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useT } from "../i18n/intl.tsx";
@@ -41,15 +43,23 @@ export function Unsaved({
   const shown = unsaved.change.shown;
   const mine = typeof shown === "string" ? shown : sayMsg(t, shown);
   const conflict = unsaved.reason === "conflict";
-  if (finished) {
+  const restored = !finished && edits.restored(unsaved);
+  if (finished || restored) {
     return (
-      <span className={styles.line} data-part="unsaved" data-reason="finished" role="status">
-        {withValue ? (
+      <span
+        className={styles.line}
+        data-part="unsaved"
+        data-reason={finished ? "finished" : "restored"}
+        role="status"
+      >
+        {withValue || restored ? (
           <span className={styles.value} dir="auto" data-part="unsaved-value">
             {mine}
           </span>
         ) : null}
-        <span className={styles.why}>{t("edit.notSavedFinished")}</span>
+        <span className={styles.why}>
+          {t(finished ? "edit.notSavedFinished" : "edit.notSavedRestored")}
+        </span>
         <button
           type="button"
           className={styles.act}

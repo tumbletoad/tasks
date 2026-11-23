@@ -178,6 +178,12 @@ export interface RunStore {
    */
   createRun(input: NewRun, requestId: string): Promise<RunRecord>;
   /**
+   * The run a request this store's scope already decided made, as it is now; undefined when the
+   * scope has not decided the request or it made no run. Read only, so a repeat is answered before
+   * anything its run would be built from is read again.
+   */
+  replayedRun(requestId: string): Promise<RunRecord | undefined>;
+  /**
    * One atomic compare-and-set transition: the record must be at `expect`, or the call is refused
    * with `stale` and the current record, and moves nothing. `expect.state → next` must be an edge
    * of A4's machine. Evidence only grows, and a result goes in once, entering a final state.

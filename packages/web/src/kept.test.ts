@@ -39,7 +39,7 @@ describe("[A5.3.8.web.kept] typed text kept in the browser: back after a reload,
     expect(browserKept.read("top.sp_1")).toBeUndefined();
   });
 
-  test("storage that is full or blocked keeps the text for the tab's life", () => {
+  test("storage that is full or blocked keeps the text as long as the page is loaded", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("full", "QuotaExceededError");
     });

@@ -167,6 +167,11 @@ export class RunMachine {
     return this.#call(() => this.#store.createRun({ ...input, machine: this.#machine }, requestId));
   }
 
+  /** The run a request already queued, as it is now; undefined when it queued none. */
+  replayed(requestId: string): Promise<RunRecord | undefined> {
+    return this.#call(() => this.#store.replayedRun(requestId));
+  }
+
   /** The run as the store holds it now. */
   read(id: string): Promise<RunRecord | undefined> {
     return this.#call(() => this.#store.readRun(id));

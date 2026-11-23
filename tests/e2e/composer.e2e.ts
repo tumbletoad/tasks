@@ -84,6 +84,29 @@ async function catchClipboard(page: Page): Promise<() => Promise<string[]>> {
   return () => page.evaluate(() => (window as unknown as { copied: string[] }).copied);
 }
 
+/**
+ * Holds the card's reads (its detail, sessions and runs) and the read of what busies the agent
+ * apps until the returned function is called.
+ */
+async function holdReads(page: Page): Promise<() => void> {
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  for (const path of [
+    "/api/v1/op/task.get",
+    "/api/v1/launch/list",
+    "/api/v1/launch/runs",
+    "/api/v1/launch/busy",
+  ]) {
+    await page.route(`**${path}`, async (route) => {
+      await released;
+      await route.continue().catch(() => undefined);
+    });
+  }
+  return release;
+}
+
 test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Copy, with and without text", () => {
   test("Note saves the text and clears the field; Open passes the text as the request; Copy carries it; without text Note waits and Open and Copy act as before", async ({
     page,
@@ -171,6 +194,191 @@ test.describe("[A7.3.12.m5-07.e2e.strip] The composer's strip: Note, Open and Co
     });
     expect(Object.keys(await kept(page))).toEqual([]);
     expect(await violations(page)).toEqual([]);
+  });
+
+  test("the strip keeps its place while the card's reads come in, a session running: a press begun before they arrive is a click, at 1,440 and 390 px, also on a card opened again", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, { title: `Read the meter (${tag})`, area: "home" });
+    for (const n of [1, 2, 3, 4]) {
+      await world.op(world.mira.id, "entry.add", {
+        task: ref,
+        kind: "note",
+        text: `Reading ${String(n)}: ${String(4000 + n)} kWh`,
+      });
+    }
+    const row = rowOf(page, ref);
+    const strip = stripOf(page, ref);
+    const copy = strip.locator('[data-part="copy"]');
+    // A session runs on the task: once that is read, Open offers another one.
+    await openTask(page, world, ref);
+    world.hold(ref);
+    await strip.getByRole("button", { name: `Open in ${FAKE_INSTANCE.label}` }).click();
+    await expect(row.locator('[data-entry][data-state="running"]')).toBeVisible({
+      timeout: SLOW_MS,
+    });
+    /** Where each of the strip's buttons stands. */
+    const places = () =>
+      strip.getByRole("button").evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const box = button.getBoundingClientRect();
+          return `${button.getAttribute("data-part") ?? "menu"} ${String(box.x)},${String(box.y)}`;
+        }),
+      );
+    /** Presses Copy while the card's reads are held, lets them answer, then lets go. */
+    const pressWhileReading = async (release: () => void, copied: () => Promise<string[]>) => {
+      await expect(copy).toBeVisible({ timeout: SLOW_MS });
+      // The page's faces arrive after its first text: the places are taken once they are in.
+      await page.evaluate(() => document.fonts.ready);
+      const before = await copy.boundingBox();
+      if (before === null) throw new Error("Copy has no box");
+      const placed = await places();
+      const count = (await copied()).length;
+      await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+      await page.mouse.down();
+      release();
+      await expect(notes(page, ref).last()).toHaveText("Reading 4: 4004 kWh", {
+        timeout: SLOW_MS,
+      });
+      await expect(
+        strip.getByRole("button", { name: `Open another in ${FAKE_INSTANCE.label}` }),
+      ).toBeVisible({ timeout: SLOW_MS });
+      expect(await places()).toEqual(placed);
+      await page.mouse.up();
+      await expect.poll(async () => (await copied()).length).toBe(count + 1);
+    };
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      const release = await holdReads(page);
+      await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
+      await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "true", {
+        timeout: SLOW_MS,
+      });
+      const copied = await catchClipboard(page);
+      await pressWhileReading(release, copied);
+      await page.unrouteAll({ behavior: "wait" });
+      // Opened again: its runs are known, its detail is read again.
+      await row.locator('[data-part="collapse"]').click();
+      await expect(row.locator('[data-part="title"]')).toHaveAttribute("aria-expanded", "false");
+      const again = await holdReads(page);
+      await row.locator('[data-part="title"]').click();
+      await pressWhileReading(again, copied);
+      await page.unrouteAll({ behavior: "wait" });
+    }
+    world.release(ref);
+  });
+
+  test("Ask from a card scrolled past its composer brings the composer out from under the top bar, and typing in the top field moves no list", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, {
+      title: `Plan the attic (${tag})`,
+      area: "home",
+      sources: [{ kind: "web", title: "Insulation guide", url: "https://attic.example/guide" }],
+    });
+    const { as_of } = await read(world, ref);
+    const context = Array.from(
+      { length: 12 },
+      (_, i) => `Step ${String(i + 1)}: measure, note it down and check it twice.`,
+    ).join("\n\n");
+    await world.op(world.mira.id, "task.update", {
+      task: ref,
+      base: as_of,
+      context: { mode: "replace", text: context },
+    });
+    for (const n of [1, 2, 3, 4, 5, 6]) {
+      await world.op(world.mira.id, "entry.add", {
+        task: ref,
+        kind: "note",
+        text: `Attic note ${String(n)}`,
+      });
+    }
+    await page.setViewportSize({ width: 1440, height: 560 });
+    await openTask(page, world, ref);
+    const composer = composerOf(page, ref);
+    const bar = await page.evaluate(() =>
+      Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--k-top")),
+    );
+    const before = await composer.boundingBox();
+    if (before === null) throw new Error("The composer has no box");
+    await page.evaluate((by) => {
+      window.scrollBy(0, by);
+    }, before.y - 8);
+    expect((await composer.boundingBox())?.y).toBeLessThan(bar);
+    await rowOf(page, ref).locator('[data-part="source"]').getByRole("img").click();
+    await expect(composer).toBeFocused();
+    await expect(composer).toHaveValue(/Change the sources/u);
+    await expect
+      .poll(async () => (await composer.boundingBox())?.y ?? 0)
+      .toBeGreaterThanOrEqual(bar);
+
+    // The top field, typed into with the list scrolled down, leaves the list where it is.
+    await page.evaluate(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    });
+    const scrolled = await page.evaluate(() => window.scrollY);
+    expect(scrolled).toBeGreaterThan(0);
+    const field = page.getByRole("textbox", { name: "New task" });
+    await field.click();
+    await page.keyboard.type("Buy nails");
+    await expect(field).toHaveValue("Buy nails");
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
+    await field.fill("");
+  });
+
+  test("the composer takes keys from the card's first frame: after Ask, after a click into it, by Tab from the title, and with a kept draft, while the card's reads are held", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, {
+      title: `Renew the parking permit (${tag})`,
+      summary: "The permit runs out at the end of the month.",
+      area: "home",
+    });
+    const composer = composerOf(page, ref);
+    const row = rowOf(page, ref);
+    let release = await holdReads(page);
+    await signIn(page, world, `/s/${world.mira.id}/task/${ref}`);
+    await showsSpace(page, world.mira.name);
+    // Ask from the header's summary, and type on at once.
+    await row.locator('[data-part="summary"]').click();
+    await page.keyboard.type("before Friday");
+    await expect(composer).toHaveValue("Change the summary: before Friday");
+    await expect(composer).toBeFocused();
+    release();
+    // The thread comes in below: the words and the focus stay.
+    await expect(row.getByText("Nothing logged yet.")).toBeVisible({ timeout: SLOW_MS });
+    await expect(composer).toHaveValue("Change the summary: before Friday");
+    await expect(composer).toBeFocused();
+    await page.unrouteAll({ behavior: "wait" });
+
+    // A reload with the reads held: the kept draft shows, and a click into it types on.
+    release = await holdReads(page);
+    await page.reload();
+    await expect(composer).toHaveValue("Change the summary: before Friday", { timeout: SLOW_MS });
+    await composer.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(" please");
+    await expect(composer).toHaveValue("Change the summary: before Friday please");
+
+    // From the title, Tab reaches the composer.
+    await row.locator('[data-part="title"]').focus();
+    let reached = false;
+    for (let i = 0; i < 40 && !reached; i += 1) {
+      await page.keyboard.press("Tab");
+      reached = await composer.evaluate((element) => element === document.activeElement);
+    }
+    expect(reached).toBe(true);
+    await page.keyboard.press("End");
+    await page.keyboard.type("!");
+    await expect(composer).toHaveValue("Change the summary: before Friday please!");
+    release();
+    await page.unrouteAll({ behavior: "wait" });
   });
 
   test("Open without text opens as the tile does, a launch that is not recorded keeps the text, and while a session runs the strip opens another only when asked @one-browser", async ({
@@ -662,6 +870,62 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     expect(found.rows.filter((row) => row.title === title)).toHaveLength(1);
   });
 
+  test("an edit still waiting behind another edit of the task when the page reloads is back as not saved, never lost, and Try again never overwrites a change made since", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const ref = await addTask(world, { title: `Oil the hinges (${tag})`, area: "home" });
+    await openTask(page, world, ref);
+    const row = rowOf(page, ref);
+    // The rename's answer comes only after the page went: the priority waits behind it until then.
+    const updates = calls(page, "task.update");
+    let answer: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    await page.route("**/api/v1/op/task.update", async (route) => {
+      await answered;
+      const response = await route.fetch();
+      await route.fulfill({ response }).catch(() => undefined);
+    });
+    const title = row.locator('[data-part="title"]');
+    await title.focus();
+    await page.keyboard.press("F2");
+    await page.keyboard.press("End");
+    await page.keyboard.type(" and the gate");
+    await page.keyboard.press("Enter");
+    await row
+      .getByRole("radiogroup", { name: "Priority" })
+      .getByRole("radio", { name: "P1" })
+      .click();
+    await page.reload();
+    expect(updates).toHaveLength(1);
+    answer();
+    await page.unrouteAll({ behavior: "wait" });
+    // The rename went out, and the priority is offered again, as any edit that was not saved.
+    await expect(title).toHaveText(`Oil the hinges (${tag}) and the gate`, { timeout: SLOW_MS });
+    const unsaved = row.locator('[data-part="unsaved"]');
+    await expect(unsaved).toHaveAttribute("data-reason", "failed", { timeout: SLOW_MS });
+    // Someone else sets the priority after the reload: Try again meets it as a conflict.
+    const { as_of } = await read(world, ref);
+    await world.op(
+      world.mira.id,
+      "task.update",
+      { task: ref, set: { priority: 2 }, base: as_of },
+      "agent",
+    );
+    await expect(
+      row.getByRole("radiogroup", { name: "Priority" }).getByRole("radio", { name: "P2" }),
+    ).toBeChecked({ timeout: SLOW_MS });
+    await unsaved.locator('[data-part="apply-mine"]').click();
+    await expect(unsaved).toHaveAttribute("data-reason", "conflict", { timeout: SLOW_MS });
+    expect((await read(world, ref)).task.priority).toBe(2);
+    await unsaved.locator('[data-part="apply-mine"]').click();
+    await expect.poll(async () => (await read(world, ref)).task.priority).toBe(1);
+    await expect(unsaved).toHaveCount(0);
+  });
+
   test("a field edit that was not saved is back after a reload with its choices: the connection was down, the task changed under it, the task was finished", async ({
     page,
     world,
@@ -686,7 +950,8 @@ test.describe("[A7.3.12.m5-07.e2e.reload] Nothing typed is lost by a reload", ()
     await unsaved.locator('[data-part="apply-mine"]').click();
     await expect.poll(async () => (await read(world, ref)).task.priority).toBe(1);
     await expect(unsaved).toHaveCount(0);
-    expect(Object.keys(await kept(page))).toEqual([]);
+    // The browser keeps the value until the page hears the answer, then lets it go.
+    await expect.poll(async () => Object.keys(await kept(page))).toEqual([]);
 
     // The task changed under an open editor: Apply mine waits, also after a reload.
     const title = row.locator('[data-part="title"]');

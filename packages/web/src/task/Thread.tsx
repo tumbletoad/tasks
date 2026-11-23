@@ -1,5 +1,5 @@
 // The expanded task's thread (A5 3.7 item 5, 3.9): notes, log entries, sessions and background
-// runs, oldest first, so it reads like a conversation that ends at the composer. Notes and log
+// runs, oldest first, as a conversation reads. Notes and log
 // entries come from the detail (detail.ts); sessions are the task's launch receipts and runs are
 // its run records, which the feed's launch and run events refresh. The last six entries show, and
 // "Earlier" reveals the rest. Each entry: the actor's mark (the person's initial, an agent's
