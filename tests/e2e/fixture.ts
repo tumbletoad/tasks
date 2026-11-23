@@ -27,11 +27,12 @@ export const test = base.extend<
     monitored: World;
   }
 >({
-  // One started only by the tests that use it: the fake `ttam` as the Agent Monitor.
+  // One started only by the tests that use it: the fake `ttam` as the Agent Monitor, and the fake
+  // Codex, so a task can have a background run beside an agent in a terminal.
   monitored: [
     // eslint-disable-next-line no-empty-pattern
     async ({}, use) => {
-      const world = await startWorld(built(), { monitor: true });
+      const world = await startWorld(built(), { monitor: true, runs: true });
       try {
         await use(world);
       } finally {
