@@ -606,8 +606,6 @@ export interface InversionPlan {
   conflicts: FieldConflict[];
   /** PlanOptions.applied: what the rules across rows count from too (applyInversions). */
   applied: number;
-  /** Every task the inversion would move to the Trash, guard or not: removing it does it anyway. */
-  trash: { task: Id<"t">; ref: string }[];
 }
 
 export interface PlanOptions {
@@ -697,7 +695,6 @@ export function planInversions(
     inversions: [],
     conflicts: [],
     applied: options.applied,
-    trash: [],
   };
   const refOf = refsOf(conn, options.refPrefix);
   const rows = new Map<string, RowState>();
@@ -770,9 +767,6 @@ export function planInversions(
       const field = change.field ?? "";
       if (!hasField(entity, field)) throw invalidValue("changes", "field");
       const restore = change.before ?? "null";
-      if (entity === "tasks" && field === table.tombstone && !isLive(parsed(restore))) {
-        plan.trash.push({ task: id as Id<"t">, ref: refOf(id as Id<"t">) });
-      }
       if (provenanceOf(row, field) !== change.afterProv) {
         blocked(
           fieldConflict(entity, id, change.taskId, field, {

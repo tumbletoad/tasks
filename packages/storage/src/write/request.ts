@@ -307,11 +307,6 @@ export interface WriteResult {
    * the next redo tries them again; `conflicts` says why.
    */
   passed?: Id<"op">[];
-  /**
-   * An undo or redo refused with UNDO_CONFLICT that would move tasks to the Trash: each of them,
-   * with its reference. Removing them again does it anyway.
-   */
-  trash?: { task: Id<"t">; ref: string }[];
   /** One per operation, for `applied` and `unchanged`. */
   results: OpResult[];
   /**

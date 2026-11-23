@@ -96,7 +96,6 @@ class World {
         update: call("task.update"),
         finish: call("task.finish"),
         reopen: call("task.reopen"),
-        delete: call("task.delete"),
       },
       history: { undo: call("history.undo"), redo: call("history.redo") },
       receipt: { get: call("receipt.get") },
@@ -1359,6 +1358,8 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     expect(w.lastToast()?.text).toEqual({ id: "toast.undoneRest" });
     // A due time cannot be set by hand: no Restore mine.
     expect(restoreChange("due", conflict.restore)).toBeUndefined();
+    expect(restoreChange("lifecycle", { lifecycle: "active" })).toBeUndefined();
+    expect(restoreChange("priority", null)?.set).toEqual({ priority: 4 });
   });
 
   /** A row another added to M-1 since: a note, a log entry, a run. */
@@ -1374,13 +1375,12 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
     ...extra,
   });
 
-  test("a refused redo says what kind of work others did and who, each apart, and that Redo goes on; Move to Trash anyway moves the task", async () => {
+  test("a refused redo says what kind of work others did and who, each apart, and offers nothing", async () => {
     const w = new World([task(1)]);
     w.answer("history.redo", () => {
       throw appError("conflict", {
         cause: "UNDO_CONFLICT",
         commit: `op_${"11".padStart(26, "0")}`,
-        trash: ["M-1"],
         conflicts: [
           added("notes", "Codex"),
           added("notes", "Codex"),
@@ -1408,21 +1408,16 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
         count: 1,
       },
     });
-    expect(shown?.action?.label).toEqual({ id: "toast.trashAnyway" });
-    w.answer("task.delete", () => ({ result: "deleted", tasks: ["M-1"], as_of: w.asOf(12) }));
-    shown?.action?.run();
-    await flush();
-    expect(w.calls.at(-1)).toMatchObject({ name: "task.delete", input: { tasks: ["t_00001"] } });
+    expect(shown?.action).toBeUndefined();
   });
 
-  test("a run's progress is said as the run's, at its time; an undo of a restore offers Move to Trash anyway after a partial undo", async () => {
+  test("a run's progress is said as the run's, at its time", async () => {
     const w = new World([task(1)]);
     const mine = `op_${"11".padStart(26, "0")}`;
     w.answer("history.undo", () => {
       throw appError("conflict", {
         cause: "UNDO_CONFLICT",
         commit: mine,
-        trash: ["M-1"],
         conflicts: [added("runs", "user", { value: { state: "running" } })],
       });
     });
@@ -1435,23 +1430,6 @@ describe("[A5.3.12.web.undo] check-off with its hold, undo and redo, and the Res
         at: Date.parse("2026-11-12T10:42:00.000Z"),
       },
     });
-    w.answer("history.undo", () => ({
-      result: "partial",
-      commit: mine,
-      tasks: [],
-      task_count: 0,
-      as_of: w.asOf(13),
-      unresolved: [],
-    }));
-    w.answer("task.delete", () => ({ result: "deleted", tasks: ["M-1"], as_of: w.asOf(14) }));
-    shown?.action?.run();
-    await flush();
-    expect(w.calls.slice(-2)).toMatchObject([
-      { name: "history.undo", input: { partial: true, commit: mine } },
-      { name: "task.delete", input: { tasks: ["t_00001"] } },
-    ]);
-    expect(restoreChange("lifecycle", { lifecycle: "active" })).toBeUndefined();
-    expect(restoreChange("priority", null)?.set).toEqual({ priority: 4 });
   });
 
   test("nothing to undo, a newer change first, and a toast whose commit is unknown each say so and change nothing", async () => {

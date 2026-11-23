@@ -194,7 +194,6 @@ function receiptError(found: Found): Error {
         ...(c.more === undefined ? {} : { more: c.more }),
       })),
       ...(found.target === undefined ? {} : { commit: found.target }),
-      ...(found.trash === undefined ? {} : { trash: found.trash }),
     },
   });
 }
@@ -241,8 +240,6 @@ interface Problem {
   readonly conflicts: readonly Conflict[];
   /** The commit an undo or redo meant, which its UNDO_CONFLICT names (A1 3.10.1). */
   readonly commit?: string;
-  /** The tasks a refused undo or redo would move to the Trash: removing them does it anyway. */
-  readonly trash: readonly string[];
 }
 
 /**
@@ -297,13 +294,11 @@ function problemOf(error: unknown): Problem | undefined {
       typeof (c as Conflict).at === "string",
   );
   const commit = record["commit"];
-  const trash = record["trash"];
   return {
     code,
     cause: typeof record["cause"] === "string" ? record["cause"] : "",
     conflicts,
     ...(typeof commit === "string" && commit !== "" ? { commit } : {}),
-    trash: Array.isArray(trash) ? trash.filter((t): t is string => typeof t === "string") : [],
   };
 }
 
@@ -1435,9 +1430,8 @@ export class Edits {
 
   /**
    * An undo or redo the service refused. A conflict says what others did and offers the one action
-   * that fits: "Move to Trash anyway" when the change would move a task there, "Restore mine" when
-   * every field of the change conflicts, "Undo the rest" when only some do (A5 3.12). A redo has
-   * no partial form.
+   * that fits: "Restore mine" when every field of the change conflicts, "Undo the rest" when only
+   * some do (A5 3.12). A redo has no partial form.
    */
   #historyFailed(
     kind: "undo" | "redo",
@@ -1489,22 +1483,6 @@ export class Edits {
     // Only some of the change's fields conflict: the rest can be undone and the others kept.
     const some = kind === "undo" && known !== undefined && known.some((f) => !fields.has(f));
     const text = conflictText(conflicts, !some && restore !== undefined);
-    // The change would move a task to the Trash: moving it there now does it anyway.
-    const [only, ...others] = problem.trash;
-    const row = only === undefined || others.length > 0 ? undefined : this.#deps.rowOf(only);
-    if (row !== undefined) {
-      say({
-        kind: "error",
-        text,
-        action: {
-          label: { id: "toast.trashAnyway" },
-          run: () => {
-            void this.#trashAnyway(kind, row, commit);
-          },
-        },
-      });
-      return;
-    }
     // Undo the rest, for a commit the page can name: the fields that pass are undone, the others
     // stay as the other actor set them.
     const undoRest =
@@ -1532,23 +1510,6 @@ export class Edits {
           void this.#restore(kind, restore, commit);
         },
       },
-    });
-  }
-
-  /**
-   * "Move to Trash anyway": the task to the Trash as a new change of the person's, with a fresh
-   * base. After an undo, the change is first undone as far as it can be, as Restore mine does, so
-   * the next Ctrl+Z reaches the change below.
-   */
-  #trashAnyway(kind: "undo" | "redo", row: TaskRow, commit: string | undefined): Promise<void> {
-    if (kind !== "undo" || commit === undefined) {
-      this.trash(row);
-      return Promise.resolve();
-    }
-    const { answer, call } = this.#history("undo", commit, true);
-    return this.#outcome(answer, call, (decision, say) => {
-      if (decision.ok) this.trash(this.#deps.rowOf(row.ref) ?? row);
-      else this.#historyFailed("undo", decision.error, commit, say);
     });
   }
 

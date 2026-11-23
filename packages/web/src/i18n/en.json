@@ -635,7 +635,6 @@
   "toast.workFolder": "{name} changed {ref, select, none {its folder} other {the folder of {ref}}}",
   "toast.workRuns": "{count, plural, one {A run made progress} other {# runs made progress}} on {ref}",
   "toast.workOther": "{name} changed {ref, select, none {it} other {{ref}}}",
-  "toast.trashAnyway": "Move to Trash anyway",
   "toast.undoRest": "Undo the rest",
   "toast.restoreMine": "Restore mine",
   "toast.applyMine": "Apply mine",

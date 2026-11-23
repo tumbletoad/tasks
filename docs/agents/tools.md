@@ -963,7 +963,6 @@ When `found` is `true`:
 | `commit` | string | no | The commit it wrote |
 | `target` | string | no | An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo |
 | `passed_over` | string[] | no | A redo's: the undone changes it could not redo, which stay for the next redo |
-| `trash` | string[] | no | An undo or redo's UNDO_CONFLICT: the tasks it would move to the Trash |
 | `results` | object[], max 50 items | yes | One result per operation, the first 50 of an import's |
 | `results[].i` | integer, 0 to 999999 | yes | Index of the operation in the request |
 | `results[].status` | "created" \| "updated" \| "unchanged" \| "existing" \| "proposed" | yes | What the operation did |
