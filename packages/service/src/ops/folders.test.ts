@@ -116,9 +116,9 @@ describe("[A1.3.15.folders.bounded] a look at the disk is timed by the time this
       signals.push(signal);
       return new Promise<never>(() => undefined);
     }, 20);
-    await bounded(async (signal) => {
+    await bounded((signal) => {
       signals.push(signal);
-      return "answered";
+      return Promise.resolve("answered");
     }, 20);
     expect(signals.map((s) => s.aborted)).toEqual([true, false]);
   });
