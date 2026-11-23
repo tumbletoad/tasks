@@ -124,6 +124,13 @@
   font-size: 0.8125rem;
 }
 
+/* An archived group a `#name` named: said, with nothing to undo. */
+.chip[data-kind="archived"] {
+  padding-inline: 10px;
+  border-style: dashed;
+  color: var(--k-muted);
+}
+
 .keep {
   display: inline-grid;
   place-items: center;

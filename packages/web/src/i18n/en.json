@@ -68,6 +68,7 @@
   "capture.waiting": "Waiting on {who}",
   "capture.star": "Starred",
   "capture.inbox": "Inbox",
+  "capture.archived": "{name} is archived",
 
   "search.tasks": "To do",
   "search.completed": "Completed",

@@ -5,7 +5,9 @@
 // (a date, p1 to p3, #area/project, @person, *) show under the field as what they became, each
 // with a cross that keeps its words as text, and the title they leave. In an area's view the task
 // lands in that area unless the person turns that off. An archived area or project takes no new
-// task here: `#` neither offers nor reads it, and its own view adds to no area. `n` (outside a text field) comes here to add.
+// task here: `#` does not offer it, a `#name` of one says it is archived and leaves its words in
+// the title (an area's name never falls through to a live project of that name), and an archived
+// area's own view adds to no area. `n` (outside a text field) comes here to add.
 // Searching is a page state, the search route: `/` (outside a text field), Ctrl+K or the lens at
 // the field's start enter it, and the field then
 // says so in its icon, its name and its placeholder, before anything is pressed. Typing there
@@ -314,11 +316,19 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
     [],
   );
 
-  // New work goes to live groups only: an archived one is neither suggested nor taken by name.
-  const { areas, projects } = useMemo(
-    () => liveGroups(state.areas.values(), state.projects.values()),
-    [state.areas, state.projects],
-  );
+  // New work goes to live groups only: an archived one is neither suggested nor taken, and its name
+  // is said to be archived rather than read as another group's.
+  const { areas, projects, archived } = useMemo(() => {
+    const open = liveGroups(state.areas.values(), state.projects.values());
+    const liveIds = new Set([...open.areas, ...open.projects].map((g) => g.id));
+    return {
+      ...open,
+      archived: {
+        areas: [...state.areas.values()].filter((a) => !liveIds.has(a.id)),
+        projects: [...state.projects.values()].filter((p) => !liveIds.has(p.id)),
+      },
+    };
+  }, [state.areas, state.projects]);
   const inArea = location.pathname.startsWith(`/s/${space}/area/`);
   const hereArea = inArea ? params.area : undefined;
   const hereProject = inArea ? params.project : undefined;
@@ -327,8 +337,10 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
       hereArea === undefined
         ? undefined
         : { area: hereArea, ...(hereProject === undefined ? {} : { project: hereProject }) };
-    return parseCapture(text, { today: clock.today, areas, projects, here, kept });
-  }, [text, clock.today, areas, projects, hereArea, hereProject, kept]);
+    return parseCapture(text, { today: clock.today, areas, projects, archived, here, kept });
+  }, [text, clock.today, areas, projects, archived, hereArea, hereProject, kept]);
+  // What the text's shortcuts became, and an archived group a `#name` named instead.
+  const read = capture.chips.length > 0 || capture.archived !== undefined;
   const typed = searching ? undefined : groupTyped(text, caret);
   const suggestions = typed === undefined ? [] : groupSuggestions(typed.typed, areas, projects);
 
@@ -393,11 +405,7 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
 
   const value = searching ? query : text;
   const label = searching ? t("top.search") : t("top.newTask");
-  const showPanel =
-    within &&
-    !searching &&
-    text.trim() !== "" &&
-    (capture.chips.length > 0 || suggestions.length > 0);
+  const showPanel = within && !searching && text.trim() !== "" && (read || suggestions.length > 0);
 
   return (
     <div className={styles.bar}>
@@ -511,7 +519,7 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
                 ))}
               </div>
             )}
-            {capture.chips.length === 0 ? null : (
+            {!read ? null : (
               <ul className={styles.chips}>
                 {capture.chips.map((chip) => {
                   const shown = chipLabel(t, chip, clock.locale);
@@ -544,9 +552,14 @@ export function TopBar({ space, live }: { readonly space: string; readonly live:
                     </li>
                   );
                 })}
+                {capture.archived === undefined ? null : (
+                  <li className={styles.chip} data-kind="archived">
+                    <span dir="auto">{t("capture.archived", { name: capture.archived })}</span>
+                  </li>
+                )}
               </ul>
             )}
-            {capture.chips.length === 0 ? null : (
+            {!read ? null : (
               <p className={styles.title}>
                 {capture.draft === undefined ? (
                   t("top.needsTitle")

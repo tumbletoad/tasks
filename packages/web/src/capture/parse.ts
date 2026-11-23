@@ -26,6 +26,14 @@ export interface CaptureContext {
   readonly today: string;
   readonly areas: readonly CaptureArea[];
   readonly projects: readonly CaptureProject[];
+  /**
+   * The archived areas and projects, and the projects of archived areas: they take no new task, but
+   * a name of theirs still means them, so it never falls through to another group of that name.
+   */
+  readonly archived?: {
+    readonly areas: readonly CaptureArea[];
+    readonly projects: readonly CaptureProject[];
+  };
   /** The area (and project) of the view the person is in: a capture lands there by default. */
   readonly here?: { readonly area: string; readonly project?: string } | undefined;
   /** The keys of shortcuts the person turned back into text. */
@@ -77,6 +85,8 @@ export interface Capture {
   readonly chips: readonly Chip[];
   /** The task to add; none while the title is empty. */
   readonly draft: CaptureDraft | undefined;
+  /** The archived group the first `#name` that matched none named: its words stay in the title. */
+  readonly archived?: string;
 }
 
 interface Word {
@@ -209,33 +219,52 @@ const PRIORITY = /^p([1-4])$/u;
 const PERSON = /^@([\p{L}\p{N}][\p{L}\p{N}._'-]*)$/u;
 const GROUP = /^#([^#/\s]+)(?:\/([^#/\s]+))?$/u;
 
-/** The area and project `#words` names, when it names exactly one. */
+/**
+ * The area and project `#words` names, when it names exactly one live one; the archived group it
+ * names, when it names one and no live one has the name; else none. An area's name comes before a
+ * project's, archived or not.
+ */
 function groupOf(
   word: string,
   areas: readonly CaptureArea[],
   projects: readonly CaptureProject[],
-): { area: CaptureArea; project?: CaptureProject } | undefined {
+  shelved: NonNullable<CaptureContext["archived"]>,
+): { area: CaptureArea; project?: CaptureProject } | { archived: string } | undefined {
   const match = GROUP.exec(word);
   if (match === null) return undefined;
   const first = slugOf(match[1] ?? "");
   const second = match[2] === undefined ? undefined : slugOf(match[2]);
   if (first === "") return undefined;
   const areasNamed = areas.filter((a) => slugOf(a.title) === first);
+  const shelvedArea = shelved.areas.find((a) => slugOf(a.title) === first);
   if (second !== undefined) {
+    if (areasNamed.length === 0) {
+      return shelvedArea === undefined ? undefined : { archived: shelvedArea.title };
+    }
     if (areasNamed.length !== 1) return undefined;
     const area = areasNamed[0] as CaptureArea;
     const inArea = projects.filter((p) => p.area_id === area.id && slugOf(p.title) === second);
-    return inArea.length === 1 ? { area, project: inArea[0] as CaptureProject } : undefined;
+    if (inArea.length === 1) return { area, project: inArea[0] as CaptureProject };
+    if (inArea.length > 1) return undefined;
+    const gone = shelved.projects.find((p) => p.area_id === area.id && slugOf(p.title) === second);
+    return gone === undefined ? undefined : { archived: gone.title };
   }
   if (areasNamed.length === 1) return { area: areasNamed[0] as CaptureArea };
   if (areasNamed.length > 1) return undefined;
+  if (shelvedArea !== undefined) return { archived: shelvedArea.title };
   // A project's name alone, when one project in an area has it.
   const named = projects.filter((p) => slugOf(p.title) === first && p.area_id !== undefined);
-  if (named.length !== 1) return undefined;
-  const project = named[0] as CaptureProject;
+  if (named.length > 1) return undefined;
+  const project = named[0];
+  if (project === undefined) {
+    const gone = shelved.projects.find((p) => slugOf(p.title) === first);
+    return gone === undefined ? undefined : { archived: gone.title };
+  }
   const area = areas.find((a) => a.id === project.area_id);
   return area === undefined ? undefined : { area, project };
 }
+
+const NOTHING_ARCHIVED = { areas: [], projects: [] } as const;
 
 /** The key a chip is kept by: its kind and its words, in lower case. */
 const keyOf = (kind: ChipKind, text: string): string => `${kind}:${text.toLowerCase()}`;
@@ -245,6 +274,7 @@ export const HERE_KEY = "area:@view";
 
 export function parseCapture(text: string, ctx: CaptureContext): Capture {
   const kept = ctx.kept ?? new Set<string>();
+  let archived: string | undefined;
   const words = wordsOf(text);
   const found: Chip[] = [];
   const seen = new Set<ChipKind>();
@@ -309,8 +339,9 @@ export function parseCapture(text: string, ctx: CaptureContext): Capture {
       const who = person[1] ?? "";
       if (one({ kind: "waiting", key: keyOf("waiting", s.text), ...s, who })) continue;
     }
-    const group = groupOf(word.text, ctx.areas, ctx.projects);
-    if (group !== undefined) one({ kind: "area", key: keyOf("area", s.text), ...s, ...group });
+    const group = groupOf(word.text, ctx.areas, ctx.projects, ctx.archived ?? NOTHING_ARCHIVED);
+    if (group !== undefined && "archived" in group) archived ??= group.archived;
+    else if (group !== undefined) one({ kind: "area", key: keyOf("area", s.text), ...s, ...group });
   }
 
   // The view's area, unless the text names one or the person turned it off.
@@ -336,7 +367,12 @@ export function parseCapture(text: string, ctx: CaptureContext): Capture {
     .filter((_, i) => !taken.has(i))
     .map((w) => w.text)
     .join(" ");
-  return { title, chips: found, draft: title === "" ? undefined : draftOf(title, found) };
+  return {
+    title,
+    chips: found,
+    draft: title === "" ? undefined : draftOf(title, found),
+    ...(archived === undefined ? {} : { archived }),
+  };
 }
 
 function draftOf(title: string, chips: readonly Chip[]): CaptureDraft {
