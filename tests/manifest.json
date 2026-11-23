@@ -975,6 +975,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.5.rescue.whole",
+      "title": "A rescue of a space in use holds every change committed before it: a checkpoint between the copies of the database and of its log makes it copy again, and a space that changes during every copy is refused with no rows file",
+      "source": "A1 3.2",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.5.restore.own-space",
       "title": "Through the service, a space's backup list and a restore by a backup's name keep to the space's own backups in a backups folder spaces share, and a restore in place takes only a backup of the space its entry names, also when the folder's database and space.json no longer say which space it held",
       "source": "A1 3.18",

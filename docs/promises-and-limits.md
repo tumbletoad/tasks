@@ -73,6 +73,8 @@ the behaviour it describes, and keep each one to a sentence or two.
   restored.
 - `ttasks space restore latest` restores the newest backup that restores. When the disk has no
   room for it, it says so and restores no older one in its place.
+- `ttasks space rescue` writes every row saved before it began that can still be read, also while
+  the space is in use. A space that keeps changing while its files are copied is refused.
 - Restoring over a space keeps what was there before, and takes only a backup of that space, also
   when its files no longer say which space it was. A space's backup list, and a restore by a
   backup's name, keep to that space's backups in a backups folder spaces share.

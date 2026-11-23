@@ -1603,6 +1603,62 @@ async function addAttachment(
   writeFileSync(join(dir, hash), blob);
 }
 
+describe("[A1.5.rescue.whole] a rescue of a space in use holds every change committed before it", () => {
+  test("a checkpoint between the copy of the database and of its log loses no committed task", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    // A connection that stays open keeps the log beside the database, as a served space does.
+    const holder = await rawWriter(folder);
+    try {
+      await writeCommits(folder, 3);
+      const tasks = Number(holder.prepare("SELECT count(*) AS n FROM tasks").get()?.["n"]);
+      expect(tasks).toBe(2);
+      let checkpoints = 0;
+      const report = rescueSpace(checked, folder, {
+        now: () => Date.UTC(2026, 10, 14),
+        copied: (suffix) => {
+          // The space's writer moves the log into the database, and empties the log, just now.
+          if (suffix !== "" || checkpoints > 0) return;
+          checkpoints += 1;
+          holder.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+        },
+      });
+      expect(checkpoints).toBe(1);
+      expect(report.failed).toEqual([]);
+      const rescued = readFileSync(report.file, "utf8")
+        .trimEnd()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { table: string });
+      expect(rescued.filter((l) => l.table === "tasks")).toHaveLength(tasks);
+    } finally {
+      holder.close();
+    }
+  });
+
+  test("a space that changes during every copy is refused, and no rows file is written", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    const holder = await rawWriter(folder);
+    try {
+      await writeCommits(folder, 3);
+      // A table of its own: each insert is a commit into the log, whatever the product allows.
+      holder.exec("CREATE TABLE churn (n INTEGER)");
+      await expectCode(
+        () =>
+          rescueSpace(checked, folder, {
+            copied: (suffix) => {
+              if (suffix === "") holder.exec("INSERT INTO churn VALUES (1)");
+            },
+          }),
+        "SPACE_CHANGED",
+      );
+      expect(readdirSync(join(folder, "exchange", "rescued"))).toEqual([]);
+    } finally {
+      holder.close();
+    }
+  });
+});
+
 describe("[A1.5.bundle.secret-scan] the export's secret scan", () => {
   // Built from parts: the source holds no token.
   const token = ["gh", "p_", "aB3dE5".repeat(6)].join("");

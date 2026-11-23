@@ -16,7 +16,10 @@
 //   folder `exchange/rescued/.rescue.tmp-<random>`, and only that copy is opened. Every file that
 //   was in the space folder is the same afterwards; the one new file is the rescued one, created
 //   exclusively, and `exchange/` is the folder meant for files people look at (A1 3.1). The scratch
-//   folder is removed by its full name; a crash's is listed by `ttasks space list`.
+//   folder is removed by its full name; a crash's is listed by `ttasks space list`. The space may
+//   be open meanwhile, so the files are copied again when a writer changed one of them during the
+//   copy (fileStates): a database from before a checkpoint beside a log from after it would lose
+//   the rows the checkpoint moved, with every table read in full.
 //   The rows are read by the product's own tables and columns at the database's revision
 //   (backup/snapshot.ts productTables), so the report names only those: a table that fails partway
 //   keeps the rows read before the failure and is named by its product name.
@@ -135,6 +138,23 @@ export const RESCUE_TEMP_PREFIX = ".rescue.tmp-";
 /** The files of a space's database a rescue copies: the database, then its side files. */
 const DATABASE_FILES = ["", "-wal", "-shm", "-journal"] as const;
 
+/** How often a rescue copies the files again when a writer changed them during the copy. */
+const COPY_ATTEMPTS = 3;
+
+/**
+ * The identity, size and modification time of the files whose content a copy must take from one
+ * moment. The shared-memory index is left out: readers write it, and SQLite rebuilds it from the
+ * log when the copy opens alone.
+ */
+function fileStates(db: string): string {
+  return ["", "-wal", "-journal"]
+    .map((suffix) => {
+      const s = fsCall(() => lstatSync(`${db}${suffix}`, { bigint: true, throwIfNoEntry: false }));
+      return s === undefined ? "-" : `${String(s.ino)}:${String(s.size)}:${String(s.mtimeNs)}`;
+    })
+    .join(" ");
+}
+
 export interface RescueRecord extends JsonlReport {
   /** The JSON lines file the rows went into. */
   file: string;
@@ -147,6 +167,8 @@ export interface RescueOptions {
   steps?: readonly SchemaStep[];
   /** Free bytes for a folder. Default: the file system's. */
   freeBytes?: (folder: string) => number;
+  /** Tests: runs after each of the database's files (`""`, `-wal`, ...) was copied. */
+  copied?: (suffix: string) => void;
 }
 
 /** The first bytes of a rollback journal's header (SQLite's file format, "The Rollback Journal"). */
@@ -323,10 +345,21 @@ export function rescueSpace(
   });
   try {
     const copy = join(scratch, DATABASE_FILE);
-    for (const suffix of DATABASE_FILES) {
-      const copied = copyPlain(`${db}${suffix}`, `${copy}${suffix}`);
-      if (suffix === "" && !copied) {
-        throw new StorageError("SPACE_NOT_FOUND", "No space found: the database is missing");
+    for (let attempt = 1; ; attempt += 1) {
+      const before = fileStates(db);
+      for (const suffix of DATABASE_FILES) {
+        const copied = copyPlain(`${db}${suffix}`, `${copy}${suffix}`);
+        if (suffix === "" && !copied) {
+          throw new StorageError("SPACE_NOT_FOUND", "No space found: the database is missing");
+        }
+        options.copied?.(suffix);
+      }
+      if (fileStates(db) === before) break;
+      // A writer committed or checkpointed while the files were copied one after another: the
+      // copy may hold the database from before and the log from after, and lose what moved.
+      for (const suffix of DATABASE_FILES) removeQuietly(`${copy}${suffix}`);
+      if (attempt === COPY_ATTEMPTS) {
+        throw new StorageError("SPACE_CHANGED", "The space kept changing while it was copied");
       }
     }
     // An empty database file is never a space's (A1 3.1), and SQLite would delete the copied -wal.
