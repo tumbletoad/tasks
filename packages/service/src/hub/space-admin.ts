@@ -47,6 +47,8 @@ export type AdminJob =
       readonly folder: string;
       /** The space the folder is registered as: another space's rows are refused. */
       readonly spaceId?: Id<"sp">;
+      /** This service has the space open: it is read beside its writer (rescue.ts). */
+      readonly served: boolean;
     };
 
 export interface AdminBackup {

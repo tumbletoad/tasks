@@ -917,6 +917,7 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
         const done = await runAdmin({
           kind: "rescue",
           folder: manager.folderOf(view.entry),
+          served: view.state === "open" || view.state === "read_only",
           ...(spaceId === undefined ? {} : { spaceId }),
         });
         return done.kind === "rescue"

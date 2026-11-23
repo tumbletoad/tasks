@@ -4,7 +4,7 @@
 // closed, and the daily backup goes to the folder this machine set for the space also when its
 // space.json is gone. Services run in this process on temporary homes; fixture spaces only.
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import {
   backupSpace,
@@ -386,6 +386,26 @@ describe("[A1.5.backup.folder-away] a backups folder set for the space that is n
 });
 
 describe("[A1.5.rescue.registered] a rescue takes only the rows of the space it is for", () => {
+  test(
+    "a rescue of a space the service has open reads it beside its writer and confirms which space it is",
+    async () => {
+      const machine = FIXTURE_MACHINE.id;
+      const { home, spaces } = setUp("rescue-open", machine);
+      const work = await fixtureSpace(join(spaces, "work"), machine);
+      await writeCommits(work.folder, 3);
+      const { user } = await start(home, [work.folder]);
+      const done = (await call(user, "space/rescue", { space: work.folder }))["rescue"] as {
+        file: string;
+        failed: string[];
+        identity: string;
+      };
+      expect(done).toMatchObject({ failed: [], identity: "confirmed" });
+      const rescued = join(work.folder, "exchange", "rescued");
+      expect(readdirSync(rescued)).toEqual([basename(done.file)]);
+    },
+    SLOW,
+  );
+
   test(
     "a rescue of a space whose folder now holds another space's files is refused, and writes no rows",
     async () => {

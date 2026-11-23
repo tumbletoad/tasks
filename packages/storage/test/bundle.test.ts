@@ -11,6 +11,7 @@ import {
   statSync,
   symlinkSync,
   truncateSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { basename, join } from "node:path";
@@ -1725,6 +1726,77 @@ describe("[A1.5.rescue.whole] a rescue of a space in use holds every change comm
         .split("\n")
         .map((line) => JSON.parse(line) as { table: string });
       expect(rescued.filter((l) => l.table === "tasks")).toHaveLength(tasks);
+    } finally {
+      holder.close();
+    }
+  });
+
+  test("a checkpoint that starts the log over between the copies is seen without the files' times, which a file system with coarse times keeps", async () => {
+    const checked = await checkedDriver();
+    const { folder } = await createFixtureSpace(folders.make());
+    await writeCommits(folder, 4);
+    const holder = await rawWriter(folder);
+    try {
+      // The tasks are in the database file, their new titles only in the log.
+      holder.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      holder.exec("UPDATE tasks SET title = title || ' (new)'");
+      const db = join(folder, "space.db");
+      // One tick of a coarse clock: no write below moves the files' times.
+      const tick = new Date(Date.UTC(2026, 10, 14));
+      const coarse = (): void => {
+        for (const file of [db, `${db}-wal`]) utimesSync(file, tick, tick);
+      };
+      coarse();
+      const sizes = (): number[] => [db, `${db}-wal`].map((file) => statSync(file).size);
+      const before = sizes();
+      let restarts = 0;
+      const report = rescueSpace(checked, folder, {
+        now: () => Date.UTC(2026, 10, 14, 1),
+        copied: (suffix) => {
+          if (suffix !== "" || restarts > 0) return;
+          restarts += 1;
+          // The writer moves the log into the database and starts the log over with a commit of
+          // another table's page, in the same files with the same sizes and times.
+          holder.exec("PRAGMA wal_checkpoint(RESTART)");
+          holder.exec("UPDATE space SET name = 'Mira again' WHERE one = 1");
+          coarse();
+        },
+      });
+      expect(restarts).toBe(1);
+      expect(sizes()).toEqual(before);
+      const titles = readFileSync(report.file, "utf8")
+        .trimEnd()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { table: string; row: { title?: string } })
+        .filter((line) => line.table === "tasks")
+        .map((line) => line.row.title);
+      expect(titles.length).toBeGreaterThan(0);
+      for (const title of titles) expect(title).toMatch(/ \(new\)$/);
+    } finally {
+      holder.close();
+    }
+  });
+
+  test("a space its service has open is read as one snapshot through SQLite, without copying its files", async () => {
+    const checked = await checkedDriver();
+    const { folder, space } = await createFixtureSpace(folders.make());
+    // A connection that stays open keeps the log beside the database, as a served space does.
+    const holder = await rawWriter(folder);
+    try {
+      await writeCommits(folder, 3);
+      const tasks = Number(holder.prepare("SELECT count(*) AS n FROM tasks").get()?.["n"]);
+      const copied: string[] = [];
+      const report = rescueSpace(checked, folder, {
+        served: true,
+        spaceId: space.spaceId,
+        now: () => Date.UTC(2026, 10, 14),
+        copied: (suffix) => copied.push(suffix),
+      });
+      expect(copied).toEqual([]);
+      expect(report).toMatchObject({ identity: "confirmed", failed: [] });
+      const rescued = readFileSync(report.file, "utf8").trimEnd().split("\n");
+      expect(rescued.filter((line) => line.startsWith('{"table":"tasks"'))).toHaveLength(tasks);
+      expect(readdirSync(join(folder, "exchange", "rescued"))).toEqual([basename(report.file)]);
     } finally {
       holder.close();
     }

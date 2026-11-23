@@ -101,11 +101,10 @@ async function run(job: AdminJob): Promise<AdminResult> {
       return { kind: "restore", spaceId: restored.space.spaceId, backup };
     }
     case "rescue": {
-      const rescued = rescueSpace(
-        checked,
-        job.folder,
-        job.spaceId === undefined ? {} : { spaceId: job.spaceId },
-      );
+      const rescued = rescueSpace(checked, job.folder, {
+        served: job.served,
+        ...(job.spaceId === undefined ? {} : { spaceId: job.spaceId }),
+      });
       return {
         kind: "rescue",
         file: rescued.file,

@@ -1008,7 +1008,7 @@
     },
     {
       "id": "A1.5.rescue.whole",
-      "title": "A rescue of a space in use holds every change committed before it: a checkpoint between the copies of the database and of its log makes it copy again, and a space that changes during every copy is refused with no rows file",
+      "title": "A rescue of a space in use holds every change committed before it: a space its service has open is read in one read transaction beside its writer; otherwise a checkpoint between the copies of the database and of its log makes it copy again, seen by what the files say of themselves and not by their times, which a file system with coarse times keeps; a space that changes during every copy is refused with no rows file",
       "source": "A1 3.2",
       "owner": "M3",
       "kind": "ci",

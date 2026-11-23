@@ -10,17 +10,20 @@
 //   twice.
 // - rescueSpace ("Rescue readable data"): every row that can still be read into
 //   `exchange/rescued/rescued-<utc>.jsonl` in the space folder, for review (bundle/jsonl.ts's
-//   format). RESCUE NEVER OPENS THE DAMAGED ORIGINAL: opening a database, read-only too, can delete
-//   a write-ahead log beside it or play a rollback journal back, and either can be the last
-//   recovery material. So the database file and its side files (`-wal`, `-shm`, `-journal`) are
-//   copied byte for byte, by plain file reads that never go through SQLite, into a private scratch
-//   folder `exchange/rescued/.rescue.tmp-<random>`, and only that copy is opened. Every file that
-//   was in the space folder is the same afterwards; the one new file is the rescued one, created
+//   format). A space its service has open is read as a backup reads it: one read transaction on a
+//   read-only connection beside the writer, one consistent moment. RESCUE NEVER OPENS A DAMAGED
+//   ORIGINAL THAT NOTHING HAS OPEN: opening a database, read-only too, can play a rollback journal
+//   back or leave files beside it, and the journal can be the last recovery material. So the
+//   database file and its side files (`-wal`, `-shm`, `-journal`) are copied byte for byte, by
+//   plain file reads that never go through SQLite, into a private scratch folder
+//   `exchange/rescued/.rescue.tmp-<random>`, and only that copy is opened. Every file that was in
+//   the space folder is the same afterwards; the one new file is the rescued one, created
 //   exclusively, and `exchange/` is the folder meant for files people look at (A1 3.1). The scratch
-//   folder is removed by its full name; a crash's is listed by `ttasks space list`. The space may
-//   be open meanwhile, so the files are copied again when a writer changed one of them during the
-//   copy (fileStates): a database from before a checkpoint beside a log from after it would lose
-//   the rows the checkpoint moved, with every table read in full.
+//   folder is removed by its full name; a crash's is listed by `ttasks space list`. Another process
+//   may write the space meanwhile, so the files are copied again when what they say of themselves
+//   changed during the copy (fileStates, never their times): a database from before a checkpoint
+//   beside a log from after it would lose the rows the checkpoint moved, with every table read in
+//   full.
 //   The rows are read by the product's own tables and columns at the database's revision
 //   (backup/snapshot.ts productTables), so the report names only those: a table that fails partway
 //   keeps the rows read before the failure and is named by its product name.
@@ -52,7 +55,7 @@ import {
 import { isId, type Id } from "../ids.ts";
 import { DATABASE_FILE } from "../manifest.ts";
 import { stepPosition } from "../migrate/steps.ts";
-import { applyPragmas, BUSY_TIMEOUT_MS, openUnconfigured } from "../open.ts";
+import { applyPragmas, BUSY_TIMEOUT_MS, openReader, openUnconfigured } from "../open.ts";
 import { inRange } from "../rows.ts";
 import type { SchemaStep } from "../schema.ts";
 import { checkSpacePath } from "../space-path.ts";
@@ -132,15 +135,46 @@ const DATABASE_FILES = ["", "-wal", "-shm", "-journal"] as const;
 const COPY_ATTEMPTS = 3;
 
 /**
- * The identity, size and modification time of the files whose content a copy must take from one
- * moment. The shared-memory index is left out: readers write it, and SQLite rebuilds it from the
- * log when the copy opens alone.
+ * The bytes at the start of each file a copy must take from one moment that say what changed in it
+ * (SQLite's file format): the database header with its change counter, which every commit moves
+ * outside WAL mode; the log's header with its checkpoint sequence and salts, which change whenever a
+ * checkpoint starts the log over, the one change between the two copies that loses what the
+ * checkpoint moved; a rollback journal's header, new with each transaction.
+ */
+const HEADER_BYTES = { "": 100, "-wal": 32, "-journal": 28 } as const;
+
+/** The first `bytes` bytes of the file at `path`, as hex, or "-" when it is not there. */
+function headerOf(path: string, bytes: number): string {
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_RDONLY | NO_FOLLOW);
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return "-";
+    throw fsError(error);
+  }
+  try {
+    const buffer = Buffer.alloc(bytes);
+    const read = fsCall(() => readSync(fd, buffer, 0, bytes, 0));
+    return buffer.subarray(0, read).toString("hex");
+  } finally {
+    closeQuietly(fd);
+  }
+}
+
+/**
+ * What the database's files say of themselves, compared before and after a copy: each one's
+ * identity, size (a log that grows by commits keeps its header) and header (HEADER_BYTES). Never
+ * their times: a file system with coarse times gives a checkpoint and the copy before it one time.
+ * The shared-memory index is left out: readers write it, and SQLite rebuilds it from the log when
+ * the copy opens alone.
  */
 function fileStates(db: string): string {
-  return ["", "-wal", "-journal"]
+  return (Object.keys(HEADER_BYTES) as (keyof typeof HEADER_BYTES)[])
     .map((suffix) => {
-      const s = fsCall(() => lstatSync(`${db}${suffix}`, { bigint: true, throwIfNoEntry: false }));
-      return s === undefined ? "-" : `${String(s.ino)}:${String(s.size)}:${String(s.mtimeNs)}`;
+      const path = `${db}${suffix}`;
+      const s = fsCall(() => lstatSync(path, { bigint: true, throwIfNoEntry: false }));
+      if (s === undefined) return "-";
+      return `${String(s.ino)}:${String(s.size)}:${headerOf(path, HEADER_BYTES[suffix])}`;
     })
     .join(" ");
 }
@@ -158,6 +192,11 @@ export interface RescueRecord extends JsonlReport {
 export interface RescueOptions {
   /** The space the folder is registered as. A database that names another one is refused. */
   spaceId?: Id<"sp">;
+  /**
+   * The space is open in this service (its writer or reader holds the database in WAL mode): it is
+   * read in one read transaction on its own database, as a backup reads it, and nothing is copied.
+   */
+  served?: boolean;
   now?: () => number;
   busyTimeoutMs?: number;
   /** The registered schema steps. Default: SCHEMA_STEPS. Tests pass stand-in steps. */
@@ -331,11 +370,48 @@ function identityOf(conn: Connection, expected: Id<"sp"> | undefined): RescueRec
 }
 
 /**
+ * A read-only connection on the database of a space its service has open, or undefined when that
+ * cannot be had: only while the log is beside it and no rollback journal is, so SQLite plays
+ * nothing back. A read-only connection never checkpoints or removes the log, also when it is the
+ * last to close.
+ */
+function openServed(
+  checked: CheckedDriver,
+  db: string,
+  busyTimeoutMs: number,
+): Connection | undefined {
+  const there = (path: string): boolean => fsCall(() => existsSync(path));
+  if (!there(`${db}-wal`) || there(`${db}-journal`)) return undefined;
+  try {
+    return openReader(checked, db, { busyTimeoutMs });
+  } catch {
+    return undefined;
+  }
+}
+
+/** The rows on `conn` into a new file in `out`, once the database said which space it holds. */
+function writeRescue(
+  checked: CheckedDriver,
+  conn: Connection,
+  place: { out: string; now: number; maxBytes: number },
+  options: RescueOptions,
+): RescueRecord {
+  const identity = identityOf(conn, options.spaceId);
+  const tables = rescueTables(checked, conn, options.steps ?? SCHEMA_STEPS);
+  const file = join(place.out, `rescued-${utcStamp(place.now)}.jsonl`);
+  // Created exclusively: a file already there is refused and stays. One cut short by a failure
+  // stays too, with the rows it holds: nothing a rescue wrote is removed.
+  const report = writeJsonl(conn, file, tables, { tolerant: true, maxBytes: place.maxBytes });
+  return { file, identity, ...report };
+}
+
+/**
  * Writes every row of the space at `folder` that can still be read into a new JSON lines file
- * under `exchange/rescued/`, from a private copy of its database files (see the header). A copy that
- * does not open at all is refused with its error, and the space folder stays as it was. A copy
- * whose space row names another space than `options.spaceId` is refused (SPACE_ID_MISMATCH) before
- * any row is written.
+ * under `exchange/rescued/` (see the header): for a space its service has open (`served`), in one
+ * read transaction on its own database; otherwise from a private copy of its database files. A copy
+ * that does not open at all is refused with its error, and the space folder stays as it was. A
+ * database whose space row names another space than `options.spaceId` is refused
+ * (SPACE_ID_MISMATCH) before any row is written.
  */
 export function rescueSpace(
   checked: CheckedDriver,
@@ -351,10 +427,25 @@ export function rescueSpace(
   if (!inRange(now, "instant"))
     throw new StorageError("STORAGE_MISUSE", "The clock is out of range");
   const out = join(dir, ...RESCUED_FOLDER);
+  const busyTimeoutMs = options.busyTimeoutMs ?? BUSY_TIMEOUT_MS;
+  const free = (options.freeBytes ?? freeBytes)(existingFolder(out));
+  const reserve = BUNDLE_POLICY.freeSpaceReserveBytes;
+  const served = options.served === true ? openServed(checked, db, busyTimeoutMs) : undefined;
+  if (served !== undefined) {
+    try {
+      checkFreeSpace(0, free, BUNDLE_POLICY);
+      makeDurableFolder(out);
+      // Every table from one moment, as a backup reads it, while the writer goes on.
+      return served.transaction("deferred", () =>
+        writeRescue(checked, served, { out, now, maxBytes: free - reserve }, options),
+      );
+    } finally {
+      closeQuietlyConn(served);
+    }
+  }
   // A writer keeps the free-space reserve: the copy must fit before anything is written, and the
   // rows file may then hold what is left, counted as it is written (bundle/jsonl.ts).
   const copying = copyBytes(db);
-  const free = (options.freeBytes ?? freeBytes)(existingFolder(out));
   checkFreeSpace(copying, free, BUNDLE_POLICY);
   makeDurableFolder(out);
   const scratch = join(out, `${RESCUE_TEMP_PREFIX}${temporaryTag()}`);
@@ -384,15 +475,9 @@ export function rescueSpace(
     if (fsCall(() => statSync(copy).size) === 0) {
       throw new StorageError("SPACE_INVALID", "The database file is empty");
     }
-    const conn = openCopy(checked, copy, options.busyTimeoutMs ?? BUSY_TIMEOUT_MS);
+    const conn = openCopy(checked, copy, busyTimeoutMs);
     try {
-      const identity = identityOf(conn, options.spaceId);
-      const tables = rescueTables(checked, conn, options.steps ?? SCHEMA_STEPS);
-      const file = join(out, `rescued-${utcStamp(now)}.jsonl`);
-      // Created exclusively: a file already there is refused and stays. One cut short by a failure
-      // stays too, with the rows it holds: nothing a rescue wrote is removed.
-      const maxBytes = free - BUNDLE_POLICY.freeSpaceReserveBytes - copying;
-      return { file, identity, ...writeJsonl(conn, file, tables, { tolerant: true, maxBytes }) };
+      return writeRescue(checked, conn, { out, now, maxBytes: free - reserve - copying }, options);
     } finally {
       closeQuietlyConn(conn);
     }
