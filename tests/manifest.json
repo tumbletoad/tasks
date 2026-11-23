@@ -5632,6 +5632,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.while-away.web.asking",
+      "title": "The page holds every finished or dropped task an agent's question waits on, from the snapshot and the batches after it: a row with questions outside the open tasks joins, one dismissed, answered or deleted leaves, and a reopened one is an open task again",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.while-away.web.question-placed",
       "title": "On the Agents page an agent's question that waits places its task under Needs you as TTasks' own state, above a run that works, and a task with no question, run or agent is not placed",
       "owner": "M5",

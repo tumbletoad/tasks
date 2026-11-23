@@ -31,7 +31,7 @@ import type { Client } from "@ttasks/contracts/generated/client.ts";
 import type { Msg } from "../row/model.ts";
 import type { Change as FeedChange } from "../store/core.ts";
 import type { Overlay } from "../store/pending.ts";
-import type { TaskRow } from "../store/rows.ts";
+import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 import type { Changes, Sent } from "../store/store.ts";
 import {
   allOf,
@@ -725,26 +725,28 @@ export class Edits {
 
   /**
    * The person sets aside the questions agents asked on a task without answering them: one
-   * action, gone from the row at once, and an Undo that brings them back. A question asked after
-   * it waits again. Another tab's dismissal in between is no failure: the questions are set aside.
+   * action, gone from the row at once, and an Undo that brings them back. It names `newest`, the
+   * newest question the row showed: one asked after it still waits. The service decides the mark
+   * from its own read and never moves it back, so it needs no base: another tab's dismissal in
+   * between is no conflict.
    */
-  dismissQuestion(task: TaskRow): void {
+  dismissQuestions(task: TaskRow, newest: string): void {
+    const count = questionsWaiting(task);
     const sent = this.#sendWith(
       task.id,
       ["reviewed_at"],
-      this.#deps.asOf(),
-      (base, request) =>
+      undefined,
+      (_base, request) =>
         this.#deps.client.task.update({
           task: task.id,
-          set: { reviewed: true },
-          ...(base === undefined ? {} : { base }),
+          set: { reviewed: newest },
           request_id: request,
         }),
-      { tasks: [{ id: task.id, set: {}, clear: ["question"] }] },
+      { tasks: [{ id: task.id, set: {}, clear: ["questions", "questions_more"] }] },
     );
     const dismissed: Omit<Toast, "key"> = {
       kind: "undo",
-      text: { id: "toast.questionDismissed" },
+      text: { id: "toast.questionDismissed", values: { count } },
       action: {
         label: { id: "toast.undo" },
         run: () => {
@@ -765,8 +767,7 @@ export class Edits {
           return;
         }
         if (this.#deps.failed(decision.error)) return;
-        if ((problemOf(decision.error)?.conflicts.length ?? 0) > 0) say(undefined);
-        else say({ kind: "error", text: { id: "toast.dismissFailed" } });
+        say({ kind: "error", text: { id: "toast.dismissFailed", values: { count } } });
       },
       toast,
     );

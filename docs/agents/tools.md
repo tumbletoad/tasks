@@ -1691,11 +1691,12 @@ Finished tasks, newest first, a page at a time: the page's Completed view.
 | `rows[].run.id` | string | yes | The run's ID |
 | `rows[].run.state` | "working" \| "needs_you" | yes | Its newest background run works, or ended asking the person |
 | `rows[].run.instance` | string | yes | The run's agent instance |
-| `rows[].question` | object | no | The newest question an agent asked that waits for the person |
-| `rows[].question.ref` | string | yes | The log entry, such as l3 |
-| `rows[].question.by` | string | yes | The agent that asked |
-| `rows[].question.text` | string, max 300 | yes | Its first 300 characters |
-| `rows[].question.at` | integer, -8640000000000000 to 8640000000000000 | yes | When it was asked |
+| `rows[].questions` | object[], max 10 items | no | Questions agents asked that wait for the person, newest first |
+| `rows[].questions[].ref` | string | yes | The log entry, such as l3 |
+| `rows[].questions[].by` | string | yes | The agent that asked |
+| `rows[].questions[].text` | string, max 300 | yes | Its first 300 characters |
+| `rows[].questions[].at` | integer, -8640000000000000 to 8640000000000000 | yes | When it was asked |
+| `rows[].questions_more` | integer, 0 to 9007199254740991 | no | How many more questions wait |
 | `rows[].ending` | string, max 300 | no | How it ended, one line: why it was dropped, or its outcome once wrapped up |
 | `cursor` | string | no | Pass it for the next page |
 
@@ -2557,7 +2558,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `set.project` | string, max 120 | no | Project name or slug |
 | `set.folder` | string, 1 to 4096 | no | "cwd", an absolute folder or one under ~ |
 | `set.focus` | boolean | no | Star it: on Today until cleared. Only when the user asks |
-| `set.reviewed` | true | no, user only | The user read the agents' questions so far |
+| `set.reviewed` | string, max 10 | no, user only | Newest agent question the user read, such as l4: it and earlier ones are done |
 | `clear` | ("summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus")[], max 7 items | no | Fields to clear |
 | `context` | object | no | Change the context |
 | `context.mode` | "append" \| "replace" | yes | append needs no base |

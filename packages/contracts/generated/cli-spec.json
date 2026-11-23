@@ -949,12 +949,9 @@
           },
           {
             "field": "set.reviewed",
-            "help": "The user read the agents' questions so far",
+            "help": "Newest agent question the user read, such as l4: it and earlier ones are done",
             "key": "reviewed",
-            "type": "boolean",
-            "values": [
-              true
-            ]
+            "type": "string"
           }
         ]
       },

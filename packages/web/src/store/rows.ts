@@ -62,9 +62,18 @@ export interface TaskRow {
   readonly place?: RowPlace;
   /** Its newest background run, while it works or needs the person. */
   readonly run?: RowRun;
-  /** The newest question an agent asked on it that waits for the person. */
-  readonly question?: RowQuestion;
+  /** The questions agents asked on it that wait for the person, newest first. */
+  readonly questions?: readonly RowQuestion[];
+  /** How many more questions wait than `questions` holds. */
+  readonly questions_more?: number;
 }
+
+/**
+ * How many questions wait for the person on the task. The service decides which wait, for every
+ * lifecycle (its task-rows.ts); a deleted task asks nothing.
+ */
+export const questionsWaiting = (row: TaskRow): number =>
+  row.deleted_at === undefined ? (row.questions?.length ?? 0) + (row.questions_more ?? 0) : 0;
 
 /** An agent's question that waits: its log entry, its agent, and its start (the thread has it all). */
 export interface RowQuestion {
@@ -134,7 +143,8 @@ const TASK_COLUMNS: ReadonlySet<string> = new Set([
   "sources_more",
   "place",
   "run",
-  "question",
+  "questions",
+  "questions_more",
   "waiting_since",
   "finished_at",
 ]);
@@ -241,6 +251,8 @@ export interface SnapshotMessage {
   readonly tasks: readonly TaskRow[];
   /** The tasks agents changed in the service's recent days, newest change first. */
   readonly agent_changes?: readonly AgentChange[];
+  /** The finished and dropped tasks on which a question waits for the person. */
+  readonly asking?: readonly TaskRow[];
   readonly areas: readonly AreaRow[];
   readonly projects: readonly ProjectRow[];
   readonly instances: readonly Instance[];
@@ -419,7 +431,8 @@ export function taskRow(value: unknown): TaskRow | undefined {
     !optional(v["sources_more"], isNumber) ||
     !optional(v["place"], isPlace) ||
     !optional(v["run"], isRun) ||
-    !optional(v["question"], isQuestion)
+    !optional(v["questions"], (q) => Array.isArray(q) && q.every(isQuestion)) ||
+    !optional(v["questions_more"], isNumber)
   ) {
     return undefined;
   }
@@ -628,6 +641,7 @@ export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" 
         cursor,
         tasks: rowsOf(value["tasks"], taskRow),
         agent_changes: agentChangesOf(value["agent_changes"]),
+        asking: rowsOf(value["asking"], taskRow),
         areas: rowsOf(value["areas"], areaRow),
         projects: rowsOf(value["projects"], projectRow),
         instances: instancesOf(value["instances"]),

@@ -165,7 +165,7 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
 
 /**
  * The row's marker for what agents ask of the person: its newest run working or needing them, or
- * else an agent's question that waits for them; none otherwise.
+ * else the newest question an agent asked that waits for them; none otherwise.
  */
 export function agentMarker(
   run: RowRun | undefined,

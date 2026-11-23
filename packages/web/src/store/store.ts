@@ -41,6 +41,8 @@ export interface LiveState {
   readonly space: SpaceHead | undefined;
   /** The open tasks: the confirmed rows with this tab's pending writes on top. */
   readonly tasks: ReadonlyMap<string, TaskRow>;
+  /** The finished and dropped tasks a question waits on, as `tasks` is made. */
+  readonly asking: ReadonlyMap<string, TaskRow>;
   readonly areas: ReadonlyMap<string, AreaRow>;
   readonly projects: ReadonlyMap<string, ProjectRow>;
   readonly instances: readonly Instance[];
@@ -119,12 +121,14 @@ export class LiveStore {
   #stopped = false;
   /** The confirmed open tasks, without overlays. */
   #confirmed: ReadonlyMap<string, TaskRow> = new Map();
+  #confirmedAsking: ReadonlyMap<string, TaskRow> = new Map();
   #state: LiveState = {
     phase: "starting",
     stale: false,
     installed: undefined,
     space: undefined,
     tasks: new Map(),
+    asking: new Map(),
     areas: new Map(),
     projects: new Map(),
     instances: [],
@@ -326,11 +330,13 @@ export class LiveStore {
     const held = this.#core.publish();
     if (held !== undefined) {
       this.#confirmed = held.tasks;
+      this.#confirmedAsking = held.asking;
       this.#state = {
         ...this.#state,
         ...(phase === undefined ? {} : { phase }),
         space: held.space,
         tasks: this.#pending.view(held.tasks),
+        asking: this.#pending.view(held.asking),
         areas: held.areas,
         projects: held.projects,
         instances: held.instances,
@@ -356,8 +362,9 @@ export class LiveStore {
   /** The pending overlays changed: the tasks the views see are made again. */
   #view(): void {
     const tasks = this.#pending.view(this.#confirmed);
-    if (tasks === this.#state.tasks) return;
-    this.#state = { ...this.#state, tasks };
+    const asking = this.#pending.view(this.#confirmedAsking);
+    if (tasks === this.#state.tasks && asking === this.#state.asking) return;
+    this.#state = { ...this.#state, tasks, asking };
     this.#emit();
   }
 

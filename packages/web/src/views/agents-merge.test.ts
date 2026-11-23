@@ -18,13 +18,17 @@ const row = (id: string, patch: Partial<TaskRow> = {}): TaskRow => ({
 
 describe("[A5.while-away.web.question-placed] an agent's question places its task under Needs you", () => {
   test("a question that waits asks as much as a run that needs the person, more than one that works", () => {
-    const question = { ref: "l2", by: "Codex", text: "Which export?", at: 1 };
+    const questions = [{ ref: "l2", by: "Codex", text: "Which export?", at: 1 }];
     const rows = new Map(
       [
-        row("1", { question }),
-        row("2", { question, run: { id: "ru_2", state: "working", instance: "codex" } }),
+        row("1", { questions }),
+        row("2", { questions, run: { id: "ru_2", state: "working", instance: "codex" } }),
         row("3", { run: { id: "ru_3", state: "working", instance: "codex" } }),
         row("4"),
+        // Whatever became of the task, its questions wait.
+        row("5", { lifecycle: "completed", questions }),
+        row("6", { lifecycle: "archived", questions }),
+        row("7", { questions, deleted_at: 2 }),
       ].map((r) => [r.id, r]),
     );
     const { tasks } = mergeAgents(null, "sp_1", rows);
@@ -32,5 +36,8 @@ describe("[A5.while-away.web.question-placed] an agent's question places its tas
     expect(tasks.get("2")).toMatchObject({ state: "waiting", own: true });
     expect(tasks.get("3")).toMatchObject({ state: "working", own: true });
     expect(tasks.has("4")).toBe(false);
+    expect(tasks.get("5")).toMatchObject({ state: "waiting", own: true });
+    expect(tasks.get("6")).toMatchObject({ state: "waiting", own: true });
+    expect(tasks.has("7")).toBe(false);
   });
 });

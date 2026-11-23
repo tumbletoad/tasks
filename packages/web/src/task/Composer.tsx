@@ -31,7 +31,7 @@ import { ChevronIcon as ChevronDownIcon } from "../app/Icons.tsx";
 import { CopyIcon, RunIcon } from "../row/icons.tsx";
 import { runners } from "./runs.ts";
 import { tileState, type BusyOf } from "../row/launch.ts";
-import type { TaskRow } from "../store/rows.ts";
+import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 import { typingIn } from "../kept.ts";
 import {
   DRAFT_MAX,
@@ -189,11 +189,14 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
     const id = known?.words === words ? known.id : requestId();
     keepNote(space, task.id, { words, id });
     sending.current = words;
+    // The note answers every question that waits: the person hears it when it was more than one.
+    const answers = questionsWaiting(task);
     api.client.entry.add({ task: task.id, kind: "note", text: words, request_id: id }).then(
       () => {
         if (sending.current === words) sending.current = undefined;
         if (readNote(space, task.id)?.id === id) keepNote(space, task.id, undefined);
         sent(words);
+        if (answers > 1) say(t("composer.noteAnswers", { count: answers }));
       },
       (error: unknown) => {
         if (sending.current === words) sending.current = undefined;

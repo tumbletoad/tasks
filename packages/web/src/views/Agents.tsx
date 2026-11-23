@@ -1,6 +1,7 @@
 // Agents as far as the page's data allows: first "Needs you", the open tasks whose newest
-// background run stopped to ask the person, on which an agent logged a question that waits for
-// them (shown beneath the row, with Dismiss), or whose agent in a terminal waits for them, and
+// background run stopped to ask the person or whose agent in a terminal waits for them, and every
+// task, finished or not, on which agents asked questions that wait for them (shown beneath the
+// row, newest first, with one Dismiss), and
 // "Working", those whose run or agent works now; then "With an agent", the tasks whose agents are
 // in any other state; then "Recent", the tasks an agent or a routine changed in the last seven
 // days, the ones it finished included, newest first, one small heading per day. The
@@ -24,13 +25,13 @@ import { formatDay, type Clock } from "../row/dates.ts";
 import { focusAfter } from "../row/Row.tsx";
 import { useClock } from "../row/useClock.ts";
 import { useLive } from "../store/hooks.ts";
-import type { RowQuestion, TaskRow } from "../store/rows.ts";
+import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 import { mergeAgents, type AgentState } from "./agents-merge.ts";
 import css from "./Computer.module.css";
 import { Computer, TaskAgents } from "./Computer.tsx";
 import { TaskList, type GroupsOf, type HeldRow } from "./TaskList.tsx";
 
-const styles = classes(css, ["question", "asks", "words", "dismiss"]);
+const styles = classes(css, ["question", "asked", "count", "asks", "words", "more", "dismiss"]);
 
 /** Agents' changes may touch any task: its rows fade in and are announced like Today's. */
 const ANY = (): boolean => true;
@@ -64,7 +65,12 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const log = changeLogOf(live);
   const changes = useSyncExternalStore(log.subscribe, log.getEntries);
   const clock = useClock(false);
-  const { tasks: rows } = useLive();
+  const { tasks: open, asking } = useLive();
+  // A finished task a question waits on is placed as an open one is.
+  const rows = useMemo(
+    () => (asking.size === 0 ? open : new Map([...asking, ...open])),
+    [open, asking],
+  );
   const agents = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
   const picture = agents.view?.picture ?? null;
   const merged = useMemo(
@@ -82,19 +88,18 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const beneath = useCallback(
     (row: TaskRow) => {
       const listed = merged.tasks.get(row.id)?.agents ?? [];
-      const question = row.question;
-      if (listed.length === 0 && question === undefined) return undefined;
+      const asked = questionsWaiting(row) > 0;
+      if (listed.length === 0 && !asked) return undefined;
       return (
         <>
-          {question === undefined ? null : (
-            <Question
-              question={question}
-              task={row.ref}
-              onDismiss={() => {
-                edits.dismissQuestion(row);
+          {asked ? (
+            <Questions
+              row={row}
+              onDismiss={(newest) => {
+                edits.dismissQuestions(row, newest);
               }}
             />
-          )}
+          ) : null}
           {listed.length === 0 ? null : <TaskAgents agents={listed} current={agents.current} />}
         </>
       );
@@ -118,7 +123,10 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
       // the monitor placed as their agents started, a new one last.
       const own = (row: TaskRow) => (merged.tasks.get(row.id)?.own === true ? 0 : 1);
       const age = (row: TaskRow) => merged.tasks.get(row.id)?.ageMs ?? -1;
-      const withAgents = [...tasks.values()]
+      const withAgents = [
+        ...tasks.values(),
+        ...[...asking.values()].filter((r) => !tasks.has(r.id)),
+      ]
         .filter((row) => merged.tasks.has(row.id))
         .sort((a, b) => own(a) - own(b) || (own(a) === 0 ? 0 : age(b) - age(a) || byRef(a, b)));
       for (const row of withAgents) {
@@ -143,7 +151,7 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
       }
       return groupsOf(sections, t, clock);
     },
-    [changes, clock, t, merged],
+    [changes, clock, t, merged, asking],
   );
   return (
     <div>
@@ -166,33 +174,49 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
 }
 
 /**
- * An agent's question that waits for the person, in its own words: answered by a note on the
- * task, or set aside with Dismiss.
+ * The questions agents asked that wait for the person, newest first, each in its own words:
+ * answered by a note on the task, or set aside with Dismiss, which names the newest one shown so
+ * that a question asked after it still waits.
  */
-function Question({
-  question,
-  task,
+function Questions({
+  row,
   onDismiss,
 }: {
-  readonly question: RowQuestion;
-  readonly task: string;
-  readonly onDismiss: () => void;
+  readonly row: TaskRow;
+  readonly onDismiss: (newest: string) => void;
 }) {
   const t = useT();
+  const questions = row.questions ?? [];
+  const count = questionsWaiting(row);
+  const more = count - questions.length;
+  const newest = questions[0];
+  if (newest === undefined) return null;
   return (
     <div className={styles.question} data-part="question">
-      <p className={styles.asks}>{t("agents.asks", { by: question.by })}</p>
-      <p className={styles.words} dir="auto">
-        {question.text}
-      </p>
+      <div className={styles.asked}>
+        {count > 1 ? <p className={styles.count}>{t("agents.questions", { count })}</p> : null}
+        <ul>
+          {questions.map((question) => (
+            <li key={question.ref}>
+              <p className={styles.asks}>{t("agents.asks", { by: question.by })}</p>
+              <p className={styles.words} dir="auto">
+                {question.text}
+              </p>
+            </li>
+          ))}
+        </ul>
+        {more > 0 ? (
+          <p className={styles.more}>{t("agents.questionsMore", { count: more })}</p>
+        ) : null}
+      </div>
       <button
         type="button"
         className={styles.dismiss}
         data-part="dismiss-question"
-        aria-label={t("agents.dismissLabel", { ref: task })}
+        aria-label={t("agents.dismissLabel", { count, ref: row.ref })}
         onClick={(event) => {
           focusAfter(event.currentTarget);
-          onDismiss();
+          onDismiss(newest.ref);
         }}
       >
         {t("agents.dismiss")}

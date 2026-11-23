@@ -126,8 +126,9 @@ the behaviour it describes, and keep each one to a sentence or two.
   and counts are the ones your page shows, except that a status of the space's own has its own
   count for an agent, while the sidebar counts it in Open.
 - Every note is visible to agents.
-- A question an agent logs on a task waits for you under Needs you on the Agents page until you
-  write a note on the task after it or dismiss it; Undo brings a dismissed one back.
+- A question an agent logs on a task waits for you under Needs you on the Agents page, also once
+  the task is finished or dropped, until you write a note on the task after it or dismiss it.
+  Dismiss sets aside only the questions you were shown; Undo brings them back.
 - Your skills, the files in `skills/` of TTasks's folder, are your instructions to every agent that
   uses TTasks, as a note for agents is. No agent tool creates or changes one. A file over 16 KB, an
   empty one, one that cannot be read or a link is not used at all, and agents and `ttasks skills`

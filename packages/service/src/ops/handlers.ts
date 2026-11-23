@@ -147,6 +147,7 @@ import {
   readSpace,
   readStatus,
   readTask,
+  readReviewedMark,
   readTaskLinks,
   readKeyHolders,
   readTaskKeys,
@@ -760,6 +761,8 @@ async function submit(
   ops: Operation[],
   options: {
     readonly active?: boolean;
+    /** The base when the caller gave none: the handler's own read that decided a value. */
+    readonly base?: string;
     readonly warnings?: readonly string[];
     /** False for an undo or redo: the stack's own move never joins the stack (A1 3.10.1). */
     readonly undoable?: false;
@@ -807,7 +810,11 @@ async function submit(
         ...(principal.session === undefined ? {} : { session_id: principal.session as Id<"se"> }),
         ...(principal.run === undefined ? {} : { run_id: principal.run as Id<"ru"> }),
       },
-      ...(typeof input["base"] === "string" ? { base: input["base"] } : {}),
+      ...(typeof input["base"] === "string"
+        ? { base: input["base"] }
+        : options.base === undefined
+          ? {}
+          : { base: options.base }),
       ...(typeof input["reason"] === "string" ? { reason: input["reason"] } : {}),
       ...(principal.actorKind === "human" && options.undoable !== false ? { undoable: true } : {}),
       ...(options.active === true ? { active: true } : {}),
@@ -1093,6 +1100,8 @@ function changedFields(named: readonly string[], facts: CommitFacts): string[] {
         return rows("folders").length > 0;
       case "sources":
         return rows("task_sources").length > 0;
+      case "reviewed":
+        return rows("tasks").some((c) => c.field === "reviewed_at");
       default:
         return rows("tasks").some((c) => c.field === field);
     }
@@ -2296,8 +2305,23 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const date = due(set["due"], today, "set.due");
     if (date !== undefined) values["due"] = date;
     if (typeof set["focus"] === "boolean") values["focus"] = set["focus"] ? today : null;
-    // The questions agents asked up to this commit are read: a later one is new.
-    if (set["reviewed"] === true) values["reviewed_at"] = (call.host.now ?? Date.now)();
+    // A dismissal's mark comes from this read, which is its base unless the caller gave one.
+    let readBase: string | undefined;
+    const reviewed = set["reviewed"];
+    if (typeof reviewed === "string") {
+      let read: Awaited<ReturnType<typeof readReviewedMark>>;
+      try {
+        read = await readReviewedMark(readerOf(call.space), task, Number(reviewed.slice(1)));
+      } catch (error) {
+        throw storageFailure(error);
+      }
+      // A retry of a request that committed gets its first answer, whatever the entry is now.
+      if (read.mark === undefined && !(await applied(call))) {
+        throw invalid("set.reviewed", "No question of this task has this entry");
+      }
+      values["reviewed_at"] = read.mark ?? 0;
+      readBase = read.asOf;
+    }
     const clear = Array.isArray(input["clear"]) ? (input["clear"] as string[]) : [];
     // The folder is a row of its own, set or cleared after the other operations.
     const clearFolder = clear.includes("folder");
@@ -2414,12 +2438,21 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     // update_task changes an active task (A3 3.4.6): the writer refuses a completed or archived
     // one with TASK_NOT_ACTIVE (wrong_tool), in the request's transaction, so it is receipted. A
     // request that only detaches or puts back sources also corrects a finished task, which still
-    // catches captures of its sources for a while.
-    const linksOnly = ops.every((op) => op.kind === "source.unlink" || op.kind === "source.relink");
+    // catches captures of its sources for a while, and a dismissal of its questions sets aside
+    // what waits for the person whatever became of the task.
+    const anyLifecycle = ops.every(
+      (op) =>
+        op.kind === "source.unlink" ||
+        op.kind === "source.relink" ||
+        (op.kind === "task.patch" &&
+          op.unset === undefined &&
+          Object.keys(op.set ?? {}).every((field) => field === "reviewed_at")),
+    );
     let submitted: WriteResult;
     try {
       submitted = await submit(call, [...groups, ...ops], {
-        active: !linksOnly,
+        active: !anyLifecycle,
+        ...(readBase === undefined ? {} : { base: readBase }),
         inserted: { at: 0, count: groups.length },
         warnings: made,
         pathOf: (i, field) =>

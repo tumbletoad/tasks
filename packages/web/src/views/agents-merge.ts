@@ -6,7 +6,7 @@
 // terminal agent TTasks holds as running that the monitor has not seen is shown as such, never
 // as idle.
 import type { AgentsPicture, AgentsSession } from "@ttasks/contracts/monitor";
-import type { TaskRow } from "../store/rows.ts";
+import { questionsWaiting, type TaskRow } from "../store/rows.ts";
 
 /** What an agent of a task does, in the page's order: what asks most of the person first. */
 export const AGENT_STATES = [
@@ -57,12 +57,12 @@ const rank = (state: AgentState): number => AGENT_STATES.indexOf(state);
 const runState = (row: TaskRow): AgentState | undefined =>
   row.run?.state === "needs_you" ? "waiting" : row.run?.state === "working" ? "working" : undefined;
 
-/** What TTasks' own record says of the task: its run's state, and a question that waits. */
+/** What TTasks' own record says of the task: its run's state, and questions that wait. */
 const ownStates = (row: TaskRow): AgentState[] => {
   const run = runState(row);
   return [
     ...(run === undefined ? [] : [run]),
-    ...(row.question === undefined ? [] : ["waiting" as const]),
+    ...(questionsWaiting(row) === 0 ? [] : ["waiting" as const]),
   ];
 };
 

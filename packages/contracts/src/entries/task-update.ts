@@ -57,7 +57,12 @@ export const TaskUpdateInput = z.strictObject({
         .boolean()
         .describe("Star it: on Today until cleared. Only when the user asks")
         .optional(),
-      reviewed: z.literal(true).describe("The user read the agents' questions so far").optional(),
+      reviewed: z
+        .string()
+        .max(10)
+        .regex(/^l[0-9]{1,9}$/u)
+        .describe("Newest agent question the user read, such as l4: it and earlier ones are done")
+        .optional(),
     })
     .describe("Fields to change")
     .optional(),

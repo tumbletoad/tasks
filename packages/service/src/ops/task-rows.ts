@@ -3,8 +3,8 @@
 // rows and one line of how each task ended. A column that is null in the space is left out. No
 // context, outcome or other long text is in it: only what a row shows of the task's children,
 // its first three sources, where it opens on the machine that serves it, whether its newest
-// background run works or needs the person, and the start of an agent's question that waits for
-// the person.
+// background run works or needs the person, and the start of each question agents asked that
+// waits for the person.
 import { isOpenRun, OPEN_RUN_STATES, type RunState } from "@ttasks/contracts/runs";
 import {
   decideLaunchFolder,
@@ -51,10 +51,7 @@ export interface CompactRun {
   readonly instance: string;
 }
 
-/**
- * The newest question an agent logged on the task that the person has not answered with a note
- * after it, nor dismissed (`reviewed_at`, set after it): its entry, its agent and its start.
- */
+/** A question an agent asked on the task that waits for the person (`WAITS`). */
 export interface CompactQuestion {
   /** The log entry, such as `l3`. */
   readonly ref: string;
@@ -72,7 +69,7 @@ export type CompactValue =
   | readonly CompactSource[]
   | CompactPlace
   | CompactRun
-  | CompactQuestion;
+  | readonly CompactQuestion[];
 export type CompactRow = Readonly<Record<string, CompactValue>>;
 
 /** The machine the feed looks at folders on: its ID, the person's home there, its platform. */
@@ -95,20 +92,32 @@ const foldersOf = (kind: "task" | "project", owner: string): string =>
 
 /** How much of a waiting question a row carries: the thread has the rest. */
 export const QUESTION_CHARS = 300;
+/** At most this many waiting questions ride on a task's row, newest first; it counts the rest. */
+export const ROW_QUESTIONS = 10;
 
 /**
- * The task's newest question from an agent or a routine that waits: no note of the person's came
- * after it, and the person's dismissal (the commit that set `reviewed_at`) came before it.
+ * Whether the log entry `q` is a question that waits for the person on the task `t`, whatever the
+ * task's lifecycle: an agent or a routine asked it, no note of the person's came after it, and it
+ * arrived after the question the person last dismissed (`reviewed_at` holds that one's arrival,
+ * read.ts's `readReviewedMark`). Arrival is the commit's time, which only moves forward; the
+ * entry's own `created_at` may be dated back.
  */
-const WAITING_QUESTION =
-  "(SELECT json_object('ref', 'l' || q.ordinal, 'by', qa.label, 'text', " +
-  `substr(q.body, 1, ${String(QUESTION_CHARS)}), 'at', q.created_at) FROM log_entries q ` +
-  "JOIN actors qa ON qa.id = q.author_id WHERE q.task_id = t.id AND q.kind = 'question' " +
-  "AND q.deleted_at IS NULL AND qa.kind IN ('agent', 'routine') AND (t.reviewed_at IS NULL " +
-  "OR q.created_seq > COALESCE(json_extract(t.fp, '$.reviewed_at'), 0)) AND NOT EXISTS " +
-  "(SELECT 1 FROM notes n JOIN actors na ON na.id = n.author_id WHERE n.task_id = t.id " +
-  "AND n.deleted_at IS NULL AND na.kind = 'human' AND n.created_seq > q.created_seq) " +
-  "ORDER BY q.created_seq DESC, q.ordinal DESC LIMIT 1)";
+export const WAITS =
+  "q.task_id = t.id AND q.kind = 'question' AND q.deleted_at IS NULL AND " +
+  "(SELECT kind FROM actors WHERE id = q.author_id) IN ('agent', 'routine') AND " +
+  "(t.reviewed_at IS NULL OR (SELECT at FROM commits WHERE seq = q.created_seq) > t.reviewed_at) " +
+  "AND NOT EXISTS (SELECT 1 FROM notes n JOIN actors na ON na.id = n.author_id WHERE " +
+  "n.task_id = t.id AND n.deleted_at IS NULL AND na.kind = 'human' AND " +
+  "n.created_seq > q.created_seq)";
+
+/** The task's waiting questions as JSON, newest first, and how many there are. */
+const WAITING_QUESTIONS =
+  "(SELECT json_group_array(json_object('seq', x.created_seq, 'o', x.ordinal, 'ref', 'l' || x.ordinal, 'by', " +
+  "x.label, 'text', x.text, 'at', x.created_at)) FROM (SELECT q.created_seq, q.ordinal, " +
+  `(SELECT label FROM actors WHERE id = q.author_id) AS label, substr(q.body, 1, ${String(QUESTION_CHARS + 1)}) ` +
+  `AS text, q.created_at FROM log_entries q WHERE ${WAITS} ORDER BY q.created_seq DESC, q.ordinal DESC ` +
+  `LIMIT ${String(ROW_QUESTIONS)}) x) AS x_questions, ` +
+  `(SELECT count(*) FROM log_entries q WHERE ${WAITS}) AS x_question_count`;
 
 /** A run that may still hold processes (contracts' `isOpenRun`). */
 const OPEN_RUN =
@@ -148,7 +157,7 @@ export function taskColumns(folders: boolean): string {
     "AS x_sources, " +
     "(SELECT count(*) FROM task_sources ts JOIN sources s ON s.id = ts.source_id WHERE " +
     "ts.task_id = t.id AND ts.removed_at IS NULL AND s.deleted_at IS NULL) AS x_source_count, " +
-    `${WAITING_QUESTION} AS x_question` +
+    WAITING_QUESTIONS +
     (folders
       ? `, ${foldersOf("task", "t.id")} AS x_folders_own, ` +
         `${foldersOf("project", "t.project_id")} AS x_folders_project, ` +
@@ -257,17 +266,32 @@ export function runOf(newest: unknown, open?: unknown): CompactRun | undefined {
   return rowRun(newest) ?? rowRun(open);
 }
 
-/** The waiting question of `x_question`, or nothing. */
-function questionOf(value: unknown): CompactQuestion | undefined {
-  const q = parsed(value);
-  if (!isPlain(q)) return undefined;
-  const { ref, by, text, at } = q;
-  return typeof ref === "string" &&
-    typeof by === "string" &&
-    typeof text === "string" &&
-    typeof at === "number"
-    ? { ref, by, text, at }
-    : undefined;
+/** A question's start, at most `QUESTION_CHARS` UTF-16 units, cut between graphemes. */
+function cutQuestion(text: string): string {
+  if (text.length <= QUESTION_CHARS) return text;
+  let cut = "";
+  for (const { segment } of graphemes.segment(text)) {
+    if (cut.length + segment.length > QUESTION_CHARS - 1) break;
+    cut += segment;
+  }
+  return `${cut}…`;
+}
+
+/** The waiting questions of `x_questions`, newest first. */
+function questionsOf(value: unknown): CompactQuestion[] {
+  const list = parsed(value);
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter(isPlain)
+    .sort((a, b) => Number(b["seq"]) - Number(a["seq"]) || Number(b["o"]) - Number(a["o"]))
+    .flatMap(({ ref, by, text, at }) =>
+      typeof ref === "string" &&
+      typeof by === "string" &&
+      typeof text === "string" &&
+      typeof at === "number"
+        ? [{ ref, by, text: cutQuestion(text), at }]
+        : [],
+    );
 }
 
 /** The folders of `x_folders_own` or `x_folders_project`, newest first, with machine names. */
@@ -320,7 +344,8 @@ export async function taskRows(
         x_folders_project: projectFolders,
         x_run: newest,
         x_run_open: open,
-        x_question: asked,
+        x_questions: asked,
+        x_question_count: askedCount,
         x_reason: reason,
         x_outcome: outcome,
         ref,
@@ -345,8 +370,10 @@ export async function taskRows(
       if (ended !== undefined) out["ending"] = ended;
       const run = runOf(newest, open);
       if (run !== undefined) out["run"] = run;
-      const question = questionOf(asked);
-      if (question !== undefined) out["question"] = question;
+      const questions = questionsOf(asked);
+      if (questions.length > 0) out["questions"] = questions;
+      const unshown = Number(askedCount ?? 0) - questions.length;
+      if (unshown > 0) out["questions_more"] = unshown;
       if (here !== undefined) {
         const names = new Map<string, string>();
         const decided = decideLaunchFolder(

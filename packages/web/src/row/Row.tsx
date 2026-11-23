@@ -475,7 +475,7 @@ function RowView({
   const t = useT();
   const intl = useIntl();
   const place = placeFact(task.place);
-  const marker = agentMarker(task.run, instances, task.question);
+  const marker = agentMarker(task.run, instances, task.questions?.[0]);
   const { live } = useContext(Session);
   const draft = useHasDraft(live.spaceId ?? "", task.id);
   const model = renderRow(

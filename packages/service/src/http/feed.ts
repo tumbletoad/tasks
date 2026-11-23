@@ -18,12 +18,12 @@
 // - A task's compact row (ops/task-rows.ts) also carries what its row shows of its children
 //   (A5 3.6): its first three sources with their own text and URL (`sources`), how many more it
 //   has (`sources_more`), where it opens on this machine (`place`), from its own folder or its
-//   project's, whether its newest background run works or needs the person (`run`), and an
-//   agent's question that waits for the person (`question`). A commit that changes a source, a
-//   link, a folder, a note, a log entry or a run of a task therefore carries the task's row too,
-//   as an entity of its own, and one that changes a project's folder carries the rows of the
-//   project's tasks the batch holds, so the row the client holds never shows a source, a folder,
-//   a run state or a question the space no longer has.
+//   project's, whether its newest background run works or needs the person (`run`), and the
+//   questions agents asked that wait for the person (`questions`). A commit that changes a
+//   source, a link, a folder, a note, a log entry or a run of a task therefore carries the task's
+//   row too, as an entity of its own, and one that changes a project's folder carries the rows of
+//   the project's tasks the batch holds, so the row the client holds never shows a source, a
+//   folder, a run state or a question the space no longer has.
 import type { PreferenceRead } from "@ttasks/contracts";
 import type { Row, WorkerConnection } from "@ttasks/storage";
 import { hasFolderTable } from "../ops/read.ts";
@@ -31,6 +31,7 @@ import {
   compact,
   taskColumns,
   taskRows,
+  WAITS,
   type CompactRow,
   type FeedHere,
 } from "../ops/task-rows.ts";
@@ -92,6 +93,11 @@ export interface SnapshotMessage {
    * from there.
    */
   readonly agent_changes: readonly AgentChange[];
+  /**
+   * The rows of the finished and dropped tasks on which a question waits for the person: the open
+   * tasks' rows carry theirs.
+   */
+  readonly asking: readonly CompactRow[];
   readonly areas: readonly CompactRow[];
   readonly projects: readonly CompactRow[];
   /**
@@ -173,6 +179,11 @@ const AGENT_CHANGES =
 const agentChangedRows = (folders: boolean) =>
   `${AGENT_CHANGED}SELECT ${taskColumns(folders)} FROM tasks t WHERE t.id IN ` +
   "(SELECT task FROM recent) AND t.lifecycle <> 'active' AND t.deleted_at IS NULL";
+/** The rows of the finished and dropped tasks a question waits on (task-rows.ts's `WAITS`). */
+const askingRows = (folders: boolean) =>
+  `SELECT ${taskColumns(folders)} FROM tasks t WHERE t.lifecycle <> 'active' AND ` +
+  "t.deleted_at IS NULL AND t.id IN (SELECT task_id FROM log_entries WHERE kind = 'question' " +
+  `AND deleted_at IS NULL) AND EXISTS (SELECT 1 FROM log_entries q WHERE ${WAITS})`;
 
 const IN_BATCH = "seq > $after AND seq <= $upto";
 const COMMITS =
@@ -267,9 +278,8 @@ export async function readSnapshot(
 ): Promise<SnapshotMessage> {
   const folders = await hasFolderTable(reader);
   const since = { since: now - AGENT_CHANGE_DAYS * 86_400_000 };
-  const [space, tasks, areas, projects, preferences, changed, finished] = await reader.transaction(
-    "deferred",
-    [
+  const [space, tasks, areas, projects, preferences, changed, finished, asking] =
+    await reader.transaction("deferred", [
       { sql: SPACE_SQL, mode: "get" },
       { sql: openTasks(folders), mode: "all" },
       { sql: LIVE_AREAS, mode: "all" },
@@ -277,8 +287,8 @@ export async function readSnapshot(
       { sql: PREFERENCE_ROWS, mode: "all" },
       { sql: AGENT_CHANGES, mode: "all", params: since },
       { sql: agentChangedRows(folders), mode: "all", params: since },
-    ],
-  );
+      { sql: askingRows(folders), mode: "all" },
+    ]);
   const head = headOf(space);
   const rows = new Map(
     (await taskRows(finished as Row[], head.ref_prefix, here)).map((row) => [row["id"], row]),
@@ -298,6 +308,7 @@ export async function readSnapshot(
         ...(row === undefined ? {} : { row }),
       };
     }),
+    asking: await taskRows(asking as Row[], head.ref_prefix, here),
     areas: (areas as Row[]).map((row) => compact(row)),
     projects: (projects as Row[]).map((row) => compact(row)),
     preferences: spacePreferencesOf(preferences as Row[]),
