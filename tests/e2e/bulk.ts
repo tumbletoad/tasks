@@ -253,8 +253,8 @@ const REASONS = ["The neighbours share theirs now.", "Too late in the season.", 
 
 /**
  * Adds finished tasks to the space at `folder`, each made and finished in one request, 25 a
- * request, all at one moment, so no month's end falls among them. Each has a summary, which a row
- * shows when the task has no ending.
+ * request, a millisecond apart in the order they are made, all in this month: no month's end falls
+ * among them. Each has a summary, which a row shows when the task has no ending.
  */
 export async function addFinishedTasks(
   folder: string,
@@ -289,6 +289,8 @@ export async function addFinishedTasks(
   add(counts.done, "done", "Finished fixture task");
   add(counts.pending, "pending", "Checked off fixture task");
   add(counts.dropped, "dropped", "Dropped fixture task");
-  const at = Date.now();
-  await writeRequests(folder, machine, requests, () => at);
+  const now = new Date();
+  const month = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const first = Math.max(month, now.getTime() - requests.length);
+  await writeRequests(folder, machine, requests, (request) => first + request);
 }
