@@ -728,6 +728,22 @@ export class LaunchService {
       }
       if (isUncPath(where.folder)) throw this.#unavailable("unc");
     }
+    // An agent whose home is registered for another space could not use TTasks here: the person
+    // hears it now rather than at its first call, and before anything is asked or written.
+    if (choice.route === "terminal" && instance !== undefined) {
+      const agent = agentHomeOf(instance, this.#options.home, platform);
+      const elsewhere =
+        agent === undefined
+          ? undefined
+          : this.#options.registeredElsewhere?.(agent.app, agent.home, space);
+      if (elsewhere !== undefined) {
+        this.#log("launch.unavailable", "other_space");
+        throw new LaunchUnavailable(
+          "other_space",
+          this.#options.spaces().find((s) => s.id === elsewhere)?.name,
+        );
+      }
+    }
     if (choice.route !== "clipboard") {
       await this.#checkMarker(space, task.folder, request.markFolder === true);
     }
@@ -753,19 +769,6 @@ export class LaunchService {
         ...(agent?.home === undefined ? {} : { home: agent.home }),
         ...(session === undefined ? {} : { preset: session }),
       };
-      // An agent whose home is registered for another space could not use TTasks here: the
-      // person hears it now rather than at its first call.
-      const elsewhere =
-        agent === undefined
-          ? undefined
-          : this.#options.registeredElsewhere?.(agent.app, agent.home, space);
-      if (elsewhere !== undefined) {
-        this.#log("launch.unavailable", "other_space");
-        throw new LaunchUnavailable(
-          "other_space",
-          this.#options.spaces().find((s) => s.id === elsewhere)?.name,
-        );
-      }
       const codexHome =
         chosen.target === "codex-cli"
           ? codexHomeOf(chosen, this.#options.home, platform)

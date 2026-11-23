@@ -138,7 +138,7 @@
   "row.openAnyway": "Use this folder",
   "row.openFolder": "{reason, select, path_missing {The folder {folder} was not found on this machine} not_a_directory {The task's folder {folder} is a file, not a folder} not_answering {The folder {folder} did not answer in time} other {The folder {folder} cannot be used on this machine}}. Nothing was started.",
   "row.openWorkFolder": "The space's work folder cannot be used on this machine. Nothing was started.",
-  "row.openOtherSpace": "{label} works in {space}, so it could not use {product} in this space. To use it here, turn \"Give {label} the {product} tools\" off, then on, in Settings under Agent apps. Nothing was started.",
+  "row.openOtherSpace": "{label} works in {space}, so it could not use {product} in this space. To use it here, go to Settings, Agent apps: turn \"Give {label} the {product} tools\" off and press Apply, then on and press Apply. Nothing was started.",
   "row.done": "Done: {title}",
   "row.dropped": "Dropped: {title}",
   "row.star": "Star",

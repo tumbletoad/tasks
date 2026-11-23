@@ -172,7 +172,7 @@ test.describe("[M6.page.e2e.open-other-space] Open with an agent registered for 
       await row.locator('[data-part="tile"]').click();
       const label = FAKE_INSTANCE.label;
       const said = page.getByRole("status").filter({
-        hasText: `${label} works in ${world.studio.name}, so it could not use ${PRODUCT_NAME} in this space. To use it here, turn "Give ${label} the ${PRODUCT_NAME} tools" off, then on, in Settings under Agent apps. Nothing was started.`,
+        hasText: `${label} works in ${world.studio.name}, so it could not use ${PRODUCT_NAME} in this space. To use it here, go to Settings, Agent apps: turn "Give ${label} the ${PRODUCT_NAME} tools" off and press Apply, then on and press Apply. Nothing was started.`,
       });
       await expect(said).toBeVisible({ timeout: SLOW_MS });
       await expect(row.locator('[data-part="tile"]')).toHaveAttribute("data-state", "ready");
