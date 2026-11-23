@@ -19,6 +19,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -88,6 +89,10 @@ export interface ExpandedProps {
   readonly runs: readonly Run[];
   /** Whether its receipts and runs were read: the thread draws once, with all of them. */
   readonly read: boolean;
+  /** The last read of its runs failed: what the thread shows of them may be out of date. */
+  readonly runsFailed?: boolean;
+  /** Not shown, and so offering nothing, while how the task is now is not known. */
+  readonly hidden?: boolean;
   readonly instances: readonly Instance[];
   readonly actions: RowActions;
   /** The last Open of this task, refused on its folder; none once an Open went through. */
@@ -672,12 +677,17 @@ export function Expanded({
   busy,
   runs,
   read,
+  runsFailed = false,
+  hidden = false,
   instances,
   actions,
   refused,
 }: ExpandedProps) {
   const t = useT();
   const clock = useClock(false);
+  const { live } = useContext(Session);
+  // The tab's copy of the space is gone (restored, claimed, closed): nothing it offers can reach it.
+  const ended = useSyncExternalStore(live.subscribe, () => live.getState().gone !== undefined);
   const requests = [...new Set(receipts.flatMap((receipt) => receipt.request ?? []))].sort();
   const { detail, base, failed, older, loadingOlder, olderFailed } = useDetail(task.id, requests);
   // A refusal holds until the detail is read again: that read says where the folder stands then.
@@ -709,7 +719,7 @@ export function Expanded({
   const facts =
     task.created_at <= 0 && Number.isFinite(created) ? { ...task, created_at: created } : task;
   return (
-    <div className={styles.body} data-part="expanded">
+    <div className={styles.body} data-part="expanded" hidden={hidden}>
       {/* First in the document: below 1,024 px the facts come before the content (A5 3.7). */}
       <Facts task={facts} clock={clock} />
       <div className={styles.content}>
@@ -794,9 +804,16 @@ export function Expanded({
                     });
                   }
             }
-            onStop={(run) => {
-              actions.stop(task, run);
-            }}
+            runsFailed={runsFailed}
+            // A tab whose copy of the space is gone stops nothing: its copy's runs are not the
+            // space's.
+            {...(ended
+              ? {}
+              : {
+                  onStop: (run: Run) => {
+                    actions.stop(task, run);
+                  },
+                })}
           />
         )}
         {failed && detail !== undefined ? (

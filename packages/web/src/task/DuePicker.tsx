@@ -91,7 +91,7 @@ export function DuePicker({
       onOpenChange={(next) => {
         if (next) {
           opened.current = {
-            base: edits.seen(task.id, ["due"]),
+            base: edits.seen(task, ["due"]),
             mark: edits.mark(),
             due: dueKey(task),
           };

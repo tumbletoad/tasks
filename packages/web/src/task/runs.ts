@@ -117,7 +117,11 @@ export function runView(run: Run, label: string, now = Date.now()): RunView {
         stoppable: true,
       };
     case "cancelling":
-      return { tone: "stopping", status: [msg("run.stopping")], stoppable: false };
+      return {
+        tone: "stopping",
+        status: [msg("run.stopping", { started: run.started_at === null ? "no" : "yes" })],
+        stoppable: false,
+      };
     case "succeeded":
       return {
         tone: "done",
@@ -221,21 +225,21 @@ export function mergeRuns(known: readonly Run[], read: readonly Run[]): Run[] {
   return out;
 }
 
-/** How `run` shows while its Stop is on its way. */
+/** How `run` shows while its Stop is on its way: stopping, whatever it was, until the service says. */
 export function stopping(run: Run): Run {
-  return { ...run, state: run.state === "queued" ? "cancelled" : "cancelling" };
+  return { ...run, state: "cancelling" };
 }
 
 /**
- * A task's runs as the page shows them: a run whose Stop is on its way (`stops`, its version when
- * Stop was pressed) shows as stopping, unless the service already has it further along. The same
- * list when no Stop applies, so a row keeps its props.
+ * A task's runs as the page shows them: a run whose Stop is on its way (`stops`, with its version
+ * when Stop was pressed) shows as stopping, unless the service already has it further along. The
+ * same list when no Stop applies, so a row keeps its props.
  */
 export function withStops(
   runs: readonly Run[],
-  stops: ReadonlyMap<string, number>,
+  stops: ReadonlyMap<string, { readonly version: number }>,
 ): readonly Run[] {
-  const held = (run: Run) => (stops.get(run.id) ?? -1) >= run.version;
+  const held = (run: Run) => (stops.get(run.id)?.version ?? -1) >= run.version;
   return runs.some(held) ? runs.map((run) => (held(run) ? stopping(run) : run)) : runs;
 }
 

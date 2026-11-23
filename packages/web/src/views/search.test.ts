@@ -55,8 +55,9 @@ function fakeSearch(total: number, options: { expireOnce?: boolean } = {}) {
       taskRow(offset + i + 1),
     );
     const next = offset + limit;
+    // Each page is read at its own position: the first at 10, the next at 11, and so on.
     return Promise.resolve({
-      as_of: "1:x:1",
+      as_of: `1.${String(10 + calls.length - 1)}.01234567`,
       scope: "active",
       parsed: input.q ?? "",
       total,
@@ -68,8 +69,8 @@ function fakeSearch(total: number, options: { expireOnce?: boolean } = {}) {
   return { search, calls };
 }
 
-const rowOf = (row: SearchRow, found: "open" | "finished") =>
-  rowOfFound(row, found, AREAS, PROJECTS);
+const rowOf = (row: SearchRow, found: "open" | "finished", read = 1) =>
+  rowOfFound(row, found, AREAS, PROJECTS, read);
 
 describe("[A5.3.13.web.search] search results read in pages, frozen, in two groups", () => {
   test("the open tasks are read at once; finished ones a page at a time with their cursor", async () => {
@@ -88,6 +89,11 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     expect(all.next).toBeUndefined();
     expect(open.calls[0]).toEqual({ q: "fence", scope: "active", limit: 50 });
     expect(open.calls.slice(1)).toEqual([{ cursor: "c_50" }, { cursor: "c_100" }]);
+
+    // A row stands as of the read of its page: a change based on it conflicts with any since.
+    expect([all.rows[0]?.version, all.rows[50]?.version, all.rows[119]?.version]).toEqual([
+      10, 11, 12,
+    ]);
 
     const done = fakeSearch(120);
     const source = searchSource({ search: done.search, q: "fence", found: "finished", rowOf });
@@ -128,7 +134,7 @@ describe("[A5.3.13.web.search] search results read in pages, frozen, in two grou
     const done = [
       rowOf(taskRow(3, { lifecycle: "completed", area: "Home", project: "Garden" }), "finished"),
     ] as FoundRow[];
-    expect(done[0]).toMatchObject({ area_id: "a_home", project_id: "p_garden", version: 0 });
+    expect(done[0]).toMatchObject({ area_id: "a_home", project_id: "p_garden", version: 1 });
     expect(rowOf({ kind: "deleted", id: "t_x", ref: "M-9" }, "open")).toBeUndefined();
     const live = new Map<string, TaskRow>([
       [open[0]?.id ?? "", { ...(open[0] as TaskRow), title: "Edited at once", version: 3 }],
