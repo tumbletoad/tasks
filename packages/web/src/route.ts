@@ -9,11 +9,17 @@
 //   /s/<space ID>/task/<ref>       a task of the space, expanded
 //
 // The skeleton's task links (`/s/<space>/t/<ref>`) still land on the task.
-// A space segment that is no space ID is a space the page does not have, and it says so.
 
 export const SPACE_ID = /^sp_[0-9a-z]{26}$/;
 /** A plain path segment: a view, an ID or a task reference. */
 export const SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
+/**
+ * The route of a space the page does not have, for whatever stood in the place of a space that is
+ * no space ID: an older command line put a space's name there, which may hold any character. The
+ * page says so there and chooses no space, since landing on the default would put the person's
+ * next edit in another list.
+ */
+export const NO_SUCH_SPACE = "/s/unknown";
 /** A sign-in code: 32 random bytes as base64url (A2 3.8.4). */
 const CODE = /^[A-Za-z0-9_-]{43}$/;
 
@@ -29,7 +35,8 @@ export function pagePath(path: string): string | undefined {
     return `/?task=${parts[1] ?? ""}`;
   }
   const [s, space, ...rest] = parts;
-  if (s !== "s" || space === undefined || !SEGMENT.test(space)) return undefined;
+  if (s !== "s" || space === undefined || space === "") return undefined;
+  if (!SPACE_ID.test(space)) return NO_SUCH_SPACE;
   if (rest.length > 4 || !rest.every((segment) => SEGMENT.test(segment))) return undefined;
   if (rest.length === 2 && rest[0] === "t") return `/s/${space}/task/${rest[1] ?? ""}`;
   return `/s/${[space, ...rest].join("/")}`;

@@ -479,12 +479,17 @@ test.describe("[A5.3.3.e2e.not-open] A space that is not open says why and what 
     page,
     world,
   }) => {
-    // A name where the ID goes: the page offers the spaces and chooses none.
+    // A name where the ID goes, as an older command line wrote it, with any character a name
+    // may hold: the page offers the spaces and chooses none, also after the sign-in.
+    for (const name of ["Shared List", "Café"]) {
+      await signIn(page, world, `/s/${name}/task/M-1`);
+      await expect(page.locator('[data-part="unknown-space"]')).toHaveText(
+        "This link names a space this machine does not have, so no space was opened.",
+      );
+      await expect(page).toHaveURL(/\/s\/unknown$/);
+    }
     await signIn(page, world, "/s/Mira/task/M-1");
-    await expect(page.locator('[data-part="unknown-space"]')).toHaveText(
-      "This link names a space this machine does not have, so no space was opened.",
-    );
-    await expect(page).toHaveURL(/\/s\/Mira\/task\/M-1$/);
+    await expect(page.locator('[data-part="unknown-space"]')).toBeVisible();
     await expect(page.getByRole("textbox", { name: "New task" })).toHaveCount(0);
     await picture(page, "landing-unknown-space.png");
     await page.setViewportSize({ width: 390, height: 844 });
