@@ -218,6 +218,38 @@ const iso = (ms: number): string => new Date(ms).toISOString();
  * receipt.get's result for a stored receipt, or for none: instants as ISO text, the error as A1's
  * code in `cause` (A3 3.5). The handler passes what storage's receipt lookup returned.
  */
+/** A conflict as a receipt stores it: the writer's FieldConflict, without its values. */
+interface StoredConflict {
+  op: number;
+  entity: string;
+  id: string;
+  task?: string;
+  ref?: string;
+  field: string;
+  version: number;
+  by: { actor: string; kind: string; label: string; origin?: string };
+  at: number;
+}
+
+function receiptConflict(c: StoredConflict): z.input<typeof ReceiptConflict> {
+  return {
+    op: c.op,
+    entity: c.entity,
+    id: c.id,
+    ...(c.task === undefined ? {} : { task: c.task }),
+    ...(c.ref === undefined ? {} : { ref: c.ref }),
+    field: c.field,
+    version: c.version,
+    by: {
+      actor: c.by.actor,
+      kind: c.by.kind,
+      label: c.by.label,
+      ...(c.by.origin === undefined ? {} : { origin: c.by.origin }),
+    },
+    at: iso(c.at),
+  } as z.input<typeof ReceiptConflict>;
+}
+
 export function receiptResult(
   stored: StoredReceiptLike | undefined,
 ): z.input<typeof ReceiptGetResult> {
@@ -238,13 +270,10 @@ export function receiptResult(
     // A request or an import holds more operations than a reply shows: the first 50.
     results: result.results.slice(0, 50) as z.input<typeof ReceiptOpResult>[],
     ...(result.results.length > 50 ? { results_more: result.results.length - 50 } : {}),
+    // Each conflict by the fields this build names: a receipt another build stored may hold more.
     ...(result.conflicts.length === 0
       ? {}
-      : {
-          conflicts: result.conflicts.map(
-            (c) => ({ ...c, at: iso(c.at) }) as z.input<typeof ReceiptConflict>,
-          ),
-        }),
+      : { conflicts: result.conflicts.map((c) => receiptConflict(c as StoredConflict)) }),
     ...(error === undefined
       ? {}
       : {
