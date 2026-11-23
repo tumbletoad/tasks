@@ -7,7 +7,17 @@
 // 1,440 and 390 px for review.
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture.ts";
-import { openTask, picture, showsSpace, violations, watchViolations } from "./page.ts";
+import {
+  axeFound,
+  openTask,
+  picture,
+  pictures,
+  showsSpace,
+  signIn,
+  themes,
+  violations,
+  watchViolations,
+} from "./page.ts";
 import { CODEX_INSTANCE, SLOW_MS, type World } from "./world.ts";
 
 interface Added {
@@ -144,6 +154,49 @@ test.describe("[A5.trash.e2e] A task taken away and brought back in the page", (
     await unsent.getByRole("button", { name: "Discard" }).click();
     await expect(unsent).toHaveCount(0);
     expect(await violations(page)).toEqual([]);
+  });
+});
+
+test.describe("[A5.trash.e2e.screens] The Trash in both themes", () => {
+  test("the Trash by change at 1,440 px and 390 px in Sumi and Washi, axe clean, nothing wider than the screen", async ({
+    browser,
+    world,
+  }) => {
+    test.setTimeout(300_000);
+    const tag = test.info().project.name;
+    const space = world.mira.id;
+    const tasks = [
+      await addTask(world, { title: `Screens: renew the passport (${tag})`, area: "home" }),
+      await addTask(world, { title: `Screens: book the dentist (${tag})`, area: "home" }),
+      await addTask(world, { title: `Screens: answer the clinic (${tag})`, area: "lumen" }),
+    ];
+    await removeTasks(world, tasks.slice(0, 2));
+    await removeTasks(world, tasks.slice(2));
+    for (const theme of themes()) {
+      const context = await browser.newContext({
+        bypassCSP: true,
+        viewport: { width: 1440, height: 1000 },
+        reducedMotion: "reduce",
+      });
+      try {
+        const shot = await context.newPage();
+        await world.machine("ui.theme", theme);
+        await signIn(shot, world, `/s/${space}/trash`);
+        await showsSpace(shot, world.mira.name);
+        await expect(shot.locator("main li[data-task]")).toHaveCount(3, { timeout: SLOW_MS });
+        await picture(shot, `trash-${theme}-1440.png`);
+        if (pictures()) expect(await axeFound(shot, ["main"]), `axe in ${theme}`).toEqual([]);
+        await shot.setViewportSize({ width: 390, height: 900 });
+        const scroll = await shot.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(scroll, "horizontal scroll at 390 px").toBeLessThanOrEqual(0);
+        await picture(shot, `trash-${theme}-390.png`);
+        if (pictures()) expect(await axeFound(shot, ["main"]), `axe in ${theme}`).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
   });
 });
 

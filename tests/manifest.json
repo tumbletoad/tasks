@@ -2156,6 +2156,13 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A5.trash.e2e.screens",
+      "title": "The Trash by change at 1,440 and 390 px in Sumi and Washi: axe clean, and nothing wider than the screen at 390 px",
+      "owner": "M5",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A5.trash.e2e.runs",
       "title": "A run working on a task moved to the Trash goes on: the toast says so, and after a cold reload the Agents page lists the task marked as in the Trash, with Stop in its card",
       "owner": "M5",
