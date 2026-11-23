@@ -15,9 +15,11 @@ import {
   type AgentCommand,
   type AgentExit,
   type Containers,
+  type OpenDriver,
   type RunFolders,
   type RunTimes,
   type SavedAnswer,
+  type Work,
 } from "../src/index.ts";
 import { endMove } from "../src/machine.ts";
 import { MODEL_LIMITS, World, type Event } from "./host-world.ts";
@@ -370,6 +372,73 @@ describe("[A4.5.run.host] the run host's rules", () => {
     expect(after.result?.text).toBe("answer 2");
     expect(after.result?.textFinal).toBeUndefined();
     expect(world.boxes.get(after.id)?.procs).toBe(0);
+  });
+
+  test("a service that closes while the agent writes its answer saves the words so far for the next start", async () => {
+    let killed: () => void = () => undefined;
+    const exited = new Promise<AgentExit>((resolve) => {
+      killed = () => {
+        resolve({ code: null, signal: "SIGTERM" });
+      };
+    });
+    const { host, id, saved } = await bareHost({
+      containers: {
+        ...refusing,
+        start: (spec) =>
+          Promise.resolve({
+            name: spec.name,
+            pid: 4242,
+            stdin: new PassThrough(),
+            stdout: new PassThrough(),
+            stderr: new PassThrough(),
+            exited,
+          }),
+        kill: () => {
+          killed();
+          return Promise.resolve();
+        },
+      },
+    });
+    let opened: () => void = () => undefined;
+    const open = new Promise<void>((resolve) => {
+      opened = resolve;
+    });
+    // An agent that said one whole message and is writing the next: its driver has the words.
+    const writing: OpenDriver = (_pipes, report) => {
+      opened();
+      report({ kind: "answer", text: "Looking.", final: false, cut: false });
+      let settle: (work: Work) => void = () => undefined;
+      const settled = new Promise<Work>((resolve) => {
+        settle = resolve;
+      });
+      return {
+        settled,
+        interrupt: () => false,
+        close: () => undefined,
+        ended: () => {
+          settle({
+            ok: false,
+            outcome: "no_result",
+            nativeId: null,
+            text: "The export drops",
+            textCut: false,
+            textFinal: false,
+            error: null,
+            usage: null,
+            appTools: null,
+            declined: 0,
+            permissionDenials: 0,
+          });
+        },
+      };
+    };
+    void host.start(id, () =>
+      Promise.resolve({ command: "codex", args: [], cwd: ".", env: {}, open: writing }),
+    );
+    await open;
+    expect(saved.get(id)).toMatchObject({ text: "Looking." });
+    await host.close();
+    expect(saved.get(id)).toEqual({ text: "The export drops", final: false, cut: false });
   });
 
   test("a crash after a Stop: the next start ends the run cancelled", async () => {

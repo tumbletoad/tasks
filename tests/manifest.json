@@ -1563,7 +1563,7 @@
     },
     {
       "id": "A4.5.run.host",
-      "title": "The run host's rules one by one: Stop on a queued run, while the agent runs (an agent that obeys gives its answer, one that ignores it is killed after the grace time), before the agent's PID (recorded, never running) and after the agent exited, a container that refuses to empty (unknown, End by force once it is empty), a start past its time whose late container is ended, a refused start, the idle and wall limits, and the next start after a crash (interrupted with the last saved answer, cancelled after a Stop, unknown while a process refuses to end)",
+      "title": "The run host's rules one by one: Stop on a queued run, while the agent runs (an agent that obeys gives its answer, one that ignores it is killed after the grace time), before the agent's PID (recorded, never running) and after the agent exited, a container that refuses to empty (unknown, End by force once it is empty), a start past its time whose late container is ended, a refused start, the idle and wall limits, the next start after a crash (interrupted with the last saved answer, cancelled after a Stop, unknown while a process refuses to end), and a service that closes while the agent writes its answer saves the words so far",
       "source": "A4 3.11.2, A4 3.11.8, A4 3.11.9, A7 3.13 M6.01",
       "owner": "M6",
       "kind": "ci",
