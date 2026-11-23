@@ -5193,6 +5193,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A3.3.4.prefs.set",
+      "title": "The person sets a space's scale from the command line: tasks keep their keys, every reader of the scale follows on the next call, a change that drops a key active tasks hold is refused naming them, and scripts and agents' shells are refused",
+      "source": "A1 3.16, A3 3.4.11",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A3.3.4.prefs.tool",
       "title": "preferences describes and reads every declared key with its default and who may set it, suggests a known key for a typo, and on set refuses a policy key to every actor (rule policy), the user's keys to agents (rule user_only), a value outside its key's schema, a missing request_id or base and a set on a read, before pref.set's own step",
       "source": "A1 3.16, A3 3.4.11, A3 3.8.2, A7 3.11 M4.01",

@@ -153,15 +153,15 @@ Only through `--input`: `links`.
 
 Read and change the space's preferences that are not policy.
 
-Usage: `ttasks prefs <action> [flags]`
+Usage: `ttasks prefs <action> [<key>] [<value>] [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
 | `<action>` | `action` | string | describe: the keys; get: their values |
+| `<key>` | `set[].key` | string | A key describe lists |
+| `<value>` | `set[].value` | string | The new value, a list as keys separated by commas; null resets it to its default |
 | `--keys` | `keys` | string | Keys, or prefixes ending in ".*"; default every key (repeatable) |
 | `--mode` | `mode` | "apply" \| "propose" | propose: ask the user to decide |
-
-Only through `--input`: `set`.
 
 ## `ttasks receipt`
 

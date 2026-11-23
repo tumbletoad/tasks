@@ -4,6 +4,7 @@
 // relative to the day the test runs, so the rows show late, soon and later dues, planned days,
 // stars, every status chip, long titles and summaries. Fixture text only. Tests only.
 import {
+  formatAsOf,
   newId,
   openSpace,
   SpaceWriter,
@@ -70,14 +71,19 @@ type Machine = {
   readonly os: "linux" | "macos" | "windows";
 };
 
+/** A request's operations, or how to make them from what the space holds when it is sent. */
+type Request = readonly Operation[] | ((read: (sql: string) => Row[]) => Operation[]);
+type Row = Record<string, unknown>;
+
 /**
- * Writes `requests` into the space at `folder`, as its owner, on the authority's machine. `now`
- * gets the request's index: the writer never lets a commit's time go back past the last one.
+ * Writes `requests` into the space at `folder`, as its owner, on the authority's machine, each
+ * with the space as it stands as its base. `now` gets the request's index: the writer never lets a
+ * commit's time go back past the last one.
  */
 async function writeRequests(
   folder: string,
   machine: Machine,
-  requests: readonly Operation[][],
+  requests: readonly Request[],
   now: (request: number) => number,
 ): Promise<void> {
   const opened = openSpace(await checkedDriver(), folder, { role: "writer" });
@@ -101,11 +107,18 @@ async function writeRequests(
       machine_id: machine.id as Id<"m">,
       origin: "cli",
     };
-    for (const ops of requests) {
+    const read = (sql: string): Row[] => opened.conn.prepare(sql).all();
+    for (const given of requests) {
+      const ops = typeof given === "function" ? given(read) : [...given];
+      if (ops.length === 0) {
+        request += 1;
+        continue;
+      }
       const result = writer.submit({
         space_id: opened.space.spaceId,
         request_id: newId("op").slice(3),
         actor,
+        base: formatAsOf(writer.asOf()),
         ops,
       });
       request += 1;
@@ -214,12 +227,35 @@ export interface Scales {
   readonly efforts: readonly string[];
 }
 
-/** Sets the space's statuses and effort scale, as its owner. */
+/**
+ * Sets the space's statuses and effort scale, as its owner. A scale never drops a key an active
+ * task holds, so the tasks on a key the new one leaves out move first: to the first status, and to
+ * no effort.
+ */
 export async function setScales(folder: string, machine: Machine, scales: Scales): Promise<void> {
+  const status = scales.statuses[0] ?? "open";
   await writeRequests(
     folder,
     machine,
     [
+      (read) =>
+        read(
+          "SELECT id, status, effort FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL",
+        ).flatMap((task): Operation[] => {
+          const off = !scales.statuses.includes(String(task["status"]));
+          const effort = task["effort"];
+          const unsized =
+            typeof effort === "string" && effort !== "" && !scales.efforts.includes(effort);
+          if (!off && !unsized) return [];
+          return [
+            {
+              kind: "task.patch",
+              task: String(task["id"]),
+              ...(off ? { set: { status } } : {}),
+              ...(unsized ? { unset: ["effort"] } : {}),
+            },
+          ];
+        }),
       [
         { kind: "pref.set", key: "tasks.statuses", value: [...scales.statuses] },
         {

@@ -370,11 +370,6 @@ const LATER: Readonly<Record<string, Later>> = {
     why: "the world's groups are the ones its own examples create, with other counts",
     now: { result: "schema" },
   },
-  "prefs.manage 1": {
-    owner: "M3.11 (the preferences registry and pref.set)",
-    why: "preferences' set",
-    now: { error: "invalid_input" },
-  },
   "run.report 0": {
     owner: "M6.06 (run and routine bindings)",
     why: "no connection is bound to a run before M6",
@@ -415,6 +410,7 @@ const VERIFIED = new Set([
   "group.manage 1",
   "folder.manage 0",
   "prefs.manage 0",
+  "prefs.manage 1",
   "history.undo 0",
   "history.redo 0",
 ]);
@@ -555,7 +551,14 @@ function meaning(entry: string, value: Value): unknown {
       };
     }
     case "prefs.manage":
-      return { action: value["action"], prefs: value["prefs"], result: value["result"] };
+      // Who may change a key is the caller's (as the UI, every example is the user's).
+      return {
+        action: value["action"],
+        prefs: (value["prefs"] as Value[]).map((row) =>
+          Object.fromEntries(Object.entries(row).filter(([field]) => field !== "writable")),
+        ),
+        result: value["result"],
+      };
     case "history.undo":
     case "history.redo":
       // The user's newest change differs by face (as the UI, every example is the user's), so

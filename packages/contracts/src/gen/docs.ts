@@ -204,11 +204,13 @@ function entrySection(entry: AnyEntry, names: DocNames): string[] {
   lines.push("### Output", "", ...outputTables(shownOutputFor(entry)), "");
   lines.push("### Examples", "");
   // An example of what a later step builds shows what this build refuses.
+  const actorOf = (example: AnyEntry["examples"][number]) =>
+    example.actor ?? (isAgentAllowed(entry) ? "agent" : "user");
   const shownExamples = entry.examples.filter(
-    (example) => laterIn(entry.name, example.input) === undefined,
+    (example) => laterIn(entry.name, example.input, actorOf(example)) === undefined,
   );
   for (const example of shownExamples) {
-    const actor = example.actor ?? (isAgentAllowed(entry) ? "agent" : "user");
+    const actor = actorOf(example);
     lines.push(`#### ${example.title}`, "", `Called by the ${actor}.`, "");
     lines.push(...json(example.input), "", "Result:", "", ...json(example.output), "");
   }

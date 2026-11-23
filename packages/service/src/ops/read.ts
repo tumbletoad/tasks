@@ -820,6 +820,44 @@ export async function readTaskKeys(
   };
 }
 
+/** How many active tasks a refusal names at most. */
+const HOLDERS_SHOWN = 10;
+
+/**
+ * The active tasks whose status or effort is one of `keys`, by reference, at most HOLDERS_SHOWN,
+ * and how many there are.
+ */
+export async function readKeyHolders(
+  reader: WorkerConnection,
+  field: "status" | "effort",
+  keys: readonly string[],
+): Promise<{ tasks: { ref: string; key: string }[]; count: number }> {
+  if (keys.length === 0) return { tasks: [], count: 0 };
+  const held =
+    `FROM tasks WHERE lifecycle = 'active' AND deleted_at IS NULL ` +
+    `AND ${field} IN (SELECT value FROM json_each($keys))`;
+  const [space, rows, count] = await snapshot(
+    reader,
+    [
+      SPACE,
+      {
+        sql: `SELECT ref, ${field} AS key ${held} ORDER BY ref LIMIT ${String(HOLDERS_SHOWN)}`,
+        mode: "all",
+      },
+      { sql: `SELECT count(*) AS n ${held}`, mode: "get" },
+    ],
+    { keys: JSON.stringify(keys) },
+  );
+  const prefix = spaceFacts(space).refPrefix;
+  return {
+    tasks: (rows as Row[]).map((row) => ({
+      ref: formatTaskRef(prefix, Number(row["ref"])),
+      key: String(row["key"]),
+    })),
+    count: Number((count as Row)["n"]),
+  };
+}
+
 /** space.status for a connection that is not bound (A3 3.4.2). */
 export async function readStatus(
   reader: WorkerConnection,
