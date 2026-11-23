@@ -1550,12 +1550,14 @@ export async function hasFolderTable(reader: WorkerConnection): Promise<boolean>
 
 /**
  * The task a launch names, as `readTask` resolves a reference: another space's prefix and a
- * deleted task are `not_found`. With it, the folder it opens in on `machine`.
+ * deleted task are `not_found`, unless `trash` asks for one in the Trash (its runs). With it, the
+ * folder it opens in on `machine`.
  */
 export async function readLaunchTask(
   reader: WorkerConnection,
   ref: string,
   machine: string,
+  options: { readonly trash?: boolean } = {},
 ): Promise<LaunchTaskRead> {
   const key = taskKey(ref);
   const params = { id: key.id, ref: key.ref, alias: key.alias, prefix: key.prefix, machine };
@@ -1579,7 +1581,9 @@ export async function readLaunchTask(
     throw notFound();
   }
   const task = row as Row | null;
-  if (task === null || task["deleted_at"] !== null) throw notFound();
+  if (task === null) throw notFound();
+  const removal = removalOf(task);
+  if (removal !== undefined && (options.trash !== true || removal.undone)) throw notFound();
   return {
     space: facts,
     id: String(task["id"]),
