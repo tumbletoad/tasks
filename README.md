@@ -8,7 +8,7 @@ Website: [tumbletoad.com/tasks](https://tumbletoad.com/tasks)
 
 ## Status
 
-In development, not yet usable. There is no release yet. In place: storage with its migrations and verified backups, the service, the local protocol, the CLI, the MCP endpoint with session binding, `ttasks setup agents` for Claude Code and Codex, the launch routes for Claude Code, Codex and T3 Code, the build, test installs and `ttasks update --from <archive>`. The browser UI has its shell, live updates and the task list. The views, the expanded task, undo, search and background runs are being built. Step states are in [`planning/STATUS.md`](planning/STATUS.md).
+In development. There is no release yet: you build and run it from source. What you can use today: the page with its views (Today, Inbox, Open, Waiting, Review, Backlog, Completed, Agents), areas and projects, search, the expanded task with its thread, and undo and redo; opening a task in Claude Code, Codex or T3 Code, in its folder, and background runs of an agent on a task; the `ttasks` command line, and the MCP endpoint that agents use, which `ttasks setup agents` connects for Claude Code and Codex; storage with its migrations and verified backups, and `ttasks update --from <archive>`. Step states are in [`planning/STATUS.md`](planning/STATUS.md).
 
 TTasks is developed and checked on Windows 11 and on Ubuntu 24.04 without sudo rights. CI runs on Ubuntu and Windows. macOS is build-only until someone verifies it on a Mac.
 
