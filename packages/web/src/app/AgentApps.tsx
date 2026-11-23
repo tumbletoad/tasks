@@ -349,7 +349,12 @@ function Switch({
       </SwitchField>
       {why === undefined ? null : (
         <p id={whyId} className={styles.why}>
-          {t("apps.why", { why, space: found.space?.name ?? t("apps.otherSpace") })}
+          {t("apps.why", {
+            why,
+            on: found.on ? "yes" : "no",
+            file: found.file,
+            space: found.space?.name ?? t("apps.otherSpace"),
+          })}
         </p>
       )}
     </>

@@ -271,6 +271,62 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
   );
 
   it(
+    "the tools switch shows the access, not the file: an unreadable file stays on and turns off; an entry that could not be taken out shows off, and turning it on again works",
+    async () => {
+      const file = join(w.user, ".claude.json");
+      const tools = async () =>
+        row((await call<AppsView>(w, "/api/v1/machine/apps", { space })).result, "claude-code");
+      const turn = async (on: boolean) => {
+        const found = await tools();
+        return call<Applied>(w, "/api/v1/machine/apps_apply", {
+          space,
+          changes: [{ key: found.key, part: "tools", on, plan: found.tools?.plan }],
+        });
+      };
+      expect((await tools()).tools).toMatchObject({ on: false, change: "add" });
+      expect((await turn(true)).result.outcomes).toMatchObject([{ result: "done" }]);
+      const withEntry = readFileSync(file, "utf8");
+
+      // A trailing comma someone typed: setup cannot read the file, and the access is still there.
+      const broken = withEntry.replace(/\}\s*$/u, ",}\n");
+      writeFileSync(file, broken);
+      expect((await tools()).tools).toMatchObject({
+        on: true,
+        change: "remove",
+        why: "file_unreadable",
+      });
+      const off = await turn(false);
+      expect(off.result.outcomes).toMatchObject([{ result: "done", kept: true }]);
+      expect(row(off.result.view, "claude-code").tools).toMatchObject({
+        on: false,
+        why: "file_unreadable",
+      });
+      expect(readFileSync(file, "utf8")).toBe(broken);
+
+      // Mended: the access is off and the entry is still there, and turning it on works.
+      writeFileSync(file, withEntry);
+      expect((await tools()).tools).toMatchObject({
+        on: false,
+        change: "add",
+        why: "entry_left",
+      });
+      const on = await turn(true);
+      expect(on.result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(row(on.result.view, "claude-code").tools).toMatchObject({ on: true });
+      expect(readFileSync(file, "utf8")).toBe(withEntry);
+
+      const done = await turn(false);
+      expect(done.result.outcomes).toMatchObject([{ result: "done" }]);
+      expect(claudeEntry(w.user)).toBeUndefined();
+      expect(row(done.result.view, "claude-code").tools).toMatchObject({
+        on: false,
+        change: "add",
+      });
+    },
+    SLOW,
+  );
+
+  it(
     "refuses a space this service does not serve, and a switch named twice",
     async () => {
       expect(

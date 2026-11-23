@@ -46,6 +46,7 @@ import {
   entryInstance,
   entryLines,
   LockBusy,
+  planChange,
   planOf,
   planToken,
   removeHome,
@@ -90,8 +91,9 @@ export interface AgentAppsHost {
  * Why a switch cannot be turned over here, or what to know about it, as a fixed word: open's
  * `by_hand` (machine.toml names it, written by hand), `no_command`, `needs_home`, `id_taken`; tools'
  * `not_installed` (TTasks's command is not where the entry would run it), `edited`, `missing`,
- * `interrupted`, `other_space`, `several` (one of several Claude Desktop files: the person picks), or
- * one of setup's refusals.
+ * `interrupted`, `entry_left` (the access is off and its entry is still in its file),
+ * `file_unreadable` (setup cannot read the file as it is now), `other_space`, `several` (one of
+ * several Claude Desktop files: the person picks), or one of setup's other refusals.
  */
 export type Why = string;
 
@@ -271,10 +273,13 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
     rows.some((row) => row.app === home.app && samePath(platform, row.home, home.home));
   // Claude Desktop with several settings files (a Windows app installed twice over the years): the
   // engine changes none of them on its own, and here the person picks one with its switch.
+  // A change that did not finish shows what turning it on writes once it is finished.
   const plan = planOf(input, views, space).map((item): Planned =>
     item.change === "ambiguous"
       ? { view: item.view, change: planOf(input, [item.view], space)[0]?.change, several: true }
-      : item,
+      : item.view.state === "interrupted"
+        ? { view: item.view, change: planChange(input, item.view, space) }
+        : item,
   );
   const written = readInstancesRecord(host.stateDir);
   const configFile = shown(pathOf(platform).join(host.configDir, MACHINE_TOML));
@@ -419,9 +424,22 @@ async function look(host: AgentAppsHost, space: string): Promise<Look> {
   return { view, input, items, offers: byRow, owners };
 }
 
+/** Setup's refusals of a file it cannot read as it is now, which the page says as one. */
+const UNREADABLE = new Set<string>([
+  "unreadable",
+  "too_large",
+  "encoding",
+  "invalid_file",
+  "duplicate_key",
+  "wrong_type",
+  "unsupported_layout",
+]);
+
 /**
- * The tools switch of a home, from setup's own view of it. `live`: the home has a live agent-home
- * row, so an entry setup did not write but that names its instance has the tools.
+ * The tools switch of a home. It is on exactly when the home has access (`live`: a live agent-home
+ * row), or for a hand-made entry that names no instance, which reaches the machine's default space.
+ * A home with access can always be turned off, whatever its file holds or whether it can be read;
+ * the file's state is said beside the switch.
  */
 function toolsPart(
   host: AgentAppsHost,
@@ -446,48 +464,66 @@ function toolsPart(
     recorded === undefined
       ? {}
       : { space: { id: recorded, name: host.spaceName(recorded) ?? null } };
-  // What turning it off takes out of the file: the entry as found, or nothing when it is gone
-  // (`missing`) or the person's (`edited`, which stays).
-  const removing = (why?: Why): Part => ({
-    on: true,
-    change: "remove",
-    ...(why === undefined ? {} : { why }),
-    file,
-    detail:
-      view.entry === undefined || why === "edited"
-        ? []
-        : entryLines(view.home.app, view.entry, "-"),
-    plan: plan("remove"),
-    ...named,
-  });
+  const fileWhy =
+    view.state === "refused"
+      ? UNREADABLE.has(view.refusal ?? "unreadable")
+        ? "file_unreadable"
+        : (view.refusal ?? "unreadable")
+      : undefined;
+  if (live) {
+    // What turning it off takes out of the file: setup's own entry, never one the person changed.
+    const own =
+      view.entry !== undefined && (view.state === "registered" || view.state === "interrupted");
+    const why =
+      view.state === "registered"
+        ? recorded !== undefined && recorded !== space
+          ? "other_space"
+          : undefined
+        : view.state === "not_registered"
+          ? "missing"
+          : (fileWhy ?? view.state);
+    return {
+      on: true,
+      change: "remove",
+      ...(why === undefined ? {} : { why }),
+      file,
+      detail: own ? entryLines(view.home.app, view.entry, "-") : [],
+      plan: plan("remove"),
+      ...named,
+    };
+  }
+  const adding = (diff: readonly string[], why?: Why): Part =>
+    installed
+      ? {
+          on: false,
+          change: "add",
+          ...(why === undefined ? {} : { why }),
+          file,
+          detail: [...diff],
+          plan: plan("add"),
+        }
+      : fixed(false, "not_installed");
   switch (view.state) {
     case "registered":
-      return removing(recorded !== undefined && recorded !== space ? "other_space" : undefined);
-    case "missing":
+      // Its entry is in place and its access is gone: turning it on gives the access again.
+      return adding([]);
     case "interrupted":
+      // A change that did not finish: the next apply finishes it first, then this one adds.
+      if (change === undefined || typeof change === "string") return fixed(false, "interrupted");
+      return adding(change.diff, view.entry === undefined ? "interrupted" : "entry_left");
+    case "missing":
     case "edited":
-      // Changed by hand: turning it off takes the access away and leaves the person's entry.
-      return removing(view.state);
+      return fixed(false, view.state);
     case "refused":
-      // An entry setup did not write has the tools when it names no instance (the hand-made
-      // entry, which reaches the machine's default space) or one of this home's live rows.
       return fixed(
-        view.refusal === "foreign_entry" && (live || entryInstance(view.entry) === null),
-        view.refusal ?? "unreadable",
+        view.refusal === "foreign_entry" && entryInstance(view.entry) === null,
+        fileWhy ?? "unreadable",
       );
     case "not_registered":
       if (change === undefined || typeof change === "string") {
         return fixed(false, change ?? "unreadable");
       }
-      if (!installed) return fixed(false, "not_installed");
-      return {
-        on: false,
-        change: "add",
-        ...(several === true ? { why: "several" } : {}),
-        file,
-        detail: [...change.diff],
-        plan: plan("add"),
-      };
+      return adding(change.diff, several === true ? "several" : undefined);
   }
 }
 
@@ -574,11 +610,8 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
     const access = rowAccess(
       (method, input) => verb(method)(input, "ui") as Promise<Record<string, unknown>>,
     );
-    // What a run that ended midway left is settled first; the person then sees what is now.
     const first = await look(host, space);
-    const now =
-      (await settleHomes(first.input, access)).length === 0 ? first : await look(host, space);
-    const partOf = (c: AppsChange) => now.view.rows.find((r) => r.key === c.key)?.[c.part];
+    const partOf = (c: AppsChange) => first.view.rows.find((r) => r.key === c.key)?.[c.part];
     const fits = changes.every((c) => {
       const part = partOf(c);
       return (
@@ -586,7 +619,11 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
       );
     });
     // Something changed since the person looked: nothing is written, they see it as it is now.
-    if (!fits) return { applied: false, view: now.view };
+    if (!fits) return { applied: false, view: first.view };
+    // What a run that ended midway left is finished first (it only ever takes access away); the
+    // switches the person turned over, as they saw them, then apply to what is now.
+    const now =
+      (await settleHomes(first.input, access)).length === 0 ? first : await look(host, space);
 
     const outcomes: AppsOutcome[] = [];
     const done = (c: AppsChange, reason?: string): void => {
@@ -659,9 +696,10 @@ async function applyChanges(host: AgentAppsHost, params: JsonObject): Promise<un
       const reason = outcome.reason ?? outcome.result;
       return { key: c.key, part: "tools", result: "done", reason, kept: true };
     });
+    // On is on once the home has its access: a new entry, or one in place whose access went.
     await each(true, async (item) => {
       const outcome = await applyHome(now.input, item.view, space, access, item.change);
-      return outcome.result === "applied" ? undefined : (outcome.reason ?? outcome.result);
+      return outcome.access === "on" ? undefined : (outcome.reason ?? outcome.result);
     });
     return { applied: true, outcomes, view: (await look(host, space)).view };
   });

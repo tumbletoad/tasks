@@ -207,6 +207,44 @@ test.describe("[A7.3.12.m5-12.e2e.settings] A second visit in Settings: removing
     await page.reload();
     await expect(appsHeading(page)).toBeVisible();
 
+    // A file setup cannot read while its tools are on: the switch shows the access, and turns off.
+    await flip(page, toolsFor("Codex"), true);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    const withEntry = fresh.codexConfig();
+    const broken = `${withEntry}[broken\n`;
+    fresh.writeCodex(broken);
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
+    await expect(toggle(page, toolsFor("Codex"))).toBeChecked();
+    await expect(toggle(page, toolsFor("Codex"))).toBeEnabled();
+    await expect(page.getByText(`${PRODUCT_NAME} cannot read ~`)).toBeVisible();
+    await widths(page, "settings-apps-unreadable");
+    await flip(page, toolsFor("Codex"), false);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText(
+      `Codex no longer has the ${PRODUCT_NAME} tools. Its entry is still in ~`,
+    );
+    await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
+    expect(fresh.codexConfig()).toBe(broken);
+    // Mended: the tools are off and the entry is still there, said beside the switch.
+    fresh.writeCodex(withEntry);
+    await page.reload();
+    await expect(appsHeading(page)).toBeVisible();
+    await expect(toggle(page, toolsFor("Codex"))).not.toBeChecked();
+    await expect(page.getByText("The tools are off. Its entry is still in ~")).toBeVisible();
+    await widths(page, "settings-apps-entry-left");
+    // Turning it on finishes the removal first, then adds the entry again.
+    await flip(page, toolsFor("Codex"), true);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    await expect(toggle(page, toolsFor("Codex"))).toBeChecked();
+    expect(fresh.codexConfig()).toBe(withEntry);
+    await flip(page, toolsFor("Codex"), false);
+    await page.getByRole("button", { name: "Apply" }).click();
+    await expect(page.getByRole("status")).toContainText("Done.");
+    expect(fresh.codexConfig()).toBe(bare);
+
     // Everything out again, from the same place.
     await flip(page, openIn("Claude Code"), false);
     await flip(page, toolsFor("Claude Code"), false);
