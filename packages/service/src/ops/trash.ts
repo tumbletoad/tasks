@@ -11,10 +11,12 @@ export interface TrashRequest {
   readonly words: readonly string[];
   readonly ref?: number | undefined;
   /**
-   * Only the tasks an agent may still work on: a run that may hold processes or whose newest asks
-   * the person, or a terminal launch that changed since this instant.
+   * The tasks the Agents page places as it places a live task: with `working`, those whose row
+   * shows a run (one that may hold processes, or a newest that asks the person); with `tasks`,
+   * these, which the Agent Monitor links an agent to. Both: either.
    */
-  readonly working?: number | undefined;
+  readonly working?: boolean | undefined;
+  readonly tasks?: readonly string[] | undefined;
   readonly limit: number;
   /** The last row of the page before: its change's seq and its reference number. */
   readonly after?: { readonly seq: number; readonly ref: number } | undefined;
@@ -50,16 +52,19 @@ function trashSql(request: TrashRequest, folders: boolean): string {
     );
   }
   const where = find.length === 0 ? [] : [`(${find.join(" OR ")})`];
-  if (request.working !== undefined) {
-    // Without the runs table (a space served at an older revision) no agent works on any of them.
-    where.push(
-      folders
-        ? `(EXISTS (SELECT 1 FROM runs r WHERE r.task_id = t.id AND ${OPEN_RUN}) OR ` +
-            "(SELECT r.state = 'failed' AND r.reason = 'needs_input' FROM runs r WHERE " +
-            "r.task_id = t.id ORDER BY r.queued_at DESC, r.id DESC LIMIT 1) OR EXISTS (SELECT 1 " +
-            "FROM launches l WHERE l.task_id = t.id AND l.route = 'terminal' AND l.updated_at >= $since))"
-        : "0",
+  const agents: string[] = [];
+  // The rule of a row's `run` (task-rows.ts runOf). Without the runs table (a space served at an
+  // older revision) no run works on any of them.
+  if (request.working === true && folders) {
+    agents.push(
+      `EXISTS (SELECT 1 FROM runs r WHERE r.task_id = t.id AND ${OPEN_RUN})`,
+      "(SELECT r.state = 'failed' AND r.reason = 'needs_input' FROM runs r WHERE " +
+        "r.task_id = t.id ORDER BY r.queued_at DESC, r.id DESC LIMIT 1)",
     );
+  }
+  if (request.tasks !== undefined) agents.push("t.id IN (SELECT value FROM json_each($tasks))");
+  if (request.working === true || request.tasks !== undefined) {
+    where.push(agents.length === 0 ? "0" : `(${agents.join(" OR ")})`);
   }
   if (request.after !== undefined)
     where.push("(k.seq < $seq OR (k.seq = $seq AND t.ref > $after))");
@@ -112,7 +117,7 @@ export async function readTrash(
         limit: request.limit + 1,
         ...(request.words.length === 0 ? {} : { words: JSON.stringify(request.words) }),
         ...(request.ref === undefined ? {} : { ref: request.ref }),
-        ...(request.working === undefined || !folders ? {} : { since: request.working }),
+        ...(request.tasks === undefined ? {} : { tasks: JSON.stringify(request.tasks) }),
         ...(request.after === undefined
           ? {}
           : { seq: request.after.seq, after: request.after.ref }),

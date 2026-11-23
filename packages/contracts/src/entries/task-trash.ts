@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { safeLine } from "../safe-text.ts";
-import { CompactTaskRow, patterns } from "../schemas.ts";
+import { CompactTaskRow, patterns, TaskId } from "../schemas.ts";
 import { CommitId } from "./history-undo.ts";
 
 /** Where the next page starts: the last row's change seq and its reference's number. */
@@ -18,7 +18,12 @@ export const TaskTrashInput = z.strictObject({
   q: safeLine(200).describe("Words of a title, or a reference such as M-14").optional(),
   working: z
     .boolean()
-    .describe("Only tasks an agent may still work on: an open run, or a terminal agent")
+    .describe("Only tasks whose row shows a run: one working, or one that asks you something")
+    .optional(),
+  tasks: z
+    .array(TaskId.max(40))
+    .max(200)
+    .describe("Only these tasks, such as those the Agent Monitor links an agent to")
     .optional(),
   limit: z.int().min(1).max(200).describe("Rows per page; default 50").optional(),
   cursor: z.string().max(60).describe("Next page: the last page's cursor").optional(),
@@ -57,7 +62,8 @@ export const taskTrash = defineEntry({
   input: TaskTrashInput,
   output: TaskTrashResult,
   defaults: [["limit", 50]],
-  faces: { ui: true, cli: { verb: "trash", positional: ["q"] } },
+  // `working` and `tasks` are the Agents page's: a person reads the Trash by words or reference.
+  faces: { ui: true, cli: { verb: "trash", positional: ["q"], exclude: ["working", "tasks"] } },
   errors: ["invalid_input", "space_unavailable", "forbidden"],
   examples: [
     {

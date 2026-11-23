@@ -128,6 +128,7 @@
   "trash.unsent": "Unsent words",
   "trash.unsentNoTask": "A task this space does not have now",
   "agents.inTrash": "In the Trash",
+  "agents.inTrashTerminal": "In the Trash. Its agent in a terminal goes on until you stop it there",
   "completed.more": "Show more",
   "completed.all": "Everything is shown",
   "completed.failed": "Completed tasks could not be read.",

@@ -5,6 +5,8 @@
 // only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
+import { RUN_LIMITS } from "@ttasks/contracts/runs";
+import { SpaceExecutionStore } from "@ttasks/launch";
 import { renderResult } from "../src/mcp/index.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
@@ -60,6 +62,79 @@ const trash = async (input: Json = {}): Promise<{ rows: Row[]; cursor?: string }
   };
 const refs = (rows: readonly Row[]) => rows.map((r) => r.ref);
 const ticket = (key: string) => ({ kind: "ticket", key, title: `Fixture ticket ${key}` });
+
+/** A background run of the task with ID `task`, started and working; `end` ends it with its answer. */
+async function startRun(task: string): Promise<{ id: string; end: () => Promise<void> }> {
+  const served = w.service.ops.spaces().find((s) => s.id === w.space);
+  const writer = served?.writer;
+  if (writer === undefined) throw new Error("the space is not open");
+  const machine = w.service.ops.machine.id;
+  const store = new SpaceExecutionStore({
+    writer,
+    spaceId: w.space,
+    credential: {
+      scope_id: `trash:${machine}`,
+      principal_id: await writer.actor("human", "user"),
+      actor_kind: "human",
+      machine_id: machine,
+      origin: "ui",
+    },
+  });
+  // No round of the service's runs takes this record while the test moves it.
+  const hold = w.service.runs.hold();
+  const queued = await store.createRun(
+    {
+      task,
+      routine: null,
+      machine,
+      instance: "codex-work",
+      adapter: "codex",
+      place: null,
+      request: "Fixture request",
+      briefHash: "0123456789abcdef".repeat(4),
+      permission: "full-access",
+      limits: RUN_LIMITS.task,
+    },
+    rid(),
+  );
+  const starting = await store.transitionRun(
+    queued.id,
+    { state: "queued", version: queued.version },
+    "starting",
+  );
+  const running = await store.transitionRun(
+    starting.id,
+    { state: "starting", version: starting.version },
+    "running",
+  );
+  return {
+    id: running.id,
+    end: async () => {
+      await store.transitionRun(
+        running.id,
+        { state: "running", version: running.version },
+        "succeeded",
+        {
+          result: {
+            ok: true,
+            outcome: "success",
+            exitCode: 0,
+            signal: null,
+            nativeId: null,
+            text: "Fixture answer",
+            error: null,
+            usage: null,
+            appTools: null,
+            declined: 0,
+            permissionDenials: 0,
+            durationMs: 1,
+          },
+        },
+      );
+      hold.release();
+    },
+  };
+}
 
 describe("[A3.trash] the Trash through real requests", () => {
   test("delete moves tasks as one change, a second delete is no change, and the Trash groups them by that change", async () => {
@@ -307,13 +382,32 @@ describe("[A3.trash] the Trash through real requests", () => {
     expect(again).toMatchObject({ replayed: true, result: "restored", moved: [a] });
   });
 
-  test("a removed task whose agent was opened in a terminal is among the ones still worked on", async () => {
-    const a = await add({ title: "Fixture agent still on it" });
+  test("the Agents page reads a removed task as it places a live one: by the run its row shows, and by the agents the monitor links, with no cut of its own", async () => {
+    const a = await add({ title: "Fixture run goes on" });
+    const terminal = await add({ title: "Fixture agent in a terminal" });
     const quiet = await add({ title: "Fixture nobody on it" });
-    await w.launch(a);
-    await remove([a, quiet]);
-    const working = refs((await trash({ working: true })).rows);
-    expect(working).toContain(a);
-    expect(working).not.toContain(quiet);
+    const live = await add({ title: "Fixture live beside them" });
+    const ids = new Map<string, string>();
+    for (const ref of [a, terminal, quiet, live]) {
+      ids.set(ref, ((await call("task.get", { task: ref }))["task"] as Json)["id"] as string);
+    }
+    const run = await startRun(ids.get(a) ?? "");
+    await w.launch(terminal);
+    await remove([a, terminal, quiet]);
+    // A working run shows on the row, as on a live task's.
+    const working = await trash({ working: true });
+    expect(refs(working.rows)).toEqual([a]);
+    expect(working.rows[0]).toMatchObject({ run: { state: "working" } });
+    // Once it ended with its answer the row shows no run, as a live task's does not; the monitor's
+    // link to its session reads it still, as it reads the terminal agent's, marked as removed.
+    await run.end();
+    expect(refs((await trash({ working: true })).rows)).toEqual([]);
+    const named = await trash({ tasks: [ids.get(a), ids.get(terminal), ids.get(live)] });
+    expect(refs(named.rows).sort()).toEqual([a, terminal].sort());
+    expect(named.rows.map((r) => r.removed.by)).toEqual(["user", "user"]);
+    // Restore changes nothing but the mark: the run and its answer are the task's as they were.
+    await restore({ tasks: [a] });
+    const runs = await w.service.runs.list(w.space, a);
+    expect(runs.map((r) => [r.run.id, r.run.state])).toEqual([[run.id, "succeeded"]]);
   });
 });

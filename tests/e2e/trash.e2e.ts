@@ -18,6 +18,7 @@ import {
   violations,
   watchViolations,
 } from "./page.ts";
+import { FAKE_QUESTION } from "./codex-cases.ts";
 import { CODEX_INSTANCE, SLOW_MS, type World } from "./world.ts";
 
 interface Added {
@@ -245,6 +246,63 @@ test.describe("[A5.trash.e2e.runs] Work on a removed task stays in sight", () =>
     await expect(runs.nth(1)).toContainText(
       "Did not start: the task was finished or moved to the Trash first.",
       { timeout: SLOW_MS },
+    );
+  });
+});
+
+test.describe("[A5.trash.e2e.answer] A run on a removed task that answers afterwards is where a live task's is", () => {
+  test("removed while its run works, the run then asks: on a cold page the task is under Needs you beside a live one, marked; Restore changes nothing but the mark @one-browser", async ({
+    page,
+    runs: world,
+  }) => {
+    const tag = test.info().project.name;
+    const space = world.mira.id;
+    const live = await addTask(world, { title: `Check the export (${tag})`, area: "home" });
+    const removed = await addTask(world, { title: `Check the backup (${tag})`, area: "home" });
+    for (const ref of [live, removed]) {
+      world.codex(ref, ["gate"]);
+      await openTask(page, world, ref);
+      const row = rowOf(page, ref);
+      await row.getByRole("button", { name: `Run with ${CODEX_INSTANCE.label}` }).click();
+      await expect(
+        row.locator('[data-entry="run"]').first().locator('[data-part="run-state"]'),
+      ).toContainText("is working on it", { timeout: SLOW_MS });
+    }
+    await removeTasks(world, [removed]);
+
+    // A cold page: both work, the removed one marked.
+    await page.goto(`${world.origin}/s/${space}/agents`);
+    await page.reload();
+    await showsSpace(page, world.mira.name);
+    const groupOf = (ref: string) =>
+      page.locator('main [role="group"]').filter({ has: page.locator(`li[data-task="${ref}"]`) });
+    await expect(groupOf(removed)).toContainText("Working", { timeout: SLOW_MS });
+    await expect(groupOf(live)).toContainText("Working");
+    await expect(rowOf(page, removed).locator('[data-part="agents-in-trash"]')).toBeVisible();
+
+    // Both runs go on and ask: the removed task is where the live one is, with the question.
+    world.openGate(live);
+    world.openGate(removed);
+    await expect(groupOf(removed)).toContainText("Needs you", { timeout: SLOW_MS });
+    await expect(groupOf(live)).toContainText("Needs you", { timeout: SLOW_MS });
+    await expect(rowOf(page, removed).locator('[data-part="agents-in-trash"]')).toBeVisible();
+    await rowOf(page, removed).locator('[data-part="title"]').click();
+    await expect(rowOf(page, removed).locator('[data-entry="run"]').first()).toContainText(
+      FAKE_QUESTION,
+      { timeout: SLOW_MS },
+    );
+
+    // Restore: the same group and the same answer, without the mark.
+    await rowOf(page, removed)
+      .locator('[data-part="agents-in-trash"] [data-part="restore"]')
+      .click();
+    await expect(toast(page)).toContainText(`${removed} is back`, { timeout: SLOW_MS });
+    await expect(rowOf(page, removed).locator('[data-part="agents-in-trash"]')).toHaveCount(0, {
+      timeout: SLOW_MS,
+    });
+    await expect(groupOf(removed)).toContainText("Needs you");
+    await expect(rowOf(page, removed).locator('[data-entry="run"]').first()).toContainText(
+      FAKE_QUESTION,
     );
   });
 });

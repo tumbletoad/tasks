@@ -8,13 +8,15 @@
 // one of its agents is listed beneath its row in its own state: the lines say what is true now,
 // and no heading can hold a state that is gone. The rows are ordinary rows, so a task expands to
 // its thread, where its runs, Stop and the changes are; it stays where it was until it collapses.
-// A task in the Trash that a run or a terminal agent still works on is placed the same way, read
-// from the Trash (`task.trash` with `working`), so a cold page shows it too, marked with Restore;
-// its card holds the run's Stop and answer. A row the monitor put in its group is muted while the
-// monitor's picture is not current. Below
-// them, every other agent on this computer and the plan usage of each account (Computer.tsx).
+// A task in the Trash is placed by the same rule, from its own row read from the Trash: the run it
+// shows, or the agents the monitor links to it. So a cold page shows it too, as long as a live task
+// would be shown, marked with Restore; a run's card holds its Stop and answer, and an agent in a
+// terminal is said to go on until it is stopped there. A row the monitor put in its group is muted
+// while the monitor's picture is not current. Below them, every other agent on this computer and
+// the plan usage of each account (Computer.tsx).
 // "Routines" and the full history with Revert wait for the service's read of sessions and routines.
 import { useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import type { Client } from "@ttasks/contracts/generated/client.ts";
 import { changeLogOf } from "../app/changes.ts";
 import { recentOf } from "../app/views.ts";
 import { Session } from "../context.ts";
@@ -28,7 +30,7 @@ import { Latest } from "../latest.ts";
 import { useLive } from "../store/hooks.ts";
 import { taskRow, type TaskRow } from "../store/rows.ts";
 import css from "./Trash.module.css";
-import { mergeAgents, type AgentState } from "./agents-merge.ts";
+import { linkedOutside, mergeAgents, type AgentState } from "./agents-merge.ts";
 import { Computer, TaskAgents } from "./Computer.tsx";
 import { TaskList, type GroupsOf, type HeldRow } from "./TaskList.tsx";
 
@@ -54,25 +56,57 @@ const byRef = (a: TaskRow, b: TaskRow): number =>
 
 const styles = classes(css, ["where", "restore"]);
 
+/** Rows per read of the Trash: every page is read, so none falls behind. */
+const PAGE = 200;
+
 /**
- * The tasks in the Trash that an agent may still work on: read at once, and again whenever the feed
- * says a run, a launch or a task's place in the Trash changed, or brings a fresh snapshot.
+ * The rows of the tasks in the Trash that the page places as it places a live task: those whose
+ * row shows a run, every page of them, and `named`, which the Agent Monitor links an agent to.
  */
-function useTrashedWork(): ReadonlyMap<string, TaskRow> {
+async function readTrashedWork(
+  client: Client,
+  named: readonly string[],
+): Promise<Map<string, TaskRow>> {
+  const found = new Map<string, TaskRow>();
+  const add = (rows: readonly unknown[]): void => {
+    for (const value of rows) {
+      const row = taskRow(value);
+      if (row !== undefined) found.set(row.id, row);
+    }
+  };
+  let cursor: string | undefined;
+  do {
+    const page = await client.task.trash({
+      working: true,
+      limit: PAGE,
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    add(page.rows);
+    cursor = page.cursor;
+  } while (cursor !== undefined);
+  for (let at = 0; at < named.length; at += PAGE) {
+    add((await client.task.trash({ tasks: named.slice(at, at + PAGE), limit: PAGE })).rows);
+  }
+  return found;
+}
+
+/**
+ * The tasks in the Trash that the page places as it places a live one (readTrashedWork): read at
+ * once, again whenever the feed says a run, a launch or a task's place in the Trash changed or
+ * brings a fresh snapshot, and when the monitor links an agent to another of them.
+ */
+function useTrashedWork(named: readonly string[]): ReadonlyMap<string, TaskRow> {
   const { api, live } = useContext(Session);
   const [rows, setRows] = useState<ReadonlyMap<string, TaskRow>>(new Map());
+  const key = named.join(" ");
   useEffect(() => {
     const reads = new Latest();
+    const asked = key === "" ? [] : key.split(" ");
     const read = (): void => {
       const newest = reads.begin("trash");
-      api.client.task.trash({ working: true, limit: 200 }).then(
-        (page) => {
-          if (!newest()) return;
-          const found = page.rows.flatMap((value) => {
-            const row = taskRow(value);
-            return row === undefined ? [] : [[row.id, row] as const];
-          });
-          setRows(new Map(found));
+      readTrashedWork(api.client, asked).then(
+        (found) => {
+          if (newest()) setRows(found);
         },
         (error: unknown) => {
           live.failed(error);
@@ -89,7 +123,7 @@ function useTrashedWork(): ReadonlyMap<string, TaskRow> {
       );
       if (reset || touched) read();
     });
-  }, [api, live]);
+  }, [api, live, key]);
   return rows;
 }
 
@@ -106,14 +140,18 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
   const clock = useClock(false);
   const { tasks: liveRows } = useLive();
   const edits = useEdits();
-  const trashed = useTrashedWork();
+  const agents = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
+  const picture = agents.view?.picture ?? null;
+  const named = useMemo(
+    () => linkedOutside(picture, live.spaceId, liveRows),
+    [picture, live.spaceId, liveRows],
+  );
+  const trashed = useTrashedWork(named);
   // A task in the Trash with an agent still on it is placed like any other.
   const rows = useMemo(
     () => (trashed.size === 0 ? liveRows : new Map([...trashed, ...liveRows])),
     [liveRows, trashed],
   );
-  const agents = useSyncExternalStore(live.agents.subscribe, live.agents.getState);
-  const picture = agents.view?.picture ?? null;
   const merged = useMemo(
     () => mergeAgents(picture, live.spaceId, rows),
     [picture, live.spaceId, rows],
@@ -132,10 +170,12 @@ export function AgentsPage({ task, onExpand }: AgentsProps) {
       const working =
         listed.length === 0 ? undefined : <TaskAgents agents={listed} current={agents.current} />;
       if (row.deleted_at === undefined) return working;
+      // A run's card has its Stop; an agent in a terminal has none here, so the line says where.
+      const terminal = listed.some((agent) => agent.started === "terminal");
       return (
         <>
           <span className={styles.where} data-part="agents-in-trash">
-            {t("agents.inTrash")}
+            {t(terminal ? "agents.inTrashTerminal" : "agents.inTrash")}
             <button
               type="button"
               className={styles.restore}

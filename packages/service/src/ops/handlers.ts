@@ -924,9 +924,6 @@ function changeGone(): AppError {
   });
 }
 
-/** A day, in milliseconds. */
-const DAY_MS = 86_400_000;
-
 const replayed = (result: WriteResult) => (result.replayed === true ? { replayed: true } : {});
 
 /** What a status or an effort may be in this space, as a refusal's hint. */
@@ -2798,8 +2795,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         {
           words,
           ref: ref === null ? undefined : Number(ref[1]),
-          // A terminal agent links to its task for a day after its launch last changed (held.ts).
-          working: input["working"] === true ? (call.host.now ?? Date.now)() - DAY_MS : undefined,
+          working: input["working"] === true,
+          ...(Array.isArray(input["tasks"]) ? { tasks: input["tasks"] as string[] } : {}),
           limit: Number(input["limit"]),
           after,
         },

@@ -71,6 +71,27 @@ const byStart = (a: TaskAgent, b: TaskAgent): number =>
   (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
 /**
+ * The tasks of `space` the monitor links an agent to that `rows` does not hold: those in the Trash,
+ * whose rows the page reads so it places them as it places a live task. Sorted, so an unchanged
+ * set reads nothing again.
+ */
+export function linkedOutside(
+  picture: AgentsPicture | null,
+  space: string | undefined,
+  rows: ReadonlyMap<string, TaskRow>,
+): string[] {
+  if (picture === null || space === undefined) return [];
+  const ids = new Set<string>();
+  for (const session of picture.sessions) {
+    if (session.task?.space === space && !rows.has(session.task.id)) ids.add(session.task.id);
+  }
+  for (const task of picture.unseen) {
+    if (task.space === space && !rows.has(task.id)) ids.add(task.id);
+  }
+  return [...ids].sort();
+}
+
+/**
  * The agents of each task of `space` the page holds as `rows`, from the monitor's `picture`. The
  * agent of the task's current run is the session matched to that run, in TTasks' state; any other
  * session, one of an earlier run or launch resumed by hand among them, is an agent of its own in
