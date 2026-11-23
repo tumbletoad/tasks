@@ -211,21 +211,30 @@ export async function folderState(
   return found === true ? "here" : "missing";
 }
 
-/** Runs a look at the disk, or answers `not_answering` once it took longer than `ms`. */
+/**
+ * Runs a look at the disk, or answers `not_answering` once it took longer than `ms`. The limit
+ * is for the disk: when this process was held up, the timer is already due as it resumes, while
+ * the disk's answer waits to be delivered. So a due timer lets what has arrived be delivered
+ * first, and only then gives up.
+ */
 export async function bounded<T>(
   look: () => Promise<T>,
   ms = LOOK_MS,
 ): Promise<T | "not_answering"> {
   let timer: NodeJS.Timeout | undefined;
+  let turn: NodeJS.Immediate | undefined;
   const late = new Promise<"not_answering">((resolve) => {
     timer = setTimeout(() => {
-      resolve("not_answering");
+      turn = setImmediate(() => {
+        resolve("not_answering");
+      });
     }, ms);
   });
   try {
     return await Promise.race([look(), late]);
   } finally {
     clearTimeout(timer);
+    clearImmediate(turn);
   }
 }
 

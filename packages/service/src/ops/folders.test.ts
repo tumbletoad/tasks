@@ -4,8 +4,9 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { MessageChannel } from "node:worker_threads";
 import { describe, expect, test } from "vitest";
-import { deepestProject, expanded, storedForm } from "./folders.ts";
+import { bounded, deepestProject, expanded, storedForm } from "./folders.ts";
 
 describe("[A1.3.15.folders.stored-form] a folder as the space stores it, the home written as ~", () => {
   test("Linux and macOS: ~ in and out, separators made plain, case kept on Linux", () => {
@@ -68,6 +69,37 @@ describe("[A1.3.15.folders.stored-form] a folder as the space stores it, the hom
     expect(storedForm("C:work", home, "win32")).toBe("not_absolute");
     expect(storedForm("\\work", home, "win32")).toBe("not_absolute");
     expect(expanded("~\\Projects", home, "win32")).toBe("C:\\Users\\Mira\\Projects");
+  });
+});
+
+describe("[A1.3.15.folders.bounded] a look at the disk is timed by the disk, not by this process", () => {
+  test("a look that answered while this process was held up counts as answered", async () => {
+    // The answer is on its way as an event of this process, as a read of the disk's is: it is
+    // posted first, and delivered only once the process is free again.
+    const { port1, port2 } = new MessageChannel();
+    try {
+      const look = bounded(
+        () =>
+          new Promise<string>((resolve) => {
+            port2.once("message", resolve);
+          }),
+        20,
+      );
+      port1.postMessage("answered");
+      // The process is busy for longer than the limit.
+      const until = Date.now() + 100;
+      while (Date.now() < until) {
+        /* held up */
+      }
+      expect(await look).toBe("answered");
+    } finally {
+      port1.close();
+      port2.close();
+    }
+  });
+
+  test("a look that never answers is given up after its limit", async () => {
+    expect(await bounded(() => new Promise<never>(() => undefined), 20)).toBe("not_answering");
   });
 });
 

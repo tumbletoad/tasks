@@ -823,6 +823,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.15.folders.bounded",
+      "title": "A look at the disk is timed by the disk, not by this process: an answer that arrived while the service was held up counts, and a look that never answers is given up after its limit",
+      "source": "A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.15.folders.deepest",
       "title": "The project a working folder belongs to: the deepest project folder that holds it, by whole names and the machine's case rule, exact when it is the project's folder, none for a sibling with a longer name; a project folder reached through a link holds the folders of its target",
       "source": "A1 3.15",
