@@ -367,12 +367,69 @@ describe("[A1.3.16.prefs.read] the writer reads preferences through the registry
     expect(waiting.error).toMatchObject({ code: "VALIDATION_FAILED", field: "status" });
     const effort = submit([{ kind: "task.create", title: "Ask", effort: "M" }]);
     expect(effort.error).toMatchObject({ code: "VALIDATION_FAILED", field: "effort" });
-    // Reset: the defaults apply again.
+    // Reset: the defaults apply again, once no active task holds a key they leave out.
+    expectStatus(submit([{ kind: "task.complete", task: id }]), "applied");
     expectStatus(submit([set("tasks.statuses", null), set("tasks.effort_scale", null)]), "applied");
     expectStatus(
       submit([{ kind: "task.create", title: "Ask", status: "waiting", effort: "M" }]),
       "applied",
     );
+  });
+
+  test("a scale that adds keys keeps every task's key, and the new keys work at once", () => {
+    const ids = ["S", "M", "L"].map((effort) => {
+      const id = newId("t");
+      expectStatus(
+        submit([{ kind: "task.create", id, title: `Size ${effort}`, effort }]),
+        "applied",
+      );
+      return id;
+    });
+    const scale = ["XS", "S", "M", "L", "XL"].map((key) => ({ key }));
+    expectStatus(submit([set("tasks.effort_scale", scale)]), "applied");
+    expect(ids.map((id) => one("SELECT effort FROM tasks WHERE id = $id", { id }))).toEqual([
+      "S",
+      "M",
+      "L",
+    ]);
+    expectStatus(submit([{ kind: "task.create", title: "Tiny", effort: "XS" }]), "applied");
+    expectStatus(
+      submit([{ kind: "task.patch", task: ids[2] ?? "", set: { effort: "XL" } }]),
+      "applied",
+    );
+  });
+
+  test("a scale that drops a key an active task holds is refused, and nothing changes", () => {
+    const sized = newId("t");
+    const waiting = newId("t");
+    expectStatus(
+      submit([
+        { kind: "task.create", id: sized, title: "Sized", effort: "L" },
+        { kind: "task.create", id: waiting, title: "Blocked", status: "waiting" },
+      ]),
+      "applied",
+    );
+    const effort = submit([set("tasks.effort_scale", [{ key: "S" }, { key: "M" }])]);
+    expect(effort.error).toMatchObject({ code: "VALIDATION_FAILED", op: 0, field: "value" });
+    const statuses = submit([set("tasks.statuses", ["open", "review", "backlog"])]);
+    expect(statuses.error).toMatchObject({ code: "VALIDATION_FAILED", op: 0, field: "value" });
+    expect(read("tasks.effort_scale").state).toBe("default");
+    expect(read("tasks.statuses").state).toBe("default");
+    expect(one("SELECT effort FROM tasks WHERE id = $id", { id: sized })).toBe("L");
+    // Renaming a key the tasks do not hold, and keeping the held ones, is no drop.
+    expectStatus(
+      submit([set("tasks.effort_scale", [{ key: "XS" }, { key: "M" }, { key: "L" }])]),
+      "applied",
+    );
+    // A finished task keeps its key and holds nothing back; an active one moved off it neither.
+    expectStatus(submit([{ kind: "task.complete", task: sized }]), "applied");
+    expectStatus(
+      submit([{ kind: "task.patch", task: waiting, set: { status: "open" } }]),
+      "applied",
+    );
+    expectStatus(submit([set("tasks.effort_scale", [{ key: "S" }, { key: "M" }])]), "applied");
+    expectStatus(submit([set("tasks.statuses", ["open", "review", "backlog"])]), "applied");
+    expect(one("SELECT effort FROM tasks WHERE id = $id", { id: sized })).toBe("L");
   });
 
   test("every declared space key reads its default in a new space, and a set one its value", () => {

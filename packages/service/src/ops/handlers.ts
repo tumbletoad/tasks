@@ -16,10 +16,12 @@ import {
   findEntry,
   AppError,
   FINISHED_CURSOR,
+  fitsShape,
   GROUP_LIMITS,
   isKeyList,
   laterIn,
   LATER_PREFERENCES,
+  LATER_SETS,
   mayWrite,
   opSpec,
   parseInput,
@@ -142,6 +144,7 @@ import {
   readSpace,
   readStatus,
   readTask,
+  readKeyHolders,
   readTaskKeys,
   readTaskRef,
   readTaskTitles,
@@ -395,7 +398,7 @@ async function callWith(
     if (Object.hasOwn(entry.input.shape, "request_id")) input["request_id"] = params.request_id;
   }
   checkHiddenFields(entry, input, principal.audience);
-  refuseLater(entry.name, input);
+  refuseLater(entry.name, input, principal.audience);
   const parsed = parseInput(entry, principal.audience, input);
   if (!parsed.success) throw schemaFailure(parsed.error, input, principal.origin, entry.name);
   checkActionFields(entry, parsed.data);
@@ -2731,7 +2734,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   "prefs.manage": async (call) => {
     const { input } = call;
     const action = String(input["action"]);
-    const actor = call.principal.actorKind;
+    if (action === "set") return prefsSet(call);
     const declared = prefsAsked(
       input["keys"],
       call.principal.audience === "agent" ? AGENT_PREFERENCES : TOOL_PREFERENCES,
@@ -2745,7 +2748,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     return {
       action,
       as_of: read.space.asOf,
-      prefs: declared.map((p) => prefRow(p, action, read.reads.get(p.key), actor)),
+      prefs: declared.map((p) => prefRow(p, action, read.reads.get(p.key), call.principal)),
     };
   },
 
@@ -3374,12 +3377,179 @@ function unknownPref(path: string, key: string, shown: readonly PreferenceSpec[]
   );
 }
 
-/** No caller changes a key while the tool's set is a later step's. */
-const PREFS_SET = laterIn("prefs.manage", { action: "set" }) === undefined;
+/** The step that makes a key this build declares and does not read do something, if it is one. */
+const laterStep = (p: PreferenceSpec): string | undefined =>
+  LATER_PREFERENCES.find((later) => later.key === p.key)?.step;
 
-/** Whether `actor` may set the key here (A1 3.16): never a policy key, else by its writers. */
-const prefWritable = (p: PreferenceSpec, actor: string): boolean =>
-  PREFS_SET && !p.policy && mayWrite(p, actor);
+/** The step that lets anyone set a key this build reads, if it is one. */
+const laterSet = (p: PreferenceSpec): string | undefined =>
+  LATER_SETS.find((later) => later.key === p.key)?.step;
+
+/**
+ * Whether the caller may set the key here (A1 3.16): a key this build acts on and lets be set,
+ * never a policy key, else by its writers, and only for a caller who may set at all (later.ts).
+ */
+const prefWritable = (p: PreferenceSpec, principal: Principal): boolean =>
+  laterIn("prefs.manage", { action: "set" }, principal.audience) === undefined &&
+  laterStep(p) === undefined &&
+  laterSet(p) === undefined &&
+  !p.policy &&
+  mayWrite(p, principal.actorKind);
+
+/**
+ * A value as the caller gave it, in its key's form: the command line gives one text, so a list is
+ * keys separated by commas, a number its digits and a switch true or false. Undefined when it does
+ * not fit the key.
+ */
+function prefValueOf(p: PreferenceSpec, given: unknown): PrefValue | null | undefined {
+  if (given === null) return null;
+  let value: unknown = given;
+  const { shape } = p;
+  if (typeof given === "string") {
+    const text = given.trim();
+    if (shape.type === "list") {
+      value = text
+        .split(",")
+        .map((key) => key.trim())
+        .filter((key) => key !== "");
+    } else if (shape.type === "integer" && /^-?[0-9]{1,15}$/.test(text)) {
+      value = Number(text);
+    } else if (shape.type === "boolean" && (text === "true" || text === "false")) {
+      value = text === "true";
+    }
+  }
+  if (isKeyList(shape) && Array.isArray(value)) value = value.map((key: unknown) => ({ key }));
+  return fitsShape(shape, value) ? (value as PrefValue) : undefined;
+}
+
+/** A key's new value, checked, and where the caller gave it. */
+interface PrefChange {
+  readonly p: PreferenceSpec;
+  readonly value: PrefValue | null;
+  readonly path: string;
+}
+
+/**
+ * `set` (A3 3.4.11): the keys' new values through A1's `pref.set`, in one request that never joins
+ * the undo stack: setting the earlier value again changes a key back. The answer says what changed.
+ */
+async function prefsSet(call: Call): Promise<unknown> {
+  const items = (call.input["set"] ?? []) as { key: string; value: unknown }[];
+  if (items.length === 0) throw invalid("set", "Required to set", "Give a key and its new value.");
+  const changes = items.map((item, k): PrefChange => {
+    const path = `set.${String(k)}`;
+    const p = TOOL_PREFERENCES.find((spec) => spec.key === item.key);
+    if (p === undefined) throw unknownPref(`${path}.key`, item.key, TOOL_PREFERENCES);
+    const step = laterStep(p);
+    if (step !== undefined) {
+      throw invalid(
+        `${path}.key`,
+        "This build does not act on this key yet, so it is not changed",
+        `It arrives with ${step}.`,
+      );
+    }
+    const setStep = laterSet(p);
+    if (setStep !== undefined) {
+      throw invalid(
+        `${path}.key`,
+        "Changing this setting is not built yet",
+        `It arrives with ${setStep}.`,
+      );
+    }
+    if (!prefWritable(p, call.principal)) {
+      throw invalid(`${path}.key`, "Not a key this caller changes");
+    }
+    const value = prefValueOf(p, item.value);
+    if (value === undefined) {
+      throw invalid(`${path}.value`, "Not a value of this key", `It takes ${shapeText(p.shape)}.`);
+    }
+    return { p, value, path };
+  });
+  const reader = readerOf(call.space);
+  const read = async () => {
+    try {
+      return await readSpacePreferences(reader);
+    } catch (error) {
+      throw storageFailure(error);
+    }
+  };
+  const before = await read();
+  let result;
+  try {
+    result = await submit(
+      call,
+      changes.map(({ p, value }): Operation => ({ kind: "pref.set", key: p.key, value })),
+      { undoable: false },
+    );
+  } catch (error) {
+    throw (await keysInUse(reader, changes)) ?? error;
+  }
+  const after = await read();
+  const keys = new Set(changes.map(({ p }) => p.key));
+  const asked = TOOL_PREFERENCES.filter((p) => keys.has(p.key));
+  const shown = (p: PreferenceSpec, from: typeof before) =>
+    shownValue(p, from.reads.get(p.key)?.value ?? p.default);
+  const changed = asked
+    .map((p) => ({ key: p.key, from: shown(p, before), to: shown(p, after) }))
+    .filter((c) => JSON.stringify(c.from) !== JSON.stringify(c.to));
+  return {
+    action: "set",
+    as_of: result.as_of,
+    prefs: asked.map((p) => prefRow(p, "get", after.reads.get(p.key), call.principal)),
+    // A replay reads the values as they are now, after the first call: what it changed is gone.
+    result: result.replayed === true || changed.length > 0 ? "updated" : "no_change",
+    ...(result.replayed === true ? {} : { changed }),
+    ...replayed(result),
+  };
+}
+
+/**
+ * The refusal of a scale change that removes a key active tasks hold (the writer's rule), naming
+ * those tasks so the person knows what to move first. Undefined when that is not why it failed.
+ */
+async function keysInUse(
+  reader: WorkerConnection,
+  changes: readonly PrefChange[],
+): Promise<AppError | undefined> {
+  for (const { p, value, path } of changes) {
+    if (p.key !== "tasks.statuses" && p.key !== "tasks.effort_scale") continue;
+    const field = p.key === "tasks.statuses" ? "status" : "effort";
+    const kept = new Set(scaleKeysOf(value ?? p.default));
+    let holders;
+    try {
+      const now = await readTaskKeys(reader);
+      holders = await readKeyHolders(
+        reader,
+        field,
+        now[field].filter((key) => !kept.has(key)),
+      );
+    } catch {
+      return undefined;
+    }
+    if (holders.count === 0) continue;
+    const named = holders.tasks.map((t) => `${t.ref} (${t.key})`).join(", ");
+    const more = holders.count - holders.tasks.length;
+    return new AppError({
+      code: "invalid_input",
+      message: `Active tasks hold ${field === "status" ? "a status" : "an effort"} this change removes: ${named}${more > 0 ? ` and ${String(more)} more` : ""}. Nothing was changed.`,
+      hint: `Give them another ${field} or finish them, then change ${p.key} again.`,
+      data: {
+        issues: [{ path: `${path}.value`, message: "Active tasks hold a key it removes" }],
+        tasks: holders.tasks.map((t) => t.ref),
+        task_count: holders.count,
+      },
+    });
+  }
+  return undefined;
+}
+
+/** A scale's keys from its value: a list of keys, or of `{key}` objects. */
+const scaleKeysOf = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.map((item: unknown) =>
+        typeof item === "string" ? item : String((item as { key?: unknown }).key),
+      )
+    : [];
 
 /** A stored or default value as the tool shows it: a list of `{key}` objects as its keys. */
 function shownValue(p: PreferenceSpec, value: PrefValue | null): PrefValue | null {
@@ -3393,7 +3563,7 @@ function prefRow(
   p: PreferenceSpec,
   action: string,
   read: PreferenceRead | undefined,
-  actor: string,
+  principal: Principal,
 ): Record<string, unknown> {
   const value = shownValue(p, read?.value ?? p.default);
   const fallback = shownValue(p, p.default);
@@ -3404,7 +3574,7 @@ function prefRow(
       ? { value, is_default: JSON.stringify(value) === JSON.stringify(fallback) }
       : {}),
     default: fallback,
-    writable: prefWritable(p, actor),
+    writable: prefWritable(p, principal),
     ...(p.policy ? { policy: true } : {}),
   };
 }

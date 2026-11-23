@@ -676,9 +676,8 @@
           ]
         }
       ],
-      "inputOnly": [
-        "set"
-      ],
+      "inputOnly": [],
+      "item": "set",
       "kind": "write",
       "positionals": [
         {
@@ -692,6 +691,20 @@
             "get",
             "set"
           ]
+        },
+        {
+          "field": "set[].key",
+          "help": "A key describe lists",
+          "name": "key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "set[].value",
+          "help": "The new value, a list as keys separated by commas; null resets it to its default",
+          "name": "value",
+          "required": false,
+          "type": "string"
         }
       ],
       "summary": "Read and change the space's preferences that are not policy.",

@@ -31,3 +31,39 @@ describe("[A3.3.4.prefs.tool] ttasks prefs", () => {
     expect(script.code).toBe(EXIT_CODES.usage);
   });
 });
+
+describe("[A3.3.4.prefs.set] ttasks prefs set", () => {
+  test("a person sets the effort scale, reads it back and uses a new size at once; a script and an agent's shell are refused", async () => {
+    const scale = ["prefs", "set", "tasks.effort_scale", "XS,S,M,L,XL"];
+    for (const refused of [
+      await tasks(scale, false),
+      await runMain([...scale, "--space", w.space], {
+        home: w.home,
+        tty: true,
+        env: { CLAUDECODE: "1" },
+      }),
+    ]) {
+      expect(refused.code).not.toBe(0);
+      expect(refused.stderr).toBe(
+        "error forbidden: Only the user can do this. Ask the user to do this in TTasks.\n",
+      );
+    }
+    const set = await tasks(scale);
+    expect(set.code).toBe(0);
+    expect(set.stdout).toBe('tasks.effort_scale: ["S","M","L"] → ["XS","S","M","L","XL"]\n');
+    const got = await tasks(["prefs", "get", "--keys", "tasks.effort_scale"]);
+    expect(got.stdout).toBe('tasks.effort_scale: ["XS","S","M","L","XL"]\n');
+    const added = await tasks(["add", "Fixture sized task", "--effort", "XL", "--json"]);
+    expect(added.code).toBe(0);
+    const ref = (JSON.parse(added.stdout) as { tasks: { ref: string }[] }).tasks[0]?.ref ?? "";
+    // Dropping the size the new task holds is refused, naming it.
+    const dropped = await tasks(["prefs", "set", "tasks.effort_scale", "XS,S,M,L"]);
+    expect(dropped.code).toBe(EXIT_CODES.usage);
+    expect(dropped.stderr).toContain(
+      `Active tasks hold an effort this change removes: ${ref} (XL).`,
+    );
+    expect((await tasks(["prefs", "get", "--keys", "tasks.effort_scale"])).stdout).toBe(
+      'tasks.effort_scale: ["XS","S","M","L","XL"]\n',
+    );
+  });
+});

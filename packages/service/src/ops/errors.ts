@@ -11,15 +11,22 @@ import {
   type ErrorBody,
 } from "@ttasks/contracts";
 import { StorageError, type WriteResult } from "@ttasks/storage";
+import { USER_ONLY } from "./caller.ts";
 
 /**
  * Refuses a call that uses what a later step builds (contracts' later.ts), naming the step, on
  * every face. The same list keeps it out of the MCP tool list and docs/agents/tools.md; the
- * command line's help still offers it.
+ * command line's help still offers it. What the person has already and agents do not yet is
+ * refused to an agent as anything else only the user may do.
  */
-export function refuseLater(entry: string, input: Readonly<Record<string, unknown>>): void {
-  const row = laterIn(entry, input);
+export function refuseLater(
+  entry: string,
+  input: Readonly<Record<string, unknown>>,
+  audience: "user" | "agent",
+): void {
+  const row = laterIn(entry, input, audience);
   if (row === undefined) return;
+  if (row.audience === "agent") throw USER_ONLY();
   throw new AppError({
     code: "invalid_input",
     message: "This service does not support that field yet.",

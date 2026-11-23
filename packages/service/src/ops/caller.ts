@@ -145,7 +145,8 @@ export function sessionPrincipal(
 export const isUserClass = (cls: ConnectionClass): boolean =>
   cls === "ui" || cls === "cli-interactive";
 
-const USER_ONLY = (): AppError =>
+/** The refusal of what only the user may do, to any other caller. */
+export const USER_ONLY = (): AppError =>
   new AppError({
     code: "forbidden",
     message: "Only the user can do this.",

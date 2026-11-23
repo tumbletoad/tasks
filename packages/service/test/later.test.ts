@@ -86,6 +86,12 @@ describe("[A3.3.3.mcp.later] what a later step builds", () => {
         if (value === undefined) throw new Error(`nothing to give ${row.field}`);
         const body = await refusal(row.entry, { ...make(before), [row.field]: value });
         const where = `${row.entry} ${row.field}`;
+        expect(await asOf(), where).toBe(before);
+        if (row.audience === "agent") {
+          // The person has it already: an agent is refused it as anything only the user may do.
+          expect(body, where).toMatchObject({ code: "forbidden", data: { rule: "user_only" } });
+          continue;
+        }
         expect(body.code, where).toBe("invalid_input");
         expect(body.hint, where).toBe(`It arrives with ${row.step}.`);
         expect(body.data?.["issues"], where).toEqual([
