@@ -119,7 +119,10 @@ export class Dedupe {
   readonly #conn: Connection;
   /** The request's instant: a task finished in the request finished then. */
   readonly #at: number;
-  /** Every key the request's `source.add` operations name, and those of the links it changes. */
+  /**
+   * Every key the request's `source.add` operations name, and those of the links it changes or
+   * the tasks it restores.
+   */
   readonly #keys: ReadonlySet<string>;
   /** The keys of the `source.add` operations that name each task reference, in request order. */
   readonly #named = new Map<string, string[]>();
@@ -135,10 +138,16 @@ export class Dedupe {
   readonly #plain = new Map<string, Set<Id<"t">>>();
   #drafts = 0;
 
-  constructor(conn: Connection, ops: readonly Operation[], at: number) {
+  /** `restored`: the keys of the live links of the tasks the request restores. */
+  constructor(
+    conn: Connection,
+    ops: readonly Operation[],
+    at: number,
+    restored: Iterable<string> = [],
+  ) {
     this.#conn = conn;
     this.#at = at;
-    const keys = new Set<string>();
+    const keys = new Set<string>(restored);
     for (const op of ops) {
       if (op.kind === "source.unlink" || op.kind === "source.relink") {
         const row = conn.prepare(SQL.keyOf).get({ id: op.source });

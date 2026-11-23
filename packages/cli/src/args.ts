@@ -146,6 +146,8 @@ export interface PositionalSpec {
   readonly field: string;
   /** The array field a read action puts it in instead (`ttasks prefs get <key>`). */
   readonly readInto?: string;
+  /** An array field, the last positional: it takes every argument left. */
+  readonly repeat?: boolean;
   readonly help: string;
   readonly name: string;
   readonly required: boolean;
@@ -366,15 +368,22 @@ export async function parseVerb(
   }
   // Positionals in order. With fewer arguments than positionals, an optional one before a
   // required one is left out first: `ttasks log "text"` gives the text, and the
-  // task comes from the binding.
+  // task comes from the binding. A last positional that repeats takes every argument left.
   const specs = verb.positionals;
-  if (tokens.length > specs.length) {
+  if (tokens.length > specs.length && specs[specs.length - 1]?.repeat !== true) {
     throw new UsageError(`ttasks ${verb.verb} takes no more arguments`);
   }
   let spare = tokens.length - specs.filter((s) => s.required).length;
   for (const spec of specs) {
     if (!spec.required && spare <= 0) continue;
     if (!spec.required) spare -= 1;
+    if (spec.repeat === true && tokens.length > 0) {
+      for (const token of tokens.splice(0)) {
+        setAt(input, spec.field, typed(token, spec.type, undefined, `<${spec.name}>`), true);
+      }
+      any = true;
+      continue;
+    }
     const token = tokens.shift();
     if (token === undefined) {
       if (spec.required && base === undefined) {

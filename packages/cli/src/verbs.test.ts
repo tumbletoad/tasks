@@ -4,8 +4,10 @@ import { describe, expect, test } from "vitest";
 import { CLI_SPEC, type VerbSpec } from "./args.ts";
 import { baseRead } from "./verbs.ts";
 
-/** A verb's writes as inputs: one per write action, or one about a task. */
+/** A verb's writes as inputs: one per write action, one about a task, or one about several. */
 function writesOf(verb: VerbSpec): Record<string, unknown>[] {
+  const several = verb.positionals.find((p) => p.repeat === true);
+  if (several !== undefined) return [{ [several.field]: ["M-14", "M-15"] }];
   const actions = verb.actions;
   if (actions === undefined) return [{}, { task: "M-14" }];
   const values = verb.positionals.find((p) => p.field === actions.field)?.values ?? [];

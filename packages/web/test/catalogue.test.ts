@@ -115,6 +115,12 @@ const SAMPLE = {
   side: "older",
   percent: 40,
   started: "yes",
+  when: "14:02",
+  place: "Open",
+  group: "Lumen / Portal",
+  holder: "M-20",
+  already: 1,
+  later: 1,
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

@@ -160,6 +160,14 @@ export const USER_ONLY = (): AppError =>
     data: { rule: "user_only" },
   });
 
+/** Entries whose refusal to an agent says why it is the user's, by entry name. */
+const USER_ONLY_WORDS: Readonly<Record<string, { message: string; hint: string }>> = {
+  "task.delete": {
+    message: "Only the user moves tasks to the Trash and back: agents cannot remove tasks yet.",
+    hint: "Tell the user which tasks you would remove and why.",
+  },
+};
+
 /**
  * The binding a call's connection holds, as `not_permitted` names it (A3 3.5): none, or a task's
  * session. A run's and a routine's arrive with M6.
@@ -181,9 +189,12 @@ export function checkExposure(
   binding: BindingKind = "none",
 ): void {
   switch (entry.actors) {
-    case "user":
-      if (!isUserClass(cls)) throw USER_ONLY();
-      return;
+    case "user": {
+      if (isUserClass(cls)) return;
+      const words = USER_ONLY_WORDS[entry.name];
+      if (words === undefined) throw USER_ONLY();
+      throw new AppError({ code: "forbidden", ...words, data: { rule: "user_only" } });
+    }
     case "ui":
       if (cls !== "ui") {
         throw new AppError({

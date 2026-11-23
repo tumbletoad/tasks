@@ -423,6 +423,38 @@
       "verb": "brief"
     },
     {
+      "actors": "user",
+      "auto": [
+        "base",
+        "request_id"
+      ],
+      "entry": "task.delete",
+      "flags": [
+        {
+          "field": "reason",
+          "flag": "--reason",
+          "help": "Why, for the history",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "inputOnly": [],
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "tasks",
+          "help": "The tasks",
+          "name": "tasks",
+          "repeat": true,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "summary": "Move tasks to the Trash, or restore them. Nothing is deleted for good.",
+      "verb": "delete"
+    },
+    {
       "actors": "agent",
       "auto": [
         "base",
@@ -807,6 +839,49 @@
       "verb": "reopen"
     },
     {
+      "actors": "user",
+      "auto": [
+        "base",
+        "request_id"
+      ],
+      "entry": "task.delete",
+      "fixed": {
+        "restore": true
+      },
+      "flags": [
+        {
+          "field": "change",
+          "flag": "--change",
+          "help": "With restore: bring back what this change moved to the Trash and is still there",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        },
+        {
+          "field": "reason",
+          "flag": "--reason",
+          "help": "Why, for the history",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "inputOnly": [],
+      "kind": "write",
+      "positionals": [
+        {
+          "field": "tasks",
+          "help": "The tasks",
+          "name": "tasks",
+          "repeat": true,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "summary": "Move tasks to the Trash, or restore them. Nothing is deleted for good.",
+      "verb": "restore"
+    },
+    {
       "actors": "agent",
       "auto": [
         "base",
@@ -1085,6 +1160,42 @@
       "positionals": [],
       "summary": "Orientation: date, autonomy, whether this is a task's session, a folder's tasks, counts.",
       "verb": "status"
+    },
+    {
+      "actors": "user",
+      "auto": [],
+      "entry": "task.trash",
+      "flags": [
+        {
+          "field": "limit",
+          "flag": "--limit",
+          "help": "Rows per page; default 50",
+          "repeat": false,
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "field": "cursor",
+          "flag": "--cursor",
+          "help": "Next page: the last page's cursor",
+          "repeat": false,
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "inputOnly": [],
+      "kind": "read",
+      "positionals": [
+        {
+          "field": "q",
+          "help": "Words of a title, or a reference such as M-14",
+          "name": "q",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "summary": "What is in the Trash, newest change first, a page at a time.",
+      "verb": "trash"
     },
     {
       "actors": "user",

@@ -989,3 +989,25 @@ a + .muted,
     box-shadow: none;
   }
 }
+
+/* Move to Trash: a quiet line at the foot of the facts, away from the controls used every day. */
+.trash {
+  margin: 12px 0 0;
+}
+
+.trashButton {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--k-text-2);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.trashButton:hover {
+  color: var(--k-text);
+}

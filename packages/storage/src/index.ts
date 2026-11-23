@@ -174,6 +174,7 @@ export type {
   QueryMode,
   QueryResult,
 } from "./worker/protocol.ts";
+export { inTrashSql, removalSeqSql } from "./write/trash.ts";
 // One writer per space across processes (A2 3.4): writer.lock and writer.json, which every
 // StorageWorker route that opens a space for writing takes. takeFileLock is the same technique for
 // another lock file, the service's (M1.08).

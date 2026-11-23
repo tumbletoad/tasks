@@ -139,6 +139,8 @@ export interface WriteProblem {
   /**
    * SPACE_READ_ONLY: why the space takes no write, a word A3 3.5's `read_only` passes on:
    * `not_authority` (A2 3.1) now, `held` and `transfer_pending` with their steps (A1 3.6, 3.18).
+   * NOT_FOUND of a `task.restore`: `creation_undone`, a task whose creation was undone, which is
+   * not in the Trash and which Redo brings back.
    */
   reason?: string;
 }
@@ -240,6 +242,32 @@ export interface OpResult {
    * between them and this task.
    */
   shared_with?: string[];
+  /**
+   * `task.restore` of an active task: each live link whose key another active task held by then,
+   * which the restore left removed, with that task's reference. Captures of the item stay there.
+   */
+  held_links?: { source: Id<"s">; by: string }[];
+  /**
+   * `task.restore` into a project or area that is gone: the task went to the project's area, or
+   * with no live area left, to the Inbox.
+   */
+  regrouped?: "area" | "inbox";
+  /**
+   * `task.restore` of a change, unchanged: the task was restored and moved to the Trash again since,
+   * and belongs to that later change.
+   */
+  later?: true;
+  /**
+   * `task.restore` that brought the task back: where it is back, as its change left it, with its
+   * area's and project's names. A replay says the same, whatever changed since.
+   */
+  back?: {
+    lifecycle: TaskLifecycle;
+    status: string;
+    inbox: boolean;
+    area?: string;
+    project?: string;
+  };
   /** A matched `task.create`: how it matched, and the matched task's lifecycle (A1 3.6). */
   matched_by?: "source_key";
   lifecycle?: TaskLifecycle;
@@ -456,16 +484,24 @@ export interface TaskWrapUp {
   once?: boolean;
 }
 
-/** `task.delete` (A1 3.11.4): sets the tombstone. Nothing is removed, and `task.restore` undoes it. */
+/**
+ * `task.delete` (A1 3.11.4): sets the tombstone. Nothing is removed, and `task.restore` undoes it.
+ * A deleted task is unchanged.
+ */
 export interface TaskDelete {
   kind: "task.delete";
   task: string;
 }
 
-/** `task.restore` (A1 3.11.4): clears the tombstone of a deleted task. */
+/**
+ * `task.restore` (A1 3.11.4): clears the tombstone of a deleted task. A live task is unchanged, and
+ * so is one with `change` whose tombstone another commit set: restored and moved to the Trash again
+ * since, it belongs to that later change. `change` guards by that instead of a base.
+ */
 export interface TaskRestore {
   kind: "task.restore";
   task: string;
+  change?: Id<"op">;
 }
 
 /** Who a note is for (A1 3.4): the user, or the user's agents. */
@@ -1498,9 +1534,14 @@ function checkOperation(value: unknown, i: number): Operation {
       op = wrap;
       break;
     }
-    case "task.delete":
-    case "task.restore": {
+    case "task.delete": {
       op = { kind, task: f.reference("task") };
+      break;
+    }
+    case "task.restore": {
+      const restore: TaskRestore = { kind, task: f.reference("task") };
+      if (f.has("change")) restore.change = f.id("change", "op");
+      op = restore;
       break;
     }
     case "task.reopen": {

@@ -417,7 +417,7 @@ export class RunService {
       }
       throw error;
     }
-    if (!task.active) throw refusal("task_closed", "This task is done or deleted.");
+    if (!task.active) throw refusal("task_closed", "This task is done, or in the Trash.");
     const able = agents.instances().filter(runsWith);
     const instance =
       asked.instance === undefined
@@ -517,7 +517,8 @@ export class RunService {
     let id: string | undefined;
     if (task !== undefined) {
       try {
-        id = (await readLaunchTask(served.reader, task, this.#options.machine)).id;
+        // A task in the Trash keeps its runs: one may still work, with its Stop and its answer.
+        id = (await readLaunchTask(served.reader, task, this.#options.machine, { trash: true })).id;
       } catch (error) {
         if (error instanceof AppError && error.code === "not_found") {
           throw refusal("task_not_found", "No task has this reference in this space.");

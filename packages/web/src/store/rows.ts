@@ -66,6 +66,11 @@ export interface TaskRow {
   readonly questions?: readonly RowQuestion[];
   /** How many more questions wait than `questions` holds. */
   readonly questions_more?: number;
+  /**
+   * Its agents in a terminal that TTasks started on this machine and holds open. Only a read of
+   * the Trash gives it: a removed task has no other row that shows them.
+   */
+  readonly terminals?: number;
 }
 
 /**
@@ -483,7 +488,8 @@ export function taskRow(value: unknown): TaskRow | undefined {
     !optional(v["place"], isPlace) ||
     !optional(v["run"], isRun) ||
     !optional(v["questions"], (q) => Array.isArray(q) && q.every(isQuestion)) ||
-    !optional(v["questions_more"], isNumber)
+    !optional(v["questions_more"], isNumber) ||
+    !optional(v["terminals"], isNumber)
   ) {
     return undefined;
   }

@@ -125,6 +125,8 @@ export interface World {
    * runs, which can be after the run's record says it runs.
    */
   codexLeft(ref: string): FakeCodexCase[];
+  /** A run of the task `ref` that plays `gate` goes on to its answer: before, it holds its turn. */
+  openGate(ref: string): void;
   /** The fake terminal refuses the next launch of this task (its ID), as one that would not start. */
   refuseNextOpen(task: string): void;
   /**
@@ -468,6 +470,9 @@ export async function startWorld(ui: string, options: WorldOptions = {}): Promis
       codex: (task, next) => {
         // Whole or not at all: the task's run reads its file while the test may write it.
         atomicWrite(join(cases, `${task}.json`), JSON.stringify(next));
+      },
+      openGate: (task) => {
+        atomicWrite(join(cases, `${task}.go`), "");
       },
       codexLeft: (task) => {
         const file = join(cases, `${task}.json`);

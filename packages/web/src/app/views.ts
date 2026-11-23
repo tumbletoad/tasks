@@ -7,8 +7,9 @@
 //   its own). So the counts add up, and every open task is in one view.
 // - Counts appear on Inbox, Open, Waiting, Review and Backlog only (U2), and only in the sidebar.
 // - Every view is always in the sidebar, in its fixed place, whatever it holds.
-// - Completed and Agents read data the live store does not hold (completed tasks are never
-//   in it): Completed is a paged query (views/Completed.tsx), Agents the tab's change log.
+// - Completed, Agents and the Trash read data the live store does not hold (completed and removed
+//   tasks are never in it): Completed and the Trash are paged queries (views/Completed.tsx,
+//   views/Trash.tsx), Agents the tab's change log.
 import { flatGroups, groupTasks, personGroups, type GroupTasks } from "../groups.ts";
 import type { MessageId } from "../i18n/intl.tsx";
 import type { TaskRow } from "../live.ts";
@@ -37,6 +38,7 @@ export const VIEWS = [
   "backlog",
   "completed",
   "agents",
+  "trash",
 ] as const;
 export type View = (typeof VIEWS)[number];
 
@@ -55,6 +57,7 @@ export const VIEW_LABEL: Readonly<Record<View, MessageId>> = {
   backlog: "nav.backlog",
   completed: "nav.completed",
   agents: "nav.agents",
+  trash: "nav.trash",
 };
 
 export const isView = (value: string): value is View =>

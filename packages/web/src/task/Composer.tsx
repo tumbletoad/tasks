@@ -4,7 +4,10 @@
 // does). Copy puts the brief on the clipboard with the text, Shift+Copy the context pack. Each
 // clears the field once its text has gone somewhere: the note or the request is on the task, the
 // brief is on the clipboard. Text typed meanwhile stays. Until then the draft is kept
-// (composer.ts), so a reload brings it back. Near its limit the strip says how much more fits.
+// (unsent.ts), so a reload brings it back. A note is kept from the moment it is sent until the
+// service holds it: one that is not on its way from here and is not what the field shows waits
+// above the field, with Send again, Copy and Discard. Near its limit the strip says how much more
+// fits.
 //
 // Run starts an agent that works on the task in the background, without a window, with the text
 // as its request (without text it works on the task): one button for the first instance that can
@@ -39,14 +42,17 @@ import {
   DRAFT_MAX,
   keepDraft,
   keepNote,
-  onAsk,
+  letGo,
   onDraft,
-  onSaved,
   readDraft,
-  readNote,
+  readNotes,
+  useNotes,
   wordsOf,
-} from "./composer.ts";
+  type NoteRequest,
+} from "../unsent.ts";
+import { onAsk, onSaved } from "./composer.ts";
 import { openAsked, useUnansweredOpens } from "../views/unanswered.ts";
+import keptCss from "../edit/Unsaved.module.css";
 import css from "./Expanded.module.css";
 
 const styles = classes(css, [
@@ -63,6 +69,7 @@ const styles = classes(css, [
   "runItem",
   "limit",
 ]);
+const noteLine = classes(keptCss, ["line", "why", "act", "value"]);
 
 /** The strip says how much more fits once the field holds this much of DRAFT_MAX. */
 const LIMIT_SHOWN = DRAFT_MAX - 2_000;
@@ -83,6 +90,116 @@ export interface ComposerProps {
   readonly actions: RowActions;
 }
 
+/**
+ * The task's notes not on their way from here whose words the field does not show: each with its
+ * words and Copy, and on a live card Send again and Discard. A note waits here until the service
+ * holds it or the person lets it go.
+ */
+function KeptNotes({
+  task,
+  shown,
+  flying,
+  send,
+}: {
+  readonly task: string;
+  /** The words the field shows, and those of the note on its way from here. */
+  readonly shown: readonly string[];
+  /** The notes this card sent and has no answer for yet, by request ID. */
+  readonly flying?: ReadonlySet<string>;
+  /** Sends the note again, with its request ID; none on a card that writes nothing. */
+  readonly send?: (note: NoteRequest) => void;
+}) {
+  const t = useT();
+  const say = useToast();
+  const { live } = useContext(Session);
+  const space = live.spaceId ?? "";
+  const notes = useNotes(space, task).filter((note) => !shown.includes(note.words));
+  return notes.map((note) => (
+    <p key={note.id} className={noteLine.line} data-part="kept-note" role="status">
+      <span className={noteLine.value} dir="auto">
+        {note.words}
+      </span>
+      <span className={noteLine.why}>
+        {t(flying?.has(note.id) === true ? "composer.noteOnItsWay" : "composer.noteKept")}
+      </span>
+      {send === undefined || flying?.has(note.id) === true ? null : (
+        <button
+          type="button"
+          className={noteLine.act}
+          data-part="send-kept-note"
+          onClick={() => {
+            send(note);
+          }}
+        >
+          {t("composer.noteAgain")}
+        </button>
+      )}
+      <button
+        type="button"
+        className={noteLine.act}
+        data-part="copy-kept-note"
+        aria-label={t("edit.copyValue", { value: note.words })}
+        onClick={() => {
+          navigator.clipboard.writeText(note.words).then(
+            () => {
+              say(t("row.copied"));
+            },
+            () => {
+              say(t("row.copyFailed"));
+            },
+          );
+        }}
+      >
+        {t("row.copy")}
+      </button>
+      {send === undefined || flying?.has(note.id) === true ? null : (
+        <button
+          type="button"
+          className={noteLine.act}
+          data-part="discard-kept-note"
+          onClick={() => {
+            letGo(space, { kind: "note", task, id: note.id });
+          }}
+        >
+          {t("edit.discard")}
+        </button>
+      )}
+    </p>
+  ));
+}
+
+/**
+ * The composer of a task in the Trash: its kept draft and notes as they are, to read and copy,
+ * following another tab's changes. It writes nothing, and nothing a click elsewhere asks reaches
+ * it: Restore first. The foot of the Trash discards them.
+ */
+export function KeptDraft({ task }: { readonly task: TaskRow }) {
+  const t = useT();
+  const { live } = useContext(Session);
+  const space = live.spaceId ?? "";
+  const [text, setText] = useState(() => readDraft(space, task.id));
+  useEffect(() => onDraft(space, task.id, setText), [space, task.id]);
+  return (
+    <>
+      <KeptNotes task={task.id} shown={[wordsOf(text)]} />
+      {text === "" ? null : (
+        <textarea
+          className={styles.input}
+          data-part="composer"
+          aria-label={t("composer.label")}
+          readOnly
+          rows={1}
+          dir="auto"
+          value={text}
+        />
+      )}
+      <p className={styles.strip} data-part="strip-trash">
+        {t("composer.inTrash")}
+      </p>
+    </>
+  );
+}
+
 export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const t = useT();
   const say = useToast();
@@ -97,8 +214,11 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   /** The text on screen, for answers that arrive later. */
   const now = useRef(text);
   now.current = text;
-  /** The words of the note on their way from this tab. */
+  /** The words of the note on their way from this tab, at once and for drawing. */
   const sending = useRef<string | undefined>(undefined);
+  const [onItsWay, setOnItsWay] = useState<string | undefined>(undefined);
+  /** Every note this card sent and has no answer for yet, by request ID. */
+  const [flying, setFlying] = useState<ReadonlySet<string>>(new Set());
   /** The instances whose Open is on its way from here. */
   const [opening, setOpening] = useState<ReadonlySet<string>>(new Set());
   /** A Run on its way from here: the words it carries, until the service answered. */
@@ -112,11 +232,18 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
 
   /**
    * The words went somewhere: the kept draft and the field clear, each unless the person has
-   * typed on since (here, in another tab, or in this task's composer opened again).
+   * typed on since (here, in another tab, or in this task's composer opened again). A kept note
+   * of the same words goes only when a note of them was `saved`: a Copy or an Open posts no note,
+   * so a note that was not saved stays until its own answer or the person's Discard.
    */
-  const sent = (words: string) => {
-    if (wordsOf(readDraft(space, task.id)) === words) keepDraft(space, task.id, "");
+  const sent = (words: string, saved = false) => {
+    const kept = readDraft(space, task.id);
+    if (wordsOf(kept) === words) letGo(space, { kind: "draft", task: task.id, text: kept });
     if (wordsOf(now.current) === words) setText("");
+    if (!saved || sending.current === words) return;
+    for (const note of readNotes(space, task.id)) {
+      if (note.words === words) letGo(space, { kind: "note", task: task.id, id: note.id });
+    }
   };
 
   // An Open saved the words on the task, also one the person confirmed from a toast.
@@ -179,29 +306,40 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
     return undefined;
   };
 
-  const addNote = () => {
-    if (words === "") {
-      field.current?.focus();
-      return;
-    }
+  /** Sends `words` as a note: kept until the service holds them, which then lets them go. */
+  const note = (words: string, known?: string) => {
     if (sending.current === words) return;
     // The same words again (after a failure, a reload, or from another tab) are the same request:
-    // the service saves them once.
-    const known = readNote(space, task.id);
-    const id = known?.words === words ? known.id : requestId();
+    // the service saves them once. A kept note sent again goes with the ID it shows, also when
+    // another tab has let its record go meanwhile.
+    const id =
+      known ?? readNotes(space, task.id).find((kept) => kept.words === words)?.id ?? requestId();
+    if (flying.has(id)) return;
     keepNote(space, task.id, { words, id });
     sending.current = words;
+    setOnItsWay(words);
+    setFlying((before) => new Set(before).add(id));
+    const done = () => {
+      setFlying((before) => {
+        const next = new Set(before);
+        next.delete(id);
+        return next;
+      });
+      if (sending.current !== words) return;
+      sending.current = undefined;
+      setOnItsWay(undefined);
+    };
     // The note answers every question that waits: the person hears it when it was more than one.
     const answers = questionsWaiting(task);
     api.client.entry.add({ task: task.id, kind: "note", text: words, request_id: id }).then(
       () => {
-        if (sending.current === words) sending.current = undefined;
-        if (readNote(space, task.id)?.id === id) keepNote(space, task.id, undefined);
-        sent(words);
+        done();
+        letGo(space, { kind: "note", task: task.id, id });
+        sent(words, true);
         if (answers > 1) say(t("composer.noteAnswers"));
       },
       (error: unknown) => {
-        if (sending.current === words) sending.current = undefined;
+        done();
         if (live.failed(error)) return;
         const readOnly = readOnlyReason(error);
         say(
@@ -211,6 +349,14 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
         );
       },
     );
+  };
+
+  const addNote = () => {
+    if (words === "") {
+      field.current?.focus();
+      return;
+    }
+    note(words);
   };
 
   /**
@@ -274,9 +420,8 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
   const first = instances[0];
   const [runner, ...others] = runners(instances);
   const finished = task.lifecycle !== "active";
-  /** Run's key on a finished task: Reopen, the step before any run. A deleted one has neither. */
+  /** Run's key on a finished task: Reopen, the step before any run. */
   const runOrReopen = (instance: Instance) => {
-    if (task.deleted_at !== undefined) return;
     if (finished) edits.reopen(task);
     else run(instance);
   };
@@ -289,6 +434,14 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
 
   return (
     <>
+      <KeptNotes
+        task={task.id}
+        shown={onItsWay === undefined ? [words] : [words, onItsWay]}
+        flying={flying}
+        send={(kept) => {
+          note(kept.words, kept.id);
+        }}
+      />
       <textarea
         ref={field}
         className={styles.input}
@@ -403,7 +556,7 @@ export function Composer({ task, busy, instances, actions }: ComposerProps) {
             </button>
           );
         })}
-        {runner === undefined || task.deleted_at !== undefined ? null : finished ? (
+        {runner === undefined ? null : finished ? (
           <button
             type="button"
             className={styles.button}

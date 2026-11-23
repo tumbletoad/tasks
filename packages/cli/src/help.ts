@@ -231,7 +231,10 @@ export function verbHelp(verb: VerbSpec): string {
   const required = verb.flags.filter((f) => f.required);
   const usage = [
     `${CLI_NAME} ${verb.verb}`,
-    ...verb.positionals.map((p) => (p.required ? `<${p.name}>` : `[<${p.name}>]`)),
+    ...verb.positionals.map((p) => {
+      const name = p.repeat === true ? `<${p.name}>...` : `<${p.name}>`;
+      return p.required ? name : `[${name}]`;
+    }),
     ...required.map(withValue),
     ...(verb.keyValue === undefined ? [] : ["[key=value ...]"]),
     "[options]",

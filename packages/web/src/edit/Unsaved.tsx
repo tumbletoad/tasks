@@ -2,13 +2,13 @@
 // shows the current value, and this line keeps the person's own value one click away. After a
 // conflict: "Changed by Codex just now · Apply mine · Keep theirs". After a failed call: "Not saved
 // · Try again · Discard". On a finished task, which takes no edit until it is reopened: "Not saved:
-// the task is finished · Copy · Discard", after the value itself where no fact shows it (the
-// title). An edit made against a history the space no longer has (restored since) is not sent
-// again: "<value> Not saved: the space was restored since · Copy · Discard". In a space that takes
-// no change (a restored copy, one another machine owns), nothing can be saved until that changes:
-// "<value> Not saved: this is a restored copy · Copy · Discard"; nor from a tab whose copy of the
-// space was closed or replaced since it loaded. The line stays until the person chooses, whatever
-// the feed brings.
+// the task is finished · Copy · Discard", and on one in the Trash "Not saved: the task is in the
+// Trash · Copy · Discard", after the value itself where no fact shows it (the title). An edit made
+// against a history the space no longer has (restored since) is not sent again: "<value> Not saved:
+// the space was restored since · Copy · Discard". In a space that takes no change (a restored copy,
+// one another machine owns), nothing can be saved until that changes: "<value> Not saved: this is a
+// restored copy · Copy · Discard"; nor from a tab whose copy of the space was closed or replaced
+// since it loaded. The line stays until the person chooses, whatever the feed brings.
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import { useT } from "../i18n/intl.tsx";
@@ -31,12 +31,15 @@ export function Unsaved({
   task,
   field,
   finished = false,
+  trashed = false,
   withValue = false,
 }: {
   readonly task: string;
   readonly field: Field;
   /** The task is finished: the value cannot be saved now, only copied or discarded. */
   readonly finished?: boolean;
+  /** The task is in the Trash: the same, until it is restored. */
+  readonly trashed?: boolean;
   /** On a finished task, the line shows the value itself too: no fact shows it (the title). */
   readonly withValue?: boolean;
 }) {
@@ -50,18 +53,20 @@ export function Unsaved({
   const shown = unsaved.change.shown;
   const mine = typeof shown === "string" ? shown : sayMsg(t, shown);
   const conflict = unsaved.reason === "conflict";
-  const blocked = finished
-    ? "finished"
-    : live.gone !== undefined
-      ? "gone"
-      : readOnly !== undefined
-        ? "read_only"
-        : undefined;
+  const blocked = trashed
+    ? "trash"
+    : finished
+      ? "finished"
+      : live.gone !== undefined
+        ? "gone"
+        : readOnly !== undefined
+          ? "read_only"
+          : undefined;
   const why = blocked ?? (edits.restored(unsaved) ? "restored" : undefined);
   if (why !== undefined) {
     return (
       <span className={styles.line} data-part="unsaved" data-reason={why} role="status">
-        {withValue || why !== "finished" ? (
+        {withValue || (why !== "finished" && why !== "trash") ? (
           <span className={styles.value} dir="auto" data-part="unsaved-value">
             {mine}
           </span>
@@ -72,11 +77,13 @@ export function Unsaved({
                 why: sayMsg(t, readOnlyWhy(readOnly?.reason ?? "")),
               })
             : t(
-                why === "finished"
-                  ? "edit.notSavedFinished"
-                  : why === "gone"
-                    ? "edit.notSavedGone"
-                    : "edit.notSavedRestored",
+                why === "trash"
+                  ? "edit.notSavedTrash"
+                  : why === "finished"
+                    ? "edit.notSavedFinished"
+                    : why === "gone"
+                      ? "edit.notSavedGone"
+                      : "edit.notSavedRestored",
               )}
         </span>
         <button

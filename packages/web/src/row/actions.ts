@@ -59,3 +59,39 @@ export interface RowActions {
   /** Focus moved into the row: it becomes the list's current row. */
   readonly current: (task: TaskRow) => void;
 }
+
+/** The actions that only read the task or stop its work: all a task in the Trash keeps. */
+type Reading = "toggle" | "expand" | "current" | "copy" | "folder" | "stop";
+
+/**
+ * Every other action, for a task in the Trash: nothing happens. The type makes an action added
+ * later choose: it is listed here, and does nothing there, or it is a reading.
+ */
+const INERT: Omit<RowActions, Reading> = {
+  open: () => Promise.resolve(undefined),
+  run: () => Promise.resolve(undefined),
+  star: () => undefined,
+  move: () => undefined,
+  check: () => undefined,
+  ask: () => undefined,
+};
+
+const readOnlyOf = new WeakMap<RowActions, RowActions>();
+
+/** The actions of a task in the Trash: its readings, and nothing that changes it. Stable per list. */
+export function readOnly(actions: RowActions): RowActions {
+  let found = readOnlyOf.get(actions);
+  if (found === undefined) {
+    found = {
+      ...INERT,
+      toggle: actions.toggle,
+      expand: actions.expand,
+      current: actions.current,
+      copy: actions.copy,
+      folder: actions.folder,
+      stop: actions.stop,
+    };
+    readOnlyOf.set(actions, found);
+  }
+  return found;
+}

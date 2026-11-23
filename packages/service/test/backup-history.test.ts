@@ -1,9 +1,9 @@
 // What a backup recorded open is history, through the service. A backup is taken while runs work
-// and wait on active, finished and dropped tasks, and a terminal session is open. In the restored
-// copy, opened read-only, every read answers and returns them as `recorded`; a claim, a restore in
-// place and a claim on another machine end them as interrupted by the restore before the copy is
-// served, so the first read after each already says so; and none of them is ever joined with the
-// machine's live agents. Services run in this process on a temporary home, with containers that
+// and wait on active, finished, dropped and trashed tasks, and a terminal session is open. In the
+// restored copy, opened read-only, every read answers and returns them as `recorded`; a claim, a
+// restore in place and a claim on another machine end them as interrupted by the restore before
+// the copy is served, so the first read after each already says so; and none of them is ever
+// joined with the machine's live agents. Services run in this process on a temporary home, with containers that
 // hold nothing; fixture data only.
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -47,9 +47,9 @@ interface Answer {
   readonly error?: { code: string; message: string };
 }
 
-type Ending = "active" | "done" | "dropped";
+type Ending = "active" | "done" | "dropped" | "trashed";
 type Kind = "working" | "waiting";
-const ENDINGS: readonly Ending[] = ["active", "done", "dropped"];
+const ENDINGS: readonly Ending[] = ["active", "done", "dropped", "trashed"];
 const KINDS: readonly Kind[] = ["working", "waiting"];
 
 interface Fixture {
@@ -61,7 +61,7 @@ interface Fixture {
 
 describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: shown as recorded in a restored copy, ended as restored by a claim or a restore in place before either answers, and joined with no live agent", () => {
   test(
-    "a backup with a working and a waiting run on an active, a finished and a dropped task, and an open terminal session: every read of the read-only copy answers, and says recorded; the first reads after a claim and after a restore in place say restored; a claim on another machine ends them too; no session of them is held for the Agents page",
+    "a backup with a working and a waiting run on an active, a finished, a dropped and a trashed task, and an open terminal session: every read of the read-only copy answers, and says recorded; the first reads after a claim and after a restore in place say restored; a claim on another machine ends them too; no session of them is held for the Agents page",
     SLOW,
     async () => {
       const w = await httpWorld(
@@ -166,17 +166,20 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
         fixtures.push({ task, ending, kind, run: run.id });
       }
       // A task finished while its run was open: the run goes on, as a person's Done never stops it.
+      // And one moved to the Trash: its work goes on too.
       for (const f of fixtures) {
         if (f.ending === "active") continue;
-        const status = (await op("space.status", {}))["as_of"];
-        await op("task.finish", {
-          task: f.task,
-          status: f.ending,
-          base: status,
-          request_id: rid(),
-        });
+        const base = (await op("space.status", {}))["as_of"];
+        if (f.ending === "trashed") {
+          await op("task.delete", { tasks: [f.task], base, request_id: rid() });
+          continue;
+        }
+        await op("task.finish", { task: f.task, status: f.ending, base, request_id: rid() });
       }
-      const finishedTasks = fixtures.filter((f) => f.ending !== "active").map((f) => f.task);
+      const finishedTasks = fixtures
+        .filter((f) => f.ending === "done" || f.ending === "dropped")
+        .map((f) => f.task);
+      const trashedTasks = fixtures.filter((f) => f.ending === "trashed").map((f) => f.task);
       const activeTasks = fixtures.filter((f) => f.ending === "active").map((f) => f.task);
       const prepared = await store.createIntent(
         {
@@ -246,6 +249,15 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
             }[]
           ).map((r) => [r.id, r.run]),
         );
+      const trashRows = async (headers: Record<string, string>) =>
+        new Map(
+          (
+            (await read("/api/v1/op/task.trash", {}, headers))["rows"] as {
+              id: string;
+              run?: RowRun;
+            }[]
+          ).map((r) => [r.id, r.run]),
+        );
       const snapshotRows = async () => {
         const feed = await openFeed(w.port(), token);
         try {
@@ -267,7 +279,12 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
         const all = (await read("/api/v1/op/task.search", { scope: "all", limit: 50 }, headers))[
           "rows"
         ] as { id: string }[];
-        expect(all.map((r) => r.id)).toEqual(expect.arrayContaining([terminal, ...titled.keys()]));
+        expect(all.map((r) => r.id)).toEqual(
+          expect.arrayContaining([
+            terminal,
+            ...fixtures.filter((f) => f.ending !== "trashed").map((f) => f.task),
+          ]),
+        );
         await read("/api/v1/op/receipt.get", { request: lastRequest }, headers);
         expect(await read("/api/v1/launch/busy", {}, headers)).toEqual({ busy: [] });
         expect(await held()).toEqual([]);
@@ -313,6 +330,10 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
       const finished = await finishedRows(inCopy);
       for (const task of finishedTasks) {
         expect(finished.get(task)).toMatchObject({ state: "recorded" });
+      }
+      const trashed = await trashRows(inCopy);
+      for (const task of trashedTasks) {
+        expect(trashed.get(task)).toMatchObject({ state: "recorded" });
       }
       const open = await snapshotRows();
       for (const task of activeTasks) expect(open.get(task)).toMatchObject({ state: "recorded" });
@@ -365,6 +386,11 @@ describe("[A2.3.10.5.copies.recorded] what a backup recorded open is history: sh
         );
         const rows = await finishedRows(inSpace);
         for (const task of finishedTasks) expect(rows.get(task)).toBeUndefined();
+        const trash = await trashRows(inSpace);
+        for (const task of trashedTasks) {
+          expect(trash.has(task)).toBe(true);
+          expect(trash.get(task)).toBeUndefined();
+        }
         const open = await snapshotRows();
         for (const task of activeTasks) expect(open.get(task)).toBeUndefined();
         await answers(inSpace);

@@ -413,6 +413,9 @@ const VERIFIED = new Set([
   "prefs.manage 1",
   "history.undo 0",
   "history.redo 0",
+  "task.delete 0",
+  "task.delete 1",
+  "task.trash 0",
 ]);
 
 type Value = Record<string, unknown>;
@@ -569,6 +572,23 @@ function meaning(entry: string, value: Value): unknown {
         task_count: value["task_count"],
         unresolved: value["unresolved"],
       };
+    case "task.delete":
+      return {
+        result: value["result"],
+        moved: value["moved"],
+        already: value["already"],
+        restored: (value["restored"] as Value[] | undefined)?.map((t) => [
+          t["ref"],
+          t["lifecycle"],
+        ]),
+        commit: typeof value["commit"],
+      };
+    case "task.trash":
+      return (value["rows"] as Value[]).map((r) => [
+        r["ref"],
+        (r["removed"] as Value)["by"],
+        (r["removed"] as Value)["count"],
+      ]);
     case "receipt.get":
       return {
         found: value["found"],
@@ -756,6 +776,19 @@ export function contractSuite(name: string, open: () => Promise<ContractTranspor
           const key = `${entry.name} ${String(i)}`;
           expect(VERIFIED.has(key) || Object.hasOwn(LATER, key), key).toBe(true);
           expect(VERIFIED.has(key) && Object.hasOwn(LATER, key), key).toBe(false);
+        });
+      }
+    });
+
+    test("no two examples share a request ID: in the one space they run in, the second is refused", () => {
+      const seen = new Map<string, string>();
+      for (const entry of registry) {
+        entry.examples.forEach((example, i) => {
+          const id = (example.input as Value)["request_id"];
+          if (typeof id !== "string") return;
+          const key = `${entry.name} ${String(i)}`;
+          expect(seen.get(id), key).toBeUndefined();
+          seen.set(id, key);
         });
       }
     });

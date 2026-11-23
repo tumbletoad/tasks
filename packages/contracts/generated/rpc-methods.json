@@ -2425,6 +2425,31 @@
                   "description": "Area name",
                   "type": "string"
                 },
+                "deleted": {
+                  "additionalProperties": false,
+                  "description": "In the Trash: who moved it there. Tell the user; never add it again",
+                  "properties": {
+                    "at": {
+                      "description": "When",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                      "type": "string"
+                    },
+                    "by": {
+                      "description": "Who: user, import or the actor's label",
+                      "type": "string"
+                    },
+                    "change": {
+                      "description": "The change that moved it",
+                      "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "at",
+                    "by"
+                  ],
+                  "type": "object"
+                },
                 "due": {
                   "anyOf": [
                     {
@@ -2584,6 +2609,31 @@
                       "area": {
                         "description": "Area name",
                         "type": "string"
+                      },
+                      "deleted": {
+                        "additionalProperties": false,
+                        "description": "In the Trash: who moved it there. Tell the user; never add it again",
+                        "properties": {
+                          "at": {
+                            "description": "When",
+                            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                            "type": "string"
+                          },
+                          "by": {
+                            "description": "Who: user, import or the actor's label",
+                            "type": "string"
+                          },
+                          "change": {
+                            "description": "The change that moved it",
+                            "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "at",
+                          "by"
+                        ],
+                        "type": "object"
                       },
                       "due": {
                         "anyOf": [
@@ -3147,6 +3197,223 @@
       "remote": "write",
       "scope": "space:write",
       "summary": "Create 1 to 25 tasks in one transaction. A draft whose source key matches returns it."
+    },
+    {
+      "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "not_found",
+        "conflict",
+        "forbidden",
+        "request_id_conflict"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "description": "as_of: the get_task that showed the field, the add that made it, your set of it",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "change": {
+            "description": "With restore: bring back what this change moved to the Trash and is still there",
+            "maxLength": 40,
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why, for the history",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "New per intended change; reuse it only to retry that call",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{16,64}$",
+            "type": "string"
+          },
+          "restore": {
+            "description": "Bring the tasks back from the Trash",
+            "type": "boolean"
+          },
+          "tasks": {
+            "description": "The tasks",
+            "items": {
+              "description": "Task ref (M-14) or ID",
+              "maxLength": 40,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "kind": "write",
+      "name": "task.delete",
+      "ops": [
+        "task.delete",
+        "task.restore"
+      ],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "already": {
+            "description": "Tasks that were where you asked already: in the Trash, or back",
+            "items": {
+              "description": "Task reference",
+              "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "as_of": {
+            "description": "The space's position when this answer was made",
+            "pattern": "^[0-9]{1,10}\\.[0-9]{1,15}\\.[0-9a-hjkmnp-tv-z]{8}$",
+            "type": "string"
+          },
+          "commit": {
+            "description": "The change, which Undo names",
+            "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+            "type": "string"
+          },
+          "later": {
+            "description": "Tasks of the change in the Trash from a later change, which restores them",
+            "items": {
+              "description": "Task reference",
+              "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "moved": {
+            "description": "The tasks this moved",
+            "items": {
+              "description": "Task reference",
+              "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "replayed": {
+            "description": "True when a retry returned the stored result",
+            "type": "boolean"
+          },
+          "restored": {
+            "description": "Where each is back",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "area": {
+                  "description": "Area name",
+                  "type": "string"
+                },
+                "held": {
+                  "description": "Its links that stayed removed",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "by": {
+                        "description": "The task that took its key meanwhile: captures go there",
+                        "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                        "type": "string"
+                      },
+                      "source": {
+                        "description": "Source ID",
+                        "pattern": "^s_[0-9a-hjkmnp-tv-z]{26}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "by"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 50,
+                  "type": "array"
+                },
+                "id": {
+                  "description": "Task ID",
+                  "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                  "type": "string"
+                },
+                "inbox": {
+                  "description": "In the Inbox",
+                  "type": "boolean"
+                },
+                "lifecycle": {
+                  "description": "Lifecycle",
+                  "enum": [
+                    "active",
+                    "completed",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                "project": {
+                  "description": "Project name",
+                  "type": "string"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                },
+                "regrouped": {
+                  "description": "Its project or area was gone: it went to the area, or to the Inbox",
+                  "enum": [
+                    "area",
+                    "inbox"
+                  ],
+                  "type": "string"
+                },
+                "status": {
+                  "description": "Status key",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "ref",
+                "lifecycle",
+                "status",
+                "inbox"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "result": {
+            "description": "moved to the Trash, restored from it, or every task was there already",
+            "enum": [
+              "moved",
+              "restored",
+              "no_change"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "result",
+          "moved",
+          "as_of"
+        ],
+        "type": "object"
+      },
+      "remote": "write",
+      "scope": "space:write",
+      "summary": "Move tasks to the Trash, or restore them. Nothing is deleted for good."
     },
     {
       "actorKinds": [
@@ -4207,6 +4474,31 @@
                         "type": "integer"
                       }
                     },
+                    "type": "object"
+                  },
+                  "deleted": {
+                    "additionalProperties": false,
+                    "description": "In the Trash: who moved it there. Tell the user; never add it again",
+                    "properties": {
+                      "at": {
+                        "description": "When",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                        "type": "string"
+                      },
+                      "by": {
+                        "description": "Who: user, import or the actor's label",
+                        "type": "string"
+                      },
+                      "change": {
+                        "description": "The change that moved it",
+                        "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "at",
+                      "by"
+                    ],
                     "type": "object"
                   },
                   "due": {
@@ -5530,6 +5822,31 @@
                     "description": "Area name",
                     "type": "string"
                   },
+                  "deleted": {
+                    "additionalProperties": false,
+                    "description": "In the Trash: who moved it there. Tell the user; never add it again",
+                    "properties": {
+                      "at": {
+                        "description": "When",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                        "type": "string"
+                      },
+                      "by": {
+                        "description": "Who: user, import or the actor's label",
+                        "type": "string"
+                      },
+                      "change": {
+                        "description": "The change that moved it",
+                        "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "at",
+                      "by"
+                    ],
+                    "type": "object"
+                  },
                   "due": {
                     "anyOf": [
                       {
@@ -5853,6 +6170,31 @@
                       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
                       "type": "string"
                     },
+                    "deleted": {
+                      "additionalProperties": false,
+                      "description": "In the Trash: who moved it there. Tell the user; never add it again",
+                      "properties": {
+                        "at": {
+                          "description": "When",
+                          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                          "type": "string"
+                        },
+                        "by": {
+                          "description": "Who: user, import or the actor's label",
+                          "type": "string"
+                        },
+                        "change": {
+                          "description": "The change that moved it",
+                          "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "by"
+                      ],
+                      "type": "object"
+                    },
                     "due": {
                       "anyOf": [
                         {
@@ -6088,6 +6430,448 @@
       "remote": "read",
       "scope": "space:read",
       "summary": "Find active tasks, finished tasks and learnings: rows only, a page at a time."
+    },
+    {
+      "actorKinds": [
+        "human"
+      ],
+      "actors": "user",
+      "audience": "caller",
+      "errors": [
+        "invalid_input",
+        "space_unavailable",
+        "forbidden"
+      ],
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Next page: the last page's cursor",
+            "maxLength": 60,
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Rows per page; default 50",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "q": {
+            "description": "Words of a title, or a reference such as M-14",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "tasks": {
+            "description": "Only these tasks, such as those the Agent Monitor links an agent to",
+            "items": {
+              "description": "Task ID",
+              "maxLength": 40,
+              "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "type": "array"
+          },
+          "working": {
+            "description": "Only tasks an agent works on: a run, or a terminal agent here not ended",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "kind": "read",
+      "name": "task.trash",
+      "ops": [],
+      "output": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Pass it for the next page",
+            "pattern": "^[0-9]{1,16}\\.[0-9]{1,10}$",
+            "type": "string"
+          },
+          "rows": {
+            "description": "Newest change first, then by task",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "area": {
+                  "description": "Its area's name, a deleted one too",
+                  "type": "string"
+                },
+                "area_id": {
+                  "description": "Area ID",
+                  "type": "string"
+                },
+                "completed_at": {
+                  "description": "When it was completed",
+                  "maximum": 8640000000000000,
+                  "minimum": -8640000000000000,
+                  "type": "integer"
+                },
+                "created_at": {
+                  "description": "When it was created",
+                  "maximum": 8640000000000000,
+                  "minimum": -8640000000000000,
+                  "type": "integer"
+                },
+                "deleted_at": {
+                  "description": "When it was deleted",
+                  "maximum": 8640000000000000,
+                  "minimum": -8640000000000000,
+                  "type": "integer"
+                },
+                "due_at": {
+                  "description": "Due time",
+                  "maximum": 8640000000000000,
+                  "minimum": -8640000000000000,
+                  "type": "integer"
+                },
+                "due_date": {
+                  "description": "Due date, YYYY-MM-DD",
+                  "type": "string"
+                },
+                "due_tz": {
+                  "description": "The due time's IANA zone",
+                  "type": "string"
+                },
+                "effort": {
+                  "description": "Effort",
+                  "type": "string"
+                },
+                "finished_at": {
+                  "description": "When it was completed or dropped",
+                  "maximum": 8640000000000000,
+                  "minimum": -8640000000000000,
+                  "type": "integer"
+                },
+                "focus_on": {
+                  "description": "Day starred for",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "Task ID",
+                  "pattern": "^t_[0-9a-hjkmnp-tv-z]{26}$",
+                  "type": "string"
+                },
+                "inbox": {
+                  "description": "In the Inbox",
+                  "type": "boolean"
+                },
+                "lifecycle": {
+                  "description": "Lifecycle",
+                  "enum": [
+                    "active",
+                    "completed",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                "owner": {
+                  "description": "Owner",
+                  "type": "string"
+                },
+                "parent_id": {
+                  "description": "Parent task ID",
+                  "type": "string"
+                },
+                "place": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "state": {
+                          "description": "Its or its project's folder here, or missing",
+                          "enum": [
+                            "here",
+                            "missing"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "machine": {
+                          "description": "That machine's name",
+                          "type": "string"
+                        },
+                        "state": {
+                          "const": "elsewhere",
+                          "description": "Only on another machine",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "machine"
+                      ],
+                      "type": "object"
+                    }
+                  ],
+                  "description": "Where it opens on this machine: its folder there, or another machine"
+                },
+                "planned_for": {
+                  "description": "Day planned for",
+                  "type": "string"
+                },
+                "position": {
+                  "description": "Order key within its group",
+                  "type": "string"
+                },
+                "priority": {
+                  "description": "1 highest, 4 none",
+                  "maximum": 4,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "project": {
+                  "description": "Its project's name, a deleted one too",
+                  "type": "string"
+                },
+                "project_id": {
+                  "description": "Project ID",
+                  "type": "string"
+                },
+                "questions": {
+                  "description": "Questions agents asked that wait for the person, newest first",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": {
+                        "description": "When it was asked",
+                        "maximum": 8640000000000000,
+                        "minimum": -8640000000000000,
+                        "type": "integer"
+                      },
+                      "by": {
+                        "description": "The agent that asked",
+                        "type": "string"
+                      },
+                      "ref": {
+                        "description": "The log entry, such as l3",
+                        "type": "string"
+                      },
+                      "text": {
+                        "description": "Its first 300 characters",
+                        "maxLength": 300,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "ref",
+                      "by",
+                      "text",
+                      "at"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 10,
+                  "type": "array"
+                },
+                "questions_more": {
+                  "description": "How many more questions wait",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "ref": {
+                  "description": "Task reference",
+                  "pattern": "^[A-Z]{1,6}-[1-9][0-9]{0,9}$",
+                  "type": "string"
+                },
+                "removed": {
+                  "additionalProperties": false,
+                  "description": "The change that moved it to the Trash",
+                  "properties": {
+                    "at": {
+                      "description": "When",
+                      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$",
+                      "type": "string"
+                    },
+                    "by": {
+                      "description": "Who: user, import or the actor's label",
+                      "type": "string"
+                    },
+                    "count": {
+                      "description": "How many of its tasks are in the Trash now",
+                      "maximum": 1000000,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "id": {
+                      "description": "A change's commit ID",
+                      "pattern": "^op_[0-9a-hjkmnp-tv-z]{26}$",
+                      "type": "string"
+                    },
+                    "reason": {
+                      "description": "Why, when it was given",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "at",
+                    "by",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "run": {
+                  "additionalProperties": false,
+                  "description": "Its newest background run, while it works, needs the person, or is recorded",
+                  "properties": {
+                    "id": {
+                      "description": "The run's ID",
+                      "type": "string"
+                    },
+                    "instance": {
+                      "description": "The run's agent instance",
+                      "type": "string"
+                    },
+                    "state": {
+                      "description": "It works, ended asking the person, or was open when this copy's backup was made",
+                      "enum": [
+                        "working",
+                        "needs_you",
+                        "recorded"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "state",
+                    "instance"
+                  ],
+                  "type": "object"
+                },
+                "sources": {
+                  "description": "Its first three sources",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "description": "Source ID",
+                        "pattern": "^s_[0-9a-hjkmnp-tv-z]{26}$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "description": "Source kind",
+                        "type": "string"
+                      },
+                      "ref": {
+                        "description": "Its key in its own system",
+                        "type": "string"
+                      },
+                      "title": {
+                        "description": "Title",
+                        "type": "string"
+                      },
+                      "url": {
+                        "description": "Link",
+                        "type": "string"
+                      },
+                      "who": {
+                        "description": "Sender or counterpart",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "title"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "sources_more": {
+                  "description": "How many more sources it has",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "status": {
+                  "description": "Status key",
+                  "type": "string"
+                },
+                "summary": {
+                  "description": "One line: the next step",
+                  "type": "string"
+                },
+                "terminals": {
+                  "description": "Its terminal agents on this computer not ended: stop them there",
+                  "maximum": 1000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "title": {
+                  "description": "Title",
+                  "type": "string"
+                },
+                "touched": {
+                  "description": "The seq of its or a child's last change",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "version": {
+                  "description": "The seq of its last change",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "waiting_on": {
+                  "description": "Who or what it waits on",
+                  "type": "string"
+                },
+                "waiting_since": {
+                  "description": "When its current wait began",
+                  "maximum": 8640000000000000,
+                  "minimum": -8640000000000000,
+                  "type": "integer"
+                },
+                "wrap_state": {
+                  "description": "Wrap-up state",
+                  "enum": [
+                    "pending",
+                    "wrapped"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "ref",
+                "title",
+                "lifecycle",
+                "status",
+                "inbox",
+                "position",
+                "created_at",
+                "version",
+                "removed"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "type": "object"
+      },
+      "remote": "read",
+      "scope": "space:read",
+      "summary": "What is in the Trash, newest change first, a page at a time."
     },
     {
       "actorKinds": [

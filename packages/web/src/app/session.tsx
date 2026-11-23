@@ -12,6 +12,7 @@ import { Api } from "../api.ts";
 import { Session, type SessionValue } from "../context.ts";
 import { Live } from "../live.ts";
 import { changeLogOf } from "./changes.ts";
+import { forgetGone } from "./leftovers.ts";
 import { useMachine } from "./machine.ts";
 import { forgetOpened, openedCopy } from "./opened.ts";
 
@@ -85,6 +86,10 @@ export function SpaceSession({
       if (state.phase !== "live" && state.gone === undefined) return;
       stopWatching();
       forgetOpened(space);
+      // The kept text under keys that name no task at all is forgotten.
+      if (state.phase === "live") {
+        void forgetGone(space, api, (task) => live.getState().tasks.has(task));
+      }
     });
     live.start();
     return () => {

@@ -356,9 +356,10 @@ describe("[A1.5.write.read-your-writes] an operation never fails against an earl
 describe("[A1.5.write.operations] the five task operations, their checks and their history", () => {
   test("the writer's operations are the registry's, with the same base rule", () => {
     // packages/contracts holds the operation registry (A3 3.2).
-    // The inserts need no base; a revival's link version and an existing place's or folder's base
-    // are conditional, which the registry leaves to the handler (A1 3.6).
+    // The inserts need no base; a revival's link version, an existing place's or folder's base and
+    // a restore's base or change are conditional, which the registry leaves to the handler (A1 3.6).
     const baseFree = new Set([
+      "task.restore",
       "task.create",
       "task.context_append",
       "note.add",

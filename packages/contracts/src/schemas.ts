@@ -340,6 +340,14 @@ export const TaskRow = z.strictObject({
   due: DueOutput.describe("Due date, or a due time with its zone").optional(),
   area: z.string().describe("Area name").optional(),
   project: z.string().describe("Project name").optional(),
+  deleted: z
+    .strictObject({
+      at: z.string().regex(patterns.instant).describe("When"),
+      by: z.string().describe("Who: user, import or the actor's label"),
+      change: z.string().regex(idPattern("op")).describe("The change that moved it").optional(),
+    })
+    .describe("In the Trash: who moved it there. Tell the user; never add it again")
+    .optional(),
 });
 
 /** A skill's name, as its folder spells it: the Agent Skills format's alphabet, 64 at most. */

@@ -66,6 +66,18 @@ export const isOpenLaunch = (launch: {
     sessionRecord(launch.evidence) === "open");
 
 /**
+ * Whether the launch row `l` (an alias in the statement) holds an agent that started and whose end
+ * is not recorded: Dispatched once its shim claimed it (an end before its session is confirmed
+ * fails the launch), or Confirmed while `sessionRecord` is `open`.
+ */
+export const heldAgentSql = (l: string): string =>
+  `((${l}.state = 'dispatched' AND json_extract(${l}.detail, '$.evidence.claim') IS NOT NULL) OR ` +
+  `(${l}.state = 'confirmed' AND json_extract(${l}.detail, '$.evidence.ran_ms') IS NULL AND ` +
+  `json_extract(${l}.detail, '$.evidence.exit_code') IS NULL AND ` +
+  `json_extract(${l}.detail, '$.evidence.restored_at') IS NULL AND ` +
+  `json_extract(${l}.detail, '$.evidence.lost_at') IS NULL))`;
+
+/**
  * The legal transitions (A4 3.9.1). A self edge records evidence and changes no state: T3's repeat
  * on Dispatching, before it is sent; a terminal shim's claim and its agent's PID on Dispatched; the
  * bridge's binding on Confirmed. Dispatching → Confirmed is a confirmation that arrives before the

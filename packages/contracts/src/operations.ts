@@ -61,7 +61,8 @@ export const OPERATIONS: Readonly<Record<string, OpSpec>> = {
   "task.reopen": agent(true),
   "task.archive": agent(true),
   "task.delete": agent(true),
-  "task.restore": agent(true),
+  // A base, or the change it restores, whose tombstone the task must still hold.
+  "task.restore": agent(false),
   "task.label": agent(false),
   "note.add": agent(false),
   "note.patch": agent(true),

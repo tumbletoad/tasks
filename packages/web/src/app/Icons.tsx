@@ -80,6 +80,13 @@ const VIEW_SHAPES: Readonly<Record<View, ReactNode>> = {
       <path d="m7 10 3 2.5L7 15M12.5 15H17" />
     </>
   ),
+  // Bin: a lid with its handle and a tapered can.
+  trash: (
+    <>
+      <path d="M4 6.5h16M9.5 6.5V4.5h5v2" />
+      <path d="m6 6.5 1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 10.5v6M14 10.5v6" />
+    </>
+  ),
 };
 
 export const ViewIcon = ({ view }: { readonly view: View }) => <Icon>{VIEW_SHAPES[view]}</Icon>;

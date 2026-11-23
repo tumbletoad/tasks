@@ -442,11 +442,13 @@ describe("[A5.agents.links] each agent of the monitor is shown with the task TTa
     expect(runIds[0]).not.toBe(runIds[1]);
     // A launch whose agent ended still links its session: the person may have resumed it.
     expect(byTitle(p, "Fixture ended launch")?.task).toMatchObject(linked("Ended") ?? {});
+    // A task moved to the Trash keeps its agent, also with a restored copy of the space beside it:
+    // the agent may still work, and the Agents page shows it there with Stop.
+    expect(byTitle(p, "Fixture trashed task")?.task).toMatchObject(linked("Trashed") ?? {});
     // A home TTAM does not list, one two of its homes could be, a session two tasks hold, the
-    // same ID under another app, a task trashed in the space but kept in a restored copy of it, a
-    // home that is not the one the launch recorded, and a record without one: no link.
+    // same ID under another app, a home that is not the one the launch recorded, and a record
+    // without one: no link.
     for (const title of [
-      "Fixture trashed task",
       "Fixture moved home",
       "Fixture no home recorded",
       "Fixture missing home",

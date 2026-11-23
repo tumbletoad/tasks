@@ -300,6 +300,7 @@ export const READ_ENTRIES: ReadonlySet<string> = new Set([
   "task.finished",
   "task.get",
   "task.search",
+  "task.trash",
 ]);
 
 /** Whether a call of the tab's space changes it or starts something from it. */

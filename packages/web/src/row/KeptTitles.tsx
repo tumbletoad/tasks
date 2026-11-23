@@ -1,12 +1,12 @@
-// Titles kept in the browser that no editor of this tab holds (title-draft.ts): what another tab is
-// typing, and on a task finished meanwhile what was typed and can no longer be saved. Each shows
+// Titles kept in the browser that no editor of this tab holds (unsent.ts): what another tab is
+// typing, and on a task finished or in the Trash what was typed and cannot be saved now. Each shows
 // its words with Copy and Discard, in the line an unsaved edit uses (Unsaved.tsx); Discard is the
-// person's choice, never a side effect of another tab's editor.
+// person's choice, never a side effect of another tab's editor, and takes only the words shown.
 import { classes } from "../app/css.ts";
 import { useToast } from "../app/frame.ts";
 import css from "../edit/Unsaved.module.css";
 import { useT } from "../i18n/intl.tsx";
-import { discardTitleDraft, useKeptTitles } from "./title-draft.ts";
+import { letGo, useKeptTitles } from "../unsent.ts";
 
 const styles = classes(css, ["line", "why", "act", "value"]);
 
@@ -14,11 +14,14 @@ export function KeptTitles({
   space,
   task,
   finished,
+  trashed = false,
 }: {
   readonly space: string;
   readonly task: string;
   /** The task is finished: no editor saves a title now, this tab's own included. */
   readonly finished: boolean;
+  /** The task is in the Trash, which is the reason it is not saved. */
+  readonly trashed?: boolean;
 }) {
   const t = useT();
   const say = useToast();
@@ -36,7 +39,13 @@ export function KeptTitles({
       </span>
       <span className={styles.why}>
         {finished
-          ? t(mine ? "edit.notSavedFinished" : "title.otherTabFinished")
+          ? t(
+              trashed
+                ? "edit.notSavedTrash"
+                : mine
+                  ? "edit.notSavedFinished"
+                  : "title.otherTabFinished",
+            )
           : t("title.otherTab")}
       </span>
       <button
@@ -62,7 +71,7 @@ export function KeptTitles({
         className={styles.act}
         data-part="discard-kept-title"
         onClick={() => {
-          discardTitleDraft(space, task, tab);
+          letGo(space, { kind: "title", task, tab, text: draft.typed });
         }}
       >
         {t("edit.discard")}

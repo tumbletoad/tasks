@@ -8,7 +8,7 @@
 // Fixture data only. Tests only.
 // First: this script ends through process.exit.
 import "../../packages/bridge/src/safe-exit.ts";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { atomicWrite } from "../../packages/files/src/index.ts";
@@ -54,6 +54,7 @@ function scenarioOf(chosen: FakeCodexCase): {
     case "hold":
       return { fixture: "windows-interrupt" };
     case "ask":
+    case "gate":
       return {
         fixture: "windows-plain",
         requests: [
@@ -96,7 +97,9 @@ function scenarioOf(chosen: FakeCodexCase): {
   }
 }
 
-const chosen = take(process.env["FAKE_CODEX_CASES"], process.env[ADDED.task]);
+const folder = process.env["FAKE_CODEX_CASES"];
+const task = process.env[ADDED.task];
+const chosen = take(folder, task);
 const scenario = { ...scenarioOf(chosen), cwd: process.cwd() };
 // The request reaches the server in `turn/start`, never on its command line: the answer is made
 // from it as it arrives, before the replay sends the answer.
@@ -128,7 +131,41 @@ process.stdin.on("data", (chunk: Buffer) => {
 process.stdin.on("end", () => {
   input.end();
 });
+
+/**
+ * `gate`: once its turn started, what the agent says next waits until the test writes the task's
+ * gate file, so the run works for as long as the test needs and then goes on.
+ */
+function gated(file: string): PassThrough {
+  const output = new PassThrough();
+  const held: string[] = [];
+  let started = false;
+  let open = false;
+  let pending = "";
+  output.on("data", (chunk: Buffer) => {
+    pending += chunk.toString("utf8");
+    let at = pending.indexOf("\n");
+    while (at >= 0) {
+      const line = pending.slice(0, at + 1);
+      pending = pending.slice(at + 1);
+      if (!started || open) process.stdout.write(line);
+      else held.push(line);
+      if (line.includes('"turn/started"')) started = true;
+      at = pending.indexOf("\n");
+    }
+  });
+  const poll = setInterval(() => {
+    if (!existsSync(file)) return;
+    clearInterval(poll);
+    open = true;
+    for (const line of held.splice(0)) process.stdout.write(line);
+  }, 50);
+  return output;
+}
+
+const gate = chosen === "gate" && folder !== undefined && task !== undefined;
+const output = gate ? gated(join(folder, `${task}.go`)) : process.stdout;
 // Never outlives ten minutes, so a run a test leaves cannot keep it for long.
 setTimeout(() => process.exit(124), 600_000).unref();
-const fake = serveCodex(input, process.stdout, scenario);
+const fake = serveCodex(input, output, scenario);
 process.exit(await fake.done);

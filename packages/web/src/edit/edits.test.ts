@@ -50,6 +50,9 @@ function appError(code: string, data: Record<string, unknown>): Error {
   return Object.assign(new Error("refused"), { code, data });
 }
 
+/** A keeper of the test's own: nothing is let go elsewhere unless it says so. */
+type Keeper = Omit<UnsavedKeeper, "onGone"> & Partial<Pick<UnsavedKeeper, "onGone">>;
+
 class World {
   readonly frames = new FakeFrames();
   readonly store: LiveStore;
@@ -60,7 +63,7 @@ class World {
   readonly answers = new Map<string, ((input: Record<string, unknown>) => unknown)[]>();
   seq = 10;
 
-  constructor(rows: readonly TaskRow[], keeper?: UnsavedKeeper, leaving?: () => Promise<unknown>) {
+  constructor(rows: readonly TaskRow[], keeper?: Keeper, leaving?: () => Promise<unknown>) {
     this.store = new LiveStore({
       space: SPACE.id,
       frames: this.frames,
@@ -105,7 +108,7 @@ class World {
       onChanges: (listener) => this.store.onChanges(listener),
       rowOf: (ref) => [...this.store.getState().tasks.values()].find((t) => t.ref === ref),
       newRequest: () => `rq-${String((requests += 1))}`,
-      ...(keeper === undefined ? {} : { keeper }),
+      ...(keeper === undefined ? {} : { keeper: { onGone: () => () => undefined, ...keeper } }),
       ...(leaving === undefined ? {} : { leaving }),
     });
     this.edits.onToast((t) => this.toasts.push(t));
@@ -572,7 +575,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
 
   test("what waits is handed to the keeper as it changes, and what the keeper held waits again in a new page's edits", async () => {
     const kept: (readonly Unsaved[])[] = [];
-    const keeper: UnsavedKeeper = {
+    const keeper: Keeper = {
       load: () => [],
       save: (unsaved) => {
         kept.push([...new Set(unsaved.values())]);
@@ -607,9 +610,40 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     expect(kept.at(-1)).toEqual([]);
   });
 
+  test("an edit the keeper says was let go elsewhere leaves this page too, and `settled` follows the refusal that keeps it, never comes before it", async () => {
+    let gone: (unsaved: Unsaved) => void = () => undefined;
+    let held: readonly Unsaved[] = [];
+    const keeper: Keeper = {
+      load: () => [],
+      save: (unsaved) => {
+        held = [...new Set(unsaved.values())];
+      },
+      onGone: (listener) => {
+        gone = listener;
+        return () => undefined;
+      },
+    };
+    const w = new World([task(1)], keeper);
+    w.answer("task.update", () => {
+      throw new Error("network");
+    });
+    const order: string[] = [];
+    w.edits.edit(task(1), titleChange("Oil the gate"), {
+      settled: () => order.push(`settled with ${String(held.length)} kept`),
+    });
+    expect(order).toEqual([]);
+    await flush();
+    expect(order).toEqual(["settled with 1 kept"]);
+    const line = w.edits.unsaved("t_00001", "title");
+    expect(line).toBeDefined();
+    // Another tab's Discard, or the foot of the Trash: the line goes here too.
+    if (line !== undefined) gone(line);
+    expect(w.edits.unsaved("t_00001", "title")).toBeUndefined();
+  });
+
   test("an edit still waiting behind another when the page goes is kept with the base it was made at: after a reload Try again sends that base, and someone's change since is a conflict with Apply mine", async () => {
     let held: readonly Unsaved[] = [];
-    const keeper: UnsavedKeeper = {
+    const keeper: Keeper = {
       load: () => [],
       save: (unsaved) => {
         held = [...new Set(unsaved.values())];
