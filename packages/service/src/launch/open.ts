@@ -21,6 +21,7 @@ import {
   type Route,
 } from "@ttasks/launch";
 import { decodeConfig, parseToml, readConfigFile } from "../config/toml.ts";
+import type { UsableSpace } from "../ops/handlers.ts";
 import type { MarkerOwner } from "../ops/marker.ts";
 import type { TaskFolder } from "../ops/read.ts";
 
@@ -125,7 +126,8 @@ export interface LaunchTask {
 
 /** A click on Open or Copy (`launch.open`). */
 export interface OpenTaskRequest {
-  readonly space: string;
+  /** The copy the click named, which takes changes: its launch records go there. */
+  readonly space: UsableSpace;
   readonly task: LaunchTask;
   /** The instance's key; undefined is Copy (A4 3.4.6). */
   readonly instance: string | undefined;

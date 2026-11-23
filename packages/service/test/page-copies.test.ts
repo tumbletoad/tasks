@@ -5,8 +5,10 @@ import { join } from "node:path";
 import type { RpcSession } from "@ttasks/bridge/protocol";
 import { afterEach, describe, expect, test } from "vitest";
 import { SPACE_HEADER } from "../src/http/app.ts";
+import { instanceToml } from "./harness.ts";
 import { post } from "./http-client.ts";
 import { httpWorld, openFeed, signIn, type FeedClient, type HttpWorld } from "./http-world.ts";
+import { errorOf } from "./ops-helpers.ts";
 
 const SLOW = { timeout: 300_000 };
 const CALL = { timeoutMs: 120_000 };
@@ -20,7 +22,7 @@ const add = (user: RpcSession, title: string, requestId: string) =>
     "op/call",
     { op: "task.add", input: { tasks: [{ title }], request_id: requestId } },
     CALL,
-  ) as Promise<{ tasks: { ref: string }[] }>;
+  ) as Promise<{ tasks: { id: string; ref: string }[] }>;
 
 interface ListRow {
   readonly id: string;
@@ -158,6 +160,104 @@ describe("[A2.3.10.5.copies.page] the page shows the copy the person opened", ()
         address,
       );
       expect(written.result).toBeDefined();
+    },
+  );
+
+  test(
+    "Run, Stop and a task's runs in a restored copy's tab act on that copy only: Run and Stop are refused with its reason, its history is its own, and the original's run is untouched; `ttasks run` by the copy's folder is the same",
+    SLOW,
+    async () => {
+      const w = await httpWorld(
+        "page-copies-runs",
+        {},
+        {
+          toml: instanceToml({
+            id: "claude-work",
+            target: "claude-cli",
+            label: "Claude · work",
+            exec: process.execPath,
+          }),
+        },
+      );
+      worlds.push(w);
+      // No run starts while the test looks: each stays queued until it is stopped.
+      const hold = w.service.runs.hold();
+      try {
+        const user = await w.user();
+        const [mira] = (
+          (await user.call("space/list", {}, CALL)) as { spaces: { id: string; folder: string }[] }
+        ).spaces;
+        if (mira === undefined) throw new Error("no Mira");
+        const task = (await add(user, "Before the backup", "page-copies-run-0001")).tasks[0]?.id;
+        if (task === undefined) throw new Error("no task");
+        const backup = (await user.call("space/backup", { space: mira.folder }, CALL)) as {
+          backup: { name: string };
+        };
+        const copyFolder = join(w.root, "s", "mira-copy");
+        await user.call(
+          "space/restore",
+          { backup: backup.backup.name, to: copyFolder, of: mira.folder },
+          CALL,
+        );
+        const { token } = await signIn(w);
+        const port = w.port();
+        const launch = async (action: string, body: unknown, space: string) =>
+          JSON.parse(
+            (
+              await post(port, `/api/v1/launch/${action}`, body, {
+                token,
+                headers: { [SPACE_HEADER]: space },
+              })
+            ).body,
+          ) as { result?: Record<string, unknown>; error?: { code: string; data?: unknown } };
+        const opened = JSON.parse(
+          (await post(port, "/api/v1/space/open", { folder: copyFolder }, { token })).body,
+        ) as { result: { address: string } };
+        const address = opened.result.address;
+        const readOnly = { code: "read_only", data: { reason: "read_only_copy" } };
+        const runsOf = async (space: string) =>
+          (await launch("runs", { task }, space)).result?.["runs"] as {
+            id: string;
+            state: string;
+          }[];
+
+        // Run in the copy's tab: refused with the copy's reason, and nothing queued anywhere.
+        expect(
+          (await launch("run", { task, request_id: "page-copies-run-0002" }, address)).error,
+        ).toMatchObject(readOnly);
+        expect(await runsOf(mira.id)).toEqual([]);
+        expect(await runsOf(address)).toEqual([]);
+
+        // A run of the original: the copy's tab reads its own history, and its Stop is refused.
+        const queued = (await launch("run", { task, request_id: "page-copies-run-0003" }, mira.id))
+          .result?.["run"] as { id: string; state: string };
+        expect(queued.state).toBe("queued");
+        expect(await runsOf(address)).toEqual([]);
+        expect((await launch("stop", { run: queued.id }, address)).error).toMatchObject(readOnly);
+        expect(await runsOf(mira.id)).toEqual([
+          expect.objectContaining({ id: queued.id, state: "queued" }),
+        ]);
+
+        // `ttasks run` names the copy by its folder: the same answers.
+        const refusal = (verb: string, params: Record<string, unknown>) =>
+          user.call(verb, { space: copyFolder, ...params }, CALL).then(
+            () => undefined,
+            (error: unknown) => errorOf(error),
+          );
+        expect(
+          await refusal("runs/start", { task, request_id: "page-copies-run-0004" }),
+        ).toMatchObject(readOnly);
+        expect(await refusal("runs/stop", { run: queued.id })).toMatchObject(readOnly);
+        expect(await user.call("runs/list", { space: copyFolder }, CALL)).toEqual({ runs: [] });
+
+        // The original's own Stop still works.
+        expect((await launch("stop", { run: queued.id }, mira.id)).result?.["run"]).toMatchObject({
+          id: queued.id,
+          state: "cancelled",
+        });
+      } finally {
+        hold.release();
+      }
     },
   );
 });

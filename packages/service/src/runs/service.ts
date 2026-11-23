@@ -44,8 +44,14 @@ import {
 import { DEFAULT_RUN_SETTINGS, type RunSettings } from "../config/machine-toml.ts";
 import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
-import type { ServedSpace } from "../ops/index.ts";
-import { readLaunchTask, readRunRows, readTaskRef, type TaskFolder } from "../ops/read.ts";
+import { readOnly, type ServedSpace, type UsableSpace } from "../ops/index.ts";
+import {
+  readLaunchTask,
+  readRunRow,
+  readRunRows,
+  readTaskRef,
+  type TaskFolder,
+} from "../ops/read.ts";
 import {
   buildRun,
   runAdapter,
@@ -324,7 +330,7 @@ export class RunService {
       this.#options
         .spaces()
         .filter(isOpen)
-        .map((space) => this.#space(space.id ?? "").catch(() => undefined)),
+        .map((space) => this.#hostOf(space).catch(() => undefined)),
     );
     await this.#supervisor.round();
   }
@@ -349,7 +355,7 @@ export class RunService {
     requestId: string,
     command: (run: RunRecord) => AgentCommand | Promise<AgentCommand>,
   ): Promise<RunRecord> {
-    const hosted = await this.#space(space);
+    const hosted = await this.#hostOf(this.#served(space));
     if (hosted === undefined) throw new Error("The space is not open on this machine");
     const settings = this.#settings();
     const limits = input.limits ?? {
@@ -373,26 +379,27 @@ export class RunService {
    * task that is done, no instance that runs tasks, or a folder on another machine or not found.
    * A repeat of the same request ID gives the run it queued, and starts nothing twice.
    */
-  async queueTask(space: string, asked: RunRequest): Promise<RunRecord> {
+  async queueTask(copy: UsableSpace, asked: RunRequest): Promise<RunRecord> {
     const agents = this.#options.agents;
-    const served = this.#served(space);
-    const hosted = await this.#space(space);
-    if (agents === undefined || served?.reader === undefined || hosted === undefined) {
+    const hosted = await this.#writable(copy);
+    const reader = copy.reader;
+    if (agents === undefined || reader === undefined || hosted === undefined) {
       throw refusal("not_served", "The space is not open on this machine.");
     }
+    const space = copy.id;
     // A repeat is given its run as it is now, before the task is read again: a rename since, or
     // the run's end, would build another request under the same ID. Another task, agent or words
     // under that ID is no repeat, and goes on to be refused below.
     const replayed = await hosted.machine.replayed(asked.requestId);
     if (
       replayed !== undefined &&
-      (await sameAsked(served.reader, replayed, asked, this.#options.machine))
+      (await sameAsked(reader, replayed, asked, this.#options.machine))
     ) {
       return replayed;
     }
     let task: Awaited<ReturnType<typeof readLaunchTask>>;
     try {
-      task = await readLaunchTask(served.reader, asked.task, this.#options.machine);
+      task = await readLaunchTask(reader, asked.task, this.#options.machine);
     } catch (error) {
       if (error instanceof AppError && error.code === "not_found") {
         throw refusal("task_not_found", "No task has this reference in this space.");
@@ -487,16 +494,16 @@ export class RunService {
     for (const listener of this.#changed) listener(space);
   }
 
-  /** A space's newest runs, or a task's, each with its task's reference. */
-  async list(space: string, task?: string): Promise<ListedRun[]> {
-    const served = this.#served(space);
-    if (served?.reader === undefined) {
+  /** A copy's newest runs, or a task's, each with its task's reference, read in that copy. */
+  async list(copy: UsableSpace, task?: string): Promise<ListedRun[]> {
+    const reader = copy.reader;
+    if (reader === undefined) {
       throw refusal("not_served", "The space is not open on this machine.");
     }
     let id: string | undefined;
     if (task !== undefined) {
       try {
-        id = (await readLaunchTask(served.reader, task, this.#options.machine)).id;
+        id = (await readLaunchTask(reader, task, this.#options.machine)).id;
       } catch (error) {
         if (error instanceof AppError && error.code === "not_found") {
           throw refusal("task_not_found", "No task has this reference in this space.");
@@ -504,7 +511,7 @@ export class RunService {
         throw error;
       }
     }
-    const rows = await readRunRows(served.reader, id);
+    const rows = await readRunRows(reader, id);
     return rows.flatMap(({ row, ref }) => {
       try {
         return [{ run: decodeRun(decodeRunRow(row)), task: ref }];
@@ -515,22 +522,24 @@ export class RunService {
   }
 
   /**
-   * One run as a person reads it: its record, with the answer saved so far while it has none in
-   * its record yet, and why it waits when it is queued.
+   * One run as a person reads it in `copy`: its record, with the answer saved so far while it has
+   * none in its record yet, and why it waits when it is queued.
    */
   async show(
-    space: string,
+    copy: UsableSpace,
     run: string,
   ): Promise<{ run: RunRecord; task: string | null; answer: string | null } | undefined> {
-    const record = await this.read(space, run).catch(() => undefined);
-    if (record === undefined) return undefined;
-    const served = this.#served(space);
-    const task =
-      record.task === null || served?.reader === undefined
-        ? null
-        : ((await readTaskRef(served.reader, record.task).catch(() => undefined)) ?? null);
+    if (copy.reader === undefined) return undefined;
+    const found = await readRunRow(copy.reader, run).catch(() => undefined);
+    if (found === undefined) return undefined;
+    let record: RunRecord;
+    try {
+      record = decodeRun(decodeRunRow(found.row));
+    } catch {
+      return undefined;
+    }
     const answer = record.result?.text ?? this.live(record).said?.text ?? null;
-    return { run: record, task, answer };
+    return { run: record, task: found.ref, answer };
   }
 
   /**
@@ -582,13 +591,15 @@ export class RunService {
    * The person's Stop: a queued run is cancelled at once and never starts, and one whose processes
    * were not confirmed ended (`unknown`) is ended by force.
    */
-  async stop(space: string, run: string): Promise<RunRecord | undefined> {
-    const { host } = await this.#required(space);
+  async stop(copy: UsableSpace, run: string): Promise<RunRecord | undefined> {
+    const hosted = await this.#writable(copy);
+    if (hosted === undefined) throw new Error("The space is not open on this machine");
+    const { host } = hosted;
     let after = await host.stop(run);
     if (after?.state === "unknown") after = await host.forceEnd(run);
     if (after?.state === "cancelled") this.#commands.delete(run);
     void this.#supervisor.round();
-    this.#tell(space);
+    this.#tell(copy.id);
     return after;
   }
 
@@ -744,8 +755,18 @@ export class RunService {
     };
   }
 
-  #served(space: string): ServedSpace | undefined {
-    return this.#options.spaces().find((s) => s.id === space && isOpen(s));
+  /** The copy of space `id` that takes changes: one service has one writer per ID. */
+  #served(id: string): ServedSpace | undefined {
+    return this.#options.spaces().find((s) => s.id === id && isOpen(s));
+  }
+
+  /**
+   * The run host of `copy`, which a run's write needs: a copy that takes no change is refused with
+   * its own reason, never sent to another copy of its space.
+   */
+  #writable(copy: UsableSpace): Promise<{ host: RunHost; machine: RunMachine } | undefined> {
+    if (copy.state === "read_only") throw readOnly(copy.reason, copy.message);
+    return this.#hostOf(copy);
   }
 
   /** What a queued run needs, read now: its task open, its instance and its folder still there. */
@@ -772,17 +793,21 @@ export class RunService {
   }
 
   async #required(space: string): Promise<{ host: RunHost; machine: RunMachine }> {
-    const hosted = await this.#space(space);
+    const hosted = await this.#hostOf(this.#served(space));
     if (hosted === undefined) throw new Error("The space is not open on this machine");
     return hosted;
   }
 
-  /** The space's run host, made once per writer with that writer's recovery. */
-  async #space(space: string): Promise<{ host: RunHost; machine: RunMachine } | undefined> {
+  /** The run host of an open copy, made once per writer with that writer's recovery. */
+  async #hostOf(
+    served: ServedSpace | undefined,
+  ): Promise<{ host: RunHost; machine: RunMachine } | undefined> {
     if (this.#stopped) return undefined;
-    const served = this.#options.spaces().find((s) => s.id === space && isOpen(s));
     const writer = served?.writer;
-    if (served === undefined || writer === undefined) return undefined;
+    const space = served?.id;
+    if (served === undefined || writer === undefined || space === undefined || !isOpen(served)) {
+      return undefined;
+    }
     const known = this.#hosted.get(space);
     if (known?.writer === writer) return known.made;
     if (known !== undefined) this.#drop(space, known);

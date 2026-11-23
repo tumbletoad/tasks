@@ -35,6 +35,7 @@ function start(
   http: HttpStart,
   launch?: LaunchOptions,
   monitor?: StartOptions["monitor"],
+  runs?: StartOptions["runs"],
 ): Promise<RunningService> {
   return startService({
     env: serviceEnv(home),
@@ -44,6 +45,7 @@ function start(
     http: { ports: [0], persist: false, ...http },
     ...(launch === undefined ? {} : { launch }),
     ...(monitor === undefined ? {} : { monitor }),
+    ...(runs === undefined ? {} : { runs }),
   });
 }
 
@@ -60,6 +62,8 @@ export async function httpWorld(
     toml?: string;
     launch?: LaunchOptions;
     monitor?: StartOptions["monitor"];
+    /** Background runs' containers and times: a test's own, so no agent starts. */
+    runs?: StartOptions["runs"];
   } = {},
 ): Promise<HttpWorld> {
   const temp = tempRoot(label);
@@ -73,6 +77,7 @@ export async function httpWorld(
     http,
     options.launch,
     options.monitor,
+    options.runs,
   );
   const sessions: RpcSession[] = [];
   const current = (): RunningService => {
@@ -101,7 +106,7 @@ export async function httpWorld(
     },
     restart: async (again = {}) => {
       await stop();
-      service = await start(home, again, options.launch, options.monitor);
+      service = await start(home, again, options.launch, options.monitor, options.runs);
       return service;
     },
     stop,

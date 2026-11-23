@@ -74,6 +74,8 @@ import {
   copyOf,
   findSpace,
   isAmbiguity,
+  keyOf,
+  namesCopy,
   onlySpace,
   type Ambiguity,
   type Copy,
@@ -274,7 +276,7 @@ interface Call {
   readonly caller: Caller;
   readonly principal: Principal;
   readonly entry: AnyEntry;
-  readonly space: ServedSpace;
+  readonly space: UsableSpace;
   /** The input after the contract: SafeText, defaults and the audience's limits. */
   readonly input: Record<string, unknown>;
   readonly today: string;
@@ -519,9 +521,9 @@ function heldSpace(
   if (named !== undefined && named !== held) {
     const other = findSpace(live, named);
     // A name is not known until its space opens: while the held space opens, it may be its own.
-    // Another ID, or another space's folder, is never its own, opening or not.
+    // Another ID, another space's folder or a copy's key is never its name, opening or not.
     const ownOpening = live.some((s) => s.state === "opening" && s.registered === held);
-    const name = !isId(named, "sp") && !isAbsolute(named);
+    const name = !isId(named, "sp") && !namesCopy(named);
     if (other === undefined && name && ownOpening) throw spaceUnavailable("opening", true);
     // A copy that is still opening is known by the ID its entry names.
     if (other === undefined || isAmbiguity(other) || (other.id ?? other.registered) !== held) {
@@ -532,8 +534,8 @@ function heldSpace(
         data: { rule: "binding" },
       });
     }
-    // A folder names its copy, which a session of the space may use.
-    if (isAbsolute(named)) return answerFor(live, other, named);
+    // A folder or a copy's key names that copy, which a session of the space may use.
+    if (namesCopy(named)) return answerFor(live, other, named);
   }
   const found = copyOf(live, held);
   if (isAmbiguity(found)) throw ambiguousError(found);
@@ -2470,8 +2472,6 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     }
     // A launch writes launch records: the space must be open for writing on this machine.
     writerOf(call.space);
-    const space = call.space.id;
-    if (space === undefined) throw spaceUnavailable("not_served", false);
     let read;
     try {
       read = await readLaunchTask(readerOf(call.space), String(input["task"]), host.machine.id);
@@ -2527,7 +2527,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     let opened: OpenTaskResult;
     try {
       opened = await launches.openTask({
-        space,
+        space: call.space,
         task: read,
         instance,
         composer: text,
@@ -2546,7 +2546,8 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
             host,
             { ...call.caller, principal },
             {
-              space,
+              // The copy the click resolved, by its own key: never the space's ID chosen again.
+              space: keyOf(call.space) ?? call.space.id,
               op: "entry.add",
               input: {
                 task: read.id,

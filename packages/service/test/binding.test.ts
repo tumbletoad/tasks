@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { SHIM_METHODS } from "@ttasks/launch";
+import { copyKey } from "../src/ops/copies.ts";
 import { opCall, type OpsHost } from "../src/ops/index.ts";
 import { bridge, launchContext, onHost, shell, written, type Agent } from "./agents.ts";
 import { contractWorld, type ContractWorld, type WorldLaunch } from "./contract/suite.ts";
@@ -756,6 +757,59 @@ describe("[A3.3.7.binding.space] one bridge process works in one space", () => {
       const unavailable = await pinned.refusal("space.status");
       expect([unavailable.code, unavailable.reason]).toEqual(["space_unavailable", "not_served"]);
       await pinned.close();
+    },
+  );
+
+  test(
+    "a session that names a restored copy of its space, by the copy's address or its folder, reaches that copy and no other: a write is refused with the copy's reason and the original is not written",
+    { timeout: LONG },
+    async () => {
+      const folder = w.service.ops.spaces().find((s) => s.id === w.space)?.folder ?? "";
+      const copyFolder = join(w.root, "mira-restored");
+      const person = await classSession(w.home, w.path, "cli-interactive");
+      try {
+        const made = (await person.call(
+          "space/backup",
+          { space: folder },
+          { timeoutMs: LONG },
+        )) as {
+          backup: { name: string };
+        };
+        await person.call(
+          "space/restore",
+          { backup: made.backup.name, to: copyFolder, of: folder },
+          { timeoutMs: LONG },
+        );
+        await person.call("space/open", { path: copyFolder }, { timeoutMs: LONG });
+        const launch = await w.launch("M-1");
+        const sh = await shell(w, { TTASKS_TICKET: launch.ticket });
+        const note = (space: string) => ({
+          input: {
+            task: "M-1",
+            kind: "note",
+            text: "Fixture note for one copy.",
+            request_id: rid(),
+          },
+          space,
+        });
+        for (const named of [copyKey(w.space, copyFolder), copyFolder]) {
+          const asked = note(named);
+          const refused = await sh.refusal("entry.add", asked.input, { space: asked.space });
+          expect(refused.body, named).toMatchObject({
+            code: "read_only",
+            data: { reason: "read_only_copy" },
+          });
+          expect(await written(w, w.space, asked.input.request_id)).toEqual([]);
+        }
+        // Naming nothing, or the space's ID, is the session's own copy: the original.
+        const own = note(w.space);
+        await sh.call("entry.add", own.input, { space: own.space });
+        expect(await written(w, w.space, own.input.request_id)).toHaveLength(1);
+        await sh.close();
+      } finally {
+        await person.call("space/close", { space: copyFolder }, { timeoutMs: LONG });
+        person.close();
+      }
     },
   );
 });

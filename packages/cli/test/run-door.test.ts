@@ -18,7 +18,7 @@ import {
   tempRoot,
   waitFor,
 } from "@ttasks/service/test/harness";
-import { classSession } from "@ttasks/service/test/ops-helpers";
+import { classSession, openCopy } from "@ttasks/service/test/ops-helpers";
 import { FINAL_RUN_STATES, type RunRecord } from "@ttasks/contracts/runs";
 import { RunMachine, type RunEnd } from "@ttasks/runs";
 import { newId, type Id } from "@ttasks/storage";
@@ -206,7 +206,10 @@ describe("[A4.3.11.run.door] ttasks run: a person starts a background run of a t
     expect(commandLines()).not.toContain("MARKREQ7Q2");
     // The run's own calls may use its space, though the instance's home was never set up for it;
     // no other connection of that home may.
-    const live = (await service?.runs.list(spaceId, task))?.[0]?.run.id ?? "";
+    const live =
+      (service === undefined
+        ? undefined
+        : (await service.runs.list(openCopy(service.ops, spaceId), task))[0]?.run.id) ?? "";
     expect(service?.runs.allows("codex", spaceId, live)).toBe(true);
     expect(service?.ops.homes?.may("codex", spaceId)).toBe(false);
     const ran = await running;

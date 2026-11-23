@@ -35,7 +35,7 @@ import { FAKE_CLI_AGENT, type CliAgentReport } from "@ttasks/testkit";
 import { briefNames, chooseRoute, codexEntryOf, LaunchUnavailable } from "../src/launch/open.ts";
 import { homeDigest, physicalHome } from "../src/setup/agents.ts";
 import { instanceToml, readLog, stateOf, tempRoot, waitFor } from "./harness.ts";
-import { errorOf, classSession } from "./ops-helpers.ts";
+import { classSession, errorOf, openCopy } from "./ops-helpers.ts";
 import { LONG_MS, ShimLab } from "./shim-harness.ts";
 
 const WINDOWS = process.platform === "win32";
@@ -641,7 +641,7 @@ describe("[A4.5.routes.service] Open and Copy through the service: golden argv, 
       const requestId = rid();
       // What the request path read for each call: the retry read the task after an edit.
       const request = (title: string, version: number) => ({
-        space: r.lab.spaceId,
+        space: openCopy(r.lab.running.ops, r.lab.spaceId),
         task: { id: task.id, ref: task.ref, title, version, folder: { kind: "none" as const } },
         instance: undefined,
         composer: undefined,
@@ -890,7 +890,7 @@ describe("[A4.5.routes.folders] a launch opens in the task's folder, else its pr
       const service = r.lab.running.launches;
       const elsewhere = (instance: string | undefined) =>
         service.openTask({
-          space: r.lab.spaceId,
+          space: openCopy(r.lab.running.ops, r.lab.spaceId),
           task: {
             id: far.id,
             ref: far.ref,

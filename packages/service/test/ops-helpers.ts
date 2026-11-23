@@ -4,6 +4,7 @@
 import { join } from "node:path";
 import { openRpc, RpcError, type RpcSession } from "@ttasks/bridge/protocol";
 import type { ErrorBody } from "@ttasks/contracts";
+import type { ServedSpace, UsableSpace } from "../src/ops/index.ts";
 import { keyOf, within } from "./harness.ts";
 
 export type CliClass = "cli-interactive" | "cli-script" | "cli-agent";
@@ -110,4 +111,11 @@ export async function revokeHome(
   } finally {
     if (session === undefined) user.close();
   }
+}
+
+/** The copy of space `id` that takes changes, as the request path finds it for a call. */
+export function openCopy(host: { spaces(): readonly ServedSpace[] }, id: string): UsableSpace {
+  const copy = host.spaces().find((s) => s.id === id && s.state === "open");
+  if (copy === undefined) throw new Error("the space is not open");
+  return copy as UsableSpace;
 }

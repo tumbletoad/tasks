@@ -100,7 +100,7 @@ import { errorCode, errorType } from "../hub/crash.ts";
 import type { Logger } from "../hub/log.ts";
 import type { ConnectionInfo, RpcContext, RpcHandlers } from "../local/index.ts";
 import type { SpaceWriterHandle } from "@ttasks/storage";
-import type { ServedSpace } from "../ops/index.ts";
+import type { ServedSpace, UsableSpace } from "../ops/index.ts";
 import { bounded, openPath } from "../ops/folders.ts";
 import type { FolderMarkers } from "../ops/marker.ts";
 import type { TaskFolder } from "../ops/read.ts";
@@ -655,7 +655,7 @@ export class LaunchService {
    * built again from a task that changed in between.
    */
   openTask(request: OpenTaskRequest): Promise<OpenTaskResult> {
-    const key = `${request.space}\n${request.requestId}`;
+    const key = `${request.space.id}\n${request.requestId}`;
     const before = this.#opening.get(key) ?? Promise.resolve();
     const run = before.then(
       () => this.#openTask(request),
@@ -670,8 +670,9 @@ export class LaunchService {
   }
 
   async #openTask(request: OpenTaskRequest): Promise<OpenTaskResult> {
-    const { space, task, requestId } = request;
-    const hosted = await this.#space(space);
+    const { task, requestId } = request;
+    const space = request.space.id;
+    const hosted = await this.#hostOf(request.space);
     if (hosted === undefined) throw new Error("The space is not open on this machine");
     // A repeated request (A1 3.8) replays the intent it made, read from its receipt before the
     // task or machine.toml is read again: an edit to the task since the click never turns a retry
@@ -884,13 +885,15 @@ export class LaunchService {
   }
 
   /**
-   * The task and agent pairs of a space that are busy on this machine, one entry each: opening
+   * The task and agent pairs of a copy that are busy on this machine, one entry each: opening
    * when one of its launches is still on its way, else running when a session of it runs. Only
-   * this machine's launches count, so a launch another machine left open blocks nothing here.
+   * this machine's launches count, so a launch another machine left open blocks nothing here. A
+   * copy that takes no change starts no launch: none of it is busy.
    */
-  async busy(space: string): Promise<BusyLaunch[]> {
-    const hosted = await this.#space(space).catch(() => undefined);
+  async busy(copy: UsableSpace): Promise<BusyLaunch[]> {
+    const hosted = await this.#hostOf(copy).catch(() => undefined);
     if (hosted === undefined) return [];
+    const space = copy.id;
     const { intents } = await hosted.store.openWork(this.#options.machine);
     const runs = await this.#sessions(space, hosted);
     const out = new Map<string, BusyLaunch>();
@@ -1567,13 +1570,22 @@ ${instance}`;
     look();
   }
 
-  /** The space's machine and store, made once per writer, with that writer's recovery. */
-  async #space(
+  /** The machine and store of the copy of space `id` that takes changes: one writer per ID. */
+  #space(
     space: string,
   ): Promise<{ machine: LaunchMachine; store: SpaceExecutionStore } | undefined> {
-    const served = this.#options.spaces().find((s) => s.id === space && isOpen(s));
+    return this.#hostOf(this.#options.spaces().find((s) => s.id === space && isOpen(s)));
+  }
+
+  /** An open copy's machine and store, made once per writer, with that writer's recovery. */
+  async #hostOf(
+    served: ServedSpace | undefined,
+  ): Promise<{ machine: LaunchMachine; store: SpaceExecutionStore } | undefined> {
     const writer = served?.writer;
-    if (served === undefined || writer === undefined) return undefined;
+    const space = served?.id;
+    if (served === undefined || writer === undefined || space === undefined || !isOpen(served)) {
+      return undefined;
+    }
     const known = this.#hosted.get(space);
     if (known?.writer === writer) return known.made;
     const made = this.#make(space, served);

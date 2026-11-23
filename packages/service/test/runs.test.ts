@@ -33,7 +33,7 @@ import {
   tempRoot,
   waitFor,
 } from "./harness.ts";
-import { classSession } from "./ops-helpers.ts";
+import { classSession, openCopy } from "./ops-helpers.ts";
 
 const windows = process.platform === "win32";
 const running: RunningService[] = [];
@@ -445,9 +445,9 @@ describe("[A4.3.11.9.run.stop-unknown] Stop of a run whose processes were not co
       agent(ANSWERS, home),
     );
     await runUntil(service, spaceId, run.id, (r) => r.state === "running", "the run");
-    await service.runs.stop(spaceId, run.id);
+    await service.runs.stop(openCopy(service.ops, spaceId), run.id);
     await runUntil(service, spaceId, run.id, (r) => r.state === "unknown", "the run unknown");
-    expect(await service.runs.stop(spaceId, run.id)).toMatchObject({
+    expect(await service.runs.stop(openCopy(service.ops, spaceId), run.id)).toMatchObject({
       state: "cancelled",
       result: { text: "Stopped with what was found." },
     });

@@ -36,7 +36,7 @@ import {
 } from "@ttasks/launch";
 import { findSpace, isAmbiguity } from "../ops/copies.ts";
 import { launchError } from "../ops/handlers.ts";
-import type { OpsHost, ServedSpace } from "../ops/index.ts";
+import type { OpsHost, UsableSpace } from "../ops/index.ts";
 import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
 import { WORK_ON_IT } from "../runs/agent.ts";
 import type { HttpLog } from "./events.ts";
@@ -65,8 +65,8 @@ export interface UiLaunchPort {
   onChange?(listener: (space: string) => void): () => void;
   /** Whether the launch's session runs now, as this service follows it. */
   running?(launch: string): boolean;
-  /** The task and agent pairs of a space busy on this machine. */
-  busy?(space: string): Promise<readonly UiBusy[]>;
+  /** The task and agent pairs of a copy busy on this machine. */
+  busy?(copy: UsableSpace): Promise<readonly UiBusy[]>;
   /** Shows the folder a task opens in here in the file manager (LaunchService.showFolder). */
   showFolder?(space: string, folder: TaskFolder): Promise<OpenResult>;
 }
@@ -96,7 +96,7 @@ export interface UiRunPort {
   /** Whether the instance with this key can work on a task in the background. */
   runnable(instance: string): boolean;
   queueTask(
-    space: string,
+    copy: UsableSpace,
     asked: {
       readonly task: string;
       readonly instance?: string;
@@ -104,8 +104,8 @@ export interface UiRunPort {
       readonly requestId: string;
     },
   ): Promise<RunRecord>;
-  list(space: string, task?: string): Promise<readonly { readonly run: RunRecord }[]>;
-  stop(space: string, run: string): Promise<RunRecord | undefined>;
+  list(copy: UsableSpace, task?: string): Promise<readonly { readonly run: RunRecord }[]>;
+  stop(copy: UsableSpace, run: string): Promise<RunRecord | undefined>;
   /** What the run's record cannot say now (RunService.live). */
   live(run: RunRecord): UiRunLive;
   /** Hears each run a person queues or stops, here or with `ttasks run`. */
@@ -375,10 +375,10 @@ export class UiLaunches {
   }
 
   /**
-   * The served space a request names (its `TTasks-Space`): an ID or a name, the copy of it that
-   * copies.ts's rule picks among the served copies (A2 3.10.5).
+   * The served copy a request names (its `TTasks-Space`), found once here: every action below
+   * reads and writes that copy and no other (copies.ts).
    */
-  #space(ref: string | undefined): ServedSpace {
+  #space(ref: string | undefined): UsableSpace {
     if (ref === undefined) throw invalid("Name the space of this tab.", "space");
     const found = findSpace(
       this.#options.host.spaces().filter((s) => s.id !== undefined && s.reader !== undefined),
@@ -391,16 +391,15 @@ export class UiLaunches {
         message: "This space cannot open tasks on this machine now.",
       });
     }
-    return space;
+    return space as UsableSpace;
   }
 
   /**
-   * The agent apps busy with a task on this machine, for every task of the space: what the
-   * page's tiles and Open buttons hold to, whatever receipts a tab has read.
+   * The agent apps busy with a task on this machine, for every task of the copy: what the page's
+   * tiles and Open buttons hold to, whatever receipts a tab has read.
    */
   async busy(spaceRef: string | undefined): Promise<readonly UiBusy[]> {
-    const space = this.#space(spaceRef).id ?? "";
-    return (await this.#options.port?.busy?.(space)) ?? [];
+    return (await this.#options.port?.busy?.(this.#space(spaceRef))) ?? [];
   }
 
   /**
@@ -418,7 +417,7 @@ export class UiLaunches {
     }
     const space = this.#space(spaceRef);
     const show = this.#options.port?.showFolder?.bind(this.#options.port);
-    if (show === undefined || space.reader === undefined || space.id === undefined) {
+    if (show === undefined || space.reader === undefined) {
       throw new AppError({
         code: "space_unavailable",
         message: "This space cannot open folders on this machine now.",
@@ -480,8 +479,7 @@ export class UiLaunches {
         data: { field: "text" },
       });
     }
-    const space = this.#space(spaceRef).id ?? "";
-    const queued = await runs.queueTask(space, {
+    const queued = await runs.queueTask(this.#space(spaceRef), {
       task,
       ...(instance === undefined ? {} : { instance }),
       request: words,
@@ -496,7 +494,7 @@ export class UiLaunches {
     const { task } = input;
     if (typeof task !== "string" || !TASK_ID.test(task))
       throw invalid("Expected a task ID.", "task");
-    const listed = await runs.list(this.#space(spaceRef).id ?? "", task);
+    const listed = await runs.list(this.#space(spaceRef), task);
     return listed
       .filter(({ run }, at) => at < RUNS_SHOWN || isOpenRun(run))
       .map(({ run }) => uiRun(run, runs.live(run)))
@@ -511,8 +509,7 @@ export class UiLaunches {
     const runs = this.#runs();
     const { run } = input;
     if (typeof run !== "string" || !RUN_ID.test(run)) throw invalid("Expected a run ID.", "run");
-    const space = this.#space(spaceRef).id ?? "";
-    const after = await runs.stop(space, run);
+    const after = await runs.stop(this.#space(spaceRef), run);
     if (after === undefined) {
       throw new AppError({ code: "not_found", message: "No run has this ID in this space." });
     }

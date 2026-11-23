@@ -95,25 +95,25 @@ export function runVerbs(
         });
       }
       const instance = text(params, "instance");
-      const run = await host.runs.queueTask(served.id, {
+      const run = await host.runs.queueTask(served, {
         task,
         ...(instance === undefined ? {} : { instance }),
         request,
         requestId,
       });
-      const shown = await host.runs.show(served.id, run.id);
+      const shown = await host.runs.show(served, run.id);
       return runView(shown?.run ?? run, shown?.task ?? null, host.runs.live(shown?.run ?? run));
     },
     "runs/list": async (params) => {
       const served = host.space(text(params, "space"));
-      const listed = await host.runs.list(served.id, text(params, "task"));
+      const listed = await host.runs.list(served, text(params, "task"));
       return {
         runs: listed.map(({ run, task }) => runView(run, task, host.runs.live(run))),
       };
     },
     "runs/show": async (params) => {
       const served = host.space(text(params, "space"));
-      const shown = await host.runs.show(served.id, runId(params));
+      const shown = await host.runs.show(served, runId(params));
       if (shown === undefined) throw noRun();
       return {
         ...runView(shown.run, shown.task, host.runs.live(shown.run)),
@@ -124,9 +124,9 @@ export function runVerbs(
     "runs/stop": async (params) => {
       const served = host.space(text(params, "space"));
       const id = runId(params);
-      const after = await host.runs.stop(served.id, id);
+      const after = await host.runs.stop(served, id);
       if (after === undefined) throw noRun();
-      const shown = await host.runs.show(served.id, id);
+      const shown = await host.runs.show(served, id);
       return runView(shown?.run ?? after, shown?.task ?? null);
     },
   };
