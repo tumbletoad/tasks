@@ -228,6 +228,20 @@ function failure(error: unknown): AppError {
 }
 
 /**
+ * `latest` that restored nothing. It stops at the first backup it cannot judge, and never takes
+ * another copy's work for this copy's, so the way on is a backup the person names: the answer
+ * says how to see them and how to restore one.
+ */
+function latestFailure(error: unknown): AppError {
+  const failed = failure(error);
+  if (failed.hint !== undefined || failed.data["cause"] === undefined) return failed;
+  return new AppError({
+    ...failed.toBody(),
+    hint: `${CLI_NAME} space backups <space> lists every backup with its state, also those of another copy of the space. Restore one by its name: ${CLI_NAME} space restore <name> <space> --to <folder>`,
+  });
+}
+
+/**
  * What a crash can leave beside a space or in it, by name (A1 3.1, 3.18): a create's
  * `.<slug>.creating-*` folder, a restore's `.<slug>.restoring-*` staging folder, the
  * `<slug>.replaced-*` folder a restore in place keeps, `.space.json.tmp-*` files, an export's
@@ -878,7 +892,7 @@ function makeSpaceVerbs(host: SpaceVerbsHost): Readonly<Record<string, Verb>> {
             );
           });
         } catch (error) {
-          throw failure(error);
+          throw latestFailure(error);
         }
       }
       // A backup's or a bundle's file, or its name as `space backups` prints it: a backup's in the

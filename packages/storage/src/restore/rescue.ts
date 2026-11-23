@@ -91,9 +91,9 @@ export interface LatestRestored {
 /**
  * Restores the newest complete backup of `spaceId` in `backupDir` that restores into the new folder
  * `target` (see the header), and names it. Its candidates are one history's (list.ts
- * backupHistories): that of the copy this machine serves (`incarnation`), whenever it has a
- * complete backup, never another's in its place; else, a choice the result names along with the
- * histories it passed over, the one written to last, then the next. Only a damaged candidate
+ * backupHistories): that of the copy this machine serves (`incarnation`), whenever the folder
+ * holds a backup of it, whole or not, never another's in its place; else, a choice the result
+ * names along with the histories it passed over, the one written to last, then the next. Only a damaged candidate
  * (fault.ts) moves on to the next older one. Any other failure stops the restore with its own
  * code, and nothing older is tried: the candidate may be whole, and an older one would bring back
  * older work as if it were the newest (BUNDLE_LIMIT_EXCEEDED for the free space or a size limit,
@@ -119,10 +119,12 @@ export async function restoreLatest(
     throw new StorageError("SPACE_EXISTS", "A space folder is already there");
   }
   const { incarnation, ...restoreOptions } = options;
-  const histories = backupHistories(listBackups(backupDir, seams.policy), spaceId).filter((h) =>
-    h.backups.some((b) => b.state === "ok"),
-  );
-  const own = histories.find((h) => h.incarnation === incarnation);
+  const all = backupHistories(listBackups(backupDir, seams.policy), spaceId);
+  const histories = all.filter((h) => h.backups.some((b) => b.state === "ok"));
+  // Found before the incomplete ones are left out: a served copy whose backups are all cut short
+  // has none that restores, which is not the same as having none.
+  const own =
+    incarnation === undefined ? undefined : all.find((h) => h.incarnation === incarnation);
   for (const history of own === undefined ? histories : [own]) {
     for (const backup of history.backups) {
       if (backup.state !== "ok") continue;

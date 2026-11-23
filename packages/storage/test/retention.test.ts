@@ -630,6 +630,20 @@ describe("[A1.5.backup.histories] no history's backups are judged by another's",
     expect(unknown.others[0]?.backups[0]?.name).toBe(d2.name);
   });
 
+  test("the served copy's own backups are all cut short: restore latest restores nothing, never another copy's work in their place", async () => {
+    const { checked, space, shared, root, laptop, l1, l2 } = await twoCopies();
+    // A sync that stopped halfway: the files are there with their metadata, and are not whole.
+    for (const cut of [l1, l2]) writeFileSync(cut.file, "cut");
+    await expectCode(
+      () =>
+        restoreLatest(checked, shared, space.spaceId, join(root, "a"), {
+          incarnation: laptop.incarnation,
+        }),
+      "BACKUP_INVALID",
+    );
+    expect(existsSync(join(root, "a"))).toBe(false);
+  });
+
   test("a daily of one copy does not make the other's look done, and retention keeps each history's newest", async () => {
     const { checked, space, shared, desktop, laptop, d1, d2, l1, l2 } = await twoCopies();
     const listing = listBackups(shared);

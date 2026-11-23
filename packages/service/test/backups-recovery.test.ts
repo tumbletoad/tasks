@@ -384,6 +384,26 @@ describe("[A1.5.backup.histories] no history's backups are judged by another's",
       for (const kept of [first, ours, theirs]) {
         expect(existsSync(kept.file) && existsSync(kept.sidecarFile), kept.name).toBe(true);
       }
+
+      // This copy's own backups cut short (a sync that stopped halfway): latest restores nothing,
+      // never the other copy's work in their place, and says how to choose a backup by name.
+      const others = [first, theirs].map((b) => basename(b.file));
+      for (const name of readdirSync(shared)) {
+        if (name.endsWith(".db.gz") && !others.includes(name)) {
+          writeFileSync(join(shared, name), "cut");
+        }
+      }
+      const body = await refused(
+        call(user, "space/restore", {
+          backup: "latest",
+          of: laptop.folder,
+          to: join(spaces, "again"),
+        }),
+      );
+      expect(body).toMatchObject({ data: { cause: "BACKUP_INVALID" } });
+      expect(String(body["hint"])).toContain("space backups");
+      expect(String(body["hint"])).toContain("space restore <name>");
+      expect(existsSync(join(spaces, "again"))).toBe(false);
     },
     SLOW,
   );
