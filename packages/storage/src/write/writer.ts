@@ -3395,9 +3395,9 @@ function regroupRestored(conn: Connection, run: Execution, staged: StagedOp, tar
   if (task.projectId !== null) {
     const project = conn.prepare(SQL.projectGroup).get({ id: task.projectId });
     if (project === undefined || project["deleted_at"] === null) return;
-    area = new RowReader("projects", project).optText("area_id", (v) => isId(v, "a")) as Id<
-      "a"
-    > | null;
+    area = new RowReader("projects", project).optText("area_id", (v) =>
+      isId(v, "a"),
+    ) as Id<"a"> | null;
   }
   if (area !== null && conn.prepare(SQL.areaGone).get({ id: area }) !== undefined) area = null;
   if (task.projectId === null && area === task.areaId) return;
