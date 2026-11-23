@@ -44,6 +44,13 @@ export const FOLDER_MARKER = `.${PRODUCT_ID}-marker`;
 /** The folder of the data folder (or of TTASKS_HOME) that holds spaces by default: `spaces/<slug>/`. */
 export const SPACES_FOLDER = "spaces";
 
+/**
+ * The Agent Monitor, a separate program by the same publisher that the Agents page reads: its name
+ * in text, and the command TTasks finds on the PATH.
+ */
+export const MONITOR_NAME = "TTAM";
+export const MONITOR_COMMAND = "ttam";
+
 /** The prefix of every environment variable the product reads or sets. */
 export const ENV_PREFIX = "TTASKS_";
 

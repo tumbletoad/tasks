@@ -118,6 +118,8 @@ export const RPC_METHODS = {
   // taken now, as a launch takes it) and the sessions row's counts.
   "doctor/launch": CLI,
   "doctor/sessions": CLI,
+  // Whether the Agent Monitor is found and fits: its version, never what it monitors.
+  "doctor/monitor": CLI,
   "launch.claim": SHIM,
   "launch.attach": SHIM,
   "launch.started": SHIM,

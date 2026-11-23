@@ -114,6 +114,13 @@ the behaviour it describes, and keep each one to a sentence or two.
 - A change by an agent or a script is never recorded as yours.
 - Every note is visible to agents.
 
+## Agents on this computer
+
+- TTasks runs the Agent Monitor (TTAM) only while it is asked for what agents run here, and ends it
+  ten minutes after the last question and when TTasks stops.
+- What TTAM reports about your agents, other projects' too, stays in TTasks and your own page: it
+  is not given to agents' tools, not written into a space or a log, and never leaves this machine.
+
 ## Opening a task in an agent app
 
 - Open uses the folder that was set, or says that it is not there. It never picks another folder

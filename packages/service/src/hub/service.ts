@@ -24,7 +24,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { CLI_NAME, envVar, PRODUCT_NAME } from "@ttasks/brand";
-import type { Instance } from "@ttasks/launch";
+import { nodeDetectHost, type Instance } from "@ttasks/launch";
 import { StorageError, type Id, type SpaceWriterHandle } from "@ttasks/storage";
 import {
   DEFAULT_CONFIG,
@@ -124,6 +124,13 @@ import { homeRows } from "./home-rows.ts";
 import { namedBy } from "./named.ts";
 import { SeenCalls } from "./agent-homes.ts";
 import { agentAppVerbs, personEnv } from "./agent-apps.ts";
+import {
+  findMonitor,
+  Monitor,
+  MONITOR_VARIABLE,
+  probeMonitor,
+  type MonitorCommand,
+} from "../monitor/index.ts";
 import { pageFolderVerbs } from "./page-folders.ts";
 import { pageSpaceVerbs } from "./page-spaces.ts";
 import { within } from "./wait.ts";
@@ -236,6 +243,8 @@ export interface StartOptions {
    * the page shows as `~`, for tests. Default: the person's own, as Open's agents get them.
    */
   readonly agentApps?: { readonly env?: Env; readonly home?: string };
+  /** The Agent Monitor to start, for tests. Default: `ttam` on the person's PATH. */
+  readonly monitor?: { readonly command: () => Promise<MonitorCommand> };
 }
 
 export type StopReason = "signal" | "request";
@@ -271,6 +280,8 @@ export interface RunningService {
   readonly spacesSettled: Promise<void>;
   /** The UI's HTTP listener (M2.12) when the service runs one. */
   readonly http: RunningHttp | undefined;
+  /** The Agent Monitor's child, started by the first ask, ended with the service. */
+  readonly monitor: Monitor;
   /** Drains and stops. Resolves with the exit code: 0, or 75 when a restart was asked for. */
   stop(options?: { restart?: boolean; reason?: StopReason }): Promise<ExitCode>;
   /** Resolves with the exit code once the service has stopped, by stop() or by itself (70). */
@@ -735,8 +746,29 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       platform,
       ...(personHome === undefined ? {} : { home: personHome }),
     });
+    // The person's own `ttam`, looked for in their environment as Open's agents get it.
+    const monitorCommand =
+      options.monitor?.command ??
+      (async (): Promise<MonitorCommand> => {
+        const source = launching.service?.environment;
+        const found = source === undefined ? env : await personEnv(source).catch(() => env);
+        const home = personHome ?? layout.state;
+        return findMonitor(
+          nodeDetectHost({ platform, env: found, home }),
+          home,
+          env[MONITOR_VARIABLE],
+        );
+      });
+    const monitor = new Monitor({
+      command: monitorCommand,
+      log: (event, fields) => {
+        log.log(event, fields);
+      },
+    });
     const hub = {
       status,
+      // `ttasks doctor`'s monitor row: TTAM's hello only, read by a run that collects nothing.
+      monitor: { probe: async () => probeMonitor(await monitorCommand()) },
       requestStop: (o: { restart: boolean }) => {
         onStopRequest(o);
       },
@@ -1204,7 +1236,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         launches.stop();
         // A run's processes end with the service: its containers are killed, and the next start
         // settles the runs.
-        await within(runs.close(), DRAIN_MS).catch(() => undefined);
+        await within(Promise.all([runs.close(), monitor.close()]), DRAIN_MS).catch(() => undefined);
         // A drain for a loss (service.lock's, or a space's writer.lock in this process) starts
         // latched.
         if (reason === "ownership_lost") ownershipLost = true;
@@ -1376,6 +1408,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
       runs,
       spacesSettled: spacesOpening,
       http: httpRunning,
+      monitor,
       stop: (o = {}) =>
         aborted
           ? drain(EXIT.crashed, "ownership_lost")

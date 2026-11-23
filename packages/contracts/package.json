@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./preferences": "./src/preferences.ts",
     "./query-terms": "./src/query-terms.ts",
+    "./monitor": "./src/monitor.ts",
     "./runs": "./src/runs.ts",
     "./generated/client.ts": "./generated/client.ts",
     "./generated/http-routes.ts": "./generated/http-routes.ts",
