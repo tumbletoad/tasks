@@ -7,7 +7,7 @@
 //
 // What this machine has marked is kept in its own state (`FolderMarks`), by owner and path: an
 // undo may give an owner back a folder, and only a folder that was marked for that owner can have
-// lost its marker. With each mark it keeps what identifies the folder itself (`identityOf`), so a
+// lost its marker. With each mark it keeps what identifies the folder itself (`identityFrom`), so a
 // marker that went while the folder stayed (`git clean -x`), or that another owner's write lost,
 // is put back without a question, and a folder made again at the path (a fresh clone) still asks.
 // A write slower than its bound counts as marked when the folder's identity is known, so a busy
@@ -184,21 +184,12 @@ async function removeOwnerNow(
 }
 
 /**
- * What identifies the folder itself, whatever its path: its volume, its file number and the
- * instant it was made. A rename keeps them and so does `git clean`; a folder made again at the path
- * (a fresh clone, a checkout moved aside and another made) has others on Windows and Linux alike.
- * Undefined when it cannot be read, or when the file system keeps no creation time (zero) or no
- * file number that fits (zero, or all ones on ReFS): an inode used again could then pass.
+ * What identifies a folder itself, whatever its path, from its stat: its volume, its file number
+ * and the instant it was made. A rename keeps them and so does `git clean`; a folder made again at
+ * the path (a fresh clone, a checkout moved aside and another made) has others on Windows and
+ * Linux alike. Undefined when the file system keeps no creation time (zero) or no file number that
+ * fits (zero, or all ones on ReFS): an inode used again could then pass.
  */
-export async function identityOf(open: string): Promise<string | undefined> {
-  try {
-    return identityFrom(await stat(open, { bigint: true }));
-  } catch {
-    return undefined;
-  }
-}
-
-/** `identityOf` for a stat already read. */
 export function identityFrom(found: {
   readonly dev: bigint;
   readonly ino: bigint;
@@ -346,13 +337,14 @@ export class FolderMarkers {
     if (open === undefined) return undefined;
     const found = await bounded(async () => {
       try {
-        return (await stat(open)).isDirectory() ? await identityOf(open) : false;
+        const folder = await stat(open, { bigint: true });
+        return folder.isDirectory() ? (identityFrom(folder) ?? true) : false;
       } catch {
         return false;
       }
     }, MARKER_MS);
     if (found === false || found === "not_answering") return undefined;
-    return found === undefined ? { open } : { open, identity: found };
+    return found === true ? { open } : { open, identity: found };
   }
 
   /** Marks the folder `stored` as `owner`'s. False when it takes no marker. */

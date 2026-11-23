@@ -75,7 +75,7 @@ async function markSlowly(
   folder: string,
 ): Promise<{ answered: boolean; land: HeldWrite["land"] }> {
   const held = holdNextWrite();
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
   try {
     const marking = markers.mark(owner, folder);
     await held.reached;

@@ -4,7 +4,6 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MessageChannel } from "node:worker_threads";
 import { describe, expect, test } from "vitest";
 import { bounded, deepestProject, expanded, storedForm } from "./folders.ts";
 
@@ -72,37 +71,58 @@ describe("[A1.3.15.folders.stored-form] a folder as the space stores it, the hom
   });
 });
 
-describe("[A1.3.15.folders.bounded] a look at the disk is timed by the disk, not by this process", () => {
-  test("a look that answered while this process was held up counts as answered", async () => {
-    // The answer is on its way as an event of this process, as a read of the disk's is: it is
-    // posted first, and delivered only once the process is free again.
-    const { port1, port2 } = new MessageChannel();
-    try {
-      const look = bounded(
-        () =>
-          new Promise<string>((resolve) => {
-            port2.once("message", resolve);
-          }),
-        20,
-      );
-      port1.postMessage("answered");
-      // The process is busy for longer than the limit.
-      const until = Date.now() + 100;
-      while (Date.now() < until) {
-        /* held up */
-      }
-      expect(await look).toBe("answered");
-    } finally {
-      port1.close();
-      port2.close();
+describe("[A1.3.15.folders.bounded] a look at the disk is timed by the time this process could listen", () => {
+  /** Keeps this process busy for `ms`, as a stall of the service does. */
+  function holdUp(ms: number): void {
+    const until = performance.now() + ms;
+    while (performance.now() < until) {
+      /* held up */
     }
+  }
+
+  test("a look of several steps answered while this process was held up before each counts as answered", async () => {
+    // Each answer is already on its way when the process is held up, as a read of the disk's is,
+    // and each next step is asked only once the one before was delivered: one turn of the event
+    // loop per step.
+    const look = bounded(async () => {
+      for (const step of ["first", "second", "third"]) {
+        const answer = new Promise((resolve) => setImmediate(resolve, step));
+        holdUp(100);
+        expect(await answer).toBe(step);
+      }
+      return "answered";
+    }, 40);
+    expect(await look).toBe("answered");
   });
 
-  test("a look that never answers is given up after its limit", async () => {
-    expect(await bounded(() => new Promise<never>(() => undefined), 20)).toBe("not_answering");
+  test("a look that never answers is given up after its limit of time this process ran, a stall counting little", async () => {
+    let started = performance.now();
+    expect(await bounded(() => new Promise<never>(() => undefined), 60)).toBe("not_answering");
+    expect(performance.now() - started).toBeGreaterThanOrEqual(60);
+
+    started = performance.now();
+    const look = bounded(() => {
+      holdUp(300);
+      return new Promise<never>(() => undefined);
+    }, 60);
+    expect(await look).toBe("not_answering");
+    // The stall counts as one short tick: the look still had most of its limit after it.
+    expect(performance.now() - started).toBeGreaterThanOrEqual(300 + 50);
+  });
+
+  test("a look given up is told so, and one that answered is not", async () => {
+    const signals: AbortSignal[] = [];
+    await bounded((signal) => {
+      signals.push(signal);
+      return new Promise<never>(() => undefined);
+    }, 20);
+    await bounded(async (signal) => {
+      signals.push(signal);
+      return "answered";
+    }, 20);
+    expect(signals.map((s) => s.aborted)).toEqual([true, false]);
   });
 });
-
 describe("[A1.3.15.folders.deepest] the project a working folder belongs to", () => {
   const project = (name: string, stored: string) => ({ project: name, name, stored });
 

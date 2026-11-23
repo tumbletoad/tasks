@@ -824,7 +824,7 @@
     },
     {
       "id": "A1.3.15.folders.bounded",
-      "title": "A look at the disk is timed by the disk, not by this process: an answer that arrived while the service was held up counts, and a look that never answers is given up after its limit",
+      "title": "A look at the disk is timed by the time this process was running: a look of several steps answered while the service was held up before each counts, a look that never answers is given up after its limit and told so, a stall counting as one short tick",
       "source": "A1 3.15",
       "owner": "M4",
       "kind": "ci",
