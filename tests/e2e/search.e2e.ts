@@ -398,36 +398,29 @@ test.describe("[A5.3.13.e2e.search-now] A search result changes the task as it s
     });
     // The page's feed through the test: while it is deaf, the page hears no change.
     let deaf = false;
+    let missed = 0;
     await page.routeWebSocket(/\/api\/v1\/ws/, (ws) => {
       const server = ws.connectToServer();
       server.onMessage((message) => {
-        const type = (JSON.parse(String(message)) as { type?: unknown }).type;
-        if (!(deaf && type === "batch")) ws.send(message);
+        const batch = JSON.parse(String(message)) as { type?: unknown; events?: unknown[] };
+        if (deaf && batch.type === "batch" && (batch.events?.length ?? 0) > 0) missed += 1;
+        else ws.send(message);
       });
     });
-    /** A change the page hears after what it missed: it asks for a fresh snapshot. */
-    const heardAgain = async (n: number) => {
+    /** Changes the page does not hear, then one it does: it asks for a fresh snapshot. */
+    const away = async (changes: () => Promise<unknown>) => {
+      const before = missed;
+      deaf = true;
+      await changes();
+      await expect.poll(() => missed, { timeout: SLOW_MS }).toBeGreaterThan(before);
       deaf = false;
-      await addTasks(world, [{ title: `Sweep the porch ${String(n)}`, inbox: true }]);
+      await addTasks(world, [{ title: `Sweep the porch ${String(missed)}`, inbox: true }]);
     };
     await openSearch(page, world, word);
     const row = page.locator(`main li[data-task="${ref}"]`);
     await row.locator('[data-part="title"]').click();
     await expect(row.locator('[data-part="lifecycle"]')).toHaveText("Checked off");
 
-    deaf = true;
-    const reopened = (await world.op(
-      world.mira.id,
-      "task.reopen",
-      { task: ref, base: (await read(world, ref)).as_of },
-      "agent",
-    )) as { as_of: string };
-    await world.op(
-      world.mira.id,
-      "task.finish",
-      { task: ref, status: "dropped", outcome: "Not needed.", base: reopened.as_of },
-      "agent",
-    );
     // The page's read of the task waits, then fails once.
     let answer: () => void = () => undefined;
     const waiting = new Promise<void>((resolve) => {
@@ -439,7 +432,20 @@ test.describe("[A5.3.13.e2e.search-now] A search result changes the task as it s
       if (failing) await route.abort();
       else await route.continue();
     });
-    await heardAgain(1);
+    // Another window reopens the task and drops it while the page hears nothing.
+    await away(async () => {
+      const reopened = (await world.op(world.mira.id, "task.reopen", {
+        task: ref,
+        reason: "Not closed after all",
+        base: (await read(world, ref)).as_of,
+      })) as { as_of: string };
+      await world.op(world.mira.id, "task.finish", {
+        task: ref,
+        status: "dropped",
+        outcome: "Not needed.",
+        base: reopened.as_of,
+      });
+    });
     const unresolved = row.locator('[data-part="unresolved"]');
     await expect(unresolved).toHaveText(
       "This task changed while the page was away. Reading it again.",
@@ -462,9 +468,7 @@ test.describe("[A5.3.13.e2e.search-now] A search result changes the task as it s
 
     // The next fresh snapshot reads it again: the result shows it dropped, in its place.
     failing = false;
-    deaf = true;
-    await addTasks(world, [{ title: "Sweep the porch 2", inbox: true }]);
-    await heardAgain(3);
+    await away(() => addTasks(world, [{ title: "Sweep the yard", inbox: true }]));
     await expect(unresolved).toHaveCount(0, { timeout: SLOW_MS });
     await expect(row.locator('[data-part="lifecycle"]')).toHaveText("Dropped");
     await expect(row.locator('[data-part="reopen"]')).toBeVisible();
