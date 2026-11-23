@@ -121,7 +121,9 @@ export function schemaFailure(
 ): AppError {
   const renamed: string[] = [];
   const first = error.issues.slice(0, 20);
+  // Only status took guide, and only status takes the skills that replaced it.
   const oldGuide = (issue: (typeof first)[number]) =>
+    entry === "space.status" &&
     issue.code === "unrecognized_keys" &&
     issue.path.length === 0 &&
     issue.keys?.includes("guide") === true;

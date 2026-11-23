@@ -461,6 +461,9 @@ describe("[A3.3.6.mcp.skills] skills: listed in a session's first call, read thr
     const named = [...hint.matchAll(/\["([^"]+)"\]/gu)].map((match) => match[1] ?? "");
     expect(named.length).toBeGreaterThan(0);
     for (const name of named) expect(DEFAULTS.has(name), name).toBe(true);
+    // Another tool cannot take skills, so guide there is just a field it does not know.
+    const elsewhere = await refusal("task.get", { task: "M-1", guide: "work" });
+    expect(elsewhere.hint ?? "").not.toMatch(/\bskills\b/u);
   });
 
   test("a listed name that is no skill's name can be asked for, and says why beside the rest", async () => {
