@@ -5,7 +5,7 @@
 // it was typed (`sessionStorage`): it survives that tab's reload, and two tabs keep two drafts.
 //
 // Every access is wrapped: when storage is missing, blocked or full, the text lives as long as the
-// tab. What is read back is untrusted (another page served at this origin could have written it),
+// page is loaded. What is read back is untrusted (another page served at this origin could have written it),
 // so each reader checks its shape before it uses it.
 import { PRODUCT_ID } from "@ttasks/brand";
 

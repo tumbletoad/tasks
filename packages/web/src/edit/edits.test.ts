@@ -773,7 +773,7 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
     expect(w.edits.unsaved("t_00001", "effort")).toBeUndefined();
   });
 
-  test("Try again sends the kept base only while it is of the screen's history and not ahead of it: after a restore, or from a base ahead, it takes the screen's now", async () => {
+  test("a kept edit whose base is of another history (a restore) takes the first snapshot of the new one as its base, once: a change made after that is a conflict", async () => {
     const updated = (w: World) => ({
       result: "updated",
       task: "M-1",
@@ -789,27 +789,60 @@ describe("[A5.3.11.web.edits] one path for a person's edit: base, overlay, refus
       reason: "failed",
       base,
     });
-    // The space was restored since: its history is another epoch and incarnation.
+    let held: readonly Unsaved[] = [];
     const restored = new World([task(1)], {
       load: () => [kept("1.10.01234567")],
-      save: () => undefined,
+      save: (unsaved) => {
+        held = [...new Set(unsaved.values())];
+      },
     });
+    // The space was restored: its history is another epoch and incarnation, first seen at 2.4.
+    const OTHER = "ai_zzzzzzzzzzzzzzzzzzzzzzzzzz";
     restored.store.push({
       type: "snapshot",
       space: SPACE,
-      cursor: { epoch: 2, incarnation: "ai_zzzzzzzzzzzzzzzzzzzzzzzzzz", seq: 4 },
+      cursor: { epoch: 2, incarnation: OTHER, seq: 4 },
       tasks: [task(1)],
       areas: [],
       projects: [],
       instances: [],
     });
     restored.store.flush();
+    expect(held.map((u) => u.base)).toEqual(["2.4.zzzzzzzz"]);
+    // An agent sets the priority after the restore; Try again does not write over it.
+    restored.store.push({
+      type: "batch",
+      space_id: SPACE.id,
+      epoch: 2,
+      incarnation: OTHER,
+      from: 4,
+      through: 5,
+      events: [
+        {
+          seq: 5,
+          op_id: `op_${"5".padStart(26, "0")}`,
+          request_id: "agent-1",
+          actor: { kind: "agent", label: "Codex" },
+          kind: "task.update",
+          entities: [
+            {
+              type: "task",
+              id: "t_00001",
+              row: task(1, { priority: 2, version: 2 }) as unknown as Record<string, unknown>,
+              changed: ["priority"],
+              created: false,
+            },
+          ],
+        },
+      ],
+    });
+    restored.store.flush();
+    expect(restored.store.asOf).toBe("2.5.zzzzzzzz");
     restored.answer("task.update", () => updated(restored));
     restored.edits.apply("t_00001", "priority");
     await flush();
-    expect(restored.calls[0]?.input).toMatchObject({ base: restored.store.asOf });
-    expect(restored.store.asOf).toMatch(/^2\.4\./u);
-    // A base ahead of what the screen shows is no base the service can compare.
+    expect(restored.calls[0]?.input).toMatchObject({ base: "2.4.zzzzzzzz" });
+    // A base ahead of what the screen shows takes the screen's as-of when it is loaded.
     const ahead = new World([task(1)], {
       load: () => [kept("1.20.01234567")],
       save: () => undefined,

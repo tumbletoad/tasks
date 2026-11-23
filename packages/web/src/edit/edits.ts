@@ -447,17 +447,19 @@ export class Edits {
   }
 
   /**
-   * A failed edit kept without a base (an earlier build kept none) takes the screen's now once
-   * there is one: a change made after the reload is then a conflict, never overwritten.
+   * A failed edit whose base the service cannot compare takes the screen's as-of the first time
+   * there is one: an edit kept without a base (an earlier build kept none), or with a base of
+   * another history (the space was restored) or ahead of it. A change made after that is then a
+   * conflict, never overwritten. Once set, the base stays, and is kept with the edit.
    */
   #baseKept(): void {
     const now = this.#deps.asOf();
     if (now === undefined) return;
     const based = new Map<Unsaved, Unsaved>();
     for (const unsaved of this.#state.unsaved.values()) {
-      if (unsaved.reason === "failed" && unsaved.base === undefined && !based.has(unsaved)) {
-        based.set(unsaved, { ...unsaved, base: now });
-      }
+      if (unsaved.reason !== "failed" || based.has(unsaved)) continue;
+      if (unsaved.base !== undefined && comparable(unsaved.base, now)) continue;
+      based.set(unsaved, { ...unsaved, base: now });
     }
     if (based.size === 0) return;
     const next = new Map(this.#state.unsaved);
@@ -506,9 +508,17 @@ export class Edits {
   }
 
   /** `edit`, resolved once its request is decided, or kept as not saved for want of an answer. */
-  #edit(task: TaskRow, change: Change, options: { readonly base?: string }): Promise<void> {
+  #edit(
+    task: TaskRow,
+    change: Change,
+    options: { readonly base?: string },
+    retried: readonly Unsaved[] = [],
+  ): Promise<void> {
     for (const field of change.fields) {
-      this.#retrying.delete(keyOf(task.id, field));
+      // A new edit of the field takes the place of a line sent again before it.
+      const key = keyOf(task.id, field);
+      const sending = this.#retrying.get(key);
+      if (sending !== undefined && !retried.includes(sending)) this.#retrying.delete(key);
       this.#forget(task.id, field);
     }
     this.#edits += 1;
@@ -580,26 +590,19 @@ export class Edits {
 
   /**
    * Kept values sent again: after a conflict (Apply mine) over the other value the screen shows
-   * now; after a failure (Try again) with the base the person made it at, while the service can
-   * still compare it (after a restore it cannot: then the screen's now). The browser keeps the
-   * lines until the request is decided.
+   * now; after a failure (Try again) with the base kept with it (`#baseKept`). The lines move to
+   * the ones on their way, so the browser keeps them as they are until the request is decided,
+   * and then lets go of only what it still holds of them: another tab's newer value stays.
    */
   #again(task: Pick<TaskRow, "id" | "ref">, change: Change, lines: readonly Unsaved[]): void {
     const row = this.#deps.rowOf(task.ref) ?? ({ ...task } as TaskRow);
     const kept = lines[0];
-    const now = this.#deps.asOf();
-    const base =
-      kept?.reason === "failed" &&
-      kept.base !== undefined &&
-      (now === undefined || comparable(kept.base, now))
-        ? kept.base
-        : undefined;
-    const decided = this.#edit(row, change, base === undefined ? {} : { base });
+    const base = kept?.reason === "failed" ? kept.base : undefined;
     const keys = lines.flatMap((line) =>
       line.change.fields.map((field) => [keyOf(line.task, field), line] as const),
     );
     for (const [key, line] of keys) this.#retrying.set(key, line);
-    this.#keep();
+    const decided = this.#edit(row, change, base === undefined ? {} : { base }, lines);
     void decided.then(() => {
       for (const [key, line] of keys) {
         if (this.#retrying.get(key) === line) this.#retrying.delete(key);

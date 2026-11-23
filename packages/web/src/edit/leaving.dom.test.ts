@@ -103,6 +103,8 @@ describe("[A5.3.11.web.edit-queue] the page's own leaving ends a wait behind ano
     answer(answered(12));
     await flush();
     expect(sent.at(-1)).toEqual({ status: "waiting" });
+    answer(answered(13));
+    await flush();
     expect(edits.unsaved("t_00001", "status")).toBeUndefined();
   });
 });
