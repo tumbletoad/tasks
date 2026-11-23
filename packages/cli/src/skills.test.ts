@@ -132,7 +132,11 @@ describe("[A3.3.6.mcp.skills] ttasks skills", () => {
       const edited = `${older}\nThe user's own rule.\n`;
       const cases: { name: string; file: string; record: string | undefined }[] = [
         { name: "an edited copy", file: edited, record: older },
-        { name: "a copy with only its line ends changed", file: older.replaceAll("\n", "\r\n"), record: older },
+        {
+          name: "a copy with only its line ends changed",
+          file: older.replaceAll("\n", "\r\n"),
+          record: older,
+        },
         { name: "a copy with no record", file: older, record: undefined },
         { name: "a damaged record", file: edited, record: String.fromCharCode(0, 0xff) },
         { name: "a record that is the user's own file", file: edited, record: edited },
@@ -186,7 +190,10 @@ describe("[A3.3.6.mcp.skills] ttasks skills", () => {
       const today = readFileSync(file, "utf8");
       rmSync(join(home, "skills", ".copied-from", "sizing-effort.md"));
       // Windows PowerShell 5 saves UTF-16 with a byte order mark.
-      const text = Buffer.from(`${today}A rule of the user's.\n`.replaceAll("\n", "\r\n"), "utf16le");
+      const text = Buffer.from(
+        `${today}A rule of the user's.\n`.replaceAll("\n", "\r\n"),
+        "utf16le",
+      );
       writeFileSync(file, Buffer.concat([Buffer.from([0xff, 0xfe]), text]));
 
       const shown = await run(home, "skills", "diff", "sizing-effort");
