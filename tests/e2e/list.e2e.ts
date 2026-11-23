@@ -11,6 +11,7 @@
 // Programmatic scrolling also skips the compositor's own smooth scrolling, so it is a stricter test
 // of coverage than a wheel, and no test of smoothness.
 import { expect, type Page } from "@playwright/test";
+import { day } from "./days.ts";
 import { FAKE_INSTANCE } from "./fake-terminal.ts";
 import { BULK_TASKS, test } from "./fixture.ts";
 import { picture, showsSpace, signIn, themes, violations, watchViolations } from "./page.ts";
@@ -343,14 +344,6 @@ test.describe("[A7.3.12.m5-03.e2e.rows] The rows as a person sees them", () => {
   });
 });
 
-/** The local calendar day `days` from today, YYYY-MM-DD. */
-function day(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
 test.describe("[A5.3.6.e2e.row-due-effort] A row's due date fits its column at every width, and its effort shows quietly", () => {
   test("every form of a due date fits, and an effort is a quiet mark, at 1,440, 1,280 and 390 px in both themes", async ({
     page,
@@ -376,7 +369,7 @@ test.describe("[A5.3.6.e2e.row-due-effort] A row's due date fits its column at e
       tasks: dues.map(([label, days, effort]) => ({
         title: `Fit the due column, ${label} (${tag})`,
         area: "home",
-        due: day(days),
+        due: day(days).iso,
         ...(effort === undefined ? {} : { effort }),
       })),
     });

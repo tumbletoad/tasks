@@ -5,6 +5,7 @@
 // both modes, a space without the word index, and the screenshots in both themes at 1,440 and
 // 390 px. Each test makes tasks with words of its own: the tests of one worker share its world.
 import { expect, type Page } from "@playwright/test";
+import { day, onOneDay } from "./days.ts";
 import { test } from "./fixture.ts";
 import { axeFound, picture, pictures, showsSpace, signIn, themes } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
@@ -16,14 +17,6 @@ const toast = (page: Page) => page.locator('[data-part="toast-text"]');
 const toastAction = (page: Page) => page.locator('[data-part="toast-action"]');
 const group = (page: Page, name: string) => page.locator(`main section[aria-label="${name}"]`);
 const titles = (page: Page, name: string) => group(page, name).locator('[data-part="title"]');
-
-/** The local calendar day `days` from today, YYYY-MM-DD. */
-function day(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
 
 /** A word no other test uses, so each test's search finds only its own tasks. */
 const wordOf = (stem: string) =>
@@ -87,36 +80,37 @@ test.describe("[A7.3.12.m5-10.e2e.capture] A capture shows its shortcuts before 
     page,
     world,
   }) => {
-    const word = wordOf("larkspur");
-    await open(page, world, "/inbox");
-    const field = adding(page);
-    await expect(field).toBeEnabled();
-    // Tomorrow from the page's today, which may turn before Enter: either day is right.
-    const tomorrow = [day(1)];
-    await field.fill(`Order the ${word} paint tomorrow p2 #home/garden *`);
-    const chips = panel(page).getByRole("listitem");
-    await expect(chips).toHaveText([/^Due /, "P2", "Home › Garden", "Starred"]);
-    await expect(panel(page)).toContainText(`Title: Order the ${word} paint`);
+    await onOneDay(async (today, attempt) => {
+      // Tomorrow is the page's tomorrow when Enter adds it: one day, so the step runs on one.
+      // Each attempt adds a task of its own.
+      const word = `${wordOf("larkspur")}${String(attempt)}`;
+      await open(page, world, "/inbox");
+      const field = adding(page);
+      await expect(field).toBeEnabled();
+      await field.fill(`Order the ${word} paint tomorrow p2 #home/garden *`);
+      const chips = panel(page).getByRole("listitem");
+      await expect(chips).toHaveText([/^Due /, "P2", "Home › Garden", "Starred"]);
+      await expect(panel(page)).toContainText(`Title: Order the ${word} paint`);
 
-    // The person keeps "p2" as text: it goes back into the title, and the field keeps focus.
-    await panel(page).getByRole("button", { name: "Keep p2 as text" }).click();
-    await expect(chips).toHaveText([/^Due /, "Home › Garden", "Starred"]);
-    await expect(panel(page)).toContainText(`Title: Order the ${word} paint p2`);
-    await expect(field).toBeFocused();
+      // The person keeps "p2" as text: it goes back into the title, and the field keeps focus.
+      await panel(page).getByRole("button", { name: "Keep p2 as text" }).click();
+      await expect(chips).toHaveText([/^Due /, "Home › Garden", "Starred"]);
+      await expect(panel(page)).toContainText(`Title: Order the ${word} paint p2`);
+      await expect(field).toBeFocused();
 
-    await field.press("Enter");
-    await expect(toast(page)).toHaveText("Added to Home › Garden");
-    await expect(field).toHaveValue("");
-    // Enter in the add mode never searched.
-    await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/inbox$`));
-    const task = await taskTitled(world, word, `Order the ${word} paint p2`);
-    tomorrow.push(day(1));
-    expect(tomorrow).toContain(task.due);
-    expect(task).toMatchObject({
-      priority: 4,
-      area: "Home",
-      project: "Garden",
-      focus: true,
+      await field.press("Enter");
+      await expect(toast(page)).toHaveText("Added to Home › Garden");
+      await expect(field).toHaveValue("");
+      // Enter in the add mode never searched.
+      await expect(page).toHaveURL(new RegExp(`/s/${world.mira.id}/inbox$`));
+      const task = await taskTitled(world, word, `Order the ${word} paint p2`);
+      expect(task).toMatchObject({
+        priority: 4,
+        due: day(1, today.start).iso,
+        area: "Home",
+        project: "Garden",
+        focus: true,
+      });
     });
   });
 
@@ -483,7 +477,7 @@ test.describe("[A7.3.12.m5-10.e2e.screens] The capture and the search in both th
         area: "home",
         project: "garden",
         priority: 1,
-        due: day(2),
+        due: day(2).iso,
       },
       {
         title: `Ask about ${word} rootstock`,

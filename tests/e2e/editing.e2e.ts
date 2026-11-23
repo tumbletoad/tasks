@@ -7,6 +7,7 @@
 // both themes with the date popover and a toast open, and the screenshots at 1,440 and 390 px.
 // Dates are relative to the day the test runs, as the service's are.
 import { expect, type Locator, type Page } from "@playwright/test";
+import { day, onOneDay } from "./days.ts";
 import { test } from "./fixture.ts";
 import {
   axeFound,
@@ -19,14 +20,6 @@ import {
   watchViolations,
 } from "./page.ts";
 import { SLOW_MS, type World } from "./world.ts";
-
-/** The local calendar day `days` from today, YYYY-MM-DD. */
-function day(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
 
 interface Added {
   readonly tasks: readonly { readonly ref: string }[];
@@ -126,28 +119,29 @@ test.describe("[A7.3.12.m5-08.e2e.flow] Edit due, priority and effort, check off
 
     // Due: the pill opens the popover with its field focused; "+3d" previews, Enter applies, and
     // focus comes back to the pill.
-    await tabInto(page, due);
-    await page.keyboard.press("Enter");
-    const field = page.locator('[data-part="due-field"]');
-    await expect(field).toBeFocused();
-    await page.keyboard.type("nonsense");
-    await expect(page.locator('[data-part="due-preview"]')).toHaveText("Not a date");
-    await page.keyboard.press("Enter");
-    await expect(field).toBeVisible();
-    const plus3 = day(3);
-    await field.fill("+3d");
-    await expect(page.locator('[data-part="due-preview"]')).not.toHaveText("Not a date");
-    await page.keyboard.press("Enter");
-    await expect(field).toHaveCount(0);
-    await expect(due).toBeFocused();
-    await expect(due).not.toHaveText("No date");
-
-    // The service has all three: the date counted from the page's today, which may have turned.
-    await expect(async () => {
-      const { task } = await read(world, ref);
-      expect([task.priority, task.effort]).toEqual([2, "L"]);
-      expect([plus3, day(3)]).toContain(task.due);
-    }).toPass();
+    await onOneDay(async (today) => {
+      await tabInto(page, due);
+      await page.keyboard.press("Enter");
+      const field = page.locator('[data-part="due-field"]');
+      await expect(field).toBeFocused();
+      await page.keyboard.type("nonsense");
+      await expect(page.locator('[data-part="due-preview"]')).toHaveText("Not a date");
+      await page.keyboard.press("Enter");
+      await expect(field).toBeVisible();
+      await field.fill("+3d");
+      await expect(page.locator('[data-part="due-preview"]')).not.toHaveText("Not a date");
+      await page.keyboard.press("Enter");
+      await expect(field).toHaveCount(0);
+      await expect(due).toBeFocused();
+      await expect(due).not.toHaveText("No date");
+      // The service has all three, the date three days from today.
+      await expect
+        .poll(async () => {
+          const { task } = await read(world, ref);
+          return [task.priority, task.effort, task.due];
+        })
+        .toEqual([2, "L", day(3, today.start).iso]);
+    });
     // And a reload shows them.
     await page.reload();
     await expect(priority.getByRole("radio", { name: "P2" })).toHaveAttribute(
@@ -216,7 +210,7 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
     world,
   }) => {
     const tag = test.info().project.name;
-    const first = day(5);
+    const first = day(5).iso;
     const [ref] = await addTasks(world, [
       { title: `Renew the parking permit (${tag})`, area: "home", due: first },
     ]);
@@ -230,15 +224,15 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
     const body = row.locator('[data-part="expanded"]');
     const due = body.locator('[data-part="due"]');
 
-    // The person sets tomorrow, from the page's today, which may have turned; then an agent sets
-    // another day.
-    await due.click();
-    const tomorrow = day(1);
-    await page.getByRole("button", { name: "Tomorrow" }).click();
-    await expect(async () => {
-      expect([tomorrow, day(1)]).toContain((await read(world, ref)).task.due);
-    }).toPass();
-    const agents = day(10);
+    // The person sets tomorrow; then an agent sets another day.
+    await onOneDay(async (today) => {
+      await due.click();
+      await page.getByRole("button", { name: "Tomorrow" }).click();
+      await expect
+        .poll(async () => (await read(world, ref)).task.due)
+        .toBe(day(1, today.start).iso);
+    });
+    const agents = day(10).iso;
     await agentSets(world, ref, { due: agents });
     await expect.poll(async () => (await read(world, ref)).task.due).toBe(agents);
 
@@ -254,23 +248,25 @@ test.describe("[A7.3.12.m5-08.e2e.conflict] Restore mine and Apply mine: an agen
 
     // The popover takes its base when it opens: an agent's change while it is open is shown there,
     // and the person's pick is a conflict that keeps their value one click away.
-    await due.click();
-    await expect(page.locator('[data-part="due-field"]')).toBeFocused();
-    const later = day(12);
-    await agentSets(world, ref, { due: later });
-    await expect(page.locator('[data-part="remote"]')).toContainText("Changed by", {
-      timeout: SLOW_MS,
+    await onOneDay(async (today, attempt) => {
+      await due.click();
+      await expect(page.locator('[data-part="due-field"]')).toBeFocused();
+      // Another day on each attempt: the same one again would change nothing.
+      const later = day(11 + attempt).iso;
+      await agentSets(world, ref, { due: later });
+      await expect(page.locator('[data-part="remote"]')).toContainText("Changed by", {
+        timeout: SLOW_MS,
+      });
+      await page.getByRole("button", { name: "In a week" }).click();
+      const unsaved = body.locator('[data-part="unsaved"]');
+      await expect(unsaved).toContainText("just now", { timeout: SLOW_MS });
+      expect((await read(world, ref)).task.due).toBe(later);
+      await unsaved.locator('[data-part="apply-mine"]').click();
+      await expect
+        .poll(async () => (await read(world, ref)).task.due)
+        .toBe(day(7, today.start).iso);
+      await expect(unsaved).toHaveCount(0);
     });
-    const week = day(7);
-    await page.getByRole("button", { name: "In a week" }).click();
-    const unsaved = body.locator('[data-part="unsaved"]');
-    await expect(unsaved).toContainText("just now", { timeout: SLOW_MS });
-    expect((await read(world, ref)).task.due).toBe(later);
-    await unsaved.locator('[data-part="apply-mine"]').click();
-    await expect(async () => {
-      expect([week, day(7)]).toContain((await read(world, ref)).task.due);
-    }).toPass();
-    await expect(unsaved).toHaveCount(0);
   });
 });
 
@@ -424,7 +420,7 @@ test.describe("[A7.3.12.m5-08.e2e.screens] Editing in both themes: screenshots a
         project: "lumen-portal",
         priority: 2,
         effort: "M",
-        due: day(4),
+        due: day(4).iso,
         status: "waiting",
         waiting_on: "Ana Reyes",
         inbox: false,
