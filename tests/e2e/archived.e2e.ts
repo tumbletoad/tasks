@@ -428,7 +428,12 @@ test.describe("[A5.archived.e2e.address] a project's page is the project's, what
       const { as_of: base } = (await world.op(world.mira.id, "group.manage", {
         action: "list",
       })) as { as_of: string };
-      await world.op(world.mira.id, "group.manage", { action: "move", path: hutId, to: yard, base });
+      await world.op(world.mira.id, "group.manage", {
+        action: "move",
+        path: hutId,
+        to: yard,
+        base,
+      });
     };
 
     await signIn(page, world, loose);

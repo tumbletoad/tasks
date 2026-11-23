@@ -79,10 +79,7 @@ describe("[A5.3.3.web.views] the sidebar's views and counts", () => {
       "open",
       "backlog",
     ]);
-    expect(TASKS.filter(projectFilter("pj_1")).map((t) => t.status)).toEqual([
-      "open",
-      "backlog",
-    ]);
+    expect(TASKS.filter(projectFilter("pj_1")).map((t) => t.status)).toEqual(["open", "backlog"]);
   });
 
   test("an area counts what its view lists, its projects' tasks included; a project its own", () => {
