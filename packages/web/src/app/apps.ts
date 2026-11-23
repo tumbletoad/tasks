@@ -13,7 +13,7 @@ export interface Part {
   readonly why: string | undefined;
   /** The file that changes, the home shown as `~`. */
   readonly file: string;
-  /** Exactly what changes: a command, the lines written or taken out. */
+  /** Exactly what changes in `file`: the lines written or taken out. */
   readonly detail: readonly string[];
   readonly plan: string;
   /** tools: the space its entry names. */
@@ -33,6 +33,8 @@ export interface AppRow {
 export interface AppsView {
   readonly space: string;
   readonly rows: readonly AppRow[];
+  /** Setup's own record when it cannot be read: only turning the tools off works then. */
+  readonly record: string | undefined;
 }
 
 export interface Outcome {
@@ -40,6 +42,8 @@ export interface Outcome {
   readonly part: PartName;
   readonly result: "done" | "failed";
   readonly reason: string | undefined;
+  /** Tools turned off: the access is off, and the entry stayed in its file (`reason` says why). */
+  readonly kept: boolean;
 }
 
 export type Applied =
@@ -98,7 +102,7 @@ export function viewOf(value: unknown): AppsView {
       },
     ];
   });
-  return { space: value["space"], rows };
+  return { space: value["space"], rows, record: text(value["record"]) };
 }
 
 export function appliedOf(value: unknown): Applied {
@@ -115,6 +119,7 @@ export function appliedOf(value: unknown): Applied {
               result: o["result"] === "done" ? "done" : "failed",
               reason:
                 typeof o["reason"] === "string" && WORD.test(o["reason"]) ? o["reason"] : undefined,
+              kept: o["kept"] === true,
             },
           ]
         : [],

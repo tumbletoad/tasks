@@ -1,7 +1,8 @@
 // Search documents (A1 3.12): what each document holds, the index kept current inside every commit,
 // and the rebuild.
 //
-//   task              title | summary, context, outcome | source titles, who and ref, labels,
+//   task              title | summary, context, outcome | source titles, who, ref, key and link
+//                                                          words (linkWords), labels,
 //                                                          project and area titles, its reference
 //   note, log entry   owning task's title | body | author label
 //   learning          owning task's title | body | project title
@@ -53,7 +54,7 @@ const TASK_DOC =
   "LEFT JOIN areas a ON a.id = t.area_id LEFT JOIN projects p ON p.id = t.project_id " +
   "WHERE t.deleted_at IS NULL";
 const TASK_SOURCES =
-  "SELECT ts.task_id, s.title, s.who, s.ref FROM task_sources ts " +
+  "SELECT ts.task_id, s.title, s.who, s.ref, s.source_key, s.url FROM task_sources ts " +
   "JOIN sources s ON s.id = ts.source_id WHERE ts.removed_at IS NULL AND s.deleted_at IS NULL";
 const TASK_LABELS =
   "SELECT tl.task_id, l.title FROM task_labels tl JOIN labels l ON l.id = tl.label_id " +
@@ -136,6 +137,30 @@ const opt = (value: unknown): string | null => (typeof value === "string" ? valu
 const lines = (values: readonly unknown[]): string =>
   values.filter((v): v is string => typeof v === "string" && v !== "").join("\n");
 
+const decoded = (text: string): string => {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+};
+
+/** A link's scheme, its user and password, then its address and path up to a query or fragment. */
+const LINK_PARTS = /^(?:[a-z][a-z\d+.-]*:)?(?:\/\/(?:[^/?#]*@)?)?(?<address>[^?#]*)/iu;
+
+/**
+ * What a person reads as a link's own words: its address as they typed it (a host in its own
+ * script, with its port, without `www.`) and its path, decoded, for any link or text that only
+ * looks like one. The scheme and `www` stand in nearly every link, so they would find every linked
+ * task; a query and a fragment are mostly tracking and session values; a user and password are
+ * not the page's words, and a password must never find a task.
+ */
+function linkWords(url: unknown): string | null {
+  if (typeof url !== "string" || url === "") return null;
+  const address = LINK_PARTS.exec(url)?.groups?.["address"] ?? "";
+  return decoded(address.replace(/^www\./iu, ""));
+}
+
 function taskDocument(
   row: Row,
   prefix: string,
@@ -152,7 +177,13 @@ function taskDocument(
     title: str(row["title"]),
     body: lines([row["summary"], row["context"], row["outcome"]]),
     extra: lines([
-      ...sources.flatMap((s) => [s["title"], s["who"], s["ref"]]),
+      ...sources.flatMap((s) => [
+        s["title"],
+        s["who"],
+        s["ref"],
+        s["source_key"],
+        linkWords(s["url"]),
+      ]),
       ...labels.map((l) => l["title"]),
       row["project_title"],
       row["area_title"],
@@ -498,6 +529,32 @@ export function rebuildSearchIndex(conn: Connection): number {
   const docs = expectedDocuments(conn);
   for (const doc of docs.values()) insertDocument(conn, seq, doc);
   return docs.size;
+}
+
+/**
+ * Makes every stored document equal what the current state defines, inside the caller's write
+ * transaction: an index that an earlier build filled by another definition of the documents holds
+ * this build's from then on, with no commit and no person doing anything. Only the documents that
+ * differ are written, with the space's last seq. Returns how many documents it wrote or removed.
+ */
+export function refreshSearchIndex(conn: Connection): number {
+  if (!conn.inTransaction) throw misuse("The search index is refreshed inside a write transaction");
+  const seq = decodeSpaceRow(conn.prepare(SQL.space).get()).lastSeq;
+  const want = expectedDocuments(conn);
+  const { docs: have } = storedDocuments(conn);
+  let written = 0;
+  for (const [id, doc] of want) {
+    const old = have.get(id);
+    if (old !== undefined && sameText(old, doc) && sameFacts(old, doc)) continue;
+    putDocument(conn, seq, id, doc);
+    written += 1;
+  }
+  for (const id of have.keys()) {
+    if (want.has(id)) continue;
+    putDocument(conn, seq, id, undefined);
+    written += 1;
+  }
+  return written;
 }
 
 /**

@@ -3,13 +3,14 @@
 //
 //   setup/homes         the live agent-home rows                      (every CLI class)
 //   setup/home_grant    the row of one agent home, kept or made anew  (the user only)
-//   setup/home_revoke   revokes agent-home rows by ID                 (the user only)
+//   setup/home_revoke   revokes agent-home rows by ID, or a home's    (the user only)
 //   setup/seen          the instances whose MCP calls this start saw  (every CLI class)
 //
 // A row is A3's registration grant: the instance, the app, the home's path, the account label, the
 // other apps that read the home (the Codex app, T3: A3 3.13.6 step 3, so attribution can say "via
 // T3") and the space the home's entry names (`--space`, `--instance`). It has no secret and no
-// expiry; setup revokes it when it takes the entry out. The CLI changes the home's file itself, in
+// expiry; setup asks for it once the home's entry is in place, and revokes it before it takes the
+// entry out. The CLI changes the home's file itself, in
 // the person's session with the person's environment (setup/agents.ts); the service keeps the row,
 // so the one holder of service.lock is the one writer of the grants table.
 //
@@ -291,7 +292,19 @@ export function agentHomeVerbs(host: AgentHomesHost): Readonly<Record<string, Ve
 
     "setup/home_revoke": async (params, cls) => {
       userOnly(cls);
-      const ids = params["grants"];
+      let ids = params["grants"];
+      if (ids === undefined) {
+        // A home's every live row, whatever its instance or space: turning a home off.
+        const app = params["app"];
+        if (!isAgentApp(app)) throw invalid("app", `Expected ${AGENT_APPS.join(", ")}`);
+        const home = text(params, "home", 4096);
+        ids = live()
+          .filter(
+            (grant) =>
+              attr(grant, "app") === app && samePath(host.platform, attr(grant, "home"), home),
+          )
+          .map((grant) => grant.grant_id);
+      }
       if (
         !Array.isArray(ids) ||
         ids.length > 100 ||
