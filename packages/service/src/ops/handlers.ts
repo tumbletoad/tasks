@@ -107,10 +107,12 @@ import {
   openPath,
   osOf,
   reservedBy,
+  stayedWhy,
   storedForm,
   type BindFacts,
   type Folder,
   type Follower,
+  type Move,
 } from "./folders.ts";
 import {
   byOf,
@@ -1512,17 +1514,7 @@ async function projectFolderChecked(
   return {};
 }
 
-/** The folders inside an owner's old folder: what moved along with it, or what stayed. */
-interface FolderMove {
-  readonly carry: boolean;
-  /** They stayed because the old folder is not seen, not because it is still there. */
-  readonly unseen: boolean;
-  readonly inside: readonly Follower[];
-  /** The followers whose new place is not a folder on this machine now. */
-  readonly missing: ReadonlySet<Follower>;
-}
-
-const NO_MOVE: FolderMove = { carry: false, unseen: false, inside: [], missing: new Set() };
+const NO_MOVE: Move = { moved: [], stayed: [] };
 
 /**
  * What changing an owner's folder here to `folder` does to the folders inside its old one
@@ -1534,7 +1526,7 @@ async function folderMove(
   facts: BindFacts & { readonly home: string },
   owner: { readonly kind: "project" | "task"; readonly id: string },
   folder: Folder,
-): Promise<FolderMove> {
+): Promise<Move> {
   let read: MoveRead;
   try {
     read = await readMove(readerOf(call.space), owner, call.host.machine.id);
@@ -1545,18 +1537,13 @@ async function folderMove(
   const from = read.current;
   const { markers } = call.host;
   const space = call.space.id;
-  const plan = await moveOf(from, folder, { kind: owner.kind, owner: id }, read.here, facts, () =>
+  const move = await moveOf(from, folder, { kind: owner.kind, owner: id }, read.here, facts, () =>
     markers === undefined || space === undefined || from === undefined
       ? Promise.resolve(false)
       : markers.movedTo({ space, kind: owner.kind, id }, from, folder.stored),
   );
-  if (plan.kind !== "carry") {
-    return { ...NO_MOVE, unseen: plan.kind === "unseen", inside: plan.inside };
-  }
-  const missing = new Set<Follower>();
-  for (const follower of plan.inside) {
-    const absolute = expanded(follower.to, facts.home, facts.platform);
-    const reason = await reservedBy(absolute, facts);
+  for (const follower of move.moved) {
+    const reason = await reservedBy(expanded(follower.to, facts.home, facts.platform), facts);
     if (reason !== undefined) {
       throw folderRefused(
         "folder",
@@ -1564,12 +1551,13 @@ async function folderMove(
         follower.kind === "task" ? { task: follower.label } : {},
       );
     }
-    if ((await folderState(follower.to, facts.home, facts.platform)) === "missing") {
-      missing.add(follower);
-    }
   }
-  return { carry: true, unseen: false, inside: plan.inside, missing };
+  return move;
 }
+
+/** A folder write's `carry`: the owners whose folders moved along with it. */
+const carryOf = (move: Move): { carry?: string[] } =>
+  move.moved.length === 0 ? {} : { carry: move.moved.map((f) => f.owner) };
 
 /** An owner's folder here that a write cleared, which loses that owner's marker. */
 interface Cleared {
@@ -1600,7 +1588,7 @@ async function markersAfter(
   call: Call,
   ops: readonly Operation[],
   result: WriteResult,
-  extra: { readonly move?: FolderMove; readonly cleared?: Cleared | undefined } = {},
+  extra: { readonly move?: Move; readonly cleared?: Cleared | undefined } = {},
 ): Promise<void> {
   const markers = call.host.markers;
   const space = call.space.id;
@@ -1620,9 +1608,8 @@ async function markersAfter(
     const kind = op.kind === "project.folder_set" ? "project" : "task";
     await markers.mark({ space, kind, id }, op.path);
   }
-  if (extra.move?.carry === true) {
-    for (const f of extra.move.inside)
-      markers.moved({ space, kind: f.kind, id: f.owner }, f.from, f.to);
+  for (const f of extra.move?.moved ?? []) {
+    markers.moved({ space, kind: f.kind, id: f.owner }, f.from, f.to);
   }
   const cleared = extra.cleared;
   if (cleared !== undefined) {
@@ -1633,40 +1620,51 @@ async function markersAfter(
 /** At most this many folders that moved along or stayed are named in an answer. */
 const FOLLOWERS_SHOWN = 20;
 
-/** A move's part of folder.manage's and organize's answer (FolderMove). */
-function moveAnswer(move: FolderMove): Record<string, unknown> {
-  if (move.inside.length === 0) return {};
-  const named = move.inside.slice(0, FOLLOWERS_SHOWN).map((f) => ({
+/** The folders a move's answer names: where each is now. */
+const namedFolders = (list: readonly Follower[], at: "from" | "to") =>
+  list.slice(0, FOLLOWERS_SHOWN).map((f) => ({
     kind: f.kind,
     ...(f.kind === "task" ? { ref: f.label } : { name: f.label }),
-    folder: move.carry ? f.to : f.from,
-    ...(move.missing.has(f) ? { missing: true } : {}),
+    folder: f[at],
   }));
-  return move.carry
-    ? { moved: move.inside.length, followed: named }
-    : { stayed: move.inside.length, old_folder: move.unseen ? "unseen" : "there", kept: named };
+
+/** A move's part of folder.manage's and organize's answer (Move). */
+function moveAnswer(move: Move): Record<string, unknown> {
+  return {
+    ...(move.moved.length === 0
+      ? {}
+      : { moved: move.moved.length, followed: namedFolders(move.moved, "to") }),
+    ...(move.stayed.length === 0
+      ? {}
+      : {
+          stayed: move.stayed.length,
+          stayed_because: move.because,
+          kept: namedFolders(move.stayed, "from"),
+        }),
+  };
 }
 
 /** The same in words, for a tool whose answer has warnings only. */
-function moveWarnings(move: FolderMove): string[] {
-  if (move.inside.length === 0) return [];
-  const names = move.inside
-    .slice(0, FOLLOWERS_SHOWN)
-    .map((f) => (f.kind === "task" ? f.label : `project ${f.label}`))
-    .join(", ");
-  const n = move.inside.length;
-  const count = `${String(n)} folder${n === 1 ? "" : "s"}`;
-  if (!move.carry) {
-    const stay = n === 1 ? "stays where it is" : "stay where they are";
-    const why = move.unseen
-      ? "The old folder is not seen here and nothing shows the new one is it"
-      : "The old folder is still there";
-    return [`${why}, so ${count} inside it ${stay}: ${names}.`];
-  }
-  const gone = move.missing.size;
-  const missing =
-    gone === 0 ? "" : ` ${String(gone)} of them ${gone === 1 ? "is" : "are"} not there now.`;
-  return [`The old folder was moved, so ${count} inside it moved along: ${names}.${missing}`];
+function moveWarnings(move: Move): string[] {
+  const names = (list: readonly Follower[]) =>
+    `${list
+      .slice(0, FOLLOWERS_SHOWN)
+      .map((f) => (f.kind === "task" ? f.label : `project ${f.label}`))
+      .join(", ")}${list.length > FOLLOWERS_SHOWN ? ", …" : ""}`;
+  const count = (n: number) => `${String(n)} folder${n === 1 ? "" : "s"}`;
+  const n = move.stayed.length;
+  return [
+    ...(move.moved.length === 0
+      ? []
+      : [
+          `The old folder was moved, so ${count(move.moved.length)} inside it moved along: ${names(move.moved)}.`,
+        ]),
+    ...(n === 0 || move.because === undefined
+      ? []
+      : [
+          `${count(n)} inside the old one ${n === 1 ? "stays where it is" : "stay where they are"}, because ${stayedWhy(move.because, n)}: ${names(move.stayed)}.`,
+        ]),
+  ];
 }
 
 /** What binding an owner's folder on this machine reads first (read.ts). */
@@ -2566,7 +2564,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
           kind: "task.folder_set",
           task,
           path: stored,
-          ...(move.carry ? { carry: true } : {}),
+          ...carryOf(move),
         });
       } else if (ops.length === 0) ops.push({ kind: "task.folder_clear", task });
     }
@@ -3443,7 +3441,7 @@ async function folderWrite(
     }
     move = await folderMove(call, facts, owner, folder);
   }
-  const carry = move.carry ? { carry: true } : {};
+  const carry = carryOf(move);
   const op: Operation =
     action === "set"
       ? owner.kind === "project"
@@ -3751,7 +3749,7 @@ async function groupWrite(call: Call, action: string): Promise<unknown> {
         kind: "project.folder_set",
         project: id,
         path: folder.stored,
-        ...(move.carry ? { carry: true } : {}),
+        ...carryOf(move),
       });
       group = { ...group, folder: folder.stored };
     } else if (action === "clear_folder") {

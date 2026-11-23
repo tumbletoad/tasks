@@ -339,24 +339,43 @@ const GROUP_DONE: Readonly<Record<string, string>> = {
   proposed: "Proposed for",
 };
 
+/** Why folders inside the old one stayed, by the answer's `stayed_because`. */
+const STAYED_WHY: Readonly<Record<string, string>> = {
+  old_folder_there: "the old folder is still there",
+  old_folder_unseen: "the old folder cannot be seen and nothing shows that the new one is it",
+  unchecked: "a folder could not be checked",
+  not_in_new_folder: "they are not in the new folder",
+};
+
 /** What a folder change did to the folders inside the old one, a line each. */
 function insideLines(result: Result): string[] {
-  const moved = typeof result["moved"] === "number" ? result["moved"] : 0;
-  const stayed = typeof result["stayed"] === "number" ? result["stayed"] : 0;
-  if (moved === 0 && stayed === 0) return [];
-  const list = ((moved > 0 ? result["followed"] : result["kept"]) as Result[] | undefined) ?? [];
   const folders = (n: number) => `${String(n)} folder${n === 1 ? "" : "s"}`;
-  const lines = [
-    moved > 0
-      ? `The old folder was moved: ${folders(moved)} inside it moved along.`
-      : `${result["old_folder"] === "unseen" ? "The old folder is not seen here and nothing shows the new one is it" : "The old folder is still there"}: ${folders(stayed)} inside it ${stayed === 1 ? "stays where it is" : "stay where they are"}.`,
-  ];
-  for (const f of list) {
-    const who = f["kind"] === "task" ? str(f["ref"]) : `project ${str(f["name"])}`;
-    lines.push(`  ${who}  ${str(f["folder"])}${f["missing"] === true ? "  (not there now)" : ""}`);
+  const listed = (key: string, count: number): string[] => {
+    const list = (result[key] as Result[] | undefined) ?? [];
+    const lines = list.map((f) => {
+      const who = f["kind"] === "task" ? str(f["ref"]) : `project ${str(f["name"])}`;
+      return `  ${who}  ${str(f["folder"])}`;
+    });
+    return count > list.length ? [...lines, `  and ${String(count - list.length)} more`] : lines;
+  };
+  const lines: string[] = [];
+  const moved = result["moved"];
+  if (typeof moved === "number") {
+    lines.push(`The old folder was moved: ${folders(moved)} inside it moved along.`);
+    lines.push(...listed("followed", moved));
   }
-  const more = (moved > 0 ? moved : stayed) - list.length;
-  if (more > 0) lines.push(`  and ${String(more)} more`);
+  const stayed = result["stayed"];
+  if (typeof stayed === "number") {
+    const because = str(result["stayed_because"]);
+    const why =
+      because === "not_in_new_folder" && stayed === 1
+        ? "it is not in the new folder"
+        : (STAYED_WHY[because] ?? "");
+    lines.push(
+      `${folders(stayed)} inside the old one ${stayed === 1 ? "stays where it is" : "stay where they are"}${why === "" ? "" : `: ${why}`}.`,
+    );
+    lines.push(...listed("kept", stayed));
+  }
   return lines;
 }
 

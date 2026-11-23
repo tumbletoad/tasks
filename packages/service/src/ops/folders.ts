@@ -388,18 +388,40 @@ export interface Follower {
   readonly to: string;
 }
 
+/** Why the folders inside an owner's old folder stayed where they are (moveOf). */
+export type Stayed = "old_folder_there" | "old_folder_unseen" | "unchecked" | "not_in_new_folder";
+
+/** Why `n` folders inside the old one stayed, as the end of a sentence for an agent. */
+export function stayedWhy(because: Stayed, n: number): string {
+  switch (because) {
+    case "old_folder_there":
+      return "the old folder is still there";
+    case "old_folder_unseen":
+      return "the old folder cannot be seen and nothing shows that the new one is it";
+    case "unchecked":
+      return "a folder could not be checked";
+    case "not_in_new_folder":
+      return n === 1 ? "it is not in the new folder" : "they are not in the new folder";
+  }
+}
+
+/** What a folder change does to the folders inside the old one: which move along, which stay. */
+export interface Move {
+  readonly moved: readonly Follower[];
+  readonly stayed: readonly Follower[];
+  /** Why `stayed` stayed, when any did. */
+  readonly because?: Stayed;
+}
+
 /**
  * What a folder change from `old` to `next` does to the folders inside the old one (`here`, every
- * live folder on this machine, the owner's own among them):
- * - `carry`: the old folder is gone and `next` is that folder (`movedHere`): it was moved, and
- *   every folder inside it moves along, as a move in a file manager takes everything inside it;
- * - `stay`: the old folder is still there, so the owner was given another folder and nothing was
- *   moved: the folders inside stay where they are and are named;
- * - `unseen`: the old folder is not seen (a drive unplugged, a share offline) and nothing shows
- *   that `next` is it, so the folders inside stay too: an absence is no proof of a move;
- * - `none`: no folder is inside the old one, or the change names the folder itself, one inside it
- *   or one around it.
- * A look that does not answer in time counts as there: nothing moves on a guess.
+ * live folder on this machine, the owner's own among them). They move along only when the old
+ * folder was moved: it is gone, `next` is that folder (`movedHere`), and each is there inside
+ * `next`, as a move in a file manager takes everything inside it; one that is not there stays.
+ * Otherwise every one stays: the old folder is still there, so the owner was given another; or it
+ * is not seen (a drive unplugged, a share offline) and nothing shows that `next` is it, for an
+ * absence is no proof of a move; or a look did not answer, and nothing moves on a guess. None is
+ * inside when the change names the folder itself, one inside it or one around it.
  */
 export async function moveOf(
   old: string | undefined,
@@ -407,9 +429,9 @@ export async function moveOf(
   self: { readonly kind: "project" | "task"; readonly owner: string },
   here: readonly { kind: "project" | "task"; owner: string; label: string; path: string }[],
   facts: Pick<BindFacts, "home" | "platform">,
-  movedHere: () => Promise<boolean>,
-): Promise<{ kind: "carry" | "stay" | "unseen" | "none"; inside: Follower[] }> {
-  if (old === undefined) return { kind: "none", inside: [] };
+  movedHere: () => Promise<boolean | "not_answering">,
+): Promise<Move> {
+  if (old === undefined) return { moved: [], stayed: [] };
   const os = osOf(facts.platform);
   const inside: Follower[] = [];
   for (const folder of here) {
@@ -418,18 +440,39 @@ export async function moveOf(
     if (to === undefined || to === folder.path) continue;
     inside.push({ ...folder, from: folder.path, to });
   }
-  if (inside.length === 0) return { kind: "none", inside };
-  const gone = await bounded(async () => {
+  if (inside.length === 0) return { moved: [], stayed: [] };
+  const stay = (because: Stayed): Move => ({ moved: [], stayed: inside, because });
+  const gone = await lookAt(expanded(old, facts.home, facts.platform));
+  if (gone === "unchecked") return stay("unchecked");
+  if (gone !== "none") return stay("old_folder_there");
+  const moved = await movedHere();
+  if (moved === "not_answering") return stay("unchecked");
+  if (!moved) return stay("old_folder_unseen");
+  const found = await Promise.all(
+    inside.map((f) => lookAt(expanded(f.to, facts.home, facts.platform))),
+  );
+  if (found.includes("unchecked")) return stay("unchecked");
+  const missing = inside.filter((_, k) => found[k] !== "folder");
+  return {
+    moved: inside.filter((_, k) => found[k] === "folder"),
+    stayed: missing,
+    ...(missing.length === 0 ? {} : { because: "not_in_new_folder" as const }),
+  };
+}
+
+/** What is at a path: a folder, something else, nothing, or no answer to the look. */
+type Found = "folder" | "other" | "none" | "unchecked";
+
+async function lookAt(absolute: string): Promise<Found> {
+  const found = await bounded(async (): Promise<Found> => {
     try {
-      await stat(expanded(old, facts.home, facts.platform));
-      return false;
+      return (await stat(absolute)).isDirectory() ? "folder" : "other";
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      return code === "ENOENT" || code === "ENOTDIR";
+      return code === "ENOENT" || code === "ENOTDIR" ? "none" : "unchecked";
     }
   });
-  if (gone !== true) return { kind: "stay", inside };
-  return { kind: (await movedHere()) ? "carry" : "unseen", inside };
+  return found === "not_answering" ? "unchecked" : found;
 }
 
 /**

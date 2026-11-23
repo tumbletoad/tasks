@@ -190,21 +190,19 @@ Give a project or a task its folder on this machine, or make a project for a fol
 | `owner.area.name` | string | yes | Its name |
 | `owner.area.archived` | true | no | Archived, and the project with it |
 | `folder` | string, max 4096 | no | The folder here as stored, the home as ~; absent once cleared |
-| `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved |
+| `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved, and they are in it |
 | `followed` | object[], max 20 items | no | The first of them |
 | `followed[].kind` | "project" \| "task" | yes | Whose folder it is |
 | `followed[].name` | string | no | A project's name |
 | `followed[].ref` | string | no | Task reference |
 | `followed[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
-| `followed[].missing` | true | no | No folder is there on this machine now |
 | `stayed` | integer, 0 to 1000000 | no | Folders inside the old one that stayed |
-| `old_folder` | "there" \| "unseen" | no | Why they stayed: the old folder is there, or unseen and not the new one |
+| `stayed_because` | "old_folder_there" \| "old_folder_unseen" \| "unchecked" \| "not_in_new_folder" | no | Why they stayed: old folder there or unseen, unchecked, or not in the new one |
 | `kept` | object[], max 20 items | no | The first of them |
 | `kept[].kind` | "project" \| "task" | yes | Whose folder it is |
 | `kept[].name` | string | no | A project's name |
 | `kept[].ref` | string | no | Task reference |
 | `kept[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
-| `kept[].missing` | true | no | No folder is there on this machine now |
 | `as_of` | string | yes | The space's position when this answer was made |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 
@@ -317,21 +315,19 @@ MCP tool `organize`, "List or shape areas and projects": The user's areas and pr
 | `group.area.id` | string | yes | Area ID |
 | `group.area.name` | string | yes | Its name |
 | `group.area.archived` | true | no | Archived, and the project with it |
-| `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved |
+| `moved` | integer, 0 to 1000000 | no | Folders inside the old one that moved along: it was moved, and they are in it |
 | `followed` | object[], max 20 items | no | The first of them |
 | `followed[].kind` | "project" \| "task" | yes | Whose folder it is |
 | `followed[].name` | string | no | A project's name |
 | `followed[].ref` | string | no | Task reference |
 | `followed[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
-| `followed[].missing` | true | no | No folder is there on this machine now |
 | `stayed` | integer, 0 to 1000000 | no | Folders inside the old one that stayed |
-| `old_folder` | "there" \| "unseen" | no | Why they stayed: the old folder is there, or unseen and not the new one |
+| `stayed_because` | "old_folder_there" \| "old_folder_unseen" \| "unchecked" \| "not_in_new_folder" | no | Why they stayed: old folder there or unseen, unchecked, or not in the new one |
 | `kept` | object[], max 20 items | no | The first of them |
 | `kept[].kind` | "project" \| "task" | yes | Whose folder it is |
 | `kept[].name` | string | no | A project's name |
 | `kept[].ref` | string | no | Task reference |
 | `kept[].folder` | string, max 4096 | yes | Where it is now, the home as ~ |
-| `kept[].missing` | true | no | No folder is there on this machine now |
 | `replayed` | boolean | no | True when a retry returned the stored result |
 
 ### Examples

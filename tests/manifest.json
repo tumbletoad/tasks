@@ -847,6 +847,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A1.3.15.folders.move",
+      "title": "A folder change whose look at the disk does not answer moves no folder inside the old one and says a folder could not be checked: the old folder's look, the new folder's, its marker's, or one folder's inside the new one",
+      "source": "A1 3.15",
+      "owner": "M4",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A1.3.15.folders.repo",
       "title": "The repository a project's folder holds, by name, from the folder's own Git configuration: origin's or the first remote's, none for no remote, a local remote or a folder that is not a checkout, the name alone for an address with a token, and none when the configuration does not answer in time",
       "source": "A1 3.15",

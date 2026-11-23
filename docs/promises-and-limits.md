@@ -122,11 +122,11 @@ the behaviour it describes, and keep each one to a sentence or two.
   whose folder holds that folder most closely. In an archived project's folder it joins no project,
   and the agent is told.
 - When you move a folder on disk and then give its project or task the new folder, every folder
-  TTasks knows inside the old one moves along, other projects' and tasks' included, as one undo
-  step on that machine. TTasks takes it as a move only when it finds the same folder at the new
-  place, by what identifies the folder or by the marker inside it. When the old folder is still
-  there, or cannot be seen (a drive unplugged) and the new one is not it, nothing else moves, and
-  you are told which folders stayed and why. TTasks itself never moves files.
+  TTasks knows inside the old one that is there in the new one moves along, other projects' and
+  tasks' included, as one undo step on that machine. TTasks takes it as a move only when the old
+  folder is gone and the new one is it: the same folder, or a copy whose marker names the owner and
+  that was not already there as the owner's earlier folder. Otherwise nothing else moves, and you
+  are told which folders stayed and why. TTasks itself never moves files.
 - An archived project keeps its folder, and a deleted one frees it.
 - Archiving an area or a project keeps its tasks open and in your views. The page then lists it
   under Archived in the sidebar, with its open tasks counted, and offers it for no new work; its

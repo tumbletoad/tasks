@@ -280,19 +280,19 @@ export const InsideFolder = z.strictObject({
   name: z.string().describe("A project's name").optional(),
   ref: TaskRef.optional(),
   folder: z.string().max(4096).describe("Where it is now, the home as ~"),
-  missing: z.literal(true).describe("No folder is there on this machine now").optional(),
 });
 
 /**
  * What a folder change did to the folders inside the old one: an old folder that is gone and found
- * at the new place was moved, and every folder inside it moved along; otherwise they stayed.
+ * at the new place was moved, and each folder inside it that is there in the new one moved along;
+ * the others stayed, for one reason.
  */
 export const InsideFolders = {
   moved: z
     .int()
     .min(0)
     .max(1_000_000)
-    .describe("Folders inside the old one that moved along: it was moved")
+    .describe("Folders inside the old one that moved along: it was moved, and they are in it")
     .optional(),
   followed: z.array(InsideFolder).max(20).describe("The first of them").optional(),
   stayed: z
@@ -301,9 +301,9 @@ export const InsideFolders = {
     .max(1_000_000)
     .describe("Folders inside the old one that stayed")
     .optional(),
-  old_folder: z
-    .enum(["there", "unseen"])
-    .describe("Why they stayed: the old folder is there, or unseen and not the new one")
+  stayed_because: z
+    .enum(["old_folder_there", "old_folder_unseen", "unchecked", "not_in_new_folder"])
+    .describe("Why they stayed: old folder there or unseen, unchecked, or not in the new one")
     .optional(),
   kept: z.array(InsideFolder).max(20).describe("The first of them").optional(),
 };

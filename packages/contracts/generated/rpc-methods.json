@@ -268,11 +268,6 @@
                   ],
                   "type": "string"
                 },
-                "missing": {
-                  "const": true,
-                  "description": "No folder is there on this machine now",
-                  "type": "boolean"
-                },
                 "name": {
                   "description": "A project's name",
                   "type": "string"
@@ -310,11 +305,6 @@
                   ],
                   "type": "string"
                 },
-                "missing": {
-                  "const": true,
-                  "description": "No folder is there on this machine now",
-                  "type": "boolean"
-                },
                 "name": {
                   "description": "A project's name",
                   "type": "string"
@@ -335,18 +325,10 @@
             "type": "array"
           },
           "moved": {
-            "description": "Folders inside the old one that moved along: it was moved",
+            "description": "Folders inside the old one that moved along: it was moved, and they are in it",
             "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
-          },
-          "old_folder": {
-            "description": "Why they stayed: the old folder is there, or unseen and not the new one",
-            "enum": [
-              "there",
-              "unseen"
-            ],
-            "type": "string"
           },
           "owner": {
             "additionalProperties": false,
@@ -426,6 +408,16 @@
             "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
+          },
+          "stayed_because": {
+            "description": "Why they stayed: old folder there or unseen, unchecked, or not in the new one",
+            "enum": [
+              "old_folder_there",
+              "old_folder_unseen",
+              "unchecked",
+              "not_in_new_folder"
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -692,11 +684,6 @@
                   ],
                   "type": "string"
                 },
-                "missing": {
-                  "const": true,
-                  "description": "No folder is there on this machine now",
-                  "type": "boolean"
-                },
                 "name": {
                   "description": "A project's name",
                   "type": "string"
@@ -792,11 +779,6 @@
                   ],
                   "type": "string"
                 },
-                "missing": {
-                  "const": true,
-                  "description": "No folder is there on this machine now",
-                  "type": "boolean"
-                },
                 "name": {
                   "description": "A project's name",
                   "type": "string"
@@ -817,18 +799,10 @@
             "type": "array"
           },
           "moved": {
-            "description": "Folders inside the old one that moved along: it was moved",
+            "description": "Folders inside the old one that moved along: it was moved, and they are in it",
             "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
-          },
-          "old_folder": {
-            "description": "Why they stayed: the old folder is there, or unseen and not the new one",
-            "enum": [
-              "there",
-              "unseen"
-            ],
-            "type": "string"
           },
           "projects": {
             "description": "Projects without an area, after every area",
@@ -914,6 +888,16 @@
             "maximum": 1000000,
             "minimum": 0,
             "type": "integer"
+          },
+          "stayed_because": {
+            "description": "Why they stayed: old folder there or unseen, unchecked, or not in the new one",
+            "enum": [
+              "old_folder_there",
+              "old_folder_unseen",
+              "unchecked",
+              "not_in_new_folder"
+            ],
+            "type": "string"
           },
           "total_areas": {
             "description": "Areas the whole list holds",

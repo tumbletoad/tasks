@@ -12,6 +12,7 @@ import {
   type OutputOf,
 } from "@ttasks/contracts";
 import { listText, oneLine } from "../skills/index.ts";
+import { stayedWhy } from "../ops/folders.ts";
 import { toolOf } from "./tools.ts";
 import {
   clip,
@@ -788,20 +789,24 @@ function groupsRendered(result: Groups, organize: string): Rendered {
   // A folder is shortened, so the line of any group fits a page and no group is left out of the text.
   const project = (p: Groups["projects"][number]) =>
     `${p.name}${p.repo === undefined ? "" : ` [${p.repo}]`} (${String(p.active)}${facts(p)}${p.folder === undefined ? "" : `, ${clip(p.folder, LIST_FOLDER)}`})`;
-  const inside = result.followed ?? result.kept ?? [];
-  const insideLine =
-    inside.length === 0
-      ? []
-      : [
-          [
-            `${result.moved === undefined ? `Stayed, ${result.old_folder === "unseen" ? "the old folder is not seen and the new one is not it" : "the old folder is still there"}: ${String(result.stayed ?? 0)}` : `Moved along: ${String(result.moved)}`} · ${inside
-              .map(
-                (f) =>
-                  `${f.kind === "task" ? (f.ref ?? "") : (f.name ?? "")} ${f.folder}${f.missing === true ? " (not there)" : ""}`,
-              )
-              .join(" · ")}`,
-          ],
-        ];
+  // The counts and the reason are the product's words and always shown; the folders are data.
+  const insideCounts = [
+    result.moved === undefined
+      ? undefined
+      : `Moved along with the old folder: ${String(result.moved)}`,
+    result.stayed === undefined || result.stayed_because === undefined
+      ? undefined
+      : `Stayed where they are, because ${stayedWhy(result.stayed_because, result.stayed)}: ${String(result.stayed)}`,
+  ];
+  const insideFolder =
+    (what: string) =>
+    (f: NonNullable<Groups["kept"]>[number]): string[] => [
+      `${what}: ${f.kind === "task" ? (f.ref ?? "") : (f.name ?? "")} ${f.folder}`,
+    ];
+  const insideLines = [
+    ...(result.followed ?? []).map(insideFolder("moved")),
+    ...(result.kept ?? []).map(insideFolder("stayed")),
+  ];
   const head = `${String(result.total_areas)} area${result.total_areas === 1 ? "" : "s"} · ${String(result.total_projects)} project${result.total_projects === 1 ? "" : "s"} · as_of ${result.as_of}${replayed(result)}`;
   const done =
     result.result === undefined
@@ -814,11 +819,11 @@ function groupsRendered(result: Groups, organize: string): Rendered {
   // The request path sizes a page to show whole (Caller.shows); a project a unit all the same.
   return {
     parts: [
-      fixed(done, head),
+      fixed(done, head, ...insideCounts),
       {
         data: true,
         units: [
-          ...insideLine,
+          ...insideLines,
           ...result.areas.flatMap((area) => [
             [`${area.name} (${String(area.active)}${facts(area)})`],
             ...area.projects.map((p) => [`  ${project(p)}`]),

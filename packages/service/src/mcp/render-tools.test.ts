@@ -326,6 +326,47 @@ describe("[A3.3.4.tools.eleven] the texts of search, add_tasks, reopen_task, org
     expect(finishText).not.toContain(CJK.slice(0, 4));
   });
 
+  test("a folder change with many folders left inside the old one keeps their count and why, however long their names", () => {
+    const inside = (n: number, at: string) =>
+      Array.from({ length: 20 }, (_, m) => ({
+        kind: "project",
+        name: cjk(120),
+        folder: `~/${at}/${"f".repeat(200)}${String(n + m)}`,
+      }));
+    const result = {
+      action: "set_folder",
+      as_of: AS_OF,
+      result: "folder_set",
+      group: { kind: "project", id: `p_${"0".repeat(26)}`, name: cjk(120) },
+      moved: 25,
+      followed: inside(0, "new"),
+      stayed: 30,
+      stayed_because: "not_in_new_folder",
+      kept: inside(100, "old"),
+      areas: [],
+      projects: [],
+      total_areas: 0,
+      total_projects: 1,
+    };
+    expect(entry("group.manage").output.safeParse(result).success).toBe(true);
+    const text = renderResult("group.manage", result);
+    expect(resultTokens(text)).toBeLessThanOrEqual(max("group.manage"));
+    const { outside } = split(text);
+    expect(outside).toContain("Moved along with the old folder: 25");
+    expect(outside).toContain("Stayed where they are, because they are not in the new folder: 30");
+    for (const because of ["old_folder_there", "old_folder_unseen", "unchecked"]) {
+      const why = split(
+        renderResult("group.manage", {
+          ...result,
+          moved: undefined,
+          followed: undefined,
+          stayed_because: because,
+        }),
+      ).outside.find((line) => line.startsWith("Stayed where they are, because "));
+      expect(why, because).toMatch(/: 30$/u);
+    }
+  });
+
   test("a page of 50 search rows and a page of groups at the limits stay within budget and say the cut", () => {
     const rows = Array.from({ length: 50 }, (_, n) => ({
       kind: "task",

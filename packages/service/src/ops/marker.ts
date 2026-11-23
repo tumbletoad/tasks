@@ -371,6 +371,13 @@ export class FolderMarkers {
 
   /** Whether the stored folder is a folder here now, where it opens, and its identity. */
   async #folder(stored: string): Promise<{ open: string; identity?: string } | undefined> {
+    const found = await this.#look(stored);
+    return found === "not_answering" ? undefined : found;
+  }
+
+  async #look(
+    stored: string,
+  ): Promise<{ open: string; identity?: string } | undefined | "not_answering"> {
     const open = openPath(stored, this.#home, this.#platform);
     if (open === undefined) return undefined;
     const found = await bounded(async () => {
@@ -381,7 +388,8 @@ export class FolderMarkers {
         return false;
       }
     }, MARKER_MS);
-    if (found === false || found === "not_answering") return undefined;
+    if (found === false) return undefined;
+    if (found === "not_answering") return found;
     return found === true ? { open } : { open, identity: found };
   }
 
@@ -452,23 +460,27 @@ export class FolderMarkers {
 
   /**
    * Whether the folder at `to` is the one this machine marked for `owner` at `from`, moved: it has
-   * that folder's identity (a rename), or its marker names the owner while this machine never
-   * marked `to` for it, so the marker came with the folder (a copy to another drive). A marker
-   * this machine wrote at `to` itself, for an earlier folder of the owner's, proves nothing.
+   * that folder's identity (a rename), or its marker names the owner and it was brought there (a
+   * copy to another drive, or back). A folder this machine marked at `to` for the owner before, and
+   * that is still the same folder by its identity, was not brought: it is the owner's earlier
+   * folder, given back. Without identities to tell the two apart, the marker proves nothing.
    */
-  movedTo(owner: MarkerOwner, from: string, to: string): Promise<boolean> {
+  movedTo(owner: MarkerOwner, from: string, to: string): Promise<boolean | "not_answering"> {
     return this.#turn(async () => {
-      const folder = await this.#folder(to);
+      const folder = await this.#look(to);
       if (folder === undefined) return false;
+      if (folder === "not_answering") return folder;
       const known = this.#marks.identity(this.#key(owner, from));
       if (known !== undefined && folder.identity === known) return true;
-      if (this.#marks.has(this.#key(owner, to))) return false;
+      const before = this.#key(owner, to);
+      if (this.#marks.has(before)) {
+        const earlier = this.#marks.identity(before);
+        if (earlier === undefined || folder.identity === undefined) return false;
+        if (earlier === folder.identity) return false;
+      }
       const read = await bounded(() => readMarker(folder.open), MARKER_MS);
-      return (
-        read !== "not_answering" &&
-        read.state === "owners" &&
-        read.owners.some((o) => same(o, owner))
-      );
+      if (read === "not_answering") return read;
+      return read.state === "owners" && read.owners.some((o) => same(o, owner));
     });
   }
 

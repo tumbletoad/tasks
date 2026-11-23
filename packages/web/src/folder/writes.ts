@@ -34,6 +34,9 @@ const hidden = (result: FolderResult | GroupResult | WriteReceipt): boolean =>
 /** At most this many folders that moved along or stayed are named in a toast. */
 const NAMED = 3;
 
+/** A folder write's toast that names no folder inside the old one. */
+const NONE_INSIDE = { count: 0, names: "", stayed: 0, because: "", kept: "" } as const;
+
 /** The folders a toast names: a task by its reference, a project by its name. */
 function namesOf(list: FolderResult["followed"], count: number): string {
   const named = (list ?? []).slice(0, NAMED).map((f) => f.ref ?? f.name ?? "");
@@ -54,21 +57,24 @@ function said(input: FolderInput, result: FolderResult | WriteReceipt): Msg | un
       const own = (input.folder ?? "").split(/[\\/]/u).findLast((part) => part !== "");
       return { id: "toast.projectAdded", values: { name: input.project ?? own ?? "" } };
     }
-    return { id: "toast.folderSet", values: { folder: input.folder ?? "", count: 0, names: "" } };
+    return { id: "toast.folderSet", values: { ...NONE_INSIDE, folder: input.folder ?? "" } };
   }
   if (input.action === "add_project") {
     return { id: "toast.projectAdded", values: { name: result.owner.name ?? "" } };
   }
   if (result.result === "cleared") return { id: "toast.folderCleared" };
-  const folder = result.folder ?? "";
-  if (result.stayed !== undefined) {
-    const names = namesOf(result.kept, result.stayed);
-    return { id: "toast.folderSetStayed", values: { folder, count: result.stayed, names } };
-  }
   const count = result.moved ?? 0;
+  const stayed = result.stayed ?? 0;
   return {
     id: "toast.folderSet",
-    values: { folder, count, names: namesOf(result.followed, count) },
+    values: {
+      folder: result.folder ?? "",
+      count,
+      names: namesOf(result.followed, count),
+      stayed,
+      because: result.stayed_because ?? "",
+      kept: namesOf(result.kept, stayed),
+    },
   };
 }
 
