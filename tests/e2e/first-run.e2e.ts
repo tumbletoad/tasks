@@ -111,7 +111,8 @@ test.describe("[A7.3.12.m5-12.e2e.first-start] The first start: a space, two app
     await page.getByRole("button", { name: "Show exactly what is written" }).click();
     const detail = changes(page).locator("pre");
     await expect(detail).toContainText("[[instance]]");
-    await expect(detail).toContainText("mcp add");
+    await expect(detail).toContainText("mcpServers.ttasks.command");
+    await expect(detail).not.toContainText("mcp add");
 
     await page.getByRole("button", { name: "Apply" }).click();
     await showsSpace(page, "Studio");

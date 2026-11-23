@@ -296,7 +296,8 @@ the behaviour it describes, and keep each one to a sentence or two.
 
 - TTasks installs for your account without administrator rights.
 - Agent setup shows what it will change, changes only its own entry, and removes only what it
-  wrote.
+  wrote. What it gives you to add or take out by hand is the file and the entry, never a command,
+  which would act on whatever account the shell you paste it into selects.
 - An agent app gets TTasks's tools only once its entry is in place. Turning them off takes the
   access away first, also when you changed the entry or its file cannot be written, and says what
   stays in the file.

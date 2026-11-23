@@ -5,7 +5,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CLI_NAME } from "@ttasks/brand";
+import { CLI_NAME, MCP_SERVER_KEY } from "@ttasks/brand";
 import { installFakeAgents } from "@ttasks/testkit/fake-agents";
 import { FixedEnvironment } from "@ttasks/launch";
 import {
@@ -173,7 +173,9 @@ describe("[A7.3.12.m5-12.page-apps] The page's agent apps: one click adds, the n
       expect(claude.home).toMatch(/^~[\\/]\.claude$/u);
       expect(claude.open).toMatchObject({ on: false, change: "add" });
       expect(claude.tools).toMatchObject({ on: false, change: "add" });
-      expect(claude.tools?.detail.join("\n")).toContain("mcp add");
+      // The lines its file gains, and no command a person could paste into another account.
+      expect(claude.tools?.detail.join("\n")).toContain(`mcpServers.${MCP_SERVER_KEY}.command`);
+      expect(claude.tools?.detail.join("\n")).not.toContain("mcp add");
       expect(codex.tools).toMatchObject({ on: false, change: "add" });
       // Nothing is written by looking.
       expect(existsSync(join(w.user, ".claude.json"))).toBe(false);

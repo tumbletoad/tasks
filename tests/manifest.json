@@ -3451,7 +3451,7 @@
     },
     {
       "id": "A3.3.13.setup.print-quoting",
-      "title": "A command line setup and doctor print for a person to paste gives the command exactly its words: fed to the real shell (PowerShell 7 and Windows PowerShell 5.1 through an npm-style .ps1 and .cmd shim on Windows, /bin/sh elsewhere) with a stub that reports its argv, no word or variable is expanded, split, joined or dropped, print's Claude Code command registers the install's path as it is, and a word no quoting keeps literal (a control character other than a newline in a POSIX line; on Windows any control character and % ! ^ & | < > \") gets no line, nor does a line past 4,095 bytes of UTF-8, while one at that bound reaches the command through every shell and shim",
+      "title": "A command line of TTasks's own printed for a person to paste gives the command exactly its words: fed to the real shell (PowerShell 7 and Windows PowerShell 5.1 through an npm-style .ps1 and .cmd shim on Windows, /bin/sh elsewhere) with a stub that reports its argv, no word is expanded, split, joined or dropped, also with the command given by its path, and a word no quoting keeps literal (a control character other than a newline in a POSIX line; on Windows any control character and % ! ^ & | < > \") gets no line, nor does a line past 4,095 bytes of UTF-8, while one at that bound reaches the command through every shell and shim",
       "source": "A3 3.13.7, A3 3.13.1, A7 3.11 M4.05",
       "owner": "M4",
       "kind": "ci",

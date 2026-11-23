@@ -38,7 +38,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { uptime } from "node:os";
-import { join, win32 } from "node:path";
+import { basename, join, win32 } from "node:path";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
 import generatedTools from "@ttasks/contracts/generated/mcp-tools.json" with { type: "json" };
 import { makeDir } from "@ttasks/files";
@@ -59,7 +59,7 @@ import {
   commandEnv,
   commandFor,
   entryInstance,
-  handRemoval,
+  manualRemoval,
   readBlockRecords,
   readRecords,
   readsHome,
@@ -334,7 +334,7 @@ export async function agentChecks(
     }
     checks.push(grantsCheck(input, views, rows));
     const surveyed = await survey(input);
-    checks.push(manualCheck(input.platform, surveyed));
+    checks.push(manualCheck(surveyed));
     checks.push(t3Check(input, surveyed));
     checks.push(await blockCheck(io, state, options, input));
     checks.push(...SKIPPED_ROWS);
@@ -638,10 +638,10 @@ function grantsCheck(
  * `--instance` it is a hand-made entry, as `print` writes one: not a mistake, so the row says what
  * it reaches (the machine's default space only). With one, the grant gate refuses its calls until
  * setup registers that instance, whose refusal sends the person to setup, which leaves the home
- * alone while the entry is there: so the row says how to take it out. A home is named by its app
- * and setup's instance for it, and the command without the home's path.
+ * alone while the entry is there: so the row says what to take out of which file. A home is named
+ * by its app and setup's instance for it, and its file by its name, without the home's path.
  */
-function manualCheck(platform: NodeJS.Platform, views: readonly HomeView[]): Check {
+function manualCheck(views: readonly HomeView[]): Check {
   const found = views.filter((v) => v.state === "refused" && v.refusal === "foreign_entry");
   if (found.length === 0) {
     return {
@@ -651,12 +651,9 @@ function manualCheck(platform: NodeJS.Platform, views: readonly HomeView[]): Che
     };
   }
   const parts = found.map((view) => {
-    const removal = handRemoval(view.home, platform);
-    const variable = Object.keys(removal?.set ?? {})[0];
-    const how =
-      removal === undefined
-        ? `take the ${MCP_SERVER_KEY} member out of mcpServers in Claude Desktop's configuration file`
-        : `take it out with ${removal.argv.join(" ")}${variable === undefined ? "" : ` with ${variable} set to that home`}`;
+    // The file by its name only: ttasks setup agents shows each home's file in full.
+    const removal = manualRemoval(view.home);
+    const how = `take ${removal.what} out of that home's ${basename(removal.file)} (${CLI_NAME} setup agents shows its full path)`;
     // The instance the service sees, by its own rule (binding's `instanceIn`): an entry without
     // --instance, or with one that is `manual` or no instance ID, acts as the hand-made entry.
     const named = entryInstance(view.entry);

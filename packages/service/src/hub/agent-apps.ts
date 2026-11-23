@@ -22,7 +22,6 @@
 import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { posix, win32 } from "node:path";
-import { MCP_SERVER_KEY } from "@ttasks/brand";
 import type { JsonObject } from "@ttasks/bridge/protocol";
 import { AppError } from "@ttasks/contracts";
 import {
@@ -30,7 +29,6 @@ import {
   instanceEntry,
   instanceHome,
   nodeDetectHost,
-  shellLine,
   type Env,
   type EnvironmentSource,
   type Instance,
@@ -46,7 +44,7 @@ import {
   blockOf,
   distinctLabels,
   entryInstance,
-  handRemoval,
+  entryLines,
   LockBusy,
   planOf,
   planToken,
@@ -54,7 +52,6 @@ import {
   rowAccess,
   runCommand,
   samePath,
-  SERVERS_KEY,
   SetupStateInvalid,
   SetupStateUnsafe,
   settleHomes,
@@ -65,7 +62,6 @@ import {
   withSetupLock,
   type AgentApp,
   type AgentHome,
-  type Change,
   type Offer,
   type PlanItem,
   type SetupInput,
@@ -107,7 +103,7 @@ export interface Part {
   readonly why?: Why;
   /** The file that changes, its home shown as `~`. */
   readonly file: string;
-  /** Exactly what changes: the command that runs, the lines that are written or taken out. */
+  /** Exactly what changes in `file`: the lines that are written or taken out. */
   readonly detail: readonly string[];
   /** A token of this switch as shown: apply goes on only with the same one. */
   readonly plan: string;
@@ -237,17 +233,6 @@ function spaceOf(params: JsonObject, host: AgentAppsHost): string {
     });
   }
   return space;
-}
-
-/** The app's command, its variables first, as the person would type it. */
-function commandText(platform: NodeJS.Platform, argv: readonly string[], set = {}): string {
-  return shellLine(platform, argv, set) ?? argv.join(" ");
-}
-
-function toolsAdd(platform: NodeJS.Platform, change: Change): string[] {
-  return change.writer === "edit"
-    ? [...change.diff]
-    : [`$ ${commandText(platform, [...change.exec, ...change.args], change.set)}`, ...change.diff];
 }
 
 /** Everything the page shows, read now. Writes nothing. */
@@ -461,21 +446,20 @@ function toolsPart(
     recorded === undefined
       ? {}
       : { space: { id: recorded, name: host.spaceName(recorded) ?? null } };
-  const removing = (why?: Why): Part => {
-    const removal = handRemoval(view.home, host.platform);
-    return {
-      on: true,
-      change: "remove",
-      ...(why === undefined ? {} : { why }),
-      file,
-      detail:
-        removal === undefined
-          ? [`- ${SERVERS_KEY[view.home.app]}.${MCP_SERVER_KEY}`]
-          : [`$ ${commandText(host.platform, removal.argv, removal.set)}`],
-      plan: plan("remove"),
-      ...named,
-    };
-  };
+  // What turning it off takes out of the file: the entry as found, or nothing when it is gone
+  // (`missing`) or the person's (`edited`, which stays).
+  const removing = (why?: Why): Part => ({
+    on: true,
+    change: "remove",
+    ...(why === undefined ? {} : { why }),
+    file,
+    detail:
+      view.entry === undefined || why === "edited"
+        ? []
+        : entryLines(view.home.app, view.entry, "-"),
+    plan: plan("remove"),
+    ...named,
+  });
   switch (view.state) {
     case "registered":
       return removing(recorded !== undefined && recorded !== space ? "other_space" : undefined);
@@ -501,7 +485,7 @@ function toolsPart(
         change: "add",
         ...(several === true ? { why: "several" } : {}),
         file,
-        detail: toolsAdd(host.platform, change),
+        detail: [...change.diff],
         plan: plan("add"),
       };
   }

@@ -151,13 +151,9 @@ describe("[A3.3.13.setup.cli] ttasks setup agents through the CLI and the servic
       }
       const text = await run(["setup", "agents"], false);
       expect(text.code).toBe(0);
-      // PowerShell drops a bare -- before an npm .ps1 shim, so on Windows it is quoted (A3 3.13.7).
-      expect(text.stdout).toContain(`mcp add ${MCP_SERVER_KEY} ${windows ? "'--'" : "--"} `);
-      // The command as the person's shell takes it literally, the home's variable first.
-      const codexHome = join(user, ".codex");
-      expect(text.stdout).toContain(
-        windows ? `runs: $env:CODEX_HOME = '${codexHome}'; & ` : `runs: CODEX_HOME=${codexHome} `,
-      );
+      // The file each entry goes in, and no command a person could paste into another account.
+      expect(text.stdout).toContain(join(user, ".codex", "config.toml"));
+      expect(text.stdout).not.toContain("mcp add");
       expect(text.stdout).toContain("+ startup_timeout_sec = 20");
       expect(text.stdout).toContain(
         `Nothing was changed. To make these 2 changes, run: ${planned.apply.join(" ")}`,
@@ -562,7 +558,10 @@ describe("[A3.3.13.setup.free-instance] setup proposes a free instance, and name
         );
         expect(preview.code, preview.stderr).toBe(0);
         expect(preview.stdout).toContain("that setup did not write (one added by hand)");
-        expect(preview.stdout).toContain(`claude mcp remove ${MCP_SERVER_KEY} --scope user`);
+        expect(preview.stdout).toContain(
+          `"${MCP_SERVER_KEY}" member of "mcpServers" out of ${claudeFile}`,
+        );
+        expect(preview.stdout).not.toContain("mcp remove");
         expect(preview.stdout).toContain(`then run ${CLI_NAME} setup agents again`);
       } finally {
         writeFileSync(claudeFile, before[0] ?? "");

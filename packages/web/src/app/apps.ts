@@ -13,7 +13,7 @@ export interface Part {
   readonly why: string | undefined;
   /** The file that changes, the home shown as `~`. */
   readonly file: string;
-  /** Exactly what changes: a command, the lines written or taken out. */
+  /** Exactly what changes in `file`: the lines written or taken out. */
   readonly detail: readonly string[];
   readonly plan: string;
   /** tools: the space its entry names. */

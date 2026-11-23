@@ -42,14 +42,7 @@ import { statSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import { CLI_NAME, MCP_SERVER_KEY, PRODUCT_NAME } from "@ttasks/brand";
 import { AppError } from "@ttasks/contracts";
-import {
-  detect,
-  MAX_LINE_BYTES,
-  nodeDetectHost,
-  pasteShell,
-  shellLine,
-  type Env,
-} from "@ttasks/launch";
+import { detect, nodeDetectHost, shellLine, type Env } from "@ttasks/launch";
 import { loadMachineConfig } from "@ttasks/service/config";
 import { homeFolder, hostFacts, resolveLayout } from "@ttasks/service/paths";
 import {
@@ -72,14 +65,14 @@ import {
   type BlockOutcome,
   type BlockReason,
   type BlockView,
-  handRemoval,
+  manualRemoval,
   HOSTS,
   isPrintApp,
   LockBusy,
   planOf,
   planToken,
-  PrintRefused,
   PRINT_APPS,
+  PRINT_HOMES,
   PRINT_LABELS,
   removeHome,
   rowAccess,
@@ -93,7 +86,6 @@ import {
   survey,
   withSetupLock,
   type AgentApp,
-  type Change,
   type Host,
   type HomeView,
   type Outcome,
@@ -246,6 +238,9 @@ function parse(input: readonly string[]): Parsed {
     if (apps?.length !== 1 || !isPrintApp(apps[0])) {
       throw new UsageError(`print takes --app and one of ${PRINT_APPS.join(", ")}`);
     }
+    if (home !== undefined && !(PRINT_HOMES as readonly string[]).includes(apps[0])) {
+      throw new UsageError(`print takes --home for ${PRINT_HOMES.join(" and ")} only`);
+    }
   } else if (apps !== undefined && !apps.every(isAppWord)) {
     throw new UsageError(`--app takes ${APP_WORDS.join(", ")}`);
   }
@@ -259,14 +254,6 @@ const forbidden = (): AppError =>
     hint: `Ask the user to run: ${CLI_NAME} setup agents --apply`,
     data: { rule: "user_only" },
   });
-
-/**
- * The app's command as the person would run it, its variables first, as one line for PowerShell on
- * Windows and a POSIX shell elsewhere (launch's shell-line.ts, A3 3.13.7). Undefined when a word
- * holds a character no quoting keeps literal there, or the line is too long to paste.
- */
-const commandLine = (platform: NodeJS.Platform, change: Change): string | undefined =>
-  shellLine(platform, [...change.exec, ...change.args], change.set);
 
 const REASON: Readonly<Record<OutcomeReason, string>> = {
   unreadable: "its file cannot be read",
@@ -317,24 +304,13 @@ function accessText(outcome: Outcome): string | undefined {
 
 /**
  * Why a home was left, for people. An entry of TTasks's name that setup did not write (one added by
- * hand) also says how to take it out with the app's own command, so the next setup can register
- * the home (A3 3.7.8: the grant gate's refusal of such an entry sends the person here).
+ * hand) also says what to take out of which file, so the next setup can register the home (A3
+ * 3.7.8: the grant gate's refusal of such an entry sends the person here).
  */
-function reasonText(
-  reason: OutcomeReason,
-  home: HomeView["home"],
-  platform: NodeJS.Platform,
-): string {
+function reasonText(reason: OutcomeReason, home: HomeView["home"]): string {
   if (reason !== "foreign_entry") return REASON[reason];
-  const removal = handRemoval(home, platform);
-  const line = removal === undefined ? undefined : shellLine(platform, removal.argv, removal.set);
-  const how =
-    home.app === "claude-desktop"
-      ? `take the ${MCP_SERVER_KEY} member out of mcpServers in that file`
-      : line === undefined
-        ? `take it out with the app's own ${removal?.argv.join(" ") ?? "mcp remove"} for this home`
-        : `take it out with: ${line}`;
-  return `${REASON.foreign_entry} (one added by hand). For setup to register this home, ${how}; then run ${CLI_NAME} setup agents again`;
+  const removal = manualRemoval(home);
+  return `${REASON.foreign_entry} (one added by hand). For setup to register this home, take ${removal.what} out of ${removal.file}; then run ${CLI_NAME} setup agents again`;
 }
 
 const NOTE: Readonly<Record<string, string>> = {
@@ -542,6 +518,7 @@ export async function agentsCommand(
           input,
           parsed.apps?.[0] as PrintApp,
           await printSpace(call, defaultSpace),
+          parsed.home,
         );
       case "apply": {
         if (mcp && (!isFolder(root) || !exists(input.tasks))) {
@@ -784,8 +761,7 @@ async function status(
   if (views.length === 0) io.stdout("No agent home was found.\n");
   for (const view of views) {
     const row = rowOf(view);
-    const reason =
-      view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home, input.platform)}`;
+    const reason = view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home)}`;
     const space = view.record === undefined ? "" : `, space ${view.record.space}`;
     const grant =
       rows === undefined ? "" : row === undefined ? ", no grant row" : `, grant row ${row.grant}`;
@@ -889,23 +865,17 @@ async function preview(
     const hash = view.sha256 === null ? "not there yet" : `sha256 ${view.sha256}`;
     io.stdout(`   ${view.home.file} (${hash})\n`);
     if (change === undefined) {
-      const reason =
-        view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home, io.platform)}`;
+      const reason = view.refusal === undefined ? "" : `: ${reasonText(view.refusal, view.home)}`;
       io.stdout(`   ${STATE_TEXT[view.state]}${reason}. Nothing to do.\n`);
     } else if (typeof change === "string") {
-      io.stdout(`   left alone: ${reasonText(change, view.home, io.platform)}.\n`);
+      io.stdout(`   left alone: ${reasonText(change, view.home)}.\n`);
     } else {
       changes += 1;
-      if (change.writer === "edit") {
-        io.stdout(`   writes one entry into this file (the app has no command for it)\n`);
-      } else {
-        io.stdout(
-          `   runs: ${commandLine(io.platform, change) ?? `the app's own command, whose words no line for ${pasteShell(io.platform)} keeps as they are (--json lists them)`}\n`,
-        );
-        if (change.unset.length > 0) {
-          io.stdout(`   without ${change.unset.join(", ")} from your environment\n`);
-        }
-      }
+      io.stdout(
+        change.writer === "edit"
+          ? `   writes one entry into this file (the app has no command for it)\n`
+          : `   the app's own command writes the entry into this file, run for this home only (--json lists it)\n`,
+      );
       const by =
         view.home.app === "codex"
           ? `the command writes the table; ${PRODUCT_NAME} adds the last ${String(change.patches.length)} keys`
@@ -1151,28 +1121,16 @@ function printCommand(
   input: SetupInput,
   app: PrintApp,
   space: string,
+  home: string | undefined,
 ): number {
-  let snippet;
-  try {
-    snippet = snippetFor(input, app, space);
-  } catch (error) {
-    if (!(error instanceof PrintRefused)) throw error;
-    throw new AppError({
-      code: "invalid_input",
-      message: `${PRODUCT_NAME}'s command path cannot be pasted into ${error.runIn} as it is: it holds a control character (on Windows also % ! ^ & | < > "), or makes the line longer than ${String(MAX_LINE_BYTES)} bytes. So no command is printed.`,
-      hint: `Run ${CLI_NAME} setup agents: it runs the app's own command without a shell.`,
-      data: { issues: [{ path: "command", message: "Cannot be pasted into a shell as it is" }] },
-    });
-  }
+  const snippet = snippetFor(input, app, space, home);
   if (globals.json) {
     io.stdout(`${JSON.stringify(snippet)}\n`);
     return 0;
   }
   const where = snippet.files.length === 1 ? "in" : "in one of";
   io.stdout(
-    snippet.format === "command"
-      ? `${PRINT_LABELS[app]}: run this in ${snippet.runIn ?? pasteShell(io.platform)}; it writes the entry ${where} ${snippet.files.join(", ")}\n`
-      : `${PRINT_LABELS[app]}: add this ${where} ${snippet.files.join(", ")}, keeping what is there\n`,
+    `${PRINT_LABELS[app]}: add this ${where} ${snippet.files.join(", ")}, keeping what is there\n`,
   );
   io.stdout(snippet.text);
   io.stdout("Nothing was changed.\n");
@@ -1231,7 +1189,7 @@ function report(
       const reason =
         outcome.reason === undefined || outcome.result === "removed"
           ? ""
-          : `: ${reasonText(outcome.reason, outcome.home, io.platform)}`;
+          : `: ${reasonText(outcome.reason, outcome.home)}`;
       io.stdout(`${title(outcome)}\n  ${verb[outcome.result]}${reason}\n`);
       for (const note of outcome.notes ?? []) io.stdout(`  ${NOTE[note] ?? note}\n`);
       const access = accessText(outcome);

@@ -1076,20 +1076,51 @@ export function entryInstance(entry: unknown): string | null | undefined {
 }
 
 /**
- * The app's own command that takes an entry of TTasks's name out of a home, as a person runs it: the
- * app's word on the PATH, its `mcp remove`, and the home's variable for a home that is not the
- * default (A3 3.7.8: how to take out an entry added by hand). Claude Desktop has no command: its
- * entry is a member of its file.
+ * What a person takes out of a home's file by hand to remove an entry of TTasks's name (A3 3.7.8):
+ * the one table or member, in the home's own file. Never a command: a pasted command runs in
+ * whatever shell and account it is pasted into, which can be another home's.
  */
-export function handRemoval(
-  home: AgentHome,
-  platform: NodeJS.Platform,
-): { argv: string[]; set: Record<string, string> } | undefined {
-  if (home.app === "claude-desktop") return undefined;
+export function manualRemoval(home: AgentHome): { readonly file: string; readonly what: string } {
+  const servers = APPS[home.app].servers;
   return {
-    argv: [home.app === "codex" ? "codex" : "claude", ...removeArgs(home.app)],
-    set: commandEnv({ env: {}, platform }, home).set,
+    file: home.file,
+    what:
+      APPS[home.app].format === "toml"
+        ? `the [${servers}.${keyText(MCP_SERVER_KEY)}] table`
+        : `the ${JSON.stringify(MCP_SERVER_KEY)} member of ${JSON.stringify(servers)}`,
   };
+}
+
+/**
+ * An entry as the lines a preview shows, each with `sign` (`+` added, `-` taken out): a TOML
+ * table's header and its keys, or a JSON member's keys under their path. An entry that is not a
+ * table shows as its path alone.
+ */
+export function entryLines(app: AgentApp, entry: unknown, sign: "+" | "-"): string[] {
+  const { servers, format } = APPS[app];
+  const fields =
+    typeof entry === "object" && entry !== null && !Array.isArray(entry)
+      ? Object.entries(entry as Record<string, unknown>)
+      : undefined;
+  if (format === "toml") {
+    const header = `${sign} [${servers}.${keyText(MCP_SERVER_KEY)}]`;
+    return [
+      header,
+      ...(fields ?? []).map(([key, value]) => `${sign} ${keyText(key)} = ${tomlText(value)}`),
+    ];
+  }
+  const at = `${servers}.${MCP_SERVER_KEY}`;
+  if (fields === undefined) return [`${sign} ${at}`];
+  return fields.map(([key, value]) => `${sign} ${at}.${key} = ${JSON.stringify(value)}`);
+}
+
+/** A value of a TOML entry as TOML text, or as JSON for one the editor does not write. */
+function tomlText(value: unknown): string {
+  try {
+    return valueText(value as EditValue);
+  } catch {
+    return JSON.stringify(value);
+  }
 }
 
 /** The homes T3's enabled provider instances use (A3 3.13.6), for doctor's `t3.homes`. */
