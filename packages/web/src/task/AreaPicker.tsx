@@ -1,9 +1,11 @@
 // The area and project control (A5 3.7, 3.11): a pill button with the area's dot that opens a
 // type-ahead over the area tree. Typing filters the areas and their projects; the arrows move in
 // the list while focus stays in the field, Enter or a click moves the task. A name no area has is
-// offered as a new area: chosen, the area is made as named and the task moves into it. Escape
+// offered as a new area, after any area whose name is close to it: the first choice is what Enter
+// takes, and a typo should land in the area meant, as it does when an agent files by name. Escape
 // closes, and focus returns to the pill. A task leaves its area only for another one: `task.update`
 // moves a task into an area or project, never out of every area.
+import { closeName, sameName } from "@ttasks/contracts/group-names";
 import { useContext, useMemo, useState } from "react";
 import {
   Autocomplete,
@@ -61,7 +63,7 @@ const AREA_NAME = 120;
 export function AreaPicker({ task }: { readonly task: TaskRow }) {
   const t = useT();
   const say = useToast();
-  const { api } = useContext(Session);
+  const { api, live } = useContext(Session);
   const edits = useEdits();
   const state = useLive();
   const [open, setOpen] = useState(false);
@@ -90,25 +92,34 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
   }, [state.areas, state.projects, slots, t]);
   // A slash would make the name an area and a project.
   const name = typed.replaceAll("/", " ").trim();
-  const known = [...state.areas.values()].some(
-    (a) => a.title.localeCompare(name, undefined, { sensitivity: "base" }) === 0,
-  );
-  // Its text holds what was typed, so the filter always keeps it.
-  const items: readonly Choice[] =
-    name === "" || known
-      ? choices
+  const areas = [...state.areas.values()].sort(byPosition);
+  const same = name === "" ? [] : areas.filter((a) => sameName(a.title, name));
+  const close = name === "" ? [] : areas.filter((a) => closeName(a.title, name));
+  // The areas the name means come first, whatever the filter's spelling: the same name, then one
+  // close to it. A new area is offered only when no area has the name.
+  const meant = new Set([...same, ...close].map((a) => a.id));
+  const items: readonly Choice[] = [
+    ...[...same, ...close].flatMap((a) => choices.find((c) => c.id === a.id) ?? []),
+    ...choices.filter((c) => !meant.has(c.id)),
+    ...(name === "" || same.length > 0
+      ? []
       : [
-          ...choices,
           {
             id: NEW_AREA,
             text: t("area.new", { name }),
             area: { id: NEW_AREA, title: name },
             slot: 0,
           },
-        ];
+        ]),
+  ];
+  const filter = (text: string, input: string, node: { readonly key: unknown }) =>
+    node.key === NEW_AREA || meant.has(String(node.key)) || contains(text, input);
 
-  /** Makes the area as the command line does, then moves the task into it. */
-  const addArea = (title: string) => {
+  /**
+   * Makes the area as the command line does, then moves the task into it from what the person saw
+   * when they chose (`seen`): a filing made elsewhere meanwhile is a conflict, never overwritten.
+   */
+  const addArea = (title: string, seen: string | undefined) => {
     edits
       .write(
         (request) =>
@@ -126,7 +137,10 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
         (result) => {
           const made = "receipt" in result ? undefined : result.group;
           if (made?.kind !== "area") return;
-          edits.edit(task, groupingChange({ id: made.id, title: made.name }, undefined));
+          edits.edit(task, groupingChange({ id: made.id, title: made.name }, undefined), {
+            base: seen,
+            refused: (why) => ({ id: "area.addedNotMoved", values: { name: made.name, why } }),
+          });
         },
         (failed: unknown) => {
           say(refusalText(failed, t("area.notAdded")));
@@ -164,7 +178,7 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
       </Button>
       <Popover className={styles.popover} placement="bottom start">
         <Dialog className={styles.dialog} aria-label={t("area.label")}>
-          <Autocomplete filter={contains} inputValue={typed} onInputChange={setTyped}>
+          <Autocomplete filter={filter} inputValue={typed} onInputChange={setTyped}>
             <SearchField aria-label={t("area.search")} autoFocus>
               <Input
                 className={styles.field}
@@ -179,10 +193,11 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
               renderEmptyState={() => t("area.empty")}
               onAction={(key) => {
                 const choice = items.find((c) => c.id === key);
+                const seen = live.store.asOf;
                 setOpen(false);
                 setTyped("");
                 if (choice === undefined || choice.id === current) return;
-                if (choice.id === NEW_AREA) addArea(choice.area.title);
+                if (choice.id === NEW_AREA) addArea(choice.area.title, seen);
                 else edits.edit(task, groupingChange(choice.area, choice.project));
               }}
             >

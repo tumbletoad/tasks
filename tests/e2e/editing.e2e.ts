@@ -407,12 +407,14 @@ test.describe("[A5.3.11.e2e.finished-title] A title typed while the task is fini
 });
 
 test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a task, and Undo takes it back", () => {
-  test("a name no area has is offered as a new area; Enter makes it and moves the task there; Ctrl+Z moves it back, and again takes the area away", async ({
+  test("a typo takes the area it is close to; a name no area has is offered as a new area; Enter makes it and moves the task there; Ctrl+Z moves it back, and again takes the area away", async ({
     page,
     world,
   }) => {
     const tag = test.info().project.name;
     const garden = `Garden ${tag}`;
+    const seedlings = `Seedlings ${tag}`;
+    await world.op(world.mira.id, "group.manage", { action: "create", path: seedlings });
     const [ref] = await addTasks(world, [{ title: `Plant the tulips (${tag})`, area: "home" }]);
     if (ref === undefined) throw new Error("the task was not added");
     const areaOf = async () =>
@@ -443,11 +445,24 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await page.keyboard.press("Escape");
     await expect(pill).toBeFocused();
 
-    // A new name: the last choice makes the area, and the task moves into it.
+    // A typo: the area it is close to comes first and Enter takes it; a new area is only offered.
+    await page.keyboard.press("Enter");
+    const typo = seedlings.replace("ee", "e");
+    await page.keyboard.type(typo);
+    await expect(page.getByRole("option").first()).toHaveText(seedlings);
+    await expect(offer).toHaveText(`New area “${typo}”`);
+    await page.keyboard.press("Enter");
+    await expect(toast(page)).toHaveText(`Moved to ${seedlings}`);
+    await expect.poll(areaOf).toBe(seedlings);
+    await page.keyboard.press("Control+z");
+    await expect(toast(page)).toHaveText("Undone");
+    await expect.poll(areaOf).toBe("Home");
+
+    // A new name: the only choice makes the area, and the task moves into it.
+    await pill.focus();
     await page.keyboard.press("Enter");
     await page.keyboard.type(garden);
     await expect(offer).toHaveText(`New area “${garden}”`);
-    await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(toast(page)).toHaveText(`Moved to ${garden}`);
     await expect(toastAction(page)).toHaveText("Undo");
@@ -461,6 +476,55 @@ test.describe("[A5.3.11.e2e.new-area] The area picker makes a new area for a tas
     await page.keyboard.press("Control+z");
     await expect(sidebarLink).toHaveCount(0, { timeout: SLOW_MS });
     expect(await violations(page)).toEqual([]);
+  });
+
+  test("a filing made elsewhere while the area is being made stays: the area is added, the task is not moved, and the toast says both", async ({
+    page,
+    world,
+  }) => {
+    const tag = test.info().project.name;
+    const orchard = `Orchard ${tag}`;
+    const shed = `Shed ${tag}`;
+    await world.op(world.mira.id, "group.manage", { action: "create", path: shed });
+    const [ref] = await addTasks(world, [{ title: `Prune the pear tree (${tag})`, area: "home" }]);
+    if (ref === undefined) throw new Error("the task was not added");
+    const areaOf = async () =>
+      ((await world.op(world.mira.id, "task.get", { task: ref })) as { task: { area?: string } })
+        .task.area;
+    // The area's creation waits until an agent has filed the task elsewhere.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let asked!: () => void;
+    const sent = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    await page.route("**/api/v1/op/group.manage", async (route) => {
+      asked();
+      await gate;
+      await route.continue();
+    });
+    await openArea(page, world, "Home");
+    const title = rowOf(page, ref).locator('[data-part="title"]');
+    await title.focus();
+    await page.keyboard.press("Enter");
+    await expect(title).toHaveAttribute("aria-expanded", "true");
+    const pill = rowOf(page, ref).locator('[data-part="area"]');
+    await pill.click();
+    await expect(page.getByRole("searchbox", { name: "Find an area or project" })).toBeFocused();
+    await page.keyboard.type(orchard);
+    await page.keyboard.press("Enter");
+    await sent;
+    await agentSets(world, ref, { area: shed });
+    release();
+    await expect(toast(page)).toHaveText(
+      new RegExp(`^Area ${orchard} added, and the task stayed where it was\\. .+ changed the area`),
+    );
+    await expect(
+      page.getByRole("navigation").getByRole("link", { name: new RegExp(`^${orchard}, `) }),
+    ).toBeVisible();
+    expect(await areaOf()).toBe(shed);
   });
 });
 

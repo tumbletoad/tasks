@@ -4807,7 +4807,7 @@
     },
     {
       "id": "A5.3.11.e2e.new-area",
-      "title": "In Chromium and Firefox against the real service: the area picker offers a name no area has as a new area, never one an area has in another case; Enter makes the area and moves the task into it with Undo, and Ctrl+Z takes back the move, then the area",
+      "title": "In Chromium and Firefox against the real service: the area picker offers a name no area has as a new area, never one an area has in another case, and after an area close to a typo, which Enter takes; Enter makes a new area and moves the task into it with Undo, and Ctrl+Z takes back the move, then the area; a filing made elsewhere meanwhile stays, and the toast says the area was added and the task stayed",
       "source": "A5 3.7, A5 3.11",
       "owner": "M5",
       "kind": "ci",

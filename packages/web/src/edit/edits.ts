@@ -395,6 +395,11 @@ function conflictText(
   return { id: "toast.conflictValues", values: { ...values, now, wrote, restore: back } };
 }
 
+interface EditOptions {
+  readonly base?: string | undefined;
+  readonly refused?: (why: Msg) => Msg;
+}
+
 export class Edits {
   readonly #deps: EditDeps;
   readonly #listeners = new Set<() => void>();
@@ -481,9 +486,10 @@ export class Edits {
 
   /**
    * A person's edit of a task (A5 3.11): shown at once, sent with a base, and on a refusal kept
-   * with the person's value. `base` is the editor's, taken when it opened; a control leaves it out.
+   * with the person's value. `base` is what the person saw when they chose: an editor's, taken
+   * when it opened; a control leaves it out. `refused` says a refusal after what came before it.
    */
-  edit(task: TaskRow, change: Change, options: { readonly base?: string } = {}): void {
+  edit(task: TaskRow, change: Change, options: EditOptions = {}): void {
     void this.#edit(task, change, options);
   }
 
@@ -491,7 +497,7 @@ export class Edits {
   #edit(
     task: TaskRow,
     change: Change,
-    options: { readonly base?: string },
+    options: EditOptions,
     retried: readonly Unsaved[] = [],
   ): Promise<void> {
     for (const field of change.fields) {
@@ -554,8 +560,15 @@ export class Edits {
         const there = waiting.filter((part) => inPlace(part, decision.error));
         if (late) for (const part of there) this.#forget(task.id, part.fields[0] ?? "title");
         const kept = waiting.filter((part) => !there.includes(part));
-        if (kept.length > 0) interim = this.#refused(task, kept, seen, decision.error, say);
-        else if (late || there.length > 0) say(undefined);
+        if (kept.length > 0) {
+          interim = this.#refused(task, kept, seen, decision.error, (toast) => {
+            say(
+              toast === undefined || options.refused === undefined
+                ? toast
+                : { ...toast, text: options.refused(toast.text) },
+            );
+          });
+        } else if (late || there.length > 0) say(undefined);
       },
       toast,
     );
