@@ -5,7 +5,7 @@
 // it; a retry gets its first answer; a finished task takes a detach alone. Fixture text only.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
-import { renderResult } from "../src/mcp/index.ts";
+import { renderError, renderResult } from "../src/mcp/index.ts";
 import { opCall, type Caller } from "../src/ops/index.ts";
 import { contractWorld, type ContractWorld } from "./contract/suite.ts";
 
@@ -17,6 +17,7 @@ interface Source {
   url?: string;
   ref?: string;
   captures_to?: string[];
+  captures_more?: number;
   removed?: { at: string; by: string };
 }
 
@@ -216,6 +217,129 @@ describe("[A3.source.detach] detaching a source and putting it back, through rea
     expect(refused.message).toBe(
       `fix:DT-5 is on ${b.ref} and ${c.ref} now: a capture of it asks which. Nothing was put back.`,
     );
+  });
+
+  test("one update that adds a detached source back and detaches it by ID leaves it detached", async () => {
+    const { ref } = await add({ title: "Fixture add and detach", sources: [ticket("fix:DT-9")] });
+    await update({ task: ref, remove_sources: ["fix:DT-9"] });
+    const [gone] = await sources(ref);
+    expect(
+      await update({ task: ref, add_sources: [ticket("fix:DT-9")], remove_sources: [gone?.id] }),
+    ).toMatchObject({ result: "updated" });
+    expect((await sources(ref))[0]?.removed).toBeDefined();
+    const next = await add({ title: "Fixture new work", sources: [ticket("fix:DT-9")] }, AGENT);
+    expect(next).toMatchObject({ result: "created" });
+  });
+
+  test("adding a detached source back while another active task holds its key links it, and says a capture now asks which", async () => {
+    const { ref } = await add({ title: "Fixture readd", sources: [ticket("fix:DT-10")] });
+    await update({ task: ref, remove_sources: ["fix:DT-10"] });
+    const other = await add({ title: "Fixture holder", sources: [ticket("fix:DT-10")] });
+    const input = {
+      task: ref,
+      add_sources: [ticket("fix:DT-10")],
+      base: await asOf(),
+      request_id: rid(),
+    };
+    const added = await call("task.update", input, AGENT);
+    const warning = `The source at add_sources.0 is on ${other.ref} too: a capture of its key asks which of ${ref} and ${other.ref} (shared_key).`;
+    expect(added).toMatchObject({ result: "updated", warnings: [warning] });
+    expect(renderResult("task.update", added)).toContain(warning);
+    // A retry answers the same.
+    expect(await call("task.update", input, AGENT)).toMatchObject({
+      warnings: [warning],
+      replayed: true,
+    });
+    expect((await sources(ref)).filter((s) => s.key === "fix:DT-10")).toHaveLength(1);
+    const captured = await call("task.add", {
+      tasks: [{ title: "Fixture capture", sources: [ticket("fix:DT-10")] }],
+      request_id: rid(),
+    });
+    expect((captured["tasks"] as Json[])[0]).toMatchObject({
+      ambiguous: [ref, other.ref],
+    });
+  });
+
+  test("a finished task takes its source back while an active task holds the key; captures stay with the active one", async () => {
+    const { ref } = await add({ title: "Fixture finished back", sources: [ticket("fix:DT-11")] });
+    await call("task.finish", {
+      task: ref,
+      outcome: "Fixture done.",
+      base: await asOf(),
+      request_id: rid(),
+    });
+    await update({ task: ref, remove_sources: ["fix:DT-11"] });
+    const other = await add({ title: "Fixture active", sources: [ticket("fix:DT-11")] }, AGENT);
+    expect(await update({ task: ref, put_back_sources: ["fix:DT-11"] })).toMatchObject({
+      result: "updated",
+    });
+    expect((await sources(ref))[0]?.removed).toBeUndefined();
+    expect(await add({ title: "Fixture next", sources: [ticket("fix:DT-11")] }, AGENT)).toEqual(
+      expect.objectContaining({ ref: other.ref }),
+    );
+  });
+
+  test("a retried refusal names the holder when it was decided; the agent's text says it holds the key", async () => {
+    const { ref } = await add({ title: "Fixture retried", sources: [ticket("fix:DT-12")] });
+    await update({ task: ref, remove_sources: ["fix:DT-12"] });
+    const holder = await add({ title: "Fixture first holder", sources: [ticket("fix:DT-12")] });
+    const input = {
+      task: ref,
+      put_back_sources: ["fix:DT-12"],
+      base: await asOf(),
+      request_id: rid(),
+    };
+    const first = await refusal("task.update", input, AGENT);
+    expect(first.message).toBe(
+      `fix:DT-12 is on ${holder.ref} now: captures go there. Nothing was put back.`,
+    );
+    const text = renderError(first);
+    expect(text).toContain(`Holds the key: ${holder.ref} removed`);
+    expect(text).not.toContain("Changed since your base");
+    // The holder lets the key go, and another task captures it.
+    await update({ task: holder.ref, remove_sources: ["fix:DT-12"] });
+    const next = await add({ title: "Fixture next holder", sources: [ticket("fix:DT-12")] });
+    const again = await refusal("task.update", input, AGENT);
+    expect(again.message).toBe(
+      `fix:DT-12 was on ${holder.ref} when this was decided. Nothing was put back.`,
+    );
+    expect((await sources(ref))[0]?.captures_to).toEqual([next.ref]);
+  });
+
+  test("the tasks named for a key are every candidate, the task read included, and how many more there are", async () => {
+    // A holds K; a capture of K and J is new work B with K as a plain reference.
+    const a = await add({ title: "Fixture holder A", sources: [ticket("fix:DT-13")] });
+    const b = await add({
+      title: "Fixture B",
+      sources: [ticket("fix:DT-13"), ticket("fix:DT-14")],
+    });
+    expect(b).toMatchObject({ result: "created" });
+    const plain = (await sources(b.ref)).find((s) => s.ref === "fix:DT-13");
+    expect(plain?.captures_to).toEqual([a.ref]);
+    // B links K on purpose: its plain line names both, B included.
+    await update({ task: b.ref, add_sources: [ticket("fix:DT-13")] });
+    const named = (await sources(b.ref)).find((s) => s.ref === "fix:DT-13");
+    expect(named?.captures_to).toEqual([a.ref, b.ref]);
+
+    // Six active holders: five are named, and one more is counted.
+    const { ref } = await add({ title: "Fixture many", sources: [ticket("fix:DT-15")] });
+    await update({ task: ref, remove_sources: ["fix:DT-15"] });
+    const holders: string[] = [];
+    for (let k = 0; k < 6; k += 1) {
+      const h = await add({
+        title: `Fixture holder ${String(k)}`,
+        sources: [{ kind: "chat", title: "x" }],
+      });
+      await update({ task: h.ref, add_sources: [ticket("fix:DT-15")] });
+      holders.push(h.ref);
+    }
+    const [gone] = await sources(ref);
+    expect(gone).toMatchObject({ captures_to: holders.slice(0, 5), captures_more: 1 });
+    const text = renderResult(
+      "task.get",
+      await call("task.get", { task: ref, sections: ["sources"] }),
+    );
+    expect(text).toContain(`captures ask which of ${holders.slice(0, 5).join(", ")} and 1 more`);
   });
 
   test("a put back with a base from before a later detach is a conflict; without a base it is checked against the link as it is now", async () => {

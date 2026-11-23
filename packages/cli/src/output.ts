@@ -258,12 +258,13 @@ function insideLines(result: Result): string[] {
 }
 
 /** Where captures of a source's item go: one task, or several a capture asks between. */
-function capturesTo(value: unknown): string | undefined {
+function capturesTo(source: Result): string | undefined {
+  const value = source["captures_to"];
   if (!Array.isArray(value) || value.length === 0) return undefined;
   const refs = value.map(String);
-  return refs.length === 1
-    ? `captures go to ${refs.join("")}`
-    : `captures ask which of ${refs.join(", ")}`;
+  const more = typeof source["captures_more"] === "number" ? source["captures_more"] : 0;
+  if (refs.length === 1 && more === 0) return `captures go to ${refs.join("")}`;
+  return `captures ask which of ${refs.join(", ")}${more > 0 ? ` and ${String(more)} more` : ""}`;
 }
 
 /** What the command asked that a command it prints must ask again. */
@@ -391,7 +392,7 @@ export function render(entry: string, result: Result, space: string, asked: Aske
         const facts = [
           typeof key === "string" ? key : undefined,
           typeof source["url"] === "string" ? source["url"] : undefined,
-          capturesTo(source["captures_to"]),
+          capturesTo(source),
           String(source["id"]),
         ].filter((fact) => fact !== undefined);
         const label =

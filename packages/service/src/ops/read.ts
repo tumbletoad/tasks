@@ -199,10 +199,11 @@ const LOG_COUNT: Statement = {
   mode: "get",
 };
 /**
- * Where captures of a source's item go when other tasks hold its key: for a source linked as
- * plain context (its key kept as its reference) and for a detached keyed link, the active tasks
- * that hold the key now, by reference, as a JSON array. Several make a capture ask which. Read
- * each time, so it holds after any change of a holder.
+ * Where captures of a source's item go when this link does not decide it: for a source linked as
+ * plain context (its key kept as its reference) and for a detached keyed link, every active task a
+ * live link to the key's source joins, the read's own task included when another of its links
+ * holds the key, by reference, as a JSON array. Several make a capture ask which. Read each time,
+ * so it holds after any change of a holder.
  */
 const CAPTURES_TO =
   "CASE WHEN ts.removed_at IS NOT NULL OR s.source_key IS NULL THEN (SELECT json_group_array(r) " +
@@ -210,7 +211,7 @@ const CAPTURES_TO =
   "JOIN task_sources hl ON hl.source_id = k.id JOIN tasks h ON h.id = hl.task_id " +
   "WHERE k.source_key = coalesce(s.source_key, s.ref) AND k.deleted_at IS NULL " +
   "AND hl.removed_at IS NULL AND h.deleted_at IS NULL AND h.lifecycle = 'active' " +
-  `AND h.id <> ts.task_id ORDER BY h.ref LIMIT ${String(CAPTURES_TO_MAX)})) END`;
+  "ORDER BY h.ref)) END";
 const SOURCE_COLUMNS =
   "s.id, s.source_key, s.kind, s.title, s.who, s.url, s.at, s.ref, ts.task_id, ts.version, " +
   `ts.removed_at, ${CAPTURES_TO} AS captures_to`;
@@ -355,11 +356,16 @@ export const logOf = (row: Row) => ({
   text: text(row["body"]),
 });
 
-/** The tasks a read names as holding a source's key, when any do. */
-function capturesTo(value: unknown): { captures_to?: string[] } {
+/** The tasks a read names as holding a source's key, when any do, and how many more there are. */
+function capturesTo(value: unknown): { captures_to?: string[]; captures_more?: number } {
   if (typeof value !== "string") return {};
   const refs = (JSON.parse(value) as unknown[]).filter((r): r is string => typeof r === "string");
-  return refs.length === 0 ? {} : { captures_to: refs };
+  if (refs.length === 0) return {};
+  const more = refs.length - CAPTURES_TO_MAX;
+  return {
+    captures_to: refs.slice(0, CAPTURES_TO_MAX),
+    ...(more > 0 ? { captures_more: more } : {}),
+  };
 }
 
 export const sourceOf = (row: Row) => ({

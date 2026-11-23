@@ -173,7 +173,7 @@ a + .muted,
   margin-inline-start: 4px;
 }
 
-[data-part="captures-to"] > a {
+[data-part="captures-to"] > * {
   margin-inline-start: 4px;
 }
 

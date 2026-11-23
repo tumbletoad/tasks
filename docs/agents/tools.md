@@ -1888,6 +1888,7 @@ When `view` is `"digest"`:
 | `task.sources[].at` | string | no | When it was sent |
 | `task.sources[].ref` | string | no | Its key, held by another task |
 | `task.sources[].captures_to` | string[], max 5 items | no | Active tasks with its key: captures go there |
+| `task.sources[].captures_more` | integer, 0 to 9007199254740991 | no | How many more tasks have its key |
 | `task.sources[].removed` | object | no | Detached from the task; put_back_sources brings it back |
 | `task.sources[].removed.at` | string | yes | When, ISO date and time |
 | `task.sources[].removed.by` | string | yes | Actor that detached it |
@@ -2004,6 +2005,7 @@ When `view` is `"sections"`:
 | `sections.sources[].at` | string | no | When it was sent |
 | `sections.sources[].ref` | string | no | Its key, held by another task |
 | `sections.sources[].captures_to` | string[], max 5 items | no | Active tasks with its key: captures go there |
+| `sections.sources[].captures_more` | integer, 0 to 9007199254740991 | no | How many more tasks have its key |
 | `sections.sources[].removed` | object | no | Detached from the task; put_back_sources brings it back |
 | `sections.sources[].removed.at` | string | yes | When, ISO date and time |
 | `sections.sources[].removed.by` | string | yes | Actor that detached it |
@@ -2529,7 +2531,7 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | A1 operations | `task.patch`, `task.context_append`, `task.move`, `source.add`, `source.unlink`, `source.relink`, `task.folder_set`, `task.folder_clear`, `area.create`, `project.create` |
 | Faces | MCP `update_task`, CLI `ttasks set`, UI |
 | Errors | `invalid_input`, `not_found`, `unbound`, `conflict`, `forbidden`, `wrong_tool`, `request_id_conflict`, `ambiguous` |
-| Definition, estimated tokens | 1906, reported |
+| Definition, estimated tokens | 1907, reported |
 | Result budget, estimated tokens | typical 80, max 400 |
 
 ### Input
@@ -2561,8 +2563,8 @@ MCP tool `update_task`, "Update a task": Use to change a task's fields, summary,
 | `add_sources[].who` | string, max 120 | no | Sender or counterpart |
 | `add_sources[].url` | string, max 2048 | no | Link |
 | `add_sources[].at` | string, max 40 | no | When it was sent |
-| `remove_sources` | (string, max 2048)[], max 10 items | no | Sources to detach (ID, key or URL): their next capture makes new work |
-| `put_back_sources` | (string, max 2048)[], max 10 items | no | Detached sources to link again; refused while another active task has the key |
+| `remove_sources` | (string, max 2048)[], max 10 items | no | Sources to detach (ID, key or URL): captures stop finding this task |
+| `put_back_sources` | (string, max 2048)[], max 10 items | no | Detached sources to link again; refused on an active task if another has the key |
 | `base` | string, max 40 | no | as_of: the get_task that showed the field, the add that made it, your set of it |
 | `reason` | string, max 200 | no | Why, shown in history |
 | `request_id` | string, max 64 | yes | New per intended change; reuse it only to retry that call |

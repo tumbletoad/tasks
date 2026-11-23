@@ -933,7 +933,7 @@
             "type": "string"
           },
           "put_back_sources": {
-            "description": "Detached sources to link again; refused while another active task has the key",
+            "description": "Detached sources to link again; refused on an active task if another has the key",
             "items": {
               "maxLength": 2048,
               "type": "string"
@@ -947,7 +947,7 @@
             "type": "string"
           },
           "remove_sources": {
-            "description": "Sources to detach (ID, key or URL): their next capture makes new work",
+            "description": "Sources to detach (ID, key or URL): captures stop finding this task",
             "items": {
               "maxLength": 2048,
               "type": "string"

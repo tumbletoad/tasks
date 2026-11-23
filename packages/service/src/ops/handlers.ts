@@ -1000,9 +1000,12 @@ function keyHeld(error: unknown, task: Id<"t"> | undefined, links: readonly Row[
     held.set(source, [...(held.get(source) ?? []), c.task]);
   }
   if (held.size === 0) return undefined;
+  // A replay answers with the holders the request was refused for: they may hold it no more.
+  const then = error.data["replayed"] === true;
   const said = [...held].map(([source, refs]) => {
     const row = links.find((link) => link["id"] === source);
     const key = typeof row?.["source_key"] === "string" ? row["source_key"] : "Its key";
+    if (then) return `${key} was on ${listed(refs)} when this was decided.`;
     return refs.length === 1
       ? `${key} is on ${listed(refs)} now: captures go there.`
       : `${key} is on ${listed(refs)} now: a capture of it asks which.`;

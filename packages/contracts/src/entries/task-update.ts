@@ -72,12 +72,12 @@ export const TaskUpdateInput = z.strictObject({
   remove_sources: z
     .array(z.string().max(USER_LIMITS.url))
     .max(10)
-    .describe("Sources to detach (ID, key or URL): their next capture makes new work")
+    .describe("Sources to detach (ID, key or URL): captures stop finding this task")
     .optional(),
   put_back_sources: z
     .array(z.string().max(USER_LIMITS.url))
     .max(10)
-    .describe("Detached sources to link again; refused while another active task has the key")
+    .describe("Detached sources to link again; refused on an active task if another has the key")
     .optional(),
   base: Base.optional(),
   reason: safeText(200).describe("Why, shown in history").optional(),

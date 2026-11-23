@@ -261,6 +261,7 @@
   "source.putBack": "Put back",
   "source.notPutBack": "The source was not put back. Try again.",
   "source.capturesTo": "{count, plural, one {· captures go to} other {· a capture asks which of}}",
+  "source.capturesMore": "and {count, number} more",
   "source.kind": "{kind, select, email {Mail} chat {Chat} ticket {Ticket} pr {Pull request} issue {Issue} doc {Document} calendar {Event} crash {Crash} session {Session} book {Book} web {Web page} other {Source}}",
 
   "place.missing": "· not found on this machine",

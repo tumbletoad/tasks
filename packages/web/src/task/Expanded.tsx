@@ -188,7 +188,9 @@ function SourceLine({
             })}
           </span>
         )}
-        {source.captures_to === undefined ? null : <CapturesTo tasks={source.captures_to} />}
+        {source.captures_to === undefined ? null : (
+          <CapturesTo tasks={source.captures_to} more={source.captures_more ?? 0} />
+        )}
       </span>
       {acts === undefined ? null : <span className={styles.acts}>{acts}</span>}
     </li>
@@ -197,19 +199,20 @@ function SourceLine({
 
 /**
  * Where captures of a source's item go: the active tasks that hold its key now, as the card last
- * read them, each a link. Several make a capture ask which.
+ * read them, each a link, and how many more there are. Several make a capture ask which.
  */
-function CapturesTo({ tasks }: { readonly tasks: readonly string[] }) {
+function CapturesTo({ tasks, more }: { readonly tasks: readonly string[]; readonly more: number }) {
   const t = useT();
   const { live } = useContext(Session);
   return (
     <span className={styles.muted} data-part="captures-to">
-      {t("source.capturesTo", { count: tasks.length })}
+      {t("source.capturesTo", { count: tasks.length + more })}
       {tasks.map((task) => (
         <Link key={task} to="/s/$space/task/$task" params={{ space: live.spaceId ?? "", task }}>
           {task}
         </Link>
       ))}
+      {more > 0 ? <span>{t("source.capturesMore", { count: more })}</span> : null}
     </span>
   );
 }

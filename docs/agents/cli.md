@@ -206,8 +206,8 @@ Usage: `ttasks set [<task>] <key>=<value>... [flags]`
 |---|---|---|---|
 | `<task>` | `task` | string | Task ref (M-14) or ID; default: this session's task |
 | `--clear` | `clear` | "summary" \| "priority" \| "effort" \| "due" \| "waiting_on" \| "folder" \| "focus" | Fields to clear (repeatable) |
-| `--remove-source` | `remove_sources` | string | Sources to detach (ID, key or URL): their next capture makes new work (repeatable) |
-| `--put-back-source` | `put_back_sources` | string | Detached sources to link again; refused while another active task has the key (repeatable) |
+| `--remove-source` | `remove_sources` | string | Sources to detach (ID, key or URL): captures stop finding this task (repeatable) |
+| `--put-back-source` | `put_back_sources` | string | Detached sources to link again; refused on an active task if another has the key (repeatable) |
 | `--reason` | `reason` | string | Why, shown in history |
 | `--mode` | `mode` | "apply" | Always apply in this build |
 | `title=` | `set.title` | string | Title: read skill writing-tasks first |

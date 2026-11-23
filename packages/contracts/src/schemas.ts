@@ -451,6 +451,7 @@ export const SourceOutput = z.strictObject({
     .max(CAPTURES_TO_MAX)
     .describe("Active tasks with its key: captures go there")
     .optional(),
+  captures_more: Count.describe("How many more tasks have its key").optional(),
   removed: z
     .strictObject({
       at: z.string().describe("When, ISO date and time"),
