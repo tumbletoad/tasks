@@ -80,9 +80,14 @@ export type Outcome =
   | { readonly kind: "resnapshot"; readonly reason: ResnapshotReason }
   /**
    * A snapshot of another copy of the space than the one this tab loaded (a claim, a restore,
-   * another folder of it opened): nothing of it applied. `was` is the copy the tab shows.
+   * another folder of it opened): nothing of it applied. `was` is the copy the tab shows; none
+   * when the tab had loaded nothing and expected the copy the person's Open folder answered.
    */
-  | { readonly kind: "replaced"; readonly was: SpaceHead; readonly now: SpaceHead };
+  | {
+      readonly kind: "replaced";
+      readonly was: SpaceHead | undefined;
+      readonly now: SpaceHead;
+    };
 
 /** What the working set looks like to a reader: immutable maps. */
 export interface Held {
@@ -110,7 +115,10 @@ function mapOf(type: RowType, rows: readonly AnyRow[]): Map<string, AnyRow> {
 export class LiveCore {
   /** The tab's space: from its route, or the first snapshot's. */
   #space: string | undefined;
-  /** The copy of the space the tab loaded: its first snapshot's, for the tab's whole life. */
+  /**
+   * The copy of the space the tab loaded, for the tab's whole life: before its first snapshot,
+   * the one it was opened for (the copy the person's Open folder answered), if any.
+   */
   #copy: string | undefined;
   #head: SpaceHead | undefined;
   #cursor: Cursor | undefined;
@@ -122,17 +130,23 @@ export class LiveCore {
   readonly #dirty = new Set<RowType>();
   #published: Held | undefined;
 
-  constructor(space?: string) {
+  constructor(space?: string, copy?: string) {
     this.#space = space;
+    this.#copy = copy;
   }
 
   get space(): string | undefined {
     return this.#space;
   }
 
-  /** The copy of the space the tab loaded, once its first snapshot named it. */
+  /** The copy of the space the tab loaded, or was opened for. */
   get copy(): string | undefined {
     return this.#copy;
+  }
+
+  /** Whether a snapshot of the space was applied. */
+  get loaded(): boolean {
+    return this.#head !== undefined;
   }
 
   /** Whether a fresh snapshot was asked for and has not arrived. */
@@ -176,7 +190,7 @@ export class LiveCore {
     // Another space's snapshot never lands in this tab, nor another copy's of its space.
     if (this.#space !== undefined && message.space.id !== this.#space) return { kind: "ignored" };
     const was = this.#head;
-    if (was !== undefined && message.space.copy !== this.#copy) {
+    if (this.#copy !== undefined && message.space.copy !== this.#copy) {
       return { kind: "replaced", was, now: message.space };
     }
     this.#copy ??= message.space.copy;

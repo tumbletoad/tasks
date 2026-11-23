@@ -164,16 +164,19 @@ export class Refused extends Error {
 export interface MadeSpace {
   readonly id: string;
   readonly name: string;
+  /** The copy of the space the folder is served as: the tab that loads it asks for that copy. */
+  readonly copy?: string;
   /** The space will not reopen after a restart: why, and what to do. */
   readonly notRemembered?: string;
 }
 
 function madeSpace(value: unknown): MadeSpace {
-  const { id, name, not_remembered: line } = (value ?? {}) as Record<string, unknown>;
+  const { id, name, copy, not_remembered: line } = (value ?? {}) as Record<string, unknown>;
   if (typeof id !== "string" || typeof name !== "string") throw new Refused(200, "unknown");
   return {
     id,
     name,
+    ...(typeof copy === "string" && /^[0-9a-f]{24}$/u.test(copy) ? { copy } : {}),
     ...(typeof line === "string" && line.length <= 2000 ? { notRemembered: line } : {}),
   };
 }

@@ -42,8 +42,12 @@ export interface Gone {
   readonly folder?: string;
 }
 
-/** What a snapshot of `now` says happened to the copy `was` a tab loaded. */
-export function goneOf(was: SpaceHead, now: SpaceHead): Gone {
+/**
+ * What a snapshot of `now` says happened to the copy `was` a tab loaded; a tab that loaded nothing
+ * yet was opened for another copy than `now`.
+ */
+export function goneOf(was: SpaceHead | undefined, now: SpaceHead): Gone {
+  if (was === undefined) return { why: "replaced" };
   const folder = now.folder === undefined ? {} : { folder: now.folder };
   if (now.restored !== undefined) return { why: "restored_copy", ...folder };
   if (was.folder !== now.folder) return { why: "other_folder", ...folder };
@@ -99,11 +103,16 @@ export type Queued =
   | SnapshotMessage
   | BatchMessage
   | { readonly type: "unreadable" }
-  | { readonly type: "error"; readonly code: string };
+  | { readonly type: "error"; readonly code: string; readonly reason?: string };
 
 export interface StoreOptions {
   /** The tab's space, from its route; a tab opened without one takes the first snapshot's. */
   readonly space?: string | undefined;
+  /**
+   * The copy of the space the tab was opened for: the one the person's Open folder answered. Any
+   * other copy served by its first snapshot is not shown.
+   */
+  readonly copy?: string | undefined;
   readonly frames: FrameClock;
   /** The core asks for a fresh snapshot: the transport subscribes again without a cursor. */
   readonly onResnapshot: (reason: ResnapshotReason) => void;
@@ -160,7 +169,7 @@ export class LiveStore {
 
   constructor(options: StoreOptions) {
     this.#options = options;
-    this.#core = new LiveCore(options.space);
+    this.#core = new LiveCore(options.space, options.copy);
     this.#queue = new FrameQueue(options.frames, (items) => {
       this.#drain(items);
     });
@@ -264,9 +273,14 @@ export class LiveStore {
     this.#queue.clear();
   }
 
-  /** The copy of the space the tab loaded, once its first snapshot named it. */
+  /** The copy of the space the tab loaded, or was opened for. */
   get copy(): string | undefined {
     return this.#core.copy;
+  }
+
+  /** Whether a snapshot of the space was applied. */
+  get loaded(): boolean {
+    return this.#core.loaded;
   }
 
   /**
@@ -342,9 +356,10 @@ export class LiveStore {
     const before = this.#core.space;
     for (const item of items) {
       if (item.type === "error") {
-        // A tab that showed its space is told it was closed, and keeps what it shows.
+        // A tab that showed its space, or was opened for one copy of it, is told it was closed or
+        // that another copy is served, and keeps what it shows.
         if (this.#core.copy !== undefined) {
-          ended = { why: "closed" };
+          ended = { why: item.reason === "replaced" ? "replaced" : "closed" };
           break;
         }
         phase = "no_space";

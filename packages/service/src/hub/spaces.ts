@@ -715,6 +715,12 @@ export class SpaceManager {
     return this.#space(entry).folder;
   }
 
+  /** The copy a registered space is served as (copyToken), while it is open or read-only. */
+  copyOf(entry: number): string | undefined {
+    const space = this.#space(entry);
+    return space.state === "open" || space.state === "read_only" ? space.copy : undefined;
+  }
+
   /**
    * Serves the space at `path` (`ttasks space open`, `create`, `restore --to`): a folder already
    * registered opens again when it is closed or unavailable, a new one is added. Resolves with its

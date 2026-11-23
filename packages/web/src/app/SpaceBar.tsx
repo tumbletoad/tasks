@@ -3,7 +3,7 @@
 // change, in the service's words; and a copy closed or replaced since the tab loaded it, with the
 // way to load what the space is now.
 import { useT } from "../i18n/intl.tsx";
-import type { LiveState } from "../store/store.ts";
+import type { Gone, LiveState } from "../store/store.ts";
 import css from "./SpaceBar.module.css";
 import { classes } from "./css.ts";
 
@@ -21,7 +21,7 @@ function commandWord(name: string, id: string): string {
 export function SpaceBar({ state }: { readonly state: LiveState }) {
   const t = useT();
   const head = state.space;
-  if (head === undefined) return null;
+  if (head === undefined) return state.gone === undefined ? null : <NotLoaded gone={state.gone} />;
   const name = head.name;
   const folder = head.folder ?? "";
   if (state.gone !== undefined) {
@@ -64,6 +64,29 @@ export function SpaceBar({ state }: { readonly state: LiveState }) {
           {why ?? t("space.readOnlyNote")}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * A tab sent to the folder the person opened, whose space was closed, or is served from another
+ * copy, before the tab loaded anything: it shows nothing of it.
+ */
+function NotLoaded({ gone }: { readonly gone: Gone }) {
+  const t = useT();
+  return (
+    <div className={styles.bar} role="status" data-part="gone" dir="auto">
+      <p className={styles.line}>
+        {t("space.goneBeforeLoad", { why: gone.why === "closed" ? "closed" : "other" })}
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          location.reload();
+        }}
+      >
+        {t("space.goneBeforeLoadLoad")}
+      </button>
     </div>
   );
 }

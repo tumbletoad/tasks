@@ -1093,6 +1093,7 @@ export async function startService(options: StartOptions = {}): Promise<RunningS
         layout,
         userHome: options.agentApps?.home ?? personHome,
         spaces: hub.spaces,
+        copyOf: (entry) => hosted.copyOf(entry),
       });
       const apps = agentAppVerbs({
         platform,

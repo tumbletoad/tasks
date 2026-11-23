@@ -108,7 +108,10 @@ export function Shell({ space }: { readonly space: string }) {
   }, [path]);
 
   let content: ReactNode;
-  if (state.phase === "starting" || state.phase === "connecting") {
+  if (state.gone !== undefined && state.space === undefined) {
+    // The bar above says why nothing was loaded.
+    content = null;
+  } else if (state.phase === "starting" || state.phase === "connecting") {
     content = <p className={styles.line}>{t("app.starting")}</p>;
   } else if (state.phase === "no_space") {
     content = <p className={styles.line}>{t("app.noSpace")}</p>;

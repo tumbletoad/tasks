@@ -185,3 +185,58 @@ describe("[A2.3.10.5.copies.page] a tab shows one copy of its space and writes o
     },
   );
 });
+
+describe("[A2.3.10.5.copies.first-load] a tab sent to the folder the person opened loads that copy or nothing", () => {
+  test(
+    "Open folder answers the copy the folder is served as, and a first subscription for it gets that copy; once another copy is served instead, the same subscription gets the word that it was replaced and no snapshot",
+    SLOW,
+    async () => {
+      const w = await httpWorld("first-load");
+      worlds.push(w);
+      const user = await w.user();
+      const [mira] = (
+        (await user.call("space/list", {}, CALL)) as { spaces: { id: string; folder: string }[] }
+      ).spaces;
+      if (mira === undefined) throw new Error("no Mira");
+      const backup = (await user.call("space/backup", { space: mira.folder }, CALL)) as {
+        backup: { name: string };
+      };
+      const copyFolder = join(w.root, "s", "mira-copy");
+      await user.call(
+        "space/restore",
+        { backup: backup.backup.name, to: copyFolder, of: mira.folder },
+        CALL,
+      );
+      await user.call("space/close", { space: mira.folder }, CALL);
+      const { token } = await signIn(w);
+      const opened = JSON.parse(
+        (await post(w.port(), "/api/v1/space/open", { folder: copyFolder }, { token })).body,
+      ) as { result: { id: string; copy?: string } };
+      expect(opened.result).toMatchObject({
+        id: mira.id,
+        copy: expect.stringMatching(/^[0-9a-f]{24}$/u),
+      });
+      const copy = opened.result.copy;
+
+      const feed = await openFeed(w.port(), token);
+      try {
+        feed.send({ type: "subscribe", space: mira.id, copy });
+        const first = await snapshotOf(feed);
+        expect(first["type"]).toBe("snapshot");
+        expect((first["space"] as Head).copy).toBe(copy);
+
+        // Another window closes the copy and opens Mira's own folder before this tab loads.
+        await user.call("space/close", { space: copyFolder }, CALL);
+        await user.call("space/open", { path: mira.folder }, CALL);
+        feed.send({ type: "subscribe", space: mira.id, copy });
+        expect(await snapshotOf(feed)).toEqual({
+          type: "error",
+          code: "space_unavailable",
+          reason: "replaced",
+        });
+      } finally {
+        feed.ws.close();
+      }
+    },
+  );
+});

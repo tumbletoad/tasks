@@ -494,4 +494,37 @@ describe("[A5.3.15.web.store.copy] a tab keeps the copy of its space it loaded",
     expect(store.getState().gone).toEqual({ why: "closed" });
     expect(store.getState().tasks).toBe(shown);
   });
+
+  test("a tab opened for the copy the person's Open folder answered loads that copy, and nothing of another: a snapshot of another copy, or the service's word that another is served, ends it with nothing shown", () => {
+    const { snapshot } = seeded();
+    const opened = (frames: FakeFrames) =>
+      new LiveStore({ space: SPACE, copy: "a".repeat(24), frames, onResnapshot: () => undefined });
+
+    const frames = new FakeFrames();
+    const right = opened(frames);
+    expect(right.copy).toBe("a".repeat(24));
+    expect(right.loaded).toBe(false);
+    right.push(copied(snapshot, "a".repeat(24)));
+    frames.frame();
+    expect(right.loaded).toBe(true);
+    expect(right.getState().gone).toBeUndefined();
+    expect(right.getState().tasks.size).toBeGreaterThan(0);
+
+    const other = opened(frames);
+    other.push(copied(snapshot, "b".repeat(24)));
+    frames.frame();
+    expect(other.getState().gone).toEqual({ why: "replaced" });
+    expect(other.getState().space).toBeUndefined();
+    expect(other.getState().tasks.size).toBe(0);
+
+    const refused = opened(frames);
+    refused.push({ type: "error", code: "space_unavailable", reason: "replaced" });
+    frames.frame();
+    expect(refused.getState().gone).toEqual({ why: "replaced" });
+    const closed = opened(frames);
+    closed.push({ type: "error", code: "space_unavailable" });
+    frames.frame();
+    expect(closed.getState().gone).toEqual({ why: "closed" });
+    expect(closed.getState().space).toBeUndefined();
+  });
 });

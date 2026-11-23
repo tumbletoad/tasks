@@ -321,6 +321,8 @@ export interface BatchMessage {
 export interface ErrorMessage {
   readonly type: "error";
   readonly code: string;
+  /** `replaced`: the tab was opened for another copy of the space than the one served. */
+  readonly reason?: string;
 }
 
 export interface HelloMessage {
@@ -589,7 +591,11 @@ export function parseMessage(text: unknown): FeedMessage | { type: "unreadable" 
       return view === undefined ? undefined : { type: "agents", view };
     }
     case "error":
-      return { type: "error", code: isString(value["code"]) ? value["code"] : "" };
+      return {
+        type: "error",
+        code: isString(value["code"]) ? value["code"] : "",
+        ...(value["reason"] === "replaced" ? { reason: "replaced" } : {}),
+      };
     case "machine": {
       const list = value["preferences"];
       if (!Array.isArray(list)) return undefined;

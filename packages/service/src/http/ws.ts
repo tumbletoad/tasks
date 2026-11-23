@@ -538,6 +538,14 @@ class FeedSocket {
       await this.#send({ type: "error", code }).catch(() => undefined);
       return;
     }
+    // A tab that loads a space for the first time with the copy the person's Open folder answered:
+    // another copy served by now is not the folder they chose, and nothing of it is sent.
+    if (cursor === undefined && copy !== undefined && copy !== found.copy) {
+      await this.#send({ type: "error", code: "space_unavailable", reason: "replaced" }).catch(
+        () => undefined,
+      );
+      return;
+    }
     const reader = found.reader;
     try {
       let start: Cursor | undefined = cursor;

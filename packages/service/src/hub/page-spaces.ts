@@ -15,6 +15,8 @@ export interface PageSpacesHost {
   /** The account's home folder: `~` in a folder the page shows or sends. */
   readonly userHome: string | undefined;
   readonly spaces: SpaceVerbsHost;
+  /** The copy a registered space is served as now (SpaceManager.copyOf). */
+  readonly copyOf: (entry: number) => string | undefined;
 }
 
 type Verb = (params: JsonObject, cls: ConnectionClass) => Promise<unknown>;
@@ -35,20 +37,26 @@ const nameOf = (params: JsonObject): string => {
 };
 
 /**
- * A space as the page needs it: its ID and name, and when machine.toml could not record it, the
- * line that says a restart will not reopen it and what to do.
+ * A space as the page needs it: its ID and name, the copy the folder is served as, which the tab
+ * that loads it next asks for, and when machine.toml could not record it, the line that says a
+ * restart will not reopen it and what to do.
  */
-function described(result: unknown): { id: string; name: string; not_remembered?: string } {
+function described(
+  result: unknown,
+  copyOf: (entry: number) => string | undefined,
+): { id: string; name: string; copy?: string; not_remembered?: string } {
   const { space, not_remembered: line } = result as {
-    space?: { id?: unknown; name?: unknown };
+    space?: { id?: unknown; name?: unknown; entry?: unknown };
     not_remembered?: unknown;
   };
   if (typeof space?.id !== "string" || typeof space.name !== "string") {
     throw new AppError({ code: "internal", message: "The space has no ID." });
   }
+  const copy = typeof space.entry === "number" ? copyOf(space.entry) : undefined;
   return {
     id: space.id,
     name: space.name,
+    ...(copy === undefined ? {} : { copy }),
     ...(typeof line === "string" ? { not_remembered: line } : {}),
   };
 }
@@ -122,13 +130,13 @@ export function pageSpaceVerbs(host: PageSpacesHost): {
         { name, path, ...(prefix === undefined || prefix === "" ? {} : { ref_prefix: prefix }) },
         cls,
       );
-      return described(result);
+      return described(result, host.copyOf);
     },
     open: async (params, cls) => {
       const path = folderOf(params, "folder");
       if (path === undefined) throw invalid("folder", "Expected a folder");
       try {
-        return described(await verb("space/open")({ path }, cls));
+        return described(await verb("space/open")({ path }, cls), host.copyOf);
       } catch (error) {
         throw shownIn(error, host.userHome, platform);
       }

@@ -43,6 +43,8 @@
   "space.restoredNote": "This is a copy of {name} restored {at, date, medium} at {at, time, short}{backup, select, none {} other { from the backup {backup}}}, in {folder}. Nothing in it can be changed. When you are done looking, close it: {cli} space close {space}. Or claim it, and it is {name} from then on: {cli} space claim {space}. The folder {name} was in before is then no longer it.",
   "space.gone": "{why, select, closed {{name} was closed since this page loaded it.} claimed {This copy of {name} was claimed since this page loaded it: it is {name} now.} restored {{name} was restored from a backup since this page loaded it.} restored_copy {{name} is open from a restored copy now, in {folder}.} other_folder {{name} is open from another folder now, {folder}.} other {{name} was closed, restored or claimed since this page loaded it.}} Nothing more is saved from this page. What you typed here stays, to copy.",
   "space.goneLoad": "Load {name} as it is now",
+  "space.goneBeforeLoad": "{why, select, closed {This space was closed before this page could load the folder you opened.} other {Another copy of this space was opened before this page could load the folder you opened.}} Nothing of it was loaded here.",
+  "space.goneBeforeLoadLoad": "Load the space as it is now",
   "space.madeDefault": "New tabs open {name}.",
   "space.defaultFailed": "The default space was not changed. Try again.",
   "space.listFailed": "The spaces could not be listed.",

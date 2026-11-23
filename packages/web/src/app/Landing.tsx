@@ -11,6 +11,7 @@ import css from "./Landing.module.css";
 import { useAuth, useMachineApi } from "./session.tsx";
 import { AgentApps } from "./AgentApps.tsx";
 import { NotOpenNotes } from "./NotOpen.tsx";
+import { openedFor } from "./opened.ts";
 import { SpaceForm, type SpaceFormMode } from "./SpaceForm.tsx";
 import {
   isServed,
@@ -127,6 +128,7 @@ function FirstStart({ closed }: { readonly closed: readonly NotOpen[] }) {
             firstStart
             headingLevel={1}
             onDone={() => {
+              openedFor(step.made.id, step.made.copy);
               void navigate({
                 to: "/s/$space/$view",
                 params: { space: step.made.id, view: LANDING },

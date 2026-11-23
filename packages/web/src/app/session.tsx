@@ -14,6 +14,7 @@ import { Live } from "../live.ts";
 import { changeLogOf } from "./changes.ts";
 import { forgetGone } from "./leftovers.ts";
 import { useMachine } from "./machine.ts";
+import { forgetOpened, openedCopy } from "./opened.ts";
 
 /** The browser's sign-in: its token, the build that served the page, and the way out. */
 export interface Auth {
@@ -64,6 +65,8 @@ export function SpaceSession({
     const live = new Live({
       api,
       route: { space },
+      // The copy the person's Open folder answered, when they came here from it.
+      copy: openedCopy(space),
       build: auth.build,
       onSpace: () => undefined,
       onSignedOut: auth.signedOut,
@@ -80,8 +83,10 @@ export function SpaceSession({
     // it lacks may be in the copy the text was typed in, so nothing is forgotten there.
     const stopWatching = live.subscribe(() => {
       const state = live.getState();
-      if (state.phase !== "live") return;
+      if (state.phase !== "live" && state.gone === undefined) return;
       stopWatching();
+      forgetOpened(space);
+      if (state.gone !== undefined) return;
       if (state.space?.read_only !== undefined || state.space?.restored !== undefined) return;
       void forgetGone(space, api, (task) => live.getState().tasks.has(task));
     });

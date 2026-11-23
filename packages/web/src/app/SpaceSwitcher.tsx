@@ -23,6 +23,7 @@ import { useToast } from "./frame.ts";
 import { CheckIcon, ChevronIcon } from "./Icons.tsx";
 import { useAuth, useMachineApi } from "./session.tsx";
 import { NotOpenNotes } from "./NotOpen.tsx";
+import { openedFor } from "./opened.ts";
 import { SpaceForm, type SpaceFormMode } from "./SpaceForm.tsx";
 import setup from "./Setup.module.css";
 import {
@@ -272,6 +273,7 @@ export function SpaceSwitcher({
               onMade={(made) => {
                 setAdding(undefined);
                 if (made.notRemembered !== undefined) say(made.notRemembered);
+                openedFor(made.id, made.copy);
                 // A folder of the tab's own space (its copy opened after the space was closed):
                 // the tab loads it afresh, as the session it had was of the copy that closed.
                 if (made.id === space) {

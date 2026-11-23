@@ -37,6 +37,8 @@ const CLOSE_SIGNED_OUT = 4401;
 export interface LiveOptions {
   readonly api: Api;
   readonly route: PageRoute;
+  /** The copy of the route's space the tab was opened for (StoreOptions `copy`). */
+  readonly copy?: string | undefined;
   /** The build the page was served with: a `hello` with another shows the reload bar. */
   readonly build: string;
   /** The snapshot named the tab's space (a tab opened at `/`): the route takes its ID. */
@@ -75,6 +77,7 @@ export class Live {
     this.#options = options;
     this.store = new LiveStore({
       space: options.route.space,
+      copy: options.copy,
       frames: options.frames ?? browserFrames(),
       onResnapshot: () => {
         if (!this.#greeting) this.#subscribe(undefined);
@@ -320,9 +323,10 @@ export class Live {
     const space = this.store.space;
     if (space !== undefined) message["space"] = space;
     if (cursor !== undefined) message["cursor"] = cursor;
-    // The copy the tab loaded: another one served now answers with a snapshot, never batches.
+    // The copy the tab loaded: another one served now answers with a snapshot, never batches. A
+    // tab that loaded nothing yet asks for the copy it was opened for, and gets nothing of another.
     const copy = this.store.copy;
-    if (cursor !== undefined && copy !== undefined) message["copy"] = copy;
+    if (copy !== undefined && (cursor !== undefined || !this.store.loaded)) message["copy"] = copy;
     // Without a socket, the next `hello` subscribes: from no cursor while a snapshot is awaited.
     if (this.#ws?.readyState === 1) this.#ws.send(JSON.stringify(message));
   }
