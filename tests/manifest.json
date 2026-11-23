@@ -4261,6 +4261,14 @@
       "profiles": ["v1"]
     },
     {
+      "id": "A2.3.10.5.copies.feed-settles",
+      "title": "A tab's feed waits while its space is opened again: a read a claim's close interrupted and a subscription that comes while the copy opens again send nothing, the claimed copy then comes as a snapshot of another copy, and an explicit close is said as one",
+      "source": "A2 3.10.5, A5 3.15",
+      "owner": "M3",
+      "kind": "ci",
+      "profiles": ["v1"]
+    },
+    {
       "id": "A2.3.10.5.copies.e2e",
       "title": "In Chromium and Firefox against the real service, at 1,440 and 390 px without sideways scroll: Open folder with a restored copy while its space is open is refused with what is open, what the folder is and what to do; a tab whose space is closed says so; the copy opened alone says it is a restored copy with its folder, backup and ways out, in the switcher too; an edit there keeps the words with the reason, Copy and Discard and no Try again, also over a reload; a claim of the copy tells the open tab, whose Undo then writes nothing, and loading it again shows the space as it is now",
       "source": "A2 3.10.5, A5 3.11, A1 3.18",

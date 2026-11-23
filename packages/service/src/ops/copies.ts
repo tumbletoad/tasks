@@ -49,6 +49,13 @@ const isServed = (copy: Copy): boolean =>
 const servingOf = <S extends Copy>(copies: readonly S[]): S | undefined =>
   copies.find(isServed) ?? copies[0];
 
+/**
+ * The entries of the space `id`: by the ID read from each folder, or for one that is being opened
+ * again (a claim, a restore in place), by the ID its entry names.
+ */
+const entriesOf = <S extends Copy>(spaces: readonly S[], id: string): S[] =>
+  spaces.filter((space) => (space.id ?? space.registered) === id);
+
 /** Whether two folders are one, as the OS compares names: case folded on Windows and macOS. */
 export function sameFolder(
   a: string,
@@ -84,7 +91,7 @@ export function findSpace<S extends Copy>(spaces: readonly S[], wanted: string):
   if (isAbsolute(wanted)) {
     return spaces.find((space) => space.folder !== undefined && sameFolder(space.folder, wanted));
   }
-  const byId = spaces.filter((space) => space.id === wanted);
+  const byId = entriesOf(spaces, wanted);
   if (byId.length > 0) return servingOf(byId);
   const folded = wanted.toLowerCase();
   const groups = bySpace(spaces.filter((space) => space.name?.toLowerCase() === folded));
@@ -94,7 +101,7 @@ export function findSpace<S extends Copy>(spaces: readonly S[], wanted: string):
 
 /** The entry of the space `id` among `spaces`: the one that serves it, else the first listed. */
 export function copyOf<S extends Copy>(spaces: readonly S[], id: string): S | undefined {
-  return servingOf(spaces.filter((space) => space.id === id));
+  return servingOf(entriesOf(spaces, id));
 }
 
 /**

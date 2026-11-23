@@ -197,6 +197,17 @@ class FeedSocket {
       }
     | undefined;
   #subscribing = false;
+  /**
+   * A subscription that came while its space was being opened again (a claim, a restore in place,
+   * a recheck): the space's poll takes it up again once the space has settled.
+   */
+  #waiting:
+    | {
+        readonly ref: string;
+        readonly cursor: Cursor | undefined;
+        readonly copy: string | undefined;
+      }
+    | undefined;
   /** The installed version this page was last told of. */
   #installed: string | undefined;
   /** The tab shows an Agents page and is visible: only then is it sent the monitor's view. */
@@ -523,6 +534,13 @@ class FeedSocket {
     this.#unsubscribe();
     const generation = ++this.#generation;
     const found = this.#find(ref);
+    if (found === undefined && ref !== undefined && this.#settling(ref)) {
+      // Not served for a moment: what it is once it settles decides what the tab is told.
+      this.#waiting = { ref, cursor, copy };
+      this.#space = ref;
+      this.#hub.watch(this);
+      return;
+    }
     if (
       found === undefined ||
       found === "ambiguous" ||
@@ -594,11 +612,26 @@ class FeedSocket {
     this.#space = undefined;
     this.#cursor = undefined;
     this.#facts = undefined;
+    this.#waiting = undefined;
+  }
+
+  /** Whether the space `ref` (its ID) is being closed or opened again now. */
+  #settling(ref: string): boolean {
+    const state = copyOf(this.#hub.options.host.spaces(), ref)?.state;
+    return state === "opening" || state === "closing";
   }
 
   /** Sends the batches after the cursor until it is current. One run at a time. */
   pump(): void {
     if (this.#closed || this.#space === undefined) return;
+    const waiting = this.#waiting;
+    if (waiting !== undefined) {
+      if (this.#settling(waiting.ref)) return;
+      this.#waiting = undefined;
+      this.#wanted ??= waiting;
+      void this.#nextSubscription();
+      return;
+    }
     if (this.#pumping) {
       this.#again = true;
       return;
@@ -628,7 +661,8 @@ class FeedSocket {
       // poll goes on.
       const space = copyOf(this.#hub.options.host.spaces(), spaceId);
       if (space?.state === "opening" || space?.state === "closing") return;
-      if (space?.reader === undefined) {
+      const reader = space?.reader;
+      if (space === undefined || reader === undefined) {
         this.#unsubscribe();
         await this.#send({ type: "error", code: "space_unavailable" }).catch(() => undefined);
         return;
@@ -636,7 +670,7 @@ class FeedSocket {
       let read;
       try {
         const here = this.#hub.here();
-        read = await readBatch(space.reader, cursor.seq, {
+        read = await readBatch(reader, cursor.seq, {
           ...(here === undefined ? {} : { here }),
           ...(this.#hub.options.visible === undefined
             ? {}
@@ -644,6 +678,9 @@ class FeedSocket {
         });
       } catch {
         if (this.#isClosed() || generation !== this.#generation) return;
+        // A read the space's close interrupted (a claim, a restore in place, a close) says nothing
+        // of what the space is now: the next poll reads that once it has settled.
+        if (copyOf(this.#hub.options.host.spaces(), spaceId)?.reader !== reader) return;
         this.#hub.options.log({ ev: "http.feed_failed", stage: "batch" });
         this.#unsubscribe();
         await this.#send({ type: "error", code: "space_unavailable" }).catch(() => undefined);
@@ -655,7 +692,7 @@ class FeedSocket {
       if (!sameAuthority(cursor, head.cursor) || facts !== this.#facts) {
         // An epoch or incarnation change always means a fresh snapshot (A1 3.7), and so does
         // another copy of the space, or another reason it takes no change.
-        const snapshot = await readSnapshot(space.reader, this.#hub.here());
+        const snapshot = await readSnapshot(reader, this.#hub.here());
         if (generation !== this.#generation) return;
         await this.#sendSnapshot(
           snapshot,

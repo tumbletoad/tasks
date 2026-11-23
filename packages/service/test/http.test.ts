@@ -824,3 +824,121 @@ describe("[A2.3.8.http.feed] a peer that reads nothing or answers nothing", () =
     expect(silent.state.terminated).toBe(true);
   });
 });
+
+describe("[A2.3.10.5.copies.feed-settles] a tab's feed waits while its space is opened again, and says what it is once it has settled", () => {
+  test("a read a claim's close interrupted, and a subscription that comes while the copy opens again, send nothing; the claimed copy then comes as a snapshot of another copy; an explicit close is said as one", async () => {
+    const ID = "sp_00000000000000000000000000";
+    const head = {
+      space_id: ID,
+      name: "Mira",
+      ref_prefix: "M",
+      authority_epoch: 1,
+      authority_incarnation: "ai_x",
+      last_seq: 5,
+    };
+    /** A reader of one copy; `fail` makes its reads fail, as a close does to a read under way. */
+    const readerOf = (epoch: number) => {
+      const state = { fail: false };
+      const read = () => ({
+        ...head,
+        authority_epoch: epoch,
+        authority_incarnation: `ai_${String(epoch)}`,
+      });
+      return {
+        state,
+        get: () => (state.fail ? Promise.reject(new Error("closed")) : Promise.resolve(read())),
+        transaction: (_mode: string, statements: unknown[]) =>
+          state.fail
+            ? Promise.reject(new Error("closed"))
+            : Promise.resolve([read(), ...statements.slice(1).map(() => [])]),
+      };
+    };
+    const first = readerOf(1);
+    // The restored copy the tab shows, as the space manager serves it.
+    const entry: Record<string, unknown> = {
+      id: ID,
+      registered: ID,
+      name: "Mira",
+      state: "read_only",
+      reason: "read_only_copy",
+      reader: first,
+      folder: "/fixture/mira-copy",
+      copy: "a".repeat(24),
+      restored: { at: "2026-11-23T09:00:00.000Z" },
+    };
+    const original = {
+      id: ID,
+      registered: ID,
+      name: "Mira",
+      state: "closed",
+      folder: "/fixture/mira",
+    };
+    const hub = new FeedHub({
+      host: { spaces: () => [original, entry] as never[] },
+      limits: DEFAULT_HTTP_LIMITS,
+      timers: testClock<HttpTimerKind>({ virtual: "all" }).timers,
+      log: () => undefined,
+      build: { version: "0.0.0", build: "source" },
+      now: () => 0,
+      live: () => true,
+    });
+    const sent: Record<string, unknown>[] = [];
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    const ws = {
+      bufferedAmount: 0,
+      on: (event: string, handler: (...args: unknown[]) => void) => {
+        handlers.set(event, handler);
+      },
+      send: (text: string, done: (error?: Error) => void) => {
+        sent.push(JSON.parse(text) as Record<string, unknown>);
+        queueMicrotask(() => {
+          done();
+        });
+      },
+      ping: () => undefined,
+      close: () => undefined,
+      terminate: () => undefined,
+    };
+    hub.attach(ws as never, "gr_x", 1);
+    const settle = async () => {
+      for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve));
+    };
+    const message = (value: unknown) => {
+      handlers.get("message")?.(Buffer.from(JSON.stringify(value)), false);
+    };
+    message({ type: "subscribe", space: ID });
+    await settle();
+    const loaded = sent.find((m) => m["type"] === "snapshot");
+    expect((loaded?.["space"] as { copy: string }).copy).toBe("a".repeat(24));
+    const count = sent.length;
+
+    // The claim closes the copy while a read is under way: the read fails, then the entry is
+    // opened again, with no ID of its own until it has.
+    first.state.fail = true;
+    hub.poke(ID);
+    Object.assign(entry, { state: "closing", reader: undefined });
+    await settle();
+    Object.assign(entry, { state: "opening", id: undefined, reason: undefined, copy: undefined });
+    delete entry["restored"];
+    hub.poke(ID);
+    await settle();
+    // The tab comes back meanwhile with its cursor and copy.
+    message({ type: "subscribe", space: ID, cursor: loaded?.["cursor"], copy: "a".repeat(24) });
+    await settle();
+    expect(sent.slice(count)).toEqual([]);
+
+    // The claimed copy is served: the tab gets a snapshot of it, never an error.
+    Object.assign(entry, { state: "open", id: ID, reader: readerOf(2), copy: "b".repeat(24) });
+    hub.poke(ID);
+    await settle();
+    expect(sent.slice(count).map((m) => [m["type"], m["reason"]])).toEqual([["snapshot", "copy"]]);
+    expect((sent.at(-1)?.["space"] as { copy: string }).copy).toBe("b".repeat(24));
+
+    // The person closes the space: that is said, as a close.
+    Object.assign(entry, { state: "closed", reader: undefined });
+    hub.poke(ID);
+    await settle();
+    expect(sent.at(-1)).toEqual({ type: "error", code: "space_unavailable" });
+    handlers.get("close")?.();
+  });
+});

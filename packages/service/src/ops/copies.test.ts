@@ -52,6 +52,16 @@ describe("[A2.3.10.5.copies.rule] an ID or a name means the folder that serves t
     // Opening or closing for a moment is serving: the answer is "retry".
     const opening = space(MIRA, "mira-copy", "opening");
     expect(copyOf([missing, opening], MIRA)).toBe(opening);
+    // A copy being opened again (a claim, a restore in place) has no ID read from its folder yet:
+    // its entry's ID finds it, beside the original that closed.
+    const reopening: Copy = { id: undefined, registered: MIRA, state: "opening", folder: at("c") };
+    for (const spaces of [
+      [space(MIRA, "mira", "closed"), reopening],
+      [reopening, space(MIRA, "mira", "closed")],
+    ]) {
+      expect(copyOf(spaces, MIRA)).toBe(reopening);
+      expect(findSpace(spaces, MIRA)).toBe(reopening);
+    }
   });
 
   test("a name two spaces have is ambiguous, and the ID names one of them", () => {
