@@ -264,6 +264,9 @@ the behaviour it describes, and keep each one to a sentence or two.
 - `ttasks run` starts an agent on a task in the task's folder, the one Open uses, and only you can
   start one. A run may do whatever your agent setup allows, without asking: the network, other
   folders, other agents. An instance's `run_permission` narrows that.
+- A run starts in the space you named, with `--space` or `TTASKS_SPACE`, else in the default
+  space, and `--wait` keeps following it there when the default changes. An answer longer than
+  TTasks keeps is kept as its start, and showing it says so.
 - Your request reaches the agent over its own connection, never on a command line. A run's
   answer, or the agent's question when it needs you, is kept in the run's record, and so is what
   the agent had written of its answer when Stop, a restart or its own end cut it short. A question

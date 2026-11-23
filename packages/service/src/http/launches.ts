@@ -41,6 +41,7 @@ import { launchError } from "../ops/handlers.ts";
 import { readOnly, type OpsHost, type ServedSpace } from "../ops/index.ts";
 import { readLaunchTask, type TaskFolder } from "../ops/read.ts";
 import { WORK_ON_IT } from "../runs/agent.ts";
+import { runAnswer } from "../runs/service.ts";
 import type { HttpLog } from "./events.ts";
 
 /** An instance as the page draws its tile (A5 3.6): a key, a label, a monogram and a ring slot. */
@@ -188,17 +189,7 @@ export function uiRun(run: RunRecord, live: UiRunLive = {}): UiRun {
           ...(result.cleanup === undefined ? {} : { cleanup: result.cleanup }),
           ...(result.error === null ? {} : { error: result.error }),
         }),
-    ...(result === null
-      ? {
-          answer: said?.text ?? null,
-          answer_final: said?.final === true,
-          answer_cut: said?.cut === true,
-        }
-      : {
-          answer: result.text,
-          answer_final: result.textFinal === true,
-          answer_cut: result.textCut === true,
-        }),
+    ...runAnswer(run, said),
     ...(refused === 0 ? {} : { refused }),
     version: run.version,
   };

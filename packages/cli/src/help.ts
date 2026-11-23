@@ -24,6 +24,8 @@ export interface LocalCommand {
   readonly help: string;
   /** The words it takes first, when it takes one: `ttasks service start`. */
   readonly subcommands?: readonly string[];
+  /** It reads `--input`. Every other command is refused it, before it does anything. */
+  readonly input?: true;
 }
 
 const OPEN_HELP = `Usage: ${CLI_NAME} open [--space <id or name>] [--task <ref>] [--print-url]
@@ -150,6 +152,7 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
       "Start a background run of a task with an agent, list runs, show a run's answer, stop a run",
     help: RUN_HELP,
     subcommands: ["list", "show", "stop"],
+    input: true,
   },
   {
     name: "view",
