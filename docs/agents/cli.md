@@ -209,7 +209,7 @@ Usage: `ttasks redo [flags]`
 
 | Argument | Field | Type | Description |
 |---|---|---|---|
-| `--commit` | `commit` | string | The change you mean: refused unless it is the next one to redo |
+| `--commit` | `commit` | string | The change you mean: refused unless it is one you undid |
 
 ## `ttasks reopen`
 

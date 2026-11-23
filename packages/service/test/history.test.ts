@@ -1,7 +1,9 @@
 // history.undo and history.redo through the request path (A1 3.10.1, A3 3.2.3, 3.5; A5 3.12; A7
 // 3.10 M3.02): the user's only, the tasks a change changed back, A1's undo codes as the registry's,
-// with the values "Restore mine" needs in a conflict, and a partial undo's unresolved fields. A
+// with each conflict's values, and a partial undo's unresolved fields. A
 // service in this process, fixture text and temporary folders only.
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { AppError, type ErrorBody } from "@ttasks/contracts";
 import { opCall, type Caller } from "../src/ops/index.ts";
@@ -192,6 +194,140 @@ describe("[A3.3.2.3.history] undo and redo through the request path", () => {
   );
 
   test(
+    "a redo of a removal after an agent's note is a conflict naming the note; the task stays, and one removal moves it",
+    async () => {
+      const task = await add("Fixture task removed and brought back");
+      await call("task.delete", { tasks: [task], base: await asOf(), request_id: rid() });
+      await call("history.undo", { request_id: rid() });
+      await call(
+        "entry.add",
+        { task, kind: "note", text: "Fixture note since.", request_id: rid() },
+        SCRIPT,
+      );
+      const conflict = await refusal("history.redo", { request_id: rid() });
+      expect(conflict).toMatchObject({
+        code: "conflict",
+        data: {
+          cause: "UNDO_CONFLICT",
+          conflicts: [{ task, entity: "notes", field: "deleted", value: null, by: "script" }],
+        },
+      });
+      expect((await show(task))["ref"]).toBe(task);
+      const removed = await call("task.delete", {
+        tasks: [task],
+        base: await asOf(),
+        request_id: rid(),
+      });
+      expect(removed["commit"]).toMatch(/^op_/);
+      expect(
+        await refusal(
+          "entry.add",
+          { task, kind: "note", text: "Fixture note after.", request_id: rid() },
+          SCRIPT,
+        ),
+      ).toMatchObject({ data: { reason: "in_trash" } });
+    },
+    LONG,
+  );
+
+  test(
+    "a redo passes over a removal someone added to since, redoes the change behind it and names the one it passed over; that one stays",
+    async () => {
+      const a = await add("Fixture task removed first");
+      const b = await add("Fixture task edited after");
+      const removal = await call("task.delete", {
+        tasks: [a],
+        base: await asOf(),
+        request_id: rid(),
+      });
+      await set(b, { summary: "Fixture summary after" });
+      await call("history.undo", { request_id: rid() });
+      await call("history.undo", { request_id: rid() });
+      await call(
+        "entry.add",
+        { task: a, kind: "note", text: "Fixture note since.", request_id: rid() },
+        SCRIPT,
+      );
+      const redone = await call("history.redo", { request_id: rid() });
+      expect(redone).toMatchObject({
+        result: "redone",
+        tasks: [b],
+        passed_over: [removal["commit"]],
+      });
+      expect((await show(b))["summary"]).toBe("Fixture summary after");
+      expect((await show(a))["ref"]).toBe(a);
+      // Nothing else can be redone: refused, naming the change it passed over again.
+      expect(await refusal("history.redo", { request_id: rid() })).toMatchObject({
+        code: "conflict",
+        data: { cause: "UNDO_CONFLICT", passed_over: [removal["commit"]] },
+      });
+    },
+    LONG,
+  );
+
+  test(
+    "a refusal over a hundred notes and a question names the task and its author once, and no count; the answer, the receipt and a partial undo say the same",
+    async () => {
+      const task = await add("Fixture task with many notes");
+      await call("task.delete", { tasks: [task], base: await asOf(), request_id: rid() });
+      await call("history.undo", { request_id: rid() });
+      for (let i = 0; i < 100; i += 1) {
+        const text = `Fixture note ${String(i)}.`;
+        await call("entry.add", { task, kind: "note", text, request_id: rid() }, SCRIPT);
+      }
+      const asked = { task, kind: "question", text: "Fixture question?", request_id: rid() };
+      await call("entry.add", asked, SCRIPT);
+      const redo = rid();
+      const refused = await refusal("history.redo", { request_id: redo });
+      const newer = { newer_work: [{ task, by: "script" }] };
+      expect(refused.data).toMatchObject(newer);
+      expect(refused.data?.["newer_work"]).toEqual([
+        { task, by: "script", at: expect.any(String) as unknown },
+      ]);
+      expect(refused.data).not.toHaveProperty("newer_changes");
+      // Each row once, for a program that looks closer.
+      expect((refused.data?.["conflicts"] as Json[]).length).toBe(101);
+      expect(await call("receipt.get", { request: redo })).toMatchObject(newer);
+      // The removal stays undone: the next undo reaches the task's creation, which the notes keep,
+      // and what it leaves says the same.
+      const undone = await call("history.undo", { partial: true, request_id: rid() });
+      expect(undone).toMatchObject({ result: "partial", ...newer });
+      expect((undone["unresolved"] as Json[]).length).toBe(101);
+    },
+    LONG,
+  );
+
+  test(
+    "a folder set from a base before Undo brought the cleared one back is a conflict, and the restored folder stays",
+    async () => {
+      const task = await add("Fixture task with a folder");
+      const other = join(w.root, "fixture-history-other");
+      mkdirSync(other, { recursive: true });
+      const folder = async (input: Json): Promise<Json> =>
+        call("folder.manage", { task, ...input, base: await asOf(), request_id: rid() });
+      await folder({ action: "set", folder: w.portal });
+      await folder({ action: "clear" });
+      const empty = await asOf();
+      await call("history.undo", { request_id: rid() });
+      const stale = await call("folder.manage", {
+        task,
+        action: "set",
+        folder: other,
+        base: empty,
+        request_id: rid(),
+      }).then(
+        () => undefined,
+        (e: unknown) => (e instanceof AppError ? e.toBody() : e),
+      );
+      expect(stale).toMatchObject({
+        code: "conflict",
+        data: { conflicts: [{ task, entity: "folders", field: "deleted" }] },
+      });
+    },
+    LONG,
+  );
+
+  test(
     "an agent's log entry keeps the user's new task; receipt.get reads both outcomes",
     async () => {
       const task = await add("Fixture task an agent logs on");
@@ -276,17 +412,30 @@ describe("[A1.5.history.runs] a run keeps its task's create, through the request
       expect(created.status).toBe("applied");
       const run = String(created.results[0]?.id);
       const refused = rid();
+      // The run is named by its state now, and is a run's work, not the person's elsewhere.
+      const newer = { newer_work: [{ task, by: "run" }] };
       expect(await refusal("history.undo", { request_id: refused })).toMatchObject({
         code: "conflict",
         data: {
           cause: "UNDO_CONFLICT",
-          conflicts: [{ task, entity: "runs", id: run, field: "state", value: null, by: "user" }],
+          conflicts: [
+            {
+              task,
+              entity: "runs",
+              id: run,
+              field: "state",
+              value: { state: "queued" },
+              by: "user",
+            },
+          ],
+          ...newer,
         },
       });
       expect(await call("receipt.get", { request: refused })).toMatchObject({
         found: true,
         status: "conflict",
         conflicts: [{ entity: "runs", id: run, ref: task, field: "state" }],
+        ...newer,
       });
       const partial = await call("history.undo", { partial: true, request_id: rid() });
       expect(partial).toMatchObject({

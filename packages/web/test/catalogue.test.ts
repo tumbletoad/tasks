@@ -124,6 +124,11 @@ const SAMPLE = {
   holder: "M-20",
   already: 1,
   later: 1,
+  a: "Codex",
+  b: "a run",
+  c: "Ana Reyes",
+  rest: 2,
+  tasks: "LUM-212 and LUM-214",
 };
 
 describe("[A5.3.23.web.catalogue] the page's message catalogue", () => {

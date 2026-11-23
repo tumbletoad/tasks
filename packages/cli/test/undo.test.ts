@@ -46,7 +46,7 @@ describe("[A3.3.2.3.history] ttasks undo and ttasks redo", () => {
       );
       const partial = await tasks(["undo", "--partial", "--yes"]);
       expect(partial.stdout).toMatch(
-        /^Undid part of your change to M-1 in Mira\nKept as others set them:\n {2}M-1 summary: script at \S+\n$/,
+        /^Undid part of your change to M-1 in Mira\nNot undone: a script changed M-1 since\.\n$/,
       );
 
       // A script is not the person: user-only.

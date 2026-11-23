@@ -574,6 +574,23 @@ describe("[A1.5.write.receipts] the intent, the writer scope and receipt.get", (
     );
     expect(ReceiptGetResult.safeParse(output).error).toBeUndefined();
     expect(output).toMatchObject({ found: true, status: "conflict", target: mine.commit });
+    // A receipt another build stored with fields this one does not name still reads.
+    const stored = fx.writer.receipt({
+      scope_id: undo.actor.scope_id,
+      request_id: undo.request_id,
+    });
+    if (stored === undefined) throw new Error("no receipt");
+    const older = {
+      ...stored,
+      result: {
+        ...stored.result,
+        setAside: [mine.commit],
+        conflicts: stored.result.conflicts.map((c) => ({ ...c, more: 2 })),
+      },
+    };
+    const read = receiptResult(older);
+    expect(ReceiptGetResult.safeParse(read).error).toBeUndefined();
+    expect(read).toMatchObject({ found: true, status: "conflict", target: mine.commit });
   });
 
   test("receipt.get through the writer worker returns the stored result, or nothing", async () => {

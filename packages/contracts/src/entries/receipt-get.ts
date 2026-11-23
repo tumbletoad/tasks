@@ -8,6 +8,8 @@ import { z } from "zod";
 import { defineEntry } from "../define.ts";
 import { AsOf, idPattern, Lifecycle, patterns, TaskId, TaskRef, Warnings } from "../schemas.ts";
 import { AS_OF, M14, requestId } from "./fixture.ts";
+import { NewerWorkFields } from "./history-undo.ts";
+import { newerBy } from "../newer-work.ts";
 
 const Seq = z.int().min(0).max(999_999_999_999_999);
 const Instant = z.string().regex(patterns.instant);
@@ -106,6 +108,24 @@ const ReceiptConflict = z.strictObject({
   at: Instant.describe("When"),
 });
 
+/** A writer's newer work as an answer's JSON (WriteResult.newer): tasks by reference, who by name. */
+export function newerWorkJson(newer: {
+  readonly work: readonly {
+    readonly ref?: string;
+    readonly by: { readonly kind: string; readonly label: string; readonly origin?: string };
+    readonly run: boolean;
+    readonly at: number;
+  }[];
+}): { newer_work: z.input<typeof NewerWorkFields.newer_work> } {
+  return {
+    newer_work: newer.work.map((w) => ({
+      ...(w.ref === undefined ? {} : { task: w.ref }),
+      by: newerBy(w.by, w.run),
+      at: new Date(w.at).toISOString(),
+    })),
+  };
+}
+
 export const ReceiptGetResult = z.union([
   z.strictObject({
     found: z.literal(false).describe("No receipt for that request ID in this writer scope"),
@@ -128,6 +148,11 @@ export const ReceiptGetResult = z.union([
       .regex(idPattern("op"))
       .describe("An undo or redo's UNDO_CONFLICT: the commit it met, to name in the next undo")
       .optional(),
+    passed_over: z
+      .array(z.string().regex(idPattern("op")))
+      .describe("A redo's: the undone changes it could not redo, which stay for the next redo")
+      .optional(),
+    ...NewerWorkFields,
     results: z
       .array(ReceiptOpResult)
       .max(50)
@@ -165,6 +190,15 @@ export interface StoredReceiptLike {
     as_of: string;
     commit?: string;
     target?: string;
+    passed?: readonly string[];
+    newer?: {
+      readonly work: readonly {
+        readonly ref?: string;
+        readonly by: { readonly kind: string; readonly label: string; readonly origin?: string };
+        readonly run: boolean;
+        readonly at: number;
+      }[];
+    };
     results: readonly object[];
     conflicts: readonly { at: number }[];
     error?: { code: string; message: string; op?: number; field?: string };
@@ -178,6 +212,38 @@ const iso = (ms: number): string => new Date(ms).toISOString();
  * receipt.get's result for a stored receipt, or for none: instants as ISO text, the error as A1's
  * code in `cause` (A3 3.5). The handler passes what storage's receipt lookup returned.
  */
+/** A conflict as a receipt stores it: the writer's FieldConflict, without its values. */
+interface StoredConflict {
+  op: number;
+  entity: string;
+  id: string;
+  task?: string;
+  ref?: string;
+  field: string;
+  version: number;
+  by: { actor: string; kind: string; label: string; origin?: string };
+  at: number;
+}
+
+function receiptConflict(c: StoredConflict): z.input<typeof ReceiptConflict> {
+  return {
+    op: c.op,
+    entity: c.entity,
+    id: c.id,
+    ...(c.task === undefined ? {} : { task: c.task }),
+    ...(c.ref === undefined ? {} : { ref: c.ref }),
+    field: c.field,
+    version: c.version,
+    by: {
+      actor: c.by.actor,
+      kind: c.by.kind,
+      label: c.by.label,
+      ...(c.by.origin === undefined ? {} : { origin: c.by.origin }),
+    },
+    at: iso(c.at),
+  } as z.input<typeof ReceiptConflict>;
+}
+
 export function receiptResult(
   stored: StoredReceiptLike | undefined,
 ): z.input<typeof ReceiptGetResult> {
@@ -193,16 +259,15 @@ export function receiptResult(
     incarnation: stored.incarnation,
     ...(result.commit === undefined ? {} : { commit: result.commit }),
     ...(result.target === undefined ? {} : { target: result.target }),
+    ...(result.passed === undefined ? {} : { passed_over: [...result.passed] }),
+    ...(result.newer === undefined ? {} : newerWorkJson(result.newer)),
     // A request or an import holds more operations than a reply shows: the first 50.
     results: result.results.slice(0, 50) as z.input<typeof ReceiptOpResult>[],
     ...(result.results.length > 50 ? { results_more: result.results.length - 50 } : {}),
+    // Each conflict by the fields this build names: a receipt another build stored may hold more.
     ...(result.conflicts.length === 0
       ? {}
-      : {
-          conflicts: result.conflicts.map(
-            (c) => ({ ...c, at: iso(c.at) }) as z.input<typeof ReceiptConflict>,
-          ),
-        }),
+      : { conflicts: result.conflicts.map((c) => receiptConflict(c as StoredConflict)) }),
     ...(error === undefined
       ? {}
       : {

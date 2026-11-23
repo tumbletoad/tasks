@@ -35,6 +35,21 @@ export const Unresolved = z.strictObject({
   at: z.string().regex(patterns.instant).describe("When"),
 });
 
+/** One author who changed one task since the change (A1 3.10.1): who, and when last. */
+export const NewerWork = z.strictObject({
+  task: TaskRef.describe("The task; absent for an area, a project or a source").optional(),
+  by: z.string().describe("Who: user, import, run (a run's own progress) or the actor's label"),
+  at: z.string().regex(patterns.instant).describe("When that author last changed it"),
+});
+
+/** Who changed what an undo or a redo met since: one entry per task and author. */
+export const NewerWorkFields = {
+  newer_work: z
+    .array(NewerWork)
+    .describe("Who changed which task since, one entry per task and author")
+    .optional(),
+};
+
 /** What an undo and a redo return besides their outcome. */
 export const HistoryResultFields = {
   commit: CommitId.describe("The change undone or redone"),
@@ -91,6 +106,7 @@ export const HistoryUndoResult = z.strictObject({
     .describe("undone: all of it; partial: the unresolved fields stay as others set them"),
   ...HistoryResultFields,
   unresolved: z.array(Unresolved).describe("Fields left as others set them").optional(),
+  ...NewerWorkFields,
   script_change: ScriptChange.describe(
     "A newer change by a script, which is not on the undo stack",
   ).optional(),
