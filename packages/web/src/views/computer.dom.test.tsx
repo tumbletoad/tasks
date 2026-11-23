@@ -267,7 +267,7 @@ describe("[A5.agents.web-page] the Agents page shows the monitor's every state i
     expect(text("monitor-status")).toBe("Still looking: an agent may be missing for a moment.");
     expect(sessions()).toHaveLength(1);
     show({ picture: picture([]), trouble: null });
-    expect(text("monitor-status")).toBe("No agent is running on this computer.");
+    expect(text("monitor-status")).toBe("TTAM sees no agent on this computer.");
     // Plan usage still shows without a session.
     expect(text("usage")).toContain("6% used");
   });

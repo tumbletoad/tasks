@@ -27,11 +27,11 @@ function homeOf(
   snapshot: MonitorSnapshot,
   held: HeldSession,
   platform: NodeJS.Platform,
-): string | undefined {
+): MonitorSnapshot["homes"][number] | undefined {
   const homes = snapshot.homes.filter(
     (h) => h.provider === held.provider && samePath(platform, h.path, held.home),
   );
-  return homes.length === 1 ? homes[0]?.id : undefined;
+  return homes.length === 1 ? homes[0] : undefined;
 }
 
 /** The task each join of app, home and session names; null where two tasks share one. */
@@ -44,7 +44,7 @@ function joined(
   for (const h of held) {
     const home = homeOf(snapshot, h, platform);
     if (home === undefined) continue;
-    const key = joinKey(h.provider, home, h.sessionId);
+    const key = joinKey(h.provider, home.id, h.sessionId);
     const found = out.get(key);
     out.set(
       key,
@@ -84,8 +84,8 @@ export const UNSEEN_MS = 10_000;
 
 /**
  * Agents in a terminal that TTasks holds as running and TTAM has not seen. An answer that says
- * `settling` may miss a session, so it counts neither way. An agent whose home TTAM does not list
- * cannot be seen at all, and is never called unseen.
+ * `settling` may miss a session, so it counts neither way. An agent whose home TTAM does not list,
+ * or lists as not present, cannot be seen at all, and is never called unseen.
  */
 export class Unseen {
   /** Per join: the complete answers in a row that missed it, and when the first of them came. */
@@ -109,8 +109,8 @@ export class Unseen {
     for (const h of held) {
       if (!h.running || h.task.started !== "terminal") continue;
       const home = homeOf(snapshot, h, platform);
-      if (home === undefined) continue;
-      const key = joinKey(h.provider, home, h.sessionId);
+      if (home === undefined || !home.present) continue;
+      const key = joinKey(h.provider, home.id, h.sessionId);
       if (present.has(key)) continue;
       const before = this.#missed.get(key);
       if (snapshot.settling) {

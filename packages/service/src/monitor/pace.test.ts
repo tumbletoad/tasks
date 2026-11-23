@@ -24,7 +24,7 @@ const TASK = {
   started: "terminal" as const,
 };
 
-const snapshot = (settling: boolean, generation = 1): MonitorSnapshot => ({
+const snapshot = (settling: boolean, generation = 1, present = true): MonitorSnapshot => ({
   settling,
   usage: "live",
   generation,
@@ -36,14 +36,14 @@ const snapshot = (settling: boolean, generation = 1): MonitorSnapshot => ({
       providerName: "claude",
       label: "claude",
       path: HOME,
-      present: true,
+      present,
     },
   ],
   agents: [],
   accounts: [],
 });
 
-function setup(held: () => readonly HeldSession[] = () => []) {
+function setup(held: () => readonly HeldSession[] = () => [], present = true) {
   const clock = testClock<PaceTimerKind>({ virtual: "all" });
   /** How far the steady clock moved on without any timer firing. */
   let slept = 0;
@@ -81,7 +81,9 @@ function setup(held: () => readonly HeldSession[] = () => []) {
     generation = 1,
     agents: MonitorSnapshot["agents"] = [],
   ) => {
-    asks.at(-1)?.resolve({ ok: true, snapshot: { ...snapshot(settling, generation), agents } });
+    asks
+      .at(-1)
+      ?.resolve({ ok: true, snapshot: { ...snapshot(settling, generation, present), agents } });
     await new Promise((resolve) => setImmediate(resolve));
   };
   const due = () => {
@@ -325,6 +327,15 @@ describe("[A5.agents.unseen] an agent TTasks holds as running that the monitor d
         running: true,
       },
     ]);
+    for (let i = 0; i < 4; i += 1) {
+      await s.reply(false);
+      s.clock.advance(20_000);
+    }
+    expect(unseen(s)).toEqual([]);
+  });
+
+  test("an agent in a home the monitor reports as not present is never unseen", async () => {
+    const s = setup(() => held(), false);
     for (let i = 0; i < 4; i += 1) {
       await s.reply(false);
       s.clock.advance(20_000);

@@ -148,7 +148,7 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
       const place = (await row.boundingBox())?.y;
       expect(place).toBeDefined();
       world.monitor("no_agents");
-      await expect(status(page)).toHaveText("No agent is running on this computer.", {
+      await expect(status(page)).toHaveText("TTAM sees no agent on this computer.", {
         timeout: SLOW_MS,
       });
       await expect(title).toBeFocused();
@@ -158,7 +158,7 @@ test.describe("[A5.agents.e2e.screens] every state of the monitor on the Agents 
       await expect(title).toBeFocused();
       expect((await row.boundingBox())?.y).toBe(place);
       world.monitor("no_agents");
-      await expect(status(page)).toHaveText("No agent is running on this computer.", {
+      await expect(status(page)).toHaveText("TTAM sees no agent on this computer.", {
         timeout: SLOW_MS,
       });
       await shots(page, world, "empty");
