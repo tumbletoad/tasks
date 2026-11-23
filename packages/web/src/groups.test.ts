@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { archivedGroup, groupTasks, liveGroups, sidebarAreas, slotOf } from "./groups.ts";
+import {
+  archivedGroup,
+  groupTasks,
+  liveGroups,
+  projectGroups,
+  sidebarAreas,
+  slotOf,
+} from "./groups.ts";
 import type { AreaRow, ProjectRow, TaskRow } from "./live.ts";
 
 let n = 0;
@@ -113,11 +120,36 @@ describe("[A5.archived.web.groups] an archived area or project leaves the areas 
       archived.map((g) =>
         g.kind === "area"
           ? [g.area.title, g.projects.map((p) => p.title)]
-          : [g.area.title, g.project.title],
+          : [g.area?.title, g.project.title],
       ),
     ).toEqual([
       ["Attic", ["Boxes"]],
       ["Lumen", "Clinic sync"],
+    ]);
+  });
+
+  test("a project without an area: a live one is listed after the areas, an archived one under Archived after the areas' groups", () => {
+    const shed: ProjectRow = { id: "p_shed", title: "Shed", position: "d0" };
+    const kiln: ProjectRow = { id: "p_kiln", title: "Kiln", position: "d1", lifecycle: "archived" };
+    const { live, loose, archived } = sidebarAreas(areas, [...projects, kiln, shed]);
+    expect(live.flatMap((a) => a.projects.map((p) => p.title))).toEqual(["Lumen portal"]);
+    expect(loose.map((p) => p.title)).toEqual(["Shed"]);
+    expect(archived.map((g) => (g.kind === "area" ? g.area.title : g.project.title))).toEqual([
+      "Attic",
+      "Clinic sync",
+      "Kiln",
+    ]);
+    expect(archived.at(-1)?.area).toBeUndefined();
+  });
+
+  test("a project's view: its tasks in one list, open first, with or without an area", () => {
+    const kiln: ProjectRow = { id: "p_kiln", title: "Kiln", position: "d1" };
+    const rows = [
+      task({ title: "Later", project_id: "p_kiln", status: "backlog" }),
+      task({ title: "Fire it", project_id: "p_kiln" }),
+    ];
+    expect(titles(projectGroups(rows, areas, [kiln]))).toEqual([
+      ["flat", undefined, [[undefined, ["Fire it", "Later"]]]],
     ]);
   });
 
@@ -128,7 +160,9 @@ describe("[A5.archived.web.groups] an archived area or project leaves the areas 
     );
     const after = sidebarAreas(areas, projects);
     const slots = (listed: ReturnType<typeof sidebarAreas>) =>
-      Object.fromEntries([...listed.live, ...listed.archived].map((g) => [g.area.title, g.slot]));
+      Object.fromEntries(
+        [...listed.live, ...listed.archived].map((g) => [g.area?.title ?? "", g.slot]),
+      );
     expect(slots(after)).toEqual(slots(before));
   });
 

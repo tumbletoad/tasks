@@ -142,9 +142,7 @@ describe("[A5.3.5.web.view-groups] each view's grouping", () => {
       [lumen],
       [portal, sync],
     );
-    expect(shape(project)).toEqual([
-      ["flat", "Lumen Health", [[undefined, ["Fix zones", "Someday"]]]],
-    ]);
+    expect(shape(project)).toEqual([["flat", undefined, [[undefined, ["Fix zones", "Someday"]]]]]);
   });
 
   test("Agents: a task an agent finished stays in Recent with its finished row, until it is deleted", () => {

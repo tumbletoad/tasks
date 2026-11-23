@@ -170,7 +170,7 @@ export function AreaPicker({ task }: { readonly task: TaskRow }) {
   const slot = area === undefined ? undefined : slots.get(area.id);
   const shown =
     area === undefined
-      ? undefined
+      ? project?.title
       : project === undefined
         ? area.title
         : t("fact.areaProject", { area: area.title, project: project.title });

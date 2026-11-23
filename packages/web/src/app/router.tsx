@@ -9,6 +9,7 @@
 //                                           completed, agents
 //   /s/:space/area/:area                    an area
 //   /s/:space/area/:area/project/:project   a project of it
+//   /s/:space/project/:project              a project without an area
 //   /s/:space/search?q=                     search results of the top field (`?task=` too)
 //   /s/:space/task/:id                      a task link: resolved to its host view (host.ts)
 //   /s/:space/settings                    Settings (an older `settings/:section` link lands there)
@@ -114,6 +115,17 @@ const projectRoute = createRoute({
   },
 });
 
+const looseProjectRoute = createRoute({
+  getParentRoute: () => spaceRoute,
+  path: "project/$project",
+  validateSearch: taskSearch,
+  component: function LooseProjectRoute() {
+    const { project } = looseProjectRoute.useParams();
+    const { task } = looseProjectRoute.useSearch();
+    return <AreaPage project={project} task={task} />;
+  },
+});
+
 /** The search's text (at most what the field takes) and its expanded result. */
 export function searchSearch(search: Record<string, unknown>): { q?: string; task?: string } {
   const q = search["q"];
@@ -161,6 +173,7 @@ const routeTree = rootRoute.addChildren([
     viewRoute,
     areaRoute,
     projectRoute,
+    looseProjectRoute,
     searchRoute,
     taskRoute,
     settingsRoute,

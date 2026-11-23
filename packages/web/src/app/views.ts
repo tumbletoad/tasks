@@ -167,6 +167,11 @@ export function areaFilter(area: string, project?: string): (task: TaskRow) => b
   return (task) => task.area_id === area && (project === undefined || task.project_id === project);
 }
 
+/** A project's view without its area: the project's open tasks, whatever their area. */
+export function projectFilter(project: string): (task: TaskRow) => boolean {
+  return (task) => task.project_id === project;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Today: a few numbers about the day, then Focus, This week, Next and Changes. A task appears in the
 // first section that selects it and in no other, so the sections are disjoint by construction:

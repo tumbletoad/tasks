@@ -10,9 +10,10 @@
 // button does. Areas and projects count the open tasks their view lists, quietly, and a folded area
 // keeps its count. A name the sidebar cuts shows whole in a tip. New project sits in the foot beside
 // Settings, and on each area while the pointer or focus is on it, in place of the area's count so
-// nothing beside it moves; on a touch screen always, after the count. An archived area or project
-// leaves the areas for Archived, folded until the person opens it, where it keeps its count, so open
-// work in it is never out of sight, and its page has the way back.
+// nothing beside it moves; on a touch screen always, after the count. A project without an area is
+// listed after the areas. An archived area or project leaves the areas for Archived, folded until
+// the person opens it, where it keeps its count, so open work in it is never out of sight, and its
+// page has the way back.
 import { Link, useParams } from "@tanstack/react-router";
 import { useId, useMemo, useState, type FocusEvent, type PointerEvent } from "react";
 import { Button } from "react-aria-components";
@@ -79,7 +80,8 @@ function ProjectLink({
   counts,
 }: {
   readonly space: string;
-  readonly area: string;
+  /** None for a project without an area. */
+  readonly area: string | undefined;
   readonly project: { readonly id: string; readonly title: string };
   /** The name shown, when it is not the project's alone. */
   readonly label?: string;
@@ -90,8 +92,12 @@ function ProjectLink({
   const name = label ?? project.title;
   return (
     <Link
-      to="/s/$space/area/$area/project/$project"
-      params={{ space, area, project: project.id }}
+      {...(area === undefined
+        ? { to: "/s/$space/project/$project", params: { space, project: project.id } }
+        : {
+            to: "/s/$space/area/$area/project/$project",
+            params: { space, area, project: project.id },
+          })}
       className={styles.item}
       activeProps={{ "aria-current": "page" }}
       activeOptions={IGNORE_TASK}
@@ -170,8 +176,45 @@ function AreaLink({
 }
 
 /**
- * Archived: the archived areas with their projects, and the archived projects of live areas, each
- * with its count and a link to its page. Nothing here takes new work.
+ * A project listed on its own, beside the areas: one without an area (no colour), or under Archived
+ * an archived one of a live area, named with its area and in its colour.
+ */
+function LooseProject({
+  space,
+  area,
+  slot,
+  project,
+  counts,
+}: {
+  readonly space: string;
+  readonly area?: { readonly id: string; readonly title: string } | undefined;
+  readonly slot?: number | undefined;
+  readonly project: { readonly id: string; readonly title: string };
+  readonly counts: ReadonlyMap<string, number> | undefined;
+}) {
+  const t = useT();
+  return (
+    <div className={slot === undefined ? styles.area : `${styles.area} slot-${String(slot)}`}>
+      <span className={styles.fold} aria-hidden="true">
+        {area === undefined ? null : <span className={styles.dot} />}
+      </span>
+      <ProjectLink
+        space={space}
+        area={area?.id}
+        project={project}
+        {...(area === undefined
+          ? {}
+          : { label: t("fact.areaProject", { area: area.title, project: project.title }) })}
+        counts={counts}
+      />
+    </div>
+  );
+}
+
+/**
+ * Archived: the archived areas with their projects, the archived projects of live areas, and the
+ * archived projects without an area, each with its count and a link to its page. Nothing here takes
+ * new work.
  */
 function Shelf({
   id,
@@ -231,21 +274,13 @@ function Shelf({
               </li>
             ) : (
               <li key={group.project.id}>
-                <div className={`${styles.area} slot-${String(group.slot)}`}>
-                  <span className={styles.fold} aria-hidden="true">
-                    <span className={styles.dot} />
-                  </span>
-                  <ProjectLink
-                    space={space}
-                    area={group.area.id}
-                    project={group.project}
-                    label={t("fact.areaProject", {
-                      area: group.area.title,
-                      project: group.project.title,
-                    })}
-                    counts={counts}
-                  />
-                </div>
+                <LooseProject
+                  space={space}
+                  area={group.area}
+                  slot={group.slot}
+                  project={group.project}
+                  counts={counts}
+                />
               </li>
             ),
           )}
@@ -255,7 +290,19 @@ function Shelf({
   );
 }
 
-export function Sidebar({ space }: { readonly space: string }) {
+export function Sidebar({
+  space,
+  shelfOpen,
+  onShelf,
+}: {
+  readonly space: string;
+  /**
+   * Archived is open: the page's, not the sidebar's, so the narrow drawer keeps it when it closes
+   * and opens again. It starts folded in every tab and after a reload: out of the way until asked.
+   */
+  readonly shelfOpen: boolean;
+  readonly onShelf: (open: boolean) => void;
+}) {
   const t = useT();
   const intl = useIntl();
   const state = useLive();
@@ -274,8 +321,6 @@ export function Sidebar({ space }: { readonly space: string }) {
     [state.areas, state.projects],
   );
   const { folded, toggle } = useFolds(space);
-  // Archived starts folded in every tab and after a reload: it is out of the way until asked for.
-  const [shelfOpen, setShelfOpen] = useState(false);
   // The side menu and the drawer can both be in the page: each names its own lists.
   const menu = useId();
   // New project: open, and the area it goes in unless the person chooses another.
@@ -317,7 +362,7 @@ export function Sidebar({ space }: { readonly space: string }) {
           );
         })}
       </ul>
-      {groups.live.length === 0 ? null : (
+      {groups.live.length + groups.loose.length === 0 ? null : (
         <ul className={styles.list} data-group="areas">
           {groups.live.map(({ area, slot, projects: own }) => {
             const isFolded = folded.has(area.id);
@@ -370,6 +415,11 @@ export function Sidebar({ space }: { readonly space: string }) {
               </li>
             );
           })}
+          {groups.loose.map((project) => (
+            <li key={project.id}>
+              <LooseProject space={space} project={project} counts={counts} />
+            </li>
+          ))}
         </ul>
       )}
       {groups.archived.length === 0 ? null : (
@@ -380,12 +430,12 @@ export function Sidebar({ space }: { readonly space: string }) {
           counts={counts}
           open={shelfOpen}
           onToggle={() => {
-            setShelfOpen((was) => !was);
+            onShelf(!shelfOpen);
           }}
           within={groups.archived.some((g) =>
             g.kind === "area"
               ? g.area.id === shownArea
-              : g.project.id === shownProject && g.area.id === shownArea,
+              : g.project.id === shownProject && g.area?.id === shownArea,
           )}
         />
       )}

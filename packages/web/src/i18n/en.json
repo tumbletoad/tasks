@@ -103,6 +103,7 @@
   "today.numberName": "{label}: {value}",
   "today.numberNameSub": "{label}: {value}, {sub}",
   "view.noArea": "This area is not in the space.",
+  "view.noProject": "This project is not in the space.",
 
   "group.inbox": "Inbox",
   "group.noArea": "No area",

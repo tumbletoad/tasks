@@ -113,24 +113,26 @@ export interface ListedArea {
   readonly projects: readonly ProjectRow[];
 }
 
-/** An archived project of a live area, listed on its own under Archived. */
+/** An archived project listed on its own under Archived: of a live area, or of none. */
 export interface ListedProject {
   readonly kind: "project";
-  readonly area: AreaRow;
-  readonly slot: number;
+  readonly area?: AreaRow | undefined;
+  readonly slot?: number | undefined;
   readonly project: ProjectRow;
 }
 
 /**
- * The sidebar's areas, in the space's order: each live area with its live projects, and under
- * Archived each archived area with all its projects and each archived project of a live area. An
- * area keeps the colour it has among all areas, so archiving one recolours no other.
+ * The sidebar's groups, in the space's order: each live area with its live projects, then the live
+ * projects without an area; under Archived each archived area with all its projects, each archived
+ * project of a live area, then the archived projects without an area. An area keeps the colour it
+ * has among all areas, so archiving one recolours no other.
  */
 export function sidebarAreas(
   areas: Iterable<AreaRow>,
   projects: Iterable<ProjectRow>,
 ): {
   readonly live: readonly ListedArea[];
+  readonly loose: readonly ProjectRow[];
   readonly archived: readonly (ListedArea | ListedProject)[];
 } {
   const all = [...areas].sort(byPosition);
@@ -149,7 +151,12 @@ export function sidebarAreas(
       if (archived(project)) shelved.push({ kind: "project", area, slot, project });
     }
   });
-  return { live, archived: shelved };
+  const areaIds = new Set(all.map((a) => a.id));
+  const without = projectList.filter((p) => p.area_id === undefined || !areaIds.has(p.area_id));
+  for (const project of without) {
+    if (archived(project)) shelved.push({ kind: "project", project });
+  }
+  return { live, loose: without.filter((p) => !archived(p)), archived: shelved };
 }
 
 export function groupTasks(
@@ -297,9 +304,13 @@ export const areaGroups: GroupTasks = (tasks, areas, projects) =>
     group.kind === "area" ? { ...group, kind: "flat" } : group,
   );
 
-/** A project's view: its tasks under no label, because the sidebar's item names the project. */
-export const projectGroups: GroupTasks = (tasks, areas, projects) =>
-  areaGroups(tasks, areas, projects).map((group) => ({
-    ...group,
-    sections: group.sections.map(({ key, tasks: rows }) => ({ key, tasks: rows })),
-  }));
+/**
+ * A project's view: its tasks in one list under no label, because the sidebar's item names the
+ * project, whether or not it has an area.
+ */
+export const projectGroups: GroupTasks = (tasks) => {
+  const list = [...tasks].sort(byStatusThenPosition);
+  return list.length === 0
+    ? []
+    : [{ key: "project", kind: "flat", sections: [{ key: "project", tasks: list }] }];
+};

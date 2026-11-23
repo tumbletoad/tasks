@@ -22,6 +22,7 @@ import css from "./pages.module.css";
 import {
   areaFilter,
   isCounted,
+  projectFilter,
   LANDING,
   VIEW_LABEL,
   VIEW_LIST,
@@ -94,26 +95,36 @@ export function ViewPage({
   );
 }
 
+/** An area's page, a project's in it, or the page of a project without an area. */
 export function AreaPage({
   area,
   project,
   task,
 }: {
-  readonly area: string;
-  readonly project?: string;
   readonly task?: string | undefined;
-}) {
+} & (
+  | { readonly area: string; readonly project?: string }
+  | { readonly area?: undefined; readonly project: string }
+)) {
   const t = useT();
   const state = useLive();
   const onExpand = useExpandInUrl();
-  const row = state.areas.get(area);
-  const named = project === undefined ? row?.title : state.projects.get(project)?.title;
-  useTitle(named ?? "");
-  const filter = useMemo(() => areaFilter(area, project), [area, project]);
-  if (row === undefined) return <p className={styles.line}>{t("view.noArea")}</p>;
+  const row = area === undefined ? undefined : state.areas.get(area);
+  const projectRow = project === undefined ? undefined : state.projects.get(project);
+  useTitle((project === undefined ? row?.title : projectRow?.title) ?? "");
+  const filter = useMemo(
+    () => (area === undefined ? projectFilter(project) : areaFilter(area, project)),
+    [area, project],
+  );
+  if (area !== undefined && row === undefined) {
+    return <p className={styles.line}>{t("view.noArea")}</p>;
+  }
+  if (area === undefined && projectRow === undefined) {
+    return <p className={styles.line}>{t("view.noProject")}</p>;
+  }
   const list = (
     <TaskList
-      key={`${area}/${project ?? ""}`}
+      key={`${area ?? ""}/${project ?? ""}`}
       view="area"
       grouping="project"
       group={project === undefined ? areaGroups : projectGroups}
